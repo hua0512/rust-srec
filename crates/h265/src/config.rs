@@ -79,8 +79,8 @@ impl HEVCDecoderConfigurationRecord {
         let general_profile_space = bit_reader.read_bits(2)? as u8;
         let general_tier_flag = bit_reader.read_bit()?;
         let general_profile_idc = bit_reader.read_bits(5)? as u8;
-        let general_profile_compatibility_flags = bit_reader.read_u32::<LittleEndian>()?;
-        let general_constraint_indicator_flags = bit_reader.read_u48::<LittleEndian>()?;
+        let general_profile_compatibility_flags = bit_reader.read_u32::<BigEndian>()?;
+        let general_constraint_indicator_flags = bit_reader.read_u48::<BigEndian>()?;
         let general_level_idc = bit_reader.read_u8()?;
 
         bit_reader.seek_bits(4)?; // reserved_4bits
@@ -185,8 +185,11 @@ impl HEVCDecoderConfigurationRecord {
         bit_writer.write_bits(self.general_profile_space as u64, 2)?;
         bit_writer.write_bit(self.general_tier_flag)?;
         bit_writer.write_bits(self.general_profile_idc as u64, 5)?;
-        bit_writer.write_u32::<LittleEndian>(self.general_profile_compatibility_flags)?;
-        bit_writer.write_u48::<LittleEndian>(self.general_constraint_indicator_flags)?;
+
+        // Fix endianness to be consistent with demux - use BigEndian
+        bit_writer.write_u32::<BigEndian>(self.general_profile_compatibility_flags)?;
+        bit_writer.write_u48::<BigEndian>(self.general_constraint_indicator_flags)?;
+
         bit_writer.write_u8(self.general_level_idc)?;
 
         bit_writer.write_bits(0b1111, 4)?; // reserved_4bits
