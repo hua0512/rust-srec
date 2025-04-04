@@ -5,6 +5,8 @@ use bytes::Bytes;
 use bytes_util::BytesCursorExt;
 use h264::AVCDecoderConfigurationRecord;
 
+use crate::resolution::Resolution;
+
 /// AVC Packet
 #[derive(Debug, Clone, PartialEq)]
 pub enum AvcPacket {
@@ -41,6 +43,32 @@ impl AvcPacket {
                 composition_time,
                 data: reader.extract_remaining(),
             }),
+        }
+    }
+
+    pub fn get_video_resolution(&self) -> Option<Resolution> {
+        match self {
+            AvcPacket::SequenceHeader(config) => {
+                if (config.sps.is_empty()) || config.pps.is_empty() {
+                    return None;
+                }
+                // Parse the first SPS to get the resolution
+                let sps = &config.sps[0];
+
+                match h264::Sps::parse_with_emulation_prevention(std::io::Cursor::new(&sps)) {
+                    Ok(sps) => {
+                        let width = sps.width();
+                        let height = sps.height();
+                        Some(Resolution {
+                            width: width as f32,
+                            height: height as f32,
+                        })
+                    }
+                    Err(_) => None,
+                }
+            }
+            // We are not able to parse other packets to get the resolution
+            _ => None,
         }
     }
 }

@@ -244,7 +244,7 @@ impl ScriptKeyframesFillerOperator {
                             write_amf_property_key!(&mut buffer, key);
                             // Encode value
                             amf0::Amf0Encoder::encode(&mut buffer, value).unwrap();
-                            info!("Encoded property: {}, {:?}", key, value);
+                            debug!("Encoded property: {}, {:?}", key, value);
                         } else {
                             // Add default values for missing properties
                             debug!(

@@ -30,14 +30,24 @@
 //! - hua0512
 //!
 
-use std::{fs, io, path::PathBuf}; // Keep imports
+use std::{
+    collections::HashMap,
+    fs,
+    io::{self, Seek, Write},
+    path::PathBuf,
+};
 
+use amf0::Amf0Value;
 use chrono::Local;
-use flv::{data::FlvData, header::FlvHeader, writer::FlvWriter};
+use flv::{data::FlvData, header::FlvHeader, tag::FlvTagData, writer::FlvWriter};
 use tokio::task::spawn_blocking;
 use tokio_stream::StreamExt;
+use tracing::info;
 
-use crate::pipeline::BoxStream;
+use crate::{
+    analyzer::{FlvAnalyzer, FlvStats},
+    pipeline::BoxStream,
+};
 
 // Custom Error type (assuming WriterError is defined as before)
 #[derive(Debug, thiserror::Error)]
@@ -66,6 +76,9 @@ pub struct FlvWriterTask {
     // the stream processing loop is sequential, ensuring only one blocking
     // operation accesses the writer at a time for this task instance.
     current_writer: Option<FlvWriter<std::io::BufWriter<std::fs::File>>>,
+    current_file_path: Option<PathBuf>,
+
+    analyzer: FlvAnalyzer,
 
     // --- State managed outside blocking calls ---
     file_counter: u32,
@@ -81,7 +94,7 @@ impl FlvWriterTask {
         let dir_clone = output_dir.clone();
         spawn_blocking(move || fs::create_dir_all(&dir_clone)).await??; // First ? handles JoinError, second ? handles io::Error
 
-        tracing::info!(path = %output_dir.display(), "Output directory ensured.");
+        info!(path = %output_dir.display(), "Output directory ensured.");
 
         Ok(Self {
             output_dir,
@@ -93,6 +106,8 @@ impl FlvWriterTask {
             total_tag_count: 0,
             current_file_start_time: None,
             current_file_last_time: None,
+            analyzer: FlvAnalyzer::new(),
+            current_file_path: None, // Initialize to None
         })
     }
 
@@ -139,6 +154,16 @@ impl FlvWriterTask {
                     // Place the writer back after the blocking operation completes
                     self.current_writer = write_result?; // Handle io::Error/FlvError/WriterError::State
 
+                    let analyze_result = self.analyzer.analyze_tag(&tag);
+                    match analyze_result {
+                        Ok(stats) => {
+                            tracing::trace!(?stats, "Tag analysis successful.");
+                        }
+                        Err(e) => {
+                            tracing::error!(error = ?e, "Tag analysis failed.");
+                        }
+                    }
+
                     // Log progress periodically
                     if current_total_count % 50000 == 0 {
                         tracing::debug!(tags_written = current_total_count, "Writer progress...");
@@ -156,7 +181,7 @@ impl FlvWriterTask {
 
         self.close_current_writer().await?;
 
-        tracing::info!(
+        info!(
             total_tags_written = self.total_tag_count,
             output_files_created = self.file_counter,
             "FlvWriterTask finished writing."
@@ -183,6 +208,14 @@ impl FlvWriterTask {
         self.current_file_last_time = None;
         self.file_counter += 1;
         let file_num = self.file_counter;
+        match self.analyzer.analyze_header(&header) {
+            Ok(_) => {
+                tracing::debug!(file_num, "Header analysis successful.");
+            }
+            Err(e) => {
+                tracing::error!(file_num, error = ?e, "Header analysis failed.");
+            }
+        }
 
         // Prepare data for blocking task
         let output_path = self.output_dir.join(format!(
@@ -192,9 +225,10 @@ impl FlvWriterTask {
             Local::now().format("%Y%m%d_%H%M%S"),
             self.extension
         ));
+        self.current_file_path = Some(output_path.clone()); // Store the path for later use
         let header_clone = header.clone();
 
-        tracing::info!(path = %output_path.display(), file_num, "Creating new output file segment.");
+        info!(path = %output_path.display(), file_num, "Creating new output file segment.");
 
         // Perform blocking file creation and writer initialization
         let new_writer = spawn_blocking(move || {
@@ -219,7 +253,7 @@ impl FlvWriterTask {
             let tags = self.current_file_tag_count;
             let file_num = self.file_counter;
 
-            tracing::info!(tags, file_num, duration_ms = ?duration_ms, "Closing file segment (delegating to blocking task).");
+            info!(tags, file_num, duration_ms = ?duration_ms, "Closing file segment (delegating to blocking task).");
 
             // Move the writer into the blocking task for closing
             spawn_blocking(move || {
@@ -227,6 +261,73 @@ impl FlvWriterTask {
                 Ok::<(), WriterError>(()) // Indicate success within the Result
             })
             .await??; // Handle JoinError + io::Error/FlvError/WriterError
+
+            let output_path = self.current_file_path.take().unwrap();
+            match self.analyzer.build_stats() {
+                Ok(stats) => {
+                    info!(?stats, "Stats built successfully.");
+                    // create a writer to modify the script data section by inject stats
+                    spawn_blocking(move || {
+                        // parse the script data section and inject stats
+                        let mut reader =
+                            std::io::BufReader::new(fs::File::open(output_path.clone()).unwrap());
+
+                        // Seek to the script data section
+                        reader.seek(io::SeekFrom::Start(13)).unwrap();
+
+                        let script_tag = flv::parser::FlvParser::parse_tag(&mut reader)?.unwrap().0;
+
+                        let script_data = if let FlvTagData::ScriptData(data) = script_tag.data {
+                            data
+                        } else {
+                            return Err(WriterError::State("Expected ScriptData tag"));
+                        };
+
+                        // assert we are treating the onMetaData tag
+                        if script_data.name != "onMetaData" {
+                            return Err(WriterError::State("First script tag is not onMetaData"));
+                        }
+
+                        // inject our stats into the script data
+
+                        let amf_data = script_data.data;
+                        if amf_data.is_empty() {
+                            return Err(WriterError::State("Script data is empty"));
+                        }
+
+                        let original_size = amf_data.len();
+
+                        // assert that we are dealing with the object type
+                        if let Amf0Value::Object(props) = &amf_data[0] {
+                            // convert props to a mutable vector
+                            // create a map of the properties
+                            let props_map: HashMap<String, Amf0Value> = props
+                                .iter()
+                                .map(|(k, v)| (k.to_string(), v.clone()))
+                                .collect();
+                            // iterate over the
+                        }
+
+                        // let mut writer = std::io::BufWriter::new(
+                        //     fs::OpenOptions::new()
+                        //         .write(true)
+                        //         .open(output_path.clone())
+                        //         .unwrap(),
+                        // );
+                        // writer.seek(io::SeekFrom::Start(13)).unwrap(); // Seek to the script data section
+
+                        // writer.flush();
+
+                        Ok::<(), WriterError>(())
+                    })
+                    .await??; // Handle JoinError + io::Error/FlvError/WriterError
+                }
+                Err(e) => {
+                    tracing::error!(file_num, error = ?e, "Failed to build stats.");
+                }
+            }
+
+            self.analyzer.reset(); // Reset analyzer state
         }
         Ok(())
     }

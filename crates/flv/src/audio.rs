@@ -31,7 +31,7 @@ use bytes_util::BytesCursorExt;
 use super::aac::{AacPacket, AacPacketType};
 
 #[repr(u8)]
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Copy)]
 pub enum SoundFormat {
     /// Uncompressed PCM audio
     Pcm = 0,
@@ -82,7 +82,7 @@ impl TryFrom<u8> for SoundFormat {
 }
 
 #[repr(u8)]
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Copy)]
 pub enum SoundRate {
     Hz5512 = 0,
     Hz11025 = 1,
@@ -113,7 +113,7 @@ impl TryFrom<u8> for SoundRate {
 }
 
 // Representation of sound size in Audio Data in FLV
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Copy)]
 pub enum SoundSize {
     Bits8 = 0,
     Bits16 = 1,
@@ -139,7 +139,7 @@ impl TryFrom<u8> for SoundSize {
 }
 
 #[repr(u8)]
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Copy)]
 pub enum SoundType {
     Mono = 0,
     Stereo = 1,
@@ -181,12 +181,20 @@ impl AudioLegacyPacket {
         }
     }
 
-    fn from_byte(byte: u8) -> Self {
-        let sound_rate = SoundRate::try_from((byte >> 2) & 0x03).unwrap();
-        let sound_size = SoundSize::try_from((byte >> 1) & 0x01).unwrap();
-        let sound_type = SoundType::try_from(byte & 0x01).unwrap();
+    pub fn from_byte(byte: u8) -> Result<Self, io::Error> {
+        // Extract bits 3-2 for sound rate
+        const SOUND_RATE_MASK: u8 = 0b00001100;
+        const SOUND_RATE_SHIFT: u8 = 2;
+        let sound_rate = SoundRate::try_from((byte & SOUND_RATE_MASK) >> SOUND_RATE_SHIFT)?;
+        // Extract bit 1 for sound size
+        const SOUND_SIZE_MASK: u8 = 0b00000010;
+        const SOUND_SIZE_SHIFT: u8 = 1;
+        let sound_size = SoundSize::try_from((byte & SOUND_SIZE_MASK) >> SOUND_SIZE_SHIFT)?;
+        // Extract bit 0 for sound type
+        const SOUND_TYPE_MASK: u8 = 0b00000001;
+        let sound_type = SoundType::try_from(byte & SOUND_TYPE_MASK)?;
 
-        AudioLegacyPacket::new(sound_rate, sound_size, sound_type)
+        Ok(AudioLegacyPacket::new(sound_rate, sound_size, sound_type))
     }
 }
 
@@ -244,6 +252,27 @@ impl AudioDataBody {
             AudioDataBody::Unknown { .. } => false,
         }
     }
+
+    pub fn is_stereo(&self) -> bool {
+        match self {
+            AudioDataBody::Aac(packet) => packet.is_stereo(),
+            AudioDataBody::Unknown { .. } => false,
+        }
+    }
+
+    pub fn sample_rate(&self) -> f32 {
+        match self {
+            AudioDataBody::Aac(packet) => packet.sample_rate(),
+            AudioDataBody::Unknown { .. } => 0.0,
+        }
+    }
+
+    pub fn sample_size(&self) -> u32 {
+        match self {
+            AudioDataBody::Aac(packet) => packet.sample_size(),
+            AudioDataBody::Unknown { .. } => 0,
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -287,7 +316,7 @@ impl TryFrom<u8> for AudioPacketType {
     }
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Copy)]
 pub enum AudioPacketModExType {
     TimestampOffsetNano = 0,
 }
@@ -309,7 +338,7 @@ impl TryFrom<u8> for AudioPacketModExType {
 }
 
 #[repr(u8)]
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Copy)]
 // New in E-RTMP v2, Audio FourCC
 pub enum AudioFourCC {
     Ac3,
@@ -323,35 +352,49 @@ pub enum AudioFourCC {
 impl AudioFourCC {
     pub fn from_u32(value: u32) -> Result<Self, io::Error> {
         Ok(match value {
-            0x00000000 => AudioFourCC::Ac3,
-            0x00000001 => AudioFourCC::Eac3,
-            0x00000002 => AudioFourCC::Opus,
-            0x00000003 => AudioFourCC::Mp3,
-            0x00000004 => AudioFourCC::Flac,
-            0x00000005 => AudioFourCC::Aac,
+            // Note: The spec uses ASCII representations, but maps them to these u32 values
+            // in the binary stream. We'll use the numeric values for matching.
+            // These values seem arbitrary in the spec draft, double check if finalized.
+            // Let's assume the spec means these literal u32 values for now.
+            // If it meant the ASCII codes as u32, e.g., 'Opus' -> 0x4f707573, adjust accordingly.
+            // The current spec text is a bit ambiguous here. Assuming numeric mapping:
+            0x61632D33 => AudioFourCC::Ac3,  // "ac-3"
+            0x6561632D => AudioFourCC::Eac3, // "eac-" (assuming eac-3)
+            0x4F707573 => AudioFourCC::Opus, // "Opus"
+            0x2E6D7033 => AudioFourCC::Mp3,  // ".mp3"
+            0x664C6143 => AudioFourCC::Flac, // "fLaC"
+            0x6D703461 => AudioFourCC::Aac,  // "mp4a" (Common FourCC for AAC)
+            // Alternative AAC FourCC if needed: 0x61616300 => AudioFourCC::Aac, // "aac\0"
             _ => {
-                return Err(io::Error::new(
-                    io::ErrorKind::InvalidData,
-                    format!("Invalid audio fourcc: {}", value),
-                ));
+                // Try matching common ASCII representations as well
+                match value {
+                    0x65616333 => AudioFourCC::Eac3, // "eac3"
+                    0x61616300 => AudioFourCC::Aac,  // "aac\0" (as used in as_bytes)
+                    _ => {
+                        return Err(io::Error::new(
+                            io::ErrorKind::InvalidData,
+                            format!("Invalid or unknown audio fourcc: 0x{:08x}", value),
+                        ));
+                    }
+                }
             }
         })
     }
 
     pub fn as_bytes(&self) -> &'static [u8] {
         match self {
-            AudioFourCC::Ac3 => b"ac3\0",
+            AudioFourCC::Ac3 => b"ac-3", // Use consistent representation
             AudioFourCC::Eac3 => b"eac3",
             AudioFourCC::Opus => b"Opus",
             AudioFourCC::Mp3 => b".mp3",
-            AudioFourCC::Flac => b"flac",
-            AudioFourCC::Aac => b"aac\0",
+            AudioFourCC::Flac => b"fLaC", // Match spec example
+            AudioFourCC::Aac => b"mp4a",  // Common FourCC
         }
     }
 }
 
 #[repr(u8)]
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Copy)]
 pub enum AvMultitrackType {
     OneTrack = 0,
     ManyTracks = 1,
@@ -394,10 +437,20 @@ impl AudioData {
     /// * Reading from the cursor fails
     /// * The data format is invalid or unsupported
     pub fn demux(reader: &mut io::Cursor<Bytes>, body_size: Option<usize>) -> io::Result<Self> {
-        let start = reader.position() as usize;
+        let start_pos = reader.position() as usize;
 
         // Read the first byte to get the sound format
         let sound_format_byte = reader.read_u8()?;
+
+        let available_data = reader.get_ref().len() - start_pos as usize;
+
+        // Ensure we have at least the first byte
+        if available_data < 1 {
+            return Err(io::Error::new(
+                io::ErrorKind::UnexpectedEof,
+                "No data available for audio header byte",
+            ));
+        }
 
         // Parse the sound format (bits 7-4)
         let sound_format = SoundFormat::try_from(sound_format_byte >> 4)?;
@@ -406,7 +459,10 @@ impl AudioData {
             // New in E-RTMP v2, new header
             SoundFormat::ExHeader => {
                 // Switch to the new fourcc mode
-                let audio_packet_type = AudioPacketType::try_from(sound_format_byte & 0x0F)?;
+                let audio_packet_type = AudioPacketType::try_from(sound_format_byte & 0x0F)
+                    .map_err(|_| {
+                        io::Error::new(io::ErrorKind::InvalidData, "Invalid audio packet type")
+                    })?;
 
                 match audio_packet_type {
                     AudioPacketType::ModEx => {
@@ -414,41 +470,35 @@ impl AudioData {
                         let mut final_audio_packet_type = audio_packet_type;
                         let mut audio_timestamp_nano_offset = 0u32;
 
+                        // Determine the size of the packet ModEx data (ranging from 1 to 256 bytes)
+                        let mod_ex_data_size = (reader.read_u8()? as usize) + 1;
+
+                        // If maximum 8-bit size is not sufficient, use a 16-bit value
+                        let mod_ex_data_size = if mod_ex_data_size == 256 {
+                            (reader.read_u16::<BigEndian>()? as usize) + 1
+                        } else {
+                            mod_ex_data_size
+                        };
+
+                        // Fetch the packet ModEx data based on its determined size
+                        let mod_ex_data = reader.extract_bytes(mod_ex_data_size)?;
+
+                        // Check the length of mod_ex_data once before entering the loop
+                        if mod_ex_data.len() >= 3 {
+                            audio_timestamp_nano_offset = ((mod_ex_data[0] as u32) << 16)
+                                | ((mod_ex_data[1] as u32) << 8)
+                                | (mod_ex_data[2] as u32);
+                            // Note: The audio_timestamp_nano_offset could be stored in the AudioData struct
+                            // and used for precise timing calculations
+                        }
+
                         loop {
-                            // Determine the size of the packet ModEx data (ranging from 1 to 256 bytes)
-                            let mod_ex_data_size = (reader.read_u8()? as usize) + 1;
-
-                            // If maximum 8-bit size is not sufficient, use a 16-bit value
-                            let mod_ex_data_size = if mod_ex_data_size == 256 {
-                                (reader.read_u16::<BigEndian>()? as usize) + 1
-                            } else {
-                                mod_ex_data_size
-                            };
-
-                            // Fetch the packet ModEx data based on its determined size
-                            let mod_ex_data = reader.extract_bytes(mod_ex_data_size)?;
-
                             // Fetch the AudioPacketModExType
                             let next_byte = reader.read_u8()?;
                             let audio_packet_mod_ex_type =
                                 AudioPacketModExType::try_from(next_byte >> 4)?;
-
-                            // Update audioPacketType for next iteration or final result
                             let next_audio_packet_type =
                                 AudioPacketType::try_from(next_byte & 0x0F)?;
-
-                            // Process specific ModEx types
-                            if audio_packet_mod_ex_type == AudioPacketModExType::TimestampOffsetNano
-                            {
-                                // This enhances RTMP timescale accuracy without altering core RTMP timestamps
-                                if mod_ex_data.len() >= 3 {
-                                    audio_timestamp_nano_offset = ((mod_ex_data[0] as u32) << 16)
-                                        | ((mod_ex_data[1] as u32) << 8)
-                                        | (mod_ex_data[2] as u32);
-                                    // Note: The audio_timestamp_nano_offset could be stored in the AudioData struct
-                                    // and used for precise timing calculations
-                                }
-                            }
 
                             // Break the loop if the next packet type is not ModEx
                             if next_audio_packet_type != AudioPacketType::ModEx {
@@ -488,7 +538,15 @@ impl AudioData {
                             if audio_multitrack_type != AvMultitrackType::ManyTracksManyCodecs {
                                 // The tracks are encoded with the same codec, read the FOURCC for them
                                 let four_cc = reader.read_u32::<BigEndian>()?;
-                                audio_four_cc = Some(AudioFourCC::from_u32(four_cc)?);
+                                audio_four_cc = match AudioFourCC::from_u32(four_cc) {
+                                    Ok(four_cc) => Some(four_cc),
+                                    Err(e) => {
+                                        return Err(io::Error::new(
+                                            io::ErrorKind::InvalidData,
+                                            format!("Invalid FOURCC value: {}", e),
+                                        ));
+                                    }
+                                };
                             }
                         } else {
                             // Not multitrack, read the FOURCC
@@ -506,11 +564,18 @@ impl AudioData {
                 }
             }
             // Legacy audio packet
-            _ => AudioPacket::Legacy(AudioLegacyPacket::from_byte(sound_format_byte)),
+            _ => AudioPacket::Legacy(AudioLegacyPacket::from_byte(sound_format_byte)?),
         };
 
         // read the body
-        let body = AudioDataBody::demux(&sound_format, reader, body_size)?;
+        let original_position = reader.position();
+        let body = match AudioDataBody::demux(&sound_format, reader, body_size) {
+            Ok(body) => body,
+            Err(e) => {
+                reader.set_position(original_position); // Reset reader position on error
+                return Err(e);
+            }
+        };
 
         // flv audio header
         let audio_header = AudioHeader {
@@ -533,6 +598,130 @@ impl AudioData {
             reader.extract_bytes(size.unwrap())?
         })
     }
+}
+
+//-----------------------------------------------------------------------------
+// Utility Struct for Quick Header Inspection
+//-----------------------------------------------------------------------------
+
+/// Provides efficient access to basic audio tag parameters by inspecting
+/// the initial byte(s) without full parsing.
+#[derive(Debug, Clone)]
+pub struct AudioTagUtils {
+    data: Bytes,
+}
+
+impl AudioTagUtils {
+    /// Creates a new utility wrapper around the audio tag data.
+    pub fn new(data: Bytes) -> Self {
+        Self { data }
+    }
+
+    /// Gets the first byte containing format and legacy parameters.
+    fn get_first_byte(&self) -> io::Result<u8> {
+        self.data
+            .first()
+            .copied()
+            .ok_or_else(|| io::Error::new(io::ErrorKind::UnexpectedEof, "Audio tag data is empty"))
+    }
+
+    /// Gets the sound format (e.g., AAC, MP3, ExHeader).
+    /// Reads only the first byte.
+    pub fn sound_format(&self) -> io::Result<SoundFormat> {
+        let byte = self.get_first_byte()?;
+        SoundFormat::try_from(byte >> 4)
+    }
+
+    /// Checks if the format is a legacy FLV format (not ExHeader).
+    /// Reads only the first byte.
+    pub fn is_legacy(&self) -> io::Result<bool> {
+        self.sound_format().map(|fmt| fmt != SoundFormat::ExHeader)
+    }
+
+    /// Checks if the format is an Enhanced RTMP header (ExHeader).
+    /// Reads only the first byte.
+    pub fn is_enhanced(&self) -> io::Result<bool> {
+        self.sound_format().map(|fmt| fmt == SoundFormat::ExHeader)
+    }
+
+    /// Gets the sound rate (sample rate indicator) for *legacy* formats.
+    /// Returns an error if the format is ExHeader.
+    /// Reads only the first byte.
+    pub fn sound_rate(&self) -> io::Result<SoundRate> {
+        let byte = self.get_first_byte()?;
+        if self.is_enhanced()? {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "SoundRate is not directly available in the first byte for ExHeader format",
+            ));
+        }
+        const SOUND_RATE_MASK: u8 = 0b00001100;
+        const SOUND_RATE_SHIFT: u8 = 2;
+        SoundRate::try_from((byte & SOUND_RATE_MASK) >> SOUND_RATE_SHIFT)
+    }
+
+    /// Gets the sound size (bit depth indicator) for *legacy* formats.
+    /// Returns an error if the format is ExHeader.
+    /// Reads only the first byte.
+    pub fn sound_size(&self) -> io::Result<SoundSize> {
+        let byte = self.get_first_byte()?;
+        if self.is_enhanced()? {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "SoundSize is not directly available in the first byte for ExHeader format",
+            ));
+        }
+        const SOUND_SIZE_MASK: u8 = 0b00000010;
+        const SOUND_SIZE_SHIFT: u8 = 1;
+        SoundSize::try_from((byte & SOUND_SIZE_MASK) >> SOUND_SIZE_SHIFT)
+    }
+
+    /// Gets the sound type (Mono/Stereo indicator) for *legacy* formats.
+    /// Returns an error if the format is ExHeader.
+    /// Reads only the first byte.
+    pub fn sound_type(&self) -> io::Result<SoundType> {
+        let byte = self.get_first_byte()?;
+        if self.is_enhanced()? {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "SoundType is not directly available in the first byte for ExHeader format",
+            ));
+        }
+        const SOUND_TYPE_MASK: u8 = 0b00000001;
+        SoundType::try_from(byte & SOUND_TYPE_MASK)
+    }
+
+    /// Gets the Audio Packet Type for *enhanced* (ExHeader) formats.
+    /// Returns an error if the format is legacy.
+    /// Reads only the first byte.
+    /// Note: This might be AudioPacketType::ModEx or AudioPacketType::Multitrack,
+    /// requiring further header parsing for the *actual* content packet type and FourCC.
+    pub fn audio_packet_type(&self) -> io::Result<AudioPacketType> {
+        let byte = self.get_first_byte()?;
+        if self.is_legacy()? {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "AudioPacketType is only available for ExHeader format",
+            ));
+        }
+        const PACKET_TYPE_MASK: u8 = 0x0F;
+        AudioPacketType::try_from(byte & PACKET_TYPE_MASK)
+    }
+
+    // /// Attempts to get the FourCC for *enhanced* (ExHeader) formats.
+    // /// This requires reading beyond the first byte and skipping potential ModEx/Multitrack headers.
+    // /// Returns None if the format is legacy or if FourCC cannot be determined quickly.
+    // /// WARNING: This is less efficient than other methods and might fail on complex headers.
+    // pub fn try_get_four_cc(&self) -> io::Result<Option<AudioFourCC>> {
+    //     if self.is_legacy()? {
+    //         return Ok(None);
+    //     }
+    //     // Need to implement logic similar to the start of AudioData::demux
+    //     // to skip ModEx/Multitrack and read the u32 FourCC.
+    //     // This adds complexity and reads more bytes.
+    //     // For simplicity, this is omitted here. Use full demux for reliable FourCC.
+    //      Err(io::Error::new(io::ErrorKind::Unsupported, "Quick FourCC extraction not implemented yet, use full demux"))
+    // }
 }
 
 impl fmt::Display for AudioData {

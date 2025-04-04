@@ -4,8 +4,14 @@ use std::sync::Arc;
 use byteorder::{BigEndian, ReadBytesExt};
 use bytes::{Buf, Bytes};
 use bytes_util::BytesCursorExt;
+use log::info;
 
-use crate::video::{EnhancedPacketType, VideoFrameType, VideoPacketType};
+use crate::audio::{AudioLegacyPacket, AudioPacketType, SoundFormat};
+use crate::hevc::HevcPacket;
+use crate::resolution::{self, Resolution};
+use crate::video::{
+    EnhancedPacket, EnhancedPacketType, VideoCodecId, VideoFrameType, VideoPacketType, VideoTagBody,
+};
 
 use super::audio::AudioData;
 use super::script::ScriptData;
@@ -268,7 +274,7 @@ impl FlvUtil<FlvTag> for FlvTag {
                 let sound_format = (bytes[0] >> 4) & 0xF;
 
                 // If it's AAC (10), check for sequence header
-                if sound_format == 10 && bytes.len() > 1 {
+                if sound_format == 10 {
                     // AAC packet type is at offset 1
                     // 0 = AAC sequence header
                     return bytes[1] == 0;
@@ -331,6 +337,91 @@ impl FlvTag {
 
     pub fn size(&self) -> usize {
         self.data.len() + 11
+    }
+
+    /// Get the video resolution from the tag
+    pub fn get_video_resolution(&self) -> Option<Resolution> {
+        // Only video tags have a resolution
+        if self.tag_type != FlvTagType::Video {
+            return None;
+        }
+
+        let data = self.data.clone();
+        let mut reader = std::io::Cursor::new(data);
+        // parse to owned version
+        return match VideoData::demux(&mut reader) {
+            Ok(video_data) => {
+                let body = video_data.body;
+                VideoTagBody::get_video_resolution(&body).and_then(|res| {
+                    if res.width > 0.0 && res.height > 0.0 {
+                        Some(res)
+                    } else {
+                        None
+                    }
+                })
+            }
+            Err(_) => None,
+        };
+    }
+
+    pub fn get_video_codec_id(&self) -> Option<VideoCodecId> {
+        // Only video tags have a codec id
+        if self.tag_type != FlvTagType::Video {
+            return None;
+        }
+
+        let data = self.data.clone();
+        let mut reader = std::io::Cursor::new(data);
+        // peek the first byte
+        let first_byte = reader.get_u8();
+        // check if this is an enhanced type
+        let enhanced = (first_byte & 0b1000_0000) != 0;
+        // for legacy formats, we detect the codec id by checking the packet type
+        if !enhanced {
+            let video_packet_type = first_byte & 0x0F;
+            return VideoCodecId::try_from(video_packet_type).ok();
+        } else {
+            // unable to parse the codec id for enhanced formats
+            return None;
+        }
+    }
+
+    pub fn get_audio_codec_id(&self) -> Option<SoundFormat> {
+        // Only audio tags have a codec id
+        if self.tag_type != FlvTagType::Audio {
+            return None;
+        }
+
+        let data = self.data.clone();
+        let mut reader = std::io::Cursor::new(data);
+        // peek the first byte
+        let first_byte = reader.get_u8();
+        // check if this is an enhanced type
+        let sound_format = (first_byte >> 4) & 0xF;
+        return SoundFormat::try_from(sound_format).ok();
+    }
+
+    pub fn get_audio_info(&self) -> Option<AudioLegacyPacket> {
+        // Only audio tags have a sample rate
+        if self.tag_type != FlvTagType::Audio {
+            return None;
+        }
+
+        let data = self.data.clone();
+        let mut reader = std::io::Cursor::new(data);
+        // peek the first byte
+        let first_byte = reader.get_u8();
+
+        // check if this is an enhanced type
+        let enhanced = (first_byte & 0b1000_0000) != 0;
+        // for legacy formats, we detect the codec id by checking the packet type
+        if !enhanced {
+            info!("Audio codec id: {}", first_byte);
+            return Some(AudioLegacyPacket::from_byte(first_byte).unwrap());
+        } else {
+            // unable to parse the codec id for enhanced formats
+            return None;
+        }
     }
 }
 

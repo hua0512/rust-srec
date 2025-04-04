@@ -9,6 +9,7 @@ pub mod header;
 pub mod hevc;
 pub mod parser;
 pub mod parser_async;
+pub mod resolution;
 pub mod script;
 pub mod tag;
 pub mod video;

@@ -3,7 +3,9 @@ use std::io;
 use byteorder::{BigEndian, ReadBytesExt};
 use bytes::Bytes;
 use bytes_util::BytesCursorExt;
-use h265::HEVCDecoderConfigurationRecord;
+use h265::{HEVCDecoderConfigurationRecord, NaluType};
+
+use crate::resolution::Resolution;
 
 #[repr(u8)]
 #[derive(Debug, Clone, PartialEq)]
@@ -78,6 +80,29 @@ impl HevcPacket {
                 composition_time,
                 data: reader.extract_remaining(),
             }),
+        }
+    }
+
+    pub fn get_video_resolution(&self) -> Option<Resolution> {
+        match self {
+            HevcPacket::SequenceStart(config) => {
+                // Find first SPS NAL unit
+                config
+                    .arrays
+                    .iter()
+                    .find(|array| array.nal_unit_type == NaluType::Sps)
+                    .and_then(|sps_array| sps_array.nalus.first())
+                    .and_then(|sps| {
+                        if sps.len() < 4 {
+                            return None;
+                        }
+                        h265::Sps::parse(sps.clone()).ok().map(|sps| Resolution {
+                            width: sps.width as f32,
+                            height: sps.height as f32,
+                        })
+                    })
+            }
+            _ => None,
         }
     }
 }
