@@ -249,21 +249,22 @@ impl AudioDataBody {
     pub fn is_sequence_header(&self) -> bool {
         match self {
             AudioDataBody::Aac(packet) => packet.is_sequence_header(),
-            AudioDataBody::Unknown { .. } => false,
+            _ => false,
         }
     }
 
     pub fn is_stereo(&self) -> bool {
         match self {
             AudioDataBody::Aac(packet) => packet.is_stereo(),
-            AudioDataBody::Unknown { .. } => false,
+
+            _ => false,
         }
     }
 
     pub fn sample_rate(&self) -> f32 {
         match self {
             AudioDataBody::Aac(packet) => packet.sample_rate(),
-            AudioDataBody::Unknown { .. } => 0.0,
+            _ => 0.0,
         }
     }
 

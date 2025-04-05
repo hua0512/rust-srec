@@ -1,15 +1,12 @@
-use core::error;
-
 use flv::{
-    audio::{self, AudioDataBody, AudioTagUtils, SoundFormat, SoundRate, SoundSize, SoundType},
-    data,
+    audio::{AudioTagUtils, SoundFormat, SoundRate, SoundSize, SoundType},
     header::FlvHeader,
-    resolution::{self, Resolution},
+    resolution::Resolution,
     tag::{FlvTag, FlvUtil},
     video::VideoCodecId,
 };
 
-use tracing::{error, info};
+use tracing::{debug, error};
 
 // Stats structure to hold all the metrics
 #[derive(Debug, Clone)]
@@ -166,54 +163,41 @@ impl FlvAnalyzer {
 
             if self.stats.audio_codec.is_none() {
                 let audio_tag_utils = AudioTagUtils::new(tag.data.clone());
-                
-                info!("Audio codec detected: {:?}", audio_tag_utils.sound_format());
-                info!("Audio rate detected: {:?}", audio_tag_utils.sound_rate());
-                info!("Audio size detected: {:?}", audio_tag_utils.sound_size());
-                info!("Audio sound_type detected: {:?}", audio_tag_utils.sound_type());
+                debug!(
+                    "Audio properties detected: codec={:?}, rate={:?}, size={:?}, type={:?}",
+                    audio_tag_utils.sound_format(),
+                    audio_tag_utils.sound_rate(),
+                    audio_tag_utils.sound_size(),
+                    audio_tag_utils.sound_type()
+                );
+                let sound_format = audio_tag_utils.sound_format().unwrap_or(SoundFormat::Aac);
+                let sample_rate = audio_tag_utils
+                    .sound_rate()
+                    .map(|s| match s {
+                        SoundRate::Hz5512 => 5512.0,
+                        SoundRate::Hz11025 => 11025.0,
+                        SoundRate::Hz22050 => 22050.0,
+                        SoundRate::Hz44100 => 44100.0,
+                        SoundRate::Hz48000 => 48000.0,
+                    })
+                    .unwrap_or(44100.0); // Default to 44100 Hz if not found
+                let sample_size = audio_tag_utils
+                    .sound_size()
+                    .map(|s| match s {
+                        SoundSize::Bits8 => 8,
+                        SoundSize::Bits16 => 16,
+                        SoundSize::Bits24 => 24,
+                    })
+                    .unwrap_or(16); // Default to 16 bits if not found
 
-                // if let Some(audio_info) = tag.get_audio_info() {
-                //     info!("Audio info: {:?}", audio_info);
-                //     let stereo = audio_info.sound_type == SoundType::Stereo;
-                //     let sample_rate = match audio_info.sound_rate {
-                //         SoundRate::Hz5512 => 5512.0,
-                //         SoundRate::Hz11025 => 11025.0,
-                //         SoundRate::Hz22050 => 22050.0,
-                //         SoundRate::Hz44100 => 44100.0,
-                //         SoundRate::Hz48000 => 48000.0,
-                //     };
+                let sound_type = audio_tag_utils.sound_type().unwrap_or(SoundType::Stereo);
 
-                //     // get the sample size
-                //     let sample_size = match audio_info.sound_size {
-                //         SoundSize::Bits8 => 8,
-                //         SoundSize::Bits16 => 16,
-                //         SoundSize::Bits24 => 24,
-                //     };
-                //     self.stats.audio_sample_rate = sample_rate;
-                //     self.stats.audio_sample_size = sample_size;
-                //     self.stats.audio_stereo = stereo;
+                let stereo = sound_type == SoundType::Stereo;
 
-                //     match tag.get_audio_codec_id() {
-                //         Some(codec) => {
-                //             info!("Audio codec detected: {:?}", codec);
-                //             self.stats.audio_codec = Some(codec);
-                //         }
-                //         None => {
-                //             error!("Failed to determine audio codec ID from tag data");
-                //             self.stats.audio_codec = Some(SoundFormat::Aac); // Default fallback
-                //             info!("Using default AAC codec as fallback");
-                //         }
-                //     }
-                // } else {
-                //     // Provide more detailed error information
-                //     error!(
-                //         "Failed to parse audio information from tag: tag_type={}, timestamp={}, data_size={}, data={:?}",
-                //         tag.tag_type,
-                //         tag.timestamp_ms,
-                //         tag.data.len(),
-                //         tag.data,
-                //     );
-                // }
+                self.stats.audio_sample_rate = sample_rate;
+                self.stats.audio_sample_size = sample_size;
+                self.stats.audio_stereo = stereo;
+                self.stats.audio_codec = Some(sound_format);
             }
         }
 

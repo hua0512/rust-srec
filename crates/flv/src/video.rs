@@ -83,7 +83,7 @@ use crate::resolution::Resolution;
 
 /// Represents the type of video frame in an FLV video tag
 #[repr(u8)]
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Copy)]
 pub enum VideoFrameType {
     /// Key frame (for AVC, a seekable frame)
     KeyFrame = 1,

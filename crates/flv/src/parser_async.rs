@@ -247,7 +247,7 @@ impl Decoder for FlvDecoder {
             match FlvTag::demux(&mut cursor) {
                 // Use the FlvUtil<FlvTag> implementation
                 Ok(tag) => {
-                    debug!(
+                    trace!(
                         "Successfully parsed FLV tag: Type={}, Timestamp={}, Size={}",
                         tag.tag_type, tag.timestamp_ms, data_size
                     );
@@ -702,7 +702,7 @@ mod tests {
     #[ignore]
     async fn test_read_file_async() -> Result<(), Box<dyn std::error::Error>> {
         init_tracing(); // Initialize tracing
-        let path = Path::new("D:/test/999/16_02_26-福州~ 主播恋爱脑！！！.flv");
+        let path = Path::new("D:/test/999/testHEVC.flv");
 
         if !path.exists() {
             println!(
