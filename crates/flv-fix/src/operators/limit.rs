@@ -242,7 +242,7 @@ impl LimitOperator {
         );
 
         // Helper macro to reduce repetition when sending tags with Arc
-        macro_rules! send_arc_item {
+        macro_rules! send_item {
             ($item:expr, $transform:expr, $msg:expr) => {
                 if let Some(item) = &$item {
                     debug!("{} {}", self.context.name, $msg);
@@ -255,22 +255,22 @@ impl LimitOperator {
         }
 
         // Send each item with Arc cloning instead of full data cloning
-        send_arc_item!(
+        send_item!(
             self.state.header,
             |h: FlvHeader| FlvData::Header(h),
             "re-emit header after split"
         );
-        send_arc_item!(
+        send_item!(
             self.state.metadata,
             |t: FlvTag| FlvData::Tag(t),
             "re-emit metadata after split"
         );
-        send_arc_item!(
+        send_item!(
             self.state.video_sequence_tag,
             |t: FlvTag| FlvData::Tag(t),
             "re-emit video sequence tag after split"
         );
-        send_arc_item!(
+        send_item!(
             self.state.audio_sequence_tag,
             |t: FlvTag| FlvData::Tag(t),
             "re-emit audio sequence tag after split"
@@ -326,10 +326,12 @@ impl FlvOperator for LimitOperator {
                                 let mut tag = tag.clone();
                                 tag.timestamp_ms = 0; // Reset timestamp for video sequence header
                                 self.state.video_sequence_tag = Some(tag);
+                                debug!("{} Video sequence header detected, resetting timestamp.", self.context.name);
                             } else if tag.is_audio_sequence_header() {
                                 let mut tag = tag.clone();
                                 tag.timestamp_ms = 0; // Reset timestamp for audio sequence header
                                 self.state.audio_sequence_tag = Some(tag);
+                                debug!("{} Audio sequence header detected, resetting timestamp.", self.context.name);
                             }
 
                             // Track keyframes for optimal split points

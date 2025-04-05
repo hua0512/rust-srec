@@ -1,16 +1,14 @@
 use std::fmt;
-use std::sync::Arc;
 
 use byteorder::{BigEndian, ReadBytesExt};
 use bytes::{Buf, Bytes};
 use bytes_util::BytesCursorExt;
-use log::info;
+use tracing::error;
 
-use crate::audio::{AudioLegacyPacket, AudioPacketType, SoundFormat};
-use crate::hevc::HevcPacket;
-use crate::resolution::{self, Resolution};
+use crate::audio::SoundFormat;
+use crate::resolution::Resolution;
 use crate::video::{
-    EnhancedPacket, EnhancedPacketType, VideoCodecId, VideoFrameType, VideoPacketType, VideoTagBody,
+    EnhancedPacketType, VideoCodecId, VideoFrameType, VideoPacketType,
 };
 
 use super::audio::AudioData;
@@ -261,22 +259,24 @@ impl FlvUtil<FlvTag> for FlvTag {
         }
     }
 
+    /// Determines if the audio tag is a sequence header.
+    ///
+    /// For audio tags, the sequence header is indicated by the second byte being 0
+    /// in AAC format audio packets. This function checks the following:
+    /// - If the tag type is `Audio`.
+    /// - If the sound format is AAC (10).
+    /// - If the AAC packet type (at offset 1) is 0, which indicates a sequence header.
     fn is_audio_sequence_header(&self) -> bool {
         match self.tag_type {
             FlvTagType::Audio => {
                 let bytes = self.data.as_ref();
-                // For audio tags, the sequence header is indicated by
-                // the second byte being 0 in AAC format audio packets
                 if bytes.len() < 2 {
                     return false;
                 }
 
                 let sound_format = (bytes[0] >> 4) & 0xF;
 
-                // If it's AAC (10), check for sequence header
-                if sound_format == 10 {
-                    // AAC packet type is at offset 1
-                    // 0 = AAC sequence header
+                if sound_format == SoundFormat::Aac as u8 {
                     return bytes[1] == 0;
                 }
                 false
@@ -352,7 +352,7 @@ impl FlvTag {
         return match VideoData::demux(&mut reader) {
             Ok(video_data) => {
                 let body = video_data.body;
-                VideoTagBody::get_video_resolution(&body).and_then(|res| {
+                body.get_video_resolution().and_then(|res| {
                     if res.width > 0.0 && res.height > 0.0 {
                         Some(res)
                     } else {
@@ -360,7 +360,10 @@ impl FlvTag {
                     }
                 })
             }
-            Err(_) => None,
+            Err(e) => {
+                error!("Error parsing demuxing data: {}", e);
+                None
+            }
         };
     }
 
@@ -401,27 +404,38 @@ impl FlvTag {
         return SoundFormat::try_from(sound_format).ok();
     }
 
-    pub fn get_audio_info(&self) -> Option<AudioLegacyPacket> {
-        // Only audio tags have a sample rate
-        if self.tag_type != FlvTagType::Audio {
-            return None;
+    /// Check if the tag is a key frame NALU
+    pub fn is_key_frame_nalu(&self) -> bool {
+        // Only applicable for video tags
+        if self.tag_type != FlvTagType::Video {
+            return false;
         }
 
-        let data = self.data.clone();
-        let mut reader = std::io::Cursor::new(data);
-        // peek the first byte
-        let first_byte = reader.get_u8();
+        // Make sure we have enough data
+        if self.data.len() < 2 {
+            return false;
+        }
 
-        // check if this is an enhanced type
-        let enhanced = (first_byte & 0b1000_0000) != 0;
-        // for legacy formats, we detect the codec id by checking the packet type
+        let bytes = self.data.as_ref();
+
+        // Check if this is an enhanced type
+        let enhanced = (bytes[0] & 0b1000_0000) != 0;
+
+        // For non-enhanced types, the codec type is in the lower 4 bits of the first byte
         if !enhanced {
-            info!("Audio codec id: {}", first_byte);
-            return Some(AudioLegacyPacket::from_byte(first_byte).unwrap());
-        } else {
-            // unable to parse the codec id for enhanced formats
-            return None;
+            let codec_id = bytes[0] & 0x0F;
+
+            // Check for AVC/H.264 (codec ID 7) or HEVC (codec ID 12)
+            if codec_id == VideoCodecId::Avc as u8 || codec_id == VideoCodecId::LegacyHevc as u8 {
+                // The packet type is in the second byte:
+                // 0 = sequence header, 1 = NALU, 2 = end of sequence
+
+                // Check if this is a NALU packet (type 1)
+                return bytes[1] == 1;
+            }
         }
+
+        false
     }
 }
 

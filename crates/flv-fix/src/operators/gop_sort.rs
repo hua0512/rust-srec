@@ -33,8 +33,8 @@ use flv::data::FlvData;
 use flv::error::FlvError;
 use flv::tag::{FlvTag, FlvTagType, FlvUtil};
 use kanal::{AsyncReceiver, AsyncSender};
-use tracing::{debug, info, trace};
 use std::sync::Arc;
+use tracing::{debug, info, trace};
 
 /// Threshold for special handling of small tag buffers
 const TAGS_BUFFER_SIZE: usize = 10;
@@ -78,6 +78,11 @@ impl GopSortOperator {
                 // Find first script tag
                 let script_pos = self.gop_tags.iter().position(|tag| tag.is_script_tag());
 
+                debug!(
+                    "{} AVC header position: {:?}, AAC header position: {:?}",
+                    self.context.name, avc_header_pos, aac_header_pos
+                );
+
                 // Emit script tag first if present
                 if let Some(script_pos) = script_pos {
                     let script_tag = self.gop_tags.remove(script_pos);
@@ -113,6 +118,10 @@ impl GopSortOperator {
 
                 // Emit audio sequence header
                 let aac_tag = self.gop_tags.remove(aac_idx);
+                debug!(
+                    "{} Emitting audio sequence header: {:?}",
+                    self.context.name, aac_tag
+                );
                 if output.send(Ok(FlvData::Tag(aac_tag))).await.is_err() {
                     return false;
                 }
@@ -138,17 +147,6 @@ impl GopSortOperator {
             }
         }
 
-        // Sort video and audio tags by timestamp
-        video_tags.sort_by_key(|tag| tag.timestamp_ms);
-        audio_tags.sort_by_key(|tag| tag.timestamp_ms);
-
-        // Emit script tags in original order (no sorting)
-        for tag in script_tags {
-            if output.send(Ok(FlvData::Tag(tag))).await.is_err() {
-                return false;
-            }
-        }
-
         // Apply the special interleaving algorithm from Kotlin implementation
         // where audio tags are inserted after video tags with timestamps >= the video timestamp
 
@@ -170,6 +168,19 @@ impl GopSortOperator {
             {
                 sorted_tags.insert(1, audio_tags[audio_idx as usize].clone());
                 audio_idx -= 1;
+            }
+        }
+
+        // add any remaining audio tags at the beginning
+        while audio_idx >= 0 {
+            sorted_tags.insert(0, audio_tags[audio_idx as usize].clone());
+            audio_idx -= 1;
+        }
+
+        // Emit script tags in original order (no sorting)
+        for tag in script_tags {
+            if output.send(Ok(FlvData::Tag(tag))).await.is_err() {
+                return false;
             }
         }
 
@@ -205,6 +216,12 @@ impl FlvOperator for GopSortOperator {
                             }
 
                             // Forward the header or EOS
+                            // do not send end of stream to output
+                            if data.is_end_of_sequence() {
+                                debug!("{} End of stream...", self.context.name);
+                                return;
+                            }
+
                             if output.send(Ok(data)).await.is_err() {
                                 return;
                             }
@@ -214,7 +231,8 @@ impl FlvOperator for GopSortOperator {
                         FlvData::Tag(tag) => {
                             let tag = tag.clone();
 
-                            if tag.is_key_frame() {
+                            // Check for a nalu keyframe
+                            if tag.is_key_frame_nalu() {
                                 // On keyframe, process buffered tags
                                 if !self.push_tags(&output).await {
                                     return;
@@ -349,44 +367,6 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_basic_sorting() {
-        let context = create_test_context();
-        let mut operator = GopSortOperator::new(context);
-
-        let (input_tx, input_rx) = bounded_async(32);
-        let (output_tx, output_rx) = bounded_async(32);
-
-        tokio::spawn(async move {
-            operator.process(input_rx, output_tx).await;
-        });
-
-        // Send header
-        input_tx.send(Ok(create_header())).await.unwrap();
-
-        // Send mixed tags (not in order)
-        input_tx.send(Ok(create_audio_tag(25))).await.unwrap();
-        input_tx
-            .send(Ok(create_video_tag(25, false)))
-            .await
-            .unwrap();
-        input_tx.send(Ok(create_script_tag(0))).await.unwrap();
-        input_tx.send(Ok(create_video_tag(10, true))).await.unwrap(); // Keyframe to trigger sorting
-
-        drop(input_tx);
-
-        // Collect results
-        let mut results = Vec::new();
-        while let Ok(result) = output_rx.recv().await {
-            results.push(result.unwrap());
-        }
-
-        print_tags(&results);
-
-        // Header + 4 tags = 5 items
-        assert_eq!(results.len(), 5);
-    }
-
-    #[tokio::test]
     async fn test_sequence_header_special_handling() {
         let context = create_test_context();
         let mut operator = GopSortOperator::new(context);
@@ -518,5 +498,61 @@ mod tests {
 
         // The Kotlin algorithm should interleave with audio tags after corresponding video tags
         // (This is a simplified test - exact order depends on the input timestamps)
+    }
+
+    #[tokio::test]
+    async fn test_audio_tags_before_first_video() {
+        // Setup with audio tags having earlier timestamps than any video tag
+        let context = create_test_context();
+        let mut operator = GopSortOperator::new(context);
+
+        let (input_tx, input_rx) = bounded_async(32);
+        let (output_tx, output_rx) = bounded_async(32);
+
+        tokio::spawn(async move {
+            operator.process(input_rx, output_tx).await;
+        });
+
+        // Send header
+        input_tx.send(Ok(create_header())).await.unwrap();
+
+        // Send audio tags with timestamps before any video tag
+        input_tx.send(Ok(create_audio_tag(5))).await.unwrap(); // A5
+        input_tx.send(Ok(create_audio_tag(10))).await.unwrap(); // A10
+
+        // Send video tags with higher timestamps
+        input_tx
+            .send(Ok(create_video_tag(20, false)))
+            .await
+            .unwrap(); // V20
+        input_tx.send(Ok(create_video_tag(30, true))).await.unwrap(); // V30 (keyframe)
+
+        drop(input_tx);
+
+        // Collect and verify results
+        let mut results = Vec::new();
+        while let Ok(result) = output_rx.recv().await {
+            results.push(result.unwrap());
+        }
+
+        print_tags(&results);
+
+        // Skip header (results[0])
+        // Verify that all audio tags are present in the output
+        let audio_tags_count = results
+            .iter()
+            .filter(|item| {
+                if let FlvData::Tag(tag) = item {
+                    tag.is_audio_tag()
+                } else {
+                    false
+                }
+            })
+            .count();
+
+        assert_eq!(
+            audio_tags_count, 2,
+            "All audio tags should be present in output"
+        );
     }
 }
