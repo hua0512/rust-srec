@@ -30,6 +30,7 @@ pub struct FlvStats {
     pub audio_data_size: u64,
     pub video_data_size: u64,
 
+    pub audio_data_rate: f32,
     pub audio_stereo: bool,
     pub audio_sample_rate: f32,
     pub audio_sample_size: u32,
@@ -80,6 +81,7 @@ impl FlvStats {
             video_data_rate: 0.0,
             video_frame_rate: 0.0,
             first_keyframe_timestamp: None,
+            audio_data_rate: 0.0,
         }
     }
 
@@ -148,8 +150,9 @@ impl FlvAnalyzer {
             return Err(format!("Unsupported FLV version: {}", version));
         }
 
-        self.stats.has_audio = header.has_audio;
-        self.stats.has_video = header.has_video;
+        // delay those stats to be set when a sequence header is found
+        // self.stats.has_audio = header.has_audio;
+        // self.stats.has_video = header.has_video;
         self.stats.file_size = (FLV_HEADER_SIZE + FLV_PREVIOUS_TAG_SIZE) as u64; // 9 bytes for header + 4 bytes for previous tag size
         self.header_analyzed = true;
 
@@ -282,6 +285,10 @@ impl FlvAnalyzer {
         if self.stats.has_video {
             self.stats.video_data_rate = self.stats.calculate_video_bitrate();
             self.stats.video_frame_rate = self.stats.calculate_frame_rate();
+        }
+
+        if self.stats.has_audio {
+            self.stats.audio_data_rate = self.stats.calculate_audio_bitrate();
         }
 
         self.stats.duration = self.stats.last_timestamp / 1000;
