@@ -60,12 +60,8 @@ impl HevcPacket {
     /// Demux HEVC packet
     pub fn demux(reader: &mut io::Cursor<Bytes>) -> io::Result<Self> {
         let hevc_packet_type = HevcPacketType::try_from(reader.read_u8()?)?;
-        let composition_time = if hevc_packet_type == HevcPacketType::Nalu {
-            Some(reader.read_i24::<BigEndian>()?)
-        } else {
-            None
-        };
-
+        // In legacy hevc, this composition is always parsed regardless of the packet type
+        let composition_time = Some(reader.read_i24::<BigEndian>()?);
         match hevc_packet_type {
             HevcPacketType::SeqHdr => Ok(Self::SequenceStart(
                 HEVCDecoderConfigurationRecord::demux(reader)?,
