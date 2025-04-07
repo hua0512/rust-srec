@@ -31,22 +31,21 @@
 //!
 
 use std::{
-    collections::HashMap,
     fs,
-    io::{self, Seek, Write},
+    io::{self, Read, Seek, Write},
     path::PathBuf,
 };
 
-use amf0::Amf0Value;
 use chrono::Local;
 use flv::{data::FlvData, header::FlvHeader, tag::FlvTagData, writer::FlvWriter};
 use tokio::task::spawn_blocking;
 use tokio_stream::StreamExt;
-use tracing::info;
+use tracing::{debug, info};
 
 use crate::{
-    analyzer::{FlvAnalyzer, FlvStats},
+    analyzer::FlvAnalyzer,
     pipeline::BoxStream,
+    script_modifier::{self, ScriptModifierError},
 };
 
 // Custom Error type (assuming WriterError is defined as before)
@@ -60,6 +59,8 @@ pub enum WriterError {
     Join(#[from] tokio::task::JoinError),
     #[error("Writer state error: {0}")]
     State(&'static str),
+    #[error("Script modifier error: {0}")]
+    ScriptModifier(#[from] ScriptModifierError),
 }
 
 /// Manages the writing of processed FLV data to output files using synchronous I/O
@@ -234,7 +235,7 @@ impl FlvWriterTask {
         let new_writer = spawn_blocking(move || {
             let output_file = std::fs::File::create(&output_path)?;
             let buffered_writer = std::io::BufWriter::new(output_file);
-            FlvWriter::new(buffered_writer, &header_clone)
+            FlvWriter::with_header(buffered_writer, &header_clone)
         })
         .await??; // Handle JoinError + io::Error/FlvError
 
@@ -265,74 +266,29 @@ impl FlvWriterTask {
             let output_path = self.current_file_path.take().unwrap();
             match self.analyzer.build_stats() {
                 Ok(stats) => {
-                    info!(?stats, "Stats built successfully.");
-                    // create a writer to modify the script data section by inject stats
-                    spawn_blocking(move || {
-                        // parse the script data section and inject stats
-                        let mut reader =
-                            std::io::BufReader::new(fs::File::open(output_path.clone()).unwrap());
-
-                        // Seek to the script data section
-                        reader.seek(io::SeekFrom::Start(13)).unwrap();
-
-                        let script_tag = flv::parser::FlvParser::parse_tag(&mut reader)?.unwrap().0;
-
-                        let script_data = if let FlvTagData::ScriptData(data) = script_tag.data {
-                            data
-                        } else {
-                            return Err(WriterError::State("Expected ScriptData tag"));
-                        };
-
-                        // assert we are treating the onMetaData tag
-                        if script_data.name != "onMetaData" {
-                            return Err(WriterError::State("First script tag is not onMetaData"));
+                    info!("Path : {}: {}", output_path.display(), stats);
+                    // Modify the script data section by injecting stats
+                    match script_modifier::inject_stats_into_script_data(&output_path, stats).await
+                    {
+                        Ok(_) => {
+                            debug!("Successfully injected stats into script data section.");
                         }
-
-                        // inject our stats into the script data
-
-                        let amf_data = script_data.data;
-                        if amf_data.is_empty() {
-                            return Err(WriterError::State("Script data is empty"));
+                        Err(e) => {
+                            tracing::error!(path = %output_path.display(), error = ?e, "Failed to inject stats into script data section.");
+                            // Continue processing despite injection failure
                         }
-
-                        let original_size = amf_data.len();
-
-                        // assert that we are dealing with the object type
-                        if let Amf0Value::Object(props) = &amf_data[0] {
-                            // convert props to a mutable vector
-                            // create a map of the properties
-                            let props_map: HashMap<String, Amf0Value> = props
-                                .iter()
-                                .map(|(k, v)| (k.to_string(), v.clone()))
-                                .collect();
-                            // iterate over the
-                        }
-
-                        // let mut writer = std::io::BufWriter::new(
-                        //     fs::OpenOptions::new()
-                        //         .write(true)
-                        //         .open(output_path.clone())
-                        //         .unwrap(),
-                        // );
-                        // writer.seek(io::SeekFrom::Start(13)).unwrap(); // Seek to the script data section
-
-                        // writer.flush();
-
-                        Ok::<(), WriterError>(())
-                    })
-                    .await??; // Handle JoinError + io::Error/FlvError/WriterError
+                    }
                 }
                 Err(e) => {
                     tracing::error!(file_num, error = ?e, "Failed to build stats.");
                 }
             }
 
-            self.analyzer.reset(); // Reset analyzer state
+            self.analyzer.reset();
         }
         Ok(())
     }
 
-    // --- Getters remain the same ---
     pub fn total_tags_written(&self) -> u64 {
         self.total_tag_count
     }

@@ -71,9 +71,9 @@ use flv::error::FlvError;
 use flv::header::FlvHeader;
 use flv::tag::{FlvTag, FlvTagType, FlvUtil};
 use kanal::{AsyncReceiver, AsyncSender};
-use tracing::{debug, info, warn};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
+use tracing::{debug, info, warn};
 
 /// Reason for a stream split
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -310,6 +310,7 @@ impl FlvOperator for LimitOperator {
                             }
                         }
                         FlvData::Tag(tag) => {
+                            
                             // Update size counter
                             let tag_size = tag.size() as u64;
                             self.state.accumulated_size += tag_size;
@@ -326,12 +327,18 @@ impl FlvOperator for LimitOperator {
                                 let mut tag = tag.clone();
                                 tag.timestamp_ms = 0; // Reset timestamp for video sequence header
                                 self.state.video_sequence_tag = Some(tag);
-                                debug!("{} Video sequence header detected, resetting timestamp.", self.context.name);
+                                debug!(
+                                    "{} Video sequence header detected, resetting timestamp.",
+                                    self.context.name
+                                );
                             } else if tag.is_audio_sequence_header() {
                                 let mut tag = tag.clone();
                                 tag.timestamp_ms = 0; // Reset timestamp for audio sequence header
                                 self.state.audio_sequence_tag = Some(tag);
-                                debug!("{} Audio sequence header detected, resetting timestamp.", self.context.name);
+                                debug!(
+                                    "{} Audio sequence header detected, resetting timestamp.",
+                                    self.context.name
+                                );
                             }
 
                             // Track keyframes for optimal split points

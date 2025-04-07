@@ -6,6 +6,17 @@ use byteorder::{BigEndian, WriteBytesExt};
 use super::define::Amf0Marker;
 use super::{Amf0Value, Amf0WriteError};
 
+/// A macro to encode an AMF property key into a buffer
+#[macro_export]
+macro_rules! write_amf_property_key {
+    ($buffer:expr, $key:expr) => {
+        // write key length (u16 in big endian)
+        $buffer.write_u16::<BigEndian>($key.len() as u16)?;
+        // write key string bytes
+        $buffer.write_all($key.as_bytes())?;
+    };
+}
+
 /// AMF0 encoder.
 ///
 /// Allows for encoding an AMF0 to some writer.
@@ -52,8 +63,7 @@ impl Amf0Encoder {
         }
 
         writer.write_u8(Amf0Marker::String as u8)?;
-        writer.write_u16::<BigEndian>(value.len() as u16)?;
-        writer.write_all(value.as_bytes())?;
+        write_amf_property_key!(writer, value);
         Ok(())
     }
 
@@ -70,8 +80,7 @@ impl Amf0Encoder {
     ) -> Result<(), Amf0WriteError> {
         writer.write_u8(Amf0Marker::Object as u8)?;
         for (key, value) in properties {
-            writer.write_u16::<BigEndian>(key.len() as u16)?;
-            writer.write_all(key.as_bytes())?;
+            write_amf_property_key!(writer, key);
             Self::encode(writer, value)?;
         }
 

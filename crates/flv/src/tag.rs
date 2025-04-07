@@ -7,9 +7,7 @@ use tracing::error;
 
 use crate::audio::SoundFormat;
 use crate::resolution::Resolution;
-use crate::video::{
-    EnhancedPacketType, VideoCodecId, VideoFrameType, VideoPacketType,
-};
+use crate::video::{EnhancedPacketType, VideoCodecId, VideoFrameType, VideoPacketType};
 
 use super::audio::AudioData;
 use super::script::ScriptData;
@@ -417,6 +415,12 @@ impl FlvTag {
         }
 
         let bytes = self.data.as_ref();
+
+        // check if its keyframe
+        let frame_type = (bytes[0] >> 4) & 0x07;
+        if frame_type != VideoFrameType::KeyFrame as u8 {
+            return false;
+        }
 
         // Check if this is an enhanced type
         let enhanced = (bytes[0] & 0b1000_0000) != 0;

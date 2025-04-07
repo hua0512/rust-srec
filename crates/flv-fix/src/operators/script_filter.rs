@@ -56,8 +56,8 @@ use flv::data::FlvData;
 use flv::error::FlvError;
 use flv::tag::FlvTagType;
 use kanal::{AsyncReceiver, AsyncSender};
-use tracing::{debug, info};
 use std::sync::Arc;
+use tracing::{debug, info};
 
 /// Operator that filters out script data tags except for the first one
 pub struct ScriptFilterOperator {
@@ -89,6 +89,7 @@ impl FlvOperator for ScriptFilterOperator {
                 Ok(data) => {
                     match &data {
                         FlvData::Header(_) => {
+                            debug!("{} Resetting script tag filter state", self.context.name);
                             // Reset state on header
                             seen_script_tag = false;
                             script_tag_count = 0;

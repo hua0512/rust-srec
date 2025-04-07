@@ -70,43 +70,44 @@
 
 use crate::context::StreamerContext;
 use crate::operators::FlvOperator;
-use amf0::{Amf0Marker, Amf0Value};
+use amf0::{Amf0Marker, Amf0Value, write_amf_property_key};
 use byteorder::{BigEndian, WriteBytesExt};
 use bytes::Bytes;
 use flv::data::FlvData;
 use flv::error::FlvError;
 use flv::script::ScriptData;
-use flv::tag::{FlvTag, FlvTagType}; // Assuming VideoFrameType can be derived
+use flv::tag::{FlvTag, FlvTagType};
 use kanal::{AsyncReceiver, AsyncSender};
 use std::borrow::Cow;
 use std::io::{self, Write};
 use std::sync::Arc;
 use tracing::{debug, error, info, trace, warn};
+use tracing_subscriber::field::debug;
 
 const DEFAULT_KEYFRAME_INTERVAL_MS: u32 = (3.5 * 60.0 * 60.0 * 1000.0) as u32; // 3.5 hours in ms
 const MIN_INTERVAL_BETWEEN_KEYFRAMES_MS: u32 = 1900; // 1.9 seconds in ms
 
-static NATURAL_METADATA_KEY_ORDER: &[&str] = &[
+pub static NATURAL_METADATA_KEY_ORDER: &[&str] = &[
+    "duration",
+    "width",
+    "height",
+    "framerate",
+    "videocodecid",
+    "audiocodecid",
     "hasAudio",
     "hasVideo",
     "hasMetadata",
     "hasKeyframes",
     "canSeekToEnd",
-    "duration",
     "datasize",
     "filesize",
     "audiosize",
-    "audiocodecid",
     "audiodatarate",
     "audiosamplerate",
     "audiosamplesize",
     "stereo",
     "videosize",
-    "framerate",
-    "videocodecid",
     "videodatarate",
-    "width",
-    "height",
     "lasttimestamp",
     "lastkeyframelocation",
     "lastkeyframetimestamp",
@@ -135,16 +136,6 @@ impl Default for ScriptFillerConfig {
     }
 }
 
-/// A macro to encode an AMF property key into a buffer
-macro_rules! write_amf_property_key {
-    ($buffer:expr, $key:expr) => {
-        // write key length (u16 in big endian)
-        $buffer.write_u16::<BigEndian>($key.len() as u16)?;
-        // write key string bytes
-        $buffer.write_all($key.as_bytes())?;
-    };
-}
-
 /// Operator to modify the first script tag with keyframe information.
 pub struct ScriptKeyframesFillerOperator {
     context: Arc<StreamerContext>,
@@ -171,6 +162,12 @@ impl ScriptKeyframesFillerOperator {
             if amf_data.name == "onMetaData" && !amf_data.data.is_empty() {
                 // typically the onMetaData is a AMF0 object
                 if let Amf0Value::Object(props) = &amf_data.data[0] {
+                    debug!(
+                        "{} Found onMetaData with {} properties",
+                        self.context.name,
+                        props.len()
+                    );
+
                     // estimate size of the new object
                     // Start with the size of the original data
                     let mut estimated_size = tag.data.len() + 1;
@@ -244,111 +241,22 @@ impl ScriptKeyframesFillerOperator {
                             write_amf_property_key!(&mut buffer, key);
                             // Encode value
                             amf0::Amf0Encoder::encode(&mut buffer, value).unwrap();
-                            debug!("Encoded property: {}, {:?}", key, value);
+                            trace!("Encoded property: {}, {:?}", key, value);
                         } else {
                             // Add default values for missing properties
-                            debug!(
-                                "{} Adding default value for missing property: {}",
-                                self.context.name, key
-                            );
-                            match key {
-                                "hasAudio" | "hasVideo" | "canSeekToEnd" | "stereo" => {
-                                    write_amf_property_key!(&mut buffer, key);
-                                    amf0::Amf0Encoder::encode(
-                                        &mut buffer,
-                                        &Amf0Value::Boolean(true),
-                                    )
-                                    .unwrap();
-                                }
-                                "duration"
-                                | "width"
-                                | "height"
-                                | "videosize"
-                                | "audiosize"
-                                | "lasttimestamp"
-                                | "lastkeyframelocation"
-                                | "lastkeyframetimestamp" => {
-                                    write_amf_property_key!(&mut buffer, key);
-                                    amf0::Amf0Encoder::encode(&mut buffer, &Amf0Value::Number(0.0))
-                                        .unwrap();
-                                }
-                                "videocodecid" => {
-                                    write_amf_property_key!(&mut buffer, key);
-                                    amf0::Amf0Encoder::encode(&mut buffer, &Amf0Value::Number(7.0))
-                                        .unwrap(); // H264
-                                }
-                                "audiocodecid" => {
-                                    write_amf_property_key!(&mut buffer, key);
-                                    amf0::Amf0Encoder::encode(
-                                        &mut buffer,
-                                        &Amf0Value::Number(10.0),
-                                    )
-                                    .unwrap(); // AAC
-                                }
-                                "audiosamplerate" => {
-                                    write_amf_property_key!(&mut buffer, key);
-                                    amf0::Amf0Encoder::encode(
-                                        &mut buffer,
-                                        &Amf0Value::Number(44100.0),
-                                    )
-                                    .unwrap();
-                                }
-                                "audiosamplesize" => {
-                                    write_amf_property_key!(&mut buffer, key);
-                                    amf0::Amf0Encoder::encode(
-                                        &mut buffer,
-                                        &Amf0Value::Number(16.0),
-                                    )
-                                    .unwrap();
-                                }
-                                "audiodatarate" => {
-                                    write_amf_property_key!(&mut buffer, key);
-                                    amf0::Amf0Encoder::encode(
-                                        &mut buffer,
-                                        &Amf0Value::Number(128.0),
-                                    )
-                                    .unwrap();
-                                }
-                                "videodatarate" => {
-                                    write_amf_property_key!(&mut buffer, key);
-                                    amf0::Amf0Encoder::encode(
-                                        &mut buffer,
-                                        &Amf0Value::Number(1000.0),
-                                    )
-                                    .unwrap();
-                                }
-                                "framerate" => {
-                                    write_amf_property_key!(&mut buffer, key);
-                                    amf0::Amf0Encoder::encode(
-                                        &mut buffer,
-                                        &Amf0Value::Number(30.0),
-                                    )
-                                    .unwrap();
-                                }
-                                "metadatacreator" => {
-                                    write_amf_property_key!(&mut buffer, key);
-                                    amf0::Amf0Encoder::encode(
-                                        &mut buffer,
-                                        &Amf0Value::String(Cow::Borrowed("Srec")),
-                                    )
-                                    .unwrap();
-                                }
-                                "metadatadate" => {
-                                    write_amf_property_key!(&mut buffer, key);
-                                    let current_iso_date = chrono::Utc::now().to_rfc3339();
-                                    amf0::Amf0Encoder::encode(
-                                        &mut buffer,
-                                        &Amf0Value::String(Cow::Borrowed(&current_iso_date)),
-                                    )
-                                    .unwrap();
-                                }
-                                _ => {
-                                    // skip unknown properties
-                                    warn!(
-                                        "{} Unknown property in metadata: {}",
-                                        self.context.name, key
-                                    );
-                                }
+                            if let Some(default_value) = self.get_default_metadata_value(key) {
+                                trace!(
+                                    "{} Adding default value for missing property: {}",
+                                    self.context.name, key
+                                );
+                                write_amf_property_key!(&mut buffer, key);
+                                amf0::Amf0Encoder::encode(&mut buffer, &default_value).unwrap();
+                            } else {
+                                // Skip unknown properties
+                                trace!(
+                                    "{} Unknown property in metadata: {}",
+                                    self.context.name, key
+                                );
                             }
                         }
                     }
@@ -400,10 +308,10 @@ impl ScriptKeyframesFillerOperator {
                     // // End keyframes object
                     amf0::Amf0Encoder::object_eof(&mut buffer).unwrap();
 
-                    info!("buffer length: {}", buffer.len());
-
                     // End of object
                     amf0::Amf0Encoder::object_eof(&mut buffer).unwrap();
+
+                    info!("New script data payload size: {}", buffer.len());
 
                     buffer.flush()?; // Flush the buffer to ensure all data is written
 
@@ -424,6 +332,43 @@ impl ScriptKeyframesFillerOperator {
             }
         }
         Ok(tag)
+    }
+
+    /// Get default metadata value for a given key.
+    fn get_default_metadata_value(&self, key: &str) -> Option<Amf0Value> {
+        match key {
+            // Booleans - Defaulting to true might be optimistic
+            "hasAudio" | "hasVideo" | "stereo" => Some(Amf0Value::Boolean(true)),
+            // Numeric - Defaulting to 0 might be safer than assuming values
+            "duration"
+            | "width"
+            | "height"
+            | "videosize"
+            | "audiosize"
+            | "lasttimestamp"
+            | "lastkeyframelocation"
+            | "lastkeyframetimestamp"
+            | "filesize" => Some(Amf0Value::Number(0.0)),
+            // Codecs - Common defaults
+            "videocodecid" => Some(Amf0Value::Number(7.0)), // H264 (AVC)
+            "audiocodecid" => Some(Amf0Value::Number(10.0)), // AAC
+            // Audio params - Common defaults
+            "audiosamplerate" => Some(Amf0Value::Number(44100.0)),
+            "audiosamplesize" => Some(Amf0Value::Number(16.0)),
+            // Data rates - Arbitrary defaults, might need adjustment
+            "audiodatarate" => Some(Amf0Value::Number(128.0)), // kbps
+            "videodatarate" => Some(Amf0Value::Number(1000.0)), // kbps
+            "framerate" => Some(Amf0Value::Number(30.0)),
+            // Strings
+            "metadatacreator" => Some(Amf0Value::String(Cow::Borrowed("Srec"))),
+            "metadatadate" => {
+                // Generate current date dynamically
+                Some(Amf0Value::String(Cow::Owned(
+                    chrono::Utc::now().to_rfc3339(),
+                )))
+            }
+            _ => None, // No default for unknown keys
+        }
     }
 }
 

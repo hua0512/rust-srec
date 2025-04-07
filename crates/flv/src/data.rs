@@ -28,6 +28,14 @@ impl FlvData {
         }
     }
 
+    pub fn is_header(&self) -> bool {
+        matches!(self, FlvData::Header(_))
+    }
+
+    pub fn is_tag(&self) -> bool {
+        matches!(self, FlvData::Tag(_))
+    }
+
     pub fn is_end_of_sequence(&self) -> bool {
         matches!(self, FlvData::EndOfSequence(_))
     }
@@ -49,6 +57,10 @@ impl FlvDataOwned {
             FlvDataOwned::Tag(tag) => tag.timestamp_ms,
             FlvDataOwned::EndOfSequence(_) => 0,
         }
+    }
+
+    pub fn is_header(&self) -> bool {
+        matches!(self, FlvDataOwned::Header(_))
     }
 
     pub fn is_end_of_sequence(&self) -> bool {

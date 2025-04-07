@@ -70,9 +70,9 @@ use flv::error::FlvError;
 use flv::tag::{FlvTag, FlvTagType, FlvUtil};
 use kanal::AsyncReceiver as Receiver;
 use kanal::AsyncSender as Sender;
-use tracing::{debug, info, warn};
 use std::cmp::min;
 use std::sync::Arc;
+use tracing::{debug, info, trace, warn};
 
 /// Defines how timestamps should be handled across stream splits
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -227,24 +227,24 @@ impl FlvOperator for TimeConsistencyOperator {
                             }
 
                             // For sequence headers, always set timestamp to 0
-                            if tag.is_video_sequence_header() || tag.is_audio_sequence_header() {
-                                // Save original timestamp for debugging
-                                let original = tag.timestamp_ms;
-                                if original != 0 {
-                                    debug!(
-                                        "{} Reset sequence header timestamp from {}ms to 0ms",
-                                        self.context.name, original
-                                    );
-                                }
+                            // if tag.is_video_sequence_header() || tag.is_audio_sequence_header() {
+                            //     // Save original timestamp for debugging
+                            //     let original = tag.timestamp_ms;
+                            //     if original != 0 {
+                            //         debug!(
+                            //             "{} Reset sequence header timestamp from {}ms to 0ms",
+                            //             self.context.name, original
+                            //         );
+                            //     }
 
-                                // Set timestamp to 0
-                                tag.timestamp_ms = 0;
+                            //     // Set timestamp to 0
+                            //     tag.timestamp_ms = 0;
 
-                                if output.send(Ok(data)).await.is_err() {
-                                    return;
-                                }
-                                continue;
-                            }
+                            //     if output.send(Ok(data)).await.is_err() {
+                            //         return;
+                            //     }
+                            //     continue;
+                            // }
 
                             // For normal media tags, handle timestamp adjustment
                             if state.new_segment {
@@ -258,6 +258,9 @@ impl FlvOperator for TimeConsistencyOperator {
 
                                     if state.segment_count > 1 && state.needs_offset_calculation {
                                         self.calculate_timestamp_offset(&mut state);
+                                    } else if state.segment_count == 1 {
+                                        // use the first timestamp as the delta
+                                        state.timestamp_offset = -((tag.timestamp_ms) as i64);
                                     }
                                 }
                                 state.new_segment = false;
@@ -270,7 +273,7 @@ impl FlvOperator for TimeConsistencyOperator {
                                     (tag.timestamp_ms as i64 + state.timestamp_offset) as u32;
                                 tag.timestamp_ms = corrected;
 
-                                debug!(
+                                trace!(
                                     "{} Adjusted timestamp: {}ms -> {}ms",
                                     self.context.name, original_timestamp, corrected
                                 );

@@ -1,6 +1,7 @@
 //! Pipeline operators for FLV stream processing
 
 pub mod defragment;
+pub mod flv_fix;
 pub mod gop_sort;
 pub mod header_check;
 pub mod limit;
@@ -22,11 +23,11 @@ pub trait FlvOperator {
     fn context(&self) -> &Arc<StreamerContext>;
 
     /// Process the FLV stream asynchronously
-    async fn process(
+    fn process(
         &mut self,
         input: AsyncReceiver<Result<FlvData, FlvError>>,
         output: AsyncSender<Result<FlvData, FlvError>>,
-    );
+    ) -> impl std::future::Future<Output = ()> + Send;
 
     /// Get the name of this operator for logging and debugging
     fn name(&self) -> &'static str;
@@ -40,6 +41,7 @@ pub trait FlvOperator {
 
 // Re-export common operators
 pub use defragment::DefragmentOperator;
+pub use flv_fix::FlvFixOperator;
 pub use gop_sort::GopSortOperator;
 pub use header_check::HeaderCheckOperator;
 pub use limit::LimitOperator;

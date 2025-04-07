@@ -2,11 +2,14 @@ use flv::{
     audio::{AudioTagUtils, SoundFormat, SoundRate, SoundSize, SoundType},
     header::FlvHeader,
     resolution::Resolution,
-    tag::{FlvTag, FlvUtil},
+    tag::{FlvTag, FlvTagData, FlvUtil},
     video::VideoCodecId,
 };
 
+use std::{fmt, io::Cursor};
 use tracing::{debug, error};
+
+use crate::utils::{FLV_HEADER_SIZE, FLV_PREVIOUS_TAG_SIZE, FLV_TAG_HEADER_SIZE};
 
 // Stats structure to hold all the metrics
 #[derive(Debug, Clone)]
@@ -113,9 +116,130 @@ impl FlvStats {
     }
 }
 
-const FLV_HEADER_SIZE: usize = 9;
-const FLV_PREVIOUS_TAG_SIZE: usize = 4;
-const FLV_TAG_HEADER_SIZE: usize = 11;
+impl fmt::Display for FlvStats {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        writeln!(f, "FLV Statistics:")?;
+        writeln!(f, "  File size: {} bytes", self.file_size)?;
+        writeln!(f, "  Duration: {}s", self.duration)?;
+
+        writeln!(f, "  Media:")?;
+        writeln!(f, "    Has video: {}", self.has_video)?;
+        if self.has_video {
+            writeln!(
+                f,
+                "    Video codec: {:?}",
+                self.video_codec.unwrap_or(VideoCodecId::Avc)
+            )?;
+            if let Some(resolution) = &self.resolution {
+                writeln!(
+                    f,
+                    "    Resolution: {}x{}",
+                    resolution.width, resolution.height
+                )?;
+            }
+            writeln!(f, "    Frame rate: {:.2} fps", self.video_frame_rate)?;
+            writeln!(f, "    Video data rate: {:.2} kbps", self.video_data_rate)?;
+        }
+
+        writeln!(f, "    Has audio: {}", self.has_audio)?;
+        if self.has_audio {
+            writeln!(
+                f,
+                "    Audio codec: {:?}",
+                self.audio_codec.unwrap_or(SoundFormat::Aac)
+            )?;
+            writeln!(f, "    Sample rate: {:.0} Hz", self.audio_sample_rate)?;
+            writeln!(f, "    Sample size: {} bits", self.audio_sample_size)?;
+            writeln!(f, "    Stereo: {}", self.audio_stereo)?;
+            writeln!(f, "    Audio data rate: {:.2} kbps", self.audio_data_rate)?;
+        }
+
+        writeln!(f, "  Tags:")?;
+        writeln!(f, "    Total tags: {}", self.tag_count)?;
+        writeln!(f, "    Audio tags: {}", self.audio_tag_count)?;
+        writeln!(f, "    Video tags: {}", self.video_tag_count)?;
+        writeln!(f, "    Script tags: {}", self.script_tag_count)?;
+
+        writeln!(f, "  Sizes:")?;
+        writeln!(f, "    Tags size: {} bytes", self.tags_size)?;
+        writeln!(f, "    Audio tags size: {} bytes", self.audio_tags_size)?;
+        writeln!(f, "    Video tags size: {} bytes", self.video_tags_size)?;
+        writeln!(f, "    Audio data size: {} bytes", self.audio_data_size)?;
+        writeln!(f, "    Video data size: {} bytes", self.video_data_size)?;
+
+        writeln!(f, "  Timestamps:")?;
+        writeln!(f, "    Last timestamp: {}ms", self.last_timestamp)?;
+        writeln!(
+            f,
+            "    Last audio timestamp: {}ms",
+            self.last_audio_timestamp
+        )?;
+        writeln!(
+            f,
+            "    Last video timestamp: {}ms",
+            self.last_video_timestamp
+        )?;
+
+        // Compress keyframes information
+        let keyframe_count = self.keyframes.len();
+        if keyframe_count > 0 {
+            writeln!(f, "  Keyframes: {}", keyframe_count)?;
+
+            // Show first keyframe
+            if keyframe_count > 0 {
+                let first = &self.keyframes[0];
+                writeln!(f, "    First: {:.2}s @ position {}", first.0, first.1)?;
+            }
+
+            // Show last keyframe
+            if keyframe_count > 1 {
+                let last = &self.keyframes[keyframe_count - 1];
+                writeln!(f, "    Last: {:.2}s @ position {}", last.0, last.1)?;
+            }
+
+            // Show distribution info if there are many keyframes
+            if keyframe_count > 5 {
+                // Calculate average keyframe interval
+                let mut intervals = Vec::with_capacity(keyframe_count - 1);
+                for i in 1..keyframe_count {
+                    intervals.push(self.keyframes[i].0 - self.keyframes[i - 1].0);
+                }
+
+                // Calculate statistics
+                let avg_interval = intervals.iter().sum::<f64>() / intervals.len() as f64;
+
+                // Find min and max intervals
+                let mut min_interval = f64::MAX;
+                let mut max_interval = f64::MIN;
+
+                for interval in &intervals {
+                    min_interval = min_interval.min(*interval);
+                    max_interval = max_interval.max(*interval);
+                }
+
+                writeln!(
+                    f,
+                    "    Keyframe intervals: {:.2}s avg, {:.2}s min, {:.2}s max",
+                    avg_interval, min_interval, max_interval
+                )?;
+            } else if keyframe_count > 2 {
+                // For a small number of keyframes, show them all
+                writeln!(f, "    All keyframes (time in seconds @ position):")?;
+                for (i, keyframe) in self.keyframes.iter().enumerate() {
+                    write!(f, "      {}: {:.2}s @ {}", i, keyframe.0, keyframe.1)?;
+                    if i < keyframe_count - 1 {
+                        writeln!(f)?;
+                    }
+                }
+            }
+        } else {
+            writeln!(f, "  No keyframes found")?;
+        }
+
+        Ok(())
+    }
+}
+
 pub struct FlvAnalyzer {
     pub stats: FlvStats,
 
@@ -142,6 +266,7 @@ impl FlvAnalyzer {
     }
 
     pub fn analyze_header(&mut self, header: &FlvHeader) -> Result<(), String> {
+        debug!("Analyzing FLV header: {:?}", header);
         if self.header_analyzed {
             return Err("Header already analyzed".to_string());
         }
@@ -301,8 +426,6 @@ impl FlvAnalyzer {
 mod tests {
     use super::*;
     use flv::header::FlvHeader;
-    use flv::tag::FlvTag;
-    use flv::tag::FlvTagType;
 
     #[test]
     fn test_analyze_header() {

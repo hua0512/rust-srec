@@ -37,8 +37,8 @@ use flv::error::FlvError;
 use flv::header::FlvHeader;
 use kanal;
 use kanal::{AsyncReceiver, AsyncSender};
-use tracing::warn;
 use std::sync::Arc;
+use tracing::warn;
 
 /// An operator that validates and ensures FLV streams have a proper header.
 ///
@@ -79,7 +79,7 @@ impl FlvOperator for HeaderCheckOperator {
                         first_item = false;
 
                         // If the first item is not a header, insert a default one
-                        if !matches!(data, FlvData::Header(_)) {
+                        if !data.is_header() {
                             warn!(
                                 "{} FLV header is missing, inserted a default header",
                                 self.context.name

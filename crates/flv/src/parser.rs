@@ -238,7 +238,7 @@ impl FlvParserRef {
         // Use FlvTag::demux to parse the entire tag
         let tag = FlvTag::demux(&mut Cursor::new(tag_buffer.freeze()))?;
         let tag_type = FlvTagType::from(tag_type);
-        
+
         Ok(Some((tag, tag_type)))
     }
 }
@@ -277,7 +277,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_read_file_ref() -> Result<(), Box<dyn std::error::Error>> {
-        let path = std::path::Path::new("D:/test/999/16_02_26-福州~ 主播恋爱脑！！！.flv");
+        let path = std::path::Path::new("D:/test/999/test.flv");
 
         // Skip the test if the file doesn't exist
         if !path.exists() {

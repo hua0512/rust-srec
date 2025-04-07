@@ -165,7 +165,7 @@ impl TryFrom<u8> for VideoCommand {
 }
 
 #[repr(u8)]
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Copy)]
 pub enum VideoCodecId {
     /// Sorenson H.263
     SorensonH263 = 2,

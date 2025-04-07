@@ -192,12 +192,6 @@ struct TimingState {
     /// Expected interval between audio samples in ms
     audio_sample_interval: u32,
 
-    /// Tracker for precise video frame timing
-    video_frame_tracker: FrameRateTracker,
-
-    /// Tracker for precise audio sample timing
-    audio_sample_tracker: FrameRateTracker,
-
     /// Timestamp of the last discontinuity detected
     last_discontinuity: Option<u32>,
 
@@ -229,8 +223,6 @@ impl TimingState {
             audio_rate: config.default_audio_rate,
             video_frame_interval,
             audio_sample_interval,
-            video_frame_tracker: FrameRateTracker::new(config.default_frame_rate),
-            audio_sample_tracker: FrameRateTracker::new(config.default_audio_rate / 1000.0), // Convert Hz to kHz
             last_discontinuity: None,
             correction_count: 0,
             rebound_count: 0,
@@ -250,8 +242,6 @@ impl TimingState {
         self.audio_rate = config.default_audio_rate;
         self.audio_sample_interval =
             Self::calculate_audio_sample_interval(config.default_audio_rate);
-        self.video_frame_tracker = FrameRateTracker::new(config.default_frame_rate);
-        self.audio_sample_tracker = FrameRateTracker::new(config.default_audio_rate / 1000.0);
         self.last_discontinuity = None;
 
         // Keep statistics for logging
@@ -263,7 +253,7 @@ impl TimingState {
             return 33; // Default ~30fps
         }
         // Round to nearest millisecond
-        (1000.0 / fps).round() as u32
+        f64::ceil(1000.0 / fps) as u32
     }
 
     /// Calculate the audio sample interval in milliseconds based on sample rate
@@ -287,13 +277,6 @@ impl TimingState {
                     if *value > 0.0 {
                         self.frame_rate = *value;
                         self.video_frame_interval = Self::calculate_video_frame_interval(*value);
-                        // Reset the frame tracker with the new frame rate
-                        if let Some(last_video) = &self.last_video_tag {
-                            self.video_frame_tracker
-                                .reset(*value, last_video.timestamp_ms);
-                        } else {
-                            self.video_frame_tracker = FrameRateTracker::new(*value);
-                        }
                     }
                 }
                 Amf0Value::String(value) => {
@@ -302,13 +285,6 @@ impl TimingState {
                             self.frame_rate = fps_float;
                             self.video_frame_interval =
                                 Self::calculate_video_frame_interval(fps_float);
-                            // Reset the frame tracker with the new frame rate
-                            if let Some(last_video) = &self.last_video_tag {
-                                self.video_frame_tracker
-                                    .reset(fps_float, last_video.timestamp_ms);
-                            } else {
-                                self.video_frame_tracker = FrameRateTracker::new(fps_float);
-                            }
                         }
                     }
                 }
@@ -323,13 +299,6 @@ impl TimingState {
                 self.audio_rate = *rate;
                 // Convert from Hz to kHz for interval calculation
                 self.audio_sample_interval = Self::calculate_audio_sample_interval(*rate);
-                // Reset the audio tracker with the new sample rate
-                if let Some(last_audio) = &self.last_audio_tag {
-                    self.audio_sample_tracker
-                        .reset(*rate / 1000.0, last_audio.timestamp_ms);
-                } else {
-                    self.audio_sample_tracker = FrameRateTracker::new(*rate / 1000.0);
-                }
             }
         }
     }
@@ -603,9 +572,9 @@ impl TimingRepairOperator {
                                                 // or audio sample rate (typically 44100, 48000, etc.)
                                                 for item in items.iter() {
                                                     if let Amf0Value::Number(value) = item {
-                                                        // Potential frame rate (common video frame rates are between 10-120)
+                                                        // Potential frame rate (common video frame rates are between 10-500)
                                                         if *value > 10.0
-                                                            && *value < 120.0
+                                                            && *value < 500.0
                                                             && framerate_value.is_none()
                                                         {
                                                             framerate_value = Some(*value);
@@ -698,38 +667,6 @@ impl TimingRepairOperator {
                                 }
                                 continue;
                             }
-                            // Handle sequence headers
-                            else if tag.is_video_sequence_header()
-                                || tag.is_audio_sequence_header()
-                            {
-                                // Sequence headers should have timestamp 0
-                                if tag.timestamp_ms != 0 {
-                                    tag.timestamp_ms = 0;
-                                    if self.config.debug {
-                                        debug!(
-                                            "{} TimingRepair: Reset sequence header timestamp to 0",
-                                            self.context.name
-                                        );
-                                    }
-                                }
-
-                                // Update state for sequence headers
-                                if tag.is_video_sequence_header() {
-                                    state.last_video_tag = Some(tag.clone());
-                                    state.video_frame_tracker.reset(state.frame_rate, 0);
-                                } else if tag.is_audio_sequence_header() {
-                                    state.last_audio_tag = Some(tag.clone());
-                                    state
-                                        .audio_sample_tracker
-                                        .reset(state.audio_rate / 1000.0, 0);
-                                }
-
-                                // Forward sequence header
-                                if output.send(Ok(data)).await.is_err() {
-                                    return;
-                                }
-                                continue;
-                            }
 
                             // Check for timestamp issues
                             let mut need_correction = false;
@@ -766,26 +703,32 @@ impl TimingRepairOperator {
                             // Apply correction if needed
                             if state.delta != 0 || need_correction {
                                 // Apply the correction delta
-                                let corrected_timestamp =
-                                    if tag.timestamp_ms as i32 + state.delta < 0 {
-                                        // Avoid negative timestamps - use frame-rate aware correction
-                                        if let Some(last) = &state.last_tag {
-                                            if tag.is_video_tag() {
-                                                // Calculate ideal timestamp using frame rate
-                                                let interval =
-                                                    (1000.0 / state.frame_rate).round() as u32;
-                                                last.timestamp_ms + interval
-                                            } else if tag.is_audio_tag() {
-                                                last.timestamp_ms + state.audio_sample_interval
-                                            } else {
-                                                last.timestamp_ms + 1
-                                            }
+                                // probably not gonna happen, but just in case
+                                let corrected_timestamp = if tag.timestamp_ms as i32 + state.delta
+                                    < 0
+                                {
+                                    warn!(
+                                        "{} TimingRepair: Negative timestamp detected, applying frame-rate aware correction",
+                                        self.context.name
+                                    );
+                                    // Avoid negative timestamps - use frame-rate aware correction
+                                    if let Some(last) = &state.last_tag {
+                                        if tag.is_video_tag() {
+                                            // Calculate ideal timestamp using frame rate
+                                            let interval =
+                                                (1000.0 / state.frame_rate).round() as u32;
+                                            last.timestamp_ms + interval
+                                        } else if tag.is_audio_tag() {
+                                            last.timestamp_ms + state.audio_sample_interval
                                         } else {
-                                            0
+                                            last.timestamp_ms + 1
                                         }
                                     } else {
-                                        (tag.timestamp_ms as i32 + state.delta) as u32
-                                    };
+                                        0
+                                    }
+                                } else {
+                                    (tag.timestamp_ms as i32 + state.delta) as u32
+                                };
 
                                 tag.timestamp_ms = corrected_timestamp;
                                 state.correction_count += 1;
@@ -798,36 +741,6 @@ impl TimingRepairOperator {
                                         corrected_timestamp,
                                         state.delta
                                     );
-                                }
-                            }
-
-                            // Update trackers for precise frame timing
-                            if tag.is_video_tag() && !tag.is_video_sequence_header() {
-                                // If this is the first regular video tag, use it as our base
-                                if state.last_video_tag.is_none()
-                                    || state
-                                        .last_video_tag
-                                        .as_ref()
-                                        .unwrap()
-                                        .is_video_sequence_header()
-                                {
-                                    state
-                                        .video_frame_tracker
-                                        .reset(state.frame_rate, tag.timestamp_ms);
-                                }
-                            } else if tag.is_audio_tag() && !tag.is_audio_sequence_header() {
-                                // Similar handling for audio
-                                if state.last_audio_tag.is_none()
-                                    || (state.last_audio_tag.is_some()
-                                        && state
-                                            .last_audio_tag
-                                            .as_ref()
-                                            .unwrap()
-                                            .is_audio_sequence_header())
-                                {
-                                    state
-                                        .audio_sample_tracker
-                                        .reset(state.audio_rate / 1000.0, tag.timestamp_ms);
                                 }
                             }
 

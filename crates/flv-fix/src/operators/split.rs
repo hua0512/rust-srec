@@ -58,15 +58,14 @@
 //!
 use crate::context::StreamerContext;
 use crate::operators::FlvOperator;
-use bytes::Bytes;
 use flv::data::FlvData;
 use flv::error::FlvError;
 use flv::header::FlvHeader;
-use flv::tag::{FlvTag, FlvTagType, FlvUtil};
+use flv::tag::{FlvTag, FlvUtil};
 use kanal;
 use kanal::{AsyncReceiver, AsyncSender};
-use tracing::{debug, info, warn};
 use std::sync::Arc;
+use tracing::{debug, info};
 
 // Store data wrapped in Arc for efficient cloning
 struct StreamState {
@@ -136,8 +135,8 @@ impl FlvOperator for SplitOperator {
             output: &kanal::AsyncSender<Result<FlvData, FlvError>>,
             state: &StreamState,
         ) -> bool {
-            // Helper macro to reduce repetition when sending tags with Arc
-            macro_rules! send_arc_item {
+            // Helper macro to reduce repetition when sending tags
+            macro_rules! send_item {
                 ($item:expr, $transform:expr, $msg:expr) => {
                     if let Some(item) = &$item {
                         debug!("{} {}", context.name, $msg);
@@ -150,22 +149,22 @@ impl FlvOperator for SplitOperator {
             }
 
             // Re-inject header and sequence tags
-            send_arc_item!(
+            send_item!(
                 state.header,
                 |h: FlvHeader| FlvData::Header(h),
                 "re-emit header"
             );
-            send_arc_item!(
+            send_item!(
                 state.metadata,
                 |t: FlvTag| FlvData::Tag(t),
                 "re-emit metadata"
             );
-            send_arc_item!(
+            send_item!(
                 state.video_sequence_tag,
                 |t: FlvTag| FlvData::Tag(t),
                 "re-emit video sequence tag"
             );
-            send_arc_item!(
+            send_item!(
                 state.audio_sequence_tag,
                 |t: FlvTag| FlvData::Tag(t),
                 "re-emit audio sequence tag"
@@ -217,7 +216,6 @@ impl FlvOperator for SplitOperator {
                             // Process different tag types
                             if tag.is_script_tag() {
                                 debug!("{} Metadata detected", self.context.name);
-                                // Wrap in Arc - only clones the Arc pointer, not the data
                                 state.metadata = Some(tag.clone());
                             } else if tag.is_video_sequence_header() {
                                 debug!("{} Video sequence tag detected", self.context.name);
@@ -236,7 +234,7 @@ impl FlvOperator for SplitOperator {
                                     }
                                 }
 
-                                // Update with current tag wrapped in Arc
+                                // Update sequence tag
                                 state.video_sequence_tag = Some(tag.clone());
                                 state.video_crc = Some(crc);
                             } else if tag.is_audio_sequence_header() {
@@ -256,7 +254,7 @@ impl FlvOperator for SplitOperator {
                                     }
                                 }
 
-                                // Store in Arc
+                                // Update sequence tag
                                 state.audio_sequence_tag = Some(tag.clone());
                                 state.audio_crc = Some(crc);
                             } else if state.changed {
@@ -290,6 +288,7 @@ impl FlvOperator for SplitOperator {
         }
 
         debug!("{} completed.", self.context.name);
+        state.reset(); // Reset state when processing is done
     }
 
     fn name(&self) -> &'static str {
