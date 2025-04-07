@@ -8,7 +8,6 @@ members = [
     "crates/expgolomb",
     "crates/av1",
     "crates/h265",
-    "crates/h265",
     "crates/amf0",
 ]
 
@@ -21,8 +20,23 @@ edition = "2024"
 bytes = "1.10.1"
 byteorder = "1.5.0"
 kanal = "0.1"
-criterion = "0.5"
 tokio = { version = "1.36", features = ["full"] }
+futures = "0.3"
+chrono = "0.4"
+
+# CLI dependencies
+clap = { version = "4.5", features = ["derive"] }
+
+# Logging
+tracing = "0.1"
+tracing-subscriber = "0.3"
+
+# Workspace crates
+flv = { path = "crates/flv" }
+flv-fix = { path = "crates/flv-fix" }
+
+[dev-dependencies]
+criterion = "0.5"
 
 [[bench]]
 name = "test_channels"
