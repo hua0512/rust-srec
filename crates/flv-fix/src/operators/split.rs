@@ -179,7 +179,7 @@ impl FlvOperator for SplitOperator {
             output: &kanal::AsyncSender<Result<FlvData, FlvError>>,
             state: &mut StreamState,
         ) -> bool {
-            info!("{} Splitting stream...", context.name);
+            debug!("{} Splitting stream...", context.name);
 
             // Note on timestamp handling:
             // When we split the stream, we re-inject the header and sequence information

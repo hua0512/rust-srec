@@ -311,7 +311,7 @@ impl ScriptKeyframesFillerOperator {
                     // End of object
                     amf0::Amf0Encoder::object_eof(&mut buffer).unwrap();
 
-                    info!("New script data payload size: {}", buffer.len());
+                    debug!("New script data payload size: {}", buffer.len());
 
                     buffer.flush()?; // Flush the buffer to ensure all data is written
 

@@ -154,7 +154,7 @@ impl TimeConsistencyOperator {
                 ContinuityMode::Continuous => {
                     // Make current segment continue from where the previous one ended
                     state.timestamp_offset = last as i64 - first as i64 + 1;
-                    info!(
+                    debug!(
                         "{} Maintaining continuous timeline: offset = {}ms",
                         self.context.name, state.timestamp_offset
                     );
@@ -162,7 +162,7 @@ impl TimeConsistencyOperator {
                 ContinuityMode::Reset => {
                     // Reset timeline - this means applying a negative offset to bring timestamps to zero
                     state.timestamp_offset = -(first as i64);
-                    info!(
+                    debug!(
                         "{} Resetting timeline to zero: offset = {}ms",
                         self.context.name, state.timestamp_offset
                     );
@@ -192,7 +192,7 @@ impl FlvOperator for TimeConsistencyOperator {
                         FlvData::Header(_) => {
                             // Headers indicate stream splits (except the first one)
                             if state.segment_count > 0 {
-                                info!(
+                                debug!(
                                     "{} Detected stream split, preparing timestamp correction",
                                     self.context.name
                                 );

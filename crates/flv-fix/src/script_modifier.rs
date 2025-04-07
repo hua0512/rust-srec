@@ -365,7 +365,7 @@ fn update_script_metadata(
             writer.write_all(&buffer)?;
             writer.flush()?;
         } else {
-            info!(
+            debug!(
                 "Script data size changed (original: {}, new: {}).",
                 original_payload_data, new_payload_size
             );
