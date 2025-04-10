@@ -50,20 +50,19 @@ pub enum ScriptModifierError {
 
 /// Main function to update FLV file metadata based on collected statistics
 /// This is an async wrapper around the actual implementation
-pub async fn inject_stats_into_script_data(
+pub fn inject_stats_into_script_data(
     file_path: &Path,
     stats: FlvStats,
 ) -> Result<(), ScriptModifierError> {
     let file_path_clone = file_path.to_path_buf();
     // Use tokio's spawn_blocking to run the CPU-bound task on a separate thread
-    tokio::task::spawn_blocking(move || update_script_metadata(&file_path_clone, &stats))
-        .await
+    update_script_metadata(&file_path_clone, &stats)
         .map_err(|e| {
             ScriptModifierError::Io(io::Error::new(
                 io::ErrorKind::Other,
                 format!("Task join error: {}", e),
             ))
-        })??;
+        })?;
 
     Ok(())
 }
