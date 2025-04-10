@@ -155,10 +155,6 @@ impl GopSortOperator {
 
         // Sorted output buffer
         // let mut sorted_tags = Vec::new();
-        // let mut sorted_tags = Vec::with_capacity(
-        //     video_tags.len() + audio_tags.len(),
-        // );
-
         // let mut audio_idx = audio_tags.len() as i32 - 1;
 
         // // Process video tags and interleave audio

@@ -35,13 +35,13 @@ use std::{
     io::{self},
     path::PathBuf,
 };
-
+use std::sync::mpsc::Receiver;
 use chrono::Local;
 use flv::{data::FlvData, header::FlvHeader, writer::FlvWriter};
 use tokio::task::spawn_blocking;
 use tokio_stream::StreamExt;
 use tracing::{debug, info};
-
+use flv::error::FlvError;
 use crate::{
     analyzer::FlvAnalyzer,
     pipeline::BoxStream,
@@ -113,82 +113,80 @@ impl FlvWriterTask {
     }
 
     /// Consumes the stream and writes FLV data to one or more files.
-    pub async fn run(&mut self, stream: BoxStream<FlvData>) -> Result<(), WriterError> {
-        futures::pin_mut!(stream);
+    pub fn run(&mut self, receiver: Receiver<Result<FlvData, FlvError>>) -> Result<(), WriterError> {
+        
+            while let Ok(result) = receiver.recv() {
+                match result {
+                    Ok(FlvData::Header(header)) => {
+                        self.handle_header(header)?;
+                    }
+                    Ok(FlvData::Tag(tag)) => {
+                        let tag_type = tag.tag_type;
+                        let data = tag.data.clone();
+                        let timestamp_ms = tag.timestamp_ms;
 
-        while let Some(result) = stream.next().await {
-            match result {
-                Ok(FlvData::Header(header)) => {
-                    self.handle_header(header).await?;
-                }
-                Ok(FlvData::Tag(tag)) => {
-                    let tag_type = tag.tag_type;
-                    let data = tag.data.clone();
-                    let timestamp_ms = tag.timestamp_ms;
+                        // Update non-blocking state immediately
+                        self.update_timestamps(timestamp_ms);
+                        self.total_tag_count += 1;
+                        self.current_file_tag_count += 1;
+                        let current_total_count = self.total_tag_count;
 
-                    // Update non-blocking state immediately
-                    self.update_timestamps(timestamp_ms);
-                    self.total_tag_count += 1;
-                    self.current_file_tag_count += 1;
-                    let current_total_count = self.total_tag_count;
+                        // Take ownership of the writer to move it into the blocking task
+                        let mut writer_opt = self.current_writer.take();
 
-                    // Take ownership of the writer to move it into the blocking task
-                    let mut writer_opt = self.current_writer.take();
+                        // Delegate the blocking write operation
+                        
+                        let write_result= match &mut writer_opt {
+                                Some(writer) => {
+                                    writer.write_tag(tag_type, data, timestamp_ms)?;
+                                    Ok(writer_opt) // Return the Option containing the writer
+                                }
+                                None => {
+                                    // This should ideally not happen if handle_header was called first
+                                    Err(WriterError::State(
+                                        "Attempted write_tag with no active writer",
+                                    ))
+                                }
+                            };
+                        
 
-                    // Delegate the blocking write operation
-                    let write_result = spawn_blocking(move || {
-                        match &mut writer_opt {
-                            Some(writer) => {
-                                writer.write_tag(tag_type, data, timestamp_ms)?;
-                                Ok(writer_opt) // Return the Option containing the writer
+                        // Place the writer back after the blocking operation completes
+                        self.current_writer = write_result?; // Handle io::Error/FlvError/WriterError::State
+
+                        let analyze_result = self.analyzer.analyze_tag(&tag);
+                        match analyze_result {
+                            Ok(stats) => {
+                                tracing::trace!(?stats, "Tag analysis successful.");
                             }
-                            None => {
-                                // This should ideally not happen if handle_header was called first
-                                Err(WriterError::State(
-                                    "Attempted write_tag with no active writer",
-                                ))
+                            Err(e) => {
+                                tracing::error!(error = ?e, "Tag analysis failed.");
                             }
                         }
-                    })
-                    .await?; // Handle JoinError
 
-                    // Place the writer back after the blocking operation completes
-                    self.current_writer = write_result?; // Handle io::Error/FlvError/WriterError::State
-
-                    let analyze_result = self.analyzer.analyze_tag(&tag);
-                    match analyze_result {
-                        Ok(stats) => {
-                            tracing::trace!(?stats, "Tag analysis successful.");
-                        }
-                        Err(e) => {
-                            tracing::error!(error = ?e, "Tag analysis failed.");
+                        // Log progress periodically
+                        if current_total_count % 50000 == 0 {
+                            tracing::debug!(tags_written = current_total_count, "Writer progress...");
                         }
                     }
-
-                    // Log progress periodically
-                    if current_total_count % 50000 == 0 {
-                        tracing::debug!(tags_written = current_total_count, "Writer progress...");
+                    Err(e) => {
+                        tracing::error!(error = ?e, "Error received from pipeline stream. Writing continues.");
                     }
-                }
-                Err(e) => {
-                    tracing::error!(error = ?e, "Error received from pipeline stream. Writing continues.");
-                }
-                #[allow(unreachable_patterns)]
-                Ok(_) => {
-                    tracing::warn!("Received unexpected FlvData variant during writing.");
+                    #[allow(unreachable_patterns)]
+                    Ok(_) => {
+                        tracing::warn!("Received unexpected FlvData variant during writing.");
+                    }
                 }
             }
-        }
 
-        self.close_current_writer().await?;
+            self.close_current_writer()?;
 
-        info!(
-            total_tags_written = self.total_tag_count,
-            output_files_created = self.file_counter,
-            "FlvWriterTask finished writing."
-        );
+            info!(
+                total_tags_written = self.total_tag_count,
+                output_files_created = self.file_counter,
+                "FlvWriterTask finished writing."
+            );
 
-        Ok(())
+            Ok(())
     }
 
     /// Updates timestamp tracking (non-blocking).
@@ -200,8 +198,8 @@ impl FlvWriterTask {
     }
 
     /// Handles receiving an FLV Header, closing the previous file and starting a new one.
-    async fn handle_header(&mut self, header: FlvHeader) -> Result<(), WriterError> {
-        self.close_current_writer().await?;
+    fn handle_header(&mut self, header: FlvHeader) -> Result<(), WriterError> {
+        self.close_current_writer()?;
 
         // Reset non-blocking state
         self.current_file_tag_count = 0;
@@ -232,19 +230,17 @@ impl FlvWriterTask {
         info!(path = %output_path.display(), file_num, "Creating new output file segment.");
 
         // Perform blocking file creation and writer initialization
-        let new_writer = spawn_blocking(move || {
-            let output_file = std::fs::File::create(&output_path)?;
-            let buffered_writer = std::io::BufWriter::new(output_file);
-            FlvWriter::with_header(buffered_writer, &header_clone)
-        })
-        .await??; // Handle JoinError + io::Error/FlvError
+        
+        let output_file = std::fs::File::create(&output_path)?;
+        let buffered_writer = std::io::BufWriter::new(output_file);
+        let new_writer = FlvWriter::with_header(buffered_writer, &header_clone)?;
 
         self.current_writer = Some(new_writer);
         Ok(())
     }
 
     /// Closes the current file writer using spawn_blocking.
-    async fn close_current_writer(&mut self) -> Result<(), WriterError> {
+    fn close_current_writer(&mut self) -> Result<(), WriterError> {
         if let Some(writer) = self.current_writer.take() {
             // Take ownership
             let duration_ms = self
@@ -257,18 +253,15 @@ impl FlvWriterTask {
             info!(tags, file_num, duration_ms = ?duration_ms, "Closing file segment (delegating to blocking task).");
 
             // Move the writer into the blocking task for closing
-            spawn_blocking(move || {
-                writer.close()?; // Blocking close (flushes BufWriter)
-                Ok::<(), WriterError>(()) // Indicate success within the Result
-            })
-            .await??; // Handle JoinError + io::Error/FlvError/WriterError
+            
+            writer.close()?; // Blocking close (flushes BufWriter)
 
             let output_path = self.current_file_path.take().unwrap();
             match self.analyzer.build_stats() {
                 Ok(stats) => {
                     info!("Path : {}: {}", output_path.display(), stats);
                     // Modify the script data section by injecting stats
-                    match script_modifier::inject_stats_into_script_data(&output_path, stats).await
+                    match script_modifier::inject_stats_into_script_data(&output_path, stats)
                     {
                         Ok(_) => {
                             debug!("Successfully injected stats into script data section.");

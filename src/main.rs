@@ -1,14 +1,16 @@
 use std::path::{Path, PathBuf};
 use std::process::exit;
+use std::sync::mpsc;
 
 use clap::Parser;
 use flv::data::FlvData;
+use flv::error::FlvError;
 use flv::parser_async::FlvDecoderStream;
 use flv_fix::context::StreamerContext;
 use flv_fix::operators::RepairStrategy;
 use flv_fix::operators::script_filler::ScriptFillerConfig;
 use flv_fix::pipeline::{BoxStream, FlvPipeline, PipelineConfig};
-use flv_fix::writer_task::FlvWriterTask;
+use flv_fix::writer_task::{FlvWriterTask, WriterError};
 use futures::StreamExt;
 use tokio::fs::File;
 use tokio::io::BufReader;
@@ -273,11 +275,22 @@ async fn process_file(
     let input_stream: BoxStream<FlvData> = decoder_stream.boxed();
 
     // Process the stream through the pipeline
-    let processed_stream = pipeline.process(input_stream);
-
+    let mut processed_stream = pipeline.process(input_stream);
+    let (sender, mut receiver) = mpsc::sync_channel::<Result<FlvData, FlvError>>(8);
     // Create writer task and run it
+
+    let reader_handle = tokio::spawn(async move {
+        while let Some(result) = processed_stream.next().await {
+            sender.send(result).unwrap();
+        }
+    });
     let mut writer_task = FlvWriterTask::new(output_dir.to_path_buf(), base_name).await?;
-    writer_task.run(processed_stream).await?;
+    
+    writer_task.run(receiver)?;
+        
+   
+
+    reader_handle.await?;
 
     let elapsed = start_time.elapsed();
     let total_tags_written = writer_task.total_tags_written();
