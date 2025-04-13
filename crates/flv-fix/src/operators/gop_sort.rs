@@ -147,70 +147,39 @@ impl GopSortOperator {
             }
         }
 
-        // Apply the special interleaving algorithm from Kotlin implementation
-        // where audio tags are inserted after video tags with timestamps >= the video timestamp
-
-        // Reverse video tags since we'll process from highest to lowest timestamp
-        // video_tags.reverse();
-
-        // Sorted output buffer
-        // let mut sorted_tags = Vec::new();
-        // let mut audio_idx = audio_tags.len() as i32 - 1;
-
-        // // Process video tags and interleave audio
-        // for video_tag in &video_tags {
-        //     // Add video tag to start of sorted list (building in reverse)
-        //     sorted_tags.insert(0, video_tag.clone());
-
-        //     // Add audio tags with timestamp >= video tag timestamp
-        //     while audio_idx >= 0
-        //         && audio_tags[audio_idx as usize].timestamp_ms >= video_tag.timestamp_ms
-        //     {
-        //         sorted_tags.insert(1, audio_tags[audio_idx as usize].clone());
-        //         audio_idx -= 1;
-        //     }
-        // }
-
-        // // add any remaining audio tags at the beginning
-        // while audio_idx >= 0 {
-        //     sorted_tags.insert(0, audio_tags[audio_idx as usize].clone());
-        //     audio_idx -= 1;
-        // }
-
         let mut sorted_tags = Vec::with_capacity(audio_tags.len() + video_tags.len());
         let mut a_idx = 0;
         let mut v_idx = 0;
 
-        // 双指针合并过程
+        // Two-pointer merge process
         while a_idx < audio_tags.len() && v_idx < video_tags.len() {
             let audio_tag = &audio_tags[a_idx];
             let video_tag = &video_tags[v_idx];
 
-            // 核心比较逻辑:
-            // 如果视频时间戳 <= 音频时间戳，优先放入视频标签。
-            // 这确保了音频标签会出现在时间戳小于等于它的最后一个视频标签之后。
+            // Core comparison logic:
+            // If video timestamp <= audio timestamp, prioritize video tag.
+            // This ensures audio tags appear after the last video tag with timestamp less than or equal to it.
             if video_tag.timestamp_ms <= audio_tag.timestamp_ms {
                 sorted_tags.push(video_tag.clone());
                 v_idx += 1;
             } else {
-                // 否则 (音频时间戳 < 视频时间戳)，放入音频标签
+                // Otherwise (audio timestamp < video timestamp), add the audio tag
                 sorted_tags.push(audio_tag.clone());
                 a_idx += 1;
             }
         }
 
-        // 添加剩余的音频标签 (如果视频列表先处理完)
+        // Add remaining audio tags (if video list was processed first)
         while a_idx < audio_tags.len() {
             sorted_tags.push(audio_tags[a_idx].clone());
             a_idx += 1;
         }
 
-        // 添加剩余的视频标签 (如果音频列表先处理完)
+        // Add remaining video tags (if audio list was processed first)
         while v_idx < video_tags.len() {
             sorted_tags.push(video_tags[v_idx].clone());
             v_idx += 1;
         }
-
 
         // Emit script tags in original order (no sorting)
         for tag in script_tags {
