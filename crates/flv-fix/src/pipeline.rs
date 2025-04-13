@@ -245,12 +245,13 @@ impl FlvPipeline {
 /// Tests for the FLV processing pipeline
 mod test {
     use super::*;
-    use crate::context::StreamerContext;
     use crate::writer_task::FlvWriterTask;
+    use crate::{context::StreamerContext, writer_task::WriterError};
 
     use flv::parser_async::FlvDecoderStream;
     use futures::StreamExt;
     use std::path::Path;
+    use std::sync::mpsc;
     use tracing::{debug, info};
 
     // Helper to initialize tracing for tests
@@ -310,16 +311,35 @@ mod test {
         // Process the stream through the pipeline
         let processed_stream = pipeline.process(input_stream);
 
-        let mut writer_task = FlvWriterTask::new(output_dir, base_name).await?;
+        // Create a channel to bridge between async Stream and sync Receiver
+        let (tx, rx) = mpsc::sync_channel(16);
 
-        // Run the writer task, consuming the processed stream
-        writer_task.run(processed_stream).await?; // Propagate writer errors
+        // Spawn a task to forward items from the stream to the channel
+        let forward_task = tokio::spawn(async move {
+            futures::pin_mut!(processed_stream);
+            while let Some(result) = processed_stream.next().await {
+                if tx.send(result).is_err() {
+                    break; // Receiver dropped, exit the loop
+                }
+            }
+        });
 
+        // Run the writer task with the receiver
+        let writer_handle = tokio::task::spawn_blocking(move || {
+            let mut writer_task = FlvWriterTask::new(output_dir, base_name)?;
+
+            writer_task.run(rx)?;
+
+            Ok::<_, WriterError>((
+                writer_task.total_tags_written(),
+                writer_task.files_created(),
+            ))
+        });
+
+        // Ensure the forwarding task completes
+        forward_task.await?;
+        let (total_tags_written, files_created) = writer_handle.await??;
         let elapsed = start_time.elapsed();
-
-        // Get stats from the writer task for assertions
-        let total_tags_written = writer_task.total_tags_written();
-        let files_created = writer_task.files_created();
 
         info!(
             duration = ?elapsed,

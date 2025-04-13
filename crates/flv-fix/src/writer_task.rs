@@ -30,24 +30,21 @@
 //! - hua0512
 //!
 
+use crate::{
+    analyzer::FlvAnalyzer,
+    script_modifier::{self, ScriptModifierError},
+};
+use chrono::Local;
+use flv::error::FlvError;
+use flv::{data::FlvData, header::FlvHeader, writer::FlvWriter};
+use std::sync::mpsc::Receiver;
 use std::{
     error::Error,
     fs,
     io::{self},
     path::PathBuf,
 };
-use std::sync::mpsc::Receiver;
-use chrono::Local;
-use flv::{data::FlvData, header::FlvHeader, writer::FlvWriter};
-use tokio::task::spawn_blocking;
-use tokio_stream::StreamExt;
 use tracing::{debug, info};
-use flv::error::FlvError;
-use crate::{
-    analyzer::FlvAnalyzer,
-    pipeline::BoxStream,
-    script_modifier::{self, ScriptModifierError},
-};
 
 // Custom Error type (assuming WriterError is defined as before)
 #[derive(Debug, thiserror::Error)]
@@ -94,7 +91,7 @@ impl FlvWriterTask {
     /// Creates a new writer task and ensures the output directory exists (using spawn_blocking).
     pub fn new(output_dir: PathBuf, base_name: String) -> Result<Self, WriterError> {
         let dir_clone = output_dir.clone();
-        fs::create_dir_all(&dir_clone)?; // First ? handles JoinError, second ? handles io::Error
+        fs::create_dir_all(&dir_clone)?; // handles io::Error
 
         info!(path = %output_dir.display(), "Output directory ensured.");
 
@@ -114,7 +111,10 @@ impl FlvWriterTask {
     }
 
     /// Consumes the stream and writes FLV data to one or more files.
-    pub fn run(&mut self, receiver: Receiver<Result<FlvData, FlvError>>) -> Result<(), WriterError> {
+    pub fn run(
+        &mut self,
+        receiver: Receiver<Result<FlvData, FlvError>>,
+    ) -> Result<(), WriterError> {
         let mut error: Option<Box<dyn Error + Send + Sync>> = None;
 
         let mut _file_size = 0;
@@ -129,33 +129,32 @@ impl FlvWriterTask {
                     let data = tag.data.clone();
                     let timestamp_ms = tag.timestamp_ms;
 
-                        // Update non-blocking state immediately
-                        self.update_timestamps(timestamp_ms);
-                        self.total_tag_count += 1;
-                        self.current_file_tag_count += 1;
-                        let current_total_count = self.total_tag_count;
+                    // Update non-blocking state immediately
+                    self.update_timestamps(timestamp_ms);
+                    self.total_tag_count += 1;
+                    self.current_file_tag_count += 1;
+                    let current_total_count = self.total_tag_count;
 
-                        // Take ownership of the writer to move it into the blocking task
-                        let mut writer_opt = self.current_writer.take();
+                    // Take ownership of the writer to move it into the blocking task
+                    let mut writer_opt = self.current_writer.take();
 
-                        // Delegate the blocking write operation
-                        
-                        let write_result= match &mut writer_opt {
-                                Some(writer) => {
-                                    writer.write_tag(tag_type, data, timestamp_ms)?;
-                                    Ok(writer_opt) // Return the Option containing the writer
-                                }
-                                None => {
-                                    // This should ideally not happen if handle_header was called first
-                                    Err(WriterError::State(
-                                        "Attempted write_tag with no active writer",
-                                    ))
-                                }
-                            };
-                        
+                    // Delegate the blocking write operation
 
-                        // Place the writer back after the blocking operation completes
-                        self.current_writer = write_result?; // Handle io::Error/FlvError/WriterError::State
+                    let write_result = match &mut writer_opt {
+                        Some(writer) => {
+                            writer.write_tag(tag_type, data, timestamp_ms)?;
+                            Ok(writer_opt) // Return the Option containing the writer
+                        }
+                        None => {
+                            // This should ideally not happen if handle_header was called first
+                            Err(WriterError::State(
+                                "Attempted write_tag with no active writer",
+                            ))
+                        }
+                    };
+
+                    // Place the writer back after the blocking operation completes
+                    self.current_writer = write_result?; // Handle io::Error/FlvError/WriterError::State
 
                     let analyze_result = self.analyzer.analyze_tag(&tag);
                     match analyze_result {
@@ -195,7 +194,7 @@ impl FlvWriterTask {
             }
         }
 
-            self.close_current_writer()?;
+        self.close_current_writer()?;
 
         info!(
             total_tags_written = self.total_tag_count,
@@ -212,7 +211,7 @@ impl FlvWriterTask {
             });
         }
 
-            Ok(())
+        Ok(())
     }
 
     /// Updates timestamp tracking (non-blocking).
@@ -256,7 +255,7 @@ impl FlvWriterTask {
         info!(segment= %file_num, path = %output_path.display(), "Opening: ");
 
         // Perform blocking file creation and writer initialization
-        
+
         let output_file = std::fs::File::create(&output_path)?;
         let buffered_writer = std::io::BufWriter::with_capacity(1024 * 1024, output_file);
         let new_writer = FlvWriter::with_header(buffered_writer, &header_clone)?;
@@ -294,8 +293,7 @@ impl FlvWriterTask {
                 Ok(stats) => {
                     info!("Path : {}: {}", output_path.display(), stats);
                     // Modify the script data section by injecting stats
-                    match script_modifier::inject_stats_into_script_data(&output_path, stats)
-                    {
+                    match script_modifier::inject_stats_into_script_data(&output_path, stats) {
                         Ok(_) => {
                             debug!("Successfully injected stats into script data section.");
                         }

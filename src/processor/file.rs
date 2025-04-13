@@ -70,7 +70,7 @@ pub async fn process_file(
         input_stream
     };
 
-    let (sender, mut receiver) = mpsc::sync_channel::<Result<FlvData, FlvError>>(8);
+    let (sender, receiver) = mpsc::sync_channel::<Result<FlvData, FlvError>>(8);
     // Create writer task and run it
 
     let reader_handle = tokio::spawn(async move {
@@ -79,24 +79,23 @@ pub async fn process_file(
         }
     });
 
-
     let output_dir = output_dir.to_path_buf();
     // Create writer task and run it
     let writer_handle = tokio::task::spawn_blocking(|| {
         let mut writer_task = FlvWriterTask::new(output_dir, base_name)?;
-    
+
         writer_task.run(receiver)?;
-        
-        Ok::<_, WriterError>((writer_task.total_tags_written(), writer_task.files_created()))
+
+        Ok::<_, WriterError>((
+            writer_task.total_tags_written(),
+            writer_task.files_created(),
+        ))
     });
-    
-   
 
     reader_handle.await?;
     let (total_tags_written, files_created) = writer_handle.await??;
 
     let elapsed = start_time.elapsed();
-
 
     info!(
         path = %input_path.display(),

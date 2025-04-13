@@ -1,19 +1,13 @@
 use std::process::exit;
-use std::sync::mpsc;
 use std::{path::PathBuf, time::Duration};
 
 use clap::Parser;
-use flv::data::FlvData;
-use flv::error::FlvError;
 use flv_fix::operators::RepairStrategy;
 use flv_fix::operators::script_filler::ScriptFillerConfig;
-use flv_fix::pipeline::{BoxStream, FlvPipeline, PipelineConfig};
-use flv_fix::writer_task::{FlvWriterTask, WriterError};
-use tokio::fs::File;
-use tokio::io::BufReader;
+use flv_fix::pipeline::PipelineConfig;
+use siphon::{DownloaderConfig, ProxyAuth, ProxyConfig, ProxyType};
 use tracing::{Level, error, info};
 use tracing_subscriber::FmtSubscriber;
-use siphon::{DownloaderConfig, ProxyAuth, ProxyConfig, ProxyType};
 mod cli;
 mod processor;
 mod utils;
