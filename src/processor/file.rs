@@ -1,10 +1,12 @@
 use flv::data::FlvData;
+use flv::error::FlvError;
 use flv::parser_async::FlvDecoderStream;
 use flv_fix::context::StreamerContext;
 use flv_fix::pipeline::{BoxStream, FlvPipeline, PipelineConfig};
-use flv_fix::writer_task::FlvWriterTask;
+use flv_fix::writer_task::{FlvWriterTask, WriterError};
 use futures::StreamExt;
 use std::path::Path;
+use std::sync::mpsc;
 use tokio::fs::File;
 use tokio::io::BufReader;
 use tracing::info;
@@ -48,7 +50,7 @@ pub async fn process_file(
     // Create the input stream
     let input_stream: BoxStream<FlvData> = decoder_stream.boxed();
 
-    let processed_stream = if enable_processing {
+    let mut processed_stream = if enable_processing {
         // Processing mode: run through the processing pipeline
         info!(
             path = %input_path.display(),
@@ -68,13 +70,33 @@ pub async fn process_file(
         input_stream
     };
 
+    let (sender, mut receiver) = mpsc::sync_channel::<Result<FlvData, FlvError>>(8);
     // Create writer task and run it
-    let mut writer_task = FlvWriterTask::new(output_dir.to_path_buf(), base_name).await?;
-    writer_task.run(processed_stream).await?;
+
+    let reader_handle = tokio::spawn(async move {
+        while let Some(result) = processed_stream.next().await {
+            sender.send(result).unwrap();
+        }
+    });
+
+
+    let output_dir = output_dir.to_path_buf();
+    // Create writer task and run it
+    let writer_handle = tokio::task::spawn_blocking(|| {
+        let mut writer_task = FlvWriterTask::new(output_dir, base_name)?;
+    
+        writer_task.run(receiver)?;
+        
+        Ok::<_, WriterError>((writer_task.total_tags_written(), writer_task.files_created()))
+    });
+    
+   
+
+    reader_handle.await?;
+    let (total_tags_written, files_created) = writer_handle.await??;
 
     let elapsed = start_time.elapsed();
-    let total_tags_written = writer_task.total_tags_written();
-    let files_created = writer_task.files_created();
+
 
     info!(
         path = %input_path.display(),
