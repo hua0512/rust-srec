@@ -5,6 +5,7 @@ members = [
     "siphon-cli",
     "crates/flv",
     "crates/flv-fix",
+    "crates/hls",
     "crates/siphon",
     "crates/aac",
     "crates/bytes-util",
