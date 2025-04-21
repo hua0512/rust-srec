@@ -1,17 +1,17 @@
-//! # FLV Downloader
-//!
-//! This module implements efficient streaming download functionality for FLV resources.
-//! It uses reqwest to download data in chunks and pipes it directly to the FLV parser,
-//! minimizing memory usage and providing a seamless integration with the processing pipeline.
-
 use bytes::Bytes;
 use futures::Stream;
+use reqwest::Client;
 use reqwest::header::{HeaderMap, HeaderValue};
+use rustls::{ClientConfig, crypto::ring};
+use rustls_platform_verifier::BuilderVerifierExt;
 use std::pin::Pin;
+use std::sync::Arc;
 use std::time::Duration;
 use tokio::io::AsyncRead;
+use tracing::{debug, info};
 
 use crate::proxy::ProxyConfig;
+use crate::{DownloadError, proxy::build_proxy_from_config};
 
 const DEFAULT_USER_AGENT: &str = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36";
 
@@ -47,6 +47,9 @@ pub struct DownloaderConfig {
 
     /// Whether to use system proxy settings if available
     pub use_system_proxy: bool,
+
+    /// Maximum concurrent segment downloads for HLS streams
+    pub max_concurrent_hls_downloads: usize,
 }
 
 impl Default for DownloaderConfig {
@@ -62,6 +65,7 @@ impl Default for DownloaderConfig {
             headers: DownloaderConfig::get_default_headers(),
             proxy: None,
             use_system_proxy: true, // Enable system proxy by default
+            max_concurrent_hls_downloads: 4,
         }
     }
 }
@@ -89,6 +93,7 @@ impl DownloaderConfig {
             headers,
             proxy: config.proxy,
             use_system_proxy: config.use_system_proxy,
+            max_concurrent_hls_downloads: config.max_concurrent_hls_downloads, // Add here
         }
     }
 
@@ -121,6 +126,63 @@ impl DownloaderConfig {
         );
         default_headers
     }
+}
+
+/// Create a reqwest Client with the provided configuration
+pub fn create_client(config: &DownloaderConfig) -> Result<Client, DownloadError> {
+    // Create the crypto provider
+    let provider = Arc::new(ring::default_provider());
+
+    // Build platform default TLS configuration
+    let tls_config = ClientConfig::builder_with_provider(provider)
+        .with_safe_default_protocol_versions()
+        .expect("Failed to configure default TLS protocol versions")
+        .with_platform_verifier()
+        .with_no_client_auth();
+
+    let mut client_builder = Client::builder()
+        .pool_max_idle_per_host(5) // Allow multiple connections to same host
+        .user_agent(&config.user_agent)
+        .default_headers(config.headers.clone())
+        .use_preconfigured_tls(tls_config)
+        .redirect(if config.follow_redirects {
+            reqwest::redirect::Policy::limited(10)
+        } else {
+            reqwest::redirect::Policy::none()
+        });
+
+    if !config.timeout.is_zero() {
+        client_builder = client_builder.timeout(config.timeout);
+    }
+
+    if !config.connect_timeout.is_zero() {
+        client_builder = client_builder.connect_timeout(config.connect_timeout);
+    }
+
+    if !config.read_timeout.is_zero() {
+        client_builder = client_builder.pool_idle_timeout(config.read_timeout);
+    }
+
+    // Set up proxy configuration
+    if let Some(proxy_config) = &config.proxy {
+        // Explicit proxy configuration takes precedence
+        let proxy = match build_proxy_from_config(proxy_config) {
+            Ok(p) => p,
+            Err(e) => return Err(DownloadError::ProxyError(e)),
+        };
+        client_builder = client_builder.proxy(proxy);
+        info!(proxy_url = %proxy_config.url, "Using explicitly configured proxy for downloads");
+    } else if config.use_system_proxy {
+        // No explicit proxy but system proxy enabled
+        // reqwest will use system proxy settings by default when we don't call no_proxy()
+        info!("Using system proxy settings for downloads");
+    } else {
+        // Explicitly disable proxy
+        client_builder = client_builder.no_proxy();
+        debug!("Proxy disabled for downloads");
+    }
+
+    client_builder.build().map_err(DownloadError::from)
 }
 
 /// A reader adapter that wraps a bytes stream for AsyncRead compatibility
