@@ -1,0 +1,12 @@
+[package]
+name = "hls"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+bytes = "1.10.1"
+byteorder = "1.5"
+bytes-util = { path = "../bytes-util" }
+m3u8-rs = "6.0.0"
+thiserror = "1.0"
+reqwest = { version = "0.11", features = ["blocking", "json"] }
