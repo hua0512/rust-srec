@@ -3,35 +3,31 @@ use futures::{Stream, StreamExt};
 use m3u8_rs::{self, MediaPlaylist};
 use reqwest::{Client, Url};
 use std::{
-    // Change HashSet to HashMap
-    collections::HashMap,
+    collections::{HashSet, VecDeque}, // Import VecDeque
     pin::Pin,
     sync::{Arc, Mutex},
     time::Duration,
 };
 use tokio::{
-    sync::{mpsc, Semaphore},
+    sync::{Semaphore, mpsc},
     task::JoinSet,
     time,
 };
 use tokio_stream::wrappers::ReceiverStream;
-use tracing::{debug, info, trace, warn}; // Add trace
+use tracing::{debug, info, warn};
 
 use crate::{
+    DownloadError, DownloaderConfig,
     hls::{
         playlist_utils::{refresh_live_playlist, resolve_url},
         segment_processor::process_segment_download,
     },
-    DownloadError,
-    DownloaderConfig,
 };
 
 /// Type alias for a boxed stream of HLS playlist segments
 pub type SegmentStream = Pin<Box<dyn Stream<Item = Result<Bytes, DownloadError>> + Send>>;
 
-// Define a window size for pruning processed segments. Keep track of segments
-// within this many sequence numbers behind the current media sequence.
-const PROCESSED_SEGMENT_WINDOW: u64 = 100;
+const MAX_TRACKED_SEGMENTS: usize = 20; // Define the maximum number of segments to track
 
 /// Download media segments from a VOD (non-live) playlist
 pub(crate) async fn download_vod_playlist(
@@ -75,22 +71,26 @@ pub(crate) async fn download_vod_playlist(
     Ok(segment_stream)
 }
 
-/// Process new segments that haven't been downloaded yet, optimizing by sequence number,
-/// and prune old entries from the tracking map.
+/// Process new segments that haven't been downloaded yet, optimizing by sequence number.
 fn process_new_segments(
-    playlist: &MediaPlaylist,
-    // Change type to HashMap<String, u64>
-    processed_segments_map: &Arc<Mutex<HashMap<String, u64>>>,
-    last_processed_sequence: &mut Option<u64>,
+    playlist: &MediaPlaylist, // Pass the whole playlist to access media_sequence
+    processed_uris: &Arc<Mutex<HashSet<String>>>,
+    uri_order: &Arc<Mutex<VecDeque<String>>>, // Add queue to track order and limit size
+    last_processed_sequence: &mut Option<u64>, // Track the last processed sequence number
 ) -> Vec<m3u8_rs::MediaSegment> {
     // Handle potential mutex poisoning gracefully
-    let mut processed_map = processed_segments_map.lock().unwrap_or_else(|poisoned| {
-        warn!("Mutex was poisoned, recovering data");
+    let mut processed = processed_uris.lock().unwrap_or_else(|poisoned| {
+        warn!("Mutex was poisoned, recovering data (HashSet)");
         poisoned.into_inner()
     });
+    let mut order = uri_order.lock().unwrap_or_else(|poisoned| {
+        warn!("Mutex was poisoned, recovering data (VecDeque)");
+        poisoned.into_inner()
+    });
+
     let mut new_segments = Vec::new();
     let start_sequence = playlist.media_sequence;
-    let mut current_max_sequence = *last_processed_sequence;
+    let mut current_max_sequence = *last_processed_sequence; // Keep track of the max sequence in this batch
 
     for (i, segment) in playlist.segments.iter().enumerate() {
         let current_sequence = start_sequence + i as u64;
@@ -100,41 +100,29 @@ fn process_new_segments(
             last_processed_sequence.map_or(true, |last_seq| current_sequence > last_seq);
 
         // Only process if potentially new based on sequence and not already seen by URI
-        // Use contains_key for HashMap
-        if is_potentially_new && !processed_map.contains_key(&segment.uri) {
-            // Insert URI and its sequence number into the map
-            processed_map.insert(segment.uri.clone(), current_sequence);
+        if is_potentially_new && !processed.contains(&segment.uri) {
+            let uri_to_add = segment.uri.clone();
+            processed.insert(uri_to_add.clone());
+            order.push_back(uri_to_add); // Add to the back of the queue
+
+            // If the queue exceeds the limit, remove the oldest element from the front
+            if order.len() > MAX_TRACKED_SEGMENTS {
+                if let Some(oldest_uri) = order.pop_front() {
+                    processed.remove(&oldest_uri); // Remove from the set as well
+                }
+            }
+
             new_segments.push(segment.clone());
             // Update the maximum sequence number seen in this processing batch
             current_max_sequence = Some(
-                current_max_sequence.map_or(current_sequence, |max_seq| max_seq.max(current_sequence)),
+                current_max_sequence
+                    .map_or(current_sequence, |max_seq| max_seq.max(current_sequence)),
             );
         }
     }
 
     // Update the last processed sequence number for the next iteration
     *last_processed_sequence = current_max_sequence;
-
-    // Prune old entries from the map
-    if let Some(max_seq) = current_max_sequence {
-        // Determine the sequence number threshold for pruning
-        // Use saturating_sub to prevent underflow if max_seq is small
-        let prune_threshold_sequence = max_seq.saturating_sub(PROCESSED_SEGMENT_WINDOW);
-        let initial_size = processed_map.len();
-
-        // Retain only entries with sequence number >= threshold
-        processed_map.retain(|_uri, &seq| seq >= prune_threshold_sequence);
-
-        let removed_count = initial_size.saturating_sub(processed_map.len());
-        if removed_count > 0 {
-            trace!(
-                removed = removed_count,
-                current_size = processed_map.len(),
-                threshold = prune_threshold_sequence,
-                "Pruned old entries from processed segments map"
-            );
-        }
-    }
 
     new_segments
 }
@@ -155,8 +143,13 @@ pub(crate) async fn download_live_playlist(
     // Use a Tokio channel
     let (tx, rx) = mpsc::channel(16);
 
-    // Change type to HashMap<String, u64>
-    let processed_segments = Arc::new(Mutex::new(HashMap::new()));
+    // Track segments we've already processed by their URIs (for fast lookup)
+    let processed_segments = Arc::new(Mutex::new(HashSet::new()));
+    // Track the order of processed segments to limit history
+    let segment_order = Arc::new(Mutex::new(VecDeque::with_capacity(
+        MAX_TRACKED_SEGMENTS + 1,
+    )));
+    // Track the last processed media sequence number
     let last_processed_sequence: Option<u64> = None; // Initialize here
 
     // Calculate refresh interval based on target duration
@@ -178,7 +171,8 @@ pub(crate) async fn download_live_playlist(
 
     // Spawn a task that continuously polls for playlist updates
     tokio::spawn({
-        let processed_segments = processed_segments.clone(); // Clone the Arc<Mutex<HashMap>>
+        let processed_segments = processed_segments.clone();
+        let segment_order = segment_order.clone(); // Clone the order queue Arc
         let client = client.clone();
         let semaphore = semaphore.clone();
         let tx = tx.clone();
@@ -198,10 +192,11 @@ pub(crate) async fn download_live_playlist(
             const MAX_RETRIES: usize = 5;
 
             loop {
-                // Process new segments using the HashMap
+                // Process new segments from the current playlist using sequence number optimization
                 let new_segments = process_new_segments(
                     &current_playlist, // Pass the whole playlist
-                    &processed_segments, // Pass the HashMap Arc
+                    &processed_segments,
+                    &segment_order,               // Pass the order queue
                     &mut last_processed_sequence, // Pass mutable reference
                 );
 
@@ -291,10 +286,14 @@ pub(crate) async fn download_live_playlist(
                                 "Failed to refresh playlist {} after {} retries: {}",
                                 playlist_url, MAX_RETRIES, e
                             );
-                            if tx.send(Err(DownloadError::IoError(std::io::Error::new(
-                                std::io::ErrorKind::Other,
-                                err_msg,
-                            )))).await.is_err() {
+                            if tx
+                                .send(Err(DownloadError::IoError(std::io::Error::new(
+                                    std::io::ErrorKind::Other,
+                                    err_msg,
+                                ))))
+                                .await
+                                .is_err()
+                            {
                                 warn!("Receiver closed before final error could be sent.");
                             }
                             break;
