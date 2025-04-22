@@ -6,6 +6,7 @@ members = [
     "crates/flv",
     "crates/flv-fix",
     "crates/hls",
+    "crates/hls-fix",
     "crates/siphon",
     "crates/aac",
     "crates/bytes-util",

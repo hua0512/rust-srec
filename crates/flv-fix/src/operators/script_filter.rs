@@ -28,14 +28,11 @@
 //! - hua0512
 //!
 
-use crate::context::StreamerContext;
 use flv::data::FlvData;
-use flv::error::FlvError;
 use flv::tag::FlvTagType;
+use pipeline_common::{PipelineError, Processor, StreamerContext};
 use std::sync::Arc;
 use tracing::{debug, info};
-
-use super::FlvProcessor;
 
 /// Operator that filters out script data tags except for the first one
 pub struct ScriptFilterOperator {
@@ -61,12 +58,12 @@ impl ScriptFilterOperator {
     }
 }
 
-impl FlvProcessor for ScriptFilterOperator {
+impl Processor<FlvData> for ScriptFilterOperator {
     fn process(
         &mut self,
         input: FlvData,
-        output: &mut dyn FnMut(FlvData) -> Result<(), FlvError>,
-    ) -> Result<(), FlvError> {
+        output: &mut dyn FnMut(FlvData) -> Result<(), PipelineError>,
+    ) -> Result<(), PipelineError> {
         match input {
             FlvData::Header(_) => {
                 debug!("{} Resetting script tag filter state", self.context.name);
@@ -97,8 +94,8 @@ impl FlvProcessor for ScriptFilterOperator {
 
     fn finish(
         &mut self,
-        _output: &mut dyn FnMut(FlvData) -> Result<(), FlvError>,
-    ) -> Result<(), FlvError> {
+        _output: &mut dyn FnMut(FlvData) -> Result<(), PipelineError>,
+    ) -> Result<(), PipelineError> {
         if self.script_tag_count > 1 {
             info!(
                 "{} Filtered out {} excess script tags",
@@ -128,7 +125,7 @@ mod tests {
         let mut output_items = Vec::new();
 
         // Create a mutable output function
-        let mut output_fn = |item: FlvData| -> Result<(), FlvError> {
+        let mut output_fn = |item: FlvData| -> Result<(), PipelineError> {
             output_items.push(item);
             Ok(())
         };
@@ -207,7 +204,7 @@ mod tests {
         let mut output_items = Vec::new();
 
         // Create a mutable output function
-        let mut output_fn = |item: FlvData| -> Result<(), FlvError> {
+        let mut output_fn = |item: FlvData| -> Result<(), PipelineError> {
             output_items.push(item);
             Ok(())
         };
