@@ -132,6 +132,7 @@ impl Processor<HlsData> for SegmentLimiterOperator {
             // Always include EndPlaylist markers
             HlsData::EndPlaylist() => {
                 output(HlsData::EndPlaylist())?;
+                self.reset_counters();
             }
         }
 
