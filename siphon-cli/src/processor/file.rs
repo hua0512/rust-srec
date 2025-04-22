@@ -1,11 +1,12 @@
 use flv::data::FlvData;
 use flv::error::FlvError;
 use flv::parser_async::FlvDecoderStream;
-use flv_fix::context::StreamerContext;
+use flv_fix::flv_error_to_pipeline_error;
 use flv_fix::pipeline::FlvPipeline;
 use flv_fix::writer_task::{FlvWriterTask, WriterError};
 use futures::StreamExt;
 use indicatif::HumanBytes;
+use pipeline_common::{PipelineError, StreamerContext};
 use std::path::Path;
 use tokio::fs::File;
 use tokio::io::BufReader;
@@ -86,16 +87,29 @@ pub async fn process_file(
             std::sync::mpsc::sync_channel::<Result<FlvData, FlvError>>(config.channel_size);
 
         process_task = Some(tokio::task::spawn_blocking(move || {
-            let pipeline = pipeline.process();
+            let pipeline = pipeline.build_pipeline();
 
             let input = std::iter::from_fn(|| {
                 // Read from the receiver channel
-                receiver.recv().map(Some).unwrap_or(None)
+                receiver
+                    .recv()
+                    .map(|result| result.map_err(flv_error_to_pipeline_error))
+                    .map(Some)
+                    .unwrap_or(None)
             });
 
-            let mut output = |result: Result<FlvData, FlvError>| {
-                // Send the processed result to the output channel
-                output_tx.send(result).unwrap();
+            let mut output = |result: Result<FlvData, PipelineError>| {
+                // Convert PipelineError back to FlvError for output
+                let flv_result = result.map_err(|e| {
+                    FlvError::Io(std::io::Error::new(
+                        std::io::ErrorKind::Other,
+                        format!("Pipeline error: {}", e),
+                    ))
+                });
+
+                if output_tx.send(flv_result).is_err() {
+                    tracing::warn!("Output channel closed, stopping processing");
+                }
             };
             pipeline.process(input, &mut output).unwrap();
         }));

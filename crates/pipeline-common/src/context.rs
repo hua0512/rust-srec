@@ -8,7 +8,7 @@ use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
-/// Statistics collected during FLV stream processing
+/// Statistics collected during stream processing
 ///
 /// Tracks various metrics about the processed stream including tag counts,
 /// fragmentation information, file characteristics, and codec details.
@@ -34,30 +34,6 @@ pub struct Statistics {
     pub audio_codec: Option<String>,
 }
 
-/// Configuration for FLV stream processing
-///
-/// Controls various aspects of the processing pipeline behavior including
-/// fragmentation handling and validation requirements.
-#[derive(Debug)]
-pub struct ProcessingConfig {
-    /// Minimum size for considering a segment as a fragment (in tags)
-    pub min_fragment_size: usize,
-    /// Whether keyframes are required for valid segments
-    pub require_keyframe: bool,
-    /// Whether to allow processing files with missing/empty headers
-    pub allow_empty_header: bool,
-}
-
-impl Default for ProcessingConfig {
-    fn default() -> Self {
-        Self {
-            min_fragment_size: 10,
-            require_keyframe: true,
-            allow_empty_header: false,
-        }
-    }
-}
-
 /// Shared context for FLV stream processing operations
 ///
 /// Provides a common context shared across the processing pipeline including
@@ -69,8 +45,6 @@ pub struct StreamerContext {
     pub name: String,
     /// Runtime statistics about the processing operation
     pub statistics: Arc<Mutex<Statistics>>,
-    /// Processing configuration options
-    pub config: ProcessingConfig,
     /// Additional metadata properties
     pub metadata: Arc<Mutex<HashMap<String, String>>>,
 }
@@ -79,22 +53,27 @@ impl StreamerContext {
     /// Create a new StreamerContext with the specified configuration
     ///
     /// # Arguments
-    /// * `config` - The processing configuration to use
     ///
     /// # Returns
     /// A new StreamerContext with the given configuration and default values for other fields
-    pub fn new(config: ProcessingConfig) -> Self {
+    pub fn new() -> Self {
         Self {
             name: "DefaultStreamer".to_string(),
             statistics: Arc::new(Mutex::new(Statistics::default())),
-            config,
             metadata: Arc::new(Mutex::new(HashMap::new())),
+        }
+    }
+
+    pub fn with_name(name: impl Into<String>) -> Self {
+        Self {
+            name: name.into(),
+            ..Self::new()
         }
     }
 }
 
 impl Default for StreamerContext {
     fn default() -> Self {
-        Self::new(ProcessingConfig::default())
+        Self::new()
     }
 }

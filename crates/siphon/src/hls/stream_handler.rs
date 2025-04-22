@@ -1,9 +1,8 @@
-use bytes::Bytes;
 use futures::{Stream, StreamExt};
 use m3u8_rs::{self, MediaPlaylist};
 use reqwest::{Client, Url};
 use std::{
-    collections::{HashSet, VecDeque}, // Import VecDeque
+    collections::{HashSet, VecDeque},
     pin::Pin,
     sync::{Arc, Mutex},
     time::Duration,
@@ -21,11 +20,14 @@ use crate::{
     hls::{
         playlist_utils::{refresh_live_playlist, resolve_url},
         segment_processor::process_segment_download,
+        segment_utils::create_hls_data,
     },
 };
 
+use hls::segment::HlsData;
+
 /// Type alias for a boxed stream of HLS playlist segments
-pub type SegmentStream = Pin<Box<dyn Stream<Item = Result<Bytes, DownloadError>> + Send>>;
+pub type SegmentStream = Pin<Box<dyn Stream<Item = Result<HlsData, DownloadError>> + Send>>;
 
 const MAX_TRACKED_SEGMENTS: usize = 20; // Define the maximum number of segments to track
 
@@ -48,6 +50,7 @@ pub(crate) async fn download_vod_playlist(
             let client = client.clone();
             let base_clone = base.clone(); // Clone base for the async block
             let segment_uri = segment.uri.clone(); // Clone URI for logging
+            let segment_clone = segment.clone(); // Clone segment for creating the HLS data
 
             async move {
                 let segment_url = match resolve_url(&segment_uri, &base_clone) {
@@ -56,16 +59,22 @@ pub(crate) async fn download_vod_playlist(
                 };
 
                 debug!(index = i, url = %segment_url, "Downloading HLS segment (VOD)");
-                // Directly download the segment for VOD, no complex retry/channel logic needed here
-                // as buffering handles concurrency.
+
+                // Download the segment
                 let response = client.get(segment_url.clone()).send().await?;
                 if !response.status().is_success() {
                     return Err(DownloadError::StatusCode(response.status()));
                 }
-                response.bytes().await.map_err(DownloadError::from)
+
+                let data = response.bytes().await?;
+
+                // Create the appropriate HlsData type
+                let hls_data = create_hls_data(segment_clone, data, &segment_url);
+
+                Ok(hls_data)
             }
         })
-        .buffered(max_concurrent) // Use value from config
+        .buffered(max_concurrent)
         .boxed();
 
     Ok(segment_stream)
@@ -73,10 +82,10 @@ pub(crate) async fn download_vod_playlist(
 
 /// Process new segments that haven't been downloaded yet, optimizing by sequence number.
 fn process_new_segments(
-    playlist: &MediaPlaylist, // Pass the whole playlist to access media_sequence
+    playlist: &MediaPlaylist,
     processed_uris: &Arc<Mutex<HashSet<String>>>,
-    uri_order: &Arc<Mutex<VecDeque<String>>>, // Add queue to track order and limit size
-    last_processed_sequence: &mut Option<u64>, // Track the last processed sequence number
+    uri_order: &Arc<Mutex<VecDeque<String>>>,
+    last_processed_sequence: &mut Option<u64>,
 ) -> Vec<m3u8_rs::MediaSegment> {
     // Handle potential mutex poisoning gracefully
     let mut processed = processed_uris.lock().unwrap_or_else(|poisoned| {
@@ -97,7 +106,7 @@ fn process_new_segments(
 
         // Check if the sequence number is potentially new
         let is_potentially_new =
-            last_processed_sequence.map_or(true, |last_seq| current_sequence > last_seq);
+            last_processed_sequence.is_none_or(|last_seq| current_sequence > last_seq);
 
         // Only process if potentially new based on sequence and not already seen by URI
         if is_potentially_new && !processed.contains(&segment.uri) {
@@ -138,9 +147,8 @@ pub(crate) async fn download_live_playlist(
     let client = client.clone();
     let base_url = base_url.clone();
     let playlist_url = playlist_url.clone(); // Clone the specific playlist URL for refreshing
-    let max_concurrent = config.max_concurrent_hls_downloads; // Get value from config
+    let max_concurrent = config.max_concurrent_hls_downloads;
 
-    // Use a Tokio channel
     let (tx, rx) = mpsc::channel(16);
 
     // Track segments we've already processed by their URIs (for fast lookup)
@@ -150,29 +158,28 @@ pub(crate) async fn download_live_playlist(
         MAX_TRACKED_SEGMENTS + 1,
     )));
     // Track the last processed media sequence number
-    let last_processed_sequence: Option<u64> = None; // Initialize here
+    let last_processed_sequence: Option<u64> = None;
 
     // Calculate refresh interval based on target duration
     // Refresh every half target duration, but at least every 1 second.
-    let refresh_interval = Duration::from_secs_f64(
-        (initial_playlist.target_duration as f64 / 2.0).max(1.0), // Use f64 division and min 1.0 sec
-    );
+    let refresh_interval =
+        Duration::from_secs_f64((initial_playlist.target_duration as f64 / 2.0).max(1.0));
 
-    // Create a semaphore to limit the number of concurrent segment downloads
-    let semaphore = Arc::new(Semaphore::new(max_concurrent)); // Use value from config
+    // Semaphore to limit the number of concurrent segment downloads
+    let semaphore = Arc::new(Semaphore::new(max_concurrent));
 
     info!(
-        refresh_interval_secs = refresh_interval.as_secs_f64(), // Log f64 value
+        refresh_interval_secs = refresh_interval.as_secs_f64(),
         playlist_url = %playlist_url,
         base_url = %base_url,
-        max_concurrent_downloads = max_concurrent, // Log the configured value
+        max_concurrent_downloads = max_concurrent,
         "Starting live HLS stream with periodic refresh"
     );
 
     // Spawn a task that continuously polls for playlist updates
     tokio::spawn({
         let processed_segments = processed_segments.clone();
-        let segment_order = segment_order.clone(); // Clone the order queue Arc
+        let segment_order = segment_order.clone();
         let client = client.clone();
         let semaphore = semaphore.clone();
         let tx = tx.clone();
@@ -182,7 +189,7 @@ pub(crate) async fn download_live_playlist(
         let base_url = base_url.clone();
         let playlist_url = playlist_url.clone();
         // Move last_processed_sequence into the task
-        let mut last_processed_sequence = last_processed_sequence; // Shadowing outer variable, this one is mutable
+        let mut last_processed_sequence = last_processed_sequence;
 
         async move {
             let mut current_playlist = initial_playlist;
@@ -215,10 +222,11 @@ pub(crate) async fn download_live_playlist(
                     let tx = tx.clone();
                     let permit_semaphore = semaphore.clone();
 
-                    // Add task to the JoinSet using the function from segment_processor
+                    // Add task to the JoinSet
                     segment_tasks.spawn(process_segment_download(
                         client,
                         segment_url,
+                        segment.clone(),
                         tx,
                         permit_semaphore,
                     ));

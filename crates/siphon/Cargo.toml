@@ -32,6 +32,7 @@ tracing-subscriber = "0.3"
 # Workspace crates
 flv = { path = "../flv" }
 flv-fix = { path = "../flv-fix" }
-
+hls = { path = "../hls" }
+hls-fix = { path = "../hls-fix" }
 
 # [dev-dependencies]

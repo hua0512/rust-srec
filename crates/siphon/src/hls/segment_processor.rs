@@ -7,7 +7,9 @@ use tokio::{
 };
 use tracing::{debug, warn};
 
-use crate::DownloadError;
+use crate::{DownloadError, hls::segment_utils::create_hls_data};
+use hls::segment::HlsData;
+use m3u8_rs::MediaSegment;
 
 /// Helper function to download a single segment
 async fn download_segment(client: &Client, segment_url: Url) -> Result<Bytes, DownloadError> {
@@ -20,9 +22,7 @@ async fn download_segment(client: &Client, segment_url: Url) -> Result<Bytes, Do
     }
 
     // Get the segment data directly as Bytes
-    let data = response.bytes().await?;
-
-    Ok(data)
+    response.bytes().await.map_err(Into::into)
 }
 
 /// Process the download of a single segment with retries and semaphore management.
@@ -30,7 +30,8 @@ async fn download_segment(client: &Client, segment_url: Url) -> Result<Bytes, Do
 pub(crate) async fn process_segment_download(
     client: Client,
     segment_url: Url,
-    tx: Sender<Result<Bytes, DownloadError>>,
+    segment: MediaSegment,
+    tx: Sender<Result<HlsData, DownloadError>>,
     permit_semaphore: std::sync::Arc<Semaphore>,
 ) -> (Url, Result<(), ()>) {
     let mut retries = 0;
@@ -51,7 +52,10 @@ pub(crate) async fn process_segment_download(
         match download_segment(&client, segment_url.clone()).await {
             Ok(data) => {
                 debug!(url = %segment_url, bytes = data.len(), "Segment downloaded successfully");
-                if tx.send(Ok(data)).await.is_err() {
+
+                let hls_data = create_hls_data(segment.clone(), data, &segment_url);
+
+                if tx.send(Ok(hls_data)).await.is_err() {
                     warn!(url = %segment_url, "Failed to send segment data: receiver closed");
                     // Drop the permit when returning
                     drop(permit);
