@@ -1764,7 +1764,7 @@ dependencies = [
  "reqwest",
  "rustls",
  "rustls-platform-verifier",
- "thiserror 1.0.69",
+ "thiserror 2.0.12",
  "tokio",
  "tracing",
  "tracing-subscriber",
