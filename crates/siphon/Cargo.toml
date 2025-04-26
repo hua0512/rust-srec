@@ -21,7 +21,7 @@ rustls = { version = "0.23", default-features = false, features = [
 rustls-platform-verifier = "0.5.1"
 url = "2.4"
 async-stream = "0.3"
-thiserror = "1.0"
+thiserror = "2.0"
 
 # Logging
 tracing = "0.1"
