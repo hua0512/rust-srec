@@ -33,13 +33,10 @@
 //!
 //! - hua0512
 //!
-use crate::context::StreamerContext;
 use flv::data::FlvData;
-use flv::error::FlvError;
+use pipeline_common::{PipelineError, Processor, StreamerContext};
 use std::sync::Arc;
 use tracing::{debug, warn};
-
-use super::FlvProcessor;
 
 /// An operator that buffers and validates FLV stream fragments to ensure continuity and validity.
 ///
@@ -95,8 +92,8 @@ impl DefragmentOperator {
     // Emit all buffered items and reset the buffer
     fn emit_buffer(
         &mut self,
-        output: &mut dyn FnMut(FlvData) -> Result<(), FlvError>,
-    ) -> Result<(), FlvError> {
+        output: &mut dyn FnMut(FlvData) -> Result<(), PipelineError>,
+    ) -> Result<(), PipelineError> {
         debug!(
             "{} Gathered {} items, total size: {}",
             self.context.name,
@@ -119,12 +116,12 @@ impl DefragmentOperator {
     }
 }
 
-impl FlvProcessor for DefragmentOperator {
+impl Processor<FlvData> for DefragmentOperator {
     fn process(
         &mut self,
         input: FlvData,
-        output: &mut dyn FnMut(FlvData) -> Result<(), FlvError>,
-    ) -> Result<(), FlvError> {
+        output: &mut dyn FnMut(FlvData) -> Result<(), PipelineError>,
+    ) -> Result<(), PipelineError> {
         // Handle new header detection
         if input.is_header() {
             self.handle_new_header();
@@ -147,8 +144,8 @@ impl FlvProcessor for DefragmentOperator {
 
     fn finish(
         &mut self,
-        output: &mut dyn FnMut(FlvData) -> Result<(), FlvError>,
-    ) -> Result<(), FlvError> {
+        output: &mut dyn FnMut(FlvData) -> Result<(), PipelineError>,
+    ) -> Result<(), PipelineError> {
         // Handle remaining data at end of stream
         if !self.buffer.is_empty() {
             if self.buffer.len() >= Self::MIN_TAGS_NUM {
@@ -182,7 +179,7 @@ mod tests {
         let mut output_items = Vec::new();
 
         // Create a mutable output function
-        let mut output_fn = |item: FlvData| -> Result<(), FlvError> {
+        let mut output_fn = |item: FlvData| -> Result<(), PipelineError> {
             output_items.push(item);
             Ok(())
         };
@@ -211,7 +208,7 @@ mod tests {
         let mut output_items = Vec::new();
 
         // Create a mutable output function
-        let mut output_fn = |item: FlvData| -> Result<(), FlvError> {
+        let mut output_fn = |item: FlvData| -> Result<(), PipelineError> {
             output_items.push(item);
             Ok(())
         };
@@ -255,7 +252,7 @@ mod tests {
         let mut output_items = Vec::new();
 
         // Create a mutable output function
-        let mut output_fn = |item: FlvData| -> Result<(), FlvError> {
+        let mut output_fn = |item: FlvData| -> Result<(), PipelineError> {
             output_items.push(item);
             Ok(())
         };
@@ -284,7 +281,7 @@ mod tests {
         let mut output_items = Vec::new();
 
         // Create a mutable output function
-        let mut output_fn = |item: FlvData| -> Result<(), FlvError> {
+        let mut output_fn = |item: FlvData| -> Result<(), PipelineError> {
             output_items.push(item);
             Ok(())
         };

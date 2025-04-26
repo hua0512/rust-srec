@@ -27,11 +27,9 @@
 //!
 //! - hua0512
 //!
-use crate::context::StreamerContext;
-use crate::operators::FlvProcessor;
 use flv::data::FlvData;
-use flv::error::FlvError;
 use flv::tag::{FlvTag, FlvUtil};
+use pipeline_common::{PipelineError, Processor, StreamerContext};
 use std::sync::Arc;
 use tracing::{debug, info, trace};
 
@@ -56,8 +54,8 @@ impl GopSortOperator {
     /// This follows the Kotlin implementation's sorting logic
     fn push_tags(
         &mut self,
-        output: &mut dyn FnMut(FlvData) -> Result<(), FlvError>,
-    ) -> Result<(), FlvError> {
+        output: &mut dyn FnMut(FlvData) -> Result<(), PipelineError>,
+    ) -> Result<(), PipelineError> {
         if self.gop_tags.is_empty() {
             return Ok(());
         }
@@ -191,12 +189,12 @@ impl GopSortOperator {
     }
 }
 
-impl FlvProcessor for GopSortOperator {
+impl Processor<FlvData> for GopSortOperator {
     fn process(
         &mut self,
         input: FlvData,
-        output: &mut dyn FnMut(FlvData) -> Result<(), FlvError>,
-    ) -> Result<(), FlvError> {
+        output: &mut dyn FnMut(FlvData) -> Result<(), PipelineError>,
+    ) -> Result<(), PipelineError> {
         match input {
             FlvData::Header(_) | FlvData::EndOfSequence(_) => {
                 // Process any buffered tags first
@@ -228,8 +226,8 @@ impl FlvProcessor for GopSortOperator {
 
     fn finish(
         &mut self,
-        output: &mut dyn FnMut(FlvData) -> Result<(), FlvError>,
-    ) -> Result<(), FlvError> {
+        output: &mut dyn FnMut(FlvData) -> Result<(), PipelineError>,
+    ) -> Result<(), PipelineError> {
         // Process any remaining buffered tags at end of stream
         self.push_tags(output)?;
         info!("{} GOP sort completed", self.context.name);
@@ -257,7 +255,7 @@ mod tests {
         let mut output_items = Vec::new();
 
         // Create a mutable output function
-        let mut output_fn = |item: FlvData| -> Result<(), FlvError> {
+        let mut output_fn = |item: FlvData| -> Result<(), PipelineError> {
             output_items.push(item);
             Ok(())
         };
@@ -325,7 +323,7 @@ mod tests {
         let mut output_items = Vec::new();
 
         // Create a mutable output function
-        let mut output_fn = |item: FlvData| -> Result<(), FlvError> {
+        let mut output_fn = |item: FlvData| -> Result<(), PipelineError> {
             output_items.push(item);
             Ok(())
         };
@@ -402,7 +400,7 @@ mod tests {
         let mut output_items = Vec::new();
 
         // Create a mutable output function
-        let mut output_fn = |item: FlvData| -> Result<(), FlvError> {
+        let mut output_fn = |item: FlvData| -> Result<(), PipelineError> {
             output_items.push(item);
             Ok(())
         };

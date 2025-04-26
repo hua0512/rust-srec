@@ -32,16 +32,13 @@
 //! - hua0512
 //!
 
-use crate::context::StreamerContext;
 use flv::data::FlvData;
-use flv::error::FlvError;
 use flv::header::FlvHeader;
 use flv::tag::{FlvTag, FlvUtil};
+use pipeline_common::{PipelineError, Processor, StreamerContext};
 use std::sync::Arc;
 use std::time::Instant;
 use tracing::{debug, info};
-
-use super::FlvProcessor;
 
 /// Reason for a stream split
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -206,8 +203,8 @@ impl LimitOperator {
 
     fn split_stream(
         &mut self,
-        output: &mut dyn FnMut(FlvData) -> Result<(), FlvError>,
-    ) -> Result<(), FlvError> {
+        output: &mut dyn FnMut(FlvData) -> Result<(), PipelineError>,
+    ) -> Result<(), PipelineError> {
         info!(
             "{} Splitting stream at size={} bytes, duration={}ms (segment #{})",
             self.context.name,
@@ -247,12 +244,12 @@ impl LimitOperator {
     }
 }
 
-impl FlvProcessor for LimitOperator {
+impl Processor<FlvData> for LimitOperator {
     fn process(
         &mut self,
         input: FlvData,
-        output: &mut dyn FnMut(FlvData) -> Result<(), FlvError>,
-    ) -> Result<(), FlvError> {
+        output: &mut dyn FnMut(FlvData) -> Result<(), PipelineError>,
+    ) -> Result<(), PipelineError> {
         match input {
             FlvData::Header(header) => {
                 // Reset state for a new stream
@@ -360,8 +357,8 @@ impl FlvProcessor for LimitOperator {
 
     fn finish(
         &mut self,
-        _output: &mut dyn FnMut(FlvData) -> Result<(), FlvError>,
-    ) -> Result<(), FlvError> {
+        _output: &mut dyn FnMut(FlvData) -> Result<(), PipelineError>,
+    ) -> Result<(), PipelineError> {
         debug!("{} completed.", self.context.name);
         Ok(())
     }
@@ -401,7 +398,7 @@ mod tests {
         let mut output_items = Vec::new();
 
         // Create a mutable output function
-        let mut output_fn = |item: FlvData| -> Result<(), FlvError> {
+        let mut output_fn = |item: FlvData| -> Result<(), PipelineError> {
             output_items.push(item);
             Ok(())
         };
@@ -499,7 +496,7 @@ mod tests {
         let mut output_items = Vec::new();
 
         // Create a mutable output function
-        let mut output_fn = |item: FlvData| -> Result<(), FlvError> {
+        let mut output_fn = |item: FlvData| -> Result<(), PipelineError> {
             output_items.push(item);
             Ok(())
         };
@@ -582,7 +579,7 @@ mod tests {
         let mut output_items = Vec::new();
 
         // Create a mutable output function
-        let mut output_fn = |item: FlvData| -> Result<(), FlvError> {
+        let mut output_fn = |item: FlvData| -> Result<(), PipelineError> {
             output_items.push(item);
             Ok(())
         };
@@ -653,7 +650,7 @@ mod tests {
         let mut output_items = Vec::new();
 
         // Create a mutable output function
-        let mut output_fn = |item: FlvData| -> Result<(), FlvError> {
+        let mut output_fn = |item: FlvData| -> Result<(), PipelineError> {
             output_items.push(item);
             Ok(())
         };
@@ -741,7 +738,7 @@ mod tests {
         let mut output_items = Vec::new();
 
         // Create a mutable output function
-        let mut output_fn = |item: FlvData| -> Result<(), FlvError> {
+        let mut output_fn = |item: FlvData| -> Result<(), PipelineError> {
             output_items.push(item);
             Ok(())
         };
@@ -866,7 +863,7 @@ mod tests {
         let mut output_items = Vec::new();
 
         // Create a mutable output function
-        let mut output_fn = |item: FlvData| -> Result<(), FlvError> {
+        let mut output_fn = |item: FlvData| -> Result<(), PipelineError> {
             output_items.push(item);
             Ok(())
         };
@@ -920,7 +917,7 @@ mod tests {
         let mut output_items = Vec::new();
 
         // Create a mutable output function
-        let mut output_fn = |item: FlvData| -> Result<(), FlvError> {
+        let mut output_fn = |item: FlvData| -> Result<(), PipelineError> {
             output_items.push(item);
             Ok(())
         };

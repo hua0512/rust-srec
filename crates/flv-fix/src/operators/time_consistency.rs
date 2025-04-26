@@ -48,11 +48,9 @@
 //! - hua0512
 //!
 
-use crate::context::StreamerContext;
-use crate::operators::FlvProcessor;
 use flv::data::FlvData;
-use flv::error::FlvError;
 use flv::tag::FlvUtil;
+use pipeline_common::{PipelineError, Processor, StreamerContext};
 use std::cmp::max;
 use std::sync::Arc;
 use tracing::{debug, trace};
@@ -161,12 +159,12 @@ impl TimeConsistencyOperator {
     }
 }
 
-impl FlvProcessor for TimeConsistencyOperator {
+impl Processor<FlvData> for TimeConsistencyOperator {
     fn process(
         &mut self,
         input: FlvData,
-        output: &mut dyn FnMut(FlvData) -> Result<(), FlvError>,
-    ) -> Result<(), FlvError> {
+        output: &mut dyn FnMut(FlvData) -> Result<(), PipelineError>,
+    ) -> Result<(), PipelineError> {
         match input {
             FlvData::Header(_) => {
                 // Headers indicate stream splits (except the first one)
@@ -260,8 +258,8 @@ impl FlvProcessor for TimeConsistencyOperator {
 
     fn finish(
         &mut self,
-        _output: &mut dyn FnMut(FlvData) -> Result<(), FlvError>,
-    ) -> Result<(), FlvError> {
+        _output: &mut dyn FnMut(FlvData) -> Result<(), PipelineError>,
+    ) -> Result<(), PipelineError> {
         debug!("{} Time consistency operator completed", self.context.name);
         Ok(())
     }
@@ -286,7 +284,7 @@ mod tests {
         let mut output_items = Vec::new();
 
         // Create a mutable output function
-        let mut output_fn = |item: FlvData| -> Result<(), FlvError> {
+        let mut output_fn = |item: FlvData| -> Result<(), PipelineError> {
             output_items.push(item);
             Ok(())
         };
@@ -337,7 +335,7 @@ mod tests {
         let mut output_items = Vec::new();
 
         // Create a mutable output function
-        let mut output_fn = |item: FlvData| -> Result<(), FlvError> {
+        let mut output_fn = |item: FlvData| -> Result<(), PipelineError> {
             output_items.push(item);
             Ok(())
         };
@@ -396,7 +394,7 @@ mod tests {
         let mut output_items = Vec::new();
 
         // Create a mutable output function
-        let mut output_fn = |item: FlvData| -> Result<(), FlvError> {
+        let mut output_fn = |item: FlvData| -> Result<(), PipelineError> {
             output_items.push(item);
             Ok(())
         };
@@ -460,7 +458,7 @@ mod tests {
         let mut output_items = Vec::new();
 
         // Create a mutable output function
-        let mut output_fn = |item: FlvData| -> Result<(), FlvError> {
+        let mut output_fn = |item: FlvData| -> Result<(), PipelineError> {
             output_items.push(item);
             Ok(())
         };
@@ -537,7 +535,7 @@ mod tests {
                 TimeConsistencyOperator::new(context.clone(), ContinuityMode::Continuous);
             let mut output_items = Vec::new();
 
-            let mut output_fn = |item: FlvData| -> Result<(), FlvError> {
+            let mut output_fn = |item: FlvData| -> Result<(), PipelineError> {
                 output_items.push(item);
                 Ok(())
             };
@@ -615,7 +613,7 @@ mod tests {
             let mut operator = TimeConsistencyOperator::new(context.clone(), ContinuityMode::Reset);
             let mut output_items = Vec::new();
 
-            let mut output_fn = |item: FlvData| -> Result<(), FlvError> {
+            let mut output_fn = |item: FlvData| -> Result<(), PipelineError> {
                 output_items.push(item);
                 Ok(())
             };

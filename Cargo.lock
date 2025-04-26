@@ -384,7 +384,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "976dd42dc7e85965fe702eb8164f21f450704bdde31faefd6471dba214cb594e"
 dependencies = [
  "libc",
- "windows-sys 0.52.0",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]
@@ -423,7 +423,7 @@ dependencies = [
 
 [[package]]
 name = "flv-fix"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "amf0",
  "async-stream",
@@ -434,6 +434,7 @@ dependencies = [
  "crc32fast",
  "flv",
  "futures",
+ "pipeline-common",
  "thiserror 2.0.12",
  "tokio",
  "tokio-stream",
@@ -645,6 +646,37 @@ name = "heck"
 version = "0.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "2304e00983f87ffb38b55b444b5e3b60a884b5d30c0fca7d82fe33449bbe55ea"
+
+[[package]]
+name = "hls"
+version = "0.1.0"
+dependencies = [
+ "byteorder",
+ "bytes",
+ "bytes-util",
+ "m3u8-rs",
+ "thiserror 1.0.69",
+]
+
+[[package]]
+name = "hls-fix"
+version = "0.1.0"
+dependencies = [
+ "byteorder",
+ "bytes",
+ "bytes-util",
+ "crc32fast",
+ "futures",
+ "hls",
+ "m3u8-rs",
+ "pipeline-common",
+ "thiserror 2.0.12",
+ "tokio",
+ "tokio-stream",
+ "tokio-util",
+ "tracing",
+ "tracing-subscriber",
+]
 
 [[package]]
 name = "http"
@@ -1066,6 +1098,16 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "30bde2b3dc3671ae49d8e2e9f044c7c005836e7a023ee57cffa25ab82764bb9e"
 
 [[package]]
+name = "m3u8-rs"
+version = "6.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f03cd3335fb5f2447755d45cda9c70f76013626a9db44374973791b0926a86c3"
+dependencies = [
+ "chrono",
+ "nom",
+]
+
+[[package]]
 name = "memchr"
 version = "2.7.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1076,6 +1118,12 @@ name = "mime"
 version = "0.3.17"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "6877bb514081ee2a7ff5ef9de3281f14a4dd4bceac4c09388074a6b5df8a139a"
+
+[[package]]
+name = "minimal-lexical"
+version = "0.2.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "68354c5c6bd36d73ff3feceb05efa59b6acb7626617f4962be322a825e61f79a"
 
 [[package]]
 name = "miniz_oxide"
@@ -1112,6 +1160,16 @@ dependencies = [
  "security-framework 2.11.1",
  "security-framework-sys",
  "tempfile",
+]
+
+[[package]]
+name = "nom"
+version = "7.1.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d273983c5a657a70a3e8f2a01329822f3b8c8172b73826411a55751e404a0a4a"
+dependencies = [
+ "memchr",
+ "minimal-lexical",
 ]
 
 [[package]]
@@ -1275,6 +1333,15 @@ name = "pin-utils"
 version = "0.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8b870d8c151b6f2fb93e84a13146138f05d02ed11c7e7c54f8826aaaf7c9f184"
+
+[[package]]
+name = "pipeline-common"
+version = "0.1.0"
+dependencies = [
+ "futures",
+ "thiserror 1.0.69",
+ "tracing",
+]
 
 [[package]]
 name = "pkg-config"
@@ -1500,7 +1567,7 @@ dependencies = [
  "errno",
  "libc",
  "linux-raw-sys",
- "windows-sys 0.52.0",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]
@@ -1745,6 +1812,7 @@ dependencies = [
  "futures",
  "indicatif",
  "kanal",
+ "pipeline-common",
  "reqwest",
  "siphon-engine",
  "tokio",
@@ -1761,11 +1829,15 @@ dependencies = [
  "flv",
  "flv-fix",
  "futures",
+ "hls",
+ "hls-fix",
+ "m3u8-rs",
  "reqwest",
  "rustls",
  "rustls-platform-verifier",
  "thiserror 1.0.69",
  "tokio",
+ "tokio-stream",
  "tracing",
  "tracing-subscriber",
  "url",
@@ -1876,7 +1948,7 @@ dependencies = [
  "getrandom 0.3.2",
  "once_cell",
  "rustix",
- "windows-sys 0.52.0",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]
