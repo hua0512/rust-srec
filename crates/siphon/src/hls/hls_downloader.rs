@@ -1,90 +1,135 @@
-use m3u8_rs::{MasterPlaylist, MediaPlaylist, Playlist as M3u8Playlist};
-use reqwest::{Client, Url};
-use tracing::info;
+use std::sync::Arc;
+
+use futures::StreamExt;
+use hls::HlsData;
+use reqwest::Client;
+use tokio_stream::wrappers::ReceiverStream;
+use crate::media_protocol::{Cacheable, MultiSource};
 
 use crate::{
-    DownloadError, DownloaderConfig,
-    downloader::create_client,
-    hls::{
-        playlist_utils::{get_best_quality_playlist, get_playlist_url as get_playlist_url_util},
-        stream_handler::{SegmentStream, download_live_playlist, download_vod_playlist},
-    },
+    BoxMediaStream, CacheManager, Download, DownloadError, ProtocolBase, SourceManager,
+    create_client, hls::HlsDownloaderError,
 };
 
-/// HLS Downloader for streaming HLS content from URLs
+use super::{HlsConfig, HlsStreamCoordinator, HlsStreamEvent};
+
 pub struct HlsDownloader {
     client: Client,
-    config: DownloaderConfig, // Keep config even if unused for now, might be used later
+    config: HlsConfig,
 }
 
 impl HlsDownloader {
-    /// Create a new HlsDownloader with default configuration
-    pub fn new() -> Result<Self, DownloadError> {
-        Self::with_config(DownloaderConfig::default())
+    pub fn new(config: HlsConfig) -> Result<Self, DownloadError> {
+        Self::with_config(config)
     }
 
     /// Create a new HlsDownloader with custom configuration
-    pub fn with_config(config: DownloaderConfig) -> Result<Self, DownloadError> {
-        let client = create_client(&config)?;
+    pub fn with_config(config: HlsConfig) -> Result<Self, DownloadError> {
+        let downloader_config = config.base.clone();
+        let client = create_client(&downloader_config)?;
         Ok(Self { client, config })
     }
 
-    /// Download and parse an HLS playlist from a URL string
-    pub async fn get_playlist(&self, url_str: &str) -> Result<M3u8Playlist, DownloadError> {
-        let url = url_str
-            .parse::<Url>()
-            .map_err(|_| DownloadError::UrlError(url_str.to_string()))?;
-        self.get_playlist_url(url).await
+    pub fn config(&self) -> &HlsConfig {
+        &self.config
     }
 
-    /// Download and parse an HLS playlist from a URL
-    pub async fn get_playlist_url(&self, url: Url) -> Result<M3u8Playlist, DownloadError> {
-        get_playlist_url_util(&self.client, url).await
+    pub fn client(&self) -> &Client {
+        &self.client
     }
 
-    /// Download media segments from a media playlist
-    pub async fn download_media_playlist(
+    pub async fn perform_download(
         &self,
-        playlist: &MediaPlaylist,
-        playlist_url: &Url, // Use the actual playlist URL for refreshes
-    ) -> Result<SegmentStream, DownloadError> {
-        // Base URL for resolving relative segment URIs
-        let base_url = playlist_url
-            .join(".")
-            .map_err(|_| DownloadError::UrlError("Failed to derive base URL".to_string()))?;
+        url: &str,
+        _source_manager: Option<&mut SourceManager>,
+        cache_manager: Option<Arc<CacheManager>>,
+    ) -> Result<BoxMediaStream<HlsData, HlsDownloaderError>, DownloadError> {
+        let config = Arc::new(self.config.clone());
+        let coordinator = HlsStreamCoordinator::setup_and_spawn(
+            url.to_string(),
+            config.clone(),
+            self.client.clone(),
+            cache_manager,
+        )
+        .await;
 
-        info!(
-            segments = playlist.segments.len(),
-            duration = playlist.target_duration,
-            is_live = !playlist.end_list,
-            playlist_url = %playlist_url,
-            base_url = %base_url,
-            "Starting HLS media playlist download"
-        );
+        let (client_event_rx, shutdown_tx, handles) = coordinator.unwrap();
 
-        // Call the appropriate stream handler function, passing the config
-        if playlist.end_list {
-            // VOD content
-            download_vod_playlist(&self.client, playlist, &base_url, &self.config).await // Pass config
-        } else {
-            // Live stream
-            download_live_playlist(
-                &self.client,
-                playlist,
-                playlist_url,
-                &base_url,
-                &self.config,
-            )
-            .await // Pass config
+        let stream = ReceiverStream::new(client_event_rx);
+
+        // map receiver stream to BoxMediaStream
+        let stream = stream.filter_map(|event| async move {
+            match event {
+                Ok(event) => match event {
+                    HlsStreamEvent::Data(data) => Some(Ok(data)),
+                    HlsStreamEvent::DiscontinuityTagEncountered { .. } => {
+                        Some(Ok(HlsData::EndMarker))
+                    }
+                    _ => None,
+                },
+                Err(e) => Some(Err(e)),
+            }
+        });
+
+        // Box the stream and return
+        Ok(stream.boxed())
+    }
+}
+
+impl ProtocolBase for HlsDownloader {
+    type Config = HlsConfig;
+
+    fn new(config: Self::Config) -> Result<Self, DownloadError> {
+        Self::with_config(config)
+    }
+}
+
+impl Download for HlsDownloader {
+    type Data = HlsData;
+    type Error = HlsDownloaderError;
+    type Stream = BoxMediaStream<Self::Data, Self::Error>;
+
+    async fn download(&self, url: &str) -> Result<Self::Stream, DownloadError> {
+        self.perform_download(url, None, None).await
+    }
+}
+
+impl MultiSource for HlsDownloader {
+    async fn download_with_sources(
+        &self,
+        url: &str, // This is the primary/initial URL
+        source_manager: &mut SourceManager,
+    ) -> Result<Self::Stream, DownloadError> {
+        // Attempt to download using the initial url.
+        match self.perform_download(url, Some(source_manager), None).await {
+            Ok(stream) => Ok(stream),
+            Err(mut last_error) => {
+                // If the initial attempt fails, iterate through sources obtained from
+                // the source_manager.select_source() method.
+                // The loop should continue until a download is successful or
+                // source_manager.select_source() returns None.
+                while let Some(content_source) = source_manager.select_source() {
+                    // Assuming select_source() returns Option<ContentSource> where ContentSource has a url: String.
+                    match self.perform_download(&content_source.url, None, None).await {
+                        Ok(stream) => return Ok(stream), // Return the Result<Self::Stream, DownloadError> from the first successful download
+                        Err(err) => {
+                            last_error = err; // Update to the latest error and try next source
+                        }
+                    }
+                }
+                // Or an appropriate error if all sources fail.
+                Err(last_error)
+            }
         }
     }
+}
 
-    /// Process a master playlist and return the best quality stream's media playlist and its URL
-    pub async fn get_best_quality_playlist(
+impl Cacheable for HlsDownloader {
+    async fn download_with_cache(
         &self,
-        master: &MasterPlaylist,
-        master_playlist_url: &Url, // URL the master playlist was fetched from
-    ) -> Result<(MediaPlaylist, Url), DownloadError> {
-        get_best_quality_playlist(&self.client, master, master_playlist_url).await
+        url: &str,
+        cache_manager: Arc<CacheManager>,
+    ) -> Result<Self::Stream, DownloadError> {
+        self.perform_download(url, None, Some(cache_manager)).await
     }
 }

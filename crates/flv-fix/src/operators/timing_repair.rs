@@ -371,11 +371,12 @@ impl TimingState {
     }
 
     fn update_last_tags(&mut self, tag: &FlvTag) {
+        let tag_clone = tag.clone();
         self.last_tag = Some(tag.clone());
         if tag.is_audio_tag() {
-            self.last_audio_tag = Some(tag.clone());
+            self.last_audio_tag = Some(tag_clone);
         } else if tag.is_video_tag() {
-            self.last_video_tag = Some(tag.clone());
+            self.last_video_tag = Some(tag_clone);
         }
     }
 }
@@ -638,9 +639,11 @@ impl Processor<FlvData> for TimingRepairOperator {
 
 #[cfg(test)]
 mod tests {
+    use pipeline_common::create_test_context;
+
     use super::*;
     use crate::test_utils::{
-        create_audio_sequence_header, create_audio_tag, create_test_context, create_test_header,
+        create_audio_sequence_header, create_audio_tag, create_test_header,
         create_video_sequence_header, create_video_tag, print_tags,
     };
 

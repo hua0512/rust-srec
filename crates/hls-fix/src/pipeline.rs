@@ -1,81 +1,48 @@
-//! # HLS Processing Pipeline
-//!
-//!
-//! ## License
-//!
-//! MIT License
-//!
-//! ## Authors
-//!
-//! - hua0512
-//!
-
-use hls::segment::HlsData;
-use pipeline_common::{Pipeline, PipelineError, StreamerContext};
 use std::sync::Arc;
 
-use crate::operators::SegmentLimiterOperator;
+use hls::HlsData;
+use pipeline_common::{Pipeline, StreamerContext};
 
-/// Configuration options for the HLS processing pipeline
-#[derive(Debug, Clone, Default)]
-pub struct PipelineConfig {
-    /// Maximum duration of segments to include (in seconds)
-    pub max_duration: Option<u64>,
+use crate::{
+    SegmentLimiterOperator, SegmentSplitOperator, operators::defragment::DefragmentOperator,
+};
 
-    /// Maximum total size of segments to include (in bytes)
-    pub max_size: Option<u64>,
+pub struct HlsPipelineConfig {
+    pub max_segment_duration: Option<u64>,
+    pub max_segments: Option<u64>,
 }
 
-/// HLS processing pipeline
 pub struct HlsPipeline {
     context: Arc<StreamerContext>,
-    config: PipelineConfig,
+    config: HlsPipelineConfig,
+}
+
+impl Default for HlsPipelineConfig {
+    fn default() -> Self {
+        Self {
+            max_segment_duration: None,
+            max_segments: None,
+        }
+    }
 }
 
 impl HlsPipeline {
-    /// Create a new pipeline with default configuration
-    pub fn new(name: impl Into<String>) -> Self {
-        let context = StreamerContext::with_name(name);
-
-        Self {
-            context: Arc::new(context),
-            config: PipelineConfig::default(),
-        }
+    pub fn new(context: Arc<StreamerContext>, config: HlsPipelineConfig) -> Self {
+        Self { context, config }
     }
 
-    /// Create a new pipeline with custom configuration
-    pub fn with_config(name: impl Into<String>, config: PipelineConfig) -> Self {
-        let context = StreamerContext::with_name(name);
-
-        Self {
-            context: Arc::new(context),
-            config,
-        }
-    }
-
-    /// Create and configure the pipeline with all necessary operators
     pub fn build_pipeline(&self) -> Pipeline<HlsData> {
-        let context = Arc::clone(&self.context);
-        let config = self.config.clone();
+        let context = self.context.clone();
 
-        // Convert duration from seconds to Duration type
-        let max_duration = config.max_duration.map(std::time::Duration::from_secs);
-        let segment_limiter = SegmentLimiterOperator::new(max_duration, config.max_size);
+        let defrag_operator = DefragmentOperator::new(context.clone());
+        let limit_operator = SegmentLimiterOperator::new(None, None);
+        let split_operator = SegmentSplitOperator::new(context.clone());
 
-        // Build the pipeline
-        Pipeline::new(context).add_processor(segment_limiter)
-    }
+        let pipeline = Pipeline::new(context.clone())
+            // .add_processor(defrag_operator)
+            .add_processor(split_operator)
+            .add_processor(limit_operator);
 
-    /// Process a stream of HLS data
-    pub fn process(
-        &self,
-        input: impl Iterator<Item = Result<HlsData, PipelineError>>,
-        output: &mut impl FnMut(Result<HlsData, PipelineError>),
-    ) -> Result<(), PipelineError> {
-        // Build the pipeline
-        let pipeline = self.build_pipeline();
-
-        // Run the pipeline and convert any errors
-        pipeline.process(input, output)
+        return pipeline;
     }
 }

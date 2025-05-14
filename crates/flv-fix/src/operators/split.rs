@@ -201,15 +201,17 @@ impl Processor<FlvData> for SplitOperator {
 
 #[cfg(test)]
 mod tests {
+    use pipeline_common::create_test_context;
+
     use super::*;
     use crate::test_utils::{
-        self, create_audio_sequence_header, create_audio_tag, create_test_header,
+        create_audio_sequence_header, create_audio_tag, create_test_header,
         create_video_sequence_header, create_video_tag,
     };
 
     #[test]
     fn test_video_codec_change_detection() {
-        let context = test_utils::create_test_context();
+        let context = create_test_context();
         let mut operator = SplitOperator::new(context);
         let mut output_items = Vec::new();
 
@@ -261,7 +263,7 @@ mod tests {
 
     #[test]
     fn test_audio_codec_change_detection() {
-        let context = test_utils::create_test_context();
+        let context = create_test_context();
         let mut operator = SplitOperator::new(context);
         let mut output_items = Vec::new();
 
@@ -313,7 +315,7 @@ mod tests {
 
     #[test]
     fn test_no_codec_change() {
-        let context = test_utils::create_test_context();
+        let context = create_test_context();
         let mut operator = SplitOperator::new(context);
         let mut output_items = Vec::new();
 
@@ -377,7 +379,7 @@ mod tests {
 
     #[test]
     fn test_multiple_codec_changes() {
-        let context = test_utils::create_test_context();
+        let context = create_test_context();
         let mut operator = SplitOperator::new(context);
         let mut output_items = Vec::new();
 

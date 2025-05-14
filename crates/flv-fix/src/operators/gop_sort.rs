@@ -247,10 +247,11 @@ mod tests {
         create_test_header, create_video_sequence_header, create_video_tag,
     };
     use flv::tag::FlvTagType;
+    use pipeline_common::test_utils::create_test_context;
 
     #[test]
     fn test_sequence_header_special_handling() {
-        let context = test_utils::create_test_context();
+        let context = create_test_context();
         let mut operator = GopSortOperator::new(context);
         let mut output_items = Vec::new();
 
@@ -318,7 +319,7 @@ mod tests {
 
     #[test]
     fn test_interleaving() {
-        let context = test_utils::create_test_context();
+        let context = create_test_context();
         let mut operator = GopSortOperator::new(context);
         let mut output_items = Vec::new();
 
@@ -395,7 +396,7 @@ mod tests {
     #[test]
     fn test_audio_tags_before_first_video() {
         // Setup with audio tags having earlier timestamps than any video tag
-        let context = test_utils::create_test_context();
+        let context = create_test_context();
         let mut operator = GopSortOperator::new(context);
         let mut output_items = Vec::new();
 

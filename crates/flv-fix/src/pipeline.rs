@@ -101,9 +101,6 @@ impl FlvPipeline {
         let context = Arc::clone(&self.context);
         let config = self.config.clone();
 
-        // Convert StreamerContext to pipeline-common StreamerContext
-        let common_context = Arc::new(StreamerContext::default());
-
         // Create all operators with adapters
         let defrag_operator = DefragmentOperator::new(context.clone());
         let header_check_operator = HeaderCheckOperator::new(context.clone());
@@ -145,7 +142,7 @@ impl FlvPipeline {
         };
 
         // Build the pipeline using the generic Pipeline implementation
-        Pipeline::new(common_context)
+        Pipeline::new(context)
             .add_processor(defrag_operator)
             .add_processor(header_check_operator)
             .add_processor(split_operator)
@@ -177,23 +174,23 @@ impl FlvPipeline {
 mod test {
     use super::*;
     use crate::adapter::flv_error_to_pipeline_error;
-    use crate::test_utils;
     use crate::writer_task::FlvWriterTask;
     use crate::writer_task::WriterError;
 
     use flv::data::FlvData;
     use flv::parser_async::FlvDecoderStream;
     use futures::StreamExt;
+    use pipeline_common::test_utils::init_tracing;
     use std::path::Path;
     use tracing::info;
 
     #[tokio::test]
     #[ignore]
     async fn test_process() -> Result<(), Box<dyn std::error::Error>> {
-        test_utils::init_tracing(); // Initialize tracing for logging using our common utility
+        init_tracing(); // Initialize tracing for logging using our common utility
 
         // Source and destination paths
-        let input_path = Path::new("D:/test/999/testHEVC.flv");
+        let input_path = Path::new("D:/test/999/16_02_26-福州~ 主播恋爱脑！！！.flv");
 
         // Skip if test file doesn't exist
         if !input_path.exists() {

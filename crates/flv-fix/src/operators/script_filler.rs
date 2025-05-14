@@ -514,6 +514,9 @@ mod tests {
     use amf0::Amf0Value;
     use bytes::Bytes;
     use flv::{header::FlvHeader, tag::FlvTagType};
+    use pipeline_common::test_utils::create_test_context;
+    use pipeline_common::test_utils::init_tracing;
+
     use std::collections::HashMap;
 
     // Helper function to extract keyframes object from tag data
@@ -551,8 +554,8 @@ mod tests {
 
     #[test]
     fn test_add_keyframes_to_amf() {
-        test_utils::init_tracing();
-        let context = test_utils::create_test_context();
+        init_tracing();
+        let context = create_test_context();
         let config = ScriptFillerConfig::default();
         let operator = ScriptKeyframesFillerOperator::new(context, config);
 
@@ -597,8 +600,8 @@ mod tests {
 
     #[test]
     fn test_process_flow() {
-        test_utils::init_tracing();
-        let context = test_utils::create_test_context();
+        init_tracing();
+        let context = create_test_context();
         let config = ScriptFillerConfig::default();
         let mut operator = ScriptKeyframesFillerOperator::new(context, config);
         let mut output_items = Vec::new();
@@ -678,8 +681,8 @@ mod tests {
 
     #[test]
     fn test_malformed_script_data() {
-        test_utils::init_tracing();
-        let context = test_utils::create_test_context();
+        init_tracing();
+        let context = create_test_context();
         let config = ScriptFillerConfig::default();
         let mut operator = ScriptKeyframesFillerOperator::new(context, config);
         let mut output_items = Vec::new();

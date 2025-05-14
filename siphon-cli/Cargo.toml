@@ -23,6 +23,8 @@ tracing-subscriber = "0.3"
 pipeline-common = { path = "../crates/pipeline-common" }
 flv = { path = "../crates/flv" }
 flv-fix = { path = "../crates/flv-fix" }
+hls = { path = "../crates/hls" }
+hls-fix = { path = "../crates/hls-fix" }
 siphon-engine = { path = "../crates/siphon" }
 indicatif = "0.17.11"
 

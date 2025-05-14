@@ -1,5 +1,5 @@
 use bytes::Bytes;
-use hls::segment::{HlsData, M4sData, M4sInitSegmentData};
+use hls::{HlsData, M4sData, M4sInitSegmentData, SegmentType};
 use pipeline_common::{PipelineError, Processor};
 use std::time::Duration;
 
@@ -74,64 +74,69 @@ impl Processor<HlsData> for SegmentLimiterOperator {
         input: HlsData,
         output: &mut dyn FnMut(HlsData) -> Result<(), PipelineError>,
     ) -> Result<(), PipelineError> {
-        match input {
-            HlsData::TsData(ts_data) => {
-                // Check if limit is reached
-                if self.is_limit_reached(&ts_data.data, ts_data.segment.duration) {
-                    // Send the last tag and reset
-                    output(HlsData::TsData(ts_data))?;
-                    self.reset_counters();
-                } else {
-                    // No limit reached, include the segment and track it
-                    output(HlsData::TsData(ts_data.clone()))?;
-                    self.track_segment(&ts_data.data, ts_data.segment.duration);
-                }
-            }
-            HlsData::M4sData(m4s_data) => {
-                match m4s_data {
-                    M4sData::InitSegment(init_segment) => {
-                        // Store the init segment for later use if it's the first one we've seen
-                        if self.init_segment.is_none() {
-                            self.init_segment = Some(init_segment.clone());
-                        }
-
-                        // Always output the init segment when we encounter it directly
-                        output(HlsData::M4sData(M4sData::InitSegment(init_segment)))?;
-                        self.init_segment_sent = true;
-                    }
-                    M4sData::Segment(segment) => {
-                        // Check if limit is reached
-                        if self.is_limit_reached(&segment.data, segment.segment.duration) {
-                            // Send the init segment if needed and the last segment, then reset
-                            if !self.init_segment_sent {
-                                if let Some(init_segment) = &self.init_segment {
-                                    output(HlsData::M4sData(M4sData::InitSegment(
-                                        init_segment.clone(),
-                                    )))?;
-                                }
-                            }
-                            output(HlsData::M4sData(M4sData::Segment(segment)))?;
-                            self.reset_counters();
-                        } else {
-                            // No limit reached, send init if needed, include the segment and track it
-                            if !self.init_segment_sent {
-                                if let Some(init_segment) = &self.init_segment {
-                                    output(HlsData::M4sData(M4sData::InitSegment(
-                                        init_segment.clone(),
-                                    )))?;
-                                    self.init_segment_sent = true;
-                                }
-                            }
-
-                            output(HlsData::M4sData(M4sData::Segment(segment.clone())))?;
-                            self.track_segment(&segment.data, segment.segment.duration);
-                        }
+        // Using new methods from the HlsData struct to simplify our code
+        match input.segment_type() {
+            SegmentType::Ts => {
+                if let HlsData::TsData(ts_data) = input {
+                    // Check if limit is reached
+                    if self.is_limit_reached(&ts_data.data, ts_data.segment.duration) {
+                        // Send the last tag and reset
+                        output(HlsData::TsData(ts_data.clone()))?;
+                        self.reset_counters();
+                    } else {
+                        // No limit reached, include the segment and track it
+                        let data_clone = ts_data.data.clone();
+                        output(HlsData::TsData(ts_data.clone()))?;
+                        self.track_segment(&data_clone, ts_data.segment.duration);
                     }
                 }
             }
-            // Always include EndPlaylist markers
-            HlsData::EndPlaylist() => {
-                output(HlsData::EndPlaylist())?;
+            SegmentType::M4sInit => {
+                if let HlsData::M4sData(M4sData::InitSegment(init_segment)) = input {
+                    // Store the init segment for later use if it's the first one we've seen
+                    if self.init_segment.is_none() {
+                        self.init_segment = Some(init_segment.clone());
+                    }
+
+                    // Always output the init segment when we encounter it directly
+                    output(HlsData::M4sData(M4sData::InitSegment(init_segment)))?;
+                    self.init_segment_sent = true;
+                }
+            }
+            SegmentType::M4sMedia => {
+                if let HlsData::M4sData(M4sData::Segment(segment)) = input {
+                    // Check if limit is reached
+                    if self.is_limit_reached(&segment.data, segment.segment.duration) {
+                        // Send the init segment if needed and the last segment, then reset
+                        if !self.init_segment_sent {
+                            if let Some(init_segment) = &self.init_segment {
+                                output(HlsData::M4sData(M4sData::InitSegment(
+                                    init_segment.clone(),
+                                )))?;
+                            }
+                        }
+                        output(HlsData::M4sData(M4sData::Segment(segment.clone())))?;
+                        self.reset_counters();
+                    } else {
+                        // No limit reached, send init if needed, include the segment and track it
+                        if !self.init_segment_sent {
+                            if let Some(init_segment) = &self.init_segment {
+                                output(HlsData::M4sData(M4sData::InitSegment(
+                                    init_segment.clone(),
+                                )))?;
+                                self.init_segment_sent = true;
+                            }
+                        }
+
+                        let data_clone = segment.data.clone();
+                        output(HlsData::M4sData(M4sData::Segment(segment.clone())))?;
+                        self.track_segment(&data_clone, segment.segment.duration);
+                    }
+                }
+            }
+            SegmentType::EndMarker => {
+                // Always include EndPlaylist markers
+                output(HlsData::end_marker())?;
                 self.reset_counters();
             }
         }
