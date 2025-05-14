@@ -8,4 +8,8 @@ license = "MIT"
 [dependencies]
 thiserror = "1.0"
 tracing = "0.1"
+tracing-subscriber = "0.3"
+
 futures = "0.3"
+
+# [dev-dependencies]

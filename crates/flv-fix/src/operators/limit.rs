@@ -374,12 +374,13 @@ mod tests {
     use crate::test_utils::{self, create_script_tag};
     use bytes::Bytes;
     use flv::tag::{FlvTag, FlvTagType};
+    use pipeline_common::test_utils::create_test_context;
     use std::sync::atomic::{AtomicUsize, Ordering};
     use std::sync::{Arc, Mutex};
 
     #[test]
     fn test_size_limit_with_keyframe_splitting() {
-        let context = test_utils::create_test_context();
+        let context = create_test_context();
         let split_counter = Arc::new(AtomicUsize::new(0));
         let split_counter_clone = split_counter.clone();
 
@@ -477,7 +478,7 @@ mod tests {
 
     #[test]
     fn test_duration_limit_with_keyframe_splitting() {
-        let context = test_utils::create_test_context();
+        let context = create_test_context();
         let split_counter = Arc::new(AtomicUsize::new(0));
         let split_counter_clone = split_counter.clone();
 
@@ -560,7 +561,7 @@ mod tests {
 
     #[test]
     fn test_no_limits() {
-        let context = test_utils::create_test_context();
+        let context = create_test_context();
         let split_counter = Arc::new(AtomicUsize::new(0));
         let split_counter_clone = split_counter.clone();
 
@@ -629,7 +630,7 @@ mod tests {
 
     #[test]
     fn test_sequential_splits() {
-        let context = test_utils::create_test_context();
+        let context = create_test_context();
 
         // Track split count
         let split_count = Arc::new(AtomicUsize::new(0));
@@ -715,7 +716,7 @@ mod tests {
 
     #[test]
     fn test_split_with_interleaved_audio_video() {
-        let context = test_utils::create_test_context();
+        let context = create_test_context();
 
         // Track split timestamps
         let split_timestamps = Arc::new(Mutex::new(Vec::new()));
@@ -842,7 +843,7 @@ mod tests {
 
     #[test]
     fn test_empty_stream_no_splits() {
-        let context = test_utils::create_test_context();
+        let context = create_test_context();
 
         // Track split events
         let split_count = Arc::new(AtomicUsize::new(0));
@@ -893,7 +894,7 @@ mod tests {
 
     #[test]
     fn test_retrospective_splitting() {
-        let context = test_utils::create_test_context();
+        let context = create_test_context();
 
         // Track split information
         let split_timestamps = Arc::new(Mutex::new(Vec::new()));

@@ -1,4 +1,5 @@
 use std::process::exit;
+use std::str::FromStr;
 use std::{path::PathBuf, time::Duration};
 
 use clap::Parser;
@@ -6,13 +7,19 @@ use config::ProgramConfig;
 use flv_fix::operators::RepairStrategy;
 use flv_fix::operators::script_filler::ScriptFillerConfig;
 use flv_fix::pipeline::PipelineConfig;
-use siphon_engine::{DownloaderConfig, ProxyAuth, ProxyConfig, ProxyType};
-use tracing::{Level, error, info};
+use output::output::OutputFormat;
+use siphon_engine::flv::FlvConfig;
+use siphon_engine::hls::HlsConfig;
+use siphon_engine::{
+    DownloaderConfig, HlsProtocolBuilder, ProtocolBuilder, ProxyAuth, ProxyConfig, ProxyType,
+};
+use tracing::{Level, debug, error, info};
 use tracing_subscriber::FmtSubscriber;
 
 mod cli;
 mod config;
 mod error;
+mod output;
 mod processor;
 mod utils;
 
@@ -35,7 +42,7 @@ async fn main() {
     let subscriber = FmtSubscriber::builder().with_max_level(log_level).finish();
     tracing::subscriber::set_global_default(subscriber).expect("Failed to set tracing subscriber");
 
-    info!("FLV Processing Tool - Part of the stream-rec project by hua0512");
+    info!("Siphon Media Processing Tool - Part of the rust-srec project by hua0512");
     info!("GitHub: https://github.com/hua0512/rust-srec");
 
     // Parse size and duration with units
@@ -173,9 +180,10 @@ async fn main() {
         (None, false)
     };
 
-    // Create download configuration
-    let download_config = DownloaderConfig::with_config(DownloaderConfig {
-        buffer_size: args.download_buffer,
+    // Create common download configuration
+    let download_config = DownloaderConfig {
+        // do not cache by default
+        cache_config: None,
         timeout: Duration::from_secs(args.timeout),
         connect_timeout: Duration::from_secs(args.connect_timeout),
         read_timeout: Duration::from_secs(args.read_timeout),
@@ -185,24 +193,48 @@ async fn main() {
         proxy: proxy_config,
         use_system_proxy: args.use_system_proxy,
         ..DownloaderConfig::default()
-    });
+    };
+
+    // Create FLV-specific configuration
+    let flv_config = FlvConfig {
+        base: download_config.clone(),
+        buffer_size: args.download_buffer,
+    };
+
+    // Create HLS-specific configuration
+    let hls_config = HlsProtocolBuilder::new()
+        .with_base_config(download_config.clone())
+        .download_concurrency(args.hls_concurrency.try_into().unwrap())
+        .segment_retry_count(args.hls_retries)
+        .get_config();
 
     // Update progress status
     progress_manager.set_status(&format!("Processing {} input(s)...", args.input.len()));
 
+    let output_format = OutputFormat::from_str(&args.output_format).unwrap_or_else(|_| {
+        error!(
+            "Invalid output format: '{}'. Defaulting to 'file'.",
+            args.output_format
+        );
+        OutputFormat::File
+    });
+
     // Create the program configuration
-    let program_config = ProgramConfig {
+    let mut program_config = ProgramConfig {
         pipeline_config,
+        flv_config: Some(flv_config),
+        hls_config: Some(hls_config),
         download_config: Some(download_config),
         enable_processing: args.enable_fix,
         channel_size: args.buffer_size,
+        output_format: Some(output_format),
     };
 
     // Process input files
     match processor::process_inputs(
         &args.input,
         &output_dir,
-        &program_config,
+        &mut program_config,
         args.output_name_template.as_deref(),
         &mut progress_manager,
     )

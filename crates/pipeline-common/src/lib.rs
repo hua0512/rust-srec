@@ -24,11 +24,14 @@ use thiserror::Error;
 pub mod context;
 pub mod pipeline;
 pub mod processor;
+pub mod test_utils;
 
 pub use context::StreamerContext;
 /// Re-export key traits and types
 pub use pipeline::Pipeline;
 pub use processor::Processor;
+
+pub use test_utils::{create_test_context, init_tracing};
 
 /// Common error type for pipeline operations
 #[derive(Error, Debug)]

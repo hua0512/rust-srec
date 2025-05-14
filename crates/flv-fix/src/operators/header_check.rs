@@ -100,7 +100,8 @@ impl Processor<FlvData> for HeaderCheckOperator {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::test_utils::{create_test_context, create_test_header, create_video_tag};
+    use crate::test_utils::{create_test_header, create_video_tag};
+    use pipeline_common::test_utils::create_test_context;
 
     #[test]
     fn test_with_header_present() {

@@ -1,132 +1,14 @@
-use bytes::Bytes;
-use futures::Stream;
 use reqwest::Client;
-use reqwest::header::{HeaderMap, HeaderValue};
 use rustls::{ClientConfig, crypto::ring};
 use rustls_platform_verifier::BuilderVerifierExt;
-use std::pin::Pin;
 use std::sync::Arc;
-use std::time::Duration;
-use tokio::io::AsyncRead;
 use tracing::{debug, info};
 
-use crate::proxy::ProxyConfig;
+use crate::{
+    Cacheable, Download, DownloaderConfig, MultiSource, ProtocolBase, RawDownload, RawResumable,
+    Resumable,
+};
 use crate::{DownloadError, proxy::build_proxy_from_config};
-
-const DEFAULT_USER_AGENT: &str = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36";
-
-/// Configurable options for the downloader
-#[derive(Debug, Clone)]
-pub struct DownloaderConfig {
-    /// Buffer size for download chunks (in bytes)
-    pub buffer_size: usize,
-
-    /// Overall timeout for the entire HTTP request
-    pub timeout: Duration,
-
-    /// Connection timeout (time to establish initial connection)
-    pub connect_timeout: Duration,
-
-    /// Read timeout (maximum time between receiving data chunks)
-    pub read_timeout: Duration,
-
-    /// Write timeout (maximum time for sending request data)
-    pub write_timeout: Duration,
-
-    /// Whether to follow redirects
-    pub follow_redirects: bool,
-
-    /// User agent string
-    pub user_agent: String,
-
-    /// Custom HTTP headers for requests
-    pub headers: HeaderMap,
-
-    /// Proxy configuration (optional)
-    pub proxy: Option<ProxyConfig>,
-
-    /// Whether to use system proxy settings if available
-    pub use_system_proxy: bool,
-
-    /// Maximum concurrent segment downloads for HLS streams
-    pub max_concurrent_hls_downloads: usize,
-}
-
-impl Default for DownloaderConfig {
-    fn default() -> Self {
-        Self {
-            buffer_size: 64 * 1024, // 64 KB chunks
-            timeout: Duration::from_secs(30),
-            connect_timeout: Duration::from_secs(10),
-            read_timeout: Duration::from_secs(30),
-            write_timeout: Duration::from_secs(30),
-            follow_redirects: true,
-            user_agent: DEFAULT_USER_AGENT.to_owned(),
-            headers: DownloaderConfig::get_default_headers(),
-            proxy: None,
-            use_system_proxy: true, // Enable system proxy by default
-            max_concurrent_hls_downloads: 4,
-        }
-    }
-}
-
-impl DownloaderConfig {
-    pub fn with_config(config: DownloaderConfig) -> Self {
-        let mut headers = DownloaderConfig::get_default_headers();
-
-        if !config.headers.is_empty() {
-            // If custom headers are provided, merge them with defaults
-            // Custom headers take precedence over defaults for the same fields
-            for (name, value) in config.headers.iter() {
-                headers.insert(name.clone(), value.clone());
-            }
-        }
-
-        Self {
-            buffer_size: config.buffer_size,
-            timeout: config.timeout,
-            connect_timeout: config.connect_timeout,
-            read_timeout: config.read_timeout,
-            write_timeout: config.write_timeout,
-            follow_redirects: config.follow_redirects,
-            user_agent: config.user_agent,
-            headers,
-            proxy: config.proxy,
-            use_system_proxy: config.use_system_proxy,
-            max_concurrent_hls_downloads: config.max_concurrent_hls_downloads, // Add here
-        }
-    }
-
-    pub fn get_default_headers() -> HeaderMap {
-        let mut default_headers = HeaderMap::new();
-
-        // Add common headers for streaming content
-        default_headers.insert(reqwest::header::ACCEPT, HeaderValue::from_static("*/*"));
-
-        default_headers.insert(
-            reqwest::header::ACCEPT_ENCODING,
-            HeaderValue::from_static("gzip, deflate, br"),
-        );
-
-        default_headers.insert(
-            reqwest::header::CONNECTION,
-            HeaderValue::from_static("keep-alive"),
-        );
-
-        default_headers.insert(
-            reqwest::header::ACCEPT,
-            HeaderValue::from_static(
-                "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-            ),
-        );
-
-        default_headers.insert(
-            reqwest::header::ACCEPT_LANGUAGE,
-            HeaderValue::from_static("en-US,en;q=0.5,zh-CN;q=0.3,zh;q=0.2"),
-        );
-        default_headers
-    }
-}
 
 /// Create a reqwest Client with the provided configuration
 pub fn create_client(config: &DownloaderConfig) -> Result<Client, DownloadError> {
@@ -185,70 +67,216 @@ pub fn create_client(config: &DownloaderConfig) -> Result<Client, DownloadError>
     client_builder.build().map_err(DownloadError::from)
 }
 
-/// A reader adapter that wraps a bytes stream for AsyncRead compatibility
-pub struct BytesStreamReader {
-    stream: Pin<Box<dyn Stream<Item = Result<Bytes, reqwest::Error>> + Send>>,
-    current_chunk: Option<Bytes>,
-    position: usize,
+use crate::{
+    cache::{CacheConfig, CacheManager},
+    source::{ContentSource, SourceManager, SourceSelectionStrategy},
+};
+
+/// Configuration for the DownloadManager
+#[derive(Debug, Clone)]
+pub struct DownloadManagerConfig {
+    /// Cache configuration
+    pub cache_config: Option<CacheConfig>,
+    /// Source selection strategy
+    pub source_strategy: SourceSelectionStrategy,
+    /// Maximum number of source retry attempts
+    pub max_retry_count: usize,
+    /// Whether to enforce SSL certificate validation
+    pub enforce_certificate_validation: bool,
 }
 
-impl BytesStreamReader {
-    /// Create a new BytesStreamReader from a reqwest bytes stream
-    pub fn new(stream: impl Stream<Item = Result<Bytes, reqwest::Error>> + Send + 'static) -> Self {
+impl Default for DownloadManagerConfig {
+    fn default() -> Self {
         Self {
-            stream: Box::pin(stream),
-            current_chunk: None,
-            position: 0,
+            cache_config: Some(CacheConfig::default()),
+            source_strategy: SourceSelectionStrategy::default(),
+            max_retry_count: 3,
+            enforce_certificate_validation: true,
         }
     }
 }
 
-impl AsyncRead for BytesStreamReader {
-    fn poll_read(
-        mut self: Pin<&mut Self>,
-        cx: &mut std::task::Context<'_>,
-        buf: &mut tokio::io::ReadBuf<'_>,
-    ) -> std::task::Poll<std::io::Result<()>> {
-        use std::task::Poll;
+/// Modern download manager implementation that uses capability traits
+pub struct DownloadManager<P> {
+    /// The media protocol handler with its capabilities
+    protocol: P,
+    /// Manager for multiple content sources
+    source_manager: SourceManager,
+    /// Optional cache manager
+    cache_manager: Option<Arc<CacheManager>>,
+    /// Configuration for this download manager
+    config: DownloadManagerConfig,
+}
 
-        loop {
-            // If we have a chunk with data remaining, copy it to the buffer
-            if let Some(chunk) = &self.current_chunk {
-                if self.position < chunk.len() {
-                    let bytes_to_copy = std::cmp::min(buf.remaining(), chunk.len() - self.position);
-                    buf.put_slice(&chunk[self.position..self.position + bytes_to_copy]);
-                    self.position += bytes_to_copy;
-                    return Poll::Ready(Ok(()));
-                }
-                // We've consumed this chunk entirely
-                self.current_chunk = None;
-                self.position = 0;
-            }
+impl<P> DownloadManager<P>
+where
+    P: ProtocolBase,
+{
+    /// Create a new download manager with the given protocol handler and default configuration
+    pub async fn new(protocol: P) -> Result<Self, DownloadError> {
+        Self::with_config(protocol, DownloadManagerConfig::default()).await
+    }
 
-            // Need to get a new chunk from the stream
-            match self.stream.as_mut().poll_next(cx) {
-                Poll::Ready(Some(Ok(chunk))) => {
-                    if chunk.is_empty() {
-                        continue; // Skip empty chunks
-                    }
-                    self.current_chunk = Some(chunk);
-                    self.position = 0;
-                    // Continue the loop to process this chunk
-                }
-                Poll::Ready(Some(Err(e))) => {
-                    return Poll::Ready(Err(std::io::Error::new(
-                        std::io::ErrorKind::Other,
-                        format!("Download error: {}", e),
-                    )));
-                }
-                Poll::Ready(None) => {
-                    // End of stream
-                    return Poll::Ready(Ok(()));
-                }
-                Poll::Pending => {
-                    return Poll::Pending;
+    /// Create a new download manager with custom configuration
+    pub async fn with_config(
+        protocol: P,
+        config: DownloadManagerConfig,
+    ) -> Result<Self, DownloadError> {
+        // Initialize cache if enabled
+        let cache_manager = if let Some(cache_config) = &config.cache_config {
+            Some(Arc::new(CacheManager::new(cache_config.clone()).await?))
+        } else {
+            None
+        };
+
+        // Create source manager with the specified strategy
+        let source_manager = SourceManager::with_strategy(config.source_strategy.clone());
+
+        Ok(Self {
+            protocol,
+            source_manager,
+            cache_manager,
+            config,
+        })
+    }
+
+    /// Add a source URL to the download manager
+    pub fn add_source(&mut self, url: impl Into<String>, priority: u8) {
+        self.source_manager.add_url(url, priority);
+    }
+
+    /// Add a content source with metadata
+    pub fn add_content_source(&mut self, source: ContentSource) {
+        self.source_manager.add_source(source);
+    }
+}
+
+// Basic download capability implementation
+impl<P> DownloadManager<P>
+where
+    P: Download,
+{
+    /// Start a simple download
+    pub async fn download(&self, url: &str) -> Result<P::Stream, DownloadError> {
+        self.protocol.download(url).await
+    }
+}
+
+// Implementation when both Download and Resumable capabilities are available
+impl<P> DownloadManager<P>
+where
+    P: Download + Resumable,
+{
+    /// Resume a download from the specified range
+    pub async fn resume(
+        &self,
+        url: &str,
+        range: (u64, Option<u64>),
+    ) -> Result<P::Stream, DownloadError> {
+        self.protocol.resume(url, range).await
+    }
+
+    /// Download with automatic resume if range is provided
+    pub async fn download_with_resume(
+        &self,
+        url: &str,
+        range: Option<(u64, Option<u64>)>,
+    ) -> Result<P::Stream, DownloadError> {
+        match range {
+            Some(r) => self.resume(url, r).await,
+            None => self.download(url).await,
+        }
+    }
+}
+
+// Implementation when both Download and MultiSource capabilities are available
+impl<P> DownloadManager<P>
+where
+    P: Download + MultiSource,
+{
+    /// Download with source management
+    pub async fn download_with_sources(&mut self, url: &str) -> Result<P::Stream, DownloadError> {
+        // If no sources configured yet, use the provided URL
+        if !self.source_manager.has_sources() {
+            self.source_manager.add_url(url, 0);
+        }
+
+        self.protocol
+            .download_with_sources(url, &mut self.source_manager)
+            .await
+    }
+}
+
+// Implementation for combined Multi-Source and Cacheable capabilities
+impl<P> DownloadManager<P>
+where
+    P: Download + MultiSource + Cacheable,
+{
+    /// Download with sources and caching
+    pub async fn download_with_sources_and_cache(
+        &mut self,
+        url: &str,
+    ) -> Result<P::Stream, DownloadError> {
+        // If no sources configured yet, use the provided URL
+        if !self.source_manager.has_sources() {
+            self.source_manager.add_url(url, 0);
+        }
+
+        // Try cache first if available
+        if let Some(cache_manager) = &self.cache_manager {
+            match self
+                .protocol
+                .download_with_cache(url, cache_manager.clone())
+                .await
+            {
+                Ok(stream) => return Ok(stream),
+                Err(_) => {
+                    // Cache miss, fall through to source download
                 }
             }
+        }
+
+        // Cache miss or no cache, try sources
+        self.protocol
+            .download_with_sources(url, &mut self.source_manager)
+            .await
+    }
+}
+
+// Implementation for RawDownload capability
+impl<P> DownloadManager<P>
+where
+    P: RawDownload,
+{
+    /// Download raw bytes
+    pub async fn download_raw(&self, url: &str) -> Result<P::RawStream, DownloadError> {
+        self.protocol.download_raw(url).await
+    }
+}
+
+// Implementation when RawDownload and RawResumable capabilities are available
+impl<P> DownloadManager<P>
+where
+    P: RawDownload + RawResumable,
+{
+    /// Resume a raw download from the specified range
+    pub async fn resume_raw(
+        &self,
+        url: &str,
+        range: (u64, Option<u64>),
+    ) -> Result<P::RawStream, DownloadError> {
+        self.protocol.resume_raw(url, range).await
+    }
+
+    /// Download raw with automatic resume if range is provided
+    pub async fn download_raw_with_resume(
+        &self,
+        url: &str,
+        range: Option<(u64, Option<u64>)>,
+    ) -> Result<P::RawStream, DownloadError> {
+        match range {
+            Some(r) => self.resume_raw(url, r).await,
+            None => self.download_raw(url).await,
         }
     }
 }

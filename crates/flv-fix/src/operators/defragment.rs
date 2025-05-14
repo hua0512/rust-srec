@@ -169,12 +169,14 @@ impl Processor<FlvData> for DefragmentOperator {
 
 #[cfg(test)]
 mod tests {
+    use pipeline_common::test_utils::create_test_context;
+
     use super::*;
     use crate::test_utils::{self, create_video_tag};
 
     #[test]
     fn test_normal_flow_with_enough_tags() {
-        let context = test_utils::create_test_context();
+        let context = create_test_context();
         let mut operator = DefragmentOperator::new(context);
         let mut output_items = Vec::new();
 
@@ -203,7 +205,7 @@ mod tests {
 
     #[test]
     fn test_header_reset() {
-        let context = test_utils::create_test_context();
+        let context = create_test_context();
         let mut operator = DefragmentOperator::new(context);
         let mut output_items = Vec::new();
 
@@ -247,7 +249,7 @@ mod tests {
 
     #[test]
     fn test_end_of_stream_with_enough_tags() {
-        let context = test_utils::create_test_context();
+        let context = create_test_context();
         let mut operator = DefragmentOperator::new(context);
         let mut output_items = Vec::new();
 
@@ -276,7 +278,7 @@ mod tests {
 
     #[test]
     fn test_end_of_stream_with_insufficient_tags() {
-        let context = test_utils::create_test_context();
+        let context = create_test_context();
         let mut operator = DefragmentOperator::new(context);
         let mut output_items = Vec::new();
 
