@@ -4,7 +4,10 @@
 //! with specific configurations.
 
 use crate::{
-    flv::{FlvConfig, FlvDownloader}, hls::{
+    CacheConfig, DownloadError, DownloaderConfig,
+    flv::{FlvConfig, FlvDownloader},
+    hls::{
+        HlsDownloader,
         config::{
             HlsCacheConfig as NewHlsCacheConfig, HlsConfig,
             HlsDecryptionConfig as NewHlsDecryptionConfig, HlsFetcherConfig as NewHlsFetcherConfig,
@@ -12,8 +15,9 @@ use crate::{
             HlsProcessorConfig as NewHlsProcessorConfig,
             HlsSchedulerConfig as NewHlsSchedulerConfig,
             HlsVariantSelectionPolicy as NewHlsVariantSelectionPolicy,
-        }, HlsDownloader
-    }, proxy::ProxyConfig, CacheConfig, DownloadError, DownloaderConfig
+        },
+    },
+    proxy::ProxyConfig,
 };
 use reqwest::header::{HeaderMap, HeaderName, HeaderValue};
 use std::{str::FromStr, time::Duration};
@@ -268,7 +272,6 @@ impl HlsProtocolBuilder {
     }
 
     // --- HLS SchedulerConfig methods ---
-
 
     /// Set maximum concurrent segment downloads.
     pub fn download_concurrency(mut self, concurrency: usize) -> Self {

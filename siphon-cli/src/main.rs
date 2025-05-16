@@ -9,11 +9,10 @@ use flv_fix::operators::script_filler::ScriptFillerConfig;
 use flv_fix::pipeline::PipelineConfig;
 use output::output::OutputFormat;
 use siphon_engine::flv::FlvConfig;
-use siphon_engine::hls::HlsConfig;
 use siphon_engine::{
     DownloaderConfig, HlsProtocolBuilder, ProtocolBuilder, ProxyAuth, ProxyConfig, ProxyType,
 };
-use tracing::{Level, debug, error, info};
+use tracing::{Level, error, info};
 use tracing_subscriber::FmtSubscriber;
 
 mod cli;
