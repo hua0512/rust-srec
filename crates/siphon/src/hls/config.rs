@@ -160,8 +160,6 @@ impl Default for HlsCacheConfig {
 
 #[derive(Debug, Clone)]
 pub struct HlsOutputConfig {
-    pub max_duration: Option<Duration>, // Max duration of a segment file
-    pub max_file_size: u64,             // Max size of a segment file
     pub live_reorder_buffer_duration: Duration, // Max duration of segments to hold in reorder buffer
     pub live_reorder_buffer_max_segments: usize, // Max number of segments in reorder buffer
     /// Enables skipping of missing segments in a live stream after a threshold.
@@ -179,8 +177,6 @@ pub struct HlsOutputConfig {
 impl Default for HlsOutputConfig {
     fn default() -> Self {
         Self {
-            max_duration: None, // No limit on segment duration
-            max_file_size: 0,   // No limit on segment file size
             live_reorder_buffer_duration: Duration::from_secs(30),
             live_reorder_buffer_max_segments: 10,
             live_gap_skip_enabled: true,

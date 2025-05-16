@@ -1,20 +1,16 @@
-use bytes::Bytes;
 use futures::StreamExt;
 use hls::HlsData;
 use hls_fix::writer_task::HlsWriterTask;
 use hls_fix::{HlsPipeline, HlsPipelineConfig};
-use indicatif::HumanBytes;
 use pipeline_common::{PipelineError, StreamerContext};
 use std::path::Path;
 use std::sync::Arc;
-use std::time::{Duration, Instant};
+use std::time::Instant;
 use tracing::{info, warn};
 
-use siphon_engine::downloader::DownloadManager;
-use siphon_engine::{DownloadStream, DownloaderInstance, ProtocolType};
+use siphon_engine::DownloaderInstance;
 
 use crate::config::ProgramConfig;
-use crate::output;
 use crate::output::output::{OutputFormat, create_output};
 use crate::utils::progress::ProgressManager;
 
@@ -61,7 +57,7 @@ pub async fn process_hls_stream(
     // Create output with appropriate format
     let output_format = config.output_format.unwrap_or(OutputFormat::File);
 
-    let mut output_manager = create_output(
+    let output_manager = create_output(
         output_format,
         output_dir,
         &base_name,
@@ -87,8 +83,8 @@ pub async fn process_hls_stream(
     let pipeline = HlsPipeline::new(
         Arc::new(context),
         HlsPipelineConfig {
-            max_segment_duration: None,
-            max_segments: None,
+            max_duration_limit: Some(config.pipeline_config.duration_limit as u64),
+            max_file_size: config.pipeline_config.file_size_limit,
         },
     );
 
