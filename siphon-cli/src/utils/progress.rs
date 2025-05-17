@@ -1,4 +1,5 @@
 use flv_fix::writer_task::FlvWriterTask;
+use hls_fix::writer_task::HlsWriterTask;
 use indicatif::{FormattedDuration, MultiProgress, ProgressBar, ProgressStyle};
 use std::time::Duration;
 
@@ -10,6 +11,7 @@ pub struct ProgressManager {
     multi: MultiProgress,
     main_progress: ProgressBar,
     pub file_progress: Option<ProgressBar>,
+    pub url_progress: Option<ProgressBar>,
     status_progress: ProgressBar,
     disabled: bool,
 }
@@ -74,6 +76,7 @@ impl ProgressManager {
             multi,
             main_progress,
             file_progress: None,
+            url_progress: None,
             status_progress,
             disabled: false,
         }
@@ -84,11 +87,12 @@ impl ProgressManager {
         // Create dummy progress bars that don't display anything
         let multi = MultiProgress::new();
         let dummy_bar = ProgressBar::hidden();
-        
+
         Self {
             multi,
             main_progress: dummy_bar.clone(),
             file_progress: None,
+            url_progress: None,
             status_progress: dummy_bar,
             disabled: true,
         }
@@ -100,7 +104,7 @@ impl ProgressManager {
         if self.disabled {
             return ProgressBar::hidden();
         }
-        
+
         // Remove the old file progress if it exists
         if let Some(old_pb) = self.file_progress.take() {
             old_pb.finish_and_clear();
@@ -119,13 +123,46 @@ impl ProgressManager {
         file_progress
     }
 
+    /// Add a URL progress bar for the current URL being downloaded
+    pub fn add_url_progress(&mut self, url: &str) -> ProgressBar {
+        // If disabled, return a hidden progress bar without doing anything
+        if self.disabled {
+            return ProgressBar::hidden();
+        }
+
+        // Remove the old URL progress if it exists
+        if let Some(old_pb) = self.url_progress.take() {
+            old_pb.finish_and_clear();
+        }
+
+        let url_progress = self.multi.add(ProgressBar::new(0));
+        url_progress.set_style(
+            ProgressStyle::default_bar()
+                .template("{spinner:.green} [{msg}] [{bar:40.cyan/blue}] {bytes}/{total_bytes} ({bytes_per_sec})")
+                .unwrap()
+                .progress_chars("#>-")
+        );
+
+        // Truncate URL if it's too long for display
+        let display_url = if url.len() > 50 {
+            format!("{}...{}", &url[..25], &url[url.len() - 22..])
+        } else {
+            url.to_string()
+        };
+
+        url_progress.set_message(format!("Downloading {}", display_url));
+
+        self.url_progress = Some(url_progress.clone());
+        url_progress
+    }
+
     /// Sets up callbacks on a FlvWriterTask to update the progress bars
     pub fn setup_writer_task_callbacks(&self, writer_task: &mut FlvWriterTask) {
         // Skip setting up callbacks if progress manager is disabled
         if self.disabled {
             return;
         }
-        
+
         if let Some(file_progress) = &self.file_progress {
             let file_pb = file_progress.clone();
 
@@ -183,12 +220,75 @@ impl ProgressManager {
         }
     }
 
+    /// Sets up callbacks on a FlvWriterTask to update the progress bars
+    pub fn setup_hls_writer_task_callbacks(&self, writer_task: &mut HlsWriterTask) {
+        // Skip setting up callbacks if progress manager is disabled
+        if self.disabled {
+            return;
+        }
+
+        if let Some(file_progress) = &self.file_progress {
+            let file_pb = file_progress.clone();
+
+            // Set up status callback for continuous progress updates
+            writer_task.set_status_callback(move |path, size, _rate, duration| {
+                if let Some(path) = path {
+                    let path_display = path
+                        .file_name()
+                        .unwrap_or_else(|| path.as_os_str())
+                        .to_string_lossy();
+                    file_pb.set_length(size);
+                    file_pb.set_position(size);
+
+                    // Display video duration prominently in the message
+                    file_pb.set_message(format!(
+                        "Duration: {} | {}",
+                        FormattedDuration(std::time::Duration::from_millis(
+                            duration.unwrap_or(0) as u64
+                        )),
+                        path_display,
+                    ));
+                }
+            });
+
+            // Set up segment open callback
+            let status_pb_open = self.status_progress.clone();
+            writer_task.set_on_segment_open(move |path, segment_type| {
+                let filename = path
+                    .file_name()
+                    .unwrap_or_else(|| path.as_os_str())
+                    .to_string_lossy();
+                status_pb_open.set_message(format!(
+                    "Opened segment type #{:?}: {}",
+                    segment_type, filename
+                ));
+            });
+
+            // Set up segment close callback
+            let status_pb_close = self.status_progress.clone();
+            writer_task.set_on_segment_close(move |path, segment_num, tags, duration| {
+                let filename = path
+                    .file_name()
+                    .unwrap_or_else(|| path.as_os_str())
+                    .to_string_lossy();
+
+                // Format duration if available
+                let duration_str = format_duration(duration as f64 / 1000.0);
+
+                status_pb_close.set_message(format!(
+                    "Closed segment #{:?}: {} ({} tags, {})",
+                    segment_num, filename, tags, duration_str
+                ));
+            });
+        }
+    }
+
     /// Updates the main progress bar position
     pub fn update_main_progress(&self, position: u64) {
         if self.disabled {
             return;
         }
-        
+
         if self.main_progress.length().unwrap_or(0) > 0 {
             self.main_progress.set_position(position);
         }
@@ -206,10 +306,13 @@ impl ProgressManager {
         if self.disabled {
             return;
         }
-        
+
         self.main_progress.finish_with_message(msg.to_string());
         if let Some(file_progress) = &self.file_progress {
             file_progress.finish();
+        }
+        if let Some(url_progress) = &self.url_progress {
+            url_progress.finish();
         }
         self.status_progress.finish_with_message(msg.to_string());
     }
@@ -219,9 +322,20 @@ impl ProgressManager {
         if self.disabled {
             return;
         }
-        
+
         if let Some(file_progress) = &self.file_progress {
             file_progress.finish_with_message(msg.to_string());
+        }
+    }
+
+    /// Finish just the URL progress bar
+    pub fn finish_url(&self, msg: &str) {
+        if self.disabled {
+            return;
+        }
+
+        if let Some(url_progress) = &self.url_progress {
+            url_progress.finish_with_message(msg.to_string());
         }
     }
 
@@ -239,7 +353,12 @@ impl ProgressManager {
     pub fn get_file_progress(&self) -> Option<&ProgressBar> {
         self.file_progress.as_ref()
     }
-    
+
+    /// Get access to the URL progress bar if it exists
+    pub fn get_url_progress(&self) -> Option<&ProgressBar> {
+        self.url_progress.as_ref()
+    }
+
     /// Check if the progress manager is disabled
     pub fn is_disabled(&self) -> bool {
         self.disabled

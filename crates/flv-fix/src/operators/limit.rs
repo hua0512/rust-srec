@@ -32,16 +32,13 @@
 //! - hua0512
 //!
 
-use crate::context::StreamerContext;
 use flv::data::FlvData;
-use flv::error::FlvError;
 use flv::header::FlvHeader;
 use flv::tag::{FlvTag, FlvUtil};
+use pipeline_common::{PipelineError, Processor, StreamerContext};
 use std::sync::Arc;
 use std::time::Instant;
 use tracing::{debug, info};
-
-use super::FlvProcessor;
 
 /// Reason for a stream split
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -206,8 +203,8 @@ impl LimitOperator {
 
     fn split_stream(
         &mut self,
-        output: &mut dyn FnMut(FlvData) -> Result<(), FlvError>,
-    ) -> Result<(), FlvError> {
+        output: &mut dyn FnMut(FlvData) -> Result<(), PipelineError>,
+    ) -> Result<(), PipelineError> {
         info!(
             "{} Splitting stream at size={} bytes, duration={}ms (segment #{})",
             self.context.name,
@@ -247,12 +244,12 @@ impl LimitOperator {
     }
 }
 
-impl FlvProcessor for LimitOperator {
+impl Processor<FlvData> for LimitOperator {
     fn process(
         &mut self,
         input: FlvData,
-        output: &mut dyn FnMut(FlvData) -> Result<(), FlvError>,
-    ) -> Result<(), FlvError> {
+        output: &mut dyn FnMut(FlvData) -> Result<(), PipelineError>,
+    ) -> Result<(), PipelineError> {
         match input {
             FlvData::Header(header) => {
                 // Reset state for a new stream
@@ -360,8 +357,8 @@ impl FlvProcessor for LimitOperator {
 
     fn finish(
         &mut self,
-        _output: &mut dyn FnMut(FlvData) -> Result<(), FlvError>,
-    ) -> Result<(), FlvError> {
+        _output: &mut dyn FnMut(FlvData) -> Result<(), PipelineError>,
+    ) -> Result<(), PipelineError> {
         debug!("{} completed.", self.context.name);
         Ok(())
     }
@@ -377,12 +374,13 @@ mod tests {
     use crate::test_utils::{self, create_script_tag};
     use bytes::Bytes;
     use flv::tag::{FlvTag, FlvTagType};
+    use pipeline_common::test_utils::create_test_context;
     use std::sync::atomic::{AtomicUsize, Ordering};
     use std::sync::{Arc, Mutex};
 
     #[test]
     fn test_size_limit_with_keyframe_splitting() {
-        let context = test_utils::create_test_context();
+        let context = create_test_context();
         let split_counter = Arc::new(AtomicUsize::new(0));
         let split_counter_clone = split_counter.clone();
 
@@ -401,7 +399,7 @@ mod tests {
         let mut output_items = Vec::new();
 
         // Create a mutable output function
-        let mut output_fn = |item: FlvData| -> Result<(), FlvError> {
+        let mut output_fn = |item: FlvData| -> Result<(), PipelineError> {
             output_items.push(item);
             Ok(())
         };
@@ -480,7 +478,7 @@ mod tests {
 
     #[test]
     fn test_duration_limit_with_keyframe_splitting() {
-        let context = test_utils::create_test_context();
+        let context = create_test_context();
         let split_counter = Arc::new(AtomicUsize::new(0));
         let split_counter_clone = split_counter.clone();
 
@@ -499,7 +497,7 @@ mod tests {
         let mut output_items = Vec::new();
 
         // Create a mutable output function
-        let mut output_fn = |item: FlvData| -> Result<(), FlvError> {
+        let mut output_fn = |item: FlvData| -> Result<(), PipelineError> {
             output_items.push(item);
             Ok(())
         };
@@ -563,7 +561,7 @@ mod tests {
 
     #[test]
     fn test_no_limits() {
-        let context = test_utils::create_test_context();
+        let context = create_test_context();
         let split_counter = Arc::new(AtomicUsize::new(0));
         let split_counter_clone = split_counter.clone();
 
@@ -582,7 +580,7 @@ mod tests {
         let mut output_items = Vec::new();
 
         // Create a mutable output function
-        let mut output_fn = |item: FlvData| -> Result<(), FlvError> {
+        let mut output_fn = |item: FlvData| -> Result<(), PipelineError> {
             output_items.push(item);
             Ok(())
         };
@@ -632,7 +630,7 @@ mod tests {
 
     #[test]
     fn test_sequential_splits() {
-        let context = test_utils::create_test_context();
+        let context = create_test_context();
 
         // Track split count
         let split_count = Arc::new(AtomicUsize::new(0));
@@ -653,7 +651,7 @@ mod tests {
         let mut output_items = Vec::new();
 
         // Create a mutable output function
-        let mut output_fn = |item: FlvData| -> Result<(), FlvError> {
+        let mut output_fn = |item: FlvData| -> Result<(), PipelineError> {
             output_items.push(item);
             Ok(())
         };
@@ -718,7 +716,7 @@ mod tests {
 
     #[test]
     fn test_split_with_interleaved_audio_video() {
-        let context = test_utils::create_test_context();
+        let context = create_test_context();
 
         // Track split timestamps
         let split_timestamps = Arc::new(Mutex::new(Vec::new()));
@@ -741,7 +739,7 @@ mod tests {
         let mut output_items = Vec::new();
 
         // Create a mutable output function
-        let mut output_fn = |item: FlvData| -> Result<(), FlvError> {
+        let mut output_fn = |item: FlvData| -> Result<(), PipelineError> {
             output_items.push(item);
             Ok(())
         };
@@ -845,7 +843,7 @@ mod tests {
 
     #[test]
     fn test_empty_stream_no_splits() {
-        let context = test_utils::create_test_context();
+        let context = create_test_context();
 
         // Track split events
         let split_count = Arc::new(AtomicUsize::new(0));
@@ -866,7 +864,7 @@ mod tests {
         let mut output_items = Vec::new();
 
         // Create a mutable output function
-        let mut output_fn = |item: FlvData| -> Result<(), FlvError> {
+        let mut output_fn = |item: FlvData| -> Result<(), PipelineError> {
             output_items.push(item);
             Ok(())
         };
@@ -896,7 +894,7 @@ mod tests {
 
     #[test]
     fn test_retrospective_splitting() {
-        let context = test_utils::create_test_context();
+        let context = create_test_context();
 
         // Track split information
         let split_timestamps = Arc::new(Mutex::new(Vec::new()));
@@ -920,7 +918,7 @@ mod tests {
         let mut output_items = Vec::new();
 
         // Create a mutable output function
-        let mut output_fn = |item: FlvData| -> Result<(), FlvError> {
+        let mut output_fn = |item: FlvData| -> Result<(), PipelineError> {
             output_items.push(item);
             Ok(())
         };

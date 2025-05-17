@@ -6,20 +6,20 @@ use std::path::PathBuf;
 #[command(
     author = "hua0512 <https://github.com/hua0512>",
     version,
-    about = "FLV processing and repair tool",
-    long_about = "A tool for processing, repairing and optimizing FLV (Flash Video) files.\n\
+    about = "Media stream processing and download tool",
+    long_about = "A powerful tool for downloading, processing, and repairing media streams.\n\
                   Part of the stream-rec project: https://github.com/hua0512/rust-rec\n\
                   \n\
-                  This tool fixes common issues in FLV streams such as timestamp anomalies,\n\
-                  out-of-order frames, duration problems, and metadata inconsistencies.\n\
-                  It supports processing individual files, entire directories of FLV files,\n\
-                  or downloading directly from URLs."
+                  This tool supports multiple protocols (FLV, HLS) and can fix common issues\n\
+                  such as timestamp anomalies, out-of-order frames, and metadata inconsistencies.\n\
+                  It supports processing individual files, entire directories, or downloading\n\
+                  directly from URLs with automatic protocol detection."
 )]
 pub struct CliArgs {
-    /// Input FLV file(s), directory, or URL(s) to process
+    /// Input file(s), directory, or URL(s) to process
     #[arg(
         required = true,
-        help = "Path to FLV file(s), directory containing FLV files, or URL(s) to download"
+        help = "Path to file(s), directory containing media files, or URL(s) to download"
     )]
     pub input: Vec<String>,
 
@@ -184,4 +184,45 @@ pub struct CliArgs {
         help = "Disable all proxy settings (including system proxy) for downloads"
     )]
     pub no_proxy: bool,
+
+    /// Number of concurrent HLS segment downloads
+    #[arg(
+        long,
+        default_value = "4",
+        help = "Maximum number of concurrent segment downloads for HLS streams"
+    )]
+    pub hls_concurrency: u32,
+
+    /// Segment retry attempts for HLS downloads
+    #[arg(
+        long,
+        default_value = "3",
+        help = "Number of retry attempts for failed HLS segment downloads"
+    )]
+    pub hls_retries: u32,
+
+    /// HLS segment timeout in seconds
+    #[arg(
+        long,
+        default_value = "30",
+        help = "Timeout for individual HLS segment downloads in seconds"
+    )]
+    pub hls_segment_timeout: u64,
+
+    /// Enable HLS playlist caching
+    #[arg(
+        long,
+        default_value = "true",
+        help = "Enable caching of HLS playlists to reduce redundant downloads"
+    )]
+    pub hls_cache_playlists: bool,
+
+    /// Select output format (file, stdout, stderr)
+    #[arg(
+            long,
+            default_value = "file",
+            help = "Output format for downloaded content",
+            value_parser = ["file", "stdout", "stderr"]
+        )]
+    pub output_format: String,
 }

@@ -31,15 +31,12 @@
 //!
 //! - hua0512
 //!
-use crate::context::StreamerContext;
 use flv::data::FlvData;
-use flv::error::FlvError;
 use flv::header::FlvHeader;
 use flv::tag::{FlvTag, FlvUtil};
+use pipeline_common::{PipelineError, Processor, StreamerContext};
 use std::sync::Arc;
 use tracing::{debug, info};
-
-use super::FlvProcessor;
 
 // Store data wrapped in Arc for efficient cloning
 struct StreamState {
@@ -97,8 +94,8 @@ impl SplitOperator {
     // Split stream and re-inject header+sequence data
     fn split_stream(
         &mut self,
-        output: &mut dyn FnMut(FlvData) -> Result<(), FlvError>,
-    ) -> Result<(), FlvError> {
+        output: &mut dyn FnMut(FlvData) -> Result<(), PipelineError>,
+    ) -> Result<(), PipelineError> {
         // Note on timestamp handling:
         // When we split the stream, we re-inject the header and sequence information
         // using the original timestamps from when they were first encountered.
@@ -123,12 +120,12 @@ impl SplitOperator {
     }
 }
 
-impl FlvProcessor for SplitOperator {
+impl Processor<FlvData> for SplitOperator {
     fn process(
         &mut self,
         input: FlvData,
-        output: &mut dyn FnMut(FlvData) -> Result<(), FlvError>,
-    ) -> Result<(), FlvError> {
+        output: &mut dyn FnMut(FlvData) -> Result<(), PipelineError>,
+    ) -> Result<(), PipelineError> {
         match &input {
             FlvData::Header(header) => {
                 // Reset state when a new header is encountered
@@ -190,8 +187,8 @@ impl FlvProcessor for SplitOperator {
 
     fn finish(
         &mut self,
-        _output: &mut dyn FnMut(FlvData) -> Result<(), FlvError>,
-    ) -> Result<(), FlvError> {
+        _output: &mut dyn FnMut(FlvData) -> Result<(), PipelineError>,
+    ) -> Result<(), PipelineError> {
         debug!("{} completed.", self.context.name);
         self.state.reset();
         Ok(())
@@ -204,20 +201,22 @@ impl FlvProcessor for SplitOperator {
 
 #[cfg(test)]
 mod tests {
+    use pipeline_common::create_test_context;
+
     use super::*;
     use crate::test_utils::{
-        self, create_audio_sequence_header, create_audio_tag, create_test_header,
+        create_audio_sequence_header, create_audio_tag, create_test_header,
         create_video_sequence_header, create_video_tag,
     };
 
     #[test]
     fn test_video_codec_change_detection() {
-        let context = test_utils::create_test_context();
+        let context = create_test_context();
         let mut operator = SplitOperator::new(context);
         let mut output_items = Vec::new();
 
         // Create a mutable output function
-        let mut output_fn = |item: FlvData| -> Result<(), FlvError> {
+        let mut output_fn = |item: FlvData| -> Result<(), PipelineError> {
             output_items.push(item);
             Ok(())
         };
@@ -264,12 +263,12 @@ mod tests {
 
     #[test]
     fn test_audio_codec_change_detection() {
-        let context = test_utils::create_test_context();
+        let context = create_test_context();
         let mut operator = SplitOperator::new(context);
         let mut output_items = Vec::new();
 
         // Create a mutable output function
-        let mut output_fn = |item: FlvData| -> Result<(), FlvError> {
+        let mut output_fn = |item: FlvData| -> Result<(), PipelineError> {
             output_items.push(item);
             Ok(())
         };
@@ -316,12 +315,12 @@ mod tests {
 
     #[test]
     fn test_no_codec_change() {
-        let context = test_utils::create_test_context();
+        let context = create_test_context();
         let mut operator = SplitOperator::new(context);
         let mut output_items = Vec::new();
 
         // Create a mutable output function
-        let mut output_fn = |item: FlvData| -> Result<(), FlvError> {
+        let mut output_fn = |item: FlvData| -> Result<(), PipelineError> {
             output_items.push(item);
             Ok(())
         };
@@ -380,12 +379,12 @@ mod tests {
 
     #[test]
     fn test_multiple_codec_changes() {
-        let context = test_utils::create_test_context();
+        let context = create_test_context();
         let mut operator = SplitOperator::new(context);
         let mut output_items = Vec::new();
 
         // Create a mutable output function
-        let mut output_fn = |item: FlvData| -> Result<(), FlvError> {
+        let mut output_fn = |item: FlvData| -> Result<(), PipelineError> {
             output_items.push(item);
             Ok(())
         };

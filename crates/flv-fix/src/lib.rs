@@ -15,16 +15,16 @@
 //!
 //! ## Component Overview
 //!
+//! - `adapter`: Adapters for integrating with the generic pipeline infrastructure
 //! - `analyzer`: Tools for analyzing FLV stream structure and content
-//! - `context`: Context and configuration for processing operations
 //! - `operators`: Modular pipeline operators for stream transformations
 //! - `pipeline`: Stream processing pipeline implementation
 //! - `script_modifier`: Utilities for manipulating FLV script tags
 //! - `utils`: Helper functions and utilities
 //! - `writer_task`: Asynchronous FLV writing functionality
 
+mod adapter;
 pub mod analyzer;
-pub mod context;
 pub mod operators;
 pub mod pipeline;
 pub mod script_modifier;
@@ -34,8 +34,8 @@ pub mod writer_task;
 #[cfg(test)]
 pub mod test_utils;
 
+pub use adapter::flv_error_to_pipeline_error;
 pub use analyzer::*;
-pub use context::*;
 pub use operators::*;
 pub use pipeline::*;
 pub use script_modifier::*;

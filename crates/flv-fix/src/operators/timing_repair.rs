@@ -44,19 +44,16 @@
 //! - hua0512
 //!
 
-use crate::context::StreamerContext;
 use amf0::Amf0Value;
 use flv::data::FlvData;
-use flv::error::FlvError;
 use flv::script::ScriptData;
 use flv::tag::{FlvTag, FlvTagType, FlvUtil};
+use pipeline_common::{PipelineError, Processor, StreamerContext};
 use std::cmp::max;
 use std::collections::HashMap;
 use std::f64;
 use std::sync::Arc;
 use tracing::{debug, error, info, trace, warn};
-
-use super::FlvProcessor;
 
 /// The tolerance for timestamp correction due to floating point conversion errors
 /// Since millisecond precision (1/1000 of a second) can't exactly represent many common frame rates
@@ -374,11 +371,12 @@ impl TimingState {
     }
 
     fn update_last_tags(&mut self, tag: &FlvTag) {
+        let tag_clone = tag.clone();
         self.last_tag = Some(tag.clone());
         if tag.is_audio_tag() {
-            self.last_audio_tag = Some(tag.clone());
+            self.last_audio_tag = Some(tag_clone);
         } else if tag.is_video_tag() {
-            self.last_video_tag = Some(tag.clone());
+            self.last_video_tag = Some(tag_clone);
         }
     }
 }
@@ -417,8 +415,8 @@ impl TimingRepairOperator {
     fn handle_script_tag(
         &mut self,
         tag: &mut FlvTag,
-        output: &mut dyn FnMut(FlvData) -> Result<(), FlvError>,
-    ) -> Result<(), FlvError> {
+        output: &mut dyn FnMut(FlvData) -> Result<(), PipelineError>,
+    ) -> Result<(), PipelineError> {
         let mut cursor = std::io::Cursor::new(tag.data.clone());
         if let Ok(amf_data) = ScriptData::demux(&mut cursor) {
             if amf_data.name == "onMetaData" && !amf_data.data.is_empty() {
@@ -506,13 +504,13 @@ impl TimingRepairOperator {
     }
 }
 
-impl FlvProcessor for TimingRepairOperator {
+impl Processor<FlvData> for TimingRepairOperator {
     /// Process method that receives FLV data, corrects timing issues, and forwards the data
     fn process(
         &mut self,
         mut input: FlvData,
-        output: &mut dyn FnMut(FlvData) -> Result<(), FlvError>,
-    ) -> Result<(), FlvError> {
+        output: &mut dyn FnMut(FlvData) -> Result<(), PipelineError>,
+    ) -> Result<(), PipelineError> {
         match &mut input {
             FlvData::Header(_) => {
                 // Reset state when encountering a header
@@ -619,8 +617,8 @@ impl FlvProcessor for TimingRepairOperator {
 
     fn finish(
         &mut self,
-        output: &mut dyn FnMut(FlvData) -> Result<(), FlvError>,
-    ) -> Result<(), FlvError> {
+        output: &mut dyn FnMut(FlvData) -> Result<(), PipelineError>,
+    ) -> Result<(), PipelineError> {
         let _ = output;
         // Finalize processing and log statistics
         info!(
@@ -641,9 +639,11 @@ impl FlvProcessor for TimingRepairOperator {
 
 #[cfg(test)]
 mod tests {
+    use pipeline_common::create_test_context;
+
     use super::*;
     use crate::test_utils::{
-        create_audio_sequence_header, create_audio_tag, create_test_context, create_test_header,
+        create_audio_sequence_header, create_audio_tag, create_test_header,
         create_video_sequence_header, create_video_tag, print_tags,
     };
 
@@ -659,7 +659,7 @@ mod tests {
 
         // Process each tag through the operator with a closure to collect the output
         for tag in input_tags {
-            let mut output_fn = |item: FlvData| -> Result<(), FlvError> {
+            let mut output_fn = |item: FlvData| -> Result<(), PipelineError> {
                 results.push(item);
                 Ok(())
             };
@@ -669,7 +669,7 @@ mod tests {
         }
 
         // Finish processing
-        let mut finish_output = |item: FlvData| -> Result<(), FlvError> {
+        let mut finish_output = |item: FlvData| -> Result<(), PipelineError> {
             results.push(item);
             Ok(())
         };

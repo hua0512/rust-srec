@@ -30,14 +30,11 @@
 //! The operator creates a header with both audio and video flags set to true
 //! when insertion is needed.
 
-use crate::context::StreamerContext;
 use flv::data::FlvData;
-use flv::error::FlvError;
 use flv::header::FlvHeader;
+use pipeline_common::{PipelineError, Processor, StreamerContext};
 use std::sync::Arc;
 use tracing::warn;
-
-use super::FlvProcessor;
 
 /// An operator that validates and ensures FLV streams have a proper header.
 ///
@@ -63,12 +60,12 @@ impl HeaderCheckOperator {
     }
 }
 
-impl FlvProcessor for HeaderCheckOperator {
+impl Processor<FlvData> for HeaderCheckOperator {
     fn process(
         &mut self,
         input: FlvData,
-        output: &mut dyn FnMut(FlvData) -> Result<(), FlvError>,
-    ) -> Result<(), FlvError> {
+        output: &mut dyn FnMut(FlvData) -> Result<(), PipelineError>,
+    ) -> Result<(), PipelineError> {
         if self.first_item {
             self.first_item = false;
 
@@ -90,8 +87,8 @@ impl FlvProcessor for HeaderCheckOperator {
 
     fn finish(
         &mut self,
-        _output: &mut dyn FnMut(FlvData) -> Result<(), FlvError>,
-    ) -> Result<(), FlvError> {
+        _output: &mut dyn FnMut(FlvData) -> Result<(), PipelineError>,
+    ) -> Result<(), PipelineError> {
         Ok(())
     }
 
@@ -103,7 +100,8 @@ impl FlvProcessor for HeaderCheckOperator {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::test_utils::{create_test_context, create_test_header, create_video_tag};
+    use crate::test_utils::{create_test_header, create_video_tag};
+    use pipeline_common::test_utils::create_test_context;
 
     #[test]
     fn test_with_header_present() {
@@ -112,7 +110,7 @@ mod tests {
         let mut output_items = Vec::new();
 
         // Create a mutable output function
-        let mut output_fn = |item: FlvData| -> Result<(), FlvError> {
+        let mut output_fn = |item: FlvData| -> Result<(), PipelineError> {
             output_items.push(item);
             Ok(())
         };
@@ -141,7 +139,7 @@ mod tests {
         let mut output_items = Vec::new();
 
         // Create a mutable output function
-        let mut output_fn = |item: FlvData| -> Result<(), FlvError> {
+        let mut output_fn = |item: FlvData| -> Result<(), PipelineError> {
             output_items.push(item);
             Ok(())
         };
