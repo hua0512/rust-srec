@@ -12,6 +12,8 @@ members = [
     "crates/av1",
     "crates/h265",
     "crates/amf0",
+    "crates/platforms",
+    "crates/tars-codec",
 ]
 
 [profile.release]

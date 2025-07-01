@@ -1,0 +1,43 @@
+[package]
+name = "platforms-parser"
+version = "0.1.1"
+edition = "2024"
+
+[dependencies]
+bytes = "1.10.1"
+tokio = { version = "1.44.2", features = [
+    "rt-multi-thread",
+    "io-util",
+    "macros",
+] }
+# futures = "0.3"
+# chrono = "0.4"
+reqwest = { version = "0.12", default-features = false, features = [
+    "json",
+    "stream",
+    "rustls-tls",
+] }
+rustls = { version = "0.23", default-features = false, features = [
+    "logging",
+    "ring",
+    "tls12",
+] }
+rustls-platform-verifier = "0.6.0"
+url = "2.4"
+thiserror = "1.0"
+
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+
+regex = { version = "1.3", default-features = false, features = [
+    "std",
+    "unicode-perl",
+] }
+once_cell = "1.17"
+
+# Logging
+tracing = "0.1"
+tracing-subscriber = "0.3"
+async-trait = "0.1.88"
+
+tars-codec = { path = "../tars-codec" }
