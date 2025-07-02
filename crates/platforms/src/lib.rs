@@ -1,2 +1,2 @@
 mod extractor;
-mod media;
+pub mod media;

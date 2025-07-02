@@ -2,7 +2,7 @@ use crate::{
     error::TarsError,
     types::{TarsType, TarsValue},
 };
-use bytes::{BufMut, BytesMut};
+use bytes::{BufMut, Bytes, BytesMut};
 
 pub struct TarsSerializer {
     buffer: BytesMut,
@@ -15,8 +15,18 @@ impl TarsSerializer {
         }
     }
 
+    pub fn with_capacity(capacity: usize) -> Self {
+        Self {
+            buffer: BytesMut::with_capacity(capacity),
+        }
+    }
+
     pub fn into_inner(self) -> BytesMut {
         self.buffer
+    }
+
+    pub fn into_bytes(self) -> Bytes {
+        self.buffer.freeze()
     }
 
     pub fn write_head(&mut self, tag: u8, type_id: TarsType) {
@@ -108,7 +118,7 @@ impl TarsSerializer {
     pub fn write_struct(
         &mut self,
         tag: u8,
-        value: &std::collections::BTreeMap<u8, TarsValue>,
+        value: &ahash::AHashMap<u8, TarsValue>,
     ) -> Result<(), TarsError> {
         self.write_head(tag, TarsType::StructBegin);
         for (tag, value) in value {
@@ -121,7 +131,7 @@ impl TarsSerializer {
     pub fn write_map<K, V>(
         &mut self,
         tag: u8,
-        value: &std::collections::BTreeMap<K, V>,
+        value: &ahash::AHashMap<K, V>,
     ) -> Result<(), TarsError>
     where
         K: TarsSerializable,
@@ -136,11 +146,11 @@ impl TarsSerializer {
         Ok(())
     }
 
-    pub fn write_list(&mut self, tag: u8, value: &[TarsValue]) -> Result<(), TarsError> {
+    pub fn write_list(&mut self, tag: u8, value: &[Box<TarsValue>]) -> Result<(), TarsError> {
         self.write_head(tag, TarsType::List);
         self.write_i32(0, value.len() as i32)?;
         for item in value {
-            self.write_value(0, item)?;
+            self.write_value(0, item.as_ref())?;
         }
         Ok(())
     }
@@ -163,10 +173,21 @@ impl TarsSerializer {
             TarsValue::Float(v) => self.write_f32(tag, *v),
             TarsValue::Double(v) => self.write_f64(tag, *v),
             TarsValue::String(v) => self.write_string(tag, v),
+            TarsValue::StringRef(bytes) => {
+                // Convert bytes back to &str for serialization
+                match std::str::from_utf8(bytes) {
+                    Ok(s) => self.write_string(tag, s),
+                    Err(e) => {
+                        println!("Invalid UTF-8 sequence: {:?}", bytes);
+                        Err(TarsError::InvalidUtf8(e))
+                    },
+                }
+            }
             TarsValue::Struct(v) => self.write_struct(tag, v),
             TarsValue::Map(v) => self.write_map(tag, v),
             TarsValue::List(v) => self.write_list(tag, v),
             TarsValue::SimpleList(v) => self.write_simple_list(tag, v),
+            TarsValue::Binary(v) => self.write_simple_list(tag, v),
             &TarsValue::StructBegin => {
                 self.write_head(tag, TarsType::StructBegin);
                 Ok(())
@@ -201,8 +222,20 @@ impl TarsSerializable for Vec<u8> {
     }
 }
 
-pub fn to_bytes(value: &TarsValue) -> Result<Vec<u8>, TarsError> {
+impl TarsSerializable for Bytes {
+    fn serialize(&self, serializer: &mut TarsSerializer, tag: u8) -> Result<(), TarsError> {
+        serializer.write_simple_list(tag, self)
+    }
+}
+
+impl TarsSerializable for &str {
+    fn serialize(&self, serializer: &mut TarsSerializer, tag: u8) -> Result<(), TarsError> {
+        serializer.write_string(tag, self)
+    }
+}
+
+pub fn to_bytes_mut(value: &TarsValue) -> Result<Bytes, TarsError> {
     let mut serializer = TarsSerializer::new();
     serializer.write_value(0, value)?;
-    Ok(serializer.into_inner().to_vec())
+    Ok(serializer.into_bytes())
 }

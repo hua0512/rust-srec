@@ -1,11 +1,13 @@
-// In tars-codec/src/types.rs
-
-use std::collections::BTreeMap;
+use bytes::Bytes;
+use std::hash::{Hash, Hasher};
+use ahash::AHashMap;
+use smallvec::SmallVec;
 
 /// Represents a full Tars message.
+#[derive(Debug)]
 pub struct TarsMessage {
     pub header: TarsRequestHeader,
-    pub body: BTreeMap<String, Vec<u8>>, // The raw body payload
+    pub body: AHashMap<String, Bytes>, // The raw body payload with fast hashing
 }
 
 /// Represents the Tars request header.
@@ -18,8 +20,8 @@ pub struct TarsRequestHeader {
     pub servant_name: String,
     pub func_name: String,
     pub timeout: i32,
-    pub context: BTreeMap<String, String>,
-    pub status: BTreeMap<String, String>,
+    pub context: AHashMap<String, String>,
+    pub status: AHashMap<String, String>,
 }
 
 /// An enum representing any valid Tars value.
@@ -35,10 +37,14 @@ pub enum TarsValue {
     Float(f32),
     Double(f64),
     String(String),
-    Struct(BTreeMap<u8, TarsValue>), // Using BTreeMap for ordered keys
-    Map(BTreeMap<TarsValue, TarsValue>),
-    List(Vec<TarsValue>),
-    SimpleList(Vec<u8>),
+    /// Zero-copy string data - avoids allocation until conversion needed
+    StringRef(Bytes),
+    Struct(AHashMap<u8, TarsValue>),
+    Map(AHashMap<TarsValue, TarsValue>),
+    List(SmallVec<[Box<TarsValue>; 4]>), // Most lists are small, avoid heap allocation
+    SimpleList(Bytes),
+    /// Zero-copy binary data
+    Binary(Bytes),
     StructBegin,
     StructEnd,
 }
@@ -59,13 +65,58 @@ impl Ord for TarsValue {
             (TarsValue::Short(a), TarsValue::Short(b)) => a.cmp(b),
             (TarsValue::Int(a), TarsValue::Int(b)) => a.cmp(b),
             (TarsValue::Long(a), TarsValue::Long(b)) => a.cmp(b),
-            (TarsValue::Float(a), TarsValue::Float(b)) => a.partial_cmp(b).unwrap(),
-            (TarsValue::Double(a), TarsValue::Double(b)) => a.partial_cmp(b).unwrap(),
+            (TarsValue::Float(a), TarsValue::Float(b)) => {
+                // Safe float comparison that handles NaN values
+                a.partial_cmp(b).unwrap_or_else(|| {
+                    if a.is_nan() && b.is_nan() {
+                        Ordering::Equal
+                    } else if a.is_nan() {
+                        Ordering::Greater
+                    } else {
+                        Ordering::Less
+                    }
+                })
+            }
+            (TarsValue::Double(a), TarsValue::Double(b)) => {
+                // Safe double comparison that handles NaN values
+                a.partial_cmp(b).unwrap_or_else(|| {
+                    if a.is_nan() && b.is_nan() {
+                        Ordering::Equal
+                    } else if a.is_nan() {
+                        Ordering::Greater
+                    } else {
+                        Ordering::Less
+                    }
+                })
+            }
             (TarsValue::String(a), TarsValue::String(b)) => a.cmp(b),
-            (TarsValue::Struct(a), TarsValue::Struct(b)) => a.cmp(b),
-            (TarsValue::Map(a), TarsValue::Map(b)) => a.cmp(b),
-            (TarsValue::List(a), TarsValue::List(b)) => a.cmp(b),
+            (TarsValue::StringRef(a), TarsValue::StringRef(b)) => a.cmp(b),
+            (TarsValue::String(a), TarsValue::StringRef(b)) => a.as_bytes().cmp(&**b),
+            (TarsValue::StringRef(a), TarsValue::String(b)) => (**a).cmp(b.as_bytes()),
+            (TarsValue::Struct(a), TarsValue::Struct(b)) => {
+                // Compare HashMaps by converting to sorted vectors
+                let mut a_vec: Vec<_> = a.iter().collect();
+                let mut b_vec: Vec<_> = b.iter().collect();
+                a_vec.sort_by_key(|(k, _)| **k);
+                b_vec.sort_by_key(|(k, _)| **k);
+                a_vec.cmp(&b_vec)
+            }
+            (TarsValue::Map(a), TarsValue::Map(b)) => {
+                // Compare HashMaps by converting to sorted vectors
+                let mut a_vec: Vec<_> = a.iter().collect();
+                let mut b_vec: Vec<_> = b.iter().collect();
+                a_vec.sort_by(|(k1, _), (k2, _)| k1.cmp(k2));
+                b_vec.sort_by(|(k1, _), (k2, _)| k1.cmp(k2));
+                a_vec.cmp(&b_vec)
+            }
+            (TarsValue::List(a), TarsValue::List(b)) => {
+                // Compare SmallVec of Box<TarsValue>
+                let a_slice: &[Box<TarsValue>] = a.as_slice();
+                let b_slice: &[Box<TarsValue>] = b.as_slice();
+                a_slice.cmp(b_slice)
+            }
             (TarsValue::SimpleList(a), TarsValue::SimpleList(b)) => a.cmp(b),
+            (TarsValue::Binary(a), TarsValue::Binary(b)) => a.cmp(b),
             (TarsValue::StructBegin, TarsValue::StructBegin) => Ordering::Equal,
             (TarsValue::StructEnd, TarsValue::StructEnd) => Ordering::Equal,
             _ => Ordering::Less,
@@ -73,7 +124,155 @@ impl Ord for TarsValue {
     }
 }
 
+impl Hash for TarsValue {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        match self {
+            TarsValue::Bool(v) => {
+                0u8.hash(state);
+                v.hash(state);
+            }
+            TarsValue::Byte(v) => {
+                1u8.hash(state);
+                v.hash(state);
+            }
+            TarsValue::Short(v) => {
+                2u8.hash(state);
+                v.hash(state);
+            }
+            TarsValue::Int(v) => {
+                3u8.hash(state);
+                v.hash(state);
+            }
+            TarsValue::Long(v) => {
+                4u8.hash(state);
+                v.hash(state);
+            }
+            TarsValue::Float(v) => {
+                5u8.hash(state);
+                // Safe float hashing by converting to bits
+                if v.is_nan() {
+                    0u32.hash(state); // All NaN values hash to the same value
+                } else {
+                    v.to_bits().hash(state);
+                }
+            }
+            TarsValue::Double(v) => {
+                6u8.hash(state);
+                // Safe double hashing by converting to bits
+                if v.is_nan() {
+                    0u64.hash(state); // All NaN values hash to the same value
+                } else {
+                    v.to_bits().hash(state);
+                }
+            }
+            TarsValue::String(v) => {
+                7u8.hash(state);
+                v.hash(state);
+            }
+            TarsValue::StringRef(v) => {
+                14u8.hash(state);
+                v.hash(state);
+            }
+            TarsValue::Struct(v) => {
+                8u8.hash(state);
+                // Hash each key-value pair in sorted order for consistency
+                let mut pairs: Vec<_> = v.iter().collect();
+                pairs.sort_by_key(|(k, _)| **k);
+                for (k, val) in pairs {
+                    k.hash(state);
+                    val.hash(state);
+                }
+            }
+            TarsValue::Map(v) => {
+                9u8.hash(state);
+                // Hash each key-value pair in sorted order for consistency
+                let mut pairs: Vec<_> = v.iter().collect();
+                pairs.sort_by(|(k1, _), (k2, _)| k1.cmp(k2));
+                for (k, val) in pairs {
+                    k.hash(state);
+                    val.hash(state);
+                }
+            }
+            TarsValue::List(v) => {
+                10u8.hash(state);
+                for item in v {
+                    item.hash(state);
+                }
+            }
+            TarsValue::SimpleList(v) => {
+                11u8.hash(state);
+                v.hash(state);
+            }
+            TarsValue::Binary(v) => {
+                15u8.hash(state);
+                v.hash(state);
+            }
+            TarsValue::StructBegin => {
+                12u8.hash(state);
+            }
+            TarsValue::StructEnd => {
+                13u8.hash(state);
+            }
+        }
+    }
+}
+
+impl TarsValue {
+    /// Fast path for getting i32 values without error handling
+    #[inline]
+    pub fn as_i32(&self) -> Option<i32> {
+        match self {
+            TarsValue::Int(v) => Some(*v),
+            TarsValue::Short(v) => Some(*v as i32),
+            TarsValue::Byte(v) => Some(*v as i32),
+            _ => None,
+        }
+    }
+
+    /// Zero-copy string access - returns &str without allocation
+    #[inline]
+    pub fn as_str(&self) -> Option<&str> {
+        match self {
+            TarsValue::String(s) => Some(s),
+            TarsValue::StringRef(bytes) => std::str::from_utf8(bytes).ok(),
+            _ => None,
+        }
+    }
+
+    /// Get string as owned String (allocates only if necessary)
+    pub fn into_string(self) -> Option<String> {
+        match self {
+            TarsValue::String(s) => Some(s),
+            TarsValue::StringRef(bytes) => {
+                String::from_utf8(bytes.to_vec()).ok()
+            }
+            _ => None,
+        }
+    }
+
+    /// Fast path for getting bytes values without cloning
+    #[inline]
+    pub fn as_bytes(&self) -> Option<&Bytes> {
+        match self {
+            TarsValue::SimpleList(b) => Some(b),
+            TarsValue::Binary(b) => Some(b),
+            TarsValue::StringRef(b) => Some(b),
+            _ => None,
+        }
+    }
+
+    /// Check if this is a zero value (for optimization)
+    #[inline]
+    pub fn is_zero(&self) -> bool {
+        matches!(
+            self,
+            TarsValue::Byte(0) | TarsValue::Short(0) | TarsValue::Int(0) | TarsValue::Long(0)
+        )
+    }
+}
+
 #[repr(u8)]
+#[derive(Debug, Clone, Copy, PartialOrd, PartialEq, Eq, Hash)]
 pub enum TarsType {
     Int1 = 0,
     Int2 = 1,

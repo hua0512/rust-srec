@@ -1,12 +1,8 @@
-use crate::{
-    de::TarsDeserializer,
-    error::TarsError,
-    ser::TarsSerializer,
-    types::{TarsMessage, TarsRequestHeader},
-};
-use bytes::{Buf, BufMut, BytesMut};
+use crate::{de::TarsDeserializer, error::TarsError, ser::TarsSerializer, types::TarsMessage};
+use bytes::{BufMut, BytesMut};
 use tokio_util::codec::{Decoder, Encoder};
 
+#[derive(Default)]
 pub struct TarsCodec;
 
 impl Encoder<TarsMessage> for TarsCodec {
@@ -17,7 +13,7 @@ impl Encoder<TarsMessage> for TarsCodec {
 
         let mut body_serializer = TarsSerializer::new();
         body_serializer.write_map(0, &item.body)?;
-        let body_bytes = body_serializer.into_inner();
+        let body_bytes = body_serializer.into_bytes();
 
         serializer.write_i16(1, item.header.version)?;
         serializer.write_u8(2, item.header.packet_type)?;
@@ -30,10 +26,10 @@ impl Encoder<TarsMessage> for TarsCodec {
         serializer.write_map(9, &item.header.context)?;
         serializer.write_map(10, &item.header.status)?;
 
-        let encoded_bytes = serializer.into_inner();
+        let encoded_bytes = serializer.into_bytes();
         let total_len = (4 + encoded_bytes.len()) as u32;
 
-        println!("Encoded length: {}", total_len);
+        // Pre-allocate capacity to avoid reallocations
         dst.reserve(total_len as usize);
         dst.put_u32(total_len);
         dst.extend_from_slice(&encoded_bytes);
@@ -50,38 +46,19 @@ impl Decoder for TarsCodec {
         if src.len() < 4 {
             return Ok(None);
         }
+
         let mut len_bytes = [0u8; 4];
         len_bytes.copy_from_slice(&src[..4]);
         let len = u32::from_be_bytes(len_bytes) as usize;
+
         if src.len() < len {
             src.reserve(len - src.len());
             return Ok(None);
         }
+
         let data = src.split_to(len).freeze();
-        let mut deserializer = TarsDeserializer::new(&data[4..]);
-        let (header, mut rest) = deserializer.read_request_header()?;
-
-        let body_bytes: Vec<u8> = rest
-            .remove(&7)
-            .ok_or(TarsError::MissingRequiredField(7))?
-            .try_into()?;
-
-        let mut body_deserializer = TarsDeserializer::new(&body_bytes);
-        let body_map_value = body_deserializer.read_value()?;
-        let body = match body_map_value {
-            crate::types::TarsValue::Map(m) => {
-                let mut result = std::collections::BTreeMap::new();
-                for (k, v) in m {
-                    result.insert(k.try_into()?, v.try_into()?);
-                }
-                Ok(result)
-            }
-            _ => Err(TarsError::TypeMismatch {
-                expected: "Map",
-                actual: "Other",
-            }),
-        }?;
-
-        Ok(Some(TarsMessage { header, body }))
+        let mut de = TarsDeserializer::new(data.slice(4..));
+        let message = de.read_message()?;
+        Ok(Some(message))
     }
 }

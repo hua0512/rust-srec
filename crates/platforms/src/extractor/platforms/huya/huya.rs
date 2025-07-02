@@ -2,6 +2,7 @@ use std::collections::HashMap;
 
 use crate::extractor::error::ExtractorError;
 use crate::extractor::extractor::{Extractor, PlatformExtractor};
+use crate::extractor::platforms::huya::huya_tars::decode_get_cdn_token_info_response;
 use crate::media::media_format::MediaFormat;
 use crate::media::media_info::MediaInfo;
 use crate::media::stream_info::StreamInfo;
@@ -9,7 +10,7 @@ use async_trait::async_trait;
 use once_cell::sync::Lazy;
 use regex::Regex;
 use reqwest::Client;
-use tars_codec::types::TarsValue;
+use url::Url;
 
 use super::huya_tars;
 
@@ -134,6 +135,7 @@ impl HuyaExtractor {
             extras.insert("cdn".to_string(), s_cdn_type.to_string());
             extras.insert("stream_name".to_string(), s_stream_name.to_string());
             extras.insert("presenter_uid".to_string(), presenter_uid.to_string());
+            extras.insert("default_bitrate".to_string(), default_bitrate.to_string());
 
             let add_streams_for_bitrate =
                 |streams: &mut Vec<StreamInfo>,
@@ -203,15 +205,13 @@ impl HuyaExtractor {
         stream_name: &str,
         presenter_uid: i32,
     ) -> Result<(), ExtractorError> {
+        println!("Getting true url for {:?}", stream_info);
         let request_body = huya_tars::build_get_cdn_token_info_request(
             stream_name.to_string(),
             cdn.to_string(),
             presenter_uid,
         )
         .unwrap();
-
-        println!("WUP Request Body: {:?}", request_body);
-       return Ok(());
 
         let response = self
             .extractor
@@ -220,40 +220,57 @@ impl HuyaExtractor {
             .send()
             .await?;
 
-        let response_bytes = response.bytes().await?;
-
-        println!("WUP Response: {:?}", response_bytes);
-
-        let decoded_response = tars_codec::decode_response(&mut response_bytes.into()).unwrap();
-
-        if let Some(response_message) = decoded_response {
-            if let Some(body_bytes) = response_message.body.get("tRsp") {
-                let tars_value: TarsValue = tars_codec::de::from_bytes(body_bytes);
-                if let Ok(resp) = huya_tars::HuyaGetTokenResp::try_from(tars_value) {
-                    println!(
-                        "CDN: {}, Stream Name: {}, FLV Anti Code: {}",
-                        resp.cdn_type, resp.stream_name, resp.flv_anti_code
-                    );
-
-                    let s_flv_anti_code = resp.flv_anti_code;
-                    let s_stream_name = stream_name;
-                    let s_cdn_type = resp.cdn_type;
-                    let s_flv_url = format!("https://{}.flv.huya.com/src", s_cdn_type);
-                    let s_flv_url_suffix = "flv";
-
-                    let new_url = format!(
-                        "{}/{}.{}?{}",
-                        s_flv_url, s_stream_name, s_flv_url_suffix, s_flv_anti_code
-                    );
-                    stream_info.url = new_url;
-                    return Ok(());
-                }
-            }
+        if response.status().is_client_error() || response.status().is_server_error() {
+            return Err(ExtractorError::HttpError(
+                response.error_for_status().unwrap_err(),
+            ));
         }
 
-        Err(ExtractorError::Other(
-            "Failed to get stream url from wup".to_string(),
-        ))
+        let response_bytes = response.bytes().await?;
+
+        let token_info = decode_get_cdn_token_info_response(response_bytes)
+            .expect("Failed to decode WUP response");
+
+        // query params
+        let anti_code = match stream_info.format {
+            MediaFormat::Flv => token_info.flv_anti_code,
+            MediaFormat::Hls => token_info.hls_anti_code,
+        };
+
+        let s_stream_name = stream_name;
+
+        let url = Url::parse(&stream_info.url).unwrap();
+        let host = url.host_str().unwrap_or("");
+        let path = url.path().split('/').nth(1).unwrap_or("");
+        let base_url = format!("{}://{}/{}", url.scheme(), host, path);
+        println!("Base URL: {:?}", base_url);
+
+        let suffix = match stream_info.format {
+            MediaFormat::Flv => "flv",
+            MediaFormat::Hls => "m3u8",
+        };
+
+        let bitrate = stream_info.bitrate;
+
+        // use match closure
+        let default_bitrate = stream_info
+            .extras
+            .as_ref()
+            .and_then(|extras| extras.get("default_bitrate"))
+            .and_then(|s| s.parse::<u32>().ok())
+            .unwrap_or(10000);
+
+        // Use reqwest's Url for safe query parameter handling
+        let base_url = format!("{}/{}.{}?{}", base_url, s_stream_name, suffix, anti_code);
+
+        if bitrate != default_bitrate {
+            let new_url = format!("{}&ratio={}", base_url, bitrate);
+            stream_info.url = new_url.to_string();
+        } else {
+            stream_info.url = base_url.to_string();
+        }
+
+        Ok(())
     }
 }
 
@@ -381,7 +398,6 @@ mod tests {
     use reqwest::Client;
     use rustls::{ClientConfig, crypto::ring};
     use rustls_platform_verifier::BuilderVerifierExt;
-    use tokio::stream;
 
     fn create_client() -> Client {
         let provider = Arc::new(ring::default_provider());
@@ -404,72 +420,23 @@ mod tests {
     async fn test_is_live_integration() {
         let extractor =
             HuyaExtractor::new("https://www.huya.com/660000".to_string(), create_client());
-        // let mut media_info = extractor.extract().await.unwrap();
-        // assert_eq!(media_info.is_live, true);
-        // let stream_info = media_info.streams.first().unwrap();
-        // assert!(!stream_info.url.is_empty());
-        let stream_info = StreamInfo {
-            url: "".to_string(),
-            format: MediaFormat::Flv,
-            quality: "1080p".to_string(),
-            bitrate: 0, 
-            priority: 0,
-            extras: Some(HashMap::from([
-                // Add any necessary extras here
-                ("cdn".to_string(), "AL".to_string()),
-                ("stream_name".to_string(), "78941969-2559461593-10992803837303062528-2693342886-10057-A-0-1-imgplus".to_string()),
-                ("presenter_uid".to_string(), "1346609715".to_string()),
-            ])),
-            codec: "avc".to_string(),
-            is_headers_needed: false,
-        };
+        let media_info = extractor.extract().await.unwrap();
+        assert_eq!(media_info.is_live, true);
+        let stream_info = media_info.streams.first().unwrap();
+        assert!(!stream_info.url.is_empty());
 
-        extractor.get_url(stream_info.clone()).await.unwrap();
-        // Manually construct the byte array from the WUP response
-        let response_bytes = [
-            0, 0, 2, 51, 16, 3, 44, 60, 64, 1, 86, 6, 108, 105, 118, 101, 117, 105, 102, 15, 103, 
-            101, 116, 67, 100, 110, 84, 111, 107, 101, 110, 73, 110, 102, 111, 125, 0, 1, 2, 6, 8, 
-            0, 2, 6, 0, 29, 0, 0, 1, 12, 6, 4, 116, 82, 115, 112, 29, 0, 1, 1, 241, 10, 6, 0, 22, 
-            2, 65, 76, 38, 71, 55, 56, 57, 52, 49, 57, 54, 57, 45, 50, 53, 53, 57, 52, 54, 49, 53, 
-            57, 51, 45, 49, 48, 57, 57, 50, 56, 48, 51, 56, 51, 55, 51, 48, 51, 48, 54, 50, 53, 50, 
-            56, 45, 50, 54, 57, 51, 51, 52, 50, 56, 56, 54, 45, 49, 48, 48, 53, 55, 45, 65, 45, 48, 
-            45, 49, 45, 105, 109, 103, 112, 108, 117, 115, 50, 80, 67, 162, 51, 70, 127, 119, 115, 
-            83, 101, 99, 114, 101, 116, 61, 55, 100, 98, 100, 55, 50, 54, 57, 100, 48, 54, 98, 97, 
-            102, 56, 53, 53, 56, 98, 102, 55, 50, 55, 56, 98, 50, 52, 97, 53, 101, 100, 97, 38, 119, 
-            115, 84, 105, 109, 101, 61, 54, 56, 54, 52, 54, 51, 57, 53, 38, 102, 109, 61, 82, 70, 100, 
-            120, 79, 69, 74, 106, 83, 106, 78, 111, 78, 107, 82, 75, 100, 68, 90, 85, 87, 86, 56, 107, 
-            77, 70, 56, 107, 77, 86, 56, 107, 77, 108, 56, 107, 77, 119, 37, 51, 68, 38, 99, 116, 121, 
-            112, 101, 61, 104, 117, 121, 97, 95, 99, 111, 109, 109, 115, 101, 114, 118, 101, 114, 86, 
-            8, 54, 56, 54, 52, 54, 50, 54, 57, 102, 134, 119, 115, 83, 101, 99, 114, 101, 116, 61, 55, 
-            100, 98, 100, 55, 50, 54, 57, 100, 48, 54, 98, 97, 102, 56, 53, 53, 56, 98, 102, 55, 50, 
-            55, 56, 98, 50, 52, 97, 53, 101, 100, 97, 38, 119, 115, 84, 105, 109, 101, 61, 54, 56, 54, 
-            52, 54, 51, 57, 53, 38, 102, 109, 61, 82, 70, 100, 120, 79, 69, 74, 106, 83, 106, 78, 111, 
-            78, 107, 82, 75, 100, 68, 90, 85, 87, 86, 56, 107, 77, 70, 56, 107, 77, 86, 56, 107, 77, 
-            108, 56, 107, 77, 119, 37, 51, 68, 38, 99, 116, 121, 112, 101, 61, 104, 117, 121, 97, 95, 
-            99, 111, 109, 109, 115, 101, 114, 118, 101, 114, 38, 102, 115, 61, 103, 99, 116, 118, 134, 
-            119, 115, 83, 101, 99, 114, 101, 116, 61, 55, 100, 98, 100, 55, 50, 54, 57, 100, 48, 54, 
-            98, 97, 102, 56, 53, 53, 56, 98, 102, 55, 50, 55, 56, 98, 50, 52, 97, 53, 101, 100, 97, 
-            38, 119, 115, 84, 105, 109, 101, 61, 54, 56, 54, 52, 54, 51, 57, 53, 38, 102, 109, 61, 
-            82, 70, 100, 120, 79, 69, 74, 106, 83, 106, 78, 111, 78, 107, 82, 75, 100, 68, 90, 85, 
-            87, 86, 56, 107, 77, 70, 56, 107, 77, 86, 56, 107, 77, 108, 56, 107, 77, 119, 37, 51, 
-            68, 38, 99, 116, 121, 112, 101, 61, 104, 117, 121, 97, 95, 99, 111, 109, 109, 115, 101, 
-            114, 118, 101, 114, 38, 102, 115, 61, 103, 99, 116, 11, 140, 152, 12, 168, 12
-        ];
+        let stream_info = extractor.get_url(stream_info.clone()).await.unwrap();
 
-        // Test decoding the response
-        let mut bytes_mut = bytes::BytesMut::from(&response_bytes[..]);
-        let decoded_response = tars_codec::decode_response(&mut bytes_mut).unwrap();
+        println!("{:?}", stream_info);
+    }
 
-        if let Some(response_message) = decoded_response {
-            if let Some(body_bytes) = response_message.body.get("tRsp") {
-            let tars_value: TarsValue = tars_codec::de::from_bytes(body_bytes);
-            if let Ok(resp) = huya_tars::HuyaGetTokenResp::try_from(tars_value) {
-                println!(
-                "Test decoded: CDN: {}, Stream Name: {}, FLV Anti Code: {}",
-                resp.cdn_type, resp.stream_name, resp.flv_anti_code
-                );
-            }
-            }
-        }
+    #[tokio::test]
+    #[ignore]
+    async fn test_decode_wup_response() {
+        let response_bytes = std::fs::read("D:/Develop/hua0512/rust-srec/wup_response.bin")
+            .unwrap()
+            .into();
+        let token_info = decode_get_cdn_token_info_response(response_bytes).unwrap();
+        println!("{:?}", token_info);
     }
 }
