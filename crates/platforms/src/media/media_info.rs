@@ -1,7 +1,7 @@
 use super::stream_info::StreamInfo;
 use serde::{Deserialize, Serialize};
 
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug, Clone)]
 /// Represents comprehensive information about a media item from a streaming platform.
 ///
 /// This struct contains metadata and streaming details for media content,

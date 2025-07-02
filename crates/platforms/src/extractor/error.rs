@@ -1,6 +1,6 @@
 use thiserror::Error;
 
-#[derive(Debug, Error)]
+#[derive(Error, Debug)]
 pub enum ExtractorError {
     #[error("invalid url: {0}")]
     InvalidUrl(String),
@@ -34,6 +34,8 @@ pub enum ExtractorError {
     // VideoUnavailable,
     #[error("no streams found")]
     NoStreamsFound,
-    #[error("other: {0}")]
+    #[error("validation error: {0}")]
+    ValidationError(String),
+    #[error("other error: {0}")]
     Other(String),
 }

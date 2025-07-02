@@ -1,8 +1,8 @@
 use ahash::AHashMap;
 use bytes::Bytes;
 use tars_codec::{
-    de::{TarsDeserializer, from_bytes},
-    decode_response_from_bytes, decode_response_zero_copy,
+    de::from_bytes,
+    decode_response_zero_copy,
     error::TarsError,
     types::{TarsMessage, TarsRequestHeader, TarsValue},
 };

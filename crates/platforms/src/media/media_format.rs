@@ -1,3 +1,6 @@
+
+use std::fmt::Display;
+
 use serde::{Deserialize, Serialize};
 
 #[derive(Deserialize, Serialize, Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -20,5 +23,12 @@ impl MediaFormat {
             "hls" => Some(MediaFormat::Hls),
             _ => None,
         }
+    }
+}
+
+
+impl Display for MediaFormat {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.as_str())
     }
 }

@@ -14,6 +14,7 @@ members = [
     "crates/amf0",
     "crates/platforms",
     "crates/tars-codec",
+    "crates/platforms-cli",
 ]
 
 [profile.release]

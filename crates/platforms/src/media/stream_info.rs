@@ -1,6 +1,6 @@
 use crate::media::MediaFormat;
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
+use std::{collections::HashMap, fmt};
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct StreamInfo {
@@ -16,4 +16,20 @@ pub struct StreamInfo {
     pub extras: Option<HashMap<String, String>>,
     pub codec: String,
     pub is_headers_needed: bool,
+}
+
+
+
+impl fmt::Display for StreamInfo {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        if let Some(extras) = &self.extras {
+            if let Some(cdn) = extras.get("cdn") {
+            write!(f, "{:?} - {} (CDN: {})", self.format, self.quality, cdn)
+            } else {
+            write!(f, "{:?} - {}", self.format, self.quality)
+            }
+        } else {
+            write!(f, "{:?} - {}", self.format, self.quality)
+        }
+    }
 }
