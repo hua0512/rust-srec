@@ -4,7 +4,7 @@ use crate::{
     ser::TarsSerializer,
     types::{TarsMessage, TarsRequestHeader},
 };
-use bytes::{Buf, BytesMut};
+use bytes::{Buf, BufMut, BytesMut};
 use tokio_util::codec::{Decoder, Encoder};
 
 pub struct TarsCodec;
@@ -33,7 +33,9 @@ impl Encoder<TarsMessage> for TarsCodec {
         let encoded_bytes = serializer.into_inner();
         let total_len = (4 + encoded_bytes.len()) as u32;
 
-        dst.extend_from_slice(&total_len.to_be_bytes());
+        println!("Encoded length: {}", total_len);
+        dst.reserve(total_len as usize);
+        dst.put_u32(total_len);
         dst.extend_from_slice(&encoded_bytes);
 
         Ok(())

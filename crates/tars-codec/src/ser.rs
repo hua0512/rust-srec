@@ -37,6 +37,10 @@ impl TarsSerializer {
     }
 
     pub fn write_i8(&mut self, tag: u8, value: i8) -> Result<(), TarsError> {
+        if value == 0 {
+            self.write_head(tag, TarsType::Zero);
+            return Ok(());
+        }
         self.write_head(tag, TarsType::Int1);
         self.buffer.put_i8(value);
         Ok(())
@@ -143,7 +147,7 @@ impl TarsSerializer {
 
     pub fn write_simple_list(&mut self, tag: u8, value: &[u8]) -> Result<(), TarsError> {
         self.write_head(tag, TarsType::SimpleList);
-        self.write_head(0, TarsType::Zero);
+        self.write_head(0, TarsType::Int1);
         self.write_i32(0, value.len() as i32)?;
         self.buffer.put_slice(value);
         Ok(())
@@ -195,4 +199,10 @@ impl TarsSerializable for Vec<u8> {
     fn serialize(&self, serializer: &mut TarsSerializer, tag: u8) -> Result<(), TarsError> {
         serializer.write_simple_list(tag, self)
     }
+}
+
+pub fn to_bytes(value: &TarsValue) -> Result<Vec<u8>, TarsError> {
+    let mut serializer = TarsSerializer::new();
+    serializer.write_value(0, value)?;
+    Ok(serializer.into_inner().to_vec())
 }

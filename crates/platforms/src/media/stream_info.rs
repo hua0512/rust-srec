@@ -2,7 +2,7 @@ use crate::media::MediaFormat;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct StreamInfo {
     // Url of the stream
     pub url: String,

@@ -64,6 +64,10 @@ impl Extractor {
         self.request(Method::POST, url)
     }
 
+    pub fn post_bytes(&self, url: &str, body: &[u8]) -> RequestBuilder {
+        self.request(Method::POST, url).body(body.to_vec())
+    }
+
     pub fn request(&self, method: Method, url: &str) -> RequestBuilder {
         let mut headers = reqwest::header::HeaderMap::new();
         for (key, value) in &self.platform_headers {

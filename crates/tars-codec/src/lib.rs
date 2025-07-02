@@ -4,10 +4,10 @@ pub mod error;
 pub mod ser;
 pub mod types;
 
-use crate::{
+pub use crate::{
     codec::TarsCodec,
     error::TarsError,
-    types::TarsMessage,
+    types::{TarsMessage, TarsRequestHeader, TarsValue},
 };
 use bytes::BytesMut;
 use tokio_util::codec::{Decoder, Encoder};

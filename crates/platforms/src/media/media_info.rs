@@ -22,6 +22,7 @@ use serde::{Deserialize, Serialize};
 ///
 /// ```rust
 /// use std::collections::HashMap;
+/// use platforms_parser::media::media_info::MediaInfo;
 ///
 /// let media = MediaInfo {
 ///     site_url: "https://example.com".to_string(),

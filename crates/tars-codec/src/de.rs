@@ -95,7 +95,6 @@ impl<'a> TarsDeserializer<'a> {
     }
 
     pub fn read_simple_list(&mut self) -> Result<Vec<u8>, TarsError> {
-        self.read_head()?;
         let len = self.read_i32()? as usize;
         let mut buf = vec![0; len];
         self.buffer.copy_to_slice(&mut buf);
@@ -263,4 +262,11 @@ impl TryFrom<TarsValue> for Vec<u8> {
             }),
         }
     }
+}
+
+
+
+pub fn from_bytes(bytes: &[u8]) -> TarsValue {
+    let mut deserializer = TarsDeserializer::new(bytes);
+    deserializer.read_value().unwrap()
 }
