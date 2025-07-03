@@ -90,6 +90,10 @@ impl Extractor {
 pub trait PlatformExtractor: Send + Sync {
     fn get_extractor(&self) -> &Extractor;
 
+    fn get_platform_headers(&self) -> &HashMap<String, String> {
+        &self.get_extractor().platform_headers
+    }
+
     async fn extract(&self) -> Result<MediaInfo, ExtractorError>;
 
     async fn get_url(

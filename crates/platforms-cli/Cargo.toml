@@ -5,6 +5,7 @@ edition = "2024"
 
 [dependencies]
 
+anyhow = "1.0"
 platforms-parser = { path = "../platforms" }
 inquire = "0.7.5"
 colored = "2.1.0"

@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 use super::stream_info::StreamInfo;
 use serde::{Deserialize, Serialize};
 
@@ -44,7 +46,7 @@ pub struct MediaInfo {
     pub artist_url: Option<String>,
     pub is_live: bool,
     pub streams: Vec<StreamInfo>,
-    pub extras: Option<std::collections::HashMap<String, String>>,
+    pub extras: Option<HashMap<String, String>>,
 }
 
 impl MediaInfo {
@@ -57,7 +59,7 @@ impl MediaInfo {
         artist_url: Option<String>,
         is_live: bool,
         streams: Vec<StreamInfo>,
-        extras: Option<std::collections::HashMap<String, String>>,
+        extras: Option<HashMap<String, String>>,
     ) -> Self {
         Self {
             site_url,

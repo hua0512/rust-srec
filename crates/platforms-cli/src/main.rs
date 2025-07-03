@@ -1,11 +1,9 @@
+use anyhow::Context;
 use clap::Parser;
 use colored::*;
 use indicatif::{ProgressBar, ProgressStyle};
 use inquire::Select;
-use platforms_parser::{
-    extractor::{default_factory, error::ExtractorError},
-    media::stream_info::StreamInfo,
-};
+use platforms_parser::{extractor::default_factory, media::StreamInfo};
 use std::time::Duration;
 
 #[derive(Parser, Debug)]
@@ -20,7 +18,7 @@ struct Args {
 }
 
 #[tokio::main]
-async fn main() -> Result<(), ExtractorError> {
+async fn main() -> anyhow::Result<()> {
     let args = Args::parse();
     let url = args.url;
 
@@ -42,22 +40,23 @@ async fn main() -> Result<(), ExtractorError> {
     pb.set_message("Extracting media information...");
 
     let factory = default_factory();
-    let extractor = factory.create_extractor(&url)?;
-    let media_info = extractor.extract().await;
+    let extractor = factory
+        .create_extractor(&url)
+        .with_context(|| format!("Failed to create extractor for URL: {}", &url))?;
+    let media_info = extractor
+        .extract()
+        .await
+        .context("Failed to fetch media information")?;
 
     pb.finish_with_message("Done");
-
-    if let Err(e) = media_info {
-        eprintln!("{} {}", "Error extracting media information:".red(), e);
-        return Err(e);
-    }
-
-    let media_info = media_info.unwrap();
 
     // handle errors
     println!("\n{}", "Media Information:".green().bold());
 
     println!("{} {}", "Artist:".green(), media_info.artist.cyan());
+
+    println!("{} {}", "Title:".green(), media_info.title.cyan());
+
     if let Some(cover_url) = &media_info.cover_url {
         println!("{} {}", "Cover URL:".green(), cover_url.blue());
     }
@@ -72,10 +71,17 @@ async fn main() -> Result<(), ExtractorError> {
     );
 
     let selected_stream: StreamInfo = if media_info.streams.len() > 1 {
+        println!(
+            "{}",
+            "Multiple streams available, please select one:"
+                .yellow()
+                .bold()
+        );
+
         let options: Vec<String> = media_info.streams.iter().map(|s| s.to_string()).collect();
         let selection = Select::new("Select a stream:", options)
             .prompt()
-            .map_err(|e| ExtractorError::Other(format!("Failed to select stream: {}", e)))?;
+            .context("Failed to select stream")?;
 
         media_info
             .streams
@@ -83,7 +89,8 @@ async fn main() -> Result<(), ExtractorError> {
             .find(|s| s.to_string() == selection)
             .unwrap()
     } else {
-        media_info.streams.into_iter().next().unwrap()
+        // there is no streams
+        anyhow::bail!("No streams available for this media.");
     };
 
     let pb = ProgressBar::new_spinner();
@@ -103,7 +110,10 @@ async fn main() -> Result<(), ExtractorError> {
     );
     pb.set_message("Fetching final stream URL...");
 
-    let final_stream_info = extractor.get_url(selected_stream).await?;
+    let final_stream_info = extractor
+        .get_url(selected_stream)
+        .await
+        .context("Failed to fetch final stream URL")?;
 
     pb.finish_with_message("Done");
 

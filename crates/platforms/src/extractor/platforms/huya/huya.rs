@@ -16,6 +16,9 @@ use super::huya_tars;
 
 static ROOM_DATA_REGEX: Lazy<Regex> =
     Lazy::new(|| Regex::new(r#"var TT_ROOM_DATA = (.*?);"#).unwrap());
+
+static PROFILE_INFO_REGEX: Lazy<Regex> =
+    Lazy::new(|| Regex::new(r#"var TT_PROFILE_INFO = (.*?);"#).unwrap());
 static STREAM_DATA_REGEX: Lazy<Regex> =
     Lazy::new(|| Regex::new(r#"stream: (\{.+)\n.*?};"#).unwrap());
 
@@ -39,7 +42,7 @@ impl HuyaExtractor {
         let huya_url = Self::HUYA_URL.to_string();
         extractor.add_header("Origin".to_string(), huya_url.clone());
         extractor.add_header("Referer".to_string(), huya_url);
-        extractor.add_param("User-Agent".to_string(), Self::WUP_UA.to_string());
+        extractor.add_header("User-Agent".to_string(), Self::WUP_UA.to_string());
         Self {
             extractor,
             use_wup: true,
@@ -58,7 +61,11 @@ impl HuyaExtractor {
     }
 
     async fn get_mp_page(&self, room_id: i64) -> Result<String, ExtractorError> {
-        let url = format!("{}?m=Live&do=profileRoom&roomId={}&showSecret=1", Self::MP_URL, room_id);
+        let url = format!(
+            "{}?m=Live&do=profileRoom&roomId={}&showSecret=1",
+            Self::MP_URL,
+            room_id
+        );
         let response = self.extractor.get(&url).send().await?;
         if response.status().is_client_error() || response.status().is_server_error() {
             return Err(ExtractorError::HttpError(
@@ -73,14 +80,13 @@ impl HuyaExtractor {
         &self,
         json: &serde_json::Value,
     ) -> Result<bool, ExtractorError> {
-       
-       let status = match json.get("status") {
+        let status = match json.get("status") {
             Some(data) => data.as_i64(),
             None => return Err(ExtractorError::ValidationError("No data found".to_string())),
         };
         let messages = match json.get("message") {
             Some(data) => data.as_str(),
-            None => Some("")
+            None => Some(""),
         };
 
         // status is present
@@ -88,16 +94,15 @@ impl HuyaExtractor {
 
         if status != 200 {
             // streamer not found
-            if status == 422 && messages.is_some() && messages.unwrap().contains("主播不存在") {
+            if status == 422 && messages.is_some() && messages.unwrap().contains("主播不存在")
+            {
                 return Err(ExtractorError::StreamerNotFound);
             }
-            return Err(ExtractorError::ValidationError(
-                format!(
-                    "Failed to get live status: status {}, message: {}",
-                    status,
-                    messages.unwrap_or("No message provided").to_string()
-                )
-            ));
+            return Err(ExtractorError::ValidationError(format!(
+                "Failed to get live status: status {}, message: {}",
+                status,
+                messages.unwrap_or("No message provided").to_string()
+            )));
         }
 
         // status is 200
@@ -109,27 +114,26 @@ impl HuyaExtractor {
 
         let real_room_status = match data_json.get("realLiveStatus") {
             Some(data) => data.as_str(),
-            None => Some("OFF")
+            None => Some("OFF"),
         };
         let live_status = match data_json.get("liveStatus") {
             Some(data) => data.as_str(),
-            None => Some("OFF")
+            None => Some("OFF"),
         };
 
-        let mut is_live = false;
-        
         let live_data_json = data_json.get("liveData");
 
         if let Some(live_data) = live_data_json {
-            let intro = live_data.get("introduction")
-            .and_then(|v| v.as_str())
-            .unwrap_or("");
+            let intro = live_data
+                .get("introduction")
+                .and_then(|v| v.as_str())
+                .unwrap_or("");
             if intro.starts_with("【回放】") {
                 return Ok(false);
             }
         }
 
-        is_live = real_room_status == Some("ON") && live_status == Some("ON");
+        let is_live = real_room_status == Some("ON") && live_status == Some("ON");
 
         Ok(is_live)
     }
@@ -145,12 +149,20 @@ impl HuyaExtractor {
 
         let profile_info = match data.get("profileInfo") {
             Some(info) => info,
-            None => return Err(ExtractorError::ValidationError("No profileInfo found".to_string())),
+            None => {
+                return Err(ExtractorError::ValidationError(
+                    "No profileInfo found".to_string(),
+                ));
+            }
         };
 
         let presenter_uid = match profile_info.get("uid") {
             Some(data) => data.as_i64(),
-            None => return Err(ExtractorError::ValidationError("No presenter UID found".to_string())),
+            None => {
+                return Err(ExtractorError::ValidationError(
+                    "No presenter UID found".to_string(),
+                ));
+            }
         };
 
         let avatar_url = profile_info
@@ -164,11 +176,11 @@ impl HuyaExtractor {
             .unwrap_or("")
             .to_string();
 
-       let live_data = match data.get("liveData") {
+        let live_data = match data.get("liveData") {
             Some(data) => data,
             // when no livedata is found, live status is false or livestatus is frozen
-            None => return Ok(
-                MediaInfo::new(
+            None => {
+                return Ok(MediaInfo::new(
                     self.extractor.url.clone(),
                     "".to_string(),
                     artist,
@@ -177,8 +189,8 @@ impl HuyaExtractor {
                     false,
                     vec![],
                     None,
-                )
-            )
+                ));
+            }
         };
 
         let title = live_data
@@ -187,7 +199,8 @@ impl HuyaExtractor {
             .unwrap_or("")
             .to_string();
 
-        let cover_url = live_data.get("screenshot")
+        let cover_url = live_data
+            .get("screenshot")
             .and_then(|v| v.as_str())
             .map(|s| s.to_string());
 
@@ -208,29 +221,49 @@ impl HuyaExtractor {
 
         let stream_json = match data.get("stream") {
             Some(data) => data,
-            None => return Err(ExtractorError::ValidationError("No stream data found".to_string())),
+            None => {
+                return Err(ExtractorError::ValidationError(
+                    "No stream data found".to_string(),
+                ));
+            }
         };
 
         // stream json can be empty or null, which means no streams are available
-        if stream_json.is_null() || stream_json.is_array() && stream_json.as_array().unwrap().is_empty() || !stream_json.is_object() {
+        if stream_json.is_null()
+            || stream_json.is_array() && stream_json.as_array().unwrap().is_empty()
+            || !stream_json.is_object()
+        {
             return Err(ExtractorError::NoStreamsFound);
         }
 
         let stream_info_list = match stream_json.get("baseSteamInfoList") {
             Some(data) => data.as_array(),
-            None => return Err(ExtractorError::ValidationError("No baseSteamInfoList found".to_string())),
+            None => {
+                return Err(ExtractorError::ValidationError(
+                    "No baseSteamInfoList found".to_string(),
+                ));
+            }
         };
 
         let stream_info_list = match stream_info_list {
             Some(list) => list,
-            None => return Err(ExtractorError::ValidationError("baseSteamInfoList is not an array".to_string())),
+            None => {
+                return Err(ExtractorError::ValidationError(
+                    "baseSteamInfoList is not an array".to_string(),
+                ));
+            }
         };
 
         let bitrate_info_array = match stream_json.get("bitRateInfo") {
             Some(data) => data.as_array(),
-            None => stream_json.get("flv")
+            None => stream_json
+                .get("flv")
                 .and_then(|v| v.get("rateArray").and_then(|v| v.as_array()))
-                .or_else(|| stream_json.get("hls").and_then(|v| v.get("rateArray").and_then(|v| v.as_array())))     
+                .or_else(|| {
+                    stream_json
+                        .get("hls")
+                        .and_then(|v| v.get("rateArray").and_then(|v| v.as_array()))
+                }),
         };
 
         let empty_vec = vec![];
@@ -243,20 +276,24 @@ impl HuyaExtractor {
 
         let presenter_uid = presenter_uid.unwrap();
 
-        let streams= self.parse_streams(stream_info_list, bitrate_info_array, default_bitrate, presenter_uid)?;
+        let streams = self.parse_streams(
+            stream_info_list,
+            bitrate_info_array,
+            default_bitrate,
+            presenter_uid,
+        )?;
 
         Ok(MediaInfo::new(
             self.extractor.url.clone(),
             title,
             artist,
             cover_url,
-            avatar_url, 
+            avatar_url,
             is_live,
             streams,
-            None,
+            Some(self.get_platform_headers().clone()),
         ))
     }
-
 
     pub(crate) fn parse_live_status(&self, response_text: &str) -> Result<bool, ExtractorError> {
         if response_text.contains("找不到这个主播") {
@@ -280,12 +317,20 @@ impl HuyaExtractor {
 
         let intro = match room_data_json.get("introduction") {
             Some(v) => v.as_str().unwrap_or(""),
-            None => return Err(ExtractorError::ValidationError("Introduction not found".to_string())),
+            None => {
+                return Err(ExtractorError::ValidationError(
+                    "Introduction not found".to_string(),
+                ));
+            }
         };
 
         let state = match room_data_json.get("state") {
             Some(v) => v.as_str().unwrap_or(""),
-            None => return Err(ExtractorError::ValidationError("State not found".to_string())),
+            None => {
+                return Err(ExtractorError::ValidationError(
+                    "State not found".to_string(),
+                ));
+            }
         };
 
         if intro.contains("【回放】") {
@@ -297,6 +342,100 @@ impl HuyaExtractor {
         }
 
         Ok(true)
+    }
+
+    pub(crate) fn parse_web_media_info(
+        &self,
+        page_content: &str,
+    ) -> Result<MediaInfo, ExtractorError> {
+        let live_status = self.parse_live_status(&page_content)?;
+
+        let profile_info = PROFILE_INFO_REGEX
+            .captures(&page_content)
+            .and_then(|caps| caps.get(1))
+            .map(|m| m.as_str())
+            .ok_or_else(|| {
+                ExtractorError::ValidationError("Could not find profile info".to_string())
+            })?;
+
+        let profile_info_json: serde_json::Value =
+            serde_json::from_str(profile_info).map_err(|e| ExtractorError::JsonError(e))?;
+
+        let nick = profile_info_json["nick"].as_str().unwrap_or("").to_string();
+
+        // check if presenter uid is present
+        profile_info_json["lp"]
+            .as_i64()
+            .filter(|&uid| uid > 0)
+            .ok_or(ExtractorError::StreamerNotFound)?;
+
+        let avatar_url = profile_info_json["avatar"].as_str().map(|s| s.to_string());
+
+        if !live_status {
+            return Ok(MediaInfo::new(
+                self.extractor.url.clone(),
+                "直播未开始".to_string(),
+                nick.to_string(),
+                None,
+                avatar_url,
+                false,
+                vec![],
+                None,
+            ));
+        }
+
+        let stream_data = STREAM_DATA_REGEX
+            .captures(&page_content)
+            .and_then(|c| c.get(1))
+            .map(|m| m.as_str())
+            .ok_or_else(|| {
+                ExtractorError::ValidationError("Could not find stream object".to_string())
+            })?;
+
+        let config_json: serde_json::Value =
+            serde_json::from_str(&stream_data).map_err(|e| ExtractorError::JsonError(e))?;
+
+        let game_live_info = &config_json["data"][0]["gameLiveInfo"];
+        let presenter_uid = game_live_info["uid"].as_i64().ok_or_else(|| {
+            ExtractorError::ValidationError("Presenter UID not found".to_string())
+        })?;
+        let title = game_live_info["roomName"]
+            .as_str()
+            .unwrap_or("")
+            .to_string();
+        let artist = game_live_info["nick"].as_str().unwrap_or("").to_string();
+        let cover_url = game_live_info["screenshot"].as_str().map(|s| s.to_string());
+
+        let stream_info_list = config_json["data"][0]["gameStreamInfoList"]
+            .as_array()
+            .ok_or_else(|| {
+                ExtractorError::ValidationError("Could not find gameStreamInfoList".to_string())
+            })?;
+
+        let default_bitrate = game_live_info["bitRate"].as_u64().unwrap_or(10000) as u32;
+
+        let empty_vec = vec![];
+        let bitrate_info_list = config_json["vMultiStreamInfo"]
+            .as_array()
+            .unwrap_or(&empty_vec);
+
+        let streams = self.parse_streams(
+            stream_info_list,
+            bitrate_info_list,
+            default_bitrate,
+            presenter_uid,
+        )?;
+
+        Ok(MediaInfo::new(
+            self.extractor.url.clone(),
+            title,
+            artist,
+            cover_url,
+            avatar_url,
+            true,
+            streams,
+            Some(self.get_platform_headers().clone()),
+        ))
     }
 
     pub(crate) fn parse_streams(
@@ -318,7 +457,6 @@ impl HuyaExtractor {
             let s_hls_url_suffix = stream_info_json["sHlsUrlSuffix"].as_str().unwrap_or("");
             let s_hls_anti_code = stream_info_json["sHlsAntiCode"].as_str().unwrap_or("");
 
-            
             if s_stream_name.is_empty() {
                 continue;
             }
@@ -487,7 +625,6 @@ impl PlatformExtractor for HuyaExtractor {
     }
 
     async fn extract(&self) -> Result<MediaInfo, ExtractorError> {
-
         // use MP API
         if !self.use_wup {
             let room_id = self
@@ -496,7 +633,9 @@ impl PlatformExtractor for HuyaExtractor {
                 .split('/')
                 .last()
                 .and_then(|s| s.parse::<i64>().ok())
-                .ok_or_else(|| ExtractorError::InvalidUrl("Huya MP API requires numeric room ID".to_string()))?;
+                .ok_or_else(|| {
+                    ExtractorError::InvalidUrl("Huya MP API requires numeric room ID".to_string())
+                })?;
             let json = self.get_mp_page(room_id).await?;
             let json_value = serde_json::from_str::<serde_json::Value>(&json)
                 .map_err(|e| ExtractorError::JsonError(e))?;
@@ -504,74 +643,10 @@ impl PlatformExtractor for HuyaExtractor {
             return Ok(media_info);
         }
 
-
-        // use WUP API
+        // use web api
         let page_content = self.get_room_page().await?;
-        let live_status = self.parse_live_status(&page_content)?;
-
-        if !live_status {
-            return Ok(MediaInfo::new(
-                self.extractor.url.clone(),
-                "直播未开始".to_string(),
-                "未知".to_string(),
-                None,
-                None,
-                false,
-                vec![],
-                None,
-            ));
-        }
-
-        let stream_data = STREAM_DATA_REGEX
-            .captures(&page_content)
-            .and_then(|c| c.get(1))
-            .map(|m| m.as_str())
-            .ok_or_else(|| ExtractorError::ValidationError("Could not find stream object".to_string()))?;
-
-        let config_json: serde_json::Value =
-            serde_json::from_str(&stream_data).map_err(|e| ExtractorError::JsonError(e))?;
-
-        let game_live_info = &config_json["data"][0]["gameLiveInfo"];
-        let presenter_uid = game_live_info["uid"]
-            .as_i64()
-            .ok_or_else(|| ExtractorError::ValidationError("Presenter UID not found".to_string()))?;
-        let title = game_live_info["roomName"]
-            .as_str()
-            .unwrap_or("")
-            .to_string();
-        let artist = game_live_info["nick"].as_str().unwrap_or("").to_string();
-        let cover_url = game_live_info["screenshot"].as_str().map(|s| s.to_string());
-
-        let stream_info_list = config_json["data"][0]["gameStreamInfoList"]
-            .as_array()
-            .ok_or_else(|| {
-                ExtractorError::ValidationError("Could not find gameStreamInfoList".to_string())
-            })?;
-
-        let default_bitrate = game_live_info["bitRate"].as_u64().unwrap_or(10000) as u32;
-
-        let empty_vec = vec![];
-        let bitrate_info_list = config_json["vMultiStreamInfo"]
-            .as_array()
-            .unwrap_or(&empty_vec);
-
-        let streams = self.parse_streams(
-            stream_info_list,
-            bitrate_info_list,
-            default_bitrate,
-            presenter_uid,
-        )?;
-
-        Ok(MediaInfo::new(
-            self.extractor.url.clone(),
-            title,
-            artist,
-            cover_url,
-            None,
-            true,
-            streams,
-            None,
-        ))
+        let media_info = self.parse_web_media_info(&page_content)?;
+        return Ok(media_info);
     }
 
     async fn get_url(&self, mut stream_info: StreamInfo) -> Result<StreamInfo, ExtractorError> {
@@ -617,13 +692,10 @@ impl PlatformExtractor for HuyaExtractor {
 
 #[cfg(test)]
 mod tests {
-    use std::sync::Arc;
 
     use crate::extractor::default::default_client;
 
     use super::*;
-
-    
 
     #[tokio::test]
     #[ignore]
@@ -643,7 +715,8 @@ mod tests {
     #[tokio::test]
     #[ignore]
     async fn test_mp_api() {
-        let extractor = HuyaExtractor::new("https://www.huya.com/660000".to_string(), default_client());
+        let extractor =
+            HuyaExtractor::new("https://www.huya.com/660000".to_string(), default_client());
         let media_info = extractor.extract().await.unwrap();
         assert_eq!(media_info.is_live, true);
         assert!(!media_info.streams.is_empty());
