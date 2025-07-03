@@ -1,0 +1,1292 @@
+{
+    "data": {
+        "data": [
+            {
+                "id_str": "7522819524010625833",
+                "status": 2,
+                "status_str": "2",
+                "title": "男的 别问了",
+                "user_count_str": "100+",
+                "cover": {
+                    "url_list": [
+                        "https://p3-webcast-sign.douyinpic.com/image-cut-tos-priv/db734c6de838773fed652056939dafb3~tplv-qz53dukwul-common-resize:0:0.image?biz_tag=app_6383_webcast\u0026from=webcast.room.pack\u0026l=2025070320202131B7824A7F36FBABF4E5\u0026lk3s=39e7556e\u0026s=enter_room\u0026sc=webcast_cover\u0026x-expires=1754137222\u0026x-signature=eXTotsWWALa3ITPE1ARIkUemntU%3D",
+                        "https://p11-webcast-sign.douyinpic.com/image-cut-tos-priv/db734c6de838773fed652056939dafb3~tplv-qz53dukwul-common-resize:0:0.image?biz_tag=app_6383_webcast\u0026from=webcast.room.pack\u0026l=2025070320202131B7824A7F36FBABF4E5\u0026lk3s=39e7556e\u0026s=enter_room\u0026sc=webcast_cover\u0026x-expires=1754137222\u0026x-signature=Mpl3OWuIRWHCmGxpp6ObuiZa1DA%3D"
+                    ]
+                },
+                "stream_url": {
+                    "flv_pull_url": {
+                        "FULL_HD1": "http://pull-flv-l96.douyincdn.com/stage/stream-405774431831196265_or4.flv?arch_hrchy=h1\u0026exp_hrchy=h1\u0026expire=1752150022\u0026major_anchor_level=common\u0026sign=4648f5fe294d8eeeaf8619406d166bcc\u0026t_id=037-2025070320202131B7824A7F36FBABF4E5-rGeMVF\u0026unique_id=stream-405774431831196265_617_flv_or4",
+                        "HD1": "http://pull-flv-l96.douyincdn.com/stage/stream-405774431831196265_hd.flv?arch_hrchy=h1\u0026exp_hrchy=h1\u0026expire=1752150022\u0026major_anchor_level=common\u0026sign=c032fff326dab1fdf9acea9b178b56e1\u0026t_id=037-2025070320202131B7824A7F36FBABF4E5-rGeMVF\u0026unique_id=stream-405774431831196265_617_flv_hd",
+                        "SD1": "http://pull-flv-l96.douyincdn.com/stage/stream-405774431831196265_ld.flv?arch_hrchy=h1\u0026exp_hrchy=h1\u0026expire=1752150022\u0026major_anchor_level=common\u0026sign=938aa501f163b5d9274a1e4ea8fdfd7b\u0026t_id=037-2025070320202131B7824A7F36FBABF4E5-rGeMVF\u0026unique_id=stream-405774431831196265_617_flv_ld",
+                        "SD2": "http://pull-flv-l96.douyincdn.com/stage/stream-405774431831196265_sd.flv?arch_hrchy=h1\u0026exp_hrchy=h1\u0026expire=1752150022\u0026major_anchor_level=common\u0026sign=53814b6b3d3bb37331262882c5652977\u0026t_id=037-2025070320202131B7824A7F36FBABF4E5-rGeMVF\u0026unique_id=stream-405774431831196265_617_flv_sd"
+                    },
+                    "default_resolution": "HD1",
+                    "hls_pull_url_map": {
+                        "FULL_HD1": "http://pull-hls-l96.douyincdn.com/stage/stream-405774431831196265_or4.m3u8?arch_hrchy=h1\u0026exp_hrchy=h1\u0026expire=1752150022\u0026major_anchor_level=common\u0026sign=40bb14309f29902dae826bf4e0cbcae8\u0026t_id=037-2025070320202131B7824A7F36FBABF4E5-rGeMVF",
+                        "HD1": "http://pull-hls-l96.douyincdn.com/stage/stream-405774431831196265_hd.m3u8?arch_hrchy=h1\u0026exp_hrchy=h1\u0026expire=1752150022\u0026major_anchor_level=common\u0026sign=2af739e68397659188344b7a76a085fa\u0026t_id=037-2025070320202131B7824A7F36FBABF4E5-rGeMVF",
+                        "SD1": "http://pull-hls-l96.douyincdn.com/stage/stream-405774431831196265_ld.m3u8?arch_hrchy=h1\u0026exp_hrchy=h1\u0026expire=1752150022\u0026major_anchor_level=common\u0026sign=ca36c5db19cd7d83c9f7e73b4c2d9353\u0026t_id=037-2025070320202131B7824A7F36FBABF4E5-rGeMVF",
+                        "SD2": "http://pull-hls-l96.douyincdn.com/stage/stream-405774431831196265_sd.m3u8?arch_hrchy=h1\u0026exp_hrchy=h1\u0026expire=1752150022\u0026major_anchor_level=common\u0026sign=5759f089ceaffbcc2ba5ca9f4c4eb590\u0026t_id=037-2025070320202131B7824A7F36FBABF4E5-rGeMVF"
+                    },
+                    "hls_pull_url": "http://pull-hls-l96.douyincdn.com/stage/stream-405774431831196265_or4.m3u8?arch_hrchy=h1\u0026exp_hrchy=h1\u0026expire=1752150022\u0026major_anchor_level=common\u0026sign=40bb14309f29902dae826bf4e0cbcae8\u0026t_id=037-2025070320202131B7824A7F36FBABF4E5-rGeMVF",
+                    "stream_orientation": 2,
+                    "live_core_sdk_data": {
+                        "pull_data": {
+                            "options": {
+                                "default_quality": {
+                                    "name": "蓝光",
+                                    "sdk_key": "origin",
+                                    "v_codec": "264",
+                                    "resolution": "1440x1088",
+                                    "level": 4,
+                                    "v_bit_rate": 0,
+                                    "additional_content": "",
+                                    "fps": 0,
+                                    "disable": 0
+                                },
+                                "qualities": [
+                                    {
+                                        "name": "标清",
+                                        "sdk_key": "ld",
+                                        "v_codec": "264",
+                                        "resolution": "635x480",
+                                        "level": 1,
+                                        "v_bit_rate": 1000000,
+                                        "additional_content": "",
+                                        "fps": 30,
+                                        "disable": 0
+                                    },
+                                    {
+                                        "name": "高清",
+                                        "sdk_key": "sd",
+                                        "v_codec": "264",
+                                        "resolution": "714x540",
+                                        "level": 2,
+                                        "v_bit_rate": 1600000,
+                                        "additional_content": "",
+                                        "fps": 30,
+                                        "disable": 0
+                                    },
+                                    {
+                                        "name": "超清",
+                                        "sdk_key": "hd",
+                                        "v_codec": "264",
+                                        "resolution": "952x720",
+                                        "level": 3,
+                                        "v_bit_rate": 2000000,
+                                        "additional_content": "",
+                                        "fps": 30,
+                                        "disable": 0
+                                    },
+                                    {
+                                        "name": "蓝光",
+                                        "sdk_key": "origin",
+                                        "v_codec": "264",
+                                        "resolution": "1440x1088",
+                                        "level": 4,
+                                        "v_bit_rate": 1249000,
+                                        "additional_content": "",
+                                        "fps": 0,
+                                        "disable": 0
+                                    }
+                                ]
+                            },
+                            "stream_data": "{\"common\":{\"ts\":\"1751545222\",\"session_id\":\"037-2025070320202131B7824A7F36FBABF4E5-rGeMVF\",\"stream\":\"405774431831196265\",\"version\":0,\"rule_ids\":\"{\\\"ab_version_trace\\\":null,\\\"sched\\\":\\\"{\\\\\\\"result\\\\\\\":{\\\\\\\"hit\\\\\\\":\\\\\\\"default\\\\\\\",\\\\\\\"cdn\\\\\\\":728}}\\\"}\",\"common_trace\":\"{\\\"StrategyTrace\\\":{\\\"Neptune\\\":{\\\"PlayStream\\\":{\\\"ids\\\":null}}},\\\"BusinessType\\\":\\\"default_business\\\",\\\"BigeventAnchorLevel\\\":\\\"\\\"}\",\"app_id\":\"100100\",\"major_anchor_level\":\"common\",\"mode\":\"Normal\",\"lines\":{\"main\":\"line_728\"},\"p2p_params\":{\"PcdnIsolationConfig\":{\"IsolationName\":\"isolation2\",\"FsV4Domain\":\"vcl-brain.ndcppx.com\",\"FsV6Domain\":\"vcl-brain-v6.ndcppx.com\",\"StunV4Domain\":\"vc-mirror.ndcpp.com\",\"StunV6Domain\":\"vc-mirror-v6.ndcpp.com\",\"HoleV4Domain\":\"vcl-hole.ndcppx.com\",\"HoleV6Domain\":\"vcl-hole-v6.ndcppx.com\"}},\"stream_data_content_encoding\":\"default\",\"common_sdk_params\":{\"main\":\"{}\"},\"stream_name\":\"stream-405774431831196265\",\"main_push_id\":617,\"backup_push_id\":0},\"data\":{\"hd\":{\"main\":{\"flv\":\"http://pull-flv-l96.douyincdn.com/stage/stream-405774431831196265_hd.flv?arch_hrchy=h1\u0026exp_hrchy=h1\u0026expire=1752150022\u0026major_anchor_level=common\u0026sign=c032fff326dab1fdf9acea9b178b56e1\u0026t_id=037-2025070320202131B7824A7F36FBABF4E5-rGeMVF\u0026unique_id=stream-405774431831196265_617_flv_hd\",\"hls\":\"http://pull-hls-l96.douyincdn.com/stage/stream-405774431831196265_hd.m3u8?arch_hrchy=h1\u0026exp_hrchy=h1\u0026expire=1752150022\u0026major_anchor_level=common\u0026sign=2af739e68397659188344b7a76a085fa\u0026t_id=037-2025070320202131B7824A7F36FBABF4E5-rGeMVF\",\"cmaf\":\"\",\"dash\":\"\",\"lls\":\"\",\"tsl\":\"\",\"tile\":\"\",\"http_ts\":\"\",\"ll_hls\":\"\",\"sdk_params\":\"{\\\"VCodec\\\":\\\"h264\\\",\\\"vbitrate\\\":2000000,\\\"resolution\\\":\\\"952x720\\\",\\\"gop\\\":2,\\\"drType\\\":\\\"sdr\\\",\\\"fps\\\":30}\",\"enableEncryption\":false}},\"ld\":{\"main\":{\"flv\":\"http://pull-flv-l96.douyincdn.com/stage/stream-405774431831196265_ld.flv?arch_hrchy=h1\u0026exp_hrchy=h1\u0026expire=1752150022\u0026major_anchor_level=common\u0026sign=938aa501f163b5d9274a1e4ea8fdfd7b\u0026t_id=037-2025070320202131B7824A7F36FBABF4E5-rGeMVF\u0026unique_id=stream-405774431831196265_617_flv_ld\",\"hls\":\"http://pull-hls-l96.douyincdn.com/stage/stream-405774431831196265_ld.m3u8?arch_hrchy=h1\u0026exp_hrchy=h1\u0026expire=1752150022\u0026major_anchor_level=common\u0026sign=ca36c5db19cd7d83c9f7e73b4c2d9353\u0026t_id=037-2025070320202131B7824A7F36FBABF4E5-rGeMVF\",\"cmaf\":\"\",\"dash\":\"\",\"lls\":\"\",\"tsl\":\"\",\"tile\":\"\",\"http_ts\":\"\",\"ll_hls\":\"\",\"sdk_params\":\"{\\\"VCodec\\\":\\\"h264\\\",\\\"vbitrate\\\":1000000,\\\"resolution\\\":\\\"635x480\\\",\\\"gop\\\":2,\\\"drType\\\":\\\"sdr\\\",\\\"fps\\\":30}\",\"enableEncryption\":false}},\"md\":{\"main\":{\"flv\":\"https://pull-flv-l96-admin.douyincdn.com/stage/stream-405774431831196265_md.flv?arch_hrchy=h1\u0026exp_hrchy=h1\u0026expire=1752150022\u0026major_anchor_level=common\u0026sign=9c4f5e5789bcdc82a794a3fab357f12a\u0026t_id=037-2025070320202131B7824A7F36FBABF4E5-rGeMVF\u0026unique_id=stream-405774431831196265_617_flv_md\",\"hls\":\"http://pull-hls-l96.douyincdn.com/stage/stream-405774431831196265_md.m3u8?arch_hrchy=h1\u0026exp_hrchy=h1\u0026expire=1752150022\u0026major_anchor_level=common\u0026sign=c02341e79c7608d16e88d4d30b41b72a\u0026t_id=037-2025070320202131B7824A7F36FBABF4E5-rGeMVF\",\"cmaf\":\"\",\"dash\":\"\",\"lls\":\"\",\"tsl\":\"\",\"tile\":\"\",\"http_ts\":\"\",\"ll_hls\":\"\",\"sdk_params\":\"{\\\"VCodec\\\":\\\"h264\\\",\\\"vbitrate\\\":250000,\\\"resolution\\\":\\\"317x240\\\",\\\"gop\\\":2,\\\"drType\\\":\\\"sdr\\\",\\\"fps\\\":15}\",\"enableEncryption\":false}},\"ao\":{\"main\":{\"flv\":\"http://pull-flv-l96.douyincdn.com/stage/stream-405774431831196265.flv?arch_hrchy=h1\u0026exp_hrchy=h1\u0026expire=1752150022\u0026major_anchor_level=common\u0026only_audio=1\u0026sign=10ff6502d5c7bc32eb36ca1a0771caae\u0026t_id=037-2025070320202131B7824A7F36FBABF4E5-rGeMVF\u0026unique_id=stream-405774431831196265_617_flv\",\"hls\":\"\",\"cmaf\":\"\",\"dash\":\"\",\"lls\":\"\",\"tsl\":\"\",\"tile\":\"\",\"http_ts\":\"\",\"ll_hls\":\"\",\"sdk_params\":\"{\\\"VCodec\\\":\\\"h264\\\",\\\"vbitrate\\\":0,\\\"resolution\\\":\\\"\\\",\\\"gop\\\":2,\\\"drType\\\":\\\"sdr\\\"}\",\"enableEncryption\":false}},\"sd\":{\"main\":{\"flv\":\"http://pull-flv-l96.douyincdn.com/stage/stream-405774431831196265_sd.flv?arch_hrchy=h1\u0026exp_hrchy=h1\u0026expire=1752150022\u0026major_anchor_level=common\u0026sign=53814b6b3d3bb37331262882c5652977\u0026t_id=037-2025070320202131B7824A7F36FBABF4E5-rGeMVF\u0026unique_id=stream-405774431831196265_617_flv_sd\",\"hls\":\"http://pull-hls-l96.douyincdn.com/stage/stream-405774431831196265_sd.m3u8?arch_hrchy=h1\u0026exp_hrchy=h1\u0026expire=1752150022\u0026major_anchor_level=common\u0026sign=5759f089ceaffbcc2ba5ca9f4c4eb590\u0026t_id=037-2025070320202131B7824A7F36FBABF4E5-rGeMVF\",\"cmaf\":\"\",\"dash\":\"\",\"lls\":\"\",\"tsl\":\"\",\"tile\":\"\",\"http_ts\":\"\",\"ll_hls\":\"\",\"sdk_params\":\"{\\\"VCodec\\\":\\\"h264\\\",\\\"vbitrate\\\":1600000,\\\"resolution\\\":\\\"714x540\\\",\\\"gop\\\":2,\\\"drType\\\":\\\"sdr\\\",\\\"fps\\\":30}\",\"enableEncryption\":false}},\"origin\":{\"main\":{\"flv\":\"http://pull-flv-l96.douyincdn.com/stage/stream-405774431831196265_or4.flv?arch_hrchy=h1\u0026exp_hrchy=h1\u0026expire=1752150022\u0026major_anchor_level=common\u0026sign=4648f5fe294d8eeeaf8619406d166bcc\u0026t_id=037-2025070320202131B7824A7F36FBABF4E5-rGeMVF\u0026unique_id=stream-405774431831196265_617_flv_or4\",\"hls\":\"http://pull-hls-l96.douyincdn.com/stage/stream-405774431831196265_or4.m3u8?arch_hrchy=h1\u0026exp_hrchy=h1\u0026expire=1752150022\u0026major_anchor_level=common\u0026sign=40bb14309f29902dae826bf4e0cbcae8\u0026t_id=037-2025070320202131B7824A7F36FBABF4E5-rGeMVF\",\"cmaf\":\"\",\"dash\":\"\",\"lls\":\"\",\"tsl\":\"\",\"tile\":\"\",\"http_ts\":\"\",\"ll_hls\":\"\",\"sdk_params\":\"{\\\"VCodec\\\":\\\"h264\\\",\\\"vbitrate\\\":1249000,\\\"resolution\\\":\\\"1440x1088\\\",\\\"gop\\\":2,\\\"drType\\\":\\\"sdr\\\"}\",\"enableEncryption\":false}}}}"
+                        }
+                    },
+                    "extra": {
+                        "height": 1088,
+                        "width": 1440,
+                        "fps": 0,
+                        "max_bitrate": 0,
+                        "min_bitrate": 0,
+                        "default_bitrate": 0,
+                        "bitrate_adapt_strategy": 0,
+                        "anchor_interact_profile": 0,
+                        "audience_interact_profile": 0,
+                        "hardware_encode": false,
+                        "video_profile": 0,
+                        "h265_enable": false,
+                        "gop_sec": 0,
+                        "bframe_enable": false,
+                        "roi": false,
+                        "sw_roi": false,
+                        "bytevc1_enable": false
+                    },
+                    "pull_datas": {}
+                },
+                "mosaic_status": 0,
+                "mosaic_status_str": "0",
+                "admin_user_ids": [
+                    2434744785312900
+                ],
+                "admin_user_ids_str": [
+                    "2434744785312900"
+                ],
+                "owner": {
+                    "id_str": "574389687158554",
+                    "sec_uid": "MS4wLjABAAAANKz3Mg5mhVQBMI06r4mnX90ThJEAmggwITyw9LSHv60",
+                    "nickname": "aasyy",
+                    "avatar_thumb": {
+                        "url_list": [
+                            "https://p26.douyinpic.com/aweme/100x100/aweme-avatar/tos-cn-avt-0015_d87bb50e8eea06761988651f95424333.jpeg?from=3067671334",
+                            "https://p11.douyinpic.com/aweme/100x100/aweme-avatar/tos-cn-avt-0015_d87bb50e8eea06761988651f95424333.jpeg?from=3067671334",
+                            "https://p3.douyinpic.com/aweme/100x100/aweme-avatar/tos-cn-avt-0015_d87bb50e8eea06761988651f95424333.jpeg?from=3067671334"
+                        ]
+                    },
+                    "follow_info": {
+                        "follow_status": 0,
+                        "follow_status_str": "0"
+                    },
+                    "subscribe": {
+                        "is_member": false,
+                        "level": 0,
+                        "identity_type": 0,
+                        "buy_type": 0,
+                        "open": 1
+                    },
+                    "foreign_user": 0,
+                    "open_id_str": ""
+                },
+                "room_auth": {
+                    "Chat": true,
+                    "Danmaku": false,
+                    "Gift": true,
+                    "LuckMoney": true,
+                    "Digg": true,
+                    "RoomContributor": true,
+                    "Props": true,
+                    "UserCard": true,
+                    "POI": true,
+                    "MoreAnchor": 1,
+                    "Banner": 1,
+                    "Share": 1,
+                    "UserCorner": 0,
+                    "Landscape": 1,
+                    "LandscapeChat": 1,
+                    "PublicScreen": 1,
+                    "GiftAnchorMt": 0,
+                    "RecordScreen": 2,
+                    "DonationSticker": 0,
+                    "HourRank": 0,
+                    "CommerceCard": 1,
+                    "AudioChat": 2,
+                    "DanmakuDefault": 0,
+                    "KtvOrderSong": 2,
+                    "SelectionAlbum": 2,
+                    "Like": 0,
+                    "MultiplierPlayback": 0,
+                    "DownloadVideo": 0,
+                    "Collect": 2,
+                    "TimedShutdown": 0,
+                    "Seek": 0,
+                    "Denounce": 0,
+                    "Dislike": 0,
+                    "OnlyTa": 0,
+                    "CastScreen": 1,
+                    "CommentWall": 1,
+                    "BulletStyle": 0,
+                    "ShowGamePlugin": 2,
+                    "VSGift": 0,
+                    "VSTopic": 0,
+                    "VSRank": 0,
+                    "AdminCommentWall": 0,
+                    "CommerceComponent": 1,
+                    "DouPlus": 1,
+                    "GamePointsPlaying": 2,
+                    "Poster": 2,
+                    "Highlights": 2,
+                    "TypingCommentState": 1,
+                    "StrokeUpDownGuide": 1,
+                    "UpRightStatsFloatingLayer": 1,
+                    "CastScreenExplicit": 1,
+                    "Selection": 2,
+                    "IndustryService": 0,
+                    "VerticalRank": 1,
+                    "EnterEffects": 0,
+                    "FansClub": 1,
+                    "EmojiOutside": 0,
+                    "CanSellTicket": 0,
+                    "DouPlusPopularityGem": 0,
+                    "MissionCenter": 0,
+                    "ExpandScreen": 2,
+                    "FansGroup": 2,
+                    "Topic": 2,
+                    "AnchorMission": 0,
+                    "Teleprompter": 0,
+                    "LongTouch": 2,
+                    "FirstFeedHistChat": 1,
+                    "MoreHistChat": 1,
+                    "TaskBanner": 0,
+                    "SpecialStyle": {
+                        "Chat": {
+                            "UnableStyle": 0,
+                            "Content": "主播已设置仅粉丝可以评论",
+                            "OffType": 0,
+                            "AnchorSwitchForPaidLive": 0,
+                            "ContentForPaidLive": ""
+                        },
+                        "Like": {
+                            "UnableStyle": 0,
+                            "Content": "",
+                            "OffType": 0,
+                            "AnchorSwitchForPaidLive": 0,
+                            "ContentForPaidLive": ""
+                        }
+                    },
+                    "FixedChat": 2,
+                    "QuizGamePointsPlaying": 2
+                },
+                "live_room_mode": 0,
+                "stats": {
+                    "total_user_desp": "",
+                    "like_count": 0,
+                    "total_user_str": "9245",
+                    "user_count_str": "106"
+                },
+                "has_commerce_goods": false,
+                "linker_map": {},
+                "linker_detail": {
+                    "linker_play_modes": [],
+                    "big_party_layout_config_version": 0,
+                    "accept_audience_pre_apply": true,
+                    "linker_ui_layout": 0,
+                    "enable_audience_linkmic": 0,
+                    "function_type": "",
+                    "linker_map_str": {},
+                    "ktv_lyric_mode": "",
+                    "init_source": "",
+                    "forbid_apply_from_other": false,
+                    "ktv_exhibit_mode": 0,
+                    "enlarge_guest_turn_on_source": 0,
+                    "playmode_detail": {},
+                    "client_ui_info": "",
+                    "manual_open_ui": 0,
+                    "feature_list": []
+                },
+                "room_view_stats": {
+                    "is_hidden": false,
+                    "display_short": "106",
+                    "display_middle": "106",
+                    "display_long": "106在线观众",
+                    "display_value": 106,
+                    "display_version": 1663849727,
+                    "incremental": false,
+                    "display_type": 1,
+                    "display_short_anchor": "106",
+                    "display_middle_anchor": "106",
+                    "display_long_anchor": "106在线观众"
+                },
+                "scene_type_info": {
+                    "is_union_live_room": false,
+                    "is_life": false,
+                    "is_protected_room": 0,
+                    "is_lasted_goods_room": 2,
+                    "is_desire_room": 2,
+                    "commentary_type": false,
+                    "is_sub_orientation_vertical_room": 1
+                },
+                "toolbar_data": {
+                    "entrance_list": [
+                        {
+                            "group_id": 5,
+                            "component_type": 24,
+                            "op_type": 0,
+                            "text": "更多",
+                            "schema_url": "",
+                            "show_type": 1,
+                            "data_status": 1,
+                            "extra": ""
+                        },
+                        {
+                            "group_id": 6,
+                            "component_type": 29,
+                            "op_type": 0,
+                            "text": "快捷送礼",
+                            "schema_url": "",
+                            "icon": {
+                                "url_list": [
+                                    "https://p11-webcast.douyinpic.com/img/webcast/7ef47758a435313180e6b78b056dda4e.png~tplv-resize:0:0.image",
+                                    "https://p3-webcast.douyinpic.com/img/webcast/7ef47758a435313180e6b78b056dda4e.png~tplv-resize:0:0.image"
+                                ],
+                                "uri": "webcast/7ef47758a435313180e6b78b056dda4e.png",
+                                "height": 0,
+                                "width": 0,
+                                "avg_color": "#373752",
+                                "image_type": 0,
+                                "open_web_url": "",
+                                "is_animated": false,
+                                "flex_setting_list": [],
+                                "text_setting_list": []
+                            },
+                            "show_type": 3,
+                            "data_status": 1,
+                            "extra": "{\"id\":463,\"name\":\"小心心\",\"type\":1,\"diamond_count\":1,\"combo\":true,\"image\":{\"url_list\":[\"https://p11-webcast.douyinpic.com/img/webcast/7ef47758a435313180e6b78b056dda4e.png~tplv-obj.image\",\"https://p3-webcast.douyinpic.com/img/webcast/7ef47758a435313180e6b78b056dda4e.png~tplv-obj.image\"],\"uri\":\"webcast/7ef47758a435313180e6b78b056dda4e.png\",\"avg_color\":\"#373752\"},\"webp_image\":{\"url_list\":[\"https://p3-webcast.douyinpic.com/img/webcast/7ef47758a435313180e6b78b056dda4e.png~tplv-obj.webp\",\"https://p11-webcast.douyinpic.com/img/webcast/7ef47758a435313180e6b78b056dda4e.png~tplv-obj.webp\"],\"uri\":\"webcast/7ef47758a435313180e6b78b056dda4e.png\",\"avg_color\":\"#FAFAFA\"}}"
+                        },
+                        {
+                            "group_id": 8,
+                            "component_type": 28,
+                            "op_type": 0,
+                            "text": "礼物",
+                            "schema_url": "",
+                            "icon": {
+                                "url_list": [
+                                    "https://p3-webcast.douyinpic.com/img/webcast/profit_gift_entrance_ab_v2.webp~tplv-resize:0:0.image",
+                                    "https://p11-webcast.douyinpic.com/img/webcast/profit_gift_entrance_ab_v2.webp~tplv-resize:0:0.image"
+                                ],
+                                "uri": "webcast/profit_gift_entrance_ab_v2.webp",
+                                "height": 0,
+                                "width": 0,
+                                "avg_color": "#B1CCA3",
+                                "image_type": 0,
+                                "open_web_url": "",
+                                "is_animated": false,
+                                "flex_setting_list": [],
+                                "text_setting_list": []
+                            },
+                            "show_type": 3,
+                            "data_status": 1,
+                            "extra": ""
+                        },
+                        {
+                            "group_id": 12,
+                            "component_type": 35,
+                            "op_type": 0,
+                            "text": "清晰度",
+                            "schema_url": "",
+                            "show_type": 2,
+                            "data_status": 1,
+                            "extra": ""
+                        }
+                    ],
+                    "more_panel": [
+                        {
+                            "group_id": 1,
+                            "component_type": 20,
+                            "op_type": 0,
+                            "text": "分享",
+                            "schema_url": "",
+                            "show_type": 1,
+                            "data_status": 1,
+                            "extra": "{\"ShareStory\":1}"
+                        },
+                        {
+                            "group_id": 10,
+                            "component_type": 31,
+                            "op_type": 0,
+                            "text": "聊天频道",
+                            "schema_url": "",
+                            "show_type": 1,
+                            "data_status": 1,
+                            "extra": ""
+                        }
+                    ],
+                    "max_entrance_cnt": 4,
+                    "landscape_up_right": [],
+                    "skin_resource": {},
+                    "max_entrance_cnt_landscape": 4,
+                    "permutation": {
+                        "general": {
+                            "GroupPriority": [
+                                18,
+                                17,
+                                12,
+                                14,
+                                16,
+                                5,
+                                1,
+                                8,
+                                4,
+                                15,
+                                10,
+                                13,
+                                0,
+                                19,
+                                9,
+                                3,
+                                2,
+                                7,
+                                6
+                            ],
+                            "ComponentSequence": [
+                                31,
+                                33,
+                                34,
+                                37,
+                                35,
+                                38,
+                                36,
+                                26,
+                                42,
+                                23,
+                                27,
+                                32,
+                                21,
+                                2,
+                                3,
+                                1,
+                                4,
+                                5,
+                                6,
+                                7,
+                                8,
+                                9,
+                                22,
+                                30,
+                                25,
+                                41,
+                                29,
+                                28,
+                                20,
+                                24
+                            ]
+                        },
+                        "on_demand_component_list": [],
+                        "block_component_list": []
+                    },
+                    "extra_info": {
+                        "game_promotion_coexist": 0
+                    }
+                },
+                "ecom_data": {
+                    "reds_show_infos": [],
+                    "instant_type": 0,
+                    "route_rule": ""
+                },
+                "room_cart": {
+                    "contain_cart": false,
+                    "total": 0,
+                    "flash_total": 0,
+                    "cart_icon": "",
+                    "show_cart": 0
+                },
+                "AnchorABMap": {
+                    "ab_admin_comment_on_wall": "0",
+                    "ab_friend_chat": "4",
+                    "admin_optimize_third": "1",
+                    "admin_pin_ab_group": "1",
+                    "admin_privilege_refine": "2",
+                    "admin_screen_chat_value": "1",
+                    "allow_shared_to_fans": "false",
+                    "anchor_other_device": "1",
+                    "audience_linkmic_continue": "2",
+                    "audio_1v8_stage_enlarge": "1",
+                    "audio_double_enlarge_enable": "1",
+                    "audio_radio_v2": "1",
+                    "audio_room_subtitle_opt": "3",
+                    "audio_subtitle_default_open": "2",
+                    "battle_match_rebuild_anchor": "2",
+                    "big_party_enable_open_camera": "2",
+                    "chat_intercommunicate_multi_anchor": "2",
+                    "chat_intercommunicate_pk": "2",
+                    "cold_start": "1",
+                    "double_enlarge_enable": "1",
+                    "ecom_room_disable_gift": "0",
+                    "enable_enter_by_sharing": "2",
+                    "enable_link_guest_enter": "2",
+                    "enter_message_tip_relation": "0",
+                    "enter_source_mark": "0",
+                    "featured_public_screen_ab_value": "2",
+                    "frequently_chat_ab_value": "2",
+                    "friend_room_audio_tuning": "1",
+                    "friend_room_support_ns_mode": "0",
+                    "friend_share_video_feature_type": "3",
+                    "game_link_entrance": "1",
+                    "gift_hide_tip": "2",
+                    "guest_battle_1v6_anchor_involved": "1",
+                    "guest_battle_crown_upgrade": "4",
+                    "guest_battle_expand": "2",
+                    "guest_battle_score_expand": "2",
+                    "guest_battle_upgrade": "2",
+                    "interact_anchor_guide": "0",
+                    "ktv_aigc_mv": "1",
+                    "ktv_anchor_enable_add_all": "1",
+                    "ktv_atmosphere_video": "2",
+                    "ktv_auto_mute_self": "1",
+                    "ktv_challenge_minus_gift": "1",
+                    "ktv_component_auto_open": "2",
+                    "ktv_component_new_midi": "3",
+                    "ktv_enable_avatar": "2",
+                    "ktv_enable_open_camera": "2",
+                    "ktv_fragment_song": "1",
+                    "ktv_grab_guide_song": "0",
+                    "ktv_guide_song_switch": "0",
+                    "ktv_kick_when_linker_full": "1",
+                    "ktv_mc_host_show_tag": "2",
+                    "ktv_midi_score": "1",
+                    "ktv_midi_sense_enhance": "1",
+                    "ktv_new_challenge": "1",
+                    "ktv_new_mv": "1",
+                    "ktv_order_chain_opt": "1",
+                    "ktv_profit_dress_bg": "1",
+                    "ktv_room_atmosphere": "1",
+                    "ktv_singing_hot_rank": "1",
+                    "ktv_video_stream_optimize": "1",
+                    "ktv_want_listen_enable": "2",
+                    "lead_real_time_chorus": "2",
+                    "link_efficiency": "1",
+                    "linkmic_multi_chorus": "2",
+                    "linkmic_order_sing_search_fingerprint": "1",
+                    "linkmic_order_sing_upgrade": "1",
+                    "linkmic_starwish": "1",
+                    "linkmic_starwish_gift": "true",
+                    "live_anchor_enable_chorus": "false",
+                    "live_anchor_enable_custom_position": "1",
+                    "live_anchor_flow_feedback_enable": "1",
+                    "live_anchor_hit_new_audience_linkmic": "2",
+                    "live_anchor_hit_position_opt": "2",
+                    "live_anchor_hit_video_bid_paid": "2",
+                    "live_anchor_hit_video_teamfight": "2",
+                    "live_anchor_new_replay_record_enable": "1",
+                    "live_answer_on_wall": "1",
+                    "live_audience_linkmic_pre_apply": "1",
+                    "live_audience_linkmic_pre_apply_v2": "1",
+                    "live_audio_enable_c_position": "2",
+                    "live_chat_streamline": "2",
+                    "live_dou_plus_enter": "1",
+                    "live_invite_panel_opt": "2",
+                    "live_ktv_enable_beat": "0",
+                    "live_ktv_group": "2",
+                    "live_ktv_show_singer_icon": "1",
+                    "live_ktv_singing_challenge": "1",
+                    "live_linkmic_battle_optimize": "1",
+                    "live_linkmic_ktv_anchor_lyric_mode": "0",
+                    "live_linkmic_order_sing_custom_gift": "2",
+                    "live_linkmic_order_sing_micro_opt": "3",
+                    "live_linkmic_order_sing_new": "1",
+                    "live_linkmic_order_sing_v3": "2",
+                    "live_pc_helper_new_layout": "0",
+                    "live_room_manage_style": "0",
+                    "live_team_fight_flexible": "1",
+                    "live_video_enable_c_position": "2",
+                    "live_video_enable_self_discipline": "2",
+                    "live_video_host_identity_enable": "2",
+                    "live_video_on_wall": "1",
+                    "live_video_share": "2",
+                    "lonely_room_enter_msg_unfold": "0",
+                    "mark_user": "1",
+                    "merge_ktv_mode_enable": "1",
+                    "merge_ktv_optimize_enable": "2",
+                    "opt_audience_linkmic": "3",
+                    "opt_paid_link_feature_switch": "1",
+                    "optran_paid_linkmic": "2",
+                    "order_sing_aigcmv": "1",
+                    "order_sing_mv": "1",
+                    "order_singer_rank": "2",
+                    "play_mode_opt_24": "1",
+                    "ps_use_new_panel": "1",
+                    "radio_paid_linkmic": "2",
+                    "radio_prepare_apply": "0",
+                    "real_time_chorus": "1",
+                    "real_time_chorus_gift": "2",
+                    "room_battle_compose_message": "1",
+                    "room_battle_mode_switch": "2",
+                    "room_battle_mode_switch_audio": "3",
+                    "room_double_like": "2",
+                    "room_secret_chat": "1",
+                    "search_user_entry_enable": "1",
+                    "self_discipline_name": "1",
+                    "self_discipline_v2": "1",
+                    "self_discipline_v3": "1",
+                    "social_share_video_adjust_volume": "2",
+                    "support_multiple_add_price": "1",
+                    "themed_competition": "1",
+                    "themed_competition_v2": "1",
+                    "traffic_strategy": "0",
+                    "video_equal_1v8fix_switch": "1",
+                    "video_ktv_challenge": "1",
+                    "video_talk_enable_avatar": "2",
+                    "vip_elaborate": "1",
+                    "webcast_chat_model": "1"
+                },
+                "like_count": 3236,
+                "owner_user_id_str": "",
+                "paid_live_data": {
+                    "paid_type": 0,
+                    "view_right": 0,
+                    "duration": 0,
+                    "delivery": 0,
+                    "need_delivery_notice": false,
+                    "anchor_right": 0,
+                    "pay_ab_type": 0,
+                    "privilege_info": {},
+                    "privilege_info_map": {},
+                    "max_preview_duration": 0
+                },
+                "basis": {
+                    "next_ping": 300,
+                    "is_customize_audio_room": false,
+                    "need_request_luckybox": 0,
+                    "secret_room": 0,
+                    "foreign_user_room": 0
+                },
+                "game_data": {
+                    "game_tag_info": {
+                        "is_game": 2,
+                        "game_tag_id": 0,
+                        "game_tag_name": ""
+                    }
+                },
+                "short_touch_area_config": {
+                    "elements": {
+                        "1": {
+                            "type": 1,
+                            "priority": 1
+                        },
+                        "2": {
+                            "type": 2,
+                            "priority": 1
+                        },
+                        "3": {
+                            "type": 3,
+                            "priority": 1
+                        },
+                        "4": {
+                            "type": 4,
+                            "priority": 3
+                        },
+                        "5": {
+                            "type": 5,
+                            "priority": 4
+                        },
+                        "6": {
+                            "type": 6,
+                            "priority": 3
+                        },
+                        "7": {
+                            "type": 7,
+                            "priority": 3
+                        },
+                        "8": {
+                            "type": 8,
+                            "priority": 3
+                        },
+                        "9": {
+                            "type": 9,
+                            "priority": 3
+                        },
+                        "10": {
+                            "type": 10,
+                            "priority": 3
+                        },
+                        "12": {
+                            "type": 12,
+                            "priority": 3
+                        },
+                        "22": {
+                            "type": 22,
+                            "priority": 1
+                        },
+                        "27": {
+                            "type": 27,
+                            "priority": 3
+                        },
+                        "30": {
+                            "type": 30,
+                            "priority": 2
+                        }
+                    },
+                    "forbidden_types_map": {},
+                    "temp_state_condition_map": {
+                        "1": {
+                            "type": {
+                                "strategy_type": 1,
+                                "priority": 30
+                            },
+                            "minimum_gap": 900
+                        },
+                        "2": {
+                            "type": {
+                                "strategy_type": 2,
+                                "priority": 20
+                            },
+                            "minimum_gap": 900
+                        },
+                        "3": {
+                            "type": {
+                                "strategy_type": 3,
+                                "priority": 10
+                            },
+                            "minimum_gap": 900
+                        },
+                        "4": {
+                            "type": {
+                                "strategy_type": 4,
+                                "priority": 1
+                            },
+                            "minimum_gap": 0
+                        },
+                        "5": {
+                            "type": {
+                                "strategy_type": 5,
+                                "priority": 5
+                            },
+                            "minimum_gap": 0
+                        },
+                        "6": {
+                            "type": {
+                                "strategy_type": 6,
+                                "priority": 7
+                            },
+                            "minimum_gap": 0
+                        },
+                        "7": {
+                            "type": {
+                                "strategy_type": 7,
+                                "priority": 6
+                            },
+                            "minimum_gap": 0
+                        }
+                    },
+                    "temp_state_strategy": {
+                        "4": {
+                            "short_touch_type": 4,
+                            "strategy_map": {
+                                "1": {
+                                    "type": {
+                                        "strategy_type": 1,
+                                        "priority": 30
+                                    },
+                                    "duration": 10,
+                                    "strategy_method": ""
+                                },
+                                "2": {
+                                    "type": {
+                                        "strategy_type": 2,
+                                        "priority": 20
+                                    },
+                                    "duration": 10,
+                                    "strategy_method": ""
+                                },
+                                "3": {
+                                    "type": {
+                                        "strategy_type": 3,
+                                        "priority": 10
+                                    },
+                                    "duration": 10,
+                                    "strategy_method": ""
+                                },
+                                "6": {
+                                    "type": {
+                                        "strategy_type": 6,
+                                        "priority": 7
+                                    },
+                                    "duration": 10,
+                                    "strategy_method": ""
+                                },
+                                "7": {
+                                    "type": {
+                                        "strategy_type": 7,
+                                        "priority": 6
+                                    },
+                                    "duration": 10,
+                                    "strategy_method": ""
+                                }
+                            }
+                        },
+                        "7": {
+                            "short_touch_type": 7,
+                            "strategy_map": {
+                                "1": {
+                                    "type": {
+                                        "strategy_type": 1,
+                                        "priority": 30
+                                    },
+                                    "duration": 10,
+                                    "strategy_method": ""
+                                },
+                                "2": {
+                                    "type": {
+                                        "strategy_type": 2,
+                                        "priority": 20
+                                    },
+                                    "duration": 10,
+                                    "strategy_method": ""
+                                },
+                                "3": {
+                                    "type": {
+                                        "strategy_type": 3,
+                                        "priority": 10
+                                    },
+                                    "duration": 10,
+                                    "strategy_method": ""
+                                },
+                                "4": {
+                                    "type": {
+                                        "strategy_type": 4,
+                                        "priority": 1
+                                    },
+                                    "duration": 0,
+                                    "strategy_method": ""
+                                },
+                                "5": {
+                                    "type": {
+                                        "strategy_type": 5,
+                                        "priority": 5
+                                    },
+                                    "duration": 10,
+                                    "strategy_method": ""
+                                },
+                                "6": {
+                                    "type": {
+                                        "strategy_type": 6,
+                                        "priority": 7
+                                    },
+                                    "duration": 10,
+                                    "strategy_method": ""
+                                }
+                            }
+                        },
+                        "8": {
+                            "short_touch_type": 8,
+                            "strategy_map": {
+                                "1": {
+                                    "type": {
+                                        "strategy_type": 1,
+                                        "priority": 30
+                                    },
+                                    "duration": 30,
+                                    "strategy_method": ""
+                                },
+                                "2": {
+                                    "type": {
+                                        "strategy_type": 2,
+                                        "priority": 20
+                                    },
+                                    "duration": 10,
+                                    "strategy_method": ""
+                                }
+                            }
+                        },
+                        "97": {
+                            "short_touch_type": 97,
+                            "strategy_map": {
+                                "1": {
+                                    "type": {
+                                        "strategy_type": 1,
+                                        "priority": 30
+                                    },
+                                    "duration": 30,
+                                    "strategy_method": ""
+                                },
+                                "2": {
+                                    "type": {
+                                        "strategy_type": 2,
+                                        "priority": 20
+                                    },
+                                    "duration": 10,
+                                    "strategy_method": ""
+                                },
+                                "3": {
+                                    "type": {
+                                        "strategy_type": 3,
+                                        "priority": 10
+                                    },
+                                    "duration": 30,
+                                    "strategy_method": ""
+                                },
+                                "5": {
+                                    "type": {
+                                        "strategy_type": 5,
+                                        "priority": 5
+                                    },
+                                    "duration": 10,
+                                    "strategy_method": "short_touch_tempstate_redpack_entry_type"
+                                },
+                                "6": {
+                                    "type": {
+                                        "strategy_type": 6,
+                                        "priority": 7
+                                    },
+                                    "duration": 10,
+                                    "strategy_method": "short_touch_tempstate_redpack_match_amunt"
+                                },
+                                "7": {
+                                    "type": {
+                                        "strategy_type": 7,
+                                        "priority": 6
+                                    },
+                                    "duration": 10,
+                                    "strategy_method": "short_touch_tempstate_redpack_user_wish_tobuy"
+                                }
+                            }
+                        },
+                        "136": {
+                            "short_touch_type": 136,
+                            "strategy_map": {
+                                "1": {
+                                    "type": {
+                                        "strategy_type": 1,
+                                        "priority": 30
+                                    },
+                                    "duration": 30,
+                                    "strategy_method": ""
+                                },
+                                "2": {
+                                    "type": {
+                                        "strategy_type": 2,
+                                        "priority": 20
+                                    },
+                                    "duration": 10,
+                                    "strategy_method": ""
+                                }
+                            }
+                        },
+                        "141": {
+                            "short_touch_type": 141,
+                            "strategy_map": {
+                                "1": {
+                                    "type": {
+                                        "strategy_type": 1,
+                                        "priority": 30
+                                    },
+                                    "duration": 30,
+                                    "strategy_method": ""
+                                },
+                                "2": {
+                                    "type": {
+                                        "strategy_type": 2,
+                                        "priority": 20
+                                    },
+                                    "duration": 10,
+                                    "strategy_method": ""
+                                },
+                                "3": {
+                                    "type": {
+                                        "strategy_type": 3,
+                                        "priority": 10
+                                    },
+                                    "duration": 10,
+                                    "strategy_method": ""
+                                }
+                            }
+                        },
+                        "149": {
+                            "short_touch_type": 149,
+                            "strategy_map": {
+                                "1": {
+                                    "type": {
+                                        "strategy_type": 1,
+                                        "priority": 30
+                                    },
+                                    "duration": 30,
+                                    "strategy_method": ""
+                                },
+                                "2": {
+                                    "type": {
+                                        "strategy_type": 2,
+                                        "priority": 20
+                                    },
+                                    "duration": 10,
+                                    "strategy_method": ""
+                                }
+                            }
+                        },
+                        "152": {
+                            "short_touch_type": 152,
+                            "strategy_map": {
+                                "1": {
+                                    "type": {
+                                        "strategy_type": 1,
+                                        "priority": 30
+                                    },
+                                    "duration": 30,
+                                    "strategy_method": ""
+                                },
+                                "2": {
+                                    "type": {
+                                        "strategy_type": 2,
+                                        "priority": 20
+                                    },
+                                    "duration": 10,
+                                    "strategy_method": ""
+                                }
+                            }
+                        },
+                        "153": {
+                            "short_touch_type": 153,
+                            "strategy_map": {
+                                "1": {
+                                    "type": {
+                                        "strategy_type": 1,
+                                        "priority": 30
+                                    },
+                                    "duration": 10,
+                                    "strategy_method": ""
+                                },
+                                "2": {
+                                    "type": {
+                                        "strategy_type": 2,
+                                        "priority": 20
+                                    },
+                                    "duration": 10,
+                                    "strategy_method": ""
+                                },
+                                "4": {
+                                    "type": {
+                                        "strategy_type": 4,
+                                        "priority": 1
+                                    },
+                                    "duration": 10,
+                                    "strategy_method": ""
+                                }
+                            }
+                        },
+                        "159": {
+                            "short_touch_type": 159,
+                            "strategy_map": {
+                                "1": {
+                                    "type": {
+                                        "strategy_type": 1,
+                                        "priority": 30
+                                    },
+                                    "duration": 30,
+                                    "strategy_method": ""
+                                }
+                            }
+                        },
+                        "161": {
+                            "short_touch_type": 161,
+                            "strategy_map": {
+                                "1": {
+                                    "type": {
+                                        "strategy_type": 1,
+                                        "priority": 30
+                                    },
+                                    "duration": 30,
+                                    "strategy_method": ""
+                                },
+                                "2": {
+                                    "type": {
+                                        "strategy_type": 2,
+                                        "priority": 20
+                                    },
+                                    "duration": 10,
+                                    "strategy_method": ""
+                                }
+                            }
+                        },
+                        "210": {
+                            "short_touch_type": 210,
+                            "strategy_map": {
+                                "1": {
+                                    "type": {
+                                        "strategy_type": 1,
+                                        "priority": 30
+                                    },
+                                    "duration": 30,
+                                    "strategy_method": ""
+                                }
+                            }
+                        },
+                        "306": {
+                            "short_touch_type": 306,
+                            "strategy_map": {
+                                "3": {
+                                    "type": {
+                                        "strategy_type": 3,
+                                        "priority": 10
+                                    },
+                                    "duration": 30,
+                                    "strategy_method": "test_temp_30"
+                                }
+                            }
+                        },
+                        "307": {
+                            "short_touch_type": 307,
+                            "strategy_map": {
+                                "4": {
+                                    "type": {
+                                        "strategy_type": 4,
+                                        "priority": 1
+                                    },
+                                    "duration": 15,
+                                    "strategy_method": "test_strategy_5"
+                                }
+                            }
+                        },
+                        "308": {
+                            "short_touch_type": 308,
+                            "strategy_map": {
+                                "5": {
+                                    "type": {
+                                        "strategy_type": 5,
+                                        "priority": 5
+                                    },
+                                    "duration": 10,
+                                    "strategy_method": "test_strategy_5"
+                                }
+                            }
+                        },
+                        "311": {
+                            "short_touch_type": 311,
+                            "strategy_map": {
+                                "3": {
+                                    "type": {
+                                        "strategy_type": 3,
+                                        "priority": 10
+                                    },
+                                    "duration": 30,
+                                    "strategy_method": ""
+                                }
+                            }
+                        },
+                        "312": {
+                            "short_touch_type": 312,
+                            "strategy_map": {
+                                "1": {
+                                    "type": {
+                                        "strategy_type": 1,
+                                        "priority": 30
+                                    },
+                                    "duration": 30,
+                                    "strategy_method": ""
+                                }
+                            }
+                        },
+                        "313": {
+                            "short_touch_type": 313,
+                            "strategy_map": {
+                                "2": {
+                                    "type": {
+                                        "strategy_type": 2,
+                                        "priority": 20
+                                    },
+                                    "duration": 30,
+                                    "strategy_method": "test_strategy_2"
+                                }
+                            }
+                        }
+                    },
+                    "strategy_feat_whitelist": [
+                        "feat_coin_lottery_amount",
+                        "feat_redpack_amount",
+                        "live_short_touch_ecom_redpack_type",
+                        "live_short_touch_ecom_redpack_sub_type",
+                        "live_short_touch_ecom_redpack_total_amount",
+                        "live_short_touch_ecom_redpack_total_stock",
+                        "live_ecom_cart_click_twice",
+                        "live_ecom_cart_stop_buy",
+                        "live_watch_6_min"
+                    ],
+                    "temp_state_global_condition": {
+                        "duration_gap": 300,
+                        "allow_count": 1,
+                        "ignore_strategy_types": [
+                            4
+                        ]
+                    }
+                },
+                "req_user": {
+                    "user_share_room_score": 0,
+                    "enter_user_device_type": 0
+                },
+                "others": {
+                    "deco_detail": {},
+                    "more_panel_info": {
+                        "load_strategy": 3
+                    },
+                    "appointment_info": {
+                        "appointment_id": 0,
+                        "is_subscribe": false
+                    },
+                    "web_skin": {
+                        "enable_skin": false
+                    },
+                    "programme": {
+                        "enable_programme": false
+                    },
+                    "web_live_port_optimization": {
+                        "strategy_config": {
+                            "background": {
+                                "strategy_type": 1,
+                                "use_config_duration": false,
+                                "pause_monitor_duration": "1800"
+                            },
+                            "detail": {
+                                "strategy_type": 1,
+                                "use_config_duration": false,
+                                "pause_monitor_duration": "1800"
+                            },
+                            "tab": {
+                                "strategy_type": 1,
+                                "use_config_duration": false,
+                                "pause_monitor_duration": "1800"
+                            }
+                        },
+                        "strategy_extra": ""
+                    },
+                    "lvideo_item_id": 0,
+                    "recognition_containers": {
+                        "recognition_candidates": []
+                    },
+                    "anchor_together_live": {
+                        "is_together_live": 0,
+                        "user_list": [],
+                        "title": "",
+                        "schema_url": "",
+                        "scene": 1,
+                        "is_show": false
+                    },
+                    "mosaic_version": 0,
+                    "metric_tracker_data_list": [],
+                    "cloud_collaborate_data": {
+                        "collaborate_room_id": 0,
+                        "collaborate_room_id_str": "",
+                        "rejoin_time": 0
+                    }
+                },
+                "admin_user_open_ids": [],
+                "admin_user_open_ids_str": [],
+                "owner_open_id_str": ""
+            }
+        ],
+        "enter_room_id": "7522819524010625833",
+        "extra": {
+            "digg_color": "0",
+            "pay_scores": "0",
+            "is_official_channel": false,
+            "signature": ""
+        },
+        "user": {
+            "id_str": "574389687158554",
+            "sec_uid": "MS4wLjABAAAANKz3Mg5mhVQBMI06r4mnX90ThJEAmggwITyw9LSHv60",
+            "nickname": "aasyy",
+            "avatar_thumb": {
+                "url_list": [
+                    "https://p11.douyinpic.com/aweme/100x100/aweme-avatar/tos-cn-avt-0015_d87bb50e8eea06761988651f95424333.jpeg?from=3067671334",
+                    "https://p26.douyinpic.com/aweme/100x100/aweme-avatar/tos-cn-avt-0015_d87bb50e8eea06761988651f95424333.jpeg?from=3067671334",
+                    "https://p3.douyinpic.com/aweme/100x100/aweme-avatar/tos-cn-avt-0015_d87bb50e8eea06761988651f95424333.jpeg?from=3067671334"
+                ]
+            },
+            "follow_info": {
+                "follow_status": 0,
+                "follow_status_str": "0"
+            },
+            "foreign_user": 0,
+            "open_id_str": ""
+        },
+        "qrcode_url": "https://p3-pc.douyinpic.com/img/aweme-qrcode/VYpudu7522819721390049059~c5_720x720.webp?from=746027608",
+        "enter_mode": 0,
+        "room_status": 0,
+        "partition_road_map": {},
+        "similar_rooms": [],
+        "shark_decision_conf": "",
+        "web_stream_url": {
+            "flv_pull_url": {},
+            "default_resolution": "",
+            "hls_pull_url_map": {},
+            "hls_pull_url": "",
+            "stream_orientation": 0,
+            "pull_datas": {}
+        },
+        "login_lead": {
+            "is_login": false,
+            "level": 0,
+            "items": {}
+        }
+    },
+    "extra": {
+        "now": 1751545222059
+    },
+    "status_code": 0
+}

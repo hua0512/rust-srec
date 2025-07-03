@@ -1,0 +1,55 @@
+{
+    "data": {
+        "data": [
+            {
+                "id_str": "7521591388094384905",
+                "status": 4,
+                "status_str": "4",
+                "title": "人生不设限·美好现场开放麦",
+                "user_count_str": "0",
+                "mosaic_status": 0,
+                "mosaic_status_str": "",
+                "admin_user_ids": [],
+                "admin_user_ids_str": [],
+                "live_room_mode": 0,
+                "has_commerce_goods": false,
+                "linker_map": {},
+                "AnchorABMap": {},
+                "like_count": 0,
+                "owner_user_id_str": "",
+                "admin_user_open_ids": [],
+                "admin_user_open_ids_str": [],
+                "owner_open_id_str": ""
+            }
+        ],
+        "enter_room_id": "7521591388094384905",
+        "user": {
+            "id_str": "3479327813677213",
+            "sec_uid": "MS4wLjABAAAAQ6d-Cy2-3-c8w0VkhtCJkVXXlV8S-Op5ntEWp0oOIqg_RsbLZOue-sJ9AF8VNNoB",
+            "nickname": "抖音演出",
+            "avatar_thumb": {
+                "url_list": [
+                    "https://p11.douyinpic.com/aweme/100x100/aweme-avatar/tos-cn-avt-0015_a75858e14cf573ad3378eab80a8768f1.jpeg?from=3067671334",
+                    "https://p26.douyinpic.com/aweme/100x100/aweme-avatar/tos-cn-avt-0015_a75858e14cf573ad3378eab80a8768f1.jpeg?from=3067671334",
+                    "https://p3.douyinpic.com/aweme/100x100/aweme-avatar/tos-cn-avt-0015_a75858e14cf573ad3378eab80a8768f1.jpeg?from=3067671334"
+                ]
+            },
+            "follow_info": {
+                "follow_status": 0,
+                "follow_status_str": "0"
+            },
+            "foreign_user": 0,
+            "open_id_str": ""
+        },
+        "qrcode_url": "",
+        "enter_mode": 0,
+        "room_status": 2,
+        "partition_road_map": {},
+        "similar_rooms": [],
+        "shark_decision_conf": ""
+    },
+    "extra": {
+        "now": 1751545160084
+    },
+    "status_code": 0
+}

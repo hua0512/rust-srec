@@ -8,7 +8,7 @@ use rustls_platform_verifier::BuilderVerifierExt;
 use std::sync::Arc;
 
 
-pub(crate)  const DEFAULT_UA : &str = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/58.0.3029.110 Safari/537.3";
+pub(crate)  const DEFAULT_UA : &str = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36";
 
 pub fn default_client() -> Client {
         let provider = Arc::new(ring::default_provider());
