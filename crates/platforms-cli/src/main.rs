@@ -157,7 +157,7 @@ async fn main() -> anyhow::Result<()> {
         if let Some(extras) = &final_stream_info.extras {
             if !extras.is_empty() {
                 println!("  {}:", "Extras".yellow());
-                for (key, value) in extras {
+                for (key, value) in extras.iter() {
                     println!("    {}: {}", key.green(), value.cyan());
                 }
             }

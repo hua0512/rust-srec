@@ -1,6 +1,6 @@
 use crate::media::MediaFormat;
 use serde::{Deserialize, Serialize};
-use std::{collections::HashMap, fmt};
+use std::{collections::HashMap, fmt, sync::Arc};
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct StreamInfo {
@@ -13,7 +13,7 @@ pub struct StreamInfo {
     // Bitrate of the stream in bits per second
     pub bitrate: u32,
     pub priority: u32,
-    pub extras: Option<HashMap<String, String>>,
+    pub extras: Option<Arc<HashMap<String, String>>>,
     pub codec: String,
     pub is_headers_needed: bool,
 }
