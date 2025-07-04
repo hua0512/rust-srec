@@ -30,7 +30,7 @@ use tracing::debug;
 /// let mut extractor = Extractor::new("Platform".to_string(), "https://example.com".to_string(), Client::new());
 ///
 /// // Add individual cookies
-/// extractor.add_cookie("session_id".to_string(), "abc123".to_string());
+/// extractor.add_cookie("session_id", "abc123");
 ///
 /// // Parse cookie string from browser/external source
 /// extractor.set_cookies_from_string("token=xyz789; user_id=12345; theme=dark");
@@ -59,7 +59,11 @@ pub struct Extractor {
 }
 
 impl Extractor {
-    pub fn new(platform_name: String, platform_url: String, client: Client) -> Self {
+    pub fn new<S1: Into<String>, S2: Into<String>>(
+        platform_name: S1,
+        platform_url: S2,
+        client: Client,
+    ) -> Self {
         let mut default_headers = HashMap::new();
         default_headers.insert(
             reqwest::header::USER_AGENT.to_string(),
@@ -79,8 +83,8 @@ impl Extractor {
         );
 
         Self {
-            platform_name,
-            url: platform_url,
+            platform_name: platform_name.into(),
+            url: platform_url.into(),
             client,
             platform_regex: None,
             platform_headers: default_headers,
@@ -89,28 +93,29 @@ impl Extractor {
         }
     }
 
-    pub fn add_header(&mut self, key: String, value: String) {
-        self.platform_headers.insert(key, value);
+    pub fn add_header<K: Into<String>, V: Into<String>>(&mut self, key: K, value: V) {
+        self.platform_headers.insert(key.into(), value.into());
     }
 
-    pub fn insert_header(&mut self, key: String, value: String) {
-        self.platform_headers.insert(key, value);
-    }
-
-    pub fn add_param(&mut self, key: String, value: String) {
-        self.platform_params.insert(key, value);
+    pub fn add_param<K: Into<String>, V: Into<String>>(&mut self, key: K, value: V) {
+        self.platform_params.insert(key.into(), value.into());
     }
 
     pub fn get_param(&self, key: &str) -> Option<&String> {
         self.platform_params.get(key)
     }
 
-    pub fn update_param(&mut self, key: String, value: String) {
-        self.platform_params.insert(key, value);
+    pub fn update_param<K: Into<String>, V: Into<String>>(&mut self, key: K, value: V) {
+        self.platform_params.insert(key.into(), value.into());
     }
 
-    pub fn update_cookie(&mut self, key: String, value: String) {
-        self.cookies.insert(key, value);
+    pub fn update_param_by_key(&mut self, key: &str, value: &str) {
+        self.platform_params
+            .insert(key.to_string(), value.to_string());
+    }
+
+    pub fn update_cookie<K: Into<String>, V: Into<String>>(&mut self, key: K, value: V) {
+        self.cookies.insert(key.into(), value.into());
     }
 
     /// Add a single cookie to the extractor's cookie store.
@@ -123,10 +128,10 @@ impl Extractor {
     /// # Example
     ///
     /// ```rust
-    /// extractor.add_cookie("session_token".to_string(), "abc123def456".to_string());
+    /// extractor.add_cookie("session_token", "abc123def456");
     /// ```
-    pub fn add_cookie(&mut self, name: String, value: String) {
-        self.cookies.insert(name, value);
+    pub fn add_cookie<N: Into<String>, V: Into<String>>(&mut self, name: N, value: V) {
+        self.cookies.insert(name.into(), value.into());
     }
 
     /// Add multiple cookies from a HashMap.

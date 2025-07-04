@@ -1,8 +1,5 @@
-use std::collections::HashMap;
-use std::sync::Arc;
-
 use crate::extractor::error::ExtractorError;
-use crate::extractor::extractor::{Extractor, PlatformExtractor};
+use crate::extractor::platform_extractor::{Extractor, PlatformExtractor};
 use crate::extractor::platforms::huya::huya_tars::decode_get_cdn_token_info_response;
 use crate::media::media_format::MediaFormat;
 use crate::media::media_info::MediaInfo;
@@ -29,6 +26,8 @@ pub struct HuyaExtractor {
     // whether to use WUP (Web Unicast Protocol) for extraction
     // if not set, the extractor will use the MP api for extraction
     pub use_wup: bool,
+    // whether to force the origin quality stream
+    pub force_origin_quality: bool,
 }
 
 impl HuyaExtractor {
@@ -42,12 +41,25 @@ impl HuyaExtractor {
     pub fn new(platform_url: String, client: Client) -> Self {
         let mut extractor = Extractor::new("Huya".to_string(), platform_url, client);
         let huya_url = Self::HUYA_URL.to_string();
-        extractor.add_header("Origin".to_string(), huya_url.clone());
-        extractor.add_header("Referer".to_string(), huya_url);
-        extractor.add_header("User-Agent".to_string(), Self::WUP_UA.to_string());
+        extractor.add_header(reqwest::header::ORIGIN.to_string(), huya_url.clone());
+        extractor.add_header(reqwest::header::REFERER.to_string(), huya_url);
+        extractor.add_header(
+            reqwest::header::USER_AGENT.to_string(),
+            Self::WUP_UA.to_string(),
+        );
         Self {
             extractor,
             use_wup: true,
+            force_origin_quality: true,
+        }
+    }
+
+    fn force_origin_quality(&self, stream_name: &str) -> String {
+        if self.force_origin_quality {
+            // remove '-imgplus'
+            stream_name.replace("-imgplus", "")
+        } else {
+            stream_name.to_string()
         }
     }
 
@@ -252,7 +264,7 @@ impl HuyaExtractor {
         Ok(true)
     }
 
-    pub(crate) fn parse_web_media_info<>(
+    pub(crate) fn parse_web_media_info(
         &self,
         page_content: &str,
     ) -> Result<MediaInfo, ExtractorError> {
@@ -355,10 +367,12 @@ impl HuyaExtractor {
                 continue;
             }
 
+            let stream_name = self.force_origin_quality(stream_info.s_stream_name);
+
             let flv_url = format!(
                 "{}/{}.{}?{}",
                 stream_info.s_flv_url,
-                stream_info.s_stream_name,
+                stream_name,
                 stream_info.s_flv_url_suffix,
                 stream_info.s_flv_anti_code
             );
@@ -366,29 +380,24 @@ impl HuyaExtractor {
             let hls_url = format!(
                 "{}/{}.{}?{}",
                 stream_info.s_hls_url,
-                stream_info.s_stream_name,
+                stream_name,
                 stream_info.s_hls_url_suffix,
                 stream_info.s_hls_anti_code
             );
 
-            let mut extras_arc = Arc::new(HashMap::new());
-
-            let extras = Arc::get_mut(&mut extras_arc).unwrap();
-
-            extras.insert("cdn".to_string(), stream_info.s_cdn_type.to_string());
-            extras.insert(
-                "stream_name".to_string(),
-                stream_info.s_stream_name.to_string(),
-            );
-            extras.insert("presenter_uid".to_string(), presenter_uid.to_string());
-            extras.insert("default_bitrate".to_string(), default_bitrate.to_string());
+            let extras = serde_json::json!({
+                "cdn": stream_info.s_cdn_type,
+                "stream_name": stream_name,
+                "presenter_uid": presenter_uid,
+                "default_bitrate": default_bitrate,
+            });
 
             let add_streams_for_bitrate =
                 |streams: &mut Vec<StreamInfo>,
                  quality: &str,
                  bitrate: u32,
                  priority: u32,
-                 extras: &Arc<HashMap<String, String>>| {
+                 extras: &serde_json::Value| {
                     // flv
                     streams.push(StreamInfo {
                         url: format!("{}&ratio={}", flv_url, bitrate),
@@ -398,6 +407,7 @@ impl HuyaExtractor {
                         priority,
                         codec: "avc".to_string(),
                         is_headers_needed: false,
+                        fps: 0.0,
                         extras: Some(extras.clone()),
                     });
                     // hls
@@ -409,6 +419,7 @@ impl HuyaExtractor {
                         priority,
                         codec: "avc".to_string(),
                         is_headers_needed: false,
+                        fps: 0.0,
                         extras: Some(extras.clone()),
                     });
                 };
@@ -416,13 +427,7 @@ impl HuyaExtractor {
             let priority = stream_info.i_web_priority_rate as u32;
 
             if bitrate_info_list.is_empty() {
-                add_streams_for_bitrate(
-                    &mut streams,
-                    "原画",
-                    default_bitrate,
-                    priority,
-                    &extras_arc,
-                );
+                add_streams_for_bitrate(&mut streams, "原画", default_bitrate, priority, &extras);
             } else {
                 for bitrate_info in bitrate_info_list.iter() {
                     if bitrate_info.s_display_name.contains("HDR") {
@@ -433,7 +438,7 @@ impl HuyaExtractor {
                         bitrate_info.s_display_name.as_ref(),
                         bitrate_info.i_bit_rate,
                         priority,
-                        &extras_arc,
+                        &extras,
                     );
                 }
             }
@@ -501,7 +506,8 @@ impl HuyaExtractor {
             .extras
             .as_ref()
             .and_then(|extras| extras.get("default_bitrate"))
-            .and_then(|s| s.parse::<u32>().ok())
+            .and_then(|v| v.as_u64())
+            .map(|v| v as u32)
             .unwrap_or(10000);
 
         // Use reqwest's Url for safe query parameter handling
@@ -531,7 +537,7 @@ impl PlatformExtractor for HuyaExtractor {
                 .extractor
                 .url
                 .split('/')
-                .last()
+                .next_back()
                 .and_then(|s| s.parse::<i64>().ok())
                 .ok_or_else(|| {
                     ExtractorError::InvalidUrl("Huya MP API requires numeric room ID".to_string())
@@ -565,15 +571,19 @@ impl PlatformExtractor for HuyaExtractor {
             .cloned()
             .unwrap();
 
-        let cdn = extras.get("cdn").map(|s| s.as_str()).unwrap_or("AL");
+        let cdn = extras.get("cdn").and_then(|v| v.as_str()).unwrap_or("AL");
 
-        let stream_name = extras.get("stream_name").ok_or_else(|| {
-            ExtractorError::ValidationError("Stream name not found in extras".to_string())
-        })?;
+        let stream_name = extras
+            .get("stream_name")
+            .and_then(|v| v.as_str())
+            .ok_or_else(|| {
+                ExtractorError::ValidationError("Stream name not found in extras".to_string())
+            })?;
 
         let presenter_uid = extras
             .get("presenter_uid")
-            .and_then(|s| s.parse::<i32>().ok())
+            .and_then(|v| v.as_i64())
+            .map(|v| v as i32)
             .unwrap_or(0);
 
         self.get_stream_url_wup(&mut stream_info, cdn, stream_name, presenter_uid)

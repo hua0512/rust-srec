@@ -1,9 +1,35 @@
-use serde::Deserialize;
+#![allow(dead_code, unused_variables)]
+
 use serde::de::Deserializer;
+use serde::{Deserialize, Serialize};
 use std::borrow::Cow;
 use std::collections::HashMap;
 
 #[derive(Deserialize, Debug)]
+
+pub(crate) struct DouyinAppResponse<'a> {
+    #[serde(borrow)]
+    pub data: DouyinAppResponseData<'a>,
+}
+
+#[derive(Deserialize, Debug)]
+pub(crate) struct DouyinAppResponseData<'a> {
+    #[serde(rename = "status_code")]
+    pub code: Option<i32>,
+    #[serde(borrow)]
+    pub prompts: Option<Cow<'a, str>>,
+    #[serde(borrow)]
+    pub message: Option<Cow<'a, str>>,
+    #[serde(borrow)]
+    pub room: Option<DouyinPcData<'a>>,
+    #[serde(borrow)]
+    pub user: Option<DouyinUserInfo<'a>>,
+    #[serde(borrow)]
+    pub enter_room_id: Option<&'a str>,
+}
+
+#[derive(Deserialize, Debug)]
+
 pub(crate) struct DouyinPcResponse<'a> {
     #[serde(borrow)]
     pub data: DouyinPcResponseData<'a>,
@@ -241,6 +267,7 @@ pub(crate) struct DouyinStreamOptions<'a> {
 }
 
 #[derive(Deserialize, Debug)]
+
 pub(crate) struct DouyinQuality<'a> {
     #[serde(borrow)]
     pub name: &'a str,
@@ -259,6 +286,7 @@ pub(crate) struct DouyinQuality<'a> {
 }
 
 #[derive(Deserialize, Debug)]
+
 pub(crate) struct DouyinStreamExtra {
     pub height: i32,
     pub width: i32,
@@ -279,8 +307,15 @@ pub(crate) struct DouyinStreamExtra {
     pub bytevc1_enable: bool,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DouyinStreamExtras {
+    pub resolution: String,
+    pub sdk_key: String,
+}
+
 // Additional structs for parsing the stream_data JSON if needed
 #[derive(Deserialize, Debug)]
+
 pub(crate) struct DouyinStreamData<'a> {
     #[serde(borrow)]
     pub common: DouyinStreamCommon<'a>,
@@ -289,6 +324,7 @@ pub(crate) struct DouyinStreamData<'a> {
 }
 
 #[derive(Deserialize, Debug)]
+
 pub(crate) struct DouyinStreamCommon<'a> {
     #[serde(borrow)]
     pub ts: &'a str,
@@ -319,6 +355,7 @@ pub(crate) struct DouyinStreamCommon<'a> {
 }
 
 #[derive(Deserialize, Debug)]
+
 pub(crate) struct DouyinStreamQualityData<'a> {
     #[serde(borrow)]
     pub main: DouyinStreamMain<'a>,

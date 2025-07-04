@@ -1,6 +1,6 @@
-mod huya;
+mod builder;
 mod huya_tars;
 mod models;
 
-pub use huya::HuyaExtractor;
+pub use builder::HuyaExtractor;
 pub use huya_tars::GetCdnTokenInfoReq;

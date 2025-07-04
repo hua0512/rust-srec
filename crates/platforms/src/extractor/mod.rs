@@ -1,7 +1,7 @@
-pub mod error;
-pub mod extractor;
-pub mod factory;
-pub mod platforms;
 mod default;
+pub mod error;
+pub mod factory;
+pub mod platform_extractor;
+pub mod platforms;
 
 pub use default::default_factory;

@@ -148,6 +148,11 @@ async fn main() -> anyhow::Result<()> {
             "Priority".yellow(),
             final_stream_info.priority.to_string().cyan()
         );
+        println!(
+            "  {}: {}",
+            "FPS".yellow(),
+            final_stream_info.fps.to_string().cyan()
+        );
         // println!(
         //     "  {}: {}",
         //     "Headers Needed".yellow(),
@@ -155,14 +160,13 @@ async fn main() -> anyhow::Result<()> {
         // );
 
         if let Some(extras) = &final_stream_info.extras {
-            if !extras.is_empty() {
+            if let Some(extras_obj) = extras.as_object().filter(|m| !m.is_empty()) {
                 println!("  {}:", "Extras".yellow());
-                for (key, value) in extras.iter() {
-                    println!("    {}: {}", key.green(), value.cyan());
+                for (key, value) in extras_obj {
+                    println!("    {}: {}", key.green(), value.to_string().cyan());
                 }
             }
         }
-
         if let Some(extras) = &media_info.extras {
             if !extras.is_empty() {
                 println!("\n{}", "Media Extras:".green().bold());

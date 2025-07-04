@@ -1,14 +1,18 @@
-use ahash::AHashMap;
 use once_cell::sync::Lazy;
-use rand::{rng, Rng};
+use rand::{Rng, rng};
 use regex::Regex;
 use reqwest::Client;
 use serde_json::json;
-use std::sync::{Arc, Mutex};
+use std::{
+    collections::HashMap,
+    sync::{Arc, Mutex},
+};
 use tracing::debug;
 
 use crate::extractor::{
-    default::DEFAULT_UA, error::ExtractorError, platforms::douyin::apis::BASE_URL,
+    default::DEFAULT_UA,
+    error::ExtractorError,
+    platforms::douyin::apis::{BASE_URL, UNION_REGISTER_URL},
 };
 
 pub static GLOBAL_TTWID: Lazy<Arc<Mutex<Option<String>>>> =
@@ -28,8 +32,8 @@ pub(crate) fn extract_rid(url: &str) -> Result<String, ExtractorError> {
         ))
 }
 
-pub(crate) fn get_common_params() -> AHashMap<&'static str, &'static str> {
-    let mut params = AHashMap::new();
+pub(crate) fn get_common_params() -> HashMap<&'static str, &'static str> {
+    let mut params = HashMap::new();
     params.insert("app_name", "douyin_web");
     params.insert("compress", "gzip");
     params.insert("device_platform", "web");
@@ -104,7 +108,7 @@ pub async fn fetch_ttwid(client: &Client) -> String {
 
     // Fetch ttwid from Douyin's ttwid endpoint
     let response = match client
-        .post("https://ttwid.bytedance.com/ttwid/union/register/")
+        .post(UNION_REGISTER_URL)
         .header(reqwest::header::USER_AGENT, DEFAULT_UA)
         .json(&json)
         .send()
@@ -171,6 +175,7 @@ impl GlobalTtwidManager {
     }
 
     /// Clear the global ttwid
+    #[allow(dead_code)]
     pub fn clear_global_ttwid() {
         *GLOBAL_TTWID.lock().unwrap() = None;
     }
@@ -216,9 +221,9 @@ impl GlobalTtwidManager {
     }
 }
 
+#[cfg(test)]
 mod tests {
     use crate::extractor::platforms::douyin::utils::GlobalTtwidManager;
-
 
     #[test]
     fn test_global_ttwid_manager() {

@@ -117,6 +117,7 @@ pub fn decode_get_cdn_token_info_response(
 
 // Response Structures
 #[derive(Default, Debug)]
+#[allow(dead_code)]
 pub struct HuyaGetTokenResp {
     pub url: String,
     pub cdn_type: String,

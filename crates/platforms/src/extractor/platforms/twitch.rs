@@ -1,5 +1,5 @@
 use crate::extractor::error::ExtractorError;
-use crate::extractor::extractor::{Extractor, PlatformExtractor};
+use crate::extractor::platform_extractor::{Extractor, PlatformExtractor};
 use crate::media::media_info::MediaInfo;
 use async_trait::async_trait;
 use reqwest::Client;

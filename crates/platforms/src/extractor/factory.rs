@@ -1,5 +1,5 @@
 use super::error::ExtractorError;
-use super::extractor::PlatformExtractor;
+use super::platform_extractor::PlatformExtractor;
 use regex::Regex;
 use reqwest::Client;
 use std::sync::Arc;
