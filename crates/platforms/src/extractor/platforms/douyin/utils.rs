@@ -1,6 +1,6 @@
 use ahash::AHashMap;
 use once_cell::sync::Lazy;
-use rand::{Rng, rng, thread_rng};
+use rand::{rng, Rng};
 use regex::Regex;
 use reqwest::Client;
 use serde_json::json;
@@ -11,8 +11,6 @@ use crate::extractor::{
     default::DEFAULT_UA, error::ExtractorError, platforms::douyin::apis::BASE_URL,
 };
 
-/// Thread-safe global ttwid manager shared across all Douyin extractor instances.
-/// This prevents multiple extractors from making redundant ttwid fetch requests.
 pub static GLOBAL_TTWID: Lazy<Arc<Mutex<Option<String>>>> =
     Lazy::new(|| Arc::new(Mutex::new(None)));
 
@@ -43,7 +41,7 @@ pub(crate) fn get_common_params() -> AHashMap<&'static str, &'static str> {
     params.insert("browser_version", ua);
     params.insert("aid", "6383");
     params.insert("live_id", "1");
-    return params;
+    params
 }
 
 /// Generate a random ms_token, 184 length
@@ -85,6 +83,67 @@ pub(crate) fn generate_odin_ttid() -> String {
 /// Default ttwid value to use as fallback when unable to obtain one from Douyin's servers.
 pub(crate) const DEFAULT_TTWID: &str = "1%7Cu7ogdHsSmHtxbt4hjDCNvcLfVJz78CTM0TTWU8Hio8w%7C1751545220%7C18aac967e501e9d6c13384335ced3523c46a0b1cc4535c7213bc2506a7f462c8";
 
+/// Sends a POST request to the UNION_REGISTER_URL and parses the `ttwid` from the `set-cookie` header.
+///
+/// # Arguments
+///
+/// * `client` - A `&reqwest::Client` to use for the request.
+///
+/// # Returns
+///
+/// A `String` containing the extracted `ttwid`, or the `DEFAULT_TTWID` as a fallback.
+pub async fn fetch_ttwid(client: &Client) -> String {
+    let json = json!({
+        "region": "cn",
+        "aid": 6383,
+        "needFid": false,
+        "service": BASE_URL,
+        "union": true,
+        "fid": ""
+    });
+
+    // Fetch ttwid from Douyin's ttwid endpoint
+    let response = match client
+        .post("https://ttwid.bytedance.com/ttwid/union/register/")
+        .header(reqwest::header::USER_AGENT, DEFAULT_UA)
+        .json(&json)
+        .send()
+        .await
+    {
+        Ok(resp) => resp,
+        Err(e) => {
+            debug!("Failed to fetch ttwid: {}", e);
+            return DEFAULT_TTWID.to_string();
+        }
+    };
+
+    // Extract ttwid from response cookies
+    response
+        .headers()
+        .get_all("set-cookie")
+        .iter()
+        .filter_map(|header_value| {
+            debug!("header_value: {:?}", header_value);
+            header_value.to_str().ok().and_then(|cookie_str| {
+                if cookie_str.contains("ttwid=") {
+                    cookie_str
+                        .split(';')
+                        .next()?
+                        .split('=')
+                        .nth(1)
+                        .map(|value| value.to_string())
+                } else {
+                    None
+                }
+            })
+        })
+        .next()
+        .unwrap_or_else(|| {
+            debug!("Failed to extract ttwid from response, using default");
+            DEFAULT_TTWID.to_string()
+        })
+}
+
 /// Thread-safe global ttwid management functions
 impl Default for GlobalTtwidManager {
     fn default() -> Self {
@@ -92,6 +151,8 @@ impl Default for GlobalTtwidManager {
     }
 }
 
+/// Thread-safe global ttwid manager shared across all Douyin extractor instances.
+/// This prevents multiple extractors from making redundant ttwid fetch requests.
 pub struct GlobalTtwidManager;
 
 impl GlobalTtwidManager {
@@ -129,48 +190,7 @@ impl GlobalTtwidManager {
 
         debug!("Fetching fresh ttwid from Douyin servers (global)");
 
-        let json = json!({
-            "region": "cn",
-            "aid": 6383,
-            "needFid": false,
-            "service": BASE_URL,
-            "union": true,
-            "fid": ""
-        });
-
-        // Fetch ttwid from Douyin's ttwid endpoint
-        let response = client
-            .post("https://ttwid.bytedance.com/ttwid/union/register/")
-            .header(reqwest::header::USER_AGENT, DEFAULT_UA)
-            .json(&json)
-            .send()
-            .await?;
-
-        // Extract ttwid from response cookies
-        let ttwid = response
-            .headers()
-            .get_all("set-cookie")
-            .iter()
-            .filter_map(|header_value| {
-                debug!("header_value: {:?}", header_value);
-                header_value.to_str().ok().and_then(|cookie_str| {
-                    if cookie_str.contains("ttwid=") {
-                        cookie_str
-                            .split(';')
-                            .next()?
-                            .split('=')
-                            .nth(1)
-                            .map(|value| value.to_string())
-                    } else {
-                        None
-                    }
-                })
-            })
-            .next()
-            .unwrap_or_else(|| {
-                debug!("Failed to extract ttwid from response, using default");
-                DEFAULT_TTWID.to_string()
-            });
+        let ttwid = fetch_ttwid(client).await;
 
         debug!("Fetched global ttwid: {}", ttwid);
 
@@ -198,6 +218,7 @@ impl GlobalTtwidManager {
 
 mod tests {
     use crate::extractor::platforms::douyin::utils::GlobalTtwidManager;
+
 
     #[test]
     fn test_global_ttwid_manager() {

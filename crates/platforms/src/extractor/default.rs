@@ -19,11 +19,11 @@ pub fn default_client() -> Client {
             .unwrap()
             .with_no_client_auth();
 
-        return Client::builder()
+         Client::builder()
             .use_preconfigured_tls(tls_config)
             .timeout(std::time::Duration::from_secs(30))
             .build()
-            .expect("Failed to create HTTP client");
+            .expect("Failed to create HTTP client")
     }
 
 /// Returns a new `ExtractorFactory` populated with all the supported platforms.
@@ -40,7 +40,7 @@ pub fn default_factory() -> ExtractorFactory {
 
     factory
         .register(
-            r"^(?:https?://)?(?:www\.)?douyin\.com/([a-zA-Z0-9_-]+)",
+            r"^(?:https?://)?(?:www\.)?live.douyin\.com/([a-zA-Z0-9_-]+)",
             Arc::new(|url, client| Box::new(douyin::DouyinExtractor::new(url, client))),
         )
         .unwrap();

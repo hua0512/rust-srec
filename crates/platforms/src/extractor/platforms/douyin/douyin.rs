@@ -2,15 +2,18 @@ use crate::extractor::default::DEFAULT_UA;
 use crate::extractor::error::ExtractorError;
 use crate::extractor::extractor::{Extractor, PlatformExtractor};
 use crate::extractor::platforms::douyin::apis::{LIVE_DOUYIN_URL, WEBCAST_ENTER_URL};
-use crate::extractor::platforms::douyin::models::DouyinPcResponse;
+use crate::extractor::platforms::douyin::models::{DouyinPcResponse, DouyinQuality};
 use crate::extractor::platforms::douyin::utils::{
-    DEFAULT_TTWID, GlobalTtwidManager, extract_rid, generate_ms_token, generate_nonce,
+    GlobalTtwidManager, extract_rid, fetch_ttwid, generate_ms_token, generate_nonce,
     generate_odin_ttid, get_common_params,
 };
+use crate::media::media_format::MediaFormat;
 use crate::media::media_info::MediaInfo;
+use crate::media::stream_info::StreamInfo;
 use async_trait::async_trait;
 use reqwest::Client;
-use serde_json::json;
+use std::collections::HashMap;
+use std::sync::Arc;
 use tracing::debug;
 
 pub struct DouyinExtractor {
@@ -117,59 +120,13 @@ impl DouyinExtractor {
 
         debug!("Fetching fresh ttwid for this extractor (per-extractor mode)");
 
-        // Fetch ttwid from Douyin's ttwid endpoint
-        let response = self
-            .extractor
-            .post("https://ttwid.bytedance.com/ttwid/union/register/")
-            .json(&json!({
-                "region": "cn",
-                "aid": "6383",
-                "needFid": false,
-                "service": "https://www.douyin.com",
-                "union": true,
-                "fid": ""
-            }))
-            .send()
-            .await?;
-
-        debug!(
-            "Per-extractor ttwid response headers: {:?}",
-            response.headers()
-        );
-
-        // Extract ttwid from response cookies
-        let ttwid = response
-            .headers()
-            .get_all("set-cookie")
-            .iter()
-            .filter_map(|header_value| {
-                header_value.to_str().ok().and_then(|cookie_str| {
-                    if cookie_str.contains("ttwid=") {
-                        cookie_str
-                            .split(';')
-                            .next()?
-                            .split('=')
-                            .nth(1)
-                            .map(|value| value.to_string())
-                    } else {
-                        None
-                    }
-                })
-            })
-            .next()
-            .unwrap_or_else(|| {
-                debug!("Failed to extract ttwid from response, using default");
-                DEFAULT_TTWID.to_string()
-            });
+        let ttwid = fetch_ttwid(&self.extractor.client).await;
 
         debug!("Fetched per-extractor ttwid: {}", ttwid);
 
         // Store the ttwid in this extractor's cookie store
         self.extractor
             .add_cookie("ttwid".to_string(), ttwid.clone());
-
-        // Also automatically parse any other cookies from the response
-        self.extractor.parse_and_store_cookies(response.headers());
 
         Ok(ttwid)
     }
@@ -219,8 +176,9 @@ impl DouyinExtractor {
 
     pub async fn get_ms_token(&self) -> Result<String, ExtractorError> {
         let ms_token = self.extractor.get_cookie("msToken").cloned();
-        if ms_token.is_some() {
-            return Ok(ms_token.unwrap());
+        if let Some(token) = ms_token {
+            debug!("Using existing msToken: {}", token);
+            return Ok(token);
         }
         let ms_token = generate_ms_token();
 
@@ -267,13 +225,13 @@ impl DouyinExtractor {
         self.ensure_odin_ttid().await?;
         self.ensure_nonce().await?;
 
-        let builder = self
+        let response = self
             .extractor
             .get(WEBCAST_ENTER_URL)
-            .query(&[("web_rid", rid)]);
-
-        debug!("builder: {:?}", builder);
-        let response = builder.send().await?;
+            .query(&[("web_rid", rid)])
+            .send()
+            .await
+            .map_err(|e| ExtractorError::HttpError(e.into()))?;
 
         // Automatically parse and store new cookies from the response
         self.extractor.parse_and_store_cookies(response.headers());
@@ -292,7 +250,7 @@ impl DouyinExtractor {
 
         let response: DouyinPcResponse = serde_json::from_str(body)?;
 
-        debug!("response: {:?}", response);
+        // debug!("response: {:?}", response);
 
         let prompts = response.data.prompts.as_ref();
         if prompts.is_some() {
@@ -325,8 +283,7 @@ impl DouyinExtractor {
         let is_banned = artist == "账号已注销"
             && avatar_urls
                 .iter()
-                .find(|url| url.contains("aweme_default_avatar.png"))
-                .is_some();
+                .any(|url| url.contains("aweme_default_avatar.png"));
 
         if is_banned {
             return Err(ExtractorError::StreamerNotFound);
@@ -338,47 +295,182 @@ impl DouyinExtractor {
                 title,
                 artist,
                 None,
-                Some(data.cover.url_list.first().unwrap().to_string()),
+                data.cover
+                    .as_ref()
+                    .and_then(|cover| cover.url_list.first())
+                    .map(|url| url.to_string()),
                 is_live,
                 Vec::new(),
                 None,
             ));
         }
-        let cover = data.cover.url_list.first().unwrap().to_string();
+        let cover = data
+            .cover
+            .as_ref()
+            .unwrap()
+            .url_list
+            .first()
+            .unwrap()
+            .to_string();
 
         let stream_url = data.stream_url.as_ref().unwrap();
 
         // Extract stream information
         let mut streams = Vec::new();
+        let sdk_pull_data = &stream_url.live_core_sdk_data.pull_data;
+        let stream_data = &sdk_pull_data.stream_data;
+        let qualities = &sdk_pull_data.options.qualities;
 
-        // Add FLV streams
-        for (quality, url) in &stream_url.flv_pull_url {
-            let stream_info = crate::media::stream_info::StreamInfo {
-                url: url.to_string(),
-                format: crate::media::media_format::MediaFormat::Flv,
-                quality: format!("FLV-{}", quality),
-                bitrate: 0, // Will be populated from quality data if available
-                priority: 0,
-                extras: None,
-                codec: "".to_string(),
-                is_headers_needed: false,
-            };
-            streams.push(stream_info);
+        if self.force_origin_quality {
+            // The "ao" (audio-only) quality might be in stream_data but not in the main qualities list.
+            debug!("stream data: {:?}", stream_data.data);
+            if let Some(ao_quality_data) = stream_data.data.get("ao") {
+                if !ao_quality_data.main.flv.is_empty() {
+                    // Remove only_audio=1 param to get the video stream
+                    let origin_url = ao_quality_data
+                        .main
+                        .flv
+                        .replace("&only_audio=1", "&only_audio=0");
+
+                    // Find the best quality to use for metadata
+                    let origin_quality_details = qualities.iter().max_by_key(|q| q.level);
+
+                    let (quality_name, bitrate, codec, extras) = if let Some(details) =
+                        origin_quality_details
+                    {
+                        let mut extras_map = HashMap::new();
+                        extras_map.insert("resolution".to_string(), details.resolution.to_string());
+                        extras_map.insert("sdk_key".to_string(), details.sdk_key.to_string());
+                        let extras = Some(Arc::new(extras_map));
+                        (
+                            "原画".to_string(),
+                            details.v_bit_rate as u32,
+                            if details.v_codec == "h264" {
+                                "avc".to_string()
+                            } else if details.v_codec == "265" {
+                                "hevc".to_string()
+                            } else {
+                                details.v_codec.to_string()
+                            },
+                            extras,
+                        )
+                    } else {
+                        ("原画".to_string(), 0, "".to_string(), None)
+                    };
+
+                    streams.push(StreamInfo {
+                        url: origin_url,
+                        format: MediaFormat::Flv,
+                        quality: quality_name,
+                        bitrate,
+                        priority: 10, // High priority for origin quality
+                        extras,
+                        codec,
+                        is_headers_needed: false,
+                    });
+                }
+            }
         }
 
-        // Add HLS streams
-        for (quality, url) in &stream_url.hls_pull_url_map {
-            let stream_info = crate::media::stream_info::StreamInfo {
-                url: url.to_string(),
-                format: crate::media::media_format::MediaFormat::Hls,
-                quality: format!("HLS-{}", quality),
-                bitrate: 0,
-                priority: 0,
-                extras: None,
-                codec: "".to_string(),
-                is_headers_needed: false,
-            };
-            streams.push(stream_info);
+        // debug!("stream data from sdk: {:?}", stream_data.data);
+
+        if !stream_data.data.is_empty() {
+            // Build streams from stream_data if available
+            let quality_map: HashMap<&str, &DouyinQuality> =
+                qualities.iter().map(|q| (q.sdk_key, q)).collect();
+
+            for (sdk_key, quality_data) in &stream_data.data {
+                let quality_details = quality_map.get(sdk_key.as_str());
+
+                let (quality_name, bitrate, codec) = if let Some(details) = quality_details {
+                    (
+                        details.name.to_string(),
+                        details.v_bit_rate as u32,
+                        if details.v_codec == "264" {
+                            "avc".to_string()
+                        } else if details.v_codec == "265" {
+                            "hevc".to_string()
+                        } else {
+                            details.v_codec.to_string().clone()
+                        },
+                    )
+                } else {
+                    // Fallback if no details found
+                    (sdk_key.clone(), 0, "".to_string())
+                };
+
+                let mut extras_map = HashMap::new();
+                if let Some(details) = quality_details {
+                    extras_map.insert("resolution".to_string(), details.resolution.to_string());
+                    extras_map.insert("sdk_key".to_string(), details.sdk_key.to_string());
+                }
+                let extras = if extras_map.is_empty() {
+                    None
+                } else {
+                    Some(Arc::new(extras_map))
+                };
+
+                // FLV stream
+                if !quality_data.main.flv.is_empty() {
+                    streams.push(StreamInfo {
+                        url: quality_data.main.flv.clone(),
+                        format: MediaFormat::Flv,
+                        quality: quality_name.clone(),
+                        bitrate,
+                        priority: 0,
+                        extras: extras.clone(),
+                        codec: codec.clone(),
+                        is_headers_needed: false,
+                    });
+                }
+
+                // HLS stream
+                if !quality_data.main.hls.is_empty() {
+                    streams.push(StreamInfo {
+                        url: quality_data.main.hls.clone(),
+                        format: MediaFormat::Hls,
+                        quality: quality_name.clone(),
+                        bitrate,
+                        priority: 0,
+                        extras: extras.clone(),
+                        codec: codec.clone(),
+                        is_headers_needed: false,
+                    });
+                }
+            }
+        }
+
+        // Fallback to old method if stream_data is empty or no streams were found
+        if streams.is_empty() {
+            // Add FLV streams
+            for (quality, url) in &stream_url.flv_pull_url {
+                let stream_info = StreamInfo {
+                    url: url.to_string(),
+                    format: MediaFormat::Flv,
+                    quality: format!("{}", quality),
+                    bitrate: 0, // Will be populated from quality data if available
+                    priority: 0,
+                    extras: None,
+                    codec: "".to_string(),
+                    is_headers_needed: false,
+                };
+                streams.push(stream_info);
+            }
+
+            // Add HLS streams
+            for (quality, url) in &stream_url.hls_pull_url_map {
+                let stream_info = StreamInfo {
+                    url: url.to_string(),
+                    format: MediaFormat::Hls,
+                    quality: format!("HLS-{}", quality),
+                    bitrate: 0,
+                    priority: 0,
+                    extras: None,
+                    codec: "".to_string(),
+                    is_headers_needed: false,
+                };
+                streams.push(stream_info);
+            }
         }
 
         let media_info = MediaInfo::new(
@@ -424,12 +516,17 @@ impl Clone for DouyinExtractor {
 }
 
 mod tests {
-    use crate::extractor::default::default_client;
-    use crate::extractor::platforms::douyin::utils::{DEFAULT_TTWID, GlobalTtwidManager};
 
-    use super::*;
+    use crate::extractor::{
+        default::default_client,
+        extractor::PlatformExtractor,
+        platforms::douyin::{
+            DouyinExtractor,
+            utils::{DEFAULT_TTWID, GlobalTtwidManager},
+        },
+    };
 
-    const TEST_URL: &str = "https://live.douyin.com/60707181723";
+    const TEST_URL: &str = "https://live.douyin.com/Shenxin543";
 
     #[tokio::test]
     async fn test_extract() {
@@ -574,7 +671,7 @@ mod tests {
         GlobalTtwidManager::clear_global_ttwid();
 
         let mut extractor1 = DouyinExtractor::new(TEST_URL.to_string(), default_client());
-        let mut extractor2 = DouyinExtractor::new(
+        let extractor2 = DouyinExtractor::new(
             "https://live.douyin.com/789012".to_string(),
             default_client(),
         );

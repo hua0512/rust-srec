@@ -14,7 +14,7 @@ use tokio_util::codec::{Decoder, Encoder};
 
 /// Encode a TARS message with capacity hint for better performance
 pub fn encode_request_with_capacity(message: TarsMessage, estimated_size: usize) -> Result<BytesMut, TarsError> {
-    let mut codec = TarsCodec::default();
+    let mut codec = TarsCodec;
     let mut dst = BytesMut::with_capacity(estimated_size);
     codec.encode(message, &mut dst)?;
     Ok(dst)
@@ -22,7 +22,7 @@ pub fn encode_request_with_capacity(message: TarsMessage, estimated_size: usize)
 
 /// Standard TARS request encoding
 pub fn encode_request(message: TarsMessage) -> Result<BytesMut, TarsError> {
-    let mut codec = TarsCodec::default();
+    let mut codec = TarsCodec;
     let mut dst = BytesMut::new();
     codec.encode(message, &mut dst)?;
     Ok(dst)
@@ -30,7 +30,7 @@ pub fn encode_request(message: TarsMessage) -> Result<BytesMut, TarsError> {
 
 /// Standard TARS response decoding
 pub fn decode_response(src: &mut BytesMut) -> Result<Option<TarsMessage>, TarsError> {
-    let mut codec = TarsCodec::default();
+    let mut codec = TarsCodec;
     codec.decode(src)
 }
 

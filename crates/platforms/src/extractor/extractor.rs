@@ -251,7 +251,7 @@ impl Extractor {
     ///
     /// * `headers` - HTTP response headers to parse for cookies
     pub fn parse_and_store_cookies(&mut self, headers: &reqwest::header::HeaderMap) {
-        for (_, value) in headers.get_all("set-cookie").iter().enumerate() {
+        for value in headers.get_all("set-cookie").iter() {
             if let Ok(cookie_str) = value.to_str() {
                 // Parse "name=value; other_attributes" format
                 if let Some(cookie_part) = cookie_str.split(';').next() {

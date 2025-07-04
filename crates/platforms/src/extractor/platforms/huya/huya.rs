@@ -252,9 +252,9 @@ impl HuyaExtractor {
         Ok(true)
     }
 
-    pub(crate) fn parse_web_media_info<'a>(
+    pub(crate) fn parse_web_media_info<>(
         &self,
-        page_content: &'a str,
+        page_content: &str,
     ) -> Result<MediaInfo, ExtractorError> {
         let live_status = self.parse_live_status(page_content)?;
 
@@ -607,11 +607,11 @@ mod tests {
         // Test case 1: Live on
         response.data.as_mut().unwrap().real_live_status = Some("ON");
         response.data.as_mut().unwrap().live_status = Some("ON");
-        assert_eq!(extractor.parse_mp_live_status(&response).unwrap(), true);
+        assert!(extractor.parse_mp_live_status(&response).unwrap());
 
         // Test case 2: Live off
         response.data.as_mut().unwrap().real_live_status = Some("OFF");
-        assert_eq!(extractor.parse_mp_live_status(&response).unwrap(), false);
+        assert!(!extractor.parse_mp_live_status(&response).unwrap());
 
         // Test case 3: Replay
         response.data.as_mut().unwrap().real_live_status = Some("ON");
@@ -624,7 +624,7 @@ mod tests {
             .as_mut()
             .unwrap()
             .introduction = "【回放】".to_string().into();
-        assert_eq!(extractor.parse_mp_live_status(&response).unwrap(), false);
+        assert!(!extractor.parse_mp_live_status(&response).unwrap());
 
         // Test case 4: Streamer not found
         response.status = 422;
@@ -640,7 +640,7 @@ mod tests {
         let response_str = read_test_file("mp_api_response.json");
         let media_info = extractor.parse_mp_media_info(&response_str).unwrap();
 
-        assert_eq!(media_info.is_live, true);
+        assert!(media_info.is_live);
         assert_eq!(media_info.artist, "虎牙英雄联盟赛事");
         assert_eq!(media_info.title, "【预告】03点MKOI vs BLG MSI淘汰赛阶段");
         assert!(!media_info.streams.is_empty());
@@ -653,7 +653,7 @@ mod tests {
         let extractor =
             HuyaExtractor::new("https://www.huya.com/660000".to_string(), default_client());
         let media_info = extractor.extract().await.unwrap();
-        assert_eq!(media_info.is_live, true);
+        assert!(media_info.is_live);
         let stream_info = media_info.streams.first().unwrap();
         assert!(!stream_info.url.is_empty());
 
@@ -669,7 +669,7 @@ mod tests {
             HuyaExtractor::new("https://www.huya.com/660000".to_string(), default_client());
         extractor.use_wup = false;
         let media_info = extractor.extract().await.unwrap();
-        assert_eq!(media_info.is_live, true);
+        assert!(media_info.is_live);
         assert!(!media_info.streams.is_empty());
         println!("{:?}", media_info);
     }

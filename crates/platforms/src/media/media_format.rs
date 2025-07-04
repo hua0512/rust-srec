@@ -1,5 +1,5 @@
-
 use std::fmt::Display;
+use std::str::FromStr;
 
 use serde::{Deserialize, Serialize};
 
@@ -16,19 +16,22 @@ impl MediaFormat {
             MediaFormat::Hls => "hls",
         }
     }
-
-    pub fn from_str(format: &str) -> Option<Self> {
-        match format.to_lowercase().as_str() {
-            "flv" => Some(MediaFormat::Flv),
-            "hls" => Some(MediaFormat::Hls),
-            _ => None,
-        }
-    }
 }
-
 
 impl Display for MediaFormat {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}", self.as_str())
+    }
+}
+
+impl FromStr for MediaFormat {
+    type Err = ();
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s.to_lowercase().as_str() {
+            "flv" => Ok(MediaFormat::Flv),
+            "hls" => Ok(MediaFormat::Hls),
+            _ => Err(()),
+        }
     }
 }

@@ -8,6 +8,12 @@ pub struct TarsSerializer {
     buffer: BytesMut,
 }
 
+impl Default for TarsSerializer {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl TarsSerializer {
     pub fn new() -> Self {
         Self {
@@ -61,7 +67,7 @@ impl TarsSerializer {
     }
 
     pub fn write_i16(&mut self, tag: u8, value: i16) -> Result<(), TarsError> {
-        if value >= -128 && value <= 127 {
+        if (-128..=127).contains(&value){
             self.write_i8(tag, value as i8)?;
         } else {
             self.write_head(tag, TarsType::Int2);
@@ -71,7 +77,7 @@ impl TarsSerializer {
     }
 
     pub fn write_i32(&mut self, tag: u8, value: i32) -> Result<(), TarsError> {
-        if value >= -32768 && value <= 32767 {
+        if (-32768..=32767).contains(&value) {
             self.write_i16(tag, value as i16)?;
         } else {
             self.write_head(tag, TarsType::Int4);
@@ -81,7 +87,7 @@ impl TarsSerializer {
     }
 
     pub fn write_i64(&mut self, tag: u8, value: i64) -> Result<(), TarsError> {
-        if value >= -2147483648 && value <= 2147483647 {
+        if (-2147483648..=2147483647).contains(&value) {
             self.write_i32(tag, value as i32)?;
         } else {
             self.write_head(tag, TarsType::Int8);

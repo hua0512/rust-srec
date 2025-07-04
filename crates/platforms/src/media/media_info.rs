@@ -51,6 +51,7 @@ pub struct MediaInfo {
 
 impl MediaInfo {
     /// Creates a new `MediaInfo` instance.
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         site_url: String,
         title: String,

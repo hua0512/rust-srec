@@ -17,7 +17,7 @@ pub(crate) struct DouyinPcData<'a> {
     #[serde(borrow)]
     pub title: &'a str,
     #[serde(borrow)]
-    pub cover: DouyinCover<'a>,
+    pub cover: Option<DouyinCover<'a>>,
     #[serde(borrow)]
     pub stream_url: Option<DouyinStreamUrl<'a>>,
 }
@@ -59,7 +59,7 @@ pub(crate) struct DouyinCover<'a> {
 }
 
 #[derive(Deserialize, Debug)]
-pub(crate) struct DouyinStreamUrl<'a> {
+pub struct DouyinStreamUrl<'a> {
     #[serde(borrow)]
     pub flv_pull_url: HashMap<Cow<'a, str>, Cow<'a, str>>,
     #[serde(borrow)]
@@ -209,16 +209,12 @@ where
                 }
 
                 // Parse data section if it exists
-                if let Some(data_value) = obj.get("data") {
-                    if let serde_json::Value::Object(data_obj) = data_value {
-                        for (quality_key, quality_value) in data_obj {
-                            if let Ok(quality_data) =
-                                serde_json::from_value::<DouyinStreamDataQuality>(
-                                    quality_value.clone(),
-                                )
-                            {
-                                result.data.insert(quality_key.clone(), quality_data);
-                            }
+                if let Some(serde_json::Value::Object(data_obj)) = obj.get("data") {
+                    for (quality_key, quality_value) in data_obj {
+                        if let Ok(quality_data) =
+                            serde_json::from_value::<DouyinStreamDataQuality>(quality_value.clone())
+                        {
+                            result.data.insert(quality_key.clone(), quality_data);
                         }
                     }
                 }
@@ -255,7 +251,7 @@ pub(crate) struct DouyinQuality<'a> {
     #[serde(borrow)]
     pub resolution: &'a str,
     pub level: i32,
-    pub v_bit_rate: i64,
+    pub v_bit_rate: i32,
     #[serde(borrow)]
     pub additional_content: &'a str,
     pub fps: i32,
