@@ -102,7 +102,7 @@ impl DouyuExtractorConfig {
         let response = self
             .extractor
             .client
-            .get(&format!(
+            .get(format!(
                 "https://open.douyucdn.cn/api/RoomApi/room/{}",
                 rid
             ))
@@ -316,9 +316,9 @@ impl DouyuExtractorConfig {
             )));
         }
 
-        Ok(resp.data.ok_or_else(|| {
+        resp.data.ok_or_else(|| {
             ExtractorError::ValidationError("Failed to get live stream info: no data".to_string())
-        })?)
+        })
     }
 
     async fn get_live_stream_info(
