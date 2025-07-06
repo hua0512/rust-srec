@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use rustc_hash::FxHashMap;
 
 use super::stream_info::StreamInfo;
 use serde::{Deserialize, Serialize};
@@ -23,7 +23,7 @@ use serde::{Deserialize, Serialize};
 /// # Examples
 ///
 /// ```rust
-/// use std::collections::HashMap;
+/// use rustc_hash::FxHashMap;
 /// use platforms_parser::media::media_info::MediaInfo;
 ///
 /// let media = MediaInfo {
@@ -34,7 +34,7 @@ use serde::{Deserialize, Serialize};
 ///     artist_url: Some("https://example.com/artist".to_string()),
 ///     is_live: true,
 ///     streams: vec![],
-///     extras: Some(HashMap::new()),
+///     extras: Some(FxHashMap::default()),
 /// };
 /// ```
 pub struct MediaInfo {
@@ -46,7 +46,7 @@ pub struct MediaInfo {
     pub artist_url: Option<String>,
     pub is_live: bool,
     pub streams: Vec<StreamInfo>,
-    pub extras: Option<HashMap<String, String>>,
+    pub extras: Option<FxHashMap<String, String>>,
 }
 
 impl MediaInfo {
@@ -60,7 +60,7 @@ impl MediaInfo {
         artist_url: Option<String>,
         is_live: bool,
         streams: Vec<StreamInfo>,
-        extras: Option<HashMap<String, String>>,
+        extras: Option<FxHashMap<String, String>>,
     ) -> Self {
         Self {
             site_url,

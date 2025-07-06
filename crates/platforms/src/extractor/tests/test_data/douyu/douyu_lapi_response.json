@@ -1,0 +1,54 @@
+{
+    "error": 0,
+    "msg": "ok",
+    "data": {
+        "room_id": 9715241,
+        "is_mixed": false,
+        "mixed_live": "",
+        "mixed_url": "",
+        "rtmp_cdn": "ws-h5",
+        "rtmp_url": "https://ws3.douyucdn.cn/live",
+        "rtmp_live": "9715241rdkExgDdB.flv?wsAuth=e9e65b899af9f12f246557d399a5f930\u0026token=web-h5-0-9715241-7cb2b838035e4b7a71e6ecf93bc980ae679dfbc9aea59a94\u0026logo=0\u0026expire=0\u0026did=10000000000000000000000000003306\u0026pt=2\u0026st=0\u0026sid=416441344\u0026mcid2=0\u0026origin=dy\u0026fcdn=ws\u0026fo=1\u0026mix=0\u0026isp=",
+        "client_ip": "79.117.164.209",
+        "inNA": 0,
+        "rateSwitch": 0,
+        "rate": 0,
+        "cdnsWithName": [
+            {
+                "name": "线路7",
+                "cdn": "hw-h5",
+                "isH265": false,
+                "re-weight": 10009
+            }
+        ],
+        "multirates": [
+            {
+                "name": "原画1080P60",
+                "rate": 0,
+                "highBit": 1,
+                "bit": 8487,
+                "diamondFan": 0
+            }
+        ],
+        "isPassPlayer": 0,
+        "eticket": null,
+        "online": 0,
+        "mixedCDN": "",
+        "p2p": 0,
+        "streamStatus": 1,
+        "smt": 0,
+        "p2pMeta": null,
+        "p2pCid": 0,
+        "p2pCids": "",
+        "player_1": "",
+        "h265_p2p": 0,
+        "h265_p2p_cid": 0,
+        "h265_p2p_cids": "",
+        "acdn": "",
+        "av1_url": "",
+        "rtc_stream_url": "",
+        "rtc_stream_config": "",
+        "pictureQualitySwitch": 1,
+        "show_id": "416441344"
+    }
+}

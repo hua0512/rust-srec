@@ -70,27 +70,35 @@ async fn main() -> anyhow::Result<()> {
         media_info.is_live.to_string().cyan()
     );
 
-    let selected_stream: StreamInfo = if media_info.streams.len() > 1 {
-        println!(
-            "{}",
-            "Multiple streams available, please select one:"
-                .yellow()
-                .bold()
-        );
+    let selected_stream: StreamInfo = match media_info.streams.len() {
+        0 => {
+            // there are no streams
+            anyhow::bail!("No streams available for this media.");
+        }
+        1 => {
+            // there is only one stream
+            media_info.streams.into_iter().next().unwrap()
+        }
+        _ => {
+            // there are multiple streams
+            println!(
+                "{}",
+                "Multiple streams available, please select one:"
+                    .yellow()
+                    .bold()
+            );
 
-        let options: Vec<String> = media_info.streams.iter().map(|s| s.to_string()).collect();
-        let selection = Select::new("Select a stream:", options)
-            .prompt()
-            .context("Failed to select stream")?;
+            let options: Vec<String> = media_info.streams.iter().map(|s| s.to_string()).collect();
+            let selection = Select::new("Select a stream:", options)
+                .prompt()
+                .context("Failed to select stream")?;
 
-        media_info
-            .streams
-            .into_iter()
-            .find(|s| s.to_string() == selection)
-            .unwrap()
-    } else {
-        // there is no streams
-        anyhow::bail!("No streams available for this media.");
+            media_info
+                .streams
+                .into_iter()
+                .find(|s| s.to_string() == selection)
+                .unwrap()
+        }
     };
 
     let pb = ProgressBar::new_spinner();

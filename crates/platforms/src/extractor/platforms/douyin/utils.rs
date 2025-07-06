@@ -1,4 +1,4 @@
-use once_cell::sync::Lazy;
+use std::sync::LazyLock;
 use rand::{Rng, rng};
 use regex::Regex;
 use reqwest::Client;
@@ -15,10 +15,10 @@ use crate::extractor::{
     platforms::douyin::apis::{BASE_URL, UNION_REGISTER_URL},
 };
 
-pub static GLOBAL_TTWID: Lazy<Arc<Mutex<Option<String>>>> =
-    Lazy::new(|| Arc::new(Mutex::new(None)));
+pub static GLOBAL_TTWID: LazyLock<Arc<Mutex<Option<String>>>> =
+    LazyLock::new(|| Arc::new(Mutex::new(None)));
 
-pub static WEB_RID_REGEX: Lazy<Regex> = Lazy::new(|| {
+pub static WEB_RID_REGEX: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(r"(?:https?://)?(?:www\.)?(?:v|live\.)?douyin\.com/([a-zA-Z0-9_\.]+)").unwrap()
 });
 
@@ -60,9 +60,10 @@ pub(crate) fn generate_ms_token() -> String {
         .collect()
 }
 
+static CHARSET: LazyLock<&[u8]> = LazyLock::new(|| b"abcdef0123456789");
+
 /// Generate a random nonce, 21 length
 pub(crate) fn generate_nonce() -> String {
-    const CHARSET: &[u8] = b"abcdef0123456789";
     let mut rng = rng();
     (0..21)
         .map(|_| {
@@ -74,7 +75,6 @@ pub(crate) fn generate_nonce() -> String {
 
 /// Generate a random odin_ttid, 160 length
 pub(crate) fn generate_odin_ttid() -> String {
-    const CHARSET: &[u8] = b"abcdef0123456789";
     let mut rng = rng();
     (0..160)
         .map(|_| {
@@ -170,8 +170,8 @@ impl GlobalTtwidManager {
     }
 
     /// Set the global ttwid
-    pub fn set_global_ttwid(ttwid: String) {
-        *GLOBAL_TTWID.lock().unwrap() = Some(ttwid);
+    pub fn set_global_ttwid(ttwid: &str) {
+        *GLOBAL_TTWID.lock().unwrap() = Some(ttwid.to_string());
     }
 
     /// Clear the global ttwid
@@ -200,7 +200,7 @@ impl GlobalTtwidManager {
         debug!("Fetched global ttwid: {}", ttwid);
 
         // Store the ttwid globally
-        Self::set_global_ttwid(ttwid.clone());
+        Self::set_global_ttwid(&ttwid);
 
         Ok(ttwid)
     }
@@ -232,7 +232,7 @@ mod tests {
         assert_eq!(GlobalTtwidManager::get_global_ttwid(), None);
 
         // Set a global ttwid
-        GlobalTtwidManager::set_global_ttwid("test_global_ttwid".to_string());
+        GlobalTtwidManager::set_global_ttwid("test_global_ttwid");
         assert_eq!(
             GlobalTtwidManager::get_global_ttwid(),
             Some("test_global_ttwid".to_string())
@@ -256,7 +256,7 @@ mod tests {
             .get("https://httpbin.org/gzip")
             .header(
                 "Accept-Encoding",
-                HeaderValue::from_static("gzip, deflate, br"),
+                HeaderValue::from_static("gzip, deflate"),
             )
             .send()
             .await;

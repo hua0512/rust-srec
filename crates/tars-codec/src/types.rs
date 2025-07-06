@@ -1,13 +1,13 @@
 use bytes::Bytes;
 use std::hash::{Hash, Hasher};
-use ahash::AHashMap;
+use rustc_hash::FxHashMap;
 use smallvec::SmallVec;
 
 /// Represents a full Tars message.
 #[derive(Debug)]
 pub struct TarsMessage {
     pub header: TarsRequestHeader,
-    pub body: AHashMap<String, Bytes>, // The raw body payload with fast hashing
+    pub body: FxHashMap<String, Bytes>, // The raw body payload with fast hashing
 }
 
 /// Represents the Tars request header.
@@ -20,8 +20,8 @@ pub struct TarsRequestHeader {
     pub servant_name: String,
     pub func_name: String,
     pub timeout: i32,
-    pub context: AHashMap<String, String>,
-    pub status: AHashMap<String, String>,
+    pub context: FxHashMap<String, String>,
+    pub status: FxHashMap<String, String>,
 }
 
 /// An enum representing any valid Tars value.
@@ -39,8 +39,8 @@ pub enum TarsValue {
     String(String),
     /// Zero-copy string data - avoids allocation until conversion needed
     StringRef(Bytes),
-    Struct(AHashMap<u8, TarsValue>),
-    Map(AHashMap<TarsValue, TarsValue>),
+    Struct(FxHashMap<u8, TarsValue>),
+    Map(FxHashMap<TarsValue, TarsValue>),
     List(SmallVec<[Box<TarsValue>; 4]>), // Most lists are small, avoid heap allocation
     SimpleList(Bytes),
     /// Zero-copy binary data

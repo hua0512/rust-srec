@@ -2,7 +2,7 @@ use crate::{
     error::TarsError,
     types::{TarsMessage, TarsRequestHeader, TarsType, TarsValue},
 };
-use ahash::AHashMap;
+use rustc_hash::FxHashMap;
 use bytes::{Buf, Bytes};
 use smallvec::SmallVec;
 
@@ -166,8 +166,8 @@ impl TarsDeserializer {
         Ok(bytes)
     }
 
-    pub fn read_struct(&mut self) -> Result<AHashMap<u8, TarsValue>, TarsError> {
-        let mut map = AHashMap::new();
+    pub fn read_struct(&mut self) -> Result<FxHashMap<u8, TarsValue>, TarsError> {
+        let mut map = FxHashMap::default();
         loop {
             let (tag, type_id) = self.read_head()?;
             if type_id == TarsType::StructEnd {
@@ -179,8 +179,8 @@ impl TarsDeserializer {
         Ok(map)
     }
 
-    pub fn read_map(&mut self) -> Result<AHashMap<TarsValue, TarsValue>, TarsError> {
-        let mut map = AHashMap::new();
+    pub fn read_map(&mut self) -> Result<FxHashMap<TarsValue, TarsValue>, TarsError> {
+        let mut map = FxHashMap::default();
         let (_len_tag, len_type) = self.read_head()?;
         let len = self.read_value_by_type(len_type, 0)?.try_into_i32()? as usize;
         for _ in 0..len {
@@ -309,7 +309,7 @@ impl TarsValue {
         }
     }
 
-    pub fn try_into_map(self) -> Result<AHashMap<TarsValue, TarsValue>, TarsError> {
+    pub fn try_into_map(self) -> Result<FxHashMap<TarsValue, TarsValue>, TarsError> {
         if let TarsValue::Map(v) = self {
             Ok(v)
         } else {

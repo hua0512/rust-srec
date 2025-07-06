@@ -5,7 +5,7 @@ use super::{super::media::media_info::MediaInfo, error::ExtractorError};
 use async_trait::async_trait;
 use regex::Regex;
 use reqwest::{Client, Method, RequestBuilder};
-use std::collections::HashMap;
+use rustc_hash::FxHashMap;
 use std::str::FromStr;
 use tracing::debug;
 
@@ -51,11 +51,11 @@ pub struct Extractor {
     // optional regex to match the platform URL
     pub platform_regex: Option<Regex>,
     // platform-specific headers and parameters
-    pub platform_headers: HashMap<String, String>,
-    pub platform_params: HashMap<String, String>,
+    pub platform_headers: FxHashMap<String, String>,
+    pub platform_params: FxHashMap<String, String>,
     /// Cookie storage for the extractor. Each extractor instance maintains
     /// its own cookies for platform-specific session management.
-    pub cookies: HashMap<String, String>,
+    pub cookies: FxHashMap<String, String>,
 }
 
 impl Extractor {
@@ -64,7 +64,7 @@ impl Extractor {
         platform_url: S2,
         client: Client,
     ) -> Self {
-        let mut default_headers = HashMap::new();
+        let mut default_headers = FxHashMap::default();
         default_headers.insert(
             reqwest::header::USER_AGENT.to_string(),
             DEFAULT_UA.to_string(),
@@ -79,7 +79,7 @@ impl Extractor {
         );
         default_headers.insert(
             reqwest::header::ACCEPT_ENCODING.to_string(),
-            "gzip, deflate, br".to_string(),
+            "gzip, deflate".to_string(),
         );
 
         Self {
@@ -88,8 +88,8 @@ impl Extractor {
             client,
             platform_regex: None,
             platform_headers: default_headers,
-            platform_params: HashMap::new(),
-            cookies: HashMap::new(),
+            platform_params: FxHashMap::default(),
+            cookies: FxHashMap::default(),
         }
     }
 
@@ -143,12 +143,12 @@ impl Extractor {
     /// # Example
     ///
     /// ```rust
-    /// let mut cookies = HashMap::new();
+    /// let mut cookies = FxHashMap::default();
     /// cookies.insert("token".to_string(), "xyz789".to_string());
     /// cookies.insert("user_id".to_string(), "12345".to_string());
     /// extractor.add_cookies(cookies);
     /// ```
-    pub fn add_cookies(&mut self, cookies: HashMap<String, String>) {
+    pub fn add_cookies(&mut self, cookies: FxHashMap<String, String>) {
         self.cookies.extend(cookies);
     }
 
@@ -184,7 +184,7 @@ impl Extractor {
     /// # Returns
     ///
     /// Reference to the cookie HashMap
-    pub fn get_cookies(&self) -> &HashMap<String, String> {
+    pub fn get_cookies(&self) -> &FxHashMap<String, String> {
         &self.cookies
     }
 
@@ -342,11 +342,11 @@ impl Extractor {
 pub trait PlatformExtractor: Send + Sync {
     fn get_extractor(&self) -> &Extractor;
 
-    fn get_platform_headers(&self) -> &HashMap<String, String> {
+    fn get_platform_headers(&self) -> &FxHashMap<String, String> {
         &self.get_extractor().platform_headers
     }
 
-    fn get_platform_params(&self) -> &HashMap<String, String> {
+    fn get_platform_params(&self) -> &FxHashMap<String, String> {
         &self.get_extractor().platform_params
     }
 

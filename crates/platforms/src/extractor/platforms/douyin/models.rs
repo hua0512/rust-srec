@@ -3,7 +3,7 @@
 use serde::de::Deserializer;
 use serde::{Deserialize, Serialize};
 use std::borrow::Cow;
-use std::collections::HashMap;
+use rustc_hash::FxHashMap;
 
 #[derive(Deserialize, Debug)]
 
@@ -87,11 +87,11 @@ pub(crate) struct DouyinCover<'a> {
 #[derive(Deserialize, Debug)]
 pub struct DouyinStreamUrl<'a> {
     #[serde(borrow)]
-    pub flv_pull_url: HashMap<Cow<'a, str>, Cow<'a, str>>,
+    pub flv_pull_url: FxHashMap<Cow<'a, str>, Cow<'a, str>>,
     #[serde(borrow)]
     pub default_resolution: &'a str,
     #[serde(borrow)]
-    pub hls_pull_url_map: HashMap<Cow<'a, str>, Cow<'a, str>>,
+    pub hls_pull_url_map: FxHashMap<Cow<'a, str>, Cow<'a, str>>,
     #[serde(borrow)]
     pub hls_pull_url: Cow<'a, str>,
     pub stream_orientation: i32,
@@ -104,7 +104,7 @@ pub struct DouyinStreamUrl<'a> {
 
 #[derive(Debug)]
 pub(crate) struct DouyinPullDatas {
-    pub data: HashMap<String, DouyinPullDataEntry>,
+    pub data: FxHashMap<String, DouyinPullDataEntry>,
 }
 
 #[derive(Deserialize, Debug)]
@@ -116,7 +116,7 @@ pub(crate) struct DouyinPullDataEntry {
     pub bitrate: Option<i64>,
     pub codec: Option<String>,
     #[serde(flatten)]
-    pub extra_params: HashMap<String, serde_json::Value>,
+    pub extra_params: FxHashMap<String, serde_json::Value>,
 }
 
 // Custom deserializer for pull_datas
@@ -125,8 +125,8 @@ where
     D: Deserializer<'de>,
 {
     // First deserialize as a generic map
-    let map: HashMap<String, serde_json::Value> = HashMap::deserialize(deserializer)?;
-    let mut data = HashMap::new();
+    let map: FxHashMap<String, serde_json::Value> = FxHashMap::deserialize(deserializer)?;
+    let mut data = FxHashMap::default();
 
     // Try to convert each value to DouyinPullDataEntry
     for (key, value) in map {
@@ -156,7 +156,7 @@ pub(crate) struct DouyinSdkPullData<'a> {
 #[derive(Debug)]
 pub(crate) struct DouyinStreamDataParsed {
     pub common: Option<DouyinStreamDataCommon>,
-    pub data: HashMap<String, DouyinStreamDataQuality>,
+    pub data: FxHashMap<String, DouyinStreamDataQuality>,
 }
 
 #[derive(Deserialize, Debug)]
@@ -212,7 +212,7 @@ where
     if json_str.trim().is_empty() || json_str.trim() == "{}" {
         return Ok(DouyinStreamDataParsed {
             common: None,
-            data: HashMap::new(),
+            data: FxHashMap::default(),
         });
     }
 
@@ -221,7 +221,7 @@ where
         Ok(value) => {
             let mut result = DouyinStreamDataParsed {
                 common: None,
-                data: HashMap::new(),
+                data: FxHashMap::default(),
             };
 
             if let serde_json::Value::Object(obj) = value {
@@ -252,7 +252,7 @@ where
             // If parsing fails, return empty data structure
             Ok(DouyinStreamDataParsed {
                 common: None,
-                data: HashMap::new(),
+                data: FxHashMap::default(),
             })
         }
     }
@@ -320,7 +320,7 @@ pub(crate) struct DouyinStreamData<'a> {
     #[serde(borrow)]
     pub common: DouyinStreamCommon<'a>,
     #[serde(borrow)]
-    pub data: HashMap<&'a str, DouyinStreamQualityData<'a>>,
+    pub data: FxHashMap<&'a str, DouyinStreamQualityData<'a>>,
 }
 
 #[derive(Deserialize, Debug)]

@@ -1,3 +1,5 @@
+use std::sync::LazyLock;
+
 use crate::extractor::error::ExtractorError;
 use crate::extractor::platform_extractor::{Extractor, PlatformExtractor};
 use crate::extractor::platforms::huya::huya_tars::decode_get_cdn_token_info_response;
@@ -5,7 +7,6 @@ use crate::media::media_format::MediaFormat;
 use crate::media::media_info::MediaInfo;
 use crate::media::stream_info::StreamInfo;
 use async_trait::async_trait;
-use once_cell::sync::Lazy;
 use regex::Regex;
 use reqwest::Client;
 use url::Url;
@@ -13,13 +14,13 @@ use url::Url;
 use super::huya_tars;
 use super::models::*;
 
-static ROOM_DATA_REGEX: Lazy<Regex> =
-    Lazy::new(|| Regex::new(r#"var TT_ROOM_DATA = (.*?);"#).unwrap());
+static ROOM_DATA_REGEX: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r#"var TT_ROOM_DATA = (.*?);"#).unwrap());
 
-static PROFILE_INFO_REGEX: Lazy<Regex> =
-    Lazy::new(|| Regex::new(r#"var TT_PROFILE_INFO = (.*?);"#).unwrap());
-static STREAM_DATA_REGEX: Lazy<Regex> =
-    Lazy::new(|| Regex::new(r#"stream: (\{.+)\n.*?};"#).unwrap());
+static PROFILE_INFO_REGEX: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r#"var TT_PROFILE_INFO = (.*?);"#).unwrap());
+static STREAM_DATA_REGEX: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r#"stream: (\{.+)\n.*?};"#).unwrap());
 
 pub struct HuyaExtractor {
     extractor: Extractor,

@@ -36,6 +36,8 @@ pub enum ExtractorError {
     NoStreamsFound,
     #[error("validation error: {0}")]
     ValidationError(String),
+    #[error("js error: {0}")]
+    JsError(String),
     #[error("other error: {0}")]
     Other(String),
 }

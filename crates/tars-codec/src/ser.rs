@@ -124,7 +124,7 @@ impl TarsSerializer {
     pub fn write_struct(
         &mut self,
         tag: u8,
-        value: &ahash::AHashMap<u8, TarsValue>,
+        value: &rustc_hash::FxHashMap<u8, TarsValue>,
     ) -> Result<(), TarsError> {
         self.write_head(tag, TarsType::StructBegin);
         for (tag, value) in value {
@@ -137,7 +137,7 @@ impl TarsSerializer {
     pub fn write_map<K, V>(
         &mut self,
         tag: u8,
-        value: &ahash::AHashMap<K, V>,
+        value: &rustc_hash::FxHashMap<K, V>,
     ) -> Result<(), TarsError>
     where
         K: TarsSerializable,

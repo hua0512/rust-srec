@@ -1,4 +1,4 @@
-use ahash::AHashMap;
+use rustc_hash::FxHashMap;
 use bytes::Bytes;
 use tars_codec::{
     de::from_bytes,
@@ -27,7 +27,7 @@ impl GetCdnTokenInfoReq {
 
 impl From<GetCdnTokenInfoReq> for TarsValue {
     fn from(req: GetCdnTokenInfoReq) -> Self {
-        let mut struct_map = AHashMap::new();
+        let mut struct_map = FxHashMap::default();
         struct_map.insert(0, TarsValue::String(req.url));
         struct_map.insert(1, TarsValue::String(req.cdn_type));
         struct_map.insert(2, TarsValue::String(req.stream_name));
@@ -42,7 +42,7 @@ pub fn build_get_cdn_token_info_request(
     presenter_uid: i32,
 ) -> Result<Vec<u8>, tars_codec::error::TarsError> {
     let req = GetCdnTokenInfoReq::new("".to_string(), stream_name, cdn_type, presenter_uid);
-    let mut body = AHashMap::new();
+    let mut body = FxHashMap::default();
     let tars_value: TarsValue = req.into();
     body.insert(
         "tReq".to_string(),
@@ -58,8 +58,8 @@ pub fn build_get_cdn_token_info_request(
             servant_name: "liveui".to_string(),
             func_name: "getCdnTokenInfo".to_string(),
             timeout: 0,
-            context: AHashMap::new(),
-            status: AHashMap::new(),
+            context: FxHashMap::default(),
+            status: FxHashMap::default(),
         },
         body,
     };

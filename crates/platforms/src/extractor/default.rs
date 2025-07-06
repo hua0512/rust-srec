@@ -49,7 +49,7 @@ pub fn default_factory() -> ExtractorFactory {
     factory
         .register(
             r"^(?:https?://)?(?:www\.)?douyu\.com/(\d+)",
-            Arc::new(|url, client| Box::new(douyu::DouyuExtractor::new(url, client))),
+            Arc::new(|url, client| Box::new(douyu::DouyuExtractorBuilder::new(url, client).build(None))),
         )
         .unwrap();
 
