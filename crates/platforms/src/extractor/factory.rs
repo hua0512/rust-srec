@@ -6,7 +6,7 @@ use std::sync::Arc;
 
 // A type alias for a thread-safe constructor function.
 type ExtractorConstructor =
-    Arc<dyn Fn(String, Client) -> Box<dyn PlatformExtractor> + Send + Sync>;
+    Arc<dyn Fn(String, Client, Option<String>) -> Box<dyn PlatformExtractor> + Send + Sync>;
 
 /// A factory for creating platform-specific extractors.
 pub struct ExtractorFactory {
@@ -43,10 +43,14 @@ impl ExtractorFactory {
     ///
     /// It iterates through the registered platforms and returns the first one
     /// that matches the URL.
-    pub fn create_extractor(&self, url: &str) -> Result<Box<dyn PlatformExtractor>, ExtractorError> {
+    pub fn create_extractor(
+        &self,
+        url: &str,
+        cookies: Option<String>,
+    ) -> Result<Box<dyn PlatformExtractor>, ExtractorError> {
         for (regex, constructor) in &self.registry {
             if regex.is_match(url) {
-                return Ok(constructor(url.to_string(), self.client.clone()));
+                return Ok(constructor(url.to_string(), self.client.clone(), cookies));
             }
         }
         Err(ExtractorError::UnsupportedExtractor)

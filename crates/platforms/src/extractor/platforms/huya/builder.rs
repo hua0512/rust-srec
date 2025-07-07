@@ -39,7 +39,7 @@ impl HuyaExtractor {
     const WUP_UA: &'static str =
         "HYSDK(Windows, 30000002)_APP(pc_exe&6090003&official)_SDK(trans&2.24.0.5030)";
 
-    pub fn new(platform_url: String, client: Client) -> Self {
+    pub fn new(platform_url: String, client: Client, cookies: Option<String>) -> Self {
         let mut extractor = Extractor::new("Huya".to_string(), platform_url, client);
         let huya_url = Self::HUYA_URL.to_string();
         extractor.add_header(reqwest::header::ORIGIN.to_string(), huya_url.clone());
@@ -48,6 +48,9 @@ impl HuyaExtractor {
             reqwest::header::USER_AGENT.to_string(),
             Self::WUP_UA.to_string(),
         );
+        if let Some(cookies) = cookies {
+            extractor.set_cookies_from_string(&cookies);
+        }
         Self {
             extractor,
             use_wup: true,
@@ -609,7 +612,7 @@ mod tests {
 
     #[test]
     fn test_parse_mp_live_status() {
-        let extractor = HuyaExtractor::new("https://www.huya.com/".to_string(), default_client());
+        let extractor = HuyaExtractor::new("https://www.huya.com/".to_string(), default_client(), None);
 
         let response_str = read_test_file("mp_api_response.json");
         let mut response: MpApiResponse = serde_json::from_str(&response_str).unwrap();
@@ -646,7 +649,7 @@ mod tests {
     #[test]
     fn test_parse_mp_media_info() {
         let extractor =
-            HuyaExtractor::new("https://www.huya.com/660000".to_string(), default_client());
+            HuyaExtractor::new("https://www.huya.com/660000".to_string(), default_client(), None);
         let response_str = read_test_file("mp_api_response.json");
         let media_info = extractor.parse_mp_media_info(&response_str).unwrap();
 
@@ -661,7 +664,7 @@ mod tests {
     #[ignore]
     async fn test_is_live_integration() {
         let extractor =
-            HuyaExtractor::new("https://www.huya.com/660000".to_string(), default_client());
+            HuyaExtractor::new("https://www.huya.com/660000".to_string(), default_client(), None);
         let media_info = extractor.extract().await.unwrap();
         assert!(media_info.is_live);
         let stream_info = media_info.streams.first().unwrap();
@@ -676,7 +679,7 @@ mod tests {
     #[ignore]
     async fn test_mp_api() {
         let mut extractor =
-            HuyaExtractor::new("https://www.huya.com/660000".to_string(), default_client());
+            HuyaExtractor::new("https://www.huya.com/660000".to_string(), default_client(), None);
         extractor.use_wup = false;
         let media_info = extractor.extract().await.unwrap();
         assert!(media_info.is_live);

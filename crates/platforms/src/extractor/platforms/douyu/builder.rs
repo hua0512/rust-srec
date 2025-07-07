@@ -378,13 +378,18 @@ impl DouyuExtractorConfig {
 pub struct DouyuExtractorBuilder {
     url: String,
     client: Client,
+    cookies: Option<String>,
 }
 
 impl DouyuExtractorBuilder {
     const BASE_URL: &str = "https://www.douyu.com/";
 
-    pub fn new(url: String, client: Client) -> Self {
-        Self { url, client }
+    pub fn new(url: String, client: Client, cookies: Option<String>) -> Self {
+        Self {
+            url,
+            client,
+            cookies,
+        }
     }
 
     pub fn build(self, cdn: Option<String>) -> DouyuExtractorConfig {
@@ -399,6 +404,10 @@ impl DouyuExtractorBuilder {
             reqwest::header::REFERER.to_string(),
             Self::BASE_URL.to_string(),
         );
+
+        if let Some(cookies) = self.cookies {
+            extractor.set_cookies_from_string(&cookies);
+        }
 
         DouyuExtractorConfig {
             extractor,
@@ -482,7 +491,7 @@ mod tests {
 
         let url = "https://www.douyu.com/8440385";
 
-        let extractor = DouyuExtractorBuilder::new(url.to_string(), default_client()).build(None);
+        let extractor = DouyuExtractorBuilder::new(url.to_string(), default_client(), None).build(None);
         let media_info = extractor.extract().await.unwrap();
         println!("{:?}", media_info);
     }

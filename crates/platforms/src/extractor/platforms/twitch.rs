@@ -5,22 +5,24 @@ use crate::media::media_info::MediaInfo;
 use async_trait::async_trait;
 use reqwest::Client;
 
-pub struct TwitchExtractor {
+pub struct Twitch {
     extractor: Extractor,
 }
 
-impl TwitchExtractor {
-    pub fn new(platform_url: String, client: Client) -> Self {
-        Self {
-            extractor: Extractor::new("Twitch".to_string(), platform_url, client),
+impl Twitch {
+    pub fn new(platform_url: String, client: Client, cookies: Option<String>) -> Self {
+        let mut extractor = Extractor::new("Twitch".to_string(), platform_url, client);
+        if let Some(cookies) = cookies {
+            extractor.set_cookies_from_string(&cookies);
         }
+        Self { extractor }
     }
 }
 
-impl HlsExtractor for TwitchExtractor {}
+impl HlsExtractor for Twitch {}
 
 #[async_trait]
-impl PlatformExtractor for TwitchExtractor {
+impl PlatformExtractor for Twitch {
     fn get_extractor(&self) -> &Extractor {
         &self.extractor
     }

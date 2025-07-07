@@ -32,7 +32,7 @@ impl PandaTV {
 
     const LIVE_API_URL: &str = "https://api.pandalive.co.kr/v1/live/play";
 
-    pub fn new(url: String, client: Client) -> Self {
+    pub fn new(url: String, client: Client, cookies: Option<String>) -> Self {
         let mut extractor = Extractor::new("pandatv".to_string(), url, client);
         extractor.add_header(
             reqwest::header::ORIGIN.to_string(),
@@ -42,6 +42,9 @@ impl PandaTV {
             reqwest::header::REFERER.to_string(),
             Self::BASE_URL.to_string(),
         );
+        if let Some(cookies) = cookies {
+            extractor.set_cookies_from_string(&cookies);
+        }
         Self { extractor }
     }
 
@@ -247,7 +250,7 @@ mod tests {
             .with_max_level(Level::DEBUG)
             .init();
 
-        let extractor = PandaTV::new(TEST_URL.to_string(), default_client());
+        let extractor = PandaTV::new(TEST_URL.to_string(), default_client(), None);
         let media_info = extractor.extract().await.unwrap();
         debug!("Media info: {:?}", media_info);
     }

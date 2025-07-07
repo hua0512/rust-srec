@@ -23,13 +23,16 @@ impl Weibo {
 
     const DEFAULT_COOKIES: &str = "XSRF-TOKEN=qAP-pIY5V4tO6blNOhA4IIOD; SUB=_2AkMRNMCwf8NxqwFRmfwWymPrbI9-zgzEieKnaDFrJRMxHRl-yT9kqmkhtRB6OrTuX5z9N_7qk9C3xxEmNR-8WLcyo2PM; SUBP=0033WrSXqPxfM72-Ws9jqgMF55529P9D9WWemwcqkukCduUO11o9sBqA; WBPSESS=Wk6CxkYDejV3DDBcnx2LOXN9V1LjdSTNQPMbBDWe4lO2HbPmXG_coMffJ30T-Avn_ccQWtEYFcq9fab1p5RR6PEI6w661JcW7-56BszujMlaiAhLX-9vT4Zjboy1yf2l";
 
-    pub fn new(platform_url: String, client: Client) -> Self {
+    pub fn new(platform_url: String, client: Client, cookies: Option<String>) -> Self {
         let mut extractor = Extractor::new("weibo", platform_url, client);
         extractor.set_cookies_from_string(Self::DEFAULT_COOKIES);
         extractor.add_header(
             reqwest::header::REFERER.to_string(),
             Self::BASE_URL.to_string(),
         );
+        if let Some(cookies) = cookies {
+            extractor.set_cookies_from_string(&cookies);
+        }
         Self { extractor }
     }
 
@@ -238,6 +241,7 @@ mod tests {
         let weibo = Weibo::new(
             "https://weibo.com/u/6034381748".to_string(),
             default_client(),
+            None,
         );
         let room_id = weibo.get_room_id().await.unwrap();
         assert_eq!(room_id, "6034381748");
@@ -248,6 +252,7 @@ mod tests {
         let weibo = Weibo::new(
             "https://weibo.com/l/wblive/p/show/1022:2321325185855777275969".to_string(),
             default_client(),
+            None,
         );
         let room_id = weibo.get_room_id().await.unwrap();
         assert_eq!(room_id, "1022:2321325185855777275969");
@@ -263,6 +268,7 @@ mod tests {
         let weibo = Weibo::new(
             "https://weibo.com/u/6124785491".to_string(),
             default_client(),
+            None,
         );
         let media_info = weibo.extract().await.unwrap();
         println!("{:?}", media_info);
@@ -278,6 +284,7 @@ mod tests {
         let weibo = Weibo::new(
             "https://weibo.com/l/wblive/p/show/1022:2321325185855777275969".to_string(),
             default_client(),
+            None,
         );
         let media_info = weibo.extract().await.unwrap();
         println!("{:?}", media_info);

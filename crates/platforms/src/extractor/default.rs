@@ -1,5 +1,5 @@
 use crate::extractor::platforms::{
-    douyin, douyu, huya, pandatv::builder::PandaTV, twitch, weibo::builder::Weibo,
+    douyin, douyu, huya, pandatv::builder::PandaTV, twitch::Twitch, weibo::builder::Weibo,
 };
 
 use super::factory::ExtractorFactory;
@@ -35,15 +35,17 @@ pub fn default_factory() -> ExtractorFactory {
     factory
         .register(
             r"^(?:https?://)?(?:www\.)?huya\.com/(\d+|[a-zA-Z0-9_-]+)",
-            Arc::new(|url, client| Box::new(huya::HuyaExtractor::new(url, client))),
+            Arc::new(|url, client, cookies| {
+                Box::new(huya::HuyaExtractor::new(url, client, cookies))
+            }),
         )
         .unwrap();
 
     factory
         .register(
             r"^(?:https?://)?(?:www\.)?live.douyin\.com/([a-zA-Z0-9_-]+)",
-            Arc::new(|url, client| {
-                Box::new(douyin::DouyinExtractorBuilder::new(url, client).build())
+            Arc::new(|url, client, cookies| {
+                Box::new(douyin::DouyinExtractorBuilder::new(url, client, cookies).build())
             }),
         )
         .unwrap();
@@ -51,8 +53,8 @@ pub fn default_factory() -> ExtractorFactory {
     factory
         .register(
             r"^(?:https?://)?(?:www\.)?douyu\.com/(\d+)",
-            Arc::new(|url, client| {
-                Box::new(douyu::DouyuExtractorBuilder::new(url, client).build(None))
+            Arc::new(|url, client, cookies| {
+                Box::new(douyu::DouyuExtractorBuilder::new(url, client, cookies).build(None))
             }),
         )
         .unwrap();
@@ -60,21 +62,21 @@ pub fn default_factory() -> ExtractorFactory {
     factory
         .register(
             r"^(?:https?://)?(?:www\.)?pandalive\.co\.kr/play/([a-zA-Z0-9_-]+)",
-            Arc::new(|url, client| Box::new(PandaTV::new(url, client))),
+            Arc::new(|url, client, cookies| Box::new(PandaTV::new(url, client, cookies))),
         )
         .unwrap();
 
     factory
         .register(
             r"(?:https://(?:www\.)?weibo\.com/(u/\d+|l/wblive/p/show/\d+:[a-zA-Z0-9]+))(?:[?#].*)?$",
-            Arc::new(|url, client| Box::new(Weibo::new(url, client))),
+            Arc::new(|url, client, cookies| Box::new(Weibo::new(url, client, cookies))),
         )
         .unwrap();
 
     factory
         .register(
             r"^(?:https?://)?(?:www\.)?twitch\.tv/([a-zA-Z0-9_]+)",
-            Arc::new(|url, client| Box::new(twitch::TwitchExtractor::new(url, client))),
+            Arc::new(|url, client, cookies| Box::new(Twitch::new(url, client, cookies))),
         )
         .unwrap();
 

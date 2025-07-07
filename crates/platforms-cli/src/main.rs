@@ -12,6 +12,11 @@ struct Args {
     /// The URL of the media to parse
     #[arg(short, long)]
     url: String,
+
+    /// The cookies to use for the request
+    #[clap(long)]
+    cookies: Option<String>,
+
     /// Output the result in JSON format
     #[clap(long)]
     json: bool,
@@ -39,9 +44,10 @@ async fn main() -> anyhow::Result<()> {
     );
     pb.set_message("Extracting media information...");
 
+    let cookies = args.cookies;
     let factory = default_factory();
     let extractor = factory
-        .create_extractor(&url)
+        .create_extractor(&url, cookies)
         .with_context(|| format!("Failed to create extractor for URL: {}", &url))?;
     let media_info = extractor
         .extract()
