@@ -1,0 +1,262 @@
+{
+    "roomBlindInfo": {
+        "enable": false,
+        "name": "",
+        "blindType": ""
+    },
+    "roomFreezeInfo": {
+        "enable": false,
+        "name": "",
+        "userType": "",
+        "managerExcpt": "",
+        "fanExcpt": ""
+    },
+    "excelBroadcast": null,
+    "token": "eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJ2XzczOGI5YjA3LWYiLCJleHAiOjE3NTE4ODE5NDIsImluZm8iOnsiY2hhbm5lbCI6IjI2Njg4NzM3IiwidHlwZSI6InZpZXdlciIsImR0Ijoid2ViIiwicGYiOiJ3ZWIiLCJpYXQiOjE3NTE4ODAxNDIsImlwIjoiU3VoYmpoYWh2XC93STI0Y3RcL1ZGSmFBPT0iLCJsYW5nIjpbImtvIl19LCJldGMiOnsibWMiOiIyNjY4ODczN18yMDI1MDcwNzVjM2JhNWMxYTczNmNkYmIifX0.NThw9gT7pefgE7hZNwfEHYD6XgBvU98C3V27c-HHHrY",
+    "enterChat": [],
+    "html5": true,
+    "channel": "26688737",
+    "media": {
+        "code": "26688737_202507075c3ba5c1a736cdbb",
+        "title": "[뉴비 5일❤️] 유니랑 놀 준비 됐나",
+        "userId": "codud23",
+        "userIdx": 26688737,
+        "userNick": "유니❤️",
+        "category": "ind",
+        "isAdult": false,
+        "isPw": false,
+        "type": "free",
+        "heart": 0,
+        "user": 78,
+        "userLimit": 1000,
+        "sizeWidth": 1920,
+        "sizeHeight": 1080,
+        "browser": "web",
+        "startTime": "2025-07-07 16:51:40",
+        "endTime": "0000-00-00 00:00:00",
+        "isLive": true,
+        "onAirType": "live",
+        "liveType": "live",
+        "playCnt": 1003,
+        "likeCnt": 36,
+        "bookmarkCnt": 80,
+        "fanCnt": 53,
+        "totalScoreCnt": 6203,
+        "newBjYN": "Y",
+        "storage": "ivs",
+        "isGuestLive": "N",
+        "thumbUrl": "https://cdn.pandalive.co.kr/thumbnails/2025/7/7/7G4o6U4Wl2wx_uGM4HSWx84Wa_7_51_640x360.jpg",
+        "userImg": "https://cdn.pandalive.co.kr/upload/noimg/user/noimg_F0.jpg",
+        "listUp": "",
+        "listDeco": "0",
+        "userUp": "",
+        "quality": 0,
+        "ivsThumbnail": "https://cdn.pandalive.co.kr/ivs/v1/658583162646/7G4o6U4Wl2wx/2025/7/7/7/51/uGM4HSWx84Wa/media/latest_thumbnail/thumb.jpg"
+    },
+    "mode": "live",
+    "chatMode": "chat",
+    "playMode": "play",
+    "PlayList": {
+        "size": {
+            "width": 1920,
+            "height": 1080
+        },
+        "hls": [
+            {
+                "name": "자동",
+                "sort": 1,
+                "url": "https://ffdced10e5f6.us-west-2.playback.live-video.net/api/video/v1/us-west-2.658583162646.channel.7G4o6U4Wl2wx.m3u8?token=eyJ0eXAiOiJKV1QiLCJhbGciOiJFUzM4NCJ9.eyJhd3M6Y2hhbm5lbC1hcm4iOiJhcm46YXdzOml2czp1cy13ZXN0LTI6NjU4NTgzMTYyNjQ2OmNoYW5uZWxcLzdHNG82VTRXbDJ3eCIsImF3czpzaW5nbGUtdXNlLXV1aWQiOiI3MjA5MDdGOC1GREQ3LTQxOUEtQTJBMC00NzA1RDM2RDg2MTkiLCJhd3M6dmlld2VyLWlkIjoiMCIsImF3czp2aWV3ZXItc2Vzc2lvbi12ZXJzaW9uIjoxNzUxODgwMTQyLCJleHAiOjE3NTE4ODA3NDIsImF3czphY2Nlc3MtY29udHJvbC1hbGxvdy1vcmlnaW4iOiJodHRwczpcL1wvKi5wYW5kYWxpdmUuY28ua3IiLCJhd3M6c3RyaWN0LW9yaWdpbi1lbmZvcmNlbWVudCI6dHJ1ZSwidCI6MH0.i2xQDfJIjgJnUrtGH6anRgO4GmbyqEdM9_dMlbXGSE13kTUaxa6c2ph98m_pebfG7xXTnqirSdikmBcru9Mit7BxA2g6eRp9lsz8BGWN12tQeUzkhLoeiRb6ctGXFLVb"
+            }
+        ],
+        "hls2": [
+            {
+                "name": "자동",
+                "sort": 1,
+                "url": "https://ffdced10e5f6.us-west-2.playback.live-video.net/api/video/v1/us-west-2.658583162646.channel.7G4o6U4Wl2wx.m3u8?token=eyJ0eXAiOiJKV1QiLCJhbGciOiJFUzM4NCJ9.eyJhd3M6Y2hhbm5lbC1hcm4iOiJhcm46YXdzOml2czp1cy13ZXN0LTI6NjU4NTgzMTYyNjQ2OmNoYW5uZWxcLzdHNG82VTRXbDJ3eCIsImF3czpzaW5nbGUtdXNlLXV1aWQiOiI3MjA5MDdGOC1GREQ3LTQxOUEtQTJBMC00NzA1RDM2RDg2MTkiLCJhd3M6dmlld2VyLWlkIjoiMCIsImF3czp2aWV3ZXItc2Vzc2lvbi12ZXJzaW9uIjoxNzUxODgwMTQyLCJleHAiOjE3NTE4ODA3NDIsImF3czphY2Nlc3MtY29udHJvbC1hbGxvdy1vcmlnaW4iOiJodHRwczpcL1wvKi5wYW5kYWxpdmUuY28ua3IiLCJhd3M6c3RyaWN0LW9yaWdpbi1lbmZvcmNlbWVudCI6dHJ1ZSwidCI6MH0.i2xQDfJIjgJnUrtGH6anRgO4GmbyqEdM9_dMlbXGSE13kTUaxa6c2ph98m_pebfG7xXTnqirSdikmBcru9Mit7BxA2g6eRp9lsz8BGWN12tQeUzkhLoeiRb6ctGXFLVb"
+            }
+        ],
+        "hls3": [
+            {
+                "name": "자동",
+                "sort": 1,
+                "url": "https://ffdced10e5f6.us-west-2.playback.live-video.net/api/video/v1/us-west-2.658583162646.channel.7G4o6U4Wl2wx.m3u8?token=eyJ0eXAiOiJKV1QiLCJhbGciOiJFUzM4NCJ9.eyJhd3M6Y2hhbm5lbC1hcm4iOiJhcm46YXdzOml2czp1cy13ZXN0LTI6NjU4NTgzMTYyNjQ2OmNoYW5uZWxcLzdHNG82VTRXbDJ3eCIsImF3czpzaW5nbGUtdXNlLXV1aWQiOiI3MjA5MDdGOC1GREQ3LTQxOUEtQTJBMC00NzA1RDM2RDg2MTkiLCJhd3M6dmlld2VyLWlkIjoiMCIsImF3czp2aWV3ZXItc2Vzc2lvbi12ZXJzaW9uIjoxNzUxODgwMTQyLCJleHAiOjE3NTE4ODA3NDIsImF3czphY2Nlc3MtY29udHJvbC1hbGxvdy1vcmlnaW4iOiJodHRwczpcL1wvKi5wYW5kYWxpdmUuY28ua3IiLCJhd3M6c3RyaWN0LW9yaWdpbi1lbmZvcmNlbWVudCI6dHJ1ZSwidCI6MH0.i2xQDfJIjgJnUrtGH6anRgO4GmbyqEdM9_dMlbXGSE13kTUaxa6c2ph98m_pebfG7xXTnqirSdikmBcru9Mit7BxA2g6eRp9lsz8BGWN12tQeUzkhLoeiRb6ctGXFLVb"
+            }
+        ]
+    },
+    "iePlayMode": "hlsOnly",
+    "fan": {
+        "level": 0,
+        "name": "",
+        "isManager": false,
+        "isRoomMaster": false,
+        "rank": 0
+    },
+    "fanList": [
+        {
+            "rank": 1,
+            "userIdx": 24342289,
+            "userId": "rkdxhldjqtdma",
+            "userNick": "cablecar",
+            "isEverFan": false,
+            "userProfileImgHash": "",
+            "userProfileImg": "",
+            "fanLevel": 5,
+            "fanName": "VIP",
+            "country": "KR"
+        },
+        {
+            "rank": 2,
+            "userIdx": 22344996,
+            "userId": "tidytasha@yesfile",
+            "userNick": "JeanFine♣️쟝핀♠️",
+            "isEverFan": false,
+            "userProfileImgHash": "",
+            "userProfileImg": "",
+            "fanLevel": 5,
+            "fanName": "VIP",
+            "country": "KR"
+        },
+        {
+            "rank": 3,
+            "userIdx": 25937605,
+            "userId": "hyotaegim01",
+            "userNick": "✨다인❤️씨벌✨",
+            "isEverFan": false,
+            "userProfileImgHash": "",
+            "userProfileImg": "",
+            "fanLevel": 5,
+            "fanName": "VIP",
+            "country": "KR"
+        },
+        {
+            "rank": 4,
+            "userIdx": 20440961,
+            "userId": "sorksj",
+            "userNick": "Eun솔s",
+            "isEverFan": false,
+            "userProfileImgHash": "",
+            "userProfileImg": "",
+            "fanLevel": 4,
+            "fanName": "다이아",
+            "country": "KR"
+        },
+        {
+            "rank": 5,
+            "userIdx": 25977487,
+            "userId": "coolcoo@applefile",
+            "userNick": "콜라™",
+            "isEverFan": false,
+            "userProfileImgHash": "",
+            "userProfileImg": "",
+            "fanLevel": 2,
+            "fanName": "실버",
+            "country": "KR"
+        },
+        {
+            "rank": 6,
+            "userIdx": 5607776,
+            "userId": "jhchang1@filenori",
+            "userNick": "띠띠빠방",
+            "isEverFan": false,
+            "userProfileImgHash": "",
+            "userProfileImg": "",
+            "fanLevel": 2,
+            "fanName": "실버",
+            "country": "KR"
+        },
+        {
+            "rank": 7,
+            "userIdx": 14393970,
+            "userId": "dark00732",
+            "userNick": "다윤잉ღ링링",
+            "isEverFan": false,
+            "userProfileImgHash": "",
+            "userProfileImg": "",
+            "fanLevel": 2,
+            "fanName": "실버",
+            "country": "KR"
+        },
+        {
+            "rank": 8,
+            "userIdx": 26781608,
+            "userId": "rkdskarjwl",
+            "userNick": "테토같은에겐남",
+            "isEverFan": false,
+            "userProfileImgHash": "",
+            "userProfileImg": "",
+            "fanLevel": 1,
+            "fanName": "브론즈",
+            "country": "KR"
+        },
+        {
+            "rank": 9,
+            "userIdx": 26283301,
+            "userId": "tjwls0303",
+            "userNick": "하늘이맑음",
+            "isEverFan": false,
+            "userProfileImgHash": "",
+            "userProfileImg": "",
+            "fanLevel": 1,
+            "fanName": "브론즈",
+            "country": "KR"
+        },
+        {
+            "rank": 10,
+            "userIdx": 25476316,
+            "userId": "tt556677",
+            "userNick": "미래⭐설린⭐강예나⭐똥™",
+            "isEverFan": false,
+            "userProfileImgHash": "",
+            "userProfileImg": "",
+            "fanLevel": 1,
+            "fanName": "브론즈",
+            "country": "KR"
+        }
+    ],
+    "isBookmark": false,
+    "adultOut": false,
+    "chatServer": {
+        "url": "",
+        "t": 1751880142,
+        "token": "37380f6c5df523dc25f1d0044a68f3138289ac5a788d148860a4f7b464738ae4"
+    },
+    "roomInfo": "f21a5d0487cddb4cdac8b0253a95bc400385fbac0e7190cde05e45ad60da04e7:eyJmYW4iOnsibGV2ZWwiOi0xLCJuYW1lIjoiZ3Vlc3QiLCJyYW5rIjowLCJpc01hbmFnZXIiOmZhbHNlLCJpc1Jvb21NYXN0ZXIiOmZhbHNlfX0=",
+    "ranking": 857,
+    "chatMessage": {
+        "intro": "24시간 모니터링 중입니다!\n건전한 채팅을 위해 저속한 표현 등은 제재의 대상이 됩니다.\n팬더티비 에서는 어떠한 경우에도 접속 정보 및 개인정보를 요구하지 않습니다. 운영팀 사칭에 주의하시어 개인정보가 유출되는 일이 없도록 당부 부탁 드리겠습니다.\n\n또한 최근 팬더티비 사이트를 사칭하거나 이미지를 도용하는 피싱사이트가 확인되었습니다. 팬더티비에서는 현재 접속하고 계시는 공식 사이트를 제외한 어떠한 사이트도 운영하지 않습니다. 발견 즉시 고객센터로 제보 부탁 드리며 피해가 발생하지 않도록 주의하시기 바랍니다. 감사합니다."
+    },
+    "ispInfo": {
+        "organization": "Cloudflare",
+        "isp": "Cloudflare, Inc.",
+        "countryCode": "ES"
+    },
+    "vipDeco": 0,
+    "playItemInfo": {
+        "coinHave": 0,
+        "itemInfo": [],
+        "postCountReadN": 0
+    },
+    "mission": {
+        "stat": "on",
+        "coin": "100"
+    },
+    "result": true,
+    "message": "시청이 시작되었습니다.",
+    "loginInfo": {
+        "sessKey": "738b9b07-f9cd-4070-bfa1-f697dc11c241",
+        "userInfo": {
+            "isLogin": false,
+            "isCaptcha": false
+        },
+        "siteMode": {
+            "needAuth": true,
+            "mode": "c",
+            "type": "b"
+        },
+        "deviceInfo": {
+            "type": "web",
+            "version": "undefine"
+        }
+    },
+    "userIp": "104.28.192.82"
+}

@@ -1,4 +1,4 @@
-use crate::extractor::platforms::{douyin, douyu, huya, twitch};
+use crate::extractor::platforms::{douyin, douyu, huya, pandatv::builder::PandaTV, twitch};
 
 use super::factory::ExtractorFactory;
 use reqwest::Client;
@@ -49,7 +49,16 @@ pub fn default_factory() -> ExtractorFactory {
     factory
         .register(
             r"^(?:https?://)?(?:www\.)?douyu\.com/(\d+)",
-            Arc::new(|url, client| Box::new(douyu::DouyuExtractorBuilder::new(url, client).build(None))),
+            Arc::new(|url, client| {
+                Box::new(douyu::DouyuExtractorBuilder::new(url, client).build(None))
+            }),
+        )
+        .unwrap();
+
+    factory
+        .register(
+            r"^(?:https?://)?(?:www\.)?pandalive\.co\.kr/play/([a-zA-Z0-9_-]+)",
+            Arc::new(|url, client| Box::new(PandaTV::new(url, client))),
         )
         .unwrap();
 

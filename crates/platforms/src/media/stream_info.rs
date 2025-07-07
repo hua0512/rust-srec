@@ -1,6 +1,6 @@
 use crate::media::MediaFormat;
 use serde::{Deserialize, Serialize};
-use std::{fmt};
+use std::fmt;
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct StreamInfo {
@@ -11,11 +11,11 @@ pub struct StreamInfo {
     // Quality of the stream, e.g., "1080p", "720p", etc.
     pub quality: String,
     // Bitrate of the stream in bits per second
-    pub bitrate: u32,
+    pub bitrate: u64,
     pub priority: u32,
     pub extras: Option<serde_json::Value>,
     pub codec: String,
-    pub fps: f32,
+    pub fps: f64,
     pub is_headers_needed: bool,
 }
 

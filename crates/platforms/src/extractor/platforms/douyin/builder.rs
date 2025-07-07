@@ -17,9 +17,8 @@ use crate::media::media_info::MediaInfo;
 use crate::media::stream_info::StreamInfo;
 use async_trait::async_trait;
 use reqwest::{Client, RequestBuilder};
-use std::borrow::Cow;
 use rustc_hash::FxHashMap;
-use std::str::FromStr;
+use std::borrow::Cow;
 use std::sync::Arc;
 use tracing::debug;
 
@@ -155,15 +154,7 @@ impl<'a> DouyinRequest<'a> {
 
     /// Creates a `RequestBuilder` with all necessary headers, params, and cookies.
     fn request(&self, method: reqwest::Method, url: &str) -> RequestBuilder {
-        let mut headers = reqwest::header::HeaderMap::new();
-        for (key, value) in &self.config.extractor.platform_headers {
-            if let (Ok(name), Ok(val)) = (
-                reqwest::header::HeaderName::from_str(key),
-                reqwest::header::HeaderValue::from_str(value),
-            ) {
-                headers.insert(name, val);
-            }
-        }
+        let mut cookies = String::new();
 
         if !self.cookies.is_empty() {
             let cookie_string = self
@@ -173,15 +164,14 @@ impl<'a> DouyinRequest<'a> {
                 .collect::<Vec<_>>()
                 .join("; ");
             if let Ok(cookie_value) = reqwest::header::HeaderValue::from_str(&cookie_string) {
-                headers.insert(reqwest::header::COOKIE, cookie_value);
+                cookies = cookie_value.to_str().unwrap_or("").to_string();
             }
         }
 
         self.config
             .extractor
-            .client
             .request(method, url)
-            .headers(headers)
+            .header(reqwest::header::COOKIE, cookies)
             .query(&self.params)
     }
 
@@ -436,7 +426,7 @@ impl<'a> DouyinRequest<'a> {
             avatar_url,
             is_live,
             streams,
-            Some(self.config.extractor.platform_headers.clone()),
+            Some(self.config.extractor.get_platform_headers_map()),
         ))
     }
 
@@ -524,7 +514,7 @@ impl<'a> DouyinRequest<'a> {
         let (quality_name, bitrate, codec, fps, extras) = match origin_quality_details {
             Some(details) => (
                 "原画",
-                Self::normalize_bitrate(details.v_bit_rate as u32),
+                Self::normalize_bitrate(details.v_bit_rate.try_into().unwrap()),
                 Self::normalize_codec(details.v_codec),
                 details.fps,
                 Some(Arc::new(DouyinStreamExtras {
@@ -539,11 +529,11 @@ impl<'a> DouyinRequest<'a> {
             url: origin_url,
             format: MediaFormat::Flv,
             quality: quality_name.to_string(),
-            bitrate,
+            bitrate: bitrate as u64,
             priority: 10,
             extras: extras.map(|e| serde_json::to_value(e).unwrap_or(serde_json::Value::Null)),
             codec,
-            fps: fps as f32,
+            fps: fps as f64,
             is_headers_needed: false,
         })
     }
@@ -586,7 +576,7 @@ impl<'a> DouyinRequest<'a> {
                 &quality_data.main.flv,
                 MediaFormat::Flv,
                 quality_name,
-                bitrate,
+                bitrate as u64,
                 &codec,
                 fps,
                 extras.as_ref(),
@@ -597,7 +587,7 @@ impl<'a> DouyinRequest<'a> {
                 &quality_data.main.hls,
                 MediaFormat::Hls,
                 quality_name,
-                bitrate,
+                bitrate as u64,
                 &codec,
                 fps,
                 extras.as_ref(),
@@ -614,7 +604,7 @@ impl<'a> DouyinRequest<'a> {
         url: &str,
         format: MediaFormat,
         quality_name: &str,
-        bitrate: u32,
+        bitrate: u64,
         codec: &str,
         fps: i32,
         extras: Option<&Arc<DouyinStreamExtras>>,
@@ -629,7 +619,7 @@ impl<'a> DouyinRequest<'a> {
                 priority: 0,
                 extras: extras.map(|e| serde_json::to_value(e).unwrap_or(serde_json::Value::Null)),
                 codec: codec.to_string(),
-                fps: fps as f32,
+                fps: fps as f64,
                 is_headers_needed: false,
             });
         }
@@ -713,7 +703,7 @@ mod tests {
     const TEST_URL: &str = "https://live.douyin.com/pt000101";
 
     #[tokio::test]
-    #[ignore] // This test performs a live network request and should be run manually.
+    #[ignore]
     async fn test_extract_live() {
         tracing_subscriber::fmt()
             .with_max_level(tracing::Level::DEBUG)

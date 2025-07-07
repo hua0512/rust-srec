@@ -102,10 +102,7 @@ impl DouyuExtractorConfig {
         let response = self
             .extractor
             .client
-            .get(format!(
-                "https://open.douyucdn.cn/api/RoomApi/room/{}",
-                rid
-            ))
+            .get(format!("https://open.douyucdn.cn/api/RoomApi/room/{}", rid))
             .send()
             .await?;
         let body = response.text().await.map_err(ExtractorError::from)?;
@@ -142,7 +139,7 @@ impl DouyuExtractorConfig {
             avatar_url,
             is_live,
             streams,
-            Some(self.get_platform_headers().clone()),
+            Some(self.extractor.get_platform_headers_map()),
         )
     }
 
@@ -356,7 +353,7 @@ impl DouyuExtractorConfig {
                     url: stream_url,
                     format,
                     quality: rate.name.to_string(),
-                    bitrate: rate.bit as u32,
+                    bitrate: rate.bit,
                     priority: 0,
                     extras: Some(serde_json::json!({
                         "cdn": cdn.cdn,

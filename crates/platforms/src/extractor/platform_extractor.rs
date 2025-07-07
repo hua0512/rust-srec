@@ -4,6 +4,7 @@ use crate::media::{StreamInfo, stream_info};
 use super::{super::media::media_info::MediaInfo, error::ExtractorError};
 use async_trait::async_trait;
 use regex::Regex;
+use reqwest::header::{HeaderMap, HeaderName, HeaderValue};
 use reqwest::{Client, Method, RequestBuilder};
 use rustc_hash::FxHashMap;
 use std::str::FromStr;
@@ -51,7 +52,7 @@ pub struct Extractor {
     // optional regex to match the platform URL
     pub platform_regex: Option<Regex>,
     // platform-specific headers and parameters
-    pub platform_headers: FxHashMap<String, String>,
+    platform_headers: HeaderMap,
     pub platform_params: FxHashMap<String, String>,
     /// Cookie storage for the extractor. Each extractor instance maintains
     /// its own cookies for platform-specific session management.
@@ -64,22 +65,21 @@ impl Extractor {
         platform_url: S2,
         client: Client,
     ) -> Self {
-        let mut default_headers = FxHashMap::default();
+        let mut default_headers = HeaderMap::new();
+        default_headers.insert(reqwest::header::USER_AGENT, DEFAULT_UA.parse().unwrap());
         default_headers.insert(
-            reqwest::header::USER_AGENT.to_string(),
-            DEFAULT_UA.to_string(),
+            reqwest::header::ACCEPT,
+            "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8"
+                .parse()
+                .unwrap(),
         );
         default_headers.insert(
-            reqwest::header::ACCEPT.to_string(),
-            "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8".to_string(),
+            reqwest::header::ACCEPT_LANGUAGE,
+            "zh-CN,zh;q=0.8,en-US;q=0.5,en;q=0.3".parse().unwrap(),
         );
         default_headers.insert(
-            reqwest::header::ACCEPT_LANGUAGE.to_string(),
-            "zh-CN,zh;q=0.8,en-US;q=0.5,en;q=0.3".to_string(),
-        );
-        default_headers.insert(
-            reqwest::header::ACCEPT_ENCODING.to_string(),
-            "gzip, deflate".to_string(),
+            reqwest::header::ACCEPT_ENCODING,
+            "gzip, deflate".parse().unwrap(),
         );
 
         Self {
@@ -94,7 +94,10 @@ impl Extractor {
     }
 
     pub fn add_header<K: Into<String>, V: Into<String>>(&mut self, key: K, value: V) {
-        self.platform_headers.insert(key.into(), value.into());
+        self.platform_headers.insert(
+            HeaderName::from_str(&key.into()).unwrap(),
+            HeaderValue::from_str(&value.into()).unwrap(),
+        );
     }
 
     pub fn add_param<K: Into<String>, V: Into<String>>(&mut self, key: K, value: V) {
@@ -313,28 +316,32 @@ impl Extractor {
     ///
     /// RequestBuilder with cookies and platform headers pre-configured
     pub fn request(&self, method: Method, url: &str) -> RequestBuilder {
-        let mut headers = reqwest::header::HeaderMap::new();
-        for (key, value) in &self.platform_headers {
-            if let (Ok(name), Ok(val)) = (
-                reqwest::header::HeaderName::from_str(key),
-                reqwest::header::HeaderValue::from_str(value),
-            ) {
-                headers.insert(name, val);
-            }
-        }
-
-        // Automatically add cookies to headers if any exist
-        if let Some(cookie_header) = self.build_cookie_header() {
-            if let Ok(cookie_value) = reqwest::header::HeaderValue::from_str(&cookie_header) {
-                headers.insert(reqwest::header::COOKIE, cookie_value);
-                debug!("Adding cookies to request: {}", cookie_header);
-            }
-        }
+        let cookies = self
+            .build_cookie_header()
+            .and_then(|header| {
+                reqwest::header::HeaderValue::from_str(&header)
+                    .inspect(|value| debug!("Adding cookies to request: {:?}", value))
+                    .ok()
+            })
+            .unwrap_or_else(|| reqwest::header::HeaderValue::from_static(""));
 
         self.client
             .request(method, url)
-            .headers(headers)
+            .headers(self.platform_headers.clone())
+            .header(reqwest::header::COOKIE, cookies)
             .query(&self.platform_params)
+    }
+
+    pub fn get_platform_headers(&self) -> &HeaderMap {
+        &self.platform_headers
+    }
+
+    pub fn get_platform_headers_map(&self) -> FxHashMap<String, String> {
+        let mut headers_map = FxHashMap::default();
+        for (key, value) in &self.platform_headers {
+            headers_map.insert(key.to_string(), value.to_str().unwrap().to_string());
+        }
+        headers_map
     }
 }
 
@@ -342,7 +349,7 @@ impl Extractor {
 pub trait PlatformExtractor: Send + Sync {
     fn get_extractor(&self) -> &Extractor;
 
-    fn get_platform_headers(&self) -> &FxHashMap<String, String> {
+    fn get_platform_headers(&self) -> &HeaderMap {
         &self.get_extractor().platform_headers
     }
 

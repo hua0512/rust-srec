@@ -207,7 +207,7 @@ impl HuyaExtractor {
 
         let stream_info_list = &stream_data.base_steam_info_list;
         let bitrate_info_list = &stream_data.bit_rate_info;
-        let default_bitrate = live_data.bit_rate;
+        let default_bitrate = live_data.bit_rate as u64;
 
         let streams = self.parse_streams(
             stream_info_list,
@@ -224,7 +224,7 @@ impl HuyaExtractor {
             avatar_url,
             is_live,
             streams,
-            Some(self.get_platform_headers().clone()),
+            Some(self.extractor.get_platform_headers_map()),
         ))
     }
 
@@ -333,7 +333,7 @@ impl HuyaExtractor {
         };
 
         let stream_info_list = &stream_container.game_stream_info_list;
-        let default_bitrate = game_live_info.bit_rate;
+        let default_bitrate = game_live_info.bit_rate as u64;
         let bitrate_info_list = &stream_response.v_multi_stream_info;
 
         let streams = self.parse_streams(
@@ -351,7 +351,7 @@ impl HuyaExtractor {
             avatar_url,
             true,
             streams,
-            Some(self.get_platform_headers().clone()),
+            Some(self.extractor.get_platform_headers_map()),
         ))
     }
 
@@ -359,7 +359,7 @@ impl HuyaExtractor {
         &self,
         stream_info_list: &[StreamInfoItem],
         bitrate_info_list: &[BitrateInfo],
-        default_bitrate: u32,
+        default_bitrate: u64,
         presenter_uid: i64,
     ) -> Result<Vec<StreamInfo>, ExtractorError> {
         let mut streams = Vec::new();
@@ -396,7 +396,7 @@ impl HuyaExtractor {
             let add_streams_for_bitrate =
                 |streams: &mut Vec<StreamInfo>,
                  quality: &str,
-                 bitrate: u32,
+                 bitrate: u64,
                  priority: u32,
                  extras: &serde_json::Value| {
                     // flv
@@ -437,7 +437,7 @@ impl HuyaExtractor {
                     add_streams_for_bitrate(
                         &mut streams,
                         bitrate_info.s_display_name.as_ref(),
-                        bitrate_info.i_bit_rate,
+                        bitrate_info.i_bit_rate.into(),
                         priority,
                         &extras,
                     );
@@ -508,7 +508,6 @@ impl HuyaExtractor {
             .as_ref()
             .and_then(|extras| extras.get("default_bitrate"))
             .and_then(|v| v.as_u64())
-            .map(|v| v as u32)
             .unwrap_or(10000);
 
         // Use reqwest's Url for safe query parameter handling

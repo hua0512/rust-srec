@@ -38,6 +38,8 @@ pub enum ExtractorError {
     ValidationError(String),
     #[error("js error: {0}")]
     JsError(String),
+    #[error("hls playlist error: {0}")]
+    HlsPlaylistError(String),
     #[error("other error: {0}")]
     Other(String),
 }

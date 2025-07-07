@@ -1,0 +1,106 @@
+{
+    "fanGrade": [
+        {
+            "level": 5,
+            "levelTitle": "1등급",
+            "name": "VIP",
+            "coin": 1004,
+            "expDay": 30
+        },
+        {
+            "level": 4,
+            "levelTitle": "2등급",
+            "name": "다이아",
+            "coin": 700,
+            "expDay": 30
+        },
+        {
+            "level": 3,
+            "levelTitle": "3등급",
+            "name": "골드",
+            "coin": 500,
+            "expDay": 30
+        },
+        {
+            "level": 2,
+            "levelTitle": "4등급",
+            "name": "실버",
+            "coin": 300,
+            "expDay": 30
+        },
+        {
+            "level": 1,
+            "levelTitle": "5등급",
+            "name": "브론즈",
+            "coin": 10,
+            "expDay": 90
+        }
+    ],
+    "media": {
+        "code": "26688737_202507075c3ba5c1a736cdbb",
+        "title": "[뉴비 5일❤️] 팬갑 터미널 갑니당 ",
+        "userId": "codud23",
+        "userIdx": 26688737,
+        "userNick": "유니❤️",
+        "category": "ind",
+        "isAdult": false,
+        "isPw": false,
+        "type": "free",
+        "heart": 0,
+        "user": 79,
+        "userLimit": 1000,
+        "sizeWidth": 1920,
+        "sizeHeight": 1080,
+        "browser": "web",
+        "startTime": "2025-07-07 16:51:40",
+        "endTime": "0000-00-00 00:00:00",
+        "isLive": true,
+        "onAirType": "live",
+        "liveType": "live",
+        "playCnt": 708,
+        "likeCnt": 21,
+        "bookmarkCnt": 77,
+        "fanCnt": 49,
+        "totalScoreCnt": 4738,
+        "newBjYN": "Y",
+        "storage": "ivs",
+        "isGuestLive": false,
+        "thumbUrl": "https://cdn.pandalive.co.kr/thumbnails/2025/7/7/7G4o6U4Wl2wx_uGM4HSWx84Wa_7_51_640x360.jpg",
+        "userImg": "https://cdn.pandalive.co.kr/upload/noimg/user/noimg_F1.jpg",
+        "listUp": "",
+        "listDeco": "0",
+        "userUp": "",
+        "quality": 0,
+        "ivsThumbnail": "https://cdn.pandalive.co.kr/thumbnails/2025/7/7/7G4o6U4Wl2wx_uGM4HSWx84Wa_7_51.jpg"
+    },
+    "runningMission": false,
+    "bjInfo": {
+        "idx": 26688737,
+        "id": "codud23",
+        "nick": "유니❤️",
+        "thumbUrl": "https://cdn.pandalive.co.kr/upload/noimg/user/noimg_F0.jpg",
+        "scoreTotal": 228963,
+        "scoreWatch": 8227,
+        "scoreLike": 274,
+        "scoreBookmark": 77,
+        "fanCnt": 49,
+        "channelTitle": "유니❤️님의 방송국",
+        "channelDesc": "유니❤️님의 방송국에 어서오세요.",
+        "isImgProfile": "N",
+        "isAsp": "N",
+        "isBJ": "Y",
+        "bjAnni": null,
+        "playTime": {
+            "monthTime": 58802,
+            "totalTime": 58802,
+            "month": "16시간 20분",
+            "total": "16시간 20분"
+        },
+        "rank": 857,
+        "vipDeco": 0,
+        "blockService": null
+    },
+    "result": true,
+    "message": "",
+    "userIp": "104.28.192.82"
+}
