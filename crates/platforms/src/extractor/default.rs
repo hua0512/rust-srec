@@ -1,4 +1,6 @@
-use crate::extractor::platforms::{douyin, douyu, huya, pandatv::builder::PandaTV, twitch};
+use crate::extractor::platforms::{
+    douyin, douyu, huya, pandatv::builder::PandaTV, twitch, weibo::builder::Weibo,
+};
 
 use super::factory::ExtractorFactory;
 use reqwest::Client;
@@ -59,6 +61,13 @@ pub fn default_factory() -> ExtractorFactory {
         .register(
             r"^(?:https?://)?(?:www\.)?pandalive\.co\.kr/play/([a-zA-Z0-9_-]+)",
             Arc::new(|url, client| Box::new(PandaTV::new(url, client))),
+        )
+        .unwrap();
+
+    factory
+        .register(
+            r"(?:https://(?:www\.)?weibo\.com/(u/\d+|l/wblive/p/show/\d+:[a-zA-Z0-9]+))(?:[?#].*)?$",
+            Arc::new(|url, client| Box::new(Weibo::new(url, client))),
         )
         .unwrap();
 

@@ -4,3 +4,4 @@ pub mod douyu;
 pub mod huya;
 pub mod pandatv;
 pub mod twitch;
+pub mod weibo;

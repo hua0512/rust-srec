@@ -1,0 +1,64 @@
+{
+  "code": 100000,
+  "data": {
+    "item": {
+      "anchor_uid": 6124785491,
+      "attitudes_count": 8,
+      "auto_stime": 1751887840000,
+      "auto_weibo_time": 1751887840000,
+      "comments_count": 157,
+      "cover": "https://wx4.sinaimg.cn/large/006GuYuLly8hob3swndmaj30sf0sfwj1.jpg",
+      "desc": "好无聊",
+      "following": 0,
+      "free_type": 0,
+      "height": 1280,
+      "landscape": 0,
+      "liked": 0,
+      "live_id": "1022:2321325185855777275969",
+      "live_type": 0,
+      "mid": "5185855825117837",
+      "reposts_count": 0,
+      "status": 1,
+      "stream_info": {
+        "pull": {
+          "live_origin_flv_url": "https://plwb32.live.weibo.com/alicdn/5185855773738060_wb720avc.flv",
+          "live_origin_hls_url": "https://plwb32.live.weibo.com/alicdn/5185855773738060_wb720avc.m3u8"
+        }
+      },
+      "watch_limit_info": {
+        "free_time": 0,
+        "pay_coin": 0,
+        "type": 0
+      },
+      "width": 720
+    },
+    "scheme": "sinaweibo://chatroom?container_id=2321325185855777275969&live_id=1022:2321325185855777275969&width=720&height=1280&livetype=wblive&cover=https%3A%2F%2Fwx4.sinaimg.cn%2Flarge%2F006GuYuLly8hob3swndmaj30sf0sfwj1.jpg&mid=5185855825117837&wish_gift=0&watch_limit=0&top_margin_type=21&model_type=0&is_cooperate=0&anchor_uid=6124785491",
+    "subscribe_list": [],
+    "user_info": {
+      "avatar": "https://tvax4.sinaimg.cn/crop.0.0.1023.1023.1024/006GuYuLly8hob3swndmaj30sf0sfwj1.jpg?KID=imgbed,tva&Expires=1751899037&ssig=u0A4Dexwsh",
+      "avatar_hd": "https://tvax4.sinaimg.cn/crop.0.0.1023.1023.1024/006GuYuLly8hob3swndmaj30sf0sfwj1.jpg?KID=imgbed,tva&Expires=1751899006&ssig=CPsQGk7rqc",
+      "avatar_large": "https://tvax4.sinaimg.cn/crop.0.0.1023.1023.180/006GuYuLly8hob3swndmaj30sf0sfwj1.jpg?KID=imgbed,tva&Expires=1751899006&ssig=aCW5jYe0GS",
+      "cover_image_phone": "https://wx4.sinaimg.cn/crop.0.0.640.640.640/006GuYuLly1hbwcpgadkwj30u00u0n00.jpg",
+      "followers_count": 303311,
+      "gender": "f",
+      "id": 6124785491,
+      "idstr": "6124785491",
+      "name": "阿画不喜",
+      "profile_image_url": "https://tvax4.sinaimg.cn/crop.0.0.1023.1023.50/006GuYuLly8hob3swndmaj30sf0sfwj1.jpg?KID=imgbed,tva&Expires=1751899006&ssig=6OdUmPBjuP",
+      "screen_name": "阿画不喜",
+      "uid": 6124785491,
+      "user_auth_type": 3,
+      "verified": 1,
+      "verified_reason": "娱乐博主 微博原创视频博主",
+      "verified_reason_url": "",
+      "verified_source": "",
+      "verified_source_url": "",
+      "verified_trade": "",
+      "verified_type": 0,
+      "verified_type_ext": 1
+    }
+  },
+  "error_code": 0,
+  "msg": "success",
+  "result": true
+}
