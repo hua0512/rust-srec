@@ -1,0 +1,82 @@
+[
+    {
+        "data": {
+            "userOrError": {
+                "id": "167100879",
+                "login": "abby_",
+                "displayName": "abby_",
+                "primaryColorHex": "FFACCE",
+                "profileImageURL": "https://static-cdn.jtvnw.net/jtv_user_pictures/28f2e31e-c1cd-4d54-a79f-e98cbe53e257-profile_image-70x70.png",
+                "stream": {
+                    "id": "322765853689",
+                    "viewersCount": 3963,
+                    "__typename": "Stream"
+                },
+                "__typename": "User",
+                "channel": {
+                    "id": "167100879",
+                    "self": {
+                        "isAuthorized": true,
+                        "restrictionType": null,
+                        "__typename": "ChannelSelfEdge"
+                    },
+                    "trailer": {
+                        "video": null,
+                        "__typename": "Trailer"
+                    },
+                    "__typename": "Channel"
+                }
+            }
+        },
+        "extensions": {
+            "durationMilliseconds": 62,
+            "operationName": "ChannelShell",
+            "requestID": "01JZJJ7H8SXZKWATF759Q9PDHA"
+        }
+    },
+    {
+        "data": {
+            "user": {
+                "id": "167100879",
+                "primaryColorHex": "FFACCE",
+                "isPartner": true,
+                "profileImageURL": "https://static-cdn.jtvnw.net/jtv_user_pictures/28f2e31e-c1cd-4d54-a79f-e98cbe53e257-profile_image-70x70.png",
+                "primaryTeam": {
+                    "id": "8029",
+                    "name": "teamheretics",
+                    "displayName": "Heretics",
+                    "__typename": "Team"
+                },
+                "squadStream": null,
+                "channel": {
+                    "id": "167100879",
+                    "chanlets": null,
+                    "__typename": "Channel"
+                },
+                "lastBroadcast": {
+                    "id": "322765853689",
+                    "title": "🥊 LA DES-VELADA 🏡 MANSIÓN DE HERETICS ⭐️ 1 SEMANA EN STREAM ❤️‍🔥 DÍA 2",
+                    "__typename": "Broadcast"
+                },
+                "stream": {
+                    "id": "322765853689",
+                    "type": "live",
+                    "createdAt": "2025-07-06T14:24:56Z",
+                    "viewersCount": 3963,
+                    "game": {
+                        "id": "509658",
+                        "name": "Just Chatting",
+                        "__typename": "Game"
+                    },
+                    "__typename": "Stream"
+                },
+                "__typename": "User"
+            }
+        },
+        "extensions": {
+            "durationMilliseconds": 56,
+            "operationName": "StreamMetadata",
+            "requestID": "01JZJJ7H8SXZKWATF759Q9PDHA"
+        }
+    }
+]

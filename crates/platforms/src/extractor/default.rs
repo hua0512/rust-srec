@@ -1,5 +1,5 @@
 use crate::extractor::platforms::{
-    douyin, douyu, huya, pandatv::builder::PandaTV, twitch::Twitch, weibo::builder::Weibo,
+    douyin, douyu, huya, pandatv::builder::PandaTV, twitch::builder::Twitch, weibo::builder::Weibo,
 };
 
 use super::factory::ExtractorFactory;
@@ -76,7 +76,7 @@ pub fn default_factory() -> ExtractorFactory {
     factory
         .register(
             r"^(?:https?://)?(?:www\.)?twitch\.tv/([a-zA-Z0-9_]+)",
-            Arc::new(|url, client, cookies| Box::new(Twitch::new(url, client, cookies))),
+            Arc::new(|url, client, cookies| Box::new(Twitch::new(url, client, cookies, None))),
         )
         .unwrap();
 

@@ -4,7 +4,7 @@ use async_trait::async_trait;
 use regex::Regex;
 use reqwest::Client;
 use rustc_hash::FxHashMap;
-use tracing::{Level, debug};
+use tracing::debug;
 use url::Url;
 
 use crate::extractor::hls_extractor::HlsExtractor;
@@ -169,7 +169,7 @@ impl PandaTV {
 
         let headers = self.extractor.get_platform_headers().clone();
         let streams = self
-            .extract_hls_stream(&self.extractor.client, Some(headers), &hls_url, None)
+            .extract_hls_stream::<()>(&self.extractor.client, Some(headers), None, &hls_url, None)
             .await?;
 
         Ok(self.create_media_info(

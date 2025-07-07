@@ -1,0 +1,14 @@
+{
+    "data": {
+        "streamPlaybackAccessToken": {
+            "value": "{\"adblock\":false,\"authorization\":{\"forbidden\":false,\"reason\":\"\"},\"blackout_enabled\":false,\"channel\":\"abby_\",\"channel_id\":167100879,\"chansub\":{\"restricted_bitrates\":[],\"view_until\":1924905600},\"ci_gb\":false,\"geoblock_reason\":\"\",\"device_id\":\"1925203870983612\",\"expires\":1751899439,\"extended_history_allowed\":false,\"game\":\"\",\"hide_ads\":false,\"https_required\":true,\"mature\":false,\"partner\":false,\"platform\":\"web\",\"player_type\":\"site\",\"private\":{\"allowed_to_view\":true},\"privileged\":false,\"role\":\"\",\"server_ads\":true,\"show_ads\":true,\"subscriber\":false,\"turbo\":false,\"user_id\":null,\"user_ip\":\"104.28.192.82\",\"version\":3,\"maximum_resolution\":\"FULL_HD\",\"maximum_video_bitrate_kbps\":12500,\"maximum_resolution_reasons\":{\"QUAD_HD\":[\"AUTHZ_NOT_LOGGED_IN\"],\"ULTRA_HD\":[\"AUTHZ_NOT_LOGGED_IN\"]},\"maximum_video_bitrate_kbps_reasons\":[\"AUTHZ_DISALLOWED_BITRATE\"]}",
+            "signature": "f8d7138235f99f5da071a3c785f67798be3a7cd5",
+            "__typename": "PlaybackAccessToken"
+        }
+    },
+    "extensions": {
+        "durationMilliseconds": 57,
+        "operationName": "PlaybackAccessToken",
+        "requestID": "01JZJMBC6KEMFHJAJF77XKNCQZ"
+    }
+}

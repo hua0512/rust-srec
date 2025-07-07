@@ -173,7 +173,7 @@ impl Weibo {
         if let Some(flv_url) = flv_url {
             streams.push(StreamInfo {
                 url: flv_url,
-                quality: "Origin".to_string(),
+                quality: "Source".to_string(),
                 format: MediaFormat::Flv,
                 bitrate: 0,
                 priority: 0,
@@ -187,7 +187,7 @@ impl Weibo {
         if let Some(hls_url) = hls_url {
             streams.push(StreamInfo {
                 url: hls_url,
-                quality: "Origin".to_string(),
+                quality: "Source".to_string(),
                 format: MediaFormat::Hls,
                 bitrate: 0,
                 priority: 0,
