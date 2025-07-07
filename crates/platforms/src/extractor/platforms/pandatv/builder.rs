@@ -4,7 +4,7 @@ use async_trait::async_trait;
 use regex::Regex;
 use reqwest::Client;
 use rustc_hash::FxHashMap;
-use tracing::debug;
+use tracing::{Level, debug};
 use url::Url;
 
 use crate::extractor::hls_extractor::HlsExtractor;
@@ -108,22 +108,22 @@ impl PandaTV {
         &self,
         response: PandaTvBjResponse,
     ) -> Result<MediaInfo, ExtractorError> {
-        let media = response.media.ok_or(ExtractorError::ValidationError(
-            "Media field is missing".to_string(),
-        ))?;
-
         let bj_info = response.bj_info.ok_or(ExtractorError::ValidationError(
             "Bj info field is missing".to_string(),
         ))?;
 
         let title = bj_info.channel_title.to_string();
         let artist = bj_info.nick.to_string();
-        let is_live = media.is_live;
 
-        if !media.is_live {
+        let media = response.media;
+
+        let is_live = media.is_some() && media.as_ref().unwrap().is_live;
+
+        if !is_live {
             return Ok(self.create_media_info(title, artist, None, None, is_live, vec![], None));
         }
 
+        let media = media.as_ref().unwrap();
         // is live
         let artist_url = media.user_img.to_string();
         let cover_url = Some(media.thumb_url.to_string());
