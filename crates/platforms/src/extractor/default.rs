@@ -1,5 +1,6 @@
 use crate::extractor::platforms::{
-    douyin, douyu, huya, pandatv::builder::PandaTV, twitch::builder::Twitch, weibo::builder::Weibo,
+    douyin, douyu, huya, pandatv::builder::PandaTV, redbook::builder::RedBook,
+    twitch::builder::Twitch, weibo::builder::Weibo,
 };
 
 use super::factory::ExtractorFactory;
@@ -82,6 +83,15 @@ pub fn default_factory() -> ExtractorFactory {
             r"^(?:https?://)?(?:www\.)?twitch\.tv/([a-zA-Z0-9_]+)",
             Arc::new(|url, client, cookies, extras| {
                 Box::new(Twitch::new(url, client, cookies, extras))
+            }),
+        )
+        .unwrap();
+
+    factory
+        .register(
+            r"^(?:https?://)?(?:(?:www\.)?xiaohongshu\.com/user/profile/([a-zA-Z0-9_-]+)|xhslink\.com/[a-zA-Z0-9_-]+)",
+            Arc::new(|url, client, cookies, extras| {
+                Box::new(RedBook::new(url, client, cookies, extras))
             }),
         )
         .unwrap();

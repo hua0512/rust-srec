@@ -1,0 +1,106 @@
+{
+    "global": {
+        "appSettings": {
+            "fakeModalPercent": 0.02,
+            "fakeModalWhiteList": [],
+            "launchAppConfig": "{\n  \"dslVersion\": 1,\n  \"strategies\": {\n    \"launchApp\": {\n      \"android\": {\n        \"wechat\": [\n          \"wxopentag\",\n          \"tencentAppStore\"\n        ],\n        \"qqclient\": [\n          \"tencentAppStore\"\n        ],\n        \"qqbrowser\": [\n          \"urlschema\",\n          \"jumpinstallurl\"\n        ],\n        \"weibo\": [\n          \"urlschema\",\n          \"jumpinstallurl\"\n        ],\n        \"sogou\": [\n          \"urlschema\",\n          \"jumpinstallurl\"\n        ],\n        \"uc\": [\n          \"urlschema\",\n          \"jumpinstallurl\"\n        ],\n        \"other\": [\n          \"urlschema\",\n          \"jumpinstallurl\"\n        ]\n      },\n      \"ios\": {\n        \"wechat\": [\n          \"wxopentag\",\n          \"universallink\"\n        ],\n        \"qqclient\": [\n          \"universallink\"\n        ],\n        \"weibo\": [\n          \"urlschema\",\n          \"jumpinstallurl\"\n        ],\n        \"sogou\": [\n          \"urlschema\",\n          \"jumpinstallurl\"\n        ],\n        \"qqbrowser\": [\n          \"urlschema\",\n          \"jumpinstallurl\"\n        ],\n        \"uc\": [\n          \"urlschema\",\n          \"jumpinstallurl\"\n        ],\n        \"other\": [\n          \"universallink\"\n        ]\n      },\n      \"harmonyos\": {\n        \"harmonyos\": [\n          \"universallink\"\n        ],\n        \"wechat\": [\n          \"universallink\"\n        ],\n        \"qqclient\": [\n          \"universallink\"\n        ],\n        \"weibo\": [\n          \"universallink\"\n        ],\n        \"sogou\": [\n          \"universallink\"\n        ],\n        \"qqbrowser\": [\n          \"universallink\"\n        ],\n        \"uc\": [\n          \"universallink\"\n        ],\n        \"other\": [\n          \"universallink\"\n        ]\n      },\n      \"other\": {\n        \"wechat\": [\n          \"wxopentag\",\n          \"tencentAppStore\"\n        ],\n        \"qqclient\": [\n          \"tencentAppStore\"\n        ],\n        \"weibo\": [\n          \"urlschema\",\n          \"jumpinstallurl\"\n        ],\n        \"sogou\": [\n          \"urlschema\",\n          \"jumpinstallurl\"\n        ],\n        \"qqbrowser\": [\n          \"urlschema\",\n          \"jumpinstallurl\"\n        ],\n        \"uc\": [\n          \"urlschema\",\n          \"jumpinstallurl\"\n        ],\n        \"other\": [\n          \"urlschema\",\n          \"jumpinstallurl\"\n        ]\n      }\n    }\n  }\n}",
+            "noteBackProfile": true,
+            "cacheLimit": 100001,
+            "playLaunch": "enable"
+        },
+        "visitMobileFromAndroidWxGuide": false,
+        "androidWxWebId": "",
+        "shareContext": null,
+        "supportWebp": false,
+        "acceptLanguageFromHeader": "zh-CN,zh;q=0.8,en-US;q=0.5,en;q=0.3",
+        "language": "zh_cn"
+    },
+    "fakeModal": {
+        "fakeModalVisible": false,
+        "modalAppendParams": {
+            "source": "",
+            "deeplink": ""
+        },
+        "enableFakeModal": false
+    },
+    "noteData": {
+        "videoRecommendCursorScore": "",
+        "routeQuery": {
+            "timestamp": "1751903094341",
+            "share_source": "share_link",
+            "share_source_id": "",
+            "source": "share_out_of_app",
+            "host_id": "6043512400000000010016bd"
+        },
+        "data": {},
+        "config": {
+            "articleExpand": false
+        },
+        "flags": "",
+        "serverFlags": "",
+        "initializedLaunchOpenAppTag": [],
+        "openTagMetaData": {},
+        "collectionData": {
+            "id": "",
+            "name": "",
+            "desc": "",
+            "noteNum": 0,
+            "paid": false,
+            "totalEpisodes": 0,
+            "deeplink": "xhsdiscover:\u002F\u002Fhome\u002Fexplore",
+            "userInfo": {
+                "nickName": "",
+                "avatarUrl": ""
+            },
+            "noteList": [],
+            "error": {
+                "msg": "",
+                "status": 200
+            }
+        },
+        "realUserId": "",
+        "hasError": false,
+        "expGroups": "",
+        "hotlistData": [],
+        "errorNoteData": {
+            "noteData": {},
+            "userNotes": [],
+            "showLaunchAppModal": false,
+            "show": false,
+            "routeQuery": {
+                "code": "200"
+            },
+            "launchAppModalParams": {
+                "source": "",
+                "deeplink": ""
+            }
+        }
+    },
+    "liveStream": {
+        "pageStatus": "success",
+        "liveStatus": "success",
+        "errorMessage": "",
+        "roomData": {
+            "hostInfo": {
+                "avatar": "https:\u002F\u002Fsns-avatar-qc.xhscdn.com\u002Favatar\u002F1040g2jo31ifp168tga005o23a4i085ltn3irq38?imageView2\u002F2\u002Fw\u002F80\u002Fformat\u002Fjpg",
+                "nickName": "小七🐰🐰"
+            },
+            "roomInfo": {
+                "pullConfig": "{\"h265\":[],\"h264\":[{\"master_url\":\"http:\u002F\u002Flive-source-play.xhscdn.com\u002Flive\u002F569823731781202596.m3u8\",\"quality_type\":\"HD\",\"quality_type_name\":\"原画\"},{\"master_url\":\"http:\u002F\u002Flive-source-play.xhscdn.com\u002Flive\u002F569823731781202596.flv\",\"quality_type\":\"HD\",\"quality_type_name\":\"原画\"},{\"master_url\":\"http:\u002F\u002Flive-source-play-bak-tx.xhscdn.com\u002Flive\u002F569823731781202596.flv\",\"quality_type\":\"HD\",\"quality_type_name\":\"原画\"}],\"width\":1080,\"height\":1920}",
+                "deeplink": "xhsdiscover:\u002F\u002Flive_audience?room_id=569823731781202596&roomConfig=%7B%22ver%22%3A101%2C%22cdn%22%3A%5B2%5D%2C%22bitrate%22%3A%5B0%5D%7D&host_nickname=%E5%B0%8F%E4%B8%83%F0%9F%90%B0%F0%9F%90%B0&flvUrl=http%3A%2F%2Flive.xhscdn.com%2Flive%2F569823731781202596.flv&host_avatar=https%3A%2F%2Fsns-avatar-qc.xhscdn.com%2Favatar%2F1040g2jo31ifp168tga005o23a4i085ltn3irq38%3FimageView2%2F2%2Fw%2F80%2Fformat%2Fjpg&source=share_out_of_app",
+                "displayPraiseCount": "1千+",
+                "displayViewerCount": "1万+",
+                "displayMemberCount": "10+",
+                "roomId": "569823731781202596",
+                "roomTitle": "别翻了就这个直播间",
+                "roomCover": "http:\u002F\u002Fsns-na-i8.xhscdn.com\u002Falpha_image\u002F1040g05031jkr4f2f34005o23a4i085ltami31u8?imageView2\u002F2\u002Fw\u002F640\u002Fformat\u002Fwebp\u002Fq\u002F85%7CimageMogr2\u002Fstrip\u002Fsharpen\u002F1\u002Fauto-orient&redImage\u002Fframe\u002F0&ap=6&sc=LVE_PRV"
+            }
+        },
+        "comments": [],
+        "badgeData": {
+            "icon": "https:\u002F\u002Fpicasso-static.xiaohongshu.com\u002Ffe-platform\u002F5292060c87d9a5632337d27558b0577eaa076bbe.png",
+            "text": "人气榜"
+        },
+        "nextRoomInfo": {}
+    }
+}

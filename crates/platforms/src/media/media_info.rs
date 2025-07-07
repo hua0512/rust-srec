@@ -73,4 +73,17 @@ impl MediaInfo {
             extras,
         }
     }
+
+    pub fn empty() -> Self {
+        Self {
+            site_url: "".to_string(),
+            title: "".to_string(),
+            artist: "".to_string(),
+            cover_url: None,
+            artist_url: None,
+            is_live: false,
+            streams: vec![],
+            extras: None,
+        }
+    }
 }
