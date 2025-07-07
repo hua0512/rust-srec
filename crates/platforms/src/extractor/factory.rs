@@ -5,8 +5,11 @@ use reqwest::Client;
 use std::sync::Arc;
 
 // A type alias for a thread-safe constructor function.
-type ExtractorConstructor =
-    Arc<dyn Fn(String, Client, Option<String>) -> Box<dyn PlatformExtractor> + Send + Sync>;
+type ExtractorConstructor = Arc<
+    dyn Fn(String, Client, Option<String>, Option<serde_json::Value>) -> Box<dyn PlatformExtractor>
+        + Send
+        + Sync,
+>;
 
 /// A factory for creating platform-specific extractors.
 pub struct ExtractorFactory {
@@ -47,10 +50,16 @@ impl ExtractorFactory {
         &self,
         url: &str,
         cookies: Option<String>,
+        extras: Option<serde_json::Value>,
     ) -> Result<Box<dyn PlatformExtractor>, ExtractorError> {
         for (regex, constructor) in &self.registry {
             if regex.is_match(url) {
-                return Ok(constructor(url.to_string(), self.client.clone(), cookies));
+                return Ok(constructor(
+                    url.to_string(),
+                    self.client.clone(),
+                    cookies,
+                    extras,
+                ));
             }
         }
         Err(ExtractorError::UnsupportedExtractor)

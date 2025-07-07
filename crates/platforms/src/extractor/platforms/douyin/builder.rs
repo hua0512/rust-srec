@@ -44,6 +44,8 @@ pub struct DouyinExtractorConfig {
     pub ttwid_management_mode: TtwidManagementMode,
     /// A specific `ttwid` to use when in `PerExtractor` mode.
     pub ttwid: Option<String>,
+    /// Extra parameters to pass to the extractor.
+    pub extras: Option<serde_json::Value>,
 }
 
 /// Builder for `DouyinExtractorConfig`.
@@ -54,10 +56,16 @@ pub struct DouyinExtractorBuilder {
     ttwid_management_mode: TtwidManagementMode,
     ttwid: Option<String>,
     cookies: Option<String>,
+    extras: Option<serde_json::Value>,
 }
 
 impl DouyinExtractorBuilder {
-    pub fn new(url: String, client: Client, cookies: Option<String>) -> Self {
+    pub fn new(
+        url: String,
+        client: Client,
+        cookies: Option<String>,
+        extras: Option<serde_json::Value>,
+    ) -> Self {
         Self {
             url,
             client,
@@ -65,6 +73,7 @@ impl DouyinExtractorBuilder {
             ttwid_management_mode: TtwidManagementMode::Global,
             ttwid: None,
             cookies,
+            extras,
         }
     }
 
@@ -113,6 +122,7 @@ impl DouyinExtractorBuilder {
             force_origin_quality: self.force_origin_quality,
             ttwid_management_mode: self.ttwid_management_mode,
             ttwid: self.ttwid,
+            extras: self.extras,
         }
     }
 }
@@ -716,7 +726,7 @@ mod tests {
             .init();
 
         let config =
-            DouyinExtractorBuilder::new(TEST_URL.to_string(), default_client(), None).build();
+            DouyinExtractorBuilder::new(TEST_URL.to_string(), default_client(), None, None).build();
         let media_info = config.extract().await;
 
         println!("media_info: {:?}", media_info);
@@ -725,7 +735,7 @@ mod tests {
     #[test]
     fn test_builder_defaults() {
         let config =
-            DouyinExtractorBuilder::new(TEST_URL.to_string(), default_client(), None).build();
+            DouyinExtractorBuilder::new(TEST_URL.to_string(), default_client(), None, None).build();
 
         assert_eq!(config.extractor.url, TEST_URL);
         assert!(config.force_origin_quality);
@@ -735,10 +745,11 @@ mod tests {
 
     #[test]
     fn test_builder_custom_options() {
-        let config = DouyinExtractorBuilder::new(TEST_URL.to_string(), default_client(), None)
-            .force_origin_quality(false)
-            .ttwid_mode(TtwidManagementMode::PerExtractor)
-            .build();
+        let config =
+            DouyinExtractorBuilder::new(TEST_URL.to_string(), default_client(), None, None)
+                .force_origin_quality(false)
+                .ttwid_mode(TtwidManagementMode::PerExtractor)
+                .build();
 
         assert!(!config.force_origin_quality);
         assert_eq!(
@@ -750,9 +761,10 @@ mod tests {
     #[test]
     fn test_builder_with_ttwid() {
         let ttwid = "test_ttwid_123".to_string();
-        let config = DouyinExtractorBuilder::new(TEST_URL.to_string(), default_client(), None)
-            .ttwid(ttwid.clone())
-            .build();
+        let config =
+            DouyinExtractorBuilder::new(TEST_URL.to_string(), default_client(), None, None)
+                .ttwid(ttwid.clone())
+                .build();
 
         assert_eq!(config.ttwid, Some(ttwid));
         assert_eq!(
@@ -767,7 +779,7 @@ mod tests {
         // 1. Test Global Mode
         GlobalTtwidManager::set_global_ttwid("global_ttwid_for_test");
         let config_global =
-            DouyinExtractorBuilder::new(TEST_URL.to_string(), default_client(), None)
+            DouyinExtractorBuilder::new(TEST_URL.to_string(), default_client(), None, None)
                 .ttwid_mode(TtwidManagementMode::Global)
                 .build();
 
@@ -780,7 +792,7 @@ mod tests {
 
         // 2. Test PerExtractor Mode with pre-set ttwid
         let config_per_extractor_set =
-            DouyinExtractorBuilder::new(TEST_URL.to_string(), default_client(), None)
+            DouyinExtractorBuilder::new(TEST_URL.to_string(), default_client(), None, None)
                 .ttwid("preset_ttwid".to_string())
                 .build();
 
@@ -800,7 +812,7 @@ mod tests {
     #[test]
     fn test_is_account_banned() {
         let config =
-            DouyinExtractorBuilder::new(TEST_URL.to_string(), default_client(), None).build();
+            DouyinExtractorBuilder::new(TEST_URL.to_string(), default_client(), None, None).build();
         let request = DouyinRequest::new(&config, "123".to_string());
 
         let banned_user = DouyinUserInfo {

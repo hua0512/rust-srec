@@ -379,16 +379,23 @@ pub struct DouyuExtractorBuilder {
     url: String,
     client: Client,
     cookies: Option<String>,
+    _extras: Option<serde_json::Value>,
 }
 
 impl DouyuExtractorBuilder {
     const BASE_URL: &str = "https://www.douyu.com/";
 
-    pub fn new(url: String, client: Client, cookies: Option<String>) -> Self {
+    pub fn new(
+        url: String,
+        client: Client,
+        cookies: Option<String>,
+        extras: Option<serde_json::Value>,
+    ) -> Self {
         Self {
             url,
             client,
             cookies,
+            _extras: extras,
         }
     }
 
@@ -491,7 +498,8 @@ mod tests {
 
         let url = "https://www.douyu.com/8440385";
 
-        let extractor = DouyuExtractorBuilder::new(url.to_string(), default_client(), None).build(None);
+        let extractor =
+            DouyuExtractorBuilder::new(url.to_string(), default_client(), None, None).build(None);
         let media_info = extractor.extract().await.unwrap();
         println!("{:?}", media_info);
     }

@@ -29,6 +29,7 @@ pub struct HuyaExtractor {
     pub use_wup: bool,
     // whether to force the origin quality stream
     pub force_origin_quality: bool,
+    pub extras: Option<serde_json::Value>,
 }
 
 impl HuyaExtractor {
@@ -39,7 +40,12 @@ impl HuyaExtractor {
     const WUP_UA: &'static str =
         "HYSDK(Windows, 30000002)_APP(pc_exe&6090003&official)_SDK(trans&2.24.0.5030)";
 
-    pub fn new(platform_url: String, client: Client, cookies: Option<String>) -> Self {
+    pub fn new(
+        platform_url: String,
+        client: Client,
+        cookies: Option<String>,
+        extras: Option<serde_json::Value>,
+    ) -> Self {
         let mut extractor = Extractor::new("Huya".to_string(), platform_url, client);
         let huya_url = Self::HUYA_URL.to_string();
         extractor.add_header(reqwest::header::ORIGIN.to_string(), huya_url.clone());
@@ -55,6 +61,7 @@ impl HuyaExtractor {
             extractor,
             use_wup: true,
             force_origin_quality: true,
+            extras,
         }
     }
 
@@ -612,7 +619,12 @@ mod tests {
 
     #[test]
     fn test_parse_mp_live_status() {
-        let extractor = HuyaExtractor::new("https://www.huya.com/".to_string(), default_client(), None);
+        let extractor = HuyaExtractor::new(
+            "https://www.huya.com/".to_string(),
+            default_client(),
+            None,
+            None,
+        );
 
         let response_str = read_test_file("mp_api_response.json");
         let mut response: MpApiResponse = serde_json::from_str(&response_str).unwrap();
@@ -648,8 +660,12 @@ mod tests {
 
     #[test]
     fn test_parse_mp_media_info() {
-        let extractor =
-            HuyaExtractor::new("https://www.huya.com/660000".to_string(), default_client(), None);
+        let extractor = HuyaExtractor::new(
+            "https://www.huya.com/660000".to_string(),
+            default_client(),
+            None,
+            None,
+        );
         let response_str = read_test_file("mp_api_response.json");
         let media_info = extractor.parse_mp_media_info(&response_str).unwrap();
 
@@ -663,8 +679,12 @@ mod tests {
     #[tokio::test]
     #[ignore]
     async fn test_is_live_integration() {
-        let extractor =
-            HuyaExtractor::new("https://www.huya.com/660000".to_string(), default_client(), None);
+        let extractor = HuyaExtractor::new(
+            "https://www.huya.com/660000".to_string(),
+            default_client(),
+            None,
+            None,
+        );
         let media_info = extractor.extract().await.unwrap();
         assert!(media_info.is_live);
         let stream_info = media_info.streams.first().unwrap();
@@ -678,8 +698,12 @@ mod tests {
     #[tokio::test]
     #[ignore]
     async fn test_mp_api() {
-        let mut extractor =
-            HuyaExtractor::new("https://www.huya.com/660000".to_string(), default_client(), None);
+        let mut extractor = HuyaExtractor::new(
+            "https://www.huya.com/660000".to_string(),
+            default_client(),
+            None,
+            None,
+        );
         extractor.use_wup = false;
         let media_info = extractor.extract().await.unwrap();
         assert!(media_info.is_live);

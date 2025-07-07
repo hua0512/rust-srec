@@ -23,6 +23,7 @@ static PLATFORM_REGEX: LazyLock<Regex> =
 
 pub struct PandaTV {
     extractor: Extractor,
+    _extras: Option<serde_json::Value>,
 }
 
 impl PandaTV {
@@ -32,7 +33,12 @@ impl PandaTV {
 
     const LIVE_API_URL: &str = "https://api.pandalive.co.kr/v1/live/play";
 
-    pub fn new(url: String, client: Client, cookies: Option<String>) -> Self {
+    pub fn new(
+        url: String,
+        client: Client,
+        cookies: Option<String>,
+        extras: Option<serde_json::Value>,
+    ) -> Self {
         let mut extractor = Extractor::new("pandatv".to_string(), url, client);
         extractor.add_header(
             reqwest::header::ORIGIN.to_string(),
@@ -45,7 +51,10 @@ impl PandaTV {
         if let Some(cookies) = cookies {
             extractor.set_cookies_from_string(&cookies);
         }
-        Self { extractor }
+        Self {
+            extractor,
+            _extras: extras,
+        }
     }
 
     fn extract_room_id(&self) -> Result<String, ExtractorError> {
@@ -250,7 +259,7 @@ mod tests {
             .with_max_level(Level::DEBUG)
             .init();
 
-        let extractor = PandaTV::new(TEST_URL.to_string(), default_client(), None);
+        let extractor = PandaTV::new(TEST_URL.to_string(), default_client(), None, None);
         let media_info = extractor.extract().await.unwrap();
         debug!("Media info: {:?}", media_info);
     }
