@@ -17,6 +17,11 @@ struct Args {
     #[clap(long)]
     cookies: Option<String>,
 
+    /// The extras to use for the request
+    /// This is a JSON string that will be passed to the extractor
+    #[clap(long)]
+    extras: Option<String>,
+
     /// Output the result in JSON format
     #[clap(long)]
     json: bool,
@@ -45,9 +50,15 @@ async fn main() -> anyhow::Result<()> {
     pb.set_message("Extracting media information...");
 
     let cookies = args.cookies;
+    let extras = args
+        .extras
+        .map(|s| {
+            serde_json::from_str(&s).with_context(|| format!("Failed to parse extras JSON: {}", s))
+        })
+        .transpose()?;
     let factory = default_factory();
     let extractor = factory
-        .create_extractor(&url, cookies)
+        .create_extractor(&url, cookies, extras)
         .with_context(|| format!("Failed to create extractor for URL: {}", &url))?;
     let media_info = extractor
         .extract()
