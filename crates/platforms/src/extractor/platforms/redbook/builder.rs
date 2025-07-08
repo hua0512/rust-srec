@@ -92,51 +92,51 @@ impl RedBook {
         pull_config: &PullConfig,
         priority_offset: usize,
     ) -> Vec<StreamInfo> {
-        stream_objects
-            .iter()
-            .enumerate()
-            .filter_map(|(index, stream_obj)| {
-                stream_obj
-                    .get("master_url")
+        let mut streams = Vec::new();
+
+        for (index, stream_obj) in stream_objects.iter().enumerate() {
+            if let Some(url) = stream_obj.get("master_url").and_then(|v| v.as_str()) {
+                debug!("stream_obj: {:?}", stream_obj);
+
+                let quality = stream_obj
+                    .get("quality_type_name")
                     .and_then(|v| v.as_str())
-                    .map(|url| {
-                        debug!("stream_obj: {:?}", stream_obj);
-                        let quality = stream_obj
-                            .get("quality_type_name")
-                            .and_then(|v| v.as_str())
-                            .unwrap_or(DEFAULT_QUALITY);
+                    .unwrap_or(DEFAULT_QUALITY);
 
-                        let format = Self::get_format_from_url(url);
+                let format = Self::get_format_from_url(url);
+                let is_bak = url.contains("bak");
 
-                        let display_quality = if codec == DEFAULT_CODEC_H265 {
-                            format!("{} (H265)", quality)
-                        } else {
-                            quality.to_string()
-                        };
+                let display_quality = match (codec == DEFAULT_CODEC_H265, is_bak) {
+                    (true, true) => format!("{} (H265) (backup)", quality),
+                    (true, false) => format!("{} (H265)", quality),
+                    (false, true) => format!("{} (backup)", quality),
+                    (false, false) => quality.to_string(),
+                };
 
-                        let extras = serde_json::json!({
-                            "quality_type": stream_obj
-                                .get("quality_type")
-                                .and_then(|v| v.as_str())
-                                .unwrap_or(DEFAULT_QUALITY_TYPE),
-                            "width": pull_config.width,
-                            "height": pull_config.height
-                        });
+                let extras = serde_json::json!({
+                    "quality_type": stream_obj
+                        .get("quality_type")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or(DEFAULT_QUALITY_TYPE),
+                    "width": pull_config.width,
+                    "height": pull_config.height
+                });
 
-                        StreamInfo {
-                            url: url.to_string(),
-                            format,
-                            quality: display_quality,
-                            bitrate: 0,
-                            priority: (priority_offset + index) as u32,
-                            codec: codec.to_string(),
-                            fps: 0.0,
-                            is_headers_needed: true,
-                            extras: Some(extras),
-                        }
-                    })
-            })
-            .collect()
+                streams.push(StreamInfo {
+                    url: url.to_string(),
+                    format,
+                    quality: display_quality,
+                    bitrate: 0,
+                    priority: (priority_offset + index) as u32,
+                    codec: codec.to_string(),
+                    fps: 0.0,
+                    is_headers_needed: true,
+                    extras: Some(extras),
+                });
+            }
+        }
+
+        streams
     }
 
     /// Extract host_id from redirected URL parameters
@@ -278,7 +278,7 @@ mod tests {
             .init();
 
         let redbook = RedBook::new(
-            "http://xhslink.com/jC4lzgb".to_string(),
+            "http://xhslink.com/DEnpCgb".to_string(),
             default_client(),
             None,
             None,
