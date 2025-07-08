@@ -1,5 +1,5 @@
 use crate::extractor::platforms::{
-    douyin, douyu, huya, pandatv::builder::PandaTV, redbook::builder::RedBook,
+    bilibili::Bilibili, douyin, douyu, huya, pandatv::builder::PandaTV, redbook::builder::RedBook,
     twitch::builder::Twitch, weibo::builder::Weibo,
 };
 
@@ -92,6 +92,15 @@ pub fn default_factory() -> ExtractorFactory {
             r"^(?:https?://)?(?:(?:www\.)?xiaohongshu\.com/user/profile/([a-zA-Z0-9_-]+)|xhslink\.com/[a-zA-Z0-9_-]+)",
             Arc::new(|url, client, cookies, extras| {
                 Box::new(RedBook::new(url, client, cookies, extras))
+            }),
+        )
+        .unwrap();
+
+    factory
+        .register(
+            r"^(?:https?://)?(?:www\.)?live\.bilibili\.com/([a-zA-Z0-9_-]+)",
+            Arc::new(|url, client, cookies, extras| {
+                Box::new(Bilibili::new(url, client, cookies, extras))
             }),
         )
         .unwrap();

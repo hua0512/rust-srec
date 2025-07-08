@@ -495,6 +495,7 @@ impl HuyaExtractor {
         let anti_code = match stream_info.format {
             MediaFormat::Flv => token_info.flv_anti_code,
             MediaFormat::Hls => token_info.hls_anti_code,
+            MediaFormat::Mp4 => "".to_string(),
         };
 
         let s_stream_name = stream_name;
@@ -508,6 +509,7 @@ impl HuyaExtractor {
         let suffix = match stream_info.format {
             MediaFormat::Flv => "flv",
             MediaFormat::Hls => "m3u8",
+            MediaFormat::Mp4 => "mp4",
         };
 
         let bitrate = stream_info.bitrate;

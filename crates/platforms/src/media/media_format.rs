@@ -7,6 +7,7 @@ use serde::{Deserialize, Serialize};
 pub enum MediaFormat {
     Flv,
     Hls,
+    Mp4,
 }
 
 impl MediaFormat {
@@ -14,6 +15,16 @@ impl MediaFormat {
         match self {
             MediaFormat::Flv => "flv",
             MediaFormat::Hls => "hls",
+            MediaFormat::Mp4 => "mp4",
+        }
+    }
+
+    pub fn from_extension(s: &str) -> Self {
+        match s.to_lowercase().as_str() {
+            "flv" => MediaFormat::Flv,
+            "ts" | "m3u8" | "fmp4" => MediaFormat::Hls,
+            "mp4" => MediaFormat::Mp4,
+            _ => MediaFormat::Flv,
         }
     }
 }
@@ -31,6 +42,7 @@ impl FromStr for MediaFormat {
         match s.to_lowercase().as_str() {
             "flv" => Ok(MediaFormat::Flv),
             "hls" => Ok(MediaFormat::Hls),
+            "mp4" => Ok(MediaFormat::Mp4),
             _ => Err(()),
         }
     }

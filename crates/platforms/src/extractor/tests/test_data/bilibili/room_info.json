@@ -1,0 +1,1324 @@
+{
+    "code": 0,
+    "message": "0",
+    "ttl": 1,
+    "data": {
+        "room_info": {
+            "uid": 2071691173,
+            "room_id": 22908869,
+            "short_id": 0,
+            "title": "【直播】2025EWC无畏契约 GEN VS EDG",
+            "cover": "https://i0.hdslb.com/bfs/live/6598c6b40fd41b9a6a59a5e08f6e05a852cde838.jpg",
+            "tags": "无畏契约赛事,瓦罗兰特赛事,东京大师赛,VCT,VCTCN,CQ,全球冠军赛",
+            "background": "https://i0.hdslb.com/bfs/live/f3c1e1e22dfb1942bd88c33f1aa174efe7a38dfd.jpg",
+            "description": "\u003cp\u003e\u003cbr\u003e\u003c/p\u003e",
+            "live_status": 1,
+            "live_start_time": 1731912337,
+            "live_screen_type": 0,
+            "lock_status": 0,
+            "lock_time": 0,
+            "hidden_status": 0,
+            "hidden_time": 0,
+            "area_id": 561,
+            "area_name": "游戏赛事",
+            "parent_area_id": 13,
+            "parent_area_name": "赛事",
+            "keyframe": "https://i0.hdslb.com/bfs/live-key-frame/keyframe07082117000022908869fvuse2.jpg",
+            "special_type": 0,
+            "up_session": "552028895287545797",
+            "pk_status": 0,
+            "is_studio": false,
+            "pendants": {
+                "frame": {
+                    "name": "",
+                    "value": "",
+                    "desc": ""
+                }
+            },
+            "on_voice_join": 0,
+            "online": 3505647,
+            "room_type": {
+                "3-19": 0,
+                "3-21": 0,
+                "3-31": 0,
+                "3-41": 0
+            },
+            "sub_session_key": "552028895287545797sub_time:1731912337",
+            "live_id": 552028895287545797,
+            "live_id_str": "552028895287545797",
+            "official_room_id": 0,
+            "official_room_info": null,
+            "voice_background": "http://i0.hdslb.com/bfs/live/879a0215c98625d38a9afae873a8c9fa36aae8b1.jpg",
+            "live_model": 0,
+            "live_platform": "live_mng",
+            "radio_background_type": 0
+        },
+        "anchor_info": {
+            "base_info": {
+                "uname": "无畏契约赛事",
+                "face": "https://i1.hdslb.com/bfs/face/44ca2be4d17a8c7cd545fdc933808811151e20eb.jpg",
+                "gender": "保密",
+                "official_info": {
+                    "role": 1,
+                    "title": "无畏契约赛事直播官方账号",
+                    "desc": "",
+                    "is_nft": 0,
+                    "nft_dmark": "https://i0.hdslb.com/bfs/live/9f176ff49d28c50e9c53ec1c3297bd1ee539b3d6.gif"
+                }
+            },
+            "live_info": {
+                "level": 23,
+                "level_color": 10512625,
+                "score": 2154919,
+                "upgrade_score": 59891,
+                "current": [
+                    456000,
+                    1594810
+                ],
+                "next": [
+                    620000,
+                    2214810
+                ],
+                "rank": "\u003e10000"
+            },
+            "relation_info": {
+                "attention": 1833611
+            },
+            "medal_info": {
+                "medal_name": "冥驹",
+                "medal_id": 489999,
+                "fansclub": 3695
+            },
+            "gift_info": {
+                "price": 0,
+                "price_update_time": 0
+            }
+        },
+        "news_info": {
+            "uid": 2071691173,
+            "ctime": "",
+            "content": ""
+        },
+        "rankdb_info": {
+            "roomid": 22908869,
+            "rank_desc": "",
+            "color": "",
+            "h5_url": "",
+            "web_url": "",
+            "timestamp": 1751980847
+        },
+        "area_rank_info": {
+            "areaRank": {
+                "index": 0,
+                "rank": "\u003e1000"
+            },
+            "liveRank": {
+                "rank": "\u003e10000"
+            }
+        },
+        "battle_rank_entry_info": null,
+        "tab_info": {
+            "list": [
+                {
+                    "type": "seven-rank",
+                    "desc": "应援日榜",
+                    "isFirst": 1,
+                    "isEvent": 0,
+                    "eventType": "",
+                    "listType": "",
+                    "apiPrefix": "",
+                    "rank_name": "room_7day"
+                },
+                {
+                    "type": "guard",
+                    "desc": "大航海",
+                    "isFirst": 0,
+                    "isEvent": 0,
+                    "eventType": "",
+                    "listType": "top-list",
+                    "apiPrefix": "",
+                    "rank_name": ""
+                }
+            ]
+        },
+        "voice_join_info": {
+            "status": {
+                "open": 0,
+                "anchor_open": 0,
+                "status": 0,
+                "uid": 0,
+                "user_name": "",
+                "head_pic": "",
+                "guard": 0,
+                "start_at": 0,
+                "current_time": 1751980847
+            },
+            "icons": {
+                "icon_close": "https://i0.hdslb.com/bfs/live/a176d879dffe8de1586a5eb54c2a08a0c7d31392.png",
+                "icon_open": "https://i0.hdslb.com/bfs/live/70f0844c9a12d29db1e586485954290144534be9.png",
+                "icon_wait": "https://i0.hdslb.com/bfs/live/1049bb88f1e7afd839cc1de80e13228ccd5807e8.png",
+                "icon_starting": "https://i0.hdslb.com/bfs/live/948433d1647a0704f8216f017c406224f9fff518.gif"
+            },
+            "web_share_link": "https://live.bilibili.com/h5/22908869"
+        },
+        "ad_banner_info": {
+            "data": []
+        },
+        "skin_info": {
+            "id": 0,
+            "skin_name": "",
+            "skin_config": "",
+            "show_text": "",
+            "skin_url": "",
+            "start_time": 0,
+            "end_time": 0,
+            "current_time": 1751980847
+        },
+        "lol_info": null,
+        "pk_info": null,
+        "battle_info": null,
+        "silent_room_info": {
+            "type": "",
+            "level": 0,
+            "second": 0,
+            "expire_time": 0
+        },
+        "switch_info": {
+            "close_guard": false,
+            "close_gift": false,
+            "close_online": false,
+            "close_danmaku": false
+        },
+        "record_switch_info": null,
+        "room_config_info": {
+            "dm_text": "发个弹幕呗~"
+        },
+        "gift_memory_info": {
+            "list": null
+        },
+        "new_switch_info": {
+            "room-socket": 1,
+            "room-prop-send": 1,
+            "room-sailing": 1,
+            "room-info-popularity": 1,
+            "room-danmaku-editor": 1,
+            "room-effect": 1,
+            "room-fans_medal": 1,
+            "room-report": 1,
+            "room-feedback": 1,
+            "room-player-watermark": 1,
+            "room-recommend-live_off": 1,
+            "room-activity": 1,
+            "room-web_banner": 1,
+            "room-silver_seeds-box": 1,
+            "room-wishing_bottle": 1,
+            "room-board": 1,
+            "room-supplication": 1,
+            "room-hour_rank": 1,
+            "room-week_rank": 1,
+            "room-anchor_rank": 1,
+            "room-info-integral": 1,
+            "room-super-chat": 0,
+            "room-tab": 1,
+            "room-hot-rank": 1,
+            "fans-medal-progress": 1,
+            "gift-bay-screen": 1,
+            "room-enter": 1,
+            "room-my-idol": 1,
+            "room-topic": 1,
+            "fans-club": 1,
+            "room-popular-rank": 1,
+            "mic_user_gift": 1,
+            "new-room-area-rank": 1,
+            "wealth_medal": 1,
+            "bubble": 1,
+            "title": 1,
+            "room_rank_rearrange": 1,
+            "web-gift-batter-bar": 1,
+            "popular_rank_anchor_ab": 1,
+            "h5_pop_up": 1,
+            "brand-user-card-web-switch": 0,
+            "brand-follow-switch": 0,
+            "danmu_click_switch": 1,
+            "danmu_setting_show_switch": 1,
+            "room_hot_rank_v3": 1
+        },
+        "super_chat_info": {
+            "status": 0,
+            "jump_url": "https://live.bilibili.com/p/html/live-app-superchat2/index.html?is_live_half_webview=1\u0026hybrid_half_ui=1,3,100p,70p,ffffff,0,30,100,12,0;2,2,375,100p,ffffff,0,30,100,0,0;3,3,100p,70p,ffffff,0,30,100,12,0;4,2,375,100p,ffffff,0,30,100,0,0;5,3,100p,60p,ffffff,0,30,100,12,0;6,3,100p,60p,ffffff,0,30,100,12,0;7,3,100p,60p,ffffff,0,30,100,12,0",
+            "icon": "https://i0.hdslb.com/bfs/live/0a9ebd72c76e9cbede9547386dd453475d4af6fe.png",
+            "ranked_mark": 0,
+            "message_list": [],
+            "sc_manager": false
+        },
+        "online_gold_rank_info_v2": null,
+        "dm_brush_info": {
+            "min_time": 700,
+            "brush_count": 100,
+            "slice_count": 2,
+            "storage_time": 3000
+        },
+        "dm_emoticon_info": {
+            "is_open_emoticon": 1,
+            "is_shield_emoticon": 0
+        },
+        "dm_tag_info": {
+            "dm_tag": 0,
+            "platform": null,
+            "extra": "",
+            "dm_chronos_extra": "",
+            "dm_mode": null,
+            "dm_setting_switch": 0,
+            "material_conf": null
+        },
+        "topic_info": {
+            "topic_id": 0,
+            "topic_name": ""
+        },
+        "game_info": {
+            "game_status": 0
+        },
+        "watched_show": {
+            "switch": false,
+            "num": 3505647,
+            "text_small": "350.5万",
+            "text_large": "350.5万人气",
+            "icon": "",
+            "icon_location": 0,
+            "icon_web": ""
+        },
+        "topic_room_info": {
+            "interactive_h5_url": "",
+            "watermark": 1
+        },
+        "show_reserve_status": false,
+        "second_create_info": null,
+        "play_together_info": null,
+        "cloud_game_info": {
+            "is_gaming": 0
+        },
+        "like_info_v3": {
+            "total_likes": 70512,
+            "click_block": false,
+            "count_block": false,
+            "guild_emo_text": "试试双击点赞 让主播被更多人看到吧～",
+            "guild_dm_text": "点赞30次可以帮主播冲刺热门榜哦～",
+            "like_dm_text": "谢谢你的赞，每点赞30次有概率为主播增加曝光哦～",
+            "hand_icons": [
+                "https://i0.hdslb.com/bfs/live/1aac78a01b4cba5aa3f7c935c49b0a0bd8992ce1.webp",
+                "https://i0.hdslb.com/bfs/live/81c69596db4a94c53bebed567c1e457c8240e91c.webp",
+                "https://i0.hdslb.com/bfs/live/f281abe0bb186253acfe7b82d54d62fd25f5fee3.webp",
+                "https://i0.hdslb.com/bfs/live/e99441bacfb0a516a08455c5eb9266e7d6174a5c.webp",
+                "https://i0.hdslb.com/bfs/live/2e9145b42b5acbd4a13de1540b42e709832f9bae.webp",
+                "https://i0.hdslb.com/bfs/live/09f36c21175ca217268896305f1d248f3f64add0.webp",
+                "https://i0.hdslb.com/bfs/live/8e90f8aedd66237922958654efb36d97ac4a5701.webp",
+                "https://i0.hdslb.com/bfs/live/29b65444d287680263b1024a6a0d479f7ad41ad7.webp",
+                "https://i0.hdslb.com/bfs/live/b0faa7d645c035cd1d61de5011cdc3880ef232d6.webp",
+                "https://i0.hdslb.com/bfs/live/10fe45806cb0c3e13ef5c9a3ca03a0707667934b.webp"
+            ],
+            "dm_icons": [
+                "https://i0.hdslb.com/bfs/live/ecc2c5a2efc1c40a1125bb0d648d891e0e8cbd3b.png",
+                "https://i0.hdslb.com/bfs/live/391b45ed00617391b863f6441d5d040165c4d1b4.png",
+                "https://i0.hdslb.com/bfs/live/ad7c7adc9ee0c778cea161dea6c5a96c4ff7f845.png",
+                "https://i0.hdslb.com/bfs/live/c6a4781558d84838cc4963fcf94792e54beabe15.png",
+                "https://i0.hdslb.com/bfs/live/6920410aca21e3397f23ee7ae5ddbf8f1c625943.png",
+                "https://i0.hdslb.com/bfs/live/7e671e053c365f91a0a0f4837ec92ac9581977ec.png"
+            ],
+            "eggshells_icon": "https://i0.hdslb.com/bfs/live/ea6454847e9b9d1b6be03f04f829620b4f0a5d46.svga",
+            "count_show_time": 15,
+            "process_icon": "https://i0.hdslb.com/bfs/live/6d96e9de0cc5c80acf3537fe9a23d94da0ab5ff5.png",
+            "process_color": "#4DFF6699",
+            "report_click_limit": 15,
+            "report_time_min": 5,
+            "report_time_max": 10,
+            "icon": "https://i0.hdslb.com/bfs/live/fe8e848118e8f18eccbd11cad62b29105c51a797.png",
+            "cooldown": 0.35,
+            "hand_use_face": true,
+            "guide_icon_urls": [
+                "https://i0.hdslb.com/bfs/live/2e9145b42b5acbd4a13de1540b42e709832f9bae.webp",
+                "https://i0.hdslb.com/bfs/live/b0faa7d645c035cd1d61de5011cdc3880ef232d6.webp"
+            ],
+            "guide_icon_ratio": 1.3
+        },
+        "live_play_info": {
+            "show_widget_banner": true,
+            "show_left_entry": true,
+            "widget_version": 1
+        },
+        "multi_voice": {
+            "switch_status": 2,
+            "members": null,
+            "mv_role": 0,
+            "seat_type": 0,
+            "invoking_time": 0,
+            "version": 0,
+            "pk": null,
+            "biz_session_id": "",
+            "mode_details": null,
+            "hat_list": null,
+            "battle_info": null
+        },
+        "popular_rank_info": {
+            "rank": -2,
+            "countdown": 0,
+            "timestamp": 0,
+            "url": "",
+            "on_rank_name": "",
+            "rank_name": "",
+            "rank_by_type": -2,
+            "rank_name_by_type": "",
+            "on_rank_name_by_type": "",
+            "url_by_type": "",
+            "default_url": ""
+        },
+        "new_area_rank_info": {
+            "items": null,
+            "rotation_cycle_time_web": 10000
+        },
+        "gift_star": {
+            "show": true,
+            "display_widget_ab_group": 0
+        },
+        "progress_for_widget": {
+            "gift_star_process": null,
+            "wish_process": null,
+            "star_knight": null,
+            "collection_praise_process": {
+                "id": 0,
+                "uid": 0,
+                "target_praise": 0,
+                "current_praise": 0,
+                "start_time": 0,
+                "end_time": 0,
+                "benefit": "",
+                "isSuccess": false,
+                "exist": false,
+                "audit_status": 0,
+                "jump_url": "",
+                "current_praise_text": "",
+                "icon_url": "https://i0.hdslb.com/bfs/live/fb44b6cc32793f15eb588ca93d2d3fc522c31dfd.png",
+                "live_id": ""
+            },
+            "wish_process_v2": null
+        },
+        "revenue_demotion": {
+            "global_gift_config_demotion": false
+        },
+        "revenue_material_md5": null,
+        "block_info": {
+            "block": false,
+            "desc": "",
+            "business": 0
+        },
+        "danmu_extra": {
+            "screen_switch_off": false,
+            "chronos_kv": "{}",
+            "danmu_player_config": null
+        },
+        "video_connection_info": null,
+        "player_throttle_info": {
+            "status": 0,
+            "normal_sleep_time": 0,
+            "fullscreen_sleep_time": 0,
+            "tab_sleep_time": 0,
+            "prompt_time": 0
+        },
+        "guard_info": {
+            "count": 1,
+            "anchor_guard_achieve_level": 0
+        },
+        "hot_rank_info": null,
+        "room_rank_info": {
+            "anchor_rank_entry": null,
+            "user_rank_entry": {
+                "user_contribution_rank_entry": {
+                    "item": [
+                        {
+                            "uid": 2632900,
+                            "name": "Jieee08",
+                            "face": "https://i1.hdslb.com/bfs/face/33b81c8b5b7db39137dcabb8c3e4ab30c8c2b33c.jpg",
+                            "rank": 1,
+                            "score": 261,
+                            "medal_info": {
+                                "guard_level": 0,
+                                "medal_color_start": 9272486,
+                                "medal_color_end": 9272486,
+                                "medal_color_border": 9272486,
+                                "medal_name": "冥驹",
+                                "level": 11,
+                                "target_id": 2071691173,
+                                "is_light": 1
+                            },
+                            "guard_level": 0,
+                            "wealth_level": 6,
+                            "is_mystery": false,
+                            "uinfo": {
+                                "uid": 2632900,
+                                "base": {
+                                    "name": "Jieee08",
+                                    "face": "https://i1.hdslb.com/bfs/face/33b81c8b5b7db39137dcabb8c3e4ab30c8c2b33c.jpg",
+                                    "name_color": 0,
+                                    "is_mystery": false,
+                                    "risk_ctrl_info": {
+                                        "name": "Jieee08",
+                                        "face": "https://i1.hdslb.com/bfs/face/33b81c8b5b7db39137dcabb8c3e4ab30c8c2b33c.jpg"
+                                    },
+                                    "origin_info": {
+                                        "name": "Jieee08",
+                                        "face": "https://i1.hdslb.com/bfs/face/33b81c8b5b7db39137dcabb8c3e4ab30c8c2b33c.jpg"
+                                    },
+                                    "official_info": {
+                                        "role": 0,
+                                        "title": "",
+                                        "desc": "",
+                                        "type": -1
+                                    },
+                                    "name_color_str": ""
+                                },
+                                "medal": {
+                                    "name": "冥驹",
+                                    "level": 11,
+                                    "color_start": 9272486,
+                                    "color_end": 9272486,
+                                    "color_border": 9272486,
+                                    "color": 9272486,
+                                    "id": 0,
+                                    "typ": 0,
+                                    "is_light": 1,
+                                    "ruid": 2071691173,
+                                    "guard_level": 0,
+                                    "score": 23300,
+                                    "guard_icon": "",
+                                    "honor_icon": "",
+                                    "v2_medal_color_start": "#596FE099",
+                                    "v2_medal_color_end": "#596FE099",
+                                    "v2_medal_color_border": "#596FE099",
+                                    "v2_medal_color_text": "#FFFFFFFF",
+                                    "v2_medal_color_level": "#000B7099",
+                                    "user_receive_count": 0
+                                },
+                                "wealth": {
+                                    "level": 6,
+                                    "dm_icon_key": ""
+                                },
+                                "title": {
+                                    "old_title_css_id": "",
+                                    "title_css_id": ""
+                                },
+                                "guard": null,
+                                "uhead_frame": null,
+                                "guard_leader": null
+                            },
+                            "icon_show": false
+                        },
+                        {
+                            "uid": 693443988,
+                            "name": "日记里的我和你",
+                            "face": "https://i0.hdslb.com/bfs/face/6503a289f8db7ec81167720df4ece21edfdd9481.webp",
+                            "rank": 2,
+                            "score": 224,
+                            "medal_info": {
+                                "guard_level": 0,
+                                "medal_color_start": 9272486,
+                                "medal_color_end": 9272486,
+                                "medal_color_border": 9272486,
+                                "medal_name": "冥驹",
+                                "level": 12,
+                                "target_id": 2071691173,
+                                "is_light": 1
+                            },
+                            "guard_level": 0,
+                            "wealth_level": 6,
+                            "is_mystery": false,
+                            "uinfo": {
+                                "uid": 693443988,
+                                "base": {
+                                    "name": "日记里的我和你",
+                                    "face": "https://i0.hdslb.com/bfs/face/6503a289f8db7ec81167720df4ece21edfdd9481.webp",
+                                    "name_color": 0,
+                                    "is_mystery": false,
+                                    "risk_ctrl_info": {
+                                        "name": "日记里的我和你",
+                                        "face": "https://i0.hdslb.com/bfs/face/6503a289f8db7ec81167720df4ece21edfdd9481.webp"
+                                    },
+                                    "origin_info": {
+                                        "name": "日记里的我和你",
+                                        "face": "https://i0.hdslb.com/bfs/face/6503a289f8db7ec81167720df4ece21edfdd9481.webp"
+                                    },
+                                    "official_info": {
+                                        "role": 0,
+                                        "title": "",
+                                        "desc": "",
+                                        "type": -1
+                                    },
+                                    "name_color_str": ""
+                                },
+                                "medal": {
+                                    "name": "冥驹",
+                                    "level": 12,
+                                    "color_start": 9272486,
+                                    "color_end": 9272486,
+                                    "color_border": 9272486,
+                                    "color": 9272486,
+                                    "id": 0,
+                                    "typ": 0,
+                                    "is_light": 1,
+                                    "ruid": 2071691173,
+                                    "guard_level": 0,
+                                    "score": 33550,
+                                    "guard_icon": "",
+                                    "honor_icon": "",
+                                    "v2_medal_color_start": "#596FE099",
+                                    "v2_medal_color_end": "#596FE099",
+                                    "v2_medal_color_border": "#596FE099",
+                                    "v2_medal_color_text": "#FFFFFFFF",
+                                    "v2_medal_color_level": "#000B7099",
+                                    "user_receive_count": 0
+                                },
+                                "wealth": {
+                                    "level": 6,
+                                    "dm_icon_key": ""
+                                },
+                                "title": {
+                                    "old_title_css_id": "",
+                                    "title_css_id": ""
+                                },
+                                "guard": null,
+                                "uhead_frame": null,
+                                "guard_leader": null
+                            },
+                            "icon_show": false
+                        },
+                        {
+                            "uid": 383165663,
+                            "name": "终无风",
+                            "face": "https://i2.hdslb.com/bfs/face/e97a94b50b00de1e17f6b22a067730504118aa28.jpg",
+                            "rank": 3,
+                            "score": 188,
+                            "medal_info": {
+                                "guard_level": 0,
+                                "medal_color_start": 12478086,
+                                "medal_color_end": 12478086,
+                                "medal_color_border": 12478086,
+                                "medal_name": "冥驹",
+                                "level": 16,
+                                "target_id": 2071691173,
+                                "is_light": 1
+                            },
+                            "guard_level": 0,
+                            "wealth_level": 20,
+                            "is_mystery": false,
+                            "uinfo": {
+                                "uid": 383165663,
+                                "base": {
+                                    "name": "终无风",
+                                    "face": "https://i2.hdslb.com/bfs/face/e97a94b50b00de1e17f6b22a067730504118aa28.jpg",
+                                    "name_color": 0,
+                                    "is_mystery": false,
+                                    "risk_ctrl_info": {
+                                        "name": "终无风",
+                                        "face": "https://i2.hdslb.com/bfs/face/e97a94b50b00de1e17f6b22a067730504118aa28.jpg"
+                                    },
+                                    "origin_info": {
+                                        "name": "终无风",
+                                        "face": "https://i2.hdslb.com/bfs/face/e97a94b50b00de1e17f6b22a067730504118aa28.jpg"
+                                    },
+                                    "official_info": {
+                                        "role": 0,
+                                        "title": "",
+                                        "desc": "",
+                                        "type": -1
+                                    },
+                                    "name_color_str": ""
+                                },
+                                "medal": {
+                                    "name": "冥驹",
+                                    "level": 16,
+                                    "color_start": 12478086,
+                                    "color_end": 12478086,
+                                    "color_border": 12478086,
+                                    "color": 12478086,
+                                    "id": 0,
+                                    "typ": 0,
+                                    "is_light": 1,
+                                    "ruid": 2071691173,
+                                    "guard_level": 0,
+                                    "score": 103700,
+                                    "guard_icon": "",
+                                    "honor_icon": "",
+                                    "v2_medal_color_start": "#C85DC499",
+                                    "v2_medal_color_end": "#C85DC499",
+                                    "v2_medal_color_border": "#C85DC499",
+                                    "v2_medal_color_text": "#FFFFFFFF",
+                                    "v2_medal_color_level": "#59005699",
+                                    "user_receive_count": 0
+                                },
+                                "wealth": {
+                                    "level": 20,
+                                    "dm_icon_key": ""
+                                },
+                                "title": {
+                                    "old_title_css_id": "",
+                                    "title_css_id": ""
+                                },
+                                "guard": null,
+                                "uhead_frame": null,
+                                "guard_leader": null
+                            },
+                            "icon_show": false
+                        },
+                        {
+                            "uid": 365774051,
+                            "name": "Piggy_pog",
+                            "face": "https://i2.hdslb.com/bfs/face/907b3ba395dae16f9126a6f64c9336db751a709a.jpg",
+                            "rank": 4,
+                            "score": 177,
+                            "medal_info": {
+                                "guard_level": 0,
+                                "medal_color_start": 12478086,
+                                "medal_color_end": 12478086,
+                                "medal_color_border": 12478086,
+                                "medal_name": "冥驹",
+                                "level": 15,
+                                "target_id": 2071691173,
+                                "is_light": 1
+                            },
+                            "guard_level": 0,
+                            "wealth_level": 2,
+                            "is_mystery": false,
+                            "uinfo": {
+                                "uid": 365774051,
+                                "base": {
+                                    "name": "Piggy_pog",
+                                    "face": "https://i2.hdslb.com/bfs/face/907b3ba395dae16f9126a6f64c9336db751a709a.jpg",
+                                    "name_color": 0,
+                                    "is_mystery": false,
+                                    "risk_ctrl_info": {
+                                        "name": "Piggy_pog",
+                                        "face": "https://i2.hdslb.com/bfs/face/907b3ba395dae16f9126a6f64c9336db751a709a.jpg"
+                                    },
+                                    "origin_info": {
+                                        "name": "Piggy_pog",
+                                        "face": "https://i2.hdslb.com/bfs/face/907b3ba395dae16f9126a6f64c9336db751a709a.jpg"
+                                    },
+                                    "official_info": {
+                                        "role": 0,
+                                        "title": "",
+                                        "desc": "",
+                                        "type": -1
+                                    },
+                                    "name_color_str": ""
+                                },
+                                "medal": {
+                                    "name": "冥驹",
+                                    "level": 15,
+                                    "color_start": 12478086,
+                                    "color_end": 12478086,
+                                    "color_border": 12478086,
+                                    "color": 12478086,
+                                    "id": 0,
+                                    "typ": 0,
+                                    "is_light": 1,
+                                    "ruid": 2071691173,
+                                    "guard_level": 0,
+                                    "score": 92800,
+                                    "guard_icon": "",
+                                    "honor_icon": "",
+                                    "v2_medal_color_start": "#C85DC499",
+                                    "v2_medal_color_end": "#C85DC499",
+                                    "v2_medal_color_border": "#C85DC499",
+                                    "v2_medal_color_text": "#FFFFFFFF",
+                                    "v2_medal_color_level": "#59005699",
+                                    "user_receive_count": 0
+                                },
+                                "wealth": {
+                                    "level": 2,
+                                    "dm_icon_key": ""
+                                },
+                                "title": {
+                                    "old_title_css_id": "",
+                                    "title_css_id": ""
+                                },
+                                "guard": null,
+                                "uhead_frame": null,
+                                "guard_leader": null
+                            },
+                            "icon_show": false
+                        },
+                        {
+                            "uid": 3493117655255548,
+                            "name": "w了个蛋",
+                            "face": "https://i1.hdslb.com/bfs/face/07470a3cc944452e0c10e0ce5e68e56d4ed6a01e.jpg",
+                            "rank": 5,
+                            "score": 161,
+                            "medal_info": {
+                                "guard_level": 0,
+                                "medal_color_start": 12478086,
+                                "medal_color_end": 12478086,
+                                "medal_color_border": 12478086,
+                                "medal_name": "冥驹",
+                                "level": 15,
+                                "target_id": 2071691173,
+                                "is_light": 1
+                            },
+                            "guard_level": 0,
+                            "wealth_level": 6,
+                            "is_mystery": false,
+                            "uinfo": {
+                                "uid": 3493117655255548,
+                                "base": {
+                                    "name": "w了个蛋",
+                                    "face": "https://i1.hdslb.com/bfs/face/07470a3cc944452e0c10e0ce5e68e56d4ed6a01e.jpg",
+                                    "name_color": 0,
+                                    "is_mystery": false,
+                                    "risk_ctrl_info": {
+                                        "name": "w了个蛋",
+                                        "face": "https://i1.hdslb.com/bfs/face/07470a3cc944452e0c10e0ce5e68e56d4ed6a01e.jpg"
+                                    },
+                                    "origin_info": {
+                                        "name": "w了个蛋",
+                                        "face": "https://i1.hdslb.com/bfs/face/07470a3cc944452e0c10e0ce5e68e56d4ed6a01e.jpg"
+                                    },
+                                    "official_info": {
+                                        "role": 0,
+                                        "title": "",
+                                        "desc": "",
+                                        "type": -1
+                                    },
+                                    "name_color_str": ""
+                                },
+                                "medal": {
+                                    "name": "冥驹",
+                                    "level": 15,
+                                    "color_start": 12478086,
+                                    "color_end": 12478086,
+                                    "color_border": 12478086,
+                                    "color": 12478086,
+                                    "id": 0,
+                                    "typ": 0,
+                                    "is_light": 1,
+                                    "ruid": 2071691173,
+                                    "guard_level": 0,
+                                    "score": 62200,
+                                    "guard_icon": "",
+                                    "honor_icon": "",
+                                    "v2_medal_color_start": "#C85DC499",
+                                    "v2_medal_color_end": "#C85DC499",
+                                    "v2_medal_color_border": "#C85DC499",
+                                    "v2_medal_color_text": "#FFFFFFFF",
+                                    "v2_medal_color_level": "#59005699",
+                                    "user_receive_count": 0
+                                },
+                                "wealth": {
+                                    "level": 6,
+                                    "dm_icon_key": ""
+                                },
+                                "title": {
+                                    "old_title_css_id": "",
+                                    "title_css_id": ""
+                                },
+                                "guard": null,
+                                "uhead_frame": null,
+                                "guard_leader": null
+                            },
+                            "icon_show": false
+                        },
+                        {
+                            "uid": 2005258411,
+                            "name": "纱咔啦咔",
+                            "face": "https://i1.hdslb.com/bfs/face/80d135e11a087c9283868f0c6154603a4342be1c.jpg",
+                            "rank": 6,
+                            "score": 161,
+                            "medal_info": null,
+                            "guard_level": 0,
+                            "wealth_level": 4,
+                            "is_mystery": false,
+                            "uinfo": {
+                                "uid": 2005258411,
+                                "base": {
+                                    "name": "纱咔啦咔",
+                                    "face": "https://i1.hdslb.com/bfs/face/80d135e11a087c9283868f0c6154603a4342be1c.jpg",
+                                    "name_color": 0,
+                                    "is_mystery": false,
+                                    "risk_ctrl_info": {
+                                        "name": "纱咔啦咔",
+                                        "face": "https://i1.hdslb.com/bfs/face/80d135e11a087c9283868f0c6154603a4342be1c.jpg"
+                                    },
+                                    "origin_info": {
+                                        "name": "纱咔啦咔",
+                                        "face": "https://i1.hdslb.com/bfs/face/80d135e11a087c9283868f0c6154603a4342be1c.jpg"
+                                    },
+                                    "official_info": {
+                                        "role": 0,
+                                        "title": "",
+                                        "desc": "",
+                                        "type": -1
+                                    },
+                                    "name_color_str": ""
+                                },
+                                "medal": null,
+                                "wealth": {
+                                    "level": 4,
+                                    "dm_icon_key": ""
+                                },
+                                "title": {
+                                    "old_title_css_id": "",
+                                    "title_css_id": ""
+                                },
+                                "guard": null,
+                                "uhead_frame": null,
+                                "guard_leader": null
+                            },
+                            "icon_show": false
+                        },
+                        {
+                            "uid": 648809897,
+                            "name": "抑明FreeDaily",
+                            "face": "https://i2.hdslb.com/bfs/face/19fd5e043f2e908215420eac93d07c534f9840b6.jpg",
+                            "rank": 7,
+                            "score": 158,
+                            "medal_info": null,
+                            "guard_level": 0,
+                            "wealth_level": 2,
+                            "is_mystery": false,
+                            "uinfo": {
+                                "uid": 648809897,
+                                "base": {
+                                    "name": "抑明FreeDaily",
+                                    "face": "https://i2.hdslb.com/bfs/face/19fd5e043f2e908215420eac93d07c534f9840b6.jpg",
+                                    "name_color": 0,
+                                    "is_mystery": false,
+                                    "risk_ctrl_info": {
+                                        "name": "抑明FreeDaily",
+                                        "face": "https://i2.hdslb.com/bfs/face/19fd5e043f2e908215420eac93d07c534f9840b6.jpg"
+                                    },
+                                    "origin_info": {
+                                        "name": "抑明FreeDaily",
+                                        "face": "https://i2.hdslb.com/bfs/face/19fd5e043f2e908215420eac93d07c534f9840b6.jpg"
+                                    },
+                                    "official_info": {
+                                        "role": 0,
+                                        "title": "",
+                                        "desc": "",
+                                        "type": -1
+                                    },
+                                    "name_color_str": ""
+                                },
+                                "medal": null,
+                                "wealth": {
+                                    "level": 2,
+                                    "dm_icon_key": ""
+                                },
+                                "title": {
+                                    "old_title_css_id": "",
+                                    "title_css_id": ""
+                                },
+                                "guard": null,
+                                "uhead_frame": null,
+                                "guard_leader": null
+                            },
+                            "icon_show": false
+                        }
+                    ],
+                    "count": 9999,
+                    "show_max": 7,
+                    "count_text": "9999+",
+                    "non_expandable": true
+                }
+            },
+            "user_rank_tab_list": {
+                "tab": [
+                    {
+                        "type": "contribution_tab",
+                        "title": "房间观众",
+                        "status": 1,
+                        "default": 1,
+                        "comment": "",
+                        "desc_url": "",
+                        "switch": null,
+                        "sub_tab": [
+                            {
+                                "type": "online_rank",
+                                "title": "在线榜",
+                                "status": 1,
+                                "default": 1,
+                                "comment": "",
+                                "desc_url": "https://live.bilibili.com/p/contribute-rank-description-h5/index.html?is_live_half_webview=1\u0026hybrid_half_ui=1,3,100p,70p,0,0,30,100,12,0;2,2,375,100p,0,0,30,100,0,0;3,3,100p,70p,0,0,30,100,12,0;4,2,375,100p,0,0,30,100,0,0;5,3,100p,70p,0,0,30,100,12,0;6,3,100p,70p,0,0,30,100,12,0;7,3,100p,70p,0,0,30,100,12,0;8,3,100p,70p,0,0,30,100,0,0\u0026rank_type=1\u0026test_type=b",
+                                "switch": [
+                                    {
+                                        "text": "贡献值",
+                                        "switch": "contribution_rank",
+                                        "ui_type": {
+                                            "hide_rank_without_score": 1,
+                                            "op_button_text": 1,
+                                            "rank_prefix": 1,
+                                            "refresh_entry": 1,
+                                            "show_score": 1
+                                        },
+                                        "comment": "投喂、发弹幕均可获得贡献值"
+                                    }
+                                ],
+                                "sub_tab": null
+                            },
+                            {
+                                "type": "daily_rank",
+                                "title": "日榜",
+                                "status": 0,
+                                "default": 0,
+                                "comment": "",
+                                "desc_url": "https://live.bilibili.com/p/contribute-rank-description-h5/index.html?is_live_half_webview=1\u0026hybrid_half_ui=1,3,100p,70p,0,0,30,100,12,0;2,2,375,100p,0,0,30,100,0,0;3,3,100p,70p,0,0,30,100,12,0;4,2,375,100p,0,0,30,100,0,0;5,3,100p,70p,0,0,30,100,12,0;6,3,100p,70p,0,0,30,100,12,0;7,3,100p,70p,0,0,30,100,12,0;8,3,100p,70p,0,0,30,100,0,0\u0026rank_type=2\u0026test_type=b",
+                                "switch": [
+                                    {
+                                        "text": "当日",
+                                        "switch": "today_rank",
+                                        "ui_type": {
+                                            "op_button_text": 1,
+                                            "rank_prefix": 0,
+                                            "show_score": 0
+                                        },
+                                        "comment": "用户当日贡献值排序"
+                                    },
+                                    {
+                                        "text": "昨日",
+                                        "switch": "yesterday_rank",
+                                        "ui_type": {
+                                            "op_button_text": 0,
+                                            "rank_prefix": 0,
+                                            "show_score": 0
+                                        },
+                                        "comment": "昨日贡献值前100排名"
+                                    }
+                                ],
+                                "sub_tab": null
+                            },
+                            {
+                                "type": "weekly_rank",
+                                "title": "周榜",
+                                "status": 0,
+                                "default": 0,
+                                "comment": "",
+                                "desc_url": "https://live.bilibili.com/p/contribute-rank-description-h5/index.html?is_live_half_webview=1\u0026hybrid_half_ui=1,3,100p,70p,0,0,30,100,12,0;2,2,375,100p,0,0,30,100,0,0;3,3,100p,70p,0,0,30,100,12,0;4,2,375,100p,0,0,30,100,0,0;5,3,100p,70p,0,0,30,100,12,0;6,3,100p,70p,0,0,30,100,12,0;7,3,100p,70p,0,0,30,100,12,0;8,3,100p,70p,0,0,30,100,0,0\u0026rank_type=2\u0026test_type=b",
+                                "switch": [
+                                    {
+                                        "text": "本周",
+                                        "switch": "current_week_rank",
+                                        "ui_type": {
+                                            "op_button_text": 1,
+                                            "rank_prefix": 0,
+                                            "show_score": 0
+                                        },
+                                        "comment": "用户当周贡献值排序"
+                                    },
+                                    {
+                                        "text": "上周",
+                                        "switch": "last_week_rank",
+                                        "ui_type": {
+                                            "op_button_text": 0,
+                                            "rank_prefix": 0,
+                                            "show_score": 0
+                                        },
+                                        "comment": "上周贡献值前100排名"
+                                    }
+                                ],
+                                "sub_tab": null
+                            },
+                            {
+                                "type": "monthly_rank",
+                                "title": "月榜",
+                                "status": 0,
+                                "default": 0,
+                                "comment": "",
+                                "desc_url": "https://live.bilibili.com/p/contribute-rank-description-h5/index.html?is_live_half_webview=1\u0026hybrid_half_ui=1,3,100p,70p,0,0,30,100,12,0;2,2,375,100p,0,0,30,100,0,0;3,3,100p,70p,0,0,30,100,12,0;4,2,375,100p,0,0,30,100,0,0;5,3,100p,70p,0,0,30,100,12,0;6,3,100p,70p,0,0,30,100,12,0;7,3,100p,70p,0,0,30,100,12,0;8,3,100p,70p,0,0,30,100,0,0\u0026rank_type=2\u0026test_type=b",
+                                "switch": [
+                                    {
+                                        "text": "本月",
+                                        "switch": "current_month_rank",
+                                        "ui_type": {
+                                            "op_button_text": 1,
+                                            "rank_prefix": 0,
+                                            "show_score": 0
+                                        },
+                                        "comment": "用户当月贡献值排序"
+                                    },
+                                    {
+                                        "text": "上月",
+                                        "switch": "last_month_rank",
+                                        "ui_type": {
+                                            "op_button_text": 0,
+                                            "rank_prefix": 0,
+                                            "show_score": 0
+                                        },
+                                        "comment": "上月贡献值前100排名"
+                                    }
+                                ],
+                                "sub_tab": null
+                            }
+                        ]
+                    },
+                    {
+                        "type": "guard_tab",
+                        "title": "大航海",
+                        "status": 1,
+                        "default": 0,
+                        "comment": "头号粉丝大航海，上船后可上榜",
+                        "desc_url": "",
+                        "switch": null,
+                        "sub_tab": null
+                    },
+                    {
+                        "type": "guard_tab_v2",
+                        "title": "大航海",
+                        "status": 1,
+                        "default": 0,
+                        "comment": "",
+                        "desc_url": "",
+                        "switch": null,
+                        "sub_tab": [
+                            {
+                                "type": "weekly_rank",
+                                "title": "周榜",
+                                "status": 1,
+                                "default": 0,
+                                "comment": "头号粉丝大航海，上船后可上榜",
+                                "desc_url": "",
+                                "switch": null,
+                                "sub_tab": null
+                            },
+                            {
+                                "type": "monthly_rank",
+                                "title": "月榜",
+                                "status": 1,
+                                "default": 0,
+                                "comment": "头号粉丝大航海，上船后可上榜",
+                                "desc_url": "",
+                                "switch": null,
+                                "sub_tab": null
+                            },
+                            {
+                                "type": "total_rank",
+                                "title": "陪伴榜",
+                                "status": 1,
+                                "default": 0,
+                                "comment": "头号粉丝大航海，上船后可上榜",
+                                "desc_url": "",
+                                "switch": null,
+                                "sub_tab": null
+                            }
+                        ]
+                    }
+                ]
+            }
+        },
+        "dm_reply": {
+            "show_reply": true,
+            "show_reply_esports": false
+        },
+        "dm_combo": null,
+        "dm_vote": null,
+        "location": null,
+        "interactive_game_tag": {
+            "action": 0,
+            "game_id": "",
+            "game_name": ""
+        },
+        "video_enhancement": {
+            "title": "画质增强",
+            "desc": "仅针对超清及以下生效",
+            "default_switch_status": 2,
+            "highest_quality": 250,
+            "is_enabled": true
+        },
+        "guard_leader": {
+            "uid": 0,
+            "name": "",
+            "face": "",
+            "jump_url": "",
+            "text": "",
+            "rank_top_icon1": "",
+            "rank_top_icon2": "",
+            "rank_top_background_url1": "",
+            "rank_top_background_url2": "",
+            "background_url": "",
+            "anchor_background_url": "",
+            "input_background_url": "",
+            "newly": 0,
+            "entry_effect_id": 0,
+            "show": 0,
+            "rank_top_background_light_url1": "",
+            "rank_top_background_light_url2": "",
+            "display_src": "",
+            "avatar_src": "",
+            "icon_src": ""
+        },
+        "room_anonymous": {
+            "open_anonymous": false
+        },
+        "tab_switches": {
+            "subtitle": 0,
+            "realtime_data": null,
+            "lol_player_grade": null
+        },
+        "universal_interact_info": null,
+        "pk_info_v2": null,
+        "area_mask_info": {
+            "area_masks": {
+                "horizontal_masks": null,
+                "vertical_masks": null,
+                "full_mask": null
+            }
+        },
+        "xtemplate_config": {
+            "dm_brush_info": {
+                "landScape": null,
+                "verticalscreen": {
+                    "min_time": 500,
+                    "brush_count": 50,
+                    "slice_count": 2,
+                    "storage_time": 500,
+                    "is_hide_anti_brush": 0
+                }
+            },
+            "dm_speed_info": {
+                "landScape": null,
+                "verticalscreen": {
+                    "valley": {
+                        "consumetime": 500,
+                        "consumecount": 2,
+                        "animationtime": 0
+                    },
+                    "peak": {
+                        "consumetime": 600,
+                        "consumecount": 3,
+                        "animationtime": 0
+                    },
+                    "proportion": 30,
+                    "interval": 10000
+                }
+            },
+            "dm_pool_info": {
+                "landScape": null,
+                "verticalscreen": {
+                    "master_ceiling": 100,
+                    "master_count": 1,
+                    "guest_config": [
+                        {
+                            "score_floor": 80,
+                            "score_ceiling": 999999,
+                            "dm_max": 150,
+                            "consume": 80
+                        },
+                        {
+                            "score_floor": 32,
+                            "score_ceiling": 79,
+                            "dm_max": 100,
+                            "consume": 10
+                        },
+                        {
+                            "score_floor": 0,
+                            "score_ceiling": 31,
+                            "dm_max": 100,
+                            "consume": 10
+                        }
+                    ],
+                    "timeout": 30000,
+                    "unusual_score": 50
+                }
+            }
+        },
+        "dm_activity": {
+            "activity_list": null,
+            "ts": 1751980847,
+            "material_list": null
+        },
+        "dm_interaction_ab": {
+            "102": 1,
+            "103": 1,
+            "104": 1,
+            "105": 1,
+            "106": 1
+        },
+        "guard_intimacy_rank_status": {
+            "guard_rank_new_ab": 1,
+            "guard_rank_new_total_status": 1,
+            "guard_rank_new_month_status": 1,
+            "guard_rank_new_week_status": 1
+        },
+        "hot_rank_entrance_info": null,
+        "area_rank_info_v2": null,
+        "transfer_flow_info": null,
+        "universal_interact_info_v2": null,
+        "play_together_voiceroom_dispatch": {
+            "mode": 0,
+            "game_name": "",
+            "gender": 0,
+            "min_price": 0,
+            "max_price": 0,
+            "end_ts": 0,
+            "ts": 0,
+            "remark": "",
+            "dispatch_id": 0,
+            "notify_num": 0,
+            "jump_url": "",
+            "icon_url": "",
+            "game_icon": ""
+        },
+        "cny": null,
+        "reenter_room_info": null,
+        "cny_quiz_guide": false,
+        "fake_device": {
+            "is_fake": false,
+            "delay": 0
+        },
+        "pure_room_info": null,
+        "hot_rank_info_v3": {
+            "item": null,
+            "room_hot_rank_v3_ab": 1
+        },
+        "charm_chat_rank": null,
+        "program_info": null,
+        "module_control_infos": {
+            "display_right_interaction_modules": false,
+            "anchor_module": {
+                "allow_click_face": false,
+                "allow_follow": false,
+                "heat_index": null
+            },
+            "audience_module": null,
+            "danmu_module": null,
+            "like_module": false,
+            "interactive_animation_module": false,
+            "super_chat_module": false,
+            "danmu_setting_module": false,
+            "cmd_list": [
+                "LOG_IN_NOTICE",
+                "CUT_OFF",
+                "WARNING",
+                "LIVE",
+                "REENTER_LIVE_ROOM",
+                "PREPARING",
+                "ROOM_REFRESH",
+                "ROOM_BLOCK_MSG",
+                "ROOM_LIVE_FORBID",
+                "ROOM_LOCK",
+                "ROOM_LIMIT",
+                "ROOM_SILENT_ON",
+                "ROOM_SILENT_OFF",
+                "ROOM_CHANGE",
+                "CHASE_FRAME_SWITCH",
+                "LIVE_INTERNAL_ROOM_LOGIN",
+                "REDIRECT_EMPTY_PAGE",
+                "FULL_SCREEN_MASK_OPEN",
+                "RECALL_DANMU_MSG",
+                "room_admin_entrance",
+                "ROOM_ADMIN_REVOKE",
+                "MULTI_VOICE_APPLICATION_ANCHOR",
+                "MULTI_VOICE_APPLICATION_USER",
+                "MULTI_VOICE_APPLICATION",
+                "MULTI_VOICE_PK_STATUS_V2",
+                "UNIVERSAL_INTERACT_INVITATION",
+                "UINVERSAL_INTERACT_JOIN",
+                "UINVERSAL_INTERACT_OPERATION"
+            ]
+        }
+    }
+}
