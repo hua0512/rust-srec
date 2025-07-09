@@ -4,6 +4,7 @@ pub mod douyin;
 pub mod douyu;
 pub mod huya;
 pub mod pandatv;
+pub mod picarto;
 pub mod redbook;
 pub mod twitch;
 pub mod weibo;

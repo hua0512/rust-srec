@@ -1,6 +1,6 @@
 use crate::extractor::platforms::{
-    bilibili::Bilibili, douyin, douyu, huya, pandatv::builder::PandaTV, redbook::builder::RedBook,
-    twitch::builder::Twitch, weibo::builder::Weibo,
+    bilibili::Bilibili, douyin, douyu, huya, pandatv::PandaTV, picarto::Picarto, redbook::RedBook,
+    twitch::Twitch, weibo::Weibo,
 };
 
 use super::factory::ExtractorFactory;
@@ -101,6 +101,15 @@ pub fn default_factory() -> ExtractorFactory {
             r"^(?:https?://)?(?:www\.)?live\.bilibili\.com/([a-zA-Z0-9_-]+)",
             Arc::new(|url, client, cookies, extras| {
                 Box::new(Bilibili::new(url, client, cookies, extras))
+            }),
+        )
+        .unwrap();
+
+    factory
+        .register(
+            r"^(?:https?://)?(?:www\.)?picarto\.tv/([a-zA-Z0-9_-]+)",
+            Arc::new(|url, client, cookies, extras| {
+                Box::new(Picarto::new(url, client, cookies, extras))
             }),
         )
         .unwrap();

@@ -7,6 +7,7 @@ use serde::{Deserialize, Serialize};
 pub enum StreamFormat {
     Flv,
     Hls,
+    Mp4,
 }
 
 impl StreamFormat {
@@ -14,6 +15,7 @@ impl StreamFormat {
         match self {
             StreamFormat::Flv => "flv",
             StreamFormat::Hls => "hls",
+            StreamFormat::Mp4 => "mp4",
         }
     }
 
@@ -21,6 +23,7 @@ impl StreamFormat {
         match s.to_lowercase().as_str() {
             "flv" => StreamFormat::Flv,
             "m3u8" => StreamFormat::Hls,
+            "mp4" => StreamFormat::Mp4,
             _ => StreamFormat::Flv,
         }
     }
@@ -39,6 +42,7 @@ impl FromStr for StreamFormat {
         match s.to_lowercase().as_str() {
             "flv" => Ok(StreamFormat::Flv),
             "hls" => Ok(StreamFormat::Hls),
+            "mp4" => Ok(StreamFormat::Mp4),
             _ => Err(()),
         }
     }

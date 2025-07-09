@@ -498,6 +498,12 @@ impl HuyaExtractor {
         let anti_code = match stream_info.stream_format {
             StreamFormat::Flv => token_info.flv_anti_code,
             StreamFormat::Hls => token_info.hls_anti_code,
+            _ => {
+                return Err(ExtractorError::ValidationError(format!(
+                    "Invalid stream format: {:?}",
+                    stream_info.stream_format
+                )));
+            }
         };
 
         let s_stream_name = stream_name;
@@ -511,6 +517,12 @@ impl HuyaExtractor {
         let suffix = match stream_info.stream_format {
             StreamFormat::Flv => "flv",
             StreamFormat::Hls => "m3u8",
+            _ => {
+                return Err(ExtractorError::ValidationError(format!(
+                    "Invalid stream format: {:?}",
+                    stream_info.stream_format
+                )));
+            }
         };
 
         let bitrate = stream_info.bitrate;

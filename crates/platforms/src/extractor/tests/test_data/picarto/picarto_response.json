@@ -1,0 +1,313 @@
+{
+  "channel": {
+    "online": true,
+    "color": "#35A775",
+    "dm_setting": {
+      "allow_message_every_one": false
+    },
+    "created_at": "2016-01-24 14:42:32",
+    "notification": false,
+    "gifted": false,
+    "gifted_channel_name": null,
+    "id": 1300,
+    "account_type": "PREMIUM",
+    "adult": false,
+    "avatar": "https://images.picarto.tv/ptvimages/1/13/1300/avatars/ceb80e7a54bf53cc08e1f117.png",
+    "bio": "",
+    "columns": 2,
+    "commissions": true,
+    "enable_subscription": true,
+    "gaming": false,
+    "name": "RaptorARTStudios",
+    "private": false,
+    "show_subscriber_count": true,
+    "title": "RaptorART Studios",
+    "verified": true,
+    "streaming": true,
+    "total_views": 110404,
+    "viewers": 42,
+    "descriptions": [
+      {
+        "id": 59787,
+        "channel_id": 1300,
+        "title": "Commission Info",
+        "body": "Best way to get a hold of me is on Twitter!\nhttps://twitter.com/RaptorARTStudio",
+        "image": "https://images.picarto.tv/ptvimages/1/13/1300/panels/a2e06e7d0ad5db70ca593469.png",
+        "button_enabled": 0,
+        "button_text": null,
+        "button_link": null,
+        "position": 1,
+        "image_link": "https://cdn.discordapp.com/attachments/617657062041583626/1246202811117604865/2024_price_sheet.jpg?ex=665b884f&is=665a36cf&hm=2791b1c16faef09e66cdc6fae7e4fffe3963692bc4b2f7c43177c5cd6a0b2f72&",
+        "background": false,
+        "shadow": false,
+        "hide": false,
+        "icon_id": null
+      },
+      {
+        "id": 129947,
+        "channel_id": 1300,
+        "title": "ADOPTIONS/ AUCTIONS ",
+        "body": "If I have any AUCTIONS up or you want to bid on an art piece, than you can find it on my YCH.ART page\nthe site i use will email you if you WIN--LOOSE---or OUTBID, simple and easy to use",
+        "image": "https://images.picarto.tv/ptvimages/1/13/1300/panels/129947_751b4590695b2adf3f27bda2db4cc828ef22ca51bb19bf81d58edcb93248c98c.png",
+        "button_enabled": 0,
+        "button_text": "",
+        "button_link": "",
+        "position": 2,
+        "image_link": "https://ych.art/user/raptorart/auctions",
+        "background": false,
+        "shadow": false,
+        "hide": false,
+        "icon_id": null
+      },
+      {
+        "id": 59786,
+        "channel_id": 1300,
+        "title": null,
+        "body": "Always love multistreaming with other folks when available!\nsometimes do requests,(which are raffles *aka Waffles* )\nCheck me out on PATREON if you want to help SUPPORT me---> [https://www.patreon.com/RaptorARTStudios](https://www.patreon.com/RaptorARTStudios)\n1$ will get you Saucy fanart every month\nthanks! :)\n\n",
+        "image": null,
+        "button_enabled": 0,
+        "button_text": null,
+        "button_link": null,
+        "position": 3,
+        "image_link": "",
+        "background": false,
+        "shadow": false,
+        "hide": false,
+        "icon_id": null
+      }
+    ],
+    "banners": [
+      {
+        "id": 151,
+        "image": "https://images.picarto.tv/ptvimages/1/13/1300/banners/panelbanner.gif",
+        "link": null,
+        "type": "chat"
+      },
+      {
+        "id": 35872,
+        "image": "https://images.picarto.tv/ptvimages/1/13/1300/banners/panelimage2.jpg",
+        "link": "https://www.patreon.com/RaptorARTStudios",
+        "type": "premium2"
+      },
+      {
+        "id": 78392,
+        "image": "https://images.picarto.tv/ptvimages/1/13/1300/banners/3ebcae37d21676c811d84558.jpg",
+        "link": null,
+        "type": "offline"
+      },
+      {
+        "id": 78394,
+        "image": "https://images.picarto.tv/ptvimages/1/13/1300/banners/093bf843bf295e5f4c722e94.webp",
+        "link": "https://www.paypal.com/donate/?hosted_button_id=AZ84VWFLRHRAW",
+        "type": "premium1"
+      }
+    ],
+    "categories": [
+      {
+        "id": 8,
+        "name": "Furry"
+      }
+    ],
+    "languages": [
+      {
+        "id": 19,
+        "name": "English",
+        "code": "en",
+        "image": "http://ptvintern.picarto.tv/images/languages/en.svg"
+      }
+    ],
+    "social_medias": [
+      {
+        "icon": "https://images.picarto.tv/socialmedias/e74c60e649f8cf2ad7caf796.png",
+        "link": "http://raptor007.tumblr.com/"
+      },
+      {
+        "icon": "https://images.picarto.tv/socialmedias/patreon.png",
+        "link": "https://www.patreon.com/RaptorARTStudios"
+      },
+      {
+        "icon": "https://images.picarto.tv/socialmedias/deviantart.png",
+        "link": "http://raptor007.deviantart.com/"
+      },
+      {
+        "icon": "https://images.picarto.tv/socialmedias/7f1b15f3566056c042d92ff8.png",
+        "link": "https://www.facebook.com/RaptorArtStudios/?ref=bookmarks"
+      },
+      {
+        "icon": "https://images.picarto.tv/socialmedias/twitter.png",
+        "link": "https://twitter.com/RaptorARTStudio"
+      },
+      {
+        "icon": "https://images.picarto.tv/socialmedias/ec271d9c5321dd38850ae2b1.png",
+        "link": "http://www.furaffinity.net/user/raptorart/"
+      },
+      {
+        "icon": "https://images.picarto.tv/socialmedias/d2bc802bab173a0ae2fdde67.png",
+        "link": "http://raptor007.deviantart.com/"
+      },
+      {
+        "icon": "https://images.picarto.tv/socialmedias/b2ea9da967ce82e4d38341fb.png",
+        "link": "https://toyhou.se/RaptorartStudios"
+      }
+    ],
+    "softwares": [
+      {
+        "id": 2,
+        "name": "Adobe Photoshop"
+      }
+    ],
+    "tags": [
+      {
+        "name": "hentai"
+      },
+      {
+        "name": "Pony"
+      },
+      {
+        "name": "anime"
+      },
+      {
+        "name": "furry"
+      },
+      {
+        "name": "clop"
+      },
+      {
+        "name": "brony"
+      },
+      {
+        "name": "#Anime"
+      },
+      {
+        "name": "#MLP"
+      },
+      {
+        "name": "#Pony"
+      },
+      {
+        "name": "#Furry"
+      },
+      {
+        "name": "#nsfw"
+      },
+      {
+        "name": "#clop"
+      }
+    ],
+    "tools": [
+      {
+        "id": 694,
+        "name": "Intous 5"
+      }
+    ],
+    "followers_count": 2218,
+    "videos_count": 0,
+    "subscribers_count": 1
+  },
+  "getLoadBalancerUrl": {
+    "url": "http://edge1-eu-west.picarto.tv",
+    "origin": "edge1-eu-west"
+  },
+  "getMultiStreams": {
+    "name": "RaptorARTStudios",
+    "streaming": true,
+    "online": true,
+    "viewers": 42,
+    "multistream": true,
+    "streams": [
+      {
+        "id": 1300,
+        "user_id": 1300,
+        "name": "RaptorARTStudios",
+        "account_type": "PREMIUM",
+        "avatar": "https://images.picarto.tv/ptvimages/1/13/1300/avatars/ceb80e7a54bf53cc08e1f117.png",
+        "offline_image": "https://images.picarto.tv/ptvimages/1/13/1300/banners/3ebcae37d21676c811d84558.jpg",
+        "streaming": true,
+        "adult": false,
+        "multistream": true,
+        "viewers": 42,
+        "hosted": false,
+        "host": true,
+        "following": false,
+        "subscription": false,
+        "online": true,
+        "channelId": 1300,
+        "stream_name": "golive+RaptorARTStudios",
+        "color": "#35A775",
+        "webrtc": false,
+        "subscription_enabled": true,
+        "thumbnail_image": "https://thumb-us-newyork.picarto.tv/thumbnail/RaptorARTStudios.jpg"
+      },
+      {
+        "id": 41423,
+        "user_id": 41423,
+        "name": "GirlSay",
+        "account_type": "PREMIUM",
+        "avatar": "https://images.picarto.tv/ptvimages/4/41/41423/avatars/b43914fff133949089bd0ad2.png",
+        "offline_image": "https://images.picarto.tv/ptvimages/4/41/41423/banners/7cb1ea65bd7de38999d6508c.jpg",
+        "streaming": true,
+        "adult": true,
+        "multistream": true,
+        "viewers": 16,
+        "hosted": false,
+        "host": false,
+        "following": false,
+        "subscription": false,
+        "online": true,
+        "channelId": 41423,
+        "stream_name": "golive+GirlSay",
+        "color": "#6688f5",
+        "webrtc": false,
+        "subscription_enabled": false,
+        "thumbnail_image": "https://thumb-eu-west1.picarto.tv/thumbnail/GirlSay.jpg"
+      },
+      {
+        "id": 1126687,
+        "user_id": 1126687,
+        "name": "CantDrawStuff",
+        "account_type": "PREMIUM",
+        "avatar": "https://images.picarto.tv/ptvimages/1/11/1126687/avatars/b1bbb8886aba9ec2b332448d.jpg",
+        "offline_image": null,
+        "streaming": false,
+        "adult": true,
+        "multistream": true,
+        "viewers": 0,
+        "hosted": false,
+        "host": false,
+        "following": false,
+        "subscription": false,
+        "online": false,
+        "channelId": 1126687,
+        "stream_name": "golive+CantDrawStuff",
+        "color": "#35A775",
+        "webrtc": true,
+        "subscription_enabled": false,
+        "thumbnail_image": "https://thumb-eu-west1.picarto.tv/thumbnail/CantDrawStuff.jpg"
+      },
+      {
+        "id": 1321632,
+        "user_id": 1321664,
+        "name": "feliifae",
+        "account_type": "FREE",
+        "avatar": "https://images.picarto.tv/ptvimages/1/13/1321632/avatars/720ac59a8b39858025914fc7.png",
+        "offline_image": null,
+        "streaming": false,
+        "adult": false,
+        "multistream": true,
+        "viewers": 0,
+        "hosted": false,
+        "host": false,
+        "following": false,
+        "subscription": false,
+        "online": false,
+        "channelId": 1321632,
+        "stream_name": "golive+feliifae",
+        "color": "#35A775",
+        "webrtc": false,
+        "subscription_enabled": false,
+        "thumbnail_image": "https://thumb-us-miami.picarto.tv/thumbnail/feliifae.jpg"
+      }
+    ],
+    "displayName": "RaptorARTStudios"
+  }
+}

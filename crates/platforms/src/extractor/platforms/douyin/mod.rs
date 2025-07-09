@@ -1,6 +1,5 @@
 pub(crate) mod apis;
-pub mod builder;
-
+mod builder;
 
 pub(crate) mod models;
 pub(crate) mod utils;

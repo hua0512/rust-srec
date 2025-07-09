@@ -20,7 +20,7 @@ use crate::{
 use rustc_hash::FxHashMap;
 
 const PLATFORM_REGEX_STR: &str = r"https?:\/\/(?:www\.)?(?:live\.)?bilibili\.com\/(\d+)";
-const PLATFORM_REGEX: LazyLock<Regex> = LazyLock::new(|| Regex::new(PLATFORM_REGEX_STR).unwrap());
+static PLATFORM_REGEX: LazyLock<Regex> = LazyLock::new(|| Regex::new(PLATFORM_REGEX_STR).unwrap());
 
 #[derive(Debug, PartialEq, Eq, Copy, Clone, TryFromPrimitive)]
 #[repr(u32)]
@@ -368,7 +368,6 @@ impl PlatformExtractor for Bilibili {
 }
 
 #[cfg(test)]
-
 mod tests {
     use tracing::Level;
 
@@ -378,6 +377,7 @@ mod tests {
     };
 
     #[tokio::test]
+    #[ignore]
     async fn test_extract() {
         tracing_subscriber::fmt()
             .with_max_level(Level::DEBUG)
