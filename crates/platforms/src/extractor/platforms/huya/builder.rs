@@ -3,7 +3,8 @@ use std::sync::LazyLock;
 use crate::extractor::error::ExtractorError;
 use crate::extractor::platform_extractor::{Extractor, PlatformExtractor};
 use crate::extractor::platforms::huya::huya_tars::decode_get_cdn_token_info_response;
-use crate::media::media_format::MediaFormat;
+use crate::media::MediaFormat;
+use crate::media::formats::StreamFormat;
 use crate::media::media_info::MediaInfo;
 use crate::media::stream_info::StreamInfo;
 use async_trait::async_trait;
@@ -412,7 +413,8 @@ impl HuyaExtractor {
                     // flv
                     streams.push(StreamInfo {
                         url: format!("{}&ratio={}", flv_url, bitrate),
-                        format: MediaFormat::Flv,
+                        stream_format: StreamFormat::Flv,
+                        media_format: MediaFormat::Flv,
                         quality: quality.to_string(),
                         bitrate,
                         priority,
@@ -424,7 +426,8 @@ impl HuyaExtractor {
                     // hls
                     streams.push(StreamInfo {
                         url: format!("{}&ratio={}", hls_url, bitrate),
-                        format: MediaFormat::Hls,
+                        stream_format: StreamFormat::Hls,
+                        media_format: MediaFormat::Ts,
                         quality: quality.to_string(),
                         bitrate,
                         priority,
@@ -492,10 +495,9 @@ impl HuyaExtractor {
             .expect("Failed to decode WUP response");
 
         // query params
-        let anti_code = match stream_info.format {
-            MediaFormat::Flv => token_info.flv_anti_code,
-            MediaFormat::Hls => token_info.hls_anti_code,
-            MediaFormat::Mp4 => "".to_string(),
+        let anti_code = match stream_info.stream_format {
+            StreamFormat::Flv => token_info.flv_anti_code,
+            StreamFormat::Hls => token_info.hls_anti_code,
         };
 
         let s_stream_name = stream_name;
@@ -506,10 +508,9 @@ impl HuyaExtractor {
         let base_url = format!("{}://{}/{}", url.scheme(), host, path);
         // println!("Base URL: {:?}", base_url);
 
-        let suffix = match stream_info.format {
-            MediaFormat::Flv => "flv",
-            MediaFormat::Hls => "m3u8",
-            MediaFormat::Mp4 => "mp4",
+        let suffix = match stream_info.stream_format {
+            StreamFormat::Flv => "flv",
+            StreamFormat::Hls => "m3u8",
         };
 
         let bitrate = stream_info.bitrate;

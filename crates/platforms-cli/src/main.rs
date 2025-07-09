@@ -150,7 +150,7 @@ async fn main() -> anyhow::Result<()> {
         println!(
             "  {}: {}",
             "Format".yellow(),
-            final_stream_info.format.to_string().cyan()
+            final_stream_info.stream_format.to_string().cyan()
         );
         println!(
             "  {}: {}",
@@ -166,6 +166,11 @@ async fn main() -> anyhow::Result<()> {
             "  {}: {} kbps",
             "Bitrate".yellow(),
             final_stream_info.bitrate.to_string().cyan()
+        );
+        println!(
+            "  {}: {}",
+            "Media Format".yellow(),
+            final_stream_info.media_format.to_string().cyan()
         );
         println!("  {}: {}", "Codec".yellow(), final_stream_info.codec.cyan());
         println!(

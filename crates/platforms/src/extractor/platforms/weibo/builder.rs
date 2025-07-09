@@ -9,7 +9,7 @@ use crate::{
         platform_extractor::{Extractor, PlatformExtractor},
         platforms::weibo::models::WeiboLiveInfo,
     },
-    media::{MediaFormat, MediaInfo, StreamInfo},
+    media::{MediaFormat, MediaInfo, StreamFormat, StreamInfo},
 };
 
 pub struct Weibo {
@@ -183,7 +183,8 @@ impl Weibo {
             streams.push(StreamInfo {
                 url: flv_url,
                 quality: "Source".to_string(),
-                format: MediaFormat::Flv,
+                stream_format: StreamFormat::Flv,
+                media_format: MediaFormat::Flv,
                 bitrate: 0,
                 priority: 0,
                 extras: None,
@@ -197,7 +198,8 @@ impl Weibo {
             streams.push(StreamInfo {
                 url: hls_url,
                 quality: "Source".to_string(),
-                format: MediaFormat::Hls,
+                stream_format: StreamFormat::Hls,
+                media_format: MediaFormat::Ts,
                 bitrate: 0,
                 priority: 0,
                 extras: None,

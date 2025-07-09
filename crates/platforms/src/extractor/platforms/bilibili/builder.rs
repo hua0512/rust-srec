@@ -15,7 +15,7 @@ use crate::{
             wbi::{encode_wbi, get_wbi_keys},
         },
     },
-    media::{MediaFormat, MediaInfo, StreamInfo},
+    media::{MediaInfo, StreamFormat, StreamInfo, formats::MediaFormat},
 };
 use rustc_hash::FxHashMap;
 
@@ -190,13 +190,16 @@ impl Bilibili {
 
         let mut streams = Vec::new();
         for s in &playurl_info.playurl.stream {
+            debug!("protocol_name: {:?}", s.protocol_name);
             let protocol_name = if s.protocol_name == "http_stream" {
-                MediaFormat::Flv
+                StreamFormat::Flv
             } else {
-                MediaFormat::Hls
+                StreamFormat::Hls
             };
 
             for f in &s.format {
+                let format_name = f.format_name.clone();
+                debug!("format_name: {:?}", format_name);
                 for c in &f.codec {
                     let current_qn = c.current_qn;
                     for u in &c.url_info {
@@ -225,7 +228,8 @@ impl Bilibili {
                             let bitrate = if qn < 1000 { qn as u64 * 10 } else { qn as u64 };
                             streams.push(StreamInfo {
                                 url,
-                                format: protocol_name,
+                                stream_format: protocol_name,
+                                media_format: MediaFormat::from_extension(&format_name),
                                 quality,
                                 bitrate,
                                 priority: 0,
@@ -291,13 +295,22 @@ impl PlatformExtractor for Bilibili {
         })?;
 
         let qn = extras["qn"]
-            .as_i64()
-            .ok_or_else(|| ExtractorError::ValidationError("QN not found in extras".to_string()))?
-            as i32;
+            .as_u64()
+            .ok_or_else(|| ExtractorError::ValidationError("QN not found in extras".to_string()))?;
 
         let rid = extras["rid"].as_u64().ok_or_else(|| {
             ExtractorError::ValidationError("Room ID not found in extras".to_string())
         })?;
+
+        let current_qn = extras["qn"].as_u64().ok_or_else(|| {
+            ExtractorError::ValidationError("Current QN not found in extras".to_string())
+        })?;
+
+        // skip extraction if the requested quality is the same as the current quality
+        if qn == current_qn {
+            // return the original stream info
+            return Ok(stream_info);
+        }
 
         let params = vec![
             ("room_id", rid.to_string()),
@@ -331,7 +344,8 @@ impl PlatformExtractor for Bilibili {
             .and_then(|f| f.codec.first())
             .ok_or_else(|| ExtractorError::ValidationError("No codec found".to_string()))?;
 
-        if codec.current_qn != qn {
+        let current_qn: u64 = codec.current_qn.try_into().unwrap();
+        if current_qn != qn {
             return Err(ExtractorError::ValidationError(
                 "Failed to get the stream for the requested quality.".to_string(),
             ));
@@ -369,7 +383,7 @@ mod tests {
             .with_max_level(Level::DEBUG)
             .init();
         let bilibili = Bilibili::new(
-            "https://live.bilibili.com/22908869".to_string(),
+            "https://live.bilibili.com/32593556".to_string(),
             default_client(),
             None,
             None,

@@ -15,7 +15,7 @@ use crate::{
         platform_extractor::{Extractor, PlatformExtractor},
         platforms::douyu::models::{DouyuH5PlayData, DouyuH5PlayResponse, DouyuRoomInfoResponse},
     },
-    media::{MediaFormat, MediaInfo, StreamInfo},
+    media::{MediaFormat, MediaInfo, StreamFormat, StreamInfo},
 };
 
 const RID_REGEX_STR: &str = r#"\$ROOM\.room_id\s*=\s*(\d+)"#;
@@ -342,16 +342,22 @@ impl DouyuExtractorConfig {
                 };
 
                 let format = if data.rtmp_live.contains("flv") {
+                    StreamFormat::Flv
+                } else {
+                    StreamFormat::Hls
+                };
+                let media_format = if data.rtmp_live.contains("flv") {
                     MediaFormat::Flv
                 } else {
-                    MediaFormat::Hls
+                    MediaFormat::Ts
                 };
 
                 let codec = if cdn.is_h265 { "hevc,aac" } else { "avc,aac" };
 
                 let stream = StreamInfo {
                     url: stream_url,
-                    format,
+                    stream_format: format,
+                    media_format,
                     quality: rate.name.to_string(),
                     bitrate: rate.bit,
                     priority: 0,

@@ -5,7 +5,7 @@ use serde::Serialize;
 use url::Url;
 
 use super::error::ExtractorError;
-use crate::media::{MediaFormat, stream_info::StreamInfo};
+use crate::media::{MediaFormat, StreamFormat, stream_info::StreamInfo};
 
 #[async_trait]
 pub trait HlsExtractor {
@@ -35,17 +35,26 @@ pub trait HlsExtractor {
 
         let streams = match playlist {
             Playlist::MasterPlaylist(pl) => process_master_playlist(pl, &base_url, extras),
-            Playlist::MediaPlaylist(_) => vec![StreamInfo {
-                url: m3u8_url.to_string(),
-                format: MediaFormat::Hls,
-                quality: "Source".to_string(),
-                bitrate: 0,
-                priority: 0,
-                extras,
-                codec: "".to_string(),
-                fps: 0.0,
-                is_headers_needed: false,
-            }],
+            Playlist::MediaPlaylist(_) => {
+                let media_format = if m3u8_url.contains("fmp4") || m3u8_url.contains(".mp4") {
+                    MediaFormat::Mp4
+                } else {
+                    MediaFormat::Ts
+                };
+
+                vec![StreamInfo {
+                    url: m3u8_url.to_string(),
+                    stream_format: StreamFormat::Hls,
+                    media_format,
+                    quality: "Source".to_string(),
+                    bitrate: 0,
+                    priority: 0,
+                    extras,
+                    codec: "".to_string(),
+                    fps: 0.0,
+                    is_headers_needed: false,
+                }]
+            }
         };
 
         Ok(streams)
@@ -79,7 +88,9 @@ fn process_master_playlist(
 
             StreamInfo {
                 url: stream_url.to_string(),
-                format: MediaFormat::Hls,
+                stream_format: StreamFormat::Hls,
+                // we do not know the media format here, so we use Ts as default
+                media_format: MediaFormat::Ts,
                 quality,
                 bitrate,
                 priority: 0,

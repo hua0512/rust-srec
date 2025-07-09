@@ -12,7 +12,7 @@ use crate::extractor::platforms::douyin::utils::{
     GlobalTtwidManager, extract_rid, fetch_ttwid, generate_ms_token, generate_nonce,
     generate_odin_ttid, get_common_params,
 };
-use crate::media::media_format::MediaFormat;
+use crate::media::formats::{MediaFormat, StreamFormat};
 use crate::media::media_info::MediaInfo;
 use crate::media::stream_info::StreamInfo;
 use async_trait::async_trait;
@@ -543,7 +543,8 @@ impl<'a> DouyinRequest<'a> {
 
         Some(StreamInfo {
             url: origin_url,
-            format: MediaFormat::Flv,
+            stream_format: StreamFormat::Flv,
+            media_format: MediaFormat::Flv,
             quality: quality_name.to_string(),
             bitrate: bitrate as u64,
             priority: 10,
@@ -590,6 +591,7 @@ impl<'a> DouyinRequest<'a> {
 
             self._add_stream_if_url_present(
                 &quality_data.main.flv,
+                StreamFormat::Flv,
                 MediaFormat::Flv,
                 quality_name,
                 bitrate as u64,
@@ -601,7 +603,8 @@ impl<'a> DouyinRequest<'a> {
 
             self._add_stream_if_url_present(
                 &quality_data.main.hls,
-                MediaFormat::Hls,
+                StreamFormat::Hls,
+                MediaFormat::Ts,
                 quality_name,
                 bitrate as u64,
                 &codec,
@@ -618,7 +621,8 @@ impl<'a> DouyinRequest<'a> {
     fn _add_stream_if_url_present(
         &self,
         url: &str,
-        format: MediaFormat,
+        format: StreamFormat,
+        media_format: MediaFormat,
         quality_name: &str,
         bitrate: u64,
         codec: &str,
@@ -629,7 +633,8 @@ impl<'a> DouyinRequest<'a> {
         if !url.is_empty() {
             streams.push(StreamInfo {
                 url: url.to_string(),
-                format,
+                stream_format: format,
+                media_format,
                 quality: quality_name.to_string(),
                 bitrate,
                 priority: 0,
@@ -649,7 +654,8 @@ impl<'a> DouyinRequest<'a> {
         for (quality, url) in &stream_url.flv_pull_url {
             streams.push(StreamInfo {
                 url: url.to_string(),
-                format: MediaFormat::Flv,
+                stream_format: StreamFormat::Flv,
+                media_format: MediaFormat::Flv,
                 quality: quality.to_string(),
                 bitrate: 0,
                 priority: 0,
@@ -663,7 +669,8 @@ impl<'a> DouyinRequest<'a> {
         for (quality, url) in &stream_url.hls_pull_url_map {
             streams.push(StreamInfo {
                 url: url.to_string(),
-                format: MediaFormat::Hls,
+                stream_format: StreamFormat::Hls,
+                media_format: MediaFormat::Ts,
                 quality: quality.to_string(),
                 bitrate: 0,
                 priority: 0,

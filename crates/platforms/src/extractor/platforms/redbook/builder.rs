@@ -11,7 +11,7 @@ use crate::{
         platform_extractor::{Extractor, PlatformExtractor},
         platforms::redbook::models::{LiveInfo, PullConfig},
     },
-    media::{MediaFormat, MediaInfo, StreamInfo},
+    media::{MediaFormat, MediaInfo, StreamFormat, StreamInfo},
 };
 
 static USER_ID_REGEX: LazyLock<Regex> =
@@ -75,13 +75,13 @@ impl RedBook {
     }
 
     /// Determine MediaFormat from URL extension
-    fn get_format_from_url(url: &str) -> MediaFormat {
-        if url.ends_with(M3U8_EXTENSION) {
-            MediaFormat::Hls
-        } else if url.ends_with(FLV_EXTENSION) {
-            MediaFormat::Flv
+    fn get_format_from_url(url: &str) -> StreamFormat {
+        if url.contains(M3U8_EXTENSION) {
+            StreamFormat::Hls
+        } else if url.contains(FLV_EXTENSION) {
+            StreamFormat::Flv
         } else {
-            MediaFormat::Hls // Default to HLS for unknown formats
+            StreamFormat::Hls // Default to HLS for unknown formats
         }
     }
 
@@ -122,9 +122,16 @@ impl RedBook {
                     "height": pull_config.height
                 });
 
+                let media_format = if format == StreamFormat::Flv {
+                    MediaFormat::Flv
+                } else {
+                    MediaFormat::Ts
+                };
+
                 streams.push(StreamInfo {
                     url: url.to_string(),
-                    format,
+                    stream_format: format,
+                    media_format,
                     quality: display_quality,
                     bitrate: 0,
                     priority: (priority_offset + index) as u32,
