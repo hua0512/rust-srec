@@ -307,7 +307,7 @@ impl PlatformExtractor for Bilibili {
         })?;
 
         // skip extraction if the requested quality is the same as the current quality
-        if qn == current_qn {
+        if qn == current_qn && !stream_info.url.is_empty() {
             // return the original stream info
             return Ok(stream_info);
         }
