@@ -16,11 +16,16 @@ use crate::media::formats::{MediaFormat, StreamFormat};
 use crate::media::media_info::MediaInfo;
 use crate::media::stream_info::StreamInfo;
 use async_trait::async_trait;
+use regex::Regex;
 use reqwest::{Client, RequestBuilder};
 use rustc_hash::FxHashMap;
 use std::borrow::Cow;
-use std::sync::Arc;
+use std::sync::{Arc, LazyLock};
 use tracing::debug;
+
+pub static URL_REGEX: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r"^(?:https?://)?(?:www\.)?live.douyin\.com/([a-zA-Z0-9_-]+)").unwrap()
+});
 
 /// Manages the ttwid cookie strategy.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

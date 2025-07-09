@@ -1,60 +1,113 @@
+use std::sync::LazyLock;
+
 use super::error::ExtractorError;
 use super::platform_extractor::PlatformExtractor;
+use crate::extractor::platforms::{
+    self, bilibili::Bilibili, douyin::DouyinExtractorBuilder, douyu::DouyuExtractorBuilder,
+    huya::HuyaExtractor, pandatv::PandaTV, picarto::Picarto, redbook::RedBook, twitch::Twitch,
+    weibo::Weibo,
+};
 use regex::Regex;
 use reqwest::Client;
-use std::sync::Arc;
 
 // A type alias for a thread-safe constructor function.
-type ExtractorConstructor = Arc<
-    dyn Fn(String, Client, Option<String>, Option<serde_json::Value>) -> Box<dyn PlatformExtractor>
-        + Send
-        + Sync,
->;
+type ExtractorConstructor =
+    fn(String, Client, Option<String>, Option<serde_json::Value>) -> Box<dyn PlatformExtractor>;
+
+struct PlatformEntry {
+    regex: &'static LazyLock<Regex>,
+    constructor: ExtractorConstructor,
+}
+
+// Static platform registry
+// Macro to create a constructor function for a given platform
+macro_rules! create_constructor {
+    ($name:ident, $builder:expr) => {
+        fn $name(
+            url: String,
+            client: Client,
+            cookies: Option<String>,
+            extras: Option<serde_json::Value>,
+        ) -> Box<dyn PlatformExtractor> {
+            Box::new($builder(url, client, cookies, extras))
+        }
+    };
+}
+
+// Create constructor functions using the macro
+create_constructor!(new_huya, HuyaExtractor::new);
+create_constructor!(new_douyin, |url, client, cookies, extras| {
+    DouyinExtractorBuilder::new(url, client, cookies, extras).build()
+});
+create_constructor!(new_douyu, |url, client, cookies, extras| {
+    DouyuExtractorBuilder::new(url, client, cookies, extras).build(None)
+});
+create_constructor!(new_pandatv, PandaTV::new);
+create_constructor!(new_weibo, Weibo::new);
+create_constructor!(new_twitch, Twitch::new);
+create_constructor!(new_redbook, RedBook::new);
+create_constructor!(new_bilibili, Bilibili::new);
+create_constructor!(new_picarto, Picarto::new);
+
+// Static platform registry
+static PLATFORMS: &[PlatformEntry] = &[
+    PlatformEntry {
+        regex: &platforms::huya::URL_REGEX,
+        constructor: new_huya,
+    },
+    PlatformEntry {
+        regex: &platforms::douyin::URL_REGEX,
+        constructor: new_douyin,
+    },
+    PlatformEntry {
+        regex: &platforms::douyu::URL_REGEX,
+        constructor: new_douyu,
+    },
+    PlatformEntry {
+        regex: &platforms::pandatv::URL_REGEX,
+        constructor: new_pandatv,
+    },
+    PlatformEntry {
+        regex: &platforms::weibo::URL_REGEX,
+        constructor: new_weibo,
+    },
+    PlatformEntry {
+        regex: &platforms::twitch::URL_REGEX,
+        constructor: new_twitch,
+    },
+    PlatformEntry {
+        regex: &platforms::redbook::URL_REGEX,
+        constructor: new_redbook,
+    },
+    PlatformEntry {
+        regex: &platforms::bilibili::URL_REGEX,
+        constructor: new_bilibili,
+    },
+    PlatformEntry {
+        regex: &platforms::picarto::URL_REGEX,
+        constructor: new_picarto,
+    },
+];
 
 /// A factory for creating platform-specific extractors.
 pub struct ExtractorFactory {
-    registry: Vec<(Regex, ExtractorConstructor)>,
     client: Client,
 }
 
 impl ExtractorFactory {
-    /// Creates a new, empty extractor factory.
     pub fn new(client: Client) -> Self {
-        Self {
-            registry: Vec::new(),
-            client,
-        }
+        Self { client }
     }
 
-    /// Registers a new extractor type with the factory.
-    ///
-    /// # Arguments
-    ///
-    /// * `regex_str` - The regular expression that identifies URLs for this platform.
-    /// * `constructor` - A function that takes a URL and returns a new extractor instance.
-    pub fn register(
-        &mut self,
-        regex_str: &str,
-        constructor: ExtractorConstructor,
-    ) -> Result<(), regex::Error> {
-        let regex = Regex::new(regex_str)?;
-        self.registry.push((regex, constructor));
-        Ok(())
-    }
-
-    /// Creates a platform-specific extractor for the given URL.
-    ///
-    /// It iterates through the registered platforms and returns the first one
-    /// that matches the URL.
     pub fn create_extractor(
         &self,
         url: &str,
         cookies: Option<String>,
         extras: Option<serde_json::Value>,
     ) -> Result<Box<dyn PlatformExtractor>, ExtractorError> {
-        for (regex, constructor) in &self.registry {
-            if regex.is_match(url) {
-                return Ok(constructor(
+        for platform in PLATFORMS {
+            if platform.regex.is_match(url) {
+                return Ok((platform.constructor)(
                     url.to_string(),
                     self.client.clone(),
                     cookies,

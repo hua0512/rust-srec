@@ -1,8 +1,3 @@
-use crate::extractor::platforms::{
-    bilibili::Bilibili, douyin, douyu, huya, pandatv::PandaTV, picarto::Picarto, redbook::RedBook,
-    twitch::Twitch, weibo::Weibo,
-};
-
 use super::factory::ExtractorFactory;
 use reqwest::Client;
 use rustls::{ClientConfig, crypto::ring};
@@ -31,88 +26,5 @@ pub fn default_client() -> Client {
 /// Returns a new `ExtractorFactory` populated with all the supported platforms.
 pub fn default_factory() -> ExtractorFactory {
     let client = default_client();
-    let mut factory = ExtractorFactory::new(client);
-
-    factory
-        .register(
-            r"^(?:https?://)?(?:www\.)?huya\.com/(\d+|[a-zA-Z0-9_-]+)",
-            Arc::new(|url, client, cookies, extras| {
-                Box::new(huya::HuyaExtractor::new(url, client, cookies, extras))
-            }),
-        )
-        .unwrap();
-
-    factory
-        .register(
-            r"^(?:https?://)?(?:www\.)?live.douyin\.com/([a-zA-Z0-9_-]+)",
-            Arc::new(|url, client, cookies, extras| {
-                Box::new(douyin::DouyinExtractorBuilder::new(url, client, cookies, extras).build())
-            }),
-        )
-        .unwrap();
-
-    factory
-        .register(
-            r"^(?:https?://)?(?:www\.)?douyu\.com/(\d+)",
-            Arc::new(|url, client, cookies, extras| {
-                Box::new(
-                    douyu::DouyuExtractorBuilder::new(url, client, cookies, extras).build(None),
-                )
-            }),
-        )
-        .unwrap();
-
-    factory
-        .register(
-            r"^(?:https?://)?(?:www\.)?pandalive\.co\.kr/play/([a-zA-Z0-9_-]+)",
-            Arc::new(|url, client, cookies, extras| {
-                Box::new(PandaTV::new(url, client, cookies, extras))
-            }),
-        )
-        .unwrap();
-
-    factory
-        .register(
-            r"(?:https://(?:www\.)?weibo\.com/(u/\d+|l/wblive/p/show/\d+:[a-zA-Z0-9]+))(?:[?#].*)?$",
-            Arc::new(|url, client, cookies, extras| Box::new(Weibo::new(url, client, cookies, extras))),
-        )
-        .unwrap();
-
-    factory
-        .register(
-            r"^(?:https?://)?(?:www\.)?twitch\.tv/([a-zA-Z0-9_]+)",
-            Arc::new(|url, client, cookies, extras| {
-                Box::new(Twitch::new(url, client, cookies, extras))
-            }),
-        )
-        .unwrap();
-
-    factory
-        .register(
-            r"^(?:https?://)?(?:(?:www\.)?xiaohongshu\.com/user/profile/([a-zA-Z0-9_-]+)|xhslink\.com/[a-zA-Z0-9_-]+)",
-            Arc::new(|url, client, cookies, extras| {
-                Box::new(RedBook::new(url, client, cookies, extras))
-            }),
-        )
-        .unwrap();
-
-    factory
-        .register(
-            r"^(?:https?://)?(?:www\.)?live\.bilibili\.com/([a-zA-Z0-9_-]+)",
-            Arc::new(|url, client, cookies, extras| {
-                Box::new(Bilibili::new(url, client, cookies, extras))
-            }),
-        )
-        .unwrap();
-
-    factory
-        .register(
-            r"^(?:https?://)?(?:www\.)?picarto\.tv/([a-zA-Z0-9_-]+)",
-            Arc::new(|url, client, cookies, extras| {
-                Box::new(Picarto::new(url, client, cookies, extras))
-            }),
-        )
-        .unwrap();
-
-    factory
+    ExtractorFactory::new(client)
 }

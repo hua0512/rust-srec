@@ -1,14 +1,14 @@
-use std::sync::LazyLock;
 use rand::{Rng, rng};
-use regex::Regex;
 use reqwest::Client;
 use serde_json::json;
+use std::sync::LazyLock;
 use std::{
     collections::HashMap,
     sync::{Arc, Mutex},
 };
 use tracing::debug;
 
+use crate::extractor::platforms::douyin::URL_REGEX;
 use crate::extractor::{
     default::DEFAULT_UA,
     error::ExtractorError,
@@ -18,12 +18,8 @@ use crate::extractor::{
 pub static GLOBAL_TTWID: LazyLock<Arc<Mutex<Option<String>>>> =
     LazyLock::new(|| Arc::new(Mutex::new(None)));
 
-pub static WEB_RID_REGEX: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(r"(?:https?://)?(?:www\.)?(?:v|live\.)?douyin\.com/([a-zA-Z0-9_\.]+)").unwrap()
-});
-
 pub(crate) fn extract_rid(url: &str) -> Result<String, ExtractorError> {
-    WEB_RID_REGEX
+    URL_REGEX
         .captures(url)
         .and_then(|captures| captures.get(1))
         .map(|m| m.as_str().to_string())
@@ -254,10 +250,7 @@ mod tests {
         // Using httpbin.org/gzip which returns gzip-compressed JSON
         let response = client
             .get("https://httpbin.org/gzip")
-            .header(
-                "Accept-Encoding",
-                HeaderValue::from_static("gzip, deflate"),
-            )
+            .header("Accept-Encoding", HeaderValue::from_static("gzip, deflate"))
             .send()
             .await;
 

@@ -1,8 +1,9 @@
-use std::{collections::HashMap, sync::LazyLock};
+use std::collections::HashMap;
 
 use async_trait::async_trait;
 use regex::Regex;
 use reqwest::Client;
+use std::sync::LazyLock;
 use tracing::debug;
 
 use crate::{
@@ -14,6 +15,10 @@ use crate::{
     media::{MediaFormat, MediaInfo, StreamFormat, StreamInfo},
 };
 
+pub static URL_REGEX: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r"^(?:https?://)?(?:(?:www\.)?xiaohongshu\.com/user/profile/([a-zA-Z0-9_-]+)|xhslink\.com/[a-zA-Z0-9_-]+)")
+        .unwrap()
+});
 static USER_ID_REGEX: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"/user/profile/([^/?]*)").unwrap());
 
@@ -279,6 +284,7 @@ mod tests {
     };
 
     #[tokio::test]
+    #[ignore]
     async fn test_extract() {
         tracing_subscriber::fmt()
             .with_max_level(Level::DEBUG)

@@ -1,5 +1,7 @@
 use async_trait::async_trait;
+use regex::Regex;
 use reqwest::Client;
+use std::sync::LazyLock;
 use tracing::debug;
 use url::Url;
 
@@ -11,6 +13,10 @@ use crate::{
     },
     media::{MediaFormat, MediaInfo, StreamFormat, StreamInfo},
 };
+
+pub static URL_REGEX: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r"^(?:https?://)?(?:www\.)?weibo\.com/(?:u/\d+|l/wblive/p/show/\d+:\d+)").unwrap()
+});
 
 pub struct Weibo {
     extractor: Extractor,

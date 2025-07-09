@@ -3,7 +3,6 @@ use crate::media::{StreamInfo, stream_info};
 
 use super::{super::media::media_info::MediaInfo, error::ExtractorError};
 use async_trait::async_trait;
-use regex::Regex;
 use reqwest::header::{HeaderMap, HeaderName, HeaderValue};
 use reqwest::{Client, Method, RequestBuilder};
 use rustc_hash::FxHashMap;
@@ -49,8 +48,6 @@ pub struct Extractor {
     pub platform_name: String,
     // The reqwest client
     pub client: Client,
-    // optional regex to match the platform URL
-    pub platform_regex: Option<Regex>,
     // platform-specific headers and parameters
     platform_headers: HeaderMap,
     pub platform_params: FxHashMap<String, String>,
@@ -86,7 +83,6 @@ impl Extractor {
             platform_name: platform_name.into(),
             url: platform_url.into(),
             client,
-            platform_regex: None,
             platform_headers: default_headers,
             platform_params: FxHashMap::default(),
             cookies: FxHashMap::default(),
@@ -271,24 +267,6 @@ impl Extractor {
                     }
                 }
             }
-        }
-    }
-
-    pub fn set_regex_str(&mut self, regex_str: &str) -> Result<(), regex::Error> {
-        self.platform_regex = Some(Regex::new(regex_str)?);
-        Ok(())
-    }
-
-    pub fn set_regex(&mut self, regex: Regex) {
-        self.platform_regex = Some(regex);
-    }
-
-    pub fn is_url_valid(&self) -> bool {
-        if let Some(re) = &self.platform_regex {
-            re.is_match(&self.url)
-        } else {
-            // If no regex is provided, assume the URL is valid
-            true
         }
     }
 

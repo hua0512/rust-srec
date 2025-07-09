@@ -18,8 +18,9 @@ use crate::{
     media::MediaInfo,
 };
 
-static PLATFORM_REGEX: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"https?://(?:www\.)?pandalive\.co\.kr/play/([^/]+)").unwrap());
+pub static URL_REGEX: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r"^(?:https?://)?(?:www\.)?pandalive\.co\.kr/play/([a-zA-Z0-9_-]+)").unwrap()
+});
 
 pub struct PandaTV {
     extractor: Extractor,
@@ -59,7 +60,7 @@ impl PandaTV {
 
     fn extract_room_id(&self) -> Result<String, ExtractorError> {
         let url = &self.extractor.url.clone();
-        let caps = PLATFORM_REGEX
+        let caps = URL_REGEX
             .captures(url)
             .ok_or(ExtractorError::InvalidUrl(url.clone()))?;
         let room_id = caps.get(1).unwrap().as_str();

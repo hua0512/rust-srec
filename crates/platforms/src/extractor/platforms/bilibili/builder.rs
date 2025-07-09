@@ -19,8 +19,8 @@ use crate::{
 };
 use rustc_hash::FxHashMap;
 
-const PLATFORM_REGEX_STR: &str = r"https?:\/\/(?:www\.)?(?:live\.)?bilibili\.com\/(\d+)";
-static PLATFORM_REGEX: LazyLock<Regex> = LazyLock::new(|| Regex::new(PLATFORM_REGEX_STR).unwrap());
+pub static URL_REGEX: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"https?:\/\/(?:www\.)?(?:live\.)?bilibili\.com\/(\d+)").unwrap());
 
 #[derive(Debug, PartialEq, Eq, Copy, Clone, TryFromPrimitive)]
 #[repr(u32)]
@@ -95,7 +95,7 @@ impl Bilibili {
     }
 
     pub fn extract_room_id(&self) -> Result<String, ExtractorError> {
-        let caps = PLATFORM_REGEX.captures(&self.extractor.url);
+        let caps = URL_REGEX.captures(&self.extractor.url);
         caps.and_then(|c| c.get(1))
             .map(|m| m.as_str().to_string())
             .ok_or(ExtractorError::InvalidUrl(self.extractor.url.clone()))

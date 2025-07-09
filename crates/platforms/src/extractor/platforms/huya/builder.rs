@@ -15,6 +15,10 @@ use url::Url;
 use super::huya_tars;
 use super::models::*;
 
+pub static URL_REGEX: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r"^(?:https?://)?(?:www\.)?huya\.com/(\d+|[a-zA-Z0-9_-]+)").unwrap()
+});
+
 static ROOM_DATA_REGEX: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r#"var TT_ROOM_DATA = (.*?);"#).unwrap());
 

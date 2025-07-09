@@ -1,5 +1,10 @@
+use regex::Regex;
 use reqwest::Client;
+use std::sync::LazyLock;
 use tracing::debug;
+
+pub static URL_REGEX: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"^(?:https?://)?(?:www\.)?picarto\.tv/([a-zA-Z0-9_-]+)").unwrap());
 
 use crate::{
     extractor::{
@@ -68,9 +73,7 @@ impl Picarto {
         debug!("Picarto response: {:?}", data);
 
         if data.channel.is_none() {
-            return Err(ExtractorError::ValidationError(
-                "Channel not found".to_string(),
-            ));
+            return Err(ExtractorError::StreamerNotFound);
         }
 
         let channel = data.channel.unwrap();

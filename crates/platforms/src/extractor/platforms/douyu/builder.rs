@@ -18,6 +18,9 @@ use crate::{
     media::{MediaFormat, MediaInfo, StreamFormat, StreamInfo},
 };
 
+pub static URL_REGEX: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"^(?:https?://)?(?:www\.)?douyu\.com/(\d+)").unwrap());
+
 const RID_REGEX_STR: &str = r#"\$ROOM\.room_id\s*=\s*(\d+)"#;
 const ROOM_STATUS_REGEX_STR: &str = r#"\$ROOM\.show_status\s*=\s*(\d+)"#;
 const VIDEO_LOOP_REGEX_STR: &str = r#"videoLoop":\s*(\d+)"#;

@@ -14,7 +14,7 @@ use reqwest::Client;
 use rustc_hash::FxHashMap;
 use tracing::debug;
 
-static PLATFORM_REGEX: LazyLock<Regex> =
+pub static URL_REGEX: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"^https?://(?:www\.)?twitch\.tv/([^/?#]+)").unwrap());
 
 pub struct Twitch {
@@ -72,7 +72,7 @@ impl Twitch {
 
     pub fn extract_room_id(&self) -> Result<&str, ExtractorError> {
         let url =
-            PLATFORM_REGEX
+            URL_REGEX
                 .captures(&self.extractor.url)
                 .ok_or(ExtractorError::ValidationError(
                     "Twitch URL is invalid".to_string(),
