@@ -4,18 +4,12 @@ use thiserror::Error;
 pub enum ExtractorError {
     #[error("invalid url: {0}")]
     InvalidUrl(String),
-    #[error("regex error: {0}")]
-    RegexError(String),
     #[error("http error: {0}")]
     HttpError(#[from] reqwest::Error),
-    #[error("io error: {0}")]
-    IoError(#[from] std::io::Error),
     #[error("unsupported extractor")]
     UnsupportedExtractor,
     #[error("json error: {0}")]
     JsonError(#[from] serde_json::Error),
-    #[error("platform not supported")]
-    PlatformNotSupported,
     #[error("live stream not supported")]
     LiveStreamNotSupported,
     #[error("age-restricted content")]
