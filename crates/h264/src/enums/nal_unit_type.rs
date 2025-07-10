@@ -156,7 +156,7 @@ impl TryFrom<u8> for NALUnitType {
             24..31 => Ok(NALUnitType::Unspecified2), // Application-specific
             _ => Err(io::Error::new(
                 io::ErrorKind::InvalidData,
-                format!("Invalid NAL unit type: {}", value),
+                format!("Invalid NAL unit type: {value}"),
             )),
         }
     }

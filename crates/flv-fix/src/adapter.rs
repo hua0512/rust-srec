@@ -14,16 +14,16 @@ impl From<FlvErrorWrapper> for PipelineError {
                 PipelineError::InvalidData("Incomplete data provided to decoder".into())
             }
             FlvError::TagParseError(msg) => {
-                PipelineError::InvalidData(format!("Error parsing tag data: {}", msg))
+                PipelineError::InvalidData(format!("Error parsing tag data: {msg}"))
             }
             FlvError::ResyncFailed => {
                 PipelineError::InvalidData("Resynchronization failed to find valid tag".into())
             }
             FlvError::InvalidTagType(tag_type) => {
-                PipelineError::InvalidData(format!("Invalid tag type encountered: {}", tag_type))
+                PipelineError::InvalidData(format!("Invalid tag type encountered: {tag_type}"))
             }
             FlvError::TagTooLarge(size) => {
-                PipelineError::InvalidData(format!("Tag data size too large: {}", size))
+                PipelineError::InvalidData(format!("Tag data size too large: {size}"))
             }
         }
     }

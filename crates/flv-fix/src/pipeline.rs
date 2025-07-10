@@ -21,12 +21,11 @@
 //! - **ScriptKeyframesFiller**: Prepares metadata for proper seeking by adding keyframe placeholders
 //! - **ScriptFilter**: Removes or modifies problematic script tags
 
-use crate::operators::limit::LimitConfig;
-use crate::operators::script_filler::ScriptFillerConfig;
 use crate::operators::{
-    ContinuityMode, DefragmentOperator, GopSortOperator, HeaderCheckOperator, LimitOperator,
-    RepairStrategy, ScriptFilterOperator, ScriptKeyframesFillerOperator, SplitOperator,
-    TimeConsistencyOperator, TimingRepairConfig, TimingRepairOperator,
+    ContinuityMode, DefragmentOperator, GopSortOperator, HeaderCheckOperator, LimitConfig,
+    LimitOperator, RepairStrategy, ScriptFillerConfig, ScriptFilterOperator,
+    ScriptKeyframesFillerOperator, SplitOperator, TimeConsistencyOperator, TimingRepairConfig,
+    TimingRepairOperator,
 };
 use flv::data::FlvData;
 use flv::error::FlvError;
@@ -181,6 +180,7 @@ mod test {
     use flv::parser_async::FlvDecoderStream;
     use futures::StreamExt;
     use pipeline_common::test_utils::init_tracing;
+    use std::io;
     use std::path::Path;
     use tracing::info;
 
@@ -244,12 +244,8 @@ mod test {
 
             let mut output = |result: Result<FlvData, PipelineError>| {
                 // Convert PipelineError back to FlvError for output
-                let flv_result = result.map_err(|e| {
-                    FlvError::Io(std::io::Error::new(
-                        std::io::ErrorKind::Other,
-                        format!("Pipeline error: {}", e),
-                    ))
-                });
+                let flv_result = result
+                    .map_err(|e| FlvError::Io(io::Error::other(format!("Pipeline error: {e}"))));
 
                 if output_tx.send(flv_result).is_err() {
                     tracing::warn!("Output channel closed, stopping processing");
@@ -258,10 +254,9 @@ mod test {
 
             if let Err(err) = pipeline.process(input, &mut output) {
                 output_tx
-                    .send(Err(FlvError::Io(std::io::Error::new(
-                        std::io::ErrorKind::Other,
-                        format!("Pipeline error: {}", err),
-                    ))))
+                    .send(Err(FlvError::Io(io::Error::other(format!(
+                        "Pipeline error: {err}"
+                    )))))
                     .ok();
             }
         }));

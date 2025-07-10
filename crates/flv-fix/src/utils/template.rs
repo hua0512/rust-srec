@@ -36,8 +36,8 @@ pub fn expand_filename_template(template: &str, file_count: Option<u32>) -> Stri
                         chars.next();
                     }
                     'i' => {
-                        if let Some(count) = file_count { 
-                            result.push_str(&format!("{:03}", count)); // Output index with 3 decimals
+                        if let Some(count) = file_count {
+                            result.push_str(&format!("{count:03}")); // Output index with 3 decimals
                         } else {
                             result.push('1'); // Default to 1 if count is None
                         }

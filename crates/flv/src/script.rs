@@ -240,7 +240,7 @@ mod tests {
         }
 
         // Test display format
-        let display = format!("{}", script_data);
+        let display = format!("{script_data}");
         assert_eq!(display, "1 values");
     }
 

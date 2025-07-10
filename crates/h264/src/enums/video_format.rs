@@ -67,7 +67,7 @@ impl TryFrom<u8> for VideoFormat {
             7 => Ok(VideoFormat::Reserved2),
             _ => Err(io::Error::new(
                 io::ErrorKind::InvalidData,
-                format!("Invalid video format: {}", value),
+                format!("Invalid video format: {value}"),
             )),
         }
     }

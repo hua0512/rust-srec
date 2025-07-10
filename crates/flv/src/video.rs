@@ -133,7 +133,7 @@ impl TryFrom<u8> for VideoFrameType {
         .ok_or_else(|| {
             std::io::Error::new(
                 std::io::ErrorKind::InvalidData,
-                format!("Invalid video frame type: {}", value),
+                format!("Invalid video frame type: {value}"),
             )
         })
     }
@@ -159,7 +159,7 @@ impl TryFrom<u8> for VideoCommand {
         .ok_or_else(|| {
             std::io::Error::new(
                 std::io::ErrorKind::InvalidData,
-                format!("Invalid video command: {}", value),
+                format!("Invalid video command: {value}"),
             )
         })
     }
@@ -207,7 +207,7 @@ impl TryFrom<u8> for VideoCodecId {
         .ok_or_else(|| {
             std::io::Error::new(
                 std::io::ErrorKind::InvalidData,
-                format!("Invalid video codec: {}", value),
+                format!("Invalid video codec: {value}"),
             )
         })
     }
@@ -275,7 +275,7 @@ impl TryFrom<u32> for VideoFourCC {
             0x61763031 => Ok(Self::Av01),
             _ => Err(std::io::Error::new(
                 std::io::ErrorKind::InvalidData,
-                format!("Unknown video FourCC: 0x{:08x}", value),
+                format!("Unknown video FourCC: 0x{value:08x}"),
             )),
         }
     }
@@ -614,12 +614,12 @@ impl std::fmt::Display for VideoFrameType {
 impl std::fmt::Display for VideoTagBody {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            VideoTagBody::Avc(packet) => write!(f, "AVC {}", packet),
-            VideoTagBody::Hevc(packet) => write!(f, "HEVC {}", packet),
-            VideoTagBody::Enhanced(packet) => write!(f, "{}", packet),
-            VideoTagBody::Command(cmd) => write!(f, "Command: {:?}", cmd),
+            VideoTagBody::Avc(packet) => write!(f, "AVC {packet}"),
+            VideoTagBody::Hevc(packet) => write!(f, "HEVC {packet}"),
+            VideoTagBody::Enhanced(packet) => write!(f, "{packet}"),
+            VideoTagBody::Command(cmd) => write!(f, "Command: {cmd:?}"),
             VideoTagBody::Unknown { codec_id, data } => {
-                write!(f, "Unknown Codec: {:?}, {} bytes", codec_id, data.len())
+                write!(f, "Unknown Codec: {codec_id:?}, {data_len} bytes", data_len = data.len())
             }
         }
     }
@@ -629,23 +629,22 @@ impl std::fmt::Display for EnhancedPacket {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             EnhancedPacket::Metadata { video_codec, data } => {
-                write!(f, "Metadata [{}] ({} bytes)", video_codec, data.len())
+                write!(f, "Metadata [{video_codec}] ({}) bytes", data.len())
             }
             EnhancedPacket::SequenceEnd { video_codec } => {
-                write!(f, "Sequence End [{}]", video_codec)
+                write!(f, "Sequence End [{video_codec}]")
             }
-            EnhancedPacket::Av1(packet) => write!(f, "AV1 {}", packet),
-            EnhancedPacket::Hevc(packet) => write!(f, "HEVC {}", packet),
+            EnhancedPacket::Av1(packet) => write!(f, "AV1 {packet}"),
+            EnhancedPacket::Hevc(packet) => write!(f, "HEVC {packet}"),
             EnhancedPacket::Unknown {
                 packet_type,
                 video_codec,
                 data,
             } => write!(
                 f,
-                "Unknown [{}] Type: {}, {} bytes",
-                video_codec,
-                packet_type,
-                data.len()
+                "Unknown [{video_codec}] Type: {packet_type}, {data_len} bytes",
+                packet_type = packet_type,
+                data_len = data.len()
             ),
         }
     }

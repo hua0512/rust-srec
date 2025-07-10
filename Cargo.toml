@@ -1,5 +1,5 @@
 [workspace]
-resolver = "3" # resolver "3" doesn't exist yet, "2" is the latest stable
+resolver = "3"
 
 members = [
     "siphon-cli",

@@ -9,7 +9,7 @@ use flv::{
 use std::fmt;
 use tracing::{debug, error};
 
-use crate::operators::script_filler::MIN_INTERVAL_BETWEEN_KEYFRAMES_MS;
+use crate::operators::MIN_INTERVAL_BETWEEN_KEYFRAMES_MS;
 use crate::utils::{FLV_HEADER_SIZE, FLV_PREVIOUS_TAG_SIZE, FLV_TAG_HEADER_SIZE};
 
 // Stats structure to hold all the metrics
@@ -237,7 +237,7 @@ impl fmt::Display for FlvStats {
         // Compress keyframes information
         let keyframe_count = self.keyframes.len();
         if keyframe_count > 0 {
-            writeln!(f, "  Keyframes: {}", keyframe_count)?;
+            writeln!(f, "  Keyframes: {keyframe_count}")?;
 
             // Show first keyframe
             if keyframe_count > 0 {
@@ -273,14 +273,13 @@ impl fmt::Display for FlvStats {
 
                 writeln!(
                     f,
-                    "    Keyframe intervals: {:.2}s avg, {:.2}s min, {:.2}s max",
-                    avg_interval, min_interval, max_interval
+                    "    Keyframe intervals: {avg_interval:.2}s avg, {min_interval:.2}s min, {max_interval:.2}s max"
                 )?;
             } else if keyframe_count > 2 {
                 // For a small number of keyframes, show them all
                 writeln!(f, "    All keyframes (time in seconds @ position):")?;
                 for (i, keyframe) in self.keyframes.iter().enumerate() {
-                    write!(f, "      {}: {:.2}s @ {}", i, keyframe.0, keyframe.1)?;
+                    write!(f, "      {i}: {:.2}s @ {}", keyframe.0, keyframe.1)?;
                     if i < keyframe_count - 1 {
                         writeln!(f)?;
                     }
@@ -318,7 +317,7 @@ impl FlvAnalyzer {
         }
         let version = header.version;
         if version != 1 {
-            return Err(format!("Unsupported FLV version: {}", version));
+            return Err(format!("Unsupported FLV version: {version}"));
         }
 
         // delay those stats to be set when a sequence header is found

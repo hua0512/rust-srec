@@ -33,7 +33,7 @@
 use crate::{
     analyzer::FlvAnalyzer,
     script_modifier::{self, ScriptModifierError},
-    template::expand_filename_template,
+    utils::expand_filename_template,
 };
 use chrono::Local;
 use flv::error::FlvError;

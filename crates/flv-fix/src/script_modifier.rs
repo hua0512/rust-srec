@@ -33,7 +33,7 @@ use tracing::{debug, info, trace};
 
 use crate::{
     analyzer::FlvStats,
-    operators::script_filler::NATURAL_METADATA_KEY_ORDER,
+    operators::NATURAL_METADATA_KEY_ORDER,
     utils::{self, shift_content_backward, shift_content_forward, write_flv_tag},
 };
 
@@ -55,12 +55,8 @@ pub fn inject_stats_into_script_data(
     stats: FlvStats,
 ) -> Result<(), ScriptModifierError> {
     let file_path_clone = file_path.to_path_buf();
-    update_script_metadata(&file_path_clone, &stats).map_err(|e| {
-        ScriptModifierError::Io(io::Error::new(
-            io::ErrorKind::Other,
-            format!("Task join error: {}", e),
-        ))
-    })?;
+    update_script_metadata(&file_path_clone, &stats)
+        .map_err(|e| ScriptModifierError::Io(io::Error::other(format!("Task join error: {e}"))))?;
 
     Ok(())
 }

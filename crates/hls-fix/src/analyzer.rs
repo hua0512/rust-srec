@@ -148,19 +148,19 @@ impl fmt::Display for HlsStats {
 
         writeln!(f, "  Media:")?;
         if let Some(codec) = &self.video_codec {
-            writeln!(f, "    Video codec: {}", codec)?;
+            writeln!(f, "    Video codec: {codec}")?;
         }
         if let Some(codec) = &self.audio_codec {
-            writeln!(f, "    Audio codec: {}", codec)?;
+            writeln!(f, "    Audio codec: {codec}")?;
         }
         if let Some((width, height)) = self.resolution {
-            writeln!(f, "    Resolution: {}x{}", width, height)?;
+            writeln!(f, "    Resolution: {width}x{height}")?;
         }
         if let Some(bitrate) = self.video_bitrate {
-            writeln!(f, "    Video bitrate: {} kbps", bitrate)?;
+            writeln!(f, "    Video bitrate: {bitrate} kbps")?;
         }
         if let Some(bitrate) = self.audio_bitrate {
-            writeln!(f, "    Audio bitrate: {} kbps", bitrate)?;
+            writeln!(f, "    Audio bitrate: {bitrate} kbps")?;
         }
 
         writeln!(f, "  Segments:")?;
@@ -205,7 +205,7 @@ impl fmt::Display for HlsStats {
         // Last segment info
         if let Some(segment_type) = &self.last_segment_type {
             writeln!(f, "  Last segment:")?;
-            writeln!(f, "    Type: {:?}", segment_type)?;
+            writeln!(f, "    Type: {segment_type:?}")?;
             writeln!(f, "    Size: {} bytes", self.last_segment_size)?;
             if self.last_segment_duration > 0.0 {
                 writeln!(f, "    Duration: {:.2}s", self.last_segment_duration)?;

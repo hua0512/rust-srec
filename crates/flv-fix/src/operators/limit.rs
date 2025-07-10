@@ -697,8 +697,7 @@ mod tests {
         let final_split_count = split_count_clone.load(Ordering::SeqCst);
         assert!(
             final_split_count >= 2,
-            "Expected at least 2 splits (one for size, one for duration), got {}",
-            final_split_count
+            "Expected at least 2 splits (one for size, one for duration), got {final_split_count}"
         );
 
         // Check header count matches split count + initial header

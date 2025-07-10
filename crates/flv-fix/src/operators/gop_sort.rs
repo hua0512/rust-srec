@@ -378,8 +378,8 @@ mod tests {
             }
         }
 
-        println!("Timestamps: {:?}", timestamps);
-        println!("Types: {:?}", types);
+        println!("Timestamps: {timestamps:?}");
+        println!("Types: {types:?}");
 
         // The Kotlin algorithm should interleave with audio tags after corresponding video tags
         // Verify video tags come before audio tags with same or higher timestamps

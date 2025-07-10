@@ -22,7 +22,7 @@ impl TryFrom<u8> for AacPacketType {
             0x01 => Ok(AacPacketType::Raw),
             _ => Err(io::Error::new(
                 io::ErrorKind::InvalidData,
-                format!("Invalid AAC packet type: {}", value),
+                format!("Invalid AAC packet type: {value}"),
             )),
         }
     }
@@ -198,8 +198,8 @@ mod tests {
         assert_eq!(format!("{:?}", AacPacketType::Raw), "Raw");
         let packet_type_2 = AacPacketType::new(0x2).unwrap_or(AacPacketType::Raw);
         let packet_type_3 = AacPacketType::new(0x3).unwrap_or(AacPacketType::Raw);
-        assert_eq!(format!("{:?}", packet_type_2), "Raw");
-        assert_eq!(format!("{:?}", packet_type_3), "Raw");
+        assert_eq!(format!("{packet_type_2:?}"), "Raw");
+        assert_eq!(format!("{packet_type_3:?}"), "Raw");
 
         assert_eq!(AacPacketType::new(0x01).unwrap(), AacPacketType::Raw);
         assert_eq!(

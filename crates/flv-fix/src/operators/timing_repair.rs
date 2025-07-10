@@ -815,8 +815,8 @@ mod tests {
         }
 
         // Print the timestamps for analysis
-        println!("Audio timestamps: {:?}", audio_ts);
-        println!("Video timestamps: {:?}", video_ts);
+        println!("Audio timestamps: {audio_ts:?}");
+        println!("Video timestamps: {video_ts:?}");
 
         // The out-of-sync audio should be corrected to maintain reasonable A/V sync
         // Check that the max difference between audio and video timestamps is not too large
@@ -824,16 +824,12 @@ mod tests {
         let mut max_diff = 0;
         for (i, v_ts) in video_ts.iter().enumerate() {
             if i < audio_ts.len() {
-                let diff = if audio_ts[i] > *v_ts {
-                    audio_ts[i] - *v_ts
-                } else {
-                    *v_ts - audio_ts[i]
-                };
+                let diff = audio_ts[i].abs_diff(*v_ts);
                 max_diff = max(max_diff, diff);
             }
         }
 
-        println!("Maximum A/V timestamp difference: {}ms", max_diff);
+        println!("Maximum A/V timestamp difference: {max_diff}ms");
 
         // In relaxed mode, we allow some difference but not too much
         assert!(

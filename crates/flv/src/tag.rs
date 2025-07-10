@@ -487,7 +487,7 @@ impl fmt::Display for FlvTagType {
             FlvTagType::Audio => write!(f, "Audio"),
             FlvTagType::Video => write!(f, "Video"),
             FlvTagType::ScriptData => write!(f, "Script"),
-            FlvTagType::Unknown(value) => write!(f, "Unknown({})", value),
+            FlvTagType::Unknown(value) => write!(f, "Unknown({value})"),
         }
     }
 }
@@ -548,11 +548,11 @@ impl FlvTagData {
 impl fmt::Display for FlvTagData {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            FlvTagData::Audio(audio) => write!(f, "Audio: {}", audio),
-            FlvTagData::Video(video) => write!(f, "Video: {}", video),
-            FlvTagData::ScriptData(script) => write!(f, "Script: {}", script),
+            FlvTagData::Audio(audio) => write!(f, "Audio: {audio}"),
+            FlvTagData::Video(video) => write!(f, "Video: {video}"),
+            FlvTagData::ScriptData(script) => write!(f, "Script: {script}"),
             FlvTagData::Unknown { tag_type, data } => {
-                write!(f, "Unknown (type: {:?}, {} bytes)", tag_type, data.len())
+                write!(f, "Unknown (type: {tag_type:?}, {data_len} bytes)", data_len = data.len())
             }
         }
     }

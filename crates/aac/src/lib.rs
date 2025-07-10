@@ -237,7 +237,7 @@ mod tests {
         ];
 
         for (idx, freq) in cases {
-            assert_eq!(freq, idx.to_freq(), "Expected frequency for {:?}", idx);
+            assert_eq!(freq, idx.to_freq(), "Expected frequency for {idx:?}");
         }
     }
 }

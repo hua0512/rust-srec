@@ -107,10 +107,8 @@ impl<T> Pipeline<T> {
             // Process items_flushed_by_current through subsequent_processors_slice
             let mut items_for_subsequent_processing = items_flushed_by_current;
 
-            for subsequent_processor_index in 0..subsequent_processors_slice.len() {
+            for subsequent_processor in subsequent_processors_slice {
                 let mut next_stage_flushed_items: Vec<T> = Vec::new();
-                let subsequent_processor =
-                    &mut subsequent_processors_slice[subsequent_processor_index];
 
                 for item_to_process in items_for_subsequent_processing {
                     let mut subsequent_process_handler = |processed_item: T| {
@@ -138,7 +136,6 @@ impl<T> Pipeline<T> {
 
         Ok(())
     }
-
 
     // Recursive implementation
     // /// Process all input through the pipeline.

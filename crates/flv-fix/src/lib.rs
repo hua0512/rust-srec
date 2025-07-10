@@ -24,12 +24,12 @@
 //! - `writer_task`: Asynchronous FLV writing functionality
 
 mod adapter;
-pub mod analyzer;
-pub mod operators;
-pub mod pipeline;
-pub mod script_modifier;
-pub mod utils;
-pub mod writer_task;
+mod analyzer;
+mod operators;
+mod pipeline;
+mod script_modifier;
+mod utils;
+mod writer_task;
 
 #[cfg(test)]
 pub mod test_utils;

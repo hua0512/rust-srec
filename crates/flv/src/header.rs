@@ -179,7 +179,7 @@ impl FlvHeader {
         if size < FLV_HEADER_SIZE || data_offset != FLV_HEADER_SIZE {
             return Err(io::Error::new(
                 io::ErrorKind::InvalidData,
-                format!("Invalid FLV header size: {}, {}", size, data_offset),
+                format!("Invalid FLV header size: {size}, {data_offset}"),
             ));
         }
 

@@ -88,8 +88,7 @@ impl Encoder<FlvData> for FlvEncoder {
                     return Err(io::Error::new(
                         io::ErrorKind::InvalidInput,
                         format!(
-                            "FLV tag data size ({}) exceeds 24-bit limit ({})",
-                            data_len, MAX_TAG_DATA_SIZE
+                            "FLV tag data size ({data_len}) exceeds 24-bit limit ({MAX_TAG_DATA_SIZE})"
                         ),
                     ));
                 }

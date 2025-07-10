@@ -395,7 +395,7 @@ mod tests {
         assert!(result.is_err());
         match result.err().unwrap() {
             FlvError::InvalidHeader => {} // Expected error
-            e => panic!("Unexpected error type: {:?}", e),
+            e => panic!("Unexpected error type: {e:?}"),
         }
     }
 
@@ -682,7 +682,7 @@ mod tests {
                     "Last tag size mismatch"
                 );
             }
-            other => panic!("Expected FlvData::Tag, got {:?}", other),
+            other => panic!("Expected FlvData::Tag, got {other:?}"),
         }
 
         // 5. Buffer should be empty now as the complete tag was consumed
@@ -713,7 +713,7 @@ mod tests {
 
         let file_size = std::fs::metadata(path)?.len();
         let file_size_mb = file_size as f64 / (1024.0 * 1024.0);
-        println!("Starting async parse. File size: {:.2} MB", file_size_mb);
+        println!("Starting async parse. File size: {file_size_mb:.2} MB");
 
         let start = Instant::now();
         let stream = FlvDecoderStream::with_capacity(
@@ -781,9 +781,9 @@ mod tests {
 
         println!("-----------------------------------------");
         println!("Async Parse Results:");
-        println!("Parsed FLV file asynchronously in {:?}", duration);
-        println!("File size: {:.2} MB", file_size_mb);
-        println!("Read speed: {:.2} MB/s", speed_mbps);
+        println!("Parsed FLV file asynchronously in {duration:?}");
+        println!("File size: {file_size_mb:.2} MB");
+        println!("Read speed: {speed_mbps:.2} MB/s");
 
         match final_stats {
             Ok(stats) => {
@@ -806,7 +806,7 @@ mod tests {
                 }
             }
             Err(e) => {
-                println!("Stream processing stopped due to error: {:?}", e);
+                println!("Stream processing stopped due to error: {e:?}");
                 // You might want to assert the error type or context depending on needs
                 return Err(e.into()); // Propagate the error
             }
@@ -878,7 +878,7 @@ mod tests {
                 Ok(FlvData::Header(_)) => {}
                 Ok(FlvData::EndOfSequence(_)) => {}
                 Err(e) => {
-                    println!("Error processing tag: {:?}", e);
+                    println!("Error processing tag: {e:?}");
                     // Don't break - continue processing
                 }
             }
@@ -954,21 +954,15 @@ mod tests {
 
         // Print comparison results
         println!("\n=== PARSER COMPARISON RESULTS ===");
-        println!(
-            "Sync parser: {} tags in {:?}",
-            sync_tags_count, sync_duration
-        );
-        println!(
-            "Async parser: {} tags in {:?}",
-            async_tags_count, async_duration
-        );
+        println!("Sync parser: {sync_tags_count} tags in {sync_duration:?}");
+        println!("Async parser: {async_tags_count} tags in {async_duration:?}");
         println!(
             "Difference: {} tags",
             sync_tags_count as i64 - async_tags_count as i64
         );
         println!("\nAsync parser tag types:");
         for (tag_type, count) in &async_tag_counts {
-            println!("  {}: {}", tag_type, count);
+            println!("  {tag_type}: {count}");
         }
 
         // Find timestamp discrepancies
@@ -989,7 +983,7 @@ mod tests {
             println!("  Async: {:?}", async_tag_timestamps[idx]);
 
             // Print surrounding context
-            let start = if idx > 2 { idx - 2 } else { 0 };
+            let start = idx.saturating_sub(2);
             let end = if idx + 3 < min_samples {
                 idx + 3
             } else {

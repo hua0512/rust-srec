@@ -42,7 +42,7 @@ pub struct DefragmentOperator {
     buffer: Vec<HlsData>,
     segment_type: Option<SegmentType>,
     has_init_segment: bool,
-    waiting_for_keyframe: bool,
+    // waiting_for_keyframe: bool,
 }
 
 impl DefragmentOperator {
@@ -59,7 +59,7 @@ impl DefragmentOperator {
             buffer: Vec::with_capacity(Self::MIN_TAGS_NUM),
             segment_type: None,
             has_init_segment: false,
-            waiting_for_keyframe: true,
+            // waiting_for_keyframe: true,
         }
     }
 
@@ -138,7 +138,7 @@ impl DefragmentOperator {
 
         // Determine segment type
         let tag_type = data.segment_type();
-        let is_segment_start = data.is_segment_start();
+        // let is_segment_start = data.is_segment_start();
 
         match self.segment_type {
             None => {
@@ -203,7 +203,7 @@ impl DefragmentOperator {
         // For TS segments, special handling for PAT/PMT tables and keyframes
         if self.segment_type == Some(SegmentType::Ts) {
             let is_pat_or_pmt = data.is_pmt_or_pat();
-            let has_keyframe = data.has_keyframe();
+            // let has_keyframe = data.has_keyframe();
 
             // Always buffer PAT/PMT tables even if we're waiting for a keyframe
             if is_pat_or_pmt {
@@ -292,7 +292,7 @@ impl DefragmentOperator {
                     return Ok(());
                 }
             }
-            return Ok(());
+            Ok(())
         } else {
             // If we're not gathering, decide whether to start gathering or pass through
             // let is_pat_or_pmt = data.is_pmt_or_pat();
@@ -310,7 +310,7 @@ impl DefragmentOperator {
             //     output(data)?;
             //     return Ok(());
             // }
-            return Ok(()); // No gathering, just pass through
+            Ok(()) // No gathering, just pass through
         }
     }
 }

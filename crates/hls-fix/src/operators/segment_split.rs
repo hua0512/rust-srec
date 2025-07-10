@@ -164,9 +164,7 @@ impl SegmentSplitOperator {
             // Check if we're dealing with PAT or PMT tables
             if pid == PAT_PID && table_id == PAT_TABLE_ID {
                 pat_changed = self.parse_pat(packet, payload_offset)?;
-            } else if self.active_pmt_pid.map_or(false, |pmt_pid| pid == pmt_pid)
-                && table_id == PMT_TABLE_ID
-            {
+            } else if (self.active_pmt_pid == Some(pid)) && table_id == PMT_TABLE_ID {
                 pmt_changed = self.parse_pmt(packet, payload_offset)?;
             }
         }

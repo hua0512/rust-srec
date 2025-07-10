@@ -115,8 +115,8 @@ fn main() -> Result<(), PipelineError> {
     println!("\nResults from pipeline:");
     for (i, result) in results.iter().enumerate() {
         match result {
-            Ok(data) => println!("Item {}: {:?}", i, data),
-            Err(err) => println!("Error on item {}: {:?}", i, err),
+            Ok(data) => println!("Item {i}: {data:?}"),
+            Err(err) => println!("Error on item {i}: {err:?}"),
         }
     }
 

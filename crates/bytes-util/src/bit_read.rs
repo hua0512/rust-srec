@@ -137,7 +137,13 @@ impl<W: io::Seek + io::Read> BitReader<W> {
     /// Returns the current stream position in bits
     pub fn bit_stream_position(&mut self) -> io::Result<u64> {
         let pos = self.data.stream_position()?;
-        Ok(pos * 8 + if self.is_aligned() { 8 } else { self.bit_pos as u64 } - 8)
+        Ok(pos * 8
+            + if self.is_aligned() {
+                8
+            } else {
+                self.bit_pos as u64
+            }
+            - 8)
     }
 
     /// Seeks a number of bits forward or backward
@@ -225,12 +231,14 @@ mod tests {
             assert_eq!(
                 reader.read_bit().unwrap(),
                 (binary & (1 << (31 - i))) != 0,
-                "bit {} is not correct",
-                i
+                "bit {i} is not correct",
             );
         }
 
-        assert!(reader.read_bit().is_err(), "there shouldnt be any bits left");
+        assert!(
+            reader.read_bit().is_err(),
+            "there shouldnt be any bits left"
+        );
     }
 
     #[test]
@@ -253,30 +261,37 @@ mod tests {
             assert_eq!(
                 reader.read_bits(count).ok(),
                 Some(expected),
-                "reading {} bits ({i}) are not correct",
-                count
+                "reading {count} bits ({i}) are not correct",
             );
         }
 
-        assert!(reader.read_bit().is_err(), "there shouldnt be any bits left");
+        assert!(
+            reader.read_bit().is_err(),
+            "there shouldnt be any bits left"
+        );
     }
 
     #[test]
     fn test_bit_reader_align() {
-        let mut reader = BitReader::new_from_slice([0b10000000, 0b10000000, 0b10000000, 0b10000000, 0b10000000, 0b10000000]);
+        let mut reader = BitReader::new_from_slice([
+            0b10000000, 0b10000000, 0b10000000, 0b10000000, 0b10000000, 0b10000000,
+        ]);
 
         for i in 0..6 {
             let pos = reader.data.stream_position().unwrap();
             assert_eq!(pos, i, "stream pos");
             assert_eq!(reader.bit_pos(), 0, "bit pos");
-            assert!(reader.read_bit().unwrap(), "bit {} is not correct", i);
+            assert!(reader.read_bit().unwrap(), "bit {i} is not correct");
             reader.align().unwrap();
             let pos = reader.data.stream_position().unwrap();
             assert_eq!(pos, i + 1, "stream pos");
             assert_eq!(reader.bit_pos(), 0, "bit pos");
         }
 
-        assert!(reader.read_bit().is_err(), "there shouldnt be any bits left");
+        assert!(
+            reader.read_bit().is_err(),
+            "there shouldnt be any bits left"
+        );
     }
 
     #[test]

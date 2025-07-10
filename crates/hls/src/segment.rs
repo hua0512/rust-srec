@@ -290,7 +290,7 @@ impl HlsData {
             let pid = ((bytes[1] as u16 & 0x1F) << 8) | bytes[2] as u16;
 
             // PAT has PID 0x0000, PMT typically has PID 0x0020-0x1FFE
-            return pid == 0 || (pid >= 0x0020 && pid <= 0x1FFE);
+            return pid == 0 || (0x0020..=0x1FFE).contains(&pid);
         }
         false
     }

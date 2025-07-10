@@ -155,7 +155,7 @@ pub fn print_tags(items: &[FlvData]) {
     println!("Tag sequence:");
     for (i, item) in items.iter().enumerate() {
         match item {
-            FlvData::Header(_) => println!("  {}: Header", i),
+            FlvData::Header(_) => println!("  {i}: Header"),
             FlvData::Tag(tag) => {
                 let type_str = match tag.tag_type {
                     FlvTagType::Audio => {
@@ -177,9 +177,9 @@ pub fn print_tags(items: &[FlvData]) {
                     FlvTagType::ScriptData => "Script",
                     _ => "Unknown",
                 };
-                println!("  {}: {} @ {}ms", i, type_str, tag.timestamp_ms);
+                println!("  {i}: {type_str} @ {ts}ms", ts = tag.timestamp_ms);
             }
-            _ => println!("  {}: Other", i),
+            _ => println!("  {i}: Other"),
         }
     }
 }

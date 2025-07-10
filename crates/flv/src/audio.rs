@@ -74,7 +74,7 @@ impl TryFrom<u8> for SoundFormat {
             _ => {
                 return Err(io::Error::new(
                     io::ErrorKind::InvalidData,
-                    format!("Invalid sound format: {}", value),
+                    format!("Invalid sound format: {value}"),
                 ));
             }
         })
@@ -105,7 +105,7 @@ impl TryFrom<u8> for SoundRate {
             _ => {
                 return Err(io::Error::new(
                     io::ErrorKind::InvalidData,
-                    format!("Invalid sound rate: {}", value),
+                    format!("Invalid sound rate: {value}"),
                 ));
             }
         })
@@ -131,7 +131,7 @@ impl TryFrom<u8> for SoundSize {
             _ => {
                 return Err(io::Error::new(
                     io::ErrorKind::InvalidData,
-                    format!("Invalid sound size: {}", value),
+                    format!("Invalid sound size: {value}"),
                 ));
             }
         })
@@ -155,7 +155,7 @@ impl TryFrom<u8> for SoundType {
             _ => {
                 return Err(io::Error::new(
                     io::ErrorKind::InvalidData,
-                    format!("Invalid sound type: {}", value),
+                    format!("Invalid sound type: {value}"),
                 ));
             }
         })
@@ -310,7 +310,7 @@ impl TryFrom<u8> for AudioPacketType {
             _ => {
                 return Err(io::Error::new(
                     io::ErrorKind::InvalidData,
-                    format!("Invalid audio packet type: {}", value),
+                    format!("Invalid audio packet type: {value}"),
                 ));
             }
         })
@@ -331,7 +331,7 @@ impl TryFrom<u8> for AudioPacketModExType {
             _ => {
                 return Err(io::Error::new(
                     io::ErrorKind::InvalidData,
-                    format!("Invalid audio packet modex type: {}", value),
+                    format!("Invalid audio packet modex type: {value}"),
                 ));
             }
         })
@@ -374,7 +374,7 @@ impl AudioFourCC {
                     _ => {
                         return Err(io::Error::new(
                             io::ErrorKind::InvalidData,
-                            format!("Invalid or unknown audio fourcc: 0x{:08x}", value),
+                            format!("Invalid or unknown audio fourcc: 0x{value:08x}"),
                         ));
                     }
                 }
@@ -413,7 +413,7 @@ impl TryFrom<u8> for AvMultitrackType {
             _ => {
                 return Err(io::Error::new(
                     io::ErrorKind::InvalidData,
-                    format!("Invalid av multitrack type: {}", value),
+                    format!("Invalid av multitrack type: {value}"),
                 ));
             }
         })
@@ -544,7 +544,7 @@ impl AudioData {
                                     Err(e) => {
                                         return Err(io::Error::new(
                                             io::ErrorKind::InvalidData,
-                                            format!("Invalid FOURCC value: {}", e),
+                                            format!("Invalid FOURCC value: {e}"),
                                         ));
                                     }
                                 };
@@ -766,7 +766,7 @@ impl fmt::Display for AudioPacket {
                 "Legacy[Rate: {}, Size: {}, Type: {}]",
                 legacy.sound_rate, legacy.sound_size, legacy.sound_type
             ),
-            AudioPacket::AudioPacketType(apt) => write!(f, "Enhanced[{}]", apt),
+            AudioPacket::AudioPacketType(apt) => write!(f, "Enhanced[{apt}]"),
         }
     }
 }
@@ -787,8 +787,10 @@ impl fmt::Display for AudioPacketType {
 impl fmt::Display for AudioDataBody {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            AudioDataBody::Aac(packet) => write!(f, "{}", packet),
-            AudioDataBody::Unknown { data } => write!(f, "Unknown[{} bytes]", data.len()),
+            AudioDataBody::Aac(packet) => write!(f, "{packet}"),
+            AudioDataBody::Unknown { data } => {
+                write!(f, "Unknown[{data_len} bytes]", data_len = data.len())
+            }
         }
     }
 }

@@ -108,8 +108,7 @@ fn test_parse_sps_with_zero_vui_num_units_in_tick() {
         Err(e) => assert_eq!(
             e.kind(),
             std::io::ErrorKind::InvalidData,
-            "Expected InvalidData error, got {:?}",
-            e
+            "Expected InvalidData error, got {e:?}"
         ),
     }
 }

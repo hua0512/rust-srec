@@ -1,9 +1,9 @@
 use byteorder::{BigEndian, ReadBytesExt};
 use bytes::{Buf, BytesMut};
-use tracing::{debug, error};
 use std::fs::File;
 use std::io::{self, BufReader, Cursor, Read};
 use std::path::Path;
+use tracing::{debug, error};
 
 use crate::header::FlvHeader;
 use crate::tag::{FlvTag, FlvTagData, FlvTagOwned, FlvTagType, FlvUtil};
@@ -177,9 +177,8 @@ impl FlvParserRef {
             }
         }
 
-        println!(
-            "Audio tags: {}, Video tags: {}, Metadata tags: {}",
-            audio_tags, video_tags, metadata_tags
+        debug!(
+            "Audio tags: {audio_tags}, Video tags: {video_tags}, Metadata tags: {metadata_tags}"
         );
 
         Ok(tags_count)
@@ -268,11 +267,11 @@ mod tests {
         let seconds = duration.as_secs() as f64 + duration.subsec_nanos() as f64 * 1e-9;
         let speed_mbps = file_size_mb / seconds;
 
-        println!("Parsed FLV file in {:?}", duration);
-        println!("File size: {:.2} MB", file_size_mb);
-        println!("Read speed: {:.2} MB/s", speed_mbps);
+        println!("Parsed FLV file in {duration:?}");
+        println!("File size: {file_size_mb:.2} MB");
+        println!("Read speed: {speed_mbps:.2} MB/s");
 
-        println!("Successfully parsed FLV file with {} tags", tags_count);
+        println!("Successfully parsed FLV file with {tags_count} tags");
 
         Ok(())
     }
@@ -300,11 +299,11 @@ mod tests {
         let seconds = duration.as_secs() as f64 + duration.subsec_nanos() as f64 * 1e-9;
         let speed_mbps = file_size_mb / seconds;
 
-        println!("Parsed FLV file (RefParser) in {:?}", duration);
-        println!("File size: {:.2} MB", file_size_mb);
-        println!("Read speed: {:.2} MB/s", speed_mbps);
+        println!("Parsed FLV file (RefParser) in {duration:?}");
+        println!("File size: {file_size_mb:.2} MB");
+        println!("Read speed: {speed_mbps:.2} MB/s");
 
-        println!("Successfully parsed FLV file with {} tags", tags_count);
+        println!("Successfully parsed FLV file with {tags_count} tags");
 
         Ok(())
     }
