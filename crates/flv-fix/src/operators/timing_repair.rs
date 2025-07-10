@@ -419,12 +419,12 @@ impl TimingRepairOperator {
     ) -> Result<(), PipelineError> {
         let mut cursor = std::io::Cursor::new(tag.data.clone());
         if let Ok(amf_data) = ScriptData::demux(&mut cursor) {
-            if amf_data.name == "onMetaData" && !amf_data.data.is_empty() {
+            if amf_data.name == crate::AMF0_ON_METADATA && !amf_data.data.is_empty() {
                 match &amf_data.data[0] {
                     Amf0Value::Object(props) => {
                         let properties = props
                             .iter()
-                            .map(|(k, v)| (k.to_string(), v.clone()))
+                            .map(|(k, v)| (k.as_ref().to_owned(), v.clone()))
                             .collect::<HashMap<String, Amf0Value>>();
                         self.state.update_timing_params(&properties);
 
@@ -473,11 +473,11 @@ impl TimingRepairOperator {
                         if framerate_value.is_some() || audio_rate_value.is_some() {
                             let mut properties = HashMap::new();
                             if let Some(fps) = framerate_value {
-                                properties.insert("framerate".to_string(), Amf0Value::Number(fps));
+                                properties.insert(crate::METADATA_FRAMERATE.to_owned(), Amf0Value::Number(fps));
                             }
                             if let Some(rate) = audio_rate_value {
                                 properties
-                                    .insert("audiosamplerate".to_string(), Amf0Value::Number(rate));
+                                    .insert(crate::METADATA_AUDIOSAMPLERATE.to_owned(), Amf0Value::Number(rate));
                             }
                             self.state.update_timing_params(&properties);
 

@@ -1,5 +1,5 @@
-use flv_fix::writer_task::FlvWriterTask;
-use hls_fix::writer_task::HlsWriterTask;
+use flv_fix::FlvWriterTask;
+use hls_fix::HlsWriterTask;
 use indicatif::{FormattedDuration, MultiProgress, ProgressBar, ProgressStyle};
 use std::time::Duration;
 

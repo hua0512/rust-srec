@@ -102,7 +102,7 @@ pub fn create_script_tag(timestamp: u32, with_keyframes: bool) -> FlvData {
 
     let obj = Amf0Value::Object(Cow::Owned(properties));
     let mut buffer = Vec::new();
-    amf0::Amf0Encoder::encode_string(&mut buffer, "onMetaData").unwrap();
+    amf0::Amf0Encoder::encode_string(&mut buffer, crate::AMF0_ON_METADATA).unwrap();
     amf0::Amf0Encoder::encode(&mut buffer, &obj).unwrap();
 
     create_test_tag(FlvTagType::ScriptData, timestamp, buffer)

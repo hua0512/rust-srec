@@ -1,9 +1,9 @@
 use flv::data::FlvData;
 use flv::error::FlvError;
 use flv::parser_async::FlvDecoderStream;
+use flv_fix::FlvPipeline;
 use flv_fix::flv_error_to_pipeline_error;
-use flv_fix::pipeline::FlvPipeline;
-use flv_fix::writer_task::{FlvWriterTask, WriterError};
+use flv_fix::{FlvWriterTask, WriterError};
 use futures::StreamExt;
 use indicatif::HumanBytes;
 use pipeline_common::{PipelineError, StreamerContext};

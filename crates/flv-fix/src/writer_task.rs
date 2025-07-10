@@ -122,7 +122,7 @@ impl FlvWriterTask {
         Ok(Self {
             output_dir,
             base_name,
-            extension: "flv".to_string(),
+            extension: crate::FLV_EXTENSION.to_owned(),
             use_base_name_directly: false,
             current_writer: None, // Initialized as None
             file_counter: 0,
@@ -258,7 +258,7 @@ impl FlvWriterTask {
                         None => {
                             // This should ideally not happen if handle_header was called first
                             Err(WriterError::State(
-                                "Attempted write_tag with no active writer".to_string(),
+                                crate::ERROR_NO_ACTIVE_WRITER.to_owned(),
                             ))
                         }
                     };

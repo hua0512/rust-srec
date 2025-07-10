@@ -129,7 +129,7 @@ impl ScriptKeyframesFillerOperator {
     fn create_script_tag_payload() -> Bytes {
         // Create a new script tag with empty data
         let mut buffer = Vec::new();
-        amf0::Amf0Encoder::encode_string(&mut buffer, "onMetaData").unwrap();
+        amf0::Amf0Encoder::encode_string(&mut buffer, crate::AMF0_ON_METADATA).unwrap();
         amf0::Amf0Encoder::encode(
             &mut buffer,
             &Amf0Value::Object(Cow::Owned(vec![
@@ -366,7 +366,7 @@ impl ScriptKeyframesFillerOperator {
                 );
 
                 // Verify we have "onMetaData" with non-empty data array
-                if amf_data.name != "onMetaData" {
+                if amf_data.name != crate::AMF0_ON_METADATA {
                     warn!(
                         "{} Script tag name is not 'onMetaData', found: '{}'. Creating fallback.",
                         self.context.name, amf_data.name
@@ -540,7 +540,7 @@ mod tests {
                                             }
                                         })
                                         .collect();
-                                    result.insert(kf_key.to_string(), values);
+                                    result.insert(kf_key.as_ref().to_owned(), values);
                                 }
                             }
                             return Some(result);

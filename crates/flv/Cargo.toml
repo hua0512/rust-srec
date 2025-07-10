@@ -6,18 +6,20 @@ edition = "2024"
 [dependencies]
 bytes = "1.10.1"
 byteorder = "1.5.0"
-tokio = { version = "1.44.2", features = ["full"] }
-tokio-util = { version = "0.7.14", features = ["io", "codec"] }
-tokio-stream = "0.1.17"
-futures = "0.3"
+tokio = { version = "1.46.1", features = ["fs", "io-util", "macros", "rt"] }
+tokio-util = { version = "0.7.15", features = ["io", "codec"] }
+futures = { version = "0.3.31", features = ["std"], default-features = false }
 bytes-util = { path = "../bytes-util" }
 amf0 = { path = "../amf0" }
 av1 = { path = "../av1" }
 h264 = { path = "../h264" }
 h265 = { path = "../h265" }
 thiserror = "2.0.12"
-tracing = "0.1"
-tracing-subscriber = "0.3"
+tracing = "0.1.41"
+
+[dev-dependencies]
+# Move tracing-subscriber to dev-dependencies since it's only used in tests
+tracing-subscriber = "0.3.19"
 
 [lints.rust]
 unexpected_cfgs = { level = "warn", check-cfg = ['cfg(coverage_nightly)'] }

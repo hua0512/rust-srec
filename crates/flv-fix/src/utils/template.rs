@@ -1,6 +1,6 @@
 /// Expand filename template with placeholders similar to FFmpeg
 pub fn expand_filename_template(template: &str, file_count: Option<u32>) -> String {
-    use chrono::Local;
+    use chrono::{Datelike, Local, Timelike};
 
     let now = Local::now();
     let mut result = String::with_capacity(template.len() * 2);
@@ -12,27 +12,27 @@ pub fn expand_filename_template(template: &str, file_count: Option<u32>) -> Stri
                 match next_char {
                     // Date and time placeholders
                     'Y' => {
-                        result.push_str(&now.format("%Y").to_string()); // Year (YYYY)
+                        result.push_str(&format!("{:04}", now.year())); // Year (YYYY)
                         chars.next();
                     }
                     'm' => {
-                        result.push_str(&now.format("%m").to_string()); // Month (01-12)
+                        result.push_str(&format!("{:02}", now.month())); // Month (01-12)
                         chars.next();
                     }
                     'd' => {
-                        result.push_str(&now.format("%d").to_string()); // Day (01-31)
+                        result.push_str(&format!("{:02}", now.day())); // Day (01-31)
                         chars.next();
                     }
                     'H' => {
-                        result.push_str(&now.format("%H").to_string()); // Hour (00-23)
+                        result.push_str(&format!("{:02}", now.hour())); // Hour (00-23)
                         chars.next();
                     }
                     'M' => {
-                        result.push_str(&now.format("%M").to_string()); // Minute (00-59)
+                        result.push_str(&format!("{:02}", now.minute())); // Minute (00-59)
                         chars.next();
                     }
                     'S' => {
-                        result.push_str(&now.format("%S").to_string()); // Second (00-59)
+                        result.push_str(&format!("{:02}", now.second())); // Second (00-59)
                         chars.next();
                     }
                     'i' => {
@@ -91,7 +91,7 @@ pub fn sanitize_filename(input: &str) -> String {
 
     // Use a default name if the result is empty
     if result.is_empty() {
-        "file".to_string()
+        crate::DEFAULT_FILENAME.to_owned()
     } else {
         // Truncate to reasonable length if too long
         if result.len() > 200 {

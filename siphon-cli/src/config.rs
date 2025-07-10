@@ -1,4 +1,4 @@
-use flv_fix::pipeline::PipelineConfig;
+use flv_fix::PipelineConfig;
 use siphon_engine::{DownloaderConfig, flv::FlvConfig, hls::HlsConfig};
 
 use crate::output::output::OutputFormat;

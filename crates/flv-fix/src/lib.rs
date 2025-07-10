@@ -17,6 +17,7 @@
 //!
 //! - `adapter`: Adapters for integrating with the generic pipeline infrastructure
 //! - `analyzer`: Tools for analyzing FLV stream structure and content
+//! - `constants`: String constants to avoid repeated allocations
 //! - `operators`: Modular pipeline operators for stream transformations
 //! - `pipeline`: Stream processing pipeline implementation
 //! - `script_modifier`: Utilities for manipulating FLV script tags
@@ -25,6 +26,7 @@
 
 mod adapter;
 mod analyzer;
+mod constants;
 mod operators;
 mod pipeline;
 mod script_modifier;
@@ -36,6 +38,7 @@ pub mod test_utils;
 
 pub use adapter::flv_error_to_pipeline_error;
 pub use analyzer::*;
+pub use constants::*;
 pub use operators::*;
 pub use pipeline::*;
 pub use script_modifier::*;

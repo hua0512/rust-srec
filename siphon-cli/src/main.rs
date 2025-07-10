@@ -4,14 +4,12 @@ use std::{path::PathBuf, time::Duration};
 
 use clap::Parser;
 use config::ProgramConfig;
-use flv_fix::operators::RepairStrategy;
-use flv_fix::operators::script_filler::ScriptFillerConfig;
-use flv_fix::pipeline::PipelineConfig;
+use flv_fix::PipelineConfig;
+use flv_fix::RepairStrategy;
+use flv_fix::ScriptFillerConfig;
 use output::output::OutputFormat;
 use siphon_engine::flv::FlvConfig;
-use siphon_engine::{
-    DownloaderConfig, HlsProtocolBuilder, ProtocolBuilder, ProxyAuth, ProxyConfig, ProxyType,
-};
+use siphon_engine::{DownloaderConfig, HlsProtocolBuilder, ProxyAuth, ProxyConfig, ProxyType};
 use tracing::{Level, error, info};
 use tracing_subscriber::FmtSubscriber;
 
@@ -29,7 +27,6 @@ use utils::{format_bytes, format_duration, parse_size, parse_time};
 #[tokio::main]
 async fn main() {
     // Parse command-line arguments
-    // Using parse() instead of try_parse() to let clap automatically handle --help
     let args = CliArgs::parse();
 
     // Setup logging
@@ -86,7 +83,7 @@ async fn main() {
         file_size_limit,
         duration_limit,
         repair_strategy: RepairStrategy::Strict, // Fixed to Strict
-        continuity_mode: flv_fix::operators::ContinuityMode::Reset, // Fixed to Reset
+        continuity_mode: flv_fix::ContinuityMode::Reset, // Fixed to Reset
         keyframe_index_config: if args.keyframe_index {
             if duration_limit > 0.0 {
                 info!("Keyframe index will be injected into metadata for better seeking");

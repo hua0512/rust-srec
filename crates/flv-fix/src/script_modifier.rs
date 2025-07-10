@@ -122,7 +122,7 @@ fn update_script_metadata(
     );
     debug!("End of original script data position: {}", end_script_pos);
 
-    if script_data.name != "onMetaData" {
+            if script_data.name != crate::AMF0_ON_METADATA {
         return Err(ScriptModifierError::ScriptData(
             "First script tag is not onMetaData",
         ));
@@ -136,7 +136,7 @@ fn update_script_metadata(
     // Generate new script data buffer
     if let Amf0Value::Object(props) = &amf_data[0] {
         let mut buffer: Vec<u8> = Vec::with_capacity(original_payload_data as usize);
-        Amf0Encoder::encode_string(&mut buffer, "onMetaData").unwrap();
+        Amf0Encoder::encode_string(&mut buffer, crate::AMF0_ON_METADATA).unwrap();
 
         for key in NATURAL_METADATA_KEY_ORDER.iter() {
             match *key {

@@ -1,6 +1,6 @@
 use futures::StreamExt;
 use hls::HlsData;
-use hls_fix::writer_task::HlsWriterTask;
+use hls_fix::HlsWriterTask;
 use hls_fix::{HlsPipeline, HlsPipelineConfig};
 use pipeline_common::{PipelineError, StreamerContext};
 use std::path::Path;

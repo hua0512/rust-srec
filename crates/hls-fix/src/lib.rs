@@ -16,7 +16,8 @@ mod adapter;
 pub mod analyzer;
 pub mod operators;
 pub mod pipeline;
-pub mod writer_task;
+mod writer_task;
 
 pub use adapter::detect_and_create_hls_data;
 pub use pipeline::{HlsPipeline, HlsPipelineConfig};
+pub use writer_task::HlsWriterTask;

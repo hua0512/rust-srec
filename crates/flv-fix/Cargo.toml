@@ -6,16 +6,20 @@ edition = "2024"
 [dependencies]
 bytes = "1.10.1"
 byteorder = "1.5.0"
-tokio = { version = "1.44.2", features = ["full"] }
-tokio-util = { version = "0.7.14", features = ["io", "codec"] }
-futures = "0.3"
-bytes-util = { path = "../bytes-util" }
+tokio = { version = "1.46.1", features = [
+    "fs",
+    "io-util",
+    "rt",
+    "macros",
+    "rt-multi-thread",
+] }
+futures = "0.3.31"
 flv = { path = "../flv" }
 amf0 = { path = "../amf0" }
 pipeline-common = { path = "../pipeline-common" }
 crc32fast = "1.4.2"
-chrono = "0.4"
-tracing = "0.1"
+chrono = "0.4.41"
+tracing = "0.1.41"
 thiserror = "2.0.12"
 
 

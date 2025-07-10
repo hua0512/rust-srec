@@ -313,7 +313,7 @@ impl FlvAnalyzer {
     pub fn analyze_header(&mut self, header: &FlvHeader) -> Result<(), String> {
         debug!("Analyzing FLV header: {:?}", header);
         if self.header_analyzed {
-            return Err("Header already analyzed".to_string());
+            return Err(crate::ERROR_HEADER_ALREADY_ANALYZED.to_owned());
         }
         let version = header.version;
         if version != 1 {
@@ -463,7 +463,7 @@ impl FlvAnalyzer {
 
     pub fn build_stats(&mut self) -> Result<FlvStats, String> {
         if !self.header_analyzed {
-            return Err("Header not analyzed".to_string());
+            return Err(crate::ERROR_HEADER_NOT_ANALYZED.to_owned());
         }
 
         if self.stats.has_video {
