@@ -5,18 +5,21 @@ A high-performance, zero-copy implementation of the TARS (Tencent Application Re
 ## Features
 
 ### 🚀 Zero-Copy Performance
+
 - **StringRef**: Zero-copy string parsing using `Bytes` - avoids allocations until conversion needed
 - **Binary**: Zero-copy binary data handling
 - **Efficient Collections**: Uses `SmallVec` and `AHashMap` for optimal performance
 - **Bytes Integration**: Full integration with the `bytes` crate for zero-copy buffer management
 
 ### 🔧 Dual API Design
+
 - **Standard API**: Backward-compatible, allocates strings as needed
 - **Zero-Copy API**: Optional zero-copy mode for maximum performance
 
 ## Usage
 
 ### Standard Usage (Backward Compatible)
+
 ```rust
 use tars_codec::{decode_response, TarsMessage};
 use bytes::BytesMut;
@@ -26,6 +29,7 @@ let message = decode_response(&mut buffer)?;
 ```
 
 ### Zero-Copy Usage (Maximum Performance)
+
 ```rust
 use tars_codec::{decode_response_zero_copy, TarsValue};
 use bytes::Bytes;
@@ -49,6 +53,7 @@ for (key, value) in &message.body {
 ```
 
 ### Accessing String Data
+
 ```rust
 // Zero-copy string access
 if let Some(text) = tars_value.as_str() {
@@ -65,16 +70,19 @@ if let Some(owned) = tars_value.into_string() {
 ## Performance Benefits
 
 ### Memory Efficiency
+
 - **Reduced Allocations**: String data stays as reference-counted `Bytes`
 - **Zero-Copy Slicing**: Use `bytes.slice()` for substring operations
 - **Lazy Conversion**: Strings converted to `String` only when explicitly needed
 
 ### CPU Efficiency
+
 - **AHashMap**: 2-3x faster than `std::collections::HashMap`
 - **SmallVec**: Stack-allocated small arrays avoid heap allocation
 - **Direct Buffer Access**: No intermediate copying for binary data
 
 ### Network Efficiency
+
 - **Shared Buffers**: Multiple values can reference the same underlying buffer
 - **Reference Counting**: Automatic memory management without GC overhead
 - **Zero-Copy Parsing**: Parse directly from network buffers
@@ -82,11 +90,13 @@ if let Some(owned) = tars_value.into_string() {
 ## API Reference
 
 ### Zero-Copy Types
+
 - `TarsValue::StringRef(Bytes)` - Zero-copy string data
 - `TarsValue::Binary(Bytes)` - Zero-copy binary data
 - `TarsValue::SimpleList(Bytes)` - Zero-copy byte arrays
 
 ### Methods
+
 - `decode_response_zero_copy(bytes)` - Zero-copy message parsing
 - `TarsValue::as_str()` - Zero-copy string access
 - `TarsValue::into_string()` - Convert to owned String when needed
@@ -138,4 +148,4 @@ fn process_text_field(text: &str) {
 - `bytes = "1.0"` - Zero-copy buffer management
 - `smallvec = "1.15"` - Stack-optimized small collections  
 - `ahash = "0.8"` - High-performance hashing
-- `tokio-util = "0.7"` - Codec traits for async integration 
+- `tokio-util = "0.7"` - Codec traits for async integration

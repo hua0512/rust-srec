@@ -1,211 +1,136 @@
-use anyhow::Context;
+mod cli;
+mod commands;
+mod config;
+mod error;
+mod output;
+
+use crate::{
+    cli::{Args, Commands},
+    commands::CommandExecutor,
+    config::AppConfig,
+    error::Result,
+};
 use clap::Parser;
 use colored::*;
-use indicatif::{ProgressBar, ProgressStyle};
-use inquire::Select;
-use platforms_parser::{extractor::default_factory, media::StreamInfo};
-use std::time::Duration;
-
-#[derive(Parser, Debug)]
-#[command(author, version, about, long_about = None)]
-struct Args {
-    /// The URL of the media to parse
-    #[arg(short, long)]
-    url: String,
-
-    /// The cookies to use for the request
-    #[clap(long)]
-    cookies: Option<String>,
-
-    /// The extras to use for the request
-    /// This is a JSON string that will be passed to the extractor
-    #[clap(long)]
-    extras: Option<String>,
-
-    /// Output the result in JSON format
-    #[clap(long)]
-    json: bool,
-}
+use std::process;
+use tracing::{error, info, Level};
+use tracing_subscriber::{filter::EnvFilter, fmt, prelude::*};
 
 #[tokio::main]
-async fn main() -> anyhow::Result<()> {
+async fn main() {
+    let result = run().await;
+    
+    if let Err(e) = result {
+        error!("Application error: {}", e);
+        eprintln!("{} {}", "Error:".red().bold(), e);
+        process::exit(1);
+    }
+}
+
+async fn run() -> Result<()> {
     let args = Args::parse();
-    let url = args.url;
-
-    let pb = ProgressBar::new_spinner();
-    pb.enable_steady_tick(Duration::from_millis(120));
-    pb.set_style(
-        ProgressStyle::with_template("{spinner:.blue} {msg}")
-            .unwrap()
-            .tick_strings(&[
-                "▹▹▹▹▹",
-                "▸▹▹▹▹",
-                "▹▸▹▹▹",
-                "▹▹▸▹▹",
-                "▹▹▹▸▹",
-                "▹▹▹▹▸",
-                "▪▪▪▪▪",
-            ]),
-    );
-    pb.set_message("Extracting media information...");
-
-    let cookies = args.cookies;
-    let extras = args
-        .extras
-        .map(|s| {
-            serde_json::from_str(&s).with_context(|| format!("Failed to parse extras JSON: {}", s))
-        })
-        .transpose()?;
-    let factory = default_factory();
-    let extractor = factory
-        .create_extractor(&url, cookies, extras)
-        .with_context(|| format!("Failed to create extractor for URL: {}", &url))?;
-    let media_info = extractor
-        .extract()
-        .await
-        .context("Failed to fetch media information")?;
-
-    pb.finish_with_message("Done");
-
-    // handle errors
-    println!("\n{}", "Media Information:".green().bold());
-
-    println!("{} {}", "Artist:".green(), media_info.artist.cyan());
-
-    println!("{} {}", "Title:".green(), media_info.title.cyan());
-
-    if let Some(cover_url) = &media_info.cover_url {
-        println!("{} {}", "Cover URL:".green(), cover_url.blue());
+    
+    // Initialize logging
+    init_logging(args.verbose, args.quiet)?;
+    
+    // Load configuration
+    let config = AppConfig::load(args.config.as_deref())?;
+    
+    info!("Starting platforms-cli with config: {:?}", config);
+    
+    // Create command executor
+    let executor = CommandExecutor::new(config);
+    
+    // Execute command
+    match args.command {
+        Commands::Extract {
+            url,
+            cookies,
+            extras,
+            output,
+            output_file,
+            quality,
+            format,
+            auto_select,
+            no_extras,
+        } => {
+            executor.extract_single(
+                &url,
+                cookies.as_deref(),
+                extras.as_deref(),
+                output_file.as_deref(),
+                quality.as_deref(),
+                format.as_deref(),
+                auto_select,
+                !no_extras, // Include extras by default, exclude only if --no-extras is specified
+                output,
+                std::time::Duration::from_secs(args.timeout),
+                args.retries,
+            ).await?;
+        }
+        
+        Commands::Batch {
+            input,
+            output_dir,
+            output_format,
+            max_concurrent,
+            continue_on_error: _,
+        } => {
+            executor.batch_process(
+                &input,
+                output_dir.as_deref(),
+                max_concurrent,
+                None, // quality filter
+                None, // format filter
+                true, // auto_select
+                output_format,
+                std::time::Duration::from_secs(args.timeout),
+                args.retries,
+            ).await?;
+        }
+        
+        Commands::Platforms { detailed: _ } => {
+            executor.list_platforms(&crate::cli::OutputFormat::Pretty).await?;
+        }
+        
+        Commands::Completions { shell } => {
+            use clap::CommandFactory;
+            use clap_complete::generate;
+            
+            let mut cmd = Args::command();
+            let bin_name = cmd.get_name().to_string();
+            generate(shell, &mut cmd, bin_name, &mut std::io::stdout());
+        }
+        
+        Commands::Config { show, reset } => {
+            if reset {
+                AppConfig::reset(args.config.as_deref())?;
+                println!("✓ Configuration reset to defaults");
+            } else if show {
+                let config = AppConfig::load(args.config.as_deref())?;
+                println!("{}", config.show()?);
+            } else {
+                println!("Use --show to display current configuration or --reset to reset to defaults");
+            }
+        }
     }
-    if let Some(artist_url) = &media_info.artist_url {
-        println!("{} {}", "Artist URL:".green(), artist_url.blue());
-    }
+    
+    Ok(())
+}
 
-    println!(
-        "{} {}",
-        "Live:".green(),
-        media_info.is_live.to_string().cyan()
-    );
-
-    let selected_stream: StreamInfo = match media_info.streams.len() {
-        0 => {
-            // there are no streams
-            anyhow::bail!("No streams available for this media.");
-        }
-        1 => {
-            // there is only one stream
-            media_info.streams.into_iter().next().unwrap()
-        }
-        _ => {
-            // there are multiple streams
-            println!(
-                "{}",
-                "Multiple streams available, please select one:"
-                    .yellow()
-                    .bold()
-            );
-
-            let options: Vec<String> = media_info.streams.iter().map(|s| s.to_string()).collect();
-            let selection = Select::new("Select a stream:", options)
-                .prompt()
-                .context("Failed to select stream")?;
-
-            media_info
-                .streams
-                .into_iter()
-                .find(|s| s.to_string() == selection)
-                .unwrap()
-        }
-    };
-
-    let pb = ProgressBar::new_spinner();
-    pb.enable_steady_tick(Duration::from_millis(120));
-    pb.set_style(
-        ProgressStyle::with_template("{spinner:.blue} {msg}")
-            .unwrap()
-            .tick_strings(&[
-                "▹▹▹▹▹",
-                "▸▹▹▹▹",
-                "▹▸▹▹▹",
-                "▹▹▸▹▹",
-                "▹▹▹▸▹",
-                "▹▹▹▹▸",
-                "▪▪▪▪▪",
-            ]),
-    );
-    pb.set_message("Fetching final stream URL...");
-
-    let final_stream_info = extractor
-        .get_url(selected_stream)
-        .await
-        .context("Failed to fetch final stream URL")?;
-
-    pb.finish_with_message("Done");
-
-    if args.json {
-        let json = serde_json::to_string_pretty(&final_stream_info).unwrap();
-        println!("{}", json);
+fn init_logging(verbose: bool, quiet: bool) -> Result<()> {
+    let filter = if quiet {
+        EnvFilter::new("error")
+    } else if verbose {
+        EnvFilter::new("debug")
     } else {
-        println!("\n{}", "Selected Stream Details:".green().bold());
-        println!(
-            "  {}: {}",
-            "Format".yellow(),
-            final_stream_info.stream_format.to_string().cyan()
-        );
-        println!(
-            "  {}: {}",
-            "Quality".yellow(),
-            final_stream_info.quality.cyan()
-        );
-        println!(
-            "  {}: {}",
-            "URL".yellow(),
-            final_stream_info.url.as_str().blue()
-        );
-        println!(
-            "  {}: {} kbps",
-            "Bitrate".yellow(),
-            final_stream_info.bitrate.to_string().cyan()
-        );
-        println!(
-            "  {}: {}",
-            "Media Format".yellow(),
-            final_stream_info.media_format.to_string().cyan()
-        );
-        println!("  {}: {}", "Codec".yellow(), final_stream_info.codec.cyan());
-        println!(
-            "  {}: {}",
-            "Priority".yellow(),
-            final_stream_info.priority.to_string().cyan()
-        );
-        println!(
-            "  {}: {}",
-            "FPS".yellow(),
-            final_stream_info.fps.to_string().cyan()
-        );
-        // println!(
-        //     "  {}: {}",
-        //     "Headers Needed".yellow(),
-        //     final_stream_info.is_headers_needed.to_string().cyan()
-        // );
-
-        if let Some(extras) = &final_stream_info.extras {
-            if let Some(extras_obj) = extras.as_object().filter(|m| !m.is_empty()) {
-                println!("  {}:", "Extras".yellow());
-                for (key, value) in extras_obj {
-                    println!("    {}: {}", key.green(), value.to_string().cyan());
-                }
-            }
-        }
-        if let Some(extras) = &media_info.extras {
-            if !extras.is_empty() {
-                println!("\n{}", "Media Extras:".green().bold());
-                for (key, value) in extras {
-                    println!("  {}: {}", key.yellow(), value.cyan());
-                }
-            }
-        }
-    }
-
+        EnvFilter::from_default_env().add_directive(Level::INFO.into())
+    };
+    
+    tracing_subscriber::registry()
+        .with(fmt::layer().with_target(false).with_level(verbose))
+        .with(filter)
+        .init();
+    
     Ok(())
 }

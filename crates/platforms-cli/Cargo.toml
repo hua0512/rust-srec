@@ -2,14 +2,40 @@
 name = "platforms-cli"
 version = "0.1.0"
 edition = "2024"
+description = "CLI tool for extracting streaming media information from various platforms"
+authors = ["rust-srec team"]
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/hua0512/rust-srec"
 
 [dependencies]
-
 anyhow = "1.0"
+thiserror = "1.0"
 platforms-parser = { path = "../platforms" }
-inquire = "0.7.5"
-colored = "2.1.0"
 tokio = { version = "1.46.0", features = ["full"] }
+serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
-clap = { version = "4.5.39", features = ["derive"] }
-indicatif = "0.17.8"
+reqwest = "0.12"
+
+# CLI framework
+clap = { version = "4.5", features = ["derive", "env", "string"] }
+clap_complete = "4.5"
+
+# UI and output
+colored = "2.1.0"
+indicatif = "0.17"
+inquire = "0.7"
+tabled = "0.16"
+
+# Configuration
+config = "0.14"
+dirs = "5.0"
+toml = "0.8"
+
+# Logging
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
+
+# Utilities
+url = "2.4"
+regex = "1.0"
+futures = "0.3"
