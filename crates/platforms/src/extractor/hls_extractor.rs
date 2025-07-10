@@ -36,8 +36,12 @@ pub trait HlsExtractor {
 
         let streams = match playlist {
             Playlist::MasterPlaylist(pl) => process_master_playlist(pl, &base_url, extras),
-            Playlist::MediaPlaylist(_) => {
-                let media_format = if m3u8_url.contains("fmp4") || m3u8_url.contains(".mp4") {
+            Playlist::MediaPlaylist(pl) => {
+                let media_format = if pl
+                    .segments
+                    .iter()
+                    .any(|s| s.uri.contains("fmp4") || s.uri.contains(".mp4"))
+                {
                     MediaFormat::Mp4
                 } else {
                     MediaFormat::Ts
