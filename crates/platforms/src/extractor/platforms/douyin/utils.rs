@@ -268,12 +268,12 @@ mod tests {
                         println!("✅ Gzip compression/decompression working correctly!");
                     }
                     Err(e) => {
-                        println!("❌ Gzip decompression may not be working: {}", e);
+                        println!("❌ Gzip decompression may not be working: {e}");
                     }
                 }
             }
             Err(e) => {
-                println!("Network request failed (this is okay for testing): {}", e);
+                println!("Network request failed (this is okay for testing): {e}");
             }
         }
     }

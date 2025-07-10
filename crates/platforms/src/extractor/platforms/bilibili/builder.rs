@@ -113,7 +113,7 @@ impl Bilibili {
         let params = encode_wbi(params, (img_key.as_str(), sub_key.as_str()));
         debug!("params: {:?}", params);
 
-        let api_url = format!("{}?{}", url, params);
+        let api_url = format!("{url}?{params}");
 
         let response = self.extractor.get(&api_url).send().await?;
 
@@ -383,12 +383,12 @@ mod tests {
             .with_max_level(Level::DEBUG)
             .init();
         let bilibili = Bilibili::new(
-            "https://live.bilibili.com/32593556".to_string(),
+            "https://live.bilibili.com/10".to_string(),
             default_client(),
             None,
             None,
         );
         let media_info = bilibili.extract().await.unwrap();
-        println!("media_info: {:?}", media_info);
+        println!("{media_info:?}");
     }
 }

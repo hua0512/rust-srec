@@ -240,7 +240,7 @@ impl Extractor {
         let cookie_string = self
             .cookies
             .iter()
-            .map(|(name, value)| format!("{}={}", name, value))
+            .map(|(name, value)| format!("{name}={value}"))
             .collect::<Vec<_>>()
             .join("; ");
 

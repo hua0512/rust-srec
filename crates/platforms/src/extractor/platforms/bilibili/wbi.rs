@@ -48,7 +48,7 @@ fn get_url_encoded(s: &str) -> String {
                 let encoded = c
                     .encode_utf8(&mut [0; 4])
                     .bytes()
-                    .fold("".to_string(), |acc, b| acc + &format!("%{:02X}", b));
+                    .fold("".to_string(), |acc, b| acc + &format!("%{b:02X}"));
                 Some(encoded)
             }
         })
@@ -84,9 +84,9 @@ fn _encode_wbi(
     let mut hasher = md5::Md5::new();
     hasher.update(query.clone() + &mixin_key);
     let md5_hash = hasher.finalize();
-    let web_sign = format!("{:x}", md5_hash);
+    let web_sign = format!("{md5_hash:x}");
     // 返回最终的 query
-    query + &format!("&w_rid={}", web_sign)
+    query + &format!("&w_rid={web_sign}")
 }
 
 pub(super) async fn get_wbi_keys(client: &Client) -> Result<(String, String), reqwest::Error> {
@@ -136,7 +136,7 @@ mod tests {
     #[tokio::test]
     async fn test_get_wbi_keys() {
         let keys = get_wbi_keys(&default_client()).await.unwrap();
-        println!("{:?}", keys);
+        println!("{keys:?}");
     }
 
     #[test]

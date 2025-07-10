@@ -113,7 +113,7 @@ impl TikTok {
 
         let stream_info: StreamDataInfo = serde_json::from_str(&data.pull_data.stream_data)
             .map_err(|e| {
-                ExtractorError::ValidationError(format!("Failed to parse stream data JSON: {}", e))
+                ExtractorError::ValidationError(format!("Failed to parse stream data JSON: {e}"))
             })?;
 
         let mut streams = Vec::with_capacity(stream_info.data.len() * 2); // Pre-allocate for FLV + HLS
@@ -124,7 +124,7 @@ impl TikTok {
                 .get(sdk_key.as_str())
                 .copied()
                 .unwrap_or(&sdk_key);
-            let quality_id = format!("{} - {}", quality_name, codec);
+            let quality_id = format!("{quality_name} - {codec}");
 
             let bitrate = serde_json::from_str::<SdkParams>(&quality_info.main_stream.sdk_params)
                 .map(|params| params.v_bitrate / 1000)
@@ -286,6 +286,6 @@ mod tests {
         );
 
         let media_info = tiktok.extract().await.unwrap();
-        println!("{:?}", media_info);
+        println!("{media_info:?}");
     }
 }

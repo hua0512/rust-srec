@@ -67,7 +67,7 @@ impl TarsSerializer {
     }
 
     pub fn write_i16(&mut self, tag: u8, value: i16) -> Result<(), TarsError> {
-        if (-128..=127).contains(&value){
+        if (-128..=127).contains(&value) {
             self.write_i8(tag, value as i8)?;
         } else {
             self.write_head(tag, TarsType::Int2);
@@ -184,9 +184,9 @@ impl TarsSerializer {
                 match std::str::from_utf8(bytes) {
                     Ok(s) => self.write_string(tag, s),
                     Err(e) => {
-                        println!("Invalid UTF-8 sequence: {:?}", bytes);
+                        println!("Invalid UTF-8 sequence: {bytes:?}");
                         Err(TarsError::InvalidUtf8(e))
-                    },
+                    }
                 }
             }
             TarsValue::Struct(v) => self.write_struct(tag, v),

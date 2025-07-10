@@ -181,7 +181,7 @@ impl<'a> DouyinRequest<'a> {
             let cookie_string = self
                 .cookies
                 .iter()
-                .map(|(name, value)| format!("{}={}", name, value))
+                .map(|(name, value)| format!("{name}={value}"))
                 .collect::<Vec<_>>()
                 .join("; ");
             if let Ok(cookie_value) = reqwest::header::HeaderValue::from_str(&cookie_string) {
@@ -241,7 +241,7 @@ impl<'a> DouyinRequest<'a> {
             let cookie_string = self
                 .cookies
                 .iter()
-                .map(|(name, value)| format!("{}={}", name, value))
+                .map(|(name, value)| format!("{name}={value}"))
                 .collect::<Vec<_>>()
                 .join("; ");
             builder = builder.header(reqwest::header::COOKIE, cookie_string);
@@ -351,8 +351,7 @@ impl<'a> DouyinRequest<'a> {
         let response: DouyinAppResponse = serde_json::from_str(body)?;
         if let Some(prompts) = &response.data.prompts {
             return Err(ExtractorError::ValidationError(format!(
-                "API error: {}",
-                prompts
+                "API error: {prompts}",
             )));
         }
 
@@ -361,14 +360,12 @@ impl<'a> DouyinRequest<'a> {
                 return Err(ExtractorError::StreamerBanned);
             }
         } else {
-            return Err(ExtractorError::ValidationError(format!(
-                "API error: {}",
-                response
-                    .data
-                    .message
-                    .as_ref()
-                    .unwrap_or(&Cow::Borrowed("Unknown error"))
-            )));
+            let msg = response
+                .data
+                .message
+                .as_ref()
+                .unwrap_or(&Cow::Borrowed("Unknown error"));
+            return Err(ExtractorError::ValidationError(format!("API error: {msg}")));
         }
 
         let data = &response.data.room;
@@ -386,8 +383,7 @@ impl<'a> DouyinRequest<'a> {
     fn _validate_response(&self, response: &DouyinPcResponse) -> Result<(), ExtractorError> {
         if let Some(prompts) = &response.data.prompts {
             return Err(ExtractorError::ValidationError(format!(
-                "API error: {}",
-                prompts
+                "API error: {prompts}"
             )));
         }
         if self.is_account_banned(&response.data.user) {
@@ -741,7 +737,7 @@ mod tests {
             DouyinExtractorBuilder::new(TEST_URL.to_string(), default_client(), None, None).build();
         let media_info = config.extract().await;
 
-        println!("media_info: {:?}", media_info);
+        println!("{media_info:?}");
     }
 
     #[test]

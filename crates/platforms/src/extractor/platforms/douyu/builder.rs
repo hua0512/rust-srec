@@ -105,7 +105,7 @@ impl DouyuExtractorConfig {
         let response = self
             .extractor
             .client
-            .get(format!("https://open.douyucdn.cn/api/RoomApi/room/{}", rid))
+            .get(format!("https://open.douyucdn.cn/api/RoomApi/room/{rid}"))
             .send()
             .await?;
         let body = response.text().await.map_err(ExtractorError::from)?;
@@ -300,7 +300,7 @@ impl DouyuExtractorConfig {
         let resp = self
             .extractor
             .client
-            .post(format!("https://www.douyu.com/lapi/live/getH5Play/{}", rid))
+            .post(format!("https://www.douyu.com/lapi/live/getH5Play/{rid}"))
             .form(&form_data)
             .send()
             .await?
@@ -510,6 +510,6 @@ mod tests {
         let extractor =
             DouyuExtractorBuilder::new(url.to_string(), default_client(), None, None).build(None);
         let media_info = extractor.extract().await.unwrap();
-        println!("{:?}", media_info);
+        println!("{media_info:?}");
     }
 }

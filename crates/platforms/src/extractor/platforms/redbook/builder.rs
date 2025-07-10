@@ -112,9 +112,9 @@ impl RedBook {
                 let is_bak = url.contains("bak");
 
                 let display_quality = match (codec == DEFAULT_CODEC_H265, is_bak) {
-                    (true, true) => format!("{} (H265) (backup)", quality),
-                    (true, false) => format!("{} (H265)", quality),
-                    (false, true) => format!("{} (backup)", quality),
+                    (true, true) => format!("{quality} (H265) (backup)"),
+                    (true, false) => format!("{quality} (H265)"),
+                    (false, true) => format!("{quality} (backup)"),
                     (false, false) => quality.to_string(),
                 };
 
@@ -213,7 +213,7 @@ impl RedBook {
         let artist = &room_data.host_info.nick_name;
         let avatar_url = Some(room_data.host_info.avatar.to_string());
         let site_url = self.extractor.url.clone();
-        let title = format!("{} 的直播", artist);
+        let title = format!("{artist} 的直播");
         let is_live = live_info.live_stream.live_status == SUCCESS_STATUS;
 
         // Validate live status
@@ -221,7 +221,7 @@ impl RedBook {
             // not live
             return Ok(MediaInfo {
                 site_url,
-                title: format!("{} 的直播", artist),
+                title: format!("{artist} 的直播"),
                 artist: artist.to_string(),
                 cover_url: None,
                 artist_url: avatar_url,
@@ -297,6 +297,6 @@ mod tests {
             None,
         );
         let media_info = redbook.extract().await.unwrap();
-        println!("{:?}", media_info);
+        println!("{media_info:?}");
     }
 }

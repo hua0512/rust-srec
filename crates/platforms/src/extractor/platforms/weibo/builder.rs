@@ -170,7 +170,7 @@ impl Weibo {
             .live_origin_flv_url
             .split("_")
             .next()
-            .map(|s| format!("{}.flv", s));
+            .map(|s| format!("{s}.flv"));
 
         // debug!("flv_url: {:?}", flv_url);
 
@@ -180,7 +180,7 @@ impl Weibo {
             .live_origin_hls_url
             .split("_")
             .next()
-            .map(|s| format!("{}.m3u8", s));
+            .map(|s| format!("{s}.m3u8"));
 
         // debug!("hls_url: {:?}", hls_url);
 
@@ -291,7 +291,7 @@ mod tests {
             None,
         );
         let media_info = weibo.extract().await.unwrap();
-        println!("{:?}", media_info);
+        println!("{media_info:?}");
     }
 
     #[tokio::test]
@@ -308,6 +308,6 @@ mod tests {
             None,
         );
         let media_info = weibo.extract().await.unwrap();
-        println!("{:?}", media_info);
+        println!("{media_info:?}");
     }
 }

@@ -351,6 +351,6 @@ mod tests {
             None,
         );
         let media_info = twitch.get_live_stream_info().await.unwrap();
-        println!("media_info: {:?}", media_info);
+        println!("{media_info:?}");
     }
 }

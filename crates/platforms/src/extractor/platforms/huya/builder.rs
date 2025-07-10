@@ -416,7 +416,7 @@ impl HuyaExtractor {
                  extras: &serde_json::Value| {
                     // flv
                     streams.push(StreamInfo {
-                        url: format!("{}&ratio={}", flv_url, bitrate),
+                        url: format!("{flv_url}&ratio={bitrate}"),
                         stream_format: StreamFormat::Flv,
                         media_format: MediaFormat::Flv,
                         quality: quality.to_string(),
@@ -429,7 +429,7 @@ impl HuyaExtractor {
                     });
                     // hls
                     streams.push(StreamInfo {
-                        url: format!("{}&ratio={}", hls_url, bitrate),
+                        url: format!("{hls_url}&ratio={bitrate}"),
                         stream_format: StreamFormat::Hls,
                         media_format: MediaFormat::Ts,
                         quality: quality.to_string(),
@@ -540,10 +540,10 @@ impl HuyaExtractor {
             .unwrap_or(10000);
 
         // Use reqwest's Url for safe query parameter handling
-        let base_url = format!("{}/{}.{}?{}", base_url, s_stream_name, suffix, anti_code);
+        let base_url = format!("{base_url}/{s_stream_name}.{suffix}?{anti_code}");
 
         if bitrate != default_bitrate {
-            let new_url = format!("{}&ratio={}", base_url, bitrate);
+            let new_url = format!("{base_url}&ratio={bitrate}");
             stream_info.url = new_url.to_string();
         } else {
             stream_info.url = base_url.to_string();
@@ -711,7 +711,7 @@ mod tests {
 
         let stream_info = extractor.get_url(stream_info.clone()).await.unwrap();
 
-        println!("{:?}", stream_info);
+        println!("{stream_info:?}");
     }
 
     #[tokio::test]
@@ -727,7 +727,7 @@ mod tests {
         let media_info = extractor.extract().await.unwrap();
         assert!(media_info.is_live);
         assert!(!media_info.streams.is_empty());
-        println!("{:?}", media_info);
+        println!("{media_info:?}");
     }
 
     #[tokio::test]
@@ -737,6 +737,6 @@ mod tests {
             .unwrap()
             .into();
         let token_info = decode_get_cdn_token_info_response(response_bytes).unwrap();
-        println!("{:?}", token_info);
+        println!("{token_info:?}");
     }
 }

@@ -55,7 +55,7 @@ impl Picarto {
         let url = self.extractor.url.clone();
         let room_id = url
             .split('/')
-            .last()
+            .next_back()
             .ok_or_else(|| ExtractorError::ValidationError("Room ID not found in URL".to_string()))?
             .to_string();
         Ok(room_id)
@@ -203,6 +203,6 @@ mod tests {
         );
 
         let media_info = picarto.extract().await;
-        println!("{:?}", media_info);
+        println!("{media_info:?}");
     }
 }
