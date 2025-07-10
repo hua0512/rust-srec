@@ -6,5 +6,6 @@ pub mod huya;
 pub mod pandatv;
 pub mod picarto;
 pub mod redbook;
+pub mod tiktok;
 pub mod twitch;
 pub mod weibo;

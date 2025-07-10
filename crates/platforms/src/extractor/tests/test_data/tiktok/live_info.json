@@ -1,0 +1,213 @@
+{
+    "LiveRoom": {
+        "loadingState": {
+            "getRecommendLive": 0,
+            "getUserInfo": 2,
+            "getUserStat": 0
+        },
+        "needLogin": false,
+        "showLiveGate": false,
+        "isAgeGateRoom": false,
+        "recommendLiveRooms": [],
+        "liveRoomStatus": 0,
+        "liveRoomUserInfo": {
+            "user": {
+                "avatarLarger": "https://p16-sign-sg.tiktokcdn.com/tos-alisg-avt-0068/f0579f8dea1cadf3b06c1ca947a4a265~tplv-tiktokx-cropcenter:1080:1080.webp?dr=10399&refresh_token=c02790ae&x-expires=1752300000&x-signature=E8wwMTea%2FgMhmd0xNkRbDQUykMg%3D&t=4d5b0474&ps=13740610&shp=a5d48078&shcp=fdd36af4&idc=no1a",
+                "avatarMedium": "https://p16-sign-sg.tiktokcdn.com/tos-alisg-avt-0068/f0579f8dea1cadf3b06c1ca947a4a265~tplv-tiktokx-cropcenter:720:720.webp?dr=10399&refresh_token=a92da78b&x-expires=1752300000&x-signature=5dIAKCe66uxi4k5viSlu1qC5RhQ%3D&t=4d5b0474&ps=13740610&shp=a5d48078&shcp=fdd36af4&idc=no1a",
+                "avatarThumb": "https://p16-sign-sg.tiktokcdn.com/tos-alisg-avt-0068/f0579f8dea1cadf3b06c1ca947a4a265~tplv-tiktokx-cropcenter:100:100.webp?dr=10399&refresh_token=98bb7e00&x-expires=1752300000&x-signature=spEDPrxDcDtF5lSuA%2FKgipWpswc%3D&t=4d5b0474&ps=13740610&shp=a5d48078&shcp=fdd36af4&idc=no1a",
+                "id": "7349705044327695362",
+                "nickname": "seraph_venusTTV",
+                "secUid": "MS4wLjABAAAAXtF25Jtfxcs-_O8Tvz1nIF-4bJgE9yMDfS8MtBeKy5xVx2tXuwy3HaXLp40_Y1ul",
+                "secret": false,
+                "uniqueId": "seraph_venusttv",
+                "verified": false,
+                "roomId": "7525342037743962887",
+                "signature": "red carpet warrior",
+                "status": 2,
+                "followStatus": 0
+            },
+            "stats": {
+                "followingCount": 14,
+                "followerCount": 93297
+            },
+            "liveRoom": {
+                "coverUrl": "https://p16-sign-sg.tiktokcdn.com/tos-alisg-avt-0068/f0579f8dea1cadf3b06c1ca947a4a265~tplv-tiktokx-cropcenter:720:720.webp?dr=10399&refresh_token=a92da78b&x-expires=1752300000&x-signature=5dIAKCe66uxi4k5viSlu1qC5RhQ%3D&t=4d5b0474&ps=13740610&shp=a5d48078&shcp=fdd36af4&idc=no1a",
+                "squareCoverImg": "https://p16-webcast.tiktokcdn.com/webcast-sg/437b4f66312a8943392de29641be7d47~tplv-obj.image",
+                "title": "comp",
+                "startTime": 1752130237,
+                "status": 2,
+                "paidEvent": {
+                    "event_id": 0,
+                    "paid_type": 0
+                },
+                "liveSubOnly": 0,
+                "liveRoomMode": 6,
+                "hashTagId": 5,
+                "gameTagId": 125,
+                "liveRoomStats": {
+                    "enterCount": 2477,
+                    "userCount": 152
+                },
+                "streamData": {
+                    "pull_data": {
+                        "options": {
+                            "default_quality": {
+                                "icon_type": 0,
+                                "level": 0,
+                                "name": "540p",
+                                "resolution": "",
+                                "sdk_key": "sd",
+                                "v_codec": ""
+                            },
+                            "qualities": [
+                                {
+                                    "icon_type": 6,
+                                    "level": 10,
+                                    "name": "原画",
+                                    "resolution": "",
+                                    "sdk_key": "origin",
+                                    "v_codec": ""
+                                },
+                                {
+                                    "icon_type": 4,
+                                    "level": 6,
+                                    "name": "1080p60",
+                                    "resolution": "",
+                                    "sdk_key": "uhd_60",
+                                    "v_codec": ""
+                                },
+                                {
+                                    "icon_type": 3,
+                                    "level": 4,
+                                    "name": "720p60",
+                                    "resolution": "",
+                                    "sdk_key": "hd_60",
+                                    "v_codec": ""
+                                },
+                                {
+                                    "icon_type": 3,
+                                    "level": 3,
+                                    "name": "720p",
+                                    "resolution": "",
+                                    "sdk_key": "hd",
+                                    "v_codec": ""
+                                },
+                                {
+                                    "icon_type": 2,
+                                    "level": 2,
+                                    "name": "540p",
+                                    "resolution": "",
+                                    "sdk_key": "sd",
+                                    "v_codec": ""
+                                },
+                                {
+                                    "icon_type": 1,
+                                    "level": 1,
+                                    "name": "360p",
+                                    "resolution": "",
+                                    "sdk_key": "ld",
+                                    "v_codec": ""
+                                }
+                            ],
+                            "show_quality_button": false
+                        },
+                        "stream_data": "{\"common\":{\"session_id\":\"052-202507100803341737AD51F0CD25120777\",\"rule_ids\":\"{\\\"ab_version_trace\\\":null,\\\"sched\\\":\\\"{\\\\\\\"ids\\\\\\\":[\\\\\\\"ex_20110(Weight:100)\\\\\\\"],\\\\\\\"result\\\\\\\":{\\\\\\\"cdn\\\\\\\":1577,\\\\\\\"hit\\\\\\\":\\\\\\\"exclusive\\\\\\\"}}\\\"}\",\"user_count\":150,\"peer_anchor_level\":20},\"data\":{\"ld\":{\"main\":{\"flv\":\"https://pull-f5-sg01.fcdn.eu.tiktokcdn.com/game/stream-2135196102851297364_ld.flv?expire=1753344214\\u0026sign=c46530158c71cb3ad13d07c35b5bc793\",\"hls\":\"https://pull-hls-f16-tt03.fcdn.eu.tiktokcdn.com/game/stream-2135196102851297364_ld/index.m3u8?expire=1753344214\\u0026sign=3f22b26ee556d1e5f9f5a0563eee7660\",\"cmaf\":\"\",\"dash\":\"\",\"lls\":\"\",\"tsl\":\"\",\"tile\":\"\",\"rtc\":\"\",\"sdk_params\":\"{\\\"gop\\\":4,\\\"v_rtbitrate_timestamp\\\":1752134309148,\\\"v_rtpsnr\\\":0,\\\"cdn_name\\\":\\\"fcdn\\\",\\\"vbitrate\\\":600000,\\\"stream_suffix\\\":\\\"ld\\\",\\\"resolution\\\":\\\"640x360\\\",\\\"v_rtbitrate_vpaas_timestamp\\\":1752134614855,\\\"v_rtbitrate_std\\\":129650,\\\"v_rtbitrate\\\":636790,\\\"Auto\\\":{\\\"Enable\\\":1,\\\"Demotion\\\":{\\\"StallCount\\\":4}},\\\"VCodec\\\":\\\"h264\\\",\\\"v_rtbitrate_pct\\\":877030}\"}},\"origin\":{\"main\":{\"flv\":\"https://pull-f5-sg01.fcdn.eu.tiktokcdn.com/game/stream-2135196102851297364_or4.flv?expire=1753344214\\u0026sign=85813081feecbe35a4d9432c7f6fa204\",\"hls\":\"https://pull-hls-f16-tt03.fcdn.eu.tiktokcdn.com/game/stream-2135196102851297364_or4/index.m3u8?expire=1753344214\\u0026sign=d0ba889722c96a053cf33162d56a76a8\",\"cmaf\":\"\",\"dash\":\"\",\"lls\":\"\",\"tsl\":\"\",\"tile\":\"\",\"rtc\":\"\",\"sdk_params\":\"{\\\"resolution\\\":\\\"1920x1080\\\",\\\"v_rtpsnr\\\":0,\\\"stream_suffix\\\":\\\"or4\\\",\\\"v_rtbitrate\\\":7922560,\\\"v_rtbitrate_timestamp\\\":1752134592682,\\\"v_rtbitrate_std\\\":3338600,\\\"VCodec\\\":\\\"h264\\\",\\\"Auto\\\":{\\\"Demotion\\\":{\\\"StallCount\\\":4},\\\"Enable\\\":1},\\\"cdn_name\\\":\\\"fcdn\\\",\\\"v_rtbitrate_pct\\\":10325590,\\\"vbitrate\\\":1000000,\\\"gop\\\":4,\\\"v_rtbitrate_vpaas_timestamp\\\":1752134614855}\"}},\"uhd_60\":{\"main\":{\"flv\":\"https://pull-f5-sg01.fcdn.eu.tiktokcdn.com/game/stream-2135196102851297364_uhd60.flv?expire=1753344214\\u0026sign=1098f8acd8decea363fbc2eba9be9db8\",\"hls\":\"https://pull-hls-f16-tt03.fcdn.eu.tiktokcdn.com/game/stream-2135196102851297364_uhd60/index.m3u8?expire=1753344214\\u0026sign=8d69e3f8f0fafacd942537074f3ca193\",\"cmaf\":\"\",\"dash\":\"\",\"lls\":\"\",\"tsl\":\"\",\"tile\":\"\",\"rtc\":\"\",\"sdk_params\":\"{\\\"VCodec\\\":\\\"h264\\\",\\\"Auto\\\":{\\\"Enable\\\":1,\\\"Demotion\\\":{\\\"StallCount\\\":4}},\\\"v_rtbitrate_pct\\\":7436750,\\\"v_rtbitrate_std\\\":912190,\\\"v_rtpsnr\\\":0,\\\"stream_suffix\\\":\\\"uhd60\\\",\\\"vbitrate\\\":5000000,\\\"v_rtbitrate\\\":5285780,\\\"cdn_name\\\":\\\"fcdn\\\",\\\"v_rtbitrate_vpaas_timestamp\\\":1752134614855,\\\"v_rtbitrate_timestamp\\\":1752134479364,\\\"resolution\\\":\\\"1920x1080\\\",\\\"gop\\\":4}\"}},\"hd_60\":{\"main\":{\"flv\":\"https://pull-f5-sg01.fcdn.eu.tiktokcdn.com/game/stream-2135196102851297364_hd60.flv?expire=1753344214\\u0026sign=6f24db32061c0bad879f2705c36a7902\",\"hls\":\"https://pull-hls-f16-tt03.fcdn.eu.tiktokcdn.com/game/stream-2135196102851297364_hd60/index.m3u8?expire=1753344214\\u0026sign=7a63b8c4a790bf3a0bda5043a789d2e8\",\"cmaf\":\"\",\"dash\":\"\",\"lls\":\"\",\"tsl\":\"\",\"tile\":\"\",\"rtc\":\"\",\"sdk_params\":\"{\\\"gop\\\":4,\\\"v_rtbitrate_pct\\\":3707130,\\\"VCodec\\\":\\\"h264\\\",\\\"Auto\\\":{\\\"Enable\\\":1,\\\"Demotion\\\":{\\\"StallCount\\\":4}},\\\"v_rtbitrate_vpaas_timestamp\\\":1752134614855,\\\"v_rtpsnr\\\":0,\\\"resolution\\\":\\\"1280x720\\\",\\\"stream_suffix\\\":\\\"hd60\\\",\\\"v_rtbitrate_timestamp\\\":1752134415328,\\\"cdn_name\\\":\\\"fcdn\\\",\\\"v_rtbitrate\\\":2983930,\\\"v_rtbitrate_std\\\":486480,\\\"vbitrate\\\":3000000}\"}},\"ao\":{\"main\":{\"flv\":\"https://pull-f5-sg01.fcdn.eu.tiktokcdn.com/game/stream-2135196102851297364.flv?expire=1753344214\\u0026sign=51fe2b960bf6ef769157490c7937af37\\u0026only_audio=1\",\"hls\":\"\",\"cmaf\":\"\",\"dash\":\"\",\"lls\":\"\",\"tsl\":\"\",\"tile\":\"\",\"rtc\":\"\",\"sdk_params\":\"{\\\"cdn_name\\\":\\\"fcdn\\\",\\\"VCodec\\\":\\\"h264\\\",\\\"Auto\\\":{\\\"Enable\\\":1,\\\"Demotion\\\":{\\\"StallCount\\\":4}},\\\"vbitrate\\\":0,\\\"resolution\\\":\\\"\\\",\\\"gop\\\":4}\"}},\"hd\":{\"main\":{\"flv\":\"https://pull-f5-sg01.fcdn.eu.tiktokcdn.com/game/stream-2135196102851297364_hd.flv?expire=1753344214\\u0026sign=546c1170feec3e7a6fc0b319a4cc2fb6\",\"hls\":\"https://pull-hls-f16-tt03.fcdn.eu.tiktokcdn.com/game/stream-2135196102851297364_hd/index.m3u8?expire=1753344214\\u0026sign=265b890e31de2999268478b6a1a0f6e1\",\"cmaf\":\"\",\"dash\":\"\",\"lls\":\"\",\"tsl\":\"\",\"tile\":\"\",\"rtc\":\"\",\"sdk_params\":\"{\\\"Auto\\\":{\\\"Enable\\\":1,\\\"Demotion\\\":{\\\"StallCount\\\":4}},\\\"v_rtbitrate_timestamp\\\":1752134431814,\\\"gop\\\":4,\\\"stream_suffix\\\":\\\"hd\\\",\\\"vbitrate\\\":1800000,\\\"v_rtbitrate\\\":1725930,\\\"VCodec\\\":\\\"h264\\\",\\\"v_rtbitrate_pct\\\":2005790,\\\"cdn_name\\\":\\\"fcdn\\\",\\\"v_rtbitrate_vpaas_timestamp\\\":1752134614855,\\\"resolution\\\":\\\"1280x720\\\",\\\"v_rtpsnr\\\":0,\\\"v_rtbitrate_std\\\":261610}\"}},\"sd\":{\"main\":{\"flv\":\"https://pull-f5-sg01.fcdn.eu.tiktokcdn.com/game/stream-2135196102851297364_sd.flv?expire=1753344214\\u0026sign=67d7b7702b1b7feec95086efc3d0aa4b\",\"hls\":\"https://pull-hls-f16-tt03.fcdn.eu.tiktokcdn.com/game/stream-2135196102851297364_sd/index.m3u8?expire=1753344214\\u0026sign=7af6d34b802fe39520168c88a2ced3d0\",\"cmaf\":\"\",\"dash\":\"\",\"lls\":\"\",\"tsl\":\"\",\"tile\":\"\",\"rtc\":\"\",\"sdk_params\":\"{\\\"v_rtpsnr\\\":0,\\\"v_rtbitrate_timestamp\\\":1752134567248,\\\"gop\\\":4,\\\"resolution\\\":\\\"960x540\\\",\\\"VCodec\\\":\\\"h264\\\",\\\"vbitrate\\\":1200000,\\\"stream_suffix\\\":\\\"sd\\\",\\\"v_rtbitrate_pct\\\":1610840,\\\"cdn_name\\\":\\\"fcdn\\\",\\\"Auto\\\":{\\\"Demotion\\\":{\\\"StallCount\\\":4},\\\"Enable\\\":1},\\\"v_rtbitrate\\\":1201280,\\\"v_rtbitrate_vpaas_timestamp\\\":1752134614855,\\\"v_rtbitrate_std\\\":281990}\"}}}}"
+                    }
+                },
+                "streamId": "2135196102851297364",
+                "multiStreamScene": 1,
+                "multiStreamSource": 1,
+                "hevcStreamData": {
+                    "pull_data": {
+                        "options": {
+                            "default_quality": {
+                                "icon_type": 0,
+                                "level": 0,
+                                "name": "540p",
+                                "resolution": "",
+                                "sdk_key": "sd",
+                                "v_codec": ""
+                            },
+                            "qualities": [
+                                {
+                                    "icon_type": 6,
+                                    "level": 10,
+                                    "name": "原画",
+                                    "resolution": "",
+                                    "sdk_key": "origin",
+                                    "v_codec": ""
+                                },
+                                {
+                                    "icon_type": 4,
+                                    "level": 6,
+                                    "name": "1080p60",
+                                    "resolution": "",
+                                    "sdk_key": "uhd_60",
+                                    "v_codec": ""
+                                },
+                                {
+                                    "icon_type": 3,
+                                    "level": 4,
+                                    "name": "720p60",
+                                    "resolution": "",
+                                    "sdk_key": "hd_60",
+                                    "v_codec": ""
+                                },
+                                {
+                                    "icon_type": 3,
+                                    "level": 3,
+                                    "name": "720p",
+                                    "resolution": "",
+                                    "sdk_key": "hd",
+                                    "v_codec": ""
+                                },
+                                {
+                                    "icon_type": 2,
+                                    "level": 2,
+                                    "name": "540p",
+                                    "resolution": "",
+                                    "sdk_key": "sd",
+                                    "v_codec": ""
+                                },
+                                {
+                                    "icon_type": 1,
+                                    "level": 1,
+                                    "name": "360p",
+                                    "resolution": "",
+                                    "sdk_key": "ld",
+                                    "v_codec": ""
+                                }
+                            ],
+                            "show_quality_button": false
+                        },
+                        "stream_data": "{\"common\":{\"session_id\":\"052-202507100803341737AD51F0CD25120777\",\"rule_ids\":\"{\\\"ab_version_trace\\\":null,\\\"sched\\\":\\\"{\\\\\\\"ids\\\\\\\":[\\\\\\\"ex_20110(Weight:100)\\\\\\\"],\\\\\\\"result\\\\\\\":{\\\\\\\"cdn\\\\\\\":1577,\\\\\\\"hit\\\\\\\":\\\\\\\"exclusive\\\\\\\"}}\\\"}\",\"user_count\":148,\"peer_anchor_level\":20},\"data\":{\"hd_60\":{\"main\":{\"flv\":\"https://pull-f5-sg01.fcdn.eu.tiktokcdn.com/game/stream-2135196102851297364_hd560.flv?expire=1753344214\\u0026sign=ed3de68fee736c0ef6f574f74da49ea2\",\"hls\":\"https://pull-hls-f16-tt03.fcdn.eu.tiktokcdn.com/game/stream-2135196102851297364_hd560/index.m3u8?expire=1753344214\\u0026sign=c689ae785537b97c28383c5b6fa08a8e\",\"cmaf\":\"\",\"dash\":\"\",\"lls\":\"\",\"tsl\":\"\",\"tile\":\"\",\"rtc\":\"\",\"sdk_params\":\"{\\\"v_rtbitrate_vpaas_timestamp\\\":1752134614863,\\\"v_rtbitrate_pct\\\":4153670,\\\"gop\\\":4,\\\"stream_suffix\\\":\\\"hd560\\\",\\\"VCodec\\\":\\\"h265\\\",\\\"v_rtbitrate_std\\\":1053100,\\\"v_rtbitrate_timestamp\\\":1752134595676,\\\"v_rtpsnr\\\":0,\\\"vbitrate\\\":2600000,\\\"resolution\\\":\\\"1280x720\\\",\\\"cdn_name\\\":\\\"fcdn\\\",\\\"Auto\\\":{\\\"Enable\\\":1,\\\"Demotion\\\":{\\\"StallCount\\\":4}},\\\"v_rtbitrate\\\":2603200}\"}},\"ao\":{\"main\":{\"flv\":\"https://pull-f5-sg01.fcdn.eu.tiktokcdn.com/game/stream-2135196102851297364.flv?expire=1753344214\\u0026sign=51fe2b960bf6ef769157490c7937af37\\u0026only_audio=1\",\"hls\":\"\",\"cmaf\":\"\",\"dash\":\"\",\"lls\":\"\",\"tsl\":\"\",\"tile\":\"\",\"rtc\":\"\",\"sdk_params\":\"{\\\"Auto\\\":{\\\"Enable\\\":1,\\\"Demotion\\\":{\\\"StallCount\\\":4}},\\\"resolution\\\":\\\"\\\",\\\"gop\\\":4,\\\"cdn_name\\\":\\\"fcdn\\\",\\\"vbitrate\\\":0,\\\"VCodec\\\":\\\"h264\\\"}\"}},\"hd\":{\"main\":{\"flv\":\"https://pull-f5-sg01.fcdn.eu.tiktokcdn.com/game/stream-2135196102851297364_hd5c2.flv?expire=1753344214\\u0026sign=7f42e2767646bf78e2702a9da9ef796c\",\"hls\":\"https://pull-hls-f16-tt03.fcdn.eu.tiktokcdn.com/game/stream-2135196102851297364_hd5c2/index.m3u8?expire=1753344214\\u0026sign=aefb69c3df867c24c2e0ca4c10133aa9\",\"cmaf\":\"\",\"dash\":\"\",\"lls\":\"\",\"tsl\":\"\",\"tile\":\"\",\"rtc\":\"\",\"sdk_params\":\"{\\\"v_rtbitrate_std\\\":267580,\\\"vbitrate\\\":1600000,\\\"v_rtbitrate_vpaas_timestamp\\\":1752134614863,\\\"resolution\\\":\\\"1280x720\\\",\\\"cdn_name\\\":\\\"fcdn\\\",\\\"v_rtpsnr\\\":0,\\\"VCodec\\\":\\\"h265\\\",\\\"v_rtbitrate\\\":1450140,\\\"stream_suffix\\\":\\\"hd5c2\\\",\\\"gop\\\":4,\\\"v_rtbitrate_timestamp\\\":1752134607533,\\\"v_rtbitrate_pct\\\":1724470,\\\"Auto\\\":{\\\"Enable\\\":1,\\\"Demotion\\\":{\\\"StallCount\\\":4}}}\"}},\"origin\":{\"main\":{\"flv\":\"https://pull-f5-sg01.fcdn.eu.tiktokcdn.com/game/stream-2135196102851297364.flv?expire=1753344214\\u0026sign=51fe2b960bf6ef769157490c7937af37\",\"hls\":\"https://pull-hls-f16-tt03.fcdn.eu.tiktokcdn.com/game/stream-2135196102851297364/index.m3u8?expire=1753344214\\u0026sign=7219db938fd38036e8cb2d4fe3047017\",\"cmaf\":\"\",\"dash\":\"\",\"lls\":\"\",\"tsl\":\"\",\"tile\":\"\",\"rtc\":\"\",\"sdk_params\":\"{\\\"gop\\\":4,\\\"cdn_name\\\":\\\"fcdn\\\",\\\"vbitrate\\\":6896000,\\\"resolution\\\":\\\"1920x1080\\\",\\\"Auto\\\":{\\\"Enable\\\":1,\\\"Demotion\\\":{\\\"StallCount\\\":4}},\\\"VCodec\\\":\\\"h265\\\"}\"}},\"sd\":{\"main\":{\"flv\":\"https://pull-f5-sg01.fcdn.eu.tiktokcdn.com/game/stream-2135196102851297364_sd5.flv?expire=1753344214\\u0026sign=7ef7022b1a827207001744ace508ce95\",\"hls\":\"https://pull-hls-f16-tt03.fcdn.eu.tiktokcdn.com/game/stream-2135196102851297364_sd5/index.m3u8?expire=1753344214\\u0026sign=8f46c0dba30fa8bb5c4783cf92d721c8\",\"cmaf\":\"\",\"dash\":\"\",\"lls\":\"\",\"tsl\":\"\",\"tile\":\"\",\"rtc\":\"\",\"sdk_params\":\"{\\\"VCodec\\\":\\\"h265\\\",\\\"Auto\\\":{\\\"Demotion\\\":{\\\"StallCount\\\":4},\\\"Enable\\\":1},\\\"v_rtpsnr\\\":0,\\\"v_rtbitrate_std\\\":202030,\\\"resolution\\\":\\\"960x540\\\",\\\"cdn_name\\\":\\\"fcdn\\\",\\\"v_rtbitrate_pct\\\":1309010,\\\"v_rtbitrate_timestamp\\\":1752134602021,\\\"gop\\\":4,\\\"v_rtbitrate\\\":1044910.0000000001,\\\"vbitrate\\\":1000000,\\\"stream_suffix\\\":\\\"sd5\\\",\\\"v_rtbitrate_vpaas_timestamp\\\":1752134614863}\"}},\"ld\":{\"main\":{\"flv\":\"https://pull-f5-sg01.fcdn.eu.tiktokcdn.com/game/stream-2135196102851297364_ld5.flv?expire=1753344214\\u0026sign=398a623a1985ff543c49e9a06f88d6aa\",\"hls\":\"https://pull-hls-f16-tt03.fcdn.eu.tiktokcdn.com/game/stream-2135196102851297364_ld5/index.m3u8?expire=1753344214\\u0026sign=7a223ae761986f4ad6d2b0679ac8d08c\",\"cmaf\":\"\",\"dash\":\"\",\"lls\":\"\",\"tsl\":\"\",\"tile\":\"\",\"rtc\":\"\",\"sdk_params\":\"{\\\"v_rtbitrate_timestamp\\\":1752134571126,\\\"gop\\\":4,\\\"v_rtpsnr\\\":0,\\\"v_rtbitrate_std\\\":125980,\\\"stream_suffix\\\":\\\"ld5\\\",\\\"cdn_name\\\":\\\"fcdn\\\",\\\"Auto\\\":{\\\"Enable\\\":1,\\\"Demotion\\\":{\\\"StallCount\\\":4}},\\\"VCodec\\\":\\\"h265\\\",\\\"resolution\\\":\\\"640x360\\\",\\\"v_rtbitrate\\\":608250,\\\"vbitrate\\\":600000,\\\"v_rtbitrate_vpaas_timestamp\\\":1752134614863,\\\"v_rtbitrate_pct\\\":766300}\"}},\"uhd_60\":{\"main\":{\"flv\":\"https://pull-f5-sg01.fcdn.eu.tiktokcdn.com/game/stream-2135196102851297364_uhd560.flv?expire=1753344214\\u0026sign=0bb059b65e915ca53024786aba6867c5\",\"hls\":\"https://pull-hls-f16-tt03.fcdn.eu.tiktokcdn.com/game/stream-2135196102851297364_uhd560/index.m3u8?expire=1753344214\\u0026sign=de3245afa06cc2683fd5358cbb364657\",\"cmaf\":\"\",\"dash\":\"\",\"lls\":\"\",\"tsl\":\"\",\"tile\":\"\",\"rtc\":\"\",\"sdk_params\":\"{\\\"v_rtbitrate\\\":3874780,\\\"v_rtbitrate_pct\\\":4600530,\\\"v_rtbitrate_std\\\":557370,\\\"cdn_name\\\":\\\"fcdn\\\",\\\"stream_suffix\\\":\\\"uhd560\\\",\\\"v_rtbitrate_timestamp\\\":1752134602245,\\\"VCodec\\\":\\\"h265\\\",\\\"Auto\\\":{\\\"Demotion\\\":{\\\"StallCount\\\":4},\\\"Enable\\\":1},\\\"v_rtpsnr\\\":0,\\\"gop\\\":4,\\\"v_rtbitrate_vpaas_timestamp\\\":1752134614863,\\\"vbitrate\\\":4000000,\\\"resolution\\\":\\\"1920x1080\\\"}\"}}}}"
+                    }
+                }
+            }
+        }
+    },
+    "CurrentRoom": {
+        "loadingState": {
+            "enterRoom": 0
+        },
+        "roomInfo": null,
+        "anchorId": "",
+        "secAnchorId": "",
+        "anchorUniqueId": "",
+        "roomId": "",
+        "hotLiveRoomInfo": null,
+        "liveType": "video_live",
+        "reportLinkType": "normal_video_live",
+        "enterRoomWithSSR": true,
+        "playMode": "webpage",
+        "isGuestConnection": false,
+        "isMultiGuestRoom": false,
+        "showLiveChat": true,
+        "enableChat": true,
+        "isAnswerRoom": false,
+        "isGateRoom": false,
+        "requestId": "",
+        "ntpDiff": 0,
+        "followStatusMap": {}
+    }
+}

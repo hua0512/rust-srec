@@ -4,8 +4,8 @@ use super::error::ExtractorError;
 use super::platform_extractor::PlatformExtractor;
 use crate::extractor::platforms::{
     self, bilibili::Bilibili, douyin::DouyinExtractorBuilder, douyu::DouyuExtractorBuilder,
-    huya::HuyaExtractor, pandatv::PandaTV, picarto::Picarto, redbook::RedBook, twitch::Twitch,
-    weibo::Weibo,
+    huya::HuyaExtractor, pandatv::PandaTV, picarto::Picarto, redbook::RedBook, tiktok::TikTok,
+    twitch::Twitch, weibo::Weibo,
 };
 use regex::Regex;
 use reqwest::Client;
@@ -48,6 +48,7 @@ create_constructor!(new_twitch, Twitch::new);
 create_constructor!(new_redbook, RedBook::new);
 create_constructor!(new_bilibili, Bilibili::new);
 create_constructor!(new_picarto, Picarto::new);
+create_constructor!(new_tiktok, TikTok::new);
 
 // Static platform registry
 static PLATFORMS: &[PlatformEntry] = &[
@@ -86,6 +87,10 @@ static PLATFORMS: &[PlatformEntry] = &[
     PlatformEntry {
         regex: &platforms::picarto::URL_REGEX,
         constructor: new_picarto,
+    },
+    PlatformEntry {
+        regex: &platforms::tiktok::URL_REGEX,
+        constructor: new_tiktok,
     },
 ];
 
