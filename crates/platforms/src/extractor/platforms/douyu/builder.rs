@@ -499,6 +499,7 @@ mod tests {
     };
 
     #[tokio::test]
+    #[ignore]
     async fn test_douyu_extractor() {
         tracing_subscriber::fmt()
             .with_max_level(Level::DEBUG)

@@ -134,6 +134,7 @@ mod tests {
     use super::*;
 
     #[tokio::test]
+    #[ignore]
     async fn test_get_wbi_keys() {
         let keys = get_wbi_keys(&default_client()).await.unwrap();
         println!("{keys:?}");
