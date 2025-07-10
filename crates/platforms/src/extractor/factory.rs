@@ -5,7 +5,7 @@ use super::platform_extractor::PlatformExtractor;
 use crate::extractor::platforms::{
     self, bilibili::Bilibili, douyin::DouyinExtractorBuilder, douyu::DouyuExtractorBuilder,
     huya::HuyaExtractor, pandatv::PandaTV, picarto::Picarto, redbook::RedBook, tiktok::TikTok,
-    twitch::Twitch, weibo::Weibo,
+    twitcasting::Twitcasting, twitch::Twitch, weibo::Weibo,
 };
 use regex::Regex;
 use reqwest::Client;
@@ -39,6 +39,7 @@ create_constructor!(new_huya, HuyaExtractor::new);
 create_constructor!(new_douyin, |url, client, cookies, extras| {
     DouyinExtractorBuilder::new(url, client, cookies, extras).build()
 });
+#[cfg(feature = "douyu")]
 create_constructor!(new_douyu, |url, client, cookies, extras| {
     DouyuExtractorBuilder::new(url, client, cookies, extras).build(None)
 });
@@ -49,6 +50,7 @@ create_constructor!(new_redbook, RedBook::new);
 create_constructor!(new_bilibili, Bilibili::new);
 create_constructor!(new_picarto, Picarto::new);
 create_constructor!(new_tiktok, TikTok::new);
+create_constructor!(new_twitcasting, Twitcasting::new);
 
 // Static platform registry
 static PLATFORMS: &[PlatformEntry] = &[
@@ -60,6 +62,7 @@ static PLATFORMS: &[PlatformEntry] = &[
         regex: &platforms::douyin::URL_REGEX,
         constructor: new_douyin,
     },
+    #[cfg(feature = "douyu")]
     PlatformEntry {
         regex: &platforms::douyu::URL_REGEX,
         constructor: new_douyu,
@@ -91,6 +94,10 @@ static PLATFORMS: &[PlatformEntry] = &[
     PlatformEntry {
         regex: &platforms::tiktok::URL_REGEX,
         constructor: new_tiktok,
+    },
+    PlatformEntry {
+        regex: &platforms::twitcasting::URL_REGEX,
+        constructor: new_twitcasting,
     },
 ];
 

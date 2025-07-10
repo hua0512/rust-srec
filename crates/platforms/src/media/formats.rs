@@ -8,6 +8,7 @@ pub enum StreamFormat {
     Flv,
     Hls,
     Mp4,
+    Wss,
 }
 
 impl StreamFormat {
@@ -16,6 +17,7 @@ impl StreamFormat {
             StreamFormat::Flv => "flv",
             StreamFormat::Hls => "hls",
             StreamFormat::Mp4 => "mp4",
+            StreamFormat::Wss => "wss",
         }
     }
 
@@ -24,6 +26,7 @@ impl StreamFormat {
             "flv" => StreamFormat::Flv,
             "m3u8" => StreamFormat::Hls,
             "mp4" => StreamFormat::Mp4,
+            "wss" => StreamFormat::Wss,
             _ => StreamFormat::Flv,
         }
     }
@@ -43,6 +46,7 @@ impl FromStr for StreamFormat {
             "flv" => Ok(StreamFormat::Flv),
             "hls" => Ok(StreamFormat::Hls),
             "mp4" => Ok(StreamFormat::Mp4),
+            "wss" => Ok(StreamFormat::Wss),
             _ => Err(()),
         }
     }

@@ -1,0 +1,45 @@
+{
+    "movie": {
+        "id": 819521108,
+        "live": false
+    },
+    "hls": {
+        "host": "twitcasting.tv",
+        "proto": "https",
+        "source": true
+    },
+    "fmp4": {
+        "host": "202-239-41-93.twitcasting.tv",
+        "proto": "wss",
+        "source": true,
+        "mobilesource": false
+    },
+    "tc-hls": {
+        "streams": {
+            "medium": "https://202-239-41-93.twitcasting.tv/tc.livehls/v1/streams/819521108/hls/369.96/media.m3u8",
+            "low": "https://202-239-41-93.twitcasting.tv/tc.livehls/v1/streams/819521108/hls/264.64/media.m3u8"
+        }
+    },
+    "llfmp4": {
+        "streams": {
+            "main": "wss://202-239-41-93.twitcasting.tv/tc.edge/v1/streams/819521108.8193.96/fmp4/solid",
+            "base": "wss://202-239-41-93.twitcasting.tv/tc.edge/v1/streams/819521108.8196.64/fmp4/solid"
+        }
+    },
+    "llfmp4.h265": {
+        "streams": {
+            "main": "wss://202-239-41-93.twitcasting.tv/tc.edge/v1/streams/819521108.4097.96/fmp4/solid",
+            "base": "wss://202-239-41-93.twitcasting.tv/tc.edge/v1/streams/819521108.4100.64/fmp4/solid"
+        }
+    },
+    "webrtc": {
+        "streams": {
+            "main": "wss://202-239-41-93.twitcasting.tv/tc.edge/v1/streams/819521108.16385.96/webrtc/sync",
+            "base": "wss://202-239-41-93.twitcasting.tv/tc.edge/v1/streams/819521108.16388.64/webrtc/sync"
+        },
+        "app": {
+            "mode": "main",
+            "url": "wss://202-239-41-93.twitcasting.tv/tc.edge/v1/streams/819521108.16385.96/webrtc/sync"
+        }
+    }
+}

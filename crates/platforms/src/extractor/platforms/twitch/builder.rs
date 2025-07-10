@@ -311,6 +311,7 @@ impl Twitch {
                 ]),
                 &m3u8_url,
                 None,
+                None,
             )
             .await?;
 

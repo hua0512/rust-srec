@@ -179,7 +179,14 @@ impl PandaTV {
 
         let headers = self.extractor.get_platform_headers().clone();
         let streams = self
-            .extract_hls_stream::<()>(&self.extractor.client, Some(headers), None, &hls_url, None)
+            .extract_hls_stream::<()>(
+                &self.extractor.client,
+                Some(headers),
+                None,
+                &hls_url,
+                None,
+                None,
+            )
             .await?;
 
         Ok(self.create_media_info(

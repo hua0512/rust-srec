@@ -15,6 +15,7 @@ pub trait HlsExtractor {
         headers: Option<reqwest::header::HeaderMap>,
         params: Option<&Q>,
         m3u8_url: &str,
+        quality_name: Option<&str>,
         extras: Option<serde_json::Value>,
     ) -> Result<Vec<StreamInfo>, ExtractorError>
     where
@@ -46,7 +47,7 @@ pub trait HlsExtractor {
                     url: m3u8_url.to_string(),
                     stream_format: StreamFormat::Hls,
                     media_format,
-                    quality: "Source".to_string(),
+                    quality: quality_name.unwrap_or("Source").to_string(),
                     bitrate: 0,
                     priority: 0,
                     extras,
