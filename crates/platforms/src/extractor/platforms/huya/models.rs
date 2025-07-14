@@ -40,6 +40,54 @@ where
     deserializer.deserialize_any(MpDataVisitor)
 }
 
+// Custom deserializer to handle lp field which can be either a string or an integer
+fn deserialize_lp<'de, D>(deserializer: D) -> Result<i64, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    use serde::de::{self, Visitor};
+
+    struct LpVisitor;
+
+    impl<'de> Visitor<'de> for LpVisitor {
+        type Value = i64;
+
+        fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
+            formatter.write_str("a string or an integer")
+        }
+
+        fn visit_i64<E>(self, value: i64) -> Result<Self::Value, E>
+        where
+            E: de::Error,
+        {
+            Ok(value)
+        }
+
+        fn visit_u64<E>(self, value: u64) -> Result<Self::Value, E>
+        where
+            E: de::Error,
+        {
+            Ok(value as i64)
+        }
+
+        fn visit_str<E>(self, value: &str) -> Result<Self::Value, E>
+        where
+            E: de::Error,
+        {
+            value.parse::<i64>().map_err(de::Error::custom)
+        }
+
+        fn visit_string<E>(self, value: String) -> Result<Self::Value, E>
+        where
+            E: de::Error,
+        {
+            value.parse::<i64>().map_err(de::Error::custom)
+        }
+    }
+
+    deserializer.deserialize_any(LpVisitor)
+}
+
 #[derive(Deserialize, Debug)]
 #[serde(rename_all = "camelCase")]
 pub struct MpApiResponse<'a> {
@@ -65,6 +113,7 @@ pub struct MpData<'a> {
 #[derive(Deserialize, Debug)]
 #[serde(rename_all = "camelCase")]
 pub struct ProfileInfo<'a> {
+    #[serde(deserialize_with = "deserialize_lp")]
     pub uid: i64,
     #[serde(borrow)]
     pub nick: Cow<'a, str>,
@@ -118,6 +167,7 @@ pub struct RoomData<'a> {
 #[derive(Deserialize, Debug)]
 #[serde(rename_all = "camelCase")]
 pub struct WebProfileInfo<'a> {
+    #[serde(deserialize_with = "deserialize_lp")]
     pub lp: i64, // presenter uid
     #[serde(borrow)]
     pub nick: Cow<'a, str>,
@@ -150,6 +200,7 @@ pub struct WebStreamDataContainer<'a> {
 #[derive(Deserialize, Debug)]
 #[serde(rename_all = "camelCase")]
 pub struct GameLiveInfo<'a> {
+    #[serde(deserialize_with = "deserialize_lp")]
     pub uid: i64,
     #[serde(borrow)]
     pub room_name: Cow<'a, str>,
