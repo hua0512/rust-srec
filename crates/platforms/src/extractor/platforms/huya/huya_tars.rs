@@ -37,15 +37,20 @@ impl From<GetCdnTokenInfoReq> for TarsValue {
 }
 
 pub fn build_get_cdn_token_info_request(
-    stream_name: String,
-    cdn_type: String,
+    stream_name: &str,
+    cdn_type: &str,
     presenter_uid: i32,
 ) -> Result<Bytes, tars_codec::error::TarsError> {
-    let req = GetCdnTokenInfoReq::new("".to_string(), stream_name, cdn_type, presenter_uid);
+    let req = GetCdnTokenInfoReq::new(
+        String::new(),
+        stream_name.to_owned(),
+        cdn_type.to_owned(),
+        presenter_uid,
+    );
     let mut body = FxHashMap::default();
     let tars_value: TarsValue = req.into();
     body.insert(
-        "tReq".to_string(),
+        String::from("tReq"),
         tars_codec::ser::to_bytes_mut(&tars_value)?,
     );
 
@@ -55,8 +60,8 @@ pub fn build_get_cdn_token_info_request(
             packet_type: 0,
             message_type: 0,
             request_id: 1,
-            servant_name: "liveui".to_string(),
-            func_name: "getCdnTokenInfo".to_string(),
+            servant_name: String::from("liveui"),
+            func_name: String::from("getCdnTokenInfo"),
             timeout: 0,
             context: FxHashMap::default(),
             status: FxHashMap::default(),

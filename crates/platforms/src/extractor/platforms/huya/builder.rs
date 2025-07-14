@@ -10,6 +10,7 @@ use crate::media::stream_info::StreamInfo;
 use async_trait::async_trait;
 use regex::Regex;
 use reqwest::Client;
+use reqwest::header::HeaderValue;
 use url::Url;
 
 use super::huya_tars;
@@ -51,14 +52,11 @@ impl HuyaExtractor {
         cookies: Option<String>,
         extras: Option<serde_json::Value>,
     ) -> Self {
-        let mut extractor = Extractor::new("Huya".to_string(), platform_url, client);
-        let huya_url = Self::HUYA_URL.to_string();
-        extractor.add_header(reqwest::header::ORIGIN.to_string(), huya_url.clone());
-        extractor.add_header(reqwest::header::REFERER.to_string(), huya_url);
-        extractor.add_header(
-            reqwest::header::USER_AGENT.to_string(),
-            Self::WUP_UA.to_string(),
-        );
+        let mut extractor = Extractor::new(String::from("Huya"), platform_url, client);
+        let huya_header_value = HeaderValue::from_str(Self::HUYA_URL).unwrap();
+        extractor.add_header_owned(reqwest::header::ORIGIN, huya_header_value.clone());
+        extractor.add_header_owned(reqwest::header::REFERER, huya_header_value);
+        extractor.add_header_typed(reqwest::header::USER_AGENT, Self::WUP_UA);
         if let Some(cookies) = cookies {
             extractor.set_cookies_from_string(&cookies);
         }
@@ -182,7 +180,7 @@ impl HuyaExtractor {
             None => {
                 return Ok(MediaInfo::new(
                     self.extractor.url.clone(),
-                    "".to_string(),
+                    String::new(),
                     artist,
                     None,
                     avatar_url,
@@ -215,7 +213,7 @@ impl HuyaExtractor {
             Some(data) => data,
             None => {
                 return Err(ExtractorError::ValidationError(
-                    "No stream data found".to_string(),
+                    "No stream data found".into(),
                 ));
             }
         };
@@ -306,7 +304,7 @@ impl HuyaExtractor {
         let avatar_url = if profile_info.avatar.is_empty() {
             None
         } else {
-            Some(profile_info.avatar.to_string())
+            Some(profile_info.avatar.into_owned())
         };
 
         if !live_status {
@@ -432,7 +430,7 @@ impl HuyaExtractor {
                         url: format!("{hls_url}&ratio={bitrate}"),
                         stream_format: StreamFormat::Hls,
                         media_format: MediaFormat::Ts,
-                        quality: quality.to_string(),
+                        quality: quality.to_owned(),
                         bitrate,
                         priority,
                         codec: "avc".to_string(),
@@ -473,12 +471,8 @@ impl HuyaExtractor {
         presenter_uid: i32,
     ) -> Result<(), ExtractorError> {
         // println!("Getting true url for {:?}", stream_info);
-        let request_body = huya_tars::build_get_cdn_token_info_request(
-            stream_name.to_string(),
-            cdn.to_string(),
-            presenter_uid,
-        )
-        .unwrap();
+        let request_body =
+            huya_tars::build_get_cdn_token_info_request(stream_name, cdn, presenter_uid).unwrap();
 
         let response = self
             .extractor
@@ -544,9 +538,9 @@ impl HuyaExtractor {
 
         if bitrate != default_bitrate {
             let new_url = format!("{base_url}&ratio={bitrate}");
-            stream_info.url = new_url.to_string();
+            stream_info.url = new_url;
         } else {
-            stream_info.url = base_url.to_string();
+            stream_info.url = base_url;
         }
 
         Ok(())
@@ -589,33 +583,37 @@ impl PlatformExtractor for HuyaExtractor {
         }
 
         // wup method
-        let extras = stream_info
-            .extras
-            .as_ref()
-            .ok_or_else(|| {
+        let (cdn, stream_name, presenter_uid) = {
+            let extras = stream_info.extras.as_ref().ok_or_else(|| {
                 ExtractorError::ValidationError(
                     "Stream extras not found for WUP request".to_string(),
                 )
-            })
-            .cloned()
-            .unwrap();
-
-        let cdn = extras.get("cdn").and_then(|v| v.as_str()).unwrap_or("AL");
-
-        let stream_name = extras
-            .get("stream_name")
-            .and_then(|v| v.as_str())
-            .ok_or_else(|| {
-                ExtractorError::ValidationError("Stream name not found in extras".to_string())
             })?;
 
-        let presenter_uid = extras
-            .get("presenter_uid")
-            .and_then(|v| v.as_i64())
-            .map(|v| v as i32)
-            .unwrap_or(0);
+            let cdn = extras
+                .get("cdn")
+                .and_then(|v| v.as_str())
+                .unwrap_or("AL")
+                .to_owned();
 
-        self.get_stream_url_wup(&mut stream_info, cdn, stream_name, presenter_uid)
+            let stream_name = extras
+                .get("stream_name")
+                .and_then(|v| v.as_str())
+                .ok_or_else(|| {
+                    ExtractorError::ValidationError("Stream name not found in extras".to_string())
+                })?
+                .to_owned();
+
+            let presenter_uid = extras
+                .get("presenter_uid")
+                .and_then(|v| v.as_i64())
+                .map(|v| v as i32)
+                .unwrap_or(0);
+
+            (cdn, stream_name, presenter_uid)
+        };
+
+        self.get_stream_url_wup(&mut stream_info, &cdn, &stream_name, presenter_uid)
             .await?;
 
         Ok(stream_info)
@@ -704,12 +702,12 @@ mod tests {
             None,
             None,
         );
-        let media_info = extractor.extract().await.unwrap();
+        let mut media_info = extractor.extract().await.unwrap();
         assert!(media_info.is_live);
-        let stream_info = media_info.streams.first().unwrap();
+        let stream_info = media_info.streams.drain(0..1).next().unwrap();
         assert!(!stream_info.url.is_empty());
 
-        let stream_info = extractor.get_url(stream_info.clone()).await.unwrap();
+        let stream_info = extractor.get_url(stream_info).await.unwrap();
 
         println!("{stream_info:?}");
     }

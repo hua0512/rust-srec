@@ -1,4 +1,5 @@
 use crate::extractor::default::DEFAULT_UA;
+use crate::media::stream_info::StreamInfo;
 use crate::media::{StreamInfo, stream_info};
 
 use super::{super::media::media_info::MediaInfo, error::ExtractorError};
@@ -94,6 +95,30 @@ impl Extractor {
             HeaderName::from_str(&key.into()).unwrap(),
             HeaderValue::from_str(&value.into()).unwrap(),
         );
+    }
+
+    pub fn add_header_str<K: AsRef<str>, V: AsRef<str>>(&mut self, key: K, value: V) {
+        self.platform_headers.insert(
+            HeaderName::from_str(key.as_ref()).unwrap(),
+            HeaderValue::from_str(value.as_ref()).unwrap(),
+        );
+    }
+
+    pub fn add_header_name<K: Into<HeaderName>, V: Into<HeaderValue>>(&mut self, key: K, value: V) {
+        self.platform_headers.insert(key.into(), value.into());
+    }
+
+    pub fn add_header_owned<K: Into<HeaderName>, V: Into<HeaderValue>>(
+        &mut self,
+        key: K,
+        value: V,
+    ) {
+        self.platform_headers.insert(key.into(), value.into());
+    }
+
+    pub fn add_header_typed<K: Into<HeaderName>, V: AsRef<str>>(&mut self, key: K, value: V) {
+        self.platform_headers
+            .insert(key.into(), HeaderValue::from_str(value.as_ref()).unwrap());
     }
 
     pub fn add_param<K: Into<String>, V: Into<String>>(&mut self, key: K, value: V) {
@@ -337,10 +362,7 @@ pub trait PlatformExtractor: Send + Sync {
 
     async fn extract(&self) -> Result<MediaInfo, ExtractorError>;
 
-    async fn get_url(
-        &self,
-        stream_info: stream_info::StreamInfo,
-    ) -> Result<StreamInfo, ExtractorError> {
+    async fn get_url(&self, stream_info: StreamInfo) -> Result<StreamInfo, ExtractorError> {
         // Default implementation, can be overridden by specific extractors
         Ok(stream_info)
     }
