@@ -150,5 +150,3 @@ impl std::fmt::Display for OutputFormat {
         }
     }
 }
-
- 

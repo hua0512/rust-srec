@@ -7,7 +7,7 @@ use crate::{
 use colored::*;
 use indicatif::{ProgressBar, ProgressStyle};
 use platforms_parser::{
-    extractor::factory::ExtractorFactory,
+    extractor::{factory::ExtractorFactory, platform_extractor::PlatformExtractor},
     media::{MediaInfo, StreamInfo},
 };
 use regex::Regex;
@@ -59,27 +59,26 @@ impl CommandExecutor {
         pb.finish_and_clear();
 
         match result {
-            Ok(media_info) => {
+            Ok((mut media_info, extractor)) => {
                 let selected_stream = if media_info.streams.is_empty() {
                     return Err(CliError::no_streams_found());
                 } else if auto_select {
-                    self.auto_select_stream(&media_info.streams)?
+                    // Move the streams vector for auto selection
+                    let streams = std::mem::take(&mut media_info.streams);
+                    self.auto_select_stream(streams)?
                 } else if media_info.streams.len() == 1 {
-                    media_info.streams[0].clone()
+                    // Move instead of clone by draining
+                    media_info.streams.drain(..).next().unwrap()
                 } else {
-                    self.interactive_select_stream(media_info.streams.clone())?
+                    // Move the streams vector for interactive selection
+                    let streams = std::mem::take(&mut media_info.streams);
+                    self.interactive_select_stream(streams)?
                 };
 
                 let filtered_stream = self.apply_filters(selected_stream, quality, format)?;
 
-                // Get the true URL by calling get_url on the extractor
+                // Get the true URL
                 let pb_get_url = self.create_progress_bar("Getting stream URL...");
-                let extras_json = extras.and_then(|s| serde_json::from_str(s).ok());
-                let extractor = self.extractor_factory.create_extractor(
-                    url,
-                    cookies.map(String::from),
-                    extras_json,
-                )?;
                 let final_stream = extractor.get_url(filtered_stream).await?;
                 pb_get_url.finish_and_clear();
 
@@ -145,7 +144,7 @@ impl CommandExecutor {
         for (index, url) in urls.iter().enumerate() {
             let url = url.clone();
             let pb = Arc::clone(&pb);
-            let permit = Arc::clone(&semaphore).acquire_owned().await?;
+            let permit = semaphore.clone().acquire_owned().await?;
             let client = reqwest::Client::new();
 
             let task = tokio::spawn(async move {
@@ -157,26 +156,29 @@ impl CommandExecutor {
                     let factory = ExtractorFactory::new(client);
                     let extractor = factory.create_extractor(&url, None, None)?;
                     // Extract media info directly using the platforms API
-                    let media_info = extractor.extract().await?;
-                    
+                    let mut media_info = extractor.extract().await?;
+
                     if media_info.streams.is_empty() {
                         return Err(CliError::no_streams_found());
                     }
-                    
+
                     let selected_stream = if auto_select {
-                        media_info
+                        // Find the index of the stream with max priority
+                        let (index, _) = media_info
                             .streams
                             .iter()
-                            .max_by_key(|s| s.priority)
-                            .cloned()
-                            .unwrap_or_else(|| media_info.streams.first().cloned().unwrap())
+                            .enumerate()
+                            .max_by_key(|(_, s)| s.priority)
+                            .unwrap_or((0, &media_info.streams[0]));
+
+                        media_info.streams.swap_remove(index)
                     } else {
-                        media_info.streams.first().cloned().unwrap()
+                        media_info.streams.swap_remove(0)
                     };
-                    
-                    // Get the true URL by calling get_url on the extractor
+
+                    // Get the true URL
                     let final_stream = extractor.get_url(selected_stream).await?;
-                    
+
                     Ok((media_info, final_stream))
                 })
                 .await
@@ -298,7 +300,7 @@ impl CommandExecutor {
         extras: Option<&str>,
         timeout_duration: Duration,
         retries: u32,
-    ) -> Result<MediaInfo> {
+    ) -> Result<(MediaInfo, Box<dyn PlatformExtractor>)> {
         let mut last_error = None;
 
         for attempt in 0..=retries {
@@ -309,7 +311,8 @@ impl CommandExecutor {
                     cookies.map(String::from),
                     extras_json,
                 )?;
-                extractor.extract().await
+                let media_info = extractor.extract().await?;
+                Ok::<_, CliError>((media_info, extractor))
             })
             .await
             {
@@ -334,12 +337,19 @@ impl CommandExecutor {
         Err(last_error.unwrap_or_else(CliError::timeout))
     }
 
-    fn auto_select_stream(&self, streams: &[StreamInfo]) -> Result<StreamInfo> {
-        streams
+    fn auto_select_stream(&self, mut streams: Vec<StreamInfo>) -> Result<StreamInfo> {
+        if streams.is_empty() {
+            return Err(CliError::no_streams_found());
+        }
+
+        // Find the index of the stream with max priority
+        let (index, _) = streams
             .iter()
-            .max_by_key(|s| s.priority)
-            .cloned()
-            .ok_or_else(CliError::no_streams_found)
+            .enumerate()
+            .max_by_key(|(_, s)| s.priority)
+            .unwrap(); // Safe because we checked for empty above
+
+        Ok(streams.swap_remove(index))
     }
 
     fn interactive_select_stream(&self, streams: Vec<StreamInfo>) -> Result<StreamInfo> {
