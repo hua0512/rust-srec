@@ -248,7 +248,7 @@ impl Bilibili {
     }
 
     pub async fn get_live_info(&self, room_id: &str) -> Result<MediaInfo, ExtractorError> {
-        let (room_info, anchor_info) = self.fetch_room_info(&room_id).await?;
+        let (room_info, anchor_info) = self.fetch_room_info(room_id).await?;
 
         let is_live = room_info.live_status == 1;
         let title = room_info.title;

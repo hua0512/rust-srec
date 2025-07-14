@@ -341,9 +341,11 @@ mod tests {
     use crate::extractor::{default::default_client, platforms::twitch::builder::Twitch};
 
     #[tokio::test]
+    #[ignore]
     async fn test_get_live_stream_info() {
         tracing_subscriber::fmt()
             .with_max_level(Level::DEBUG)
+            .with_test_writer()
             .init();
         let twitch = Twitch::new(
             "https://www.twitch.tv/abby_".to_string(),

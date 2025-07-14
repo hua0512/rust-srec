@@ -131,20 +131,47 @@ impl Weibo {
             .await?;
 
         if response.error_code != 0 {
-            return if response.msg == "LiveRoom does not exists!" {
+            let msg = response.msg.unwrap_or_default();
+            return if msg == "LiveRoom does not exists!" {
                 Err(ExtractorError::StreamerNotFound)
+            } else if msg.is_empty() {
+                // if msg is empty, then is not live
+                return Ok(MediaInfo {
+                    site_url: self.extractor.url.clone(),
+                    title: "".to_string(),
+                    artist: "".to_string(),
+                    artist_url: None,
+                    cover_url: None,
+                    is_live: false,
+                    streams: vec![],
+                    extras: None,
+                });
             } else {
-                Err(ExtractorError::ValidationError(response.msg))
+                Err(ExtractorError::ValidationError(msg))
             };
         }
 
         // debug!("response: {:?}", response);
 
-        let user_info = response.data.user_info;
+        if response.data.is_none() {
+            return Ok(MediaInfo {
+                site_url: self.extractor.url.clone(),
+                title: "".to_string(),
+                artist: "".to_string(),
+                artist_url: None,
+                cover_url: None,
+                is_live: false,
+                streams: vec![],
+                extras: None,
+            });
+        }
+
+        let data = response.data.unwrap();
+        let user_info = data.user_info;
 
         let artist = user_info.screen_name;
         let avatar_url = user_info.profile_image_url;
-        let data = response.data.item;
+        let data = data.item;
 
         let title = data.desc;
         let cover_url = data.cover;

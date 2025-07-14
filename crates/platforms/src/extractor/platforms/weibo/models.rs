@@ -3,11 +3,11 @@ use serde::Deserialize;
 
 #[derive(Debug, Deserialize)]
 pub struct WeiboLiveInfo {
-    pub code: i64,
-    pub data: Data,
+    pub code: Option<i64>,
+    pub data: Option<Data>,
     pub error_code: i64,
-    pub msg: String,
-    pub result: bool,
+    pub msg: Option<String>,
+    pub result: Option<bool>,
 }
 
 #[derive(Debug, Deserialize)]

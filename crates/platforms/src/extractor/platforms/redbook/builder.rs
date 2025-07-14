@@ -237,7 +237,7 @@ impl RedBook {
         // Process H264 streams
         if let Some(h264) = &pull_config.h264 {
             streams.extend(Self::process_streams(
-                &h264,
+                h264,
                 DEFAULT_CODEC_H264,
                 pull_config,
                 0,
@@ -247,7 +247,7 @@ impl RedBook {
         // Process H265 streams
         if let Some(h265) = &pull_config.h265 {
             streams.extend(Self::process_streams(
-                &h265,
+                h265,
                 DEFAULT_CODEC_H265,
                 pull_config,
                 h265.len(),
