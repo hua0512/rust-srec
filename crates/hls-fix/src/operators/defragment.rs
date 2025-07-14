@@ -396,7 +396,7 @@ mod tests {
     use super::*;
     use bytes::Bytes;
     use hls::{M4sInitSegmentData, M4sSegmentData, TsSegmentData as TsData};
-    use pipeline_common::init_tracing;
+    use pipeline_common::init_test_tracing;
     use std::collections::VecDeque;
 
     // Test utilities
@@ -497,7 +497,7 @@ mod tests {
     // Test a complete TS segment flow
     #[test]
     fn test_ts_segment_complete() {
-        init_tracing();
+        init_test_tracing!();
         let mut ctx = TestContext::new();
 
         // Create a complete TS segment (PAT, PMT, keyframe, regular packets)
@@ -523,7 +523,7 @@ mod tests {
     // Test M4S segments with init segment
     #[test]
     fn test_m4s_init_and_segment() {
-        init_tracing();
+        init_test_tracing!();
         let mut ctx = TestContext::new();
 
         // Process init segment first
@@ -547,6 +547,7 @@ mod tests {
     // Test handling of end of playlist marker
     #[test]
     fn test_end_of_playlist() {
+        init_test_tracing!();
         let mut ctx = TestContext::new();
 
         // Start with incomplete segment
@@ -571,7 +572,7 @@ mod tests {
     // Test finish() with a complete segment
     #[test]
     fn test_finish_with_complete_segment() {
-        init_tracing();
+        init_test_tracing!();
         let mut ctx = TestContext::new();
 
         // Process a complete segment
@@ -593,7 +594,7 @@ mod tests {
     // Test finish() with an incomplete segment
     #[test]
     fn test_finish_with_incomplete_segment() {
-        init_tracing();
+        init_test_tracing!();
         let mut ctx = TestContext::new();
 
         // Only process PAT - incomplete segment
@@ -613,7 +614,7 @@ mod tests {
     // Test segment type switching
     #[test]
     fn test_segment_type_switching() {
-        init_tracing();
+        init_test_tracing!();
         let mut ctx = TestContext::new();
 
         // Start with TS segment

@@ -2,13 +2,22 @@ use std::sync::Arc;
 
 use crate::StreamerContext;
 
-/// Initialize tracing for tests with appropriate settings
-#[inline]
-pub fn init_tracing() {
-    let _ = tracing_subscriber::fmt()
-        .with_max_level(tracing::Level::DEBUG)
-        .with_test_writer() // Write to test output
-        .try_init();
+/// Macro to initialize tracing for tests
+///
+/// Usage:
+/// - `init_test_tracing!()` - uses DEBUG level (default)
+/// - `init_test_tracing!(INFO)` - uses specified level
+#[macro_export]
+macro_rules! init_test_tracing {
+    () => {
+        init_test_tracing!(DEBUG);
+    };
+    ($level:ident) => {
+        let _ = tracing_subscriber::fmt()
+            .with_max_level(tracing::Level::$level)
+            .with_test_writer()
+            .try_init();
+    };
 }
 
 /// Create a test streamer context
@@ -16,3 +25,6 @@ pub fn init_tracing() {
 pub fn create_test_context() -> Arc<StreamerContext> {
     Arc::new(StreamerContext::default())
 }
+
+// Re-export the macro
+pub use crate::init_test_tracing;

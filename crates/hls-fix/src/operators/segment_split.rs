@@ -366,7 +366,7 @@ mod tests {
     use super::*;
     use bytes::Bytes;
     use m3u8_rs::MediaSegment;
-    use pipeline_common::{init_tracing, test_utils::create_test_context};
+    use pipeline_common::{init_test_tracing, test_utils::create_test_context};
 
     // Helper function to create a basic PAT packet
     fn create_pat_packet(programs: &[(u16, u16)]) -> Vec<u8> {
@@ -583,7 +583,7 @@ mod tests {
 
     #[test]
     fn test_init_segment_change() {
-        init_tracing();
+        init_test_tracing!();
         let context = create_test_context();
         let mut operator = SegmentSplitOperator::new(context);
         let mut output_items = Vec::new();

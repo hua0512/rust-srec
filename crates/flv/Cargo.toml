@@ -18,7 +18,6 @@ thiserror = "2.0.12"
 tracing = "0.1.41"
 
 [dev-dependencies]
-# Move tracing-subscriber to dev-dependencies since it's only used in tests
 tracing-subscriber = "0.3.19"
 
 [lints.rust]

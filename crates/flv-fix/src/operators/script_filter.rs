@@ -116,12 +116,12 @@ impl Processor<FlvData> for ScriptFilterOperator {
 mod tests {
     use super::*;
     use crate::test_utils::{create_script_tag, create_test_header, create_video_tag};
-    use pipeline_common::init_tracing;
-    use pipeline_common::test_utils::create_test_context;
+    use pipeline_common::create_test_context;
+    use pipeline_common::init_test_tracing;
 
     #[test]
     fn test_filter_script_tags() {
-        init_tracing();
+        init_test_tracing!();
         let context = create_test_context();
         let mut operator = ScriptFilterOperator::new(context);
         let mut output_items = Vec::new();
@@ -200,7 +200,7 @@ mod tests {
 
     #[test]
     fn test_multiple_headers_reset_filtering() {
-        init_tracing();
+        init_test_tracing!();
         let context = create_test_context();
         let mut operator = ScriptFilterOperator::new(context);
         let mut output_items = Vec::new();

@@ -179,7 +179,7 @@ mod test {
     use flv::data::FlvData;
     use flv::parser_async::FlvDecoderStream;
     use futures::StreamExt;
-    use pipeline_common::test_utils::init_tracing;
+    use pipeline_common::init_test_tracing;
     use std::io;
     use std::path::Path;
     use tracing::info;
@@ -187,7 +187,7 @@ mod test {
     #[tokio::test]
     #[ignore]
     async fn test_process() -> Result<(), Box<dyn std::error::Error>> {
-        init_tracing(); // Initialize tracing for logging using our common utility
+        init_test_tracing!();
 
         // Source and destination paths
         let input_path = Path::new("D:/test/999/16_02_26-福州~ 主播恋爱脑！！！.flv");

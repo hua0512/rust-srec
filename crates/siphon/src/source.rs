@@ -396,7 +396,7 @@ impl SourceManager {
         };
 
         // Final score is weighted average: 70% success rate, 30% time score
-        health.score = (success_rate * 70 + time_score * 30) / 100;
+        health.score = ((success_rate as u32 * 70 + time_score as u32 * 30) / 100) as u8;
     }
 
     /// Manually set the active status of a source

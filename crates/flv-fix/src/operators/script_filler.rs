@@ -514,8 +514,8 @@ mod tests {
     use amf0::Amf0Value;
     use bytes::Bytes;
     use flv::{header::FlvHeader, tag::FlvTagType};
-    use pipeline_common::test_utils::create_test_context;
-    use pipeline_common::test_utils::init_tracing;
+    use pipeline_common::create_test_context;
+    use pipeline_common::init_test_tracing;
 
     use std::collections::HashMap;
 
@@ -554,7 +554,7 @@ mod tests {
 
     #[test]
     fn test_add_keyframes_to_amf() {
-        init_tracing();
+        init_test_tracing!();
         let context = create_test_context();
         let config = ScriptFillerConfig::default();
         let operator = ScriptKeyframesFillerOperator::new(context, config);
@@ -600,7 +600,7 @@ mod tests {
 
     #[test]
     fn test_process_flow() {
-        init_tracing();
+        init_test_tracing!();
         let context = create_test_context();
         let config = ScriptFillerConfig::default();
         let mut operator = ScriptKeyframesFillerOperator::new(context, config);
@@ -681,7 +681,7 @@ mod tests {
 
     #[test]
     fn test_malformed_script_data() {
-        init_tracing();
+        init_test_tracing!();
         let context = create_test_context();
         let config = ScriptFillerConfig::default();
         let mut operator = ScriptKeyframesFillerOperator::new(context, config);

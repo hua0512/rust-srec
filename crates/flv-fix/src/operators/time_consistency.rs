@@ -273,7 +273,7 @@ impl Processor<FlvData> for TimeConsistencyOperator {
 mod tests {
 
     use crate::test_utils::{create_audio_tag, create_test_header, create_video_tag};
-    use pipeline_common::{create_test_context, init_tracing};
+    use pipeline_common::{create_test_context, init_test_tracing};
 
     use super::*;
 
@@ -452,7 +452,7 @@ mod tests {
 
     #[test]
     fn test_decreasing_timestamp_handling() {
-        init_tracing();
+        init_test_tracing!();
         let context = create_test_context();
         let mut operator = TimeConsistencyOperator::new(context, ContinuityMode::Reset);
         let mut output_items = Vec::new();
@@ -526,7 +526,7 @@ mod tests {
 
     #[test]
     fn test_multiple_splits() {
-        init_tracing();
+        init_test_tracing!();
         let context = create_test_context();
 
         // Test with Continuous mode

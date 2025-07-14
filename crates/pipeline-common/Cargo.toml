@@ -5,9 +5,10 @@ edition = "2024"
 description = "Common traits and implementations for media processing pipelines"
 license = "MIT"
 
+
 [dependencies]
 thiserror = "1.0"
 tracing = "0.1"
-tracing-subscriber = "0.3"
 
-# [dev-dependencies]
+[dev-dependencies]
+tracing-subscriber = "0.3"

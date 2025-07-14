@@ -31,7 +31,7 @@ pub use context::StreamerContext;
 pub use pipeline::Pipeline;
 pub use processor::Processor;
 
-pub use test_utils::{create_test_context, init_tracing};
+pub use test_utils::create_test_context;
 
 /// Common error type for pipeline operations
 #[derive(Error, Debug)]

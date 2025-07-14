@@ -49,6 +49,21 @@ impl Amf0Encoder {
         Ok(())
     }
 
+    /// Encode a u64 as an AMF0 number
+    ///
+    /// Note: AMF0 numbers are stored as f64, so precision may be lost for values > 2^53.
+    /// This is acceptable for file positions and timestamps in practical use cases.
+    pub fn encode_u64(writer: &mut impl io::Write, value: u64) -> Result<(), Amf0WriteError> {
+        Self::encode_number(writer, value as f64)
+    }
+
+    /// Encode a u32 as an AMF0 number
+    ///
+    /// Note: u32 values are always precisely representable in f64.
+    pub fn encode_u32(writer: &mut impl io::Write, value: u32) -> Result<(), Amf0WriteError> {
+        Self::encode_number(writer, value as f64)
+    }
+
     /// Encode an AMF0 boolean
     pub fn encode_bool(writer: &mut impl io::Write, value: bool) -> Result<(), Amf0WriteError> {
         writer.write_u8(Amf0Marker::Boolean as u8)?;
@@ -117,6 +132,30 @@ mod tests {
         Amf0Encoder::encode_number(&mut vec, 772.161).unwrap();
 
         assert_eq!(vec, amf0_number);
+    }
+
+    #[test]
+    fn test_encode_u64() {
+        let value: u64 = 1234567890;
+        let mut expected = vec![0x00]; // Number marker
+        expected.extend_from_slice(&(value as f64).to_be_bytes());
+
+        let mut vec = Vec::<u8>::new();
+        Amf0Encoder::encode_u64(&mut vec, value).unwrap();
+
+        assert_eq!(vec, expected);
+    }
+
+    #[test]
+    fn test_encode_u32() {
+        let value: u32 = 123456;
+        let mut expected = vec![0x00]; // Number marker
+        expected.extend_from_slice(&(value as f64).to_be_bytes());
+
+        let mut vec = Vec::<u8>::new();
+        Amf0Encoder::encode_u32(&mut vec, value).unwrap();
+
+        assert_eq!(vec, expected);
     }
 
     #[test]
