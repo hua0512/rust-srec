@@ -1,8 +1,10 @@
 use crate::{cli::OutputFormat, error::Result};
+#[cfg(feature = "colored-output")]
 use colored::*;
 use platforms_parser::media::{MediaInfo, StreamInfo};
 use std::borrow::Cow;
 use std::io::Write;
+#[cfg(feature = "table-output")]
 use tabled::{Table, Tabled, settings::Style};
 
 pub struct OutputManager {
@@ -27,7 +29,13 @@ impl OutputManager {
             OutputFormat::JsonCompact => {
                 self.format_json(media_info, stream_info, include_extras, false)
             }
+            #[cfg(feature = "table-output")]
             OutputFormat::Table => self.format_table(media_info, stream_info),
+            #[cfg(not(feature = "table-output"))]
+            OutputFormat::Table => {
+                // Fallback to pretty format when table feature is disabled
+                self.format_pretty(media_info, stream_info, include_extras)
+            }
             OutputFormat::Csv => self.format_csv(media_info, stream_info),
         }
     }
@@ -227,6 +235,7 @@ impl OutputManager {
         Ok(result)
     }
 
+    #[cfg(feature = "table-output")]
     fn format_table(
         &self,
         media_info: &MediaInfo,
@@ -268,43 +277,37 @@ impl OutputManager {
         }
 
         if let Some(stream) = stream_info {
-            rows.extend([
-                TableRow {
-                    property: "Stream Format",
-                    value: Cow::Owned(stream.stream_format.to_string()),
-                },
-                TableRow {
-                    property: "Quality",
-                    value: Cow::Borrowed(&stream.quality),
-                },
-                TableRow {
-                    property: "URL",
-                    value: Cow::Borrowed(stream.url.as_str()),
-                },
-                TableRow {
-                    property: "Bitrate",
-                    value: Cow::Owned(format!("{} kbps", stream.bitrate)),
-                },
-                TableRow {
-                    property: "Media Format",
-                    value: Cow::Owned(stream.media_format.to_string()),
-                },
-                TableRow {
-                    property: "Codec",
-                    value: Cow::Borrowed(&stream.codec),
-                },
-                TableRow {
-                    property: "FPS",
-                    value: Cow::Owned(stream.fps.to_string()),
-                },
-                TableRow {
-                    property: "Priority",
-                    value: Cow::Owned(stream.priority.to_string()),
-                },
-            ]);
+            rows.push(TableRow {
+                property: "Stream Format",
+                value: Cow::Owned(stream.stream_format.to_string()),
+            });
+            rows.push(TableRow {
+                property: "Quality",
+                value: Cow::Borrowed(&stream.quality),
+            });
+            rows.push(TableRow {
+                property: "Stream URL",
+                value: Cow::Borrowed(stream.url.as_str()),
+            });
+            rows.push(TableRow {
+                property: "Bitrate",
+                value: Cow::Owned(format!("{} kbps", stream.bitrate)),
+            });
+            rows.push(TableRow {
+                property: "Media Format",
+                value: Cow::Owned(stream.media_format.to_string()),
+            });
+            rows.push(TableRow {
+                property: "Codec",
+                value: Cow::Borrowed(&stream.codec),
+            });
+            rows.push(TableRow {
+                property: "FPS",
+                value: Cow::Owned(stream.fps.to_string()),
+            });
         }
 
-        let table = Table::new(rows).with(Style::rounded()).to_string();
+        let table = Table::new(rows).with(Style::modern()).to_string();
         Ok(table)
     }
 
@@ -367,26 +370,41 @@ impl OutputManager {
     }
 
     fn colorize(&self, text: &str, color: &Color, bold: bool) -> String {
-        if !self.colored {
-            return text.to_string();
+        #[cfg(feature = "colored-output")]
+        {
+            if self.colored {
+                let colored_text = match color {
+                    Color::Green => text.green(),
+                    Color::Yellow => text.yellow(),
+                    Color::Blue => text.blue(),
+                    Color::Cyan => text.cyan(),
+                };
+                if bold {
+                    colored_text.bold().to_string()
+                } else {
+                    colored_text.to_string()
+                }
+            } else {
+                text.to_string()
+            }
         }
 
-        let colored_text = match color {
-            Color::Green => text.green(),
-            Color::Yellow => text.yellow(),
-            Color::Blue => text.blue(),
-            Color::Cyan => text.cyan(),
-        };
-
-        if bold {
-            colored_text.bold().to_string()
-        } else {
-            colored_text.to_string()
+        #[cfg(not(feature = "colored-output"))]
+        {
+            text.to_string()
         }
     }
 }
 
-#[derive(Debug)]
+#[cfg(feature = "colored-output")]
+enum Color {
+    Green,
+    Yellow,
+    Blue,
+    Cyan,
+}
+
+#[cfg(not(feature = "colored-output"))]
 enum Color {
     Green,
     Yellow,

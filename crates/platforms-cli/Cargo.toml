@@ -11,31 +11,43 @@ repository = "https://github.com/hua0512/rust-srec"
 anyhow = "1.0"
 thiserror = "1.0"
 platforms-parser = { path = "../platforms" }
-tokio = { version = "1.46.0", features = ["full"] }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 reqwest = "0.12"
+
+tokio = { version = "1.46.0", features = [
+    "rt-multi-thread",
+    "macros",
+    "sync",
+    "time",
+] }
 
 # CLI framework
 clap = { version = "4.5", features = ["derive", "env", "string"] }
 clap_complete = "4.5"
 
-# UI and output
-colored = "2.1.0"
+# UI and output (some made optional)
+colored = { version = "2.1.0", optional = true }
 indicatif = "0.17"
-inquire = "0.7"
-tabled = "0.16"
+inquire = { version = "0.7", optional = true }
+tabled = { version = "0.16", optional = true }
 
-# Configuration
-config = "0.14"
-dirs = "5.0"
+# Simplified configuration
+confy = "0.6"
 toml = "0.8"
 
 # Logging
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
 
-# Utilities
+# Utilities (some made optional)
 url = "2.4"
-regex = "1.0"
-futures = "0.3"
+regex = { version = "1.0", optional = true }
+
+[features]
+default = ["interactive", "colored-output", "table-output", "regex-filters"]
+interactive = ["inquire"]
+colored-output = ["colored"]
+table-output = ["tabled"]
+regex-filters = ["regex"]
+minimal = []                                                                 # No optional features

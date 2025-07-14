@@ -4,12 +4,14 @@ use crate::{
     error::{CliError, Result},
     output::{OutputManager, write_output},
 };
+#[cfg(feature = "colored-output")]
 use colored::*;
 use indicatif::{ProgressBar, ProgressStyle};
 use platforms_parser::{
     extractor::{factory::ExtractorFactory, platform_extractor::PlatformExtractor},
     media::{MediaInfo, StreamInfo},
 };
+#[cfg(feature = "regex-filters")]
 use regex::Regex;
 use std::{path::Path, sync::Arc, time::Duration};
 use tokio::{
@@ -94,7 +96,14 @@ impl CommandExecutor {
                 Ok(())
             }
             Err(e) => {
-                eprintln!("{}", e.to_string().red());
+                #[cfg(feature = "colored-output")]
+                {
+                    eprintln!("{}", e.to_string().red());
+                }
+                #[cfg(not(feature = "colored-output"))]
+                {
+                    eprintln!("{}", e);
+                }
                 Err(e)
             }
         }
@@ -184,7 +193,7 @@ impl CommandExecutor {
                 .await
                 {
                     Ok(Ok(result)) => Ok(result),
-                    Ok(Err(e)) => Err(e.into()),
+                    Ok(Err(e)) => Err(e),
                     Err(_) => Err(CliError::timeout()),
                 };
 
@@ -260,18 +269,30 @@ impl CommandExecutor {
                 println!("{output}");
             }
             _ => {
+                #[cfg(feature = "colored-output")]
                 let title = if self.config.colored_output {
                     "Supported Platforms:".green().bold().to_string()
                 } else {
                     "Supported Platforms:".to_string()
                 };
 
+                #[cfg(not(feature = "colored-output"))]
+                let title = "Supported Platforms:".to_string();
+
                 println!("{title}");
 
                 for (name, pattern) in platforms {
-                    if self.config.colored_output {
-                        println!("  {} - {}", name.cyan().bold(), pattern.blue());
-                    } else {
+                    #[cfg(feature = "colored-output")]
+                    {
+                        if self.config.colored_output {
+                            println!("  {} - {}", name.cyan().bold(), pattern.blue());
+                        } else {
+                            println!("  {name} - {pattern}");
+                        }
+                    }
+
+                    #[cfg(not(feature = "colored-output"))]
+                    {
                         println!("  {name} - {pattern}");
                     }
                 }
@@ -318,7 +339,7 @@ impl CommandExecutor {
             {
                 Ok(Ok(result)) => return Ok(result),
                 Ok(Err(e)) => {
-                    last_error = Some(e.into());
+                    last_error = Some(e);
                     if attempt < retries {
                         let delay = Duration::from_millis(1000 * (1 << attempt));
                         sleep(delay).await;
@@ -357,35 +378,47 @@ impl CommandExecutor {
             return Err(CliError::no_streams_found());
         }
 
-        let options: Vec<String> = streams
-            .iter()
-            .enumerate()
-            .map(|(i, stream)| {
-                format!(
-                    "{}: {} - {} ({})",
-                    i + 1,
-                    stream.quality,
-                    stream.stream_format,
-                    stream.codec
-                )
-            })
-            .collect();
+        #[cfg(feature = "interactive")]
+        {
+            let options: Vec<String> = streams
+                .iter()
+                .enumerate()
+                .map(|(i, stream)| {
+                    format!(
+                        "{}: {} - {} ({})",
+                        i + 1,
+                        stream.quality,
+                        stream.stream_format,
+                        stream.codec
+                    )
+                })
+                .collect();
 
-        let selection = inquire::Select::new("Select a stream:", options)
-            .prompt()
-            .map_err(|_| CliError::user_cancelled())?;
+            let selection = inquire::Select::new("Select a stream:", options)
+                .prompt()
+                .map_err(|_| CliError::user_cancelled())?;
 
-        let index = selection
-            .split(':')
-            .next()
-            .and_then(|s| s.parse::<usize>().ok())
-            .and_then(|i| i.checked_sub(1))
-            .ok_or_else(|| CliError::invalid_input("Invalid selection"))?;
+            let index = selection
+                .split(':')
+                .next()
+                .and_then(|s| s.parse::<usize>().ok())
+                .and_then(|i| i.checked_sub(1))
+                .ok_or_else(|| CliError::invalid_input("Invalid selection"))?;
 
-        streams
-            .into_iter()
-            .nth(index)
-            .ok_or_else(|| CliError::invalid_input("Invalid stream index"))
+            streams
+                .into_iter()
+                .nth(index)
+                .ok_or_else(|| CliError::invalid_input("Invalid stream index"))
+        }
+
+        #[cfg(not(feature = "interactive"))]
+        {
+            // Fallback: auto-select the first stream if interactive feature is disabled
+            streams
+                .into_iter()
+                .next()
+                .ok_or_else(|| CliError::no_streams_found())
+        }
     }
 
     fn apply_filters(
@@ -396,21 +429,43 @@ impl CommandExecutor {
     ) -> Result<StreamInfo> {
         // Quality filter
         if let Some(quality_filter) = quality {
-            let quality_regex = Regex::new(quality_filter)
-                .map_err(|e| CliError::invalid_filter(format!("Invalid quality regex: {e}")))?;
+            #[cfg(feature = "regex-filters")]
+            {
+                let quality_regex = Regex::new(quality_filter)
+                    .map_err(|e| CliError::invalid_filter(format!("Invalid quality regex: {e}")))?;
 
-            if !quality_regex.is_match(&stream.quality) {
-                return Err(CliError::no_matching_stream());
+                if !quality_regex.is_match(&stream.quality) {
+                    return Err(CliError::no_matching_stream());
+                }
+            }
+
+            #[cfg(not(feature = "regex-filters"))]
+            {
+                // Fallback: simple substring matching
+                if !stream.quality.contains(quality_filter) {
+                    return Err(CliError::no_matching_stream());
+                }
             }
         }
 
         // Format filter
         if let Some(format_filter) = format {
-            let format_regex = Regex::new(format_filter)
-                .map_err(|e| CliError::invalid_filter(format!("Invalid format regex: {e}")))?;
+            #[cfg(feature = "regex-filters")]
+            {
+                let format_regex = Regex::new(format_filter)
+                    .map_err(|e| CliError::invalid_filter(format!("Invalid format regex: {e}")))?;
 
-            if !format_regex.is_match(&stream.stream_format.to_string()) {
-                return Err(CliError::no_matching_stream());
+                if !format_regex.is_match(&stream.stream_format.to_string()) {
+                    return Err(CliError::no_matching_stream());
+                }
+            }
+
+            #[cfg(not(feature = "regex-filters"))]
+            {
+                // Fallback: simple substring matching
+                if !stream.stream_format.to_string().contains(format_filter) {
+                    return Err(CliError::no_matching_stream());
+                }
             }
         }
 

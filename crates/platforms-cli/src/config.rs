@@ -1,6 +1,4 @@
 use anyhow::{Context, Result};
-use config::{Config, Environment, File};
-use dirs::config_dir;
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 
@@ -57,36 +55,28 @@ impl Default for AppConfig {
 impl AppConfig {
     /// Load configuration from file and environment
     pub fn load(config_path: Option<&Path>) -> Result<Self> {
-        let mut builder = Config::builder().add_source(Config::try_from(&AppConfig::default())?);
-
-        // Add config file if it exists
-        if let Some(path) = config_path {
-            if path.exists() {
-                builder = builder.add_source(File::from(path));
+        match config_path {
+            Some(path) => {
+                if path.exists() {
+                    let content = std::fs::read_to_string(path)
+                        .context("Failed to read configuration file")?;
+                    toml::from_str(&content)
+                        .context("Failed to parse configuration file")
+                } else {
+                    Ok(Self::default())
+                }
             }
-        } else if let Some(default_path) = Self::default_config_path() {
-            if default_path.exists() {
-                builder = builder.add_source(File::from(default_path));
+            None => {
+                // Use confy for default location
+                confy::load("platforms-cli", None)
+                    .context("Failed to load configuration")
             }
         }
-
-        // Add environment variables with PLATFORMS_CLI prefix
-        builder = builder.add_source(
-            Environment::with_prefix("PLATFORMS_CLI")
-                .try_parsing(true)
-                .separator("_"),
-        );
-
-        let config = builder.build().context("Failed to build configuration")?;
-
-        config
-            .try_deserialize()
-            .context("Failed to deserialize configuration")
     }
 
     /// Get default configuration file path
     pub fn default_config_path() -> Option<PathBuf> {
-        config_dir().map(|dir| dir.join("platforms-cli").join("config.toml"))
+        confy::get_configuration_file_path("platforms-cli", None).ok()
     }
 
     /// Save configuration to file
