@@ -81,7 +81,8 @@ impl CommandExecutor {
 
                 // Get the true URL
                 let pb_get_url = self.create_progress_bar("Getting stream URL...");
-                let final_stream = extractor.get_url(filtered_stream).await?;
+                let mut final_stream = filtered_stream;
+                extractor.get_url(&mut final_stream).await?;
                 pb_get_url.finish_and_clear();
 
                 let output_manager = OutputManager::new(self.config.colored_output);
@@ -186,7 +187,8 @@ impl CommandExecutor {
                     };
 
                     // Get the true URL
-                    let final_stream = extractor.get_url(selected_stream).await?;
+                    let mut final_stream = selected_stream;
+                    extractor.get_url(&mut final_stream).await?;
 
                     Ok((media_info, final_stream))
                 })

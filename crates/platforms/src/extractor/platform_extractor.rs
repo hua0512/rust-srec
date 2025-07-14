@@ -1,6 +1,5 @@
 use crate::extractor::default::DEFAULT_UA;
-use crate::media::stream_info::StreamInfo;
-use crate::media::{StreamInfo, stream_info};
+use crate::media::StreamInfo;
 
 use super::{super::media::media_info::MediaInfo, error::ExtractorError};
 use async_trait::async_trait;
@@ -362,8 +361,9 @@ pub trait PlatformExtractor: Send + Sync {
 
     async fn extract(&self) -> Result<MediaInfo, ExtractorError>;
 
-    async fn get_url(&self, stream_info: StreamInfo) -> Result<StreamInfo, ExtractorError> {
+    #[allow(unused_variables)]
+    async fn get_url(&self, stream_info: &mut StreamInfo) -> Result<(), ExtractorError> {
         // Default implementation, can be overridden by specific extractors
-        Ok(stream_info)
+        Ok(())
     }
 }

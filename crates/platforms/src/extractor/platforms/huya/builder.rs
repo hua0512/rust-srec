@@ -576,10 +576,10 @@ impl PlatformExtractor for HuyaExtractor {
         return Ok(media_info);
     }
 
-    async fn get_url(&self, mut stream_info: StreamInfo) -> Result<StreamInfo, ExtractorError> {
+    async fn get_url(&self, stream_info: &mut StreamInfo) -> Result<(), ExtractorError> {
         // if not wup, return the stream info directly
         if !self.use_wup {
-            return Ok(stream_info);
+            return Ok(());
         }
 
         // wup method
@@ -613,10 +613,10 @@ impl PlatformExtractor for HuyaExtractor {
             (cdn, stream_name, presenter_uid)
         };
 
-        self.get_stream_url_wup(&mut stream_info, &cdn, &stream_name, presenter_uid)
+        self.get_stream_url_wup(stream_info, &cdn, &stream_name, presenter_uid)
             .await?;
 
-        Ok(stream_info)
+        Ok(())
     }
 }
 
@@ -704,10 +704,10 @@ mod tests {
         );
         let mut media_info = extractor.extract().await.unwrap();
         assert!(media_info.is_live);
-        let stream_info = media_info.streams.drain(0..1).next().unwrap();
+        let mut stream_info = media_info.streams.drain(0..1).next().unwrap();
         assert!(!stream_info.url.is_empty());
 
-        let stream_info = extractor.get_url(stream_info).await.unwrap();
+        extractor.get_url(&mut stream_info).await.unwrap();
 
         println!("{stream_info:?}");
     }

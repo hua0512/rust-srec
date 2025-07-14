@@ -289,7 +289,7 @@ impl PlatformExtractor for Bilibili {
         self.get_live_info(room_id).await
     }
 
-    async fn get_url(&self, stream_info: StreamInfo) -> Result<StreamInfo, ExtractorError> {
+    async fn get_url(&self, stream_info: &mut StreamInfo) -> Result<(), ExtractorError> {
         let extras = stream_info.extras.as_ref().ok_or_else(|| {
             ExtractorError::ValidationError("Stream extras not found".to_string())
         })?;
@@ -308,8 +308,7 @@ impl PlatformExtractor for Bilibili {
 
         // skip extraction if the requested quality is the same as the current quality
         if qn == current_qn && !stream_info.url.is_empty() {
-            // return the original stream info
-            return Ok(stream_info);
+            return Ok(());
         }
 
         let params = vec![
@@ -355,9 +354,8 @@ impl PlatformExtractor for Bilibili {
             let url = format!("{}{}{}", url_info.host, codec.base_url, url_info.extra);
             // check if url is valid
             if reqwest::Url::parse(&url).is_ok() {
-                let mut new_stream_info = stream_info.clone();
-                new_stream_info.url = url;
-                return Ok(new_stream_info);
+                stream_info.url = url;
+                return Ok(());
             }
         }
 

@@ -50,12 +50,12 @@ async fn main() {
                 Ok(media_info) => {
                     println!("Title: {}", media_info.title);
                     println!("Uploader: {}", media_info.uploader);
-                    for (i, stream) in media_info.streams.into_iter().enumerate() {
+                    for (i, mut stream) in media_info.streams.into_iter().enumerate() {
                         // For some platforms, you need to call get_url to get the real stream url
-                        let final_stream = extractor.get_url(stream).await.unwrap();
+                        extractor.get_url(&mut stream).await.unwrap();
                         println!("  Stream {}:", i + 1);
-                        println!("    URL: {}", final_stream.url);
-                        println!("    Quality: {}", final_stream.quality);
+                        println!("    URL: {}", stream.url);
+                        println!("    Quality: {}", stream.quality);
                     }
                 }
                 Err(e) => {
@@ -75,7 +75,7 @@ async fn main() {
 >
 > Some platforms (e.g., `Huya`, `Douyu`, `Bilibili`) require an additional asynchronous call to resolve the final, playable stream URL. The `extract` method may return a `StreamInfo` object with a temporary or incomplete URL.
 >
-> Always call `extractor.get_url(stream_info).await` to ensure you have the correct, final URL before attempting to use it. For platforms that do not require this step, the default implementation will simply return the original `StreamInfo` without making another network request.
+> Always call `extractor.get_url(&mut stream_info).await` to ensure you have the correct, final URL before attempting to use it. For platforms that do not require this step, the default implementation will do nothing.
 
 ## License
 

@@ -445,9 +445,9 @@ impl PlatformExtractor for DouyuExtractorConfig {
         Ok(media_info)
     }
 
-    async fn get_url(&self, mut stream_info: StreamInfo) -> Result<StreamInfo, ExtractorError> {
+    async fn get_url(&self, stream_info: &mut StreamInfo) -> Result<(), ExtractorError> {
         if !stream_info.url.is_empty() {
-            return Ok(stream_info);
+            return Ok(());
         }
 
         let extras = stream_info.extras.as_ref().ok_or_else(|| {
@@ -485,7 +485,7 @@ impl PlatformExtractor for DouyuExtractorConfig {
 
         stream_info.url = format!("{}/{}", resp.rtmp_url, resp.rtmp_live);
 
-        Ok(stream_info)
+        Ok(())
     }
 }
 
