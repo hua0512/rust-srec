@@ -72,10 +72,21 @@ impl CommandExecutor {
 
                 let filtered_stream = self.apply_filters(selected_stream, quality, format)?;
 
+                // Get the true URL by calling get_url on the extractor
+                let pb_get_url = self.create_progress_bar("Getting stream URL...");
+                let extras_json = extras.and_then(|s| serde_json::from_str(s).ok());
+                let extractor = self.extractor_factory.create_extractor(
+                    url,
+                    cookies.map(String::from),
+                    extras_json,
+                )?;
+                let final_stream = extractor.get_url(filtered_stream).await?;
+                pb_get_url.finish_and_clear();
+
                 let output_manager = OutputManager::new(self.config.colored_output);
                 let output = output_manager.format_media_info(
                     &media_info,
-                    Some(&filtered_stream),
+                    Some(&final_stream),
                     &output_format,
                     include_extras,
                 )?;
@@ -146,27 +157,31 @@ impl CommandExecutor {
                     let factory = ExtractorFactory::new(client);
                     let extractor = factory.create_extractor(&url, None, None)?;
                     // Extract media info directly using the platforms API
-                    extractor.extract().await
+                    let media_info = extractor.extract().await?;
+                    
+                    if media_info.streams.is_empty() {
+                        return Err(CliError::no_streams_found());
+                    }
+                    
+                    let selected_stream = if auto_select {
+                        media_info
+                            .streams
+                            .iter()
+                            .max_by_key(|s| s.priority)
+                            .cloned()
+                            .unwrap_or_else(|| media_info.streams.first().cloned().unwrap())
+                    } else {
+                        media_info.streams.first().cloned().unwrap()
+                    };
+                    
+                    // Get the true URL by calling get_url on the extractor
+                    let final_stream = extractor.get_url(selected_stream).await?;
+                    
+                    Ok((media_info, final_stream))
                 })
                 .await
                 {
-                    Ok(Ok(media_info)) => {
-                        if media_info.streams.is_empty() {
-                            Err(CliError::no_streams_found())
-                        } else {
-                            let stream = if auto_select {
-                                media_info
-                                    .streams
-                                    .iter()
-                                    .max_by_key(|s| s.priority)
-                                    .cloned()
-                                    .unwrap_or_else(|| media_info.streams.first().cloned().unwrap())
-                            } else {
-                                media_info.streams.first().cloned().unwrap()
-                            };
-                            Ok((media_info, stream))
-                        }
-                    }
+                    Ok(Ok(result)) => Ok(result),
                     Ok(Err(e)) => Err(e.into()),
                     Err(_) => Err(CliError::timeout()),
                 };
