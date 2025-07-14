@@ -9,6 +9,17 @@ impl Encoder<TarsMessage> for TarsCodec {
     type Error = TarsError;
 
     fn encode(&mut self, item: TarsMessage, dst: &mut BytesMut) -> Result<(), Self::Error> {
+        self.encode_by_ref(&item, dst)
+    }
+}
+
+impl TarsCodec {
+    /// Encode a TarsMessage by reference (more efficient for reuse)
+    pub fn encode_by_ref(
+        &mut self,
+        item: &TarsMessage,
+        dst: &mut BytesMut,
+    ) -> Result<(), TarsError> {
         let mut serializer = TarsSerializer::new();
 
         let mut body_serializer = TarsSerializer::new();

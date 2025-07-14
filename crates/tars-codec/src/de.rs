@@ -2,8 +2,8 @@ use crate::{
     error::TarsError,
     types::{TarsMessage, TarsRequestHeader, TarsType, TarsValue},
 };
-use rustc_hash::FxHashMap;
 use bytes::{Buf, Bytes};
+use rustc_hash::FxHashMap;
 use smallvec::SmallVec;
 
 pub struct TarsDeserializer {
@@ -25,6 +25,12 @@ impl TarsDeserializer {
             buffer,
             zero_copy_strings: true,
         }
+    }
+
+    /// Reset the deserializer with new data for object pool reuse
+    pub fn reset(&mut self, buffer: Bytes) {
+        self.buffer = buffer;
+        // Keep the zero_copy_strings setting from original construction
     }
 
     pub fn read_message(&mut self) -> Result<TarsMessage, TarsError> {
@@ -90,6 +96,7 @@ impl TarsDeserializer {
         self.buffer.is_empty()
     }
 
+    #[inline]
     pub fn read_head(&mut self) -> Result<(u8, TarsType), TarsError> {
         let head = self.buffer.get_u8();
         let type_id =
@@ -107,18 +114,22 @@ impl TarsDeserializer {
         Ok(self.buffer.get_u8() != 0)
     }
 
+    #[inline]
     pub fn read_i8(&mut self) -> Result<i8, TarsError> {
         Ok(self.buffer.get_i8())
     }
 
+    #[inline]
     pub fn read_i16(&mut self) -> Result<i16, TarsError> {
         Ok(self.buffer.get_i16())
     }
 
+    #[inline]
     pub fn read_i32(&mut self) -> Result<i32, TarsError> {
         Ok(self.buffer.get_i32())
     }
 
+    #[inline]
     pub fn read_i64(&mut self) -> Result<i64, TarsError> {
         Ok(self.buffer.get_i64())
     }

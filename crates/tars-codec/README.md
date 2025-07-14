@@ -8,7 +8,7 @@ A high-performance, zero-copy implementation of the TARS (Tencent Application Re
 
 - **StringRef**: Zero-copy string parsing using `Bytes` - avoids allocations until conversion needed
 - **Binary**: Zero-copy binary data handling
-- **Efficient Collections**: Uses `SmallVec` and `AHashMap` for optimal performance
+- **Efficient Collections**: Uses `SmallVec` and `FxHashMap` for optimal performance
 - **Bytes Integration**: Full integration with the `bytes` crate for zero-copy buffer management
 
 ### 🔧 Dual API Design
@@ -77,7 +77,7 @@ if let Some(owned) = tars_value.into_string() {
 
 ### CPU Efficiency
 
-- **AHashMap**: 2-3x faster than `std::collections::HashMap`
+- **FxHashMap**: 2-3x faster than `std::collections::HashMap` using rustc-hash
 - **SmallVec**: Stack-allocated small arrays avoid heap allocation
 - **Direct Buffer Access**: No intermediate copying for binary data
 
@@ -147,5 +147,5 @@ fn process_text_field(text: &str) {
 
 - `bytes = "1.0"` - Zero-copy buffer management
 - `smallvec = "1.15"` - Stack-optimized small collections  
-- `ahash = "0.8"` - High-performance hashing
+- `rustc-hash = "2.1"` - High-performance FxHashMap implementation
 - `tokio-util = "0.7"` - Codec traits for async integration

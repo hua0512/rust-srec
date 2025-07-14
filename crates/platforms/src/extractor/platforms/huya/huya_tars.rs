@@ -1,5 +1,5 @@
-use rustc_hash::FxHashMap;
 use bytes::Bytes;
+use rustc_hash::FxHashMap;
 use tars_codec::{
     de::from_bytes,
     decode_response_zero_copy,
@@ -40,7 +40,7 @@ pub fn build_get_cdn_token_info_request(
     stream_name: String,
     cdn_type: String,
     presenter_uid: i32,
-) -> Result<Vec<u8>, tars_codec::error::TarsError> {
+) -> Result<Bytes, tars_codec::error::TarsError> {
     let req = GetCdnTokenInfoReq::new("".to_string(), stream_name, cdn_type, presenter_uid);
     let mut body = FxHashMap::default();
     let tars_value: TarsValue = req.into();
@@ -64,7 +64,8 @@ pub fn build_get_cdn_token_info_request(
         body,
     };
 
-    tars_codec::encode_request(message).map(|bytes| bytes.to_vec())
+    let bytes = tars_codec::encode_request(&message)?;
+    Ok(bytes.freeze())
 }
 
 impl TryFrom<TarsValue> for HuyaGetTokenResp {

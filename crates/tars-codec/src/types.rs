@@ -1,7 +1,7 @@
 use bytes::Bytes;
-use std::hash::{Hash, Hasher};
 use rustc_hash::FxHashMap;
 use smallvec::SmallVec;
+use std::hash::{Hash, Hasher};
 
 /// Represents a full Tars message.
 #[derive(Debug)]
@@ -175,22 +175,59 @@ impl Hash for TarsValue {
             }
             TarsValue::Struct(v) => {
                 8u8.hash(state);
-                // Hash each key-value pair in sorted order for consistency
-                let mut pairs: Vec<_> = v.iter().collect();
-                pairs.sort_by_key(|(k, _)| **k);
-                for (k, val) in pairs {
-                    k.hash(state);
-                    val.hash(state);
+                // Optimized hashing for small structs - avoid sorting when possible
+                if v.len() <= 4 {
+                    // For small structs, hash in tag order (usually already sorted)
+                    let mut tags: Vec<_> = v.keys().collect();
+                    tags.sort_unstable();
+                    for &tag in tags {
+                        tag.hash(state);
+                        v[&tag].hash(state);
+                    }
+                } else {
+                    // For larger structs, use the sorting approach
+                    let mut pairs: Vec<_> = v.iter().collect();
+                    pairs.sort_by_key(|(k, _)| **k);
+                    for (k, val) in pairs {
+                        k.hash(state);
+                        val.hash(state);
+                    }
                 }
             }
             TarsValue::Map(v) => {
                 9u8.hash(state);
-                // Hash each key-value pair in sorted order for consistency
-                let mut pairs: Vec<_> = v.iter().collect();
-                pairs.sort_by(|(k1, _), (k2, _)| k1.cmp(k2));
-                for (k, val) in pairs {
-                    k.hash(state);
-                    val.hash(state);
+                // Optimized hashing for small maps
+                if v.len() <= 3 {
+                    // For small maps, collect and sort with faster unstable sort
+                    let mut pairs: Vec<_> = v.iter().collect();
+                    pairs.sort_unstable_by(|(k1, _), (k2, _)| k1.cmp(k2));
+                    // Hash length first for better distribution
+                    v.len().hash(state);
+                    for (k, val) in pairs {
+                        k.hash(state);
+                        val.hash(state);
+                    }
+                } else {
+                    // For larger maps, use a simplified hash approach
+                    // Hash the length and a sample of key-value pairs
+                    v.len().hash(state);
+                    let mut key_hash = 0u64;
+                    let mut val_hash = 0u64;
+                    for (k, val) in v.iter().take(3) {
+                        // XOR hash values for order independence (approximate)
+                        key_hash ^= {
+                            let mut hasher = std::collections::hash_map::DefaultHasher::new();
+                            k.hash(&mut hasher);
+                            hasher.finish()
+                        };
+                        val_hash ^= {
+                            let mut hasher = std::collections::hash_map::DefaultHasher::new();
+                            val.hash(&mut hasher);
+                            hasher.finish()
+                        };
+                    }
+                    key_hash.hash(state);
+                    val_hash.hash(state);
                 }
             }
             TarsValue::List(v) => {
@@ -243,9 +280,7 @@ impl TarsValue {
     pub fn into_string(self) -> Option<String> {
         match self {
             TarsValue::String(s) => Some(s),
-            TarsValue::StringRef(bytes) => {
-                String::from_utf8(bytes.to_vec()).ok()
-            }
+            TarsValue::StringRef(bytes) => String::from_utf8(bytes.to_vec()).ok(),
             _ => None,
         }
     }
@@ -317,5 +352,53 @@ impl TryFrom<u8> for TarsType {
             13 => Ok(TarsType::SimpleList),
             _ => Err(()),
         }
+    }
+}
+
+/// A bytes wrapper that guarantees the content is valid UTF-8
+/// Used to avoid redundant validation in hot paths
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+pub struct ValidatedBytes(pub(crate) Bytes);
+
+impl ValidatedBytes {
+    /// Create a new ValidatedBytes after checking UTF-8 validity
+    pub fn new(bytes: Bytes) -> Result<Self, std::str::Utf8Error> {
+        std::str::from_utf8(&bytes)?;
+        Ok(Self(bytes))
+    }
+
+    /// Get the underlying bytes
+    pub fn bytes(&self) -> &Bytes {
+        &self.0
+    }
+
+    /// Convert to underlying bytes
+    pub fn into_bytes(self) -> Bytes {
+        self.0
+    }
+
+    /// Get string slice without validation (safe because we validated during construction)
+    #[inline]
+    pub fn as_str(&self) -> &str {
+        // SAFETY: We validated UTF-8 during construction
+        unsafe { std::str::from_utf8_unchecked(&self.0) }
+    }
+
+    /// Convert to owned String
+    pub fn into_string(self) -> String {
+        // SAFETY: We validated UTF-8 during construction
+        unsafe { String::from_utf8_unchecked(self.0.to_vec()) }
+    }
+}
+
+impl Hash for ValidatedBytes {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.0.hash(state);
+    }
+}
+
+impl From<ValidatedBytes> for Bytes {
+    fn from(validated: ValidatedBytes) -> Self {
+        validated.0
     }
 }
