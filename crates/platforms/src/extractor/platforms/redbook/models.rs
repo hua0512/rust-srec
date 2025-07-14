@@ -57,8 +57,8 @@ pub struct RoomInfo<'a> {
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct PullConfig {
-    pub h265: Vec<serde_json::Value>,
-    pub h264: Vec<serde_json::Value>,
+    pub h265: Option<Vec<serde_json::Value>>,
+    pub h264: Option<Vec<serde_json::Value>>,
     pub width: u32,
     pub height: u32,
 }

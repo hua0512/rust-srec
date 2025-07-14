@@ -235,20 +235,24 @@ impl RedBook {
         let mut streams = Vec::new();
 
         // Process H264 streams
-        streams.extend(Self::process_streams(
-            &pull_config.h264,
-            DEFAULT_CODEC_H264,
-            pull_config,
-            0,
-        ));
+        if let Some(h264) = &pull_config.h264 {
+            streams.extend(Self::process_streams(
+                &h264,
+                DEFAULT_CODEC_H264,
+                pull_config,
+                0,
+            ));
+        }
 
         // Process H265 streams
-        streams.extend(Self::process_streams(
-            &pull_config.h265,
-            DEFAULT_CODEC_H265,
-            pull_config,
-            pull_config.h264.len(),
-        ));
+        if let Some(h265) = &pull_config.h265 {
+            streams.extend(Self::process_streams(
+                &h265,
+                DEFAULT_CODEC_H265,
+                pull_config,
+                h265.len(),
+            ));
+        }
 
         Ok(MediaInfo::new(
             site_url,
