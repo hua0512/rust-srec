@@ -296,7 +296,7 @@ impl Twitch {
 
         let headers = self.extractor.get_platform_headers();
         let streams = self
-            .extract_hls_stream(
+            .extract_hls_stream_with_params(
                 &self.extractor.client,
                 Some(headers.clone()),
                 Some(&[

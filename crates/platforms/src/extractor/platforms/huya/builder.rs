@@ -28,17 +28,16 @@ static PROFILE_INFO_REGEX: LazyLock<Regex> =
 static STREAM_DATA_REGEX: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r#"stream: (\{.+)\n.*?};"#).unwrap());
 
-pub struct HuyaExtractor {
+pub struct Huya {
     extractor: Extractor,
     // whether to use WUP (Web Unicast Protocol) for extraction
     // if not set, the extractor will use the MP api for extraction
     pub use_wup: bool,
     // whether to force the origin quality stream
     pub force_origin_quality: bool,
-    pub extras: Option<serde_json::Value>,
 }
 
-impl HuyaExtractor {
+impl Huya {
     const HUYA_URL: &'static str = "https://www.huya.com";
     const WUP_URL: &'static str = "https://wup.huya.com";
     const MP_URL: &'static str = "https://mp.huya.com/cache.php";
@@ -60,11 +59,21 @@ impl HuyaExtractor {
         if let Some(cookies) = cookies {
             extractor.set_cookies_from_string(&cookies);
         }
+
+        let force_origin_quality = extras
+            .as_ref()
+            .and_then(|extras| extras.get("force_origin_quality").and_then(|v| v.as_bool()))
+            .unwrap_or(true);
+
+        let use_wup = extras
+            .as_ref()
+            .and_then(|extras| extras.get("use_wup").and_then(|v| v.as_bool()))
+            .unwrap_or(true);
+
         Self {
             extractor,
-            use_wup: true,
-            force_origin_quality: true,
-            extras,
+            use_wup,
+            force_origin_quality,
         }
     }
 
@@ -449,9 +458,13 @@ impl HuyaExtractor {
                     if bitrate_info.s_display_name.contains("HDR") {
                         continue;
                     }
+                    let quality = format!(
+                        "{} ({})",
+                        bitrate_info.s_display_name, stream_info.s_cdn_type
+                    );
                     add_streams_for_bitrate(
                         &mut streams,
-                        bitrate_info.s_display_name.as_ref(),
+                        &quality,
                         bitrate_info.i_bit_rate.into(),
                         priority,
                         &extras,
@@ -548,7 +561,7 @@ impl HuyaExtractor {
 }
 
 #[async_trait]
-impl PlatformExtractor for HuyaExtractor {
+impl PlatformExtractor for Huya {
     fn get_extractor(&self) -> &Extractor {
         &self.extractor
     }
@@ -636,7 +649,7 @@ mod tests {
 
     #[test]
     fn test_parse_mp_live_status() {
-        let extractor = HuyaExtractor::new(
+        let extractor = Huya::new(
             "https://www.huya.com/".to_string(),
             default_client(),
             None,
@@ -677,7 +690,7 @@ mod tests {
 
     #[test]
     fn test_parse_mp_media_info() {
-        let extractor = HuyaExtractor::new(
+        let extractor = Huya::new(
             "https://www.huya.com/660000".to_string(),
             default_client(),
             None,
@@ -696,7 +709,7 @@ mod tests {
     #[tokio::test]
     #[ignore]
     async fn test_is_live_integration() {
-        let extractor = HuyaExtractor::new(
+        let extractor = Huya::new(
             "https://www.huya.com/660000".to_string(),
             default_client(),
             None,
@@ -715,7 +728,7 @@ mod tests {
     #[tokio::test]
     #[ignore]
     async fn test_mp_api() {
-        let mut extractor = HuyaExtractor::new(
+        let mut extractor = Huya::new(
             "https://www.huya.com/660000".to_string(),
             default_client(),
             None,

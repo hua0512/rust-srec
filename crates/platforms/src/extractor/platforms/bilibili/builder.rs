@@ -3,7 +3,7 @@ use std::{fmt::Display, sync::LazyLock};
 use async_trait::async_trait;
 use num_enum::TryFromPrimitive;
 use regex::Regex;
-use reqwest::Client;
+use reqwest::{Client, header::HeaderValue};
 use tracing::debug;
 
 use crate::{
@@ -78,12 +78,14 @@ impl Bilibili {
         if let Some(cookies) = cookies {
             extractor.set_cookies_from_string(&cookies);
         }
+        let base_url_value = HeaderValue::from_str(Self::BASE_URL).unwrap();
+        extractor.add_header_owned(reqwest::header::REFERER, base_url_value);
 
-        extractor.add_header(reqwest::header::REFERER.to_string(), Self::BASE_URL);
         let mut quality = BilibiliQuality::Original;
 
         if let Some(extras) = _extras {
-            let quality_value = extras.get("quality").unwrap_or(&serde_json::Value::Null);
+            let default_quality = serde_json::Value::Number(10000.into());
+            let quality_value = extras.get("quality").unwrap_or(&default_quality);
             if quality_value.is_number() {
                 let quality_num = quality_value.as_u64().unwrap_or(10000);
                 quality = BilibiliQuality::try_from_primitive(quality_num as u32)
@@ -94,10 +96,10 @@ impl Bilibili {
         Self { extractor, quality }
     }
 
-    pub fn extract_room_id(&self) -> Result<String, ExtractorError> {
+    pub fn extract_room_id(&self) -> Result<&str, ExtractorError> {
         let caps = URL_REGEX.captures(&self.extractor.url);
         caps.and_then(|c| c.get(1))
-            .map(|m| m.as_str().to_string())
+            .map(|m| m.as_str())
             .ok_or(ExtractorError::InvalidUrl(self.extractor.url.clone()))
     }
 
@@ -185,7 +187,7 @@ impl Bilibili {
             .playurl
             .g_qn_desc
             .iter()
-            .map(|q| (q.qn, q.desc.clone()))
+            .map(|q| (q.qn, q.desc.as_str()))
             .collect::<FxHashMap<_, _>>();
 
         let mut streams = Vec::new();
@@ -198,8 +200,7 @@ impl Bilibili {
             };
 
             for f in &s.format {
-                let format_name = f.format_name.clone();
-                debug!("format_name: {:?}", format_name);
+                debug!("format_name: {:?}", f.format_name);
                 for c in &f.codec {
                     let current_qn = c.current_qn;
                     for u in &c.url_info {
@@ -219,17 +220,14 @@ impl Bilibili {
                                 .next()
                                 .unwrap_or("");
 
-                            let quality_desc = quality_map
-                                .get(&qn)
-                                .cloned()
-                                .unwrap_or_else(|| "Unknown".to_string());
+                            let quality_desc = quality_map.get(&qn).copied().unwrap_or("Unknown");
                             let quality = format!("{} - {} - {}", quality_desc, c.codec_name, cdn);
 
                             let bitrate = if qn < 1000 { qn as u64 * 10 } else { qn as u64 };
                             streams.push(StreamInfo {
                                 url,
                                 stream_format: protocol_name,
-                                media_format: MediaFormat::from_extension(&format_name),
+                                media_format: MediaFormat::from_extension(&f.format_name),
                                 quality,
                                 bitrate,
                                 priority: 0,
@@ -237,7 +235,7 @@ impl Bilibili {
                                     "qn": qn,
                                     "rid": room_id,
                                 })),
-                                codec: c.codec_name.clone(),
+                                codec: c.codec_name.to_string(),
                                 fps: 0.0,
                                 is_headers_needed: false,
                             });
@@ -249,14 +247,14 @@ impl Bilibili {
         Ok(streams)
     }
 
-    pub async fn get_live_info(&self, room_id: String) -> Result<MediaInfo, ExtractorError> {
+    pub async fn get_live_info(&self, room_id: &str) -> Result<MediaInfo, ExtractorError> {
         let (room_info, anchor_info) = self.fetch_room_info(&room_id).await?;
 
         let is_live = room_info.live_status == 1;
-        let title = room_info.title.clone();
-        let artist = anchor_info.base_info.uname.clone();
-        let cover_url = Some(room_info.cover.clone());
-        let artist_url = Some(anchor_info.base_info.face.clone());
+        let title = room_info.title;
+        let artist = anchor_info.base_info.uname;
+        let cover_url = Some(room_info.cover);
+        let artist_url = Some(anchor_info.base_info.face);
 
         let streams = if is_live {
             self.process_streams(room_info.room_id, self.quality)
@@ -302,12 +300,8 @@ impl PlatformExtractor for Bilibili {
             ExtractorError::ValidationError("Room ID not found in extras".to_string())
         })?;
 
-        let current_qn = extras["qn"].as_u64().ok_or_else(|| {
-            ExtractorError::ValidationError("Current QN not found in extras".to_string())
-        })?;
-
-        // skip extraction if the requested quality is the same as the current quality
-        if qn == current_qn && !stream_info.url.is_empty() {
+        // skip extraction if url is already present
+        if !stream_info.url.is_empty() {
             return Ok(());
         }
 

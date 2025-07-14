@@ -3,9 +3,9 @@ use std::sync::LazyLock;
 use super::error::ExtractorError;
 use super::platform_extractor::PlatformExtractor;
 use crate::extractor::platforms::{
-    self, bilibili::Bilibili, douyin::DouyinExtractorBuilder, douyu::DouyuExtractorBuilder,
-    huya::HuyaExtractor, pandatv::PandaTV, picarto::Picarto, redbook::RedBook, tiktok::TikTok,
-    twitcasting::Twitcasting, twitch::Twitch, weibo::Weibo,
+    self, bilibili::Bilibili, douyin::DouyinExtractorBuilder, douyu::Douyu, huya::Huya,
+    pandatv::PandaTV, picarto::Picarto, redbook::RedBook, tiktok::TikTok, twitcasting::Twitcasting,
+    twitch::Twitch, weibo::Weibo,
 };
 use regex::Regex;
 use reqwest::Client;
@@ -35,14 +35,12 @@ macro_rules! create_constructor {
 }
 
 // Create constructor functions using the macro
-create_constructor!(new_huya, HuyaExtractor::new);
+create_constructor!(new_huya, Huya::new);
 create_constructor!(new_douyin, |url, client, cookies, extras| {
     DouyinExtractorBuilder::new(url, client, cookies, extras).build()
 });
 #[cfg(feature = "douyu")]
-create_constructor!(new_douyu, |url, client, cookies, extras| {
-    DouyuExtractorBuilder::new(url, client, cookies, extras).build(None)
-});
+create_constructor!(new_douyu, Douyu::new);
 create_constructor!(new_pandatv, PandaTV::new);
 create_constructor!(new_weibo, Weibo::new);
 create_constructor!(new_twitch, Twitch::new);

@@ -188,11 +188,10 @@ impl Extractor {
     /// extractor.set_cookies_from_string("sessionid=abc123; csrftoken=def456; theme=dark");
     /// ```
     pub fn set_cookies_from_string(&mut self, cookie_string: &str) {
-        for cookie in cookie_string.split(';') {
-            let cookie = cookie.trim();
+        for cookie in cookie_string.split(';').map(|s| s.trim()) {
             if let Some((name, value)) = cookie.split_once('=') {
                 self.cookies
-                    .insert(name.trim().to_string(), value.trim().to_string());
+                    .insert(name.trim().to_owned(), value.trim().to_owned());
             }
         }
     }
@@ -261,12 +260,15 @@ impl Extractor {
             return None;
         }
 
-        let cookie_string = self
-            .cookies
-            .iter()
-            .map(|(name, value)| format!("{name}={value}"))
-            .collect::<Vec<_>>()
-            .join("; ");
+        let mut cookie_string = String::new();
+        for (name, value) in &self.cookies {
+            if !cookie_string.is_empty() {
+                cookie_string.push_str("; ");
+            }
+            cookie_string.push_str(name);
+            cookie_string.push('=');
+            cookie_string.push_str(value);
+        }
 
         Some(cookie_string)
     }
@@ -327,9 +329,11 @@ impl Extractor {
             })
             .unwrap_or_else(|| reqwest::header::HeaderValue::from_static(""));
 
-        self.client
-            .request(method, url)
-            .headers(self.platform_headers.clone())
+        let mut builder = self.client.request(method, url);
+        for (key, value) in &self.platform_headers {
+            builder = builder.header(key.clone(), value.clone());
+        }
+        builder
             .header(reqwest::header::COOKIE, cookies)
             .query(&self.platform_params)
     }

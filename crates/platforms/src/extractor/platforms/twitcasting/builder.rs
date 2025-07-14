@@ -146,9 +146,8 @@ impl Twitcasting {
         for (url, quality) in stream_configs {
             if let Some(stream_url) = url {
                 let info = self
-                    .extract_hls_stream::<()>(
+                    .extract_hls_stream(
                         &self.extractor.client,
-                        None,
                         None,
                         stream_url,
                         Some(quality),

@@ -9,7 +9,28 @@ use crate::media::{MediaFormat, StreamFormat, stream_info::StreamInfo};
 
 #[async_trait]
 pub trait HlsExtractor {
-    async fn extract_hls_stream<Q>(
+    /// Extract HLS streams without query parameters
+    async fn extract_hls_stream(
+        &self,
+        client: &Client,
+        headers: Option<reqwest::header::HeaderMap>,
+        m3u8_url: &str,
+        quality_name: Option<&str>,
+        extras: Option<serde_json::Value>,
+    ) -> Result<Vec<StreamInfo>, ExtractorError> {
+        self.extract_hls_stream_with_params::<()>(
+            client,
+            headers,
+            None,
+            m3u8_url,
+            quality_name,
+            extras,
+        )
+        .await
+    }
+
+    /// Extract HLS streams with query parameters
+    async fn extract_hls_stream_with_params<Q>(
         &self,
         client: &Client,
         headers: Option<reqwest::header::HeaderMap>,
@@ -99,7 +120,7 @@ fn process_master_playlist(
                 quality,
                 bitrate,
                 priority: 0,
-                extras: extras.clone(),
+                extras: extras.as_ref().cloned(),
                 codec: variant.codecs.unwrap_or_default(),
                 fps: variant.frame_rate.unwrap_or(0.0),
                 is_headers_needed: false,

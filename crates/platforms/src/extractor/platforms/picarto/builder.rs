@@ -132,14 +132,7 @@ impl Picarto {
 
         let headers = self.extractor.get_platform_headers().clone();
         let mut streams = self
-            .extract_hls_stream::<()>(
-                &self.extractor.client,
-                Some(headers),
-                None,
-                &hls_url,
-                None,
-                None,
-            )
+            .extract_hls_stream(&self.extractor.client, Some(headers), &hls_url, None, None)
             .await?;
 
         streams.push(StreamInfo {

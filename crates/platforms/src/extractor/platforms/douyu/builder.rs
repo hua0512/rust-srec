@@ -54,12 +54,45 @@ impl DouyuTokenResult {
     }
 }
 
-pub struct DouyuExtractorConfig {
+pub struct Douyu {
     pub extractor: Extractor,
     pub cdn: String,
 }
 
-impl DouyuExtractorConfig {
+impl Douyu {
+    const BASE_URL: &str = "https://www.douyu.com/";
+
+    pub fn new(
+        url: String,
+        client: Client,
+        cookies: Option<String>,
+        extras: Option<serde_json::Value>,
+    ) -> Self {
+        let cdn = extras
+            .as_ref()
+            .and_then(|extras| extras.get("cdn").and_then(|v| v.as_str()))
+            .unwrap_or("ws-h5")
+            .to_string();
+
+        let mut extractor = Extractor::new("Douyu".to_string(), url, client);
+
+        extractor.add_header(
+            reqwest::header::ORIGIN.to_string(),
+            Self::BASE_URL.to_string(),
+        );
+
+        extractor.add_header(
+            reqwest::header::REFERER.to_string(),
+            Self::BASE_URL.to_string(),
+        );
+
+        if let Some(cookies) = cookies {
+            extractor.set_cookies_from_string(&cookies);
+        }
+
+        Self { extractor, cdn }
+    }
+
     pub(crate) fn extract_rid(&self, response: &str) -> Result<u64, ExtractorError> {
         let captures = RID_REGEX.captures(response);
         if let Some(captures) = captures {
@@ -384,56 +417,8 @@ impl DouyuExtractorConfig {
     }
 }
 
-pub struct DouyuExtractorBuilder {
-    url: String,
-    client: Client,
-    cookies: Option<String>,
-    _extras: Option<serde_json::Value>,
-}
-
-impl DouyuExtractorBuilder {
-    const BASE_URL: &str = "https://www.douyu.com/";
-
-    pub fn new(
-        url: String,
-        client: Client,
-        cookies: Option<String>,
-        extras: Option<serde_json::Value>,
-    ) -> Self {
-        Self {
-            url,
-            client,
-            cookies,
-            _extras: extras,
-        }
-    }
-
-    pub fn build(self, cdn: Option<String>) -> DouyuExtractorConfig {
-        let mut extractor = Extractor::new("Douyu".to_string(), self.url, self.client);
-
-        extractor.add_header(
-            reqwest::header::ORIGIN.to_string(),
-            Self::BASE_URL.to_string(),
-        );
-
-        extractor.add_header(
-            reqwest::header::REFERER.to_string(),
-            Self::BASE_URL.to_string(),
-        );
-
-        if let Some(cookies) = self.cookies {
-            extractor.set_cookies_from_string(&cookies);
-        }
-
-        DouyuExtractorConfig {
-            extractor,
-            cdn: cdn.unwrap_or("tct-h5".to_string()),
-        }
-    }
-}
-
 #[async_trait]
-impl PlatformExtractor for DouyuExtractorConfig {
+impl PlatformExtractor for Douyu {
     fn get_extractor(&self) -> &Extractor {
         &self.extractor
     }
@@ -494,8 +479,7 @@ mod tests {
     use tracing::Level;
 
     use crate::extractor::{
-        default::default_client, platform_extractor::PlatformExtractor,
-        platforms::douyu::DouyuExtractorBuilder,
+        default::default_client, platform_extractor::PlatformExtractor, platforms::douyu::Douyu,
     };
 
     #[tokio::test]
@@ -508,8 +492,7 @@ mod tests {
 
         let url = "https://www.douyu.com/8440385";
 
-        let extractor =
-            DouyuExtractorBuilder::new(url.to_string(), default_client(), None, None).build(None);
+        let extractor = Douyu::new(url.to_string(), default_client(), None, None);
         let media_info = extractor.extract().await.unwrap();
         println!("{media_info:?}");
     }

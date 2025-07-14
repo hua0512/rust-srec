@@ -134,7 +134,7 @@ pub struct Codec {
     pub drm: bool,
 }
 
-#[derive(Debug, Deserialize, Clone)]
+#[derive(Debug, Deserialize)]
 pub struct UrlInfo {
     pub host: String,
     pub extra: String,
