@@ -46,8 +46,17 @@ async fn run() -> Result<()> {
 
     info!("Starting platforms-cli with config: {:?}", config);
 
-    // Create command executor
-    let executor = CommandExecutor::new(config);
+    // Create command executor with proxy support
+    let executor = if args.proxy.is_some() || args.proxy_username.is_some() || args.proxy_password.is_some() {
+        CommandExecutor::new_with_proxy(
+            config,
+            args.proxy,
+            args.proxy_username,
+            args.proxy_password,
+        )
+    } else {
+        CommandExecutor::new(config)
+    };
 
     // Execute command
     match args.command {

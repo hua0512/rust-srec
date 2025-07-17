@@ -121,6 +121,46 @@ platforms-cli completions powershell
 - `--config` / `-c` - Custom configuration file path
 - `--timeout` - Request timeout in seconds (default: 30)
 - `--retries` - Number of retry attempts (default: 3)
+- `--proxy` - Proxy URL (supports http, https, socks5)
+- `--proxy-username` - Proxy username (if proxy requires authentication)
+- `--proxy-password` - Proxy password (if proxy requires authentication)
+
+## Proxy Support
+
+The CLI tool supports HTTP, HTTPS, and SOCKS5 proxies. You can configure proxies through command line arguments or configuration file.
+
+### CLI Usage
+
+```bash
+# Use HTTP proxy
+platforms-cli extract --url "https://twitch.tv/example_channel" --proxy "http://proxy.example.com:8080"
+
+# Use HTTPS proxy
+platforms-cli extract --url "https://bilibili.com/123456" --proxy "https://proxy.example.com:8080"
+
+# Use SOCKS5 proxy
+platforms-cli extract --url "https://douyu.com/123456" --proxy "socks5://proxy.example.com:1080"
+
+# Use proxy with authentication
+platforms-cli extract --url "https://huya.com/123456" \
+  --proxy "http://proxy.example.com:8080" \
+  --proxy-username "user" \
+  --proxy-password "pass"
+
+# Batch processing with proxy
+platforms-cli batch --input urls.txt \
+  --proxy "http://proxy.example.com:8080" \
+  --output-dir ./results
+```
+
+### Configuration File Proxy Settings
+
+```toml
+# Default proxy settings
+default_proxy = "http://proxy.example.com:8080"
+default_proxy_username = "username"
+default_proxy_password = "password"
+```
 
 ## Configuration File
 

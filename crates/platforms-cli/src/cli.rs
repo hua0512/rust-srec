@@ -32,6 +32,18 @@ pub struct Args {
     /// Number of retry attempts
     #[arg(long, global = true, default_value = "3")]
     pub retries: u32,
+
+    /// Proxy URL (supports http, https, socks5)
+    #[arg(long, global = true)]
+    pub proxy: Option<String>,
+
+    /// Proxy username (if proxy requires authentication)
+    #[arg(long, global = true)]
+    pub proxy_username: Option<String>,
+
+    /// Proxy password (if proxy requires authentication)
+    #[arg(long, global = true)]
+    pub proxy_password: Option<String>,
 }
 
 #[derive(Subcommand, Debug)]

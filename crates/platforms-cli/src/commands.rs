@@ -8,7 +8,10 @@ use crate::{
 use colored::*;
 use indicatif::{ProgressBar, ProgressStyle};
 use platforms_parser::{
-    extractor::{factory::ExtractorFactory, platform_extractor::PlatformExtractor},
+    extractor::{
+        ProxyConfig, factory::ExtractorFactory, factory_with_proxy,
+        platform_extractor::PlatformExtractor,
+    },
     media::{MediaInfo, StreamInfo},
 };
 #[cfg(feature = "regex-filters")]
@@ -30,8 +33,40 @@ pub struct CommandExecutor {
 
 impl CommandExecutor {
     pub fn new(config: AppConfig) -> Self {
-        let client = reqwest::Client::new();
-        let extractor_factory = ExtractorFactory::new(client);
+        let proxy_config = if let Some(proxy_url) = &config.default_proxy {
+            Some(ProxyConfig {
+                url: proxy_url.clone(),
+                username: config.default_proxy_username.clone(),
+                password: config.default_proxy_password.clone(),
+            })
+        } else {
+            None
+        };
+
+        let extractor_factory = factory_with_proxy(proxy_config);
+        Self {
+            config,
+            extractor_factory,
+        }
+    }
+
+    pub fn new_with_proxy(
+        config: AppConfig,
+        proxy_url: Option<String>,
+        proxy_username: Option<String>,
+        proxy_password: Option<String>,
+    ) -> Self {
+        let proxy_config = if let Some(url) = proxy_url {
+            Some(ProxyConfig {
+                url,
+                username: proxy_username,
+                password: proxy_password,
+            })
+        } else {
+            None
+        };
+
+        let extractor_factory = factory_with_proxy(proxy_config);
         Self {
             config,
             extractor_factory,
@@ -151,11 +186,22 @@ impl CommandExecutor {
         let semaphore = Arc::new(Semaphore::new(concurrency));
         let mut tasks = Vec::new();
 
+        // Create proxy config for batch processing
+        let proxy_config = if let Some(proxy_url) = &self.config.default_proxy {
+            Some(ProxyConfig {
+                url: proxy_url.clone(),
+                username: self.config.default_proxy_username.clone(),
+                password: self.config.default_proxy_password.clone(),
+            })
+        } else {
+            None
+        };
+
         for (index, url) in urls.iter().enumerate() {
             let url = url.clone();
             let pb = Arc::clone(&pb);
             let permit = semaphore.clone().acquire_owned().await?;
-            let client = reqwest::Client::new();
+            let proxy_config = proxy_config.clone();
 
             let task = tokio::spawn(async move {
                 let _permit = permit;
@@ -163,7 +209,7 @@ impl CommandExecutor {
                 pb.set_message(format!("Processing: {url}"));
 
                 let result = match timeout(timeout_duration, async {
-                    let factory = ExtractorFactory::new(client);
+                    let factory = factory_with_proxy(proxy_config);
                     let extractor = factory.create_extractor(&url, None, None)?;
                     // Extract media info directly using the platforms API
                     let mut media_info = extractor.extract().await?;

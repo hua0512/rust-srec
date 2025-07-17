@@ -33,6 +33,15 @@ pub struct AppConfig {
 
     /// Enable colored output
     pub colored_output: bool,
+
+    /// Default proxy URL (supports http, https, socks5)
+    pub default_proxy: Option<String>,
+
+    /// Default proxy username (if proxy requires authentication)
+    pub default_proxy_username: Option<String>,
+
+    /// Default proxy password (if proxy requires authentication)
+    pub default_proxy_password: Option<String>,
 }
 
 impl Default for AppConfig {
@@ -48,6 +57,9 @@ impl Default for AppConfig {
             default_output_dir: None,
             user_agent: Some("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/136.0.0.0 Safari/537.36".to_string()),
             colored_output: true,
+            default_proxy: None,
+            default_proxy_username: None,
+            default_proxy_password: None,
         }
     }
 }
