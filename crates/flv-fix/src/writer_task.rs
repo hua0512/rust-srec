@@ -81,12 +81,7 @@ pub struct FlvWriterTask {
     // New field to control whether to use base name directly
     use_base_name_directly: bool,
 
-    // Holds the stateful, synchronous FLV writer for the current output file.
-    // Since FlvWriter<BufWriter<File>> is Send (File and BufWriter are Send),
-    // we can move ownership of this Option into and out of spawn_blocking closures
-    // using a take/put-back pattern. This avoids needing Arc<Mutex> because
-    // the stream processing loop is sequential, ensuring only one blocking
-    // operation accesses the writer at a time for this task instance.
+    // stateful, synchronous FLV writer for the current output file
     current_writer: Option<FlvWriter<std::io::BufWriter<std::fs::File>>>,
     current_file_path: Option<PathBuf>,
 
@@ -257,9 +252,7 @@ impl FlvWriterTask {
                         }
                         None => {
                             // This should ideally not happen if handle_header was called first
-                            Err(WriterError::State(
-                                crate::ERROR_NO_ACTIVE_WRITER.to_owned(),
-                            ))
+                            Err(WriterError::State(crate::ERROR_NO_ACTIVE_WRITER.to_owned()))
                         }
                     };
 

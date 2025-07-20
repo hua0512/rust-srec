@@ -31,7 +31,7 @@ impl HlsPipeline {
         let split_operator = SegmentSplitOperator::new(context.clone());
 
         Pipeline::new(context.clone())
-            // .add_processor(defrag_operator)
+            .add_processor(defrag_operator)
             .add_processor(split_operator)
             .add_processor(limit_operator)
     }

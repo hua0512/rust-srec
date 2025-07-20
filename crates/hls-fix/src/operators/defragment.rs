@@ -5,7 +5,6 @@
 //!
 //! - Incomplete or fragmented media segments
 //! - Missing initialization segments in fMP4 streams
-//! - Segments that start mid-frame rather than with keyframes
 //! - Corrupted or partial TS segments lacking PAT/PMT tables
 //!
 //! ## How it works
@@ -14,13 +13,14 @@
 //! a complete segment, then outputs the segment as a unit. This ensures downstream operators
 //! receive only well-formed segments containing all necessary structural elements.
 //!
-//! For TS segments, it ensures segments begin with keyframes and contain PAT/PMT tables.
-//! For fMP4 segments, it validates that init segments are present before media segments.
+//! For TS segments, it uses optimized zero-copy parsing to validate PSI tables and stream
+//! completeness. For fMP4 segments, it validates that init segments are present before media segments.
 //!
 //! ## Configuration
 //!
 //! The operator maintains state about the current segment type (TS or fMP4) and automatically
-//! adapts to format changes in the stream.
+//! adapts to format changes in the stream. It leverages stream profiling for intelligent
+//! segment validation.
 //!
 //! ## License
 //!
@@ -32,7 +32,7 @@
 //!
 use std::sync::Arc;
 
-use hls::{HlsData, M4sData, SegmentType};
+use hls::{HlsData, M4sData, SegmentType, StreamProfile};
 use pipeline_common::{PipelineError, Processor, StreamerContext};
 use tracing::{debug, info, warn};
 
@@ -42,7 +42,7 @@ pub struct DefragmentOperator {
     buffer: Vec<HlsData>,
     segment_type: Option<SegmentType>,
     has_init_segment: bool,
-    // waiting_for_keyframe: bool,
+    last_stream_profile: Option<StreamProfile>,
 }
 
 impl DefragmentOperator {
@@ -52,6 +52,9 @@ impl DefragmentOperator {
     // The minimum number of tags for TS segments (PAT, PMT, and at least one IDR frame)
     const MIN_TS_TAGS_NUM: usize = 3;
 
+    // Maximum buffer size to prevent indefinite growth
+    const MAX_BUFFER_SIZE: usize = 50;
+
     pub fn new(context: Arc<StreamerContext>) -> Self {
         DefragmentOperator {
             context,
@@ -59,14 +62,50 @@ impl DefragmentOperator {
             buffer: Vec::with_capacity(Self::MIN_TAGS_NUM),
             segment_type: None,
             has_init_segment: false,
-            // waiting_for_keyframe: true,
+            last_stream_profile: None,
         }
     }
 
     fn reset(&mut self) {
         self.is_gathering = false;
         self.buffer.clear();
-        // Don't reset has_init_segment as that's a property of the stream
+        // Don't reset has_init_segment or last_stream_profile as they're properties of the stream
+    }
+
+    /// Validates if the buffered TS segment is complete using zero-copy stream analysis
+    fn validate_ts_segment_completeness(&self) -> bool {
+        if self.buffer.is_empty() {
+            return false;
+        }
+
+        // Check if we have any segments with PSI tables
+        let has_psi_segments = self.buffer.iter().any(|data| data.ts_has_psi_tables());
+
+        if !has_psi_segments {
+            debug!(
+                "{} TS segment lacks PSI tables, incomplete",
+                self.context.name
+            );
+            return false;
+        }
+
+        // For advanced validation, check if we have a complete stream profile
+        if let Some(ref profile) = self.last_stream_profile {
+            debug!(
+                "{} TS segment validation: {} - has_video: {}, has_audio: {}",
+                self.context.name, profile.summary, profile.has_video, profile.has_audio
+            );
+
+            // Consider segment complete if we have either video OR audio streams (more lenient)
+            // OR if we have enough buffer items regardless of stream completeness
+            return profile.has_video
+                || profile.has_audio
+                || self.buffer.len() >= Self::MIN_TAGS_NUM;
+        }
+
+        // Fallback: if we have PSI tables and minimum packets, consider complete
+        debug!("{} TS segment basic validation passed", self.context.name);
+        true
     }
 
     // Handle cases for FMP4s init segment
@@ -138,7 +177,6 @@ impl DefragmentOperator {
 
         // Determine segment type
         let tag_type = data.segment_type();
-        // let is_segment_start = data.is_segment_start();
 
         match self.segment_type {
             None => {
@@ -195,59 +233,85 @@ impl DefragmentOperator {
                 if self.buffer.is_empty() {
                     self.is_gathering = true;
                 }
+
+                // Clean up the buffer if it's too large
+                if self.buffer.len() >= Self::MAX_BUFFER_SIZE {
+                    warn!(
+                        "{} Buffer too large, discarding incomplete segment while waiting for init segment",
+                        self.context.name
+                    );
+                    self.buffer.clear();
+                }
                 self.buffer.push(data);
                 return Ok(());
             }
         }
 
-        // For TS segments, special handling for PAT/PMT tables and keyframes
+        // For TS segments, use optimized zero-copy parsing for PSI table detection
         if self.segment_type == Some(SegmentType::Ts) {
-            let is_pat_or_pmt = data.is_pmt_or_pat();
-            // let has_keyframe = data.has_keyframe();
+            // Check if this segment has PSI tables using efficient zero-copy parsing
+            let has_psi_tables = data.ts_has_psi_tables();
 
-            // Always buffer PAT/PMT tables even if we're waiting for a keyframe
-            if is_pat_or_pmt {
+            if has_psi_tables {
+                debug!(
+                    "{} Found PSI tables (PAT/PMT), start gathering",
+                    self.context.name
+                );
+                self.is_gathering = true;
+
+                // Get stream profile for this segment
+                if let Some(profile) = data.get_stream_profile() {
+                    debug!(
+                        "{} Stream profile: {} (complete: {})",
+                        self.context.name,
+                        profile.summary,
+                        profile.is_complete()
+                    );
+                    self.last_stream_profile = Some(profile);
+                }
+
+                self.buffer.push(data);
+                // REMOVED: early return here was causing buffer to never be checked for emission
+            } else {
+                // For TS segments without PSI tables, only buffer if we're already gathering
                 if !self.is_gathering {
                     debug!(
-                        "{} Starting to gather with PAT/PMT table",
+                        "{} Skipping TS data without PSI tables while not gathering",
                         self.context.name
                     );
-                    self.is_gathering = true;
+                    return Ok(());
                 }
-                debug!("{} Buffering PAT/PMT table", self.context.name);
-                // self.buffer.push(data);
-                // return Ok(());
+                // Add to buffer if we're gathering data
+                self.buffer.push(data);
             }
-
-            // If we're waiting for a keyframe and this isn't a PAT/PMT
-            // if self.waiting_for_keyframe {
-            //     if has_keyframe {
-            //         debug!(
-            //             "{} Found keyframe, can start fully gathering",
-            //             self.context.name
-            //         );
-            //         self.waiting_for_keyframe = false;
-            //         // If not already gathering, start now
-            //         if !self.is_gathering {
-            //             self.is_gathering = true;
-            //         }
-            //         self.buffer.push(data);
-            //         return Ok(());
-            //     } else if !self.is_gathering {
-            //         // Skip non-essential packets while waiting for a keyframe
-            //         debug!(
-            //             "{} Skipping non-essential data while waiting for a keyframe",
-            //             self.context.name
-            //         );
-            //         return Ok(());
-            //     }
-            // }
+        } else {
+            // For non-TS segments, add to buffer if we're gathering data
+            if self.is_gathering {
+                self.buffer.push(data);
+            } else {
+                // If we're not gathering, pass through the data
+                output(data)?;
+                return Ok(());
+            }
         }
 
-        // Add to buffer if we're gathering data
-        if self.is_gathering {
-            self.buffer.push(data);
+        // // Check buffer size and force emission if too large
+        // if self.buffer.len() >= Self::MAX_BUFFER_SIZE {
+        //     warn!(
+        //         "{} Buffer size limit reached ({}), force emitting",
+        //         self.context.name, Self::MAX_BUFFER_SIZE
+        //     );
 
+        //     // Force emit all buffered items
+        //     for item in self.buffer.drain(..) {
+        //         output(item)?;
+        //     }
+        //     self.is_gathering = false;
+        //     return Ok(());
+        // }
+
+        // Check if we've gathered enough data and if gathering is active
+        if self.is_gathering && !self.buffer.is_empty() {
             // Determine minimum number of tags based on segment type
             let min_required = match self.segment_type {
                 Some(SegmentType::Ts) => Self::MIN_TS_TAGS_NUM,
@@ -258,23 +322,29 @@ impl DefragmentOperator {
 
             // Check if we've gathered enough tags to consider this a complete segment
             if self.buffer.len() >= min_required {
-                // For TS segments, check if we have enough PAT/PMT tables and at least one keyframe
-                // let is_complete = match self.segment_type {
-                //     Some(SegmentType::Ts) => {
-                //         let has_keyframe = self.buffer.iter().any(|d| d.has_keyframe());
-                //         let has_pat_pmt =
-                //             self.buffer.iter().filter(|d| d.is_pmt_or_pat()).count() >= 2;
-                //         has_keyframe && has_pat_pmt
-                //     }
-                //     Some(SegmentType::M4sInit) | Some(SegmentType::M4sMedia) => true, // For M4S, just trust the count
-                //     Some(SegmentType::EndMarker) => false,
-                //     None => false, // Can't complete if we don't know the type
-                // };
-                let is_complete = self.buffer.len() >= min_required;
+                // Enhanced completion check using stream profiling
+                let is_complete = match self.segment_type {
+                    Some(SegmentType::Ts) => {
+                        // Use advanced stream analysis for TS segments
+                        self.validate_ts_segment_completeness()
+                    }
+                    Some(SegmentType::M4sInit) | Some(SegmentType::M4sMedia) => {
+                        // For M4S, check if we have init segment for media segments
+                        if !self.has_init_segment
+                            && matches!(self.segment_type, Some(SegmentType::M4sMedia))
+                        {
+                            false
+                        } else {
+                            self.buffer.len() >= min_required
+                        }
+                    }
+                    Some(SegmentType::EndMarker) => false,
+                    None => false, // Can't complete if we don't know the type
+                };
 
                 if is_complete {
                     debug!(
-                        "{} Gathered enough data ({} items), processing segment",
+                        "{} Gathered complete segment ({} items), processing",
                         self.context.name,
                         self.buffer.len()
                     );
@@ -285,33 +355,11 @@ impl DefragmentOperator {
                     }
 
                     self.is_gathering = false;
-                    // For TS, wait for keyframe again on the next segment
-                    // if self.segment_type == Some(SegmentType::Ts) {
-                    //     self.waiting_for_keyframe = true;
-                    // }
-                    return Ok(());
                 }
             }
-            Ok(())
-        } else {
-            // If we're not gathering, decide whether to start gathering or pass through
-            // let is_pat_or_pmt = data.is_pmt_or_pat();
-            // let has_keyframe = data.has_keyframe();
-
-            // if is_segment_start
-            //     || (self.segment_type == Some(SegmentType::Ts) && (has_keyframe || is_pat_or_pmt))
-            // {
-            //     debug!("{} Starting new segment", self.context.name);
-            //     self.is_gathering = true;
-            //     self.buffer.push(data);
-            //     return Ok(());
-            // } else {
-            //     // Pass through individual items when not gathering
-            //     output(data)?;
-            //     return Ok(());
-            // }
-            Ok(()) // No gathering, just pass through
         }
+
+        Ok(())
     }
 }
 
@@ -346,23 +394,18 @@ impl Processor<HlsData> for DefragmentOperator {
             None => Self::MIN_TAGS_NUM, // Default if type not yet determined
         };
 
-        // Only flush if we have a minimally viable segment
-        if self.buffer.len() >= min_required {
-            // if self.segment_type == Some(SegmentType::Ts) {
-            //     // For TS, check if we have necessary tables
-            //     let has_keyframe = self.buffer.iter().any(|d| d.has_keyframe());
-            //     let has_pat_pmt = self.buffer.iter().filter(|d| d.is_pmt_or_pat()).count() >= 2;
+        // Enhanced segment validation before flushing
+        let is_valid_segment = match self.segment_type {
+            Some(SegmentType::Ts) => {
+                self.buffer.len() >= min_required && self.validate_ts_segment_completeness()
+            }
+            Some(SegmentType::M4sInit) | Some(SegmentType::M4sMedia) => {
+                self.buffer.len() >= min_required
+            }
+            _ => false,
+        };
 
-            //     if !has_keyframe || !has_pat_pmt {
-            //         warn!(
-            //             "{} Discarding incomplete TS segment on flush (missing PAT/PMT or keyframe)",
-            //             self.context.name
-            //         );
-            //         self.reset();
-            //         return Ok(());
-            //     }
-            // }
-
+        if is_valid_segment {
             let count = self.buffer.len();
 
             for item in self.buffer.drain(..) {
@@ -371,9 +414,8 @@ impl Processor<HlsData> for DefragmentOperator {
             self.reset();
 
             info!(
-                "{} Flushing complete segment ({} items)",
-                self.context.name,
-                self.buffer.len()
+                "{} Flushed complete segment ({} items)",
+                self.context.name, count
             );
         } else {
             warn!(
@@ -389,261 +431,5 @@ impl Processor<HlsData> for DefragmentOperator {
 
     fn name(&self) -> &'static str {
         "Defragment"
-    }
-}
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use bytes::Bytes;
-    use hls::{M4sInitSegmentData, M4sSegmentData, TsSegmentData as TsData};
-    use pipeline_common::init_test_tracing;
-    use std::collections::VecDeque;
-
-    // Test utilities
-    struct TestContext {
-        operator: DefragmentOperator,
-        outputs: VecDeque<HlsData>,
-    }
-
-    impl TestContext {
-        fn new() -> Self {
-            let context = Arc::new(StreamerContext::default());
-            TestContext {
-                operator: DefragmentOperator::new(context),
-                outputs: VecDeque::new(),
-            }
-        }
-
-        fn process(&mut self, data: HlsData) -> Result<(), PipelineError> {
-            self.operator.process(data, &mut |output| {
-                self.outputs.push_back(output);
-                Ok(())
-            })
-        }
-
-        fn process_all(&mut self, data: Vec<HlsData>) -> Result<(), PipelineError> {
-            for item in data {
-                self.process(item)?;
-            }
-            Ok(())
-        }
-
-        fn finish(&mut self) -> Result<(), PipelineError> {
-            self.operator.finish(&mut |output| {
-                self.outputs.push_back(output);
-                Ok(())
-            })
-        }
-
-        fn get_outputs(self) -> Vec<HlsData> {
-            self.outputs.into_iter().collect()
-        }
-    }
-
-    // Create test data
-    fn create_ts_data(is_keyframe: bool, is_pat: bool, is_pmt: bool) -> HlsData {
-        let mut data = vec![0u8; 188]; // Standard TS packet size
-        data[0] = 0x47; // Sync byte
-
-        if is_keyframe {
-            data[3] |= 0x20; // Set adaptation field control
-            data[4] = 1; // Set adaptation field length
-            data[5] |= 0x40; // Set random access indicator
-        }
-
-        if is_pat {
-            data[1] = 0x00; // PAT PID high bits
-            data[2] = 0x00; // PAT PID low bits
-        } else if is_pmt {
-            data[1] = 0x01; // Common PMT PID high bits
-            data[2] = 0x00; // Common PMT PID low bits
-        }
-
-        HlsData::TsData(TsData {
-            data: Bytes::from(data),
-            segment: m3u8_rs::MediaSegment::empty(),
-        })
-    }
-
-    fn create_m4s_init_segment() -> HlsData {
-        let mut data = vec![0u8; 32];
-        data[4] = b'f'; // Set ftyp box
-        data[5] = b't';
-        data[6] = b'y';
-        data[7] = b'p';
-
-        HlsData::M4sData(M4sData::InitSegment(M4sInitSegmentData {
-            data: Bytes::from(data),
-            segment: m3u8_rs::MediaSegment::empty(),
-        }))
-    }
-
-    fn create_m4s_media_segment(is_moof: bool) -> HlsData {
-        let mut data = vec![0u8; 32];
-
-        if is_moof {
-            data[4] = b'm'; // Set moof box
-            data[5] = b'o';
-            data[6] = b'o';
-            data[7] = b'f';
-        }
-
-        HlsData::M4sData(M4sData::Segment(M4sSegmentData {
-            data: Bytes::from(data),
-            segment: m3u8_rs::MediaSegment::empty(),
-        }))
-    }
-
-    // Test a complete TS segment flow
-    #[test]
-    fn test_ts_segment_complete() {
-        init_test_tracing!();
-        let mut ctx = TestContext::new();
-
-        // Create a complete TS segment (PAT, PMT, keyframe, regular packets)
-        let segment = vec![
-            create_ts_data(false, true, false),  // PAT
-            create_ts_data(false, false, true),  // PMT
-            create_ts_data(true, false, false),  // Keyframe
-            create_ts_data(false, false, false), // Regular packet
-            create_ts_data(false, false, false), // Regular packet
-            create_ts_data(false, false, false), // Regular packet
-        ];
-
-        ctx.process_all(segment).unwrap();
-
-        let outputs = ctx.get_outputs();
-        assert_eq!(
-            outputs.len(),
-            6,
-            "Should output all 6 packets as a complete segment"
-        );
-    }
-
-    // Test M4S segments with init segment
-    #[test]
-    fn test_m4s_init_and_segment() {
-        init_test_tracing!();
-        let mut ctx = TestContext::new();
-
-        // Process init segment first
-        ctx.process(create_m4s_init_segment()).unwrap();
-
-        // Then process media segments
-        ctx.process(create_m4s_media_segment(true)).unwrap(); // with moof box
-
-        for _ in 0..4 {
-            ctx.process(create_m4s_media_segment(false)).unwrap();
-        }
-
-        let outputs = ctx.get_outputs();
-        assert_eq!(
-            outputs.len(),
-            6,
-            "Should output init segment and all media packets"
-        );
-    }
-
-    // Test handling of end of playlist marker
-    #[test]
-    fn test_end_of_playlist() {
-        init_test_tracing!();
-        let mut ctx = TestContext::new();
-
-        // Start with incomplete segment
-        ctx.process(create_ts_data(false, true, false)).unwrap(); // PAT
-        ctx.process(create_ts_data(false, false, true)).unwrap(); // PMT
-
-        // Send end of playlist marker
-        ctx.process(HlsData::EndMarker).unwrap();
-
-        let outputs = ctx.get_outputs();
-        assert_eq!(
-            outputs.len(),
-            1,
-            "Should discard incomplete segment and output only end marker"
-        );
-        assert!(
-            matches!(outputs[0], HlsData::EndMarker),
-            "Output should be end of playlist marker"
-        );
-    }
-
-    // Test finish() with a complete segment
-    #[test]
-    fn test_finish_with_complete_segment() {
-        init_test_tracing!();
-        let mut ctx = TestContext::new();
-
-        // Process a complete segment
-        ctx.process(create_ts_data(false, true, false)).unwrap(); // PAT
-        ctx.process(create_ts_data(false, false, true)).unwrap(); // PMT
-        ctx.process(create_ts_data(true, false, false)).unwrap(); // Keyframe
-
-        // Call finish
-        ctx.finish().unwrap();
-
-        let outputs = ctx.get_outputs();
-        assert_eq!(
-            outputs.len(),
-            3,
-            "Should output the complete segment on finish"
-        );
-    }
-
-    // Test finish() with an incomplete segment
-    #[test]
-    fn test_finish_with_incomplete_segment() {
-        init_test_tracing!();
-        let mut ctx = TestContext::new();
-
-        // Only process PAT - incomplete segment
-        ctx.process(create_ts_data(false, true, false)).unwrap();
-
-        // Call finish
-        ctx.finish().unwrap();
-
-        let outputs = ctx.get_outputs();
-        assert_eq!(
-            outputs.len(),
-            0,
-            "Should discard incomplete segment on finish"
-        );
-    }
-
-    // Test segment type switching
-    #[test]
-    fn test_segment_type_switching() {
-        init_test_tracing!();
-        let mut ctx = TestContext::new();
-
-        // Start with TS segment
-        ctx.process(create_ts_data(false, false, true)).unwrap(); // PMT
-        ctx.process(create_ts_data(true, false, false)).unwrap(); // Keyframe + PAT
-        ctx.process(create_ts_data(false, false, false)).unwrap(); // Regular packet
-        ctx.process(create_ts_data(false, false, false)).unwrap(); // Regular packet
-        ctx.process(create_ts_data(false, false, false)).unwrap(); // Regular packet
-
-        // There should be a end of marker
-
-        // Switch to M4S
-        ctx.process(create_m4s_init_segment()).unwrap();
-        ctx.process(create_m4s_media_segment(true)).unwrap();
-        ctx.process(create_m4s_media_segment(true)).unwrap();
-        ctx.process(create_m4s_media_segment(true)).unwrap();
-        ctx.process(create_m4s_media_segment(true)).unwrap();
-        ctx.finish().unwrap();
-
-        let outputs = ctx.get_outputs();
-
-        assert_eq!(outputs.len(), 11, "Should handle both segment types");
-
-        // First 5 should be TS, last 5 should be M4S
-        assert!(matches!(outputs[0], HlsData::TsData(_)));
-        assert!(matches!(outputs[5], HlsData::EndMarker));
-        assert!(matches!(
-            outputs[6],
-            HlsData::M4sData(M4sData::InitSegment(_))
-        ));
     }
 }

@@ -1,35 +1,28 @@
 use crc32fast::Hasher;
 use hls::segment::SegmentData;
-use hls::{HlsData, M4sData};
+use hls::{HlsData, M4sData, Resolution, StreamProfile, TsStreamInfo};
 use pipeline_common::{PipelineError, Processor, StreamerContext};
-use std::collections::HashMap;
 use std::sync::Arc;
-use tracing::{debug, info};
+use tracing::{debug, info, warn};
 
 /// An operator that splits HLS segments when parameters change.
 ///
 /// The SegmentSplitOperator performs deep inspection of stream metadata:
+///
 /// - MP4 initialization segment changes (different codecs, resolutions, etc.)
-/// - TS segment PAT/PMT changes (program changes, PID changes, etc.)
-/// - Stream parameter changes (resolution, codec, bitrate, etc.)
+/// - TS segment stream changes (codec changes, program changes, stream layout changes)
+/// - Stream parameter changes detected through stream profiles
+/// - Video resolution changes detected through SPS parsing
 ///
 /// When meaningful changes are detected, the operator inserts an end marker
 /// to properly split the HLS stream.
 pub struct SegmentSplitOperator {
     context: Arc<StreamerContext>,
     last_init_segment_crc: Option<u32>,
-    last_pat_crc: Option<u32>,
-    last_pmt_crc: Option<u32>,
-    program_map: HashMap<u16, u16>, // program_number -> PMT PID
-    active_pmt_pid: Option<u16>,
+    last_stream_profile: Option<StreamProfile>,
+    last_ts_stream_info: Option<TsStreamInfo>,
+    last_resolution: Option<Resolution>,
 }
-
-// Constants for MPEG-TS parsing
-const TS_PACKET_SIZE: usize = 188;
-const SYNC_BYTE: u8 = 0x47;
-const PAT_PID: u16 = 0x0000;
-const PAT_TABLE_ID: u8 = 0x00;
-const PMT_TABLE_ID: u8 = 0x02;
 
 impl SegmentSplitOperator {
     /// Creates a new SegmentSplitOperator with the given context.
@@ -41,10 +34,9 @@ impl SegmentSplitOperator {
         Self {
             context,
             last_init_segment_crc: None,
-            last_pat_crc: None,
-            last_pmt_crc: None,
-            program_map: HashMap::new(),
-            active_pmt_pid: None,
+            last_stream_profile: None,
+            last_ts_stream_info: None,
+            last_resolution: None,
         }
     }
 
@@ -53,6 +45,21 @@ impl SegmentSplitOperator {
         let mut hasher = Hasher::new();
         hasher.update(data);
         hasher.finalize()
+    }
+
+    /// Extract resolution information from HLS segment data using StreamProfile
+    fn extract_resolution(&self, input: &HlsData) -> Option<Resolution> {
+        // Use the HLS crate's built-in resolution detection via StreamProfile
+        if let Some(profile) = input.get_stream_profile() {
+            profile.resolution
+        } else {
+            // For non-TS segments, return None for now
+            debug!(
+                "{} Resolution extraction not available for this segment type",
+                self.context.name
+            );
+            None
+        }
     }
 
     // Handle MP4 init segment - returns true if a split is needed
@@ -68,6 +75,7 @@ impl SegmentSplitOperator {
         };
 
         let crc = Self::calculate_crc(data);
+        let mut needs_split = false;
 
         if let Some(previous_crc) = self.last_init_segment_crc {
             if previous_crc != crc {
@@ -76,8 +84,7 @@ impl SegmentSplitOperator {
                     self.context.name
                 );
                 self.last_init_segment_crc = Some(crc);
-                // Signal that we need to emit an end marker before starting a new segment
-                return Ok(true);
+                needs_split = true;
             }
         } else {
             // First init segment encountered
@@ -85,227 +92,272 @@ impl SegmentSplitOperator {
             info!("{} First init segment encountered", self.context.name);
         }
 
-        // No split needed
-        Ok(false)
+        // Check for resolution changes in MP4 init segments
+        // if !needs_split {
+        //     if let Some(current_resolution) = self.extract_resolution(input) {
+        //         if let Some(previous_resolution) = &self.last_resolution {
+        //             if previous_resolution != &current_resolution {
+        //                 info!(
+        //                     "{} MP4 video resolution changed: {} -> {}",
+        //                     self.context.name, previous_resolution, current_resolution
+        //                 );
+        //                 needs_split = true;
+        //             }
+        //         } else {
+        //             // First time we detect resolution in MP4
+        //             info!(
+        //                 "{} Detected MP4 video resolution: {}",
+        //                 self.context.name, current_resolution
+        //             );
+        //         }
+        //         self.last_resolution = Some(current_resolution);
+        //     }
+        // }
+
+        Ok(needs_split)
     }
 
-    // Handle TS segment by parsing PAT/PMT tables
+    // Handle TS segment
     // Returns true if a split is needed
     fn handle_ts_segment(&mut self, input: &HlsData) -> Result<bool, PipelineError> {
-        // Get data from HlsData
-        let segment = match input {
-            HlsData::TsData(segment) => segment,
-            _ => {
-                return Err(PipelineError::InvalidData("Expected TsSegment".to_string()));
+        // Quick check if segment has PSI tables
+        if !input.ts_has_psi_tables() {
+            debug!(
+                "{} TS segment has no PSI tables, skipping analysis",
+                self.context.name
+            );
+            return Ok(false);
+        }
+
+        // Parse stream information
+        let current_stream_info = match input.parse_ts_psi_tables_zero_copy() {
+            Some(Ok(info)) => info,
+            Some(Err(e)) => {
+                warn!("{} Failed to parse TS PSI tables: {}", self.context.name, e);
+                return Ok(false);
+            }
+            None => {
+                debug!("{} Not a TS segment", self.context.name);
+                return Ok(false);
             }
         };
 
-        // Extract TS packets and parse PAT/PMT
-        let data = &segment.data;
+        // Get current stream profile for comparison
+        let current_profile = input.get_stream_profile();
 
-        // Check if we have PAT/PMT changes
-        let mut pat_changed = false;
-        let mut pmt_changed = false;
+        let mut needs_split = false;
 
-        // Iterate through TS packets (each 188 bytes)
-        for chunk_start in (0..data.len()).step_by(TS_PACKET_SIZE) {
-            // Make sure we have a complete packet
-            if chunk_start + TS_PACKET_SIZE > data.len() {
-                break;
-            }
-
-            let packet = &data[chunk_start..chunk_start + TS_PACKET_SIZE];
-
-            // Check sync byte
-            if packet[0] != SYNC_BYTE {
-                continue;
-            }
-
-            // Extract PID (13 bits from bytes 1-2)
-            let pid = (((packet[1] & 0x1F) as u16) << 8) | (packet[2] as u16);
-
-            // Skip packets with adaptation field only or with payload scrambling
-            let adaptation_field_control = (packet[3] & 0x30) >> 4;
-            if adaptation_field_control == 0 || adaptation_field_control == 2 {
-                continue;
-            }
-
-            // Check for payload unit start indicator
-            let payload_start = (packet[1] & 0x40) != 0;
-            if !payload_start {
-                continue;
-            }
-
-            // Calculate payload offset
-            let mut payload_offset = 4;
-
-            // If adaptation field exists, skip it
-            if (adaptation_field_control & 0x2) != 0 {
-                let adaptation_field_length = packet[4] as usize;
-                payload_offset += 1 + adaptation_field_length;
-
-                // Make sure we don't exceed packet bounds
-                if payload_offset >= TS_PACKET_SIZE {
-                    continue;
-                }
-            }
-
-            // Skip pointer field for sections
-            payload_offset += 1;
-
-            // Make sure we have enough bytes for a table
-            if payload_offset + 3 >= TS_PACKET_SIZE {
-                continue;
-            }
-
-            // Read table ID
-            let table_id = packet[payload_offset];
-
-            // Check if we're dealing with PAT or PMT tables
-            if pid == PAT_PID && table_id == PAT_TABLE_ID {
-                pat_changed = self.parse_pat(packet, payload_offset)?;
-            } else if (self.active_pmt_pid == Some(pid)) && table_id == PMT_TABLE_ID {
-                pmt_changed = self.parse_pmt(packet, payload_offset)?;
-            }
-        }
-
-        // Return true if either PAT or PMT changed
-        Ok(pat_changed || pmt_changed)
-    }
-
-    // Parse Program Association Table and check for changes
-    fn parse_pat(&mut self, packet: &[u8], offset: usize) -> Result<bool, PipelineError> {
-        // Need at least 8 bytes for a minimal PAT
-        if offset + 8 >= packet.len() {
-            return Ok(false);
-        }
-
-        // Section length (12 bits)
-        let section_length =
-            (((packet[offset + 1] & 0x0F) as usize) << 8) | (packet[offset + 2] as usize);
-
-        // Make sure we have the full section
-        if offset + 3 + section_length > packet.len() {
-            return Ok(false);
-        }
-
-        // Calculate CRC for the PAT
-        let pat_data = &packet[offset..offset + 3 + section_length];
-        let crc = Self::calculate_crc(pat_data);
-
-        let mut changed = false;
-
-        if let Some(previous_crc) = self.last_pat_crc {
-            if previous_crc != crc {
+        // Compare with previous stream information
+        if let Some(previous_info) = &self.last_ts_stream_info {
+            // Check for program changes
+            if previous_info.program_count != current_stream_info.program_count {
                 info!(
-                    "{} Detected PAT change, updating program map",
-                    self.context.name
+                    "{} Program count changed: {} -> {}",
+                    self.context.name,
+                    previous_info.program_count,
+                    current_stream_info.program_count
                 );
+                needs_split = true;
+            }
 
-                // Clear existing program map
-                self.program_map.clear();
+            // Check for transport stream ID changes
+            if previous_info.transport_stream_id != current_stream_info.transport_stream_id {
+                info!(
+                    "{} Transport Stream ID changed: {} -> {}",
+                    self.context.name,
+                    previous_info.transport_stream_id,
+                    current_stream_info.transport_stream_id
+                );
+                needs_split = true;
+            }
 
-                // Parse program entries
-                let mut pos = offset + 8; // Skip header
-                while pos + 4 <= offset + 3 + section_length - 4 {
-                    // Leave room for CRC
-                    let program_number = ((packet[pos] as u16) << 8) | (packet[pos + 1] as u16);
-                    let program_pid =
-                        (((packet[pos + 2] & 0x1F) as u16) << 8) | (packet[pos + 3] as u16);
+            // Compare stream layouts within programs
+            if !needs_split && previous_info.programs.len() != current_stream_info.programs.len() {
+                info!(
+                    "{} Number of programs changed: {} -> {}",
+                    self.context.name,
+                    previous_info.programs.len(),
+                    current_stream_info.programs.len()
+                );
+                needs_split = true;
+            }
 
-                    if program_number != 0 {
-                        // Non-zero program number -> PMT
-                        self.program_map.insert(program_number, program_pid);
+            // Check individual program changes
+            if !needs_split {
+                for (prev_prog, curr_prog) in previous_info
+                    .programs
+                    .iter()
+                    .zip(current_stream_info.programs.iter())
+                {
+                    if prev_prog.program_number != curr_prog.program_number {
+                        info!(
+                            "{} Program number changed: {} -> {}",
+                            self.context.name, prev_prog.program_number, curr_prog.program_number
+                        );
+                        needs_split = true;
+                        break;
+                    }
 
-                        // Use the first program's PMT as the active one
-                        if self.active_pmt_pid.is_none() {
-                            self.active_pmt_pid = Some(program_pid);
+                    if prev_prog.pcr_pid != curr_prog.pcr_pid {
+                        info!(
+                            "{} PCR PID changed for program {}: 0x{:04X} -> 0x{:04X}",
+                            self.context.name,
+                            curr_prog.program_number,
+                            prev_prog.pcr_pid,
+                            curr_prog.pcr_pid
+                        );
+                        needs_split = true;
+                        break;
+                    }
+
+                    // Check stream count changes
+                    let prev_stream_count = prev_prog.video_streams.len()
+                        + prev_prog.audio_streams.len()
+                        + prev_prog.other_streams.len();
+                    let curr_stream_count = curr_prog.video_streams.len()
+                        + curr_prog.audio_streams.len()
+                        + curr_prog.other_streams.len();
+
+                    if prev_stream_count != curr_stream_count {
+                        info!(
+                            "{} Stream count changed for program {}: {} -> {}",
+                            self.context.name,
+                            curr_prog.program_number,
+                            prev_stream_count,
+                            curr_stream_count
+                        );
+                        needs_split = true;
+                        break;
+                    }
+
+                    // Check for codec changes in video streams
+                    for (prev_stream, curr_stream) in prev_prog
+                        .video_streams
+                        .iter()
+                        .zip(curr_prog.video_streams.iter())
+                    {
+                        if prev_stream.stream_type != curr_stream.stream_type {
+                            info!(
+                                "{} Video codec changed for program {}: {:?} -> {:?}",
+                                self.context.name,
+                                curr_prog.program_number,
+                                prev_stream.stream_type,
+                                curr_stream.stream_type
+                            );
+                            needs_split = true;
+                            break;
                         }
                     }
 
-                    pos += 4;
-                }
-
-                self.last_pat_crc = Some(crc);
-                changed = true;
-            }
-        } else {
-            // First PAT encountered
-            // Parse program entries as above
-            let mut pos = offset + 8; // Skip header
-            while pos + 4 <= offset + 3 + section_length - 4 {
-                // Leave room for CRC
-                let program_number = ((packet[pos] as u16) << 8) | (packet[pos + 1] as u16);
-                let program_pid =
-                    (((packet[pos + 2] & 0x1F) as u16) << 8) | (packet[pos + 3] as u16);
-
-                if program_number != 0 {
-                    // Non-zero program number -> PMT
-                    self.program_map.insert(program_number, program_pid);
-
-                    // Use the first program's PMT as the active one
-                    if self.active_pmt_pid.is_none() {
-                        self.active_pmt_pid = Some(program_pid);
+                    // Check for codec changes in audio streams
+                    for (prev_stream, curr_stream) in prev_prog
+                        .audio_streams
+                        .iter()
+                        .zip(curr_prog.audio_streams.iter())
+                    {
+                        if prev_stream.stream_type != curr_stream.stream_type {
+                            info!(
+                                "{} Audio codec changed for program {}: {:?} -> {:?}",
+                                self.context.name,
+                                curr_prog.program_number,
+                                prev_stream.stream_type,
+                                curr_stream.stream_type
+                            );
+                            needs_split = true;
+                            break;
+                        }
                     }
                 }
-
-                pos += 4;
             }
-
-            self.last_pat_crc = Some(crc);
-            // First PAT doesn't trigger a split
         }
 
-        Ok(changed)
-    }
+        // Compare stream profiles for high-level changes
+        if let (Some(current_profile), Some(previous_profile)) =
+            (&current_profile, &self.last_stream_profile)
+        {
+            if !needs_split {
+                // Check for codec changes
+                if current_profile.has_h264 != previous_profile.has_h264
+                    || current_profile.has_h265 != previous_profile.has_h265
+                    || current_profile.has_aac != previous_profile.has_aac
+                    || current_profile.has_ac3 != previous_profile.has_ac3
+                {
+                    info!("{} Stream codec availability changed", self.context.name);
+                    needs_split = true;
+                }
 
-    // Parse Program Map Table and check for changes
-    fn parse_pmt(&mut self, packet: &[u8], offset: usize) -> Result<bool, PipelineError> {
-        // Need at least 12 bytes for a minimal PMT
-        if offset + 12 >= packet.len() {
-            return Ok(false);
-        }
+                // Check for stream type changes
+                if current_profile.has_video != previous_profile.has_video
+                    || current_profile.has_audio != previous_profile.has_audio
+                {
+                    info!(
+                        "{} Stream type availability changed (video: {} -> {}, audio: {} -> {})",
+                        self.context.name,
+                        previous_profile.has_video,
+                        current_profile.has_video,
+                        previous_profile.has_audio,
+                        current_profile.has_audio
+                    );
+                    needs_split = true;
+                }
 
-        // Section length (12 bits)
-        let section_length =
-            (((packet[offset + 1] & 0x0F) as usize) << 8) | (packet[offset + 2] as usize);
-
-        // Make sure we have the full section
-        if offset + 3 + section_length > packet.len() {
-            return Ok(false);
-        }
-
-        // Calculate CRC for the PMT
-        let pmt_data = &packet[offset..offset + 3 + section_length];
-        let crc = Self::calculate_crc(pmt_data);
-
-        let mut changed = false;
-
-        if let Some(previous_crc) = self.last_pmt_crc {
-            if previous_crc != crc {
-                info!(
-                    "{} Detected PMT change, stream parameters changed",
-                    self.context.name
-                );
-                self.last_pmt_crc = Some(crc);
-                changed = true;
+                // Check for resolution changes using StreamProfile
+                if let (Some(current_res), Some(previous_res)) =
+                    (&current_profile.resolution, &previous_profile.resolution)
+                {
+                    if current_res != previous_res {
+                        info!(
+                            "{} Video resolution changed via profile: {} -> {}",
+                            self.context.name, previous_res, current_res
+                        );
+                        needs_split = true;
+                    }
+                }
             }
-        } else {
-            // First PMT encountered
-            self.last_pmt_crc = Some(crc);
-            // First PMT doesn't trigger a split
         }
 
-        Ok(changed)
+        // Additional resolution change check (if video streams are present)
+        if !needs_split
+            && (current_stream_info
+                .programs
+                .iter()
+                .any(|p| !p.video_streams.is_empty()))
+        {
+            if let Some(current_resolution) = self.extract_resolution(input) {
+                if let Some(previous_resolution) = &self.last_resolution {
+                    if previous_resolution != &current_resolution {
+                        info!(
+                            "{} Video resolution changed: {} -> {}",
+                            self.context.name, previous_resolution, current_resolution
+                        );
+                        needs_split = true;
+                    }
+                } else {
+                    // First time we detect resolution
+                    info!(
+                        "{} Detected video resolution: {}",
+                        self.context.name, current_resolution
+                    );
+                }
+                self.last_resolution = Some(current_resolution);
+            }
+        }
+
+        // Update stored information
+        self.last_ts_stream_info = Some(current_stream_info);
+        if let Some(profile) = current_profile {
+            self.last_stream_profile = Some(profile);
+        }
+
+        Ok(needs_split)
     }
 
     // Reset operator state
     fn reset(&mut self) {
-        self.last_pat_crc = None;
-        self.last_pmt_crc = None;
         self.last_init_segment_crc = None;
-        self.program_map.clear();
-        self.active_pmt_pid = None;
+        self.last_stream_profile = None;
+        self.last_ts_stream_info = None;
+        self.last_resolution = None;
     }
 }
 
@@ -368,118 +420,73 @@ mod tests {
     use m3u8_rs::MediaSegment;
     use pipeline_common::{init_test_tracing, test_utils::create_test_context};
 
-    // Helper function to create a basic PAT packet
-    fn create_pat_packet(programs: &[(u16, u16)]) -> Vec<u8> {
-        let mut packet = vec![0u8; TS_PACKET_SIZE];
+    // Helper function to create a working TS data with specific codec combinations
+    fn create_ts_data_with_codecs(video_codec: u8, audio_codec: u8, program_num: u16) -> Vec<u8> {
+        let mut ts_data = Vec::new();
 
-        // Sync byte
-        packet[0] = SYNC_BYTE;
+        // PAT packet (188 bytes)
+        let mut pat_packet = vec![0u8; 188];
+        pat_packet[0] = 0x47; // Sync byte
+        pat_packet[1] = 0x40; // PUSI set, PID = 0 (PAT)
+        pat_packet[2] = 0x00;
+        pat_packet[3] = 0x10; // No scrambling, payload only
 
-        // Transport flags: payload unit start indicator + PAT PID
-        packet[1] = 0x40; // Payload unit start
-        packet[2] = 0x00; // PAT PID = 0
+        // Simple PAT payload
+        pat_packet[4] = 0x00; // Pointer field
+        pat_packet[5] = 0x00; // Table ID (PAT)
+        pat_packet[6] = 0x80; // Section syntax indicator
+        pat_packet[7] = 0x0D; // Section length (13 bytes)
+        pat_packet[8] = 0x00;
+        pat_packet[9] = 0x01; // Transport stream ID
+        pat_packet[10] = 0x01; // Version 0 + current/next = 1
+        pat_packet[11] = 0x00;
+        pat_packet[12] = 0x00; // Section numbers
+        // Program entry
+        pat_packet[13] = (program_num >> 8) as u8;
+        pat_packet[14] = (program_num & 0xFF) as u8;
+        pat_packet[15] = 0xE1;
+        pat_packet[16] = 0x00; // PMT PID 0x100
 
-        // Adaptation control: payload only
-        packet[3] = 0x10;
+        // PMT packet (188 bytes)
+        let mut pmt_packet = vec![0u8; 188];
+        pmt_packet[0] = 0x47; // Sync byte
+        pmt_packet[1] = 0x41; // PUSI set, PID = 0x100
+        pmt_packet[2] = 0x00;
+        pmt_packet[3] = 0x10; // No scrambling, payload only
 
-        // Pointer field
-        packet[4] = 0x00;
+        pmt_packet[4] = 0x00; // Pointer field
+        pmt_packet[5] = 0x02; // Table ID (PMT)
+        pmt_packet[6] = 0x80; // Section syntax indicator
+        pmt_packet[7] = 0x17; // Section length (23 bytes for 2 streams)
+        pmt_packet[8] = (program_num >> 8) as u8;
+        pmt_packet[9] = (program_num & 0xFF) as u8;
+        pmt_packet[10] = 0x01; // Version 0 + current/next = 1
+        pmt_packet[11] = 0x00;
+        pmt_packet[12] = 0x00; // Section numbers
+        pmt_packet[13] = 0xE1;
+        pmt_packet[14] = 0x00; // PCR PID 0x100
+        pmt_packet[15] = 0x00;
+        pmt_packet[16] = 0x00; // Program info length
+        // Video stream
+        pmt_packet[17] = video_codec;
+        pmt_packet[18] = 0xE1;
+        pmt_packet[19] = 0x00; // Elementary PID 0x100
+        pmt_packet[20] = 0x00;
+        pmt_packet[21] = 0x00; // ES info length
+        // Audio stream
+        pmt_packet[22] = audio_codec;
+        pmt_packet[23] = 0xE1;
+        pmt_packet[24] = 0x01; // Elementary PID 0x101
+        pmt_packet[25] = 0x00;
+        pmt_packet[26] = 0x00; // ES info length
 
-        // PAT header
-        packet[5] = PAT_TABLE_ID; // Table ID
-        packet[6] = 0x80; // Section syntax indicator + reserved bits
-
-        // Section length will be calculated later
-        let section_length = 5 + (programs.len() * 4) + 4; // 5 bytes header, 4 bytes per program, 4 bytes CRC
-        packet[6] |= ((section_length >> 8) & 0x0F) as u8;
-        packet[7] = (section_length & 0xFF) as u8;
-
-        // Transport stream ID
-        packet[8] = 0x00;
-        packet[9] = 0x01;
-
-        // Version and section numbers
-        packet[10] = 0xC1; // Reserved bits + version 0 + current indicator + section 0
-        packet[11] = 0x00; // Last section number
-
-        // Program entries
-        let mut offset = 12;
-        for (program_num, pid) in programs {
-            packet[offset] = (*program_num >> 8) as u8;
-            packet[offset + 1] = (*program_num & 0xFF) as u8;
-            packet[offset + 2] = 0xE0 | ((*pid >> 8) & 0x1F) as u8;
-            packet[offset + 3] = (*pid & 0xFF) as u8;
-            offset += 4;
-        }
-
-        // CRC32 - in a real implementation we would calculate this
-        // For testing, we'll just use a placeholder
-        packet[offset..offset + 4].copy_from_slice(&[0xAA, 0xBB, 0xCC, 0xDD]);
-
-        packet
-    }
-
-    // Helper function to create a basic PMT packet
-    fn create_pmt_packet(pmt_pid: u16, program_info: &[(u8, u16)]) -> Vec<u8> {
-        let mut packet = vec![0u8; TS_PACKET_SIZE];
-
-        // Sync byte
-        packet[0] = SYNC_BYTE;
-
-        // Transport flags: payload unit start indicator + PMT PID
-        packet[1] = 0x40 | ((pmt_pid >> 8) & 0x1F) as u8;
-        packet[2] = (pmt_pid & 0xFF) as u8;
-
-        // Adaptation control: payload only
-        packet[3] = 0x10;
-
-        // Pointer field
-        packet[4] = 0x00;
-
-        // PMT header
-        packet[5] = PMT_TABLE_ID; // Table ID
-        packet[6] = 0x80; // Section syntax indicator + reserved bits
-
-        // Section length will be calculated later
-        let section_length = 9 + (program_info.len() * 5) + 4; // 9 bytes header, 5 bytes per stream, 4 bytes CRC
-        packet[6] |= ((section_length >> 8) & 0x0F) as u8;
-        packet[7] = (section_length & 0xFF) as u8;
-
-        // Program number
-        packet[8] = 0x00;
-        packet[9] = 0x01;
-
-        // Version and section numbers
-        packet[10] = 0xC1; // Reserved bits + version 0 + current indicator + section 0
-
-        // PCR PID
-        packet[11] = 0xE0 | ((pmt_pid >> 8) & 0x1F) as u8;
-        packet[12] = (pmt_pid & 0xFF) as u8;
-
-        // Program info length (0 for now)
-        packet[13] = 0xF0;
-        packet[14] = 0x00;
-
-        // Stream entries
-        let mut offset = 15;
-        for (stream_type, pid) in program_info {
-            packet[offset] = *stream_type;
-            packet[offset + 1] = 0xE0 | ((*pid >> 8) & 0x1F) as u8;
-            packet[offset + 2] = (*pid & 0xFF) as u8;
-            packet[offset + 3] = 0xF0; // Reserved bits
-            packet[offset + 4] = 0x00; // ES info length = 0
-            offset += 5;
-        }
-
-        // CRC32 - in a real implementation we would calculate this
-        // For testing, we'll just use a placeholder
-        packet[offset..offset + 4].copy_from_slice(&[0xAA, 0xBB, 0xCC, 0xDD]);
-
-        packet
+        ts_data.extend_from_slice(&pat_packet);
+        ts_data.extend_from_slice(&pmt_packet);
+        ts_data
     }
 
     #[test]
-    fn test_pat_change_detection() {
+    fn test_stream_change_detection() {
         let context = create_test_context();
         let mut operator = SegmentSplitOperator::new(context);
         let mut output_items = Vec::new();
@@ -490,33 +497,27 @@ mod tests {
             Ok(())
         };
 
-        // Create initial PAT with two programs
-        let programs1 = vec![(1, 0x1000), (2, 0x1001)];
-        let pat1 = create_pat_packet(&programs1);
-
-        // Create a TS segment with the initial PAT
+        // Create initial TS segment with H.264 + AAC
+        let ts_data1 = create_ts_data_with_codecs(0x1B, 0x0F, 1); // H.264 + AAC
         let ts_segment1 = HlsData::TsData(hls::TsSegmentData {
             segment: MediaSegment::empty(),
-            data: Bytes::from(pat1),
+            data: Bytes::from(ts_data1),
         });
 
-        // Process the initial PAT
+        // Process the initial segment
         operator.process(ts_segment1, &mut output_fn).unwrap();
 
-        // Create second PAT with different programs
-        let programs2 = vec![(1, 0x1000), (3, 0x1002)]; // Program 2 -> 3
-        let pat2 = create_pat_packet(&programs2);
-
-        // Create a TS segment with the modified PAT
+        // Create second TS segment with H.265 + AC-3 (different codecs)
+        let ts_data2 = create_ts_data_with_codecs(0x24, 0x81, 1); // H.265 + AC-3
         let ts_segment2 = HlsData::TsData(hls::TsSegmentData {
             segment: MediaSegment::empty(),
-            data: Bytes::from(pat2),
+            data: Bytes::from(ts_data2),
         });
 
-        // Process the modified PAT
+        // Process the modified segment
         operator.process(ts_segment2, &mut output_fn).unwrap();
 
-        // Should have split the stream (end marker + new segment)
+        // Should have split the stream (segment1 + end marker + segment2)
         assert_eq!(output_items.len(), 3);
         match &output_items[1] {
             HlsData::EndMarker => {}
@@ -525,7 +526,7 @@ mod tests {
     }
 
     #[test]
-    fn test_pmt_change_detection() {
+    fn test_program_change_detection() {
         let context = create_test_context();
         let mut operator = SegmentSplitOperator::new(context);
         let mut output_items = Vec::new();
@@ -536,44 +537,27 @@ mod tests {
             Ok(())
         };
 
-        // First create a PAT to set up the PMT PID
-        let pmt_pid = 0x1000;
-        let programs = vec![(1, pmt_pid)];
-        let pat = create_pat_packet(&programs);
-
-        // Create initial PMT with audio and video
-        let streams1 = vec![(0x1B, 0x1001), (0x0F, 0x1002)]; // H.264 video + AAC audio
-        let pmt1 = create_pmt_packet(pmt_pid, &streams1);
-
-        // Create a TS segment with PAT and PMT
-        let mut combined1 = pat.clone();
-        combined1.extend_from_slice(&pmt1);
-
+        // Create initial TS segment with program 1
+        let ts_data1 = create_ts_data_with_codecs(0x1B, 0x0F, 1); // H.264 + AAC, program 1
         let ts_segment1 = HlsData::TsData(hls::TsSegmentData {
             segment: MediaSegment::empty(),
-            data: Bytes::from(combined1),
+            data: Bytes::from(ts_data1),
         });
 
-        // Process the initial PAT+PMT
+        // Process the initial segment
         operator.process(ts_segment1, &mut output_fn).unwrap();
 
-        // Create second PMT with changed streams
-        let streams2 = vec![(0x24, 0x1001), (0x0F, 0x1002)]; // H.265 video + AAC audio
-        let pmt2 = create_pmt_packet(pmt_pid, &streams2);
-
-        // Create a TS segment with PAT and modified PMT
-        let mut combined2 = pat.clone();
-        combined2.extend_from_slice(&pmt2);
-
+        // Create second TS segment with program 2 (different program number)
+        let ts_data2 = create_ts_data_with_codecs(0x1B, 0x0F, 2); // H.264 + AAC, program 2
         let ts_segment2 = HlsData::TsData(hls::TsSegmentData {
             segment: MediaSegment::empty(),
-            data: Bytes::from(combined2),
+            data: Bytes::from(ts_data2),
         });
 
-        // Process the modified PMT
+        // Process the segment with different program
         operator.process(ts_segment2, &mut output_fn).unwrap();
 
-        // Should have split the stream (end marker + new segment)
+        // Should have split the stream (segment1 + end marker + segment2)
         assert_eq!(output_items.len(), 3);
         match &output_items[1] {
             HlsData::EndMarker => {}
@@ -610,6 +594,48 @@ mod tests {
         match &output_items[1] {
             HlsData::EndMarker => {}
             _ => panic!("Expected EndMarker"),
+        }
+    }
+
+    #[test]
+    fn test_resolution_change_detection() {
+        init_test_tracing!();
+        let context = create_test_context();
+        let mut operator = SegmentSplitOperator::new(context);
+        let mut output_items = Vec::new();
+
+        // Create a mutable output function
+        let mut output_fn = |item: HlsData| -> Result<(), PipelineError> {
+            output_items.push(item);
+            Ok(())
+        };
+
+        // Create initial TS segment with H.264 (which typically defaults to 1920x1080)
+        let ts_data1 = create_ts_data_with_codecs(0x1B, 0x0F, 1); // H.264 + AAC
+        let ts_segment1 = HlsData::TsData(hls::TsSegmentData {
+            segment: MediaSegment::empty(),
+            data: Bytes::from(ts_data1),
+        });
+
+        // Process the initial segment
+        operator.process(ts_segment1, &mut output_fn).unwrap();
+
+        // Create second TS segment with H.265 (which typically defaults to 3840x2160)
+        let ts_data2 = create_ts_data_with_codecs(0x24, 0x0F, 1); // H.265 + AAC
+        let ts_segment2 = HlsData::TsData(hls::TsSegmentData {
+            segment: MediaSegment::empty(),
+            data: Bytes::from(ts_data2),
+        });
+
+        // Process the segment with different codec (and implied resolution)
+        operator.process(ts_segment2, &mut output_fn).unwrap();
+
+        // Should have split the stream due to both codec and resolution change
+        // (segment1 + end marker + segment2)
+        assert_eq!(output_items.len(), 3);
+        match &output_items[1] {
+            HlsData::EndMarker => {}
+            _ => panic!("Expected EndMarker after resolution change"),
         }
     }
 }

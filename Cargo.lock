@@ -1310,8 +1310,12 @@ dependencies = [
  "byteorder",
  "bytes",
  "bytes-util",
+ "h264",
+ "h265",
  "m3u8-rs",
  "thiserror 1.0.69",
+ "tracing",
+ "ts",
 ]
 
 [[package]]
@@ -1324,6 +1328,8 @@ dependencies = [
  "chrono",
  "crc32fast",
  "futures",
+ "h264",
+ "h265",
  "hls",
  "m3u8-rs",
  "pipeline-common",
@@ -1334,6 +1340,7 @@ dependencies = [
  "tokio-util",
  "tracing",
  "tracing-subscriber",
+ "ts",
 ]
 
 [[package]]
@@ -3808,6 +3815,15 @@ name = "try-lock"
 version = "0.2.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e421abadd41a4225275504ea4d6566923418b7f05506fbc9c0fe86ba7396114b"
+
+[[package]]
+name = "ts"
+version = "0.1.0"
+dependencies = [
+ "bytes",
+ "hex",
+ "thiserror 1.0.69",
+]
 
 [[package]]
 name = "typenum"

@@ -13,10 +13,13 @@ members = [
     "crates/expgolomb",
     "crates/av1",
     "crates/h265",
+    "crates/h264",
     "crates/amf0",
     "crates/platforms",
     "crates/tars-codec",
     "crates/platforms-cli",
+    "crates/pipeline-common",
+    "crates/ts",
 ]
 
 [workspace.package]

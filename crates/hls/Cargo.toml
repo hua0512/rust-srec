@@ -11,3 +11,31 @@ byteorder = "1.5"
 bytes-util = { path = "../bytes-util" }
 m3u8-rs = "6.0.0"
 thiserror = "1.0"
+ts = { path = "../ts" }
+h264 = { path = "../h264" }
+h265 = { path = "../h265" }
+tracing = "0.1"
+
+[[example]]
+name = "ts_analysis"
+path = "examples/ts_analysis.rs"
+
+[[example]]
+name = "simple_ts_test"
+path = "examples/simple_ts_test.rs"
+
+[[example]]
+name = "debug_ts"
+path = "examples/debug_ts.rs"
+
+[[example]]
+name = "debug_hls_ts"
+path = "examples/debug_hls_ts.rs"
+
+[[example]]
+name = "memory_efficient_analysis"
+path = "examples/memory_efficient_analysis.rs"
+
+[[example]]
+name = "optimized_segment_analysis"
+path = "examples/optimized_segment_analysis.rs"
