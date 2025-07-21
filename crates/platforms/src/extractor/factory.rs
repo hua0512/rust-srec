@@ -3,7 +3,7 @@ use std::sync::LazyLock;
 use super::error::ExtractorError;
 use super::platform_extractor::PlatformExtractor;
 use crate::extractor::platforms::{
-    self, bilibili::Bilibili, douyin::DouyinExtractorBuilder, douyu::Douyu, huya::Huya,
+    self, bilibili::Bilibili, douyin::Douyin, douyu::Douyu, huya::Huya,
     pandatv::PandaTV, picarto::Picarto, redbook::RedBook, tiktok::TikTok, twitcasting::Twitcasting,
     twitch::Twitch, weibo::Weibo,
 };
@@ -36,9 +36,7 @@ macro_rules! create_constructor {
 
 // Create constructor functions using the macro
 create_constructor!(new_huya, Huya::new);
-create_constructor!(new_douyin, |url, client, cookies, extras| {
-    DouyinExtractorBuilder::new(url, client, cookies, extras).build()
-});
+create_constructor!(new_douyin, Douyin::new);
 #[cfg(feature = "douyu")]
 create_constructor!(new_douyu, Douyu::new);
 create_constructor!(new_pandatv, PandaTV::new);
