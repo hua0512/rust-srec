@@ -333,9 +333,10 @@ impl Extractor {
         for (key, value) in &self.platform_headers {
             builder = builder.header(key.clone(), value.clone());
         }
-        builder
-            .header(reqwest::header::COOKIE, cookies)
-            .query(&self.platform_params)
+        if !self.cookies.is_empty() {
+            builder = builder.header(reqwest::header::COOKIE, cookies);
+        }
+        builder.query(&self.platform_params)
     }
 
     pub fn get_platform_headers(&self) -> &HeaderMap {

@@ -1,4 +1,4 @@
-use crate::extractor::default::{DEFAULT_MOBILE_UA, DEFAULT_UA};
+use crate::extractor::default::DEFAULT_MOBILE_UA;
 use crate::extractor::error::ExtractorError;
 use crate::extractor::platform_extractor::{Extractor, PlatformExtractor};
 use crate::extractor::platforms::douyin::apis::{
@@ -24,7 +24,7 @@ use std::sync::{Arc, LazyLock};
 use tracing::debug;
 
 pub static URL_REGEX: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(r"^(?:https?://)?(?:www\.)?live.douyin\.com/([a-zA-Z0-9_-]+)").unwrap()
+    Regex::new(r"^(?:https?://)?(?:www\.)?live.douyin\.com/([a-zA-Z0-9_\-\.]+)").unwrap()
 });
 
 /// Manages the ttwid cookie strategy.
@@ -71,11 +71,6 @@ impl Douyin {
         extractor.add_header(
             reqwest::header::REFERER.to_string(),
             LIVE_DOUYIN_URL.to_string(),
-        );
-        // The default UA is already set in Extractor::new, but we can ensure it here.
-        extractor.add_header(
-            reqwest::header::USER_AGENT.to_string(),
-            DEFAULT_UA.to_string(),
         );
 
         if let Some(cookies) = cookies {
@@ -148,11 +143,11 @@ struct DouyinRequest<'a> {
 
 impl<'a> DouyinRequest<'a> {
     /// Creates a new request handler.
-    fn new(config: &'a Douyin, web_rid: String) -> Self {
+    fn new(cookies: FxHashMap<String, String>, config: &'a Douyin, web_rid: String) -> Self {
         Self {
             config,
             web_rid,
-            cookies: FxHashMap::default(),
+            cookies,
             params: config.extractor.platform_params.clone(),
             id_str: None,
             sec_rid: None,
@@ -193,11 +188,12 @@ impl<'a> DouyinRequest<'a> {
             }
         }
 
-        self.config
-            .extractor
-            .request(method, url)
-            .header(reqwest::header::COOKIE, cookies)
-            .query(&self.params)
+        let mut builder = self.config.extractor.request(method, url);
+        if !cookies.is_empty() {
+            builder = builder.header(reqwest::header::COOKIE, cookies);
+        }
+        // debug!("builder: {:?}", builder);
+        builder
     }
 
     /// Fetches the main PC API response.
@@ -342,8 +338,8 @@ impl<'a> DouyinRequest<'a> {
         let response: DouyinPcResponse = serde_json::from_str(body)?;
         self._validate_response(&response)?;
 
-        let user = &response.data.user;
-        self.id_str = Some(response.data.enter_room_id.to_string());
+        let user = response.data.user.as_ref().unwrap();
+        self.id_str = response.data.enter_room_id.map(|v| v.to_string());
         self.sec_rid = Some(user.sec_uid.to_string());
 
         let data = self._extract_data(&response)?;
@@ -390,8 +386,13 @@ impl<'a> DouyinRequest<'a> {
                 "API error: {prompts}"
             )));
         }
-        if self.is_account_banned(&response.data.user) {
-            return Err(ExtractorError::StreamerBanned);
+        if let Some(user) = &response.data.user {
+            if self.is_account_banned(user) {
+                return Err(ExtractorError::StreamerBanned);
+            }
+        } else {
+            let msg = response.data.message.as_ref().unwrap_or(&"Unknown error");
+            return Err(ExtractorError::ValidationError(format!("API error: {msg}")));
         }
         Ok(())
     }
@@ -404,7 +405,8 @@ impl<'a> DouyinRequest<'a> {
         response
             .data
             .data
-            .first()
+            .as_ref()
+            .and_then(|data| data.first())
             .ok_or_else(|| ExtractorError::ValidationError("No room data available".to_string()))
     }
 
@@ -714,7 +716,7 @@ impl PlatformExtractor for Douyin {
         let web_rid = extract_rid(&self.extractor.url)?;
         debug!("extract web_rid: {}", web_rid);
 
-        let mut request = DouyinRequest::new(self, web_rid);
+        let mut request = DouyinRequest::new(self.extractor.cookies.clone(), self, web_rid);
         request.extract().await
     }
 }
@@ -729,7 +731,7 @@ mod tests {
     use crate::extractor::platforms::douyin::models::{DouyinAvatarThumb, DouyinUserInfo};
     use crate::extractor::platforms::douyin::utils::GlobalTtwidManager;
 
-    const TEST_URL: &str = "https://live.douyin.com/pt000101";
+    const TEST_URL: &str = "https://live.douyin.com/Esdeathkami.";
 
     #[tokio::test]
     #[ignore]
@@ -788,7 +790,11 @@ mod tests {
         let config_global = Douyin::new(TEST_URL.to_string(), default_client(), None, None)
             .ttwid_mode(TtwidManagementMode::Global);
 
-        let mut request_global = DouyinRequest::new(&config_global, "123".to_string());
+        let mut request_global = DouyinRequest::new(
+            config_global.extractor.cookies.clone(),
+            &config_global,
+            "123".to_string(),
+        );
         request_global.ensure_ttwid().await.unwrap();
         assert_eq!(
             request_global.cookies.get("ttwid"),
@@ -800,8 +806,11 @@ mod tests {
             Douyin::new(TEST_URL.to_string(), default_client(), None, None)
                 .ttwid("preset_ttwid".to_string());
 
-        let mut request_per_extractor_set =
-            DouyinRequest::new(&config_per_extractor_set, "123".to_string());
+        let mut request_per_extractor_set = DouyinRequest::new(
+            config_per_extractor_set.extractor.cookies.clone(),
+            &config_per_extractor_set,
+            "123".to_string(),
+        );
         request_per_extractor_set.ensure_ttwid().await.unwrap();
         assert_eq!(
             request_per_extractor_set.cookies.get("ttwid"),
@@ -816,7 +825,8 @@ mod tests {
     #[test]
     fn test_is_account_banned() {
         let config = Douyin::new(TEST_URL.to_string(), default_client(), None, None);
-        let request = DouyinRequest::new(&config, "123".to_string());
+        let request =
+            DouyinRequest::new(config.extractor.cookies.clone(), &config, "123".to_string());
 
         let banned_user = DouyinUserInfo {
             id_str: "1",

@@ -1,9 +1,9 @@
 #![allow(dead_code, unused_variables)]
 
+use rustc_hash::FxHashMap;
 use serde::de::Deserializer;
 use serde::{Deserialize, Serialize};
 use std::borrow::Cow;
-use rustc_hash::FxHashMap;
 
 #[derive(Deserialize, Debug)]
 
@@ -53,11 +53,14 @@ pub(crate) struct DouyinPcResponseData<'a> {
     #[serde(borrow)]
     pub prompts: Option<&'a str>,
     #[serde(borrow)]
-    pub data: Vec<DouyinPcData<'a>>,
+    pub data: Option<Vec<DouyinPcData<'a>>>,
     #[serde(borrow)]
-    pub user: DouyinUserInfo<'a>,
+    pub user: Option<DouyinUserInfo<'a>>,
     #[serde(borrow)]
-    pub enter_room_id: &'a str,
+    pub enter_room_id: Option<&'a str>,
+
+    #[serde(borrow)]
+    pub message: Option<&'a str>,
 }
 
 #[derive(Deserialize, Debug)]
