@@ -156,9 +156,10 @@ pub struct CliArgs {
     #[arg(
         short = 'n',
         long = "name",
-        help = "Output file name template with placeholders (e.g., '%Y%m%d_%H%M%S_p%i'). Supported placeholders: %Y (year), %m (month), %d (day), %H (hour), %M (minute), %S (second), %i (output index)"
+        help = "Output file name template with placeholders (e.g., %u%Y%m%d_%H%M%S_p%i'). Supported placeholders: %u (unique identifier), %Y (year), %m (month), %d (day), %H (hour), %M (minute), %S (second), %i (output index)",
+        default_value = "%u%Y%m%d_%H%M%S_p%i"
     )]
-    pub output_name_template: Option<String>,
+    pub output_name_template: String,
 
     /// Custom HTTP headers for download requests
     #[arg(

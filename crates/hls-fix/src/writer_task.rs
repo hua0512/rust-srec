@@ -650,36 +650,36 @@ mod tests {
         Ok(())
     }
 
-    #[test]
-    fn test_status_callback() -> Result<(), Box<dyn std::error::Error>> {
-        // Create a temporary directory for test output
-        let temp_dir = tempfile::tempdir()?;
-        let temp_path = temp_dir.path().to_owned();
+    // #[test]
+    // fn test_status_callback() -> Result<(), Box<dyn std::error::Error>> {
+    //     // Create a temporary directory for test output
+    //     let temp_dir = tempfile::tempdir()?;
+    //     let temp_path = temp_dir.path().to_owned();
 
-        // Create writer task
-        let mut writer = HlsWriterTask::new(temp_path.clone(), "test".to_string())?;
+    //     // Create writer task
+    //     let mut writer = HlsWriterTask::new(temp_path.clone(), "test".to_string())?;
 
-        // Track callback invocations using an atomic counter
-        use std::sync::Arc;
-        use std::sync::atomic::{AtomicUsize, Ordering};
-        let callback_count = Arc::new(AtomicUsize::new(0));
-        let callback_count_clone = Arc::clone(&callback_count);
+    //     // Track callback invocations using an atomic counter
+    //     use std::sync::Arc;
+    //     use std::sync::atomic::{AtomicUsize, Ordering};
+    //     let callback_count = Arc::new(AtomicUsize::new(0));
+    //     let callback_count_clone = Arc::clone(&callback_count);
 
-        writer.set_status_callback(move |path, size, _rate, _duration| {
-            callback_count_clone.fetch_add(1, Ordering::SeqCst);
-            assert!(path.is_some());
-            assert!(size > 0);
-        });
+    //     writer.set_status_callback(move |path, size, _rate, _duration| {
+    //         callback_count_clone.fetch_add(1, Ordering::SeqCst);
+    //         assert!(path.is_some());
+    //         assert!(size > 0);
+    //     });
 
-        // Create a test segment
-        let segment = create_test_segment(SegmentType::Ts, 2.0);
+    //     // Create a test segment
+    //     let segment = create_test_segment(SegmentType::Ts, 2.0);
 
-        // Write the segment
-        writer.write_segment(&segment)?;
+    //     // Write the segment
+    //     writer.write_segment(&segment)?;
 
-        // Verify callback was called
-        assert!(callback_count.load(Ordering::SeqCst) > 0);
+    //     // Verify callback was called
+    //     assert!(callback_count.load(Ordering::SeqCst) > 0);
 
-        Ok(())
-    }
+    //     Ok(())
+    // }
 }

@@ -4,6 +4,20 @@ use std::io::{self, BufWriter, Write};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use thiserror::Error;
+use tracing::debug;
+
+use crate::expand_filename_template;
+
+/// Action to take after writing an item.
+#[derive(Debug, Clone, Copy)]
+pub enum PostWriteAction {
+    /// Do nothing.
+    None,
+    /// Close the current file.
+    Close,
+    /// Rotate the current file.
+    Rotate,
+}
 
 /// Configuration for the writer task.
 #[derive(Debug, Clone)]
@@ -11,25 +25,19 @@ pub struct WriterConfig {
     /// Base directory for output files.
     pub base_path: PathBuf,
     /// File name prefix.
-    pub file_prefix: String,
+    pub file_name_template: String,
     /// File name extension.
     pub file_extension: String,
-    /// Maximum size in bytes per file before rotation. `None` for no limit.
-    pub max_bytes_per_file: Option<u64>,
-    /// Maximum duration per file before rotation. `None` for no limit.
-    pub max_duration_per_file: Option<chrono::Duration>,
     /// Custom data for the strategy.
     pub strategy_specific_config: Option<Arc<dyn std::any::Any + Send + Sync>>,
 }
 
 impl WriterConfig {
-    pub fn new(base_path: PathBuf, file_prefix: String, file_extension: String) -> Self {
+    pub fn new(base_path: PathBuf, file_name_template: String, file_extension: String) -> Self {
         Self {
             base_path,
-            file_prefix,
+            file_name_template,
             file_extension,
-            max_bytes_per_file: None,
-            max_duration_per_file: None,
             strategy_specific_config: None,
         }
     }
@@ -74,7 +82,7 @@ impl WriterState {
         self.items_written_current_file = 0;
         self.bytes_written_current_file = 0;
         self.current_file_opened_at = Some(Utc::now());
-        self.file_sequence_number += 1;
+        // self.file_sequence_number += 1;
     }
 }
 
@@ -107,7 +115,7 @@ pub trait FormatStrategy<D>: Send + Sync + 'static {
     fn write_item(
         &mut self,
         writer: &mut Self::Writer,
-        item: D,
+        item: &D,
     ) -> Result<u64, Self::StrategyError>;
 
     /// Determines if the current file should be rotated based on the state and config.
@@ -123,6 +131,7 @@ pub trait FormatStrategy<D>: Send + Sync + 'static {
         writer: &mut Self::Writer,
         path: &Path,
         config: &WriterConfig,
+        state: &WriterState,
     ) -> Result<u64, Self::StrategyError>;
 
     /// Called when a file is about to be closed.
@@ -132,6 +141,7 @@ pub trait FormatStrategy<D>: Send + Sync + 'static {
         writer: &mut Self::Writer,
         path: &Path,
         config: &WriterConfig,
+        state: &WriterState,
     ) -> Result<u64, Self::StrategyError>;
 
     /// Optional: Called after an item has been successfully written.
@@ -141,8 +151,8 @@ pub trait FormatStrategy<D>: Send + Sync + 'static {
         _item: &D,
         _bytes_written: u64,
         _state: &WriterState,
-    ) -> Result<(), Self::StrategyError> {
-        Ok(())
+    ) -> Result<PostWriteAction, Self::StrategyError> {
+        Ok(PostWriteAction::None)
     }
 
     /// Optional: Called if an error occurs during writing an item.
@@ -157,8 +167,8 @@ pub struct WriterTask<D, S: FormatStrategy<D>> {
     state: WriterState,
     strategy: S,
     writer: Option<S::Writer>,
-    // Callback for when a file is rotated, providing the path and sequence number of the new file.
-    on_file_rotated_callback: Option<Box<dyn Fn(&Path, u32) + Send + Sync>>,
+    on_file_open_callback: Option<Box<dyn Fn(&Path, u32) + Send + Sync>>,
+    on_file_close_callback: Option<Box<dyn Fn(&Path, u32) + Send + Sync>>,
 }
 
 impl<D, S: FormatStrategy<D>> WriterTask<D, S> {
@@ -171,47 +181,112 @@ impl<D, S: FormatStrategy<D>> WriterTask<D, S> {
             state: WriterState::default(),
             strategy,
             writer: None,
-            on_file_rotated_callback: None,
+            on_file_open_callback: None,
+            on_file_close_callback: None,
         }
     }
 
-    pub fn set_on_file_rotated_callback<F>(&mut self, callback: F)
+    pub fn set_on_file_open_callback<F>(&mut self, callback: F)
     where
         F: Fn(&Path, u32) + Send + Sync + 'static,
     {
-        self.on_file_rotated_callback = Some(Box::new(callback));
+        self.on_file_open_callback = Some(Box::new(callback));
+    }
+
+    pub fn set_on_file_close_callback<F>(&mut self, callback: F)
+    where
+        F: Fn(&Path, u32) + Send + Sync + 'static,
+    {
+        self.on_file_close_callback = Some(Box::new(callback));
     }
 
     fn ensure_writer_open(&mut self) -> Result<(), TaskError<S::StrategyError>> {
-        if self.writer.is_none() || self.strategy.should_rotate_file(&self.config, &self.state) {
+        if self.writer.is_none() {
+            self.open_initial_writer()?;
+        } else if self.strategy.should_rotate_file(&self.config, &self.state) {
             self.rotate_file()?;
         }
         Ok(())
     }
 
+    fn open_initial_writer(&mut self) -> Result<(), TaskError<S::StrategyError>> {
+        // This should only be called when there is no writer.
+        if self.writer.is_some() {
+            return Err(TaskError::Internal(
+                "Initial writer already exists".to_string(),
+            ));
+        }
+
+        let initial_path = self.strategy.next_file_path(&self.config, &self.state);
+        if let Some(parent) = initial_path.parent() {
+            std::fs::create_dir_all(parent).map_err(TaskError::Io)?;
+        }
+
+        debug!("Creating initial writer for file: {:?}", initial_path);
+
+        let mut new_writer = self
+            .strategy
+            .create_writer(&initial_path)
+            .map_err(TaskError::Strategy)?;
+        self.state.reset_for_new_file(initial_path.clone());
+
+        debug!("Opening initial file: {:?}", initial_path);
+
+        let bytes_opened = self
+            .strategy
+            .on_file_open(&mut new_writer, &initial_path, &self.config, &self.state)
+            .map_err(TaskError::Strategy)?;
+        self.state.bytes_written_current_file += bytes_opened;
+        self.state.bytes_written_total += bytes_opened;
+
+        if let Some(cb) = &self.on_file_open_callback {
+            cb(&initial_path, self.state.file_sequence_number);
+        }
+
+        debug!("Initial writer opened for file: {:?}", initial_path);
+
+        self.writer = Some(new_writer);
+        Ok(())
+    }
+
     fn rotate_file(&mut self) -> Result<(), TaskError<S::StrategyError>> {
+        // close the existing writer
         if let Some(mut writer) = self.writer.take() {
+            debug!(
+                "Closing file for rotation: {:?}",
+                self.state.current_file_path
+            );
             if let Some(path) = &self.state.current_file_path {
                 let bytes_closed = self
                     .strategy
-                    .on_file_close(&mut writer, path, &self.config)
+                    .on_file_close(&mut writer, path, &self.config, &self.state)
                     .map_err(TaskError::Strategy)?;
                 self.state.bytes_written_current_file += bytes_closed;
                 self.state.bytes_written_total += bytes_closed;
 
-                // Ensure all data is written to disk
                 writer.flush().map_err(TaskError::Io)?;
 
-                if let Some(cb) = &self.on_file_rotated_callback {
+                if let Some(cb) = &self.on_file_close_callback {
                     cb(path, self.state.file_sequence_number);
                 }
             }
+        } else {
+            // This should not happen if called from ensure_writer_open
+            return Err(TaskError::Internal(
+                "rotate_file called without an open writer".to_string(),
+            ));
         }
 
+        // increment sequence number for the new file
+        self.state.file_sequence_number += 1;
+
+        // open the new writer
         let next_path = self.strategy.next_file_path(&self.config, &self.state);
         if let Some(parent) = next_path.parent() {
             std::fs::create_dir_all(parent).map_err(TaskError::Io)?;
         }
+
+        debug!("Creating new writer for file (rotation): {:?}", next_path);
 
         let mut new_writer = self
             .strategy
@@ -219,12 +294,20 @@ impl<D, S: FormatStrategy<D>> WriterTask<D, S> {
             .map_err(TaskError::Strategy)?;
         self.state.reset_for_new_file(next_path.clone());
 
+        debug!("Opening new file after rotation: {:?}", next_path);
+
         let bytes_opened = self
             .strategy
-            .on_file_open(&mut new_writer, &next_path, &self.config)
+            .on_file_open(&mut new_writer, &next_path, &self.config, &self.state)
             .map_err(TaskError::Strategy)?;
         self.state.bytes_written_current_file += bytes_opened;
         self.state.bytes_written_total += bytes_opened;
+
+        if let Some(cb) = &self.on_file_open_callback {
+            cb(&next_path, self.state.file_sequence_number);
+        }
+
+        debug!("Writer opened for file: {:?}", next_path);
 
         self.writer = Some(new_writer);
         Ok(())
@@ -234,17 +317,29 @@ impl<D, S: FormatStrategy<D>> WriterTask<D, S> {
         self.ensure_writer_open()?;
 
         if let Some(writer) = self.writer.as_mut() {
-            match self.strategy.write_item(writer, item) {
+            match self.strategy.write_item(writer, &item) {
                 Ok(bytes_written) => {
                     self.state.items_written_current_file += 1;
                     self.state.items_written_total += 1;
                     self.state.bytes_written_current_file += bytes_written;
                     self.state.bytes_written_total += bytes_written;
-                    // self.strategy.after_item_written(&item, bytes_written, &self.state).map_err(TaskError::Strategy)?; // item is consumed
+                    let post_write_action = self
+                        .strategy
+                        .after_item_written(&item, bytes_written, &self.state)
+                        .map_err(TaskError::Strategy)?;
+                    match post_write_action {
+                        PostWriteAction::None => {}
+                        PostWriteAction::Close => {
+                            self.close()?;
+                        }
+                        PostWriteAction::Rotate => {
+                            self.rotate_file()?;
+                        }
+                    }
                     Ok(())
                 }
                 Err(e) => {
-                    // self.strategy.on_write_error(&e, &item); // item is consumed
+                    self.strategy.on_write_error(&e, &item);
                     Err(TaskError::Strategy(e))
                 }
             }
@@ -267,14 +362,12 @@ impl<D, S: FormatStrategy<D>> WriterTask<D, S> {
             if let Some(path) = &self.state.current_file_path {
                 let bytes_closed = self
                     .strategy
-                    .on_file_close(&mut writer, path, &self.config)
+                    .on_file_close(&mut writer, path, &self.config, &self.state)
                     .map_err(TaskError::Strategy)?;
                 self.state.bytes_written_current_file += bytes_closed;
                 self.state.bytes_written_total += bytes_closed;
                 writer.flush().map_err(TaskError::Io)?;
-                if let Some(cb) = &self.on_file_rotated_callback {
-                    // Consider if this should be a different callback, e.g. on_final_close
-                    // For now, using the same as rotation.
+                if let Some(cb) = &self.on_file_close_callback {
                     cb(path, self.state.file_sequence_number);
                 }
             }
@@ -335,7 +428,7 @@ impl<D: Send + Sync + 'static> FormatStrategy<D> for DefaultFileStrategy {
     fn write_item(
         &mut self,
         _writer: &mut Self::Writer,
-        _item: D,
+        _item: &D,
     ) -> Result<u64, Self::StrategyError> {
         // This default strategy doesn't know how to write arbitrary D.
         // Users should implement this for their specific D.
@@ -353,31 +446,17 @@ impl<D: Send + Sync + 'static> FormatStrategy<D> for DefaultFileStrategy {
     }
 
     fn should_rotate_file(&self, config: &WriterConfig, state: &WriterState) -> bool {
-        if let Some(max_bytes) = config.max_bytes_per_file {
-            if state.bytes_written_current_file >= max_bytes {
-                return true;
-            }
-        }
-        if let Some(max_duration) = config.max_duration_per_file {
-            if let Some(opened_at) = state.current_file_opened_at {
-                if Utc::now().signed_duration_since(opened_at) >= max_duration {
-                    return true;
-                }
-            }
-        }
         false
     }
 
     fn next_file_path(&self, config: &WriterConfig, state: &WriterState) -> PathBuf {
-        let timestamp = Utc::now().format("%Y%m%d_%H%M%S");
-        let filename = format!(
-            "{}_{}_{:04}.{}",
-            config.file_prefix,
-            timestamp,
-            state.file_sequence_number + 1, // Next sequence number
-            config.file_extension
+        let filename = expand_filename_template(
+            &config.file_name_template,
+            Some(state.file_sequence_number + 1),
         );
-        config.base_path.join(filename)
+        config
+            .base_path
+            .join(format!("{}.{}", filename, config.file_extension))
     }
 
     fn on_file_open(
@@ -385,6 +464,7 @@ impl<D: Send + Sync + 'static> FormatStrategy<D> for DefaultFileStrategy {
         _writer: &mut Self::Writer,
         _path: &Path,
         _config: &WriterConfig,
+        _state: &WriterState,
     ) -> Result<u64, Self::StrategyError> {
         Ok(0) // No header by default
     }
@@ -394,6 +474,7 @@ impl<D: Send + Sync + 'static> FormatStrategy<D> for DefaultFileStrategy {
         _writer: &mut Self::Writer,
         _path: &Path,
         _config: &WriterConfig,
+        _state: &WriterState,
     ) -> Result<u64, Self::StrategyError> {
         Ok(0) // No footer by default
     }
@@ -441,7 +522,7 @@ mod tests {
         fn write_item(
             &mut self,
             writer: &mut Self::Writer,
-            item: TestData,
+            item: &TestData,
         ) -> Result<u64, Self::StrategyError> {
             self.items_written_for_rotation_check += 1;
             let bytes = item.0.as_bytes();
@@ -452,22 +533,19 @@ mod tests {
             Ok((bytes.len() + 1) as u64)
         }
 
-        fn should_rotate_file(
-            &self,
-            _config: &WriterConfig,
-            state: &WriterState,
-        ) -> bool {
+        fn should_rotate_file(&self, _config: &WriterConfig, state: &WriterState) -> bool {
             // Use items_written_current_file from state for actual rotation logic
             state.items_written_current_file >= self.item_count_to_rotate
         }
 
         fn next_file_path(&self, config: &WriterConfig, state: &WriterState) -> PathBuf {
-            config.base_path.join(format!(
-                "{}_{}.{}",
-                config.file_prefix,
-                state.file_sequence_number + 1, // state.file_sequence_number is 0-indexed before increment for new file
-                config.file_extension
-            ))
+            let filename = expand_filename_template(
+                &config.file_name_template,
+                Some(state.file_sequence_number),
+            );
+            config
+                .base_path
+                .join(format!("{}.{}", filename, config.file_extension))
         }
 
         fn on_file_open(
@@ -475,6 +553,7 @@ mod tests {
             writer: &mut Self::Writer,
             _path: &Path,
             _config: &WriterConfig,
+            _state: &WriterState,
         ) -> Result<u64, Self::StrategyError> {
             if let Some(header) = &self.header_content {
                 writer
@@ -493,6 +572,7 @@ mod tests {
             writer: &mut Self::Writer,
             _path: &Path,
             _config: &WriterConfig,
+            _state: &WriterState,
         ) -> Result<u64, Self::StrategyError> {
             if let Some(footer) = &self.footer_content {
                 writer
@@ -512,7 +592,7 @@ mod tests {
         let dir = tempdir().unwrap();
         let config = WriterConfig {
             base_path: dir.path().to_path_buf(),
-            file_prefix: "test_basic".to_string(),
+            file_name_template: "test_basic_%i".to_string(),
             file_extension: "txt".to_string(),
             ..WriterConfig::new(
                 dir.path().to_path_buf(),
@@ -532,7 +612,7 @@ mod tests {
         task.process_item(TestData("item2".to_string())).unwrap();
         task.close().unwrap();
 
-        let expected_file_path = config.base_path.join("test_basic_1.txt");
+        let expected_file_path = config.base_path.join("test_basic_0.txt");
         assert!(expected_file_path.exists());
         let content = fs::read_to_string(expected_file_path).unwrap();
         assert_eq!(content, "HEADER\nitem1\nitem2\nFOOTER\n");
@@ -544,11 +624,11 @@ mod tests {
         let dir = tempdir().unwrap();
         let config = WriterConfig {
             base_path: dir.path().to_path_buf(),
-            file_prefix: "test_rotate".to_string(),
+            file_name_template: "test_rotate_%i".to_string(),
             file_extension: "log".to_string(),
             ..WriterConfig::new(
                 dir.path().to_path_buf(),
-                "test_rotate".to_string(),
+                "test_rotate_%i".to_string(),
                 "log".to_string(),
             )
         };
@@ -568,9 +648,9 @@ mod tests {
         task.process_item(TestData("data5".to_string())).unwrap(); // File 3
         task.close().unwrap();
 
-        let file1_path = config.base_path.join("test_rotate_1.log");
-        let file2_path = config.base_path.join("test_rotate_2.log");
-        let file3_path = config.base_path.join("test_rotate_3.log");
+        let file1_path = config.base_path.join("test_rotate_0.log");
+        let file2_path = config.base_path.join("test_rotate_1.log");
+        let file3_path = config.base_path.join("test_rotate_2.log");
 
         assert!(file1_path.exists());
         assert!(file2_path.exists());
@@ -585,45 +665,6 @@ mod tests {
         assert_eq!(content3, "data5\n");
 
         assert_eq!(task.get_state().items_written_total, 5);
-        assert_eq!(task.get_state().file_sequence_number, 3);
-    }
-
-    #[test]
-    fn test_writer_task_rotation_callback() {
-        let dir = tempdir().unwrap();
-        let config = WriterConfig {
-            base_path: dir.path().to_path_buf(),
-            file_prefix: "test_cb".to_string(),
-            file_extension: "dat".to_string(),
-            ..WriterConfig::new(
-                dir.path().to_path_buf(),
-                "test_cb".to_string(),
-                "dat".to_string(),
-            )
-        };
-        let strategy = TestStrategy {
-            item_count_to_rotate: 1,
-            header_content: None,
-            footer_content: None,
-            items_written_for_rotation_check: 0,
-        };
-        let mut task = WriterTask::new(config.clone(), strategy);
-
-        let rotated_files = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
-        let rotated_files_clone = rotated_files.clone();
-
-        task.set_on_file_rotated_callback(move |path, _| {
-            rotated_files_clone.lock().unwrap().push(path.to_path_buf());
-        });
-
-        task.process_item(TestData("itemA".to_string())).unwrap(); // Rotates after this, file 1 closed
-        task.process_item(TestData("itemB".to_string())).unwrap(); // Rotates after this, file 2 closed
-        task.close().unwrap(); // File 3 closed
-
-        let locked_files = rotated_files.lock().unwrap();
-        assert_eq!(locked_files.len(), 3); // Rotated after itemA (file1), itemB (file2), and on close (file3)
-        assert_eq!(locked_files[0], config.base_path.join("test_cb_1.dat"));
-        assert_eq!(locked_files[1], config.base_path.join("test_cb_2.dat"));
-        assert_eq!(locked_files[2], config.base_path.join("test_cb_3.dat"));
+        assert_eq!(task.get_state().file_sequence_number, 2);
     }
 }

@@ -1,6 +1,8 @@
+use std::fmt::Display;
+
 use bytes::Bytes;
 use m3u8_rs::MediaSegment;
-use ts::{TsParser, Pat, Pmt, StreamType};
+use ts::{Pat, Pmt, StreamType, TsParser};
 
 use crate::resolution::{self, ResolutionDetector};
 
@@ -15,6 +17,17 @@ pub enum SegmentType {
     M4sMedia,
     /// End of playlist marker
     EndMarker,
+}
+
+impl Display for SegmentType {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            SegmentType::Ts => write!(f, "ts"),
+            SegmentType::M4sInit => write!(f, "mp4"),
+            SegmentType::M4sMedia => write!(f, "m4s"),
+            SegmentType::EndMarker => write!(f, "end_marker"),
+        }
+    }
 }
 
 /// Common trait for segment data
@@ -58,21 +71,21 @@ impl TsSegmentData {
     pub fn parse_psi_tables(&self) -> Result<(Option<Pat>, Vec<Pmt>), ts::TsError> {
         let mut parser = TsParser::new();
         parser.parse_packets(self.data.as_ref())?;
-        
+
         let pat = parser.pat().cloned();
         let pmts = parser.pmts().values().cloned().collect();
-        
+
         Ok((pat, pmts))
     }
 
     /// Parse TS segments with zero-copy approach for minimal memory usage
     /// Returns stream information without copying descriptor data
     pub fn parse_psi_tables_zero_copy(&self) -> Result<TsStreamInfo, ts::TsError> {
-        use ts::{ZeroCopyTsParser, PatRef, PmtRef};
-        
+        use ts::{PatRef, PmtRef, ZeroCopyTsParser};
+
         let mut parser = ZeroCopyTsParser::new();
         let mut stream_info = TsStreamInfo::default();
-        
+
         parser.parse_packets(
             self.data.as_ref(),
             |pat: PatRef<'_>| {
@@ -108,23 +121,23 @@ impl TsSegmentData {
 
                 stream_info.programs.push(program_info);
                 Ok(())
-            }
+            },
         )?;
 
         Ok(stream_info)
     }
-    
+
     /// Get video streams from this TS segment using zero-copy parsing
     pub fn get_video_streams_zero_copy(&self) -> Result<Vec<(u16, StreamType)>, ts::TsError> {
         let stream_info = self.parse_psi_tables_zero_copy()?;
         let mut video_streams = Vec::new();
-        
+
         for program in stream_info.programs {
             for stream in program.video_streams {
                 video_streams.push((stream.pid, stream.stream_type));
             }
         }
-        
+
         Ok(video_streams)
     }
 
@@ -132,13 +145,13 @@ impl TsSegmentData {
     pub fn get_audio_streams_zero_copy(&self) -> Result<Vec<(u16, StreamType)>, ts::TsError> {
         let stream_info = self.parse_psi_tables_zero_copy()?;
         let mut audio_streams = Vec::new();
-        
+
         for program in stream_info.programs {
             for stream in program.audio_streams {
                 audio_streams.push((stream.pid, stream.stream_type));
             }
         }
-        
+
         Ok(audio_streams)
     }
 
@@ -146,15 +159,18 @@ impl TsSegmentData {
     pub fn get_all_streams_zero_copy(&self) -> Result<Vec<(u16, StreamType)>, ts::TsError> {
         let stream_info = self.parse_psi_tables_zero_copy()?;
         let mut all_streams = Vec::new();
-        
+
         for program in stream_info.programs {
-            for stream in program.video_streams.into_iter()
+            for stream in program
+                .video_streams
+                .into_iter()
                 .chain(program.audio_streams)
-                .chain(program.other_streams) {
+                .chain(program.other_streams)
+            {
                 all_streams.push((stream.pid, stream.stream_type));
             }
         }
-        
+
         Ok(all_streams)
     }
 
@@ -172,12 +188,12 @@ impl TsSegmentData {
             Ok(stream_info) => {
                 let mut video_count = 0;
                 let mut audio_count = 0;
-                
+
                 for program in &stream_info.programs {
                     video_count += program.video_streams.len();
                     audio_count += program.audio_streams.len();
                 }
-                
+
                 let mut summary = Vec::new();
                 if video_count > 0 {
                     summary.push(format!("{} video stream(s)", video_count));
@@ -185,7 +201,7 @@ impl TsSegmentData {
                 if audio_count > 0 {
                     summary.push(format!("{} audio stream(s)", audio_count));
                 }
-                
+
                 if summary.is_empty() {
                     Some("No recognized streams".to_string())
                 } else {
@@ -195,49 +211,49 @@ impl TsSegmentData {
             Err(_) => Some("Failed to parse streams".to_string()),
         }
     }
-    
+
     /// Get video streams from this TS segment
     pub fn get_video_streams(&self) -> Result<Vec<(u16, StreamType)>, ts::TsError> {
         let (_, pmts) = self.parse_psi_tables()?;
         let mut video_streams = Vec::new();
-        
+
         for pmt in pmts {
             for stream in pmt.video_streams() {
                 video_streams.push((stream.elementary_pid, stream.stream_type));
             }
         }
-        
+
         Ok(video_streams)
     }
-    
+
     /// Get audio streams from this TS segment
     pub fn get_audio_streams(&self) -> Result<Vec<(u16, StreamType)>, ts::TsError> {
         let (_, pmts) = self.parse_psi_tables()?;
         let mut audio_streams = Vec::new();
-        
+
         for pmt in pmts {
             for stream in pmt.audio_streams() {
                 audio_streams.push((stream.elementary_pid, stream.stream_type));
             }
         }
-        
+
         Ok(audio_streams)
     }
-    
+
     /// Get all elementary streams from this TS segment
     pub fn get_all_streams(&self) -> Result<Vec<(u16, StreamType)>, ts::TsError> {
         let (_, pmts) = self.parse_psi_tables()?;
         let mut all_streams = Vec::new();
-        
+
         for pmt in pmts {
             for stream in &pmt.streams {
                 all_streams.push((stream.elementary_pid, stream.stream_type));
             }
         }
-        
+
         Ok(all_streams)
     }
-    
+
     /// Check if this TS segment contains specific stream types
     pub fn contains_stream_type(&self, stream_type: StreamType) -> bool {
         match self.get_all_streams() {
@@ -245,22 +261,22 @@ impl TsSegmentData {
             Err(_) => false,
         }
     }
-    
+
     /// Get program numbers from PAT
     pub fn get_program_numbers(&self) -> Result<Vec<u16>, ts::TsError> {
         let (pat, _) = self.parse_psi_tables()?;
         Ok(pat.map(|p| p.program_numbers()).unwrap_or_default())
     }
-    
+
     /// Check if this segment contains PAT/PMT tables using zero-copy parser
     /// This is the preferred method for performance and memory efficiency
     pub fn has_psi_tables(&self) -> bool {
-        use ts::ZeroCopyTsParser;
         use std::cell::Cell;
-        
+        use ts::ZeroCopyTsParser;
+
         let mut parser = ZeroCopyTsParser::new();
         let found_psi = Cell::new(false);
-        
+
         let result = parser.parse_packets(
             self.data.as_ref(),
             |_pat| {
@@ -270,9 +286,9 @@ impl TsSegmentData {
             |_pmt| {
                 found_psi.set(true);
                 Ok(())
-            }
+            },
         );
-        
+
         result.is_ok() && found_psi.get()
     }
 
@@ -331,16 +347,24 @@ impl StreamProfile {
 
     /// Get primary video codec
     pub fn primary_video_codec(&self) -> Option<&'static str> {
-        if self.has_h265 { Some("H.265/HEVC") }
-        else if self.has_h264 { Some("H.264/AVC") }
-        else { None }
+        if self.has_h265 {
+            Some("H.265/HEVC")
+        } else if self.has_h264 {
+            Some("H.264/AVC")
+        } else {
+            None
+        }
     }
 
     /// Get primary audio codec
     pub fn primary_audio_codec(&self) -> Option<&'static str> {
-        if self.has_aac { Some("AAC") }
-        else if self.has_ac3 { Some("AC-3") }
-        else { None }
+        if self.has_aac {
+            Some("AAC")
+        } else if self.has_ac3 {
+            Some("AC-3")
+        } else {
+            None
+        }
     }
 
     /// Get a brief codec description
@@ -579,12 +603,12 @@ impl HlsData {
     pub fn is_pmt_or_pat(&self) -> bool {
         if let HlsData::TsData(ts) = self {
             // Use zero-copy parser for efficient and reliable PAT/PMT detection
-            use ts::ZeroCopyTsParser;
             use std::cell::Cell;
-            
+            use ts::ZeroCopyTsParser;
+
             let mut parser = ZeroCopyTsParser::new();
             let found_psi = Cell::new(false);
-            
+
             // Parse packets and check for PAT/PMT using proper TS parsing
             let result = parser.parse_packets(
                 ts.data.as_ref(),
@@ -595,9 +619,9 @@ impl HlsData {
                 |_pmt| {
                     found_psi.set(true);
                     Ok(())
-                }
+                },
             );
-            
+
             // Return true if we successfully found PAT or PMT tables
             result.is_ok() && found_psi.get()
         } else {
@@ -634,7 +658,9 @@ impl HlsData {
     }
 
     /// Get video streams from TS segments using traditional parsing (for compatibility)
-    pub fn get_ts_video_streams_traditional(&self) -> Option<Result<Vec<(u16, StreamType)>, ts::TsError>> {
+    pub fn get_ts_video_streams_traditional(
+        &self,
+    ) -> Option<Result<Vec<(u16, StreamType)>, ts::TsError>> {
         match self {
             HlsData::TsData(ts) => Some(ts.get_video_streams()),
             _ => None,
@@ -642,7 +668,9 @@ impl HlsData {
     }
 
     /// Get video streams from TS segments using zero-copy parsing (only for TS data)
-    pub fn get_ts_video_streams_zero_copy(&self) -> Option<Result<Vec<(u16, StreamType)>, ts::TsError>> {
+    pub fn get_ts_video_streams_zero_copy(
+        &self,
+    ) -> Option<Result<Vec<(u16, StreamType)>, ts::TsError>> {
         match self {
             HlsData::TsData(ts) => Some(ts.get_video_streams_zero_copy()),
             _ => None,
@@ -659,7 +687,9 @@ impl HlsData {
     }
 
     /// Get audio streams from TS segments using traditional parsing (for compatibility)
-    pub fn get_ts_audio_streams_traditional(&self) -> Option<Result<Vec<(u16, StreamType)>, ts::TsError>> {
+    pub fn get_ts_audio_streams_traditional(
+        &self,
+    ) -> Option<Result<Vec<(u16, StreamType)>, ts::TsError>> {
         match self {
             HlsData::TsData(ts) => Some(ts.get_audio_streams()),
             _ => None,
@@ -676,7 +706,9 @@ impl HlsData {
     }
 
     /// Get all elementary streams from TS segments using traditional parsing (for compatibility)
-    pub fn get_ts_all_streams_traditional(&self) -> Option<Result<Vec<(u16, StreamType)>, ts::TsError>> {
+    pub fn get_ts_all_streams_traditional(
+        &self,
+    ) -> Option<Result<Vec<(u16, StreamType)>, ts::TsError>> {
         match self {
             HlsData::TsData(ts) => Some(ts.get_all_streams()),
             _ => None,
@@ -722,29 +754,27 @@ impl HlsData {
     /// Get a summary of streams using traditional parsing (for compatibility)
     pub fn get_stream_summary_traditional(&self) -> Option<String> {
         match self {
-            HlsData::TsData(ts) => {
-                match ts.get_all_streams() {
-                    Ok(streams) => {
-                        let mut summary = Vec::new();
-                        let video_count = streams.iter().filter(|(_, st)| st.is_video()).count();
-                        let audio_count = streams.iter().filter(|(_, st)| st.is_audio()).count();
-                        
-                        if video_count > 0 {
-                            summary.push(format!("{} video stream(s)", video_count));
-                        }
-                        if audio_count > 0 {
-                            summary.push(format!("{} audio stream(s)", audio_count));
-                        }
-                        
-                        if summary.is_empty() {
-                            Some("No recognized streams".to_string())
-                        } else {
-                            Some(summary.join(", "))
-                        }
+            HlsData::TsData(ts) => match ts.get_all_streams() {
+                Ok(streams) => {
+                    let mut summary = Vec::new();
+                    let video_count = streams.iter().filter(|(_, st)| st.is_video()).count();
+                    let audio_count = streams.iter().filter(|(_, st)| st.is_audio()).count();
+
+                    if video_count > 0 {
+                        summary.push(format!("{} video stream(s)", video_count));
                     }
-                    Err(_) => Some("Failed to parse streams".to_string()),
+                    if audio_count > 0 {
+                        summary.push(format!("{} audio stream(s)", audio_count));
+                    }
+
+                    if summary.is_empty() {
+                        Some("No recognized streams".to_string())
+                    } else {
+                        Some(summary.join(", "))
+                    }
                 }
-            }
+                Err(_) => Some("Failed to parse streams".to_string()),
+            },
             _ => None,
         }
     }
@@ -793,14 +823,14 @@ impl HlsData {
 
     /// Quick check if this TS segment contains AAC audio (zero-copy)
     pub fn has_aac_audio(&self) -> bool {
-        self.ts_contains_stream_type(StreamType::AdtsAac) || 
-        self.ts_contains_stream_type(StreamType::LatmAac)
+        self.ts_contains_stream_type(StreamType::AdtsAac)
+            || self.ts_contains_stream_type(StreamType::LatmAac)
     }
 
     /// Quick check if this TS segment contains AC-3 audio (zero-copy)
     pub fn has_ac3_audio(&self) -> bool {
-        self.ts_contains_stream_type(StreamType::Ac3) || 
-        self.ts_contains_stream_type(StreamType::EAc3)
+        self.ts_contains_stream_type(StreamType::Ac3)
+            || self.ts_contains_stream_type(StreamType::EAc3)
     }
 
     /// Get a compact stream profile for this segment (zero-copy)

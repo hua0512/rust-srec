@@ -15,3 +15,10 @@ pub mod tag;
 pub mod video;
 pub mod writer;
 pub mod writer_async;
+
+pub use data::{FlvData, FlvDataOwned};
+pub use error::FlvError;
+pub use header::FlvHeader;
+pub use tag::{FlvTag, FlvTagData, FlvTagOwned, FlvTagType, FlvUtil};
+pub use writer::FlvWriter;
+pub use writer_async::FlvEncoder;

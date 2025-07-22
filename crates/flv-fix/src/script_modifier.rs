@@ -171,7 +171,13 @@ fn update_script_metadata(
     );
 
     // Read the script data tag
-    let script_tag = flv::parser::FlvParser::parse_tag(&mut reader)?.unwrap().0;
+    let script_tag = match flv::parser::FlvParser::parse_tag(&mut reader)? {
+        Some((tag, _)) => tag,
+        None => {
+            warn!("No script tag found in file, skipping stats injection.");
+            return Ok(());
+        }
+    };
 
     let script_data = match script_tag.data {
         FlvTagData::ScriptData(data) => data,

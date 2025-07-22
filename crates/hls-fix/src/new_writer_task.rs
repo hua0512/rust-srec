@@ -1,0 +1,196 @@
+use std::{
+    fs::OpenOptions,
+    io::{BufWriter, Write},
+    path::PathBuf,
+    sync::{Arc, mpsc::Receiver},
+};
+
+use hls::{HlsData, M4sData, SegmentType, segment::SegmentData};
+use pipeline_common::{
+    FormatStrategy, PostWriteAction, TaskError, WriterConfig, WriterState, WriterTask,
+    expand_filename_template,
+};
+use thiserror::Error;
+use tracing::debug;
+
+use crate::analyzer::HlsAnalyzer;
+
+pub type StatusCallback =
+    Arc<dyn Fn(Option<&PathBuf>, u64, f64, Option<u32>) + Send + Sync + 'static>;
+
+pub struct HlsFormatStrategy {
+    analyzer: HlsAnalyzer,
+}
+
+#[derive(Debug, thiserror::Error)]
+pub enum HlsStrategyError {
+    #[error("IO Error: {0}")]
+    Io(#[from] std::io::Error),
+    #[error("Task Join Error: {0}")]
+    Join(#[from] tokio::task::JoinError),
+    #[error("Analyzer error: {0}")]
+    Analyzer(String),
+    #[error("Pipeline error: {0}")]
+    Pipeline(#[from] pipeline_common::PipelineError),
+}
+
+impl HlsFormatStrategy {
+    pub fn new(status_callback: Option<StatusCallback>) -> Self {
+        Self {
+            analyzer: HlsAnalyzer::new(),
+        }
+    }
+}
+
+impl FormatStrategy<HlsData> for HlsFormatStrategy {
+    type Writer = BufWriter<std::fs::File>;
+    type StrategyError = HlsStrategyError;
+
+    fn create_writer(&self, path: &std::path::Path) -> Result<Self::Writer, Self::StrategyError> {
+        debug!("Creating writer for path: {}", path.display());
+        let file = OpenOptions::new()
+            .write(true)
+            .create(true)
+            .truncate(true)
+            .open(path)?;
+        Ok(BufWriter::with_capacity(1024 * 1024, file))
+    }
+
+    fn write_item(
+        &mut self,
+        writer: &mut Self::Writer,
+        item: &HlsData,
+    ) -> Result<u64, Self::StrategyError> {
+        match item {
+            HlsData::TsData(ts) => {
+                self.analyzer
+                    .analyze_segment(item)
+                    .map_err(HlsStrategyError::Analyzer)?;
+                writer.write_all(&ts.data)?;
+                Ok(ts.data.len() as u64)
+            }
+            HlsData::M4sData(m4s_data) => {
+                self.analyzer
+                    .analyze_segment(item)
+                    .map_err(HlsStrategyError::Analyzer)?;
+                match m4s_data {
+                    M4sData::InitSegment(init) => {
+                        writer.write_all(&init.data)?;
+                        Ok(init.data.len() as u64)
+                    }
+                    M4sData::Segment(segment) => {
+                        writer.write_all(&segment.data)?;
+                        Ok(segment.data.len() as u64)
+                    }
+                }
+            }
+            // do nothing for end marker, it will be handled in after_item_written
+            HlsData::EndMarker => Ok(0),
+        }
+    }
+
+    fn should_rotate_file(&self, config: &WriterConfig, state: &WriterState) -> bool {
+        false
+    }
+
+    fn next_file_path(&self, config: &WriterConfig, state: &WriterState) -> PathBuf {
+        let filename =
+            expand_filename_template(&config.file_name_template, Some(state.file_sequence_number));
+        let path = config.base_path.join(filename);
+        let new_path = path.with_extension(&config.file_extension);
+        debug!("Next file path: {}", new_path.display());
+        new_path
+    }
+
+    fn on_file_open(
+        &mut self,
+        writer: &mut Self::Writer,
+        path: &std::path::Path,
+        config: &WriterConfig,
+        state: &WriterState,
+    ) -> Result<u64, Self::StrategyError> {
+        Ok(0)
+    }
+
+    fn on_file_close(
+        &mut self,
+        writer: &mut Self::Writer,
+        path: &std::path::Path,
+        config: &WriterConfig,
+        state: &WriterState,
+    ) -> Result<u64, Self::StrategyError> {
+        Ok(0)
+    }
+
+    fn after_item_written(
+        &mut self,
+        item: &HlsData,
+        _bytes_written: u64,
+        _state: &WriterState,
+    ) -> Result<PostWriteAction, Self::StrategyError> {
+        if matches!(item, HlsData::EndMarker) {
+            let stats = self
+                .analyzer
+                .build_stats()
+                .map_err(HlsStrategyError::Analyzer)?;
+            debug!("HLS stats: {:?}", stats);
+            self.analyzer.reset();
+            Ok(PostWriteAction::Rotate)
+        } else {
+            Ok(PostWriteAction::None)
+        }
+    }
+}
+
+/// Error type for the `HlsWriter`.
+#[derive(Debug, Error)]
+pub enum HlsWriterError {
+    /// An error occurred in the underlying writer task.
+    #[error("Writer task error: {0}")]
+    Task(#[from] TaskError<HlsStrategyError>),
+
+    /// An error was received from the input stream.
+    #[error("Input stream error: {0}")]
+    InputError(pipeline_common::PipelineError),
+}
+
+pub struct HlsWriter {
+    writer_task: WriterTask<HlsData, HlsFormatStrategy>,
+}
+
+impl HlsWriter {
+    pub fn new(output_dir: PathBuf, base_name: String, extension: String) -> Self {
+        let writer_config = WriterConfig::new(output_dir, base_name, extension);
+        let strategy = HlsFormatStrategy::new(None);
+        let writer_task = WriterTask::new(writer_config, strategy);
+        Self { writer_task }
+    }
+
+    pub fn get_state(&self) -> &WriterState {
+        self.writer_task.get_state()
+    }
+
+    pub fn run(
+        &mut self,
+        receiver: Receiver<Result<HlsData, pipeline_common::PipelineError>>,
+    ) -> Result<(usize, u32), HlsWriterError> {
+        for result in receiver.iter() {
+            match result {
+                Ok(hls_data) => {
+                    self.writer_task.process_item(hls_data)?;
+                }
+                Err(e) => {
+                    tracing::error!("Error in received HLS data: {}", e);
+                    return Err(HlsWriterError::InputError(e));
+                }
+            }
+        }
+        self.writer_task.close()?;
+
+        let final_state = self.get_state();
+        let total_tags_written = final_state.items_written_total;
+        let files_created = final_state.file_sequence_number;
+
+        Ok((total_tags_written, files_created))
+    }
+}

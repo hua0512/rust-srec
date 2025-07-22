@@ -22,7 +22,7 @@
 //! - `pipeline`: Stream processing pipeline implementation
 //! - `script_modifier`: Utilities for manipulating FLV script tags
 //! - `utils`: Helper functions and utilities
-//! - `writer_task`: Asynchronous FLV writing functionality
+//! - `writer`: Asynchronous FLV writing functionality
 
 mod adapter;
 mod analyzer;
@@ -31,16 +31,16 @@ mod operators;
 mod pipeline;
 mod script_modifier;
 mod utils;
+pub mod writer;
 mod writer_task;
 
 #[cfg(test)]
 pub mod test_utils;
 
 pub use adapter::flv_error_to_pipeline_error;
-pub use analyzer::*;
+pub use analyzer::{AnalyzerError, FlvAnalyzer};
 pub use constants::*;
 pub use operators::*;
 pub use pipeline::*;
 pub use script_modifier::*;
 pub use utils::*;
-pub use writer_task::*;

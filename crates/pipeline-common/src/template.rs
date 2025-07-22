@@ -1,5 +1,7 @@
+use std::time::{SystemTime, UNIX_EPOCH};
+
 /// Expand filename template with placeholders similar to FFmpeg
-pub fn expand_filename_template(template: &str, file_count: Option<u32>) -> String {
+pub fn expand_filename_template(template: &str, sequence_number: Option<u32>) -> String {
     use chrono::{Datelike, Local, Timelike};
 
     let now = Local::now();
@@ -36,11 +38,19 @@ pub fn expand_filename_template(template: &str, file_count: Option<u32>) -> Stri
                         chars.next();
                     }
                     'i' => {
-                        if let Some(count) = file_count {
+                        if let Some(count) = sequence_number {
                             result.push_str(&format!("{count:03}")); // Output index with 3 decimals
                         } else {
                             result.push('1'); // Default to 1 if count is None
                         }
+                        chars.next();
+                    }
+                    't' => {
+                        let timestamp = SystemTime::now()
+                            .duration_since(UNIX_EPOCH)
+                            .unwrap()
+                            .as_secs();
+                        result.push_str(&timestamp.to_string());
                         chars.next();
                     }
 
@@ -53,6 +63,7 @@ pub fn expand_filename_template(template: &str, file_count: Option<u32>) -> Stri
                     // Unrecognized placeholder, treat as literal
                     _ => {
                         result.push('%');
+                        result.push(chars.next().unwrap());
                     }
                 }
             } else {
@@ -67,6 +78,8 @@ pub fn expand_filename_template(template: &str, file_count: Option<u32>) -> Stri
     // Sanitize the entire filename to ensure it's valid
     sanitize_filename(&result)
 }
+
+const DEFAULT_FILENAME: &str = "output";
 
 /// Sanitize a string for use as a filename
 pub fn sanitize_filename(input: &str) -> String {
@@ -91,7 +104,7 @@ pub fn sanitize_filename(input: &str) -> String {
 
     // Use a default name if the result is empty
     if result.is_empty() {
-        crate::DEFAULT_FILENAME.to_owned()
+        DEFAULT_FILENAME.to_string()
     } else {
         // Truncate to reasonable length if too long
         if result.len() > 200 {

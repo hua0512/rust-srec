@@ -12,7 +12,7 @@ pub async fn process_inputs(
     inputs: &[String],
     output_dir: &Path,
     config: &mut ProgramConfig,
-    name_template: Option<&str>,
+    name_template: &str,
     progress_manager: &mut ProgressManager,
 ) -> Result<(), Box<dyn std::error::Error>> {
     if inputs.is_empty() {
@@ -40,26 +40,26 @@ pub async fn process_inputs(
         let input_index = index + 1;
 
         // Log which input we're processing
-        info!(
-            input_index = input_index,
-            total_inputs = inputs_len,
-            input = %input,
-            "Processing input ({}/{})",
-            input_index,
-            inputs_len
-        );
+        // info!(
+        //     input_index = input_index,
+        //     total_inputs = inputs_len,
+        //     input = %input,
+        //     "Processing input ({}/{})",
+        //     input_index,
+        //     inputs_len
+        // );
 
-        // Update progress manager if it's not disabled - reuse the string buffer
-        if !progress_manager.is_disabled() {
-            status_buffer.clear();
-            status_buffer.push_str("Processing input (");
-            status_buffer.push_str(&input_index.to_string());
-            status_buffer.push('/');
-            status_buffer.push_str(&inputs_len.to_string());
-            status_buffer.push_str(") - ");
-            status_buffer.push_str(input);
-            progress_manager.set_status(&status_buffer);
-        }
+        // // Update progress manager if it's not disabled - reuse the string buffer
+        // if !progress_manager.is_disabled() {
+        //     status_buffer.clear();
+        //     status_buffer.push_str("Processing input (");
+        //     status_buffer.push_str(&input_index.to_string());
+        //     status_buffer.push('/');
+        //     status_buffer.push_str(&inputs_len.to_string());
+        //     status_buffer.push_str(") - ");
+        //     status_buffer.push_str(input);
+        //     progress_manager.set_status(&status_buffer);
+        // }
 
         // Process based on input type
         if input.starts_with("http://") || input.starts_with("https://") {

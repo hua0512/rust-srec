@@ -70,23 +70,12 @@ impl<W: Write + Seek> FlvWriter<W> {
         })
     }
 
-    /// Creates a new FLV writer with the specified output writer
-    ///
-    /// # Arguments
-    ///
-    /// * `writer` - A writer implementing Write + Seek traits
-    /// * `has_audio` - Whether the FLV file will contain audio
-    /// * `has_video` - Whether the FLV file will contain video
-    ///
-    /// # Returns
-    ///
-    /// A Result containing the FlvWriter or an IO error
-    pub fn with_header(mut writer: W, header: &FlvHeader) -> io::Result<Self> {
+    pub fn write_header(&mut self, header: &FlvHeader) -> io::Result<()> {
         // Write FLV signature ("FLV")
-        writer.write_all(&[0x46, 0x4C, 0x56])?; // "FLV"
+        self.writer.write_all(&[0x46, 0x4C, 0x56])?; // "FLV"
 
         // Write version (0x01)
-        writer.write_u8(header.version)?;
+        self.writer.write_u8(header.version)?;
 
         // Write flags (bit 2 for audio, bit 0 for video)
         let mut flags = 0_u8;
@@ -96,21 +85,14 @@ impl<W: Write + Seek> FlvWriter<W> {
         if header.has_video {
             flags |= 0x01;
         }
-        writer.write_u8(flags)?;
+        self.writer.write_u8(flags)?;
 
         // Write data offset (always 9 for standard FLV header)
-        writer.write_u32::<BigEndian>(9)?;
+        self.writer.write_u32::<BigEndian>(9)?;
 
         // Write initial previous tag size (0 before first tag)
-        writer.write_u32::<BigEndian>(0)?;
-
-        Ok(Self {
-            writer,
-            has_audio: header.has_audio,
-            has_video: header.has_video,
-            timestamp: 0,
-            previous_tag_size: 0,
-        })
+        self.writer.write_u32::<BigEndian>(0)?;
+        Ok(())
     }
 
     /// Writes an FLV tag header to the output
@@ -186,8 +168,8 @@ impl<W: Write + Seek> FlvWriter<W> {
         Ok(())
     }
 
-    pub fn write_tag_f(&mut self, tag: FlvTag) -> io::Result<()> {
-        self.write_tag(tag.tag_type, tag.data, tag.timestamp_ms)?;
+    pub fn write_tag_f(&mut self, tag: &FlvTag) -> io::Result<()> {
+        self.write_tag(tag.tag_type, tag.data.clone(), tag.timestamp_ms)?;
         Ok(())
     }
 
@@ -295,6 +277,16 @@ impl<W: Write + Seek> FlvWriter<W> {
     }
 }
 
+impl<W: Write + Seek> Write for FlvWriter<W> {
+    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+        self.writer.write(buf)
+    }
+
+    fn flush(&mut self) -> io::Result<()> {
+        self.flush()
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -304,7 +296,8 @@ mod tests {
     fn test_write_header() {
         let buffer = Cursor::new(Vec::new());
 
-        let writer = FlvWriter::with_header(buffer, &FlvHeader::new(true, true)).unwrap();
+        let mut writer = FlvWriter::new(buffer).unwrap();
+        writer.write_header(&FlvHeader::new(true, true)).unwrap();
 
         // Get the inner buffer
         let buffer = writer.writer.into_inner();

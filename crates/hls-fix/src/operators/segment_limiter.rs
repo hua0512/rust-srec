@@ -2,6 +2,7 @@ use bytes::Bytes;
 use hls::{HlsData, M4sData, M4sInitSegmentData, SegmentType};
 use pipeline_common::{PipelineError, Processor};
 use std::time::Duration;
+use tracing::debug;
 
 /// HLS processor: Limits HLS segments based on size or duration
 pub struct SegmentLimiterOperator {
@@ -36,18 +37,31 @@ impl SegmentLimiterOperator {
 
         // Check size limit
         if let Some(max_size) = self.max_size {
-            let segment_size = segment_data.len() as u64;
-            if self.current_size + segment_size > max_size {
-                return true;
+            if max_size > 0 {
+                let segment_size = segment_data.len() as u64;
+                if self.current_size + segment_size > max_size {
+                    debug!(
+                        "Size limit reached: {} > {}",
+                        self.current_size + segment_size,
+                        max_size
+                    );
+                    return true;
+                }
             }
         }
 
         // Check duration limit
         if let Some(max_duration) = self.max_duration {
-            let segment_duration_ms = (segment_duration * 1000.0) as u64;
-            let segment_duration = Duration::from_millis(segment_duration_ms);
-            if self.current_duration + segment_duration > max_duration {
-                return true;
+            if !max_duration.is_zero() {
+                let segment_duration = Duration::from_secs((segment_duration) as u64);
+                if self.current_duration + segment_duration > max_duration {
+                    debug!(
+                        "Duration limit reached: {:?} > {:?}",
+                        self.current_duration + segment_duration,
+                        max_duration
+                    );
+                    return true;
+                }
             }
         }
 
@@ -56,6 +70,7 @@ impl SegmentLimiterOperator {
 
     /// Reset tracking counters
     fn reset_counters(&mut self) {
+        debug!("Resetting counters");
         self.current_duration = Duration::from_secs(0);
         self.current_size = 0;
         self.init_segment_sent = false;
@@ -64,7 +79,7 @@ impl SegmentLimiterOperator {
     /// Add segment to current tracking
     fn track_segment(&mut self, segment_data: &Bytes, segment_duration: f32) {
         self.current_size += segment_data.len() as u64;
-        self.current_duration += Duration::from_millis((segment_duration * 1000.0) as u64);
+        self.current_duration += Duration::from_secs((segment_duration) as u64);
     }
 }
 
@@ -74,21 +89,18 @@ impl Processor<HlsData> for SegmentLimiterOperator {
         input: HlsData,
         output: &mut dyn FnMut(HlsData) -> Result<(), PipelineError>,
     ) -> Result<(), PipelineError> {
-        // Using new methods from the HlsData struct to simplify our code
         match input.segment_type() {
             SegmentType::Ts => {
                 if let HlsData::TsData(ts_data) = input {
-                    // Check if limit is reached
+                    // Check if the current segment would exceed the limit. If so, start a new sequence.
                     if self.is_limit_reached(&ts_data.data, ts_data.segment.duration) {
-                        // Send the last tag and reset
-                        output(HlsData::TsData(ts_data.clone()))?;
+                        output(HlsData::end_marker())?;
                         self.reset_counters();
-                    } else {
-                        // No limit reached, include the segment and track it
-                        let data_clone = ts_data.data.clone();
-                        output(HlsData::TsData(ts_data.clone()))?;
-                        self.track_segment(&data_clone, ts_data.segment.duration);
                     }
+
+                    // Unconditionally output the current segment and track its metrics.
+                    output(HlsData::TsData(ts_data.clone()))?;
+                    self.track_segment(&ts_data.data, ts_data.segment.duration);
                 }
             }
             SegmentType::M4sInit => {
@@ -105,33 +117,23 @@ impl Processor<HlsData> for SegmentLimiterOperator {
             }
             SegmentType::M4sMedia => {
                 if let HlsData::M4sData(M4sData::Segment(segment)) = input {
-                    // Check if limit is reached
+                    // Check if the current segment would exceed the limit. If so, start a new sequence.
                     if self.is_limit_reached(&segment.data, segment.segment.duration) {
-                        // Send the init segment if needed and the last segment, then reset
-                        if !self.init_segment_sent {
-                            if let Some(init_segment) = &self.init_segment {
-                                output(HlsData::M4sData(M4sData::InitSegment(
-                                    init_segment.clone(),
-                                )))?;
-                            }
-                        }
-                        output(HlsData::M4sData(M4sData::Segment(segment.clone())))?;
+                        output(HlsData::end_marker())?;
                         self.reset_counters();
-                    } else {
-                        // No limit reached, send init if needed, include the segment and track it
-                        if !self.init_segment_sent {
-                            if let Some(init_segment) = &self.init_segment {
-                                output(HlsData::M4sData(M4sData::InitSegment(
-                                    init_segment.clone(),
-                                )))?;
-                                self.init_segment_sent = true;
-                            }
-                        }
-
-                        let data_clone = segment.data.clone();
-                        output(HlsData::M4sData(M4sData::Segment(segment.clone())))?;
-                        self.track_segment(&data_clone, segment.segment.duration);
                     }
+
+                    // Ensure each new sequence starts with an init segment.
+                    if !self.init_segment_sent {
+                        if let Some(init_segment) = &self.init_segment {
+                            output(HlsData::M4sData(M4sData::InitSegment(init_segment.clone())))?;
+                            self.init_segment_sent = true;
+                        }
+                    }
+
+                    // Unconditionally output the current media segment and track its metrics.
+                    output(HlsData::M4sData(M4sData::Segment(segment.clone())))?;
+                    self.track_segment(&segment.data, segment.segment.duration);
                 }
             }
             SegmentType::EndMarker => {

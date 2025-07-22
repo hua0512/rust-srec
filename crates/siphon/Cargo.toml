@@ -50,7 +50,3 @@ hls-fix = { path = "../hls-fix" }
 
 [dev-dependencies]
 tokio = { version = "1.44.2", features = ["rt-multi-thread", "macros", "time"] }
-
-[[example]]
-name = "builder_example"
-path = "examples/builder_example.rs"

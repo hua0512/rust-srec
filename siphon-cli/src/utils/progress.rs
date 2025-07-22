@@ -1,6 +1,5 @@
-use flv_fix::FlvWriterTask;
-use hls_fix::HlsWriterTask;
 use indicatif::{FormattedDuration, MultiProgress, ProgressBar, ProgressStyle};
+use pipeline_common::{FormatStrategy, WriterTask};
 use std::time::Duration;
 
 use crate::utils::format_duration;
@@ -157,7 +156,11 @@ impl ProgressManager {
     }
 
     /// Sets up callbacks on a FlvWriterTask to update the progress bars
-    pub fn setup_writer_task_callbacks(&self, writer_task: &mut FlvWriterTask) {
+    pub fn setup_writer_task_callbacks<D, S>(&self, writer_task: &mut WriterTask<D, S>)
+    where
+        D: Send + Sync + 'static,
+        S: FormatStrategy<D>,
+    {
         // Skip setting up callbacks if progress manager is disabled
         if self.disabled {
             return;
@@ -166,30 +169,30 @@ impl ProgressManager {
         if let Some(file_progress) = &self.file_progress {
             let file_pb = file_progress.clone();
 
-            // Set up status callback for continuous progress updates
-            writer_task.set_status_callback(move |path, size, _rate, duration| {
-                if let Some(path) = path {
-                    let path_display = path
-                        .file_name()
-                        .unwrap_or_else(|| path.as_os_str())
-                        .to_string_lossy();
-                    file_pb.set_length(size);
-                    file_pb.set_position(size);
+            // // Set up status callback for continuous progress updates
+            // writer_task.set_on_file_open_callback(move |path, size, _rate, duration| {
+            //     if let Some(path) = path {
+            //         let path_display = path
+            //             .file_name()
+            //             .unwrap_or_else(|| path.as_os_str())
+            //             .to_string_lossy();
+            //         file_pb.set_length(size);
+            //         file_pb.set_position(size);
 
-                    // Display video duration prominently in the message
-                    file_pb.set_message(format!(
-                        "Duration: {} | {}",
-                        FormattedDuration(std::time::Duration::from_millis(
-                            duration.unwrap_or(0) as u64
-                        )),
-                        path_display,
-                    ));
-                }
-            });
+            //         // Display video duration prominently in the message
+            //         file_pb.set_message(format!(
+            //             "Duration: {} | {}",
+            //             FormattedDuration(std::time::Duration::from_millis(
+            //                 duration.unwrap_or(0) as u64
+            //             )),
+            //             path_display,
+            //         ));
+            //     }
+            // });
 
             // Set up segment open callback
             let status_pb_open = self.status_progress.clone();
-            writer_task.set_on_segment_open(move |path, segment_num| {
+            writer_task.set_on_file_open_callback(move |path, segment_num| {
                 let filename = path
                     .file_name()
                     .unwrap_or_else(|| path.as_os_str())
@@ -200,85 +203,14 @@ impl ProgressManager {
 
             // Set up segment close callback
             let status_pb_close = self.status_progress.clone();
-            writer_task.set_on_segment_close(move |path, segment_num, tags, duration| {
+            writer_task.set_on_file_close_callback(move |path, segment_num| {
                 let filename = path
                     .file_name()
                     .unwrap_or_else(|| path.as_os_str())
                     .to_string_lossy();
 
-                // Format duration if available
-                let duration_str = match duration {
-                    Some(ms) => format_duration(ms as f64 / 1000.0),
-                    None => "unknown duration".to_string(),
-                };
-
-                status_pb_close.set_message(format!(
-                    "Closed segment #{}: {} ({} tags, {})",
-                    segment_num, filename, tags, duration_str
-                ));
-            });
-        }
-    }
-
-    /// Sets up callbacks on a FlvWriterTask to update the progress bars
-    pub fn setup_hls_writer_task_callbacks(&self, writer_task: &mut HlsWriterTask) {
-        // Skip setting up callbacks if progress manager is disabled
-        if self.disabled {
-            return;
-        }
-
-        if let Some(file_progress) = &self.file_progress {
-            let file_pb = file_progress.clone();
-
-            // Set up status callback for continuous progress updates
-            writer_task.set_status_callback(move |path, size, _rate, duration| {
-                if let Some(path) = path {
-                    let path_display = path
-                        .file_name()
-                        .unwrap_or_else(|| path.as_os_str())
-                        .to_string_lossy();
-                    file_pb.set_length(size);
-                    file_pb.set_position(size);
-
-                    // Display video duration prominently in the message
-                    file_pb.set_message(format!(
-                        "Duration: {} | {}",
-                        FormattedDuration(std::time::Duration::from_millis(
-                            duration.unwrap_or(0) as u64
-                        )),
-                        path_display,
-                    ));
-                }
-            });
-
-            // Set up segment open callback
-            let status_pb_open = self.status_progress.clone();
-            writer_task.set_on_segment_open(move |path, segment_type| {
-                let filename = path
-                    .file_name()
-                    .unwrap_or_else(|| path.as_os_str())
-                    .to_string_lossy();
-                status_pb_open.set_message(format!(
-                    "Opened segment type #{:?}: {}",
-                    segment_type, filename
-                ));
-            });
-
-            // Set up segment close callback
-            let status_pb_close = self.status_progress.clone();
-            writer_task.set_on_segment_close(move |path, segment_num, tags, duration| {
-                let filename = path
-                    .file_name()
-                    .unwrap_or_else(|| path.as_os_str())
-                    .to_string_lossy();
-
-                // Format duration if available
-                let duration_str = format_duration(duration as f64 / 1000.0);
-
-                status_pb_close.set_message(format!(
-                    "Closed segment #{:?}: {} ({} tags, {})",
-                    segment_num, filename, tags, duration_str
-                ));
+                status_pb_close
+                    .set_message(format!("Closed segment #{}: {}", segment_num, filename));
             });
         }
     }

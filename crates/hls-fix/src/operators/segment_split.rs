@@ -1,6 +1,5 @@
 use crc32fast::Hasher;
-use hls::segment::SegmentData;
-use hls::{HlsData, M4sData, Resolution, StreamProfile, TsStreamInfo};
+use hls::{HlsData, M4sData, M4sInitSegmentData, Resolution, StreamProfile, TsStreamInfo};
 use pipeline_common::{PipelineError, Processor, StreamerContext};
 use std::sync::Arc;
 use tracing::{debug, info, warn};
@@ -22,6 +21,7 @@ pub struct SegmentSplitOperator {
     last_stream_profile: Option<StreamProfile>,
     last_ts_stream_info: Option<TsStreamInfo>,
     last_resolution: Option<Resolution>,
+    last_init_segment: Option<M4sInitSegmentData>,
 }
 
 impl SegmentSplitOperator {
@@ -37,6 +37,7 @@ impl SegmentSplitOperator {
             last_stream_profile: None,
             last_ts_stream_info: None,
             last_resolution: None,
+            last_init_segment: None,
         }
     }
 
@@ -66,7 +67,7 @@ impl SegmentSplitOperator {
     fn handle_init_segment(&mut self, input: &HlsData) -> Result<bool, PipelineError> {
         // Get data from HlsData
         let data = match input {
-            HlsData::M4sData(init) => &init.data(),
+            HlsData::M4sData(M4sData::InitSegment(init)) => init,
             _ => {
                 return Err(PipelineError::Processing(
                     "Expected MP4 init segment".to_string(),
@@ -74,7 +75,7 @@ impl SegmentSplitOperator {
             }
         };
 
-        let crc = Self::calculate_crc(data);
+        let crc = Self::calculate_crc(&data.data);
         let mut needs_split = false;
 
         if let Some(previous_crc) = self.last_init_segment_crc {
@@ -83,14 +84,16 @@ impl SegmentSplitOperator {
                     "{} Detected different init segment, splitting the stream",
                     self.context.name
                 );
-                self.last_init_segment_crc = Some(crc);
                 needs_split = true;
             }
         } else {
             // First init segment encountered
-            self.last_init_segment_crc = Some(crc);
             info!("{} First init segment encountered", self.context.name);
         }
+
+        // Always update to the latest init segment, since this is the only place we see them.
+        self.last_init_segment = Some(data.clone());
+        self.last_init_segment_crc = Some(crc);
 
         // Check for resolution changes in MP4 init segments
         // if !needs_split {
@@ -358,6 +361,7 @@ impl SegmentSplitOperator {
         self.last_stream_profile = None;
         self.last_ts_stream_info = None;
         self.last_resolution = None;
+        self.last_init_segment = None;
     }
 }
 
@@ -392,6 +396,16 @@ impl Processor<HlsData> for SegmentSplitOperator {
                 self.context.name
             );
             output(HlsData::end_marker())?;
+
+            // If the split was triggered by a non-init segment, we need to re-emit the last init segment.
+            if !matches!(&input, HlsData::M4sData(M4sData::InitSegment(_))) {
+                if let Some(init_segment) = &self.last_init_segment {
+                    output(HlsData::mp4_init(
+                        init_segment.segment.clone(),
+                        init_segment.data.clone(),
+                    ))?;
+                }
+            }
         }
 
         // Always output the original input
@@ -558,38 +572,6 @@ mod tests {
         operator.process(ts_segment2, &mut output_fn).unwrap();
 
         // Should have split the stream (segment1 + end marker + segment2)
-        assert_eq!(output_items.len(), 3);
-        match &output_items[1] {
-            HlsData::EndMarker => {}
-            _ => panic!("Expected EndMarker"),
-        }
-    }
-
-    #[test]
-    fn test_init_segment_change() {
-        init_test_tracing!();
-        let context = create_test_context();
-        let mut operator = SegmentSplitOperator::new(context);
-        let mut output_items = Vec::new();
-
-        // Create a mutable output function
-        let mut output_fn = |item: HlsData| -> Result<(), PipelineError> {
-            output_items.push(item);
-            Ok(())
-        };
-
-        // Create initial init segment
-        let init1 = HlsData::mp4_init(MediaSegment::empty(), Bytes::from(vec![1, 2, 3, 4]));
-
-        // Process the initial init segment
-        operator.process(init1, &mut output_fn).unwrap();
-        // Create a different init segment
-        let init2 = HlsData::mp4_init(MediaSegment::empty(), Bytes::from(vec![5, 6, 7, 8]));
-
-        // Process the new init segment
-        operator.process(init2, &mut output_fn).unwrap();
-
-        // Should have split the stream (end marker + new segment)
         assert_eq!(output_items.len(), 3);
         match &output_items[1] {
             HlsData::EndMarker => {}

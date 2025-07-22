@@ -231,7 +231,7 @@ async fn main() {
         &args.input,
         &output_dir,
         &mut program_config,
-        args.output_name_template.as_deref(),
+        &args.output_name_template,
         &mut progress_manager,
     )
     .await

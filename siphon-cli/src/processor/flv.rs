@@ -3,12 +3,13 @@ use flv::error::FlvError;
 use flv::parser_async::FlvDecoderStream;
 use flv_fix::FlvPipeline;
 use flv_fix::flv_error_to_pipeline_error;
-use flv_fix::{FlvWriterTask, WriterError};
+use flv_fix::writer::{FlvWriter, FlvWriterError};
 use futures::StreamExt;
 use indicatif::HumanBytes;
 use pipeline_common::{PipelineError, StreamerContext};
 use siphon_engine::DownloaderInstance;
-use std::path::Path;
+use std::path::{Path, PathBuf};
+use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tokio::fs::File;
 use tokio::io::BufReader;
@@ -134,17 +135,28 @@ pub async fn process_file(
 
     // Create writer task and run it
     let writer_handle = tokio::task::spawn_blocking(move || {
-        let mut writer_task = FlvWriterTask::new(output_dir, base_name)?;
+        // Define the status callback closure
+        let status_callback = {
+            let pb_clone = progress_clone.clone();
+            Arc::new(
+                move |path: Option<&PathBuf>, size: u64, _rate: f64, duration: Option<u32>| {
+                    if let Some(file_pb) = pb_clone.get_file_progress() {
+                        file_pb.set_position(size);
+                        if let Some(d) = duration {
+                            file_pb.set_message(format!("{}s", d / 1000));
+                        }
+                    }
+                    if let Some(p) = path {
+                        pb_clone.set_status(&format!("Writing to {}", p.display()));
+                    }
+                },
+            )
+        };
 
-        // Set up progress bar callbacks
-        progress_clone.setup_writer_task_callbacks(&mut writer_task);
-
-        writer_task.run(processed_stream)?;
-
-        Ok::<_, WriterError>((
-            writer_task.total_tags_written(),
-            writer_task.files_created(),
-        ))
+        // Create and run the new writer
+        let mut flv_writer =
+            FlvWriter::new(output_dir.clone(), base_name.clone(), Some(status_callback));
+        flv_writer.run(processed_stream)
     });
 
     // Process the FLV data
@@ -165,7 +177,17 @@ pub async fn process_file(
 
     drop(sender); // Close the channel to signal completion
 
-    let (total_tags_written, files_created) = writer_handle.await??;
+    let writer_result = writer_handle.await?;
+    let (tags_written, files_created) = match writer_result {
+        Ok(stats) => stats,
+        Err(e) => match e {
+            FlvWriterError::InputError(e) => {
+                warn!("Writer channel closed prematurely: {}", e);
+                (0, 0) // Default stats on input error
+            }
+            FlvWriterError::Task(e) => return Err(e.into()),
+        },
+    };
 
     if let Some(p) = process_task {
         p.await?;
@@ -175,19 +197,20 @@ pub async fn process_file(
 
     // Finish progress bars with summary
     pb_manager.finish(&format!(
-        "Processed {} ({} tags) in {:?}",
+        "Processed {} in {:?}. Tags written: {}, Files created: {}",
         HumanBytes(bytes_processed),
-        total_tags_written,
-        elapsed
+        elapsed,
+        tags_written,
+        files_created
     ));
 
     info!(
         path = %input_path.display(),
         input_size = %format_bytes(file_size),
         duration = ?elapsed,
+        tags_written,
+        files_created,
         processing_enabled = config.enable_processing,
-        tags_processed = total_tags_written,
-        files_created = files_created,
         "Processing complete"
     );
 
@@ -199,7 +222,7 @@ pub async fn process_flv_stream(
     url_str: &str,
     output_dir: &Path,
     config: &ProgramConfig,
-    name_template: Option<&str>,
+    name_template: &str,
     pb_manager: &mut ProgressManager,
     downloader: &mut DownloaderInstance,
 ) -> Result<u64, Box<dyn std::error::Error>> {
@@ -209,9 +232,7 @@ pub async fn process_flv_stream(
     tokio::fs::create_dir_all(output_dir).await?;
 
     // Parse the URL for file naming
-    let base_name = if let Some(template) = name_template {
-        template.to_string()
-    } else {
+    let url_name = {
         // Extract name from URL
         let url = url_str.parse::<reqwest::Url>()?;
         let file_name = url
@@ -233,8 +254,7 @@ pub async fn process_flv_stream(
         }
     };
 
-    let use_base_name = name_template.is_some();
-
+    let base_name = name_template.replace("%u", &url_name);
     // Setup progress reporting
     pb_manager.add_url_progress(url_str);
     let progress_clone = pb_manager.clone();
@@ -277,7 +297,7 @@ pub async fn process_flv_stream(
             let data = data.map_err(|e| {
                 FlvError::Io(std::io::Error::new(
                     std::io::ErrorKind::Other,
-                    format!("Downloader error: {}", e),
+                    e.to_string(),
                 ))
             })?;
             output_manager.write_bytes(&data)?;
@@ -367,33 +387,37 @@ pub async fn process_flv_stream(
             pipeline.process(input, &mut output).unwrap();
         });
 
-        let writer_progress = pb_manager.clone();
-
         // Add a file progress bar if progress manager is enabled
         if !pb_manager.is_disabled() {
             pb_manager.add_file_progress(&base_name);
         }
 
-        let output_dir = output_dir.to_path_buf();
-
+        let output_dir_clone = output_dir.to_path_buf();
+        let base_name_clone = base_name.clone();
         // Write task
         let writer_handle = tokio::task::spawn_blocking(move || {
-            let mut writer_task = FlvWriterTask::new(output_dir, base_name)?;
-
-            // Configure writer to use the base name directly if a template was provided
-            writer_task.use_base_name_directly(use_base_name);
-
-            // Set up progress bar callbacks if progress is enabled
-            writer_progress.setup_writer_task_callbacks(&mut writer_task);
-
-            let result = writer_task.run(output_rx);
-
-            result.map(|_| {
-                (
-                    writer_task.total_tags_written(),
-                    writer_task.files_created(),
+            // Define the status callback closure
+            let status_callback = {
+                let pb_clone = progress_clone.clone();
+                Arc::new(
+                    move |path: Option<&PathBuf>, size: u64, _rate: f64, duration: Option<u32>| {
+                        if let Some(file_pb) = pb_clone.get_file_progress() {
+                            file_pb.set_position(size);
+                            if let Some(d) = duration {
+                                file_pb.set_message(format!("{}s", d / 1000));
+                            }
+                        }
+                        if let Some(p) = path {
+                            pb_clone.set_status(&format!("Writing to {}", p.display()));
+                        }
+                    },
                 )
-            })
+            };
+
+            // Create and run the new writer
+            let mut flv_writer =
+                FlvWriter::new(output_dir_clone, base_name_clone, Some(status_callback));
+            flv_writer.run(output_rx)
         });
 
         pb_manager.set_status("Downloading and processing FLV stream...");
@@ -404,7 +428,7 @@ pub async fn process_flv_stream(
             let converted_result = result.map_err(|e| {
                 FlvError::Io(std::io::Error::new(
                     std::io::ErrorKind::Other,
-                    format!("Downloader error: {}", e),
+                    e.to_string(),
                 ))
             });
 
@@ -420,7 +444,18 @@ pub async fn process_flv_stream(
         pb_manager.set_status("Processing FLV data...");
 
         // Wait for write task to finish
-        let (total_tags_written, files_created) = writer_handle.await??;
+        let writer_result = writer_handle.await?;
+        let (tags_written, files_created) = match writer_result {
+            Ok(stats) => stats,
+            Err(e) => match e {
+                FlvWriterError::InputError(e) => {
+                    warn!("Writer channel closed prematurely: {}", e);
+                    (0, 0) // Default stats on input error
+                }
+                FlvWriterError::Task(e) => return Err(e.into()),
+            },
+        };
+
         // Wait for processing task to finish
         let _ = process_task.await?; // Ensure task is finished
 
@@ -428,18 +463,18 @@ pub async fn process_flv_stream(
 
         // Final progress update
         pb_manager.finish(&format!(
-            "Processed {} tags into {} files in {:?}",
-            total_tags_written, files_created, elapsed
+            "Processed stream in {:?}. Tags written: {}, Files created: {}",
+            elapsed, tags_written, files_created
         ));
 
         info!(
             url = %url_str,
             duration = ?elapsed,
-            tags_processed = total_tags_written,
-            files_created = files_created,
+            tags_written,
+            files_created,
             "FLV processing complete"
         );
 
-        Ok(total_tags_written as u64)
+        Ok(tags_written as u64)
     }
 }

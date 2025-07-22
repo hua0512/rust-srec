@@ -248,7 +248,7 @@ mod test {
                     .map_err(|e| FlvError::Io(io::Error::other(format!("Pipeline error: {e}"))));
 
                 if output_tx.send(flv_result).is_err() {
-                    tracing::warn!("Output channel closed, stopping processing");
+                    tracing::warn!("Output channel closed, astopping processing");
                 }
             };
 

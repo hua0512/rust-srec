@@ -24,12 +24,18 @@ use thiserror::Error;
 pub mod context;
 pub mod pipeline;
 pub mod processor;
+mod template;
 pub mod test_utils;
+mod writer_task_common;
 
-pub use context::StreamerContext;
 /// Re-export key traits and types
+pub use context::StreamerContext;
 pub use pipeline::Pipeline;
 pub use processor::Processor;
+pub use template::{expand_filename_template, sanitize_filename};
+pub use writer_task_common::{
+    FormatStrategy, PostWriteAction, TaskError, WriterConfig, WriterState, WriterTask,
+};
 
 pub use test_utils::create_test_context;
 
