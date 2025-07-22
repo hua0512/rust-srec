@@ -89,7 +89,6 @@ impl CommandExecutor {
         retries: u32,
     ) -> Result<()> {
         let pb = self.create_progress_bar("Extracting...");
-
         let result = self
             .extract_with_retry(url, cookies, extras, timeout_duration, retries)
             .await;
@@ -352,6 +351,7 @@ impl CommandExecutor {
 
     fn create_progress_bar(&self, message: &str) -> ProgressBar {
         let pb = ProgressBar::new_spinner();
+        pb.enable_steady_tick(Duration::from_millis(500));
         pb.set_style(
             ProgressStyle::default_spinner()
                 .template("{spinner:.cyan} {msg}")
