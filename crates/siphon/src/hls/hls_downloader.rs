@@ -54,7 +54,7 @@ impl HlsDownloader {
         )
         .await;
 
-        let (client_event_rx, shutdown_tx, handles) = coordinator.unwrap();
+        let (client_event_rx, _shutdown_tx, _handles) = coordinator.unwrap();
 
         let stream = ReceiverStream::new(client_event_rx);
 
@@ -62,7 +62,7 @@ impl HlsDownloader {
         let stream = stream.filter_map(|event| async move {
             match event {
                 Ok(event) => match event {
-                    HlsStreamEvent::Data(data) => Some(Ok(data)),
+                    HlsStreamEvent::Data(data) => Some(Ok(*data)),
                     HlsStreamEvent::DiscontinuityTagEncountered { .. } => {
                         debug!("Discontinuity tag encountered");
                         Some(Ok(HlsData::EndMarker))

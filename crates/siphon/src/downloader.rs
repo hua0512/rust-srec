@@ -105,6 +105,7 @@ pub struct DownloadManager<P> {
     /// Optional cache manager
     cache_manager: Option<Arc<CacheManager>>,
     /// Configuration for this download manager
+    #[allow(dead_code)]
     config: DownloadManagerConfig,
 }
 

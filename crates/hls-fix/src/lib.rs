@@ -12,13 +12,10 @@
 //!
 //! - `pipeline`: HLS processing pipeline implementation
 
-mod adapter;
 pub mod analyzer;
-mod new_writer_task;
 pub mod operators;
 pub mod pipeline;
 mod writer_task;
 
-pub use adapter::detect_and_create_hls_data;
-pub use new_writer_task::HlsWriter;
 pub use pipeline::{HlsPipeline, HlsPipelineConfig};
+pub use writer_task::HlsWriter;

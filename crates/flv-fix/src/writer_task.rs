@@ -122,7 +122,7 @@ impl FormatStrategy<FlvData> for FlvFormatStrategy {
                 if self.last_header_received {
                     self.last_header_received = false;
                 }
-                let timestamp = tag.timestamp_ms;
+
                 self.current_tag_count += 1;
 
                 self.analyzer

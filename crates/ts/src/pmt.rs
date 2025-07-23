@@ -1,4 +1,4 @@
-use crate::{TsError, Result};
+use crate::{Result, TsError};
 
 /// Stream types defined in MPEG-2 and other standards
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -295,7 +295,9 @@ impl Pmt {
         // Parse section header
         let section_syntax_indicator = (data[1] & 0x80) != 0;
         if !section_syntax_indicator {
-            return Err(TsError::ParseError("PMT must have section syntax indicator set".to_string()));
+            return Err(TsError::ParseError(
+                "PMT must have section syntax indicator set".to_string(),
+            ));
         }
 
         let section_length = ((data[1] as u16 & 0x0F) << 8) | data[2] as u16;
@@ -384,12 +386,18 @@ impl Pmt {
 
     /// Get all video streams
     pub fn video_streams(&self) -> Vec<&PmtStream> {
-        self.streams.iter().filter(|s| s.stream_type.is_video()).collect()
+        self.streams
+            .iter()
+            .filter(|s| s.stream_type.is_video())
+            .collect()
     }
 
     /// Get all audio streams
     pub fn audio_streams(&self) -> Vec<&PmtStream> {
-        self.streams.iter().filter(|s| s.stream_type.is_audio()).collect()
+        self.streams
+            .iter()
+            .filter(|s| s.stream_type.is_audio())
+            .collect()
     }
 
     /// Get stream by PID
@@ -427,7 +435,9 @@ mod tests {
 
     #[test]
     fn test_pmt_invalid_table_id() {
-        let data = vec![0x01, 0x80, 0x0D, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00];
+        let data = vec![
+            0x01, 0x80, 0x0D, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        ];
         assert!(Pmt::parse(&data).is_err());
     }
 
@@ -436,10 +446,10 @@ mod tests {
         // Example PMT with one H.264 video stream
         let data = vec![
             0x02, // Table ID
-            0x80 | 0x00, // Section syntax indicator + section length high
+            0x80, // Section syntax indicator + section length high
             0x12, // Section length low (18 bytes total)
             0x00, 0x01, // Program number
-            0x00 | 0x01, // Version 0 + current/next = 1
+            0x01, // Version 0 + current/next = 1
             0x00, // Section number
             0x00, // Last section number
             0xE1, 0x00, // PCR PID (0x100)
@@ -461,4 +471,4 @@ mod tests {
         assert_eq!(pmt.streams[0].elementary_pid, 0x100);
         assert!(pmt.streams[0].stream_type.is_video());
     }
-} 
+}

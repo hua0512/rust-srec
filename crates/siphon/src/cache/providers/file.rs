@@ -45,10 +45,10 @@ impl FileCache {
         }
 
         // Use compare_exchange to ensure only one thread initializes
-        if !self
+        if self
             .initialized
             .compare_exchange(false, true, Ordering::Acquire, Ordering::Relaxed)
-            .is_err()
+            .is_ok()
         {
             // We won the race, do initialization
             fs::create_dir_all(&self.cache_dir).await?;
@@ -62,7 +62,7 @@ impl FileCache {
                 crate::cache::types::CacheResourceType::Segment,
                 crate::cache::types::CacheResourceType::Key,
             ] {
-                fs::create_dir_all(self.cache_dir.join(format!("{:?}", res_type))).await?;
+                fs::create_dir_all(self.cache_dir.join(format!("{res_type:?}"))).await?;
             }
 
             // Mark as fully initialized with release ordering
@@ -210,9 +210,8 @@ impl CacheProvider for FileCache {
             Err(e) => {
                 return Err(io::Error::new(
                     io::ErrorKind::InvalidData,
-                    format!("Failed to serialize metadata: {}", e),
-                )
-                .into());
+                    format!("Failed to serialize metadata: {e}"),
+                ));
             }
         };
 
@@ -334,12 +333,10 @@ impl CacheProvider for FileCache {
                 } else {
                     entry_count += 1;
                 }
+            } else if let Err(e) = fs::remove_file(&path).await {
+                warn!(path = ?path, error = %e, "Failed to remove cache file");
             } else {
-                if let Err(e) = fs::remove_file(&path).await {
-                    warn!(path = ?path, error = %e, "Failed to remove cache file");
-                } else {
-                    entry_count += 1;
-                }
+                entry_count += 1;
             }
         }
 

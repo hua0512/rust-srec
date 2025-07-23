@@ -2,7 +2,7 @@ use hls::HlsData;
 
 #[derive(Debug, Clone)]
 pub enum HlsStreamEvent {
-    Data(HlsData),
+    Data(Box<HlsData>),
     PlaylistRefreshed {
         media_sequence_base: u64,
         target_duration: f64,

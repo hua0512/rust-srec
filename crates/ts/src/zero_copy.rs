@@ -1,4 +1,4 @@
-use crate::{TsError, Result, StreamType};
+use crate::{Result, StreamType, TsError};
 use std::collections::HashMap;
 
 /// Zero-copy TS packet parser that references source data
@@ -65,10 +65,10 @@ impl<'data> TsPacketRef<'data> {
         }
 
         // Calculate payload offset
-        if adaptation_field_control == 0x01 || adaptation_field_control == 0x03 {
-            if offset < data.len() {
-                payload_offset = Some(offset);
-            }
+        if (adaptation_field_control == 0x01 || adaptation_field_control == 0x03)
+            && offset < data.len()
+        {
+            payload_offset = Some(offset);
         }
 
         Ok(TsPacketRef {
@@ -174,7 +174,9 @@ impl<'data> PatRef<'data> {
 
         let section_syntax_indicator = (data[1] & 0x80) != 0;
         if !section_syntax_indicator {
-            return Err(TsError::ParseError("PAT must have section syntax indicator set".to_string()));
+            return Err(TsError::ParseError(
+                "PAT must have section syntax indicator set".to_string(),
+            ));
         }
 
         let section_length = ((data[1] as u16 & 0x0F) << 8) | data[2] as u16;
@@ -238,11 +240,13 @@ impl<'data> Iterator for PatProgramIterator<'data> {
 
     fn next(&mut self) -> Option<Self::Item> {
         if self.offset + 4 <= self.data.len() {
-            let program_number = ((self.data[self.offset] as u16) << 8) | self.data[self.offset + 1] as u16;
-            let pmt_pid = ((self.data[self.offset + 2] as u16 & 0x1F) << 8) | self.data[self.offset + 3] as u16;
-            
+            let program_number =
+                ((self.data[self.offset] as u16) << 8) | self.data[self.offset + 1] as u16;
+            let pmt_pid = ((self.data[self.offset + 2] as u16 & 0x1F) << 8)
+                | self.data[self.offset + 3] as u16;
+
             self.offset += 4;
-            
+
             Some(PatProgramRef {
                 program_number,
                 pmt_pid,
@@ -301,7 +305,9 @@ impl<'data> PmtRef<'data> {
 
         let section_syntax_indicator = (data[1] & 0x80) != 0;
         if !section_syntax_indicator {
-            return Err(TsError::ParseError("PMT must have section syntax indicator set".to_string()));
+            return Err(TsError::ParseError(
+                "PMT must have section syntax indicator set".to_string(),
+            ));
         }
 
         let section_length = ((data[1] as u16 & 0x0F) << 8) | data[2] as u16;
@@ -325,7 +331,7 @@ impl<'data> PmtRef<'data> {
 
         let program_info_length = ((data[10] as u16 & 0x0F) << 8) | data[11] as u16;
         let program_info_offset = 12;
-        
+
         let streams_offset = 12 + program_info_length as usize;
         let streams_end = 3 + section_length as usize - 4; // Exclude CRC32
         let streams_length = streams_end - streams_offset;
@@ -374,9 +380,11 @@ impl<'data> Iterator for PmtStreamIterator<'data> {
     fn next(&mut self) -> Option<Self::Item> {
         if self.offset + 5 <= self.data.len() {
             let stream_type = StreamType::from(self.data[self.offset]);
-            let elementary_pid = ((self.data[self.offset + 1] as u16 & 0x1F) << 8) | self.data[self.offset + 2] as u16;
-            let es_info_length = ((self.data[self.offset + 3] as u16 & 0x0F) << 8) | self.data[self.offset + 4] as u16;
-            
+            let elementary_pid = ((self.data[self.offset + 1] as u16 & 0x1F) << 8)
+                | self.data[self.offset + 2] as u16;
+            let es_info_length = ((self.data[self.offset + 3] as u16 & 0x0F) << 8)
+                | self.data[self.offset + 4] as u16;
+
             let es_info_offset = self.offset + 5;
             if es_info_offset + es_info_length as usize > self.data.len() {
                 return Some(Err(TsError::InsufficientData {
@@ -435,39 +443,45 @@ impl ZeroCopyTsParser {
             let packet = TsPacketRef::parse(chunk)?;
 
             match packet.pid {
-                0x0000 => { // PAT
+                0x0000 => {
+                    // PAT
                     if let Some(psi_payload) = packet.psi_payload() {
                         let pat = PatRef::parse(psi_payload)?;
-                        
+
                         // Check if this is a new version
-                        let is_new = self.pat_version.map_or(true, |v| v != pat.version_number);
+                        let is_new = self.pat_version != Some(pat.version_number);
                         if is_new {
                             self.pat_version = Some(pat.version_number);
-                            
+
                             // Update program mapping
                             self.program_pids.clear();
                             for program in pat.programs() {
                                 if program.program_number != 0 {
-                                    self.program_pids.insert(program.program_number, program.pmt_pid);
+                                    self.program_pids
+                                        .insert(program.program_number, program.pmt_pid);
                                 }
                             }
-                            
+
                             on_pat(pat)?;
                         }
                     }
                 }
                 pid => {
                     // Check if this is a PMT PID
-                    if let Some(program_number) = self.program_pids.iter()
+                    if let Some(program_number) = self
+                        .program_pids
+                        .iter()
                         .find(|(_prog_num, pmt_pid)| **pmt_pid == pid)
-                        .map(|(prog_num, _pmt_pid)| *prog_num) {
-                        
+                        .map(|(prog_num, _pmt_pid)| *prog_num)
+                    {
                         if let Some(psi_payload) = packet.psi_payload() {
                             let pmt = PmtRef::parse(psi_payload)?;
-                            
+
                             // Check if this is a new version
-                            let is_new = self.pmt_versions.get(&program_number)
-                                .map_or(true, |&v| v != pmt.version_number);
+                            let is_new = self
+                                .pmt_versions
+                                .get(&program_number)
+                                .is_none_or(|&v| v != pmt.version_number);
                             if is_new {
                                 self.pmt_versions.insert(program_number, pmt.version_number);
                                 on_pmt(pmt)?;
@@ -490,13 +504,14 @@ impl ZeroCopyTsParser {
 
     /// Get estimated memory usage for the parser (for debugging/profiling)
     pub fn estimated_memory_usage(&self) -> usize {
-        std::mem::size_of::<Self>() +
-        self.program_pids.capacity() * (std::mem::size_of::<u16>() * 2) +
-        self.pmt_versions.capacity() * (std::mem::size_of::<u16>() + std::mem::size_of::<u8>())
+        std::mem::size_of::<Self>()
+            + self.program_pids.capacity() * (std::mem::size_of::<u16>() * 2)
+            + self.pmt_versions.capacity()
+                * (std::mem::size_of::<u16>() + std::mem::size_of::<u8>())
     }
 
     /// Get number of tracked programs (for debugging)
     pub fn program_count(&self) -> usize {
         self.program_pids.len()
     }
-} 
+}

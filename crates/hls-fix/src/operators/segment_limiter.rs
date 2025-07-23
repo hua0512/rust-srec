@@ -79,7 +79,7 @@ impl SegmentLimiterOperator {
     /// Add segment to current tracking
     fn track_segment(&mut self, segment_data: &Bytes, segment_duration: f32) {
         self.current_size += segment_data.len() as u64;
-        self.current_duration += Duration::from_secs((segment_duration) as u64);
+        self.current_duration += Duration::from_secs_f32(segment_duration);
     }
 }
 

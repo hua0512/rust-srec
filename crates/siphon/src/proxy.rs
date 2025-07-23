@@ -40,22 +40,22 @@ pub fn build_proxy_from_config(config: &ProxyConfig) -> Result<Proxy, String> {
     // Create the appropriate proxy based on type
     let mut proxy = match config.proxy_type {
         ProxyType::Http => {
-            Proxy::http(proxy_url).map_err(|e| format!("Invalid HTTP proxy URL: {}", e))?
+            Proxy::http(proxy_url).map_err(|e| format!("Invalid HTTP proxy URL: {e}"))?
         }
         ProxyType::Https => {
-            Proxy::https(proxy_url).map_err(|e| format!("Invalid HTTPS proxy URL: {}", e))?
+            Proxy::https(proxy_url).map_err(|e| format!("Invalid HTTPS proxy URL: {e}"))?
         }
         ProxyType::Socks5 => {
             // Make sure URL starts with socks5://
             let url = if proxy_url.starts_with("socks5://") {
                 proxy_url.to_string()
             } else {
-                format!("socks5://{}", proxy_url)
+                format!("socks5://{proxy_url}")
             };
 
-            Proxy::all(&url).map_err(|e| format!("Invalid SOCKS5 proxy URL: {}", e))?
+            Proxy::all(&url).map_err(|e| format!("Invalid SOCKS5 proxy URL: {e}"))?
         }
-        ProxyType::All => Proxy::all(proxy_url).map_err(|e| format!("Invalid proxy URL: {}", e))?,
+        ProxyType::All => Proxy::all(proxy_url).map_err(|e| format!("Invalid proxy URL: {e}"))?,
     };
 
     // Add authentication if provided

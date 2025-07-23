@@ -129,6 +129,7 @@ impl HlsStreamCoordinator {
         let mut shutdown_tx_for_playlist_engine = shutdown_tx.subscribe();
 
         let output_manager_handle = tokio::spawn(async move {
+            #[allow(clippy::never_loop)]
             loop {
                 debug!(
                     "OutputManager task (Coordinator): Top of select loop. is_live: {}",
@@ -201,7 +202,6 @@ impl HlsStreamCoordinator {
 }
 
 #[cfg(test)]
-
 mod tests {
     use super::*;
     use crate::hls::config::HlsConfig;
@@ -220,8 +220,8 @@ mod tests {
 
         let cache_config = CacheConfig {
             enabled: true,
-            disk_cache_path: None, // If None, we'll use system temp dir
-            max_disk_cache_size: 0 * 1024 * 1024, // 500MB
+            disk_cache_path: None,  // If None, we'll use system temp dir
+            max_disk_cache_size: 0, // 500MB
             max_memory_cache_size: 30 * 1024 * 1024, // 30MB
             default_ttl: Duration::from_secs(3600), // 1 hour
             segment_ttl: Duration::from_secs(2 * 60), // 2 minutes
@@ -249,7 +249,7 @@ mod tests {
             HlsStreamCoordinator::setup_and_spawn(initial_url, config, client, cache).await;
 
         assert!(result.is_ok());
-        let (mut client_event_rx, shutdown_tx, handles) = result.unwrap();
+        let (mut client_event_rx, _shutdown_tx, _handles) = result.unwrap();
 
         while let Some(event) = client_event_rx.recv().await {
             match event {

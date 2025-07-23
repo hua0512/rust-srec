@@ -46,13 +46,6 @@ pub struct HlsStats {
     pub ts_segments_duration: f32,
     pub mp4_segments_duration: f32,
 
-    // Format specific information
-    pub video_codec: Option<String>,
-    pub audio_codec: Option<String>,
-    pub resolution: Option<(u32, u32)>,
-    pub video_bitrate: Option<u32>,
-    pub audio_bitrate: Option<u32>,
-
     // Last segment info
     pub last_segment_type: Option<SegmentType>,
     pub last_segment_size: u64,
@@ -75,11 +68,6 @@ impl Default for HlsStats {
             mp4_media_segments_size: 0,
             ts_segments_duration: 0.0,
             mp4_segments_duration: 0.0,
-            video_codec: None,
-            audio_codec: None,
-            resolution: None,
-            video_bitrate: None,
-            audio_bitrate: None,
             last_segment_type: None,
             last_segment_size: 0,
             last_segment_duration: 0.0,
@@ -146,23 +134,6 @@ impl fmt::Display for HlsStats {
             self.calculate_overall_bitrate()
         )?;
 
-        writeln!(f, "  Media:")?;
-        if let Some(codec) = &self.video_codec {
-            writeln!(f, "    Video codec: {codec}")?;
-        }
-        if let Some(codec) = &self.audio_codec {
-            writeln!(f, "    Audio codec: {codec}")?;
-        }
-        if let Some((width, height)) = self.resolution {
-            writeln!(f, "    Resolution: {width}x{height}")?;
-        }
-        if let Some(bitrate) = self.video_bitrate {
-            writeln!(f, "    Video bitrate: {bitrate} kbps")?;
-        }
-        if let Some(bitrate) = self.audio_bitrate {
-            writeln!(f, "    Audio bitrate: {bitrate} kbps")?;
-        }
-
         writeln!(f, "  Segments:")?;
         writeln!(f, "    Total segments: {}", self.total_segment_count)?;
 
@@ -220,9 +191,6 @@ impl fmt::Display for HlsStats {
 #[derive(Default)]
 pub struct HlsAnalyzer {
     pub stats: HlsStats,
-
-    // Internal state for advanced analysis
-    has_analyzed_init_segment: bool,
 }
 
 impl HlsAnalyzer {
@@ -232,7 +200,6 @@ impl HlsAnalyzer {
 
     pub fn reset(&mut self) {
         self.stats.reset();
-        self.has_analyzed_init_segment = false;
     }
 
     /// Analyze a segment and update statistics
@@ -254,9 +221,6 @@ impl HlsAnalyzer {
                 self.stats.last_segment_type = Some(SegmentType::Ts);
                 self.stats.last_segment_size = segment_size;
                 self.stats.last_segment_duration = duration;
-
-                // Analyze TS segment content
-                self.analyze_ts_content(&ts_data.data)?;
             }
             HlsData::M4sData(M4sData::InitSegment(init_segment)) => {
                 self.stats.has_mp4_segments = true;
@@ -270,10 +234,6 @@ impl HlsAnalyzer {
                 self.stats.last_segment_type = Some(SegmentType::M4sInit);
                 self.stats.last_segment_size = segment_size;
                 self.stats.last_segment_duration = 0.0; // Init segments don't have duration
-
-                // Analyze init segment content
-                self.analyze_mp4_init_segment(&init_segment.data)?;
-                self.has_analyzed_init_segment = true;
             }
             HlsData::M4sData(M4sData::Segment(media_segment)) => {
                 self.stats.has_mp4_segments = true;
@@ -291,11 +251,6 @@ impl HlsAnalyzer {
                 self.stats.last_segment_type = Some(SegmentType::M4sMedia);
                 self.stats.last_segment_size = segment_size;
                 self.stats.last_segment_duration = duration;
-
-                // Analyze media segment content if needed
-                if !self.has_analyzed_init_segment {
-                    self.analyze_mp4_media_segment(&media_segment.data)?;
-                }
             }
             HlsData::EndMarker => {
                 debug!("End marker received, no analysis needed");
@@ -309,155 +264,8 @@ impl HlsAnalyzer {
         Ok(())
     }
 
-    /// Analyze TS segment content to extract codec and resolution information
-    fn analyze_ts_content(&mut self, data: &[u8]) -> Result<(), String> {
-        // Basic TS packet checks
-        if data.len() < 188 || data[0] != 0x47 {
-            return Err("Invalid TS packet".to_string());
-        }
-
-        // For a real implementation, this would analyze the TS packet structures
-        // to extract PMTs, video/audio PIDs, and parse codec information.
-        // This is complex and requires TS packet parsing, so we'll just set some
-        // placeholder values for now.
-
-        if self.stats.video_codec.is_none() {
-            // Assume H.264 video for simplicity - in reality, this would be extracted
-            self.stats.video_codec = Some("H.264/AVC".to_string());
-        }
-
-        if self.stats.audio_codec.is_none() {
-            // Assume AAC audio for simplicity - in reality, this would be extracted
-            self.stats.audio_codec = Some("AAC".to_string());
-        }
-
-        // For resolution, we would need to parse the video elementary stream
-        // and extract SPS (Sequence Parameter Set) for H.264
-        if self.stats.resolution.is_none() {
-            // Placeholder - in reality, this would be extracted
-            self.stats.resolution = Some((1280, 720));
-        }
-
-        Ok(())
-    }
-
-    /// Analyze MP4 initialization segment to extract codec and resolution information
-    fn analyze_mp4_init_segment(&mut self, data: &[u8]) -> Result<(), String> {
-        // For a real implementation, this would parse the MP4 boxes like 'moov', 'trak', 'stsd'
-        // to extract codec information and video dimensions.
-
-        // Check for a minimum valid size
-        if data.len() < 8 {
-            return Err("Invalid MP4 init segment, too small".to_string());
-        }
-
-        // Look for key MP4 boxes to set information
-        let mut i = 0;
-        while i < data.len() - 8 {
-            let box_size = ((data[i] as u32) << 24)
-                | ((data[i + 1] as u32) << 16)
-                | ((data[i + 2] as u32) << 8)
-                | (data[i + 3] as u32);
-
-            let box_type = &data[i + 4..i + 8];
-
-            // Log found box for debugging
-            debug!(
-                "Found MP4 box: {:?}, size: {}",
-                String::from_utf8_lossy(box_type),
-                box_size
-            );
-
-            // Parse specific boxes of interest
-            if box_type == b"moov" {
-                debug!("Found moov box at position {}", i);
-                if self.stats.video_codec.is_none() {
-                    // In reality, would parse inside moov -> trak -> mdia -> minf -> stbl -> stsd
-                    // For now, assume common codecs
-                    self.stats.video_codec = Some("H.264/AVC".to_string());
-                    self.stats.audio_codec = Some("AAC".to_string());
-                }
-
-                if self.stats.resolution.is_none() {
-                    // Placeholder for resolution info
-                    self.stats.resolution = Some((1920, 1080));
-                }
-
-                // For bitrates, in reality these would be calculated or extracted
-                // from the MP4 boxes if available
-                if self.stats.video_bitrate.is_none() {
-                    self.stats.video_bitrate = Some(2500); // 2.5 Mbps placeholder
-                }
-
-                if self.stats.audio_bitrate.is_none() {
-                    self.stats.audio_bitrate = Some(128); // 128 kbps placeholder
-                }
-            }
-
-            // Move to next box, if box_size is valid
-            if box_size > 8 && box_size < data.len() as u32 {
-                i += box_size as usize;
-            } else {
-                // Invalid box size, move forward by a small amount
-                i += 8;
-            }
-        }
-
-        Ok(())
-    }
-
-    /// Analyze MP4 media segment if no initialization segment has been analyzed
-    fn analyze_mp4_media_segment(&mut self, data: &[u8]) -> Result<(), String> {
-        // For media segments, we normally wouldn't need to extract format info
-        // as it should be in the init segment. But if we haven't seen an init segment,
-        // we can try to infer some basic information.
-
-        // Check for a minimum valid size
-        if data.len() < 8 {
-            return Err("Invalid MP4 media segment, too small".to_string());
-        }
-
-        // Look for key MP4 boxes
-        for i in 0..data.len() - 8 {
-            let box_type = &data[i + 4..i + 8];
-
-            if box_type == b"moof" || box_type == b"mdat" {
-                // If we find standard boxes but haven't set codecs yet,
-                // use reasonable defaults
-                if self.stats.video_codec.is_none() {
-                    self.stats.video_codec = Some("H.264/AVC".to_string());
-                }
-
-                if self.stats.audio_codec.is_none() {
-                    self.stats.audio_codec = Some("AAC".to_string());
-                }
-
-                // Cannot reliably determine resolution from media segments alone
-            }
-        }
-
-        Ok(())
-    }
-
     /// Build final stats after analyzing all segments
     pub fn build_stats(&mut self) -> Result<HlsStats, String> {
-        // Calculate any final derived statistics here if needed
-
-        // For example, if we never determined bitrates directly, we can estimate them
-        if self.stats.video_bitrate.is_none() && self.stats.total_duration > 0.0 {
-            // Estimate video bitrate as 80% of total
-            let total_bitrate = self.stats.calculate_overall_bitrate();
-            let estimated_video_bitrate = (total_bitrate * 0.8) as u32;
-            self.stats.video_bitrate = Some(estimated_video_bitrate);
-        }
-
-        if self.stats.audio_bitrate.is_none() && self.stats.total_duration > 0.0 {
-            // Estimate audio bitrate as 15% of total
-            let total_bitrate = self.stats.calculate_overall_bitrate();
-            let estimated_audio_bitrate = (total_bitrate * 0.15) as u32;
-            self.stats.audio_bitrate = Some(estimated_audio_bitrate);
-        }
-
         info!(
             "HLS analysis complete: {} segments, {:.2}s total duration",
             self.stats.total_segment_count, self.stats.total_duration
@@ -592,7 +400,6 @@ mod tests {
         assert!(stats.has_mp4_segments);
 
         // Check that video codec was detected
-        assert!(stats.video_codec.is_some());
     }
 
     #[test]

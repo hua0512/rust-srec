@@ -3,7 +3,7 @@ use std::time::Duration;
 use crate::DownloaderConfig;
 
 // --- Top-Level Configuration ---
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct HlsConfig {
     /// Base downloader configuration
     pub base: DownloaderConfig,
@@ -14,21 +14,6 @@ pub struct HlsConfig {
     pub decryption_config: HlsDecryptionConfig,
     pub cache_config: HlsCacheConfig,
     pub output_config: HlsOutputConfig,
-}
-
-impl Default for HlsConfig {
-    fn default() -> Self {
-        Self {
-            base: DownloaderConfig::default(),
-            playlist_config: Default::default(),
-            scheduler_config: Default::default(),
-            fetcher_config: Default::default(),
-            processor_config: Default::default(),
-            decryption_config: Default::default(),
-            cache_config: Default::default(),
-            output_config: Default::default(),
-        }
-    }
 }
 
 // --- Playlist Configuration ---
@@ -103,7 +88,7 @@ impl Default for HlsFetcherConfig {
             key_download_timeout: Duration::from_secs(5),
             max_key_retries: 3,
             key_retry_delay_base: Duration::from_millis(200),
-            segment_raw_cache_ttl: Duration::from_secs(60 * 1), // Default 1 minutes for raw segments
+            segment_raw_cache_ttl: Duration::from_secs(60), // Default 1 minutes for raw segments
         }
     }
 }
@@ -119,7 +104,7 @@ pub struct HlsProcessorConfig {
 impl Default for HlsProcessorConfig {
     fn default() -> Self {
         Self {
-            processed_segment_ttl: Duration::from_secs(60 * 1), // Default 1 minutes for processed segments
+            processed_segment_ttl: Duration::from_secs(60), // Default 1 minutes for processed segments
         }
     }
 }

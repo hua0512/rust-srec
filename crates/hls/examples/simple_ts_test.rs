@@ -6,27 +6,27 @@ fn main() {
 
     // Create known working TS test data based on the ts crate's own tests
     let ts_data = create_working_ts_data();
-    
+
     // Test TS parsing directly
     let mut parser = TsParser::new();
     match parser.parse_packets(&ts_data) {
         Ok(()) => {
             println!("✓ Successfully parsed TS packets");
-            
+
             if let Some(pat) = parser.pat() {
                 println!("✓ PAT found:");
                 println!("  Transport Stream ID: {}", pat.transport_stream_id);
                 println!("  Programs: {}", pat.programs.len());
             }
-            
+
             for (program_num, pmt) in parser.pmts() {
-                println!("✓ PMT found for program {}:", program_num);
+                println!("✓ PMT found for program {program_num}:");
                 println!("  PCR PID: 0x{:04X}", pmt.pcr_pid);
                 println!("  Streams: {}", pmt.streams.len());
             }
         }
         Err(e) => {
-            println!("❌ Failed to parse TS packets: {}", e);
+            println!("❌ Failed to parse TS packets: {e}");
         }
     }
 }
@@ -39,7 +39,7 @@ fn create_working_ts_data() -> Vec<u8> {
     let mut pat_packet = vec![0u8; 188];
     pat_packet[0] = 0x47; // Sync byte
     pat_packet[1] = 0x40; // PUSI set, PID = 0 (PAT)
-    pat_packet[2] = 0x00; 
+    pat_packet[2] = 0x00;
     pat_packet[3] = 0x10; // No scrambling, payload only, continuity = 0
 
     // Simple PAT payload (based on ts crate test)
@@ -100,4 +100,4 @@ fn create_working_ts_data() -> Vec<u8> {
     ts_data.extend_from_slice(&pmt_packet);
 
     ts_data
-} 
+}

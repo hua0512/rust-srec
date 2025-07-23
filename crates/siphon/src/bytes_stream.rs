@@ -54,10 +54,7 @@ impl AsyncRead for BytesStreamReader {
                     // Continue the loop to process this chunk
                 }
                 Poll::Ready(Some(Err(e))) => {
-                    return Poll::Ready(Err(std::io::Error::new(
-                        std::io::ErrorKind::Other,
-                        format!("Download error: {}", e),
-                    )));
+                    return Poll::Ready(Err(std::io::Error::other(format!("Download error: {e}"))));
                 }
                 Poll::Ready(None) => {
                     // End of stream

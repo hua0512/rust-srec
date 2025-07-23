@@ -173,8 +173,7 @@ impl FlvPipeline {
 mod test {
     use super::*;
     use crate::adapter::flv_error_to_pipeline_error;
-    use crate::writer_task::FlvWriterTask;
-    use crate::writer_task::WriterError;
+    use crate::writer::{FlvWriter, FlvWriterError};
 
     use flv::data::FlvData;
     use flv::parser_async::FlvDecoderStream;
@@ -263,13 +262,13 @@ mod test {
 
         // Run the writer task with the receiver
         let writer_handle = tokio::task::spawn_blocking(move || {
-            let mut writer_task = FlvWriterTask::new(output_dir, base_name)?;
+            let mut writer_task = FlvWriter::new(output_dir, base_name, None);
 
             writer_task.run(output_rx)?;
 
-            Ok::<_, WriterError>((
-                writer_task.total_tags_written(),
-                writer_task.files_created(),
+            Ok::<_, FlvWriterError>((
+                writer_task.get_state().items_written_total,
+                writer_task.get_state().file_sequence_number,
             ))
         });
 

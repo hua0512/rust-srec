@@ -230,7 +230,7 @@ impl OutputManager {
                             return Err(());
                         }
                     }
-                    let event = HlsStreamEvent::Data(segment_output.data);
+                    let event = HlsStreamEvent::Data(Box::new(segment_output.data));
                     if self.event_tx.send(Ok(event)).await.is_err() {
                         return Err(());
                     }
@@ -310,14 +310,10 @@ impl OutputManager {
                             "Gap detected(Live). Expected: {}, Found: {}. Waiting for {} more segments (current: {}, threshold: {}) or the expected segment. Gap skipping enabled but threshold not met or not current gap.",
                             self.expected_next_media_sequence,
                             segment_sequence,
-                            if self.config.output_config.live_gap_skip_threshold_segments
-                                > self.segments_received_since_gap_detected
-                            {
-                                self.config.output_config.live_gap_skip_threshold_segments
-                                    - self.segments_received_since_gap_detected
-                            } else {
-                                0
-                            },
+                            self.config
+                                .output_config
+                                .live_gap_skip_threshold_segments
+                                .saturating_sub(self.segments_received_since_gap_detected),
                             self.segments_received_since_gap_detected,
                             self.config.output_config.live_gap_skip_threshold_segments
                         );
@@ -467,7 +463,7 @@ impl OutputManager {
                     return Err(());
                 }
             }
-            let event = HlsStreamEvent::Data(segment_output.data);
+            let event = HlsStreamEvent::Data(Box::new(segment_output.data));
             if self.event_tx.send(Ok(event)).await.is_err() {
                 // If sending fails, return the error.
                 return Err(());

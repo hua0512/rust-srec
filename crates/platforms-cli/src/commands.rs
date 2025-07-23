@@ -56,15 +56,11 @@ impl CommandExecutor {
         proxy_username: Option<String>,
         proxy_password: Option<String>,
     ) -> Self {
-        let proxy_config = if let Some(url) = proxy_url {
-            Some(ProxyConfig {
-                url,
-                username: proxy_username,
-                password: proxy_password,
-            })
-        } else {
-            None
-        };
+        let proxy_config = proxy_url.map(|url| ProxyConfig {
+            url,
+            username: proxy_username,
+            password: proxy_password,
+        });
 
         let extractor_factory = factory_with_proxy(proxy_config);
         Self {
@@ -186,15 +182,11 @@ impl CommandExecutor {
         let mut tasks = Vec::new();
 
         // Create proxy config for batch processing
-        let proxy_config = if let Some(proxy_url) = &self.config.default_proxy {
-            Some(ProxyConfig {
-                url: proxy_url.clone(),
-                username: self.config.default_proxy_username.clone(),
-                password: self.config.default_proxy_password.clone(),
-            })
-        } else {
-            None
-        };
+        let proxy_config = self.config.default_proxy.as_ref().map(|url| ProxyConfig {
+            url: url.to_string(),
+            username: self.config.default_proxy_username.clone(),
+            password: self.config.default_proxy_password.clone(),
+        });
 
         for (index, url) in urls.iter().enumerate() {
             let url = url.clone();

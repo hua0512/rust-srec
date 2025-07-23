@@ -1,4 +1,4 @@
-use crate::{TsError, Result};
+use crate::{Result, TsError};
 
 /// Program Association Table (PAT) - Table ID 0x00
 #[derive(Debug, Clone)]
@@ -49,7 +49,9 @@ impl Pat {
         // Parse section header
         let section_syntax_indicator = (data[1] & 0x80) != 0;
         if !section_syntax_indicator {
-            return Err(TsError::ParseError("PAT must have section syntax indicator set".to_string()));
+            return Err(TsError::ParseError(
+                "PAT must have section syntax indicator set".to_string(),
+            ));
         }
 
         let section_length = ((data[1] as u16 & 0x0F) << 8) | data[2] as u16;
@@ -153,18 +155,23 @@ mod tests {
         // Example PAT with one program
         let data = vec![
             0x00, // Table ID
-            0x80 | 0x00, // Section syntax indicator + section length high
+            0x80, // Section syntax indicator + section length high
             0x0D, // Section length low (13 bytes total)
-            0x00, 0x01, // Transport stream ID
-            0x00 | 0x01, // Version 0 + current/next = 1
+            0x00,
+            0x01, // Transport stream ID
+            0x01, // Version 0 + current/next = 1
             0x00, // Section number
             0x00, // Last section number
             // Program 1
-            0x00, 0x01, // Program number 1
+            0x00,
+            0x01,        // Program number 1
             0xE0 | 0x10, // PMT PID high (0x1000)
-            0x00, // PMT PID low
+            0x00,        // PMT PID low
             // CRC32 placeholder
-            0x00, 0x00, 0x00, 0x00,
+            0x00,
+            0x00,
+            0x00,
+            0x00,
         ];
 
         let pat = Pat::parse(&data).unwrap();
@@ -176,4 +183,4 @@ mod tests {
         assert_eq!(pat.programs[0].program_number, 1);
         assert_eq!(pat.programs[0].pmt_pid, 0x1000);
     }
-} 
+}

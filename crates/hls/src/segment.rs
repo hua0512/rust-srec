@@ -6,6 +6,8 @@ use ts::{Pat, Pmt, StreamType, TsParser};
 
 use crate::resolution::{self, ResolutionDetector};
 
+pub type PsiParseResult = Result<(Option<Pat>, Vec<Pmt>), ts::TsError>;
+
 /// The type of segment
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SegmentType {
@@ -68,7 +70,7 @@ impl SegmentData for TsSegmentData {
 
 impl TsSegmentData {
     /// Parse PAT and PMT tables from this TS segment
-    pub fn parse_psi_tables(&self) -> Result<(Option<Pat>, Vec<Pmt>), ts::TsError> {
+    pub fn parse_psi_tables(&self) -> PsiParseResult {
         let mut parser = TsParser::new();
         parser.parse_packets(self.data.as_ref())?;
 
@@ -102,20 +104,18 @@ impl TsSegmentData {
                     other_streams: Vec::new(),
                 };
 
-                for stream_result in pmt.streams() {
-                    if let Ok(stream) = stream_result {
-                        let stream_entry = StreamEntry {
-                            pid: stream.elementary_pid,
-                            stream_type: stream.stream_type,
-                        };
+                for stream in pmt.streams().flatten() {
+                    let stream_entry = StreamEntry {
+                        pid: stream.elementary_pid,
+                        stream_type: stream.stream_type,
+                    };
 
-                        if stream.stream_type.is_video() {
-                            program_info.video_streams.push(stream_entry);
-                        } else if stream.stream_type.is_audio() {
-                            program_info.audio_streams.push(stream_entry);
-                        } else {
-                            program_info.other_streams.push(stream_entry);
-                        }
+                    if stream.stream_type.is_video() {
+                        program_info.video_streams.push(stream_entry);
+                    } else if stream.stream_type.is_audio() {
+                        program_info.audio_streams.push(stream_entry);
+                    } else {
+                        program_info.other_streams.push(stream_entry);
                     }
                 }
 
@@ -196,10 +196,10 @@ impl TsSegmentData {
 
                 let mut summary = Vec::new();
                 if video_count > 0 {
-                    summary.push(format!("{} video stream(s)", video_count));
+                    summary.push(format!("{video_count} video stream(s)"));
                 }
                 if audio_count > 0 {
-                    summary.push(format!("{} audio stream(s)", audio_count));
+                    summary.push(format!("{audio_count} audio stream(s)"));
                 }
 
                 if summary.is_empty() {
@@ -371,7 +371,7 @@ impl StreamProfile {
     pub fn codec_description(&self) -> String {
         let video = self.primary_video_codec().unwrap_or("Unknown");
         let audio = self.primary_audio_codec().unwrap_or("Unknown");
-        format!("Video: {}, Audio: {}", video, audio)
+        format!("Video: {video}, Audio: {audio}")
     }
 }
 
@@ -648,7 +648,7 @@ impl HlsData {
     }
 
     /// Parse PAT and PMT tables from TS segments (only for TS data)
-    pub fn parse_ts_psi_tables(&self) -> Option<Result<(Option<Pat>, Vec<Pmt>), ts::TsError>> {
+    pub fn parse_ts_psi_tables(&self) -> Option<PsiParseResult> {
         match self {
             HlsData::TsData(ts) => Some(ts.parse_psi_tables()),
             _ => None,
@@ -773,10 +773,10 @@ impl HlsData {
                     let audio_count = streams.iter().filter(|(_, st)| st.is_audio()).count();
 
                     if video_count > 0 {
-                        summary.push(format!("{} video stream(s)", video_count));
+                        summary.push(format!("{video_count} video stream(s)"));
                     }
                     if audio_count > 0 {
-                        summary.push(format!("{} audio stream(s)", audio_count));
+                        summary.push(format!("{audio_count} audio stream(s)"));
                     }
 
                     if summary.is_empty() {

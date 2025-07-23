@@ -3,7 +3,6 @@
 //! This module provides an in-memory cache implementation using Moka caching.
 
 use std::time::Duration;
-use std::u32;
 
 use bytes::Bytes;
 use moka::future::Cache as MokaCache;
@@ -66,12 +65,12 @@ impl MemoryCache {
 #[async_trait::async_trait]
 impl CacheProvider for MemoryCache {
     async fn contains(&self, key: &CacheKey) -> CacheResult<bool> {
-        Ok(self.cache.contains_key(&key))
+        Ok(self.cache.contains_key(key))
     }
 
     async fn get(&self, key: &CacheKey) -> CacheLookupResult {
         // Try to get the entry from the cache
-        if let Some(entry) = self.cache.get(&key).await {
+        if let Some(entry) = self.cache.get(key).await {
             let data = entry.data.clone();
             let metadata = entry.metadata.clone();
 
@@ -79,7 +78,7 @@ impl CacheProvider for MemoryCache {
             if metadata.is_expired() {
                 debug!(key = ?key, "Memory cache entry has expired");
                 // Remove the entry from the cache
-                self.cache.invalidate(&key).await;
+                self.cache.invalidate(key).await;
                 return Ok(Some((data, metadata, CacheStatus::Expired)));
             }
 
@@ -128,9 +127,9 @@ impl CacheProvider for MemoryCache {
 
     async fn remove(&self, key: &CacheKey) -> CacheResult<()> {
         // Check if entry exists before removing
-        if let Some(_) = self.cache.get(&key).await {
+        if self.cache.get(key).await.is_some() {
             // Remove from cache
-            self.cache.invalidate(&key).await;
+            self.cache.invalidate(key).await;
             debug!(key = ?key, "Removed entry from memory cache");
         }
 
@@ -312,7 +311,7 @@ mod tests {
         assert!(cache.contains(&k).await.unwrap());
         match cache.get(&k).await.unwrap() {
             Some((_, _, CacheStatus::Hit)) => {}
-            res => panic!("Expected Hit initially, got {:?}", res),
+            res => panic!("Expected Hit initially, got {res:?}"),
         }
 
         sleep(Duration::from_millis(1500)).await;
@@ -653,7 +652,7 @@ mod tests {
 
         match cache.get(&k).await.unwrap() {
             Some((_, _, CacheStatus::Hit)) => {}
-            res => panic!("Expected Hit initially, got {:?}", res),
+            res => panic!("Expected Hit initially, got {res:?}"),
         }
 
         sleep(Duration::from_millis(1500)).await;
@@ -664,7 +663,7 @@ mod tests {
             Some((res_d, _, CacheStatus::Expired)) => {
                 assert_eq!(res_d, d);
             }
-            res => panic!("Expected CacheExpired due to metadata, got {:?}", res),
+            res => panic!("Expected CacheExpired due to metadata, got {res:?}"),
         }
 
         cache.cache.run_pending_tasks().await; // Ensure invalidation from get() is processed

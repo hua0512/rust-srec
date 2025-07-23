@@ -6,7 +6,15 @@ use std::sync::Arc;
 use thiserror::Error;
 use tracing::debug;
 
-use crate::expand_filename_template;
+/// Expands a filename template with optional sequence number.
+/// Replaces `%i` with the sequence number if provided.
+pub fn expand_filename_template(template: &str, sequence_number: Option<u32>) -> String {
+    if let Some(seq) = sequence_number {
+        template.replace("%i", &seq.to_string())
+    } else {
+        template.to_string()
+    }
+}
 
 /// Action to take after writing an item.
 #[derive(Debug, Clone, Copy)]
@@ -44,7 +52,7 @@ impl WriterConfig {
 }
 
 /// State of the writer task.
-#[derive(Debug)]
+#[derive(Debug, Default)]
 pub struct WriterState {
     /// Current output file path.
     pub current_file_path: Option<PathBuf>,
@@ -62,27 +70,12 @@ pub struct WriterState {
     pub file_sequence_number: u32,
 }
 
-impl Default for WriterState {
-    fn default() -> Self {
-        Self {
-            current_file_path: None,
-            items_written_current_file: 0,
-            items_written_total: 0,
-            bytes_written_current_file: 0,
-            bytes_written_total: 0,
-            current_file_opened_at: None,
-            file_sequence_number: 0,
-        }
-    }
-}
-
 impl WriterState {
     pub fn reset_for_new_file(&mut self, new_path: PathBuf) {
         self.current_file_path = Some(new_path);
         self.items_written_current_file = 0;
         self.bytes_written_current_file = 0;
         self.current_file_opened_at = Some(Utc::now());
-        // self.file_sequence_number += 1;
     }
 }
 
@@ -161,14 +154,16 @@ pub trait FormatStrategy<D>: Send + Sync + 'static {
     }
 }
 
+pub type FileOpCallback = Box<dyn Fn(&Path, u32) + Send + Sync>;
+
 /// Generic writer task.
 pub struct WriterTask<D, S: FormatStrategy<D>> {
     config: WriterConfig,
     state: WriterState,
     strategy: S,
     writer: Option<S::Writer>,
-    on_file_open_callback: Option<Box<dyn Fn(&Path, u32) + Send + Sync>>,
-    on_file_close_callback: Option<Box<dyn Fn(&Path, u32) + Send + Sync>>,
+    on_file_open_callback: Option<FileOpCallback>,
+    on_file_close_callback: Option<FileOpCallback>,
 }
 
 impl<D, S: FormatStrategy<D>> WriterTask<D, S> {
@@ -408,8 +403,6 @@ pub struct DefaultFileStrategy;
 pub enum DefaultStrategyError {
     #[error("I/O error: {0}")]
     Io(#[from] io::Error),
-    #[error("Path generation error: {0}")]
-    PathGeneration(String),
 }
 
 impl<D: Send + Sync + 'static> FormatStrategy<D> for DefaultFileStrategy {
@@ -445,7 +438,7 @@ impl<D: Send + Sync + 'static> FormatStrategy<D> for DefaultFileStrategy {
         );
     }
 
-    fn should_rotate_file(&self, config: &WriterConfig, state: &WriterState) -> bool {
+    fn should_rotate_file(&self, _config: &WriterConfig, _state: &WriterState) -> bool {
         false
     }
 
@@ -516,7 +509,7 @@ mod tests {
                 .truncate(true)
                 .open(path)
                 .map(BufWriter::new)
-                .map_err(|e| TestStrategyError(format!("Failed to create writer: {}", e)))
+                .map_err(|e| TestStrategyError(format!("Failed to create writer: {e}")))
         }
 
         fn write_item(
@@ -529,7 +522,7 @@ mod tests {
             writer
                 .write_all(bytes)
                 .and_then(|_| writer.write_all(b"\n"))
-                .map_err(|e| TestStrategyError(format!("Failed to write item: {}", e)))?;
+                .map_err(|e| TestStrategyError(format!("Failed to write item: {e}")))?;
             Ok((bytes.len() + 1) as u64)
         }
 

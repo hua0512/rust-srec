@@ -112,15 +112,13 @@ impl DecryptionService {
                 } else {
                     let base = url::Url::parse(base_url).map_err(|e| {
                         HlsDownloaderError::PlaylistError(format!(
-                            "Invalid base URL {}: {}",
-                            base_url, e
+                            "Invalid base URL {base_url}: {e}"
                         ))
                     })?;
                     base.join(uri)
                         .map_err(|e| {
                             HlsDownloaderError::PlaylistError(format!(
-                                "Could not join base URL {} with key URI {}: {}",
-                                base_url, uri, e
+                                "Could not join base URL {base_url} with key URI {uri}: {e}"
                             ))
                         })?
                         .to_string()
@@ -140,7 +138,7 @@ impl DecryptionService {
             if let Some(cached_key) = cache_manager
                 .get(&key)
                 .await
-                .map_err(|e| HlsDownloaderError::CacheError(format!("Cache error: {}", e)))?
+                .map_err(|e| HlsDownloaderError::CacheError(format!("Cache error: {e}")))?
             {
                 return Ok(cached_key.0);
             }
@@ -150,8 +148,7 @@ impl DecryptionService {
         if fetched_key_bytes.len() != 16 {
             // AES-128 keys are 16 bytes
             return Err(HlsDownloaderError::DecryptionError(format!(
-                "Fetched decryption key from {} has incorrect length: {} bytes (expected 16)",
-                key_uri_str,
+                "Fetched decryption key from {key_uri_str} has incorrect length: {} bytes (expected 16)",
                 fetched_key_bytes.len()
             )));
         }
@@ -166,7 +163,7 @@ impl DecryptionService {
             cache_manager
                 .put(key.clone(), key_clone, metadata)
                 .await
-                .map_err(|e| HlsDownloaderError::CacheError(format!("Cache error: {}", e)))?;
+                .map_err(|e| HlsDownloaderError::CacheError(format!("Cache error: {e}")))?;
         }
 
         Ok(fetched_key_bytes)
@@ -177,8 +174,7 @@ impl DecryptionService {
         let mut iv_bytes = [0u8; 16];
         hex::decode_to_slice(iv_str, &mut iv_bytes).map_err(|e| {
             HlsDownloaderError::DecryptionError(format!(
-                "Failed to parse IV '{}': {}",
-                iv_hex_str, e
+                "Failed to parse IV '{iv_hex_str}': {e}"
             ))
         })?;
         Ok(iv_bytes)
@@ -198,8 +194,7 @@ impl DecryptionService {
             // Changed to AES128 (all caps)
             // For now, only support AES-128. SAMPLE-AES would need different handling.
             return Err(HlsDownloaderError::DecryptionError(format!(
-                "Unsupported decryption method: {:?}",
-                key_info.method
+                "Unsupported decryption method: {key_info:?}"
             )));
         }
 
@@ -223,14 +218,13 @@ impl DecryptionService {
         let mut buffer = data.to_vec(); // Clone data for mutable operations
         let cipher = Aes128CbcDec::new_from_slices(&key_data, &iv_bytes).map_err(|e| {
             HlsDownloaderError::DecryptionError(format!(
-                "Failed to initialize AES decryptor: {}",
-                e
+                "Failed to initialize AES decryptor: {e}"
             ))
         })?;
 
         let decrypted_len = cipher
             .decrypt_padded_mut::<Pkcs7>(&mut buffer)
-            .map_err(|e| HlsDownloaderError::DecryptionError(format!("Decryption failed: {}", e)))?
+            .map_err(|e| HlsDownloaderError::DecryptionError(format!("Decryption failed: {e}")))?
             .len();
 
         Ok(Bytes::copy_from_slice(&buffer[..decrypted_len]))

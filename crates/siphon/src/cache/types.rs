@@ -75,7 +75,7 @@ impl CacheKey {
         }
 
         let hash = hasher.finalize();
-        format!("{:x}", hash)
+        format!("{hash:x}")
     }
 }
 

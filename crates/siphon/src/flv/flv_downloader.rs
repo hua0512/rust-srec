@@ -65,7 +65,7 @@ impl FlvDownloader {
     ) -> Result<BoxMediaStream<Bytes, FlvDownloadError>, DownloadError> {
         let url = url_str
             .parse::<Url>()
-            .map_err(|e| DownloadError::UrlError(format!("{}: {}", url_str, e)))?;
+            .map_err(|e| DownloadError::UrlError(format!("{url_str}: {e}")))?;
         self.download_url_raw(url).await
     }
 
@@ -348,6 +348,7 @@ impl FlvDownloader {
     }
 
     /// Attempt to resume download from a single source
+    #[allow(dead_code)]
     async fn try_resume_from_source(
         &self,
         source: &ContentSource,
@@ -373,6 +374,7 @@ impl FlvDownloader {
     }
 
     /// Attempt to download raw data from a single source
+    #[allow(dead_code)]
     async fn try_download_raw_from_source(
         &self,
         source: &ContentSource,
@@ -451,6 +453,7 @@ impl FlvDownloader {
     }
 
     /// Attempt to resume a raw download from a single source
+    #[allow(dead_code)]
     async fn try_resume_raw_from_source(
         &self,
         source: &ContentSource,

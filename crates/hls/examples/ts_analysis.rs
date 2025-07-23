@@ -1,7 +1,7 @@
-use hls::HlsData;
-use ts::StreamType;
 use bytes::Bytes;
+use hls::HlsData;
 use m3u8_rs::MediaSegment;
+use ts::StreamType;
 
 fn main() {
     println!("HLS TS Analysis Example");
@@ -9,7 +9,7 @@ fn main() {
 
     // Create some sample TS data (this would normally come from an HLS segment download)
     let ts_data = create_working_ts_data();
-    
+
     // Create a media segment metadata (normally parsed from m3u8 playlist)
     let media_segment = MediaSegment {
         uri: "segment001.ts".to_string(),
@@ -35,7 +35,7 @@ fn main() {
 
 fn analyze_ts_segment(hls_data: &HlsData) {
     println!("\nAnalyzing TS segment...");
-    
+
     // Check if this is a TS segment
     if !hls_data.is_ts() {
         println!("❌ This is not a TS segment");
@@ -44,7 +44,7 @@ fn analyze_ts_segment(hls_data: &HlsData) {
 
     // Get stream summary
     if let Some(summary) = hls_data.get_stream_summary() {
-        println!("📊 Stream summary: {}", summary);
+        println!("📊 Stream summary: {summary}");
     }
 
     // Debug: try to parse PSI tables directly and print any errors
@@ -52,11 +52,14 @@ fn analyze_ts_segment(hls_data: &HlsData) {
         match result {
             Ok((pat, pmts)) => {
                 println!("✓ Successfully parsed PSI tables");
-                println!("   PAT: {}", if pat.is_some() { "found" } else { "not found" });
+                println!(
+                    "   PAT: {}",
+                    if pat.is_some() { "found" } else { "not found" }
+                );
                 println!("   PMTs: {} found", pmts.len());
             }
             Err(e) => {
-                println!("❌ Failed to parse PSI tables: {}", e);
+                println!("❌ Failed to parse PSI tables: {e}");
             }
         }
     }
@@ -70,14 +73,14 @@ fn analyze_ts_segment(hls_data: &HlsData) {
 
     // Get program numbers
     if let Some(Ok(programs)) = hls_data.get_ts_program_numbers() {
-        println!("📺 Program numbers: {:?}", programs);
+        println!("📺 Program numbers: {programs:?}");
     }
 
     // Get video streams
     if let Some(Ok(video_streams)) = hls_data.get_ts_video_streams() {
         println!("🎥 Video streams:");
         for (pid, stream_type) in video_streams {
-            println!("   PID 0x{:04X}: {:?}", pid, stream_type);
+            println!("   PID 0x{pid:04X}: {stream_type:?}");
         }
     }
 
@@ -85,7 +88,7 @@ fn analyze_ts_segment(hls_data: &HlsData) {
     if let Some(Ok(audio_streams)) = hls_data.get_ts_audio_streams() {
         println!("🔊 Audio streams:");
         for (pid, stream_type) in audio_streams {
-            println!("   PID 0x{:04X}: {:?}", pid, stream_type);
+            println!("   PID 0x{pid:04X}: {stream_type:?}");
         }
     }
 
@@ -123,7 +126,7 @@ fn create_working_ts_data() -> Vec<u8> {
     let mut pat_packet = vec![0u8; 188];
     pat_packet[0] = 0x47; // Sync byte
     pat_packet[1] = 0x40; // PUSI set, PID = 0 (PAT)
-    pat_packet[2] = 0x00; 
+    pat_packet[2] = 0x00;
     pat_packet[3] = 0x10; // No scrambling, payload only, continuity = 0
 
     // Simple PAT payload (based on ts crate test)
@@ -184,4 +187,4 @@ fn create_working_ts_data() -> Vec<u8> {
     ts_data.extend_from_slice(&pmt_packet);
 
     ts_data
-} 
+}

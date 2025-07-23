@@ -53,9 +53,6 @@ impl From<HlsDownloaderError> for DownloadError {
 
 impl From<DownloadError> for FlvError {
     fn from(err: DownloadError) -> Self {
-        FlvError::Io(std::io::Error::new(
-            std::io::ErrorKind::Other,
-            format!("Download error: {}", err),
-        ))
+        FlvError::Io(std::io::Error::other(format!("Download error: {err}")))
     }
 }

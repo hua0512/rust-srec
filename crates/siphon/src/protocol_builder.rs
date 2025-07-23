@@ -8,14 +8,7 @@ use crate::{
     flv::{FlvConfig, FlvDownloader},
     hls::{
         HlsDownloader,
-        config::{
-            HlsCacheConfig as NewHlsCacheConfig, HlsConfig,
-            HlsDecryptionConfig as NewHlsDecryptionConfig, HlsFetcherConfig as NewHlsFetcherConfig,
-            HlsOutputConfig as NewHlsOutputConfig, HlsPlaylistConfig as NewHlsPlaylistConfig,
-            HlsProcessorConfig as NewHlsProcessorConfig,
-            HlsSchedulerConfig as NewHlsSchedulerConfig,
-            HlsVariantSelectionPolicy as NewHlsVariantSelectionPolicy,
-        },
+        config::{HlsConfig, HlsVariantSelectionPolicy as NewHlsVariantSelectionPolicy},
     },
     proxy::ProxyConfig,
 };

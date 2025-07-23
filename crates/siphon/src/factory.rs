@@ -17,6 +17,7 @@ pub enum ProtocolType {
 }
 
 /// Siphon downloader factory for creating appropriate download managers
+#[derive(Debug, Default)]
 pub struct SiphonDownloaderFactory {
     /// Base download manager configuration
     download_config: DownloadManagerConfig,
@@ -24,16 +25,6 @@ pub struct SiphonDownloaderFactory {
     flv_config: FlvConfig,
     /// HLS protocol configuration
     hls_config: HlsConfig,
-}
-
-impl Default for SiphonDownloaderFactory {
-    fn default() -> Self {
-        Self {
-            download_config: DownloadManagerConfig::default(),
-            flv_config: FlvConfig::default(),
-            hls_config: HlsConfig::default(),
-        }
-    }
 }
 
 impl SiphonDownloaderFactory {
@@ -64,10 +55,7 @@ impl SiphonDownloaderFactory {
     pub fn detect_protocol(url: &str) -> Result<ProtocolType, DownloadError> {
         // Parse URL
         let url = Url::parse(url).map_err(|_| {
-            DownloadError::UrlError(format!(
-                "Failed to parse URL for protocol detection: {}",
-                url
-            ))
+            DownloadError::UrlError(format!("Failed to parse URL for protocol detection: {url}",))
         })?;
 
         // Check for HLS indicators first
@@ -118,13 +106,13 @@ impl SiphonDownloaderFactory {
                 let flv = FlvDownloader::with_config(self.flv_config.clone())?;
                 let manager =
                     DownloadManager::with_config(flv, self.download_config.clone()).await?;
-                Ok(DownloaderInstance::Flv(manager))
+                Ok(DownloaderInstance::Flv(Box::new(manager)))
             }
             ProtocolType::Hls => {
                 let hls = HlsDownloader::with_config(self.hls_config.clone())?;
                 let manager =
                     DownloadManager::with_config(hls, self.download_config.clone()).await?;
-                Ok(DownloaderInstance::Hls(manager))
+                Ok(DownloaderInstance::Hls(Box::new(manager)))
             }
             ProtocolType::Auto => unreachable!(),
         }
@@ -151,8 +139,8 @@ impl SiphonDownloaderFactory {
 ///
 // #[derive(Debug)]
 pub enum DownloaderInstance {
-    Flv(DownloadManager<FlvDownloader>),
-    Hls(DownloadManager<HlsDownloader>),
+    Flv(Box<DownloadManager<FlvDownloader>>),
+    Hls(Box<DownloadManager<HlsDownloader>>),
 }
 
 impl DownloaderInstance {

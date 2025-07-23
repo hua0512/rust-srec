@@ -39,6 +39,7 @@ pub struct SegmentScheduler {
     segment_processor: Arc<dyn SegmentTransformer>,
     segment_request_rx: mpsc::Receiver<ScheduledSegmentJob>,
     output_tx: mpsc::Sender<Result<ProcessedSegmentOutput, HlsDownloaderError>>,
+    #[allow(dead_code)]
     shutdown_rx: broadcast::Receiver<()>,
 }
 

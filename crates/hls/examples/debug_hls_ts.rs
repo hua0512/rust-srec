@@ -1,6 +1,5 @@
-use hls::HlsData;
-use ts::StreamType;
 use bytes::Bytes;
+use hls::HlsData;
 use m3u8_rs::MediaSegment;
 
 fn main() {
@@ -9,7 +8,7 @@ fn main() {
 
     // Create the exact same working TS data as the debug_ts example
     let ts_data = create_working_ts_data();
-    
+
     // Create a media segment metadata
     let media_segment = MediaSegment {
         uri: "segment001.ts".to_string(),
@@ -37,15 +36,23 @@ fn main() {
             Ok((pat, pmts)) => {
                 println!("✓ Successfully parsed PSI tables via HLS");
                 if let Some(pat) = pat {
-                    println!("  PAT: Transport Stream ID {}, {} programs", pat.transport_stream_id, pat.programs.len());
+                    println!(
+                        "  PAT: Transport Stream ID {}, {} programs",
+                        pat.transport_stream_id,
+                        pat.programs.len()
+                    );
                 }
                 println!("  PMTs: {} found", pmts.len());
                 for pmt in pmts {
-                    println!("    Program {}: {} streams", pmt.program_number, pmt.streams.len());
+                    println!(
+                        "    Program {}: {} streams",
+                        pmt.program_number,
+                        pmt.streams.len()
+                    );
                 }
             }
             Err(e) => {
-                println!("❌ Failed to parse PSI tables via HLS: {}", e);
+                println!("❌ Failed to parse PSI tables via HLS: {e}");
             }
         }
     } else {
@@ -68,7 +75,7 @@ fn create_working_ts_data() -> Vec<u8> {
     let mut pat_packet = vec![0u8; 188];
     pat_packet[0] = 0x47; // Sync byte
     pat_packet[1] = 0x40; // PUSI set, PID = 0 (PAT)
-    pat_packet[2] = 0x00; 
+    pat_packet[2] = 0x00;
     pat_packet[3] = 0x10; // No scrambling, payload only, continuity = 0
 
     // Simple PAT payload (based on ts crate test)
@@ -129,4 +136,4 @@ fn create_working_ts_data() -> Vec<u8> {
     ts_data.extend_from_slice(&pmt_packet);
 
     ts_data
-} 
+}

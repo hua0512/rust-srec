@@ -1,7 +1,6 @@
 use bytes::Bytes;
 use hls::segment::{HlsData, M4sData, M4sInitSegmentData, M4sSegmentData, TsSegmentData};
 use m3u8_rs::MediaSegment;
-use tracing::debug;
 use url::Url;
 
 /// Determine if a segment URL represents an M4S segment

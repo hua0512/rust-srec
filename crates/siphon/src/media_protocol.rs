@@ -20,9 +20,9 @@ pub trait ProtocolConfig: Debug + Clone {}
 
 pub enum Protocol {
     /// FLV protocol
-    Flv(FlvConfig),
+    Flv(Box<FlvConfig>),
     /// HLS protocol
-    Hls(HlsConfig),
+    Hls(Box<HlsConfig>),
 }
 
 /// Shared protocol configuration trait

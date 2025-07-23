@@ -1,4 +1,4 @@
-use ts::{TsParser, TsPacket};
+use ts::{TsPacket, TsParser};
 
 fn main() {
     println!("Debug TS Parsing");
@@ -6,29 +6,30 @@ fn main() {
 
     // Create the exact same data as simple_ts_test
     let ts_data = create_working_ts_data();
-    
+
     // Parse packets manually to debug
     for (i, chunk) in ts_data.chunks_exact(188).enumerate() {
-        println!("\nPacket {}: ", i);
+        println!("\nPacket {i}: ");
         match TsPacket::parse(chunk) {
             Ok(packet) => {
                 println!("  PID: 0x{:04X}", packet.pid);
                 println!("  PUSI: {}", packet.payload_unit_start_indicator);
                 println!("  Has payload: {}", packet.has_payload());
-                
+
                 if let Some(psi_payload) = packet.get_psi_payload() {
                     println!("  PSI payload length: {}", psi_payload.len());
                     if !psi_payload.is_empty() {
                         println!("  Table ID: 0x{:02X}", psi_payload[0]);
                         if psi_payload.len() >= 3 {
-                            let section_length = ((psi_payload[1] as u16 & 0x0F) << 8) | psi_payload[2] as u16;
-                            println!("  Section length: {}", section_length);
+                            let section_length =
+                                ((psi_payload[1] as u16 & 0x0F) << 8) | psi_payload[2] as u16;
+                            println!("  Section length: {section_length}");
                         }
                     }
                 }
             }
             Err(e) => {
-                println!("  Error: {}", e);
+                println!("  Error: {e}");
             }
         }
     }
@@ -45,7 +46,7 @@ fn main() {
             println!("  PMTs: {}", parser.pmts().len());
         }
         Err(e) => {
-            println!("❌ TsParser failed: {}", e);
+            println!("❌ TsParser failed: {e}");
         }
     }
 }
@@ -58,7 +59,7 @@ fn create_working_ts_data() -> Vec<u8> {
     let mut pat_packet = vec![0u8; 188];
     pat_packet[0] = 0x47; // Sync byte
     pat_packet[1] = 0x40; // PUSI set, PID = 0 (PAT)
-    pat_packet[2] = 0x00; 
+    pat_packet[2] = 0x00;
     pat_packet[3] = 0x10; // No scrambling, payload only, continuity = 0
 
     // Simple PAT payload (based on ts crate test)
@@ -119,4 +120,4 @@ fn create_working_ts_data() -> Vec<u8> {
     ts_data.extend_from_slice(&pmt_packet);
 
     ts_data
-} 
+}

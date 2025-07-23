@@ -81,7 +81,7 @@ impl SegmentTransformer for SegmentProcessor {
 
         // Construct HlsData
         let segment_url = url::Url::parse(&job.segment_uri)
-            .map_err(|e| HlsDownloaderError::SegmentProcessError(format!("Invalid URL: {}", e)))?;
+            .map_err(|e| HlsDownloaderError::SegmentProcessError(format!("Invalid URL: {e}")))?;
         let len = current_data.len();
         let current_data_clone = current_data.clone();
         let hls_data = create_hls_data(

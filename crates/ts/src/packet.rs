@@ -1,4 +1,4 @@
-use crate::{TsError, Result};
+use crate::{Result, TsError};
 
 /// PAT PID (always 0x0000)
 pub const PID_PAT: u16 = 0x0000;
@@ -86,10 +86,10 @@ impl TsPacket {
         }
 
         // Parse payload if present
-        if adaptation_field_control == 0x01 || adaptation_field_control == 0x03 {
-            if offset < data.len() {
-                payload = Some(data[offset..].to_vec());
-            }
+        if (adaptation_field_control == 0x01 || adaptation_field_control == 0x03)
+            && offset < data.len()
+        {
+            payload = Some(data[offset..].to_vec());
         }
 
         Ok(TsPacket {
@@ -176,4 +176,4 @@ mod tests {
         assert!(packet.has_payload());
         assert!(!packet.has_adaptation_field());
     }
-} 
+}
