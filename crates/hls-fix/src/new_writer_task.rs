@@ -1,5 +1,5 @@
 use std::{
-    fs::OpenOptions,
+    fs::{File, OpenOptions},
     io::{BufWriter, Write},
     path::PathBuf,
     sync::{Arc, mpsc::Receiver},
@@ -11,15 +11,25 @@ use pipeline_common::{
     expand_filename_template,
 };
 use thiserror::Error;
-use tracing::debug;
+use tracing::{debug, error, info};
 
 use crate::analyzer::HlsAnalyzer;
 
 pub type StatusCallback =
     Arc<dyn Fn(Option<&PathBuf>, u64, f64, Option<u32>) + Send + Sync + 'static>;
 
+#[derive(Debug, Clone)]
+struct SegmentInfo {
+    duration: f32,
+    offset: u64,
+    size: u64,
+}
+
 pub struct HlsFormatStrategy {
     analyzer: HlsAnalyzer,
+    segment_info: Vec<SegmentInfo>,
+    current_offset: u64,
+    is_finalizing: bool,
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -38,7 +48,57 @@ impl HlsFormatStrategy {
     pub fn new(status_callback: Option<StatusCallback>) -> Self {
         Self {
             analyzer: HlsAnalyzer::new(),
+            segment_info: Vec::new(),
+            current_offset: 0,
+            is_finalizing: false,
         }
+    }
+
+    fn write_playlist(&self, path: &PathBuf, config: &WriterConfig) -> Result<(), std::io::Error> {
+        let media_filename = match path.file_name() {
+            Some(name) => name.to_string_lossy().into_owned(),
+            None => {
+                return Err(std::io::Error::new(
+                    std::io::ErrorKind::InvalidInput,
+                    "Could not get media filename from path",
+                ));
+            }
+        };
+        let playlist_path = path.with_extension("m3u8");
+
+        info!("Writing playlist to: {}", playlist_path.display());
+
+        let mut file = File::create(playlist_path)?;
+        writeln!(file, "#EXTM3U")?;
+        writeln!(file, "#EXT-X-VERSION:7")?;
+        let target_duration = self
+            .segment_info
+            .iter()
+            .map(|s| s.duration)
+            .fold(0.0, f32::max)
+            .ceil() as u32;
+        writeln!(file, "#EXT-X-TARGETDURATION:{}", target_duration)?;
+        writeln!(file, "#EXT-X-MEDIA-SEQUENCE:0")?;
+        writeln!(file, "#EXT-X-PLAYLIST-TYPE:VOD")?;
+
+        // Write the init segment info
+        if let Some(init_segment) = self.segment_info.first() {
+            writeln!(
+                file,
+                "#EXT-X-MAP:URI=\"{}\",BYTERANGE=\"{}@{}\"",
+                media_filename, init_segment.size, init_segment.offset
+            )?;
+        }
+
+        // Write media segments
+        for segment in self.segment_info.iter().skip(1) {
+            writeln!(file, "#EXTINF:{:.3},", segment.duration)?;
+            writeln!(file, "#EXT-X-BYTERANGE:{}@{}", segment.size, segment.offset)?;
+            writeln!(file, "{}", media_filename)?;
+        }
+
+        writeln!(file, "#EXT-X-ENDLIST")?;
+        Ok(())
     }
 }
 
@@ -66,23 +126,36 @@ impl FormatStrategy<HlsData> for HlsFormatStrategy {
                 self.analyzer
                     .analyze_segment(item)
                     .map_err(HlsStrategyError::Analyzer)?;
+                let bytes_written = ts.data.len() as u64;
                 writer.write_all(&ts.data)?;
-                Ok(ts.data.len() as u64)
+                Ok(bytes_written)
             }
             HlsData::M4sData(m4s_data) => {
                 self.analyzer
                     .analyze_segment(item)
                     .map_err(HlsStrategyError::Analyzer)?;
-                match m4s_data {
+                let (bytes_written, duration) = match m4s_data {
                     M4sData::InitSegment(init) => {
+                        info!("Found init segment, offset: {:?}", self.current_offset);
+                        let bytes_written = init.data.len() as u64;
                         writer.write_all(&init.data)?;
-                        Ok(init.data.len() as u64)
+                        (bytes_written, 0.0)
                     }
                     M4sData::Segment(segment) => {
+                        let bytes_written = segment.data.len() as u64;
                         writer.write_all(&segment.data)?;
-                        Ok(segment.data.len() as u64)
+                        (bytes_written, segment.segment.duration)
                     }
-                }
+                };
+
+                self.segment_info.push(SegmentInfo {
+                    duration,
+                    offset: self.current_offset,
+                    size: bytes_written,
+                });
+                self.current_offset += bytes_written;
+
+                Ok(bytes_written)
             }
             // do nothing for end marker, it will be handled in after_item_written
             HlsData::EndMarker => Ok(0),
@@ -114,11 +187,21 @@ impl FormatStrategy<HlsData> for HlsFormatStrategy {
 
     fn on_file_close(
         &mut self,
-        writer: &mut Self::Writer,
+        _writer: &mut Self::Writer,
         path: &std::path::Path,
         config: &WriterConfig,
-        state: &WriterState,
+        _state: &WriterState,
     ) -> Result<u64, Self::StrategyError> {
+        if self.is_finalizing {
+            if let Err(e) = self.write_playlist(&path.to_path_buf(), config) {
+                error!("Failed to write playlist: {}", e);
+            }
+            // Reset state after writing playlist
+            self.is_finalizing = false;
+            self.analyzer.reset();
+            self.segment_info.clear();
+            self.current_offset = 0;
+        }
         Ok(0)
     }
 
@@ -134,7 +217,7 @@ impl FormatStrategy<HlsData> for HlsFormatStrategy {
                 .build_stats()
                 .map_err(HlsStrategyError::Analyzer)?;
             debug!("HLS stats: {:?}", stats);
-            self.analyzer.reset();
+            self.is_finalizing = true;
             Ok(PostWriteAction::Rotate)
         } else {
             Ok(PostWriteAction::None)
@@ -177,6 +260,7 @@ impl HlsWriter {
         for result in receiver.iter() {
             match result {
                 Ok(hls_data) => {
+                    debug!("Received HLS data: {:?}", hls_data.tag_type());
                     self.writer_task.process_item(hls_data)?;
                 }
                 Err(e) => {

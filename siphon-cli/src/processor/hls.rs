@@ -76,7 +76,7 @@ pub async fn process_hls_stream(
 
     let extension = match first_segment {
         HlsData::TsData(_) => "ts",
-        HlsData::M4sData(_) => "mp4",
+        HlsData::M4sData(_) => "m4s",
         HlsData::EndMarker => {
             // This should not happen for the first segment, but we'll default to "ts"
             "ts"

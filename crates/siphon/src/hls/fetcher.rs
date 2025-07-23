@@ -141,9 +141,25 @@ impl SegmentDownloader for SegmentFetcher {
             }
         }
 
-        let downloaded_bytes = self
-            .fetch_with_retries(&segment_url, job.byte_range.as_ref())
-            .await?;
+        let mut attempts = 0;
+        let downloaded_bytes = loop {
+            attempts += 1;
+
+            match self
+                .fetch_with_retries(&segment_url, job.byte_range.as_ref())
+                .await
+            {
+                Ok(bytes) => break bytes,
+                Err(e) => {
+                    if attempts >= 3 {
+                        return Err(e);
+                    }
+                    let delay = self.config.fetcher_config.segment_retry_delay_base
+                        * (2_u32.pow((attempts as u32).saturating_sub(1)));
+                    tokio::time::sleep(delay).await;
+                }
+            }
+        };
 
         if let Some(cache) = &self.cache_service {
             let metadata = CacheMetadata::new(downloaded_bytes.len() as u64)

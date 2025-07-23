@@ -22,6 +22,7 @@ pub struct ScheduledSegmentJob {
     pub byte_range: Option<M3u8ByteRange>,
     pub discontinuity: bool,
     pub media_segment: MediaSegment,
+    pub is_init_segment: bool,
 }
 
 #[derive(Debug)]

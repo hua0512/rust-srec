@@ -220,6 +220,7 @@ impl OutputManager {
                     self.reorder_buffer.remove_entry(&segment_sequence)
                 {
                     if segment_output.discontinuity {
+                        debug!("sending discontinuity tag encountered");
                         if self
                             .event_tx
                             .send(Ok(HlsStreamEvent::DiscontinuityTagEncountered {}))
@@ -288,14 +289,15 @@ impl OutputManager {
                             self.config.output_config.live_gap_skip_threshold_segments,
                             segment_sequence
                         );
-                        if self
-                            .event_tx
-                            .send(Ok(HlsStreamEvent::DiscontinuityTagEncountered {}))
-                            .await
-                            .is_err()
-                        {
-                            return Err(());
-                        }
+                        // we don't send discontinuity tag here, because it's not a discontinuity
+                        // if self
+                        //     .event_tx
+                        //     .send(Ok(HlsStreamEvent::DiscontinuityTagEncountered {}))
+                        //     .await
+                        //     .is_err()
+                        // {
+                        //     return Err(());
+                        // }
                         self.expected_next_media_sequence = segment_sequence; // Jump to the available segment
 
                         // Reset gap state as we are skipping
@@ -453,6 +455,7 @@ impl OutputManager {
         // Removes and returns the first element (smallest key),
         while let Some((_key, segment_output)) = self.reorder_buffer.pop_first() {
             if segment_output.discontinuity {
+                debug!("sending discontinuity tag encountered in flush_reorder_buffer");
                 if self
                     .event_tx
                     .send(Ok(HlsStreamEvent::DiscontinuityTagEncountered {}))

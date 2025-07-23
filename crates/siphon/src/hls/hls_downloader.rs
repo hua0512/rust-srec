@@ -1,10 +1,11 @@
 use std::sync::Arc;
 
+use crate::media_protocol::{Cacheable, MultiSource};
 use futures::StreamExt;
 use hls::HlsData;
 use reqwest::Client;
 use tokio_stream::wrappers::ReceiverStream;
-use crate::media_protocol::{Cacheable, MultiSource};
+use tracing::debug;
 
 use crate::{
     BoxMediaStream, CacheManager, Download, DownloadError, ProtocolBase, SourceManager,
@@ -63,6 +64,7 @@ impl HlsDownloader {
                 Ok(event) => match event {
                     HlsStreamEvent::Data(data) => Some(Ok(data)),
                     HlsStreamEvent::DiscontinuityTagEncountered { .. } => {
+                        debug!("Discontinuity tag encountered");
                         Some(Ok(HlsData::EndMarker))
                     }
                     _ => None,

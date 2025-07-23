@@ -84,7 +84,12 @@ impl SegmentTransformer for SegmentProcessor {
             .map_err(|e| HlsDownloaderError::SegmentProcessError(format!("Invalid URL: {}", e)))?;
         let len = current_data.len();
         let current_data_clone = current_data.clone();
-        let hls_data = create_hls_data(job.media_segment.clone(), current_data, &segment_url);
+        let hls_data = create_hls_data(
+            job.media_segment.clone(),
+            current_data,
+            &segment_url,
+            job.is_init_segment,
+        );
 
         if let Some(cache_service) = &self.cache_service {
             // Cache the decrypted raw segment

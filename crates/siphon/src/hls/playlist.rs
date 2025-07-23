@@ -316,6 +316,8 @@ impl PlaylistProvider for PlaylistEngine {
         let mut seen_segment_uris: LruCache<String, ()> =
             LruCache::new(NonZeroUsize::new(SEEN_SEGMENTS_LRU_CAPACITY).unwrap());
 
+        let mut last_map_uri: Option<String> = None;
+
         let mut retries = 0;
 
         loop {
@@ -366,6 +368,45 @@ impl PlaylistProvider for PlaylistEngine {
                             let mut jobs_to_send = Vec::new();
 
                             for (idx, segment) in new_mp.segments.iter().enumerate() {
+                                if let Some(map_info) = &segment.map {
+                                    let absolute_map_uri = if map_info.uri.starts_with("http://") || map_info.uri.starts_with("https://") {
+                                        map_info.uri.clone()
+                                    } else {
+                                        match Url::parse(&base_url) {
+                                            Ok(b_url) => b_url.join(&map_info.uri).map(|u| u.to_string()).unwrap_or_else(|e| {
+                                                error!("Error joining base_url '{}' with map URI '{}': {}", base_url, map_info.uri, e);
+                                                map_info.uri.clone()
+                                            }),
+                                            Err(e) => {
+                                                error!("Invalid base_url '{}' for resolving map URI '{}': {}", base_url, map_info.uri, e);
+                                                map_info.uri.clone()
+                                            }
+                                        }
+                                    };
+
+                                    if last_map_uri.as_ref() != Some(&absolute_map_uri) {
+                                        debug!("New init segment detected: {}", absolute_map_uri);
+                                        let init_job = ScheduledSegmentJob {
+                                            segment_uri: absolute_map_uri.clone(),
+                                            base_url: base_url.clone(),
+                                            media_sequence_number: new_mp.media_sequence + idx as u64,
+                                            duration: 0.0,
+                                            key: segment.key.clone(),
+                                            byte_range: map_info.byte_range.clone(),
+                                            discontinuity: segment.discontinuity,
+                                            media_segment: segment.clone(),
+                                            is_init_segment: true,
+                                        };
+                                        if segment_request_tx.send(init_job).await.is_err() {
+                                            error!("SegmentScheduler request channel closed while sending init job for {}.", playlist_url_str);
+                                            return Err(HlsDownloaderError::InternalError(
+                                                "SegmentScheduler request channel closed".to_string(),
+                                            ));
+                                        }
+                                        last_map_uri = Some(absolute_map_uri);
+                                    }
+                                }
+
                                 let absolute_segment_uri = if segment.uri.starts_with("http://")
                                     || segment.uri.starts_with("https://")
                                 {
@@ -395,6 +436,7 @@ impl PlaylistProvider for PlaylistEngine {
                                         byte_range: segment.byte_range.clone(),
                                         discontinuity: segment.discontinuity,
                                         media_segment: segment.clone(),
+                                        is_init_segment: false,
                                     };
                                     jobs_to_send.push(job);
                                 } else {

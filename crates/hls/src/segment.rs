@@ -23,7 +23,7 @@ impl Display for SegmentType {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             SegmentType::Ts => write!(f, "ts"),
-            SegmentType::M4sInit => write!(f, "mp4"),
+            SegmentType::M4sInit => write!(f, "m4s"),
             SegmentType::M4sMedia => write!(f, "m4s"),
             SegmentType::EndMarker => write!(f, "end_marker"),
         }
@@ -569,6 +569,18 @@ impl HlsData {
             }
             // Init segments don't have keyframes
             _ => false,
+        }
+    }
+
+    /// Check if this segment is a discontinuity
+    /// For TS: checks for discontinuity flag in the segment
+    /// For MP4: checks for discontinuity flag in the segment
+    /// For EndMarker: returns false
+    pub fn is_discontinuity(&self) -> bool {
+        match self {
+            HlsData::TsData(ts) => ts.segment.discontinuity,
+            HlsData::M4sData(m4s) => m4s.media_segment().unwrap().discontinuity,
+            HlsData::EndMarker => false,
         }
     }
 
