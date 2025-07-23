@@ -29,7 +29,7 @@ flv-fix = { path = "../crates/flv-fix" }
 hls = { path = "../crates/hls" }
 hls-fix = { path = "../crates/hls-fix" }
 mesio-engine = { path = "../crates/mesio" }
-indicatif = "0.17.11"
+indicatif = "0.18.0"
 
 [profile.release]
 lto = true
