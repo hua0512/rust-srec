@@ -2,7 +2,7 @@ use futures::StreamExt;
 use hls::HlsData;
 use hls_fix::HlsWriter;
 use hls_fix::{HlsPipeline, HlsPipelineConfig};
-use pipeline_common::{PipelineError, StreamerContext};
+use pipeline_common::{OnProgress, PipelineError, StreamerContext};
 use std::path::Path;
 use std::sync::Arc;
 use std::time::Instant;
@@ -11,8 +11,7 @@ use tracing::{debug, info, warn};
 use siphon_engine::DownloaderInstance;
 
 use crate::config::ProgramConfig;
-use crate::output::output::OutputFormat;
-use crate::utils::progress::ProgressManager;
+use crate::output::provider::OutputFormat;
 
 /// Process an HLS stream
 pub async fn process_hls_stream(
@@ -20,7 +19,7 @@ pub async fn process_hls_stream(
     output_dir: &Path,
     config: &ProgramConfig,
     name_template: &str,
-    pb_manager: &mut ProgressManager,
+    on_progress: Option<OnProgress>,
     downloader: &mut DownloaderInstance,
 ) -> Result<u64, Box<dyn std::error::Error>> {
     let start_time = Instant::now();
@@ -42,21 +41,11 @@ pub async fn process_hls_stream(
         None => file_name,
     };
     let base_name = name_template.replace("%u", &base_name);
-
-    // Setup progress reporting
-    // pb_manager.add_url_progress(url_str);
-    // let progress_clone = pb_manager.clone();
-
     // Add the source URL with priority 0 (for potential fallback)
     downloader.add_source(url_str, 0);
 
     // Create output with appropriate format
     let output_format = config.output_format.unwrap_or(OutputFormat::File);
-
-    // Add a file progress bar if progress manager is enabled
-    // if !pb_manager.is_disabled() {
-    //     pb_manager.add_file_progress(&format!("{}.ts", base_name));
-    // }
 
     // Start the download
     let mut stream = match downloader {
@@ -67,7 +56,7 @@ pub async fn process_hls_stream(
     // Peek at the first segment to determine the file extension
     let first_segment = match stream.next().await {
         Some(Ok(segment)) => segment,
-        Some(Err(e)) => return Err(format!("Failed to get first HLS segment: {}", e).into()),
+        Some(Err(e)) => return Err(format!("Failed to get first HLS segment: {e}").into()),
         None => {
             info!("HLS stream is empty.");
             return Ok(0);
@@ -122,16 +111,11 @@ pub async fn process_hls_stream(
         pipeline.process(input, &mut output).unwrap();
     });
 
-    // // Add a file progress bar if progress manager is enabled
-    // if !pb_manager.is_disabled() {
-    //     pb_manager.add_file_progress(&base_name);
-    // }
-
     let output_dir = output_dir.to_path_buf();
     let extension = extension.to_string();
 
     let writer_handle = tokio::task::spawn_blocking(move || {
-        let mut writer_task = HlsWriter::new(output_dir, base_name, extension);
+        let mut writer_task = HlsWriter::new(output_dir, base_name, extension, on_progress);
         writer_task.run(output_rx)
     });
 
@@ -150,7 +134,7 @@ pub async fn process_hls_stream(
                     }
                 }
                 Err(e) => {
-                    let err_msg = format!("HLS segment error: {}", e);
+                    let err_msg = format!("HLS segment error: {e}");
                     if sender
                         .send(Err(PipelineError::Processing(err_msg.clone())))
                         .is_err()
@@ -165,9 +149,9 @@ pub async fn process_hls_stream(
 
     drop(sender);
 
-    let (ts_segments_written, total_segments_written) = writer_handle.await??;
+    let (_ts_segments_written, total_segments_written) = writer_handle.await??;
 
-    let _ = process_task.await?;
+    process_task.await?;
 
     let elapsed = start_time.elapsed();
 
@@ -178,8 +162,6 @@ pub async fn process_hls_stream(
         duration = ?elapsed,
         "HLS download complete"
     );
-
-    // pb_manager.finish(&format!("Download complete"));
 
     Ok(total_segments_written as u64)
 }

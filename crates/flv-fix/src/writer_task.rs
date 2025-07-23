@@ -1,19 +1,17 @@
 use crate::{analyzer::FlvAnalyzer, script_modifier};
 use flv::{FlvData, FlvHeader, FlvWriter};
+use pipeline_common::progress::ProgressEvent;
 use pipeline_common::{
-    FormatStrategy, PostWriteAction, WriterConfig, WriterState, expand_filename_template,
+    FormatStrategy, OnProgress, PostWriteAction, Progress, WriterConfig, WriterState,
+    expand_filename_template,
 };
 use std::{
     fs::OpenOptions,
     io::BufWriter,
     path::{Path, PathBuf},
-    sync::Arc,
-    time::Instant,
+    time::{Duration, Instant},
 };
 use tracing::info;
-
-pub type StatusCallback =
-    Arc<dyn Fn(Option<&PathBuf>, u64, f64, Option<u32>) + Send + Sync + 'static>;
 
 /// Error type for FLV strategy
 #[derive(Debug, thiserror::Error)]
@@ -39,18 +37,18 @@ pub struct FlvFormatStrategy {
     current_tag_count: u64,
 
     // Callbacks
-    status_callback: Option<StatusCallback>,
+    on_progress: Option<OnProgress>,
 }
 
 impl FlvFormatStrategy {
-    pub fn new(status_callback: Option<StatusCallback>) -> Self {
+    pub fn new(on_progress: Option<OnProgress>) -> Self {
         Self {
             analyzer: FlvAnalyzer::default(),
             pending_header: None,
             file_start_instant: None,
             last_header_received: false,
             current_tag_count: 0,
-            status_callback,
+            on_progress,
         }
     }
 
@@ -69,15 +67,18 @@ impl FlvFormatStrategy {
     }
 
     fn update_status(&self, state: &WriterState) {
-        if let Some(callback) = &self.status_callback {
-            let rate = self.calculate_write_rate(state.bytes_written_current_file);
-            let duration = self.calculate_duration();
-            callback(
-                state.current_file_path.as_ref(),
-                state.bytes_written_current_file,
-                rate,
-                Some(duration),
-            );
+        if let Some(callback) = &self.on_progress {
+            let progress = Progress {
+                bytes_written: state.bytes_written_current_file,
+                total_bytes: None, // FLV streams don't have a known total size
+                items_processed: self.current_tag_count,
+                rate: self.calculate_write_rate(state.bytes_written_current_file),
+                duration: Some(Duration::from_millis(self.calculate_duration() as u64)),
+            };
+            callback(ProgressEvent::ProgressUpdate {
+                path: state.current_path.clone(),
+                progress,
+            });
         }
     }
 }
@@ -161,6 +162,11 @@ impl FormatStrategy<FlvData> for FlvFormatStrategy {
         _config: &WriterConfig,
         _state: &WriterState,
     ) -> Result<u64, Self::StrategyError> {
+        if let Some(callback) = &self.on_progress {
+            callback(ProgressEvent::FileOpened {
+                path: path.to_path_buf(),
+            });
+        }
         self.file_start_instant = Some(Instant::now());
         self.analyzer.reset();
         self.current_tag_count = 0;
@@ -195,6 +201,12 @@ impl FormatStrategy<FlvData> for FlvFormatStrategy {
             if let Err(e) = script_modifier::inject_stats_into_script_data(path, stats) {
                 tracing::warn!(path = %path.display(), error = ?e, "Failed to inject stats into script data section");
             }
+        }
+
+        if let Some(callback) = &self.on_progress {
+            callback(ProgressEvent::FileClosed {
+                path: path.to_path_buf(),
+            });
         }
 
         Ok(0)

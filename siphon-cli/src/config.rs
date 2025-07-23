@@ -1,7 +1,7 @@
 use flv_fix::PipelineConfig;
-use siphon_engine::{DownloaderConfig, flv::FlvConfig, hls::HlsConfig};
+use siphon_engine::{flv::FlvConfig, hls::HlsConfig};
 
-use crate::output::output::OutputFormat;
+use crate::output::provider::OutputFormat;
 
 /// Configuration for the entire program
 #[derive(Debug, Clone)]
@@ -14,9 +14,6 @@ pub struct ProgramConfig {
 
     /// HLS-specific configuration
     pub hls_config: Option<HlsConfig>,
-
-    /// Common downloader configuration
-    pub download_config: Option<DownloaderConfig>,
 
     /// Whether to enable processing pipeline (vs raw download)
     pub enable_processing: bool,

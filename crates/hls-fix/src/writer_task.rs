@@ -3,12 +3,14 @@ use std::{
     io::{BufWriter, Write},
     path::PathBuf,
     sync::mpsc::Receiver,
+    time::Duration,
 };
 
 use hls::{HlsData, M4sData};
+use pipeline_common::progress::ProgressEvent;
 use pipeline_common::{
-    FormatStrategy, PostWriteAction, TaskError, WriterConfig, WriterState, WriterTask,
-    expand_filename_template,
+    FormatStrategy, OnProgress, PostWriteAction, Progress, TaskError, WriterConfig, WriterState,
+    WriterTask, expand_filename_template,
 };
 use thiserror::Error;
 use tracing::{debug, error, info};
@@ -20,6 +22,7 @@ pub struct HlsFormatStrategy {
     current_offset: u64,
     is_finalizing: bool,
     target_duration: f32,
+    on_progress: Option<OnProgress>,
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -33,12 +36,13 @@ pub enum HlsStrategyError {
 }
 
 impl HlsFormatStrategy {
-    pub fn new() -> Self {
+    pub fn new(on_progress: Option<OnProgress>) -> Self {
         Self {
             analyzer: HlsAnalyzer::new(),
             current_offset: 0,
             is_finalizing: false,
             target_duration: 0.0,
+            on_progress,
         }
     }
 
@@ -48,6 +52,22 @@ impl HlsFormatStrategy {
         self.current_offset = 0;
         self.target_duration = 0.0;
         Ok(())
+    }
+
+    fn update_status(&self, state: &WriterState) {
+        if let Some(callback) = &self.on_progress {
+            let progress = Progress {
+                bytes_written: state.bytes_written_current_file,
+                total_bytes: None, // HLS streams don't have a known total size
+                items_processed: state.items_written_current_file as u64,
+                rate: 0.0,
+                duration: Some(Duration::from_secs_f32(self.target_duration)),
+            };
+            callback(ProgressEvent::ProgressUpdate {
+                path: state.current_path.clone(),
+                progress,
+            });
+        }
     }
 }
 
@@ -122,22 +142,32 @@ impl FormatStrategy<HlsData> for HlsFormatStrategy {
     fn on_file_open(
         &mut self,
         _writer: &mut Self::Writer,
-        _path: &std::path::Path,
+        path: &std::path::Path,
         _config: &WriterConfig,
         _state: &WriterState,
     ) -> Result<u64, Self::StrategyError> {
+        if let Some(callback) = &self.on_progress {
+            callback(ProgressEvent::FileOpened {
+                path: path.to_path_buf(),
+            });
+        }
         Ok(0)
     }
 
     fn on_file_close(
         &mut self,
         _writer: &mut Self::Writer,
-        _path: &std::path::Path,
+        path: &std::path::Path,
         _config: &WriterConfig,
         _state: &WriterState,
     ) -> Result<u64, Self::StrategyError> {
         if self.is_finalizing {
             self.reset()?;
+        }
+        if let Some(callback) = &self.on_progress {
+            callback(ProgressEvent::FileClosed {
+                path: path.to_path_buf(),
+            });
         }
         Ok(0)
     }
@@ -146,8 +176,9 @@ impl FormatStrategy<HlsData> for HlsFormatStrategy {
         &mut self,
         item: &HlsData,
         _bytes_written: u64,
-        _state: &WriterState,
+        state: &WriterState,
     ) -> Result<PostWriteAction, Self::StrategyError> {
+        self.update_status(state);
         if matches!(item, HlsData::EndMarker) {
             let stats = self
                 .analyzer
@@ -179,9 +210,14 @@ pub struct HlsWriter {
 }
 
 impl HlsWriter {
-    pub fn new(output_dir: PathBuf, base_name: String, extension: String) -> Self {
+    pub fn new(
+        output_dir: PathBuf,
+        base_name: String,
+        extension: String,
+        on_progress: Option<OnProgress>,
+    ) -> Self {
         let writer_config = WriterConfig::new(output_dir, base_name, extension);
-        let strategy = HlsFormatStrategy::new();
+        let strategy = HlsFormatStrategy::new(on_progress);
         let writer_task = WriterTask::new(writer_config, strategy);
         Self { writer_task }
     }

@@ -55,6 +55,7 @@ impl WriterConfig {
 #[derive(Debug, Default)]
 pub struct WriterState {
     /// Current output file path.
+    pub current_path: PathBuf,
     pub current_file_path: Option<PathBuf>,
     /// Number of items written to the current file.
     pub items_written_current_file: usize,
@@ -72,6 +73,7 @@ pub struct WriterState {
 
 impl WriterState {
     pub fn reset_for_new_file(&mut self, new_path: PathBuf) {
+        self.current_path = new_path.clone();
         self.current_file_path = Some(new_path);
         self.items_written_current_file = 0;
         self.bytes_written_current_file = 0;

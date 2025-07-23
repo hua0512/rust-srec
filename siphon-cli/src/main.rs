@@ -1,13 +1,18 @@
 use std::process::exit;
 use std::str::FromStr;
-use std::{path::PathBuf, time::Duration};
+use std::{
+    path::PathBuf,
+    sync::Arc,
+    time::Duration,
+};
 
 use clap::Parser;
 use config::ProgramConfig;
 use flv_fix::PipelineConfig;
 use flv_fix::RepairStrategy;
 use flv_fix::ScriptFillerConfig;
-use output::output::OutputFormat;
+use indicatif::MultiProgress;
+use output::provider::OutputFormat;
 use siphon_engine::flv::FlvConfig;
 use siphon_engine::{DownloaderConfig, HlsProtocolBuilder, ProxyAuth, ProxyConfig, ProxyType};
 use tracing::{Level, error, info};
@@ -103,14 +108,11 @@ async fn main() {
     let output_dir = args.output_dir.unwrap_or_else(|| PathBuf::from("./fix"));
 
     // Create a progress manager based on show_progress flag
-    let mut progress_manager = if args.show_progress {
-        // Create an active progress manager
-        let manager = ProgressManager::new_with_mode(None, false);
-        manager.set_status("Initializing...");
-        manager
+    let multi = MultiProgress::new();
+    let progress_manager = if args.show_progress {
+        ProgressManager::new(multi.clone())
     } else {
-        // Create a fully disabled progress manager (no UI elements created)
-        ProgressManager::disabled()
+        ProgressManager::new_disabled(multi.clone())
     };
 
     // Handle proxy configuration
@@ -204,9 +206,6 @@ async fn main() {
         .segment_retry_count(args.hls_retries)
         .get_config();
 
-    // Update progress status
-    progress_manager.set_status(&format!("Processing {} input(s)...", args.input.len()));
-
     let output_format = OutputFormat::from_str(&args.output_format).unwrap_or_else(|_| {
         error!(
             "Invalid output format: '{}'. Defaulting to 'file'.",
@@ -220,7 +219,6 @@ async fn main() {
         pipeline_config,
         flv_config: Some(flv_config),
         hls_config: Some(hls_config),
-        download_config: Some(download_config),
         enable_processing: args.enable_fix,
         channel_size: args.buffer_size,
         output_format: Some(output_format),
@@ -232,16 +230,16 @@ async fn main() {
         &output_dir,
         &mut program_config,
         &args.output_name_template,
-        &mut progress_manager,
+        Some(Arc::new(move |event| {
+            progress_manager.handle_event(event);
+        })),
     )
     .await
     {
         Ok(_) => {
-            progress_manager.finish("All processing completed successfully");
             info!("All processing completed");
         }
         Err(e) => {
-            progress_manager.finish(&format!("Processing failed: {}", e));
             error!(error = ?e, "Processing failed");
             exit(1);
         }

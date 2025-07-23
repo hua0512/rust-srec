@@ -24,6 +24,7 @@ use thiserror::Error;
 pub mod context;
 pub mod pipeline;
 pub mod processor;
+pub mod progress;
 mod template;
 pub mod test_utils;
 mod writer_task_common;
@@ -32,6 +33,7 @@ mod writer_task_common;
 pub use context::StreamerContext;
 pub use pipeline::Pipeline;
 pub use processor::Processor;
+pub use progress::{OnProgress, Progress, ProgressEvent};
 pub use template::{expand_filename_template, sanitize_filename};
 pub use writer_task_common::{
     FormatStrategy, PostWriteAction, TaskError, WriterConfig, WriterState, WriterTask,

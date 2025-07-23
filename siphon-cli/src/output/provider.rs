@@ -1,12 +1,9 @@
 use std::fs::File;
 use std::io::{self, BufWriter, Write};
 use std::path::{Path, PathBuf};
-use std::sync::{Arc, Mutex};
 
 use bytes::Bytes;
 use tracing::{debug, info};
-
-use crate::utils::progress::ProgressManager;
 
 /// OutputFormat enum to specify the type of output
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -27,7 +24,7 @@ impl std::str::FromStr for OutputFormat {
             "file" => Ok(OutputFormat::File),
             "stdout" => Ok(OutputFormat::Stdout),
             "stderr" => Ok(OutputFormat::Stderr),
-            _ => Err(format!("Unknown output format: {}", s)),
+            _ => Err(format!("Unknown output format: {s}")),
         }
     }
 }
@@ -50,9 +47,6 @@ pub trait OutputProvider: Send + Sync {
     /// Flush any buffered data
     fn flush(&mut self) -> io::Result<()>;
 
-    /// Get the path if this is a file provider, None otherwise
-    fn path(&self) -> Option<&Path>;
-
     /// Get total bytes written so far
     fn bytes_written(&self) -> u64;
 
@@ -63,7 +57,6 @@ pub trait OutputProvider: Send + Sync {
 /// A file-based output provider
 pub struct FileOutputProvider {
     writer: BufWriter<File>,
-    path: PathBuf,
     bytes_written: u64,
 }
 
@@ -73,7 +66,6 @@ impl FileOutputProvider {
         let file = File::create(&path)?;
         Ok(Self {
             writer: BufWriter::new(file),
-            path,
             bytes_written: 0,
         })
     }
@@ -88,10 +80,6 @@ impl OutputProvider for FileOutputProvider {
 
     fn flush(&mut self) -> io::Result<()> {
         self.writer.flush()
-    }
-
-    fn path(&self) -> Option<&Path> {
-        Some(&self.path)
     }
 
     fn bytes_written(&self) -> u64 {
@@ -138,10 +126,6 @@ impl OutputProvider for PipeOutputProvider {
         self.writer.flush()
     }
 
-    fn path(&self) -> Option<&Path> {
-        None
-    }
-
     fn bytes_written(&self) -> u64 {
         self.bytes_written
     }
@@ -154,18 +138,11 @@ impl OutputProvider for PipeOutputProvider {
 /// Output manager that handles creating and managing output providers
 pub struct OutputManager {
     provider: Box<dyn OutputProvider>,
-    progress_manager: Option<ProgressManager>,
-    update_interval: usize,
-    update_counter: usize,
 }
 
 impl OutputManager {
     /// Create a new output manager with a specific output format
-    pub fn new(
-        format: OutputFormat,
-        output_path: Option<PathBuf>,
-        progress_manager: Option<ProgressManager>,
-    ) -> io::Result<Self> {
+    pub fn new(format: OutputFormat, output_path: Option<PathBuf>) -> io::Result<Self> {
         let provider: Box<dyn OutputProvider> = match format {
             OutputFormat::File => {
                 let path = output_path.ok_or_else(|| {
@@ -180,34 +157,12 @@ impl OutputManager {
             OutputFormat::Stderr => Box::new(PipeOutputProvider::stderr()?),
         };
 
-        Ok(Self {
-            provider,
-            progress_manager,
-            update_interval: 100, // Update progress every 100 writes
-            update_counter: 0,
-        })
+        Ok(Self { provider })
     }
 
     /// Write data to the output provider with progress updates
     pub fn write(&mut self, bytes: &[u8]) -> io::Result<usize> {
-        let result = self.provider.write(bytes);
-
-        // Update progress if we have a progress manager
-        if let Some(ref pm) = self.progress_manager {
-            self.update_counter += 1;
-            if self.update_counter >= self.update_interval {
-                pm.update_main_progress(self.provider.bytes_written());
-
-                // Update file progress if it exists
-                if let Some(file_pb) = pm.get_file_progress() {
-                    file_pb.set_position(self.provider.bytes_written());
-                }
-
-                self.update_counter = 0;
-            }
-        }
-
-        result
+        self.provider.write(bytes)
     }
 
     /// Write bytes from the Bytes type
@@ -220,35 +175,12 @@ impl OutputManager {
         self.provider.flush()
     }
 
-    /// Get the path of the output (if it's a file)
-    pub fn path(&self) -> Option<&Path> {
-        self.provider.path()
-    }
-
-    /// Get total bytes written
-    pub fn bytes_written(&self) -> u64 {
-        self.provider.bytes_written()
-    }
-
-    /// Set a new progress manager
-    pub fn set_progress_manager(&mut self, progress_manager: ProgressManager) {
-        self.progress_manager = Some(progress_manager);
-    }
-
     /// Close the output and finalize
     pub fn close(mut self) -> io::Result<u64> {
         self.flush()?;
         self.provider.close()?;
 
-        // Final progress update
-        if let Some(ref pm) = self.progress_manager {
-            pm.update_main_progress(self.provider.bytes_written());
-
-            // Final file progress update
-            if let Some(file_pb) = pm.get_file_progress() {
-                file_pb.set_position(self.provider.bytes_written());
-            }
-        }
+        // Progress updates are now handled by the event system
 
         Ok(self.provider.bytes_written())
     }
@@ -260,69 +192,24 @@ pub fn create_output(
     output_dir: &Path,
     base_name: &str,
     extension: &str,
-    progress_manager: Option<ProgressManager>,
 ) -> io::Result<OutputManager> {
     match format {
         OutputFormat::File => {
             // Ensure output directory exists
             std::fs::create_dir_all(output_dir)?;
 
-            let path = output_dir.join(format!("{}.{}", base_name, extension));
+            let path = output_dir.join(format!("{base_name}.{extension}"));
             info!("Creating file output: {}", path.display());
 
-            OutputManager::new(format, Some(path), progress_manager)
+            OutputManager::new(format, Some(path))
         }
         OutputFormat::Stdout => {
             debug!("Creating stdout output");
-            OutputManager::new(format, None, progress_manager)
+            OutputManager::new(format, None)
         }
         OutputFormat::Stderr => {
             debug!("Creating stderr output");
-            OutputManager::new(format, None, progress_manager)
+            OutputManager::new(format, None)
         }
     }
-}
-
-// Helper function for async code that needs to write to the output manager
-pub async fn write_stream_to_output<E>(
-    stream: &mut (impl futures::Stream<Item = Result<Bytes, E>> + Unpin),
-    output: Arc<Mutex<OutputManager>>,
-) -> Result<u64, io::Error>
-where
-    E: std::error::Error,
-{
-    use futures::StreamExt;
-
-    let mut total_bytes = 0u64;
-
-    while let Some(result) = stream.next().await {
-        match result {
-            Ok(bytes) => {
-                let bytes_len = bytes.len();
-                // Write to output manager through mutex lock
-                output
-                    .lock()
-                    .map_err(|e| {
-                        io::Error::new(io::ErrorKind::Other, format!("Mutex error: {}", e))
-                    })?
-                    .write(&bytes)?;
-
-                total_bytes += bytes_len as u64;
-            }
-            Err(e) => {
-                return Err(io::Error::new(
-                    io::ErrorKind::Other,
-                    format!("Stream error: {}", e),
-                ));
-            }
-        }
-    }
-
-    // Final flush
-    output
-        .lock()
-        .map_err(|e| io::Error::new(io::ErrorKind::Other, format!("Mutex error: {}", e)))?
-        .flush()?;
-
-    Ok(total_bytes)
 }

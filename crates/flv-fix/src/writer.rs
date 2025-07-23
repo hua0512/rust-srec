@@ -15,9 +15,9 @@ pub enum FlvWriterError {
     InputError(FlvError),
 }
 
-use crate::writer_task::{FlvFormatStrategy, StatusCallback};
+use crate::writer_task::FlvFormatStrategy;
 use flv::data::FlvData;
-use pipeline_common::{WriterConfig, WriterState, WriterTask};
+use pipeline_common::{OnProgress, WriterConfig, WriterState, WriterTask};
 use std::path::PathBuf;
 use std::sync::mpsc::Receiver;
 
@@ -31,10 +31,10 @@ impl FlvWriter {
     pub fn new(
         output_dir: PathBuf,
         base_name: String,
-        status_callback: Option<StatusCallback>,
+        on_progress: Option<OnProgress>,
     ) -> Self {
         let writer_config = WriterConfig::new(output_dir, base_name, "flv".to_string());
-        let strategy = FlvFormatStrategy::new(status_callback);
+        let strategy = FlvFormatStrategy::new(on_progress);
         let writer_task = WriterTask::new(writer_config, strategy);
         Self { writer_task }
     }

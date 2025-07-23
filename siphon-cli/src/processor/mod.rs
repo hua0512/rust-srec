@@ -1,11 +1,12 @@
 mod flv;
 mod hls;
 
+use pipeline_common::OnProgress;
 use siphon_engine::{DownloadManagerConfig, ProtocolType, SiphonDownloaderFactory};
 use std::path::{Path, PathBuf};
 use tracing::{error, info};
 
-use crate::{config::ProgramConfig, utils::progress::ProgressManager};
+use crate::config::ProgramConfig;
 
 /// Determine the type of input and process accordingly
 pub async fn process_inputs(
@@ -13,7 +14,7 @@ pub async fn process_inputs(
     output_dir: &Path,
     config: &mut ProgramConfig,
     name_template: &str,
-    progress_manager: &mut ProgressManager,
+    on_progress: Option<OnProgress>,
 ) -> Result<(), Box<dyn std::error::Error>> {
     if inputs.is_empty() {
         return Err("No input files or URLs provided".into());
@@ -28,7 +29,7 @@ pub async fn process_inputs(
     );
 
     // Preallocate a string builder for status messages to avoid repeated allocations
-    let mut status_buffer = String::with_capacity(100);
+    let _status_buffer = String::with_capacity(100);
 
     let factory = SiphonDownloaderFactory::new()
         .with_download_config(DownloadManagerConfig::default())
@@ -37,7 +38,7 @@ pub async fn process_inputs(
 
     // Process each input
     for (index, input) in inputs.iter().enumerate() {
-        let input_index = index + 1;
+        let _input_index = index + 1;
 
         // Log which input we're processing
         // info!(
@@ -49,17 +50,6 @@ pub async fn process_inputs(
         //     inputs_len
         // );
 
-        // // Update progress manager if it's not disabled - reuse the string buffer
-        // if !progress_manager.is_disabled() {
-        //     status_buffer.clear();
-        //     status_buffer.push_str("Processing input (");
-        //     status_buffer.push_str(&input_index.to_string());
-        //     status_buffer.push('/');
-        //     status_buffer.push_str(&inputs_len.to_string());
-        //     status_buffer.push_str(") - ");
-        //     status_buffer.push_str(input);
-        //     progress_manager.set_status(&status_buffer);
-        // }
 
         // Process based on input type
         if input.starts_with("http://") || input.starts_with("https://") {
@@ -74,7 +64,7 @@ pub async fn process_inputs(
                         output_dir,
                         config,
                         name_template,
-                        progress_manager,
+                        on_progress.clone(),
                         &mut downloader,
                     )
                     .await?;
@@ -85,14 +75,14 @@ pub async fn process_inputs(
                         output_dir,
                         config,
                         name_template,
-                        progress_manager,
+                        on_progress.clone(),
                         &mut downloader,
                     )
                     .await?;
                 }
                 _ => {
-                    error!("Unsupported protocol for: {}", input);
-                    return Err(format!("Unsupported protocol: {}", input).into());
+                    error!("Unsupported protocol for: {input}");
+                    return Err(format!("Unsupported protocol: {input}").into());
                 }
             }
         } else {
@@ -103,26 +93,26 @@ pub async fn process_inputs(
                 if let Some(extension) = path.extension().and_then(|ext| ext.to_str()) {
                     match extension.to_lowercase().as_str() {
                         "flv" => {
-                            flv::process_file(&path, output_dir, config, progress_manager).await?;
+                            flv::process_file(&path, output_dir, config, on_progress.clone()).await?;
                         }
                         // "m3u8" | "m3u" => {
-                        //     hls::process_hls_file(&path, output_dir, config, progress_manager).await?;
+                        //     hls::process_hls_file(&path, output_dir, config, &progress_manager).await?;
                         // },
                         _ => {
-                            error!("Unsupported file extension for: {}", input);
-                            return Err(format!("Unsupported file extension: {}", input).into());
+                            error!("Unsupported file extension for: {input}");
+                            return Err(format!("Unsupported file extension: {input}").into());
                         }
                     }
                 } else {
-                    error!("File without extension: {}", input);
-                    return Err(format!("File without extension: {}", input).into());
+                    error!("File without extension: {input}");
+                    return Err(format!("File without extension: {input}").into());
                 }
             } else {
                 error!(
                     "Input is neither a valid URL nor an existing file: {}",
                     input
                 );
-                return Err(format!("Invalid input: {}", input).into());
+                return Err(format!("Invalid input: {input}").into());
             }
         }
     }

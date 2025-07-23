@@ -56,12 +56,12 @@ pub fn format_duration(seconds: f64) -> String {
 
     if seconds >= 3600.0 {
         let hours = seconds / 3600.0;
-        write!(result, "{:.2}h", hours).unwrap();
+        write!(result, "{hours:.2}h").unwrap();
     } else if seconds >= 60.0 {
         let minutes = seconds / 60.0;
-        write!(result, "{:.2}m", minutes).unwrap();
+        write!(result, "{minutes:.2}m").unwrap();
     } else {
-        write!(result, "{:.2}s", seconds).unwrap();
+        write!(result, "{seconds:.2}s").unwrap();
     }
 
     result
