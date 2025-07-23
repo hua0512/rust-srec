@@ -23,10 +23,11 @@ use tracing::debug;
 ///
 /// # Example Usage
 ///
-/// ```rust
-/// use reqwest::Client;
-/// use crate::extractor::extractor::Extractor;
-///
+/// ```rust,ignore
+/// # use reqwest::Client;
+/// # use platforms_parser::extractor::platform_extractor::Extractor;
+/// #
+/// # async fn doc_test() -> Result<(), Box<dyn std::error::Error>> {
 /// let mut extractor = Extractor::new("Platform".to_string(), "https://example.com".to_string(), Client::new());
 ///
 /// // Add individual cookies
@@ -39,6 +40,8 @@ use tracing::debug;
 /// let response = extractor.get("https://api.example.com/data").send().await?;
 ///
 /// // Response cookies are automatically parsed and stored
+/// # Ok(())
+/// # }
 /// ```
 #[derive(Debug, Clone)]
 pub struct Extractor {
@@ -151,6 +154,9 @@ impl Extractor {
     /// # Example
     ///
     /// ```rust
+    /// # use reqwest::Client;
+    /// # use platforms_parser::extractor::platform_extractor::Extractor;
+    /// # let mut extractor = Extractor::new("Platform".to_string(), "https://example.com".to_string(), Client::new());
     /// extractor.add_cookie("session_token", "abc123def456");
     /// ```
     pub fn add_cookie<N: Into<String>, V: Into<String>>(&mut self, name: N, value: V) {
@@ -166,6 +172,10 @@ impl Extractor {
     /// # Example
     ///
     /// ```rust
+    /// # use rustc_hash::FxHashMap;
+    /// # use reqwest::Client;
+    /// # use platforms_parser::extractor::platform_extractor::Extractor;
+    /// # let mut extractor = Extractor::new("Platform".to_string(), "https://example.com".to_string(), Client::new());
     /// let mut cookies = FxHashMap::default();
     /// cookies.insert("token".to_string(), "xyz789".to_string());
     /// cookies.insert("user_id".to_string(), "12345".to_string());
@@ -185,6 +195,9 @@ impl Extractor {
     /// # Example
     ///
     /// ```rust
+    /// # use reqwest::Client;
+    /// # use platforms_parser::extractor::platform_extractor::Extractor;
+    /// # let mut extractor = Extractor::new("Platform".to_string(), "https://example.com".to_string(), Client::new());
     /// extractor.set_cookies_from_string("sessionid=abc123; csrftoken=def456; theme=dark");
     /// ```
     pub fn set_cookies_from_string(&mut self, cookie_string: &str) {

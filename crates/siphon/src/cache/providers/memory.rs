@@ -74,12 +74,22 @@ impl CacheProvider for MemoryCache {
             let data = entry.data.clone();
             let metadata = entry.metadata.clone();
 
-            // Check if entry has expired (Moka has automatic TTL, but we maintain our own expiration too)
-            if metadata.is_expired() {
-                debug!(key = ?key, "Memory cache entry has expired");
-                // Remove the entry from the cache
-                self.cache.invalidate(key).await;
-                return Ok(Some((data, metadata, CacheStatus::Expired)));
+            // Manually check for expiration based on metadata, which is necessary when no
+            // global TTL is set on the Moka cache.
+            if let Some(expires_at) = metadata.expires_at {
+                let now = std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .unwrap_or_default()
+                    .as_secs();
+
+                if now > 0 && now >= expires_at {
+                    debug!(
+                        key = ?key,
+                        "Memory cache entry expired based on metadata.expires_at"
+                    );
+                    self.cache.invalidate(key).await;
+                    return Ok(Some((data, metadata, CacheStatus::Expired)));
+                }
             }
 
             // Return a cache hit

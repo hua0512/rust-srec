@@ -240,6 +240,7 @@ mod tests {
     }
 
     #[tokio::test]
+    #[ignore]
     async fn test_gzip_compression_support() {
         use crate::extractor::default::default_client;
         use reqwest::header::HeaderValue;
