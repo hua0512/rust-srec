@@ -40,6 +40,17 @@ async fn run() -> Result<()> {
 
     // Initialize logging
     init_logging(args.verbose, args.quiet)?;
+    
+    info!("███████╗████████╗██████╗ ███████╗██╗   ██╗");
+    info!("██╔════╝╚══██╔══╝██╔══██╗██╔════╝██║   ██║");
+    info!("███████╗   ██║   ██████╔╝█████╗  ██║   ██║");
+    info!("╚════██║   ██║   ██╔══██╗██╔══╝  ╚██╗ ██╔╝");
+    info!("███████║   ██║   ██║  ██║███████╗ ╚████╔╝ ");
+    info!("╚══════╝   ╚═╝   ╚═╝  ╚═╝╚══════╝  ╚═══╝  ");
+    info!("");
+    info!("Streev - CLI tool for streaming media extraction and retrieval from various platforms");
+    info!("GitHub: https://github.com/hua0512/rust-srec");
+    info!("==================================================================");
 
     // Load configuration
     let config = AppConfig::load(args.config.as_deref())?;
@@ -47,16 +58,17 @@ async fn run() -> Result<()> {
     info!("Starting platforms-cli with config: {:?}", config);
 
     // Create command executor with proxy support
-    let executor = if args.proxy.is_some() || args.proxy_username.is_some() || args.proxy_password.is_some() {
-        CommandExecutor::new_with_proxy(
-            config,
-            args.proxy,
-            args.proxy_username,
-            args.proxy_password,
-        )
-    } else {
-        CommandExecutor::new(config)
-    };
+    let executor =
+        if args.proxy.is_some() || args.proxy_username.is_some() || args.proxy_password.is_some() {
+            CommandExecutor::new_with_proxy(
+                config,
+                args.proxy,
+                args.proxy_username,
+                args.proxy_password,
+            )
+        } else {
+            CommandExecutor::new(config)
+        };
 
     // Execute command
     match args.command {

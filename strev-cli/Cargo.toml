@@ -1,8 +1,8 @@
 [package]
-name = "platforms-cli"
+name = "strev"
 version = "0.1.0"
 edition = "2024"
-description = "CLI tool for extracting streaming media information from various platforms"
+description = "Strev (Streev) - CLI tool for streaming media extraction and retrieval from various platforms"
 authors = ["rust-srec team"]
 license = "MIT OR Apache-2.0"
 repository = "https://github.com/hua0512/rust-srec"
@@ -10,7 +10,7 @@ repository = "https://github.com/hua0512/rust-srec"
 [dependencies]
 anyhow = "1.0"
 thiserror = "1.0"
-platforms-parser = { path = "../platforms" }
+platforms-parser = { path = "../crates/platforms" }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 reqwest = "0.12"

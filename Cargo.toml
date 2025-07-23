@@ -3,6 +3,7 @@ resolver = "3"
 
 members = [
     "mesio-cli",
+    "strev-cli",
     "crates/flv",
     "crates/flv-fix",
     "crates/hls",
@@ -17,7 +18,6 @@ members = [
     "crates/amf0",
     "crates/platforms",
     "crates/tars-codec",
-    "crates/platforms-cli",
     "crates/pipeline-common",
     "crates/ts",
 ]

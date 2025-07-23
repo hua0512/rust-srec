@@ -1,10 +1,6 @@
 use std::process::exit;
 use std::str::FromStr;
-use std::{
-    path::PathBuf,
-    sync::Arc,
-    time::Duration,
-};
+use std::{path::PathBuf, sync::Arc, time::Duration};
 
 use clap::Parser;
 use config::ProgramConfig;
@@ -12,11 +8,12 @@ use flv_fix::PipelineConfig;
 use flv_fix::RepairStrategy;
 use flv_fix::ScriptFillerConfig;
 use indicatif::MultiProgress;
-use output::provider::OutputFormat;
 use mesio_engine::flv::FlvConfig;
 use mesio_engine::{DownloaderConfig, HlsProtocolBuilder, ProxyAuth, ProxyConfig, ProxyType};
+use output::provider::OutputFormat;
 use tracing::{Level, error, info};
 use tracing_subscriber::FmtSubscriber;
+use tracing_subscriber::fmt::writer::MakeWriterExt;
 
 mod cli;
 mod config;
@@ -40,7 +37,28 @@ async fn main() {
     } else {
         Level::INFO
     };
-    let subscriber = FmtSubscriber::builder().with_max_level(log_level).finish();
+    let log_file = std::fs::OpenOptions::new()
+        .create(true)
+        .write(true)
+        .truncate(true)
+        .open("mesio.log")
+        .unwrap_or_else(|e| {
+            eprintln!(
+                "Warning: Failed to create log file 'mesio.log': {}. Logging to console only.",
+                e
+            );
+            // Return a dummy writer that discards everything
+            std::fs::File::create(std::env::temp_dir().join("mesio_dummy.log"))
+                .expect("Failed to create temporary log file")
+        });
+
+    let multi_writer = MakeWriterExt::and(std::io::stdout, log_file);
+
+    let subscriber = FmtSubscriber::builder()
+        .with_max_level(log_level)
+        .with_writer(multi_writer)
+        .with_ansi(true)
+        .finish();
     tracing::subscriber::set_global_default(subscriber).expect("Failed to set tracing subscriber");
 
     info!("███╗   ███╗███████╗███████╗██╗ ██████╗ ");

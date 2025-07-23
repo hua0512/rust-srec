@@ -1,4 +1,4 @@
-# Platforms CLI
+# Strev CLI
 
 A high-performance, user-friendly CLI tool for extracting streaming media information from various online platforms.
 
@@ -35,7 +35,7 @@ A high-performance, user-friendly CLI tool for extracting streaming media inform
 ## Installation
 
 ```bash
-cargo build --release -p platforms-cli
+cargo build --release -p strev
 ```
 
 ## Usage
@@ -44,74 +44,74 @@ cargo build --release -p platforms-cli
 
 ```bash
 # Extract media info from a URL (includes extras by default)
-platforms-cli extract --url "https://twitch.tv/example_channel"
+strev extract --url "https://twitch.tv/example_channel"
 
 # Auto-select best quality stream
-platforms-cli extract --url "https://live.bilibili.com/123456" --auto-select
+strev extract --url "https://live.bilibili.com/123456" --auto-select
 
 # Filter streams by quality
-platforms-cli extract --url "https://douyu.com/123456" --quality "1080p"
+strev extract --url "https://douyu.com/123456" --quality "1080p"
 
 # Output in JSON format
-platforms-cli extract --url "https://huya.com/123456" --output json
+strev extract --url "https://huya.com/123456" --output json
 
 # Save to file
-platforms-cli extract --url "https://twitch.tv/example_channel" --output-file result.json
+strev extract --url "https://twitch.tv/example_channel" --output-file result.json
 
 # Exclude extra metadata
-platforms-cli extract --url "https://twitch.tv/example_channel" --no-extras
+strev extract --url "https://twitch.tv/example_channel" --no-extras
 ```
 
 ### Batch Processing
 
 ```bash
 # Process multiple URLs from a file
-platforms-cli batch --input urls.txt --output-dir ./results
+strev batch --input urls.txt --output-dir ./results
 
 # Limit concurrent extractions
-platforms-cli batch --input urls.txt --max-concurrent 3
+strev batch --input urls.txt --max-concurrent 3
 
 # Continue on errors
-platforms-cli batch --input urls.txt --continue-on-error
+strev batch --input urls.txt --continue-on-error
 ```
 
 ### Platform Information
 
 ```bash
 # List supported platforms
-platforms-cli platforms
+strev platforms
 
 # Show detailed platform information
-platforms-cli platforms --detailed
+strev platforms --detailed
 ```
 
 ### Configuration
 
 ```bash
 # Show current configuration
-platforms-cli config --show
+strev config --show
 
 # Reset to defaults
-platforms-cli config --reset
+strev config --reset
 
 # Use custom config file
-platforms-cli --config ~/.config/platforms-cli/config.toml extract --url "https://twitch.tv/channel_name"
+strev --config ~/.config/strev/config.toml extract --url "https://twitch.tv/channel_name"
 ```
 
 ### Shell Completions
 
 ```bash
 # Generate bash completions
-platforms-cli completions bash
+strev completions bash
 
 # Generate zsh completions
-platforms-cli completions zsh
+strev completions zsh
 
 # Generate fish completions
-platforms-cli completions fish
+strev completions fish
 
 # Generate PowerShell completions
-platforms-cli completions powershell
+strev completions powershell
 ```
 
 ## Global Options
@@ -133,22 +133,22 @@ The CLI tool supports HTTP, HTTPS, and SOCKS5 proxies. You can configure proxies
 
 ```bash
 # Use HTTP proxy
-platforms-cli extract --url "https://twitch.tv/example_channel" --proxy "http://proxy.example.com:8080"
+strev extract --url "https://twitch.tv/example_channel" --proxy "http://proxy.example.com:8080"
 
 # Use HTTPS proxy
-platforms-cli extract --url "https://bilibili.com/123456" --proxy "https://proxy.example.com:8080"
+strev extract --url "https://bilibili.com/123456" --proxy "https://proxy.example.com:8080"
 
 # Use SOCKS5 proxy
-platforms-cli extract --url "https://douyu.com/123456" --proxy "socks5://proxy.example.com:1080"
+strev extract --url "https://douyu.com/123456" --proxy "socks5://proxy.example.com:1080"
 
 # Use proxy with authentication
-platforms-cli extract --url "https://huya.com/123456" \
+strev extract --url "https://huya.com/123456" \
   --proxy "http://proxy.example.com:8080" \
   --proxy-username "user" \
   --proxy-password "pass"
 
 # Batch processing with proxy
-platforms-cli batch --input urls.txt \
+strev batch --input urls.txt \
   --proxy "http://proxy.example.com:8080" \
   --output-dir ./results
 ```
@@ -166,9 +166,9 @@ default_proxy_password = "password"
 
 The CLI tool supports configuration files in TOML format. Default location:
 
-- **Windows**: `%APPDATA%\platforms-cli\config.toml`
-- **macOS**: `~/Library/Application Support/platforms-cli/config.toml`
-- **Linux**: `~/.config/platforms-cli/config.toml`
+- **Windows**: `%APPDATA%\strev\config.toml`
+- **macOS**: `~/Library/Application Support/strev/config.toml`
+- **Linux**: `~/.config/strev/config.toml`
 
 Example configuration:
 
@@ -180,7 +180,7 @@ max_concurrent = 10
 auto_select = true
 include_extras = true  # Extras are included by default
 colored_output = true
-user_agent = "platforms-cli/1.0.0"
+user_agent = "strev/1.0.0"
 
 [default_cookies]
 # Platform-specific default cookies
@@ -247,7 +247,7 @@ Comma-separated values for spreadsheet import.
 To exclude extras from the output, use the `--no-extras` flag:
 
 ```bash
-platforms-cli extract --url "https://twitch.tv/channel" --no-extras
+strev extract --url "https://twitch.tv/channel" --no-extras
 ```
 
 ## Development
@@ -267,13 +267,13 @@ platforms-cli extract --url "https://twitch.tv/channel" --no-extras
 ### Building
 
 ```bash
-cargo build --release -p platforms-cli
+cargo build --release -p strev
 ```
 
 ### Testing
 
 ```bash
-cargo test -p platforms-cli
+cargo test -p strev
 ```
 
 ## License

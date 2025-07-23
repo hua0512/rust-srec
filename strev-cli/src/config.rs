@@ -80,7 +80,7 @@ impl AppConfig {
             }
             None => {
                 // Use confy for default location
-                confy::load("platforms-cli", None)
+                confy::load("streev-cli", None)
                     .context("Failed to load configuration")
             }
         }
@@ -88,7 +88,7 @@ impl AppConfig {
 
     /// Get default configuration file path
     pub fn default_config_path() -> Option<PathBuf> {
-        confy::get_configuration_file_path("platforms-cli", None).ok()
+        confy::get_configuration_file_path("streev-cli", None).ok()
     }
 
     /// Save configuration to file
