@@ -1,2 +1,32 @@
-/target
+# Rust / Cargo
+/target/
+*.rs.bk
+rust-toolchain
+rust-toolchain.toml
+
+# Media output
 *.flv
+*.ts
+*.m3u8
+
+# Logs
+*.log
+
+# Editor / IDE
+.vscode/
+.idea/
+*.sublime-workspace
+*.sublime-project
+
+# OS generated
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+desktop.ini
+*~
+*.swp
+*.swo
