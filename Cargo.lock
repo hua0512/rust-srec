@@ -1312,7 +1312,7 @@ dependencies = [
  "h264",
  "h265",
  "m3u8-rs",
- "thiserror 1.0.69",
+ "thiserror 2.0.12",
  "tracing",
  "ts",
 ]
@@ -2071,7 +2071,7 @@ dependencies = [
  "serde",
  "serde_json",
  "sha2",
- "thiserror 1.0.69",
+ "thiserror 2.0.12",
  "tokio",
  "tokio-stream",
  "tracing",
@@ -2469,7 +2469,7 @@ version = "0.1.0"
 dependencies = [
  "chrono",
  "tempfile",
- "thiserror 1.0.69",
+ "thiserror 2.0.12",
  "tracing",
  "tracing-subscriber",
 ]
@@ -2499,7 +2499,7 @@ dependencies = [
  "serde",
  "serde_json",
  "tars-codec",
- "thiserror 1.0.69",
+ "thiserror 2.0.12",
  "tokio",
  "tracing",
  "tracing-subscriber",
@@ -3306,7 +3306,7 @@ dependencies = [
  "serde",
  "serde_json",
  "tabled",
- "thiserror 1.0.69",
+ "thiserror 2.0.12",
  "tokio",
  "toml",
  "tracing",
@@ -3434,7 +3434,7 @@ dependencies = [
  "rustc-hash",
  "serde",
  "smallvec",
- "thiserror 1.0.69",
+ "thiserror 2.0.12",
  "tokio-util",
 ]
 
@@ -3832,7 +3832,7 @@ version = "0.1.0"
 dependencies = [
  "bytes",
  "hex",
- "thiserror 1.0.69",
+ "thiserror 2.0.12",
 ]
 
 [[package]]

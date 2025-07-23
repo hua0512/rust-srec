@@ -10,7 +10,7 @@ bytes = "1.10.1"
 byteorder = "1.5"
 bytes-util = { path = "../bytes-util" }
 m3u8-rs = "6.0.0"
-thiserror = "1.0"
+thiserror = "2.0"
 ts = { path = "../ts" }
 h264 = { path = "../h264" }
 h265 = { path = "../h265" }
