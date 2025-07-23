@@ -1,12 +1,10 @@
-name: Rust CI
+name: Main CI and Releases
 
 on:
   push:
-    branches: [main, dev]
+    branches: [main]
     tags:
       - "v*"
-  pull_request:
-    branches: [main]
 
 env:
   CARGO_TERM_COLOR: always
@@ -49,34 +47,53 @@ jobs:
 
   build:
     name: Build
+    if: github.event_name == 'push'
     strategy:
       matrix:
-        os: [ubuntu-latest, ubuntu-22.04-arm, windows-latest, macos-latest]
         include:
           - os: ubuntu-latest
-            artifact_name: mesio
-            asset_name: mesio-linux-amd64
+            mesio_artifact_name: mesio
+            mesio_asset_name: mesio-linux-amd64
+            strev_artifact_name: strev
+            strev_asset_name: strev-linux-amd64
           - os: ubuntu-22.04-arm
-            artifact_name: mesio
-            asset_name: mesio-linux-arm64
+            mesio_artifact_name: mesio
+            mesio_asset_name: mesio-linux-arm64
+            strev_artifact_name: strev
+            strev_asset_name: strev-linux-arm64
           - os: windows-latest
-            artifact_name: mesio.exe
-            asset_name: mesio-windows-amd64.exe
+            mesio_artifact_name: mesio.exe
+            mesio_asset_name: mesio-windows-amd64.exe
+            strev_artifact_name: strev.exe
+            strev_asset_name: strev-windows-amd64.exe
           - os: macos-latest
-            artifact_name: mesio
-            asset_name: mesio-macos-amd64
+            mesio_artifact_name: mesio
+            mesio_asset_name: mesio-macos-amd64
+            strev_artifact_name: strev
+            strev_asset_name: strev-macos-amd64
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
-      - name: Build release
+      - name: Build mesio release
         run: cargo build -p mesio --release
-      - name: Upload binary
+
+      - name: Build strev release
+        run: cargo build -p strev-cli --release
+
+      - name: Upload mesio binary
         uses: actions/upload-artifact@v4
         with:
-          name: ${{ matrix.asset_name }}
-          path: target/release/${{ matrix.artifact_name }}
+          name: ${{ matrix.mesio_asset_name }}
+          path: target/release/${{ matrix.mesio_artifact_name }}
+          if-no-files-found: error
+
+      - name: Upload strev binary
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.strev_asset_name }}
+          path: target/release/${{ matrix.strev_artifact_name }}
           if-no-files-found: error
 
   release:
@@ -104,5 +121,9 @@ jobs:
             artifacts/mesio-linux-arm64/mesio
             artifacts/mesio-windows-amd64.exe/mesio.exe
             artifacts/mesio-macos-amd64/mesio
+            artifacts/strev-linux-amd64/strev
+            artifacts/strev-linux-arm64/strev
+            artifacts/strev-windows-amd64.exe/strev.exe
+            artifacts/strev-macos-amd64/strev
           draft: false
           prerelease: false
