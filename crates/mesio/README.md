@@ -1,20 +1,27 @@
 # Mesio Engine
 
+[![License](https://img.shields.io/crates/l/mesio-engine.svg)](https://github.com/hua0512/rust-srec)
+
 A modern, high-performance media streaming engine for Rust, supporting various streaming formats like HLS and FLV.
 
-## Features
 
-- **Multiple Protocol Support**: Ready-to-use implementations for HLS and FLV streaming
-- **Capability-based Architecture**: Modular design allows selecting exact features needed
-- **Caching System**: Efficient multi-level caching with memory and disk storage
-- **Flexible Source Management**: Support for multiple content sources with automatic failover
-- **Protocol Auto-detection**: Automatic protocol detection from stream URLs
-- **Proxy Support**: Configurable proxy settings including system proxy detection
-- **Async Design**: Built on Tokio for high-performance async I/O
+## Core Concepts
+
+`mesio-engine` is built around a few key concepts:
+
+- **`DownloadManager`**: The central component that coordinates the download process. It manages capabilities like caching, multi-source fallback, and proxy support.
+- **`MesioDownloaderFactory`**: A factory for creating `DownloadManager` instances. It can automatically detect the protocol from a URL and configure the appropriate downloader (HLS or FLV).
+- **Capability-based Traits**: The library uses a system of traits to define the capabilities of a protocol downloader. These include:
+    - `Download`: Basic download functionality.
+    - `Resumable`: Support for resuming downloads.
+    - `MultiSource`: Ability to handle multiple download sources with fallback.
+    - `Cacheable`: Caching support for playlists and segments.
 
 ## Usage Examples
 
 ### Basic Usage with Factory Pattern
+
+The easiest way to use `mesio-engine` is with the `MesioDownloaderFactory`. It automatically detects the protocol and creates a configured downloader.
 
 ```rust
 use mesio_engine::{MesioDownloaderFactory, ProtocolType, process_stream};
@@ -54,6 +61,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
 ### Protocol-Specific Approach with Builders
 
+For more control, you can use protocol-specific builders to create and configure downloaders.
+
 ```rust
 use mesio_engine::{FlvProtocolBuilder, ProtocolBuilder, Download};
 use tokio_stream::StreamExt;
@@ -84,97 +93,49 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 }
 ```
 
-### HLS Streaming with Caching
+## Configuration
+
+You can customize the behavior of the `DownloadManager` and protocol-specific handlers using builder patterns.
+
+### Advanced `DownloadManager` Configuration
 
 ```rust
-use mesio_engine::{
-    HlsProtocolBuilder, ProtocolBuilder, CacheConfig,
-    DownloadManager, DownloadManagerConfig, Download
-};
+use mesio_engine::{DownloadManager, HlsProtocolBuilder, DownloadManagerConfig, CacheConfig};
 use std::time::Duration;
-use tokio_stream::StreamExt;
 
-#[tokio::main]
-async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    // Configure caching
-    let cache_config = CacheConfig {
-        enabled: true,
-        playlist_ttl: Duration::from_secs(10),
-        segment_ttl: Duration::from_secs(300),
-        ..CacheConfig::default()
-    };
+# #[tokio::main]
+# async fn main() -> Result<(), Box<dyn std::error::Error>> {
+// Configure caching
+let cache_config = CacheConfig {
+    enabled: true,
+    playlist_ttl: Duration::from_secs(10),
+    segment_ttl: Duration::from_secs(300),
+    ..CacheConfig::default()
+};
 
-    // Create HLS protocol with high-quality selection
-    let hls = HlsProtocolBuilder::new()
-        .select_highest_quality(true)
-        .max_concurrent_segment_downloads(4)
-        .segment_retry_count(3)
-        .build()?;
-
-    // Create a download manager with caching
-    let mut manager = DownloadManager::with_config(
-        hls,
-        DownloadManagerConfig {
-            cache_config: Some(cache_config),
-            ..DownloadManagerConfig::default()
-        }
-    ).await?;
-
-    // Stream HLS content
-    let stream = manager.download("https://example.com/playlist.m3u8").await?;
-
-    // Process the stream
-    tokio::pin!(stream);
-    while let Some(result) = stream.next().await {
-        // Process HLS data...
+// Create a download manager with caching
+let hls_protocol = HlsProtocolBuilder::new().build()?;
+let mut manager = DownloadManager::with_config(
+    hls_protocol,
+    DownloadManagerConfig {
+        cache_config: Some(cache_config),
+        ..DownloadManagerConfig::default()
     }
-
-    Ok(())
-}
+).await?;
+# Ok(())
+# }
 ```
-
-### Multi-Source Download with Fallback
-
-```rust
-use mesio_engine::{MesioDownloaderFactory, ProtocolType};
-use tokio_stream::StreamExt;
-
-#[tokio::main]
-async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    // Create a factory
-    let factory = MesioDownloaderFactory::new();
-
-    // Create a downloader
-    let mut downloader = factory
-        .create_for_url("https://example.com/video.flv", ProtocolType::Flv)
-        .await?;
-
-    // Add multiple sources with priorities
-    downloader.add_source("https://mirror1.example.com/video.flv", 1);
-    downloader.add_source("https://mirror2.example.com/video.flv", 2);
-
-    // Download with automatic fallback
-    let stream = downloader.download_with_sources("https://example.com/video.flv").await?;
-
-    // Process the stream...
-
-    Ok(())
-}
-```
-
-## Advanced Configuration
 
 ### Creating a Factory with Custom Settings
+
+You can also pre-configure a `MesioDownloaderFactory` with custom settings that will be applied to all downloaders it creates.
 
 ```rust
 use mesio_engine::{
     MesioDownloaderFactory,
     DownloadManagerConfig,
-    FlvConfig,
-    HlsConfig,
-    ProxyConfig,
-    ProxyType,
-    ProxyAuth
+    config::{FlvConfig, HlsConfig},
+    proxy::{ProxyConfig, ProxyType, ProxyAuth}
 };
 
 // Create proxy configuration
@@ -222,11 +183,11 @@ let factory = MesioDownloaderFactory::new()
 
 The library is built around these key components:
 
-- **Protocol Handlers**: Implementations for specific formats (HLS, FLV)
-- **Download Manager**: Coordinates sources and manages capabilities
-- **Cache System**: Multi-level caching with memory and disk backends
-- **Source Manager**: Handles multiple content sources with failover
-- **Factory**: Creates appropriate downloaders with protocol auto-detection
+- **Protocol Handlers**: Implementations for specific formats (HLS, FLV) that provide the core download capabilities.
+- **`DownloadManager`**: Coordinates sources and manages capabilities like caching and proxies.
+- **Cache System**: Multi-level caching with memory and disk backends.
+- **`SourceManager`**: Handles multiple content sources with failover.
+- **`MesioDownloaderFactory`**: Creates and configures appropriate downloaders with protocol auto-detection.
 
 ## License
 
