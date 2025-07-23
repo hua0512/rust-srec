@@ -2,12 +2,12 @@
 resolver = "3"
 
 members = [
-    "siphon-cli",
+    "mesio-cli",
     "crates/flv",
     "crates/flv-fix",
     "crates/hls",
     "crates/hls-fix",
-    "crates/siphon",
+    "crates/mesio",
     "crates/aac",
     "crates/bytes-util",
     "crates/expgolomb",

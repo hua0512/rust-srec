@@ -1,10 +1,10 @@
-# Siphon CLI
+# Mesio CLI
 
 [![GitHub](https://img.shields.io/badge/github-hua0512/rust--srec-8da0cb?logo=github)](https://github.com/hua0512/rust-srec)
 ![Version](https://img.shields.io/badge/version-0.2.3-blue)
 ![Rust](https://img.shields.io/badge/rust-2024-orange)
 
-Siphon is a powerful command-line tool for downloading, processing, and repairing FLV (Flash Video) streams and files. It's part of the [rust-srec](https://github.com/hua0512/rust-srec) project, designed to handle common issues in FLV streams.
+Mesio is a powerful command-line tool for downloading, processing, and repairing FLV (Flash Video) streams and files. It's part of the [rust-srec](https://github.com/hua0512/rust-srec) project, designed to handle common issues in FLV streams.
 
 ## Features
 
@@ -31,11 +31,11 @@ To build and install from source, you need Rust and Cargo installed on your syst
 git clone https://github.com/hua0512/rust-srec.git
 cd rust-srec
 
-# Build and install the siphon CLI tool
-cargo build --release -p siphon
+# Build and install the mesio CLI tool
+cargo build --release -p mesio
 
 # The binary will be available at
-./target/release/siphon
+./target/release/mesio
 ```
 
 ### Pre-built Binaries
@@ -46,16 +46,16 @@ Check the [releases page](https://github.com/hua0512/rust-srec/releases) for pre
 
 ```bash
 # Download an FLV stream from a URL
-siphon --progress https://example.com/stream.flv
+mesio --progress https://example.com/stream.flv
 
 # Process an existing FLV file
-siphon --progress --fix path/to/file.flv
+mesio --progress --fix path/to/file.flv
 
 # Download with custom output directory
-siphon --progress -o downloads/ https://example.com/stream.flv
+mesio --progress -o downloads/ https://example.com/stream.flv
 
 # Process multiple inputs
-siphon --progress --fix file1.flv file2.flv https://example.com/stream.flv
+mesio --progress --fix file1.flv file2.flv https://example.com/stream.flv
 ```
 
 ## Command-Line Options
@@ -121,7 +121,7 @@ OPTIONS:
 Split the output into multiple files, limiting each to 500MB and 30 minutes:
 
 ```bash
-siphon --progress -m 500MB -d 30m https://example.com/stream.flv
+mesio --progress -m 500MB -d 30m https://example.com/stream.flv
 ```
 
 ### Custom Output Names
@@ -129,7 +129,7 @@ siphon --progress -m 500MB -d 30m https://example.com/stream.flv
 Use a template for output filenames:
 
 ```bash
-siphon --progress --name "stream_%Y%m%d_%H%M%S" https://example.com/stream.flv
+mesio --progress --name "stream_%Y%m%d_%H%M%S" https://example.com/stream.flv
 ```
 
 ### Using a Proxy
@@ -137,13 +137,13 @@ siphon --progress --name "stream_%Y%m%d_%H%M%S" https://example.com/stream.flv
 Download through an HTTP proxy:
 
 ```bash
-siphon --progress --proxy "http://proxy.example.com:8080" --proxy-type http https://example.com/stream.flv
+mesio --progress --proxy "http://proxy.example.com:8080" --proxy-type http https://example.com/stream.flv
 ```
 
 With authentication:
 
 ```bash
-siphon --progress --proxy "http://proxy.example.com:8080" --proxy-user username --proxy-pass password https://example.com/stream.flv
+mesio --progress --proxy "http://proxy.example.com:8080" --proxy-user username --proxy-pass password https://example.com/stream.flv
 ```
 
 ### Custom HTTP Headers
@@ -151,7 +151,7 @@ siphon --progress --proxy "http://proxy.example.com:8080" --proxy-user username 
 Add custom HTTP headers for the request:
 
 ```bash
-siphon --progress -H "Referer: https://example.com" -H "User-Agent: Custom/1.0" https://example.com/stream.flv
+mesio --progress -H "Referer: https://example.com" -H "User-Agent: Custom/1.0" https://example.com/stream.flv
 ```
 
 ### Process and Fix Existing Files
@@ -159,7 +159,7 @@ siphon --progress -H "Referer: https://example.com" -H "User-Agent: Custom/1.0" 
 Enable the processing pipeline to repair files:
 
 ```bash
-siphon --progress --fix file.flv
+mesio --progress --fix file.flv
 ```
 
 ## Advanced Usage
@@ -169,7 +169,7 @@ siphon --progress --fix file.flv
 For better seeking in media players, enable keyframe indexing:
 
 ```bash
-siphon --progress --fix --keyframe-index file.flv
+mesio --progress --fix --keyframe-index file.flv
 ```
 
 ### Setting Timeouts
@@ -177,7 +177,7 @@ siphon --progress --fix --keyframe-index file.flv
 Configure network timeouts for unstable connections:
 
 ```bash
-siphon --progress --connect-timeout 60 --read-timeout 45 https://example.com/stream.flv
+mesio --progress --connect-timeout 60 --read-timeout 45 https://example.com/stream.flv
 ```
 
 ## License

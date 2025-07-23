@@ -1,7 +1,10 @@
 [package]
-name = "siphon"
+name = "mesio"
 version = "0.2.3"
 edition = "2024"
+description = "Mesio (media) streaming downloader CLI"
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/hua0512/rust-srec"
 
 [dependencies]
 bytes = "1.10.1"
@@ -25,7 +28,7 @@ flv = { path = "../crates/flv" }
 flv-fix = { path = "../crates/flv-fix" }
 hls = { path = "../crates/hls" }
 hls-fix = { path = "../crates/hls-fix" }
-siphon-engine = { path = "../crates/siphon" }
+mesio-engine = { path = "../crates/mesio" }
 indicatif = "0.17.11"
 
 [profile.release]

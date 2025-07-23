@@ -54,24 +54,24 @@ jobs:
         os: [ubuntu-latest, ubuntu-22.04-arm, windows-latest, macos-latest]
         include:
           - os: ubuntu-latest
-            artifact_name: siphon
-            asset_name: siphon-linux-amd64
+            artifact_name: mesio
+            asset_name: mesio-linux-amd64
           - os: ubuntu-22.04-arm
-            artifact_name: siphon
-            asset_name: siphon-linux-arm64
+            artifact_name: mesio
+            asset_name: mesio-linux-arm64
           - os: windows-latest
-            artifact_name: siphon.exe
-            asset_name: siphon-windows-amd64.exe
+            artifact_name: mesio.exe
+            asset_name: mesio-windows-amd64.exe
           - os: macos-latest
-            artifact_name: siphon
-            asset_name: siphon-macos-amd64
+            artifact_name: mesio
+            asset_name: mesio-macos-amd64
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
       - name: Build release
-        run: cargo build -p siphon --release
+        run: cargo build -p mesio --release
       - name: Upload binary
         uses: actions/upload-artifact@v4
         with:
@@ -100,9 +100,9 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           files: |
-            artifacts/siphon-linux-amd64/siphon
-            artifacts/siphon-linux-arm64/siphon
-            artifacts/siphon-windows-amd64.exe/siphon.exe
-            artifacts/siphon-macos-amd64/siphon
+            artifacts/mesio-linux-amd64/mesio
+            artifacts/mesio-linux-arm64/mesio
+            artifacts/mesio-windows-amd64.exe/mesio.exe
+            artifacts/mesio-macos-amd64/mesio
           draft: false
           prerelease: false

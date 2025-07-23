@@ -29,7 +29,7 @@ impl CacheManager {
         // If no disk cache path provided, use system temp
         if config.disk_cache_path.is_none() {
             let temp_dir = std::env::temp_dir();
-            config.disk_cache_path = Some(temp_dir.join("siphon-cache"));
+            config.disk_cache_path = Some(temp_dir.join("mesio-cache"));
         }
 
         let cache_dir = config.disk_cache_path.as_ref().unwrap().clone();

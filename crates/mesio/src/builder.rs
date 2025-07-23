@@ -7,8 +7,8 @@
 //!
 //! ```
 //! use std::time::Duration;
-//! use siphon_engine::DownloaderConfig;
-//! use siphon_engine::proxy::ProxyConfig;
+//! use mesio_engine::DownloaderConfig;
+//! use mesio_engine::proxy::ProxyConfig;
 //!
 //! // Create a config with the builder
 //! let config = DownloaderConfig::builder()
@@ -24,8 +24,8 @@
 //! let config_with_proxy = DownloaderConfig::builder()
 //!     .with_proxy(ProxyConfig {
 //!         url: "http://proxy.example.com:8080".to_string(),
-//!         proxy_type: siphon_engine::proxy::ProxyType::Http,
-//!         auth: Some(siphon_engine::proxy::ProxyAuth {
+//!         proxy_type: mesio_engine::proxy::ProxyType::Http,
+//!         auth: Some(mesio_engine::proxy::ProxyAuth {
 //!             username: "user".to_string(),
 //!             password: "pass".to_string(),
 //!         }),

@@ -13,8 +13,8 @@ use flv_fix::RepairStrategy;
 use flv_fix::ScriptFillerConfig;
 use indicatif::MultiProgress;
 use output::provider::OutputFormat;
-use siphon_engine::flv::FlvConfig;
-use siphon_engine::{DownloaderConfig, HlsProtocolBuilder, ProxyAuth, ProxyConfig, ProxyType};
+use mesio_engine::flv::FlvConfig;
+use mesio_engine::{DownloaderConfig, HlsProtocolBuilder, ProxyAuth, ProxyConfig, ProxyType};
 use tracing::{Level, error, info};
 use tracing_subscriber::FmtSubscriber;
 
@@ -43,8 +43,16 @@ async fn main() {
     let subscriber = FmtSubscriber::builder().with_max_level(log_level).finish();
     tracing::subscriber::set_global_default(subscriber).expect("Failed to set tracing subscriber");
 
-    info!("Siphon Media Processing Tool - Part of the rust-srec project by hua0512");
+    info!("███╗   ███╗███████╗███████╗██╗ ██████╗ ");
+    info!("████╗ ████║██╔════╝██╔════╝██║██╔═══██╗");
+    info!("██╔████╔██║█████╗  ███████╗██║██║   ██║");
+    info!("██║╚██╔╝██║██╔══╝  ╚════██║██║██║   ██║");
+    info!("██║ ╚═╝ ██║███████╗███████║██║╚██████╔╝");
+    info!("╚═╝     ╚═╝╚══════╝╚══════╝╚═╝ ╚═════╝ ");
+    info!("");
+    info!("Media Streaming Downloader - Part of the rust-srec project by hua0512");
     info!("GitHub: https://github.com/hua0512/rust-srec");
+    info!("==================================================================");
 
     // Parse size and duration with units
     let file_size_limit = match parse_size(&args.max_size) {

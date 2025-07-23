@@ -1,4 +1,4 @@
-//! # Siphon
+//! # Mesio
 //!
 //! A library for downloading media content from various sources.
 //! Supports FLV, HLS, and other streaming formats with efficient
@@ -59,7 +59,7 @@ pub use source::{ContentSource, SourceManager, SourceSelectionStrategy};
 pub use downloader::{DownloadManager, DownloadManagerConfig, create_client};
 
 // Re-export factory types
-pub use factory::{DownloadStream, DownloaderInstance, ProtocolType, SiphonDownloaderFactory};
+pub use factory::{DownloadStream, DownloaderInstance, ProtocolType, MesioDownloaderFactory};
 
 // Re-export proxy utilities
 pub use proxy::{ProxyAuth, ProxyConfig, ProxyType};

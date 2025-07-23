@@ -16,9 +16,9 @@ pub enum ProtocolType {
     Auto,
 }
 
-/// Siphon downloader factory for creating appropriate download managers
+/// Mesio downloader factory for creating appropriate download managers
 #[derive(Debug, Default)]
-pub struct SiphonDownloaderFactory {
+pub struct MesioDownloaderFactory {
     /// Base download manager configuration
     download_config: DownloadManagerConfig,
     /// FLV protocol configuration
@@ -27,8 +27,8 @@ pub struct SiphonDownloaderFactory {
     hls_config: HlsConfig,
 }
 
-impl SiphonDownloaderFactory {
-    /// Create a new siphon downloader factory with default settings
+impl MesioDownloaderFactory {
+    /// Create a new mesio downloader factory with default settings
     pub fn new() -> Self {
         Self::default()
     }

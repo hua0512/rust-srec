@@ -1,8 +1,8 @@
 mod flv;
 mod hls;
 
+use mesio_engine::{DownloadManagerConfig, MesioDownloaderFactory, ProtocolType};
 use pipeline_common::OnProgress;
-use siphon_engine::{DownloadManagerConfig, ProtocolType, SiphonDownloaderFactory};
 use std::path::{Path, PathBuf};
 use tracing::{error, info};
 
@@ -31,7 +31,7 @@ pub async fn process_inputs(
     // Preallocate a string builder for status messages to avoid repeated allocations
     let _status_buffer = String::with_capacity(100);
 
-    let factory = SiphonDownloaderFactory::new()
+    let factory = MesioDownloaderFactory::new()
         .with_download_config(DownloadManagerConfig::default())
         .with_flv_config(config.flv_config.clone().unwrap_or_default())
         .with_hls_config(config.hls_config.clone().unwrap_or_default());
@@ -39,17 +39,6 @@ pub async fn process_inputs(
     // Process each input
     for (index, input) in inputs.iter().enumerate() {
         let _input_index = index + 1;
-
-        // Log which input we're processing
-        // info!(
-        //     input_index = input_index,
-        //     total_inputs = inputs_len,
-        //     input = %input,
-        //     "Processing input ({}/{})",
-        //     input_index,
-        //     inputs_len
-        // );
-
 
         // Process based on input type
         if input.starts_with("http://") || input.starts_with("https://") {
@@ -93,7 +82,8 @@ pub async fn process_inputs(
                 if let Some(extension) = path.extension().and_then(|ext| ext.to_str()) {
                     match extension.to_lowercase().as_str() {
                         "flv" => {
-                            flv::process_file(&path, output_dir, config, on_progress.clone()).await?;
+                            flv::process_file(&path, output_dir, config, on_progress.clone())
+                                .await?;
                         }
                         // "m3u8" | "m3u" => {
                         //     hls::process_hls_file(&path, output_dir, config, &progress_manager).await?;
