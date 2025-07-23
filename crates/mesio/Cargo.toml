@@ -21,7 +21,7 @@ rustls = { version = "0.23", default-features = false, features = [
     "ring",
     "tls12",
 ] }
-rustls-platform-verifier = "0.5.1"
+rustls-platform-verifier = "0.6.0"
 url = "2.4"
 async-stream = "0.3"
 async-trait = "0.1"
