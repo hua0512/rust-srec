@@ -33,7 +33,7 @@ inquire = { version = "0.7", optional = true }
 tabled = { version = "0.16", optional = true }
 
 # Simplified configuration
-confy = "0.6"
+confy = "1.0"
 toml = "0.8"
 
 # Logging
