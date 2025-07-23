@@ -20,6 +20,7 @@ pub fn create_client(config: &DownloaderConfig) -> Result<Client, DownloadError>
         .with_safe_default_protocol_versions()
         .expect("Failed to configure default TLS protocol versions")
         .with_platform_verifier()
+        .unwrap()
         .with_no_client_auth();
 
     let mut client_builder = Client::builder()
