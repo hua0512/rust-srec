@@ -44,8 +44,7 @@ async fn main() {
         .open("mesio.log")
         .unwrap_or_else(|e| {
             eprintln!(
-                "Warning: Failed to create log file 'mesio.log': {}. Logging to console only.",
-                e
+                "Warning: Failed to create log file 'mesio.log': {e}. Logging to console only."
             );
             // Return a dummy writer that discards everything
             std::fs::File::create(std::env::temp_dir().join("mesio_dummy.log"))
