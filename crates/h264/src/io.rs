@@ -10,7 +10,10 @@ impl<I> EmulationPreventionIo<I> {
     /// This should be a buffered reader or writer because we will only read or write one byte at a time.
     /// If the underlying io is not buffered this will result in poor performance.
     pub fn new(inner: I) -> Self {
-        Self { inner, zero_count: 0 }
+        Self {
+            inner,
+            zero_count: 0,
+        }
     }
 }
 
@@ -92,7 +95,9 @@ mod tests {
     fn test_write_emulation_prevention_multiple() {
         let mut buf = Vec::new();
         let mut writer = EmulationPreventionIo::new(&mut buf);
-        writer.write_all(&[0x00, 0x00, 0x01, 0x00, 0x00, 0x02]).unwrap();
+        writer
+            .write_all(&[0x00, 0x00, 0x01, 0x00, 0x00, 0x02])
+            .unwrap();
         writer.flush().unwrap();
 
         assert_eq!(buf, vec![0x00, 0x00, 0x03, 0x01, 0x00, 0x00, 0x03, 0x02]);

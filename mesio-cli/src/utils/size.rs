@@ -1,13 +1,24 @@
 use crate::error::AppError;
 
 /// Function to parse size with units
+/// # Arguments
+///
+/// * `size_str` - The string to parse
+///
+/// # Returns
+///
+/// * `Ok(size)` - The parsed size in bytes
+/// * `Err(AppError)` - If the string is invalid
+///
 pub fn parse_size(size_str: &str) -> Result<u64, AppError> {
     // Trim whitespace and handle case-insensitivity
     let size_str = size_str.trim().to_lowercase();
 
     // Handle empty string
     if size_str.is_empty() {
-        return Err(AppError::ParseError("Invalid format: empty string".to_string()));
+        return Err(AppError::ParseError(
+            "Invalid format: empty string".to_string(),
+        ));
     }
 
     // Split the numeric part and the unit

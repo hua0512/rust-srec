@@ -101,11 +101,11 @@ impl Processor<FlvData> for HeaderCheckOperator {
 mod tests {
     use super::*;
     use crate::test_utils::{create_test_header, create_video_tag};
-    use pipeline_common::test_utils::create_test_context;
+    use pipeline_common::StreamerContext;
 
     #[test]
     fn test_with_header_present() {
-        let context = create_test_context();
+        let context = StreamerContext::arc_new();
         let mut operator = HeaderCheckOperator::new(context);
         let mut output_items = Vec::new();
 
@@ -134,7 +134,7 @@ mod tests {
 
     #[test]
     fn test_without_header() {
-        let context = create_test_context();
+        let context = StreamerContext::arc_new();
         let mut operator = HeaderCheckOperator::new(context);
         let mut output_items = Vec::new();
 

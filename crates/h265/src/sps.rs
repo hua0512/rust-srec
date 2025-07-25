@@ -45,7 +45,10 @@ impl Sps {
 
         let forbidden_zero_bit = bit_reader.read_bit()?;
         if forbidden_zero_bit {
-            return Err(io::Error::new(io::ErrorKind::InvalidData, "forbidden_zero_bit is not zero"));
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                "forbidden_zero_bit is not zero",
+            ));
         }
 
         let nalu_type = bit_reader.read_bits(6)?;
@@ -140,11 +143,18 @@ impl Sps {
             1 => (2, 2),
             2 => (2, 1),
             3 => (1, 1),
-            _ => return Err(io::Error::new(io::ErrorKind::InvalidData, "chroma_format_idc is not 0-3")),
+            _ => {
+                return Err(io::Error::new(
+                    io::ErrorKind::InvalidData,
+                    "chroma_format_idc is not 0-3",
+                ));
+            }
         };
 
-        let width = pic_width_in_luma_samples - sub_width_c * (conf_win_left_offset + conf_win_right_offset);
-        let height = pic_height_in_luma_samples - sub_height_c * (conf_win_top_offset + conf_win_bottom_offset);
+        let width = pic_width_in_luma_samples
+            - sub_width_c * (conf_win_left_offset + conf_win_right_offset);
+        let height = pic_height_in_luma_samples
+            - sub_height_c * (conf_win_top_offset + conf_win_bottom_offset);
 
         bit_reader.read_exp_golomb()?; // bit_depth_luma_minus8
         bit_reader.read_exp_golomb()?; // bit_depth_chroma_minus8
@@ -180,11 +190,13 @@ impl Sps {
                             let coef_num = 64.min(1 << (4 + (size_id << 1)));
                             let mut next_coef = 8;
                             if size_id > 1 {
-                                let scaling_list_dc_coef_minus8 = bit_reader.read_signed_exp_golomb()?;
+                                let scaling_list_dc_coef_minus8 =
+                                    bit_reader.read_signed_exp_golomb()?;
                                 next_coef = 8 + scaling_list_dc_coef_minus8;
                             }
                             for _ in 0..coef_num {
-                                let scaling_list_delta_coef = bit_reader.read_signed_exp_golomb()?;
+                                let scaling_list_delta_coef =
+                                    bit_reader.read_signed_exp_golomb()?;
                                 next_coef = (next_coef + scaling_list_delta_coef + 256) % 256;
                             }
                         }

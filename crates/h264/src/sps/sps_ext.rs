@@ -1,7 +1,9 @@
 use std::io;
 
 use bytes_util::{BitReader, BitWriter};
-use expgolomb::{BitReaderExpGolombExt, BitWriterExpGolombExt, size_of_exp_golomb, size_of_signed_exp_golomb};
+use expgolomb::{
+    BitReaderExpGolombExt, BitWriterExpGolombExt, size_of_exp_golomb, size_of_signed_exp_golomb,
+};
 
 /// The Sequence Parameter Set extension.
 /// ISO/IEC-14496-10-2022 - 7.3.2

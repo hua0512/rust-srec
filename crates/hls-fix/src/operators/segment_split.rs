@@ -432,7 +432,7 @@ mod tests {
     use super::*;
     use bytes::Bytes;
     use m3u8_rs::MediaSegment;
-    use pipeline_common::{init_test_tracing, test_utils::create_test_context};
+    use pipeline_common::init_test_tracing;
 
     // Helper function to create a working TS data with specific codec combinations
     fn create_ts_data_with_codecs(video_codec: u8, audio_codec: u8, program_num: u16) -> Vec<u8> {
@@ -501,7 +501,7 @@ mod tests {
 
     #[test]
     fn test_stream_change_detection() {
-        let context = create_test_context();
+        let context = StreamerContext::arc_new();
         let mut operator = SegmentSplitOperator::new(context);
         let mut output_items = Vec::new();
 
@@ -541,7 +541,7 @@ mod tests {
 
     #[test]
     fn test_program_change_detection() {
-        let context = create_test_context();
+        let context = StreamerContext::arc_new();
         let mut operator = SegmentSplitOperator::new(context);
         let mut output_items = Vec::new();
 
@@ -582,7 +582,7 @@ mod tests {
     #[test]
     fn test_resolution_change_detection() {
         init_test_tracing!();
-        let context = create_test_context();
+        let context = StreamerContext::arc_new();
         let mut operator = SegmentSplitOperator::new(context);
         let mut output_items = Vec::new();
 

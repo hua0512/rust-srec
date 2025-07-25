@@ -2,11 +2,21 @@ use crate::error::AppError;
 use std::fmt::Write;
 
 /// Function to parse time with units
+/// # Arguments
+///
+/// * `time_str` - The string to parse
+///
+/// # Returns
+///
+/// * `Ok(time)` - The parsed time in seconds
+/// * `Err(AppError)` - If the string is invalid
 pub fn parse_time(time_str: &str) -> Result<f64, AppError> {
     // Trim whitespace and handle empty string
     let time_str = time_str.trim();
     if time_str.is_empty() {
-        return Err(AppError::ParseError("Invalid format: empty string".to_string()));
+        return Err(AppError::ParseError(
+            "Invalid format: empty string".to_string(),
+        ));
     }
 
     // Try to parse as a simple number (seconds) first for efficiency
@@ -50,6 +60,7 @@ pub fn parse_time(time_str: &str) -> Result<f64, AppError> {
 }
 
 /// Convert seconds to a human-readable format
+#[allow(dead_code)]
 pub fn format_duration(seconds: f64) -> String {
     // Pre-allocate
     let mut result = String::with_capacity(10);

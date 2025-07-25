@@ -1,7 +1,9 @@
 use std::io;
 
 use bytes_util::{BitReader, BitWriter};
-use expgolomb::{BitReaderExpGolombExt, BitWriterExpGolombExt, size_of_exp_golomb, size_of_signed_exp_golomb};
+use expgolomb::{
+    BitReaderExpGolombExt, BitWriterExpGolombExt, size_of_exp_golomb, size_of_signed_exp_golomb,
+};
 
 /// `PicOrderCountType1` contains the fields that are set when `pic_order_cnt_type == 1`.
 ///
@@ -180,7 +182,13 @@ mod tests {
         let rebuilt_pic_order_count_type1 = PicOrderCountType1::parse(&mut reader2).unwrap();
 
         // now we can check the size:
-        assert_eq!(rebuilt_pic_order_count_type1.bitsize(), pic_order_count_type1.bitsize());
-        assert_eq!(rebuilt_pic_order_count_type1.bytesize(), pic_order_count_type1.bytesize());
+        assert_eq!(
+            rebuilt_pic_order_count_type1.bitsize(),
+            pic_order_count_type1.bitsize()
+        );
+        assert_eq!(
+            rebuilt_pic_order_count_type1.bytesize(),
+            pic_order_count_type1.bytesize()
+        );
     }
 }

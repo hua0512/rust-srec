@@ -40,7 +40,7 @@ async fn run() -> Result<()> {
 
     // Initialize logging
     init_logging(args.verbose, args.quiet)?;
-    
+
     info!("███████╗████████╗██████╗ ███████╗██╗   ██╗");
     info!("██╔════╝╚══██╔══╝██╔══██╗██╔════╝██║   ██║");
     info!("███████╗   ██║   ██████╔╝█████╗  ██║   ██║");

@@ -68,4 +68,4 @@ impl CliError {
     }
 }
 
-pub type Result<T> = std::result::Result<T, CliError>; 
+pub type Result<T> = std::result::Result<T, CliError>;

@@ -1,7 +1,3 @@
-use std::sync::Arc;
-
-use crate::StreamerContext;
-
 /// Macro to initialize tracing for tests
 ///
 /// Usage:
@@ -20,11 +16,6 @@ macro_rules! init_test_tracing {
     };
 }
 
-/// Create a test streamer context
-#[inline]
-pub fn create_test_context() -> Arc<StreamerContext> {
-    Arc::new(StreamerContext::default())
-}
-
 // Re-export the macro
+#[allow(unused_imports)]
 pub use crate::init_test_tracing;

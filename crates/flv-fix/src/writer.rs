@@ -1,36 +1,25 @@
 use crate::writer_task::FlvStrategyError;
-use flv::error::FlvError;
-use pipeline_common::TaskError;
-use thiserror::Error;
-
-/// Error type for the `FlvWriter`.
-#[derive(Debug, Error)]
-pub enum FlvWriterError {
-    /// An error occurred in the underlying writer task.
-    #[error("Writer task error: {0}")]
-    Task(#[from] TaskError<FlvStrategyError>),
-
-    /// An error was received from the input stream.
-    #[error("Input stream error: {0}")]
-    InputError(FlvError),
-}
+use pipeline_common::{PipelineError, ProtocolWriter, WriterError};
 
 use crate::writer_task::FlvFormatStrategy;
 use flv::data::FlvData;
 use pipeline_common::{OnProgress, WriterConfig, WriterState, WriterTask};
 use std::path::PathBuf;
-use std::sync::mpsc::Receiver;
 
 /// A specialized writer task for FLV data.
 pub struct FlvWriter {
     writer_task: WriterTask<FlvData, FlvFormatStrategy>,
 }
 
-impl FlvWriter {
-    /// Creates a new `FlvWriter`.
-    pub fn new(
+impl ProtocolWriter for FlvWriter {
+    type Item = FlvData;
+    type Stats = (usize, u32);
+    type Error = WriterError<FlvStrategyError>;
+
+    fn new(
         output_dir: PathBuf,
         base_name: String,
+        _extension: String,
         on_progress: Option<OnProgress>,
     ) -> Self {
         let writer_config = WriterConfig::new(output_dir, base_name, "flv".to_string());
@@ -39,23 +28,24 @@ impl FlvWriter {
         Self { writer_task }
     }
 
-    pub fn get_state(&self) -> &WriterState {
+    fn get_state(&self) -> &WriterState {
         self.writer_task.get_state()
     }
 
-    /// Runs the writer task, consuming FLV data from the provided receiver.
-    pub fn run(
+    fn run(
         &mut self,
-        receiver: Receiver<Result<FlvData, FlvError>>,
-    ) -> Result<(usize, u32), FlvWriterError> {
-        for result in receiver.iter() {
+        input_stream: std::sync::mpsc::Receiver<Result<Self::Item, PipelineError>>,
+    ) -> Result<Self::Stats, Self::Error> {
+        for result in input_stream.iter() {
             match result {
                 Ok(flv_data) => {
-                    self.writer_task.process_item(flv_data)?;
+                    self.writer_task
+                        .process_item(flv_data)
+                        .map_err(WriterError::TaskError)?;
                 }
                 Err(e) => {
                     tracing::error!("Error in received FLV data: {}", e);
-                    return Err(FlvWriterError::InputError(e));
+                    return Err(WriterError::InputError(e.to_string()));
                 }
             }
         }

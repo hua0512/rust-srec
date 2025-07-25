@@ -26,7 +26,10 @@ impl AV1VideoDescriptor {
     pub fn demux(reader: &mut io::Cursor<Bytes>) -> io::Result<Self> {
         let tag = reader.read_u8()?;
         if tag != 0x80 {
-            return Err(io::Error::new(io::ErrorKind::InvalidData, "Invalid AV1 video descriptor tag"));
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                "Invalid AV1 video descriptor tag",
+            ));
         }
 
         let length = reader.read_u8()?;
@@ -124,12 +127,18 @@ impl AV1CodecConfigurationRecord {
 
         let marker = bit_reader.read_bit()?;
         if !marker {
-            return Err(io::Error::new(io::ErrorKind::InvalidData, "marker is not set"));
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                "marker is not set",
+            ));
         }
 
         let version = bit_reader.read_bits(7)? as u8;
         if version != 1 {
-            return Err(io::Error::new(io::ErrorKind::InvalidData, "version is not 1"));
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                "version is not 1",
+            ));
         }
 
         let seq_profile = bit_reader.read_bits(3)? as u8;
@@ -159,7 +168,10 @@ impl AV1CodecConfigurationRecord {
         };
 
         if !bit_reader.is_aligned() {
-            return Err(io::Error::new(io::ErrorKind::InvalidData, "Bit reader is not aligned"));
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                "Bit reader is not aligned",
+            ));
         }
 
         let reader = bit_reader.into_inner();
@@ -209,7 +221,9 @@ impl AV1CodecConfigurationRecord {
 
         bit_writer.write_bits(0, 3)?; // reserved 3 bits
 
-        if let Some(initial_presentation_delay_minus_one) = self.initial_presentation_delay_minus_one {
+        if let Some(initial_presentation_delay_minus_one) =
+            self.initial_presentation_delay_minus_one
+        {
             bit_writer.write_bit(true)?;
             bit_writer.write_bits(initial_presentation_delay_minus_one as u64, 4)?;
         } else {
@@ -257,7 +271,8 @@ mod tests {
     fn test_marker_is_not_set() {
         let data = vec![0b00000000];
 
-        let err = AV1CodecConfigurationRecord::demux(&mut io::Cursor::new(data.into())).unwrap_err();
+        let err =
+            AV1CodecConfigurationRecord::demux(&mut io::Cursor::new(data.into())).unwrap_err();
 
         assert_eq!(err.kind(), io::ErrorKind::InvalidData);
         assert_eq!(err.to_string(), "marker is not set");
@@ -267,7 +282,8 @@ mod tests {
     fn test_version_is_not_1() {
         let data = vec![0b10000000];
 
-        let err = AV1CodecConfigurationRecord::demux(&mut io::Cursor::new(data.into())).unwrap_err();
+        let err =
+            AV1CodecConfigurationRecord::demux(&mut io::Cursor::new(data.into())).unwrap_err();
 
         assert_eq!(err.kind(), io::ErrorKind::InvalidData);
         assert_eq!(err.to_string(), "version is not 1");
@@ -347,7 +363,8 @@ mod tests {
 
     #[test]
     fn test_video_descriptor_demux() {
-        let data = b"\x80\x04\x81\r\x0c\x3f\n\x0f\0\0\0j\xef\xbf\xe1\xbc\x02\x19\x90\x10\x10\x10@".to_vec();
+        let data = b"\x80\x04\x81\r\x0c\x3f\n\x0f\0\0\0j\xef\xbf\xe1\xbc\x02\x19\x90\x10\x10\x10@"
+            .to_vec();
 
         let config = AV1VideoDescriptor::demux(&mut io::Cursor::new(data.into())).unwrap();
 

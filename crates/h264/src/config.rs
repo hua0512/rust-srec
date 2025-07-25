@@ -129,7 +129,8 @@ impl AVCDecoderConfigurationRecord {
                     let bit_depth_chroma_minus8 = reader.read_u8()? & 0b00000111; // 3 bits (5 bits reserved)
                     let number_of_sequence_parameter_set_ext = reader.read_u8()?; // 8 bits
 
-                    let mut sequence_parameter_set_ext = Vec::with_capacity(number_of_sequence_parameter_set_ext as usize);
+                    let mut sequence_parameter_set_ext =
+                        Vec::with_capacity(number_of_sequence_parameter_set_ext as usize);
                     for _ in 0..number_of_sequence_parameter_set_ext {
                         let sps_ext_length = reader.read_u16::<BigEndian>()?;
                         let sps_ext_data = reader.extract_bytes(sps_ext_length as usize)?;
@@ -266,7 +267,8 @@ mod tests {
 
     #[test]
     fn test_config_parse() {
-        let sample_sps = b"gd\0\x1f\xac\xd9A\xe0m\xf9\xe6\xa0  (\0\0\x03\0\x08\0\0\x03\x01\xe0x\xc1\x8c\xb0";
+        let sample_sps =
+            b"gd\0\x1f\xac\xd9A\xe0m\xf9\xe6\xa0  (\0\0\x03\0\x08\0\0\x03\x01\xe0x\xc1\x8c\xb0";
         let mut data = Vec::new();
         let mut writer = BitWriter::new(&mut data);
 
@@ -284,7 +286,9 @@ mod tests {
         // num_of_sequence_parameter_sets
         writer.write_bits(1, 8).unwrap();
         // sps_length
-        writer.write_u16::<BigEndian>(sample_sps.len() as u16).unwrap();
+        writer
+            .write_u16::<BigEndian>(sample_sps.len() as u16)
+            .unwrap();
         // sps
         // this was from the old test
         writer.write_all(sample_sps).unwrap();
@@ -305,7 +309,8 @@ mod tests {
         writer.write_bits(0, 8).unwrap();
         writer.finish().unwrap();
 
-        let result = AVCDecoderConfigurationRecord::parse(&mut io::Cursor::new(data.into())).unwrap();
+        let result =
+            AVCDecoderConfigurationRecord::parse(&mut io::Cursor::new(data.into())).unwrap();
 
         let sps = &result.sps[0];
 
@@ -319,7 +324,8 @@ mod tests {
         // reduction will occur from rebuilding the sps and from rebuilding the sps_ext.
         let data = Bytes::from(b"\x01d\0\x1f\xff\xe1\0\x19\x67\x64\x00\x1F\xAC\xD9\x41\xE0\x6D\xF9\xE6\xA0\x20\x20\x28\x00\x00\x03\x00\x08\x00\x00\x03\x01\xE0\x01\0\x06h\xeb\xe3\xcb\"\xc0\xfd\xf8\xf8\0".to_vec());
 
-        let config = AVCDecoderConfigurationRecord::parse(&mut io::Cursor::new(data.clone())).unwrap();
+        let config =
+            AVCDecoderConfigurationRecord::parse(&mut io::Cursor::new(data.clone())).unwrap();
 
         assert_eq!(config.size(), data.len() as u64);
 
@@ -431,8 +437,16 @@ mod tests {
         let mut buf = Vec::new();
         config.build(&mut buf).unwrap();
 
-        let parsed = AVCDecoderConfigurationRecord::parse(&mut io::Cursor::new(buf.into())).unwrap();
-        assert_eq!(parsed.extended_config.unwrap().sequence_parameter_set_ext.len(), 1);
+        let parsed =
+            AVCDecoderConfigurationRecord::parse(&mut io::Cursor::new(buf.into())).unwrap();
+        assert_eq!(
+            parsed
+                .extended_config
+                .unwrap()
+                .sequence_parameter_set_ext
+                .len(),
+            1
+        );
         insta::assert_debug_snapshot!(config, @r#"
         AVCDecoderConfigurationRecord {
             configuration_version: 1,

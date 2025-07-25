@@ -30,24 +30,20 @@ use crate::operators::{
 use flv::data::FlvData;
 use flv::error::FlvError;
 use futures::stream::Stream;
-use pipeline_common::{Pipeline, PipelineError, StreamerContext};
+use pipeline_common::config::PipelineConfig;
+use pipeline_common::{Pipeline, PipelineProvider, StreamerContext};
 use std::pin::Pin;
 use std::sync::Arc;
+use std::time::Duration;
 
 /// Type alias for a boxed stream of FLV data with error handling
 pub type BoxStream<T> = Pin<Box<dyn Stream<Item = Result<T, FlvError>> + Send>>;
 
 /// Configuration options for the FLV processing pipeline
 #[derive(Debug, Clone)]
-pub struct PipelineConfig {
+pub struct FlvPipelineConfig {
     /// Whether to filter duplicate tags
     pub duplicate_tag_filtering: bool,
-
-    /// Maximum file size limit in bytes (0 = unlimited)
-    pub file_size_limit: u64,
-
-    /// Maximum duration limit in seconds (0 = unlimited)
-    pub duration_limit: f64,
 
     /// Strategy for timestamp repair
     pub repair_strategy: RepairStrategy,
@@ -59,12 +55,10 @@ pub struct PipelineConfig {
     pub keyframe_index_config: Option<ScriptFillerConfig>,
 }
 
-impl Default for PipelineConfig {
+impl Default for FlvPipelineConfig {
     fn default() -> Self {
         Self {
             duplicate_tag_filtering: true,
-            file_size_limit: 6 * 1024 * 1024 * 1024, // 6 GB
-            duration_limit: 0.0,
             repair_strategy: RepairStrategy::Strict,
             continuity_mode: ContinuityMode::Reset,
             keyframe_index_config: Some(ScriptFillerConfig::default()),
@@ -72,31 +66,86 @@ impl Default for PipelineConfig {
     }
 }
 
-/// Main pipeline for processing FLV streams
-pub struct FlvPipeline {
-    context: Arc<StreamerContext>,
-    config: PipelineConfig,
+impl FlvPipelineConfig {
+    /// Create a new builder for FlvPipelineConfig
+    pub fn builder() -> FlvPipelineConfigBuilder {
+        FlvPipelineConfigBuilder::new()
+    }
 }
 
-impl FlvPipeline {
-    /// Create a new pipeline with default configuration
-    pub fn new(context: StreamerContext) -> Self {
+pub struct FlvPipelineConfigBuilder {
+    config: FlvPipelineConfig,
+}
+
+impl FlvPipelineConfigBuilder {
+    pub fn new() -> Self {
         Self {
-            context: Arc::new(context),
-            config: PipelineConfig::default(),
+            config: FlvPipelineConfig::default(),
         }
     }
 
-    /// Create a new pipeline with custom configuration
-    pub fn with_config(context: StreamerContext, config: PipelineConfig) -> Self {
+    pub fn duplicate_tag_filtering(mut self, duplicate_tag_filtering: bool) -> Self {
+        self.config.duplicate_tag_filtering = duplicate_tag_filtering;
+        self
+    }
+
+    pub fn repair_strategy(mut self, repair_strategy: RepairStrategy) -> Self {
+        self.config.repair_strategy = repair_strategy;
+        self
+    }
+
+    pub fn continuity_mode(mut self, continuity_mode: ContinuityMode) -> Self {
+        self.config.continuity_mode = continuity_mode;
+        self
+    }
+
+    pub fn keyframe_index_config(
+        mut self,
+        keyframe_index_config: Option<ScriptFillerConfig>,
+    ) -> Self {
+        self.config.keyframe_index_config = keyframe_index_config;
+        self
+    }
+
+    pub fn build(self) -> FlvPipelineConfig {
+        self.config
+    }
+}
+
+impl Default for FlvPipelineConfigBuilder {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+/// Main pipeline for processing FLV streams
+pub struct FlvPipeline {
+    context: Arc<StreamerContext>,
+    config: FlvPipelineConfig,
+
+    max_file_size: u64,
+    max_duration: Option<Duration>,
+}
+
+impl PipelineProvider for FlvPipeline {
+    type Item = FlvData;
+    type Config = FlvPipelineConfig;
+
+    fn with_config(
+        context: StreamerContext,
+        common_config: &PipelineConfig,
+        config: FlvPipelineConfig,
+    ) -> Self {
         Self {
             context: Arc::new(context),
             config,
+            max_file_size: common_config.max_file_size,
+            max_duration: common_config.max_duration,
         }
     }
 
     /// Create and configure the pipeline with all necessary operators
-    pub fn build_pipeline(&self) -> Pipeline<FlvData> {
+    fn build_pipeline(&self) -> Pipeline<FlvData> {
         let context = Arc::clone(&self.context);
         let config = self.config.clone();
 
@@ -106,13 +155,13 @@ impl FlvPipeline {
 
         // Configure the limit operator
         let limit_config = LimitConfig {
-            max_size_bytes: if config.file_size_limit > 0 {
-                Some(config.file_size_limit)
+            max_size_bytes: if self.max_file_size > 0 {
+                Some(self.max_file_size)
             } else {
                 None
             },
-            max_duration_ms: if config.duration_limit > 0.0 {
-                Some((config.duration_limit * 1000.0) as u32)
+            max_duration_ms: if self.max_duration.is_some() {
+                Some(self.max_duration.unwrap().as_millis() as u32)
             } else {
                 None
             },
@@ -153,33 +202,19 @@ impl FlvPipeline {
             .add_processor(keyframe_index_operator)
             .add_processor(script_filter_operator)
     }
-
-    /// Process all input through the pipeline
-    pub fn process(
-        &self,
-        input: impl Iterator<Item = Result<FlvData, PipelineError>>,
-        output: &mut impl FnMut(Result<FlvData, PipelineError>),
-    ) -> Result<(), PipelineError> {
-        // Build the pipeline
-        let pipeline = self.build_pipeline();
-
-        // Run the pipeline and convert any errors
-        pipeline.process(input, output)
-    }
 }
 
 #[cfg(test)]
 /// Tests for the FLV processing pipeline
 mod test {
     use super::*;
-    use crate::adapter::flv_error_to_pipeline_error;
-    use crate::writer::{FlvWriter, FlvWriterError};
+    use crate::{FlvStrategyError, writer::FlvWriter};
 
     use flv::data::FlvData;
     use flv::parser_async::FlvDecoderStream;
     use futures::StreamExt;
-    use pipeline_common::init_test_tracing;
-    use std::io;
+    use pipeline_common::{PipelineError, ProtocolWriter, WriterError, init_test_tracing};
+
     use std::path::Path;
     use tracing::info;
 
@@ -216,7 +251,11 @@ mod test {
         let context = StreamerContext::default();
 
         // Create the pipeline with default configuration
-        let pipeline = FlvPipeline::new(context);
+        let pipeline = FlvPipeline::with_config(
+            context,
+            &PipelineConfig::default(),
+            FlvPipelineConfig::default(),
+        );
 
         // Start a task to parse the input file using async Decoder
         let file_reader = tokio::io::BufReader::new(tokio::fs::File::open(input_path).await?);
@@ -225,48 +264,38 @@ mod test {
             32 * 1024, // Input buffer capacity
         );
 
-        let (sender, receiver) = std::sync::mpsc::sync_channel::<Result<FlvData, FlvError>>(8);
+        let (sender, receiver) = std::sync::mpsc::sync_channel::<Result<FlvData, PipelineError>>(8);
 
-        let (output_tx, output_rx) = std::sync::mpsc::sync_channel::<Result<FlvData, FlvError>>(8);
+        let (output_tx, output_rx) =
+            std::sync::mpsc::sync_channel::<Result<FlvData, PipelineError>>(8);
 
         let process_task = Some(tokio::task::spawn_blocking(move || {
             let pipeline = pipeline.build_pipeline();
 
-            // Convert input from FlvError to PipelineError
-            let input = std::iter::from_fn(|| {
-                receiver
-                    .recv()
-                    .map(|result| result.map_err(flv_error_to_pipeline_error))
-                    .map(Some)
-                    .unwrap_or(None)
-            });
+            let input = std::iter::from_fn(|| receiver.recv().map(Some).unwrap_or(None));
 
             let mut output = |result: Result<FlvData, PipelineError>| {
-                // Convert PipelineError back to FlvError for output
-                let flv_result = result
-                    .map_err(|e| FlvError::Io(io::Error::other(format!("Pipeline error: {e}"))));
-
-                if output_tx.send(flv_result).is_err() {
+                if output_tx.send(result).is_err() {
                     tracing::warn!("Output channel closed, astopping processing");
                 }
             };
 
             if let Err(err) = pipeline.process(input, &mut output) {
                 output_tx
-                    .send(Err(FlvError::Io(io::Error::other(format!(
+                    .send(Err(PipelineError::Processing(format!(
                         "Pipeline error: {err}"
-                    )))))
+                    ))))
                     .ok();
             }
         }));
 
         // Run the writer task with the receiver
         let writer_handle = tokio::task::spawn_blocking(move || {
-            let mut writer_task = FlvWriter::new(output_dir, base_name, None);
+            let mut writer_task = FlvWriter::new(output_dir, base_name, "flv".to_string(), None);
 
             writer_task.run(output_rx)?;
 
-            Ok::<_, FlvWriterError>((
+            Ok::<_, WriterError<FlvStrategyError>>((
                 writer_task.get_state().items_written_total,
                 writer_task.get_state().file_sequence_number,
             ))
@@ -274,7 +303,9 @@ mod test {
 
         // Ensure the forwarding task completes
         while let Some(result) = decoder_stream.next().await {
-            sender.send(result).unwrap()
+            sender
+                .send(result.map_err(|e| PipelineError::Processing(e.to_string())))
+                .unwrap();
         }
         drop(sender); // Close the channel to signal completion
 

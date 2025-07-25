@@ -6,18 +6,18 @@
 use std::collections::HashMap;
 
 pub mod error;
+pub mod packet;
 pub mod pat;
 pub mod pmt;
-pub mod packet;
 pub mod zero_copy;
 
 pub use error::TsError;
+pub use packet::{PID_NULL, PID_PAT, TsPacket};
 pub use pat::{Pat, PatProgram};
 pub use pmt::{Pmt, PmtStream, StreamType};
-pub use packet::{TsPacket, PID_PAT, PID_NULL};
 pub use zero_copy::{
-    ZeroCopyTsParser, TsPacketRef, PatRef, PmtRef, PatProgramRef, PmtStreamRef,
-    PatProgramIterator, PmtStreamIterator
+    PatProgramIterator, PatProgramRef, PatRef, PmtRef, PmtStreamIterator, PmtStreamRef,
+    TsPacketRef, ZeroCopyTsParser,
 };
 
 /// Result type for TS parsing operations
@@ -141,4 +141,4 @@ mod tests {
         let data = vec![0u8; 100]; // Invalid size
         assert!(parser.parse_packets(&data).is_err());
     }
-} 
+}

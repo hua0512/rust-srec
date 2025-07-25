@@ -1,5 +1,5 @@
-use std::io;
 use std::fmt;
+use std::io;
 
 /// NAL (Network Abstraction Layer) unit types as defined by ISO/IEC 14496-10:2022 (Table 7-1).
 ///
@@ -96,7 +96,9 @@ impl fmt::Debug for NALUnitType {
         write!(f, "NALUnitType::")?;
         match self {
             Self::Unspecified1 => write!(f, "Unspecified1"),
-            Self::NonIDRSliceLayerWithoutPartitioning => write!(f, "NonIDRSliceLayerWithoutPartitioning"),
+            Self::NonIDRSliceLayerWithoutPartitioning => {
+                write!(f, "NonIDRSliceLayerWithoutPartitioning")
+            }
             Self::SliceDataPartitionALayer => write!(f, "SliceDataPartitionALayer"),
             Self::SliceDataPartitionBLayer => write!(f, "SliceDataPartitionBLayer"),
             Self::SliceDataPartitionCLayer => write!(f, "SliceDataPartitionCLayer"),
@@ -114,7 +116,9 @@ impl fmt::Debug for NALUnitType {
             Self::DepthParameterSet => write!(f, "DepthParameterSet"),
             Self::Reserved1 => write!(f, "Reserved1"),
             Self::Reserved2 => write!(f, "Reserved2"),
-            Self::AuxCodedPictureSliceLayerWithoutPartitioning => write!(f, "AuxCodedPictureSliceLayerWithoutPartitioning"),
+            Self::AuxCodedPictureSliceLayerWithoutPartitioning => {
+                write!(f, "AuxCodedPictureSliceLayerWithoutPartitioning")
+            }
             Self::SliceLayerExtension => write!(f, "SliceLayerExtension"),
             Self::SliceLayerExtension2 => write!(f, "SliceLayerExtension2"),
             Self::Reserved3 => write!(f, "Reserved3"),

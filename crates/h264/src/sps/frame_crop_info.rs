@@ -148,6 +148,9 @@ mod tests {
 
         // now we can check the size:
         assert_eq!(rebuilt_frame_crop_info.bitsize(), frame_crop_info.bitsize());
-        assert_eq!(rebuilt_frame_crop_info.bytesize(), frame_crop_info.bytesize());
+        assert_eq!(
+            rebuilt_frame_crop_info.bytesize(),
+            frame_crop_info.bytesize()
+        );
     }
 }

@@ -241,7 +241,10 @@ pub struct OperatingParametersInfo {
 
 impl OperatingParametersInfo {
     /// Parses the operating parameters info from the given reader.
-    pub fn parse(delay_bit_length: u8, bit_reader: &mut BitReader<impl io::Read>) -> io::Result<Self> {
+    pub fn parse(
+        delay_bit_length: u8,
+        bit_reader: &mut BitReader<impl io::Read>,
+    ) -> io::Result<Self> {
         let decoder_buffer_delay = bit_reader.read_bits(delay_bit_length)?;
         let encoder_buffer_delay = bit_reader.read_bits(delay_bit_length)?;
         let low_delay_mode_flag = bit_reader.read_bit()?;
@@ -325,7 +328,10 @@ impl ColorConfig {
         const TC_SRGB: u8 = 13;
         const MC_IDENTITY: u8 = 0;
 
-        if color_primaries == CP_BT_709 && transfer_characteristics == TC_SRGB && matrix_coefficients == MC_IDENTITY {
+        if color_primaries == CP_BT_709
+            && transfer_characteristics == TC_SRGB
+            && matrix_coefficients == MC_IDENTITY
+        {
             color_range = true;
             subsampling_x = false;
             subsampling_y = false;
@@ -366,7 +372,11 @@ impl ColorConfig {
             (_, false) => 8,
         };
 
-        let mono_chrome = if seq_profile == 1 { false } else { bit_reader.read_bit()? };
+        let mono_chrome = if seq_profile == 1 {
+            false
+        } else {
+            bit_reader.read_bit()?
+        };
 
         let color_primaries;
         let transfer_characteristics;
@@ -488,18 +498,29 @@ impl SequenceHeaderObu {
             for _ in 0..operating_points_cnt_minus_1 + 1 {
                 let idc = bit_reader.read_bits(12)? as u16;
                 let seq_level_idx = bit_reader.read_bits(5)? as u8;
-                let seq_tier = if seq_level_idx > 7 { bit_reader.read_bit()? } else { false };
-                let decoder_model_present_for_this_op = if let Some(decoder_model_info) = decoder_model_info {
-                    bit_reader.read_bit()?.then_some(decoder_model_info.buffer_delay_length)
+                let seq_tier = if seq_level_idx > 7 {
+                    bit_reader.read_bit()?
                 } else {
-                    None
+                    false
                 };
+                let decoder_model_present_for_this_op =
+                    if let Some(decoder_model_info) = decoder_model_info {
+                        bit_reader
+                            .read_bit()?
+                            .then_some(decoder_model_info.buffer_delay_length)
+                    } else {
+                        None
+                    };
 
-                let operating_parameters_info = if let Some(delay_bit_length) = decoder_model_present_for_this_op {
-                    Some(OperatingParametersInfo::parse(delay_bit_length, &mut bit_reader)?)
-                } else {
-                    None
-                };
+                let operating_parameters_info =
+                    if let Some(delay_bit_length) = decoder_model_present_for_this_op {
+                        Some(OperatingParametersInfo::parse(
+                            delay_bit_length,
+                            &mut bit_reader,
+                        )?)
+                    } else {
+                        None
+                    };
 
                 let initial_display_delay = if initial_display_delay_present_flag {
                     if bit_reader.read_bit()? {

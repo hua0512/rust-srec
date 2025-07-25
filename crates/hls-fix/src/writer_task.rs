@@ -7,12 +7,11 @@ use std::{
 };
 
 use hls::{HlsData, M4sData};
-use pipeline_common::progress::ProgressEvent;
 use pipeline_common::{
-    FormatStrategy, OnProgress, PostWriteAction, Progress, TaskError, WriterConfig, WriterState,
-    WriterTask, expand_filename_template,
+    FormatStrategy, OnProgress, PostWriteAction, Progress, ProtocolWriter, WriterConfig,
+    WriterState, WriterTask, expand_filename_template,
 };
-use thiserror::Error;
+use pipeline_common::{WriterError, progress::ProgressEvent};
 use tracing::{debug, error, info};
 
 use crate::analyzer::HlsAnalyzer;
@@ -193,24 +192,16 @@ impl FormatStrategy<HlsData> for HlsFormatStrategy {
     }
 }
 
-/// Error type for the `HlsWriter`.
-#[derive(Debug, Error)]
-pub enum HlsWriterError {
-    /// An error occurred in the underlying writer task.
-    #[error("Writer task error: {0}")]
-    Task(#[from] TaskError<HlsStrategyError>),
-
-    /// An error was received from the input stream.
-    #[error("Input stream error: {0}")]
-    InputError(pipeline_common::PipelineError),
-}
-
 pub struct HlsWriter {
     writer_task: WriterTask<HlsData, HlsFormatStrategy>,
 }
 
-impl HlsWriter {
-    pub fn new(
+impl ProtocolWriter for HlsWriter {
+    type Item = HlsData;
+    type Stats = (usize, u32);
+    type Error = WriterError<HlsStrategyError>;
+
+    fn new(
         output_dir: PathBuf,
         base_name: String,
         extension: String,
@@ -222,14 +213,14 @@ impl HlsWriter {
         Self { writer_task }
     }
 
-    pub fn get_state(&self) -> &WriterState {
+    fn get_state(&self) -> &WriterState {
         self.writer_task.get_state()
     }
 
-    pub fn run(
+    fn run(
         &mut self,
         receiver: Receiver<Result<HlsData, pipeline_common::PipelineError>>,
-    ) -> Result<(usize, u32), HlsWriterError> {
+    ) -> Result<(usize, u32), WriterError<HlsStrategyError>> {
         for result in receiver.iter() {
             match result {
                 Ok(hls_data) => {
@@ -238,7 +229,7 @@ impl HlsWriter {
                 }
                 Err(e) => {
                     tracing::error!("Error in received HLS data: {}", e);
-                    return Err(HlsWriterError::InputError(e));
+                    return Err(WriterError::InputError(e.to_string()));
                 }
             }
         }

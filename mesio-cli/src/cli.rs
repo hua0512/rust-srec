@@ -71,14 +71,14 @@ pub struct CliArgs {
     )]
     pub enable_fix: bool,
 
-    /// Buffer size for processing channels
+    /// Channel size for processing channels
     #[arg(
         short = 'b',
         long,
-        default_value = "16",
-        help = "Buffer size for internal processing channels"
+        default_value = "32",
+        help = "Channel size for internal processing channels"
     )]
-    pub buffer_size: usize,
+    pub channel_size: usize,
 
     /// Download buffer size
     #[arg(
@@ -217,13 +217,4 @@ pub struct CliArgs {
         help = "Enable caching of HLS playlists to reduce redundant downloads"
     )]
     pub hls_cache_playlists: bool,
-
-    /// Select output format (file, stdout, stderr)
-    #[arg(
-            long,
-            default_value = "file",
-            help = "Output format for downloaded content",
-            value_parser = ["file", "stdout", "stderr"]
-        )]
-    pub output_format: String,
 }

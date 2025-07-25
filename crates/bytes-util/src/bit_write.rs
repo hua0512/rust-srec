@@ -41,7 +41,10 @@ impl<W: io::Write> BitWriter<W> {
         let count = count.min(64);
 
         if count != 64 && bits > (1 << count as u64) - 1 {
-            return Err(io::Error::new(io::ErrorKind::InvalidData, "bits too large to write"));
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                "bits too large to write",
+            ));
         }
 
         for i in 0..count {
@@ -170,12 +173,20 @@ mod tests {
         bit_writer.write_bits(0b11111111, 8).unwrap();
         assert_eq!(bit_writer.bit_pos(), 0);
         assert!(bit_writer.is_aligned());
-        assert_eq!(bit_writer.get_ref(), &[0b11111111], "underlying writer should have one byte");
+        assert_eq!(
+            bit_writer.get_ref(),
+            &[0b11111111],
+            "underlying writer should have one byte"
+        );
 
         bit_writer.write_bits(0b0000, 4).unwrap();
         assert_eq!(bit_writer.bit_pos(), 4);
         assert!(!bit_writer.is_aligned());
-        assert_eq!(bit_writer.get_ref(), &[0b11111111], "underlying writer should have one bytes");
+        assert_eq!(
+            bit_writer.get_ref(),
+            &[0b11111111],
+            "underlying writer should have one bytes"
+        );
 
         bit_writer.write_bits(0b1010, 4).unwrap();
         assert_eq!(bit_writer.bit_pos(), 0);
@@ -224,7 +235,9 @@ mod tests {
 
         assert_eq!(
             inner,
-            vec![255, 1, 2, 3, 0b11010111, 0b11111000, 0b00000111, 0b11111000, 0b00000000]
+            vec![
+                255, 1, 2, 3, 0b11010111, 0b11111000, 0b00000111, 0b11111000, 0b00000000
+            ]
         );
     }
 

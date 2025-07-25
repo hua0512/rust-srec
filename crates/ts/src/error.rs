@@ -29,4 +29,4 @@ pub enum TsError {
 
     #[error("Parse error: {0}")]
     ParseError(String),
-} 
+}

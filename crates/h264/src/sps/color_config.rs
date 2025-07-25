@@ -72,7 +72,11 @@ impl ColorConfig {
         writer.write_bits(self.video_format as u64, 3)?;
         writer.write_bit(self.video_full_range_flag)?;
 
-        match (self.color_primaries, self.transfer_characteristics, self.matrix_coefficients) {
+        match (
+            self.color_primaries,
+            self.transfer_characteristics,
+            self.matrix_coefficients,
+        ) {
             (2, 2, 2) => {
                 writer.write_bit(false)?;
             }

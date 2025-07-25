@@ -42,8 +42,10 @@ impl TimingInfo {
     /// Parses the fields defined when the `timing_info_present_flag == 1` from a bitstream.
     /// Returns a `TimingInfo` struct.
     pub fn parse<T: io::Read>(reader: &mut BitReader<T>) -> io::Result<Self> {
-        let num_units_in_tick = NonZeroU32::new(reader.read_u32::<BigEndian>()?)
-            .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidData, "num_units_in_tick cannot be 0"))?;
+        let num_units_in_tick =
+            NonZeroU32::new(reader.read_u32::<BigEndian>()?).ok_or_else(|| {
+                io::Error::new(io::ErrorKind::InvalidData, "num_units_in_tick cannot be 0")
+            })?;
 
         let time_scale = NonZeroU32::new(reader.read_u32::<BigEndian>()?)
             .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidData, "time_scale cannot be 0"))?;

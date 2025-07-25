@@ -173,9 +173,7 @@ impl DecryptionService {
         let iv_str = iv_hex_str.trim_start_matches("0x");
         let mut iv_bytes = [0u8; 16];
         hex::decode_to_slice(iv_str, &mut iv_bytes).map_err(|e| {
-            HlsDownloaderError::DecryptionError(format!(
-                "Failed to parse IV '{iv_hex_str}': {e}"
-            ))
+            HlsDownloaderError::DecryptionError(format!("Failed to parse IV '{iv_hex_str}': {e}"))
         })?;
         Ok(iv_bytes)
     }
@@ -217,9 +215,7 @@ impl DecryptionService {
         // TODO: or a dedicated thread pool if `offload_decryption_to_cpu_pool` is true.
         let mut buffer = data.to_vec(); // Clone data for mutable operations
         let cipher = Aes128CbcDec::new_from_slices(&key_data, &iv_bytes).map_err(|e| {
-            HlsDownloaderError::DecryptionError(format!(
-                "Failed to initialize AES decryptor: {e}"
-            ))
+            HlsDownloaderError::DecryptionError(format!("Failed to initialize AES decryptor: {e}"))
         })?;
 
         let decrypted_len = cipher

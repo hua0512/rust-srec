@@ -1,4 +1,5 @@
 mod flv;
+mod generic;
 mod hls;
 
 use mesio_engine::{DownloadManagerConfig, MesioDownloaderFactory, ProtocolType};
@@ -6,18 +7,20 @@ use pipeline_common::OnProgress;
 use std::path::{Path, PathBuf};
 use tracing::{error, info};
 
-use crate::config::ProgramConfig;
+use crate::{config::ProgramConfig, error::AppError};
 
 /// Determine the type of input and process accordingly
 pub async fn process_inputs(
     inputs: &[String],
     output_dir: &Path,
-    config: &mut ProgramConfig,
+    config: &ProgramConfig,
     name_template: &str,
     on_progress: Option<OnProgress>,
-) -> Result<(), Box<dyn std::error::Error>> {
+) -> Result<(), AppError> {
     if inputs.is_empty() {
-        return Err("No input files or URLs provided".into());
+        return Err(AppError::InvalidInput(
+            "No input files or URLs provided".to_string(),
+        ));
     }
 
     let inputs_len = inputs.len();
@@ -28,9 +31,6 @@ pub async fn process_inputs(
         if inputs_len == 1 { "" } else { "s" }
     );
 
-    // Preallocate a string builder for status messages to avoid repeated allocations
-    let _status_buffer = String::with_capacity(100);
-
     let factory = MesioDownloaderFactory::new()
         .with_download_config(DownloadManagerConfig::default())
         .with_flv_config(config.flv_config.clone().unwrap_or_default())
@@ -40,6 +40,8 @@ pub async fn process_inputs(
     for (index, input) in inputs.iter().enumerate() {
         let _input_index = index + 1;
 
+        // trim urls for better usability
+        let input = input.trim();
         // Process based on input type
         if input.starts_with("http://") || input.starts_with("https://") {
             let mut downloader = factory.create_for_url(input, ProtocolType::Auto).await?;
@@ -71,7 +73,9 @@ pub async fn process_inputs(
                 }
                 _ => {
                     error!("Unsupported protocol for: {input}");
-                    return Err(format!("Unsupported protocol: {input}").into());
+                    return Err(AppError::InvalidInput(format!(
+                        "Unsupported protocol: {input}"
+                    )));
                 }
             }
         } else {
@@ -90,19 +94,23 @@ pub async fn process_inputs(
                         // },
                         _ => {
                             error!("Unsupported file extension for: {input}");
-                            return Err(format!("Unsupported file extension: {input}").into());
+                            return Err(AppError::InvalidInput(format!(
+                                "Unsupported file extension: {input}"
+                            )));
                         }
                     }
                 } else {
                     error!("File without extension: {input}");
-                    return Err(format!("File without extension: {input}").into());
+                    return Err(AppError::InvalidInput(format!(
+                        "File without extension: {input}"
+                    )));
                 }
             } else {
                 error!(
                     "Input is neither a valid URL nor an existing file: {}",
                     input
                 );
-                return Err(format!("Invalid input: {input}").into());
+                return Err(AppError::InvalidInput(format!("Invalid input: {input}")));
             }
         }
     }

@@ -552,7 +552,11 @@ impl fmt::Display for FlvTagData {
             FlvTagData::Video(video) => write!(f, "Video: {video}"),
             FlvTagData::ScriptData(script) => write!(f, "Script: {script}"),
             FlvTagData::Unknown { tag_type, data } => {
-                write!(f, "Unknown (type: {tag_type:?}, {data_len} bytes)", data_len = data.len())
+                write!(
+                    f,
+                    "Unknown (type: {tag_type:?}, {data_len} bytes)",
+                    data_len = data.len()
+                )
             }
         }
     }

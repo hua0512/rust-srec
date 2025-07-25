@@ -82,9 +82,7 @@ impl PlaylistProvider for PlaylistEngine {
                     ))
                 })?;
                 let base_url_obj = playlist_url.join(".").map_err(|e| {
-                    HlsDownloaderError::PlaylistError(format!(
-                        "Failed to determine base URL: {e}"
-                    ))
+                    HlsDownloaderError::PlaylistError(format!("Failed to determine base URL: {e}"))
                 })?;
                 let base_url = base_url_obj.to_string();
                 return match parse_playlist_res(playlist_content.as_bytes()) {

@@ -59,7 +59,7 @@ pub use source::{ContentSource, SourceManager, SourceSelectionStrategy};
 pub use downloader::{DownloadManager, DownloadManagerConfig, create_client};
 
 // Re-export factory types
-pub use factory::{DownloadStream, DownloaderInstance, ProtocolType, MesioDownloaderFactory};
+pub use factory::{DownloadStream, DownloaderInstance, MesioDownloaderFactory, ProtocolType};
 
 // Re-export proxy utilities
 pub use proxy::{ProxyAuth, ProxyConfig, ProxyType};

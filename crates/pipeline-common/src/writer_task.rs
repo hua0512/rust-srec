@@ -96,6 +96,15 @@ pub enum TaskError<StrategyError: std::error::Error + Send + Sync + 'static> {
     Internal(String),
 }
 
+#[derive(Error, Debug)]
+pub enum WriterError<StrategyError: std::error::Error + Send + Sync + 'static> {
+    #[error("Task error: {0}")]
+    TaskError(#[from] TaskError<StrategyError>),
+
+    #[error("Input stream error: {0}")]
+    InputError(String),
+}
+
 /// Trait defining the strategy for formatting and writing data.
 pub trait FormatStrategy<D>: Send + Sync + 'static {
     type Writer: Write;

@@ -619,7 +619,11 @@ impl std::fmt::Display for VideoTagBody {
             VideoTagBody::Enhanced(packet) => write!(f, "{packet}"),
             VideoTagBody::Command(cmd) => write!(f, "Command: {cmd:?}"),
             VideoTagBody::Unknown { codec_id, data } => {
-                write!(f, "Unknown Codec: {codec_id:?}, {data_len} bytes", data_len = data.len())
+                write!(
+                    f,
+                    "Unknown Codec: {codec_id:?}, {data_len} bytes",
+                    data_len = data.len()
+                )
             }
         }
     }

@@ -117,7 +117,13 @@ mod tests {
         let rebuilt_chroma_sample_loc = ChromaSampleLoc::parse(&mut reader2).unwrap();
 
         // now we can check the size:
-        assert_eq!(rebuilt_chroma_sample_loc.bitsize(), chroma_sample_loc.bitsize());
-        assert_eq!(rebuilt_chroma_sample_loc.bytesize(), chroma_sample_loc.bytesize());
+        assert_eq!(
+            rebuilt_chroma_sample_loc.bitsize(),
+            chroma_sample_loc.bitsize()
+        );
+        assert_eq!(
+            rebuilt_chroma_sample_loc.bytesize(),
+            chroma_sample_loc.bytesize()
+        );
     }
 }

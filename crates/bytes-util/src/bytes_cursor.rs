@@ -35,7 +35,10 @@ pub trait BytesCursorExt {
 }
 
 fn remaining(cursor: &BytesCursor) -> usize {
-    cursor.get_ref().len().saturating_sub(cursor.position() as usize)
+    cursor
+        .get_ref()
+        .len()
+        .saturating_sub(cursor.position() as usize)
 }
 
 impl BytesCursorExt for BytesCursor {
@@ -55,7 +58,10 @@ impl BytesCursorExt for BytesCursor {
         // If the size is greater than the remaining bytes we can just return an
         // error.
         if size > remaining(self) {
-            return Err(io::Error::new(io::ErrorKind::UnexpectedEof, "not enough bytes"));
+            return Err(io::Error::new(
+                io::ErrorKind::UnexpectedEof,
+                "not enough bytes",
+            ));
         }
 
         let position = self.position() as usize;

@@ -1,17 +1,14 @@
-use futures::StreamExt;
+use crate::error::AppError;
+use crate::processor::generic::process_stream;
+use crate::{config::ProgramConfig, utils::create_dirs};
+use futures::{StreamExt, stream};
 use hls::HlsData;
-use hls_fix::HlsWriter;
-use hls_fix::{HlsPipeline, HlsPipelineConfig};
-use pipeline_common::{OnProgress, PipelineError, StreamerContext};
+use hls_fix::{HlsPipeline, HlsPipelineConfig, HlsWriter};
+use mesio_engine::{DownloadError, DownloaderInstance};
+use pipeline_common::{OnProgress, PipelineError};
 use std::path::Path;
-use std::sync::Arc;
 use std::time::Instant;
-use tracing::{debug, info, warn};
-
-use mesio_engine::DownloaderInstance;
-
-use crate::config::ProgramConfig;
-use crate::output::provider::OutputFormat;
+use tracing::{debug, info};
 
 /// Process an HLS stream
 pub async fn process_hls_stream(
@@ -21,14 +18,16 @@ pub async fn process_hls_stream(
     name_template: &str,
     on_progress: Option<OnProgress>,
     downloader: &mut DownloaderInstance,
-) -> Result<u64, Box<dyn std::error::Error>> {
+) -> Result<u64, AppError> {
+    // Create output directory if it doesn't exist
+    create_dirs(output_dir).await?;
+
     let start_time = Instant::now();
 
-    // Create output directory if it doesn't exist
-    tokio::fs::create_dir_all(output_dir).await?;
-
     // Extract name from URL
-    let url = url_str.parse::<reqwest::Url>()?;
+    let url = url_str
+        .parse::<reqwest::Url>()
+        .map_err(|e| AppError::InvalidInput(e.to_string()))?;
     let file_name = url
         .path_segments()
         .and_then(|mut segments| segments.next_back())
@@ -41,34 +40,42 @@ pub async fn process_hls_stream(
         None => file_name,
     };
     let base_name = name_template.replace("%u", &base_name);
-    // Add the source URL with priority 0 (for potential fallback)
-    downloader.add_source(url_str, 0);
-
-    // Create output with appropriate format
-    let output_format = config.output_format.unwrap_or(OutputFormat::File);
+    downloader.add_source(url_str, 10);
 
     // Start the download
     let mut stream = match downloader {
         DownloaderInstance::Hls(hls_manager) => hls_manager.download_with_sources(url_str).await?,
-        _ => return Err("Expected HLS downloader".into()),
+        _ => {
+            return Err(AppError::InvalidInput(
+                "Expected HLS downloader".to_string(),
+            ));
+        }
     };
 
     // Peek at the first segment to determine the file extension
     let first_segment = match stream.next().await {
         Some(Ok(segment)) => segment,
-        Some(Err(e)) => return Err(format!("Failed to get first HLS segment: {e}").into()),
+        Some(Err(e)) => {
+            return Err(AppError::InvalidInput(format!(
+                "Failed to get first HLS segment: {e}"
+            )));
+        }
         None => {
             info!("HLS stream is empty.");
-            return Ok(0);
+            return Err(AppError::Download(DownloadError::NoSource(
+                "HLS stream is empty".to_string(),
+            )));
         }
     };
 
     let extension = match first_segment {
         HlsData::TsData(_) => "ts",
         HlsData::M4sData(_) => "m4s",
+        // should never happen
         HlsData::EndMarker => {
-            // This should not happen for the first segment, but we'll default to "ts"
-            "ts"
+            return Err(AppError::Pipeline(PipelineError::InvalidData(
+                "First segment is EndMarker".to_string(),
+            )));
         }
     };
 
@@ -77,81 +84,24 @@ pub async fn process_hls_stream(
         extension.to_uppercase(),
         extension
     );
-    info!("Saving HLS stream to {} output", output_format);
 
-    let context = StreamerContext::default();
+    let hls_pipe_config = config.hls_pipeline_config.clone();
+    debug!("Pipeline config: {:?}", hls_pipe_config);
 
-    let pipeline_config = HlsPipelineConfig {
-        max_duration_limit: Some((config.pipeline_config.duration_limit * 1000.0) as u64),
-        max_file_size: config.pipeline_config.file_size_limit,
-    };
+    // Prepend the first segment back to the stream
+    let stream_with_first_segment = stream::once(async { Ok(first_segment) }).chain(stream);
 
-    debug!("Pipeline config: {:?}", pipeline_config);
-    let pipeline = HlsPipeline::new(Arc::new(context), pipeline_config);
-
-    // sender channel
-    let (sender, receiver) =
-        std::sync::mpsc::sync_channel::<Result<HlsData, PipelineError>>(config.channel_size);
-
-    // output channel
-    let (output_tx, output_rx) =
-        std::sync::mpsc::sync_channel::<Result<HlsData, PipelineError>>(config.channel_size);
-
-    let process_task = tokio::task::spawn_blocking(move || {
-        let pipeline = pipeline.build_pipeline();
-
-        let input = std::iter::from_fn(|| receiver.recv().map(Some).unwrap_or(None));
-
-        let mut output = |result: Result<HlsData, PipelineError>| {
-            if output_tx.send(result).is_err() {
-                warn!("Output channel closed, stopping processing");
-            }
-        };
-
-        pipeline.process(input, &mut output).unwrap();
-    });
-
-    let output_dir = output_dir.to_path_buf();
-    let extension = extension.to_string();
-
-    let writer_handle = tokio::task::spawn_blocking(move || {
-        let mut writer_task = HlsWriter::new(output_dir, base_name, extension, on_progress);
-        writer_task.run(output_rx)
-    });
-
-    // Send the first segment that we peeked at
-    if sender.send(Ok(first_segment)).is_err() {
-        warn!("Failed to send the first segment. Receiver has been dropped.");
-        // In this case, we can just stop, as the processing pipeline is not running.
-    } else {
-        // Pipe the rest of the data from the stream to the pipeline
-        while let Some(result) = stream.next().await {
-            match result {
-                Ok(segment) => {
-                    if sender.send(Ok(segment)).is_err() {
-                        warn!("Sender channel closed, stopping processing");
-                        break;
-                    }
-                }
-                Err(e) => {
-                    let err_msg = format!("HLS segment error: {e}");
-                    if sender
-                        .send(Err(PipelineError::Processing(err_msg.clone())))
-                        .is_err()
-                    {
-                        warn!("Failed to send error to pipeline. Receiver has been dropped.");
-                    }
-                    return Err(err_msg.into());
-                }
-            }
-        }
-    }
-
-    drop(sender);
-
-    let (_ts_segments_written, total_segments_written) = writer_handle.await??;
-
-    process_task.await?;
+    let (_ts_segments_written, total_segments_written) =
+        process_stream::<HlsPipelineConfig, HlsData, HlsPipeline, HlsWriter, _, _>(
+            &config.pipeline_config,
+            hls_pipe_config,
+            stream_with_first_segment,
+            output_dir,
+            &base_name,
+            extension,
+            on_progress,
+        )
+        .await?;
 
     let elapsed = start_time.elapsed();
 

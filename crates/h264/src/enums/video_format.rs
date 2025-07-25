@@ -1,5 +1,5 @@
-use std::io;
 use std::fmt;
+use std::io;
 
 /// The `VideoFormat` is a nutype enum for `video_format` as defined in
 /// ISO/IEC-14496-10-2022 - E.2.1 Table E-2.

@@ -3,9 +3,9 @@ use std::sync::LazyLock;
 use super::error::ExtractorError;
 use super::platform_extractor::PlatformExtractor;
 use crate::extractor::platforms::{
-    self, bilibili::Bilibili, douyin::Douyin, douyu::Douyu, huya::Huya,
-    pandatv::PandaTV, picarto::Picarto, redbook::RedBook, tiktok::TikTok, twitcasting::Twitcasting,
-    twitch::Twitch, weibo::Weibo,
+    self, bilibili::Bilibili, douyin::Douyin, douyu::Douyu, huya::Huya, pandatv::PandaTV,
+    picarto::Picarto, redbook::RedBook, tiktok::TikTok, twitcasting::Twitcasting, twitch::Twitch,
+    weibo::Weibo,
 };
 use regex::Regex;
 use reqwest::Client;

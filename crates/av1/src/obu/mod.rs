@@ -38,7 +38,10 @@ impl ObuHeader {
         let mut bit_reader = BitReader::new(cursor);
         let forbidden_bit = bit_reader.read_bit()?;
         if forbidden_bit {
-            return Err(io::Error::new(io::ErrorKind::InvalidData, "obu_forbidden_bit is not 0"));
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                "obu_forbidden_bit is not 0",
+            ));
         }
 
         let obu_type = bit_reader.read_bits(4)?;
@@ -67,7 +70,10 @@ impl ObuHeader {
         };
 
         if !bit_reader.is_aligned() {
-            return Err(io::Error::new(io::ErrorKind::InvalidData, "bit reader is not aligned"));
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                "bit reader is not aligned",
+            ));
         }
 
         Ok(ObuHeader {
@@ -147,7 +153,8 @@ mod tests {
 
     #[test]
     fn test_obu_header_parse() {
-        let mut cursor = std::io::Cursor::new(b"\n\x0f\0\0\0j\xef\xbf\xe1\xbc\x02\x19\x90\x10\x10\x10@");
+        let mut cursor =
+            std::io::Cursor::new(b"\n\x0f\0\0\0j\xef\xbf\xe1\xbc\x02\x19\x90\x10\x10\x10@");
         let header = ObuHeader::parse(&mut cursor).unwrap();
         insta::assert_debug_snapshot!(header, @r"
         ObuHeader {

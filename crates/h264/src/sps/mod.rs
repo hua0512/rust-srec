@@ -363,13 +363,19 @@ impl Sps {
 
         let forbidden_zero_bit = bit_reader.read_bit()?;
         if forbidden_zero_bit {
-            return Err(io::Error::new(io::ErrorKind::InvalidData, "Forbidden zero bit is set"));
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                "Forbidden zero bit is set",
+            ));
         }
 
         let nal_ref_idc = bit_reader.read_bits(2)? as u8;
         let nal_unit_type = bit_reader.read_bits(5)? as u8;
         if NALUnitType::try_from(nal_unit_type)? != NALUnitType::SPS {
-            return Err(io::Error::new(io::ErrorKind::InvalidData, "NAL unit type is not SPS"));
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                "NAL unit type is not SPS",
+            ));
         }
 
         let profile_idc = bit_reader.read_u8()?;
@@ -490,7 +496,13 @@ impl Sps {
             }
 
             let chroma_loc_info_present_flag = bit_reader.read_bit()?;
-            if sps_ext.as_ref().unwrap_or(&SpsExtended::default()).chroma_format_idc != 1 && chroma_loc_info_present_flag {
+            if sps_ext
+                .as_ref()
+                .unwrap_or(&SpsExtended::default())
+                .chroma_format_idc
+                != 1
+                && chroma_loc_info_present_flag
+            {
                 return Err(io::Error::new(
                     io::ErrorKind::InvalidData,
                     "chroma_loc_info_present_flag cannot be set to 1 when chroma_format_idc is not 1",
@@ -704,8 +716,9 @@ impl Sps {
     /// If `mb_adaptive_frame_field_flag` is None, then `frame_mbs_only_flag` is set (1).
     /// Otherwise `mb_adaptive_frame_field_flag` unset (0).
     pub fn height(&self) -> u64 {
-        let base_height =
-            (2 - self.mb_adaptive_frame_field_flag.is_none() as u64) * (self.pic_height_in_map_units_minus1 + 1) * 16;
+        let base_height = (2 - self.mb_adaptive_frame_field_flag.is_none() as u64)
+            * (self.pic_height_in_map_units_minus1 + 1)
+            * 16;
 
         self.frame_crop_info.as_ref().map_or(base_height, |crop| {
             base_height - (crop.frame_crop_top_offset + crop.frame_crop_bottom_offset) * 2

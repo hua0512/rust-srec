@@ -44,3 +44,5 @@ pub use operators::*;
 pub use pipeline::*;
 pub use script_modifier::*;
 pub use utils::*;
+
+pub use crate::writer_task::FlvStrategyError;

@@ -39,7 +39,7 @@ pub struct Statistics {
 /// Provides a common context shared across the processing pipeline including
 /// the stream name, statistics, configuration, and metadata. This context is used
 /// by operators to coordinate their actions and share information.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct StreamerContext {
     /// Name of the stream/file being processed
     pub name: String,
@@ -62,6 +62,10 @@ impl StreamerContext {
             statistics: Arc::new(Mutex::new(Statistics::default())),
             metadata: Arc::new(Mutex::new(HashMap::new())),
         }
+    }
+
+    pub fn arc_new() -> Arc<Self> {
+        Arc::new(Self::new())
     }
 
     pub fn with_name(name: impl Into<String>) -> Self {

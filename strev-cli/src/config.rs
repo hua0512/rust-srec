@@ -72,16 +72,14 @@ impl AppConfig {
                 if path.exists() {
                     let content = std::fs::read_to_string(path)
                         .context("Failed to read configuration file")?;
-                    toml::from_str(&content)
-                        .context("Failed to parse configuration file")
+                    toml::from_str(&content).context("Failed to parse configuration file")
                 } else {
                     Ok(Self::default())
                 }
             }
             None => {
                 // Use confy for default location
-                confy::load("streev-cli", None)
-                    .context("Failed to load configuration")
+                confy::load("streev-cli", None).context("Failed to load configuration")
             }
         }
     }

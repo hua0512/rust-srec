@@ -473,11 +473,16 @@ impl TimingRepairOperator {
                         if framerate_value.is_some() || audio_rate_value.is_some() {
                             let mut properties = HashMap::new();
                             if let Some(fps) = framerate_value {
-                                properties.insert(crate::METADATA_FRAMERATE.to_owned(), Amf0Value::Number(fps));
+                                properties.insert(
+                                    crate::METADATA_FRAMERATE.to_owned(),
+                                    Amf0Value::Number(fps),
+                                );
                             }
                             if let Some(rate) = audio_rate_value {
-                                properties
-                                    .insert(crate::METADATA_AUDIOSAMPLERATE.to_owned(), Amf0Value::Number(rate));
+                                properties.insert(
+                                    crate::METADATA_AUDIOSAMPLERATE.to_owned(),
+                                    Amf0Value::Number(rate),
+                                );
                             }
                             self.state.update_timing_params(&properties);
 
@@ -639,7 +644,7 @@ impl Processor<FlvData> for TimingRepairOperator {
 
 #[cfg(test)]
 mod tests {
-    use pipeline_common::create_test_context;
+    use pipeline_common::StreamerContext;
 
     use super::*;
     use crate::test_utils::{
@@ -651,7 +656,7 @@ mod tests {
         config: TimingRepairConfig,
         input_tags: Vec<FlvData>,
     ) -> Vec<FlvData> {
-        let context = create_test_context();
+        let context = StreamerContext::arc_new();
         let mut operator = TimingRepairOperator::new(context, config);
 
         // Collect results in a vector
