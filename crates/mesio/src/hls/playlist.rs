@@ -9,7 +9,6 @@ use async_trait::async_trait;
 use m3u8_rs::{MasterPlaylist, MediaPlaylist, parse_playlist_res};
 use moka::future::Cache;
 use reqwest::Client;
-use std::num::NonZeroUsize;
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::{broadcast, mpsc};
@@ -299,8 +298,9 @@ impl PlaylistProvider for PlaylistEngine {
 
         /// The LRU cache capacity for seen segments.
         const SEEN_SEGMENTS_LRU_CAPACITY: usize = 20;
-        let seen_segment_uris: Cache<String, ()> =
-            Cache::builder().max_capacity(SEEN_SEGMENTS_LRU_CAPACITY as u64).build();
+        let seen_segment_uris: Cache<String, ()> = Cache::builder()
+            .max_capacity(SEEN_SEGMENTS_LRU_CAPACITY as u64)
+            .build();
 
         let mut last_map_uri: Option<String> = None;
 
@@ -415,7 +415,7 @@ impl PlaylistProvider for PlaylistEngine {
                                 };
 
                                 if !seen_segment_uris.contains_key(&absolute_segment_uri) {
-                                    seen_segment_uris.insert(absolute_segment_uri.clone(), ());
+                                    seen_segment_uris.insert(absolute_segment_uri.clone(), ()).await;
                                     debug!("New segment detected: {}", absolute_segment_uri);
                                     let job = ScheduledSegmentJob {
                                         segment_uri: absolute_segment_uri,
