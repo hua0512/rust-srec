@@ -31,7 +31,6 @@ serde_json = "1.0"
 sha2 = "0.10.8"
 humansize = "2.0.0"
 rand = "0.9.1"
-lru = "0.16"
 moka = { version = "0.12", features = ["future"] }
 aes = "0.8"
 cbc = "0.1"
