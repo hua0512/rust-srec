@@ -189,18 +189,21 @@ async fn bootstrap() -> Result<(), AppError> {
     };
 
     // Create common download configuration
-    let download_config = DownloaderConfig {
-        // do not cache by default
-        cache_config: None,
-        timeout: Duration::from_secs(args.timeout),
-        connect_timeout: Duration::from_secs(args.connect_timeout),
-        read_timeout: Duration::from_secs(args.read_timeout),
-        write_timeout: Duration::from_secs(args.write_timeout),
-        follow_redirects: true,
-        headers: crate::utils::parse_headers(&args.headers),
-        proxy: proxy_config,
-        use_system_proxy: args.use_system_proxy,
-        ..DownloaderConfig::default()
+    let download_config = {
+        let mut builder = DownloaderConfig::builder()
+            .with_timeout(Duration::from_secs(args.timeout))
+            .with_connect_timeout(Duration::from_secs(args.connect_timeout))
+            .with_read_timeout(Duration::from_secs(args.read_timeout))
+            .with_write_timeout(Duration::from_secs(args.write_timeout))
+            .with_headers(crate::utils::parse_headers(&args.headers))
+            .with_caching_enabled(false);
+
+        if let Some(proxy) = proxy_config {
+            builder = builder.with_proxy(proxy);
+        } else {
+            builder = builder.with_system_proxy(args.use_system_proxy);
+        }
+        builder.build()
     };
 
     // Create FLV-specific configuration
@@ -211,7 +214,7 @@ async fn bootstrap() -> Result<(), AppError> {
 
     // Create HLS-specific configuration
     let hls_config = HlsProtocolBuilder::new()
-        .with_base_config(download_config.clone())
+        .with_base_config(download_config)
         .download_concurrency(
             args.hls_concurrency
                 .try_into()
