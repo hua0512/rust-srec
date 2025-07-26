@@ -1,11 +1,13 @@
 use crate::{Result, StreamType, TsError};
+use bytes::{Buf, Bytes};
+use memchr::memchr;
 use std::collections::HashMap;
 
-/// Zero-copy TS packet parser that references source data
-#[derive(Debug)]
-pub struct TsPacketRef<'data> {
+/// Zero-copy TS packet parser 
+#[derive(Debug, Clone)]
+pub struct TsPacketRef {
     /// Source packet data (exactly 188 bytes)
-    data: &'data [u8],
+    data: Bytes,
     /// Parsed header information
     pub sync_byte: u8,
     pub transport_error_indicator: bool,
@@ -21,35 +23,30 @@ pub struct TsPacketRef<'data> {
     payload_offset: Option<usize>,
 }
 
-impl<'data> TsPacketRef<'data> {
-    /// Parse a TS packet from 188 bytes without copying
-    pub fn parse(data: &'data [u8]) -> Result<Self> {
+impl TsPacketRef {
+    /// Parse a TS packet from 188 bytes 
+    pub fn parse(data: Bytes) -> Result<Self> {
         if data.len() != 188 {
             return Err(TsError::InvalidPacketSize(data.len()));
         }
-
-        let sync_byte = data[0];
+        let mut reader = &data[..];
+        let sync_byte = reader.get_u8();
         if sync_byte != 0x47 {
             return Err(TsError::InvalidSyncByte(sync_byte));
         }
-
-        let byte1 = data[1];
-        let byte2 = data[2];
-        let byte3 = data[3];
-
+        let byte1 = reader.get_u8();
+        let byte2 = reader.get_u8();
+        let byte3 = reader.get_u8();
         let transport_error_indicator = (byte1 & 0x80) != 0;
         let payload_unit_start_indicator = (byte1 & 0x40) != 0;
         let transport_priority = (byte1 & 0x20) != 0;
         let pid = ((byte1 as u16 & 0x1F) << 8) | byte2 as u16;
-
         let transport_scrambling_control = (byte3 >> 6) & 0x03;
         let adaptation_field_control = (byte3 >> 4) & 0x03;
         let continuity_counter = byte3 & 0x0F;
-
         let mut offset = 4;
         let mut adaptation_field_offset = None;
         let mut payload_offset = None;
-
         // Calculate adaptation field offset
         if adaptation_field_control == 0x02 || adaptation_field_control == 0x03 {
             if offset >= data.len() {
@@ -58,19 +55,16 @@ impl<'data> TsPacketRef<'data> {
                     actual: data.len(),
                 });
             }
-
             let adaptation_field_length = data[offset] as usize;
             adaptation_field_offset = Some(offset);
             offset += 1 + adaptation_field_length;
         }
-
         // Calculate payload offset
         if (adaptation_field_control == 0x01 || adaptation_field_control == 0x03)
             && offset < data.len()
         {
             payload_offset = Some(offset);
         }
-
         Ok(TsPacketRef {
             data,
             sync_byte,
@@ -85,39 +79,36 @@ impl<'data> TsPacketRef<'data> {
             payload_offset,
         })
     }
-
-    /// Get adaptation field data without copying
+    /// Get adaptation field data 
     #[inline]
-    pub fn adaptation_field(&self) -> Option<&'data [u8]> {
+    pub fn adaptation_field(&self) -> Option<Bytes> {
         if let Some(offset) = self.adaptation_field_offset {
             if offset + 1 < self.data.len() {
                 let length = self.data[offset] as usize;
                 if offset + 1 + length <= self.data.len() {
-                    return Some(&self.data[offset + 1..offset + 1 + length]);
+                    return Some(self.data.slice(offset + 1..offset + 1 + length));
                 }
             }
         }
         None
     }
-
-    /// Get payload data without copying
+    /// Get payload data
     #[inline]
-    pub fn payload(&self) -> Option<&'data [u8]> {
+    pub fn payload(&self) -> Option<Bytes> {
         if let Some(offset) = self.payload_offset {
             if offset < self.data.len() {
-                return Some(&self.data[offset..]);
+                return Some(self.data.slice(offset..));
             }
         }
         None
     }
-
-    /// Get PSI payload without copying (removes pointer field if PUSI is set)
-    pub fn psi_payload(&self) -> Option<&'data [u8]> {
+    /// Get PSI payload (removes pointer field if PUSI is set)
+    pub fn psi_payload(&self) -> Option<Bytes> {
         if let Some(payload) = self.payload() {
             if self.payload_unit_start_indicator && !payload.is_empty() {
                 let pointer_field = payload[0] as usize;
                 if 1 + pointer_field < payload.len() {
-                    return Some(&payload[1 + pointer_field..]);
+                    return Some(payload.slice(1 + pointer_field..));
                 }
             } else if !self.payload_unit_start_indicator {
                 return Some(payload);
@@ -137,11 +128,11 @@ impl<'data> TsPacketRef<'data> {
     }
 }
 
-/// Zero-copy PAT parser that references source data
+/// Zero-copy PAT parser 
 #[derive(Debug, Clone)]
-pub struct PatRef<'data> {
+pub struct PatRef {
     /// Source PSI section data
-    data: &'data [u8],
+    data: Bytes,
     /// Parsed header info (lightweight)
     pub table_id: u8,
     pub transport_stream_id: u16,
@@ -154,53 +145,49 @@ pub struct PatRef<'data> {
     programs_length: usize,
 }
 
-impl<'data> PatRef<'data> {
-    /// Parse PAT from PSI section data without copying
-    pub fn parse(data: &'data [u8]) -> Result<Self> {
+impl PatRef {
+    /// Parse PAT from PSI section data 
+    pub fn parse(data: Bytes) -> Result<Self> {
         if data.len() < 8 {
             return Err(TsError::InsufficientData {
                 expected: 8,
                 actual: data.len(),
             });
         }
-
-        let table_id = data[0];
+        let mut reader = &data[..];
+        let table_id = reader.get_u8();
         if table_id != 0x00 {
             return Err(TsError::InvalidTableId {
                 expected: 0x00,
                 actual: table_id,
             });
         }
-
-        let section_syntax_indicator = (data[1] & 0x80) != 0;
+        let byte1 = reader.get_u8();
+        let section_syntax_indicator = (byte1 & 0x80) != 0;
         if !section_syntax_indicator {
             return Err(TsError::ParseError(
                 "PAT must have section syntax indicator set".to_string(),
             ));
         }
-
-        let section_length = ((data[1] as u16 & 0x0F) << 8) | data[2] as u16;
+        let section_length = ((byte1 as u16 & 0x0F) << 8) | reader.get_u8() as u16;
         if section_length < 5 {
             return Err(TsError::InvalidSectionLength(section_length));
         }
-
         if data.len() < (3 + section_length as usize) {
             return Err(TsError::InsufficientData {
                 expected: 3 + section_length as usize,
                 actual: data.len(),
             });
         }
-
-        let transport_stream_id = ((data[3] as u16) << 8) | data[4] as u16;
-        let version_number = (data[5] >> 1) & 0x1F;
-        let current_next_indicator = (data[5] & 0x01) != 0;
-        let section_number = data[6];
-        let last_section_number = data[7];
-
+        let transport_stream_id = reader.get_u16();
+        let byte5 = reader.get_u8();
+        let version_number = (byte5 >> 1) & 0x1F;
+        let current_next_indicator = (byte5 & 0x01) != 0;
+        let section_number = reader.get_u8();
+        let last_section_number = reader.get_u8();
         let programs_offset = 8;
         let programs_end = 3 + section_length as usize - 4; // Exclude CRC32
         let programs_length = programs_end - programs_offset;
-
         Ok(PatRef {
             data,
             table_id,
@@ -215,10 +202,11 @@ impl<'data> PatRef<'data> {
     }
 
     /// Iterator over programs without allocating
-    pub fn programs(&self) -> PatProgramIterator<'data> {
+    pub fn programs(&self) -> PatProgramIterator {
         PatProgramIterator {
-            data: &self.data[self.programs_offset..self.programs_offset + self.programs_length],
-            offset: 0,
+            data: self
+                .data
+                .slice(self.programs_offset..self.programs_offset + self.programs_length),
         }
     }
 
@@ -230,23 +218,19 @@ impl<'data> PatRef<'data> {
 
 /// Iterator over PAT programs that doesn't allocate
 #[derive(Debug)]
-pub struct PatProgramIterator<'data> {
-    data: &'data [u8],
-    offset: usize,
+pub struct PatProgramIterator {
+    data: Bytes,
 }
 
-impl<'data> Iterator for PatProgramIterator<'data> {
+impl Iterator for PatProgramIterator {
     type Item = PatProgramRef;
 
     fn next(&mut self) -> Option<Self::Item> {
-        if self.offset + 4 <= self.data.len() {
-            let program_number =
-                ((self.data[self.offset] as u16) << 8) | self.data[self.offset + 1] as u16;
-            let pmt_pid = ((self.data[self.offset + 2] as u16 & 0x1F) << 8)
-                | self.data[self.offset + 3] as u16;
-
-            self.offset += 4;
-
+        if self.data.remaining() >= 4 {
+            let mut reader = &self.data[..];
+            let program_number = reader.get_u16();
+            let pmt_pid = reader.get_u16() & 0x1FFF;
+            self.data.advance(4);
             Some(PatProgramRef {
                 program_number,
                 pmt_pid,
@@ -264,11 +248,11 @@ pub struct PatProgramRef {
     pub pmt_pid: u16,
 }
 
-/// Zero-copy PMT parser that references source data
+/// Zero-copy PMT parser
 #[derive(Debug, Clone)]
-pub struct PmtRef<'data> {
+pub struct PmtRef {
     /// Source PSI section data
-    data: &'data [u8],
+    data: Bytes,
     /// Parsed header info
     pub table_id: u8,
     pub program_number: u16,
@@ -285,57 +269,52 @@ pub struct PmtRef<'data> {
     streams_length: usize,
 }
 
-impl<'data> PmtRef<'data> {
-    /// Parse PMT from PSI section data without copying
-    pub fn parse(data: &'data [u8]) -> Result<Self> {
+impl PmtRef {
+    /// Parse PMT from PSI section data 
+    pub fn parse(data: Bytes) -> Result<Self> {
         if data.len() < 12 {
             return Err(TsError::InsufficientData {
                 expected: 12,
                 actual: data.len(),
             });
         }
-
-        let table_id = data[0];
+        let mut reader = &data[..];
+        let table_id = reader.get_u8();
         if table_id != 0x02 {
             return Err(TsError::InvalidTableId {
                 expected: 0x02,
                 actual: table_id,
             });
         }
-
-        let section_syntax_indicator = (data[1] & 0x80) != 0;
+        let byte1 = reader.get_u8();
+        let section_syntax_indicator = (byte1 & 0x80) != 0;
         if !section_syntax_indicator {
             return Err(TsError::ParseError(
                 "PMT must have section syntax indicator set".to_string(),
             ));
         }
-
-        let section_length = ((data[1] as u16 & 0x0F) << 8) | data[2] as u16;
+        let section_length = ((byte1 as u16 & 0x0F) << 8) | reader.get_u8() as u16;
         if section_length < 9 {
             return Err(TsError::InvalidSectionLength(section_length));
         }
-
         if data.len() < (3 + section_length as usize) {
             return Err(TsError::InsufficientData {
                 expected: 3 + section_length as usize,
                 actual: data.len(),
             });
         }
-
-        let program_number = ((data[3] as u16) << 8) | data[4] as u16;
-        let version_number = (data[5] >> 1) & 0x1F;
-        let current_next_indicator = (data[5] & 0x01) != 0;
-        let section_number = data[6];
-        let last_section_number = data[7];
-        let pcr_pid = ((data[8] as u16 & 0x1F) << 8) | data[9] as u16;
-
-        let program_info_length = ((data[10] as u16 & 0x0F) << 8) | data[11] as u16;
+        let program_number = reader.get_u16();
+        let byte5 = reader.get_u8();
+        let version_number = (byte5 >> 1) & 0x1F;
+        let current_next_indicator = (byte5 & 0x01) != 0;
+        let section_number = reader.get_u8();
+        let last_section_number = reader.get_u8();
+        let pcr_pid = reader.get_u16() & 0x1FFF;
+        let program_info_length = (reader.get_u16() & 0x0FFF) as usize;
         let program_info_offset = 12;
-
-        let streams_offset = 12 + program_info_length as usize;
+        let streams_offset = 12 + program_info_length;
         let streams_end = 3 + section_length as usize - 4; // Exclude CRC32
         let streams_length = streams_end - streams_offset;
-
         Ok(PmtRef {
             data,
             table_id,
@@ -346,59 +325,57 @@ impl<'data> PmtRef<'data> {
             last_section_number,
             pcr_pid,
             program_info_offset,
-            program_info_length: program_info_length as usize,
+            program_info_length,
             streams_offset,
             streams_length,
         })
     }
 
-    /// Get program info descriptors without copying
+    /// Get program info descriptors 
     #[inline]
-    pub fn program_info(&self) -> &'data [u8] {
-        &self.data[self.program_info_offset..self.program_info_offset + self.program_info_length]
+    pub fn program_info(&self) -> Bytes {
+        self.data
+            .slice(self.program_info_offset..self.program_info_offset + self.program_info_length)
     }
 
     /// Iterator over elementary streams without allocating
-    pub fn streams(&self) -> PmtStreamIterator<'data> {
+    pub fn streams(&self) -> PmtStreamIterator {
         PmtStreamIterator {
-            data: &self.data[self.streams_offset..self.streams_offset + self.streams_length],
-            offset: 0,
+            data: self
+                .data
+                .slice(self.streams_offset..self.streams_offset + self.streams_length),
         }
     }
 }
 
 /// Iterator over PMT streams that doesn't allocate
 #[derive(Debug)]
-pub struct PmtStreamIterator<'data> {
-    data: &'data [u8],
-    offset: usize,
+pub struct PmtStreamIterator {
+    data: Bytes,
 }
 
-impl<'data> Iterator for PmtStreamIterator<'data> {
-    type Item = Result<PmtStreamRef<'data>>;
+impl Iterator for PmtStreamIterator {
+    type Item = Result<PmtStreamRef>;
 
     fn next(&mut self) -> Option<Self::Item> {
-        if self.offset + 5 <= self.data.len() {
-            let stream_type = StreamType::from(self.data[self.offset]);
-            let elementary_pid = ((self.data[self.offset + 1] as u16 & 0x1F) << 8)
-                | self.data[self.offset + 2] as u16;
-            let es_info_length = ((self.data[self.offset + 3] as u16 & 0x0F) << 8)
-                | self.data[self.offset + 4] as u16;
+        if self.data.remaining() >= 5 {
+            let stream_type = StreamType::from(self.data.get_u8());
+            let elementary_pid = self.data.get_u16() & 0x1FFF;
+            let es_info_length = (self.data.get_u16() & 0x0FFF) as usize;
 
-            let es_info_offset = self.offset + 5;
-            if es_info_offset + es_info_length as usize > self.data.len() {
+            if self.data.remaining() < es_info_length {
                 return Some(Err(TsError::InsufficientData {
-                    expected: es_info_offset + es_info_length as usize,
-                    actual: self.data.len(),
+                    expected: es_info_length,
+                    actual: self.data.remaining(),
                 }));
             }
 
-            self.offset += 5 + es_info_length as usize;
+            let es_info = self.data.split_to(es_info_length);
 
             Some(Ok(PmtStreamRef {
                 stream_type,
                 elementary_pid,
-                es_info: &self.data[es_info_offset..es_info_offset + es_info_length as usize],
+                es_info,
             }))
         } else {
             None
@@ -408,96 +385,169 @@ impl<'data> Iterator for PmtStreamIterator<'data> {
 
 /// Zero-copy PMT stream entry
 #[derive(Debug, Clone)]
-pub struct PmtStreamRef<'data> {
+pub struct PmtStreamRef {
     pub stream_type: StreamType,
     pub elementary_pid: u16,
-    pub es_info: &'data [u8],
+    pub es_info: Bytes,
 }
 
 /// Zero-copy streaming TS parser with minimal memory footprint
 #[derive(Debug, Default)]
-pub struct ZeroCopyTsParser {
-    /// Only store essential program mapping info
-    program_pids: HashMap<u16, u16>, // program_number -> pmt_pid
+pub struct TsParser {
+    /// Program mapping: program_number -> pmt_pid
+    program_pids: HashMap<u16, u16>,
+    /// Reverse PMT PID lookup: pmt_pid -> program_number
+    pmt_pids: HashMap<u16, u16>,
     /// Current version numbers to detect updates
     pat_version: Option<u8>,
     pmt_versions: HashMap<u16, u8>, // program_number -> version
 }
 
-impl ZeroCopyTsParser {
+impl TsParser {
     pub fn new() -> Self {
         Self::default()
     }
 
     /// Parse TS packets with zero-copy approach and call handlers for found PSI
-    pub fn parse_packets<F, G>(&mut self, data: &[u8], mut on_pat: F, mut on_pmt: G) -> Result<()>
+    pub fn parse_packets<F, G>(
+        &mut self,
+        mut data: Bytes,
+        mut on_pat: F,
+        mut on_pmt: G,
+    ) -> Result<()>
     where
-        F: FnMut(PatRef<'_>) -> Result<()>,
-        G: FnMut(PmtRef<'_>) -> Result<()>,
+        F: FnMut(PatRef) -> Result<()>,
+        G: FnMut(PmtRef) -> Result<()>,
     {
-        if data.len() % 188 != 0 {
-            return Err(TsError::InvalidPacketSize(data.len()));
-        }
-
-        for chunk in data.chunks_exact(188) {
-            let packet = TsPacketRef::parse(chunk)?;
-
-            match packet.pid {
-                0x0000 => {
-                    // PAT
-                    if let Some(psi_payload) = packet.psi_payload() {
-                        let pat = PatRef::parse(psi_payload)?;
-
-                        // Check if this is a new version
-                        let is_new = self.pat_version != Some(pat.version_number);
-                        if is_new {
-                            self.pat_version = Some(pat.version_number);
-
-                            // Update program mapping
-                            self.program_pids.clear();
-                            for program in pat.programs() {
-                                if program.program_number != 0 {
-                                    self.program_pids
-                                        .insert(program.program_number, program.pmt_pid);
-                                }
-                            }
-
-                            on_pat(pat)?;
-                        }
+        while !data.is_empty() {
+            // Fast path: if we're already at a sync byte, we don't need to search
+            if data.len() >= 188 && data[0] == 0x47 {
+                // We have a sync byte and enough data for a packet
+            } else {
+                // Slow path: search for the next sync byte
+                match memchr(0x47, &data) {
+                    Some(sync_offset) => {
+                        data.advance(sync_offset);
                     }
-                }
-                pid => {
-                    // Check if this is a PMT PID
-                    if let Some(program_number) = self
-                        .program_pids
-                        .iter()
-                        .find(|(_prog_num, pmt_pid)| **pmt_pid == pid)
-                        .map(|(prog_num, _pmt_pid)| *prog_num)
-                    {
-                        if let Some(psi_payload) = packet.psi_payload() {
-                            let pmt = PmtRef::parse(psi_payload)?;
-
-                            // Check if this is a new version
-                            let is_new = self
-                                .pmt_versions
-                                .get(&program_number)
-                                .is_none_or(|&v| v != pmt.version_number);
-                            if is_new {
-                                self.pmt_versions.insert(program_number, pmt.version_number);
-                                on_pmt(pmt)?;
-                            }
-                        }
+                    None => {
+                        // No more sync bytes in the buffer.
+                        break;
                     }
                 }
             }
-        }
 
+            if data.len() < 188 {
+                // Not enough data for a full packet
+                break;
+            }
+
+            // At this point, data[0] is 0x47.
+            let chunk = data.slice(0..188);
+            if let Ok(packet) = TsPacketRef::parse(chunk) {
+                // Successfully parsed a packet.
+                if packet.payload_unit_start_indicator {
+                    if let Some(psi_payload) = packet.psi_payload() {
+                        self.process_psi_payload(
+                            packet.pid,
+                            psi_payload,
+                            &mut on_pat,
+                            &mut on_pmt,
+                        )?;
+                    }
+                }
+                data.advance(188);
+            } else {
+                // The packet was invalid despite the sync byte.
+                // Advance one byte to continue searching from the next position.
+                data.advance(1);
+            }
+        }
+        Ok(())
+    }
+
+    /// Process a PSI payload from a packet
+    fn process_psi_payload<F, G>(
+        &mut self,
+        pid: u16,
+        psi_payload: Bytes,
+        on_pat: &mut F,
+        on_pmt: &mut G,
+    ) -> Result<()>
+    where
+        F: FnMut(PatRef) -> Result<()>,
+        G: FnMut(PmtRef) -> Result<()>,
+    {
+        if pid == 0x0000 {
+            if let Ok(pat) = PatRef::parse(psi_payload) {
+                self.process_pat(pat, on_pat)?;
+            }
+        } else if self.pmt_pids.contains_key(&pid) {
+            // It could be a PAT on a PMT PID, check table_id
+            if psi_payload.is_empty() {
+                return Ok(());
+            }
+            match psi_payload[0] {
+                0x00 => {
+                    // PAT packet on a PMT PID, re-process PAT
+                    if let Ok(pat) = PatRef::parse(psi_payload) {
+                        self.process_pat(pat, on_pat)?;
+                    }
+                }
+                0x02 => {
+                    // PMT packet
+                    if let Ok(pmt) = PmtRef::parse(psi_payload) {
+                        let program_number = self.pmt_pids.get(&pid).cloned().unwrap_or(0);
+                        let is_new = self
+                            .pmt_versions
+                            .get(&program_number)
+                            .is_none_or(|&v| v != pmt.version_number);
+                        if is_new {
+                            self.pmt_versions.insert(program_number, pmt.version_number);
+                            on_pmt(pmt)?;
+                        }
+                    }
+                }
+                _ => {
+                    // Unknown table ID on a PMT PID, ignore
+                }
+            }
+        }
+        Ok(())
+    }
+
+    /// Process a parsed PAT
+    fn process_pat<F>(&mut self, pat: PatRef, on_pat: &mut F) -> Result<()>
+    where
+        F: FnMut(PatRef) -> Result<()>,
+    {
+        let is_new = self.pat_version != Some(pat.version_number);
+        if is_new {
+            self.pat_version = Some(pat.version_number);
+
+            // A new PAT version has been received, clear all program-related state.
+            self.program_pids.clear();
+            self.pmt_pids.clear();
+            self.pmt_versions.clear();
+
+            // Populate the maps with the new program data.
+            for program in pat.programs() {
+                if program.program_number != 0 {
+                    self.program_pids
+                        .insert(program.program_number, program.pmt_pid);
+                    self.pmt_pids
+                        .insert(program.pmt_pid, program.program_number);
+                }
+            }
+
+            on_pat(pat)?;
+        }
         Ok(())
     }
 
     /// Reset parser state
     pub fn reset(&mut self) {
         self.program_pids.clear();
+        self.pmt_pids.clear();
         self.pat_version = None;
         self.pmt_versions.clear();
     }
@@ -506,6 +556,7 @@ impl ZeroCopyTsParser {
     pub fn estimated_memory_usage(&self) -> usize {
         std::mem::size_of::<Self>()
             + self.program_pids.capacity() * (std::mem::size_of::<u16>() * 2)
+            + self.pmt_pids.capacity() * (std::mem::size_of::<u16>() * 2)
             + self.pmt_versions.capacity()
                 * (std::mem::size_of::<u16>() + std::mem::size_of::<u8>())
     }

@@ -2,7 +2,7 @@ use std::fmt::Display;
 
 use bytes::Bytes;
 use m3u8_rs::MediaSegment;
-use ts::{Pat, Pmt, StreamType, TsParser};
+use ts::{OwnedTsParser, Pat, Pmt, StreamType, TsParser, PatRef, PmtRef};
 
 use crate::resolution::{self, ResolutionDetector};
 
@@ -71,7 +71,7 @@ impl SegmentData for TsSegmentData {
 impl TsSegmentData {
     /// Parse PAT and PMT tables from this TS segment
     pub fn parse_psi_tables(&self) -> PsiParseResult {
-        let mut parser = TsParser::new();
+        let mut parser = OwnedTsParser::new();
         parser.parse_packets(self.data.as_ref())?;
 
         let pat = parser.pat().cloned();
@@ -83,19 +83,18 @@ impl TsSegmentData {
     /// Parse TS segments with zero-copy approach for minimal memory usage
     /// Returns stream information without copying descriptor data
     pub fn parse_psi_tables_zero_copy(&self) -> Result<TsStreamInfo, ts::TsError> {
-        use ts::{PatRef, PmtRef, ZeroCopyTsParser};
 
-        let mut parser = ZeroCopyTsParser::new();
+        let mut parser = TsParser::new();
         let mut stream_info = TsStreamInfo::default();
 
         parser.parse_packets(
-            self.data.as_ref(),
-            |pat: PatRef<'_>| {
+            self.data.clone(),
+            |pat: PatRef| {
                 stream_info.transport_stream_id = pat.transport_stream_id;
                 stream_info.program_count = pat.program_count();
                 Ok(())
             },
-            |pmt: PmtRef<'_>| {
+            |pmt: PmtRef| {
                 let mut program_info = ProgramInfo {
                     program_number: pmt.program_number,
                     pcr_pid: pmt.pcr_pid,
@@ -272,13 +271,13 @@ impl TsSegmentData {
     /// This is the preferred method for performance and memory efficiency
     pub fn has_psi_tables(&self) -> bool {
         use std::cell::Cell;
-        use ts::ZeroCopyTsParser;
+        use ts::TsParser;
 
-        let mut parser = ZeroCopyTsParser::new();
+        let mut parser = TsParser::new();
         let found_psi = Cell::new(false);
 
         let result = parser.parse_packets(
-            self.data.as_ref(),
+            self.data.clone(),
             |_pat| {
                 found_psi.set(true);
                 Ok(())
@@ -616,14 +615,14 @@ impl HlsData {
         if let HlsData::TsData(ts) = self {
             // Use zero-copy parser for efficient and reliable PAT/PMT detection
             use std::cell::Cell;
-            use ts::ZeroCopyTsParser;
+            use ts::TsParser;
 
-            let mut parser = ZeroCopyTsParser::new();
+            let mut parser = TsParser::new();
             let found_psi = Cell::new(false);
 
             // Parse packets and check for PAT/PMT using proper TS parsing
             let result = parser.parse_packets(
-                ts.data.as_ref(),
+                ts.data.clone(),
                 |_pat| {
                     found_psi.set(true);
                     Ok(())

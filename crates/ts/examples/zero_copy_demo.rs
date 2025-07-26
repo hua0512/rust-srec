@@ -1,5 +1,6 @@
+use bytes::Bytes;
 use std::time::Instant;
-use ts::{PatRef, PmtRef, TsParser, ZeroCopyTsParser};
+use ts::{OwnedTsParser, PatRef, PmtRef, TsParser};
 
 fn main() {
     println!("TS Parser Memory Usage Comparison");
@@ -15,7 +16,7 @@ fn main() {
 
     // Benchmark original parser
     let start = Instant::now();
-    let mut original_parser = TsParser::new();
+    let mut original_parser = OwnedTsParser::new();
     let original_result = original_parser.parse_packets(&ts_data);
     let original_duration = start.elapsed();
 
@@ -49,15 +50,15 @@ fn main() {
 
     // Benchmark zero-copy parser
     let start = Instant::now();
-    let mut zero_copy_parser = ZeroCopyTsParser::new();
+    let mut zero_copy_parser = TsParser::new();
 
     let mut pat_count = 0;
     let mut pmt_count = 0;
     let mut total_streams = 0;
 
     let zero_copy_result = zero_copy_parser.parse_packets(
-        &ts_data,
-        |pat: PatRef<'_>| {
+        Bytes::from(ts_data.clone()),
+        |pat: PatRef| {
             pat_count += 1;
             println!("\n🚀 Zero-Copy PAT Found:");
             println!("  Transport Stream ID: {}", pat.transport_stream_id);
@@ -72,7 +73,7 @@ fn main() {
             }
             Ok(())
         },
-        |pmt: PmtRef<'_>| {
+        |pmt: PmtRef| {
             pmt_count += 1;
             println!("\n🚀 Zero-Copy PMT Found (Program {}):", pmt.program_number);
             println!("  PCR PID: 0x{:04X}", pmt.pcr_pid);
@@ -145,14 +146,14 @@ fn demonstrate_streaming(ts_data: &[u8]) {
         ts_data.len() / 188
     );
 
-    let mut zero_copy_parser = ZeroCopyTsParser::new();
+    let mut zero_copy_parser = TsParser::new();
     let mut processed_packets = 0;
 
     // Process packets in small chunks to simulate streaming
     for chunk in ts_data.chunks(188 * 4) {
         // 4 packets at a time
         let _ = zero_copy_parser.parse_packets(
-            chunk,
+            Bytes::from(chunk.to_vec()),
             |_pat| {
                 // In a real streaming scenario, you'd process the PAT immediately
                 Ok(())
