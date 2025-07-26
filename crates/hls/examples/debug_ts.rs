@@ -1,4 +1,5 @@
-use ts::{TsPacket, TsParser};
+use bytes::Bytes;
+use ts::{TsPacketRef, TsParser};
 
 fn main() {
     println!("Debug TS Parsing");
@@ -6,17 +7,23 @@ fn main() {
 
     // Create the exact same data as simple_ts_test
     let ts_data = create_working_ts_data();
+    let ts_bytes = Bytes::from(ts_data);
 
     // Parse packets manually to debug
-    for (i, chunk) in ts_data.chunks_exact(188).enumerate() {
+    for (i, chunk) in ts_bytes.chunks(188).enumerate() {
+        if chunk.len() < 188 {
+            continue;
+        }
         println!("\nPacket {i}: ");
-        match TsPacket::parse(chunk) {
+        match TsPacketRef::parse(Bytes::copy_from_slice(chunk)) {
             Ok(packet) => {
                 println!("  PID: 0x{:04X}", packet.pid);
                 println!("  PUSI: {}", packet.payload_unit_start_indicator);
-                println!("  Has payload: {}", packet.has_payload());
+                if let Some(payload) = packet.payload() {
+                    println!("  Payload length: {}", payload.len());
+                }
 
-                if let Some(psi_payload) = packet.get_psi_payload() {
+                if let Some(psi_payload) = packet.psi_payload() {
                     println!("  PSI payload length: {}", psi_payload.len());
                     if !psi_payload.is_empty() {
                         println!("  Table ID: 0x{:02X}", psi_payload[0]);
@@ -37,13 +44,27 @@ fn main() {
     // Now try with TsParser
     println!("\n\nTesting with TsParser:");
     let mut parser = TsParser::new();
-    match parser.parse_packets(&ts_data) {
+    let on_pat = |pat: ts::PatRef| {
+        println!("  PAT: programs={}", pat.program_count());
+        Ok(())
+    };
+    let on_pmt = |pmt: ts::PmtRef| {
+        println!(
+            "  PMT for program {}: streams={}",
+            pmt.program_number,
+            pmt.streams().count()
+        );
+        Ok(())
+    };
+
+    match parser.parse_packets(
+        ts_bytes,
+        on_pat,
+        on_pmt,
+        None::<fn(&ts::TsPacketRef) -> ts::Result<()>>,
+    ) {
         Ok(()) => {
             println!("✓ TsParser succeeded");
-            if let Some(pat) = parser.pat() {
-                println!("  PAT: programs={}", pat.programs.len());
-            }
-            println!("  PMTs: {}", parser.pmts().len());
         }
         Err(e) => {
             println!("❌ TsParser failed: {e}");

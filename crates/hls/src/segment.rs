@@ -2,7 +2,7 @@ use std::fmt::Display;
 
 use bytes::Bytes;
 use m3u8_rs::MediaSegment;
-use ts::{Pat, Pmt, StreamType, TsParser};
+use ts::{OwnedTsParser, Pat, PatRef, Pmt, PmtRef, StreamType, TsPacketRef, TsParser};
 
 use crate::resolution::{self, ResolutionDetector};
 
@@ -71,7 +71,7 @@ impl SegmentData for TsSegmentData {
 impl TsSegmentData {
     /// Parse PAT and PMT tables from this TS segment
     pub fn parse_psi_tables(&self) -> PsiParseResult {
-        let mut parser = TsParser::new();
+        let mut parser = OwnedTsParser::new();
         parser.parse_packets(self.data.as_ref())?;
 
         let pat = parser.pat().cloned();
@@ -83,19 +83,26 @@ impl TsSegmentData {
     /// Parse TS segments with zero-copy approach for minimal memory usage
     /// Returns stream information without copying descriptor data
     pub fn parse_psi_tables_zero_copy(&self) -> Result<TsStreamInfo, ts::TsError> {
-        use ts::{PatRef, PmtRef, ZeroCopyTsParser};
+        let (stream_info, _) = self.parse_stream_and_packets_zero_copy()?;
+        Ok(stream_info)
+    }
 
-        let mut parser = ZeroCopyTsParser::new();
+    /// Parse TS segments with zero-copy approach, returning both stream info and raw packets
+    pub fn parse_stream_and_packets_zero_copy(
+        &self,
+    ) -> Result<(TsStreamInfo, Vec<TsPacketRef>), ts::TsError> {
+        let mut parser = TsParser::new();
         let mut stream_info = TsStreamInfo::default();
+        let mut packets = Vec::new();
 
         parser.parse_packets(
-            self.data.as_ref(),
-            |pat: PatRef<'_>| {
+            self.data.clone(),
+            |pat: PatRef| {
                 stream_info.transport_stream_id = pat.transport_stream_id;
                 stream_info.program_count = pat.program_count();
                 Ok(())
             },
-            |pmt: PmtRef<'_>| {
+            |pmt: PmtRef| {
                 let mut program_info = ProgramInfo {
                     program_number: pmt.program_number,
                     pcr_pid: pmt.pcr_pid,
@@ -122,9 +129,13 @@ impl TsSegmentData {
                 stream_info.programs.push(program_info);
                 Ok(())
             },
+            Some(|packet: &TsPacketRef| {
+                packets.push(packet.clone());
+                Ok(())
+            }),
         )?;
 
-        Ok(stream_info)
+        Ok((stream_info, packets))
     }
 
     /// Get video streams from this TS segment using zero-copy parsing
@@ -272,13 +283,13 @@ impl TsSegmentData {
     /// This is the preferred method for performance and memory efficiency
     pub fn has_psi_tables(&self) -> bool {
         use std::cell::Cell;
-        use ts::ZeroCopyTsParser;
+        use ts::TsParser;
 
-        let mut parser = ZeroCopyTsParser::new();
+        let mut parser = TsParser::new();
         let found_psi = Cell::new(false);
 
         let result = parser.parse_packets(
-            self.data.as_ref(),
+            self.data.clone(),
             |_pat| {
                 found_psi.set(true);
                 Ok(())
@@ -287,6 +298,7 @@ impl TsSegmentData {
                 found_psi.set(true);
                 Ok(())
             },
+            None::<fn(&ts::TsPacketRef) -> ts::Result<()>>,
         );
 
         result.is_ok() && found_psi.get()
@@ -307,6 +319,18 @@ pub struct TsStreamInfo {
     pub transport_stream_id: u16,
     pub program_count: usize,
     pub programs: Vec<ProgramInfo>,
+}
+
+impl TsStreamInfo {
+    /// Get the first video stream found, if any
+    pub fn first_video_stream(&self) -> Option<(u16, StreamType)> {
+        for program in &self.programs {
+            if let Some(stream) = program.video_streams.first() {
+                return Some((stream.pid, stream.stream_type));
+            }
+        }
+        None
+    }
 }
 
 /// Information about a program
@@ -615,15 +639,12 @@ impl HlsData {
     pub fn is_pmt_or_pat(&self) -> bool {
         if let HlsData::TsData(ts) = self {
             // Use zero-copy parser for efficient and reliable PAT/PMT detection
-            use std::cell::Cell;
-            use ts::ZeroCopyTsParser;
-
-            let mut parser = ZeroCopyTsParser::new();
-            let found_psi = Cell::new(false);
+            let mut parser = TsParser::new();
+            let found_psi = std::cell::Cell::new(false);
 
             // Parse packets and check for PAT/PMT using proper TS parsing
             let result = parser.parse_packets(
-                ts.data.as_ref(),
+                ts.data.clone(),
                 |_pat| {
                     found_psi.set(true);
                     Ok(())
@@ -632,6 +653,7 @@ impl HlsData {
                     found_psi.set(true);
                     Ok(())
                 },
+                None::<fn(&ts::TsPacketRef) -> ts::Result<()>>,
             );
 
             // Return true if we successfully found PAT or PMT tables
@@ -847,22 +869,74 @@ impl HlsData {
 
     /// Get a compact stream profile for this segment (zero-copy)
     pub fn get_stream_profile(&self) -> Option<StreamProfile> {
-        if !self.is_ts() {
-            return None;
+        let ts_data = match self {
+            HlsData::TsData(ts_data) => ts_data,
+            _ => return None,
+        };
+
+        let (stream_info, packets) = match ts_data.parse_stream_and_packets_zero_copy() {
+            Ok(data) => data,
+            Err(_) => return None,
+        };
+
+        let mut has_video = false;
+        let mut has_audio = false;
+        let mut has_h264 = false;
+        let mut has_h265 = false;
+        let mut has_aac = false;
+        let mut has_ac3 = false;
+        let mut video_count = 0;
+        let mut audio_count = 0;
+
+        for program in &stream_info.programs {
+            if !program.video_streams.is_empty() {
+                has_video = true;
+                video_count += program.video_streams.len();
+                for stream in &program.video_streams {
+                    match stream.stream_type {
+                        StreamType::H264 => has_h264 = true,
+                        StreamType::H265 => has_h265 = true,
+                        _ => {}
+                    }
+                }
+            }
+            if !program.audio_streams.is_empty() {
+                has_audio = true;
+                audio_count += program.audio_streams.len();
+                for stream in &program.audio_streams {
+                    match stream.stream_type {
+                        StreamType::AdtsAac | StreamType::LatmAac => has_aac = true,
+                        StreamType::Ac3 | StreamType::EAc3 => has_ac3 = true,
+                        _ => {}
+                    }
+                }
+            }
         }
 
-        let has_video = self.has_video_streams();
-        let has_audio = self.has_audio_streams();
-        let has_h264 = self.has_h264_video();
-        let has_h265 = self.has_h265_video();
-        let has_aac = self.has_aac_audio();
-        let has_ac3 = self.has_ac3_audio();
-
-        // Extract resolution if video streams are present
         let resolution = if has_video {
-            self.get_resolution_from_ts()
+            let video_streams: Vec<_> = stream_info
+                .programs
+                .iter()
+                .flat_map(|p| &p.video_streams)
+                .map(|s| (s.pid, s.stream_type))
+                .collect();
+            ResolutionDetector::extract_from_ts_packets(packets.iter(), &video_streams)
         } else {
             None
+        };
+
+        let mut summary_parts = Vec::new();
+        if video_count > 0 {
+            summary_parts.push(format!("{video_count} video stream(s)"));
+        }
+        if audio_count > 0 {
+            summary_parts.push(format!("{audio_count} audio stream(s)"));
+        }
+
+        let summary = if summary_parts.is_empty() {
+            "No recognized streams".to_string()
+        } else {
+            summary_parts.join(", ")
         };
 
         Some(StreamProfile {
@@ -873,23 +947,8 @@ impl HlsData {
             has_aac,
             has_ac3,
             resolution,
-            summary: self.get_stream_summary().unwrap_or_default(),
+            summary,
         })
-    }
-
-    /// Extract resolution from TS segment data
-    fn get_resolution_from_ts(&self) -> Option<resolution::Resolution> {
-        match self {
-            HlsData::TsData(ts_data) => {
-                // Get video streams for resolution detection
-                if let Some(Ok(video_streams)) = self.get_ts_video_streams() {
-                    ResolutionDetector::extract_from_ts_data(&ts_data.data, &video_streams)
-                } else {
-                    None
-                }
-            }
-            _ => None,
-        }
     }
 }
 

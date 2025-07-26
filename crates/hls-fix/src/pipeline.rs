@@ -5,8 +5,22 @@ use pipeline_common::{Pipeline, PipelineProvider, StreamerContext, config::Pipel
 
 use crate::operators::{DefragmentOperator, SegmentLimiterOperator, SegmentSplitOperator};
 
-#[derive(Debug, Clone, Default)]
-pub struct HlsPipelineConfig {}
+#[derive(Debug, Clone)]
+pub struct HlsPipelineConfig {
+    pub defragment: bool,
+    pub split_segments: bool,
+    pub segment_limiter: bool,
+}
+
+impl Default for HlsPipelineConfig {
+    fn default() -> Self {
+        Self {
+            defragment: true,
+            split_segments: true,
+            segment_limiter: true,
+        }
+    }
+}
 
 impl HlsPipelineConfig {
     /// Create a new HLS pipeline configuration
@@ -39,7 +53,6 @@ impl Default for HlsPipelineConfigBuilder {
 
 pub struct HlsPipeline {
     context: Arc<StreamerContext>,
-    #[allow(dead_code)]
     config: HlsPipelineConfig,
     max_file_size: u64,
     max_duration: Option<Duration>,
@@ -63,14 +76,23 @@ impl PipelineProvider for HlsPipeline {
     }
 
     fn build_pipeline(&self) -> Pipeline<Self::Item> {
-        let defrag_operator = DefragmentOperator::new(self.context.clone());
-        let limit_operator =
-            SegmentLimiterOperator::new(self.max_duration, Some(self.max_file_size));
-        let split_operator = SegmentSplitOperator::new(self.context.clone());
+        let mut pipeline = Pipeline::new(self.context.clone());
 
-        Pipeline::new(self.context.clone())
-            .add_processor(defrag_operator)
-            .add_processor(split_operator)
-            .add_processor(limit_operator)
+        if self.config.defragment {
+            pipeline = pipeline.add_processor(DefragmentOperator::new(self.context.clone()));
+        }
+
+        if self.config.split_segments {
+            pipeline = pipeline.add_processor(SegmentSplitOperator::new(self.context.clone()));
+        }
+
+        if self.config.segment_limiter {
+            pipeline = pipeline.add_processor(SegmentLimiterOperator::new(
+                self.max_duration,
+                Some(self.max_file_size),
+            ));
+        }
+
+        pipeline
     }
 }

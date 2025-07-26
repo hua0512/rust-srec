@@ -48,21 +48,6 @@ impl SegmentSplitOperator {
         hasher.finalize()
     }
 
-    /// Extract resolution information from HLS segment data using StreamProfile
-    fn extract_resolution(&self, input: &HlsData) -> Option<Resolution> {
-        // Use the HLS crate's built-in resolution detection via StreamProfile
-        if let Some(profile) = input.get_stream_profile() {
-            profile.resolution
-        } else {
-            // For non-TS segments, return None for now
-            debug!(
-                "{} Resolution extraction not available for this segment type",
-                self.context.name
-            );
-            None
-        }
-    }
-
     // Handle MP4 init segment - returns true if a split is needed
     fn handle_init_segment(&mut self, input: &HlsData) -> Result<bool, PipelineError> {
         // Get data from HlsData
@@ -326,7 +311,7 @@ impl SegmentSplitOperator {
                 .iter()
                 .any(|p| !p.video_streams.is_empty()))
         {
-            if let Some(current_resolution) = self.extract_resolution(input) {
+            if let Some(current_resolution) = current_profile.as_ref().and_then(|p| p.resolution) {
                 if let Some(previous_resolution) = &self.last_resolution {
                     if previous_resolution != &current_resolution {
                         info!(

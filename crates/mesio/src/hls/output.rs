@@ -264,12 +264,10 @@ impl OutputManager {
                     self.gap_detected_waiting_for_sequence =
                         Some(self.expected_next_media_sequence);
                     self.segments_received_since_gap_detected = 0;
-                    // Count already buffered segments that are newer than the missing one
-                    for (&seq_in_buffer, _) in self.reorder_buffer.iter() {
-                        if seq_in_buffer > self.expected_next_media_sequence {
-                            self.segments_received_since_gap_detected += 1;
-                        }
-                    }
+                    // Count already buffered segments that are newer than the expected (missing) sequence
+                    let range = (self.expected_next_media_sequence + 1)..;
+                    self.segments_received_since_gap_detected =
+                        self.reorder_buffer.range(range).count() as u64;
                     debug!(
                         "After re-counting buffered segments, segments_since_gap for expected {}: {}.",
                         self.expected_next_media_sequence,
@@ -384,62 +382,40 @@ impl OutputManager {
 
         // Only proceed with duration pruning if a positive max duration is set.
         if max_buffer_duration_secs > 0.0_f32 {
-            let mut old_segments_info: Vec<(u64, f32)> = Vec::new();
-            let mut current_total_old_duration = 0.0_f32;
+            let mut total_duration = 0.0;
+            let mut prune_before_sequence = None;
 
-            // Collect information about segments older than the expected next one.
-            // BTreeMap iterates keys in ascending order, so this processes from oldest.
-            for (&sequence_number, segment_output) in &self.reorder_buffer {
-                if sequence_number < self.expected_next_media_sequence {
-                    let duration = segment_output
-                        .data
-                        .media_segment()
-                        .map_or(0.0, |ms| ms.duration); // Use 0.0 for non-media or no duration
-                    old_segments_info.push((sequence_number, duration));
-                    current_total_old_duration += duration;
-                } else {
-                    // Since BTreeMap is sorted, no further segments will be older.
+            // Iterate backwards over segments older than the expected one to find the cutoff point.
+            for (&sequence_number, segment_output) in self
+                .reorder_buffer
+                .range(..self.expected_next_media_sequence)
+                .rev()
+            {
+                let duration = segment_output
+                    .data
+                    .media_segment()
+                    .map_or(0.0, |ms| ms.duration);
+                total_duration += duration;
+
+                if total_duration > max_buffer_duration_secs {
+                    prune_before_sequence = Some(sequence_number);
                     break;
                 }
             }
 
-            if current_total_old_duration > max_buffer_duration_secs {
-                let mut duration_to_shed = current_total_old_duration - max_buffer_duration_secs;
-
-                // Iterate through the collected old segments (already sorted oldest first)
-                // to prune those that fit the criteria.
-                for (key_to_prune, seg_duration) in old_segments_info {
-                    if duration_to_shed <= 0.0 {
-                        // We've shed enough duration or gone below the target.
-                        break;
+            // If a cutoff point was found, remove all segments older than it.
+            if let Some(prune_seq) = prune_before_sequence {
+                self.reorder_buffer.retain(|&k, _| {
+                    if k < prune_seq {
+                        debug!(
+                            "Pruning segment {} by duration (max buffer duration: {:.2}s)",
+                            k, max_buffer_duration_secs
+                        );
+                        false // Remove the item
+                    } else {
+                        true // Keep the item
                     }
-
-                    // Only consider pruning segments that have a positive duration.
-                    if seg_duration > 0.0 {
-                        // Adhere to the rule: prune if segment's duration is less than or equal to
-                        // the remaining duration we need to shed.
-                        if seg_duration <= duration_to_shed {
-                            // Check if the segment still exists in the reorder_buffer,
-                            // as count-based pruning might have already removed it.
-                            // If remove is successful, log and update duration_to_shed.
-                            let initial_shed_needed_for_this_segment_check = duration_to_shed;
-                            if self.reorder_buffer.remove(&key_to_prune).is_some() {
-                                debug!(
-                                    "Pruning segment {} ({}s) by duration. Need to shed {:.2}s, segment fits. Max buffer duration: {:.2}s.",
-                                    key_to_prune,
-                                    seg_duration,
-                                    initial_shed_needed_for_this_segment_check,
-                                    max_buffer_duration_secs
-                                );
-                                duration_to_shed -= seg_duration;
-                            }
-                        }
-                        // If seg_duration > duration_to_shed, this segment is "too large" to remove
-                        // under the current rule. We skip it and check the next segment in old_segments_info.
-                    }
-                    // Segments with 0.0 duration are not pruned by this duration-based logic,
-                    // as per the instruction "The original proposal implies pruning segments with duration."
-                }
+                });
             }
         }
         // If max_buffer_duration_secs is not positive, duration pruning is skipped.

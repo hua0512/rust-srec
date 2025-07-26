@@ -62,7 +62,7 @@ pub struct HlsSchedulerConfig {
 impl Default for HlsSchedulerConfig {
     fn default() -> Self {
         Self {
-            download_concurrency: 8,
+            download_concurrency: 3,
         }
     }
 }
