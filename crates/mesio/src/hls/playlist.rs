@@ -311,15 +311,14 @@ impl PlaylistProvider for PlaylistEngine {
 
         let mut last_map_uri: Option<String> = None;
         let mut retries = 0;
+        let mut last_playlist_bytes: Option<bytes::Bytes> = None;
 
-        // TODO: find a better way to inject processor
         let mut twitch_processor = if base_url.contains("ttvnw.net") {
             Some(TwitchPlaylistProcessor::new())
         } else {
             None
         };
 
-        /// The LRU cache capacity for seen segments.
         const SEEN_SEGMENTS_LRU_CAPACITY: usize = 30;
         let seen_segment_uris: Cache<String, ()> = Cache::builder()
             .max_capacity(SEEN_SEGMENTS_LRU_CAPACITY as u64)
@@ -327,209 +326,42 @@ impl PlaylistProvider for PlaylistEngine {
             .build();
 
         loop {
-            let response_result = self
-                .http_client
-                .get(playlist_url.clone())
-                .timeout(self.config.playlist_config.initial_playlist_fetch_timeout)
-                .send()
-                .await;
-
-            match response_result {
-                Ok(response) => {
-                    if !response.status().is_success() {
-                        error!(
-                            "HTTP error refreshing playlist {playlist_url}: {}",
-                            response.status()
-                        );
-                        retries += 1;
-                        if retries > self.config.playlist_config.live_max_refresh_retries {
-                            return Err(HlsDownloaderError::PlaylistError(format!(
-                                "Max retries for live playlist {playlist_url}: {}",
-                                response.status()
-                            )));
-                        }
-                        tokio::time::sleep(
-                            self.config.playlist_config.live_refresh_retry_delay * retries,
-                        )
-                        .await;
-                        continue;
-                    }
+            match self
+                .fetch_and_parse_playlist(&playlist_url, &last_playlist_bytes)
+                .await
+            {
+                Ok(Some((new_playlist, new_playlist_bytes))) => {
                     retries = 0;
+                    let jobs = self
+                        .process_segments(
+                            &new_playlist,
+                            &base_url,
+                            &seen_segment_uris,
+                            &mut last_map_uri,
+                            &mut twitch_processor,
+                        )
+                        .await?;
 
-                    let playlist_bytes = match response.bytes().await {
-                        Ok(b) => b,
-                        Err(e) => {
-                            error!(
-                                "Error reading refreshed playlist bytes for {playlist_url}: {e}"
-                            );
-                            continue;
-                        }
-                    };
+                    self.send_jobs(jobs, &segment_request_tx, playlist_url_str)
+                        .await?;
 
-                    let playlist_bytes_to_parse: Cow<[u8]> =
-                        if TwitchPlaylistProcessor::is_twitch_playlist(playlist_url.as_str()) {
-                            let playlist_content = String::from_utf8_lossy(&playlist_bytes);
-                            let preprocessed = self.preprocess_twitch_playlist(&playlist_content);
-                            Cow::Owned(preprocessed.into_bytes())
-                        } else {
-                            Cow::Borrowed(&playlist_bytes)
-                        };
-                    let new_playlist_result = parse_playlist_res(&playlist_bytes_to_parse);
-                    match new_playlist_result {
-                        Ok(m3u8_rs::Playlist::MediaPlaylist(new_mp)) => {
-                            let mut jobs_to_send = Vec::new();
+                    current_playlist = new_playlist;
+                    last_playlist_bytes = Some(new_playlist_bytes);
 
-                            let processed_segments = if let Some(processor) = &mut twitch_processor
-                            {
-                                processor.process_playlist(&new_mp)
-                            } else {
-                                new_mp
-                                    .segments
-                                    .iter()
-                                    .map(|s| ProcessedSegment {
-                                        segment: s.clone(),
-                                        is_ad: false,
-                                    })
-                                    .collect()
-                            };
-
-                            for (idx, processed_segment) in
-                                processed_segments.into_iter().enumerate()
-                            {
-                                let segment = processed_segment.segment;
-                                if let Some(map_info) = &segment.map {
-                                    let absolute_map_uri = if map_info.uri.starts_with("http://")
-                                        || map_info.uri.starts_with("https://")
-                                    {
-                                        map_info.uri.clone()
-                                    } else {
-                                        match Url::parse(&base_url) {
-                                            Ok(b_url) => b_url.join(&map_info.uri).map(|u| u.to_string()).unwrap_or_else(|e| {
-                                                error!("Error joining base_url '{}' with map URI '{}': {}", base_url, map_info.uri, e);
-                                                map_info.uri.clone()
-                                            }),
-                                            Err(e) => {
-                                                error!("Invalid base_url '{}' for resolving map URI '{}': {}", base_url, map_info.uri, e);
-                                                map_info.uri.clone()
-                                            }
-                                        }
-                                    };
-
-                                    if last_map_uri.as_ref() != Some(&absolute_map_uri) {
-                                        debug!("New init segment detected: {}", absolute_map_uri);
-                                        let init_job = ScheduledSegmentJob {
-                                            segment_uri: absolute_map_uri.clone(),
-                                            base_url: base_url.clone(),
-                                            media_sequence_number: new_mp.media_sequence
-                                                + idx as u64,
-                                            duration: 0.0,
-                                            key: segment.key.clone(),
-                                            byte_range: map_info.byte_range.clone(),
-                                            discontinuity: segment.discontinuity,
-                                            media_segment: segment.clone(),
-                                            is_init_segment: true,
-                                        };
-                                        if segment_request_tx.send(init_job).await.is_err() {
-                                            error!(
-                                                "SegmentScheduler request channel closed while sending init job for {}.",
-                                                playlist_url_str
-                                            );
-                                            return Err(HlsDownloaderError::InternalError(
-                                                "SegmentScheduler request channel closed"
-                                                    .to_string(),
-                                            ));
-                                        }
-                                        last_map_uri = Some(absolute_map_uri);
-                                    }
-                                }
-
-                                let absolute_segment_uri = if segment.uri.starts_with("http://")
-                                    || segment.uri.starts_with("https://")
-                                {
-                                    segment.uri.clone()
-                                } else {
-                                    match Url::parse(&base_url) {
-                                        Ok(b_url) => b_url.join(&segment.uri).map(|u| u.to_string()).unwrap_or_else(|e| {
-                                            error!("Error joining base_url '{}' with segment URI '{}': {}", base_url, segment.uri, e);
-                                            segment.uri.clone()
-                                        }),
-                                        Err(e) => {
-                                             error!("Invalid base_url '{}' for resolving segment URI '{}': {}", base_url, segment.uri, e);
-                                             segment.uri.clone()
-                                        }
-                                    }
-                                };
-
-                                if !seen_segment_uris.contains_key(&absolute_segment_uri) {
-                                    if processed_segment.is_ad {
-                                        debug!("Skipping Twitch ad segment: {}", segment.uri);
-                                        continue;
-                                    }
-
-                                    seen_segment_uris
-                                        .insert(absolute_segment_uri.clone(), ())
-                                        .await;
-                                    debug!("New segment detected: {}", absolute_segment_uri);
-                                    let job = ScheduledSegmentJob {
-                                        segment_uri: absolute_segment_uri,
-                                        base_url: base_url.clone(),
-                                        media_sequence_number: new_mp.media_sequence + idx as u64,
-                                        duration: segment.duration,
-                                        key: segment.key.clone(),
-                                        byte_range: segment.byte_range.clone(),
-                                        discontinuity: segment.discontinuity,
-                                        media_segment: segment.clone(),
-                                        is_init_segment: false,
-                                    };
-                                    jobs_to_send.push(job);
-                                } else {
-                                    trace!(
-                                        "Segment {} already seen, skipping.",
-                                        absolute_segment_uri
-                                    );
-                                    // Skip this segment
-                                    continue;
-                                }
-                            }
-
-                            if !jobs_to_send.is_empty() {
-                                for job in jobs_to_send {
-                                    debug!("Sending segment job: {:?}", job.segment_uri);
-                                    if segment_request_tx.send(job).await.is_err() {
-                                        error!(
-                                            "SegmentScheduler request channel closed for {}.",
-                                            playlist_url_str
-                                        );
-                                        return Err(HlsDownloaderError::InternalError(
-                                            "SegmentScheduler request channel closed".to_string(),
-                                        ));
-                                    }
-                                }
-                            }
-
-                            current_playlist = new_mp;
-                            if current_playlist.end_list {
-                                info!("ENDLIST for {playlist_url}. Stopping monitoring.");
-                                return Ok(());
-                            }
-                        }
-                        Ok(m3u8_rs::Playlist::MasterPlaylist(_)) => {
-                            return Err(HlsDownloaderError::PlaylistError(format!(
-                                "Expected Media Playlist, got Master for {playlist_url_str}"
-                            )));
-                        }
-                        Err(e) => {
-                            error!("Failed to parse refreshed playlist {playlist_url}: {e}");
-                        }
+                    if current_playlist.end_list {
+                        info!("ENDLIST for {playlist_url}. Stopping monitoring.");
+                        return Ok(());
                     }
                 }
+                Ok(None) => {
+                    // Playlist unchanged or parse error, just wait for next refresh
+                    retries = 0;
+                }
                 Err(e) => {
-                    error!("Network error refreshing playlist {playlist_url}: {e}");
+                    error!("Error refreshing playlist {playlist_url}: {e}");
                     retries += 1;
                     if retries > self.config.playlist_config.live_max_refresh_retries {
-                        return Err(HlsDownloaderError::NetworkError {
-                            source: Arc::new(e),
-                        });
+                        return Err(e);
                     }
                     tokio::time::sleep(
                         self.config.playlist_config.live_refresh_retry_delay * retries,
@@ -537,6 +369,7 @@ impl PlaylistProvider for PlaylistEngine {
                     .await;
                 }
             }
+
             let refresh_delay = Duration::from_secs(current_playlist.target_duration / 2)
                 .max(self.config.playlist_config.live_refresh_interval);
 
@@ -577,7 +410,7 @@ impl PlaylistEngine {
             {
                 // skip ad tag
             } else if let Some(prefetch_uri) = line.strip_prefix("#EXT-X-TWITCH-PREFETCH:") {
-                trace!("Transformed prefetch tag to segment: {}", prefetch_uri);
+                debug!("Transformed prefetch tag to segment: {}", prefetch_uri);
                 // The duration is not provided, so we use a common value.
                 // The title is used as a heuristic to identify the segment as an ad later.
                 out.push_str("#EXTINF:2.002,PREFETCH_SEGMENT\n");
@@ -589,5 +422,189 @@ impl PlaylistEngine {
             }
         }
         out
+    }
+
+    /// Fetches and parses a refreshed media playlist.
+    async fn fetch_and_parse_playlist(
+        &self,
+        playlist_url: &Url,
+        last_playlist_bytes: &Option<bytes::Bytes>,
+    ) -> Result<Option<(MediaPlaylist, bytes::Bytes)>, HlsDownloaderError> {
+        let response = self
+            .http_client
+            .get(playlist_url.clone())
+            .timeout(self.config.playlist_config.initial_playlist_fetch_timeout)
+            .send()
+            .await
+            .map_err(|e| HlsDownloaderError::NetworkError {
+                source: Arc::new(e),
+            })?;
+
+        if !response.status().is_success() {
+            return Err(HlsDownloaderError::PlaylistError(format!(
+                "Failed to fetch playlist {playlist_url}: HTTP {}",
+                response.status()
+            )));
+        }
+
+        let playlist_bytes =
+            response
+                .bytes()
+                .await
+                .map_err(|e| HlsDownloaderError::NetworkError {
+                    source: Arc::new(e),
+                })?;
+
+        if last_playlist_bytes.as_ref() == Some(&playlist_bytes) {
+            debug!(
+                "Playlist content for {} has not changed. Skipping parsing.",
+                playlist_url
+            );
+            return Ok(None);
+        }
+
+        let playlist_bytes_to_parse: Cow<[u8]> =
+            if TwitchPlaylistProcessor::is_twitch_playlist(playlist_url.as_str()) {
+                let playlist_content = String::from_utf8_lossy(&playlist_bytes);
+                let preprocessed = self.preprocess_twitch_playlist(&playlist_content);
+                Cow::Owned(preprocessed.into_bytes())
+            } else {
+                Cow::Borrowed(&playlist_bytes)
+            };
+
+        match parse_playlist_res(&playlist_bytes_to_parse) {
+            Ok(m3u8_rs::Playlist::MediaPlaylist(new_mp)) => Ok(Some((new_mp, playlist_bytes))),
+            Ok(m3u8_rs::Playlist::MasterPlaylist(_)) => Err(HlsDownloaderError::PlaylistError(
+                format!("Expected Media Playlist, got Master for {playlist_url}"),
+            )),
+            Err(e) => {
+                error!("Failed to parse refreshed playlist {playlist_url}: {e}");
+                Ok(None)
+            }
+        }
+    }
+
+    /// Processes the segments of a new playlist to identify new ones and create jobs.
+    #[allow(clippy::too_many_arguments)]
+    async fn process_segments(
+        &self,
+        new_playlist: &MediaPlaylist,
+        base_url: &str,
+        seen_segment_uris: &Cache<String, ()>,
+        last_map_uri: &mut Option<String>,
+        twitch_processor: &mut Option<TwitchPlaylistProcessor>,
+    ) -> Result<Vec<ScheduledSegmentJob>, HlsDownloaderError> {
+        let mut jobs_to_send = Vec::new();
+        let processed_segments = if let Some(processor) = twitch_processor {
+            processor.process_playlist(new_playlist)
+        } else {
+            new_playlist
+                .segments
+                .iter()
+                .map(|s| ProcessedSegment {
+                    segment: s.clone(),
+                    is_ad: false,
+                })
+                .collect()
+        };
+
+        for (idx, processed_segment) in processed_segments.into_iter().enumerate() {
+            let segment = processed_segment.segment;
+            if let Some(map_info) = &segment.map {
+                let absolute_map_uri = Url::parse(base_url)
+                    .and_then(|b| b.join(&map_info.uri))
+                    .map(|u| u.to_string())
+                    .unwrap_or_else(|_| {
+                        error!(
+                            "Failed to resolve map URI '{}' with base '{}'",
+                            map_info.uri, base_url
+                        );
+                        map_info.uri.clone()
+                    });
+
+                if last_map_uri.as_ref() != Some(&absolute_map_uri) {
+                    debug!("New init segment detected: {}", absolute_map_uri);
+                    let init_job = ScheduledSegmentJob {
+                        segment_uri: absolute_map_uri.clone(),
+                        base_url: base_url.to_string(),
+                        media_sequence_number: new_playlist.media_sequence + idx as u64,
+                        duration: 0.0,
+                        key: segment.key.clone(),
+                        byte_range: map_info.byte_range.clone(),
+                        discontinuity: segment.discontinuity,
+                        media_segment: segment.clone(),
+                        is_init_segment: true,
+                    };
+                    jobs_to_send.push(init_job);
+                    *last_map_uri = Some(absolute_map_uri);
+                }
+            }
+
+            let absolute_segment_uri = Url::parse(base_url)
+                .and_then(|b| b.join(&segment.uri))
+                .map(|u| u.to_string())
+                .unwrap_or_else(|_| {
+                    error!(
+                        "Failed to resolve segment URI '{}' with base '{}'",
+                        segment.uri, base_url
+                    );
+                    segment.uri.clone()
+                });
+
+            if !seen_segment_uris.contains_key(&absolute_segment_uri) {
+                if processed_segment.is_ad {
+                    debug!("Skipping Twitch ad segment: {}", segment.uri);
+                    continue;
+                }
+
+                seen_segment_uris
+                    .insert(absolute_segment_uri.clone(), ())
+                    .await;
+                debug!("New segment detected: {}", absolute_segment_uri);
+                let job = ScheduledSegmentJob {
+                    segment_uri: absolute_segment_uri,
+                    base_url: base_url.to_string(),
+                    media_sequence_number: new_playlist.media_sequence + idx as u64,
+                    duration: segment.duration,
+                    key: segment.key.clone(),
+                    byte_range: segment.byte_range.clone(),
+                    discontinuity: segment.discontinuity,
+                    media_segment: segment.clone(),
+                    is_init_segment: false,
+                };
+                jobs_to_send.push(job);
+            } else {
+                trace!(
+                    "Segment {} already seen, skipping.",
+                    absolute_segment_uri
+                );
+            }
+        }
+        Ok(jobs_to_send)
+    }
+
+    /// Sends the created jobs to the segment scheduler.
+    async fn send_jobs(
+        &self,
+        jobs: Vec<ScheduledSegmentJob>,
+        segment_request_tx: &mpsc::Sender<ScheduledSegmentJob>,
+        playlist_url_str: &str,
+    ) -> Result<(), HlsDownloaderError> {
+        if jobs.is_empty() {
+            return Ok(());
+        }
+        for job in jobs {
+            debug!("Sending segment job: {:?}", job.segment_uri);
+            if segment_request_tx.send(job).await.is_err() {
+                error!(
+                    "SegmentScheduler request channel closed for {}.",
+                    playlist_url_str
+                );
+                return Err(HlsDownloaderError::InternalError(
+                    "SegmentScheduler request channel closed".to_string(),
+                ));
+            }
+        }
+        Ok(())
     }
 }
