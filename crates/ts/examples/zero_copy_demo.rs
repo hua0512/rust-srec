@@ -106,6 +106,7 @@ fn main() {
             println!("  Summary: {video_streams} video, {audio_streams} audio streams");
             Ok(())
         },
+        None::<fn(&ts::TsPacketRef) -> ts::Result<()>>,
     );
 
     let zero_copy_duration = start.elapsed();
@@ -162,6 +163,7 @@ fn demonstrate_streaming(ts_data: &[u8]) {
                 // In a real streaming scenario, you'd process the PMT immediately
                 Ok(())
             },
+            None::<fn(&ts::TsPacketRef) -> ts::Result<()>>,
         );
         processed_packets += chunk.len() / 188;
     }

@@ -264,7 +264,7 @@ impl OutputManager {
                     self.gap_detected_waiting_for_sequence =
                         Some(self.expected_next_media_sequence);
                     self.segments_received_since_gap_detected = 0;
-                    // Count already buffered segments that are newer than the expected (missing) sequence 
+                    // Count already buffered segments that are newer than the expected (missing) sequence
                     let range = (self.expected_next_media_sequence + 1)..;
                     self.segments_received_since_gap_detected =
                         self.reorder_buffer.range(range).count() as u64;

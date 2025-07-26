@@ -574,10 +574,7 @@ impl PlaylistEngine {
                 };
                 jobs_to_send.push(job);
             } else {
-                trace!(
-                    "Segment {} already seen, skipping.",
-                    absolute_segment_uri
-                );
+                trace!("Segment {} already seen, skipping.", absolute_segment_uri);
             }
         }
         Ok(jobs_to_send)

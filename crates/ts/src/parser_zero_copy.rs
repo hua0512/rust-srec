@@ -3,7 +3,7 @@ use bytes::{Buf, Bytes};
 use memchr::memchr;
 use std::collections::HashMap;
 
-/// Zero-copy TS packet parser 
+/// Zero-copy TS packet parser
 #[derive(Debug, Clone)]
 pub struct TsPacketRef {
     /// Source packet data (exactly 188 bytes)
@@ -24,7 +24,7 @@ pub struct TsPacketRef {
 }
 
 impl TsPacketRef {
-    /// Parse a TS packet from 188 bytes 
+    /// Parse a TS packet from 188 bytes
     pub fn parse(data: Bytes) -> Result<Self> {
         if data.len() != 188 {
             return Err(TsError::InvalidPacketSize(data.len()));
@@ -79,7 +79,7 @@ impl TsPacketRef {
             payload_offset,
         })
     }
-    /// Get adaptation field data 
+    /// Get adaptation field data
     #[inline]
     pub fn adaptation_field(&self) -> Option<Bytes> {
         if let Some(offset) = self.adaptation_field_offset {
@@ -128,7 +128,7 @@ impl TsPacketRef {
     }
 }
 
-/// Zero-copy PAT parser 
+/// Zero-copy PAT parser
 #[derive(Debug, Clone)]
 pub struct PatRef {
     /// Source PSI section data
@@ -146,7 +146,7 @@ pub struct PatRef {
 }
 
 impl PatRef {
-    /// Parse PAT from PSI section data 
+    /// Parse PAT from PSI section data
     pub fn parse(data: Bytes) -> Result<Self> {
         if data.len() < 8 {
             return Err(TsError::InsufficientData {
@@ -270,7 +270,7 @@ pub struct PmtRef {
 }
 
 impl PmtRef {
-    /// Parse PMT from PSI section data 
+    /// Parse PMT from PSI section data
     pub fn parse(data: Bytes) -> Result<Self> {
         if data.len() < 12 {
             return Err(TsError::InsufficientData {
@@ -331,7 +331,7 @@ impl PmtRef {
         })
     }
 
-    /// Get program info descriptors 
+    /// Get program info descriptors
     #[inline]
     pub fn program_info(&self) -> Bytes {
         self.data
@@ -409,15 +409,17 @@ impl TsParser {
     }
 
     /// Parse TS packets with zero-copy approach and call handlers for found PSI
-    pub fn parse_packets<F, G>(
+    pub fn parse_packets<F, G, H>(
         &mut self,
         mut data: Bytes,
         mut on_pat: F,
         mut on_pmt: G,
+        mut on_packet: Option<H>,
     ) -> Result<()>
     where
         F: FnMut(PatRef) -> Result<()>,
         G: FnMut(PmtRef) -> Result<()>,
+        H: FnMut(&TsPacketRef) -> Result<()>,
     {
         while !data.is_empty() {
             // Fast path: if we're already at a sync byte, we don't need to search
@@ -445,6 +447,10 @@ impl TsParser {
             let chunk = data.slice(0..188);
             if let Ok(packet) = TsPacketRef::parse(chunk) {
                 // Successfully parsed a packet.
+                if let Some(on_packet_cb) = &mut on_packet {
+                    on_packet_cb(&packet)?;
+                }
+
                 if packet.payload_unit_start_indicator {
                     if let Some(psi_payload) = packet.psi_payload() {
                         self.process_psi_payload(

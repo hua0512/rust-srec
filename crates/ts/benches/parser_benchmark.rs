@@ -21,7 +21,12 @@ fn benchmark_parsers(c: &mut Criterion) {
         b.iter(|| {
             let mut parser = TsParser::new();
             parser
-                .parse_packets(black_box(ts_data_bytes.clone()), |_| Ok(()), |_| Ok(()))
+                .parse_packets(
+                    black_box(ts_data_bytes.clone()),
+                    |_| Ok(()),
+                    |_| Ok(()),
+                    None::<fn(&ts::TsPacketRef) -> ts::Result<()>>,
+                )
                 .unwrap();
         })
     });

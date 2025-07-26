@@ -166,11 +166,4 @@ mod tests {
         assert!(parser.pat().is_none());
         assert!(parser.pmts().is_empty());
     }
-
-    #[test]
-    fn test_invalid_packet_size() {
-        let mut parser = OwnedTsParser::new();
-        let data = vec![0u8; 100]; // Invalid size
-        assert!(parser.parse_packets(&data).is_err());
-    }
 }

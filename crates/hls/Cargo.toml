@@ -12,6 +12,7 @@ ts = { path = "../ts" }
 h264 = { path = "../h264" }
 h265 = { path = "../h265" }
 tracing = "0.1"
+memchr = "2.7.5"
 
 [[example]]
 name = "ts_analysis"

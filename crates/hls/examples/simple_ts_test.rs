@@ -1,3 +1,4 @@
+use bytes::Bytes;
 use ts::TsParser;
 
 fn main() {
@@ -9,21 +10,27 @@ fn main() {
 
     // Test TS parsing directly
     let mut parser = TsParser::new();
-    match parser.parse_packets(&ts_data) {
+    let on_pat = |pat: ts::PatRef| {
+        println!("✓ PAT found:");
+        println!("  Transport Stream ID: {}", pat.transport_stream_id);
+        println!("  Programs: {}", pat.program_count());
+        Ok(())
+    };
+    let on_pmt = |pmt: ts::PmtRef| {
+        println!("✓ PMT found for program {}:", pmt.program_number);
+        println!("  PCR PID: 0x{:04X}", pmt.pcr_pid);
+        println!("  Streams: {}", pmt.streams().count());
+        Ok(())
+    };
+
+    match parser.parse_packets(
+        Bytes::from(ts_data),
+        on_pat,
+        on_pmt,
+        None::<fn(&ts::TsPacketRef) -> ts::Result<()>>,
+    ) {
         Ok(()) => {
             println!("✓ Successfully parsed TS packets");
-
-            if let Some(pat) = parser.pat() {
-                println!("✓ PAT found:");
-                println!("  Transport Stream ID: {}", pat.transport_stream_id);
-                println!("  Programs: {}", pat.programs.len());
-            }
-
-            for (program_num, pmt) in parser.pmts() {
-                println!("✓ PMT found for program {program_num}:");
-                println!("  PCR PID: 0x{:04X}", pmt.pcr_pid);
-                println!("  Streams: {}", pmt.streams.len());
-            }
         }
         Err(e) => {
             println!("❌ Failed to parse TS packets: {e}");

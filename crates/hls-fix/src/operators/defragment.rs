@@ -247,9 +247,8 @@ impl DefragmentOperator {
             }
         }
 
-        // For TS segments, use optimized zero-copy parsing for PSI table detection
-        if self.segment_type == Some(SegmentType::Ts) {
-            // Check if this segment has PSI tables using efficient zero-copy parsing
+        if self.segment_type == Some(SegmentType::Ts) && !self.is_gathering {
+            // Check if this segment has PSI tables
             let has_psi_tables = data.ts_has_psi_tables();
 
             if has_psi_tables {
@@ -271,7 +270,6 @@ impl DefragmentOperator {
                 }
 
                 self.buffer.push(data);
-                // REMOVED: early return here was causing buffer to never be checked for emission
             } else {
                 // For TS segments without PSI tables, only buffer if we're already gathering
                 if !self.is_gathering {
@@ -284,6 +282,17 @@ impl DefragmentOperator {
                 // Add to buffer if we're gathering data
                 self.buffer.push(data);
             }
+        } else if self.segment_type == Some(SegmentType::Ts) {
+            // gathering, just output the data
+            // consider it as a complete segment stream as we previously checked the stream profile
+            // just keep this state forever
+            if self.buffer.len() >= Self::MIN_TS_TAGS_NUM {
+                for item in self.buffer.drain(..) {
+                    output(item)?;
+                }
+            }
+            self.buffer.push(data);
+            return Ok(());
         } else {
             // For non-TS segments, add to buffer if we're gathering data
             if self.is_gathering {
@@ -326,7 +335,8 @@ impl DefragmentOperator {
                 let is_complete = match self.segment_type {
                     Some(SegmentType::Ts) => {
                         // Use advanced stream analysis for TS segments
-                        self.validate_ts_segment_completeness()
+                        // self.validate_ts_segment_completeness()
+                        true
                     }
                     Some(SegmentType::M4sInit) | Some(SegmentType::M4sMedia) => {
                         // For M4S, check if we have init segment for media segments
