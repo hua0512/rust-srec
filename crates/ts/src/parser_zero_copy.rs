@@ -170,7 +170,7 @@ impl PatRef {
             ));
         }
         let section_length = ((byte1 as u16 & 0x0F) << 8) | reader.get_u8() as u16;
-        if section_length < 5 {
+        if section_length < 9 {
             return Err(TsError::InvalidSectionLength(section_length));
         }
         if data.len() < (3 + section_length as usize) {
@@ -227,10 +227,8 @@ impl Iterator for PatProgramIterator {
 
     fn next(&mut self) -> Option<Self::Item> {
         if self.data.remaining() >= 4 {
-            let mut reader = &self.data[..];
-            let program_number = reader.get_u16();
-            let pmt_pid = ((reader.get_u8() as u16 & 0x1F) << 8) | reader.get_u8() as u16;
-            self.data.advance(4);
+            let program_number = self.data.get_u16();
+            let pmt_pid = ((self.data.get_u8() as u16 & 0x1F) << 8) | self.data.get_u8() as u16;
             Some(PatProgramRef {
                 program_number,
                 pmt_pid,
@@ -294,7 +292,7 @@ impl PmtRef {
             ));
         }
         let section_length = ((byte1 as u16 & 0x0F) << 8) | reader.get_u8() as u16;
-        if section_length < 9 {
+        if section_length < 13 {
             return Err(TsError::InvalidSectionLength(section_length));
         }
         if data.len() < (3 + section_length as usize) {
@@ -318,6 +316,11 @@ impl PmtRef {
         let program_info_length =
             (((prog_info_len_high as u16) & 0x0F) << 8) | prog_info_len_low as u16;
         let program_info_length = program_info_length as usize;
+
+        if (section_length as usize) < 9 + program_info_length + 4 {
+            return Err(TsError::InvalidSectionLength(section_length));
+        }
+
         let program_info_offset = 12;
         let streams_offset = 12 + program_info_length;
         let streams_end = 3 + section_length as usize - 4; // Exclude CRC32
@@ -437,14 +440,12 @@ impl TsParser {
                 // We have a sync byte and enough data for a packet
             } else {
                 // Slow path: search for the next sync byte
-                match memchr(0x47, &data) {
-                    Some(sync_offset) => {
-                        data.advance(sync_offset);
-                    }
-                    None => {
-                        // No more sync bytes in the buffer.
-                        break;
-                    }
+                if let Some(sync_offset) = memchr(0x47, &data) {
+                    data.advance(sync_offset);
+                } else {
+                    // No more sync bytes in the buffer. Advance to the end to avoid repeated scans.
+                    data.advance(data.len());
+                    break;
                 }
             }
 

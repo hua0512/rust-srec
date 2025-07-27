@@ -1,3 +1,5 @@
+use std::sync::OnceLock;
+
 use bytes::{Bytes, BytesMut};
 use memchr::memmem;
 use tracing::{debug, warn};
@@ -25,12 +27,15 @@ impl std::fmt::Display for Resolution {
 /// Resolution detector for HLS segments
 pub struct ResolutionDetector;
 
+static THREE_BYTE_FINDER: OnceLock<memmem::Finder<'static>> = OnceLock::new();
+static FOUR_BYTE_FINDER: OnceLock<memmem::Finder<'static>> = OnceLock::new();
+
 impl ResolutionDetector {
-    fn three_byte_finder() -> memmem::Finder<'static> {
-        memmem::Finder::new(b"\x00\x00\x01")
+    fn three_byte_finder() -> &'static memmem::Finder<'static> {
+        THREE_BYTE_FINDER.get_or_init(|| memmem::Finder::new(b"\x00\x00\x01"))
     }
-    fn four_byte_finder() -> memmem::Finder<'static> {
-        memmem::Finder::new(b"\x00\x00\x00\x01")
+    fn four_byte_finder() -> &'static memmem::Finder<'static> {
+        FOUR_BYTE_FINDER.get_or_init(|| memmem::Finder::new(b"\x00\x00\x00\x01"))
     }
 
     /// Extract resolution from pre-parsed TS packets
