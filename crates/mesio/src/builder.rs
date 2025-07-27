@@ -142,14 +142,14 @@ impl DownloaderConfigBuilder {
     }
 
     /// Set whether to force IPv4
-    pub fn with_force_ipv4(mut self) -> Self {
-        self.config.force_ipv4 = true;
+    pub fn force_ipv4(mut self, force: bool) -> Self {
+        self.config.force_ipv4 = force;
         self
     }
 
     /// Set whether to force IPv6
-    pub fn with_force_ipv6(mut self) -> Self {
-        self.config.force_ipv6 = true;
+    pub fn force_ipv6(mut self, force: bool) -> Self {
+        self.config.force_ipv6 = force;
         self
     }
 

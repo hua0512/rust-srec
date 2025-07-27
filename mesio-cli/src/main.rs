@@ -196,13 +196,9 @@ async fn bootstrap() -> Result<(), AppError> {
             .with_read_timeout(Duration::from_secs(args.read_timeout))
             .with_write_timeout(Duration::from_secs(args.write_timeout))
             .with_headers(crate::utils::parse_headers(&args.headers))
-            .with_caching_enabled(false);
-
-        builder = match (args.force_ipv4, args.force_ipv6) {
-            (true, false) => builder.with_force_ipv4(),
-            (false, true) => builder.with_force_ipv6(),
-            _ => builder,
-        };
+            .with_caching_enabled(false)
+            .force_ipv4(args.force_ipv4)
+            .force_ipv6(args.force_ipv6);
 
         if let Some(proxy) = proxy_config {
             builder = builder.with_proxy(proxy);
