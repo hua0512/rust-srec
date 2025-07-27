@@ -455,12 +455,18 @@ impl PlaylistEngine {
                     source: Arc::new(e),
                 })?;
 
-        if last_playlist_bytes.as_ref() == Some(&playlist_bytes) {
-            debug!(
-                "Playlist content for {} has not changed. Skipping parsing.",
-                playlist_url
-            );
-            return Ok(None);
+        // Fast path: check if we have a previous playlist and if lengths differ
+        if let Some(last_bytes) = last_playlist_bytes.as_ref() {
+            if last_bytes.len() == playlist_bytes.len() {
+                // Same length, do full byte comparison
+                if last_bytes == &playlist_bytes {
+                    debug!(
+                        "Playlist content for {} has not changed. Skipping parsing.",
+                        playlist_url
+                    );
+                    return Ok(None);
+                }
+            }
         }
 
         let playlist_bytes_to_parse: Cow<[u8]> =
