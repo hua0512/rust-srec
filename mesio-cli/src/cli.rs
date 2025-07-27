@@ -170,6 +170,15 @@ pub struct CliArgs {
     )]
     pub headers: Vec<String>,
 
+    /// Custom parameters for download requests
+    #[arg(
+        long = "param",
+        short = 'p',
+        help = "Add custom parameter to requests (can be used multiple times). Format: 'Name=Value'",
+        value_name = "PARAM"
+    )]
+    pub params: Vec<String>,
+
     /// Show progress bars for operations
     #[arg(
         short = 'P',
@@ -189,10 +198,34 @@ pub struct CliArgs {
     /// Number of concurrent HLS segment downloads
     #[arg(
         long,
-        default_value = "4",
+        default_value = "3",
         help = "Maximum number of concurrent segment downloads for HLS streams"
     )]
     pub hls_concurrency: u32,
+
+    /// HLS playlist fetch timeout in seconds
+    #[arg(
+        long,
+        default_value = "15",
+        help = "Timeout for fetching the initial HLS playlist in seconds"
+    )]
+    pub hls_playlist_fetch_timeout: u64,
+
+    /// HLS playlist minimum refresh interval in seconds
+    #[arg(
+        long,
+        default_value = "1",
+        help = "Minimum interval for refreshing HLS playlists in seconds"
+    )]
+    pub hls_playlist_min_refresh_interval: u64,
+
+    /// HLS playlist retry attempts
+    #[arg(
+        long,
+        default_value = "5",
+        help = "Number of retry attempts for failed HLS playlist downloads"
+    )]
+    pub hls_playlist_retries: u32,
 
     /// Segment retry attempts for HLS downloads
     #[arg(
@@ -205,7 +238,7 @@ pub struct CliArgs {
     /// HLS segment timeout in seconds
     #[arg(
         long,
-        default_value = "30",
+        default_value = "10",
         help = "Timeout for individual HLS segment downloads in seconds"
     )]
     pub hls_segment_timeout: u64,

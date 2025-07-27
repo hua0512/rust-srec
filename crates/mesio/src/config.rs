@@ -33,6 +33,9 @@ pub struct DownloaderConfig {
     /// Custom HTTP headers for requests
     pub headers: HeaderMap,
 
+    /// Custom parameters for requests
+    pub params: Vec<(String, String)>,
+
     /// Proxy configuration (optional)
     pub proxy: Option<ProxyConfig>,
 
@@ -57,6 +60,7 @@ impl Default for DownloaderConfig {
             follow_redirects: true,
             user_agent: DEFAULT_USER_AGENT.to_owned(),
             headers: DownloaderConfig::get_default_headers(),
+            params: Vec::new(),
             proxy: None,
             use_system_proxy: true, // Enable system proxy by default
             danger_accept_invalid_certs: false, // Default to not accepting invalid certs
@@ -91,6 +95,7 @@ impl DownloaderConfig {
             follow_redirects: config.follow_redirects,
             user_agent: config.user_agent,
             headers,
+            params: config.params,
             proxy: config.proxy,
             use_system_proxy: config.use_system_proxy,
             danger_accept_invalid_certs: config.danger_accept_invalid_certs,

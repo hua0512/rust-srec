@@ -108,6 +108,7 @@ impl PlaylistProvider for PlaylistEngine {
             .http_client
             .get(playlist_url.clone())
             .timeout(self.config.playlist_config.initial_playlist_fetch_timeout)
+            .query(&self.config.base.params)
             .send()
             .await
             .map_err(|e| HlsDownloaderError::NetworkError {
@@ -252,6 +253,7 @@ impl PlaylistProvider for PlaylistEngine {
             .http_client
             .get(media_playlist_url.clone())
             .timeout(self.config.playlist_config.initial_playlist_fetch_timeout)
+            .query(&self.config.base.params)
             .send()
             .await
             .map_err(|e| HlsDownloaderError::NetworkError {
@@ -434,6 +436,7 @@ impl PlaylistEngine {
             .http_client
             .get(playlist_url.clone())
             .timeout(self.config.playlist_config.initial_playlist_fetch_timeout)
+            .query(&self.config.base.params)
             .send()
             .await
             .map_err(|e| HlsDownloaderError::NetworkError {

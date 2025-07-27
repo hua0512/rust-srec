@@ -50,7 +50,10 @@ impl SegmentFetcher {
         let mut attempts = 0;
         loop {
             attempts += 1;
-            let mut request_builder = self.http_client.get(segment_url.clone());
+            let mut request_builder = self
+                .http_client
+                .get(segment_url.clone())
+                .query(&self.config.base.params);
             if let Some(range) = byte_range {
                 let range_str = if let Some(offset) = range.offset {
                     format!("bytes={}-{}", range.length, range.length + offset - 1)
