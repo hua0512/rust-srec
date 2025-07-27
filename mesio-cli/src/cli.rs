@@ -222,7 +222,8 @@ pub struct CliArgs {
     #[arg(
         short = '4',
         long = "ipv4",
-        help = "Force IPv4 for downloads"
+        help = "Force IPv4 for downloads",
+        default_value = "false"
     )]
     pub force_ipv4: bool,
 
@@ -230,7 +231,8 @@ pub struct CliArgs {
     #[arg(
         short = '6',
         long = "ipv6",
-        help = "Force IPv6 for downloads"
+        help = "Force IPv6 for downloads",
+        default_value = "false"
     )]
     pub force_ipv6: bool,
 }
