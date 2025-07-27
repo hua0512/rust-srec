@@ -21,7 +21,7 @@ pub async fn process_inputs<F>(
     on_progress: Option<Arc<F>>,
 ) -> Result<(), AppError>
 where
-    F: Fn(ProgressEvent) + Send + Sync + 'static + Clone,
+    F: Fn(ProgressEvent) + Send + Sync + 'static,
 {
     if inputs.is_empty() {
         return Err(AppError::InvalidInput(

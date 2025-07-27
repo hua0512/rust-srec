@@ -2,7 +2,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 /// Expand filename template with placeholders similar to FFmpeg
 pub fn expand_filename_template(template: &str, sequence_number: Option<u32>) -> String {
-    let now = time::OffsetDateTime::now_local().unwrap();
+    let now = time::OffsetDateTime::now_local().unwrap_or_else(|_| time::OffsetDateTime::now_utc());
     let mut result = String::with_capacity(template.len() * 2);
     let mut chars = template.chars().peekable();
 

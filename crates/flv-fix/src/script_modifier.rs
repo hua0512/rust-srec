@@ -26,8 +26,8 @@ use std::{
 
 use amf0::{Amf0Encoder, Amf0Marker, Amf0Value, write_amf_property_key};
 use byteorder::{BigEndian, WriteBytesExt};
-use time::OffsetDateTime;
 use flv::tag::{FlvTagData, FlvTagType::ScriptData};
+use time::OffsetDateTime;
 use tracing::{debug, info, trace, warn};
 
 use crate::{
@@ -375,7 +375,10 @@ fn update_script_metadata(
                 }
                 "metadatadate" => {
                     write_amf_property_key!(&mut buffer, key);
-                    let value = OffsetDateTime::now_utc().format(&time::format_description::well_known::Rfc3339).unwrap();
+                    let value = OffsetDateTime::now_local()
+                        .unwrap_or_else(|_| OffsetDateTime::now_utc())
+                        .format(&time::format_description::well_known::Rfc3339)
+                        .map_err(|_| ScriptModifierError::ScriptData("Failed to format date"))?;
 
                     Amf0Encoder::encode_string(&mut buffer, &value)?;
                 }

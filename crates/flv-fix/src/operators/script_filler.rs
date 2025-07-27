@@ -442,7 +442,12 @@ impl ScriptKeyframesFillerOperator {
             "metadatadate" => {
                 // Generate current date dynamically
                 Some(Amf0Value::String(Cow::Owned(
-                    time::OffsetDateTime::now_utc().format(&time::format_description::well_known::Rfc3339).unwrap(),
+                    time::OffsetDateTime::now_utc()
+                        .format(&time::format_description::well_known::Rfc3339)
+                        .map_err(|_| PipelineError::Processing("Failed to format date".to_string()))
+                        .ok()
+                        .unwrap_or_default()
+                        .to_string(),
                 )))
             }
             _ => None, // No default for unknown keys
