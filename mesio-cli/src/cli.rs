@@ -217,4 +217,20 @@ pub struct CliArgs {
         help = "Enable caching of HLS playlists to reduce redundant downloads"
     )]
     pub hls_cache_playlists: bool,
+
+    /// Force IPv4
+    #[arg(
+        short = '4',
+        long = "ipv4",
+        help = "Force IPv4 for downloads"
+    )]
+    pub force_ipv4: bool,
+
+    /// Force IPv6
+    #[arg(
+        short = '6',
+        long = "ipv6",
+        help = "Force IPv6 for downloads"
+    )]
+    pub force_ipv6: bool,
 }

@@ -40,6 +40,10 @@ pub struct DownloaderConfig {
     pub use_system_proxy: bool,
 
     pub danger_accept_invalid_certs: bool, // For reqwest's `danger_accept_invalid_certs`
+
+    pub force_ipv4: bool,
+
+    pub force_ipv6: bool,
 }
 
 impl Default for DownloaderConfig {
@@ -56,6 +60,8 @@ impl Default for DownloaderConfig {
             proxy: None,
             use_system_proxy: true, // Enable system proxy by default
             danger_accept_invalid_certs: false, // Default to not accepting invalid certs
+            force_ipv4: false,
+            force_ipv6: false,
         }
     }
 }
@@ -88,6 +94,8 @@ impl DownloaderConfig {
             proxy: config.proxy,
             use_system_proxy: config.use_system_proxy,
             danger_accept_invalid_certs: config.danger_accept_invalid_certs,
+            force_ipv4: config.force_ipv4,
+            force_ipv6: config.force_ipv6,
         }
     }
 

@@ -198,6 +198,12 @@ async fn bootstrap() -> Result<(), AppError> {
             .with_headers(crate::utils::parse_headers(&args.headers))
             .with_caching_enabled(false);
 
+        builder = match (args.force_ipv4, args.force_ipv6) {
+            (true, false) => builder.with_force_ipv4(),
+            (false, true) => builder.with_force_ipv6(),
+            _ => builder,
+        };
+
         if let Some(proxy) = proxy_config {
             builder = builder.with_proxy(proxy);
         } else {

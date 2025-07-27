@@ -141,6 +141,18 @@ impl DownloaderConfigBuilder {
         self
     }
 
+    /// Set whether to force IPv4
+    pub fn with_force_ipv4(mut self) -> Self {
+        self.config.force_ipv4 = true;
+        self
+    }
+
+    /// Set whether to force IPv6
+    pub fn with_force_ipv6(mut self) -> Self {
+        self.config.force_ipv6 = true;
+        self
+    }
+
     /// Set whether to accept invalid certificates
     ///
     /// # Warning
