@@ -6,20 +6,23 @@ use futures::{StreamExt, stream};
 use hls::HlsData;
 use hls_fix::{HlsPipeline, HlsPipelineConfig, HlsWriter};
 use mesio_engine::{DownloadError, DownloaderInstance};
-use pipeline_common::{OnProgress, PipelineError};
-use std::path::Path;
+use pipeline_common::{progress::ProgressEvent, PipelineError};
+use std::{path::Path, sync::Arc};
 use std::time::Instant;
 use tracing::{debug, info};
 
 /// Process an HLS stream
-pub async fn process_hls_stream(
+pub async fn process_hls_stream<F>(
     url_str: &str,
     output_dir: &Path,
     config: &ProgramConfig,
     name_template: &str,
-    on_progress: Option<OnProgress>,
+    on_progress: Option<Arc<F>>,
     downloader: &mut DownloaderInstance,
-) -> Result<u64, AppError> {
+) -> Result<u64, AppError>
+where
+    F: Fn(ProgressEvent) + Send + Sync + 'static,
+{
     // Create output directory if it doesn't exist
     create_dirs(output_dir).await?;
 
@@ -78,7 +81,7 @@ pub async fn process_hls_stream(
     let stream_with_first_segment = stream::once(async { Ok(first_segment) }).chain(stream);
 
     let (_ts_segments_written, total_segments_written) =
-        process_stream::<HlsPipelineConfig, HlsData, HlsPipeline, HlsWriter, _, _>(
+        process_stream::<HlsPipelineConfig, HlsData, HlsPipeline, HlsWriter<F>, _, _, F>(
             &config.pipeline_config,
             hls_pipe_config,
             stream_with_first_segment,

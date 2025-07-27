@@ -226,7 +226,7 @@ mod tests {
             .process(create_test_header(), &mut output_fn)
             .unwrap();
         operator
-            .process(create_video_sequence_header(1), &mut output_fn)
+            .process(create_video_sequence_header(0, 1), &mut output_fn)
             .unwrap();
 
         // Add some content tags
@@ -238,7 +238,7 @@ mod tests {
 
         // Add a different video sequence header (version 2) - should trigger a split
         operator
-            .process(create_video_sequence_header(2), &mut output_fn)
+            .process(create_video_sequence_header(0, 2), &mut output_fn)
             .unwrap();
 
         // Add more content tags
@@ -278,7 +278,7 @@ mod tests {
             .process(create_test_header(), &mut output_fn)
             .unwrap();
         operator
-            .process(create_audio_sequence_header(1), &mut output_fn)
+            .process(create_audio_sequence_header(0, 1), &mut output_fn)
             .unwrap();
 
         // Add some content tags
@@ -290,7 +290,7 @@ mod tests {
 
         // Add a different audio sequence header - should trigger a split
         operator
-            .process(create_audio_sequence_header(2), &mut output_fn)
+            .process(create_audio_sequence_header(0, 2), &mut output_fn)
             .unwrap();
 
         // Add more content tags
@@ -330,10 +330,10 @@ mod tests {
             .process(create_test_header(), &mut output_fn)
             .unwrap();
         operator
-            .process(create_video_sequence_header(1), &mut output_fn)
+            .process(create_video_sequence_header(0, 1), &mut output_fn)
             .unwrap();
         operator
-            .process(create_audio_sequence_header(1), &mut output_fn)
+            .process(create_audio_sequence_header(0, 1), &mut output_fn)
             .unwrap();
 
         // Add some content tags
@@ -348,10 +348,10 @@ mod tests {
 
         // Add identical codec headers again - should NOT trigger a split
         operator
-            .process(create_video_sequence_header(1), &mut output_fn)
+            .process(create_video_sequence_header(0, 1), &mut output_fn)
             .unwrap();
         operator
-            .process(create_audio_sequence_header(1), &mut output_fn)
+            .process(create_audio_sequence_header(0, 1), &mut output_fn)
             .unwrap();
 
         // Add more content tags
@@ -394,10 +394,10 @@ mod tests {
             .process(create_test_header(), &mut output_fn)
             .unwrap();
         operator
-            .process(create_video_sequence_header(1), &mut output_fn)
+            .process(create_video_sequence_header(0, 1), &mut output_fn)
             .unwrap();
         operator
-            .process(create_audio_sequence_header(1), &mut output_fn)
+            .process(create_audio_sequence_header(0, 1), &mut output_fn)
             .unwrap();
         operator
             .process(create_video_tag(100, true), &mut output_fn)
@@ -405,7 +405,7 @@ mod tests {
 
         // Second segment (video codec change)
         operator
-            .process(create_video_sequence_header(2), &mut output_fn)
+            .process(create_video_sequence_header(0, 2), &mut output_fn)
             .unwrap();
         operator
             .process(create_video_tag(200, true), &mut output_fn)
@@ -413,7 +413,7 @@ mod tests {
 
         // Third segment (audio codec change)
         operator
-            .process(create_audio_sequence_header(2), &mut output_fn)
+            .process(create_audio_sequence_header(0, 2), &mut output_fn)
             .unwrap();
         operator
             .process(create_audio_tag(300), &mut output_fn)
@@ -421,10 +421,10 @@ mod tests {
 
         // Fourth segment (both codecs change)
         operator
-            .process(create_video_sequence_header(3), &mut output_fn)
+            .process(create_video_sequence_header(0, 3), &mut output_fn)
             .unwrap();
         operator
-            .process(create_audio_sequence_header(3), &mut output_fn)
+            .process(create_audio_sequence_header(0, 3), &mut output_fn)
             .unwrap();
         operator
             .process(create_video_tag(400, true), &mut output_fn)

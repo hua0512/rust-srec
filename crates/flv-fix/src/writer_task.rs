@@ -2,13 +2,13 @@ use crate::{analyzer::FlvAnalyzer, script_modifier};
 use flv::{FlvData, FlvHeader, FlvWriter};
 use pipeline_common::progress::ProgressEvent;
 use pipeline_common::{
-    FormatStrategy, OnProgress, PostWriteAction, Progress, WriterConfig, WriterState,
-    expand_filename_template,
+    FormatStrategy, PostWriteAction, Progress, WriterConfig, WriterState, expand_filename_template,
 };
 use std::{
     fs::OpenOptions,
     io::BufWriter,
     path::{Path, PathBuf},
+    sync::Arc,
     time::{Duration, Instant},
 };
 use tracing::info;
@@ -27,7 +27,10 @@ pub enum FlvStrategyError {
 }
 
 /// FLV-specific format strategy implementation
-pub struct FlvFormatStrategy {
+pub struct FlvFormatStrategy<F>
+where
+    F: Fn(ProgressEvent) + Send + Sync + 'static,
+{
     // FLV-specific state
     analyzer: FlvAnalyzer,
     pending_header: Option<FlvHeader>,
@@ -37,11 +40,14 @@ pub struct FlvFormatStrategy {
     current_tag_count: u64,
 
     // Callbacks
-    on_progress: Option<OnProgress>,
+    on_progress: Option<Arc<F>>,
 }
 
-impl FlvFormatStrategy {
-    pub fn new(on_progress: Option<OnProgress>) -> Self {
+impl<F> FlvFormatStrategy<F>
+where
+    F: Fn(ProgressEvent) + Send + Sync + 'static,
+{
+    pub fn new(on_progress: Option<Arc<F>>) -> Self {
         Self {
             analyzer: FlvAnalyzer::default(),
             pending_header: None,
@@ -76,14 +82,17 @@ impl FlvFormatStrategy {
                 duration: Some(Duration::from_millis(self.calculate_duration() as u64)),
             };
             callback(ProgressEvent::ProgressUpdate {
-                path: state.current_path.clone(),
+                path: state.current_path.clone().into(),
                 progress,
             });
         }
     }
 }
 
-impl FormatStrategy<FlvData> for FlvFormatStrategy {
+impl<F> FormatStrategy<FlvData> for FlvFormatStrategy<F>
+where
+    F: Fn(ProgressEvent) + Send + Sync + 'static,
+{
     type Writer = FlvWriter<BufWriter<std::fs::File>>;
     type StrategyError = FlvStrategyError;
 
@@ -164,7 +173,7 @@ impl FormatStrategy<FlvData> for FlvFormatStrategy {
     ) -> Result<u64, Self::StrategyError> {
         if let Some(callback) = &self.on_progress {
             callback(ProgressEvent::FileOpened {
-                path: path.to_path_buf(),
+                path: path.to_path_buf().into(),
             });
         }
         self.file_start_instant = Some(Instant::now());
@@ -205,7 +214,7 @@ impl FormatStrategy<FlvData> for FlvFormatStrategy {
 
         if let Some(callback) = &self.on_progress {
             callback(ProgressEvent::FileClosed {
-                path: path.to_path_buf(),
+                path: path.to_path_buf().into(),
             });
         }
 

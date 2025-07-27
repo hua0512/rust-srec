@@ -688,8 +688,8 @@ mod tests {
         // Create input tags
         let mut input_tags = Vec::new();
         input_tags.push(create_test_header());
-        input_tags.push(create_video_sequence_header(1));
-        input_tags.push(create_audio_sequence_header(1));
+        input_tags.push(create_video_sequence_header(0, 1));
+        input_tags.push(create_audio_sequence_header(0, 1));
 
         // Regular tags with increasing timestamps
         for i in 1..5 {

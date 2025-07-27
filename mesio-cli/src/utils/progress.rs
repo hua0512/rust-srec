@@ -52,10 +52,10 @@ impl ProgressManager {
                 bar.set_style(download_style());
                 bar.set_message(format!("Processing {}", path.to_string_lossy()));
                 bar.enable_steady_tick(Duration::from_millis(500));
-                bars.insert(path, bar);
+                bars.insert(path.to_path_buf(), bar);
             }
             PipelineProgressEvent::ProgressUpdate { path, progress } => {
-                if let Some(bar) = bars.get(&path) {
+                if let Some(bar) = bars.get(path.as_ref()) {
                     if let Some(total) = progress.total_bytes {
                         bar.set_length(total);
                     }
@@ -63,7 +63,7 @@ impl ProgressManager {
                 }
             }
             PipelineProgressEvent::FileClosed { path } => {
-                if let Some(bar) = bars.remove(&path) {
+                if let Some(bar) = bars.remove(path.as_ref()) {
                     bar.finish_with_message(format!("Finished {}", path.to_string_lossy()));
                 }
             }

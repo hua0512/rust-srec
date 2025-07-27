@@ -1,34 +1,33 @@
 use crate::error::AppError;
+use crossbeam_channel as mpsc;
 use futures::{Stream, StreamExt};
 use pipeline_common::{
-    OnProgress, PipelineError, PipelineProvider, ProtocolWriter, StreamerContext,
-    config::PipelineConfig,
+    PipelineError, PipelineProvider, ProtocolWriter, StreamerContext, config::PipelineConfig,
+    progress::ProgressEvent,
 };
-use std::{
-    path::Path,
-    sync::mpsc::{self},
-};
+use std::{path::Path, sync::Arc};
 use tracing::warn;
 
-pub async fn process_stream<C, I, P, W, S, E>(
+pub async fn process_stream<C, I, P, W, S, E, F>(
     pipeline_common_config: &PipelineConfig,
     pipeline_config: C,
     stream: S,
     output_dir: &Path,
     base_name: &str,
     extension: &str,
-    on_progress: Option<OnProgress>,
+    on_progress: Option<Arc<F>>,
 ) -> Result<W::Stats, AppError>
 where
     C: Send + 'static,
     I: Send + 'static,
     P: PipelineProvider<Item = I, Config = C>,
-    W: ProtocolWriter<Item = I>,
+    W: ProtocolWriter<F, Item = I>,
     S: Stream<Item = Result<I, E>> + Send + 'static,
     E: std::error::Error + Send + Sync + 'static,
+    F: Fn(ProgressEvent) + Send + Sync + 'static,
 {
-    let (tx, rx) = mpsc::sync_channel(pipeline_common_config.channel_size);
-    let (processed_tx, processed_rx) = mpsc::sync_channel(pipeline_common_config.channel_size);
+    let (tx, rx) = mpsc::bounded(pipeline_common_config.channel_size);
+    let (processed_tx, processed_rx) = mpsc::bounded(pipeline_common_config.channel_size);
 
     let context = StreamerContext::new();
     let pipeline_provider = P::with_config(context, pipeline_common_config, pipeline_config);
@@ -38,9 +37,14 @@ where
         let input_iter = std::iter::from_fn(move || rx.recv().map(Some).unwrap_or(None));
 
         let mut output = |result: Result<I, PipelineError>| {
-            if processed_tx.send(result).is_err() {
+            if let Err(ref send_error) = processed_tx.send(result) {
                 // Downstream channel closed, stop processing
-                warn!("Output channel closed, stopping processing");
+                // get error and log it
+                if let Err(e) = send_error.0.as_ref() {
+                    warn!("Output channel closed, stopping processing: {e}");
+                } else {
+                    warn!("Output channel closed, stopping processing");
+                }
             }
         };
 

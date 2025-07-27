@@ -2,16 +2,23 @@ use crate::writer_task::FlvStrategyError;
 use pipeline_common::{PipelineError, ProtocolWriter, WriterError};
 
 use crate::writer_task::FlvFormatStrategy;
+use crossbeam_channel as mpsc;
 use flv::data::FlvData;
-use pipeline_common::{OnProgress, WriterConfig, WriterState, WriterTask};
-use std::path::PathBuf;
+use pipeline_common::{WriterConfig, WriterState, WriterTask, progress::ProgressEvent};
+use std::{path::PathBuf, sync::Arc};
 
 /// A specialized writer task for FLV data.
-pub struct FlvWriter {
-    writer_task: WriterTask<FlvData, FlvFormatStrategy>,
+pub struct FlvWriter<F>
+where
+    F: Fn(ProgressEvent) + Send + Sync + 'static,
+{
+    writer_task: WriterTask<FlvData, FlvFormatStrategy<F>>,
 }
 
-impl ProtocolWriter for FlvWriter {
+impl<F> ProtocolWriter<F> for FlvWriter<F>
+where
+    F: Fn(ProgressEvent) + Send + Sync + 'static,
+{
     type Item = FlvData;
     type Stats = (usize, u32);
     type Error = WriterError<FlvStrategyError>;
@@ -20,7 +27,7 @@ impl ProtocolWriter for FlvWriter {
         output_dir: PathBuf,
         base_name: String,
         _extension: String,
-        on_progress: Option<OnProgress>,
+        on_progress: Option<Arc<F>>,
     ) -> Self {
         let writer_config = WriterConfig::new(output_dir, base_name, "flv".to_string());
         let strategy = FlvFormatStrategy::new(on_progress);
@@ -34,14 +41,15 @@ impl ProtocolWriter for FlvWriter {
 
     fn run(
         &mut self,
-        input_stream: std::sync::mpsc::Receiver<Result<Self::Item, PipelineError>>,
+        input_stream: mpsc::Receiver<Result<Self::Item, PipelineError>>,
     ) -> Result<Self::Stats, Self::Error> {
         for result in input_stream.iter() {
             match result {
                 Ok(flv_data) => {
-                    self.writer_task
-                        .process_item(flv_data)
-                        .map_err(WriterError::TaskError)?;
+                    if let Err(e) = self.writer_task.process_item(flv_data) {
+                        tracing::error!("Error processing FLV data: {}", e);
+                        return Err(WriterError::TaskError(e));
+                    }
                 }
                 Err(e) => {
                     tracing::error!("Error in received FLV data: {}", e);

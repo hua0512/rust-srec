@@ -274,10 +274,10 @@ mod tests {
             .process(create_script_tag(0, false), &mut output_fn)
             .unwrap();
         operator
-            .process(create_video_sequence_header(1), &mut output_fn)
+            .process(create_video_sequence_header(0, 1), &mut output_fn)
             .unwrap();
         operator
-            .process(create_audio_sequence_header(1), &mut output_fn)
+            .process(create_audio_sequence_header(0, 1), &mut output_fn)
             .unwrap();
         operator
             .process(create_video_tag(20, false), &mut output_fn)

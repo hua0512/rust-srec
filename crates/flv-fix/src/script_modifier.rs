@@ -26,7 +26,7 @@ use std::{
 
 use amf0::{Amf0Encoder, Amf0Marker, Amf0Value, write_amf_property_key};
 use byteorder::{BigEndian, WriteBytesExt};
-use chrono::Utc;
+use time::OffsetDateTime;
 use flv::tag::{FlvTagData, FlvTagType::ScriptData};
 use tracing::{debug, info, trace, warn};
 
@@ -375,7 +375,7 @@ fn update_script_metadata(
                 }
                 "metadatadate" => {
                     write_amf_property_key!(&mut buffer, key);
-                    let value = Utc::now().to_rfc3339();
+                    let value = OffsetDateTime::now_utc().format(&time::format_description::well_known::Rfc3339).unwrap();
 
                     Amf0Encoder::encode_string(&mut buffer, &value)?;
                 }

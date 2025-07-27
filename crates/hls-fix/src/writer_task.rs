@@ -2,26 +2,30 @@ use std::{
     fs::OpenOptions,
     io::{BufWriter, Write},
     path::PathBuf,
-    sync::mpsc::Receiver,
+    sync::Arc,
     time::Duration,
 };
 
+use crossbeam_channel as mpsc;
 use hls::{HlsData, M4sData};
 use pipeline_common::{
-    FormatStrategy, OnProgress, PostWriteAction, Progress, ProtocolWriter, WriterConfig,
-    WriterState, WriterTask, expand_filename_template,
+    FormatStrategy, PostWriteAction, Progress, ProtocolWriter, WriterConfig, WriterState,
+    WriterTask, expand_filename_template,
 };
 use pipeline_common::{WriterError, progress::ProgressEvent};
 use tracing::{debug, error, info};
 
 use crate::analyzer::HlsAnalyzer;
 
-pub struct HlsFormatStrategy {
+pub struct HlsFormatStrategy<F>
+where
+    F: Fn(ProgressEvent) + Send + Sync + 'static,
+{
     analyzer: HlsAnalyzer,
     current_offset: u64,
     is_finalizing: bool,
     target_duration: f32,
-    on_progress: Option<OnProgress>,
+    on_progress: Option<Arc<F>>,
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -34,8 +38,11 @@ pub enum HlsStrategyError {
     Pipeline(#[from] pipeline_common::PipelineError),
 }
 
-impl HlsFormatStrategy {
-    pub fn new(on_progress: Option<OnProgress>) -> Self {
+impl<F> HlsFormatStrategy<F>
+where
+    F: Fn(ProgressEvent) + Send + Sync + 'static,
+{
+    pub fn new(on_progress: Option<Arc<F>>) -> Self {
         Self {
             analyzer: HlsAnalyzer::new(),
             current_offset: 0,
@@ -63,14 +70,17 @@ impl HlsFormatStrategy {
                 duration: Some(Duration::from_secs_f32(self.target_duration)),
             };
             callback(ProgressEvent::ProgressUpdate {
-                path: state.current_path.clone(),
+                path: state.current_path.clone().into(),
                 progress,
             });
         }
     }
 }
 
-impl FormatStrategy<HlsData> for HlsFormatStrategy {
+impl<F> FormatStrategy<HlsData> for HlsFormatStrategy<F>
+where
+    F: Fn(ProgressEvent) + Send + Sync + 'static,
+{
     type Writer = BufWriter<std::fs::File>;
     type StrategyError = HlsStrategyError;
 
@@ -147,7 +157,7 @@ impl FormatStrategy<HlsData> for HlsFormatStrategy {
     ) -> Result<u64, Self::StrategyError> {
         if let Some(callback) = &self.on_progress {
             callback(ProgressEvent::FileOpened {
-                path: path.to_path_buf(),
+                path: path.to_path_buf().into(),
             });
         }
         Ok(0)
@@ -165,7 +175,7 @@ impl FormatStrategy<HlsData> for HlsFormatStrategy {
         }
         if let Some(callback) = &self.on_progress {
             callback(ProgressEvent::FileClosed {
-                path: path.to_path_buf(),
+                path: path.to_path_buf().into(),
             });
         }
         Ok(0)
@@ -192,11 +202,17 @@ impl FormatStrategy<HlsData> for HlsFormatStrategy {
     }
 }
 
-pub struct HlsWriter {
-    writer_task: WriterTask<HlsData, HlsFormatStrategy>,
+pub struct HlsWriter<F>
+where
+    F: Fn(ProgressEvent) + Send + Sync + 'static,
+{
+    writer_task: WriterTask<HlsData, HlsFormatStrategy<F>>,
 }
 
-impl ProtocolWriter for HlsWriter {
+impl<F> ProtocolWriter<F> for HlsWriter<F>
+where
+    F: Fn(ProgressEvent) + Send + Sync + 'static,
+{
     type Item = HlsData;
     type Stats = (usize, u32);
     type Error = WriterError<HlsStrategyError>;
@@ -205,7 +221,7 @@ impl ProtocolWriter for HlsWriter {
         output_dir: PathBuf,
         base_name: String,
         extension: String,
-        on_progress: Option<OnProgress>,
+        on_progress: Option<Arc<F>>,
     ) -> Self {
         let writer_config = WriterConfig::new(output_dir, base_name, extension);
         let strategy = HlsFormatStrategy::new(on_progress);
@@ -219,7 +235,7 @@ impl ProtocolWriter for HlsWriter {
 
     fn run(
         &mut self,
-        receiver: Receiver<Result<HlsData, pipeline_common::PipelineError>>,
+        receiver: mpsc::Receiver<Result<HlsData, pipeline_common::PipelineError>>,
     ) -> Result<(usize, u32), WriterError<HlsStrategyError>> {
         for result in receiver.iter() {
             match result {

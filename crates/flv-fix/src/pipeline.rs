@@ -213,7 +213,9 @@ mod test {
     use flv::data::FlvData;
     use flv::parser_async::FlvDecoderStream;
     use futures::StreamExt;
-    use pipeline_common::{PipelineError, ProtocolWriter, WriterError, init_test_tracing};
+    use pipeline_common::{
+        PipelineError, ProgressEvent, ProtocolWriter, WriterError, init_test_tracing,
+    };
 
     use std::path::Path;
     use tracing::info;
@@ -264,10 +266,10 @@ mod test {
             32 * 1024, // Input buffer capacity
         );
 
-        let (sender, receiver) = std::sync::mpsc::sync_channel::<Result<FlvData, PipelineError>>(8);
+        let (sender, receiver) = crossbeam_channel::bounded::<Result<FlvData, PipelineError>>(8);
 
         let (output_tx, output_rx) =
-            std::sync::mpsc::sync_channel::<Result<FlvData, PipelineError>>(8);
+            crossbeam_channel::bounded::<Result<FlvData, PipelineError>>(8);
 
         let process_task = Some(tokio::task::spawn_blocking(move || {
             let pipeline = pipeline.build_pipeline();
@@ -291,7 +293,8 @@ mod test {
 
         // Run the writer task with the receiver
         let writer_handle = tokio::task::spawn_blocking(move || {
-            let mut writer_task = FlvWriter::new(output_dir, base_name, "flv".to_string(), None);
+            let mut writer_task =
+                FlvWriter::<fn(ProgressEvent)>::new(output_dir, base_name, "flv".to_string(), None);
 
             writer_task.run(output_rx)?;
 

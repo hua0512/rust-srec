@@ -1,4 +1,3 @@
-use chrono::Utc;
 use std::fs::{File, OpenOptions};
 use std::io::{self, BufWriter, Write};
 use std::path::{Path, PathBuf};
@@ -66,7 +65,7 @@ pub struct WriterState {
     /// Total number of bytes written across all files.
     pub bytes_written_total: u64,
     /// Timestamp when the current file was opened.
-    pub current_file_opened_at: Option<chrono::DateTime<Utc>>,
+    pub current_file_opened_at: Option<std::time::SystemTime>,
     /// Sequence number for file naming.
     pub file_sequence_number: u32,
 }
@@ -77,7 +76,7 @@ impl WriterState {
         self.current_file_path = Some(new_path);
         self.items_written_current_file = 0;
         self.bytes_written_current_file = 0;
-        self.current_file_opened_at = Some(Utc::now());
+        self.current_file_opened_at = Some(std::time::SystemTime::now());
     }
 }
 

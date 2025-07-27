@@ -3,20 +3,26 @@ mod generic;
 mod hls;
 
 use mesio_engine::{DownloadManagerConfig, MesioDownloaderFactory, ProtocolType};
-use pipeline_common::OnProgress;
-use std::path::{Path, PathBuf};
+use pipeline_common::progress::ProgressEvent;
+use std::{
+    path::{Path, PathBuf},
+    sync::Arc,
+};
 use tracing::{error, info};
 
 use crate::{config::ProgramConfig, error::AppError};
 
 /// Determine the type of input and process accordingly
-pub async fn process_inputs(
+pub async fn process_inputs<F>(
     inputs: &[String],
     output_dir: &Path,
     config: &ProgramConfig,
     name_template: &str,
-    on_progress: Option<OnProgress>,
-) -> Result<(), AppError> {
+    on_progress: Option<Arc<F>>,
+) -> Result<(), AppError>
+where
+    F: Fn(ProgressEvent) + Send + Sync + 'static + Clone,
+{
     if inputs.is_empty() {
         return Err(AppError::InvalidInput(
             "No input files or URLs provided".to_string(),

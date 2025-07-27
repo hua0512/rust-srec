@@ -35,7 +35,7 @@ mod writer_task;
 pub use context::{Statistics, StreamerContext};
 pub use pipeline::Pipeline;
 pub use processor::Processor;
-pub use progress::{OnProgress, Progress, ProgressEvent};
+pub use progress::{Progress, ProgressEvent};
 pub use utils::{expand_filename_template, sanitize_filename};
 
 pub use writer_task::{
@@ -57,7 +57,10 @@ pub enum PipelineError {
     InvalidData(String),
 }
 
-pub trait ProtocolWriter: Send + 'static {
+pub trait ProtocolWriter<F>: Send + 'static
+where
+    F: Fn(ProgressEvent) + Send + Sync + 'static,
+{
     type Item: Send + 'static;
     type Stats: Send + 'static;
     type Error: std::error::Error + Send + Sync + 'static;
@@ -66,14 +69,14 @@ pub trait ProtocolWriter: Send + 'static {
         output_dir: PathBuf,
         base_name: String,
         extension: String,
-        on_progress: Option<OnProgress>,
+        on_progress: Option<std::sync::Arc<F>>,
     ) -> Self;
 
     fn get_state(&self) -> &WriterState;
 
     fn run(
         &mut self,
-        input_stream: std::sync::mpsc::Receiver<Result<Self::Item, PipelineError>>,
+        input_stream: crossbeam_channel::Receiver<Result<Self::Item, PipelineError>>,
     ) -> Result<Self::Stats, Self::Error>;
 }
 

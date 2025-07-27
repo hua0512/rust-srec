@@ -664,10 +664,10 @@ mod tests {
             .process(create_script_tag(0, false), &mut output_fn)
             .unwrap();
         operator
-            .process(test_utils::create_video_sequence_header(0), &mut output_fn)
+            .process(test_utils::create_video_sequence_header(0, 1), &mut output_fn)
             .unwrap();
         operator
-            .process(test_utils::create_audio_sequence_header(0), &mut output_fn)
+            .process(test_utils::create_audio_sequence_header(0, 1), &mut output_fn)
             .unwrap();
 
         // First send tags that should trigger size limit
@@ -762,10 +762,10 @@ mod tests {
             .process(create_script_tag(0, false), &mut output_fn)
             .unwrap();
         operator
-            .process(test_utils::create_video_sequence_header(0), &mut output_fn)
+            .process(test_utils::create_video_sequence_header(0, 1), &mut output_fn)
             .unwrap();
         operator
-            .process(test_utils::create_audio_sequence_header(0), &mut output_fn)
+            .process(test_utils::create_audio_sequence_header(0, 1), &mut output_fn)
             .unwrap();
 
         // Interleaved audio and video with keyframes at 0ms and 500ms

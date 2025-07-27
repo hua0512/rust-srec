@@ -8,26 +8,29 @@ use flv_fix::writer::FlvWriter;
 use flv_fix::{FlvPipeline, FlvPipelineConfig, flv_error_to_pipeline_error};
 use futures::{Stream, StreamExt, TryStreamExt};
 use mesio_engine::DownloaderInstance;
-use pipeline_common::{OnProgress, PipelineError, ProtocolWriter, config::PipelineConfig};
-use std::path::Path;
-use std::sync::mpsc;
+use pipeline_common::{
+    config::PipelineConfig, progress::ProgressEvent, PipelineError, ProtocolWriter,
+};
+use std::{path::Path, sync::Arc};
+use crossbeam_channel as mpsc;
 use std::time::Instant;
 use tokio::fs::File;
 use tokio::io::BufReader;
 use tracing::info;
 
-async fn process_raw_stream<S, E>(
+async fn process_raw_stream<S, E, F>(
     stream: S,
     output_dir: &Path,
     base_name: &str,
     pipeline_common_config: &PipelineConfig,
-    on_progress: Option<OnProgress>,
+    on_progress: Option<Arc<F>>,
 ) -> Result<(usize, u32), AppError>
 where
     S: Stream<Item = Result<FlvData, E>> + Send + 'static,
     E: std::error::Error + Send + Sync + 'static,
+    F: Fn(ProgressEvent) + Send + Sync + 'static,
 {
-    let (tx, rx) = mpsc::sync_channel(pipeline_common_config.channel_size);
+    let (tx, rx) = mpsc::bounded(pipeline_common_config.channel_size);
     let mut writer = FlvWriter::new(
         output_dir.to_path_buf(),
         base_name.to_string(),
@@ -52,12 +55,15 @@ where
 }
 
 /// Process a single FLV file
-pub async fn process_file(
+pub async fn process_file<F>(
     input_path: &Path,
     output_dir: &Path,
     config: &ProgramConfig,
-    on_progress: Option<OnProgress>,
-) -> Result<(), AppError> {
+    on_progress: Option<Arc<F>>,
+) -> Result<(), AppError>
+where
+    F: Fn(ProgressEvent) + Send + Sync + 'static,
+{
     // Create output directory if it doesn't exist
     create_dirs(output_dir).await?;
 
@@ -83,7 +89,7 @@ pub async fn process_file(
     let (tags_written, files_created) = if config.enable_processing {
         // we need to expand base_name with %i for output file numbering
         let base_name = format!("{base_name}_p%i");
-        process_stream::<FlvPipelineConfig, FlvData, FlvPipeline, FlvWriter, _, _>(
+        process_stream::<FlvPipelineConfig, FlvData, FlvPipeline, FlvWriter<F>, _, _, F>(
             &config.pipeline_config,
             config.flv_pipeline_config.clone(),
             decoder_stream,
@@ -119,14 +125,17 @@ pub async fn process_file(
 }
 
 /// Process an FLV stream
-pub async fn process_flv_stream(
+pub async fn process_flv_stream<F>(
     url_str: &str,
     output_dir: &Path,
     config: &ProgramConfig,
     name_template: &str,
-    on_progress: Option<OnProgress>,
+    on_progress: Option<Arc<F>>,
     downloader: &mut DownloaderInstance,
-) -> Result<u64, AppError> {
+) -> Result<u64, AppError>
+where
+    F: Fn(ProgressEvent) + Send + Sync + 'static,
+{
     // Create output directory if it doesn't exist
     create_dirs(output_dir).await?;
 
@@ -146,7 +155,7 @@ pub async fn process_flv_stream(
     };
 
     let (tags_written, files_created) = if config.enable_processing {
-        process_stream::<FlvPipelineConfig, FlvData, FlvPipeline, FlvWriter, _, _>(
+        process_stream::<FlvPipelineConfig, FlvData, FlvPipeline, FlvWriter<F>, _, _, F>(
             &config.pipeline_config,
             config.flv_pipeline_config.clone(),
             stream,

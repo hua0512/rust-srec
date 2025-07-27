@@ -1,4 +1,4 @@
-use std::path::PathBuf;
+use std::path::Path;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -23,21 +23,19 @@ pub enum ProgressEvent {
     /// Indicates that a new file has been opened for writing.
     FileOpened {
         /// The path to the file that was opened.
-        path: PathBuf,
+        path: Arc<Path>,
     },
     /// An update on the progress of writing to a file.
     ProgressUpdate {
         /// The path to the file being updated.
-        path: PathBuf,
+        path: Arc<Path>,
         /// The progress data.
         progress: Progress,
     },
     /// Indicates that a file has been closed after writing.
     FileClosed {
         /// The path to the file that was closed.
-        path: PathBuf,
+        path: Arc<Path>,
     },
 }
 
-/// A callback function for progress updates.
-pub type OnProgress = Arc<dyn Fn(ProgressEvent) + Send + Sync>;

@@ -2,9 +2,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 /// Expand filename template with placeholders similar to FFmpeg
 pub fn expand_filename_template(template: &str, sequence_number: Option<u32>) -> String {
-    use chrono::{Datelike, Local, Timelike};
-
-    let now = Local::now();
+    let now = time::OffsetDateTime::now_local().unwrap();
     let mut result = String::with_capacity(template.len() * 2);
     let mut chars = template.chars().peekable();
 
@@ -18,7 +16,7 @@ pub fn expand_filename_template(template: &str, sequence_number: Option<u32>) ->
                         chars.next();
                     }
                     'm' => {
-                        result.push_str(&format!("{:02}", now.month())); // Month (01-12)
+                        result.push_str(&format!("{:02}", now.month() as u8)); // Month (01-12)
                         chars.next();
                     }
                     'd' => {

@@ -110,31 +110,27 @@ pub fn create_script_tag(timestamp: u32, with_keyframes: bool) -> FlvData {
 
 /// Create a video sequence header with specified version
 #[cfg(test)]
-pub fn create_video_sequence_header(avc_version: u8) -> FlvData {
+pub fn create_video_sequence_header(timestamp: u32, version: u8) -> FlvData {
     let data = vec![
         0x17, // Keyframe (1) + AVC (7)
         0x00, // AVC sequence header
-        0x00,
-        0x00,
-        0x00,        // Composition time
-        avc_version, // AVC version, use different values to test detection
-        0x64,
-        0x00,
-        0x28, // AVCC data
+        0x00, 0x00, 0x00, // Composition time
+        version, // AVC version
+        0x64, 0x00, 0x28, // AVCC data
     ];
-    create_test_tag(FlvTagType::Video, 0, data)
+    create_test_tag(FlvTagType::Video, timestamp, data)
 }
 
 /// Create an audio sequence header with specified version
 #[cfg(test)]
-pub fn create_audio_sequence_header(aac_version: u8) -> FlvData {
+pub fn create_audio_sequence_header(timestamp: u32, version: u8) -> FlvData {
     let data = vec![
-        0xAF,        // Audio format 10 (AAC) + sample rate 3 (44kHz) + sample size 1 (16-bit) + stereo
-        0x00,        // AAC sequence header
-        aac_version, // AAC specific config, use different values to test detection
+        0xAF, // Audio format 10 (AAC) + sample rate 3 (44kHz) + sample size 1 (16-bit) + stereo
+        0x00, // AAC sequence header
+        version, // AAC specific config
         0x10,
     ];
-    create_test_tag(FlvTagType::Audio, 0, data)
+    create_test_tag(FlvTagType::Audio, timestamp, data)
 }
 
 /// Extract timestamps from processed items
