@@ -309,8 +309,15 @@ impl PmtRef {
         let current_next_indicator = (byte5 & 0x01) != 0;
         let section_number = reader.get_u8();
         let last_section_number = reader.get_u8();
-        let pcr_pid = reader.get_u16() & 0x1FFF;
-        let program_info_length = (reader.get_u16() & 0x0FFF) as usize;
+        let pcr_pid_high = reader.get_u8();
+        let pcr_pid_low = reader.get_u8();
+        let pcr_pid = ((pcr_pid_high as u16 & 0x1F) << 8) | pcr_pid_low as u16;
+
+        let prog_info_len_high = reader.get_u8();
+        let prog_info_len_low = reader.get_u8();
+        let program_info_length =
+            (((prog_info_len_high as u16) & 0x0F) << 8) | prog_info_len_low as u16;
+        let program_info_length = program_info_length as usize;
         let program_info_offset = 12;
         let streams_offset = 12 + program_info_length;
         let streams_end = 3 + section_length as usize - 4; // Exclude CRC32
@@ -359,9 +366,11 @@ impl Iterator for PmtStreamIterator {
 
     fn next(&mut self) -> Option<Self::Item> {
         if self.data.remaining() >= 5 {
-            let stream_type = StreamType::from(self.data.get_u8());
-            let elementary_pid = self.data.get_u16() & 0x1FFF;
-            let es_info_length = (self.data.get_u16() & 0x0FFF) as usize;
+            let mut reader = &self.data[..];
+            let stream_type = StreamType::from(reader.get_u8());
+            let elementary_pid = reader.get_u16() & 0x1FFF;
+            let es_info_length = (reader.get_u16() & 0x0FFF) as usize;
+            self.data.advance(5);
 
             if self.data.remaining() < es_info_length {
                 return Some(Err(TsError::InsufficientData {
