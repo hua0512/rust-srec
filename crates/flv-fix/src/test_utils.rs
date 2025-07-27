@@ -114,7 +114,7 @@ pub fn create_video_sequence_header(timestamp: u32, version: u8) -> FlvData {
     let data = vec![
         0x17, // Keyframe (1) + AVC (7)
         0x00, // AVC sequence header
-        0x00, 0x00, 0x00, // Composition time
+        0x00, 0x00, 0x00,    // Composition time
         version, // AVC version
         0x64, 0x00, 0x28, // AVCC data
     ];
@@ -125,8 +125,8 @@ pub fn create_video_sequence_header(timestamp: u32, version: u8) -> FlvData {
 #[cfg(test)]
 pub fn create_audio_sequence_header(timestamp: u32, version: u8) -> FlvData {
     let data = vec![
-        0xAF, // Audio format 10 (AAC) + sample rate 3 (44kHz) + sample size 1 (16-bit) + stereo
-        0x00, // AAC sequence header
+        0xAF,    // Audio format 10 (AAC) + sample rate 3 (44kHz) + sample size 1 (16-bit) + stereo
+        0x00,    // AAC sequence header
         version, // AAC specific config
         0x10,
     ];

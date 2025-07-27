@@ -38,4 +38,3 @@ pub enum ProgressEvent {
         path: Arc<Path>,
     },
 }
-

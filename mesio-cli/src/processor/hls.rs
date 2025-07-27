@@ -6,9 +6,9 @@ use futures::{StreamExt, stream};
 use hls::HlsData;
 use hls_fix::{HlsPipeline, HlsPipelineConfig, HlsWriter};
 use mesio_engine::{DownloadError, DownloaderInstance};
-use pipeline_common::{progress::ProgressEvent, PipelineError};
-use std::{path::Path, sync::Arc};
+use pipeline_common::{PipelineError, progress::ProgressEvent};
 use std::time::Instant;
+use std::{path::Path, sync::Arc};
 use tracing::{debug, info};
 
 /// Process an HLS stream
