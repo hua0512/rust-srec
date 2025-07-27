@@ -1,5 +1,3 @@
-use std::sync::LazyLock;
-
 use bytes::{Bytes, BytesMut};
 use memchr::memmem;
 use tracing::{debug, warn};
@@ -27,12 +25,14 @@ impl std::fmt::Display for Resolution {
 /// Resolution detector for HLS segments
 pub struct ResolutionDetector;
 
-static THREE_BYTE_FINDER: LazyLock<memmem::Finder> =
-    LazyLock::new(|| memmem::Finder::new(b"\x00\x00\x01"));
-static FOUR_BYTE_FINDER: LazyLock<memmem::Finder> =
-    LazyLock::new(|| memmem::Finder::new(b"\x00\x00\x00\x01"));
-
 impl ResolutionDetector {
+    fn three_byte_finder() -> memmem::Finder<'static> {
+        memmem::Finder::new(b"\x00\x00\x01")
+    }
+    fn four_byte_finder() -> memmem::Finder<'static> {
+        memmem::Finder::new(b"\x00\x00\x00\x01")
+    }
+
     /// Extract resolution from pre-parsed TS packets
     pub fn extract_from_ts_packets<'a>(
         packets: impl Iterator<Item = &'a TsPacketRef> + Clone,
@@ -220,8 +220,8 @@ impl ResolutionDetector {
 
         let mut search_pos = 0;
         while search_pos < stream_data.len() {
-            let next_three = THREE_BYTE_FINDER.find(&stream_data[search_pos..]);
-            let next_four = FOUR_BYTE_FINDER.find(&stream_data[search_pos..]);
+            let next_three = Self::three_byte_finder().find(&stream_data[search_pos..]);
+            let next_four = Self::four_byte_finder().find(&stream_data[search_pos..]);
 
             let (start_code_pos, start_code_len) = match (next_three, next_four) {
                 (Some(pos3), Some(pos4)) if pos4 <= pos3 => (pos4, 4),
@@ -242,8 +242,9 @@ impl ResolutionDetector {
                 let end_pos = if next_search_pos >= stream_data.len() {
                     stream_data.len()
                 } else {
-                    let next_three = THREE_BYTE_FINDER.find(&stream_data[next_search_pos..]);
-                    let next_four = FOUR_BYTE_FINDER.find(&stream_data[next_search_pos..]);
+                    let next_three =
+                        Self::three_byte_finder().find(&stream_data[next_search_pos..]);
+                    let next_four = Self::four_byte_finder().find(&stream_data[next_search_pos..]);
 
                     match (next_three, next_four) {
                         (Some(pos3), Some(pos4)) if pos4 <= pos3 => next_search_pos + pos4,

@@ -18,7 +18,4 @@ criterion = "0.7.0"
 name = "parser_benchmark"
 harness = false
 
-[[example]]
-name = "zero_copy_demo"
-path = "examples/zero_copy_demo.rs"
 

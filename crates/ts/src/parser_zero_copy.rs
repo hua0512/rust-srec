@@ -229,7 +229,7 @@ impl Iterator for PatProgramIterator {
         if self.data.remaining() >= 4 {
             let mut reader = &self.data[..];
             let program_number = reader.get_u16();
-            let pmt_pid = reader.get_u16() & 0x1FFF;
+            let pmt_pid = ((reader.get_u8() as u16 & 0x1F) << 8) | reader.get_u8() as u16;
             self.data.advance(4);
             Some(PatProgramRef {
                 program_number,
@@ -368,8 +368,9 @@ impl Iterator for PmtStreamIterator {
         if self.data.remaining() >= 5 {
             let mut reader = &self.data[..];
             let stream_type = StreamType::from(reader.get_u8());
-            let elementary_pid = reader.get_u16() & 0x1FFF;
-            let es_info_length = (reader.get_u16() & 0x0FFF) as usize;
+            let elementary_pid = ((reader.get_u8() as u16 & 0x1F) << 8) | reader.get_u8() as u16;
+            let es_info_length =
+                (((reader.get_u8() as u16 & 0x0F) << 8) | reader.get_u8() as u16) as usize;
             self.data.advance(5);
 
             if self.data.remaining() < es_info_length {

@@ -10,16 +10,15 @@ fn benchmark_parsers(c: &mut Criterion) {
     let ts_data = create_complex_ts_data();
     let ts_data_bytes = Bytes::from(ts_data.clone());
 
+    let mut parser = OwnedTsParser::new();
     group.bench_function("Original Parser", |b| {
         b.iter(|| {
-            let mut parser = OwnedTsParser::new();
             parser.parse_packets(black_box(&ts_data)).unwrap();
         })
     });
-
+    let mut parser = TsParser::new();
     group.bench_function("Zero-Copy Parser", |b| {
         b.iter(|| {
-            let mut parser = TsParser::new();
             parser
                 .parse_packets(
                     black_box(ts_data_bytes.clone()),
