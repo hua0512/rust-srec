@@ -574,10 +574,6 @@ impl<'a> DouyinRequest<'a> {
             qualities.iter().map(|q| (q.sdk_key, q)).collect();
 
         for (sdk_key, quality_data) in stream_data.data.iter() {
-            if origin_quality_filled && sdk_key == "origin" {
-                continue;
-            }
-
             let quality_details = quality_map.get(sdk_key.as_str());
             let (quality_name, bitrate, fps, codec) = match quality_details {
                 Some(details) => (
@@ -596,17 +592,20 @@ impl<'a> DouyinRequest<'a> {
                 })
             });
 
-            self._add_stream_if_url_present(
-                &quality_data.main.flv,
-                StreamFormat::Flv,
-                MediaFormat::Flv,
-                quality_name,
-                bitrate as u64,
-                &codec,
-                fps,
-                extras.as_ref(),
-                &mut streams,
-            );
+            // Skip FLV if origin quality filled and this is origin quality
+            if !(origin_quality_filled && sdk_key == "origin") {
+                self._add_stream_if_url_present(
+                    &quality_data.main.flv,
+                    StreamFormat::Flv,
+                    MediaFormat::Flv,
+                    quality_name,
+                    bitrate as u64,
+                    &codec,
+                    fps,
+                    extras.as_ref(),
+                    &mut streams,
+                );
+            }
 
             self._add_stream_if_url_present(
                 &quality_data.main.hls,
