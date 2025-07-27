@@ -125,6 +125,12 @@ impl DownloaderConfigBuilder {
         self
     }
 
+    /// Set custom parameters for requests
+    pub fn with_params(mut self, params: Vec<(String, String)>) -> Self {
+        self.config.params = params;
+        self
+    }
+
     /// Set the proxy configuration
     pub fn with_proxy(mut self, proxy: ProxyConfig) -> Self {
         self.config.proxy = Some(proxy);

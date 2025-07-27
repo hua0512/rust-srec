@@ -281,13 +281,6 @@ impl HlsProtocolBuilder {
     }
 
     /// Set maximum number of retries for downloading a segment.
-    /// Alias for `max_segment_retries`.
-    pub fn segment_retry_count(mut self, retries: u32) -> Self {
-        self.config.fetcher_config.max_segment_retries = retries;
-        self
-    }
-
-    /// Set maximum number of retries for downloading a segment.
     pub fn max_segment_retries(mut self, retries: u32) -> Self {
         self.config.fetcher_config.max_segment_retries = retries;
         self

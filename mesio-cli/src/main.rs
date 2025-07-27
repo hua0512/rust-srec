@@ -12,8 +12,6 @@ use mesio_engine::flv::FlvConfig;
 use mesio_engine::{DownloaderConfig, HlsProtocolBuilder, ProxyAuth, ProxyConfig, ProxyType};
 use pipeline_common::config::PipelineConfig;
 use tracing::{Level, error, info};
-use tracing_subscriber::FmtSubscriber;
-use tracing_subscriber::fmt::writer::MakeWriterExt;
 
 mod cli;
 mod config;
@@ -23,8 +21,10 @@ mod processor;
 mod utils;
 
 use cli::CliArgs;
+use tracing_subscriber::FmtSubscriber;
+use tracing_subscriber::fmt::writer::MakeWriterExt;
 use utils::progress::ProgressManager;
-use utils::{parse_size, parse_time};
+use utils::{parse_headers, parse_params, parse_size, parse_time};
 
 fn main() {
     if let Err(e) = bootstrap() {
@@ -69,7 +69,7 @@ async fn bootstrap() -> Result<(), AppError> {
     info!("██║ ╚═╝ ██║███████╗███████║██║╚██████╔╝");
     info!("╚═╝     ╚═╝╚══════╝╚══════╝╚═╝ ╚═════╝ ");
     info!("");
-    info!("Media Streaming Downloader - Part of the rust-srec project by hua0512");
+    info!("Media Streaming Downloader");
     info!("GitHub: https://github.com/hua0512/rust-srec");
     info!("==================================================================");
 
@@ -195,10 +195,9 @@ async fn bootstrap() -> Result<(), AppError> {
             .with_connect_timeout(Duration::from_secs(args.connect_timeout))
             .with_read_timeout(Duration::from_secs(args.read_timeout))
             .with_write_timeout(Duration::from_secs(args.write_timeout))
-            .with_headers(crate::utils::parse_headers(&args.headers))
-            .with_caching_enabled(false)
-            .force_ipv4(args.force_ipv4)
-            .force_ipv6(args.force_ipv6);
+            .with_headers(parse_headers(&args.headers))
+            .with_params(parse_params(&args.params)?)
+            .with_caching_enabled(false);
 
         if let Some(proxy) = proxy_config {
             builder = builder.with_proxy(proxy);
@@ -222,7 +221,11 @@ async fn bootstrap() -> Result<(), AppError> {
                 .try_into()
                 .map_err(|_| AppError::InvalidInput("Invalid HLS concurrency".to_string()))?,
         )
-        .segment_retry_count(args.hls_retries)
+        .initial_playlist_fetch_timeout(Duration::from_secs(args.hls_playlist_fetch_timeout))
+        .live_refresh_interval(Duration::from_secs(args.hls_playlist_min_refresh_interval))
+        .live_max_refresh_retries(args.hls_playlist_retries)
+        .max_segment_retries(args.hls_retries)
+        .segment_download_timeout(Duration::from_secs(args.hls_segment_timeout))
         .get_config();
 
     // Create the program configuration

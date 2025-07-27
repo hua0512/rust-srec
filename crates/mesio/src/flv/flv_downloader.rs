@@ -72,7 +72,12 @@ impl FlvDownloader {
     /// Core method to start a download request and return the response
     async fn start_download_request(&self, url: &Url) -> Result<Response, DownloadError> {
         info!(url = %url, "Starting download request");
-        let response = self.client.get(url.clone()).send().await?;
+        let response = self
+            .client
+            .get(url.clone())
+            .query(&self.config.base.params)
+            .send()
+            .await?;
 
         // Check response status
         if !response.status().is_success() {
@@ -243,7 +248,12 @@ impl FlvDownloader {
         info!(url = %url, "Starting FLV download (not in cache)");
 
         // Start the request
-        let response = self.client.get(url.clone()).send().await?;
+        let response = self
+            .client
+            .get(url.clone())
+            .query(&self.config.base.params)
+            .send()
+            .await?;
 
         // Check response status
         if !response.status().is_success() {
@@ -329,6 +339,7 @@ impl FlvDownloader {
             .client
             .get(url.clone())
             .header("Range", range_header)
+            .query(&self.config.base.params)
             .send()
             .await?;
 
@@ -433,6 +444,7 @@ impl FlvDownloader {
             .client
             .get(url.clone())
             .header("Range", range_header)
+            .query(&self.config.base.params)
             .send()
             .await?;
 
