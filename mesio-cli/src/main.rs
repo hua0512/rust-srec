@@ -197,7 +197,9 @@ async fn bootstrap() -> Result<(), AppError> {
             .with_write_timeout(Duration::from_secs(args.write_timeout))
             .with_headers(parse_headers(&args.headers))
             .with_params(parse_params(&args.params)?)
-            .with_caching_enabled(false);
+            .with_caching_enabled(false)
+            .with_force_ipv4(args.force_ipv4)
+            .with_force_ipv6(args.force_ipv6);
 
         if let Some(proxy) = proxy_config {
             builder = builder.with_proxy(proxy);
