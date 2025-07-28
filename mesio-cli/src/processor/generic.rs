@@ -1,10 +1,10 @@
 use crate::error::AppError;
-use crossbeam_channel as mpsc;
 use futures::{Stream, StreamExt};
 use pipeline_common::{
     PipelineError, PipelineProvider, ProtocolWriter, StreamerContext, config::PipelineConfig,
     progress::ProgressEvent,
 };
+use std::sync::mpsc;
 use std::{path::Path, sync::Arc};
 use tracing::warn;
 
@@ -26,8 +26,8 @@ where
     E: std::error::Error + Send + Sync + 'static,
     F: Fn(ProgressEvent) + Send + Sync + 'static,
 {
-    let (tx, rx) = mpsc::bounded(pipeline_common_config.channel_size);
-    let (processed_tx, processed_rx) = mpsc::bounded(pipeline_common_config.channel_size);
+    let (tx, rx) = mpsc::sync_channel(pipeline_common_config.channel_size);
+    let (processed_tx, processed_rx) = mpsc::sync_channel(pipeline_common_config.channel_size);
 
     let context = StreamerContext::new();
     let pipeline_provider = P::with_config(context, pipeline_common_config, pipeline_config);

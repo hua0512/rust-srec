@@ -2,7 +2,7 @@ use crate::config::ProgramConfig;
 use crate::error::AppError;
 use crate::processor::generic::process_stream;
 use crate::utils::{create_dirs, expand_name_url, format_bytes};
-use crossbeam_channel as mpsc;
+use std::sync::mpsc as mpsc;
 use flv::data::FlvData;
 use flv::parser_async::FlvDecoderStream;
 use flv_fix::writer::FlvWriter;
@@ -30,7 +30,7 @@ where
     E: std::error::Error + Send + Sync + 'static,
     F: Fn(ProgressEvent) + Send + Sync + 'static,
 {
-    let (tx, rx) = mpsc::bounded(pipeline_common_config.channel_size);
+    let (tx, rx) = mpsc::sync_channel(pipeline_common_config.channel_size);
     let mut writer = FlvWriter::new(
         output_dir.to_path_buf(),
         base_name.to_string(),

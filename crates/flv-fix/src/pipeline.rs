@@ -216,6 +216,7 @@ mod test {
     use pipeline_common::{
         PipelineError, ProgressEvent, ProtocolWriter, WriterError, init_test_tracing,
     };
+    use std::sync::mpsc;
 
     use std::path::Path;
     use tracing::info;
@@ -266,10 +267,9 @@ mod test {
             32 * 1024, // Input buffer capacity
         );
 
-        let (sender, receiver) = crossbeam_channel::bounded::<Result<FlvData, PipelineError>>(8);
+        let (sender, receiver) = mpsc::channel::<Result<FlvData, PipelineError>>(8);
 
-        let (output_tx, output_rx) =
-            crossbeam_channel::bounded::<Result<FlvData, PipelineError>>(8);
+        let (output_tx, output_rx) = mpsc::channel::<Result<FlvData, PipelineError>>(8);
 
         let process_task = Some(tokio::task::spawn_blocking(move || {
             let pipeline = pipeline.build_pipeline();

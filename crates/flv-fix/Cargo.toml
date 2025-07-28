@@ -15,7 +15,6 @@ crc32fast = "1.4.2"
 time = { version = "0.3.41", features = ["macros", "formatting"] }
 tracing = "0.1.41"
 thiserror = "2.0.12"
-crossbeam-channel = "0.5.15"
 
 [dev-dependencies]
 tracing-subscriber = "0.3"

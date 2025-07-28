@@ -2,7 +2,7 @@ use crate::writer_task::FlvStrategyError;
 use pipeline_common::{PipelineError, ProtocolWriter, WriterError};
 
 use crate::writer_task::FlvFormatStrategy;
-use crossbeam_channel as mpsc;
+use std::sync::mpsc as mpsc;
 use flv::data::FlvData;
 use pipeline_common::{WriterConfig, WriterState, WriterTask, progress::ProgressEvent};
 use std::{path::PathBuf, sync::Arc};

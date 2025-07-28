@@ -962,7 +962,6 @@ dependencies = [
  "byteorder",
  "bytes",
  "crc32fast",
- "crossbeam-channel",
  "flv",
  "futures",
  "pipeline-common",
@@ -1239,7 +1238,6 @@ version = "0.1.1"
 dependencies = [
  "bytes",
  "crc32fast",
- "crossbeam-channel",
  "hls",
  "m3u8-rs",
  "pipeline-common",
@@ -1863,7 +1861,6 @@ version = "0.2.8"
 dependencies = [
  "bytes",
  "clap",
- "crossbeam-channel",
  "flv",
  "flv-fix",
  "futures",
@@ -2241,7 +2238,6 @@ name = "pipeline-common"
 version = "0.1.1"
 dependencies = [
  "criterion",
- "crossbeam-channel",
  "flume",
  "tempfile",
  "thiserror 2.0.12",

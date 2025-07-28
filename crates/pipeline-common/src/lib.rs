@@ -76,7 +76,7 @@ where
 
     fn run(
         &mut self,
-        input_stream: crossbeam_channel::Receiver<Result<Self::Item, PipelineError>>,
+        input_stream: std::sync::mpsc::Receiver<Result<Self::Item, PipelineError>>,
     ) -> Result<Self::Stats, Self::Error>;
 }
 

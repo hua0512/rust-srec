@@ -6,7 +6,7 @@ use std::{
     time::Duration,
 };
 
-use crossbeam_channel as mpsc;
+use std::sync::mpsc as mpsc;
 use hls::{HlsData, M4sData};
 use pipeline_common::{
     FormatStrategy, PostWriteAction, Progress, ProtocolWriter, WriterConfig, WriterState,
