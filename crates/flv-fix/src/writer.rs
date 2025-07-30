@@ -2,9 +2,9 @@ use crate::writer_task::FlvStrategyError;
 use pipeline_common::{PipelineError, ProtocolWriter, WriterError};
 
 use crate::writer_task::FlvFormatStrategy;
-use std::sync::mpsc as mpsc;
 use flv::data::FlvData;
 use pipeline_common::{WriterConfig, WriterState, WriterTask, progress::ProgressEvent};
+use std::sync::mpsc;
 use std::{path::PathBuf, sync::Arc};
 
 /// A specialized writer task for FLV data.

@@ -267,9 +267,9 @@ mod test {
             32 * 1024, // Input buffer capacity
         );
 
-        let (sender, receiver) = mpsc::channel::<Result<FlvData, PipelineError>>(8);
+        let (sender, receiver) = mpsc::sync_channel::<Result<FlvData, PipelineError>>(8);
 
-        let (output_tx, output_rx) = mpsc::channel::<Result<FlvData, PipelineError>>(8);
+        let (output_tx, output_rx) = mpsc::sync_channel::<Result<FlvData, PipelineError>>(8);
 
         let process_task = Some(tokio::task::spawn_blocking(move || {
             let pipeline = pipeline.build_pipeline();

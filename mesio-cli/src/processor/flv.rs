@@ -2,7 +2,6 @@ use crate::config::ProgramConfig;
 use crate::error::AppError;
 use crate::processor::generic::process_stream;
 use crate::utils::{create_dirs, expand_name_url, format_bytes};
-use std::sync::mpsc as mpsc;
 use flv::data::FlvData;
 use flv::parser_async::FlvDecoderStream;
 use flv_fix::writer::FlvWriter;
@@ -12,6 +11,7 @@ use mesio_engine::DownloaderInstance;
 use pipeline_common::{
     PipelineError, ProtocolWriter, config::PipelineConfig, progress::ProgressEvent,
 };
+use std::sync::mpsc;
 use std::time::Instant;
 use std::{path::Path, sync::Arc};
 use tokio::fs::File;

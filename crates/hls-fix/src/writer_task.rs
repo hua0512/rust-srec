@@ -6,13 +6,13 @@ use std::{
     time::Duration,
 };
 
-use std::sync::mpsc as mpsc;
 use hls::{HlsData, M4sData};
 use pipeline_common::{
     FormatStrategy, PostWriteAction, Progress, ProtocolWriter, WriterConfig, WriterState,
     WriterTask, expand_filename_template,
 };
 use pipeline_common::{WriterError, progress::ProgressEvent};
+use std::sync::mpsc;
 use tracing::{debug, error, info};
 
 use crate::analyzer::HlsAnalyzer;

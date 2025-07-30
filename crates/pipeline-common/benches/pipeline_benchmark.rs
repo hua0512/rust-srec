@@ -1,4 +1,4 @@
-use criterion::{ criterion_group, criterion_main, Criterion};
+use criterion::{Criterion, criterion_group, criterion_main};
 use pipeline_common::{Pipeline, PipelineError, Processor};
 use std::sync::Arc;
 
@@ -68,7 +68,7 @@ impl<T: Clone> RecursivePipeline<T> {
 fn build_iterative_pipeline(num_processors: usize) -> Pipeline<u32> {
     let mut pipeline = Pipeline::new(Arc::new(Default::default()));
     for _ in 0..num_processors {
-        pipeline = pipeline.add_processor(CounterProcessor::default());
+        pipeline = pipeline.add_processor(CounterProcessor);
     }
     pipeline
 }
@@ -76,7 +76,7 @@ fn build_iterative_pipeline(num_processors: usize) -> Pipeline<u32> {
 fn build_recursive_pipeline(num_processors: usize) -> RecursivePipeline<u32> {
     let mut pipeline = RecursivePipeline::new();
     for _ in 0..num_processors {
-        pipeline = pipeline.add_processor(CounterProcessor::default());
+        pipeline = pipeline.add_processor(CounterProcessor);
     }
     pipeline
 }
@@ -87,7 +87,7 @@ fn pipeline_benchmark(c: &mut Criterion) {
 
     for count in processor_counts.iter() {
         group.bench_with_input(
-            format!("Iterative - {} processors", count),
+            format!("Iterative - {count} processors"),
             count,
             |b, &num_processors| {
                 b.iter_with_setup(
@@ -109,7 +109,7 @@ fn pipeline_benchmark(c: &mut Criterion) {
         );
 
         group.bench_with_input(
-            format!("Recursive - {} processors", count),
+            format!("Recursive - {count} processors"),
             count,
             |b, &num_processors| {
                 b.iter_with_setup(
