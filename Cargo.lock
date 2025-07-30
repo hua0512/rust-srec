@@ -2238,6 +2238,7 @@ name = "pipeline-common"
 version = "0.1.1"
 dependencies = [
  "criterion",
+ "crossbeam-channel",
  "flume",
  "tempfile",
  "thiserror 2.0.12",

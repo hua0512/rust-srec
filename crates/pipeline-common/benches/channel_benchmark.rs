@@ -4,7 +4,7 @@ use std::sync::mpsc;
 use std::thread;
 use std::time::Duration;
 
-const NUM_MESSAGES: usize = 1_000_000;
+const NUM_MESSAGES: usize = 5_000_000;
 
 fn mpsc_benchmark(c: &mut Criterion) {
     c.bench_function("mpsc", |b| {
@@ -128,7 +128,7 @@ fn crossbeam_bounded_benchmark(c: &mut Criterion) {
 
 criterion_group!(
     name = benches;
-    config = Criterion::default().measurement_time(Duration::from_secs(15));
+    config = Criterion::default().measurement_time(Duration::from_secs(50));
     targets = mpsc_benchmark,
     flume_benchmark,
     crossbeam_benchmark,
