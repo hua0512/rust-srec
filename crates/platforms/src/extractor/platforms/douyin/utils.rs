@@ -36,9 +36,9 @@ pub(crate) fn get_common_params() -> HashMap<&'static str, &'static str> {
     params.insert("browser_language", "zh-CN");
     params.insert("browser_platform", "Win32");
     params.insert("browser_name", "Mozilla");
-    // remove prefix 'mozilla/'
     let ua = DEFAULT_UA.trim_start_matches("Mozilla/");
-    params.insert("browser_version", ua);
+    let browser_version = ua.split("Chrome/").nth(1).unwrap().split(" ").nth(0).unwrap();
+    params.insert("browser_version", browser_version);
     params.insert("aid", "6383");
     params.insert("live_id", "1");
     params.insert("enter_from", "web_live");

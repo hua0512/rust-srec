@@ -200,7 +200,7 @@ impl<'a> DouyinRequest<'a> {
     async fn get_pc_response(&mut self) -> Result<String, ExtractorError> {
         let response = self
             .request(reqwest::Method::GET, WEBCAST_ENTER_URL)
-            .query(&[("web_rid", &self.web_rid)])
+            .query(&[("web_rid", &self.web_rid), ("a_bogus", "0")])
             .send()
             .await
             .map_err(ExtractorError::HttpError)?;
@@ -730,7 +730,7 @@ mod tests {
     use crate::extractor::platforms::douyin::models::{DouyinAvatarThumb, DouyinUserInfo};
     use crate::extractor::platforms::douyin::utils::GlobalTtwidManager;
 
-    const TEST_URL: &str = "https://live.douyin.com/Esdeathkami.";
+    const TEST_URL: &str = "https://live.douyin.com/231670159245";
 
     #[tokio::test]
     #[ignore]
