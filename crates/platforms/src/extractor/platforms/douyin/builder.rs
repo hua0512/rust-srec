@@ -200,7 +200,7 @@ impl<'a> DouyinRequest<'a> {
     async fn get_pc_response(&mut self) -> Result<String, ExtractorError> {
         let response = self
             .request(reqwest::Method::GET, WEBCAST_ENTER_URL)
-            .query(&[("web_rid", &self.web_rid), ("a_bogus", "0")])
+            .query(&[("web_rid", &self.web_rid), ("a_bogus", &"0".to_string())])
             .send()
             .await
             .map_err(ExtractorError::HttpError)?;
