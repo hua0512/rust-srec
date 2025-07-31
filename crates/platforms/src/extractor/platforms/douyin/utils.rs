@@ -41,6 +41,7 @@ pub(crate) fn get_common_params() -> HashMap<&'static str, &'static str> {
     params.insert("browser_version", ua);
     params.insert("aid", "6383");
     params.insert("live_id", "1");
+    params.insert("enter_from", "web_live");
     params
 }
 
