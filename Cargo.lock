@@ -1759,6 +1759,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "libsm"
+version = "0.6.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6a50b2cfd98028663c889d55a4236eec5bf8cb9488f8026ef8a71e7d9af8604b"
+dependencies = [
+ "byteorder",
+ "getrandom 0.2.16",
+ "lazy_static",
+ "num-bigint",
+ "num-integer",
+ "num-traits",
+ "rand 0.8.5",
+ "yasna",
+]
+
+[[package]]
 name = "linux-raw-sys"
 version = "0.9.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2252,8 +2268,10 @@ name = "platforms-parser"
 version = "0.1.1"
 dependencies = [
  "async-trait",
+ "base64",
  "boa_engine",
  "bytes",
+ "libsm",
  "m3u8-rs",
  "md-5",
  "num_enum",
@@ -4295,6 +4313,15 @@ name = "writeable"
 version = "0.6.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ea2f10b9bb0928dfb1b42b65e1f9e36f7f54dbdf08457afefb38afcdec4fa2bb"
+
+[[package]]
+name = "yasna"
+version = "0.5.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e17bb3549cc1321ae1296b9cdc2698e2b6cb1992adfa19a8c72e5b7a738f44cd"
+dependencies = [
+ "num-bigint",
+]
 
 [[package]]
 name = "yoke"

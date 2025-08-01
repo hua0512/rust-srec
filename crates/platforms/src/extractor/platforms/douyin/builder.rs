@@ -1,6 +1,7 @@
-use crate::extractor::default::DEFAULT_MOBILE_UA;
+use crate::extractor::default::{DEFAULT_MOBILE_UA, DEFAULT_UA};
 use crate::extractor::error::ExtractorError;
 use crate::extractor::platform_extractor::{Extractor, PlatformExtractor};
+use crate::extractor::platforms::douyin::abogus::ABogus;
 use crate::extractor::platforms::douyin::apis::{
     APP_REFLOW_URL, BASE_URL, LIVE_DOUYIN_URL, WEBCAST_ENTER_URL,
 };
@@ -20,6 +21,7 @@ use regex::Regex;
 use reqwest::{Client, RequestBuilder};
 use rustc_hash::FxHashMap;
 use std::borrow::Cow;
+use std::collections::HashMap;
 use std::sync::{Arc, LazyLock};
 use tracing::debug;
 
@@ -77,10 +79,10 @@ impl Douyin {
             extractor.set_cookies_from_string(&cookies);
         }
 
-        let common_params = get_common_params();
-        for (key, value) in common_params {
-            extractor.add_param(key.to_string(), value.to_string());
-        }
+        // let common_params = get_common_params();
+        // for (key, value) in common_params {
+        //     extractor.add_param(key.to_string(), value.to_string());
+        // }
 
         let force_origin_quality = extras
             .as_ref()
@@ -196,11 +198,54 @@ impl<'a> DouyinRequest<'a> {
         builder
     }
 
+    /// Generate request parameters with a_bogus signature.
+    ///
+    /// This method takes a HashMap of parameters, converts them to a query string format,
+    /// and then generates an a_bogus signature using the ABogus algorithm. The a_bogus
+    /// signature is appended to the parameters to create a final authenticated parameter string.
+    ///
+    /// # Arguments
+    ///
+    /// * `params` - A HashMap containing the request parameters as key-value pairs
+    ///
+    /// # Returns
+    ///
+    /// * `Result<String, ExtractorError>` - The final parameter string with a_bogus signature on success,
+    ///   or an ExtractorError on failure
+    ///
+    /// # Example
+    ///
+    /// ```ignore
+    /// let mut params = HashMap::new();
+    /// params.insert("web_rid", "12345");
+    /// params.insert("aid", "6383");
+    /// let signed_params = self.get_a_bogus_params(&params).await?;
+    /// ```
+    async fn get_a_bogus_params(
+        &self,
+        params: &HashMap<&str, &str>,
+    ) -> Result<String, ExtractorError> {
+        let params_str = params
+            .iter()
+            .map(|(k, v)| format!("{k}={v}"))
+            .collect::<Vec<_>>()
+            .join("&");
+        debug!("params_str: {}", params_str);
+        let mut abogus = ABogus::new(None, Some(DEFAULT_UA), None);
+        let (final_params, _, _, _) = abogus.generate_abogus(&params_str, "");
+        Ok(final_params)
+    }
+
     /// Fetches the main PC API response.
     async fn get_pc_response(&mut self) -> Result<String, ExtractorError> {
+        let mut params = get_common_params();
+        params.insert("web_rid", &self.web_rid);
+        let abogus = self.get_a_bogus_params(&params).await?;
+        let url = format!("{WEBCAST_ENTER_URL}?{abogus}");
+        debug!("url: {}", url);
+
         let response = self
-            .request(reqwest::Method::GET, WEBCAST_ENTER_URL)
-            .query(&[("web_rid", &self.web_rid), ("a_bogus", &"0".to_string())])
+            .request(reqwest::Method::GET, &url)
             .send()
             .await
             .map_err(ExtractorError::HttpError)?;
@@ -214,28 +259,29 @@ impl<'a> DouyinRequest<'a> {
         let default_room_id = "2";
         let room_id = self.id_str.as_ref().map_or(default_room_id, |v| v.as_str());
         let sec_rid = self.sec_rid.as_ref().unwrap().as_str();
+        let mut params = HashMap::new();
+        params.insert("room_id", room_id);
+        params.insert("sec_user_id", sec_rid);
+        params.insert("type_id", "0");
+        params.insert("live_id", "1");
+        params.insert("version_code", "99.99.99");
+        params.insert("app_id", "1128");
+        params.insert("compress", "gzip");
+        params.insert("aid", "6383");
+
+        let abogus = self.get_a_bogus_params(&params).await?;
+
+        let url = format!("{APP_REFLOW_URL}?{abogus}");
+        debug!("url: {}", url);
+
         let mut builder = self
             .config
             .extractor
             .client
-            .request(reqwest::Method::GET, APP_REFLOW_URL)
+            .request(reqwest::Method::GET, &url)
             .header(reqwest::header::REFERER, BASE_URL)
             .header(reqwest::header::ORIGIN, BASE_URL)
-            .header(reqwest::header::USER_AGENT, DEFAULT_MOBILE_UA)
-            .query(&[
-                ("room_id", room_id),
-                ("sec_user_id", sec_rid),
-                ("type_id", "0"),
-                ("live_id", "1"),
-                ("version_code", "99.99.99"),
-                ("app_id", "1128"),
-                (
-                    "msToken",
-                    self.params.get("msToken").unwrap_or(&"".to_string()),
-                ),
-                ("compress", "gzip"),
-                ("aid", "6383"),
-            ]);
+            .header(reqwest::header::USER_AGENT, DEFAULT_MOBILE_UA);
 
         if !self.cookies.is_empty() {
             let cookie_string = self
@@ -730,7 +776,7 @@ mod tests {
     use crate::extractor::platforms::douyin::models::{DouyinAvatarThumb, DouyinUserInfo};
     use crate::extractor::platforms::douyin::utils::GlobalTtwidManager;
 
-    const TEST_URL: &str = "https://live.douyin.com/231670159245";
+    const TEST_URL: &str = "https://live.douyin.com/Shenxin543";
 
     #[tokio::test]
     #[ignore]
