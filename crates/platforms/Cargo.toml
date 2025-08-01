@@ -10,7 +10,7 @@ categories = ["multimedia::streaming", "api-bindings"]
 
 [dependencies]
 bytes = { version = "1.10.1" }
-tokio = { version = "1.47.0", features = [
+tokio = { version = "1.47.1", features = [
     "rt-multi-thread",
     "io-util",
     "macros",
