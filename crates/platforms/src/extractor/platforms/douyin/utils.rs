@@ -37,7 +37,13 @@ pub(crate) fn get_common_params() -> HashMap<&'static str, &'static str> {
     params.insert("browser_platform", "Win32");
     params.insert("browser_name", "Mozilla");
     let ua = DEFAULT_UA.trim_start_matches("Mozilla/");
-    let browser_version = ua.split("Chrome/").nth(1).unwrap().split(" ").nth(0).unwrap();
+    let browser_version = ua
+        .split("Chrome/")
+        .nth(1)
+        .unwrap()
+        .split(" ")
+        .next()
+        .unwrap();
     params.insert("browser_version", browser_version);
     params.insert("aid", "6383");
     params.insert("live_id", "1");
