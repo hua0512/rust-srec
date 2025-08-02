@@ -312,12 +312,14 @@ impl PlatformExtractor for Bilibili {
             return Ok(());
         }
 
+        // 协议格式，0: http_stream(flv), 1: http_hls
         let protocol = match stream_info.stream_format {
             StreamFormat::Flv => "0",
             StreamFormat::Hls => "1",
             _ => "0,1",
         };
 
+        // 编码格式，0: flv, 1: ts, 2: fmp4
         let format = match stream_info.media_format {
             MediaFormat::Flv => "0",
             MediaFormat::Ts => "1",
@@ -351,11 +353,18 @@ impl PlatformExtractor for Bilibili {
             .first()
             .ok_or_else(|| ExtractorError::ValidationError("No stream found".to_string()))?;
 
-        let codec = stream
+        let format = stream
             .format
             .first()
-            .and_then(|f| f.codec.first())
-            .ok_or_else(|| ExtractorError::ValidationError("No codec found".to_string()))?;
+            .ok_or_else(|| ExtractorError::ValidationError("No format found".to_string()))?;
+
+        let codec = format
+            .codec
+            .iter()
+            .find(|c| c.codec_name == stream_info.codec)
+            .ok_or_else(|| {
+                ExtractorError::ValidationError("No matching codec found".to_string())
+            })?;
 
         let current_qn: u64 = codec.current_qn.try_into().unwrap();
         if current_qn != qn {
@@ -365,28 +374,30 @@ impl PlatformExtractor for Bilibili {
         }
 
         if let Some(cdn) = cdn {
-            for url_info in &codec.url_info {
-                let host_cdn = url_info
-                    .host
+            if let Some(url_info) = codec.url_info.iter().find(|&u| {
+                u.host
                     .split("//")
                     .nth(1)
                     .unwrap_or("")
                     .split('.')
                     .next()
-                    .unwrap_or("");
-                if host_cdn == cdn {
-                    let url = format!("{}{}{}", url_info.host, codec.base_url, url_info.extra);
-                    if reqwest::Url::parse(&url).is_ok() {
-                        stream_info.url = url;
-                        return Ok(());
-                    }
+                    .unwrap_or("")
+                    == cdn
+            }) {
+                let url = format!("{}{}{}", url_info.host, codec.base_url, url_info.extra);
+                if reqwest::Url::parse(&url).is_ok() {
+                    stream_info.url = url;
+                    return Ok(());
                 }
             }
+            return Err(ExtractorError::ValidationError(format!(
+                "Requested CDN '{cdn}' not found."
+            )));
         }
 
+        // If no CDN is specified, just pick the first valid URL.
         for url_info in &codec.url_info {
             let url = format!("{}{}{}", url_info.host, codec.base_url, url_info.extra);
-            // check if url is valid
             if reqwest::Url::parse(&url).is_ok() {
                 stream_info.url = url;
                 return Ok(());
