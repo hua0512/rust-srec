@@ -2,6 +2,36 @@ use crate::media::{StreamFormat, formats::MediaFormat};
 use serde::{Deserialize, Serialize};
 use std::fmt;
 
+/// StreamInfo represents a media stream with all its properties and metadata.
+///
+/// ## Serialization
+///
+/// StreamInfo implements Serde's Serialize and Deserialize traits, allowing it to be
+/// easily converted to and from various formats:
+///
+/// ### JSON Serialization
+/// ```rust
+/// use serde_json;
+///
+/// // Serialize to JSON
+/// let json_string = serde_json::to_string(&stream_info)?;
+/// let pretty_json = serde_json::to_string_pretty(&stream_info)?;
+///
+/// // Deserialize from JSON
+/// let stream_info: StreamInfo = serde_json::from_str(&json_string)?;
+/// ```
+///
+/// ### Other formats
+/// The struct can be serialized to any format supported by Serde, including:
+/// - YAML (with serde_yaml)
+/// - TOML (with toml)
+/// - CBOR (with serde_cbor)
+/// - MessagePack (with rmp-serde)
+///
+/// ### Field serialization notes
+/// - `stream_format` and `media_format` are serialized as strings using their `as_str()` methods
+/// - `extras` field is optional and will serialize as `null` when `None`
+/// - All numeric fields maintain their precision during serialization
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct StreamInfo {
     // Url of the stream
@@ -18,6 +48,33 @@ pub struct StreamInfo {
     pub codec: String,
     pub fps: f64,
     pub is_headers_needed: bool,
+}
+
+impl StreamInfo {
+    /// Serialize the StreamInfo to a JSON string
+    pub fn to_json(&self) -> Result<String, serde_json::Error> {
+        serde_json::to_string(self)
+    }
+
+    /// Serialize the StreamInfo to a pretty-formatted JSON string
+    pub fn to_json_pretty(&self) -> Result<String, serde_json::Error> {
+        serde_json::to_string_pretty(self)
+    }
+
+    /// Deserialize a StreamInfo from a JSON string
+    pub fn from_json(json: &str) -> Result<Self, serde_json::Error> {
+        serde_json::from_str(json)
+    }
+
+    /// Convert to a serde_json::Value for flexible manipulation
+    pub fn to_value(&self) -> Result<serde_json::Value, serde_json::Error> {
+        serde_json::to_value(self)
+    }
+
+    /// Create from a serde_json::Value
+    pub fn from_value(value: serde_json::Value) -> Result<Self, serde_json::Error> {
+        serde_json::from_value(value)
+    }
 }
 
 impl fmt::Display for StreamInfo {

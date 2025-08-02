@@ -78,7 +78,6 @@ impl CommandExecutor {
         payload: &str,
         output_format: &OutputFormat,
         output_file: Option<&Path>,
-        include_extras: bool,
     ) -> Result<()> {
         let mut stream_info: StreamInfo = serde_json::from_str(payload)?;
 
@@ -91,8 +90,7 @@ impl CommandExecutor {
         extractor.get_url(&mut stream_info).await?;
 
         let output_manager = OutputManager::new(self.config.colored_output);
-        let output =
-            output_manager.format_stream_info(&stream_info, output_format, include_extras)?;
+        let output = output_manager.format_stream_info(&stream_info, output_format)?;
 
         write_output(&output, output_file)?;
 
@@ -109,7 +107,6 @@ impl CommandExecutor {
         quality: Option<&str>,
         format: Option<&str>,
         auto_select: bool,
-        include_extras: bool,
         output_format: OutputFormat,
         timeout_duration: Duration,
         retries: u32,
@@ -158,7 +155,6 @@ impl CommandExecutor {
                     &media_info,
                     final_stream.as_ref(),
                     &output_format,
-                    include_extras,
                 )?;
 
                 write_output(&output, output_file)?;

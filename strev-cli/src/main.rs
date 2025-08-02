@@ -118,7 +118,6 @@ async fn run(args: Args) -> Result<()> {
             quality,
             format,
             auto_select,
-            no_extras,
         } => {
             executor
                 .extract_single(
@@ -129,7 +128,6 @@ async fn run(args: Args) -> Result<()> {
                     quality.as_deref(),
                     format.as_deref(),
                     auto_select,
-                    !no_extras, // Include extras by default, exclude only if --no-extras is specified
                     output,
                     std::time::Duration::from_secs(args.timeout),
                     args.retries,
@@ -194,7 +192,6 @@ async fn run(args: Args) -> Result<()> {
             payload,
             output,
             output_file,
-            no_extras,
         } => {
             let payload_str = if let Some(p) = payload {
                 p
@@ -211,7 +208,6 @@ async fn run(args: Args) -> Result<()> {
                     &payload_str,
                     &output,
                     output_file.as_deref(),
-                    !no_extras,
                 )
                 .await?;
         }

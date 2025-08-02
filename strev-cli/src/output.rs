@@ -21,20 +21,17 @@ impl OutputManager {
         media_info: &MediaInfo,
         stream_info: Option<&StreamInfo>,
         format: &OutputFormat,
-        include_extras: bool,
     ) -> Result<String> {
         match format {
-            OutputFormat::Pretty => self.format_pretty(media_info, stream_info, include_extras),
-            OutputFormat::Json => self.format_json(media_info, stream_info, include_extras, true),
-            OutputFormat::JsonCompact => {
-                self.format_json(media_info, stream_info, include_extras, false)
-            }
+            OutputFormat::Pretty => self.format_pretty(media_info, stream_info),
+            OutputFormat::Json => self.format_json(media_info, true),
+            OutputFormat::JsonCompact => self.format_json(media_info, false),
             #[cfg(feature = "table-output")]
             OutputFormat::Table => self.format_table(media_info, stream_info),
             #[cfg(not(feature = "table-output"))]
             OutputFormat::Table => {
                 // Fallback to pretty format when table feature is disabled
-                self.format_pretty(media_info, stream_info, include_extras)
+                self.format_pretty(media_info, stream_info)
             }
             OutputFormat::Csv => self.format_csv(media_info, stream_info),
         }
@@ -43,23 +40,20 @@ impl OutputManager {
         &self,
         stream_info: &StreamInfo,
         format: &OutputFormat,
-        include_extras: bool,
     ) -> Result<String> {
         match format {
-            OutputFormat::Pretty => self.format_stream_pretty(stream_info, include_extras),
-            OutputFormat::Json => self.format_stream_json(stream_info, include_extras, true),
-            OutputFormat::JsonCompact => {
-                self.format_stream_json(stream_info, include_extras, false)
-            }
+            OutputFormat::Pretty => self.format_stream_pretty(stream_info),
+            OutputFormat::Json => self.format_stream_json(stream_info, true),
+            OutputFormat::JsonCompact => self.format_stream_json(stream_info, false),
             #[cfg(feature = "table-output")]
-            OutputFormat::Table => self.format_stream_table(stream_info, include_extras),
+            OutputFormat::Table => self.format_stream_table(stream_info),
             #[cfg(not(feature = "table-output"))]
-            OutputFormat::Table => self.format_stream_pretty(stream_info, include_extras),
-            OutputFormat::Csv => self.format_stream_csv(stream_info, include_extras),
+            OutputFormat::Table => self.format_stream_pretty(stream_info),
+            OutputFormat::Csv => self.format_stream_csv(stream_info),
         }
     }
 
-    fn format_stream_pretty(&self, stream: &StreamInfo, include_extras: bool) -> Result<String> {
+    fn format_stream_pretty(&self, stream: &StreamInfo) -> Result<String> {
         let mut output = String::new();
         output.push_str(&self.colorize("Stream Details:", &Color::Green, true));
         output.push('\n');
@@ -67,7 +61,7 @@ impl OutputManager {
         output.push_str(&format!(
             "  {}: {}\n",
             self.colorize("Format", &Color::Yellow, false),
-            self.colorize(&stream.stream_format.to_string(), &Color::Cyan, false)
+            self.colorize(stream.stream_format.as_str(), &Color::Cyan, false)
         ));
         output.push_str(&format!(
             "  {}: {}\n",
@@ -87,7 +81,7 @@ impl OutputManager {
         output.push_str(&format!(
             "  {}: {}\n",
             self.colorize("Media Format", &Color::Yellow, false),
-            self.colorize(&stream.media_format.to_string(), &Color::Cyan, false)
+            self.colorize(stream.media_format.as_str(), &Color::Cyan, false)
         ));
         output.push_str(&format!(
             "  {}: {}\n",
@@ -105,54 +99,36 @@ impl OutputManager {
             self.colorize(&stream.priority.to_string(), &Color::Cyan, false)
         ));
 
-        if include_extras {
-            if let Some(extras) = &stream.extras {
-                if let Some(extras_obj) = extras.as_object().filter(|m| !m.is_empty()) {
+        if let Some(extras) = &stream.extras {
+            output.push_str(&format!(
+                "  {}:\n",
+                self.colorize("Extras", &Color::Yellow, false)
+            ));
+            if let Some(extras_map) = extras.as_object() {
+                for (key, value) in extras_map {
                     output.push_str(&format!(
-                        "  {}:\n",
-                        self.colorize("Extras", &Color::Yellow, false)
+                        "    {}: {}\n",
+                        self.colorize(key, &Color::Green, false),
+                        self.colorize(&value.to_string(), &Color::Cyan, false)
                     ));
-                    for (key, value) in extras_obj {
-                        output.push_str(&format!(
-                            "    {}: {}\n",
-                            self.colorize(key, &Color::Green, false),
-                            self.colorize(&value.to_string(), &Color::Cyan, false)
-                        ));
-                    }
                 }
             }
         }
         Ok(output)
     }
 
-    fn format_stream_json(
-        &self,
-        stream_info: &StreamInfo,
-        include_extras: bool,
-        pretty: bool,
-    ) -> Result<String> {
-        let mut stream_data = serde_json::to_value(stream_info)?;
-        if !include_extras {
-            if let Some(obj) = stream_data.as_object_mut() {
-                obj.remove("extras");
-            }
-        }
-
-        let result = if pretty {
-            serde_json::to_string_pretty(&stream_data)?
+    fn format_stream_json(&self, stream_info: &StreamInfo, pretty: bool) -> Result<String> {
+        let stream_data = stream_info.to_value()?;
+        if pretty {
+            serde_json::to_string_pretty(&stream_data)
         } else {
-            serde_json::to_string(&stream_data)?
-        };
-
-        Ok(result)
+            serde_json::to_string(&stream_data)
+        }
+        .map_err(Into::into)
     }
 
     #[cfg(feature = "table-output")]
-    fn format_stream_table(
-        &self,
-        stream_info: &StreamInfo,
-        include_extras: bool,
-    ) -> Result<String> {
+    fn format_stream_table(&self, stream_info: &StreamInfo) -> Result<String> {
         #[derive(Tabled)]
         struct StreamTableRow<'a> {
             property: &'a str,
@@ -162,7 +138,7 @@ impl OutputManager {
         let mut rows = vec![
             StreamTableRow {
                 property: "Format",
-                value: Cow::Owned(stream_info.stream_format.to_string()),
+                value: Cow::Borrowed(stream_info.stream_format.as_str()),
             },
             StreamTableRow {
                 property: "Quality",
@@ -178,7 +154,7 @@ impl OutputManager {
             },
             StreamTableRow {
                 property: "Media Format",
-                value: Cow::Owned(stream_info.media_format.to_string()),
+                value: Cow::Borrowed(stream_info.media_format.as_str()),
             },
             StreamTableRow {
                 property: "Codec",
@@ -194,15 +170,13 @@ impl OutputManager {
             },
         ];
 
-        if include_extras {
-            if let Some(extras) = &stream_info.extras {
-                if let Some(extras_obj) = extras.as_object() {
-                    for (key, value) in extras_obj {
-                        rows.push(StreamTableRow {
-                            property: key,
-                            value: Cow::Owned(value.to_string()),
-                        });
-                    }
+        if let Some(extras) = &stream_info.extras {
+            if let Some(extras_obj) = extras.as_object() {
+                for (key, value) in extras_obj {
+                    rows.push(StreamTableRow {
+                        property: key,
+                        value: Cow::Owned(value.to_string()),
+                    });
                 }
             }
         }
@@ -211,7 +185,7 @@ impl OutputManager {
         Ok(table)
     }
 
-    fn format_stream_csv(&self, stream_info: &StreamInfo, include_extras: bool) -> Result<String> {
+    fn format_stream_csv(&self, stream_info: &StreamInfo) -> Result<String> {
         let mut output = String::new();
         let mut headers = vec![
             "quality",
@@ -225,26 +199,24 @@ impl OutputManager {
         ];
 
         let mut extras_keys = Vec::new();
-        if include_extras {
-            if let Some(extras) = &stream_info.extras {
-                if let Some(extras_obj) = extras.as_object() {
-                    for key in extras_obj.keys() {
-                        headers.push(key);
-                        extras_keys.push(key.as_str());
-                    }
+        if let Some(extras) = &stream_info.extras {
+            if let Some(extras_obj) = extras.as_object() {
+                for key in extras_obj.keys() {
+                    headers.push(key);
+                    extras_keys.push(key.as_str());
                 }
             }
         }
         output.push_str(&headers.join(","));
         output.push('\n');
 
-        let stream_format_str = stream_info.stream_format.to_string();
-        let media_format_str = stream_info.media_format.to_string();
+        let stream_format_str = stream_info.stream_format.as_str();
+        let media_format_str = stream_info.media_format.as_str();
 
         let mut record = vec![
             Self::escape_csv(&stream_info.quality),
-            Self::escape_csv(&stream_format_str),
-            Self::escape_csv(&media_format_str),
+            Self::escape_csv(stream_format_str),
+            Self::escape_csv(media_format_str),
             Self::escape_csv(&stream_info.url),
             Cow::Owned(stream_info.bitrate.to_string()),
             Self::escape_csv(&stream_info.codec),
@@ -252,13 +224,11 @@ impl OutputManager {
             Cow::Owned(stream_info.priority.to_string()),
         ];
 
-        if include_extras {
-            if let Some(extras) = &stream_info.extras {
-                if let Some(extras_obj) = extras.as_object() {
-                    for key in extras_keys {
-                        let value = extras_obj.get(key).and_then(|v| v.as_str()).unwrap_or("");
-                        record.push(Self::escape_csv(value));
-                    }
+        if let Some(extras) = &stream_info.extras {
+            if let Some(extras_obj) = extras.as_object() {
+                for key in extras_keys {
+                    let value = extras_obj.get(key).and_then(|v| v.as_str()).unwrap_or("");
+                    record.push(Self::escape_csv(value));
                 }
             }
         }
@@ -273,7 +243,6 @@ impl OutputManager {
         &self,
         media_info: &MediaInfo,
         stream_info: Option<&StreamInfo>,
-        include_extras: bool,
     ) -> Result<String> {
         let mut output = String::new();
 
@@ -324,7 +293,7 @@ impl OutputManager {
             output.push_str(&format!(
                 "  {}: {}\n",
                 self.colorize("Format", &Color::Yellow, false),
-                self.colorize(&stream.stream_format.to_string(), &Color::Cyan, false)
+                self.colorize(stream.stream_format.as_str(), &Color::Cyan, false)
             ));
 
             output.push_str(&format!(
@@ -348,7 +317,7 @@ impl OutputManager {
             output.push_str(&format!(
                 "  {}: {}\n",
                 self.colorize("Media Format", &Color::Yellow, false),
-                self.colorize(&stream.media_format.to_string(), &Color::Cyan, false)
+                self.colorize(stream.media_format.as_str(), &Color::Cyan, false)
             ));
 
             output.push_str(&format!(
@@ -368,40 +337,38 @@ impl OutputManager {
                 self.colorize("Priority", &Color::Yellow, false),
                 self.colorize(&stream.priority.to_string(), &Color::Cyan, false)
             ));
-
-            if include_extras {
-                if let Some(extras) = &stream.extras {
-                    if let Some(extras_obj) = extras.as_object().filter(|m| !m.is_empty()) {
-                        output.push_str(&format!(
-                            "  {}:\n",
-                            self.colorize("Extras", &Color::Yellow, false)
-                        ));
-                        for (key, value) in extras_obj {
-                            output.push_str(&format!(
-                                "    {}: {}\n",
-                                self.colorize(key, &Color::Green, false),
-                                self.colorize(&value.to_string(), &Color::Cyan, false)
-                            ));
-                        }
-                    }
+            if let Some(extras_obj) = stream
+                .extras
+                .as_ref()
+                .and_then(|v| v.as_object())
+                .filter(|m| !m.is_empty())
+            {
+                output.push_str(&format!(
+                    "  {}:\n",
+                    self.colorize("Extras", &Color::Yellow, false)
+                ));
+                for (key, value) in extras_obj {
+                    output.push_str(&format!(
+                        "    {}: {}\n",
+                        self.colorize(key, &Color::Green, false),
+                        self.colorize(&value.to_string(), &Color::Cyan, false)
+                    ));
                 }
             }
         }
 
         // Media Extras
-        if include_extras {
-            if let Some(ref extras) = media_info.extras {
-                if !extras.is_empty() {
-                    output.push('\n');
-                    output.push_str(&self.colorize("Media Extras:", &Color::Green, true));
-                    output.push('\n');
-                    for (key, value) in extras {
-                        output.push_str(&format!(
-                            "  {}: {}\n",
-                            self.colorize(key, &Color::Yellow, false),
-                            self.colorize(value, &Color::Cyan, false)
-                        ));
-                    }
+        if let Some(extras) = &media_info.extras {
+            if !extras.is_empty() {
+                output.push('\n');
+                output.push_str(&self.colorize("Media Extras:", &Color::Green, true));
+                output.push('\n');
+                for (key, value) in extras {
+                    output.push_str(&format!(
+                        "  {}: {}\n",
+                        self.colorize(key, &Color::Yellow, false),
+                        self.colorize(value, &Color::Cyan, false)
+                    ));
                 }
             }
         }
@@ -409,64 +376,16 @@ impl OutputManager {
         Ok(output)
     }
 
-    fn format_json(
-        &self,
-        media_info: &MediaInfo,
-        stream_info: Option<&StreamInfo>,
-        include_extras: bool,
-        pretty: bool,
-    ) -> Result<String> {
-        let mut output = serde_json::json!({
-            "media": {
-                "artist": &media_info.artist,
-                "title": &media_info.title,
-                "is_live": media_info.is_live,
-                "cover_url": &media_info.cover_url,
-                "artist_url": &media_info.artist_url,
-            }
-        });
+    fn format_json(&self, media_info: &MediaInfo, pretty: bool) -> Result<String> {
+        let media_data = media_info.to_value()?;
+        let output_data = serde_json::json!({ "media": media_data });
 
-        if include_extras {
-            if let Some(ref extras) = media_info.extras {
-                if !extras.is_empty() {
-                    output["media"]["extras"] = serde_json::to_value(extras)?;
-                }
-            }
-        }
-
-        if let Some(stream) = stream_info {
-            let mut stream_data = serde_json::json!({
-                "stream_format": stream.stream_format.to_string(),
-                "quality": &stream.quality,
-                "url": stream.url.as_str(),
-                "bitrate": stream.bitrate,
-                "media_format": stream.media_format.to_string(),
-                "codec": &stream.codec,
-                "fps": stream.fps,
-                "priority": stream.priority,
-            });
-
-            if include_extras {
-                if let Some(extras) = &stream.extras {
-                    stream_data["extras"] = extras.clone();
-                }
-            }
-
-            output["stream"] = stream_data;
-        } else if let Some(media_obj) = output.get_mut("media").and_then(|m| m.as_object_mut()) {
-            media_obj.insert(
-                "streams".to_string(),
-                serde_json::to_value(&media_info.streams)?,
-            );
-        }
-
-        let result = if pretty {
-            serde_json::to_string_pretty(&output)?
+        if pretty {
+            serde_json::to_string_pretty(&output_data)
         } else {
-            serde_json::to_string(&output)?
-        };
-
-        Ok(result)
+            serde_json::to_string(&output_data)
+        }
+        .map_err(Into::into)
     }
 
     #[cfg(feature = "table-output")]
@@ -513,7 +432,7 @@ impl OutputManager {
         if let Some(stream) = stream_info {
             rows.push(TableRow {
                 property: "Stream Format",
-                value: Cow::Owned(stream.stream_format.to_string()),
+                value: Cow::Borrowed(stream.stream_format.as_str()),
             });
             rows.push(TableRow {
                 property: "Quality",
@@ -529,7 +448,7 @@ impl OutputManager {
             });
             rows.push(TableRow {
                 property: "Media Format",
-                value: Cow::Owned(stream.media_format.to_string()),
+                value: Cow::Borrowed(stream.media_format.as_str()),
             });
             rows.push(TableRow {
                 property: "Codec",
@@ -585,7 +504,10 @@ impl OutputManager {
                 Self::escape_csv(stream.url.as_str())
             ));
             output.push_str(&format!("bitrate,{}\n", stream.bitrate));
-            output.push_str(&format!("media_format,\"{}\"\n", stream.media_format));
+            output.push_str(&format!(
+                "media_format,\"{}\"\n",
+                stream.media_format.as_str()
+            ));
             output.push_str(&format!("codec,\"{}\"\n", Self::escape_csv(&stream.codec)));
             output.push_str(&format!("fps,{}\n", stream.fps));
             output.push_str(&format!("priority,{}\n", stream.priority));
@@ -631,19 +553,19 @@ impl OutputManager {
                 output.push('\n');
             } else {
                 for stream in &media_info.streams {
-                    let stream_format_str = stream.stream_format.to_string();
-                    let media_format_str = stream.media_format.to_string();
+                    let stream_format_str = stream.stream_format.as_str();
+                    let media_format_str = stream.media_format.as_str();
                     let row = [
                         Self::escape_csv(&media_info.artist),
                         Self::escape_csv(&media_info.title),
                         Cow::Owned(media_info.is_live.to_string()),
                         Self::escape_csv(media_info.cover_url.as_deref().unwrap_or("")),
                         Self::escape_csv(media_info.artist_url.as_deref().unwrap_or("")),
-                        Self::escape_csv(&stream_format_str),
+                        Self::escape_csv(stream_format_str),
                         Self::escape_csv(&stream.quality),
                         Self::escape_csv(stream.url.as_str()),
                         Cow::Owned(stream.bitrate.to_string()),
-                        Self::escape_csv(&media_format_str),
+                        Self::escape_csv(media_format_str),
                         Self::escape_csv(&stream.codec),
                         Cow::Owned(stream.fps.to_string()),
                         Cow::Owned(stream.priority.to_string()),

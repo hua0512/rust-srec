@@ -81,10 +81,6 @@ pub enum Commands {
         /// Auto-select best quality stream without prompt
         #[arg(long)]
         auto_select: bool,
-
-        /// Exclude extra metadata from output
-        #[arg(long)]
-        no_extras: bool,
     },
 
     /// Process multiple URLs from a file
@@ -157,10 +153,6 @@ pub enum Commands {
         /// Save output to file
         #[arg(short = 'O', long)]
         output_file: Option<PathBuf>,
-
-        /// Exclude extra metadata from output
-        #[arg(long)]
-        no_extras: bool,
     },
 }
 

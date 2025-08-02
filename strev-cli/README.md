@@ -77,7 +77,6 @@ Extracts media information from a single URL.
 | `--quality <QUALITY>`  |       | Filter streams by quality (e.g., "1080p").         | (none)   |
 | `--format <FORMAT>`    |       | Filter streams by format (e.g., "mp4", "flv").     | (none)   |
 | `--auto-select`        |       | Auto-select the best quality stream without a prompt.| `false`  |
-| `--no-extras`          |       | Exclude extra metadata from the output.            | `false`  |
 
 #### Behavior
 
@@ -126,7 +125,6 @@ Resolves a final stream URL from a stream data payload, which is typically obtai
 | `--extras <JSON>`      |       | Extra parameters for the extractor (JSON string).  | (none)   |
 | `--output <FORMAT>`    | `-o`  | Output format.                                     | `pretty` |
 | `--output-file <PATH>` | `-O`  | Save the output to a file instead of `stdout`.     | (none)   |
-| `--no-extras`          |       | Exclude extra metadata from the output.            | `false`  |
 
 ---
 
