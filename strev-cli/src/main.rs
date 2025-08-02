@@ -13,54 +13,86 @@ use crate::{
 use clap::Parser;
 #[cfg(feature = "colored-output")]
 use colored::*;
-use std::process;
+use std::{
+    io::{self, Read},
+    process,
+};
 use tracing::{Level, error, info};
 use tracing_subscriber::{filter::EnvFilter, fmt, prelude::*};
 
 #[tokio::main]
 async fn main() {
-    let result = run().await;
+    let args = Args::parse();
+    let result = run(args).await;
 
     if let Err(e) = result {
-        error!("Application error: {}", e);
-        #[cfg(feature = "colored-output")]
-        {
-            eprintln!("{} {}", "Error:".red().bold(), e);
-        }
-        #[cfg(not(feature = "colored-output"))]
-        {
-            eprintln!("Error: {}", e);
+        let output_format = match &Args::parse().command {
+            Commands::Extract { output, .. } => Some(*output),
+            Commands::Batch { output_format, .. } => Some(*output_format),
+            Commands::Resolve { output, .. } => Some(*output),
+            _ => None,
+        };
+
+        match output_format {
+            Some(crate::cli::OutputFormat::Json) | Some(crate::cli::OutputFormat::JsonCompact) => {
+                let error_json = serde_json::json!({
+                    "status": "error",
+                    "message": e.to_string(),
+                });
+                println!("{}", serde_json::to_string(&error_json).unwrap());
+            }
+            _ => {
+                error!("Application error: {}", e);
+                #[cfg(feature = "colored-output")]
+                {
+                    eprintln!("{} {}", "Error:".red().bold(), e);
+                }
+                #[cfg(not(feature = "colored-output"))]
+                {
+                    eprintln!("Error: {}", e);
+                }
+            }
         }
         process::exit(1);
     }
 }
 
 #[allow(clippy::println_empty_string)]
-async fn run() -> Result<()> {
-    let args = Args::parse();
+async fn run(args: Args) -> Result<()> {
+    let output_format = match &args.command {
+        Commands::Extract { output, .. } => Some(*output),
+        Commands::Batch { output_format, .. } => Some(*output_format),
+        Commands::Resolve { output, .. } => Some(*output),
+        _ => None,
+    };
 
-    println!("==================================================================");
-    println!("███████╗████████╗██████╗ ███████╗██╗   ██╗");
-    println!("██╔════╝╚══██╔══╝██╔══██╗██╔════╝██║   ██║");
-    println!("███████╗   ██║   ██████╔╝█████╗  ██║   ██║");
-    println!("╚════██║   ██║   ██╔══██╗██╔══╝  ╚██╗ ██╔╝");
-    println!("███████║   ██║   ██║  ██║███████╗ ╚████╔╝ ");
-    println!("╚══════╝   ╚═╝   ╚═╝  ╚═╝╚══════╝  ╚═══╝  ");
-    println!("");
-    println!(
-        "Streev - CLI tool for streaming media extraction and retrieval from various platforms"
-    );
-    println!("GitHub: https://github.com/hua0512/rust-srec");
-    println!("==================================================================");
-    println!("");
+    let show_banner = matches!(output_format, Some(crate::cli::OutputFormat::Pretty));
 
-    // Initialize logging
-    init_logging(args.verbose, args.quiet)?;
+    if show_banner {
+        println!("==================================================================");
+        println!("███████╗████████╗██████╗ ███████╗██╗   ██╗");
+        println!("██╔════╝╚══██╔══╝██╔══██╗██╔════╝██║   ██║");
+        println!("███████╗   ██║   ██████╔╝█████╗  ██║   ██║");
+        println!("╚════██║   ██║   ██╔══██╗██╔══╝  ╚██╗ ██╔╝");
+        println!("███████║   ██║   ██║  ██║███████╗ ╚████╔╝ ");
+        println!("╚══════╝   ╚═╝   ╚═╝  ╚═╝╚══════╝  ╚═══╝  ");
+        println!("");
+        println!(
+            "Streev - CLI tool for streaming media extraction and retrieval from various platforms"
+        );
+        println!("GitHub: https://github.com/hua0512/rust-srec");
+        println!("==================================================================");
+        println!("");
+    } else {
+        init_logging(args.verbose, args.quiet)?;
+    }
 
     // Load configuration
     let config = AppConfig::load(args.config.as_deref())?;
 
-    info!("Starting platforms-cli with config: {:?}", config);
+    if show_banner {
+        info!("Starting platforms-cli with config: {:?}", config);
+    }
 
     // Create command executor with proxy support
     let executor =
@@ -155,6 +187,34 @@ async fn run() -> Result<()> {
                 );
             }
         }
+        Commands::Resolve {
+            url,
+            cookies,
+            extras,
+            payload,
+            output,
+            output_file,
+            no_extras,
+        } => {
+            let payload_str = if let Some(p) = payload {
+                p
+            } else {
+                let mut buffer = String::new();
+                io::stdin().read_to_string(&mut buffer)?;
+                buffer
+            };
+            executor
+                .resolve_stream(
+                    &url,
+                    cookies.as_deref(),
+                    extras.as_deref(),
+                    &payload_str,
+                    &output,
+                    output_file.as_deref(),
+                    !no_extras,
+                )
+                .await?;
+        }
     }
 
     Ok(())
@@ -169,10 +229,10 @@ fn init_logging(verbose: bool, quiet: bool) -> Result<()> {
         EnvFilter::from_default_env().add_directive(Level::INFO.into())
     };
 
-    tracing_subscriber::registry()
-        .with(fmt::layer().with_target(false).with_level(verbose))
-        .with(filter)
-        .init();
+    let subscriber = tracing_subscriber::registry().with(filter);
 
+    subscriber
+        .with(fmt::layer().with_target(false).with_level(verbose))
+        .init();
     Ok(())
 }

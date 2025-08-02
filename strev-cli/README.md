@@ -29,8 +29,8 @@ A high-performance, user-friendly CLI tool for extracting streaming media inform
 - **Shell completions** - For bash, zsh, fish, powershell
 - **Verbose/quiet modes** - Configurable logging levels
 - **File output** - Save results to files
-- **Error recovery** - Continue processing on errors
 - **Configuration management** - Show/reset configuration
+- **Rich output for resolved streams** - `resolve` command supports all output formats
 
 ## Installation
 
@@ -38,95 +38,138 @@ A high-performance, user-friendly CLI tool for extracting streaming media inform
 cargo build --release -p strev
 ```
 
-## Usage
+## Commands
 
-### Basic Extraction
+This section provides a detailed overview of all available commands and their options.
 
-```bash
-# Extract media info from a URL (includes extras by default)
-strev extract --url "https://twitch.tv/example_channel"
+### Global Options
 
-# Auto-select best quality stream
-strev extract --url "https://live.bilibili.com/123456" --auto-select
+These options can be used with any command.
 
-# Filter streams by quality
-strev extract --url "https://douyu.com/123456" --quality "1080p"
+| Option                  | Short | Description                               | Default |
+| ----------------------- | ----- | ----------------------------------------- | ------- |
+| `--verbose`             | `-v`  | Enable verbose (debug) output.            | `false` |
+| `--quiet`               | `-q`  | Suppress all output except errors.        | `false` |
+| `--config <PATH>`       | `-c`  | Path to a custom configuration file.      | (none)  |
+| `--timeout <SECONDS>`   |       | Request timeout in seconds.               | `30`    |
+| `--retries <NUM>`       |       | Number of retry attempts on failure.      | `3`     |
+| `--proxy <URL>`         |       | Proxy URL (supports http, https, socks5). | (none)  |
+| `--proxy-username <USER>`|      | Username for proxy authentication.        | (none)  |
+| `--proxy-password <PASS>`|      | Password for proxy authentication.        | (none)  |
 
-# Output in JSON format
-strev extract --url "https://huya.com/123456" --output json
+---
 
-# Save to file
-strev extract --url "https://twitch.tv/example_channel" --output-file result.json
+### `extract`
 
-# Exclude extra metadata
-strev extract --url "https://twitch.tv/example_channel" --no-extras
+Extracts media information from a single URL.
 
-# Pass custom extras as a JSON string
-strev extract --url "https://twitch.tv/example_channel" --extras '{"key": "value", "another_key": 123}'
-```
+**Usage:** `strev extract [OPTIONS]`
 
-### Batch Processing
+**Options:**
 
-```bash
-# Process multiple URLs from a file
-strev batch --input urls.txt --output-dir ./results
+| Option                 | Short | Description                                        | Default  |
+| ---------------------- | ----- | -------------------------------------------------- | -------- |
+| `--url <URL>`          | `-u`  | **Required.** The URL of the media to extract.     |          |
+| `--cookies <COOKIES>`  |       | Cookies to use for the request.                    | (none)   |
+| `--extras <JSON>`      |       | Extra parameters for the extractor (JSON string).  | (none)   |
+| `--output <FORMAT>`    | `-o`  | Output format (`pretty`, `json`, `json-compact`, `table`, `csv`). | `pretty` |
+| `--output-file <PATH>` | `-O`  | Save the output to a file instead of `stdout`.     | (none)   |
+| `--quality <QUALITY>`  |       | Filter streams by quality (e.g., "1080p").         | (none)   |
+| `--format <FORMAT>`    |       | Filter streams by format (e.g., "mp4", "flv").     | (none)   |
+| `--auto-select`        |       | Auto-select the best quality stream without a prompt.| `false`  |
+| `--no-extras`          |       | Exclude extra metadata from the output.            | `false`  |
 
-# Limit concurrent extractions
-strev batch --input urls.txt --max-concurrent 3
+#### Behavior
 
-# Continue on errors
-strev batch --input urls.txt --continue-on-error
-```
+*   **Interactive Mode:** By default (when `output` is `pretty` or `table` and `--auto-select` is not used), if multiple media streams are found, it will prompt the user to select one. This interactive prompt is disabled if the output is not to a TTY.
+*   **Auto-Selection:** When `--auto-select` is specified, it automatically selects the stream with the highest priority value.
 
-### Platform Information
+---
 
-```bash
-# List supported platforms
-strev platforms
+### `batch`
 
-# Show detailed platform information
-strev platforms --detailed
-```
+Processes multiple URLs from a file in parallel.
 
-### Configuration
+**Usage:** `strev batch [OPTIONS]`
 
-```bash
-# Show current configuration
-strev config --show
+**Options:**
 
-# Reset to defaults
-strev config --reset
+| Option                    | Short | Description                                    | Default |
+| ------------------------- | ----- | ---------------------------------------------- | ------- |
+| `--input <PATH>`          | `-i`  | **Required.** Input file with one URL per line.|         |
+| `--output-dir <PATH>`     | `-o`  | Directory to save output files.                | (none)  |
+| `--output-format <FORMAT>`| `-f`  | Output format for the results.                 | `json`  |
+| `--max-concurrent <NUM>`  |       | Maximum number of concurrent extractions.      | `5`     |
+| `--continue-on-error`     |       | Continue processing even if some URLs fail.    | `false` |
 
-# Use custom config file
-strev --config ~/.config/strev/config.toml extract --url "https://twitch.tv/channel_name"
-```
+#### Behavior
 
-### Shell Completions
+*   Reads URLs from the specified input file, ignoring empty lines and lines starting with `#`.
+*   Always uses **auto-selection** for streams, choosing the one with the highest bitrate and priority.
+*   If `--output-dir` is specified, results are saved to `batch_results.json` (for JSON formats) or `batch_summary.txt` (for other formats) in that directory.
 
-```bash
-# Generate bash completions
-strev completions bash
+---
 
-# Generate zsh completions
-strev completions zsh
+### `resolve`
 
-# Generate fish completions
-strev completions fish
+Resolves a final stream URL from a stream data payload, which is typically obtained from a previous `extract` command.
 
-# Generate PowerShell completions
-strev completions powershell
-```
+**Usage:** `strev resolve [OPTIONS]`
 
-## Global Options
+**Options:**
 
-- `--verbose` / `-v` - Enable verbose output
-- `--quiet` / `-q` - Suppress all output except errors
-- `--config` / `-c` - Custom configuration file path
-- `--timeout` - Request timeout in seconds (default: 30)
-- `--retries` - Number of retry attempts (default: 3)
-- `--proxy` - Proxy URL (supports http, https, socks5)
-- `--proxy-username` - Proxy username (if proxy requires authentication)
-- `--proxy-password` - Proxy password (if proxy requires authentication)
+| Option                 | Short | Description                                        | Default  |
+| ---------------------- | ----- | -------------------------------------------------- | -------- |
+| `--url <URL>`          | `-u`  | **Required.** The original URL of the media.       |          |
+| `--payload <JSON>`     |       | Stream information payload (JSON string). Reads from `stdin` if not provided. | (none)   |
+| `--cookies <COOKIES>`  |       | Cookies to use for the request.                    | (none)   |
+| `--extras <JSON>`      |       | Extra parameters for the extractor (JSON string).  | (none)   |
+| `--output <FORMAT>`    | `-o`  | Output format.                                     | `pretty` |
+| `--output-file <PATH>` | `-O`  | Save the output to a file instead of `stdout`.     | (none)   |
+| `--no-extras`          |       | Exclude extra metadata from the output.            | `false`  |
+
+---
+
+### `platforms`
+
+Lists all supported platforms and their URL patterns.
+
+**Usage:** `strev platforms [OPTIONS]`
+
+**Options:**
+
+| Option       | Short | Description                               | Default |
+| ------------ | ----- | ----------------------------------------- | ------- |
+| `--detailed` | `-d`  | Show detailed information (currently no effect). | `false` |
+
+---
+
+### `config`
+
+Manages the application configuration.
+
+**Usage:** `strev config [OPTIONS]`
+
+**Options:**
+
+| Option    | Short | Description                       |
+| --------- | ----- | --------------------------------- |
+| `--show`  | `-s`  | Show the current configuration.   |
+| `--reset` |       | Reset the configuration to defaults. |
+
+---
+
+### `completions`
+
+Generates shell completion scripts.
+
+**Usage:** `strev completions <SHELL>`
+
+**Arguments:**
+
+| Argument | Description                                       |
+| -------- | ------------------------------------------------- |
+| `SHELL`  | **Required.** The shell to generate completions for (e.g., `bash`, `zsh`, `fish`, `powershell`). |
 
 ## Proxy Support
 
@@ -189,17 +232,6 @@ user_agent = "strev/1.0.0"
 # Platform-specific default cookies
 ```
 
-## Environment Variables
-
-Configuration can also be set via environment variables with the `PLATFORMS_CLI_` prefix:
-
-```bash
-export PLATFORMS_CLI_DEFAULT_TIMEOUT=60
-export PLATFORMS_CLI_AUTO_SELECT=true
-export PLATFORMS_CLI_INCLUDE_EXTRAS=false  # Disable extras if needed
-export PLATFORMS_CLI_COLORED_OUTPUT=false
-```
-
 ## Supported Platforms
 
 | Platform | URL Examples | Description |
@@ -215,43 +247,6 @@ export PLATFORMS_CLI_COLORED_OUTPUT=false
 | **Twitcasting** | `twitcasting.tv/{username}` | Live broadcasting service |
 | **Picarto** | `picarto.tv/{channel_name}` | Art streaming platform |
 | **PandaTV** | `pandalive.co.kr/play/{user_id}` | Live streaming platform (Defunct) |
-
-## Output Formats
-
-### Pretty (Default)
-
-Human-readable colored output with clear formatting. **Includes extras by default**.
-
-### JSON
-
-Structured JSON output for programmatic use. **Includes extras by default**.
-
-### JSON Compact
-
-Minified JSON output for reduced size. **Includes extras by default**.
-
-### Table
-
-Formatted table output for easy reading.
-
-### CSV
-
-Comma-separated values for spreadsheet import.
-
-## Extras Information
-
-**By default, the CLI tool displays extra metadata** such as:
-
-- Platform-specific stream information
-- Additional media properties
-- Technical details and parameters
-- Custom metadata from the platform
-
-To exclude extras from the output, use the `--no-extras` flag:
-
-```bash
-strev extract --url "https://twitch.tv/channel" --no-extras
-```
 
 ## Development
 
