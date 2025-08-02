@@ -1,6 +1,6 @@
 [package]
 name = "mesio"
-version = "0.2.8"
+version = "0.2.9"
 edition = "2024"
 description = "Mesio (media) streaming downloader CLI"
 license = "MIT OR Apache-2.0"

@@ -1873,7 +1873,7 @@ dependencies = [
 
 [[package]]
 name = "mesio"
-version = "0.2.8"
+version = "0.2.9"
 dependencies = [
  "bytes",
  "clap",
@@ -2265,7 +2265,7 @@ dependencies = [
 
 [[package]]
 name = "platforms-parser"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "async-trait",
  "boa_engine",
@@ -3051,7 +3051,7 @@ checksum = "a2eb9349b6444b326872e140eb1cf5e7c522154d69e7a0ffb0fb81c06b37543f"
 
 [[package]]
 name = "strev"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "anyhow",
  "clap",

@@ -106,6 +106,7 @@ OPTIONS:
       --read-timeout <SECONDS>     Read timeout in seconds [default: 30]
       --write-timeout <SECONDS>    Write timeout in seconds [default: 30]
   -H, --header <HEADER>            Add custom HTTP header (can be used multiple times). Format: 'Name: Value'
+  -p, --param <PARAM>              Add custom parameter to requests (can be used multiple times). Format: 'Name=Value'
   -4, --ipv4                       Force IPv4 for downloads
   -6, --ipv6                       Force IPv6 for downloads
 ```
