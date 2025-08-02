@@ -263,6 +263,8 @@ impl Bilibili {
             Vec::new()
         };
 
+        let extras = Some(self.extractor.get_platform_headers_map());
+
         Ok(MediaInfo::new(
             self.extractor.url.clone(),
             title,
@@ -271,7 +273,7 @@ impl Bilibili {
             artist_url,
             is_live,
             streams,
-            None,
+            extras,
         ))
     }
 }
@@ -300,17 +302,35 @@ impl PlatformExtractor for Bilibili {
             ExtractorError::ValidationError("Room ID not found in extras".to_string())
         })?;
 
+        let cdn = extras
+            .get("cdn")
+            .and_then(|c| c.as_str())
+            .map(|s| s.to_string());
+
         // skip extraction if url is already present
         if !stream_info.url.is_empty() {
             return Ok(());
         }
 
+        let protocol = match stream_info.stream_format {
+            StreamFormat::Flv => "0",
+            StreamFormat::Hls => "1",
+            _ => "0,1",
+        };
+
+        let format = match stream_info.media_format {
+            MediaFormat::Flv => "0",
+            MediaFormat::Ts => "1",
+            MediaFormat::Fmp4 => "2",
+            _ => "0,1,2",
+        };
+
         let params = vec![
             ("room_id", rid.to_string()),
             ("qn", qn.to_string()),
             ("platform", "html5".to_string()),
-            ("protocol", "0,1".to_string()),
-            ("format", "0,1,2".to_string()),
+            ("protocol", protocol.to_string()),
+            ("format", format.to_string()),
             ("codec", "0,1".to_string()),
             ("dolby", "5".to_string()),
             ("web_location", Self::WBI_WEB_LOCATION.to_string()),
@@ -342,6 +362,26 @@ impl PlatformExtractor for Bilibili {
             return Err(ExtractorError::ValidationError(
                 "Failed to get the stream for the requested quality.".to_string(),
             ));
+        }
+
+        if let Some(cdn) = cdn {
+            for url_info in &codec.url_info {
+                let host_cdn = url_info
+                    .host
+                    .split("//")
+                    .nth(1)
+                    .unwrap_or("")
+                    .split('.')
+                    .next()
+                    .unwrap_or("");
+                if host_cdn == cdn {
+                    let url = format!("{}{}{}", url_info.host, codec.base_url, url_info.extra);
+                    if reqwest::Url::parse(&url).is_ok() {
+                        stream_info.url = url;
+                        return Ok(());
+                    }
+                }
+            }
         }
 
         for url_info in &codec.url_info {
