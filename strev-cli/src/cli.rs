@@ -134,9 +134,37 @@ pub enum Commands {
         #[arg(long)]
         reset: bool,
     },
+    /// Resolve a stream URL from a payload
+    Resolve {
+        /// The URL of the media to parse
+        #[arg(short, long)]
+        url: String,
+        /// The cookies to use for the request
+        #[arg(long)]
+        cookies: Option<String>,
+
+        /// The extras to use for the request (JSON string)
+        #[arg(long)]
+        extras: Option<String>,
+        /// The payload to use for resolving the stream (JSON string)
+        #[arg(long)]
+        payload: Option<String>,
+
+        /// Output format
+        #[arg(short, long, default_value = "pretty")]
+        output: OutputFormat,
+
+        /// Save output to file
+        #[arg(short = 'O', long)]
+        output_file: Option<PathBuf>,
+
+        /// Exclude extra metadata from output
+        #[arg(long)]
+        no_extras: bool,
+    },
 }
 
-#[derive(ValueEnum, Clone, Debug, Default, Serialize, Deserialize)]
+#[derive(ValueEnum, Copy, Clone, Debug, Default, Serialize, Deserialize)]
 pub enum OutputFormat {
     /// Pretty-printed human-readable output
     #[default]

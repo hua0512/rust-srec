@@ -70,6 +70,36 @@ impl CommandExecutor {
     }
 
     #[allow(clippy::too_many_arguments)]
+    pub async fn resolve_stream(
+        &self,
+        url: &str,
+        cookies: Option<&str>,
+        extras: Option<&str>,
+        payload: &str,
+        output_format: &OutputFormat,
+        output_file: Option<&Path>,
+        include_extras: bool,
+    ) -> Result<()> {
+        let mut stream_info: StreamInfo = serde_json::from_str(payload)?;
+
+        let extractor = self.extractor_factory.create_extractor(
+            url,
+            cookies.map(String::from),
+            extras.and_then(|s| serde_json::from_str(s).ok()),
+        )?;
+
+        extractor.get_url(&mut stream_info).await?;
+
+        let output_manager = OutputManager::new(self.config.colored_output);
+        let output =
+            output_manager.format_stream_info(&stream_info, output_format, include_extras)?;
+
+        write_output(&output, output_file)?;
+
+        Ok(())
+    }
+
+    #[allow(clippy::too_many_arguments)]
     pub async fn extract_single(
         &self,
         url: &str,
@@ -84,7 +114,7 @@ impl CommandExecutor {
         timeout_duration: Duration,
         retries: u32,
     ) -> Result<()> {
-        let pb = self.create_progress_bar("Extracting...");
+        let pb = self.create_progress_bar("Extracting...", &output_format);
         let result = self
             .extract_with_retry(url, cookies, extras, timeout_duration, retries)
             .await;
@@ -92,33 +122,41 @@ impl CommandExecutor {
 
         match result {
             Ok((mut media_info, extractor)) => {
-                let selected_stream = if media_info.streams.is_empty() {
-                    return Err(CliError::no_streams_found());
-                } else if auto_select {
-                    // Move the streams vector for auto selection
-                    let streams = std::mem::take(&mut media_info.streams);
-                    self.auto_select_stream(streams)?
-                } else if media_info.streams.len() == 1 {
-                    // Move instead of clone by draining
-                    media_info.streams.drain(..).next().unwrap()
+                let selected_stream =
+                    if matches!(output_format, OutputFormat::Pretty | OutputFormat::Table) {
+                        if media_info.streams.is_empty() {
+                            None
+                        } else if auto_select {
+                            let streams = std::mem::take(&mut media_info.streams);
+                            Some(self.auto_select_stream(streams)?)
+                        } else if media_info.streams.len() == 1 {
+                            media_info.streams.drain(..).next()
+                        } else {
+                            let streams = std::mem::take(&mut media_info.streams);
+                            Some(self.interactive_select_stream(streams)?)
+                        }
+                    } else {
+                        None
+                    };
+
+                let final_stream = if let Some(stream) = selected_stream {
+                    let filtered_stream = self.apply_filters(stream, quality, format)?;
+
+                    // Get the true URL
+                    let pb_get_url =
+                        self.create_progress_bar("Getting stream URL...", &output_format);
+                    let mut final_stream = filtered_stream;
+                    extractor.get_url(&mut final_stream).await?;
+                    pb_get_url.finish_and_clear();
+                    Some(final_stream)
                 } else {
-                    // Move the streams vector for interactive selection
-                    let streams = std::mem::take(&mut media_info.streams);
-                    self.interactive_select_stream(streams)?
+                    None
                 };
-
-                let filtered_stream = self.apply_filters(selected_stream, quality, format)?;
-
-                // Get the true URL
-                let pb_get_url = self.create_progress_bar("Getting stream URL...");
-                let mut final_stream = filtered_stream;
-                extractor.get_url(&mut final_stream).await?;
-                pb_get_url.finish_and_clear();
 
                 let output_manager = OutputManager::new(self.config.colored_output);
                 let output = output_manager.format_media_info(
                     &media_info,
-                    Some(&final_stream),
+                    final_stream.as_ref(),
                     &output_format,
                     include_extras,
                 )?;
@@ -170,13 +208,18 @@ impl CommandExecutor {
             return Err(CliError::invalid_input("No valid URLs found in input file"));
         }
 
-        let pb = Arc::new(ProgressBar::new(urls.len() as u64));
-        pb.set_style(
-            ProgressStyle::default_bar()
-                .template("[{elapsed_precise}] {bar:40.cyan/blue} {pos}/{len} {msg}")
-                .unwrap()
-                .progress_chars("█▉▊▋▌▍▎▏  "),
-        );
+        let pb = if !matches!(output_format, OutputFormat::Pretty) {
+            Arc::new(ProgressBar::hidden())
+        } else {
+            let pb = Arc::new(ProgressBar::new(urls.len() as u64));
+            pb.set_style(
+                ProgressStyle::default_bar()
+                    .template("[{elapsed_precise}] {bar:40.cyan/blue} {pos}/{len} {msg}")
+                    .unwrap()
+                    .progress_chars("█▉▊▋▌▍▎▏  "),
+            );
+            pb
+        };
 
         let semaphore = Arc::new(Semaphore::new(concurrency));
         let mut tasks = Vec::new();
@@ -212,7 +255,7 @@ impl CommandExecutor {
                             .streams
                             .iter()
                             .enumerate()
-                            .max_by_key(|(_, s)| s.priority)
+                            .max_by_key(|(_, s)| (s.bitrate, s.priority))
                             .map(|(i, _)| i)
                             .unwrap_or(0)
                     } else {
@@ -333,7 +376,11 @@ impl CommandExecutor {
         Ok(())
     }
 
-    fn create_progress_bar(&self, message: &str) -> ProgressBar {
+    fn create_progress_bar(&self, message: &str, output_format: &OutputFormat) -> ProgressBar {
+        if !matches!(output_format, OutputFormat::Pretty) {
+            let pb = ProgressBar::hidden();
+            return pb;
+        }
         let pb = ProgressBar::new_spinner();
         pb.enable_steady_tick(Duration::from_millis(500));
         pb.set_style(

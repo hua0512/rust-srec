@@ -39,6 +39,235 @@ impl OutputManager {
             OutputFormat::Csv => self.format_csv(media_info, stream_info),
         }
     }
+    pub fn format_stream_info(
+        &self,
+        stream_info: &StreamInfo,
+        format: &OutputFormat,
+        include_extras: bool,
+    ) -> Result<String> {
+        match format {
+            OutputFormat::Pretty => self.format_stream_pretty(stream_info, include_extras),
+            OutputFormat::Json => self.format_stream_json(stream_info, include_extras, true),
+            OutputFormat::JsonCompact => {
+                self.format_stream_json(stream_info, include_extras, false)
+            }
+            #[cfg(feature = "table-output")]
+            OutputFormat::Table => self.format_stream_table(stream_info, include_extras),
+            #[cfg(not(feature = "table-output"))]
+            OutputFormat::Table => self.format_stream_pretty(stream_info, include_extras),
+            OutputFormat::Csv => self.format_stream_csv(stream_info, include_extras),
+        }
+    }
+
+    fn format_stream_pretty(&self, stream: &StreamInfo, include_extras: bool) -> Result<String> {
+        let mut output = String::new();
+        output.push_str(&self.colorize("Stream Details:", &Color::Green, true));
+        output.push('\n');
+
+        output.push_str(&format!(
+            "  {}: {}\n",
+            self.colorize("Format", &Color::Yellow, false),
+            self.colorize(&stream.stream_format.to_string(), &Color::Cyan, false)
+        ));
+        output.push_str(&format!(
+            "  {}: {}\n",
+            self.colorize("Quality", &Color::Yellow, false),
+            self.colorize(&stream.quality, &Color::Cyan, false)
+        ));
+        output.push_str(&format!(
+            "  {}: {}\n",
+            self.colorize("URL", &Color::Yellow, false),
+            self.colorize(stream.url.as_str(), &Color::Blue, false)
+        ));
+        output.push_str(&format!(
+            "  {}: {} kbps\n",
+            self.colorize("Bitrate", &Color::Yellow, false),
+            self.colorize(&stream.bitrate.to_string(), &Color::Cyan, false)
+        ));
+        output.push_str(&format!(
+            "  {}: {}\n",
+            self.colorize("Media Format", &Color::Yellow, false),
+            self.colorize(&stream.media_format.to_string(), &Color::Cyan, false)
+        ));
+        output.push_str(&format!(
+            "  {}: {}\n",
+            self.colorize("Codec", &Color::Yellow, false),
+            self.colorize(&stream.codec, &Color::Cyan, false)
+        ));
+        output.push_str(&format!(
+            "  {}: {}\n",
+            self.colorize("FPS", &Color::Yellow, false),
+            self.colorize(&stream.fps.to_string(), &Color::Cyan, false)
+        ));
+        output.push_str(&format!(
+            "  {}: {}\n",
+            self.colorize("Priority", &Color::Yellow, false),
+            self.colorize(&stream.priority.to_string(), &Color::Cyan, false)
+        ));
+
+        if include_extras {
+            if let Some(extras) = &stream.extras {
+                if let Some(extras_obj) = extras.as_object().filter(|m| !m.is_empty()) {
+                    output.push_str(&format!(
+                        "  {}:\n",
+                        self.colorize("Extras", &Color::Yellow, false)
+                    ));
+                    for (key, value) in extras_obj {
+                        output.push_str(&format!(
+                            "    {}: {}\n",
+                            self.colorize(key, &Color::Green, false),
+                            self.colorize(&value.to_string(), &Color::Cyan, false)
+                        ));
+                    }
+                }
+            }
+        }
+        Ok(output)
+    }
+
+    fn format_stream_json(
+        &self,
+        stream_info: &StreamInfo,
+        include_extras: bool,
+        pretty: bool,
+    ) -> Result<String> {
+        let mut stream_data = serde_json::to_value(stream_info)?;
+        if !include_extras {
+            if let Some(obj) = stream_data.as_object_mut() {
+                obj.remove("extras");
+            }
+        }
+
+        let result = if pretty {
+            serde_json::to_string_pretty(&stream_data)?
+        } else {
+            serde_json::to_string(&stream_data)?
+        };
+
+        Ok(result)
+    }
+
+    #[cfg(feature = "table-output")]
+    fn format_stream_table(
+        &self,
+        stream_info: &StreamInfo,
+        include_extras: bool,
+    ) -> Result<String> {
+        #[derive(Tabled)]
+        struct StreamTableRow<'a> {
+            property: &'a str,
+            value: Cow<'a, str>,
+        }
+
+        let mut rows = vec![
+            StreamTableRow {
+                property: "Format",
+                value: Cow::Owned(stream_info.stream_format.to_string()),
+            },
+            StreamTableRow {
+                property: "Quality",
+                value: Cow::Borrowed(&stream_info.quality),
+            },
+            StreamTableRow {
+                property: "URL",
+                value: Cow::Borrowed(stream_info.url.as_str()),
+            },
+            StreamTableRow {
+                property: "Bitrate",
+                value: Cow::Owned(format!("{} kbps", stream_info.bitrate)),
+            },
+            StreamTableRow {
+                property: "Media Format",
+                value: Cow::Owned(stream_info.media_format.to_string()),
+            },
+            StreamTableRow {
+                property: "Codec",
+                value: Cow::Borrowed(&stream_info.codec),
+            },
+            StreamTableRow {
+                property: "FPS",
+                value: Cow::Owned(stream_info.fps.to_string()),
+            },
+            StreamTableRow {
+                property: "Priority",
+                value: Cow::Owned(stream_info.priority.to_string()),
+            },
+        ];
+
+        if include_extras {
+            if let Some(extras) = &stream_info.extras {
+                if let Some(extras_obj) = extras.as_object() {
+                    for (key, value) in extras_obj {
+                        rows.push(StreamTableRow {
+                            property: key,
+                            value: Cow::Owned(value.to_string()),
+                        });
+                    }
+                }
+            }
+        }
+
+        let table = Table::new(rows).with(Style::modern()).to_string();
+        Ok(table)
+    }
+
+    fn format_stream_csv(&self, stream_info: &StreamInfo, include_extras: bool) -> Result<String> {
+        let mut output = String::new();
+        let mut headers = vec![
+            "quality",
+            "stream_format",
+            "media_format",
+            "url",
+            "bitrate",
+            "codec",
+            "fps",
+            "priority",
+        ];
+
+        let mut extras_keys = Vec::new();
+        if include_extras {
+            if let Some(extras) = &stream_info.extras {
+                if let Some(extras_obj) = extras.as_object() {
+                    for key in extras_obj.keys() {
+                        headers.push(key);
+                        extras_keys.push(key.as_str());
+                    }
+                }
+            }
+        }
+        output.push_str(&headers.join(","));
+        output.push('\n');
+
+        let stream_format_str = stream_info.stream_format.to_string();
+        let media_format_str = stream_info.media_format.to_string();
+
+        let mut record = vec![
+            Self::escape_csv(&stream_info.quality),
+            Self::escape_csv(&stream_format_str),
+            Self::escape_csv(&media_format_str),
+            Self::escape_csv(&stream_info.url),
+            Cow::Owned(stream_info.bitrate.to_string()),
+            Self::escape_csv(&stream_info.codec),
+            Cow::Owned(stream_info.fps.to_string()),
+            Cow::Owned(stream_info.priority.to_string()),
+        ];
+
+        if include_extras {
+            if let Some(extras) = &stream_info.extras {
+                if let Some(extras_obj) = extras.as_object() {
+                    for key in extras_keys {
+                        let value = extras_obj.get(key).and_then(|v| v.as_str()).unwrap_or("");
+                        record.push(Self::escape_csv(value));
+                    }
+                }
+            }
+        }
+
+        output.push_str(&record.join(","));
+        output.push('\n');
+
+        Ok(output)
+    }
 
     fn format_pretty(
         &self,
@@ -224,6 +453,11 @@ impl OutputManager {
             }
 
             output["stream"] = stream_data;
+        } else if let Some(media_obj) = output.get_mut("media").and_then(|m| m.as_object_mut()) {
+            media_obj.insert(
+                "streams".to_string(),
+                serde_json::to_value(&media_info.streams)?,
+            );
         }
 
         let result = if pretty {
@@ -316,31 +550,31 @@ impl OutputManager {
         media_info: &MediaInfo,
         stream_info: Option<&StreamInfo>,
     ) -> Result<String> {
-        let mut output = String::new();
-        output.push_str("property,value\n");
-
-        output.push_str(&format!(
-            "artist,\"{}\"\n",
-            Self::escape_csv(&media_info.artist)
-        ));
-        output.push_str(&format!(
-            "title,\"{}\"\n",
-            Self::escape_csv(&media_info.title)
-        ));
-        output.push_str(&format!("is_live,{}\n", media_info.is_live));
-
-        if let Some(cover_url) = &media_info.cover_url {
-            output.push_str(&format!("cover_url,\"{}\"\n", Self::escape_csv(cover_url)));
-        }
-
-        if let Some(artist_url) = &media_info.artist_url {
-            output.push_str(&format!(
-                "artist_url,\"{}\"\n",
-                Self::escape_csv(artist_url)
-            ));
-        }
-
         if let Some(stream) = stream_info {
+            let mut output = String::new();
+            output.push_str("property,value\n");
+
+            output.push_str(&format!(
+                "artist,\"{}\"\n",
+                Self::escape_csv(&media_info.artist)
+            ));
+            output.push_str(&format!(
+                "title,\"{}\"\n",
+                Self::escape_csv(&media_info.title)
+            ));
+            output.push_str(&format!("is_live,{}\n", media_info.is_live));
+
+            if let Some(cover_url) = &media_info.cover_url {
+                output.push_str(&format!("cover_url,\"{}\"\n", Self::escape_csv(cover_url)));
+            }
+
+            if let Some(artist_url) = &media_info.artist_url {
+                output.push_str(&format!(
+                    "artist_url,\"{}\"\n",
+                    Self::escape_csv(artist_url)
+                ));
+            }
+
             output.push_str(&format!("stream_format,\"{}\"\n", stream.stream_format));
             output.push_str(&format!(
                 "quality,\"{}\"\n",
@@ -355,9 +589,71 @@ impl OutputManager {
             output.push_str(&format!("codec,\"{}\"\n", Self::escape_csv(&stream.codec)));
             output.push_str(&format!("fps,{}\n", stream.fps));
             output.push_str(&format!("priority,{}\n", stream.priority));
-        }
 
-        Ok(output)
+            Ok(output)
+        } else {
+            let mut output = String::new();
+            let headers = [
+                "artist",
+                "title",
+                "is_live",
+                "cover_url",
+                "artist_url",
+                "stream_format",
+                "quality",
+                "url",
+                "bitrate",
+                "media_format",
+                "codec",
+                "fps",
+                "priority",
+            ];
+            output.push_str(&headers.join(","));
+            output.push('\n');
+
+            if media_info.streams.is_empty() {
+                let row: [Cow<str>; 13] = [
+                    Self::escape_csv(&media_info.artist),
+                    Self::escape_csv(&media_info.title),
+                    Cow::Owned(media_info.is_live.to_string()),
+                    Self::escape_csv(media_info.cover_url.as_deref().unwrap_or("")),
+                    Self::escape_csv(media_info.artist_url.as_deref().unwrap_or("")),
+                    Cow::Borrowed(""),
+                    Cow::Borrowed(""),
+                    Cow::Borrowed(""),
+                    Cow::Borrowed(""),
+                    Cow::Borrowed(""),
+                    Cow::Borrowed(""),
+                    Cow::Borrowed(""),
+                    Cow::Borrowed(""),
+                ];
+                output.push_str(&row.join(","));
+                output.push('\n');
+            } else {
+                for stream in &media_info.streams {
+                    let stream_format_str = stream.stream_format.to_string();
+                    let media_format_str = stream.media_format.to_string();
+                    let row = [
+                        Self::escape_csv(&media_info.artist),
+                        Self::escape_csv(&media_info.title),
+                        Cow::Owned(media_info.is_live.to_string()),
+                        Self::escape_csv(media_info.cover_url.as_deref().unwrap_or("")),
+                        Self::escape_csv(media_info.artist_url.as_deref().unwrap_or("")),
+                        Self::escape_csv(&stream_format_str),
+                        Self::escape_csv(&stream.quality),
+                        Self::escape_csv(stream.url.as_str()),
+                        Cow::Owned(stream.bitrate.to_string()),
+                        Self::escape_csv(&media_format_str),
+                        Self::escape_csv(&stream.codec),
+                        Cow::Owned(stream.fps.to_string()),
+                        Cow::Owned(stream.priority.to_string()),
+                    ];
+                    output.push_str(&row.join(","));
+                    output.push('\n');
+                }
+            }
+            Ok(output)
+        }
     }
 
     // Helper method to avoid unnecessary allocations when escaping CSV
