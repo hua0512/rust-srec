@@ -103,9 +103,7 @@ impl Bilibili {
         url: &str,
         params: Vec<(&str, String)>,
     ) -> Result<T, ExtractorError> {
-        let keys = get_wbi_keys(&self.extractor.client)
-            .await
-            .map_err(ExtractorError::from)?;
+        let keys = get_wbi_keys(&self.extractor.client).await?;
 
         let params = encode_wbi(params, keys)?;
         debug!("params: {:?}", params);

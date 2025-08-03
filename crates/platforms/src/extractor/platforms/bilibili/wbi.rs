@@ -138,7 +138,7 @@ fn _encode_wbi(
     query + &format!("&w_rid={web_sign}")
 }
 
-async fn fetch_new_keys(client: &Client) -> Result<WbiKeys, reqwest::Error> {
+async fn fetch_new_keys(client: &Client) -> Result<WbiKeys, ExtractorError> {
     let ResWbi {
         data: Data { wbi_img },
     } = client
@@ -146,17 +146,28 @@ async fn fetch_new_keys(client: &Client) -> Result<WbiKeys, reqwest::Error> {
         .header(USER_AGENT, DEFAULT_UA)
         .header(reqwest::header::REFERER.to_string(), Bilibili::BASE_URL)
         .send()
-        .await?
+        .await
+        .map_err(ExtractorError::HttpError)?
         .json::<ResWbi>()
         .await?;
 
-    let img_key = take_filename(wbi_img.img_url).unwrap();
-    let sub_key = take_filename(wbi_img.sub_url).unwrap();
+    let img_key = take_filename(wbi_img.img_url.clone()).ok_or_else(|| {
+        ExtractorError::ValidationError(format!(
+            "Failed to extract img_key from URL: {}",
+            wbi_img.img_url
+        ))
+    })?;
+    let sub_key = take_filename(wbi_img.sub_url.clone()).ok_or_else(|| {
+        ExtractorError::ValidationError(format!(
+            "Failed to extract sub_key from URL: {}",
+            wbi_img.sub_url
+        ))
+    })?;
 
     Ok(WbiKeys::new(img_key, sub_key))
 }
 
-pub(super) async fn get_wbi_keys(client: &Client) -> Result<WbiKeys, reqwest::Error> {
+pub(super) async fn get_wbi_keys(client: &Client) -> Result<WbiKeys, ExtractorError> {
     let check_keys = || {
         let rx = WBI_KEYS_RX.clone();
         let keys = rx.borrow();
