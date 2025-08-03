@@ -1,8 +1,43 @@
 use md5::Digest;
 use reqwest::{Client, header::USER_AGENT};
 use serde::Deserialize;
+use std::time::{Duration, Instant};
 use std::time::{SystemTime, UNIX_EPOCH};
+use tokio::sync::{Mutex, watch};
+const CACHE_EXPIRATION: Duration = Duration::from_secs(2 * 60 * 60); // 2 hours
 
+#[derive(Clone, Debug)]
+pub struct WbiKeys {
+    img_key: String,
+    sub_key: String,
+    timestamp: Instant,
+}
+
+impl WbiKeys {
+    fn new(img_key: String, sub_key: String) -> Self {
+        Self {
+            img_key,
+            sub_key,
+            timestamp: Instant::now(),
+        }
+    }
+
+    fn is_stale(&self) -> bool {
+        self.timestamp.elapsed() > CACHE_EXPIRATION
+    }
+}
+
+use std::sync::LazyLock;
+static WBI_KEYS_WATCH: LazyLock<(watch::Sender<Option<WbiKeys>>, Mutex<()>)> =
+    LazyLock::new(|| {
+        let (tx, _) = watch::channel(None);
+        (tx, Mutex::new(()))
+    });
+
+static WBI_KEYS_RX: LazyLock<watch::Receiver<Option<WbiKeys>>> =
+    LazyLock::new(|| WBI_KEYS_WATCH.0.subscribe());
+
+use crate::extractor::error::ExtractorError;
 use crate::extractor::{default::DEFAULT_UA, platforms::bilibili::Bilibili};
 
 const MIXIN_KEY_ENC_TAB: [usize; 64] = [
@@ -37,31 +72,45 @@ fn get_mixin_key(orig: &[u8]) -> String {
 }
 
 fn get_url_encoded(s: &str) -> String {
-    s.chars()
-        .filter_map(|c| match c.is_ascii_alphanumeric() || "-_.~".contains(c) {
-            true => Some(c.to_string()),
-            false => {
-                // 过滤 value 中的 "!'()*" 字符
-                if "!'()*".contains(c) {
-                    return None;
-                }
-                let encoded = c
-                    .encode_utf8(&mut [0; 4])
-                    .bytes()
-                    .fold("".to_string(), |acc, b| acc + &format!("%{b:02X}"));
-                Some(encoded)
+    let mut encoded = String::with_capacity(s.len());
+    for c in s.chars() {
+        match c {
+            // Unreserved characters that do not need to be encoded.
+            'a'..='z' | 'A'..='Z' | '0'..='9' | '-' | '_' | '.' | '~' => {
+                encoded.push(c);
             }
-        })
-        .collect::<String>()
+            // Characters that are explicitly filtered out and not included in the output.
+            '!' | '\'' | '(' | ')' | '*' => {}
+            // All other characters are percent-encoded.
+            _ => {
+                let mut buf = [0; 4];
+                for b in c.encode_utf8(&mut buf).bytes() {
+                    encoded.push_str(&format!("%{b:02X}"));
+                }
+            }
+        }
+    }
+    encoded
 }
 
 // 为请求参数进行 wbi 签名
-pub(super) fn encode_wbi(params: Vec<(&str, String)>, (img_key, sub_key): (&str, &str)) -> String {
+pub(super) fn encode_wbi(
+    params: Vec<(&str, String)>,
+    keys: WbiKeys,
+) -> Result<String, ExtractorError> {
     let cur_time = match SystemTime::now().duration_since(UNIX_EPOCH) {
         Ok(t) => t.as_secs(),
-        Err(_) => panic!("SystemTime before UNIX EPOCH!"),
+        Err(_) => {
+            return Err(ExtractorError::Other(
+                "SystemTime before UNIX EPOCH!".to_string(),
+            ));
+        }
     };
-    _encode_wbi(params, (img_key, sub_key), cur_time)
+    Ok(_encode_wbi(
+        params,
+        (&keys.img_key, &keys.sub_key),
+        cur_time,
+    ))
 }
 
 fn _encode_wbi(
@@ -89,23 +138,64 @@ fn _encode_wbi(
     query + &format!("&w_rid={web_sign}")
 }
 
-pub(super) async fn get_wbi_keys(client: &Client) -> Result<(String, String), reqwest::Error> {
+async fn fetch_new_keys(client: &Client) -> Result<WbiKeys, ExtractorError> {
     let ResWbi {
         data: Data { wbi_img },
     } = client
         .get("https://api.bilibili.com/x/web-interface/nav")
         .header(USER_AGENT, DEFAULT_UA)
         .header(reqwest::header::REFERER.to_string(), Bilibili::BASE_URL)
-        // SESSDATA=xxxxx
-        // .header("Cookie", "SESSDATA=xxxxx")
         .send()
-        .await?
+        .await
+        .map_err(ExtractorError::HttpError)?
         .json::<ResWbi>()
         .await?;
-    Ok((
-        take_filename(wbi_img.img_url).unwrap(),
-        take_filename(wbi_img.sub_url).unwrap(),
-    ))
+
+    let img_key = take_filename(wbi_img.img_url.clone()).ok_or_else(|| {
+        ExtractorError::ValidationError(format!(
+            "Failed to extract img_key from URL: {}",
+            wbi_img.img_url
+        ))
+    })?;
+    let sub_key = take_filename(wbi_img.sub_url.clone()).ok_or_else(|| {
+        ExtractorError::ValidationError(format!(
+            "Failed to extract sub_key from URL: {}",
+            wbi_img.sub_url
+        ))
+    })?;
+
+    Ok(WbiKeys::new(img_key, sub_key))
+}
+
+pub(super) async fn get_wbi_keys(client: &Client) -> Result<WbiKeys, ExtractorError> {
+    let check_keys = || {
+        let rx = WBI_KEYS_RX.clone();
+        let keys = rx.borrow();
+        if let Some(k) = &*keys {
+            if !k.is_stale() {
+                return Some(Ok(k.clone()));
+            }
+        }
+        None
+    };
+
+    // Initial check
+    if let Some(result) = check_keys() {
+        return result;
+    }
+
+    // If cache is stale or empty, acquire lock to refresh.
+    let _lock = WBI_KEYS_WATCH.1.lock().await;
+
+    // Double-check after acquiring lock
+    if let Some(result) = check_keys() {
+        return result;
+    }
+
+    // If still stale, fetch and send the new keys.
+    let new_keys = fetch_new_keys(client).await?;
+    WBI_KEYS_WATCH.0.send(Some(new_keys.clone())).ok();
+    Ok(new_keys)
 }
 
 fn take_filename(url: String) -> Option<String> {
@@ -136,7 +226,8 @@ mod tests {
     #[tokio::test]
     #[ignore]
     async fn test_get_wbi_keys() {
-        let keys = get_wbi_keys(&default_client()).await.unwrap();
+        let keys = get_wbi_keys(&default_client()).await;
+        assert!(keys.is_ok());
         println!("{keys:?}");
     }
 
@@ -167,15 +258,12 @@ mod tests {
             ("bar", String::from("514")),
             ("zab", String::from("1919810")),
         ];
+        let keys = (
+            "7cd084941338484aae1ad9425b84077c",
+            "4932caff0ff746eab6f01bf08b70ac45",
+        );
         assert_eq!(
-            _encode_wbi(
-                params,
-                (
-                    "7cd084941338484aae1ad9425b84077c",
-                    "4932caff0ff746eab6f01bf08b70ac45"
-                ),
-                1702204169
-            ),
+            _encode_wbi(params, keys, 1702204169),
             "bar=514&foo=114&wts=1702204169&zab=1919810&w_rid=8f6f2b5b3d485fe1886cec6a0be8c5d4"
                 .to_string()
         )

@@ -71,7 +71,7 @@ impl Bilibili {
         url: String,
         client: Client,
         cookies: Option<String>,
-        _extras: Option<serde_json::Value>,
+        extras: Option<serde_json::Value>,
     ) -> Self {
         let mut extractor = Extractor::new("Bilibili", url, client);
 
@@ -81,17 +81,12 @@ impl Bilibili {
         let base_url_value = HeaderValue::from_str(Self::BASE_URL).unwrap();
         extractor.add_header_owned(reqwest::header::REFERER, base_url_value);
 
-        let mut quality = BilibiliQuality::Original;
-
-        if let Some(extras) = _extras {
-            let default_quality = serde_json::Value::Number(10000.into());
-            let quality_value = extras.get("quality").unwrap_or(&default_quality);
-            if quality_value.is_number() {
-                let quality_num = quality_value.as_u64().unwrap_or(10000);
-                quality = BilibiliQuality::try_from_primitive(quality_num as u32)
-                    .unwrap_or(BilibiliQuality::Original);
-            }
-        }
+        let quality = extras
+            .as_ref()
+            .and_then(|extras| extras.get("quality"))
+            .and_then(|v| v.as_u64())
+            .and_then(|num| BilibiliQuality::try_from_primitive(num as u32).ok())
+            .unwrap_or(BilibiliQuality::DolbyVision);
 
         Self { extractor, quality }
     }
@@ -108,11 +103,9 @@ impl Bilibili {
         url: &str,
         params: Vec<(&str, String)>,
     ) -> Result<T, ExtractorError> {
-        let (img_key, sub_key) = get_wbi_keys(&self.extractor.client)
-            .await
-            .map_err(ExtractorError::from)?;
+        let keys = get_wbi_keys(&self.extractor.client).await?;
 
-        let params = encode_wbi(params, (img_key.as_str(), sub_key.as_str()));
+        let params = encode_wbi(params, keys)?;
         debug!("params: {:?}", params);
 
         let api_url = format!("{url}?{params}");
@@ -426,7 +419,7 @@ mod tests {
             .with_max_level(Level::DEBUG)
             .init();
         let bilibili = Bilibili::new(
-            "https://live.bilibili.com/10".to_string(),
+            "https://live.bilibili.com/6".to_string(),
             default_client(),
             None,
             None,
