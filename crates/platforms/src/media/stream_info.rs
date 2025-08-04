@@ -11,14 +11,32 @@ use std::fmt;
 ///
 /// ### JSON Serialization
 /// ```rust
-/// use serde_json;
+/// fn main() -> Result<(), Box<dyn std::error::Error>> {
+///     use serde_json;
+///     use platforms_parser::media::{StreamInfo, StreamFormat, formats::MediaFormat};
 ///
-/// // Serialize to JSON
-/// let json_string = serde_json::to_string(&stream_info)?;
-/// let pretty_json = serde_json::to_string_pretty(&stream_info)?;
+///     // Create a sample StreamInfo
+///     let stream_info = StreamInfo {
+///         url: "https://example.com/stream".to_string(),
+///         stream_format: StreamFormat::Hls,
+///         media_format: MediaFormat::Mp4,
+///         quality: "1080p".to_string(),
+///         bitrate: 5000000,
+///         priority: 1,
+///         extras: None,
+///         codec: "h264".to_string(),
+///         fps: 30.0,
+///         is_headers_needed: false,
+///     };
 ///
-/// // Deserialize from JSON
-/// let stream_info: StreamInfo = serde_json::from_str(&json_string)?;
+///     // Serialize to JSON
+///     let json_string = serde_json::to_string(&stream_info)?;
+///     let pretty_json = serde_json::to_string_pretty(&stream_info)?;
+///
+///     // Deserialize from JSON
+///     let stream_info: StreamInfo = serde_json::from_str(&json_string)?;
+///     Ok(())
+/// }
 /// ```
 ///
 /// ### Other formats
