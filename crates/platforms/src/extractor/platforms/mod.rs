@@ -1,3 +1,4 @@
+pub mod acfun;
 pub mod bilibili;
 pub mod douyin;
 #[cfg(feature = "douyu")]

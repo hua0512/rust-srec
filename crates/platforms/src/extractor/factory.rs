@@ -3,9 +3,9 @@ use std::sync::LazyLock;
 use super::error::ExtractorError;
 use super::platform_extractor::PlatformExtractor;
 use crate::extractor::platforms::{
-    self, bilibili::Bilibili, douyin::Douyin, douyu::Douyu, huya::Huya, pandatv::PandaTV,
-    picarto::Picarto, redbook::RedBook, tiktok::TikTok, twitcasting::Twitcasting, twitch::Twitch,
-    weibo::Weibo,
+    self, acfun::Acfun, bilibili::Bilibili, douyin::Douyin, douyu::Douyu, huya::Huya,
+    pandatv::PandaTV, picarto::Picarto, redbook::RedBook, tiktok::TikTok, twitcasting::Twitcasting,
+    twitch::Twitch, weibo::Weibo,
 };
 use regex::Regex;
 use reqwest::Client;
@@ -47,6 +47,7 @@ create_constructor!(new_bilibili, Bilibili::new);
 create_constructor!(new_picarto, Picarto::new);
 create_constructor!(new_tiktok, TikTok::new);
 create_constructor!(new_twitcasting, Twitcasting::new);
+create_constructor!(new_acfun, Acfun::new);
 
 // Static platform registry
 static PLATFORMS: &[PlatformEntry] = &[
@@ -94,6 +95,10 @@ static PLATFORMS: &[PlatformEntry] = &[
     PlatformEntry {
         regex: &platforms::twitcasting::URL_REGEX,
         constructor: new_twitcasting,
+    },
+    PlatformEntry {
+        regex: &platforms::acfun::URL_REGEX,
+        constructor: new_acfun,
     },
 ];
 
