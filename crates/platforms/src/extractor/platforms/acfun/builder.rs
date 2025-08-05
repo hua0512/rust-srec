@@ -86,8 +86,7 @@ impl PlatformExtractor for Acfun {
             ("did", did),
             ("acfun.api.visitor_st", response.visitor_st),
         ];
-
-        let response = self
+        let start_play_response = self
             .extractor
             .client
             .post(Self::START_PLAY_URL)
@@ -98,12 +97,9 @@ impl PlatformExtractor for Acfun {
                 ("pullStreamType", "FLV".to_string()),
             ])
             .send()
+            .await?
+            .json::<StartPlayResponse>()
             .await?;
-
-        let body = response.text().await?;
-        std::fs::write("start_play_response.json", body.as_bytes()).unwrap();
-
-        let start_play_response = serde_json::from_str::<StartPlayResponse>(&body)?;
 
         if start_play_response.result != 1 {
             return Ok(MediaInfo {
