@@ -232,19 +232,20 @@ user_agent = "strev/1.0.0"
 
 ## Supported Platforms
 
-| Platform | URL Examples | Description |
-|----------|-------------|-------------|
-| **Bilibili** | `live.bilibili.com/{room_id}` | Live streaming platform |
-| **Douyin** | `live.douyin.com/{room_id}` | TikTok China live streaming |
-| **Douyu** | `douyu.com/{room_id}` | Gaming live streaming |
-| **Huya** | `huya.com/{room_id}` | Gaming live streaming |
-| **Twitch** | `twitch.tv/{channel_name}` | Gaming and creative content |
-| **Weibo** | `weibo.com/u/{user_id}`, `weibo.com/l/wblive/p/show/{live_id}` | Social media live streaming |
-| **Redbook** | `xiaohongshu.com/user/profile/{user_id}`, `xhslink.com/{share_id}` | Lifestyle live streaming |
-| **TikTok** | `tiktok.com/@{username}/live` | Short-form video live streaming |
-| **Twitcasting** | `twitcasting.tv/{username}` | Live broadcasting service |
-| **Picarto** | `picarto.tv/{channel_name}` | Art streaming platform |
-| **PandaTV** | `pandalive.co.kr/play/{user_id}` | Live streaming platform (Defunct) |
+| Platform    | Supported URL Type                               | Description |
+|-------------|--------------------------------------------------|-------------|
+| Acfun       | `acfun.cn/live/{room_id}`                        | Live streaming platform |
+| Bilibili    | `live.bilibili.com/{room_id}`                    | Live streaming platform |
+| Douyin      | `live.douyin.com/{room_id}`                      | TikTok China live streaming |
+| Douyu       | `douyu.com/{room_id}`                            | Gaming live streaming |
+| Huya        | `huya.com/{room_id}`                             | Gaming live streaming |
+| PandaTV     | `pandalive.co.kr/play/{user_id}` (Defunct)       | Live streaming platform |
+| Picarto     | `picarto.tv/{channel_name}`                      | Art streaming platform |
+| Redbook     | `xiaohongshu.com/user/profile/{user_id}` or `xhslink.com/{share_id}` | Lifestyle live streaming |
+| TikTok      | `tiktok.com/@{username}/live`                   | Short-form video live streaming |
+| TwitCasting | `twitcasting.tv/{username}`                      | Live broadcasting service |
+| Twitch      | `twitch.tv/{channel_name}`                       | Gaming and creative content |
+| Weibo       | `weibo.com/u/{user_id}` or `weibo.com/l/wblive/p/show/{live_id}` | Social media live streaming |
 
 ## Development
 

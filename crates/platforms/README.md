@@ -10,6 +10,7 @@ This library provides a unified interface to extract streaming media information
 
 | Platform    | Supported URL Type                               |
 |-------------|--------------------------------------------------|
+| Acfun       | `acfun.cn/live/{room_id}`                        |
 | Bilibili    | `live.bilibili.com/{room_id}`                    |
 | Douyin      | `live.douyin.com/{room_id}`                      |
 | Douyu       | `douyu.com/{room_id}`                            |

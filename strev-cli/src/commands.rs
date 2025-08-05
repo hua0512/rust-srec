@@ -299,6 +299,7 @@ impl CommandExecutor {
 
     pub async fn list_platforms(&self, output_format: &OutputFormat) -> Result<()> {
         let platforms = vec![
+            ("Acfun", "acfun.cn/live/{room_id}"),
             ("Bilibili", "live.bilibili.com/{room_id}"),
             ("Douyin", "live.douyin.com/{room_id}"),
             ("Douyu", "douyu.com/{room_id}"),
