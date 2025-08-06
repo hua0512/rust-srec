@@ -326,6 +326,7 @@ impl SourceManager {
         if let DownloadError::StatusCode(status) = error {
             if status.is_client_error() {
                 self.set_source_active(url, false);
+                return;
             }
         } else if let DownloadError::HlsError(hls_err) = error {
             // Specific handling for HLS errors that might contain a client error
@@ -338,6 +339,7 @@ impl SourceManager {
             };
             if is_client_error {
                 self.set_source_active(url, false);
+                return;
             }
         }
 
