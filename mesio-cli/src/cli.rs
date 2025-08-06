@@ -1,4 +1,5 @@
 use clap::Parser;
+use mesio_engine::ProxyType;
 use std::path::PathBuf;
 
 /// Define CLI arguments
@@ -127,14 +128,9 @@ pub struct CliArgs {
     )]
     pub proxy: Option<String>,
 
-    /// Proxy type (http, https, socks5, all)
-    #[arg(
-        long,
-        default_value = "http",
-        help = "Proxy type (http, https, socks5, all)",
-        value_parser = ["http", "https", "socks5", "all"]
-    )]
-    pub proxy_type: String,
+    /// Proxy type
+    #[arg(long, default_value = "http", help = "Proxy type", value_enum)]
+    pub proxy_type: ProxyType,
 
     /// Proxy username
     #[arg(long, help = "Username for proxy authentication")]

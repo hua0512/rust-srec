@@ -1901,6 +1901,7 @@ dependencies = [
  "bytes",
  "cbc",
  "cipher",
+ "clap",
  "flv",
  "futures",
  "hex",

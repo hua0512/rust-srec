@@ -135,23 +135,7 @@ async fn bootstrap() -> Result<(), AppError> {
     } else if let Some(proxy_url) = args.proxy.as_ref() {
         // Explicit proxy configuration
         // Parse proxy type
-        let proxy_type = match args.proxy_type.as_str() {
-            "http" => ProxyType::Http,
-            "https" => ProxyType::Https,
-            "socks5" => ProxyType::Socks5,
-            "all" => {
-                return Err(AppError::InvalidInput(format!(
-                    "Invalid proxy type: '{}'",
-                    args.proxy_type
-                )));
-            }
-            _ => {
-                return Err(AppError::InvalidInput(format!(
-                    "Invalid proxy type: '{}'",
-                    args.proxy_type
-                )));
-            }
-        };
+        let proxy_type: ProxyType = args.proxy_type;
 
         // Configure proxy authentication if both username and password are provided
         let auth = if let (Some(username), Some(password)) = (&args.proxy_user, &args.proxy_pass) {

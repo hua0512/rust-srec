@@ -2,6 +2,7 @@ use reqwest::Proxy;
 
 /// Proxy configuration types
 #[derive(Debug, Clone, PartialEq, Eq, Copy)]
+#[cfg_attr(feature = "clap", derive(clap::ValueEnum))]
 pub enum ProxyType {
     /// HTTP proxy
     Http,
@@ -9,8 +10,6 @@ pub enum ProxyType {
     Https,
     /// SOCKS5 proxy
     Socks5,
-    /// All protocols proxy (use this for general-purpose proxies)
-    All,
 }
 
 /// Proxy authentication type
@@ -46,8 +45,8 @@ pub fn build_proxy_from_config(config: &ProxyConfig) -> Result<Proxy, String> {
             Proxy::https(proxy_url).map_err(|e| format!("Invalid HTTPS proxy URL: {e}"))?
         }
         ProxyType::Socks5 => {
-            // Make sure URL starts with socks5://
-            let url = if proxy_url.starts_with("socks5://") {
+            // Make sure URL starts with socks5:// or socks5h://
+            let url = if proxy_url.starts_with("socks5://") || proxy_url.starts_with("socks5h://") {
                 proxy_url.to_string()
             } else {
                 format!("socks5://{proxy_url}")
@@ -55,7 +54,6 @@ pub fn build_proxy_from_config(config: &ProxyConfig) -> Result<Proxy, String> {
 
             Proxy::all(&url).map_err(|e| format!("Invalid SOCKS5 proxy URL: {e}"))?
         }
-        ProxyType::All => Proxy::all(proxy_url).map_err(|e| format!("Invalid proxy URL: {e}"))?,
     };
 
     // Add authentication if provided

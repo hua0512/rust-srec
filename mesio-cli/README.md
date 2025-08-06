@@ -115,7 +115,7 @@ OPTIONS:
 
 ```
       --proxy <URL>              Proxy server URL (e.g., "http://proxy.example.com:8080")
-      --proxy-type <TYPE>        Proxy type: http, https, socks5, all [default: http]
+      --proxy-type <TYPE>        Proxy type: http, https, socks5 [default: http]
       --proxy-user <USERNAME>    Username for proxy authentication
       --proxy-pass <PASSWORD>    Password for proxy authentication
       --use-system-proxy         Use system proxy settings if no explicit proxy is configured [default: true]
