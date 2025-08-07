@@ -333,14 +333,14 @@ impl Douyu {
         let resp = self
             .extractor
             .client
-            .post(format!("https://www.douyu.com/lapi/live/getH5Play/{rid}"))
+            .post(format!(
+                "https://playweb.douyucdn.cn/lapi/live/getH5Play/{rid}"
+            ))
             .form(&form_data)
             .send()
             .await?
-            .text()
+            .json::<DouyuH5PlayResponse>()
             .await?;
-
-        let resp: DouyuH5PlayResponse = serde_json::from_str(&resp)?;
 
         if resp.error != 0 {
             return Err(ExtractorError::ValidationError(format!(
