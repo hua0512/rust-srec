@@ -214,13 +214,19 @@ impl FlvUtil<FlvTag> for FlvTag {
                 let first_byte = bytes[0];
 
                 // Check if this is an enhanced type
-                // let enhanced = (first_byte & 0b1000_0000) != 0;
+                let enhanced = (first_byte & 0b1000_0000) != 0;
 
-                // For both legacy and enhanced, frame type is in bits 4-7
-                let frame_type = (first_byte >> 4) & 0x07;
-
-                // VideoFrameType::KeyFrame = 1
-                frame_type == VideoFrameType::KeyFrame as u8
+                if enhanced {
+                    // For enhanced video, frame type is in bits 0-3
+                    let frame_type = first_byte & 0x0F;
+                    // VideoFrameType::KeyFrame = 1
+                    frame_type == VideoFrameType::KeyFrame as u8
+                } else {
+                    // For legacy video, frame type is in bits 4-7
+                    let frame_type = (first_byte >> 4) & 0x0F;
+                    // VideoFrameType::KeyFrame = 1
+                    frame_type == VideoFrameType::KeyFrame as u8
+                }
             }
             _ => false,
         }
