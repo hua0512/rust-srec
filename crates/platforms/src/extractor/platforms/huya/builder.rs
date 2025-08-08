@@ -43,7 +43,7 @@ impl Huya {
     const MP_URL: &'static str = "https://mp.huya.com/cache.php";
     // WUP User-Agent for Huya
     const WUP_UA: &'static str =
-        "HYSDK(Windows, 30000002)_APP(pc_exe&6090007&official)_SDK(trans&2.24.0.5157)";
+        "HYSDK(Windows, 30000002)_APP(pc_exe&6100301&official)_SDK(trans&2.24.0.5157)";
 
     pub fn new(
         platform_url: String,
@@ -478,7 +478,7 @@ impl Huya {
         stream_info: &mut StreamInfo,
         cdn: &str,
         stream_name: &str,
-        presenter_uid: i32,
+        presenter_uid: i64,
     ) -> Result<(), ExtractorError> {
         // println!("Getting true url for {:?}", stream_info);
         let request_body =
@@ -617,7 +617,6 @@ impl PlatformExtractor for Huya {
             let presenter_uid = extras
                 .get("presenter_uid")
                 .and_then(|v| v.as_i64())
-                .map(|v| v as i32)
                 .unwrap_or(0);
 
             (cdn, stream_name, presenter_uid)
