@@ -161,9 +161,7 @@ impl<W: Write + Seek> FlvWriter<W> {
         self.writer.write_u32::<BigEndian>(self.previous_tag_size)?;
 
         // Update timestamp for sequential writing
-        if timestamp_ms > self.timestamp {
-            self.timestamp = timestamp_ms;
-        }
+        self.timestamp = timestamp_ms;
 
         Ok(())
     }

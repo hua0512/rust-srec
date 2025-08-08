@@ -7,7 +7,7 @@ use flv::{
 };
 
 use std::fmt;
-use tracing::{debug, error};
+use tracing::{debug, error, trace};
 
 use crate::operators::MIN_INTERVAL_BETWEEN_KEYFRAMES_MS;
 use crate::utils::{FLV_HEADER_SIZE, FLV_PREVIOUS_TAG_SIZE, FLV_TAG_HEADER_SIZE};
@@ -196,7 +196,19 @@ impl FlvStats {
     }
 
     pub fn has_consistent_timestamps(&self) -> bool {
-        self.last_timestamp >= self.first_keyframe_timestamp.unwrap_or(0)
+        let video_consistent = if let Some(first) = self.first_keyframe_timestamp {
+            self.last_video_timestamp >= first
+        } else {
+            true // No video or no keyframes
+        };
+
+        let audio_consistent = if let Some(first) = self.first_audio_timestamp {
+            self.last_audio_timestamp >= first
+        } else {
+            true // No audio
+        };
+
+        video_consistent && audio_consistent
     }
 }
 
@@ -457,6 +469,7 @@ impl FlvAnalyzer {
 
     fn analyze_video_tag(&mut self, tag: &FlvTag) {
         let timestamp = tag.timestamp_ms;
+
         if tag.is_video_sequence_header() {
             if self.stats.resolution.is_none() {
                 if let Some(resolution) = tag.get_video_resolution() {
@@ -482,14 +495,25 @@ impl FlvAnalyzer {
 
             // Respect the minimum interval between keyframes
             let add_keyframe = self.stats.last_keyframe_timestamp == 0
-                || (timestamp - self.stats.last_keyframe_timestamp
+                || (timestamp.saturating_sub(self.stats.last_keyframe_timestamp)
                     >= MIN_INTERVAL_BETWEEN_KEYFRAMES_MS);
+            trace!(
+                "Analyzer: Checking keyframe. Current timestamp: {}, Last keyframe timestamp: {}, Condition: {}",
+                timestamp,
+                self.stats.last_keyframe_timestamp,
+                timestamp.saturating_sub(self.stats.last_keyframe_timestamp)
+                    >= MIN_INTERVAL_BETWEEN_KEYFRAMES_MS
+            );
             if add_keyframe {
                 // Store the position and timestamp for this keyframe
                 self.stats.keyframes.push(Keyframe {
                     timestamp_s: timestamp as f32 / 1000.0,
                     file_position: position,
                 });
+                trace!(
+                    "Analyzer: Adding keyframe. New count: {}",
+                    self.stats.keyframes.len()
+                );
                 self.stats.last_keyframe_timestamp = timestamp;
                 self.stats.last_keyframe_position = position;
 

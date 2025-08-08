@@ -21,9 +21,7 @@ pub use header_check::HeaderCheckOperator;
 pub use limit::LimitConfig;
 pub use limit::LimitOperator;
 pub use script_filler::MIN_INTERVAL_BETWEEN_KEYFRAMES_MS;
-pub use script_filler::{
-    NATURAL_METADATA_KEY_ORDER, ScriptFillerConfig, ScriptKeyframesFillerOperator,
-};
+pub use script_filler::{ScriptFillerConfig, ScriptKeyframesFillerOperator};
 pub use script_filter::ScriptFilterOperator;
 pub use split::SplitOperator;
 pub use time_consistency::{ContinuityMode, TimeConsistencyOperator};
