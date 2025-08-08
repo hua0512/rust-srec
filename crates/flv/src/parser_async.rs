@@ -35,9 +35,16 @@ pub struct FlvDecoder {
     expecting_tag_header: bool,
     // Stores the size of the last successfully parsed tag, useful for potential validation
     last_tag_size: u32,
+    // Tracks the current byte position in the stream
+    position: u64,
 }
 
 impl FlvDecoder {
+    /// Get the current byte position in the stream
+    pub fn position(&self) -> u64 {
+        self.position
+    }
+
     // Helper function to attempt resynchronization by finding the next potential tag start
     // Returns true if resync advanced the buffer, false otherwise.
     fn try_resync(&mut self, src: &mut BytesMut) -> bool {
@@ -45,6 +52,7 @@ impl FlvDecoder {
         if let Some(pos) = src.iter().position(|&b| b == 8 || b == 9 || b == 18) {
             // Discard bytes before the potential tag start
             src.advance(pos);
+            self.position += pos as u64;
             debug!(
                 "Resync: Found potential tag start after skipping {} bytes. Remaining buffer: {}",
                 pos,
@@ -61,6 +69,7 @@ impl FlvDecoder {
             // No potential tag start found in the current buffer, discard it all.
             let discarded_len = src.len();
             src.clear();
+            self.position += discarded_len as u64;
             // Request more data by reserving a minimal amount
             src.reserve(BUFFER_SIZE);
             warn!(
@@ -99,6 +108,7 @@ impl Decoder for FlvDecoder {
             }
 
             let header_bytes = src.split_to(FLV_HEADER_SIZE);
+            self.position += header_bytes.len() as u64;
             let mut cursor = Cursor::new(&header_bytes[..]); // Borrow slice temporarily
 
             match FlvHeader::parse(&mut cursor) {
@@ -106,6 +116,7 @@ impl Decoder for FlvDecoder {
                     debug!("Successfully parsed FLV header: {:?}", header);
                     // Skip PrevTagSize field (4 bytes) after header
                     src.advance(PREV_TAG_SIZE_FIELD_SIZE);
+                    self.position += PREV_TAG_SIZE_FIELD_SIZE as u64;
                     self.header_parsed = true;
                     self.expecting_tag_header = true; // After header, expect first tag
                     self.last_tag_size = 0; // Header is preceded by 0 size
@@ -164,6 +175,7 @@ impl Decoder for FlvDecoder {
 
             // Consume the PreviousTagSize field
             src.advance(PREV_TAG_SIZE_FIELD_SIZE);
+            self.position += PREV_TAG_SIZE_FIELD_SIZE as u64;
             self.expecting_tag_header = true; // Now we expect the tag header
         }
 
@@ -215,6 +227,7 @@ impl Decoder for FlvDecoder {
             );
             // Discard the invalid tag header
             src.advance(TAG_HEADER_SIZE);
+            self.position += TAG_HEADER_SIZE as u64;
             self.last_tag_size = 0; // Lost context
             // Return None here as well to indicate progress (skipping header)
             // without producing a full item. Let the next call handle PreviousTagSize.
@@ -237,6 +250,7 @@ impl Decoder for FlvDecoder {
         // --- 6. Demux Tag ---
         // We have the full tag. Create a Bytes slice containing the *entire* tag.
         let tag_bytes = src.split_to(total_tag_size).freeze();
+        self.position += total_tag_size as u64;
         // Cursor now owns the tag's Bytes
         let mut cursor = Cursor::new(tag_bytes);
 
@@ -287,6 +301,10 @@ impl<R: AsyncRead + Unpin> FlvDecoderStream<R> {
         Self {
             framed: FramedRead::with_capacity(reader, FlvDecoder::default(), capacity),
         }
+    }
+
+    pub fn position(&self) -> u64 {
+        self.framed.decoder().position()
     }
 }
 
@@ -399,8 +417,8 @@ mod tests {
         }
     }
 
-    #[test]
-    fn test_flv_decoder_stream() {
+    #[tokio::test]
+    async fn test_flv_decoder_stream() {
         let data = vec![
             0x46, 0x4C, 0x56, // "FLV" signature
             0x01, // version
@@ -416,7 +434,7 @@ mod tests {
         let cursor = Cursor::new(data);
         let mut decoder_stream = FlvDecoderStream::new(cursor);
 
-        let result = futures::executor::block_on(decoder_stream.next());
+        let result = decoder_stream.next().await;
 
         assert!(result.is_some());
         if let Some(Ok(FlvData::Header(header))) = result {
@@ -1004,5 +1022,51 @@ mod tests {
         }
 
         Ok(())
+    }
+
+    #[test]
+    fn test_decode_tracks_position() {
+        init_tracing();
+        let mut decoder = FlvDecoder::default();
+        let mut buffer = BytesMut::new();
+
+        // 1. Initial position should be 0
+        assert_eq!(decoder.position(), 0);
+
+        // 2. Decode Header
+        buffer.extend_from_slice(&[
+            0x46, 0x4C, 0x56, 0x01, 0x05, 0x00, 0x00, 0x00, 0x09, // Header (9 bytes)
+            0x00, 0x00, 0x00, 0x00, // PrevTagSize0 (4 bytes)
+        ]);
+        let header_res = decoder.decode(&mut buffer).unwrap().unwrap();
+        assert!(matches!(header_res, FlvData::Header(_)));
+        assert_eq!(
+            decoder.position(),
+            (FLV_HEADER_SIZE + PREV_TAG_SIZE_FIELD_SIZE) as u64
+        ); // 9 + 4 = 13
+
+        // 3. Decode a tag
+        let tag_data_size = 15;
+        let tag_header_size = 11;
+        let total_tag_size = tag_header_size + tag_data_size;
+        let prev_tag_size_field = 4;
+        buffer.extend_from_slice(&[
+            // Tag 1: Script Data (type 18), 15 bytes data
+            0x12, 0x00, 0x00, 0x0F, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // Header
+            1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, // Data
+            // Prev Tag Size for Tag 1
+            0x00, 0x00, 0x00, 0x1A,
+        ]);
+
+        let initial_pos = decoder.position();
+        let tag1_res = decoder.decode(&mut buffer).unwrap().unwrap();
+        assert!(matches!(tag1_res, FlvData::Tag(_)));
+        assert_eq!(decoder.position(), initial_pos + total_tag_size as u64);
+
+        // 4. Decode the PreviousTagSize
+        let initial_pos = decoder.position();
+        // This decode call will consume the PreviousTagSize
+        let _ = decoder.decode(&mut buffer).unwrap();
+        assert_eq!(decoder.position(), initial_pos + prev_tag_size_field as u64);
     }
 }
