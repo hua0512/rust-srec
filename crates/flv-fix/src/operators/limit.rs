@@ -174,27 +174,27 @@ impl LimitOperator {
 
     fn check_limits(&self) -> bool {
         // Check size limit if configured
-        if let Some(max_size) = self.config.max_size_bytes {
-            if self.state.accumulated_size >= max_size {
-                debug!(
-                    "{} Size limit exceeded: {} bytes (max: {} bytes)",
-                    self.context.name, self.state.accumulated_size, max_size
-                );
-                return true;
-            }
+        if let Some(max_size) = self.config.max_size_bytes
+            && self.state.accumulated_size >= max_size
+        {
+            debug!(
+                "{} Size limit exceeded: {} bytes (max: {} bytes)",
+                self.context.name, self.state.accumulated_size, max_size
+            );
+            return true;
         }
 
         // Check duration limit if configured - only if we've seen at least one content tag
-        if let Some(max_duration) = self.config.max_duration_ms {
-            if self.state.first_content_tag_seen {
-                let current_duration = self.state.current_duration();
-                if current_duration >= max_duration {
-                    debug!(
-                        "{} Duration limit exceeded: {} ms (max: {} ms)",
-                        self.context.name, current_duration, max_duration
-                    );
-                    return true;
-                }
+        if let Some(max_duration) = self.config.max_duration_ms
+            && self.state.first_content_tag_seen
+        {
+            let current_duration = self.state.current_duration();
+            if current_duration >= max_duration {
+                debug!(
+                    "{} Duration limit exceeded: {} ms (max: {} ms)",
+                    self.context.name, current_duration, max_duration
+                );
+                return true;
             }
         }
 

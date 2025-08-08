@@ -113,19 +113,19 @@ impl OwnedTsParser {
 
     /// Parse PMT from payload
     fn process_pmt(&mut self, pid: u16, payload: &[u8]) -> Result<(), TsError> {
-        if let Some(pat) = &self.pat {
-            if let Some(program) = pat.programs.iter().find(|p| p.pmt_pid == pid) {
-                let pmt = Pmt::parse(payload)?;
-                let is_new = self
-                    .pmt_versions
-                    .get(&program.program_number)
-                    .is_none_or(|&v| v != pmt.version_number);
+        if let Some(pat) = &self.pat
+            && let Some(program) = pat.programs.iter().find(|p| p.pmt_pid == pid)
+        {
+            let pmt = Pmt::parse(payload)?;
+            let is_new = self
+                .pmt_versions
+                .get(&program.program_number)
+                .is_none_or(|&v| v != pmt.version_number);
 
-                if is_new {
-                    self.pmt_versions
-                        .insert(program.program_number, pmt.version_number);
-                    self.pmts.insert(program.program_number, pmt);
-                }
+            if is_new {
+                self.pmt_versions
+                    .insert(program.program_number, pmt.version_number);
+                self.pmts.insert(program.program_number, pmt);
             }
         }
         Ok(())

@@ -140,12 +140,12 @@ pub mod bulk_ops {
                 }
                 TarsValue::Struct(map) => {
                     for value in map.values() {
-                        validate_string_collection(&[value.clone()])?;
+                        validate_string_collection(std::slice::from_ref(value))?;
                     }
                 }
                 TarsValue::Map(map) => {
                     for value in map.values() {
-                        validate_string_collection(&[value.clone()])?;
+                        validate_string_collection(std::slice::from_ref(value))?;
                     }
                 }
                 TarsValue::List(list) => {

@@ -29,32 +29,31 @@ impl TwitchPlaylistProcessor {
         let mut processed_segments = Vec::new();
 
         for segment in &playlist.segments {
-            if let Some(daterange) = &segment.daterange {
-                if (daterange.class.as_deref() == Some("twitch-stitched-ad")
+            if let Some(daterange) = &segment.daterange
+                && (daterange.class.as_deref() == Some("twitch-stitched-ad")
                     || daterange.id.starts_with("stitched-ad-"))
-                    && self.ad_dateranges.insert(daterange.id.clone())
-                {
-                    debug!(
-                        "New ad DATERANGE detected: id={}, class={:?}",
-                        daterange.id, daterange.class
-                    );
-                }
+                && self.ad_dateranges.insert(daterange.id.clone())
+            {
+                debug!(
+                    "New ad DATERANGE detected: id={}, class={:?}",
+                    daterange.id, daterange.class
+                );
             }
         }
 
         for segment in &playlist.segments {
             let mut is_ad = false;
 
-            if let Some(pdt) = segment.program_date_time {
-                if self.ad_dateranges.iter().any(|ad_id| {
+            if let Some(pdt) = segment.program_date_time
+                && self.ad_dateranges.iter().any(|ad_id| {
                     playlist.segments.iter().any(|s| {
                         s.daterange.as_ref().is_some_and(|dr| {
                             &dr.id == ad_id && pdt >= dr.start_date && pdt < dr.end_date.unwrap()
                         })
                     })
-                }) {
-                    is_ad = true;
-                }
+                })
+            {
+                is_ad = true;
             }
 
             if segment.discontinuity {

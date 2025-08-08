@@ -229,12 +229,11 @@ where
 
             if let serde_json::Value::Object(obj) = value {
                 // Parse common section if it exists
-                if let Some(common_value) = obj.get("common") {
-                    if let Ok(common) =
+                if let Some(common_value) = obj.get("common")
+                    && let Ok(common) =
                         serde_json::from_value::<DouyinStreamDataCommon>(common_value.clone())
-                    {
-                        result.common = Some(common);
-                    }
+                {
+                    result.common = Some(common);
                 }
 
                 // Parse data section if it exists

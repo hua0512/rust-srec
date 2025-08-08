@@ -81,10 +81,10 @@ impl ResolutionDetector {
         stream_type: StreamType,
     ) -> Option<Resolution> {
         for packet in video_packets {
-            if let Some(payload) = packet.payload() {
-                if let Some(resolution) = Self::scan_payload_for_sps(&payload, stream_type) {
-                    return Some(resolution);
-                }
+            if let Some(payload) = packet.payload()
+                && let Some(resolution) = Self::scan_payload_for_sps(&payload, stream_type)
+            {
+                return Some(resolution);
             }
         }
         None

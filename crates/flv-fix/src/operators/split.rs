@@ -145,14 +145,14 @@ impl Processor<FlvData> for SplitOperator {
                     let crc = Self::calculate_crc32(&tag.data);
 
                     // Compare with cached CRC if available
-                    if let Some(prev_crc) = self.state.video_crc {
-                        if prev_crc != crc {
-                            info!(
-                                "{} Video sequence header changed (CRC: {:x} -> {:x}), marking for split",
-                                self.context.name, prev_crc, crc
-                            );
-                            self.state.changed = true;
-                        }
+                    if let Some(prev_crc) = self.state.video_crc
+                        && prev_crc != crc
+                    {
+                        info!(
+                            "{} Video sequence header changed (CRC: {:x} -> {:x}), marking for split",
+                            self.context.name, prev_crc, crc
+                        );
+                        self.state.changed = true;
                     }
                     // Update sequence tag
                     self.state.video_sequence_tag = Some(tag.clone());
@@ -162,14 +162,14 @@ impl Processor<FlvData> for SplitOperator {
 
                     let crc = Self::calculate_crc32(&tag.data);
                     // Compare with cached CRC if available
-                    if let Some(prev_crc) = self.state.audio_crc {
-                        if prev_crc != crc {
-                            info!(
-                                "{} Audio parameters changed: {:x} -> {:x}",
-                                self.context.name, prev_crc, crc
-                            );
-                            self.state.changed = true;
-                        }
+                    if let Some(prev_crc) = self.state.audio_crc
+                        && prev_crc != crc
+                    {
+                        info!(
+                            "{} Audio parameters changed: {:x} -> {:x}",
+                            self.context.name, prev_crc, crc
+                        );
+                        self.state.changed = true;
                     }
                     // Update sequence tag
                     self.state.audio_sequence_tag = Some(tag.clone());

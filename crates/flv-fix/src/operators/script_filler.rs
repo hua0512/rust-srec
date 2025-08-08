@@ -299,30 +299,30 @@ mod tests {
     // Helper function to extract keyframes object from tag data
     fn extract_keyframes(tag: &FlvTag) -> Option<HashMap<String, Vec<f64>>> {
         let mut cursor = std::io::Cursor::new(tag.data.clone());
-        if let Ok(amf_data) = ScriptData::demux(&mut cursor) {
-            if let Amf0Value::Object(props) = &amf_data.data[0] {
-                for (key, value) in props.iter() {
-                    if key == "keyframes" {
-                        if let Amf0Value::Object(keyframe_props) = value {
-                            let mut result = HashMap::new();
-                            for (kf_key, kf_value) in keyframe_props.iter() {
-                                if let Amf0Value::StrictArray(array) = kf_value {
-                                    let values: Vec<f64> = array
-                                        .iter()
-                                        .filter_map(|v| {
-                                            if let Amf0Value::Number(num) = v {
-                                                Some(*num)
-                                            } else {
-                                                None
-                                            }
-                                        })
-                                        .collect();
-                                    result.insert(kf_key.as_ref().to_owned(), values);
-                                }
-                            }
-                            return Some(result);
+        if let Ok(amf_data) = ScriptData::demux(&mut cursor)
+            && let Amf0Value::Object(props) = &amf_data.data[0]
+        {
+            for (key, value) in props.iter() {
+                if key == "keyframes"
+                    && let Amf0Value::Object(keyframe_props) = value
+                {
+                    let mut result = HashMap::new();
+                    for (kf_key, kf_value) in keyframe_props.iter() {
+                        if let Amf0Value::StrictArray(array) = kf_value {
+                            let values: Vec<f64> = array
+                                .iter()
+                                .filter_map(|v| {
+                                    if let Amf0Value::Number(num) = v {
+                                        Some(*num)
+                                    } else {
+                                        None
+                                    }
+                                })
+                                .collect();
+                            result.insert(kf_key.as_ref().to_owned(), values);
                         }
                     }
+                    return Some(result);
                 }
             }
         }

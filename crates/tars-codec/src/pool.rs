@@ -36,7 +36,7 @@ impl TarsCodecPool {
     }
 
     /// Get a pooled serializer, or create a new one if pool is empty
-    pub fn get_serializer(&self) -> PooledSerializer {
+    pub fn get_serializer(&self) -> PooledSerializer<'_> {
         let serializer = self.serializers.lock().unwrap().pop().unwrap_or_default();
         PooledSerializer {
             inner: Some(serializer),
@@ -45,7 +45,7 @@ impl TarsCodecPool {
     }
 
     /// Get a pooled deserializer for the given bytes
-    pub fn get_deserializer(&self, bytes: Bytes) -> PooledDeserializer {
+    pub fn get_deserializer(&self, bytes: Bytes) -> PooledDeserializer<'_> {
         let deserializer = self
             .deserializers
             .lock()
@@ -64,7 +64,7 @@ impl TarsCodecPool {
     }
 
     /// Get a pooled byte buffer for encoding
-    pub fn get_byte_buffer(&self, estimated_size: usize) -> PooledByteBuffer {
+    pub fn get_byte_buffer(&self, estimated_size: usize) -> PooledByteBuffer<'_> {
         let mut buffer = self
             .byte_buffers
             .lock()

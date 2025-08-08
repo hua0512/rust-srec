@@ -103,9 +103,10 @@ impl OutputManager {
 
                 // Branch 2: Max Overall Stall Timeout (Live streams only)
                 _ = sleep(overall_stall_timeout), if self.is_live_stream && self.config.output_config.live_max_overall_stall_duration.is_some() => {
-                    if let Some(last_input_time) = self.last_input_received_time {
-                        if let Some(max_stall_duration) = self.config.output_config.live_max_overall_stall_duration {
-                            if last_input_time.elapsed() >= max_stall_duration {
+                    if let Some(last_input_time) = self.last_input_received_time
+                        && let Some(max_stall_duration) = self.config.output_config.live_max_overall_stall_duration
+                        && last_input_time.elapsed() >= max_stall_duration
+                    {
                                 error!(
                                     "Live stream stalled for more than configured max duration ({:?}). No new segments or events received.",
                                     max_stall_duration
@@ -114,9 +115,8 @@ impl OutputManager {
                                     "Stalled: No input received for max duration.".to_string()
                                 ))).await;
                                 break; // Exit loop for live stream stall
-                            }
-                        }
                     }
+
                 }
 
                 // Branch 3: Input from SegmentScheduler
@@ -140,17 +140,17 @@ impl OutputManager {
 
                             // For both live and VOD, add to reorder buffer.
                             // If it's a live stream and we are waiting for a gap, update counter.
-                            if self.is_live_stream {
-                                if let Some(missing_seq) = self.gap_detected_waiting_for_sequence {
-                                    if current_segment_sequence > missing_seq {
+                            if self.is_live_stream
+                                && let Some(missing_seq) = self.gap_detected_waiting_for_sequence
+                                    && current_segment_sequence > missing_seq
+                                {
                                         self.segments_received_since_gap_detected += 1;
                                         debug!(
                                             "Live stream: Received segment {} while waiting for {}. Segments since gap: {}.",
-                                            current_segment_sequence, missing_seq, self.segments_received_since_gap_detected
-                                        );
-                                    }
+                                        current_segment_sequence, missing_seq, self.segments_received_since_gap_detected
+                                    );
                                 }
-                            }
+
                             self.reorder_buffer.insert(current_segment_sequence, processed_output);
 
                             // Attempt to emit segments from the buffer.

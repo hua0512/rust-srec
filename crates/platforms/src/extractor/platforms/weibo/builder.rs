@@ -87,15 +87,13 @@ impl Weibo {
             // debug!("response: {:?}", response);
 
             for item in response["data"]["list"].as_array().unwrap() {
-                if let Some(page_info) = item["page_info"].as_object() {
-                    if let Some(object_type) = page_info.get("object_type") {
-                        if object_type == "live" {
-                            if let Some(rid) = page_info.get("object_id").and_then(|v| v.as_str()) {
-                                uid = rid;
-                                break;
-                            }
-                        }
-                    }
+                if let Some(page_info) = item["page_info"].as_object()
+                    && let Some(object_type) = page_info.get("object_type")
+                    && object_type == "live"
+                    && let Some(rid) = page_info.get("object_id").and_then(|v| v.as_str())
+                {
+                    uid = rid;
+                    break;
                 }
             }
 

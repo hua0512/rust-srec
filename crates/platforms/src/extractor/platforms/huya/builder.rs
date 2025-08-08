@@ -135,10 +135,10 @@ impl Huya {
             None => return Err(ExtractorError::StreamerNotFound),
         };
 
-        if let Some(live_data) = &data.live_data {
-            if live_data.introduction.starts_with("【回放】") {
-                return Ok(false);
-            }
+        if let Some(live_data) = &data.live_data
+            && live_data.introduction.starts_with("【回放】")
+        {
+            return Ok(false);
         }
 
         let is_live = data.real_live_status == Some("ON") && data.live_status == Some("ON");

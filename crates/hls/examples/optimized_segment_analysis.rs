@@ -139,16 +139,16 @@ fn show_detailed_streams(segment: &HlsData) {
     }
 
     // Alternative: get video and audio separately
-    if let Some(Ok(video_streams)) = segment.get_ts_video_streams() {
-        if !video_streams.is_empty() {
-            println!("  Video streams: {}", video_streams.len());
-        }
+    if let Some(Ok(video_streams)) = segment.get_ts_video_streams()
+        && !video_streams.is_empty()
+    {
+        println!("  Video streams: {}", video_streams.len());
     }
 
-    if let Some(Ok(audio_streams)) = segment.get_ts_audio_streams() {
-        if !audio_streams.is_empty() {
-            println!("  Audio streams: {}", audio_streams.len());
-        }
+    if let Some(Ok(audio_streams)) = segment.get_ts_audio_streams()
+        && !audio_streams.is_empty()
+    {
+        println!("  Audio streams: {}", audio_streams.len());
     }
 }
 

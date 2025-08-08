@@ -262,45 +262,43 @@ impl SegmentSplitOperator {
         // Compare stream profiles for high-level changes
         if let (Some(current_profile), Some(previous_profile)) =
             (&current_profile, &self.last_stream_profile)
+            && !needs_split
         {
-            if !needs_split {
-                // Check for codec changes
-                if current_profile.has_h264 != previous_profile.has_h264
-                    || current_profile.has_h265 != previous_profile.has_h265
-                    || current_profile.has_aac != previous_profile.has_aac
-                    || current_profile.has_ac3 != previous_profile.has_ac3
-                {
-                    info!("{} Stream codec availability changed", self.context.name);
-                    needs_split = true;
-                }
+            // Check for codec changes
+            if current_profile.has_h264 != previous_profile.has_h264
+                || current_profile.has_h265 != previous_profile.has_h265
+                || current_profile.has_aac != previous_profile.has_aac
+                || current_profile.has_ac3 != previous_profile.has_ac3
+            {
+                info!("{} Stream codec availability changed", self.context.name);
+                needs_split = true;
+            }
 
-                // Check for stream type changes
-                if current_profile.has_video != previous_profile.has_video
-                    || current_profile.has_audio != previous_profile.has_audio
-                {
-                    info!(
-                        "{} Stream type availability changed (video: {} -> {}, audio: {} -> {})",
-                        self.context.name,
-                        previous_profile.has_video,
-                        current_profile.has_video,
-                        previous_profile.has_audio,
-                        current_profile.has_audio
-                    );
-                    needs_split = true;
-                }
+            // Check for stream type changes
+            if current_profile.has_video != previous_profile.has_video
+                || current_profile.has_audio != previous_profile.has_audio
+            {
+                info!(
+                    "{} Stream type availability changed (video: {} -> {}, audio: {} -> {})",
+                    self.context.name,
+                    previous_profile.has_video,
+                    current_profile.has_video,
+                    previous_profile.has_audio,
+                    current_profile.has_audio
+                );
+                needs_split = true;
+            }
 
-                // Check for resolution changes using StreamProfile
-                if let (Some(current_res), Some(previous_res)) =
-                    (&current_profile.resolution, &previous_profile.resolution)
-                {
-                    if current_res != previous_res {
-                        info!(
-                            "{} Video resolution changed via profile: {} -> {}",
-                            self.context.name, previous_res, current_res
-                        );
-                        needs_split = true;
-                    }
-                }
+            // Check for resolution changes using StreamProfile
+            if let (Some(current_res), Some(previous_res)) =
+                (&current_profile.resolution, &previous_profile.resolution)
+                && current_res != previous_res
+            {
+                info!(
+                    "{} Video resolution changed via profile: {} -> {}",
+                    self.context.name, previous_res, current_res
+                );
+                needs_split = true;
             }
         }
 
@@ -310,25 +308,24 @@ impl SegmentSplitOperator {
                 .programs
                 .iter()
                 .any(|p| !p.video_streams.is_empty()))
+            && let Some(current_resolution) = current_profile.as_ref().and_then(|p| p.resolution)
         {
-            if let Some(current_resolution) = current_profile.as_ref().and_then(|p| p.resolution) {
-                if let Some(previous_resolution) = &self.last_resolution {
-                    if previous_resolution != &current_resolution {
-                        info!(
-                            "{} Video resolution changed: {} -> {}",
-                            self.context.name, previous_resolution, current_resolution
-                        );
-                        needs_split = true;
-                    }
-                } else {
-                    // First time we detect resolution
-                    info!(
-                        "{} Detected video resolution: {}",
-                        self.context.name, current_resolution
-                    );
-                }
-                self.last_resolution = Some(current_resolution);
+            if let Some(previous_resolution) = &self.last_resolution
+                && previous_resolution != &current_resolution
+            {
+                info!(
+                    "{} Video resolution changed: {} -> {}",
+                    self.context.name, previous_resolution, current_resolution
+                );
+                needs_split = true;
+            } else {
+                // First time we detect resolution
+                info!(
+                    "{} Detected video resolution: {}",
+                    self.context.name, current_resolution
+                );
             }
+            self.last_resolution = Some(current_resolution);
         }
 
         // Update stored information
@@ -383,13 +380,13 @@ impl Processor<HlsData> for SegmentSplitOperator {
             output(HlsData::end_marker())?;
 
             // If the split was triggered by a non-init segment, we need to re-emit the last init segment.
-            if !matches!(&input, HlsData::M4sData(M4sData::InitSegment(_))) {
-                if let Some(init_segment) = &self.last_init_segment {
-                    output(HlsData::mp4_init(
-                        init_segment.segment.clone(),
-                        init_segment.data.clone(),
-                    ))?;
-                }
+            if !matches!(&input, HlsData::M4sData(M4sData::InitSegment(_)))
+                && let Some(init_segment) = &self.last_init_segment
+            {
+                output(HlsData::mp4_init(
+                    init_segment.segment.clone(),
+                    init_segment.data.clone(),
+                ))?;
             }
         }
 

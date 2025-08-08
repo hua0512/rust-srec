@@ -295,16 +295,14 @@ impl Extractor {
     /// * `headers` - HTTP response headers to parse for cookies
     pub fn parse_and_store_cookies(&mut self, headers: &reqwest::header::HeaderMap) {
         for value in headers.get_all("set-cookie").iter() {
-            if let Ok(cookie_str) = value.to_str() {
-                // Parse "name=value; other_attributes" format
-                if let Some(cookie_part) = cookie_str.split(';').next() {
-                    if let Some((name, value)) = cookie_part.split_once('=') {
-                        let name = name.trim().to_string();
-                        let value = value.trim().to_string();
-                        debug!("Auto-storing cookie: {}={}", name, value);
-                        self.cookies.insert(name, value);
-                    }
-                }
+            if let Ok(cookie_str) = value.to_str()
+                && let Some(cookie_part) = cookie_str.split(';').next()
+                && let Some((name, value)) = cookie_part.split_once('=')
+            {
+                let name = name.trim().to_string();
+                let value = value.trim().to_string();
+                debug!("Auto-storing cookie: {}={}", name, value);
+                self.cookies.insert(name, value);
             }
         }
     }

@@ -138,10 +138,10 @@ impl SegmentDownloader for SegmentFetcher {
 
         // Check if the segment is already cached
         let cache_key = CacheKey::new(CacheResourceType::Segment, segment_url.to_string(), None);
-        if let Some(cache) = &self.cache_service {
-            if let Ok(Some(data)) = cache.get(&cache_key).await {
-                return Ok(data.0);
-            }
+        if let Some(cache) = &self.cache_service
+            && let Ok(Some(data)) = cache.get(&cache_key).await
+        {
+            return Ok(data.0);
         }
 
         let downloaded_bytes = self

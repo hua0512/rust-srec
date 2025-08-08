@@ -36,32 +36,32 @@ impl SegmentLimiterOperator {
         }
 
         // Check size limit
-        if let Some(max_size) = self.max_size {
-            if max_size > 0 {
-                let segment_size = segment_data.len() as u64;
-                if self.current_size + segment_size > max_size {
-                    debug!(
-                        "Size limit reached: {} > {}",
-                        self.current_size + segment_size,
-                        max_size
-                    );
-                    return true;
-                }
+        if let Some(max_size) = self.max_size
+            && max_size > 0
+        {
+            let segment_size = segment_data.len() as u64;
+            if self.current_size + segment_size > max_size {
+                debug!(
+                    "Size limit reached: {} > {}",
+                    self.current_size + segment_size,
+                    max_size
+                );
+                return true;
             }
         }
 
         // Check duration limit
-        if let Some(max_duration) = self.max_duration {
-            if !max_duration.is_zero() {
-                let segment_duration = Duration::from_secs((segment_duration) as u64);
-                if self.current_duration + segment_duration > max_duration {
-                    debug!(
-                        "Duration limit reached: {:?} > {:?}",
-                        self.current_duration + segment_duration,
-                        max_duration
-                    );
-                    return true;
-                }
+        if let Some(max_duration) = self.max_duration
+            && !max_duration.is_zero()
+        {
+            let segment_duration = Duration::from_secs((segment_duration) as u64);
+            if self.current_duration + segment_duration > max_duration {
+                debug!(
+                    "Duration limit reached: {:?} > {:?}",
+                    self.current_duration + segment_duration,
+                    max_duration
+                );
+                return true;
             }
         }
 
@@ -124,11 +124,11 @@ impl Processor<HlsData> for SegmentLimiterOperator {
                     }
 
                     // Ensure each new sequence starts with an init segment.
-                    if !self.init_segment_sent {
-                        if let Some(init_segment) = &self.init_segment {
-                            output(HlsData::M4sData(M4sData::InitSegment(init_segment.clone())))?;
-                            self.init_segment_sent = true;
-                        }
+                    if !self.init_segment_sent
+                        && let Some(init_segment) = &self.init_segment
+                    {
+                        output(HlsData::M4sData(M4sData::InitSegment(init_segment.clone())))?;
+                        self.init_segment_sent = true;
                     }
 
                     // Unconditionally output the current media segment and track its metrics.

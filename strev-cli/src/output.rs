@@ -170,14 +170,14 @@ impl OutputManager {
             },
         ];
 
-        if let Some(extras) = &stream_info.extras {
-            if let Some(extras_obj) = extras.as_object() {
-                for (key, value) in extras_obj {
-                    rows.push(StreamTableRow {
-                        property: key,
-                        value: Cow::Owned(value.to_string()),
-                    });
-                }
+        if let Some(extras) = &stream_info.extras
+            && let Some(extras_obj) = extras.as_object()
+        {
+            for (key, value) in extras_obj {
+                rows.push(StreamTableRow {
+                    property: key,
+                    value: Cow::Owned(value.to_string()),
+                });
             }
         }
 
@@ -199,12 +199,12 @@ impl OutputManager {
         ];
 
         let mut extras_keys = Vec::new();
-        if let Some(extras) = &stream_info.extras {
-            if let Some(extras_obj) = extras.as_object() {
-                for key in extras_obj.keys() {
-                    headers.push(key);
-                    extras_keys.push(key.as_str());
-                }
+        if let Some(extras) = &stream_info.extras
+            && let Some(extras_obj) = extras.as_object()
+        {
+            for key in extras_obj.keys() {
+                headers.push(key);
+                extras_keys.push(key.as_str());
             }
         }
         output.push_str(&headers.join(","));
@@ -224,12 +224,12 @@ impl OutputManager {
             Cow::Owned(stream_info.priority.to_string()),
         ];
 
-        if let Some(extras) = &stream_info.extras {
-            if let Some(extras_obj) = extras.as_object() {
-                for key in extras_keys {
-                    let value = extras_obj.get(key).and_then(|v| v.as_str()).unwrap_or("");
-                    record.push(Self::escape_csv(value));
-                }
+        if let Some(extras) = &stream_info.extras
+            && let Some(extras_obj) = extras.as_object()
+        {
+            for key in extras_keys {
+                let value = extras_obj.get(key).and_then(|v| v.as_str()).unwrap_or("");
+                record.push(Self::escape_csv(value));
             }
         }
 
@@ -358,18 +358,18 @@ impl OutputManager {
         }
 
         // Media Extras
-        if let Some(extras) = &media_info.extras {
-            if !extras.is_empty() {
-                output.push('\n');
-                output.push_str(&self.colorize("Media Extras:", &Color::Green, true));
-                output.push('\n');
-                for (key, value) in extras {
-                    output.push_str(&format!(
-                        "  {}: {}\n",
-                        self.colorize(key, &Color::Yellow, false),
-                        self.colorize(value, &Color::Cyan, false)
-                    ));
-                }
+        if let Some(extras) = &media_info.extras
+            && !extras.is_empty()
+        {
+            output.push('\n');
+            output.push_str(&self.colorize("Media Extras:", &Color::Green, true));
+            output.push('\n');
+            for (key, value) in extras {
+                output.push_str(&format!(
+                    "  {}: {}\n",
+                    self.colorize(key, &Color::Yellow, false),
+                    self.colorize(value, &Color::Cyan, false)
+                ));
             }
         }
 
@@ -579,7 +579,7 @@ impl OutputManager {
     }
 
     // Helper method to avoid unnecessary allocations when escaping CSV
-    fn escape_csv(s: &str) -> Cow<str> {
+    fn escape_csv(s: &str) -> Cow<'_, str> {
         if s.contains('"') {
             Cow::Owned(s.replace('"', "\"\""))
         } else {

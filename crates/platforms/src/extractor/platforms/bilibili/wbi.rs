@@ -171,11 +171,12 @@ pub(super) async fn get_wbi_keys(client: &Client) -> Result<WbiKeys, ExtractorEr
     let check_keys = || {
         let rx = WBI_KEYS_RX.clone();
         let keys = rx.borrow();
-        if let Some(k) = &*keys {
-            if !k.is_stale() {
-                return Some(Ok(k.clone()));
-            }
+        if let Some(k) = &*keys
+            && !k.is_stale()
+        {
+            return Some(Ok(k.clone()));
         }
+
         None
     };
 

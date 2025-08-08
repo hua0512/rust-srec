@@ -76,34 +76,34 @@ impl PlaylistProvider for PlaylistEngine {
         })?;
         let cache_key = CacheKey::new(CacheResourceType::Playlist, playlist_url.as_str(), None);
 
-        if let Some(cache_service) = &self.cache_service {
-            if let Some(cached_data) = cache_service.get(&cache_key).await? {
-                let mut playlist_content =
-                    String::from_utf8(cached_data.0.to_vec()).map_err(|e| {
-                        HlsDownloaderError::PlaylistError(format!(
-                            "Failed to parse cached playlist from UTF-8: {e}"
-                        ))
-                    })?;
-                if TwitchPlaylistProcessor::is_twitch_playlist(playlist_url.as_str()) {
-                    playlist_content = self.preprocess_twitch_playlist(&playlist_content);
-                }
-                let base_url_obj = playlist_url.join(".").map_err(|e| {
-                    HlsDownloaderError::PlaylistError(format!("Failed to determine base URL: {e}"))
-                })?;
-                let base_url = base_url_obj.to_string();
-                return match parse_playlist_res(playlist_content.as_bytes()) {
-                    Ok(m3u8_rs::Playlist::MasterPlaylist(pl)) => {
-                        Ok(InitialPlaylist::Master(pl, base_url))
-                    }
-                    Ok(m3u8_rs::Playlist::MediaPlaylist(pl)) => {
-                        Ok(InitialPlaylist::Media(pl, base_url))
-                    }
-                    Err(e) => Err(HlsDownloaderError::PlaylistError(format!(
-                        "Failed to parse cached playlist: {e}"
-                    ))),
-                };
+        if let Some(cache_service) = &self.cache_service
+            && let Some(cached_data) = cache_service.get(&cache_key).await?
+        {
+            let mut playlist_content = String::from_utf8(cached_data.0.to_vec()).map_err(|e| {
+                HlsDownloaderError::PlaylistError(format!(
+                    "Failed to parse cached playlist from UTF-8: {e}"
+                ))
+            })?;
+            if TwitchPlaylistProcessor::is_twitch_playlist(playlist_url.as_str()) {
+                playlist_content = self.preprocess_twitch_playlist(&playlist_content);
             }
+            let base_url_obj = playlist_url.join(".").map_err(|e| {
+                HlsDownloaderError::PlaylistError(format!("Failed to determine base URL: {e}"))
+            })?;
+            let base_url = base_url_obj.to_string();
+            return match parse_playlist_res(playlist_content.as_bytes()) {
+                Ok(m3u8_rs::Playlist::MasterPlaylist(pl)) => {
+                    Ok(InitialPlaylist::Master(pl, base_url))
+                }
+                Ok(m3u8_rs::Playlist::MediaPlaylist(pl)) => {
+                    Ok(InitialPlaylist::Media(pl, base_url))
+                }
+                Err(e) => Err(HlsDownloaderError::PlaylistError(format!(
+                    "Failed to parse cached playlist: {e}"
+                ))),
+            };
         }
+
         let response = self
             .http_client
             .get(playlist_url.clone())
@@ -459,16 +459,16 @@ impl PlaylistEngine {
                 })?;
 
         // Fast path: check if we have a previous playlist and if lengths differ
-        if let Some(last_bytes) = last_playlist_bytes.as_ref() {
-            if last_bytes.len() == playlist_bytes.len() {
-                // Same length, do full byte comparison
-                if last_bytes == &playlist_bytes {
-                    debug!(
-                        "Playlist content for {} has not changed. Skipping parsing.",
-                        playlist_url
-                    );
-                    return Ok(None);
-                }
+        if let Some(last_bytes) = last_playlist_bytes.as_ref()
+            && last_bytes.len() == playlist_bytes.len()
+        {
+            // Same length, do full byte comparison
+            if last_bytes == &playlist_bytes {
+                debug!(
+                    "Playlist content for {} has not changed. Skipping parsing.",
+                    playlist_url
+                );
+                return Ok(None);
             }
         }
 

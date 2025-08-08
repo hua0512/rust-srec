@@ -82,12 +82,12 @@ impl TsPacketRef {
     /// Get adaptation field data
     #[inline]
     pub fn adaptation_field(&self) -> Option<Bytes> {
-        if let Some(offset) = self.adaptation_field_offset {
-            if offset + 1 < self.data.len() {
-                let length = self.data[offset] as usize;
-                if offset + 1 + length <= self.data.len() {
-                    return Some(self.data.slice(offset + 1..offset + 1 + length));
-                }
+        if let Some(offset) = self.adaptation_field_offset
+            && offset + 1 < self.data.len()
+        {
+            let length = self.data[offset] as usize;
+            if offset + 1 + length <= self.data.len() {
+                return Some(self.data.slice(offset + 1..offset + 1 + length));
             }
         }
         None
@@ -95,11 +95,12 @@ impl TsPacketRef {
     /// Get payload data
     #[inline]
     pub fn payload(&self) -> Option<Bytes> {
-        if let Some(offset) = self.payload_offset {
-            if offset < self.data.len() {
-                return Some(self.data.slice(offset..));
-            }
+        if let Some(offset) = self.payload_offset
+            && offset < self.data.len()
+        {
+            return Some(self.data.slice(offset..));
         }
+
         None
     }
     /// Get PSI payload (removes pointer field if PUSI is set)
@@ -119,10 +120,10 @@ impl TsPacketRef {
 
     /// Check if this packet has a random access indicator
     pub fn has_random_access_indicator(&self) -> bool {
-        if let Some(adaptation_field) = self.adaptation_field() {
-            if !adaptation_field.is_empty() {
-                return (adaptation_field[0] & 0x40) != 0;
-            }
+        if let Some(adaptation_field) = self.adaptation_field()
+            && !adaptation_field.is_empty()
+        {
+            return (adaptation_field[0] & 0x40) != 0;
         }
         false
     }
@@ -462,15 +463,10 @@ impl TsParser {
                     on_packet_cb(&packet)?;
                 }
 
-                if packet.payload_unit_start_indicator {
-                    if let Some(psi_payload) = packet.psi_payload() {
-                        self.process_psi_payload(
-                            packet.pid,
-                            psi_payload,
-                            &mut on_pat,
-                            &mut on_pmt,
-                        )?;
-                    }
+                if packet.payload_unit_start_indicator
+                    && let Some(psi_payload) = packet.psi_payload()
+                {
+                    self.process_psi_payload(packet.pid, psi_payload, &mut on_pat, &mut on_pmt)?;
                 }
                 data.advance(188);
             } else {

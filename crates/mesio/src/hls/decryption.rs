@@ -134,14 +134,13 @@ impl DecryptionService {
         // Check in-memory cache first
 
         let key = CacheKey::new(CacheResourceType::Key, key_uri_str.clone(), None);
-        if let Some(cache_manager) = &self.cache_manager {
-            if let Some(cached_key) = cache_manager
+        if let Some(cache_manager) = &self.cache_manager
+            && let Some(cached_key) = cache_manager
                 .get(&key)
                 .await
                 .map_err(|e| HlsDownloaderError::CacheError(format!("Cache error: {e}")))?
-            {
-                return Ok(cached_key.0);
-            }
+        {
+            return Ok(cached_key.0);
         }
 
         let fetched_key_bytes = self.key_fetcher.fetch_key(&key_uri_str).await?;

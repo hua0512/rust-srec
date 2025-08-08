@@ -118,11 +118,11 @@ impl TsPacket {
 
     /// Check if this packet contains a random access indicator
     pub fn has_random_access_indicator(&self) -> bool {
-        if let Some(adaptation_field) = &self.adaptation_field {
-            if !adaptation_field.is_empty() {
-                // Random access indicator is bit 6 (0x40) of the first byte
-                return (adaptation_field[0] & 0x40) != 0;
-            }
+        if let Some(adaptation_field) = &self.adaptation_field
+            && !adaptation_field.is_empty()
+        {
+            // Random access indicator is bit 6 (0x40) of the first byte
+            return (adaptation_field[0] & 0x40) != 0;
         }
         false
     }

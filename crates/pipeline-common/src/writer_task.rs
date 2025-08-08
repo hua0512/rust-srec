@@ -7,6 +7,8 @@ use tracing::debug;
 
 /// Expands a filename template with optional sequence number.
 /// Replaces `%i` with the sequence number if provided.
+/// TODO: Clippy is reporting false positives here.
+#[allow(dead_code)]
 pub fn expand_filename_template(template: &str, sequence_number: Option<u32>) -> String {
     if let Some(seq) = sequence_number {
         template.replace("%i", &seq.to_string())
@@ -363,20 +365,21 @@ impl<D, S: FormatStrategy<D>> WriterTask<D, S> {
     }
 
     pub fn close(&mut self) -> Result<(), TaskError<S::StrategyError>> {
-        if let Some(mut writer) = self.writer.take() {
-            if let Some(path) = &self.state.current_file_path {
-                let bytes_closed = self
-                    .strategy
-                    .on_file_close(&mut writer, path, &self.config, &self.state)
-                    .map_err(TaskError::Strategy)?;
-                self.state.bytes_written_current_file += bytes_closed;
-                self.state.bytes_written_total += bytes_closed;
-                writer.flush().map_err(TaskError::Io)?;
-                if let Some(cb) = &self.on_file_close_callback {
-                    cb(path, self.state.file_sequence_number);
-                }
+        if let Some(mut writer) = self.writer.take()
+            && let Some(path) = &self.state.current_file_path
+        {
+            let bytes_closed = self
+                .strategy
+                .on_file_close(&mut writer, path, &self.config, &self.state)
+                .map_err(TaskError::Strategy)?;
+            self.state.bytes_written_current_file += bytes_closed;
+            self.state.bytes_written_total += bytes_closed;
+            writer.flush().map_err(TaskError::Io)?;
+            if let Some(cb) = &self.on_file_close_callback {
+                cb(path, self.state.file_sequence_number);
             }
         }
+
         self.state.current_file_path = None;
         Ok(())
     }
@@ -407,6 +410,7 @@ impl<D, S: FormatStrategy<D>> WriterTask<D, S> {
 
 /// A default file-based strategy for convenience.
 /// This can be used directly or as a template for more complex strategies.
+#[allow(dead_code)]
 pub struct DefaultFileStrategy;
 
 #[derive(Error, Debug)]

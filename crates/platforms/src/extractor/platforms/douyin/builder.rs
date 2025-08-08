@@ -304,13 +304,12 @@ impl<'a> DouyinRequest<'a> {
     /// Parses and stores cookies from response headers.
     fn parse_and_store_cookies(&mut self, headers: &reqwest::header::HeaderMap) {
         for value in headers.get_all("set-cookie").iter() {
-            if let Ok(cookie_str) = value.to_str() {
-                if let Some(cookie_part) = cookie_str.split(';').next() {
-                    if let Some((name, value)) = cookie_part.split_once('=') {
-                        self.cookies
-                            .insert(name.trim().to_string(), value.trim().to_string());
-                    }
-                }
+            if let Ok(cookie_str) = value.to_str()
+                && let Some(cookie_part) = cookie_str.split(';').next()
+                && let Some((name, value)) = cookie_part.split_once('=')
+            {
+                self.cookies
+                    .insert(name.trim().to_string(), value.trim().to_string());
             }
         }
     }
@@ -540,11 +539,11 @@ impl<'a> DouyinRequest<'a> {
 
         // 1. Attempt to extract origin quality stream if forced
         let mut origin_quality_filled = false;
-        if self.config.force_origin_quality {
-            if let Some(origin_stream) = self._extract_origin_stream(stream_data, qualities) {
-                streams.push(origin_stream);
-                origin_quality_filled = true;
-            }
+        if self.config.force_origin_quality
+            && let Some(origin_stream) = self._extract_origin_stream(stream_data, qualities)
+        {
+            streams.push(origin_stream);
+            origin_quality_filled = true;
         }
 
         // 2. Extract streams from SDK data
