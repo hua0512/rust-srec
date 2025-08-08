@@ -85,7 +85,7 @@ impl TryFrom<TarsValue> for HuyaGetTokenResp {
             let url = take(0)?.try_into_string()?;
             let cdn_type = take(1)?.try_into_string()?;
             let stream_name = take(2)?.try_into_string()?;
-            let presenter_uid = take(3)?.try_into_i32()?;
+            let presenter_uid = take(3)?.try_into_i64()?;
             let anti_code = take(4)?.try_into_string()?;
             let s_time = take(5)?.try_into_string()?;
             let flv_anti_code = take(6)?.try_into_string()?;
@@ -128,7 +128,7 @@ pub struct HuyaGetTokenResp {
     pub url: String,
     pub cdn_type: String,
     pub stream_name: String,
-    pub presenter_uid: i32,
+    pub presenter_uid: i64,
     pub anti_code: String,
     pub s_time: String,
     pub flv_anti_code: String,

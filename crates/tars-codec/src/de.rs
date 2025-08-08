@@ -306,6 +306,19 @@ impl TarsValue {
         }
     }
 
+    pub fn try_into_i64(self) -> Result<i64, TarsError> {
+        match self {
+            TarsValue::Long(v) => Ok(v),
+            TarsValue::Int(v) => Ok(v as i64),
+            TarsValue::Short(v) => Ok(v as i64),
+            TarsValue::Byte(v) => Ok(v as i64),
+            _ => Err(TarsError::TypeMismatch {
+                expected: "Long",
+                actual: "Other",
+            }),
+        }
+    }
+
     pub fn try_into_string(self) -> Result<String, TarsError> {
         match self {
             TarsValue::String(v) => Ok(v),
