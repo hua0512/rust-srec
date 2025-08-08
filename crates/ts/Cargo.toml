@@ -1,6 +1,6 @@
 [package]
 name = "ts"
-version = "0.1.1"
+version = "0.1.2"
 authors = ["hua0512"]
 repository = "https://github.com/hua0512/rust-srec"
 license = "MIT OR Apache-2.0"
