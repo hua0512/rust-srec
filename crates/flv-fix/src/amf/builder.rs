@@ -76,7 +76,7 @@ impl OnMetaDataBuilder {
         self.data.has_audio = Some(stats.has_audio);
         self.data.has_metadata = Some(true);
         self.data.has_keyframes = Some(!stats.keyframes.is_empty());
-        self.data.can_seek_to_end = Some(stats.last_video_timestamp == stats.last_timestamp);
+        self.data.can_seek_to_end = Some(stats.last_keyframe_timestamp == stats.last_timestamp);
         self
     }
 
