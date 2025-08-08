@@ -11,11 +11,11 @@ pub struct GetCdnTokenInfoReq {
     url: String,
     cdn_type: String,
     stream_name: String,
-    presenter_uid: i32,
+    presenter_uid: i64,
 }
 
 impl GetCdnTokenInfoReq {
-    pub fn new(url: String, stream_name: String, cdn_type: String, presenter_uid: i32) -> Self {
+    pub fn new(url: String, stream_name: String, cdn_type: String, presenter_uid: i64) -> Self {
         Self {
             url,
             cdn_type,
@@ -31,7 +31,7 @@ impl From<GetCdnTokenInfoReq> for TarsValue {
         struct_map.insert(0, TarsValue::String(req.url));
         struct_map.insert(1, TarsValue::String(req.cdn_type));
         struct_map.insert(2, TarsValue::String(req.stream_name));
-        struct_map.insert(3, TarsValue::Int(req.presenter_uid));
+        struct_map.insert(3, TarsValue::Long(req.presenter_uid));
         TarsValue::Struct(struct_map)
     }
 }
@@ -39,7 +39,7 @@ impl From<GetCdnTokenInfoReq> for TarsValue {
 pub fn build_get_cdn_token_info_request(
     stream_name: &str,
     cdn_type: &str,
-    presenter_uid: i32,
+    presenter_uid: i64,
 ) -> Result<Bytes, tars_codec::error::TarsError> {
     let req = GetCdnTokenInfoReq::new(
         String::new(),

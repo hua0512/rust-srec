@@ -478,7 +478,7 @@ impl Huya {
         stream_info: &mut StreamInfo,
         cdn: &str,
         stream_name: &str,
-        presenter_uid: i32,
+        presenter_uid: i64,
     ) -> Result<(), ExtractorError> {
         // println!("Getting true url for {:?}", stream_info);
         let request_body =
@@ -617,7 +617,6 @@ impl PlatformExtractor for Huya {
             let presenter_uid = extras
                 .get("presenter_uid")
                 .and_then(|v| v.as_i64())
-                .map(|v| v as i32)
                 .unwrap_or(0);
 
             (cdn, stream_name, presenter_uid)
