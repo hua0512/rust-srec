@@ -21,7 +21,7 @@
 use std::{
     fs,
     io::{self, BufReader, BufWriter, Seek, Write},
-    path::{Path, PathBuf},
+    path::Path,
 };
 
 use amf0::{Amf0Encoder, Amf0Marker, Amf0Value, write_amf_property_key};
@@ -57,8 +57,7 @@ pub fn inject_stats_into_script_data(
     file_path: &Path,
     stats: &FlvStats,
 ) -> Result<(), ScriptModifierError> {
-    let file_path_clone = file_path.to_path_buf();
-    update_script_metadata(&file_path_clone, stats)
+    update_script_metadata(&file_path, stats)
 }
 
 /// Write keyframes section with adjusted file positions
@@ -80,7 +79,7 @@ fn compute_keyframes_section_size(keyframes: &[crate::analyzer::Keyframe]) -> us
     // "filepositions" property key + strict array marker + array length
     size += "filepositions".len() + 2 + 1 + 4; // string length + string + array marker + length
 
-    // Each position value is encoded as u64 (8 bytes + 1 byte marker)
+    // Each position value is encoded as a number (8 bytes + 1 byte marker)
     size += keyframes_length as usize * 9;
 
     // Object EOF marker (3 bytes)
@@ -149,10 +148,7 @@ fn write_keyframes_section(
 
 /// Implementation function that actually does the metadata update work
 /// This is not async as it performs blocking I/O operations
-fn update_script_metadata(
-    file_path: &PathBuf,
-    stats: &FlvStats,
-) -> Result<(), ScriptModifierError> {
+fn update_script_metadata(file_path: &Path, stats: &FlvStats) -> Result<(), ScriptModifierError> {
     debug!("Injecting stats into script data section.");
 
     // Create a backup of the file
@@ -202,6 +198,8 @@ fn update_script_metadata(
         }
     };
 
+    debug!("Script data: {:?}", script_data);
+
     // Get the size of the payload of the script data tag
     // After reading the tag entirely, we are at the end of the payload
     // The script data size is the size of the tag minus the header (11 bytes)
@@ -229,6 +227,9 @@ fn update_script_metadata(
     if let Amf0Value::Object(props) = &amf_data[0] {
         let mut buffer: Vec<u8> = Vec::with_capacity(original_payload_data as usize);
         Amf0Encoder::encode_string(&mut buffer, crate::AMF0_ON_METADATA)?;
+
+        // Start object
+        buffer.write_u8(Amf0Marker::Object as u8)?;
 
         for key in NATURAL_METADATA_KEY_ORDER.iter() {
             match *key {
@@ -498,4 +499,111 @@ fn update_script_metadata(
     }
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use flv::{FlvTagType, FlvUtil, parser::FlvParserRef, script::ScriptData};
+    use std::{fs::File, io::Cursor};
+    use tracing_subscriber::fmt;
+
+    use crate::{FlvAnalyzer, analyzer::Keyframe, operators::MIN_INTERVAL_BETWEEN_KEYFRAMES_MS};
+
+    use super::*;
+
+    #[tokio::test]
+    #[ignore]
+    async fn validate_keyframes_extraction() {
+        let log_file = File::create("test_run.log").expect("Failed to create log file.");
+        let subscriber = fmt()
+            .with_max_level(tracing::Level::TRACE)
+            .with_writer(log_file)
+            .finish();
+        tracing::subscriber::set_global_default(subscriber)
+            .expect("setting default subscriber failed");
+
+        // Source and destination paths
+        let input_path = Path::new(
+            "D:/Develop/hua0512/stream-rec/rust-srec/fix/19_40_40-WE前职业第八赛季国服第一芮娜王赋能局游龙_p000.flv",
+        );
+
+        // Skip if test file doesn't exist
+        if !input_path.exists() {
+            info!(path = %input_path.display(), "Test file not found, skipping test");
+            return;
+        }
+
+        let mut analyzer = FlvAnalyzer::default();
+        let mut keyframes = Vec::new();
+        let mut last_keyframe_timestamp = 0;
+
+        // First, analyze the header
+        let file = std::fs::File::open(input_path).unwrap();
+        let mut reader = std::io::BufReader::new(file);
+        let header = FlvParserRef::parse_header(&mut reader).unwrap();
+        analyzer.analyze_header(&header).unwrap();
+
+        // The position after the header
+        let current_position = 9u64;
+
+        // Parse tags using the same reader
+        FlvParserRef::parse_tags(
+            &mut reader,
+            |tag, tag_type, position| {
+                analyzer.analyze_tag(tag).unwrap();
+
+                if tag.is_script_tag() {
+                    let mut script_data = Cursor::new(tag.data.clone());
+                    let data = ScriptData::demux(&mut script_data).unwrap();
+                    println!("Script data: {data:?}");
+                }
+
+                if tag.is_key_frame() && tag_type == FlvTagType::Video {
+                    let timestamp = tag.timestamp_ms;
+                    let add_keyframe = last_keyframe_timestamp == 0
+                        || (timestamp.saturating_sub(last_keyframe_timestamp)
+                            >= MIN_INTERVAL_BETWEEN_KEYFRAMES_MS);
+
+                    trace!(
+                        "Test: Checking keyframe. Current timestamp: {}, Last keyframe timestamp: {}, Condition: {}",
+                        tag.timestamp_ms,
+                        last_keyframe_timestamp,
+                        tag.timestamp_ms.saturating_sub(last_keyframe_timestamp) >= MIN_INTERVAL_BETWEEN_KEYFRAMES_MS
+                    );
+                    if add_keyframe {
+                        let keyframe = Keyframe {
+                            timestamp_s: timestamp as f32 / 1000.0,
+                            file_position: position,
+                        };
+                        keyframes.push(keyframe);
+                        trace!("Test: Adding keyframe. New count: {}", keyframes.len());
+                        last_keyframe_timestamp = timestamp;
+                    }
+                }
+            },
+            current_position,
+        )
+        .unwrap();
+
+        // Build the stats to get FlvStats
+        let stats = analyzer.build_stats().unwrap();
+        let analyzed_keyframes = stats.keyframes.clone();
+
+        assert_eq!(
+            analyzed_keyframes.len(),
+            keyframes.len(),
+            "Mismatch in the number of keyframes"
+        );
+
+        for (analyzed, manual) in analyzed_keyframes.iter().zip(keyframes.iter()) {
+            assert_eq!(
+                manual.timestamp_s, analyzed.timestamp_s,
+                "Timestamp mismatch"
+            );
+            assert_eq!(
+                manual.file_position, analyzed.file_position,
+                "File position mismatch"
+            );
+        }
+    }
 }
