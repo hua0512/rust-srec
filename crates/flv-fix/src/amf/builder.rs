@@ -1,0 +1,646 @@
+use crate::amf::model::{AmfScriptData, KeyframeData};
+use crate::analyzer::FlvStats;
+use amf0::{Amf0Encoder, Amf0Marker, Amf0Value, Amf0WriteError, write_amf_property_key};
+use byteorder::{BigEndian, WriteBytesExt};
+use flv::{audio::SoundFormat, video::VideoCodecId};
+use std::borrow::Cow;
+use std::io::Write;
+use tracing::debug;
+
+const NATURAL_METADATA_KEY_ORDER: &[&str] = &[
+    "duration",
+    "width",
+    "height",
+    "videodatarate",
+    "framerate",
+    "videocodecid",
+    "audiodatarate",
+    "audiosamplerate",
+    "audiosamplesize",
+    "stereo",
+    "audiocodecid",
+    "filesize",
+    "datasize",
+    "videosize",
+    "audiosize",
+    "lasttimestamp",
+    "lastkeyframetimestamp",
+    "lastkeyframelocation",
+    "hasVideo",
+    "hasAudio",
+    "hasMetadata",
+    "hasKeyframes",
+    "canSeekToEnd",
+    "metadatacreator",
+    "metadatadate",
+    "keyframes",
+];
+
+/// A fluent builder for creating `onMetaData` script data.
+#[derive(Debug, Default)]
+pub struct OnMetaDataBuilder {
+    data: AmfScriptData,
+}
+
+impl OnMetaDataBuilder {
+    /// Creates a new builder.
+    pub fn new() -> Self {
+        Self {
+            data: AmfScriptData::default(),
+        }
+    }
+
+    /// Creates a new builder from an existing `AmfScriptData` object,
+    /// preserving any custom properties.
+    pub fn from_script_data(data: AmfScriptData) -> Self {
+        Self { data }
+    }
+
+    /// Populates the builder with data from an `FlvStats` object.
+    pub fn with_stats(mut self, stats: &FlvStats) -> Self {
+        self.data.duration = Some(stats.duration as f64);
+        if let Some(res) = &stats.resolution {
+            self.data.width = Some(res.width as f64);
+            self.data.height = Some(res.height as f64);
+        }
+        self.data.framerate = Some(stats.video_frame_rate as f64);
+        self.data.videocodecid = stats.video_codec;
+        self.data.audiocodecid = stats.audio_codec;
+        self.data.filesize = Some(stats.file_size);
+        self.data.videosize = Some(stats.video_data_size);
+        self.data.audiosize = Some(stats.audio_data_size);
+        self.data.lasttimestamp = Some(stats.last_timestamp);
+        self.data.lastkeyframetimestamp = Some(stats.last_keyframe_timestamp);
+        self.data.lastkeyframelocation = Some(stats.last_keyframe_position);
+        self.data.has_video = Some(stats.has_video);
+        self.data.has_audio = Some(stats.has_audio);
+        self.data.has_metadata = Some(true);
+        self.data.has_keyframes = Some(!stats.keyframes.is_empty());
+        self.data.can_seek_to_end = Some(stats.last_video_timestamp == stats.last_timestamp);
+        self
+    }
+
+    /// Sets the duration in seconds.
+    pub fn with_duration(mut self, duration: f64) -> Self {
+        self.data.duration = Some(duration);
+        self
+    }
+
+    /// Sets the video width.
+    pub fn with_width(mut self, width: f64) -> Self {
+        self.data.width = Some(width);
+        self
+    }
+
+    /// Sets the video height.
+    pub fn with_height(mut self, height: f64) -> Self {
+        self.data.height = Some(height);
+        self
+    }
+
+    /// Sets the video framerate.
+    pub fn with_framerate(mut self, framerate: f64) -> Self {
+        self.data.framerate = Some(framerate);
+        self
+    }
+
+    /// Sets the video codec ID.
+    pub fn with_video_codec(mut self, codec: VideoCodecId) -> Self {
+        self.data.videocodecid = Some(codec);
+        self
+    }
+
+    /// Sets the audio codec ID.
+    pub fn with_audio_codec(mut self, codec: SoundFormat) -> Self {
+        self.data.audiocodecid = Some(codec);
+        self
+    }
+
+    /// Sets a custom property.
+    pub fn with_custom_property(
+        mut self,
+        key: impl Into<String>,
+        value: Amf0Value<'static>,
+    ) -> Self {
+        self.data.custom_properties.insert(key.into(), value);
+        self
+    }
+
+    /// Configures the builder to generate a complete `keyframes` object.
+    pub fn with_final_keyframes(mut self, times: Vec<f64>, filepositions: Vec<u64>) -> Self {
+        self.data.keyframes = Some(KeyframeData::Final {
+            times,
+            filepositions,
+        });
+        self
+    }
+
+    /// Configures the builder to generate a `keyframes` object with placeholders.
+    pub fn with_placeholder_keyframes(mut self, spacer_size: usize) -> Self {
+        self.data.keyframes = Some(KeyframeData::Placeholder { spacer_size });
+        self
+    }
+
+    /// Builds the final `AmfScriptData` model.
+    pub fn build_model(self) -> AmfScriptData {
+        self.data
+    }
+
+    /// Builds the AMF0 byte payload, ready for writing to a file.
+    ///
+    /// # Arguments
+    ///
+    /// * `original_payload_size` - The size of the original script data payload.
+    ///   This is used to calculate the size difference and adjust keyframe file positions.
+    ///
+    /// # Returns
+    ///
+    /// A tuple containing the new byte payload and the size difference.
+    pub fn build_bytes(
+        mut self,
+        original_payload_size: u32,
+    ) -> Result<(Vec<u8>, i64), Amf0WriteError> {
+        // arbitrary buffer size
+        let estimated_size = original_payload_size as usize + 128;
+        let mut buf = Vec::with_capacity(estimated_size);
+
+        // start the main object
+        Amf0Encoder::encode_string(&mut buf, "onMetaData")?;
+        buf.write_u8(Amf0Marker::Object as u8)?;
+
+        // encode all properties *except* keyframes
+        for &key in NATURAL_METADATA_KEY_ORDER {
+            if key == "keyframes" {
+                continue;
+            }
+            if let Some(value) = self.get_amf_value_for_key(key) {
+                write_amf_property_key!(&mut buf, key);
+                Amf0Encoder::encode(&mut buf, &value)?;
+            }
+        }
+
+        for (key, value) in self.data.custom_properties {
+            write_amf_property_key!(&mut buf, &key);
+            Amf0Encoder::encode(&mut buf, &value)?;
+        }
+
+        // calculate the size difference
+        let metadata_size_without_keyframes = buf.len() + 3; // +3 for object_eof
+        let keyframes_size = self
+            .data
+            .keyframes
+            .as_ref()
+            .map(Self::compute_keyframes_section_size)
+            .unwrap_or(0);
+
+        let final_size = metadata_size_without_keyframes + keyframes_size;
+        let size_diff = final_size as i64 - original_payload_size as i64;
+
+        debug!(
+            "Size calculation: metadata_without_keyframes={}, keyframes_size={}, final_size={}, original_payload_size={}, size_diff={}",
+            metadata_size_without_keyframes,
+            keyframes_size,
+            final_size,
+            original_payload_size,
+            size_diff
+        );
+
+        // encode the keyframes object with the correct offsets
+        if let Some(keyframes) = self.data.keyframes.take() {
+            Self::write_keyframes_section(&mut buf, keyframes, size_diff)?;
+        }
+
+        // finalize the main object
+        Amf0Encoder::object_eof(&mut buf)?;
+
+        Ok((buf, size_diff))
+    }
+
+    fn get_amf_value_for_key(&mut self, key: &str) -> Option<Amf0Value<'static>> {
+        match key {
+            "duration" => self.data.duration.map(Amf0Value::Number),
+            "width" => self.data.width.map(Amf0Value::Number),
+            "height" => self.data.height.map(Amf0Value::Number),
+            "framerate" => self.data.framerate.map(Amf0Value::Number),
+            "videocodecid" => self
+                .data
+                .videocodecid
+                .map(|v| Amf0Value::Number(v as u8 as f64)),
+            "videodatarate" => self.data.videodatarate.map(Amf0Value::Number),
+            "audiocodecid" => self
+                .data
+                .audiocodecid
+                .map(|v| Amf0Value::Number(v as u8 as f64)),
+            "audiodatarate" => self.data.audiodatarate.map(Amf0Value::Number),
+            "audiosamplerate" => self.data.audiosamplerate.map(Amf0Value::Number),
+            "audiosamplesize" => self.data.audiosamplesize.map(Amf0Value::Number),
+            "stereo" => self.data.stereo.map(Amf0Value::Boolean),
+            "filesize" => self.data.filesize.map(|v| Amf0Value::Number(v as f64)),
+            "datasize" => self.data.datasize.map(|v| Amf0Value::Number(v as f64)),
+            "videosize" => self.data.videosize.map(|v| Amf0Value::Number(v as f64)),
+            "audiosize" => self.data.audiosize.map(|v| Amf0Value::Number(v as f64)),
+            "lasttimestamp" => self.data.lasttimestamp.map(|v| Amf0Value::Number(v as f64)),
+            "lastkeyframetimestamp" => self
+                .data
+                .lastkeyframetimestamp
+                .map(|v| Amf0Value::Number(v as f64)),
+            "lastkeyframelocation" => self
+                .data
+                .lastkeyframelocation
+                .map(|v| Amf0Value::Number(v as f64)),
+            "hasVideo" => self.data.has_video.map(Amf0Value::Boolean),
+            "hasAudio" => self.data.has_audio.map(Amf0Value::Boolean),
+            "hasMetadata" => self.data.has_metadata.map(Amf0Value::Boolean),
+            "hasKeyframes" => self.data.has_keyframes.map(Amf0Value::Boolean),
+            "canSeekToEnd" => self.data.can_seek_to_end.map(Amf0Value::Boolean),
+            "metadatacreator" => self
+                .data
+                .metadatacreator
+                .take()
+                .map(|v| Amf0Value::String(Cow::Owned(v))),
+            _ => None,
+        }
+    }
+
+    fn compute_keyframes_section_size(keyframes: &KeyframeData) -> usize {
+        let mut size = 0;
+        // "keyframes" property key + object marker
+        size += "keyframes".len() + 2 + 1;
+
+        match keyframes {
+            KeyframeData::Final {
+                times,
+                filepositions: _,
+            } => {
+                let keyframes_length = times.len();
+                // "times" property key + strict array marker + array length + (marker + f64) * count
+                size += "times".len() + 2 + 1 + 4 + (keyframes_length * 9);
+                // "filepositions" property key + strict array marker + array length + (marker + f64) * count
+                size += "filepositions".len() + 2 + 1 + 4 + (keyframes_length * 9);
+            }
+            KeyframeData::Placeholder { spacer_size } => {
+                // "times" property key + strict array marker + array length (0)
+                size += "times".len() + 2 + 1 + 4;
+                // "filepositions" property key + strict array marker + array length (0)
+                size += "filepositions".len() + 2 + 1 + 4;
+                if *spacer_size > 0 {
+                    // "spacer" property key + strict array marker + array length + (marker + f64) * count
+                    size += "spacer".len() + 2 + 1 + 4 + (*spacer_size * 9);
+                }
+            }
+        }
+
+        // Object EOF marker
+        size += 3;
+        size
+    }
+
+    fn write_keyframes_section(
+        buf: &mut Vec<u8>,
+        keyframes: KeyframeData,
+        size_diff: i64,
+    ) -> Result<(), Amf0WriteError> {
+        write_amf_property_key!(buf, "keyframes");
+        buf.write_u8(Amf0Marker::Object as u8)?;
+
+        match keyframes {
+            KeyframeData::Final {
+                times,
+                filepositions,
+            } => {
+                // Write times array
+                write_amf_property_key!(buf, "times");
+                buf.write_u8(Amf0Marker::StrictArray as u8)?;
+                buf.write_u32::<BigEndian>(times.len() as u32)?;
+                for time in times {
+                    Amf0Encoder::encode_number(buf, time)?;
+                }
+
+                // Write filepositions array
+                write_amf_property_key!(buf, "filepositions");
+                buf.write_u8(Amf0Marker::StrictArray as u8)?;
+                buf.write_u32::<BigEndian>(filepositions.len() as u32)?;
+                for pos in filepositions {
+                    let adjusted_pos = (pos as i64 + size_diff) as f64;
+                    Amf0Encoder::encode_number(buf, adjusted_pos)?;
+                }
+            }
+            KeyframeData::Placeholder { spacer_size } => {
+                // Write empty times array
+                write_amf_property_key!(buf, "times");
+                buf.write_u8(Amf0Marker::StrictArray as u8)?;
+                buf.write_u32::<BigEndian>(0)?;
+
+                // Write empty filepositions array
+                write_amf_property_key!(buf, "filepositions");
+                buf.write_u8(Amf0Marker::StrictArray as u8)?;
+                buf.write_u32::<BigEndian>(0)?;
+
+                if spacer_size > 0 {
+                    write_amf_property_key!(buf, "spacer");
+                    buf.write_u8(Amf0Marker::StrictArray as u8)?;
+                    buf.write_u32::<BigEndian>(spacer_size as u32)?;
+                    for _ in 0..spacer_size {
+                        Amf0Encoder::encode_number(buf, 0.0)?;
+                    }
+                }
+            }
+        }
+
+        Amf0Encoder::object_eof(buf)?;
+        Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::amf::model::KeyframeData;
+    use amf0::Amf0Decoder;
+
+    #[test]
+    fn test_on_meta_data_builder_final_keyframes() {
+        let builder = OnMetaDataBuilder::new()
+            .with_duration(10.0)
+            .with_width(1920.0)
+            .with_height(1080.0)
+            .with_final_keyframes(vec![0.0, 1.0, 2.0], vec![100, 200, 300]);
+
+        let (bytes, size_diff) = builder.build_bytes(0).unwrap();
+
+        assert_eq!(size_diff, bytes.len() as i64);
+
+        let mut decoder = Amf0Decoder::new(&bytes);
+        let name = decoder.decode().unwrap();
+        let data = decoder.decode().unwrap();
+
+        assert_eq!(name, Amf0Value::String(Cow::Borrowed("onMetaData")));
+        if let Amf0Value::Object(props) = data {
+            assert_eq!(props.len(), 4);
+            assert_eq!(props[0].0, "duration");
+            assert_eq!(props[0].1, Amf0Value::Number(10.0));
+            assert_eq!(props[1].0, "width");
+            assert_eq!(props[1].1, Amf0Value::Number(1920.0));
+            assert_eq!(props[2].0, "height");
+            assert_eq!(props[2].1, Amf0Value::Number(1080.0));
+            assert_eq!(props[3].0, "keyframes");
+            if let Amf0Value::Object(keyframes) = &props[3].1 {
+                assert_eq!(keyframes.len(), 2);
+                assert_eq!(keyframes[0].0, "times");
+                if let Amf0Value::StrictArray(times) = &keyframes[0].1 {
+                    assert_eq!(times.len(), 3);
+                    assert_eq!(times[0], Amf0Value::Number(0.0));
+                    assert_eq!(times[1], Amf0Value::Number(1.0));
+                    assert_eq!(times[2], Amf0Value::Number(2.0));
+                } else {
+                    panic!("Expected strict array for times");
+                }
+                assert_eq!(keyframes[1].0, "filepositions");
+                if let Amf0Value::StrictArray(filepositions) = &keyframes[1].1 {
+                    assert_eq!(filepositions.len(), 3);
+                    assert_eq!(
+                        filepositions[0],
+                        Amf0Value::Number(100.0 + size_diff as f64)
+                    );
+                    assert_eq!(
+                        filepositions[1],
+                        Amf0Value::Number(200.0 + size_diff as f64)
+                    );
+                    assert_eq!(
+                        filepositions[2],
+                        Amf0Value::Number(300.0 + size_diff as f64)
+                    );
+                } else {
+                    panic!("Expected strict array for filepositions");
+                }
+            } else {
+                panic!("Expected object for keyframes");
+            }
+        } else {
+            panic!("Expected object for metadata");
+        }
+    }
+
+    #[test]
+    fn test_on_meta_data_builder_placeholder_keyframes() {
+        let builder = OnMetaDataBuilder::new()
+            .with_duration(10.0)
+            .with_width(1920.0)
+            .with_height(1080.0)
+            .with_placeholder_keyframes(1024);
+
+        let (bytes, size_diff) = builder.build_bytes(0).unwrap();
+
+        assert_eq!(size_diff, bytes.len() as i64);
+        assert!(!bytes.is_empty());
+    }
+
+    #[test]
+    fn test_on_meta_data_builder_filepositions_offset() {
+        let original_payload_size = 100;
+        let keyframes_pos = vec![1000, 2000, 3000];
+
+        let builder = OnMetaDataBuilder::new()
+            .with_duration(10.0)
+            .with_final_keyframes(vec![0.0, 1.0, 2.0], keyframes_pos.clone());
+
+        let (bytes, size_diff) = builder.build_bytes(original_payload_size).unwrap();
+
+        assert_eq!(size_diff, bytes.len() as i64 - original_payload_size as i64);
+
+        let mut decoder = Amf0Decoder::new(&bytes);
+        let _name = decoder.decode().unwrap();
+        let data = decoder.decode().unwrap();
+
+        if let Amf0Value::Object(props) = data {
+            let keyframes_prop = props.iter().find(|(k, _)| k == "keyframes").unwrap();
+            if let Amf0Value::Object(keyframes) = &keyframes_prop.1 {
+                let filepositions_prop = keyframes
+                    .iter()
+                    .find(|(k, _)| k == "filepositions")
+                    .unwrap();
+                if let Amf0Value::StrictArray(filepositions) = &filepositions_prop.1 {
+                    assert_eq!(filepositions.len(), 3);
+                    assert_eq!(
+                        filepositions[0],
+                        Amf0Value::Number((keyframes_pos[0] as i64 + size_diff) as f64)
+                    );
+                    assert_eq!(
+                        filepositions[1],
+                        Amf0Value::Number((keyframes_pos[1] as i64 + size_diff) as f64)
+                    );
+                    assert_eq!(
+                        filepositions[2],
+                        Amf0Value::Number((keyframes_pos[2] as i64 + size_diff) as f64)
+                    );
+                } else {
+                    panic!("Expected strict array for filepositions");
+                }
+            } else {
+                panic!("Expected object for keyframes");
+            }
+        } else {
+            panic!("Expected object for metadata");
+        }
+    }
+
+    #[test]
+    fn test_refactored_build_bytes_is_logically_equivalent() {
+        // This function simulates the *old* implementation of `build_bytes`.
+        // It builds the metadata payload in a single pass, without the logic
+        // to calculate a size difference and offset keyframe filepositions.
+        fn build_bytes_old_logic(mut data: AmfScriptData) -> Result<Vec<u8>, Amf0WriteError> {
+            let mut props = Vec::new();
+
+            // Simplified property getter for the test.
+            // It takes an immutable reference and returns an owned value
+            // to avoid borrow checker issues.
+            fn get_test_value(data: &AmfScriptData, key: &str) -> Option<Amf0Value<'static>> {
+                match key {
+                    "duration" => data.duration.map(Amf0Value::Number),
+                    "width" => data.width.map(Amf0Value::Number),
+                    "height" => data.height.map(Amf0Value::Number),
+                    _ => None,
+                }
+            }
+
+            for &key in NATURAL_METADATA_KEY_ORDER {
+                if key == "keyframes" {
+                    continue;
+                }
+                // Immutable borrow here
+                if let Some(v) = get_test_value(&data, key) {
+                    props.push((Cow::Borrowed(key), v));
+                }
+            }
+
+            // Mutable borrow here is now safe
+            if let Some(KeyframeData::Final {
+                times,
+                filepositions,
+            }) = data.keyframes.take()
+            {
+                let times_arr = times.into_iter().map(Amf0Value::Number).collect::<Vec<_>>();
+                let filepositions_arr = filepositions
+                    .into_iter()
+                    .map(|p| Amf0Value::Number(p as f64)) // No offset
+                    .collect::<Vec<_>>();
+
+                let keyframe_props = vec![
+                    (
+                        Cow::Borrowed("times"),
+                        Amf0Value::StrictArray(Cow::Owned(times_arr)),
+                    ),
+                    (
+                        Cow::Borrowed("filepositions"),
+                        Amf0Value::StrictArray(Cow::Owned(filepositions_arr)),
+                    ),
+                ];
+                props.push((
+                    Cow::Borrowed("keyframes"),
+                    Amf0Value::Object(Cow::Owned(keyframe_props)),
+                ));
+            }
+
+            let mut buf = Vec::new();
+            Amf0Encoder::encode_string(&mut buf, "onMetaData")?;
+            Amf0Encoder::encode_object(&mut buf, &props)?;
+            Ok(buf)
+        }
+
+        // 1. Define test data
+        let duration = 120.5;
+        let width = 1280.0;
+        let height = 720.0;
+        let times = vec![0.0, 2.0, 4.0];
+        let filepositions = vec![1024, 4096, 8192];
+
+        // 2. Generate "expected" output using the old logic
+        let old_builder_model = OnMetaDataBuilder::new()
+            .with_duration(duration)
+            .with_width(width)
+            .with_height(height)
+            .with_final_keyframes(times.clone(), filepositions.clone())
+            .build_model();
+
+        let expected_bytes = build_bytes_old_logic(old_builder_model).unwrap();
+        let original_payload_size = expected_bytes.len() as u32;
+
+        // 3. Generate "actual" output using the new, refactored logic
+        let new_builder = OnMetaDataBuilder::new()
+            .with_duration(duration)
+            .with_width(width)
+            .with_height(height)
+            .with_final_keyframes(times.clone(), filepositions.clone());
+
+        let (actual_bytes, size_diff) = new_builder.build_bytes(original_payload_size).unwrap();
+
+        // In this specific test, since we are not changing the number of properties,
+        // the size of the payload should not change. The only change is in the
+        // *values* of the filepositions, which doesn't alter the total size.
+        assert_eq!(
+            size_diff, 0,
+            "Size difference should be zero for this test case"
+        );
+        assert_eq!(
+            actual_bytes.len(),
+            expected_bytes.len(),
+            "Payload sizes should be identical"
+        );
+
+        // 4. Parse both payloads and compare them
+        let mut old_decoder = Amf0Decoder::new(&expected_bytes);
+        let _ = old_decoder.decode().unwrap(); // "onMetaData"
+        let Amf0Value::Object(old_props) = old_decoder.decode().unwrap() else {
+            panic!("old not object")
+        };
+
+        let mut new_decoder = Amf0Decoder::new(&actual_bytes);
+        let _ = new_decoder.decode().unwrap(); // "onMetaData"
+        let Amf0Value::Object(new_props) = new_decoder.decode().unwrap() else {
+            panic!("new not object")
+        };
+
+        assert_eq!(old_props.len(), new_props.len());
+
+        // 5. Verify that all fields are identical, except for filepositions
+        for ((old_key, old_val), (new_key, new_val)) in old_props.iter().zip(new_props.iter()) {
+            assert_eq!(old_key, new_key);
+
+            if old_key.as_ref() == "keyframes" {
+                let Amf0Value::Object(old_kf) = old_val else {
+                    panic!()
+                };
+                let Amf0Value::Object(new_kf) = new_val else {
+                    panic!()
+                };
+
+                // Times should be identical
+                assert_eq!(old_kf[0], new_kf[0]);
+
+                // Filepositions should be different (offset)
+                let Amf0Value::StrictArray(old_fp) = &old_kf[1].1 else {
+                    panic!()
+                };
+                let Amf0Value::StrictArray(new_fp) = &new_kf[1].1 else {
+                    panic!()
+                };
+
+                for i in 0..filepositions.len() {
+                    let Amf0Value::Number(old_pos) = old_fp[i] else {
+                        panic!()
+                    };
+                    let Amf0Value::Number(new_pos) = new_fp[i] else {
+                        panic!()
+                    };
+                    // The old logic didn't offset, so we compare the new, offset value
+                    // against the original value plus the calculated size_diff.
+                    assert_eq!(new_pos, old_pos + size_diff as f64);
+                }
+            } else {
+                // All other properties must be identical
+                assert_eq!(old_val, new_val, "Property '{old_key}' should be identical",);
+            }
+        }
+    }
+}

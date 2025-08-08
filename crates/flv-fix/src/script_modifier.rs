@@ -20,19 +20,17 @@
 
 use std::{
     fs,
-    io::{self, BufReader, BufWriter, Seek, Write},
+    io::{self, BufReader, Seek, Write},
     path::Path,
 };
 
-use amf0::{Amf0Encoder, Amf0Marker, Amf0Value, write_amf_property_key};
-use byteorder::{BigEndian, WriteBytesExt};
+use amf0::Amf0Value;
 use flv::tag::{FlvTagData, FlvTagType::ScriptData};
-use time::OffsetDateTime;
-use tracing::{debug, info, trace, warn};
+use tracing::{debug, info, warn};
 
 use crate::{
+    amf::{builder::OnMetaDataBuilder, model::AmfScriptData},
     analyzer::FlvStats,
-    operators::NATURAL_METADATA_KEY_ORDER,
     utils::{self, shift_content_backward, shift_content_forward, write_flv_tag},
 };
 
@@ -53,97 +51,12 @@ pub enum ScriptModifierError {
 
 /// Main function to update FLV file metadata based on collected statistics
 /// This is an async wrapper around the actual implementation
+#[inline]
 pub fn inject_stats_into_script_data(
     file_path: &Path,
     stats: &FlvStats,
 ) -> Result<(), ScriptModifierError> {
-    update_script_metadata(&file_path, stats)
-}
-
-/// Write keyframes section with adjusted file positions
-/// Precompute the size of the keyframes section without actually writing it
-fn compute_keyframes_section_size(keyframes: &[crate::analyzer::Keyframe]) -> usize {
-    let mut size = 0;
-
-    // "keyframes" property key + object marker
-    size += "keyframes".len() + 2 + 1; // string length (2 bytes) + string + object marker
-
-    let keyframes_length = keyframes.len() as u32;
-
-    // "times" property key + strict array marker + array length
-    size += "times".len() + 2 + 1 + 4; // string length + string + array marker + length
-
-    // Each time value is encoded as a number (8 bytes + 1 byte marker)
-    size += keyframes_length as usize * 9;
-
-    // "filepositions" property key + strict array marker + array length
-    size += "filepositions".len() + 2 + 1 + 4; // string length + string + array marker + length
-
-    // Each position value is encoded as a number (8 bytes + 1 byte marker)
-    size += keyframes_length as usize * 9;
-
-    // Object EOF marker (3 bytes)
-    size += 3;
-
-    size
-}
-
-/// Write keyframes section with adjusted file positions
-fn write_keyframes_section(
-    buffer: &mut Vec<u8>,
-    keyframes: &[crate::analyzer::Keyframe],
-    position_adjustment: i64,
-) -> Result<(), ScriptModifierError> {
-    write_amf_property_key!(buffer, "keyframes");
-    buffer.write_u8(Amf0Marker::Object as u8)?;
-
-    let keyframes_length = keyframes.len() as u32;
-    debug!("Injecting {} keyframes", keyframes_length);
-
-    // Write times array
-    write_amf_property_key!(buffer, "times");
-    buffer.write_u8(Amf0Marker::StrictArray as u8)?;
-    buffer.write_u32::<BigEndian>(keyframes_length)?;
-
-    for keyframe in keyframes.iter() {
-        let keyframe_time = keyframe.timestamp_s;
-        trace!("Injecting keyframe at time {}", keyframe_time);
-        amf0::Amf0Encoder::encode_number(buffer, keyframe_time as f64)?;
-    }
-
-    // Write filepositions array with adjusted positions
-    write_amf_property_key!(buffer, "filepositions");
-    buffer.push(Amf0Marker::StrictArray as u8);
-    buffer.write_u32::<BigEndian>(keyframes_length)?;
-
-    for keyframe in keyframes.iter() {
-        // Adjust keyframe position based on script data size change
-        let adjusted_keyframe_pos = if position_adjustment != 0 {
-            let adjusted_pos = keyframe.file_position as i64 + position_adjustment;
-            if adjusted_pos < 0 {
-                warn!(
-                    "Keyframe position adjustment resulted in negative position: {} + {} = {}",
-                    keyframe.file_position, position_adjustment, adjusted_pos
-                );
-                keyframe.file_position // Keep original if adjustment is invalid
-            } else {
-                adjusted_pos as u64
-            }
-        } else {
-            keyframe.file_position
-        };
-
-        trace!(
-            "Injecting keyframe at position {} (adjusted from {} with diff {})",
-            adjusted_keyframe_pos, keyframe.file_position, position_adjustment
-        );
-        amf0::Amf0Encoder::encode_u64(buffer, adjusted_keyframe_pos)?;
-    }
-
-    // close keyframes object
-    amf0::Amf0Encoder::object_eof(buffer)?;
-
-    Ok(())
+    update_script_metadata(file_path, stats)
 }
 
 /// Implementation function that actually does the metadata update work
@@ -225,212 +138,31 @@ fn update_script_metadata(file_path: &Path, stats: &FlvStats) -> Result<(), Scri
 
     // Generate new script data buffer
     if let Amf0Value::Object(props) = &amf_data[0] {
-        let mut buffer: Vec<u8> = Vec::with_capacity(original_payload_data as usize);
-        Amf0Encoder::encode_string(&mut buffer, crate::AMF0_ON_METADATA)?;
+        // current script data model
+        let script_data_model = AmfScriptData::from_amf_object_ref(props)?;
 
-        // Start object
-        buffer.write_u8(Amf0Marker::Object as u8)?;
+        let (times, filepositions): (Vec<f64>, Vec<u64>) = stats
+            .keyframes
+            .iter()
+            .map(|k| (k.timestamp_s as f64, k.file_position))
+            .unzip();
 
-        for key in NATURAL_METADATA_KEY_ORDER.iter() {
-            match *key {
-                "duration" => {
-                    let duration = stats.duration;
-                    write_amf_property_key!(&mut buffer, key);
-                    Amf0Encoder::encode_number(&mut buffer, duration as f64)?;
-                }
-                "width" => {
-                    write_amf_property_key!(&mut buffer, key);
-                    if let Some(resolution) = stats.resolution {
-                        Amf0Encoder::encode_number(&mut buffer, resolution.width as f64)?;
-                    } else {
-                        let original_value =
-                            props.iter().find(|(k, _)| k == key).map(|(_, v)| v.clone());
-                        Amf0Encoder::encode(
-                            &mut buffer,
-                            &original_value.unwrap_or(Amf0Value::Number(0.0)),
-                        )?;
-                    }
-                }
-                "height" => {
-                    write_amf_property_key!(&mut buffer, key);
-                    if let Some(resolution) = stats.resolution {
-                        Amf0Encoder::encode_number(&mut buffer, resolution.height as f64)?;
-                    } else {
-                        let original_value =
-                            props.iter().find(|(k, _)| k == key).map(|(_, v)| v.clone());
-                        Amf0Encoder::encode(
-                            &mut buffer,
-                            &original_value.unwrap_or(Amf0Value::Number(0.0)),
-                        )?;
-                    }
-                }
-                "framerate" => {
-                    write_amf_property_key!(&mut buffer, key);
-                    Amf0Encoder::encode_number(&mut buffer, stats.video_frame_rate as f64)?;
-                }
-                "videocodecid" => {
-                    write_amf_property_key!(&mut buffer, key);
-
-                    if let Some(codec_id) = stats.video_codec {
-                        Amf0Encoder::encode_number(&mut buffer, codec_id as u8 as f64)?;
-                    } else {
-                        let original_value =
-                            props.iter().find(|(k, _)| k == key).map(|(_, v)| v.clone());
-                        Amf0Encoder::encode(
-                            &mut buffer,
-                            &original_value.unwrap_or(Amf0Value::Number(0.0)),
-                        )?;
-                    }
-                }
-                "audiocodecid" => {
-                    write_amf_property_key!(&mut buffer, key);
-                    if let Some(codec_id) = stats.audio_codec {
-                        Amf0Encoder::encode_number(&mut buffer, codec_id as u8 as f64)?;
-                    } else {
-                        let original_value =
-                            props.iter().find(|(k, _)| k == key).map(|(_, v)| v.clone());
-                        Amf0Encoder::encode(
-                            &mut buffer,
-                            &original_value.unwrap_or(Amf0Value::Number(0.0)),
-                        )?;
-                    }
-                }
-                "hasAudio" => {
-                    write_amf_property_key!(&mut buffer, key);
-                    Amf0Encoder::encode_bool(&mut buffer, stats.has_audio)?;
-                }
-                "hasVideo" => {
-                    write_amf_property_key!(&mut buffer, key);
-                    Amf0Encoder::encode_bool(&mut buffer, stats.has_video)?;
-                }
-                "hasMetadata" => {
-                    write_amf_property_key!(&mut buffer, key);
-                    Amf0Encoder::encode_bool(&mut buffer, true)?;
-                }
-                "hasKeyframes" => {
-                    write_amf_property_key!(&mut buffer, key);
-                    Amf0Encoder::encode_bool(&mut buffer, !stats.keyframes.is_empty())?;
-                }
-                "canSeekToEnd" => {
-                    write_amf_property_key!(&mut buffer, key);
-
-                    Amf0Encoder::encode_bool(
-                        &mut buffer,
-                        stats.last_keyframe_timestamp == stats.last_timestamp,
-                    )?;
-                }
-                "datasize" => {
-                    write_amf_property_key!(&mut buffer, key);
-                    let data_size = stats.audio_data_size + stats.video_data_size;
-                    Amf0Encoder::encode_u64(&mut buffer, data_size)?;
-                }
-                "filesize" => {
-                    write_amf_property_key!(&mut buffer, key);
-                    Amf0Encoder::encode_u64(&mut buffer, stats.file_size)?;
-                }
-                "audiosize" => {
-                    write_amf_property_key!(&mut buffer, key);
-                    Amf0Encoder::encode_u64(&mut buffer, stats.audio_data_size)?;
-                }
-                "audiodatarate" => {
-                    write_amf_property_key!(&mut buffer, key);
-                    let audio_bitrate = stats.audio_sample_rate as f64;
-                    Amf0Encoder::encode_number(&mut buffer, audio_bitrate)?;
-                }
-                "audiosamplerate" => {
-                    write_amf_property_key!(&mut buffer, key);
-                    Amf0Encoder::encode_number(&mut buffer, stats.audio_sample_rate as f64)?;
-                }
-                "audiosamplesize" => {
-                    write_amf_property_key!(&mut buffer, key);
-                    Amf0Encoder::encode_number(&mut buffer, stats.audio_sample_size as f64)?;
-                }
-                "stereo" => {
-                    write_amf_property_key!(&mut buffer, key);
-                    Amf0Encoder::encode_bool(&mut buffer, stats.audio_stereo)?;
-                }
-                "videosize" => {
-                    write_amf_property_key!(&mut buffer, key);
-                    Amf0Encoder::encode_u64(&mut buffer, stats.video_data_size)?;
-                }
-                "videodatarate" => {
-                    write_amf_property_key!(&mut buffer, key);
-                    let video_bitrate = stats.video_data_rate as f64;
-                    Amf0Encoder::encode_number(&mut buffer, video_bitrate)?;
-                }
-                "lasttimestamp" => {
-                    write_amf_property_key!(&mut buffer, key);
-                    Amf0Encoder::encode_u32(&mut buffer, stats.last_timestamp)?;
-                }
-                "lastkeyframelocation" => {
-                    write_amf_property_key!(&mut buffer, key);
-                    Amf0Encoder::encode_u64(&mut buffer, stats.last_keyframe_position)?;
-                }
-                "lastkeyframetimestamp" => {
-                    write_amf_property_key!(&mut buffer, key);
-                    Amf0Encoder::encode_u32(&mut buffer, stats.last_keyframe_timestamp)?;
-                }
-                "metadatacreator" => {
-                    write_amf_property_key!(&mut buffer, key);
-                    Amf0Encoder::encode_string(&mut buffer, "Srec")?;
-                }
-                "metadatadate" => {
-                    write_amf_property_key!(&mut buffer, key);
-                    let value = OffsetDateTime::now_local()
-                        .unwrap_or_else(|_| OffsetDateTime::now_utc())
-                        .format(&time::format_description::well_known::Rfc3339)
-                        .map_err(|_| ScriptModifierError::ScriptData("Failed to format date"))?;
-
-                    Amf0Encoder::encode_string(&mut buffer, &value)?;
-                }
-                _ => {}
-            }
-        }
-
-        let mut count = 0;
-        for (key, value) in props.iter() {
-            if !NATURAL_METADATA_KEY_ORDER.contains(&key.as_ref()) {
-                debug!("Adding custom property: {} with value: {:?}", key, value);
-                write_amf_property_key!(buffer, key);
-                amf0::Amf0Encoder::encode(&mut buffer, value)?;
-                count += 1;
-            }
-        }
-        debug!("Injected {} custom metadata keys", count);
-
-        // Calculate size difference for the entire script data payload (metadata + keyframes)
-        // This is how much all subsequent content in the file will shift
-        let metadata_size_without_keyframes = buffer.len() + 3; // +3 for object_eof
-        let keyframes_size = compute_keyframes_section_size(&stats.keyframes);
-        let estimated_new_payload_size = metadata_size_without_keyframes + keyframes_size;
-        let metadata_size_diff = estimated_new_payload_size as i64 - original_payload_data as i64;
-
-        debug!(
-            "Script data size difference: {} (original: {}, metadata only: {}, keyframes: {}, total new: {})",
-            metadata_size_diff,
-            original_payload_data,
-            metadata_size_without_keyframes,
-            keyframes_size,
-            estimated_new_payload_size
-        );
-
-        // Add keyframes with positions adjusted by metadata size difference
-        write_keyframes_section(&mut buffer, &stats.keyframes, metadata_size_diff)?;
-
-        // close script data object
-        amf0::Amf0Encoder::object_eof(&mut buffer)?;
-
-        buffer.flush()?;
+        // new script data buffer and size diff
+        let (buffer, size_diff) = OnMetaDataBuilder::from_script_data(script_data_model)
+            .with_stats(stats)
+            .with_final_keyframes(times, filepositions)
+            .build_bytes(original_payload_data)?;
 
         let new_payload_size = buffer.len();
         debug!("New script data size: {}", new_payload_size);
 
         drop(reader); // Close the reader before opening the writer
 
-        if new_payload_size == original_payload_data as usize {
+        if size_diff == 0 {
             // Same size case - simple overwrite
             debug!("Script data size is same as original size, writing directly.");
-            let mut writer = BufWriter::new(fs::OpenOptions::new().write(true).open(file_path)?);
+            let mut writer =
+                std::io::BufWriter::new(fs::OpenOptions::new().write(true).open(file_path)?);
             // Skip the header + 4 bytes for PreviousTagSize + 11 bytes for tag header
             writer.seek(io::SeekFrom::Start(start_pos + 11))?;
             writer.write_all(&buffer)?;
@@ -446,9 +178,6 @@ fn update_script_metadata(file_path: &Path, stats: &FlvStats) -> Result<(), Scri
 
             // Get the file size
             let total_file_size = fs::metadata(file_path)?.len();
-
-            // Calculate size difference
-            let size_diff = new_payload_size as i64 - original_payload_data as i64;
 
             // Open the file for both reading and writing
             let mut file = fs::OpenOptions::new()
@@ -505,6 +234,7 @@ fn update_script_metadata(file_path: &Path, stats: &FlvStats) -> Result<(), Scri
 mod tests {
     use flv::{FlvTagType, FlvUtil, parser::FlvParserRef, script::ScriptData};
     use std::{fs::File, io::Cursor};
+    use tracing::trace;
     use tracing_subscriber::fmt;
 
     use crate::{FlvAnalyzer, analyzer::Keyframe, operators::MIN_INTERVAL_BETWEEN_KEYFRAMES_MS};

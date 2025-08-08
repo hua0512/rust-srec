@@ -25,6 +25,7 @@
 //! - `writer`: Asynchronous FLV writing functionality
 
 mod adapter;
+pub mod amf;
 mod analyzer;
 mod constants;
 mod operators;
