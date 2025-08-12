@@ -14,7 +14,7 @@ amf0 = { path = "../amf0" }
 av1 = { path = "../av1" }
 h264 = { path = "../h264" }
 h265 = { path = "../h265" }
-thiserror = "2.0.12"
+thiserror = "2.0.14"
 tracing = "0.1.41"
 
 [dev-dependencies]
