@@ -75,9 +75,10 @@ pub struct CliArgs {
     /// Low-latency mode for FLV metadata modification
     #[arg(
         long,
+        action = clap::ArgAction::Set,
         default_value = "true",
-        help = "Enable low-latency mode for FLV metadata modification. This will reduce the latency of script data modification, but it will also increase the size of the output file.",
-        requires = "enable_fix"
+        help = "Enable low-latency mode for FLV metadata modification. This will reduce the latency of script data modification, but it will also increase the size of the output file. Enabled by default.",
+        requires = "enable_fix",
     )]
     pub low_latency_fix: bool,
 

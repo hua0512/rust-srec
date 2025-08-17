@@ -68,7 +68,7 @@ mesio --progress --fix file1.flv https://example.com/playlist.m3u8
 
 ### Input/Output Options
 
-```
+```text
 REQUIRED:
   <INPUT>...                Path to media file(s), directory, or URL(s) to download
 
@@ -80,18 +80,24 @@ OPTIONS:
 
 ### Processing Options
 
-```
+```text
   -m, --max-size <SIZE>     Maximum size for output files (e.g., "4GB", "500MB"). Use 0 for unlimited.
   -d, --max-duration <DUR>  Maximum duration for output files (e.g., "30m", "1.5h"). Use 0 for unlimited.
-  -k, --keyframe-index      Inject keyframe index in metadata for better seeking [default: true]
-      --fix                 Enable processing/fixing pipeline (by default streams are downloaded as raw data)
   -b, --buffer-size <SIZE>  Buffer size for internal processing channels [default: 16]
       --download-buffer <SIZE>  Buffer size for downloading in bytes [default: 65536]
+  --fix                 Enable processing/fixing pipeline (by default streams are downloaded as raw data)
+```
+
+### Flv Processing Options
+
+```text
+  -k, --keyframe-index                Inject keyframe index in metadata for better seeking [default: true]
+      --low_latency_fix <BOOLEAN>     Enable low-latency mode for FLV metadata modification. This will reduce the latency of script data modification, but it will also increase the size of the output file. Requires --fix flag to be enabled [default: true]
 ```
 
 ### HLS Options
 
-```
+```text
       --hls-concurrency <NUM>     Maximum number of concurrent segment downloads [default: 4]
       --hls-retries <NUM>         Number of retry attempts for failed segments [default: 3]
       --hls-segment-timeout <SEC> Timeout for individual segment downloads in seconds [default: 30]
@@ -100,7 +106,7 @@ OPTIONS:
 
 ### Network Options
 
-```
+```text
       --timeout <SECONDS>          Overall timeout in seconds for HTTP requests [default: 0]
       --connect-timeout <SECONDS>  Connection timeout in seconds [default: 30]
       --read-timeout <SECONDS>     Read timeout in seconds [default: 30]
@@ -113,7 +119,7 @@ OPTIONS:
 
 ### Proxy Options
 
-```
+```text
       --proxy <URL>              Proxy server URL (e.g., "http://proxy.example.com:8080")
       --proxy-type <TYPE>        Proxy type: http, https, socks5 [default: http]
       --proxy-user <USERNAME>    Username for proxy authentication
@@ -124,7 +130,7 @@ OPTIONS:
 
 ### Display Options
 
-```
+```text
   -P, --progress         Show progress bars for download and processing operations
   -v, --verbose          Enable detailed debug logging
   -h, --help             Print help
