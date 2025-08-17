@@ -27,10 +27,7 @@ pub enum FlvStrategyError {
 }
 
 /// FLV-specific format strategy implementation
-pub struct FlvFormatStrategy<F>
-where
-    F: Fn(ProgressEvent) + Send + Sync + 'static,
-{
+pub struct FlvFormatStrategy {
     // FLV-specific state
     analyzer: FlvAnalyzer,
     pending_header: Option<FlvHeader>,
@@ -40,17 +37,17 @@ where
     current_tag_count: u64,
 
     // Callbacks
-    on_progress: Option<Arc<F>>,
+    on_progress: Option<Arc<dyn Fn(ProgressEvent) + Send + Sync + 'static>>,
 
     // Whether to use low-latency mode for metadata modification.
     enable_low_latency: bool,
 }
 
-impl<F> FlvFormatStrategy<F>
-where
-    F: Fn(ProgressEvent) + Send + Sync + 'static,
-{
-    pub fn new(enable_low_latency: bool, on_progress: Option<Arc<F>>) -> Self {
+impl FlvFormatStrategy {
+    pub fn new(
+        enable_low_latency: bool,
+        on_progress: Option<Arc<dyn Fn(ProgressEvent) + Send + Sync + 'static>>,
+    ) -> Self {
         Self {
             analyzer: FlvAnalyzer::default(),
             pending_header: None,
@@ -93,10 +90,7 @@ where
     }
 }
 
-impl<F> FormatStrategy<FlvData> for FlvFormatStrategy<F>
-where
-    F: Fn(ProgressEvent) + Send + Sync + 'static,
-{
+impl FormatStrategy<FlvData> for FlvFormatStrategy {
     type Writer = FlvWriter<BufWriter<std::fs::File>>;
     type StrategyError = FlvStrategyError;
 

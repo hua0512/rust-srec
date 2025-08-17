@@ -18,15 +18,12 @@ use tracing::{debug, error, info};
 
 use crate::analyzer::HlsAnalyzer;
 
-pub struct HlsFormatStrategy<F>
-where
-    F: Fn(ProgressEvent) + Send + Sync + 'static,
-{
+pub struct HlsFormatStrategy {
     analyzer: HlsAnalyzer,
     current_offset: u64,
     is_finalizing: bool,
     target_duration: f32,
-    on_progress: Option<Arc<F>>,
+    on_progress: Option<Arc<dyn Fn(ProgressEvent) + Send + Sync + 'static>>,
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -39,11 +36,8 @@ pub enum HlsStrategyError {
     Pipeline(#[from] pipeline_common::PipelineError),
 }
 
-impl<F> HlsFormatStrategy<F>
-where
-    F: Fn(ProgressEvent) + Send + Sync + 'static,
-{
-    pub fn new(on_progress: Option<Arc<F>>) -> Self {
+impl HlsFormatStrategy {
+    pub fn new(on_progress: Option<Arc<dyn Fn(ProgressEvent) + Send + Sync + 'static>>) -> Self {
         Self {
             analyzer: HlsAnalyzer::new(),
             current_offset: 0,
@@ -78,10 +72,7 @@ where
     }
 }
 
-impl<F> FormatStrategy<HlsData> for HlsFormatStrategy<F>
-where
-    F: Fn(ProgressEvent) + Send + Sync + 'static,
-{
+impl FormatStrategy<HlsData> for HlsFormatStrategy {
     type Writer = BufWriter<std::fs::File>;
     type StrategyError = HlsStrategyError;
 
@@ -203,17 +194,11 @@ where
     }
 }
 
-pub struct HlsWriter<F>
-where
-    F: Fn(ProgressEvent) + Send + Sync + 'static,
-{
-    writer_task: WriterTask<HlsData, HlsFormatStrategy<F>>,
+pub struct HlsWriter {
+    writer_task: WriterTask<HlsData, HlsFormatStrategy>,
 }
 
-impl<F> ProtocolWriter<F> for HlsWriter<F>
-where
-    F: Fn(ProgressEvent) + Send + Sync + 'static,
-{
+impl ProtocolWriter for HlsWriter {
     type Item = HlsData;
     type Stats = (usize, u32);
     type Error = WriterError<HlsStrategyError>;
@@ -222,7 +207,7 @@ where
         output_dir: PathBuf,
         base_name: String,
         extension: String,
-        on_progress: Option<Arc<F>>,
+        on_progress: Option<Arc<dyn Fn(ProgressEvent) + Send + Sync + 'static>>,
         _extras: Option<HashMap<String, String>>,
     ) -> Self {
         let writer_config = WriterConfig::new(output_dir, base_name, extension);

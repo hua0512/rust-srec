@@ -14,17 +14,11 @@ pub struct FlvWriterConfig {
 }
 
 /// A specialized writer task for FLV data.
-pub struct FlvWriter<F>
-where
-    F: Fn(ProgressEvent) + Send + Sync + 'static,
-{
-    writer_task: WriterTask<FlvData, FlvFormatStrategy<F>>,
+pub struct FlvWriter {
+    writer_task: WriterTask<FlvData, FlvFormatStrategy>,
 }
 
-impl<F> ProtocolWriter<F> for FlvWriter<F>
-where
-    F: Fn(ProgressEvent) + Send + Sync + 'static,
-{
+impl ProtocolWriter for FlvWriter {
     type Item = FlvData;
     type Stats = (usize, u32);
     type Error = WriterError<FlvStrategyError>;
@@ -33,7 +27,7 @@ where
         output_dir: PathBuf,
         base_name: String,
         _extension: String,
-        on_progress: Option<Arc<F>>,
+        on_progress: Option<Arc<dyn Fn(ProgressEvent) + Send + Sync + 'static>>,
         extras: Option<HashMap<String, String>>,
     ) -> Self {
         let writer_config = WriterConfig::new(output_dir, base_name, "flv".to_string());

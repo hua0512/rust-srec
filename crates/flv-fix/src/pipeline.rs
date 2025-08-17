@@ -221,9 +221,7 @@ mod test {
     use flv::data::FlvData;
     use flv::parser_async::FlvDecoderStream;
     use futures::StreamExt;
-    use pipeline_common::{
-        PipelineError, ProgressEvent, ProtocolWriter, WriterError, init_test_tracing,
-    };
+    use pipeline_common::{PipelineError, ProtocolWriter, WriterError, init_test_tracing};
     use std::sync::mpsc;
 
     use std::path::Path;
@@ -301,13 +299,8 @@ mod test {
 
         // Run the writer task with the receiver
         let writer_handle = tokio::task::spawn_blocking(move || {
-            let mut writer_task = FlvWriter::<fn(ProgressEvent)>::new(
-                output_dir,
-                base_name,
-                "flv".to_string(),
-                None,
-                None,
-            );
+            let mut writer_task =
+                FlvWriter::new(output_dir, base_name, "flv".to_string(), None, None);
 
             writer_task.run(output_rx)?;
 

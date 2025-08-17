@@ -12,17 +12,14 @@ use std::{path::Path, sync::Arc};
 use tracing::{debug, info};
 
 /// Process an HLS stream
-pub async fn process_hls_stream<F>(
+pub async fn process_hls_stream(
     url_str: &str,
     output_dir: &Path,
     config: &ProgramConfig,
     name_template: &str,
-    on_progress: Option<Arc<F>>,
+    on_progress: Option<Arc<dyn Fn(ProgressEvent) + Send + Sync + 'static>>,
     downloader: &mut DownloaderInstance,
-) -> Result<u64, AppError>
-where
-    F: Fn(ProgressEvent) + Send + Sync + 'static,
-{
+) -> Result<u64, AppError> {
     // Create output directory if it doesn't exist
     create_dirs(output_dir).await?;
 
@@ -80,22 +77,24 @@ where
     // Prepend the first segment back to the stream
     let stream_with_first_segment = stream::once(async { Ok(first_segment) }).chain(stream);
 
-    let (_ts_segments_written, total_segments_written) =
-        process_stream::<HlsPipeline, HlsWriter<F>, _, _, _>(
-            &config.pipeline_config,
-            hls_pipe_config,
-            stream_with_first_segment,
-            || {
-                HlsWriter::new(
-                    output_dir.to_path_buf(),
-                    base_name.to_string(),
-                    extension.to_string(),
-                    on_progress,
-                    None,
-                )
-            },
-        )
-        .await?;
+    let stream =
+        stream_with_first_segment.map(|r| r.map_err(|e| PipelineError::Processing(e.to_string())));
+
+    let (_ts_segments_written, total_segments_written) = process_stream::<HlsPipeline, HlsWriter>(
+        &config.pipeline_config,
+        hls_pipe_config,
+        Box::pin(stream),
+        || {
+            HlsWriter::new(
+                output_dir.to_path_buf(),
+                base_name.to_string(),
+                extension.to_string(),
+                on_progress,
+                None,
+            )
+        },
+    )
+    .await?;
 
     let elapsed = start_time.elapsed();
 

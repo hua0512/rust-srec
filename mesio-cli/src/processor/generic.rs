@@ -2,25 +2,22 @@ use crate::error::AppError;
 use futures::{Stream, StreamExt};
 use pipeline_common::{
     PipelineError, PipelineProvider, ProtocolWriter, StreamerContext, config::PipelineConfig,
-    progress::ProgressEvent,
 };
+use std::pin::Pin;
 use std::sync::mpsc;
 use tracing::warn;
 
-pub async fn process_stream<P, W, S, E, F>(
+pub async fn process_stream<P, W>(
     pipeline_common_config: &PipelineConfig,
     pipeline_config: P::Config,
-    stream: S,
+    stream: Pin<Box<dyn Stream<Item = Result<P::Item, PipelineError>> + Send>>,
     writer_initializer: impl FnOnce() -> W,
 ) -> Result<W::Stats, AppError>
 where
     P: PipelineProvider,
     P::Config: Send + 'static,
     P::Item: Send + 'static,
-    S: Stream<Item = Result<P::Item, E>> + Send + 'static,
-    E: std::error::Error + Send + Sync + 'static,
-    F: Fn(ProgressEvent) + Send + Sync + 'static,
-    W: ProtocolWriter<F, Item = P::Item>,
+    W: ProtocolWriter<Item = P::Item>,
 {
     let (tx, rx) = mpsc::sync_channel(pipeline_common_config.channel_size);
     let (processed_tx, processed_rx) = mpsc::sync_channel(pipeline_common_config.channel_size);
@@ -52,10 +49,9 @@ where
     let mut writer = writer_initializer();
     let writer_task = tokio::task::spawn_blocking(move || writer.run(processed_rx));
 
-    let mut stream = Box::pin(stream);
+    let mut stream = stream;
     while let Some(item_result) = stream.next().await {
-        let item = item_result.map_err(|e| PipelineError::Processing(e.to_string()));
-        if tx.send(item).is_err() {
+        if tx.send(item_result).is_err() {
             // Upstream channel closed
             break;
         }
