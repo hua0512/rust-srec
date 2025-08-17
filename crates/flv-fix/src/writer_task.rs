@@ -41,13 +41,16 @@ where
 
     // Callbacks
     on_progress: Option<Arc<F>>,
+
+    // Whether to use low-latency mode for metadata modification.
+    enable_low_latency: bool,
 }
 
 impl<F> FlvFormatStrategy<F>
 where
     F: Fn(ProgressEvent) + Send + Sync + 'static,
 {
-    pub fn new(on_progress: Option<Arc<F>>) -> Self {
+    pub fn new(enable_low_latency: bool, on_progress: Option<Arc<F>>) -> Self {
         Self {
             analyzer: FlvAnalyzer::default(),
             pending_header: None,
@@ -55,6 +58,7 @@ where
             last_header_received: false,
             current_tag_count: 0,
             on_progress,
+            enable_low_latency,
         }
     }
 
@@ -207,7 +211,9 @@ where
 
         if let Ok(stats) = self.analyzer.build_stats() {
             info!("Path : {}: {}", path.display(), stats);
-            if let Err(e) = script_modifier::inject_stats_into_script_data(path, stats) {
+            if let Err(e) =
+                script_modifier::inject_stats_into_script_data(path, stats, self.enable_low_latency)
+            {
                 tracing::warn!(path = %path.display(), error = ?e, "Failed to inject stats into script data section");
             }
         }

@@ -5,7 +5,7 @@
 
 use crate::{
     CacheConfig, DownloadError, DownloaderConfig,
-    flv::{FlvConfig, FlvDownloader},
+    flv::{FlvDownloader, FlvProtocolConfig},
     hls::{
         HlsDownloader,
         config::{HlsConfig, HlsVariantSelectionPolicy as NewHlsVariantSelectionPolicy},
@@ -27,14 +27,14 @@ pub trait ProtocolBuilder {
 
 /// Builder for FLV protocol handlers
 pub struct FlvProtocolBuilder {
-    config: FlvConfig,
+    config: FlvProtocolConfig,
 }
 
 impl FlvProtocolBuilder {
     /// Create a new FLV protocol builder with default configuration
     pub fn new() -> Self {
         Self {
-            config: FlvConfig::default(),
+            config: FlvProtocolConfig::default(),
         }
     }
 
@@ -91,14 +91,14 @@ impl FlvProtocolBuilder {
     /// Access the raw configuration for more advanced customization
     pub fn with_config<F>(mut self, f: F) -> Self
     where
-        F: FnOnce(&mut FlvConfig),
+        F: FnOnce(&mut FlvProtocolConfig),
     {
         f(&mut self.config);
         self
     }
 
     /// Get a copy of the current configuration
-    pub fn get_config(&self) -> FlvConfig {
+    pub fn get_config(&self) -> FlvProtocolConfig {
         self.config.clone()
     }
 }

@@ -26,7 +26,7 @@ use std::{
 
 use amf0::Amf0Value;
 use flv::tag::{FlvTagData, FlvTagType::ScriptData};
-use tracing::{debug, info, warn};
+use tracing::{debug, info, trace, warn};
 
 use crate::{
     amf::{builder::OnMetaDataBuilder, model::AmfScriptData},
@@ -39,29 +39,22 @@ use crate::{
 pub enum ScriptModifierError {
     #[error("IO Error: {0}")]
     Io(#[from] io::Error),
-    #[error("FLV Error: {0}")]
-    Flv(#[from] flv::error::FlvError),
-    #[error("AMF0 Read Error: {0}")]
-    Amf0Read(#[from] amf0::Amf0ReadError),
     #[error("AMF0 Write Error: {0}")]
     Amf0Write(#[from] amf0::Amf0WriteError),
     #[error("Script data error: {0}")]
     ScriptData(&'static str),
 }
 
-/// Main function to update FLV file metadata based on collected statistics
-/// This is an async wrapper around the actual implementation
-#[inline]
+/// Injects stats into the script data section of an FLV file.
+/// * `file_path` - The path to the FLV file.
+/// * `stats` - The statistics to inject into the script data section.
+/// * `low_latency_metadata` - Whether to use low-latency mode for metadata modification.
+///   This will reduce the latency of script data modification, but it will also increase the size of the output file.
 pub fn inject_stats_into_script_data(
     file_path: &Path,
     stats: &FlvStats,
+    low_latency_metadata: bool,
 ) -> Result<(), ScriptModifierError> {
-    update_script_metadata(file_path, stats)
-}
-
-/// Implementation function that actually does the metadata update work
-/// This is not async as it performs blocking I/O operations
-fn update_script_metadata(file_path: &Path, stats: &FlvStats) -> Result<(), ScriptModifierError> {
     debug!("Injecting stats into script data section.");
 
     // Create a backup of the file
@@ -111,7 +104,7 @@ fn update_script_metadata(file_path: &Path, stats: &FlvStats) -> Result<(), Scri
         }
     };
 
-    debug!("Script data: {:?}", script_data);
+    trace!("Script data: {:?}", script_data);
 
     // Get the size of the payload of the script data tag
     // After reading the tag entirely, we are at the end of the payload
@@ -119,11 +112,8 @@ fn update_script_metadata(file_path: &Path, stats: &FlvStats) -> Result<(), Scri
     let end_script_pos = reader.stream_position()?;
 
     let original_payload_data = (end_script_pos - start_pos - 11) as u32;
-    debug!(
-        "Original script data payload size: {}",
-        original_payload_data
-    );
-    debug!("End of original script data position: {}", end_script_pos);
+    debug!("Original script data payload size: {original_payload_data}");
+    debug!("End of original script data position: {end_script_pos}");
 
     if script_data.name != crate::AMF0_ON_METADATA {
         return Err(ScriptModifierError::ScriptData(
@@ -141,6 +131,8 @@ fn update_script_metadata(file_path: &Path, stats: &FlvStats) -> Result<(), Scri
         // current script data model
         let script_data_model = AmfScriptData::from_amf_object_ref(props)?;
 
+        debug!("script data model: {script_data_model:?}");
+
         let (times, filepositions): (Vec<f64>, Vec<u64>) = stats
             .keyframes
             .iter()
@@ -151,10 +143,10 @@ fn update_script_metadata(file_path: &Path, stats: &FlvStats) -> Result<(), Scri
         let (buffer, size_diff) = OnMetaDataBuilder::from_script_data(script_data_model)
             .with_stats(stats)
             .with_final_keyframes(times, filepositions)
-            .build_bytes(original_payload_data)?;
+            .build_bytes(original_payload_data, low_latency_metadata)?;
 
         let new_payload_size = buffer.len();
-        debug!("New script data size: {}", new_payload_size);
+        debug!("New script data size: {new_payload_size}");
 
         drop(reader); // Close the reader before opening the writer
 
@@ -169,8 +161,7 @@ fn update_script_metadata(file_path: &Path, stats: &FlvStats) -> Result<(), Scri
             writer.flush()?;
         } else {
             debug!(
-                "Script data size changed (original: {}, new: {}).",
-                original_payload_data, new_payload_size
+                "Script data size changed (original: {original_payload_data}, new: {new_payload_size})."
             );
 
             // This position is where the next tag starts after the script data tag
@@ -216,8 +207,7 @@ fn update_script_metadata(file_path: &Path, stats: &FlvStats) -> Result<(), Scri
                 file.set_len(new_file_size)?;
 
                 info!(
-                    "Successfully rewrote file with reduced script data. New file size: {}",
-                    new_file_size
+                    "Successfully rewrote file with reduced script data. New file size: {new_file_size}"
                 );
             }
         }

@@ -1,4 +1,5 @@
 use std::{
+    collections::HashMap,
     fs::OpenOptions,
     io::{BufWriter, Write},
     path::PathBuf,
@@ -222,6 +223,7 @@ where
         base_name: String,
         extension: String,
         on_progress: Option<Arc<F>>,
+        _extras: Option<HashMap<String, String>>,
     ) -> Self {
         let writer_config = WriterConfig::new(output_dir, base_name, extension);
         let strategy = HlsFormatStrategy::new(on_progress);

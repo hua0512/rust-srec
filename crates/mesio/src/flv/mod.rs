@@ -4,4 +4,4 @@ pub mod flv_downloader;
 
 pub use flv_downloader::FlvDownloader;
 
-pub use flv_config::FlvConfig;
+pub use flv_config::FlvProtocolConfig;

@@ -1,6 +1,6 @@
 use crate::{
     BoxMediaStream, DownloadError, DownloadManager, DownloadManagerConfig,
-    flv::{FlvConfig, FlvDownloader},
+    flv::{FlvDownloader, FlvProtocolConfig},
     hls::{HlsConfig, HlsDownloader},
 };
 use url::Url;
@@ -22,7 +22,7 @@ pub struct MesioDownloaderFactory {
     /// Base download manager configuration
     download_config: DownloadManagerConfig,
     /// FLV protocol configuration
-    flv_config: FlvConfig,
+    flv_config: FlvProtocolConfig,
     /// HLS protocol configuration
     hls_config: HlsConfig,
 }
@@ -40,7 +40,7 @@ impl MesioDownloaderFactory {
     }
 
     /// Set FLV protocol configuration
-    pub fn with_flv_config(mut self, config: FlvConfig) -> Self {
+    pub fn with_flv_config(mut self, config: FlvProtocolConfig) -> Self {
         self.flv_config = config;
         self
     }

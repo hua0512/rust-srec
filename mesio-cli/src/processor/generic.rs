@@ -4,10 +4,12 @@ use pipeline_common::{
     PipelineError, PipelineProvider, ProtocolWriter, StreamerContext, config::PipelineConfig,
     progress::ProgressEvent,
 };
+use std::collections::HashMap;
 use std::sync::mpsc;
 use std::{path::Path, sync::Arc};
 use tracing::warn;
 
+#[allow(clippy::too_many_arguments)]
 pub async fn process_stream<C, I, P, W, S, E, F>(
     pipeline_common_config: &PipelineConfig,
     pipeline_config: C,
@@ -16,6 +18,7 @@ pub async fn process_stream<C, I, P, W, S, E, F>(
     base_name: &str,
     extension: &str,
     on_progress: Option<Arc<F>>,
+    writer_extras: Option<HashMap<String, String>>,
 ) -> Result<W::Stats, AppError>
 where
     C: Send + 'static,
@@ -58,6 +61,7 @@ where
         base_name.to_string(),
         extension.to_string(),
         on_progress,
+        writer_extras,
     );
     let writer_task = tokio::task::spawn_blocking(move || writer.run(processed_rx));
 

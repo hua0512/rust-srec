@@ -11,6 +11,7 @@ use mesio_engine::DownloaderInstance;
 use pipeline_common::{
     PipelineError, ProtocolWriter, config::PipelineConfig, progress::ProgressEvent,
 };
+use std::collections::HashMap;
 use std::sync::mpsc;
 use std::time::Instant;
 use std::{path::Path, sync::Arc};
@@ -36,6 +37,10 @@ where
         base_name.to_string(),
         "flv".to_string(),
         on_progress,
+        Some(HashMap::from([(
+            "enable_low_latency".to_string(),
+            "false".to_string(),
+        )])),
     );
     let writer_task = tokio::task::spawn_blocking(move || writer.run(rx));
 
@@ -97,6 +102,10 @@ where
             &base_name,
             "flv",
             on_progress,
+            Some(HashMap::from([(
+                "enable_low_latency".to_string(),
+                config.flv_pipeline_config.enable_low_latency.to_string(),
+            )])),
         )
         .await?
     } else {
@@ -163,6 +172,10 @@ where
             &base_name,
             "flv",
             on_progress,
+            Some(HashMap::from([(
+                "enable_low_latency".to_string(),
+                config.flv_pipeline_config.enable_low_latency.to_string(),
+            )])),
         )
         .await?
     } else {

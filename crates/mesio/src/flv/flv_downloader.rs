@@ -14,7 +14,7 @@ use std::time::Instant;
 use tracing::{debug, info, instrument, warn};
 
 use super::error::FlvDownloadError;
-use super::flv_config::FlvConfig;
+use super::flv_config::FlvProtocolConfig;
 use crate::bytes_stream::BytesStreamReader;
 use crate::{
     DownloadError,
@@ -30,17 +30,17 @@ use crate::{Cacheable, Download, MultiSource, ProtocolBase, RawDownload, RawResu
 /// FLV Downloader for streaming FLV content from URLs
 pub struct FlvDownloader {
     client: Client,
-    config: FlvConfig,
+    config: FlvProtocolConfig,
 }
 
 impl FlvDownloader {
     /// Create a new FlvDownloader with default configuration
     pub fn new() -> Result<Self, DownloadError> {
-        Self::with_config(FlvConfig::default())
+        Self::with_config(FlvProtocolConfig::default())
     }
 
     /// Create a new FlvDownloader with custom configuration
-    pub fn with_config(config: FlvConfig) -> Result<Self, DownloadError> {
+    pub fn with_config(config: FlvProtocolConfig) -> Result<Self, DownloadError> {
         let client = create_client(&config.base)?;
         Ok(Self { client, config })
     }
@@ -493,7 +493,7 @@ impl FlvDownloader {
 
 // Implement base protocol trait
 impl ProtocolBase for FlvDownloader {
-    type Config = FlvConfig;
+    type Config = FlvProtocolConfig;
 
     fn new(config: Self::Config) -> Result<Self, DownloadError> {
         Self::with_config(config)

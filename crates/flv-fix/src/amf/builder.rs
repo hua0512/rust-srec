@@ -152,6 +152,8 @@ impl OnMetaDataBuilder {
     ///
     /// * `original_payload_size` - The size of the original script data payload.
     ///   This is used to calculate the size difference and adjust keyframe file positions.
+    /// * `low_latency_mode` - Whether to use low-latency mode for metadata modification.
+    ///   This will reduce the latency of script data modification, but it will also increase the size of the output file.
     ///
     /// # Returns
     ///
@@ -159,6 +161,7 @@ impl OnMetaDataBuilder {
     pub fn build_bytes(
         mut self,
         original_payload_size: u32,
+        low_latency_mode: bool,
     ) -> Result<(Vec<u8>, i64), Amf0WriteError> {
         // arbitrary buffer size
         let estimated_size = original_payload_size as usize + 128;
@@ -179,19 +182,58 @@ impl OnMetaDataBuilder {
             }
         }
 
-        for (key, value) in self.data.custom_properties {
-            write_amf_property_key!(&mut buf, &key);
-            Amf0Encoder::encode(&mut buf, &value)?;
+        for (key, value) in &self.data.custom_properties {
+            write_amf_property_key!(&mut buf, key);
+            Amf0Encoder::encode(&mut buf, value)?;
         }
 
         // calculate the size difference
         let metadata_size_without_keyframes = buf.len() + 3; // +3 for object_eof
-        let keyframes_size = self
+
+        let file_positions_size = self
             .data
             .keyframes
             .as_ref()
-            .map(Self::compute_keyframes_section_size)
+            .map(|k| match k {
+                KeyframeData::Final { filepositions, .. } => filepositions.len(),
+                _ => 0,
+            })
             .unwrap_or(0);
+
+        let times_size = self
+            .data
+            .keyframes
+            .as_ref()
+            .map(|k| match k {
+                KeyframeData::Final { times, .. } => times.len(),
+                _ => 0,
+            })
+            .unwrap_or(0);
+
+        let spacer_size = self.data.spacer_size.unwrap_or(0);
+
+        debug!(
+            "file_positions_size={}, times_size={}, spacer_size={}",
+            file_positions_size, times_size, spacer_size
+        );
+
+        // if we are on low-latency mode and the spacer size is greater than the file positions and times size,
+        // we can use the original payload size, and pad the remaining space with 0s
+        // requirement: ScriptFiller operator must be used in the pipeline
+        let keyframes_size = if low_latency_mode
+            && spacer_size > 0
+            && file_positions_size + times_size <= spacer_size
+        {
+            original_payload_size as usize - metadata_size_without_keyframes
+        } else {
+            self.data
+                .keyframes
+                .as_ref()
+                .map(Self::compute_keyframes_section_size)
+                .unwrap_or(0)
+        };
+
+        debug!("keyframes_size={}", keyframes_size);
 
         let final_size = metadata_size_without_keyframes + keyframes_size;
         let size_diff = final_size as i64 - original_payload_size as i64;
@@ -207,7 +249,7 @@ impl OnMetaDataBuilder {
 
         // encode the keyframes object with the correct offsets
         if let Some(keyframes) = self.data.keyframes.take() {
-            Self::write_keyframes_section(&mut buf, keyframes, size_diff)?;
+            self.write_keyframes_section(&mut buf, keyframes, size_diff, low_latency_mode)?;
         }
 
         // finalize the main object
@@ -216,52 +258,140 @@ impl OnMetaDataBuilder {
         Ok((buf, size_diff))
     }
 
+    /// Returns the AMF0 value for a given key.
+    /// If the key is not found, a default value is returned.
+    /// Returns `None` if the key is not known.
     fn get_amf_value_for_key(&mut self, key: &str) -> Option<Amf0Value<'static>> {
         match key {
-            "duration" => self.data.duration.map(Amf0Value::Number),
-            "width" => self.data.width.map(Amf0Value::Number),
-            "height" => self.data.height.map(Amf0Value::Number),
-            "framerate" => self.data.framerate.map(Amf0Value::Number),
+            "duration" => self
+                .data
+                .duration
+                .map(Amf0Value::Number)
+                .or(Some(Amf0Value::Number(0.0))),
+            "width" => self
+                .data
+                .width
+                .map(Amf0Value::Number)
+                .or(Some(Amf0Value::Number(0.0))),
+            "height" => self
+                .data
+                .height
+                .map(Amf0Value::Number)
+                .or(Some(Amf0Value::Number(0.0))),
+            "framerate" => self
+                .data
+                .framerate
+                .map(Amf0Value::Number)
+                .or(Some(Amf0Value::Number(0.0))),
             "videocodecid" => self
                 .data
                 .videocodecid
-                .map(|v| Amf0Value::Number(v as u8 as f64)),
-            "videodatarate" => self.data.videodatarate.map(Amf0Value::Number),
+                .map(|v| Amf0Value::Number(v as u8 as f64))
+                .or(Some(Amf0Value::Number(0.0))),
+            "videodatarate" => self
+                .data
+                .videodatarate
+                .map(Amf0Value::Number)
+                .or(Some(Amf0Value::Number(0.0))),
             "audiocodecid" => self
                 .data
                 .audiocodecid
-                .map(|v| Amf0Value::Number(v as u8 as f64)),
-            "audiodatarate" => self.data.audiodatarate.map(Amf0Value::Number),
-            "audiosamplerate" => self.data.audiosamplerate.map(Amf0Value::Number),
-            "audiosamplesize" => self.data.audiosamplesize.map(Amf0Value::Number),
-            "stereo" => self.data.stereo.map(Amf0Value::Boolean),
-            "filesize" => self.data.filesize.map(|v| Amf0Value::Number(v as f64)),
-            "datasize" => self.data.datasize.map(|v| Amf0Value::Number(v as f64)),
-            "videosize" => self.data.videosize.map(|v| Amf0Value::Number(v as f64)),
-            "audiosize" => self.data.audiosize.map(|v| Amf0Value::Number(v as f64)),
-            "lasttimestamp" => self.data.lasttimestamp.map(|v| Amf0Value::Number(v as f64)),
+                .map(|v| Amf0Value::Number(v as u8 as f64))
+                .or(Some(Amf0Value::Number(0.0))),
+            "audiodatarate" => self
+                .data
+                .audiodatarate
+                .map(Amf0Value::Number)
+                .or(Some(Amf0Value::Number(0.0))),
+            "audiosamplerate" => self
+                .data
+                .audiosamplerate
+                .map(Amf0Value::Number)
+                .or(Some(Amf0Value::Number(0.0))),
+            "audiosamplesize" => self
+                .data
+                .audiosamplesize
+                .map(Amf0Value::Number)
+                .or(Some(Amf0Value::Number(0.0))),
+            "stereo" => self
+                .data
+                .stereo
+                .map(Amf0Value::Boolean)
+                .or(Some(Amf0Value::Boolean(false))),
+            "filesize" => self
+                .data
+                .filesize
+                .map(|v| Amf0Value::Number(v as f64))
+                .or(Some(Amf0Value::Number(0.0))),
+            "datasize" => self
+                .data
+                .datasize
+                .map(|v| Amf0Value::Number(v as f64))
+                .or(Some(Amf0Value::Number(0.0))),
+            "videosize" => self
+                .data
+                .videosize
+                .map(|v| Amf0Value::Number(v as f64))
+                .or(Some(Amf0Value::Number(0.0))),
+            "audiosize" => self
+                .data
+                .audiosize
+                .map(|v| Amf0Value::Number(v as f64))
+                .or(Some(Amf0Value::Number(0.0))),
+            "lasttimestamp" => self
+                .data
+                .lasttimestamp
+                .map(|v| Amf0Value::Number(v as f64))
+                .or(Some(Amf0Value::Number(0.0))),
             "lastkeyframetimestamp" => self
                 .data
                 .lastkeyframetimestamp
-                .map(|v| Amf0Value::Number(v as f64)),
+                .map(|v| Amf0Value::Number(v as f64))
+                .or(Some(Amf0Value::Number(0.0))),
             "lastkeyframelocation" => self
                 .data
                 .lastkeyframelocation
-                .map(|v| Amf0Value::Number(v as f64)),
-            "hasVideo" => self.data.has_video.map(Amf0Value::Boolean),
-            "hasAudio" => self.data.has_audio.map(Amf0Value::Boolean),
-            "hasMetadata" => self.data.has_metadata.map(Amf0Value::Boolean),
-            "hasKeyframes" => self.data.has_keyframes.map(Amf0Value::Boolean),
-            "canSeekToEnd" => self.data.can_seek_to_end.map(Amf0Value::Boolean),
+                .map(|v| Amf0Value::Number(v as f64))
+                .or(Some(Amf0Value::Number(0.0))),
+            "hasVideo" => self
+                .data
+                .has_video
+                .map(Amf0Value::Boolean)
+                .or(Some(Amf0Value::Boolean(false))),
+            "hasAudio" => self
+                .data
+                .has_audio
+                .map(Amf0Value::Boolean)
+                .or(Some(Amf0Value::Boolean(false))),
+            "hasMetadata" => self
+                .data
+                .has_metadata
+                .map(Amf0Value::Boolean)
+                .or(Some(Amf0Value::Boolean(false))),
+            "hasKeyframes" => self
+                .data
+                .has_keyframes
+                .map(Amf0Value::Boolean)
+                .or(Some(Amf0Value::Boolean(false))),
+            "canSeekToEnd" => self
+                .data
+                .can_seek_to_end
+                .map(Amf0Value::Boolean)
+                .or(Some(Amf0Value::Boolean(false))),
             "metadatacreator" => self
                 .data
                 .metadatacreator
                 .take()
-                .map(|v| Amf0Value::String(Cow::Owned(v))),
+                .map(|v| Amf0Value::String(Cow::Owned(v)))
+                .or(Some(Amf0Value::String(Cow::Borrowed(concat!(
+                    "Mesio v",
+                    env!("CARGO_PKG_VERSION")
+                ))))),
             _ => None,
         }
     }
 
+    /// Computes the size of the keyframes section.
     fn compute_keyframes_section_size(keyframes: &KeyframeData) -> usize {
         let mut size = 0;
         // "keyframes" property key + object marker
@@ -295,11 +425,20 @@ impl OnMetaDataBuilder {
         size
     }
 
+    /// Writes the keyframes section to the buffer.
+    /// * `buf` - The buffer to write the keyframes section to.
+    /// * `keyframes` - The keyframes data.
+    /// * `size_diff` - The size difference between the original and modified keyframes section.
+    /// * `low_latency_mode` - Whether to use low-latency mode for metadata modification.
+    ///   This will reduce the latency of script data modification, but it will also increase the size of the output file.
     fn write_keyframes_section(
+        self,
         buf: &mut Vec<u8>,
         keyframes: KeyframeData,
         size_diff: i64,
+        low_latency_mode: bool,
     ) -> Result<(), Amf0WriteError> {
+        let start_position = buf.len();
         write_amf_property_key!(buf, "keyframes");
         buf.write_u8(Amf0Marker::Object as u8)?;
 
@@ -312,17 +451,43 @@ impl OnMetaDataBuilder {
                 write_amf_property_key!(buf, "times");
                 buf.write_u8(Amf0Marker::StrictArray as u8)?;
                 buf.write_u32::<BigEndian>(times.len() as u32)?;
-                for time in times {
-                    Amf0Encoder::encode_number(buf, time)?;
+                for time in &times {
+                    Amf0Encoder::encode_number(buf, *time)?;
                 }
 
                 // Write filepositions array
                 write_amf_property_key!(buf, "filepositions");
                 buf.write_u8(Amf0Marker::StrictArray as u8)?;
                 buf.write_u32::<BigEndian>(filepositions.len() as u32)?;
-                for pos in filepositions {
-                    let adjusted_pos = (pos as i64 + size_diff) as f64;
+                for pos in &filepositions {
+                    let adjusted_pos = (*pos as i64 + size_diff) as f64;
                     Amf0Encoder::encode_number(buf, adjusted_pos)?;
+                }
+
+                let current_filepositions_size = filepositions.len();
+                let current_times_size = times.len();
+
+                let spacer_size = self.data.spacer_size.unwrap_or(0);
+                debug!(
+                    "current_filepositions_size={current_filepositions_size}, current_times_size={current_times_size}, spacer_size={spacer_size}"
+                );
+
+                if low_latency_mode
+                    && spacer_size > 0
+                    && current_filepositions_size + current_times_size <= spacer_size
+                {
+                    let remaining_spacer_size =
+                        spacer_size - current_filepositions_size - current_times_size;
+                    debug!("Remaining spacer size: {remaining_spacer_size}");
+                    if remaining_spacer_size > 0 {
+                        // Write spacer array
+                        write_amf_property_key!(buf, "spacer");
+                        buf.write_u8(Amf0Marker::StrictArray as u8)?;
+                        buf.write_u32::<BigEndian>(remaining_spacer_size as u32)?;
+                        for _ in 0..remaining_spacer_size {
+                            Amf0Encoder::encode_number(buf, 0.0)?;
+                        }
+                    }
                 }
             }
             KeyframeData::Placeholder { spacer_size } => {
@@ -348,6 +513,8 @@ impl OnMetaDataBuilder {
         }
 
         Amf0Encoder::object_eof(buf)?;
+        let end_position = buf.len();
+        debug!("keyframes section size: {}", end_position - start_position);
         Ok(())
     }
 }
@@ -366,7 +533,7 @@ mod tests {
             .with_height(1080.0)
             .with_final_keyframes(vec![0.0, 1.0, 2.0], vec![100, 200, 300]);
 
-        let (bytes, size_diff) = builder.build_bytes(0).unwrap();
+        let (bytes, size_diff) = builder.build_bytes(0, false).unwrap();
 
         assert_eq!(size_diff, bytes.len() as i64);
 
@@ -429,7 +596,7 @@ mod tests {
             .with_height(1080.0)
             .with_placeholder_keyframes(1024);
 
-        let (bytes, size_diff) = builder.build_bytes(0).unwrap();
+        let (bytes, size_diff) = builder.build_bytes(0, false).unwrap();
 
         assert_eq!(size_diff, bytes.len() as i64);
         assert!(!bytes.is_empty());
@@ -444,7 +611,7 @@ mod tests {
             .with_duration(10.0)
             .with_final_keyframes(vec![0.0, 1.0, 2.0], keyframes_pos.clone());
 
-        let (bytes, size_diff) = builder.build_bytes(original_payload_size).unwrap();
+        let (bytes, size_diff) = builder.build_bytes(original_payload_size, false).unwrap();
 
         assert_eq!(size_diff, bytes.len() as i64 - original_payload_size as i64);
 
@@ -573,7 +740,9 @@ mod tests {
             .with_height(height)
             .with_final_keyframes(times.clone(), filepositions.clone());
 
-        let (actual_bytes, size_diff) = new_builder.build_bytes(original_payload_size).unwrap();
+        let (actual_bytes, size_diff) = new_builder
+            .build_bytes(original_payload_size, false)
+            .unwrap();
 
         // In this specific test, since we are not changing the number of properties,
         // the size of the payload should not change. The only change is in the

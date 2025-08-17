@@ -89,6 +89,7 @@ where
             &base_name,
             extension,
             on_progress,
+            None,
         )
         .await?;
 

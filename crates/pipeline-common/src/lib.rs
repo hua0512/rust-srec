@@ -19,7 +19,7 @@
 //! - hua0512
 //!
 
-use std::path::PathBuf;
+use std::{collections::HashMap, path::PathBuf};
 
 use thiserror::Error;
 
@@ -70,6 +70,7 @@ where
         base_name: String,
         extension: String,
         on_progress: Option<std::sync::Arc<F>>,
+        extras: Option<HashMap<String, String>>,
     ) -> Self;
 
     fn get_state(&self) -> &WriterState;

@@ -9,7 +9,8 @@ use std::pin::Pin;
 use std::{fmt::Debug, sync::Arc};
 
 use crate::{
-    DownloadError, cache::CacheManager, flv::FlvConfig, hls::HlsConfig, source::SourceManager,
+    DownloadError, cache::CacheManager, flv::FlvProtocolConfig, hls::HlsConfig,
+    source::SourceManager,
 };
 
 /// A type alias for a boxed media stream
@@ -20,7 +21,7 @@ pub trait ProtocolConfig: Debug + Clone {}
 
 pub enum Protocol {
     /// FLV protocol
-    Flv(Box<FlvConfig>),
+    Flv(Box<FlvProtocolConfig>),
     /// HLS protocol
     Hls(Box<HlsConfig>),
 }
