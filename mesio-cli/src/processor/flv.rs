@@ -5,7 +5,7 @@ use crate::utils::{create_dirs, expand_name_url, format_bytes};
 use flv::data::FlvData;
 use flv::parser_async::FlvDecoderStream;
 use flv_fix::writer::FlvWriter;
-use flv_fix::{FlvPipeline, FlvPipelineConfig, flv_error_to_pipeline_error};
+use flv_fix::{FlvPipeline, flv_error_to_pipeline_error};
 use futures::{Stream, StreamExt, TryStreamExt};
 use mesio_engine::DownloaderInstance;
 use pipeline_common::{
@@ -94,18 +94,22 @@ where
     let (tags_written, files_created) = if config.enable_processing {
         // we need to expand base_name with %i for output file numbering
         let base_name = format!("{base_name}_p%i");
-        process_stream::<FlvPipelineConfig, FlvData, FlvPipeline, FlvWriter<F>, _, _, F>(
+        process_stream::<FlvPipeline, FlvWriter<F>, _, _, _>(
             &config.pipeline_config,
             config.flv_pipeline_config.clone(),
             decoder_stream,
-            output_dir,
-            &base_name,
-            "flv",
-            on_progress,
-            Some(HashMap::from([(
-                "enable_low_latency".to_string(),
-                config.flv_pipeline_config.enable_low_latency.to_string(),
-            )])),
+            || {
+                FlvWriter::new(
+                    output_dir.to_path_buf(),
+                    base_name.to_string(),
+                    "flv".to_string(),
+                    on_progress,
+                    Some(HashMap::from([(
+                        "enable_low_latency".to_string(),
+                        config.flv_pipeline_config.enable_low_latency.to_string(),
+                    )])),
+                )
+            },
         )
         .await?
     } else {
@@ -164,18 +168,22 @@ where
     };
 
     let (tags_written, files_created) = if config.enable_processing {
-        process_stream::<FlvPipelineConfig, FlvData, FlvPipeline, FlvWriter<F>, _, _, F>(
+        process_stream::<FlvPipeline, FlvWriter<F>, _, _, _>(
             &config.pipeline_config,
             config.flv_pipeline_config.clone(),
             stream,
-            output_dir,
-            &base_name,
-            "flv",
-            on_progress,
-            Some(HashMap::from([(
-                "enable_low_latency".to_string(),
-                config.flv_pipeline_config.enable_low_latency.to_string(),
-            )])),
+            || {
+                FlvWriter::new(
+                    output_dir.to_path_buf(),
+                    base_name.clone(),
+                    "flv".to_string(),
+                    on_progress,
+                    Some(HashMap::from([(
+                        "enable_low_latency".to_string(),
+                        config.flv_pipeline_config.enable_low_latency.to_string(),
+                    )])),
+                )
+            },
         )
         .await?
     } else {

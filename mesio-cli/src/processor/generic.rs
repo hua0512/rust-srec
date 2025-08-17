@@ -4,30 +4,23 @@ use pipeline_common::{
     PipelineError, PipelineProvider, ProtocolWriter, StreamerContext, config::PipelineConfig,
     progress::ProgressEvent,
 };
-use std::collections::HashMap;
 use std::sync::mpsc;
-use std::{path::Path, sync::Arc};
 use tracing::warn;
 
-#[allow(clippy::too_many_arguments)]
-pub async fn process_stream<C, I, P, W, S, E, F>(
+pub async fn process_stream<P, W, S, E, F>(
     pipeline_common_config: &PipelineConfig,
-    pipeline_config: C,
+    pipeline_config: P::Config,
     stream: S,
-    output_dir: &Path,
-    base_name: &str,
-    extension: &str,
-    on_progress: Option<Arc<F>>,
-    writer_extras: Option<HashMap<String, String>>,
+    writer_initializer: impl FnOnce() -> W,
 ) -> Result<W::Stats, AppError>
 where
-    C: Send + 'static,
-    I: Send + 'static,
-    P: PipelineProvider<Item = I, Config = C>,
-    W: ProtocolWriter<F, Item = I>,
-    S: Stream<Item = Result<I, E>> + Send + 'static,
+    P: PipelineProvider,
+    P::Config: Send + 'static,
+    P::Item: Send + 'static,
+    S: Stream<Item = Result<P::Item, E>> + Send + 'static,
     E: std::error::Error + Send + Sync + 'static,
     F: Fn(ProgressEvent) + Send + Sync + 'static,
+    W: ProtocolWriter<F, Item = P::Item>,
 {
     let (tx, rx) = mpsc::sync_channel(pipeline_common_config.channel_size);
     let (processed_tx, processed_rx) = mpsc::sync_channel(pipeline_common_config.channel_size);
@@ -39,7 +32,7 @@ where
         let pipeline = pipeline_provider.build_pipeline();
         let input_iter = std::iter::from_fn(move || rx.recv().map(Some).unwrap_or(None));
 
-        let mut output = |result: Result<I, PipelineError>| {
+        let mut output = |result: Result<P::Item, PipelineError>| {
             if let Err(ref send_error) = processed_tx.send(result) {
                 // Downstream channel closed, stop processing
                 // get error and log it
@@ -56,13 +49,7 @@ where
         }
     });
 
-    let mut writer = W::new(
-        output_dir.to_path_buf(),
-        base_name.to_string(),
-        extension.to_string(),
-        on_progress,
-        writer_extras,
-    );
+    let mut writer = writer_initializer();
     let writer_task = tokio::task::spawn_blocking(move || writer.run(processed_rx));
 
     let mut stream = Box::pin(stream);
