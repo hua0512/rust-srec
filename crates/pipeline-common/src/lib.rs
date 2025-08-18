@@ -19,7 +19,7 @@
 //! - hua0512
 //!
 
-use std::path::PathBuf;
+use std::{collections::HashMap, path::PathBuf};
 
 use thiserror::Error;
 
@@ -57,10 +57,7 @@ pub enum PipelineError {
     InvalidData(String),
 }
 
-pub trait ProtocolWriter<F>: Send + 'static
-where
-    F: Fn(ProgressEvent) + Send + Sync + 'static,
-{
+pub trait ProtocolWriter: Send + 'static {
     type Item: Send + 'static;
     type Stats: Send + 'static;
     type Error: std::error::Error + Send + Sync + 'static;
@@ -69,7 +66,8 @@ where
         output_dir: PathBuf,
         base_name: String,
         extension: String,
-        on_progress: Option<std::sync::Arc<F>>,
+        on_progress: Option<std::sync::Arc<dyn Fn(ProgressEvent) + Send + Sync + 'static>>,
+        extras: Option<HashMap<String, String>>,
     ) -> Self;
 
     fn get_state(&self) -> &WriterState;

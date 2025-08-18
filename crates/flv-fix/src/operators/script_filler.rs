@@ -136,6 +136,8 @@ impl ScriptKeyframesFillerOperator {
             .div_ceil(MIN_INTERVAL_BETWEEN_KEYFRAMES_MS);
         let spacer_size = 2 * keyframes_count as usize;
 
+        debug!("keyframes spacer_size={spacer_size}");
+
         let original_payload_size = tag.data.len() as u32;
 
         let script_data_model = AmfScriptData::from_amf_object(props)
@@ -146,7 +148,7 @@ impl ScriptKeyframesFillerOperator {
         // new buffer with placeholder keyframes
         let (buffer, _) = OnMetaDataBuilder::from_script_data(script_data_model)
             .with_placeholder_keyframes(spacer_size)
-            .build_bytes(original_payload_size)
+            .build_bytes(original_payload_size, false)
             .map_err(|e| PipelineError::Processing(e.to_string()))?;
 
         debug!("New script data payload size: {}", buffer.len());

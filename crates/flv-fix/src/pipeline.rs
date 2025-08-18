@@ -53,6 +53,8 @@ pub struct FlvPipelineConfig {
 
     /// Configuration for keyframe index injection
     pub keyframe_index_config: Option<ScriptFillerConfig>,
+
+    pub enable_low_latency: bool,
 }
 
 impl Default for FlvPipelineConfig {
@@ -62,6 +64,7 @@ impl Default for FlvPipelineConfig {
             repair_strategy: RepairStrategy::Strict,
             continuity_mode: ContinuityMode::Reset,
             keyframe_index_config: Some(ScriptFillerConfig::default()),
+            enable_low_latency: true,
         }
     }
 }
@@ -104,6 +107,11 @@ impl FlvPipelineConfigBuilder {
         keyframe_index_config: Option<ScriptFillerConfig>,
     ) -> Self {
         self.config.keyframe_index_config = keyframe_index_config;
+        self
+    }
+
+    pub fn enable_low_latency(mut self, enable_low_latency: bool) -> Self {
+        self.config.enable_low_latency = enable_low_latency;
         self
     }
 
@@ -213,9 +221,7 @@ mod test {
     use flv::data::FlvData;
     use flv::parser_async::FlvDecoderStream;
     use futures::StreamExt;
-    use pipeline_common::{
-        PipelineError, ProgressEvent, ProtocolWriter, WriterError, init_test_tracing,
-    };
+    use pipeline_common::{PipelineError, ProtocolWriter, WriterError, init_test_tracing};
     use std::sync::mpsc;
 
     use std::path::Path;
@@ -294,7 +300,7 @@ mod test {
         // Run the writer task with the receiver
         let writer_handle = tokio::task::spawn_blocking(move || {
             let mut writer_task =
-                FlvWriter::<fn(ProgressEvent)>::new(output_dir, base_name, "flv".to_string(), None);
+                FlvWriter::new(output_dir, base_name, "flv".to_string(), None, None);
 
             writer_task.run(output_rx)?;
 

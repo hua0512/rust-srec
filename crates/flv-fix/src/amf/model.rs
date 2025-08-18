@@ -39,6 +39,7 @@ pub struct AmfScriptData {
 
     // Keyframes
     pub keyframes: Option<KeyframeData>,
+    pub spacer_size: Option<usize>,
 
     // Metadata
     pub metadatacreator: Option<String>,
@@ -418,6 +419,20 @@ impl AmfScriptData {
                                     None
                                 }
                             });
+
+                        // retrieve our custom defined spacer size
+                        let spacer_size = props
+                            .iter()
+                            .find(|(k, _)| k.as_ref() == "spacer")
+                            .and_then(|(_, v)| {
+                                if let Amf0Value::StrictArray(arr) = v {
+                                    Some(arr.len())
+                                } else {
+                                    None
+                                }
+                            });
+
+                        data.spacer_size = spacer_size;
 
                         if let (Some(times), Some(filepositions)) = (times, filepositions) {
                             data.keyframes = Some(KeyframeData::Final {

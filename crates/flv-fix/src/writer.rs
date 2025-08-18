@@ -4,21 +4,21 @@ use pipeline_common::{PipelineError, ProtocolWriter, WriterError};
 use crate::writer_task::FlvFormatStrategy;
 use flv::data::FlvData;
 use pipeline_common::{WriterConfig, WriterState, WriterTask, progress::ProgressEvent};
+use std::collections::HashMap;
 use std::sync::mpsc;
 use std::{path::PathBuf, sync::Arc};
 
-/// A specialized writer task for FLV data.
-pub struct FlvWriter<F>
-where
-    F: Fn(ProgressEvent) + Send + Sync + 'static,
-{
-    writer_task: WriterTask<FlvData, FlvFormatStrategy<F>>,
+#[derive(Clone, Debug, Default)]
+pub struct FlvWriterConfig {
+    pub enable_low_latency: bool,
 }
 
-impl<F> ProtocolWriter<F> for FlvWriter<F>
-where
-    F: Fn(ProgressEvent) + Send + Sync + 'static,
-{
+/// A specialized writer task for FLV data.
+pub struct FlvWriter {
+    writer_task: WriterTask<FlvData, FlvFormatStrategy>,
+}
+
+impl ProtocolWriter for FlvWriter {
     type Item = FlvData;
     type Stats = (usize, u32);
     type Error = WriterError<FlvStrategyError>;
@@ -27,10 +27,15 @@ where
         output_dir: PathBuf,
         base_name: String,
         _extension: String,
-        on_progress: Option<Arc<F>>,
+        on_progress: Option<Arc<dyn Fn(ProgressEvent) + Send + Sync + 'static>>,
+        extras: Option<HashMap<String, String>>,
     ) -> Self {
         let writer_config = WriterConfig::new(output_dir, base_name, "flv".to_string());
-        let strategy = FlvFormatStrategy::new(on_progress);
+        let enable_low_latency = extras
+            .and_then(|extras| extras.get("enable_low_latency").map(|v| v == "true"))
+            .unwrap_or(true);
+
+        let strategy = FlvFormatStrategy::new(enable_low_latency, on_progress);
         let writer_task = WriterTask::new(writer_config, strategy);
         Self { writer_task }
     }

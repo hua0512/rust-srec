@@ -1,3 +1,4 @@
+use std::error::Error;
 use std::fs::{File, OpenOptions};
 use std::io::{self, BufWriter, Write};
 use std::path::{Path, PathBuf};
@@ -84,7 +85,7 @@ impl WriterState {
 
 /// Error type for the writer task.
 #[derive(Error, Debug)]
-pub enum TaskError<StrategyError: std::error::Error + Send + Sync + 'static> {
+pub enum TaskError<StrategyError: Error + Send + Sync + 'static> {
     #[error("I/O error: {0}")]
     Io(#[from] io::Error),
     #[error("Strategy error: {0}")]
@@ -98,7 +99,7 @@ pub enum TaskError<StrategyError: std::error::Error + Send + Sync + 'static> {
 }
 
 #[derive(Error, Debug)]
-pub enum WriterError<StrategyError: std::error::Error + Send + Sync + 'static> {
+pub enum WriterError<StrategyError: Error + Send + Sync + 'static> {
     #[error("Task error: {0}")]
     TaskError(#[from] TaskError<StrategyError>),
 
@@ -109,7 +110,7 @@ pub enum WriterError<StrategyError: std::error::Error + Send + Sync + 'static> {
 /// Trait defining the strategy for formatting and writing data.
 pub trait FormatStrategy<D>: Send + Sync + 'static {
     type Writer: Write;
-    type StrategyError: std::error::Error + Send + Sync + 'static;
+    type StrategyError: Error + Send + Sync + 'static;
 
     /// Creates a new writer for the given path.
     /// This is typically a `BufWriter<File>` or similar.

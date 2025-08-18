@@ -1,6 +1,6 @@
 use flv_fix::FlvPipelineConfig;
 use hls_fix::HlsPipelineConfig;
-use mesio_engine::{flv::FlvConfig, hls::HlsConfig};
+use mesio_engine::{flv::FlvProtocolConfig, hls::HlsConfig};
 use pipeline_common::config::PipelineConfig;
 
 /// Configuration for the entire program
@@ -16,7 +16,7 @@ pub struct ProgramConfig {
     pub hls_pipeline_config: HlsPipelineConfig,
 
     /// FLV-specific configuration
-    pub flv_config: Option<FlvConfig>,
+    pub flv_config: Option<FlvProtocolConfig>,
 
     /// HLS-specific configuration
     pub hls_config: Option<HlsConfig>,
@@ -39,7 +39,7 @@ pub struct ProgramConfigBuilder {
     pipeline_config: Option<PipelineConfig>,
     flv_pipeline_config: Option<FlvPipelineConfig>,
     hls_pipeline_config: Option<HlsPipelineConfig>,
-    flv_config: Option<FlvConfig>,
+    flv_config: Option<FlvProtocolConfig>,
     hls_config: Option<HlsConfig>,
     enable_processing: bool,
 }
@@ -81,7 +81,7 @@ impl ProgramConfigBuilder {
 
     /// Set the FLV-specific configuration
     #[inline]
-    pub fn flv_config(mut self, config: FlvConfig) -> Self {
+    pub fn flv_config(mut self, config: FlvProtocolConfig) -> Self {
         self.flv_config = Some(config);
         self
     }

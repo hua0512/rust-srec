@@ -8,7 +8,7 @@ use std::fmt::Debug;
 
 /// Configuration for FLV downloads
 #[derive(Debug, Clone)]
-pub struct FlvConfig {
+pub struct FlvProtocolConfig {
     /// Base downloader configuration
     pub base: DownloaderConfig,
     /// Buffer size for download chunks (in bytes)
@@ -17,7 +17,7 @@ pub struct FlvConfig {
 
 const DEFAULT_BUFFER_SIZE: usize = 64 * 1024; // 64KB default buffer size
 
-impl Default for FlvConfig {
+impl Default for FlvProtocolConfig {
     fn default() -> Self {
         Self {
             base: DownloaderConfig::default(),
@@ -26,9 +26,9 @@ impl Default for FlvConfig {
     }
 }
 
-impl ProtocolConfig for FlvConfig {}
+impl ProtocolConfig for FlvProtocolConfig {}
 
-impl From<DownloaderConfig> for FlvConfig {
+impl From<DownloaderConfig> for FlvProtocolConfig {
     fn from(base: DownloaderConfig) -> Self {
         Self {
             base,
@@ -37,22 +37,22 @@ impl From<DownloaderConfig> for FlvConfig {
     }
 }
 
-impl FlvConfig {
+impl FlvProtocolConfig {
     /// Create a new builder for FlvConfig
-    pub fn builder() -> FlvConfigBuilder {
-        FlvConfigBuilder::new()
+    pub fn builder() -> FlvProtocolConfigBuilder {
+        FlvProtocolConfigBuilder::new()
     }
 }
 
-/// Builder for FlvConfig
+/// Builder for FlvProtocolConfig
 #[derive(Debug, Clone)]
-pub struct FlvConfigBuilder {
+pub struct FlvProtocolConfigBuilder {
     base: DownloaderConfig,
     buffer_size: usize,
 }
 
-impl FlvConfigBuilder {
-    /// Create a new FlvConfigBuilder with default values
+impl FlvProtocolConfigBuilder {
+    /// Create a new FlvProtocolConfigBuilder with default values
     pub fn new() -> Self {
         Self {
             base: DownloaderConfig::default(),
@@ -72,16 +72,16 @@ impl FlvConfigBuilder {
         self
     }
 
-    /// Build the FlvConfig
-    pub fn build(self) -> FlvConfig {
-        FlvConfig {
+    /// Build the FlvProtocolConfig
+    pub fn build(self) -> FlvProtocolConfig {
+        FlvProtocolConfig {
             base: self.base,
             buffer_size: self.buffer_size,
         }
     }
 }
 
-impl Default for FlvConfigBuilder {
+impl Default for FlvProtocolConfigBuilder {
     fn default() -> Self {
         Self::new()
     }

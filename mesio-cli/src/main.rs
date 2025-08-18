@@ -8,7 +8,7 @@ use flv_fix::RepairStrategy;
 use flv_fix::ScriptFillerConfig;
 use hls_fix::HlsPipelineConfig;
 use indicatif::MultiProgress;
-use mesio_engine::flv::FlvConfig;
+use mesio_engine::flv::FlvProtocolConfig;
 use mesio_engine::{DownloaderConfig, HlsProtocolBuilder, ProxyAuth, ProxyConfig, ProxyType};
 use pipeline_common::config::PipelineConfig;
 use tracing::{Level, error, info};
@@ -111,6 +111,7 @@ async fn bootstrap() -> Result<(), AppError> {
         } else {
             None
         })
+        .enable_low_latency(args.low_latency_fix)
         .build();
 
     // Configure HLS pipeline config
@@ -194,7 +195,7 @@ async fn bootstrap() -> Result<(), AppError> {
     };
 
     // Create FLV-specific configuration
-    let flv_config = FlvConfig::builder()
+    let flv_config = FlvProtocolConfig::builder()
         .with_base_config(download_config.clone())
         .buffer_size(args.download_buffer)
         .build();
