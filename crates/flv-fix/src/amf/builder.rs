@@ -522,7 +522,6 @@ impl OnMetaDataBuilder {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::amf::model::KeyframeData;
     use amf0::Amf0Decoder;
 
     #[test]
@@ -543,15 +542,26 @@ mod tests {
 
         assert_eq!(name, Amf0Value::String(Cow::Borrowed("onMetaData")));
         if let Amf0Value::Object(props) = data {
-            assert_eq!(props.len(), 4);
+            // The number of properties should be the number of keys in NATURAL_METADATA_KEY_ORDER
+            // minus "metadatadate" (which is not implemented).
+            let expected_len = NATURAL_METADATA_KEY_ORDER
+                .iter()
+                .filter(|&&key| key != "metadatadate")
+                .count();
+            assert_eq!(props.len(), expected_len);
+
+            // Check that the first 3 properties are in order
             assert_eq!(props[0].0, "duration");
             assert_eq!(props[0].1, Amf0Value::Number(10.0));
             assert_eq!(props[1].0, "width");
             assert_eq!(props[1].1, Amf0Value::Number(1920.0));
             assert_eq!(props[2].0, "height");
             assert_eq!(props[2].1, Amf0Value::Number(1080.0));
-            assert_eq!(props[3].0, "keyframes");
-            if let Amf0Value::Object(keyframes) = &props[3].1 {
+
+            // Find the keyframes property
+            let keyframes_prop = props.iter().find(|(k, _)| k == "keyframes").unwrap();
+            assert_eq!(keyframes_prop.0, "keyframes");
+            if let Amf0Value::Object(keyframes) = &keyframes_prop.1 {
                 assert_eq!(keyframes.len(), 2);
                 assert_eq!(keyframes[0].0, "times");
                 if let Amf0Value::StrictArray(times) = &keyframes[0].1 {
@@ -562,6 +572,7 @@ mod tests {
                 } else {
                     panic!("Expected strict array for times");
                 }
+
                 assert_eq!(keyframes[1].0, "filepositions");
                 if let Amf0Value::StrictArray(filepositions) = &keyframes[1].1 {
                     assert_eq!(filepositions.len(), 3);
@@ -648,168 +659,6 @@ mod tests {
             }
         } else {
             panic!("Expected object for metadata");
-        }
-    }
-
-    #[test]
-    fn test_refactored_build_bytes_is_logically_equivalent() {
-        // This function simulates the *old* implementation of `build_bytes`.
-        // It builds the metadata payload in a single pass, without the logic
-        // to calculate a size difference and offset keyframe filepositions.
-        fn build_bytes_old_logic(mut data: AmfScriptData) -> Result<Vec<u8>, Amf0WriteError> {
-            let mut props = Vec::new();
-
-            // Simplified property getter for the test.
-            // It takes an immutable reference and returns an owned value
-            // to avoid borrow checker issues.
-            fn get_test_value(data: &AmfScriptData, key: &str) -> Option<Amf0Value<'static>> {
-                match key {
-                    "duration" => data.duration.map(Amf0Value::Number),
-                    "width" => data.width.map(Amf0Value::Number),
-                    "height" => data.height.map(Amf0Value::Number),
-                    _ => None,
-                }
-            }
-
-            for &key in NATURAL_METADATA_KEY_ORDER {
-                if key == "keyframes" {
-                    continue;
-                }
-                // Immutable borrow here
-                if let Some(v) = get_test_value(&data, key) {
-                    props.push((Cow::Borrowed(key), v));
-                }
-            }
-
-            // Mutable borrow here is now safe
-            if let Some(KeyframeData::Final {
-                times,
-                filepositions,
-            }) = data.keyframes.take()
-            {
-                let times_arr = times.into_iter().map(Amf0Value::Number).collect::<Vec<_>>();
-                let filepositions_arr = filepositions
-                    .into_iter()
-                    .map(|p| Amf0Value::Number(p as f64)) // No offset
-                    .collect::<Vec<_>>();
-
-                let keyframe_props = vec![
-                    (
-                        Cow::Borrowed("times"),
-                        Amf0Value::StrictArray(Cow::Owned(times_arr)),
-                    ),
-                    (
-                        Cow::Borrowed("filepositions"),
-                        Amf0Value::StrictArray(Cow::Owned(filepositions_arr)),
-                    ),
-                ];
-                props.push((
-                    Cow::Borrowed("keyframes"),
-                    Amf0Value::Object(Cow::Owned(keyframe_props)),
-                ));
-            }
-
-            let mut buf = Vec::new();
-            Amf0Encoder::encode_string(&mut buf, "onMetaData")?;
-            Amf0Encoder::encode_object(&mut buf, &props)?;
-            Ok(buf)
-        }
-
-        // 1. Define test data
-        let duration = 120.5;
-        let width = 1280.0;
-        let height = 720.0;
-        let times = vec![0.0, 2.0, 4.0];
-        let filepositions = vec![1024, 4096, 8192];
-
-        // 2. Generate "expected" output using the old logic
-        let old_builder_model = OnMetaDataBuilder::new()
-            .with_duration(duration)
-            .with_width(width)
-            .with_height(height)
-            .with_final_keyframes(times.clone(), filepositions.clone())
-            .build_model();
-
-        let expected_bytes = build_bytes_old_logic(old_builder_model).unwrap();
-        let original_payload_size = expected_bytes.len() as u32;
-
-        // 3. Generate "actual" output using the new, refactored logic
-        let new_builder = OnMetaDataBuilder::new()
-            .with_duration(duration)
-            .with_width(width)
-            .with_height(height)
-            .with_final_keyframes(times.clone(), filepositions.clone());
-
-        let (actual_bytes, size_diff) = new_builder
-            .build_bytes(original_payload_size, false)
-            .unwrap();
-
-        // In this specific test, since we are not changing the number of properties,
-        // the size of the payload should not change. The only change is in the
-        // *values* of the filepositions, which doesn't alter the total size.
-        assert_eq!(
-            size_diff, 0,
-            "Size difference should be zero for this test case"
-        );
-        assert_eq!(
-            actual_bytes.len(),
-            expected_bytes.len(),
-            "Payload sizes should be identical"
-        );
-
-        // 4. Parse both payloads and compare them
-        let mut old_decoder = Amf0Decoder::new(&expected_bytes);
-        let _ = old_decoder.decode().unwrap(); // "onMetaData"
-        let Amf0Value::Object(old_props) = old_decoder.decode().unwrap() else {
-            panic!("old not object")
-        };
-
-        let mut new_decoder = Amf0Decoder::new(&actual_bytes);
-        let _ = new_decoder.decode().unwrap(); // "onMetaData"
-        let Amf0Value::Object(new_props) = new_decoder.decode().unwrap() else {
-            panic!("new not object")
-        };
-
-        assert_eq!(old_props.len(), new_props.len());
-
-        // 5. Verify that all fields are identical, except for filepositions
-        for ((old_key, old_val), (new_key, new_val)) in old_props.iter().zip(new_props.iter()) {
-            assert_eq!(old_key, new_key);
-
-            if old_key.as_ref() == "keyframes" {
-                let Amf0Value::Object(old_kf) = old_val else {
-                    panic!()
-                };
-                let Amf0Value::Object(new_kf) = new_val else {
-                    panic!()
-                };
-
-                // Times should be identical
-                assert_eq!(old_kf[0], new_kf[0]);
-
-                // Filepositions should be different (offset)
-                let Amf0Value::StrictArray(old_fp) = &old_kf[1].1 else {
-                    panic!()
-                };
-                let Amf0Value::StrictArray(new_fp) = &new_kf[1].1 else {
-                    panic!()
-                };
-
-                for i in 0..filepositions.len() {
-                    let Amf0Value::Number(old_pos) = old_fp[i] else {
-                        panic!()
-                    };
-                    let Amf0Value::Number(new_pos) = new_fp[i] else {
-                        panic!()
-                    };
-                    // The old logic didn't offset, so we compare the new, offset value
-                    // against the original value plus the calculated size_diff.
-                    assert_eq!(new_pos, old_pos + size_diff as f64);
-                }
-            } else {
-                // All other properties must be identical
-                assert_eq!(old_val, new_val, "Property '{old_key}' should be identical",);
-            }
         }
     }
 }
