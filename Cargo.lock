@@ -60,7 +60,7 @@ dependencies = [
  "bytes",
  "num-derive",
  "num-traits",
- "thiserror 2.0.14",
+ "thiserror 2.0.15",
 ]
 
 [[package]]
@@ -289,7 +289,7 @@ dependencies = [
  "static_assertions",
  "tap",
  "thin-vec",
- "thiserror 2.0.14",
+ "thiserror 2.0.15",
  "time",
 ]
 
@@ -602,7 +602,7 @@ checksum = "f29222b549d4e3ded127989d523da9e928918d0d0d7f7c1690b439d0d538bae9"
 dependencies = [
  "directories",
  "serde",
- "thiserror 2.0.14",
+ "thiserror 2.0.15",
  "toml 0.8.23",
 ]
 
@@ -947,7 +947,7 @@ dependencies = [
  "futures",
  "h264",
  "h265",
- "thiserror 2.0.14",
+ "thiserror 2.0.15",
  "tokio",
  "tokio-util",
  "tracing",
@@ -965,7 +965,7 @@ dependencies = [
  "flv",
  "futures",
  "pipeline-common",
- "thiserror 2.0.14",
+ "thiserror 2.0.15",
  "time",
  "tokio",
  "tracing",
@@ -1241,7 +1241,7 @@ dependencies = [
  "hls",
  "m3u8-rs",
  "pipeline-common",
- "thiserror 2.0.14",
+ "thiserror 2.0.15",
  "tracing",
  "tracing-subscriber",
 ]
@@ -1886,7 +1886,7 @@ dependencies = [
  "mesio-engine",
  "pipeline-common",
  "reqwest",
- "thiserror 2.0.14",
+ "thiserror 2.0.15",
  "tokio",
  "tracing",
  "tracing-subscriber",
@@ -1916,7 +1916,7 @@ dependencies = [
  "serde",
  "serde_json",
  "sha2",
- "thiserror 2.0.14",
+ "thiserror 2.0.15",
  "tokio",
  "tokio-stream",
  "tracing",
@@ -2258,7 +2258,7 @@ dependencies = [
  "crossbeam-channel",
  "flume",
  "tempfile",
- "thiserror 2.0.14",
+ "thiserror 2.0.15",
  "time",
  "tracing",
  "tracing-subscriber",
@@ -2284,7 +2284,7 @@ dependencies = [
  "serde",
  "serde_json",
  "tars-codec",
- "thiserror 2.0.14",
+ "thiserror 2.0.15",
  "tokio",
  "tracing",
  "tracing-subscriber",
@@ -2410,7 +2410,7 @@ dependencies = [
  "rustc-hash",
  "rustls",
  "socket2 0.5.10",
- "thiserror 2.0.14",
+ "thiserror 2.0.15",
  "tokio",
  "tracing",
  "web-time",
@@ -2431,7 +2431,7 @@ dependencies = [
  "rustls",
  "rustls-pki-types",
  "slab",
- "thiserror 2.0.14",
+ "thiserror 2.0.15",
  "tinyvec",
  "tracing",
  "web-time",
@@ -2562,7 +2562,7 @@ checksum = "dd6f9d3d47bdd2ad6945c5015a226ec6155d0bcdfd8f7cd29f86b71f8de99d2b"
 dependencies = [
  "getrandom 0.2.16",
  "libredox",
- "thiserror 2.0.14",
+ "thiserror 2.0.15",
 ]
 
 [[package]]
@@ -3067,7 +3067,7 @@ dependencies = [
  "serde",
  "serde_json",
  "tabled",
- "thiserror 2.0.14",
+ "thiserror 2.0.15",
  "tokio",
  "toml 0.9.5",
  "tracing",
@@ -3161,7 +3161,7 @@ dependencies = [
  "bytes",
  "rustc-hash",
  "smallvec",
- "thiserror 2.0.14",
+ "thiserror 2.0.15",
  "tokio-util",
 ]
 
@@ -3204,11 +3204,11 @@ dependencies = [
 
 [[package]]
 name = "thiserror"
-version = "2.0.14"
+version = "2.0.15"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0b0949c3a6c842cbde3f1686d6eea5a010516deb7085f79db747562d4102f41e"
+checksum = "80d76d3f064b981389ecb4b6b7f45a0bf9fdac1d5b9204c7bd6714fecc302850"
 dependencies = [
- "thiserror-impl 2.0.14",
+ "thiserror-impl 2.0.15",
 ]
 
 [[package]]
@@ -3224,9 +3224,9 @@ dependencies = [
 
 [[package]]
 name = "thiserror-impl"
-version = "2.0.14"
+version = "2.0.15"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "cc5b44b4ab9c2fdd0e0512e6bece8388e214c0749f5862b114cc5b7a25daf227"
+checksum = "44d29feb33e986b6ea906bd9c3559a856983f92371b3eaa5e83782a351623de0"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -3596,7 +3596,7 @@ dependencies = [
  "bytes",
  "criterion",
  "memchr",
- "thiserror 2.0.14",
+ "thiserror 2.0.15",
 ]
 
 [[package]]
