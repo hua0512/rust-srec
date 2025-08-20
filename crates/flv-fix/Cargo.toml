@@ -14,7 +14,7 @@ pipeline-common = { path = "../pipeline-common" }
 crc32fast = "1.4.2"
 time = { version = "0.3.41", features = ["macros", "formatting", "parsing"] }
 tracing = "0.1.41"
-thiserror = "2.0.15"
+thiserror = "2.0.16"
 
 [dev-dependencies]
 tracing-subscriber = "0.3"

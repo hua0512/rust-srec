@@ -11,7 +11,7 @@ hls = { path = "../hls" }
 pipeline-common = { path = "../pipeline-common" }
 crc32fast = "1.4.2"
 tracing = "0.1"
-thiserror = "2.0.15"
+thiserror = "2.0.16"
 
 
 [dev-dependencies]
