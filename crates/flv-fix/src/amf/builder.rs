@@ -32,7 +32,7 @@ const NATURAL_METADATA_KEY_ORDER: &[&str] = &[
     "hasKeyframes",
     "canSeekToEnd",
     "metadatacreator",
-    "metadatadate",
+    "creationdate",
     "keyframes",
 ];
 
@@ -378,6 +378,20 @@ impl OnMetaDataBuilder {
                 .can_seek_to_end
                 .map(Amf0Value::Boolean)
                 .or(Some(Amf0Value::Boolean(false))),
+            "creationdate" => self
+                .data
+                .metadatadate
+                .map(|v| {
+                    Amf0Value::String(Cow::Owned(
+                        v.format(&time::format_description::well_known::Rfc3339)
+                            .unwrap(),
+                    ))
+                })
+                .or(Some(Amf0Value::String(Cow::Owned(
+                    time::OffsetDateTime::now_utc()
+                        .format(&time::format_description::well_known::Rfc3339)
+                        .unwrap(),
+                )))),
             "metadatacreator" => self
                 .data
                 .metadatacreator

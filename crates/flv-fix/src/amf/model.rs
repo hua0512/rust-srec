@@ -188,6 +188,15 @@ impl AmfScriptData {
                         data.metadatacreator = Some(v.to_string())
                     }
                 }
+                "creationdate" => {
+                    if let Amf0Value::String(v) = value {
+                        data.metadatadate = OffsetDateTime::parse(
+                            &v,
+                            &time::format_description::well_known::Rfc3339,
+                        )
+                        .ok()
+                    }
+                }
                 "keyframes" => {
                     if let Amf0Value::Object(props) = value {
                         let times = props.iter().find(|(k, _)| k == "times").and_then(|(_, v)| {
@@ -368,6 +377,13 @@ impl AmfScriptData {
                 "canSeekToEnd" => {
                     if let Amf0Value::Boolean(v) = value {
                         data.can_seek_to_end = Some(*v)
+                    }
+                }
+                "creationdate" => {
+                    if let Amf0Value::String(v) = value {
+                        data.metadatadate =
+                            OffsetDateTime::parse(v, &time::format_description::well_known::Rfc3339)
+                                .ok()
                     }
                 }
                 "metadatacreator" => {

@@ -92,7 +92,7 @@ OPTIONS:
 
 ```text
   -k, --keyframe-index                Inject keyframe index in metadata for better seeking [default: true]
-      --low_latency_fix <BOOLEAN>     Enable low-latency mode for FLV metadata modification. This will reduce the latency of script data modification, but it will also increase the size of the output file. Requires --fix flag to be enabled [default: true]
+      --low-latency-fix <BOOLEAN>     Enable low-latency mode for FLV metadata modification. This will reduce the latency of script data modification, but it will also increase the size of the output file. Requires --fix flag to be enabled [default: true]
 ```
 
 ### HLS Options

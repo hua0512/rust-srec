@@ -243,9 +243,8 @@ mod tests {
             .expect("setting default subscriber failed");
 
         // Source and destination paths
-        let input_path = Path::new(
-            "D:/Develop/hua0512/stream-rec/rust-srec/fix/19_40_40-WE前职业第八赛季国服第一芮娜王赋能局游龙_p000.flv",
-        );
+        let input_path =
+            Path::new("D:/Develop/hua0512/stream-rec/rust-srec/fix/06_11_33-你真的会来吗_p000.flv");
 
         // Skip if test file doesn't exist
         if !input_path.exists() {
