@@ -46,7 +46,7 @@ tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
 
 # Utilities (some made optional)
 url = "2.5"
-regex = { version = "1.0", optional = true }
+regex = { version = "1.11", optional = true }
 
 [features]
 default = ["interactive", "colored-output", "table-output", "regex-filters"]
