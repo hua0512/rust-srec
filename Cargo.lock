@@ -1911,8 +1911,6 @@ dependencies = [
  "moka",
  "rand 0.9.2",
  "reqwest",
- "rustls",
- "rustls-platform-verifier",
  "serde",
  "serde_json",
  "sha2",
