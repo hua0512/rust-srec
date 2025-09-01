@@ -1,6 +1,4 @@
 use reqwest::Client;
-use rustls::{ClientConfig, crypto::ring};
-use rustls_platform_verifier::BuilderVerifierExt;
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
 use std::sync::Arc;
 use tracing::{debug, info};
@@ -13,22 +11,11 @@ use crate::{DownloadError, proxy::build_proxy_from_config};
 
 /// Create a reqwest Client with the provided configuration
 pub fn create_client(config: &DownloaderConfig) -> Result<Client, DownloadError> {
-    // Create the crypto provider
-    let provider = Arc::new(ring::default_provider());
-
-    // Build platform default TLS configuration
-    let tls_config = ClientConfig::builder_with_provider(provider)
-        .with_safe_default_protocol_versions()
-        .expect("Failed to configure default TLS protocol versions")
-        .with_platform_verifier()
-        .unwrap()
-        .with_no_client_auth();
-
     let mut client_builder = Client::builder()
         .pool_max_idle_per_host(5) // Allow multiple connections to same host
         .user_agent(&config.user_agent)
         .default_headers(config.headers.clone())
-        .use_preconfigured_tls(tls_config)
+        .use_rustls_tls()
         .redirect(if config.follow_redirects {
             reqwest::redirect::Policy::limited(10)
         } else {
