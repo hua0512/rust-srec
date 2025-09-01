@@ -343,10 +343,9 @@ impl SourceManager {
         self.record_result(url, true, response_time);
     }
 
-    /// Record a failed request to a source and update health
-    pub fn record_failure(&mut self, url: &str, error: &DownloadError, response_time: Duration) {
-        // Deactivate source permanently for non-recoverable errors
-        let should_deactivate = match error {
+    /// Check if an error indicates a non-recoverable condition for a source
+    fn is_non_recoverable_error(error: &DownloadError) -> bool {
+        match error {
             DownloadError::StatusCode(status) if status.is_client_error() => true,
             DownloadError::HttpError(err) => {
                 let mut is_url_error = false;
@@ -374,9 +373,13 @@ impl SourceManager {
                 }
             }
             _ => false,
-        };
+        }
+    }
 
-        if should_deactivate {
+    /// Record a failed request to a source and update health
+    pub fn record_failure(&mut self, url: &str, error: &DownloadError, response_time: Duration) {
+        // Deactivate source permanently for non-recoverable errors
+        if Self::is_non_recoverable_error(error) {
             self.set_source_active(url, false);
             return;
         }
@@ -413,8 +416,7 @@ impl SourceManager {
         // Circuit breaker logic: disable source temporarily after repeated failures
         if !success && health.consecutive_failures >= 3 {
             // Safe: health.consecutive_failures >= 3, so subtraction cannot underflow
-            let backoff_duration =
-                Duration::from_secs(2_u64.pow(health.consecutive_failures - 3));
+            let backoff_duration = Duration::from_secs(2_u64.pow(health.consecutive_failures - 3));
             health.disabled_until = Some(Instant::now() + backoff_duration);
 
             debug!(
