@@ -2,8 +2,7 @@
 
 [![License](https://img.shields.io/crates/l/mesio-engine.svg)](https://github.com/hua0512/rust-srec)
 
-A modern, high-performance media streaming engine for Rust, supporting various streaming formats like HLS and FLV.
-
+A modern, high-performance media downloader engine for Rust, supporting various streaming formats like HLS and FLV.
 
 ## Core Concepts
 
@@ -12,10 +11,10 @@ A modern, high-performance media streaming engine for Rust, supporting various s
 - **`DownloadManager`**: The central component that coordinates the download process. It manages capabilities like caching, multi-source fallback, and proxy support.
 - **`MesioDownloaderFactory`**: A factory for creating `DownloadManager` instances. It can automatically detect the protocol from a URL and configure the appropriate downloader (HLS or FLV).
 - **Capability-based Traits**: The library uses a system of traits to define the capabilities of a protocol downloader. These include:
-    - `Download`: Basic download functionality.
-    - `Resumable`: Support for resuming downloads.
-    - `MultiSource`: Ability to handle multiple download sources with fallback.
-    - `Cacheable`: Caching support for playlists and segments.
+  - `Download`: Basic download functionality.
+  - `Resumable`: Support for resuming downloads.
+  - `MultiSource`: Ability to handle multiple download sources with fallback.
+  - `Cacheable`: Caching support for playlists and segments.
 
 ## Usage Examples
 
