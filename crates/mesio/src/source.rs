@@ -412,8 +412,9 @@ impl SourceManager {
 
         // Circuit breaker logic: disable source temporarily after repeated failures
         if !success && health.consecutive_failures >= 3 {
+            // Safe: health.consecutive_failures >= 3, so subtraction cannot underflow
             let backoff_duration =
-                Duration::from_secs(2_u64.pow(health.consecutive_failures.min(6) - 3));
+                Duration::from_secs(2_u64.pow(health.consecutive_failures - 3));
             health.disabled_until = Some(Instant::now() + backoff_duration);
 
             debug!(
@@ -474,8 +475,8 @@ impl SourceManager {
         // If success rate is 0%, the health score should be very low regardless of response time
         if success_rate == 0 {
             // Penalize consecutive failures even more
-            let consecutive_penalty = (health.consecutive_failures * 5).min(15);
-            health.score = (10_u8).saturating_sub(consecutive_penalty as u8);
+            let consecutive_penalty = (health.consecutive_failures * 5).min(255) as u8;
+            health.score = (10_u8).saturating_sub(consecutive_penalty);
             return;
         }
 
