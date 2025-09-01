@@ -14,7 +14,6 @@ use crate::{
 };
 use reqwest::header::{HeaderMap, HeaderName, HeaderValue};
 use std::{str::FromStr, time::Duration};
-// use url::Url; // For proxy URL in NewHttpClientConfig - ProxyConfig itself handles Url
 
 /// Generic protocol builder trait
 pub trait ProtocolBuilder {

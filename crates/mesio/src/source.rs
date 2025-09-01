@@ -7,6 +7,7 @@
 use crate::DownloadError;
 use rand::Rng;
 use std::collections::HashMap;
+use std::error::Error;
 use std::fmt::Debug;
 use std::time::{Duration, Instant};
 use tracing::debug;
@@ -45,6 +46,10 @@ struct SourceHealth {
     score: u8,
     /// Whether the source is currently considered active
     active: bool,
+    /// Number of consecutive failures
+    consecutive_failures: u32,
+    /// When the source was temporarily disabled (for circuit breaker)
+    disabled_until: Option<Instant>,
 }
 
 impl Default for SourceHealth {
@@ -56,6 +61,8 @@ impl Default for SourceHealth {
             last_used: None,
             score: 100, // Start with full health
             active: true,
+            consecutive_failures: 0,
+            disabled_until: None,
         }
     }
 }
@@ -159,6 +166,28 @@ impl SourceManager {
         self.add_source(ContentSource::new(url_str, priority));
     }
 
+    /// Check if a source is available (active and not in circuit breaker state)
+    fn is_source_available(&self, url: &str) -> bool {
+        match self.health.get(url) {
+            Some(health) => {
+                // Check if source is active
+                if !health.active {
+                    return false;
+                }
+
+                // Check circuit breaker state
+                if let Some(disabled_until) = health.disabled_until
+                    && Instant::now() < disabled_until
+                {
+                    return false; // Still in circuit breaker timeout
+                }
+
+                true
+            }
+            None => true, // New source, assume available
+        }
+    }
+
     /// Sort sources according to the current strategy
     fn sort_sources(&mut self) {
         match self.strategy {
@@ -194,7 +223,7 @@ impl SourceManager {
     pub fn healthy_count(&self) -> usize {
         self.sources
             .iter()
-            .filter(|s| self.health.get(&s.url).map(|h| h.active).unwrap_or(false))
+            .filter(|s| self.is_source_available(&s.url))
             .count()
     }
 
@@ -206,8 +235,8 @@ impl SourceManager {
 
         if self.sources.len() == 1 {
             let source = &self.sources[0];
-            let is_active = self.health.get(&source.url).is_some_and(|h| h.active);
-            if is_active {
+            let is_available = self.is_source_available(&source.url);
+            if is_available {
                 return Some(source.clone());
             } else {
                 return None; // The only source is inactive
@@ -241,10 +270,10 @@ impl SourceManager {
 
     /// Select a source using the priority strategy
     fn select_by_priority(&self) -> Option<ContentSource> {
-        // Find the first active source by priority
+        // Find the first available source by priority
         self.sources
             .iter()
-            .filter(|s| self.health.get(&s.url).map(|h| h.active).unwrap_or(false))
+            .filter(|s| self.is_source_available(&s.url))
             .min_by_key(|s| s.priority)
             .cloned()
     }
@@ -255,23 +284,17 @@ impl SourceManager {
             return None;
         }
 
-        // Find the next active source in round-robin fashion
+        // Find the next available source in round-robin fashion
         let mut checked = 0;
         let mut index = self.current_index;
 
-        // Loop until we find an active source or checked all sources
+        // Loop until we find an available source or checked all sources
         while checked < self.sources.len() {
             let source = &self.sources[index];
             index = (index + 1) % self.sources.len();
             checked += 1;
 
-            let is_active = self
-                .health
-                .get(&source.url)
-                .map(|h| h.active)
-                .unwrap_or(false);
-
-            if is_active {
+            if self.is_source_available(&source.url) {
                 self.current_index = index;
                 return Some(source.clone());
             }
@@ -285,10 +308,10 @@ impl SourceManager {
         // Sort sources by response time if needed
         self.sort_sources();
 
-        // Return the fastest active source
+        // Return the fastest available source
         self.sources
             .iter()
-            .find(|s| self.health.get(&s.url).map(|h| h.active).unwrap_or(false))
+            .find(|s| self.is_source_available(&s.url))
             .cloned()
     }
 
@@ -298,20 +321,20 @@ impl SourceManager {
             return None;
         }
 
-        // Get active sources
-        let active_sources: Vec<_> = self
+        // Get available sources
+        let available_sources: Vec<_> = self
             .sources
             .iter()
-            .filter(|s| self.health.get(&s.url).map(|h| h.active).unwrap_or(false))
+            .filter(|s| self.is_source_available(&s.url))
             .collect();
 
-        if active_sources.is_empty() {
-            // If no active sources, return None
+        if available_sources.is_empty() {
+            // If no available sources, return None
             None
         } else {
-            // Choose a random active source
-            let index = rand::rng().random_range(0..active_sources.len());
-            Some(active_sources[index].clone())
+            // Choose a random available source
+            let index = rand::rng().random_range(0..available_sources.len());
+            Some(available_sources[index].clone())
         }
     }
 
@@ -320,27 +343,45 @@ impl SourceManager {
         self.record_result(url, true, response_time);
     }
 
+    /// Check if an error indicates a non-recoverable condition for a source
+    fn is_non_recoverable_error(error: &DownloadError) -> bool {
+        match error {
+            DownloadError::StatusCode(status) if status.is_client_error() => true,
+            DownloadError::HttpError(err) => {
+                let mut is_url_error = false;
+                let mut source = err.source();
+                while let Some(e) = source {
+                    if e.downcast_ref::<url::ParseError>().is_some() {
+                        is_url_error = true;
+                        break;
+                    }
+                    source = e.source();
+                }
+                is_url_error
+            }
+            DownloadError::UrlError(_)
+            | DownloadError::UnsupportedProtocol(_)
+            | DownloadError::ProtocolDetectionFailed(_) => true,
+            DownloadError::HlsError(hls_err) => {
+                // Specific handling for HLS errors that might contain a client error
+                match hls_err {
+                    crate::hls::HlsDownloaderError::PlaylistError(msg) => msg.contains("HTTP 4"),
+                    crate::hls::HlsDownloaderError::NetworkError { source } => {
+                        source.status().is_some_and(|s| s.is_client_error())
+                    }
+                    _ => false,
+                }
+            }
+            _ => false,
+        }
+    }
+
     /// Record a failed request to a source and update health
     pub fn record_failure(&mut self, url: &str, error: &DownloadError, response_time: Duration) {
-        // Deactivate source permanently on client errors (4xx)
-        if let DownloadError::StatusCode(status) = error {
-            if status.is_client_error() {
-                self.set_source_active(url, false);
-                return;
-            }
-        } else if let DownloadError::HlsError(hls_err) = error {
-            // Specific handling for HLS errors that might contain a client error
-            let is_client_error = match hls_err {
-                crate::hls::HlsDownloaderError::PlaylistError(msg) => msg.contains("HTTP 4"),
-                crate::hls::HlsDownloaderError::NetworkError { source } => {
-                    source.status().is_some_and(|s| s.is_client_error())
-                }
-                _ => false,
-            };
-            if is_client_error {
-                self.set_source_active(url, false);
-                return;
-            }
+        // Deactivate source permanently for non-recoverable errors
+        if Self::is_non_recoverable_error(error) {
+            self.set_source_active(url, false);
+            return;
         }
 
         self.record_result(url, false, response_time);
@@ -353,8 +394,11 @@ impl SourceManager {
         // Update success/failure counts
         if success {
             health.successes += 1;
+            health.consecutive_failures = 0; // Reset consecutive failures on success
+            health.disabled_until = None; // Clear any circuit breaker state
         } else {
             health.failures += 1;
+            health.consecutive_failures += 1;
         }
 
         // Update response time with weighted average
@@ -369,8 +413,28 @@ impl SourceManager {
         // Calculate health score
         Self::calculate_health_score(health);
 
-        // Update active status based on health score
-        health.active = health.score > 20;
+        // Circuit breaker logic: disable source temporarily after repeated failures
+        if !success && health.consecutive_failures >= 3 {
+            // Safe: health.consecutive_failures >= 3, so subtraction cannot underflow
+            let backoff_duration = Duration::from_secs(2_u64.pow(health.consecutive_failures - 3));
+            health.disabled_until = Some(Instant::now() + backoff_duration);
+
+            debug!(
+                url = url,
+                consecutive_failures = health.consecutive_failures,
+                backoff_seconds = backoff_duration.as_secs(),
+                "Source temporarily disabled due to consecutive failures"
+            );
+        }
+
+        // Update active status based on health score (but not too restrictive for fast failures)
+        health.active = if health.successes == 0 && health.failures > 0 {
+            // If we have only failures, deactivate permanently after many attempts
+            health.failures < 10
+        } else {
+            // Normal health score calculation
+            health.score > 20
+        };
 
         debug!(
             url = url,
@@ -379,6 +443,7 @@ impl SourceManager {
             avg_response_time_ms = health.avg_response_time,
             health_score = health.score,
             active = health.active,
+            consecutive_failures = health.consecutive_failures,
             "Source health updated"
         );
 
@@ -409,6 +474,14 @@ impl SourceManager {
         // Calculate success rate (0-100)
         let success_rate = (health.successes as f32 * 100.0 / total as f32) as u8;
 
+        // If success rate is 0%, the health score should be very low regardless of response time
+        if success_rate == 0 {
+            // Penalize consecutive failures even more
+            let consecutive_penalty = (health.consecutive_failures * 5).min(255) as u8;
+            health.score = (10_u8).saturating_sub(consecutive_penalty);
+            return;
+        }
+
         // Response time score (faster = better)
         // 0ms - 100ms: 100-80
         // 100ms - 500ms: 80-60
@@ -424,8 +497,9 @@ impl SourceManager {
             (40 * 1000 / health.avg_response_time.max(1)) as u8
         };
 
-        // Final score is weighted average: 70% success rate, 30% time score
-        health.score = ((success_rate as u32 * 70 + time_score as u32 * 30) / 100) as u8;
+        // For successful sources, final score is weighted average: 80% success rate, 20% time score
+        // This gives more weight to reliability than speed
+        health.score = ((success_rate as u32 * 80 + time_score as u32 * 20) / 100) as u8;
     }
 
     /// Manually set the active status of a source
