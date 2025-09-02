@@ -9,7 +9,7 @@ license = "MIT"
 [dependencies]
 thiserror = "2.0"
 tracing = "0.1"
-time = { version = "0.3.41", features = ["local-offset"] }
+time = { version = "0.3.42", features = ["local-offset"] }
 
 [dev-dependencies]
 tracing-subscriber = "0.3"

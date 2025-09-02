@@ -12,7 +12,7 @@ flv = { path = "../flv" }
 amf0 = { path = "../amf0" }
 pipeline-common = { path = "../pipeline-common" }
 crc32fast = "1.4.2"
-time = { version = "0.3.41", features = ["macros", "formatting", "parsing"] }
+time = { version = "0.3.42", features = ["macros", "formatting", "parsing"] }
 tracing = "0.1.41"
 thiserror = "2.0.16"
 
