@@ -133,17 +133,20 @@ pub fn inject_stats_into_script_data(
 
         debug!("script data model: {script_data_model:?}");
 
-        let (times, filepositions): (Vec<f64>, Vec<u64>) = stats
-            .keyframes
-            .iter()
-            .map(|k| (k.timestamp_s as f64, k.file_position))
-            .unzip();
-
         // new script data buffer and size diff
-        let (buffer, size_diff) = OnMetaDataBuilder::from_script_data(script_data_model)
-            .with_stats(stats)
-            .with_final_keyframes(times, filepositions)
-            .build_bytes(original_payload_data, low_latency_metadata)?;
+        let mut builder = OnMetaDataBuilder::from_script_data(script_data_model).with_stats(stats);
+
+        if let Some(video_stats) = &stats.video_stats {
+            let (times, filepositions): (Vec<f64>, Vec<u64>) = video_stats
+                .keyframes
+                .iter()
+                .map(|k| (k.timestamp_s as f64, k.file_position))
+                .unzip();
+            builder = builder.with_final_keyframes(times, filepositions);
+        }
+
+        let (buffer, size_diff) =
+            builder.build_bytes(original_payload_data, low_latency_metadata)?;
 
         let new_payload_size = buffer.len();
         debug!("New script data size: {new_payload_size}");
@@ -306,7 +309,11 @@ mod tests {
 
         // Build the stats to get FlvStats
         let stats = analyzer.build_stats().unwrap();
-        let analyzed_keyframes = stats.keyframes.clone();
+        let analyzed_keyframes = stats
+            .video_stats
+            .as_ref()
+            .map(|vs| vs.keyframes.clone())
+            .unwrap_or_default();
 
         assert_eq!(
             analyzed_keyframes.len(),

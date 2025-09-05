@@ -37,6 +37,7 @@ use tracing::{debug, info, trace};
 pub struct GopSortOperator {
     context: Arc<StreamerContext>,
     gop_tags: Vec<FlvTag>,
+    has_video: bool,
 }
 
 impl GopSortOperator {
@@ -47,6 +48,7 @@ impl GopSortOperator {
         Self {
             context,
             gop_tags: Vec::new(),
+            has_video: false,
         }
     }
 
@@ -196,28 +198,25 @@ impl Processor<FlvData> for GopSortOperator {
         output: &mut dyn FnMut(FlvData) -> Result<(), PipelineError>,
     ) -> Result<(), PipelineError> {
         match input {
-            FlvData::Header(_) | FlvData::EndOfSequence(_) => {
+            FlvData::Header(header) => {
                 // Process any buffered tags first
                 self.push_tags(output)?;
-
-                // Forward the header or EOS
-                // do not send end of stream to output
-                if input.is_end_of_sequence() {
-                    debug!("{} End of stream...", self.context.name);
-                    return Ok(());
-                }
-
-                output(input)?;
+                self.has_video = header.has_video;
+                output(FlvData::Header(header))?;
                 debug!("{} Reset GOP tags...", self.context.name);
             }
+            FlvData::EndOfSequence(_) => {
+                self.push_tags(output)?;
+                debug!("{} End of stream...", self.context.name);
+            }
             FlvData::Tag(tag) => {
-                // Check for a nalu keyframe
-                if tag.is_key_frame_nalu() {
-                    // On keyframe, process buffered tags
+                // if we have video, we wait for a keyframe
+                if self.has_video && tag.is_key_frame_nalu() {
                     self.push_tags(output)?;
-                    // Start the new buffer with this keyframe
+                } else if !self.has_video && self.gop_tags.len() >= Self::TAGS_BUFFER_SIZE {
+                    // if we don't have video, we flush the buffer when it's full
+                    self.push_tags(output)?;
                 }
-                // Just add non-keyframe to buffer
                 self.gop_tags.push(tag);
             }
         }
@@ -449,5 +448,44 @@ mod tests {
             audio_tags_count, 2,
             "All audio tags should be present in output"
         );
+    }
+    #[test]
+    fn test_audio_only_stream() {
+        let context = StreamerContext::arc_new();
+        let mut operator = GopSortOperator::new(context);
+        let mut output_items = Vec::new();
+
+        let mut output_fn = |item: FlvData| -> Result<(), PipelineError> {
+            output_items.push(item);
+            Ok(())
+        };
+
+        // Create a header with no video
+        let mut header = create_test_header();
+        if let FlvData::Header(ref mut h) = header {
+            h.has_video = false;
+        }
+
+        operator.process(header, &mut output_fn).unwrap();
+
+        // Send more than TAGS_BUFFER_SIZE audio tags
+        for i in 0..15 {
+            operator
+                .process(create_audio_tag(i * 10), &mut output_fn)
+                .unwrap();
+        }
+
+        operator.finish(&mut output_fn).unwrap();
+
+        test_utils::print_tags(&output_items);
+
+        // Check that audio tags were flushed before the end
+        // The header is at index 0, so we check the count of tags after that.
+        // 10 tags should be flushed when the buffer is full, and the remaining 5 on finish.
+        let tag_count = output_items
+            .iter()
+            .filter(|item| matches!(item, FlvData::Tag(_)))
+            .count();
+        assert_eq!(tag_count, 15, "All audio tags should be flushed");
     }
 }
