@@ -48,6 +48,8 @@ jobs:
     name: Build
     strategy:
       matrix:
+        os: [ubuntu-latest, ubuntu-22.04-arm, windows-latest, macos-latest]
+        package: [mesio, strev]
         include:
           - os: ubuntu-latest
             target: x86_64-unknown-linux-musl
@@ -85,17 +87,17 @@ jobs:
         if: contains(matrix.os, 'ubuntu')
         run: sudo apt-get update && sudo apt-get install -y musl-tools
 
-      - name: Build mesio release
-        run: cargo build -p mesio --release --target ${{ matrix.target }}
-      - name: Build strev release
-        run: cargo build -p strev --release --target ${{ matrix.target }}
+      - name: Build ${{ matrix.package }} release
+        run: cargo build -p ${{ matrix.package }} --release --target ${{ matrix.target }}
       - name: Upload mesio binary
+        if: matrix.package == 'mesio'
         uses: actions/upload-artifact@v4
         with:
           name: ${{ matrix.mesio_asset_name }}
           path: target/${{ matrix.target }}/release/${{ matrix.mesio_artifact_name }}
           if-no-files-found: error
       - name: Upload strev binary
+        if: matrix.package == 'strev'
         uses: actions/upload-artifact@v4
         with:
           name: ${{ matrix.strev_asset_name }}
