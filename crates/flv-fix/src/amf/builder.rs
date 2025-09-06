@@ -59,24 +59,27 @@ impl OnMetaDataBuilder {
     /// Populates the builder with data from an `FlvStats` object.
     pub fn with_stats(mut self, stats: &FlvStats) -> Self {
         self.data.duration = Some(stats.duration as f64);
-        if let Some(res) = &stats.resolution {
-            self.data.width = Some(res.width as f64);
-            self.data.height = Some(res.height as f64);
+        if let Some(video_stats) = &stats.video_stats {
+            if let Some(res) = &video_stats.resolution {
+                self.data.width = Some(res.width as f64);
+                self.data.height = Some(res.height as f64);
+            }
+            self.data.framerate = Some(video_stats.video_frame_rate as f64);
+            self.data.videocodecid = video_stats.video_codec;
+            self.data.videosize = Some(video_stats.video_data_size);
+            self.data.lastkeyframetimestamp = Some(video_stats.last_keyframe_timestamp);
+            self.data.lastkeyframelocation = Some(video_stats.last_keyframe_position);
+            self.data.has_keyframes = Some(!video_stats.keyframes.is_empty());
+            self.data.can_seek_to_end =
+                Some(video_stats.last_keyframe_timestamp == stats.last_timestamp);
         }
-        self.data.framerate = Some(stats.video_frame_rate as f64);
-        self.data.videocodecid = stats.video_codec;
         self.data.audiocodecid = stats.audio_codec;
         self.data.filesize = Some(stats.file_size);
-        self.data.videosize = Some(stats.video_data_size);
         self.data.audiosize = Some(stats.audio_data_size);
         self.data.lasttimestamp = Some(stats.last_timestamp);
-        self.data.lastkeyframetimestamp = Some(stats.last_keyframe_timestamp);
-        self.data.lastkeyframelocation = Some(stats.last_keyframe_position);
         self.data.has_video = Some(stats.has_video);
         self.data.has_audio = Some(stats.has_audio);
         self.data.has_metadata = Some(true);
-        self.data.has_keyframes = Some(!stats.keyframes.is_empty());
-        self.data.can_seek_to_end = Some(stats.last_keyframe_timestamp == stats.last_timestamp);
         self
     }
 

@@ -80,6 +80,7 @@ pub struct ScriptKeyframesFillerOperator {
     context: Arc<StreamerContext>,
     config: ScriptFillerConfig,
     seen_first_script_tag: bool,
+    has_video: bool,
 }
 
 impl ScriptKeyframesFillerOperator {
@@ -89,6 +90,7 @@ impl ScriptKeyframesFillerOperator {
             context,
             config,
             seen_first_script_tag: false,
+            has_video: true,
         }
     }
 
@@ -164,6 +166,9 @@ impl ScriptKeyframesFillerOperator {
 
     /// Modifies the parsed AMF values to include the keyframes property.
     fn add_keyframes_to_amf(&self, tag: FlvTag) -> Result<FlvTag, PipelineError> {
+        if !self.has_video {
+            return Ok(tag);
+        }
         // Parse the AMF data using a reference to the tag data
         let mut cursor = std::io::Cursor::new(tag.data.clone());
 
@@ -236,12 +241,13 @@ impl Processor<FlvData> for ScriptKeyframesFillerOperator {
         output: &mut dyn FnMut(FlvData) -> Result<(), PipelineError>,
     ) -> Result<(), PipelineError> {
         match input {
-            FlvData::Header(_) => {
+            FlvData::Header(header) => {
                 debug!("{} Received Header. Forwarding.", self.context.name);
                 // reset flag
                 self.seen_first_script_tag = false;
+                self.has_video = header.has_video;
 
-                output(input)
+                output(FlvData::Header(header))
             }
             FlvData::Tag(tag) if tag.tag_type == FlvTagType::ScriptData => {
                 if !self.seen_first_script_tag {

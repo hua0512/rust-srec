@@ -159,7 +159,7 @@ impl PipelineProvider for FlvPipeline {
 
         // Create all operators with adapters
         let defrag_operator = DefragmentOperator::new(context.clone());
-        let header_check_operator = HeaderCheckOperator::new(context.clone());
+        let header_check_operator = HeaderCheckOperator::new(context.clone(), true, true);
 
         // Configure the limit operator
         let limit_config = LimitConfig {

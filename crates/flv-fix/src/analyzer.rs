@@ -36,46 +36,80 @@ pub struct Keyframe {
     pub file_position: u64,
 }
 
+#[derive(Debug, Clone, Default)]
+pub struct VideoStats {
+    pub video_codec: Option<VideoCodecId>,
+    pub video_tag_count: u32,
+    pub video_tags_size: u64,
+    pub video_data_size: u64,
+    pub video_frame_rate: f32,
+    pub video_data_rate: f32,
+    pub last_video_timestamp: u32,
+    pub first_video_timestamp: Option<u32>,
+    pub first_keyframe_timestamp: Option<u32>,
+    pub resolution: Option<Resolution>,
+    pub last_keyframe_timestamp: u32,
+    pub last_keyframe_position: u64,
+    pub keyframes: Vec<Keyframe>,
+}
+
+impl VideoStats {
+    pub fn calculate_frame_rate(&self) -> f32 {
+        self.calculate_rate(
+            self.video_tag_count as f32 * 1000.0,
+            self.last_video_timestamp,
+            self.first_video_timestamp,
+        )
+    }
+
+    pub fn calculate_video_bitrate(&self) -> f32 {
+        self.calculate_rate(
+            (self.video_data_size * 8) as f32,
+            self.last_video_timestamp,
+            self.first_video_timestamp,
+        )
+    }
+
+    fn calculate_rate(&self, value: f32, last_timestamp: u32, first_timestamp: Option<u32>) -> f32 {
+        if value == 0.0 {
+            return 0.0;
+        }
+
+        let duration_in_ms = last_timestamp.saturating_sub(first_timestamp.unwrap_or(0));
+        if duration_in_ms == 0 {
+            return 0.0;
+        }
+
+        value / duration_in_ms as f32
+    }
+}
 #[derive(Debug, Clone)]
 pub struct FlvStats {
     pub file_size: u64,
     pub duration: u32,
     pub has_video: bool,
     pub has_audio: bool,
-    pub video_codec: Option<VideoCodecId>,
+    pub video_stats: Option<VideoStats>,
     pub audio_codec: Option<SoundFormat>,
 
     pub tag_count: u32,
     pub audio_tag_count: u32,
-    pub video_tag_count: u32,
     pub script_tag_count: u32,
 
     pub tags_size: u64,
     pub audio_tags_size: u64,
-    pub video_tags_size: u64,
 
     pub audio_data_size: u64,
-    pub video_data_size: u64,
 
     pub audio_data_rate: f32,
     pub audio_stereo: bool,
     pub audio_sample_rate: f32,
     pub audio_sample_size: u32,
 
-    pub video_frame_rate: f32,
-    pub video_data_rate: f32,
-
     pub last_timestamp: u32,
     pub last_audio_timestamp: u32,
-    pub last_video_timestamp: u32,
 
-    pub first_keyframe_timestamp: Option<u32>,
     pub first_audio_timestamp: Option<u32>,
-
-    pub resolution: Option<Resolution>,
-    pub last_keyframe_timestamp: u32,
-    pub last_keyframe_position: u64,
-    pub keyframes: Vec<Keyframe>,
 }
 
 impl Default for FlvStats {
@@ -85,30 +119,19 @@ impl Default for FlvStats {
             duration: 0,
             has_video: false,
             has_audio: false,
-            video_codec: None,
+            video_stats: None,
             audio_codec: None,
             tag_count: 0,
             audio_tag_count: 0,
-            video_tag_count: 0,
             script_tag_count: 0,
             tags_size: 0,
             audio_tags_size: 0,
-            video_tags_size: 0,
             audio_data_size: 0,
-            video_data_size: 0,
             last_timestamp: 0,
             last_audio_timestamp: 0,
-            last_video_timestamp: 0,
-            resolution: None,
-            last_keyframe_timestamp: 0,
-            last_keyframe_position: 0,
-            keyframes: Vec::new(),
             audio_stereo: true,
             audio_sample_rate: 0.0,
             audio_sample_size: 0,
-            video_data_rate: 0.0,
-            video_frame_rate: 0.0,
-            first_keyframe_timestamp: None,
             first_audio_timestamp: None,
             audio_data_rate: 0.0,
         }
@@ -118,22 +141,6 @@ impl Default for FlvStats {
 impl FlvStats {
     pub fn reset(&mut self) {
         *self = Self::default();
-    }
-
-    pub fn calculate_frame_rate(&self) -> f32 {
-        self.calculate_rate(
-            self.video_tag_count as f32 * 1000.0,
-            self.last_video_timestamp,
-            self.first_keyframe_timestamp,
-        )
-    }
-
-    pub fn calculate_video_bitrate(&self) -> f32 {
-        self.calculate_rate(
-            (self.video_data_size * 8) as f32,
-            self.last_video_timestamp,
-            self.first_keyframe_timestamp,
-        )
     }
 
     pub fn calculate_audio_bitrate(&self) -> f32 {
@@ -171,8 +178,13 @@ impl FlvStats {
     ///
     /// Returns the duration in seconds as a u32.
     pub fn calculate_duration(&self) -> u32 {
+        let first_video_timestamp = self
+            .video_stats
+            .as_ref()
+            .and_then(|vs| vs.first_keyframe_timestamp);
+
         // Determine the earliest timestamp from available media streams
-        let first_timestamp = match (self.first_keyframe_timestamp, self.first_audio_timestamp) {
+        let first_timestamp = match (first_video_timestamp, self.first_audio_timestamp) {
             (Some(video), Some(audio)) => video.min(audio), // Both available: use earliest
             (Some(video), None) => video,                   // Only video available
             (None, Some(audio)) => audio,                   // Only audio available
@@ -181,8 +193,13 @@ impl FlvStats {
 
         // Determine the latest timestamp based on which media types are present
         let last_timestamp = match (self.has_video, self.has_audio) {
-            (true, true) => self.last_video_timestamp.max(self.last_audio_timestamp), // Both: use latest
-            (true, false) => self.last_video_timestamp,                               // Video only
+            (true, true) => self
+                .video_stats
+                .as_ref()
+                .unwrap()
+                .last_video_timestamp
+                .max(self.last_audio_timestamp), // Both: use latest
+            (true, false) => self.video_stats.as_ref().unwrap().last_video_timestamp, // Video only
             (false, true) => self.last_audio_timestamp,                               // Audio only
             (false, false) => self.last_timestamp, // Fallback to general timestamp
         };
@@ -196,8 +213,14 @@ impl FlvStats {
     }
 
     pub fn has_consistent_timestamps(&self) -> bool {
-        let video_consistent = if let Some(first) = self.first_keyframe_timestamp {
-            self.last_video_timestamp >= first
+        let video_consistent = if let Some(video_stats) = self
+            .video_stats
+            .as_ref()
+            .and_then(|vs| vs.first_keyframe_timestamp)
+        {
+            self.video_stats
+                .as_ref()
+                .is_none_or(|vs| vs.last_video_timestamp >= video_stats)
         } else {
             true // No video or no keyframes
         };
@@ -234,21 +257,25 @@ impl FlvStats {
     fn fmt_media_info(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         writeln!(f, "  Media:")?;
         writeln!(f, "    Has video: {}", self.has_video)?;
-        if self.has_video {
+        if let Some(video_stats) = &self.video_stats {
             writeln!(
                 f,
                 "    Video codec: {:?}",
-                self.video_codec.unwrap_or(VideoCodecId::Avc)
+                video_stats.video_codec.unwrap_or(VideoCodecId::Avc)
             )?;
-            if let Some(resolution) = &self.resolution {
+            if let Some(resolution) = &video_stats.resolution {
                 writeln!(
                     f,
                     "    Resolution: {}x{}",
                     resolution.width, resolution.height
                 )?;
             }
-            writeln!(f, "    Frame rate: {:.2} fps", self.video_frame_rate)?;
-            writeln!(f, "    Video data rate: {:.2} kbps", self.video_data_rate)?;
+            writeln!(f, "    Frame rate: {:.2} fps", video_stats.video_frame_rate)?;
+            writeln!(
+                f,
+                "    Video data rate: {:.2} kbps",
+                video_stats.video_data_rate
+            )?;
         }
 
         writeln!(f, "    Has audio: {}", self.has_audio)?;
@@ -270,7 +297,9 @@ impl FlvStats {
         writeln!(f, "  Tags:")?;
         writeln!(f, "    Total tags: {}", self.tag_count)?;
         writeln!(f, "    Audio tags: {}", self.audio_tag_count)?;
-        writeln!(f, "    Video tags: {}", self.video_tag_count)?;
+        if let Some(video_stats) = &self.video_stats {
+            writeln!(f, "    Video tags: {}", video_stats.video_tag_count)?;
+        }
         writeln!(f, "    Script tags: {}", self.script_tag_count)?;
         Ok(())
     }
@@ -279,9 +308,21 @@ impl FlvStats {
         writeln!(f, "  Sizes:")?;
         writeln!(f, "    Tags size: {} bytes", self.tags_size)?;
         writeln!(f, "    Audio tags size: {} bytes", self.audio_tags_size)?;
-        writeln!(f, "    Video tags size: {} bytes", self.video_tags_size)?;
+        if let Some(video_stats) = &self.video_stats {
+            writeln!(
+                f,
+                "    Video tags size: {} bytes",
+                video_stats.video_tags_size
+            )?;
+        }
         writeln!(f, "    Audio data size: {} bytes", self.audio_data_size)?;
-        writeln!(f, "    Video data size: {} bytes", self.video_data_size)?;
+        if let Some(video_stats) = &self.video_stats {
+            writeln!(
+                f,
+                "    Video data size: {} bytes",
+                video_stats.video_data_size
+            )?;
+        }
         Ok(())
     }
 
@@ -293,81 +334,87 @@ impl FlvStats {
             "    Last audio timestamp: {}ms",
             self.last_audio_timestamp
         )?;
-        writeln!(
-            f,
-            "    Last video timestamp: {}ms",
-            self.last_video_timestamp
-        )?;
+        if let Some(video_stats) = &self.video_stats {
+            writeln!(
+                f,
+                "    Last video timestamp: {}ms",
+                video_stats.last_video_timestamp
+            )?;
+        }
         Ok(())
     }
 
     fn fmt_keyframe_info(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        // Compress keyframes information
-        let keyframe_count = self.keyframes.len();
-        if keyframe_count > 0 {
-            writeln!(f, "  Keyframes: {keyframe_count}")?;
-
-            // Show first keyframe
+        if let Some(video_stats) = &self.video_stats {
+            // Compress keyframes information
+            let keyframe_count = video_stats.keyframes.len();
             if keyframe_count > 0 {
-                let first = &self.keyframes[0];
-                writeln!(
-                    f,
-                    "    First: {:.2}s @ position {}",
-                    first.timestamp_s, first.file_position
-                )?;
-            }
+                writeln!(f, "  Keyframes: {keyframe_count}")?;
 
-            // Show last keyframe
-            if keyframe_count > 1 {
-                let last = &self.keyframes[keyframe_count - 1];
-                writeln!(
-                    f,
-                    "    Last: {:.2}s @ position {}",
-                    last.timestamp_s, last.file_position
-                )?;
-            }
-
-            // Show distribution info if there are many keyframes
-            if keyframe_count > 5 {
-                // Calculate average keyframe interval
-                let mut intervals = Vec::with_capacity(keyframe_count - 1);
-                for i in 1..keyframe_count {
-                    intervals
-                        .push(self.keyframes[i].timestamp_s - self.keyframes[i - 1].timestamp_s);
-                }
-
-                // Calculate statistics
-                let avg_interval = intervals.iter().sum::<f32>() / intervals.len() as f32;
-
-                // Find min and max intervals
-                let mut min_interval = f32::MAX;
-                let mut max_interval = f32::MIN;
-
-                for interval in &intervals {
-                    min_interval = min_interval.min(*interval);
-                    max_interval = max_interval.max(*interval);
-                }
-
-                writeln!(
-                    f,
-                    "    Keyframe intervals: {avg_interval:.2}s avg, {min_interval:.2}s min, {max_interval:.2}s max"
-                )?;
-            } else if keyframe_count > 2 {
-                // For a small number of keyframes, show them all
-                writeln!(f, "    All keyframes (time in seconds @ position):")?;
-                for (i, keyframe) in self.keyframes.iter().enumerate() {
-                    write!(
+                // Show first keyframe
+                if keyframe_count > 0 {
+                    let first = &video_stats.keyframes[0];
+                    writeln!(
                         f,
-                        "      {i}: {:.2}s @ {}",
-                        keyframe.timestamp_s, keyframe.file_position
+                        "    First: {:.2}s @ position {}",
+                        first.timestamp_s, first.file_position
                     )?;
-                    if i < keyframe_count - 1 {
-                        writeln!(f)?;
+                }
+
+                // Show last keyframe
+                if keyframe_count > 1 {
+                    let last = &video_stats.keyframes[keyframe_count - 1];
+                    writeln!(
+                        f,
+                        "    Last: {:.2}s @ position {}",
+                        last.timestamp_s, last.file_position
+                    )?;
+                }
+
+                // Show distribution info if there are many keyframes
+                if keyframe_count > 5 {
+                    // Calculate average keyframe interval
+                    let mut intervals = Vec::with_capacity(keyframe_count - 1);
+                    for i in 1..keyframe_count {
+                        intervals.push(
+                            video_stats.keyframes[i].timestamp_s
+                                - video_stats.keyframes[i - 1].timestamp_s,
+                        );
+                    }
+
+                    // Calculate statistics
+                    let avg_interval = intervals.iter().sum::<f32>() / intervals.len() as f32;
+
+                    // Find min and max intervals
+                    let mut min_interval = f32::MAX;
+                    let mut max_interval = f32::MIN;
+
+                    for interval in &intervals {
+                        min_interval = min_interval.min(*interval);
+                        max_interval = max_interval.max(*interval);
+                    }
+
+                    writeln!(
+                        f,
+                        "    Keyframe intervals: {avg_interval:.2}s avg, {min_interval:.2}s min, {max_interval:.2}s max"
+                    )?;
+                } else if keyframe_count > 2 {
+                    // For a small number of keyframes, show them all
+                    writeln!(f, "    All keyframes (time in seconds @ position):")?;
+                    for (i, keyframe) in video_stats.keyframes.iter().enumerate() {
+                        write!(
+                            f,
+                            "      {i}: {:.2}s @ {}",
+                            keyframe.timestamp_s, keyframe.file_position
+                        )?;
+                        if i < keyframe_count - 1 {
+                            writeln!(f)?;
+                        }
                     }
                 }
+            } else {
+                writeln!(f, "  No keyframes found")?;
             }
-        } else {
-            writeln!(f, "  No keyframes found")?;
         }
         Ok(())
     }
@@ -469,20 +516,28 @@ impl FlvAnalyzer {
 
     fn analyze_video_tag(&mut self, tag: &FlvTag) {
         let timestamp = tag.timestamp_ms;
+        let video_stats = self
+            .stats
+            .video_stats
+            .get_or_insert_with(VideoStats::default);
+
+        if video_stats.first_video_timestamp.is_none() {
+            video_stats.first_video_timestamp = Some(timestamp);
+        }
 
         if tag.is_video_sequence_header() {
-            if self.stats.resolution.is_none() {
+            if video_stats.resolution.is_none() {
                 if let Some(resolution) = tag.get_video_resolution() {
-                    self.stats.resolution = Some(resolution);
+                    video_stats.resolution = Some(resolution);
                 } else {
                     error!("Failed to get video resolution");
                 }
             }
 
-            if self.stats.video_codec.is_none() {
+            if video_stats.video_codec.is_none() {
                 // parse the codec id
                 if let Some(codec_id) = tag.get_video_codec_id() {
-                    self.stats.video_codec = Some(codec_id);
+                    video_stats.video_codec = Some(codec_id);
                 } else {
                     error!("Failed to get video codec id");
                 }
@@ -494,42 +549,42 @@ impl FlvAnalyzer {
             let position = self.stats.file_size;
 
             // Respect the minimum interval between keyframes
-            let add_keyframe = self.stats.last_keyframe_timestamp == 0
-                || (timestamp.saturating_sub(self.stats.last_keyframe_timestamp)
+            let add_keyframe = video_stats.last_keyframe_timestamp == 0
+                || (timestamp.saturating_sub(video_stats.last_keyframe_timestamp)
                     >= MIN_INTERVAL_BETWEEN_KEYFRAMES_MS);
             trace!(
                 "Analyzer: Checking keyframe. Current timestamp: {}, Last keyframe timestamp: {}, Condition: {}",
                 timestamp,
-                self.stats.last_keyframe_timestamp,
-                timestamp.saturating_sub(self.stats.last_keyframe_timestamp)
+                video_stats.last_keyframe_timestamp,
+                timestamp.saturating_sub(video_stats.last_keyframe_timestamp)
                     >= MIN_INTERVAL_BETWEEN_KEYFRAMES_MS
             );
             if add_keyframe {
                 // Store the position and timestamp for this keyframe
-                self.stats.keyframes.push(Keyframe {
+                video_stats.keyframes.push(Keyframe {
                     timestamp_s: timestamp as f32 / 1000.0,
                     file_position: position,
                 });
                 trace!(
                     "Analyzer: Adding keyframe. New count: {}",
-                    self.stats.keyframes.len()
+                    video_stats.keyframes.len()
                 );
-                self.stats.last_keyframe_timestamp = timestamp;
-                self.stats.last_keyframe_position = position;
+                video_stats.last_keyframe_timestamp = timestamp;
+                video_stats.last_keyframe_position = position;
 
                 // Set first keyframe timestamp if not already set
-                if self.stats.first_keyframe_timestamp.is_none() {
-                    self.stats.first_keyframe_timestamp = Some(timestamp);
+                if video_stats.first_keyframe_timestamp.is_none() {
+                    video_stats.first_keyframe_timestamp = Some(timestamp);
                 }
             }
         }
 
         let data_size = tag.data.len() as u64;
-        self.stats.video_tag_count += 1;
-        self.stats.video_tags_size +=
+        video_stats.video_tag_count += 1;
+        video_stats.video_tags_size +=
             data_size + FLV_TAG_HEADER_SIZE as u64 + FLV_PREVIOUS_TAG_SIZE as u64; // Tag header + PreviousTagSize
-        self.stats.video_data_size += data_size;
-        self.stats.last_video_timestamp = timestamp;
+        video_stats.video_data_size += data_size;
+        video_stats.last_video_timestamp = timestamp;
     }
 
     pub fn analyze_tag(&mut self, tag: &FlvTag) -> Result<(), AnalyzerError> {
@@ -561,9 +616,9 @@ impl FlvAnalyzer {
             return Err(AnalyzerError::HeaderNotAnalyzed);
         }
 
-        if self.stats.has_video {
-            self.stats.video_data_rate = self.stats.calculate_video_bitrate();
-            self.stats.video_frame_rate = self.stats.calculate_frame_rate();
+        if let Some(video_stats) = self.stats.video_stats.as_mut() {
+            video_stats.video_data_rate = video_stats.calculate_video_bitrate();
+            video_stats.video_frame_rate = video_stats.calculate_frame_rate();
         }
 
         if self.stats.has_audio {

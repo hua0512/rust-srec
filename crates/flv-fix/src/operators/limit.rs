@@ -302,8 +302,15 @@ impl Processor<FlvData> for LimitOperator {
                 let should_split = self.check_limits();
 
                 // Inside the process method where split decisions are made
-                if should_split && (!self.config.split_at_keyframes_only || tag.is_key_frame_nalu())
-                {
+                let has_video = self.state.header.as_ref().is_some_and(|h| h.has_video);
+                let can_split_on_tag = if has_video {
+                    !self.config.split_at_keyframes_only || tag.is_key_frame_nalu()
+                } else {
+                    // For audio-only, we can split on any tag
+                    true
+                };
+
+                if should_split && can_split_on_tag {
                     // Direct splitting - no retrospective logic
                     let split_reason = self.determine_split_reason();
 
@@ -316,8 +323,9 @@ impl Processor<FlvData> for LimitOperator {
                     // Perform the split
                     self.split_stream(output)?;
 
-                    // Emit current tag after the split if it's a keyframe
-                    if tag.is_key_frame_nalu() || !self.config.split_at_keyframes_only {
+                    // Emit current tag after the split
+                    if !has_video || tag.is_key_frame_nalu() || !self.config.split_at_keyframes_only
+                    {
                         output(FlvData::Tag(tag))?;
                     }
                 } else if should_split
@@ -998,5 +1006,100 @@ mod tests {
             .count();
 
         assert!(header_count > 1, "Should have more than the initial header");
+    }
+    #[test]
+    fn test_audio_only_size_limit_split() {
+        let context = StreamerContext::arc_new();
+        let split_counter = Arc::new(AtomicUsize::new(0));
+        let split_counter_clone = split_counter.clone();
+
+        // Configure with a size limit
+        let config = LimitConfig {
+            max_size_bytes: Some(1024), // 1KB limit
+            max_duration_ms: None,
+            split_at_keyframes_only: true, // This should be ignored for audio-only
+            use_retrospective_splitting: false,
+            on_split: Some(Box::new(move |_, _, _| {
+                split_counter.fetch_add(1, Ordering::SeqCst);
+            })),
+        };
+
+        let mut operator = LimitOperator::with_config(context, config);
+        let mut output_items = Vec::new();
+
+        let mut output_fn = |item: FlvData| -> Result<(), PipelineError> {
+            output_items.push(item);
+            Ok(())
+        };
+
+        // Helper function to create audio tag
+        let create_audio_tag = |timestamp: u32, size: usize| -> FlvData {
+            let data = vec![0u8; size];
+            FlvData::Tag(FlvTag {
+                timestamp_ms: timestamp,
+                stream_id: 0,
+                tag_type: FlvTagType::Audio,
+                data: Bytes::from(data),
+            })
+        };
+
+        // Process an audio-only header
+        let header = FlvHeader::new(true, false);
+        operator
+            .process(FlvData::Header(header), &mut output_fn)
+            .unwrap();
+
+        // Send audio sequence header
+        operator
+            .process(
+                test_utils::create_audio_sequence_header(0, 1),
+                &mut output_fn,
+            )
+            .unwrap();
+
+        // Send audio tags to exceed size limit
+        operator
+            .process(create_audio_tag(0, 500), &mut output_fn)
+            .unwrap();
+        operator
+            .process(create_audio_tag(100, 500), &mut output_fn)
+            .unwrap();
+        operator
+            .process(create_audio_tag(200, 500), &mut output_fn)
+            .unwrap(); // Should split after this tag
+
+        operator.finish(&mut output_fn).unwrap();
+
+        assert_eq!(
+            split_counter_clone.load(Ordering::SeqCst),
+            1,
+            "Should have split exactly once"
+        );
+
+        let headers: Vec<_> = output_items
+            .iter()
+            .filter(|item| matches!(item, FlvData::Header(_)))
+            .collect();
+        assert_eq!(
+            headers.len(),
+            2,
+            "Should have two headers (initial + split)"
+        );
+
+        // The first header should be audio-only
+        if let Some(&FlvData::Header(h)) = headers.first() {
+            assert!(h.has_audio);
+            assert!(!h.has_video);
+        } else {
+            panic!("First header not found");
+        }
+
+        // The second header (after split) should also be audio-only
+        if let Some(&FlvData::Header(h)) = headers.get(1) {
+            assert!(h.has_audio);
+            assert!(!h.has_video);
+        } else {
+            panic!("Second header not found");
+        }
     }
 }
