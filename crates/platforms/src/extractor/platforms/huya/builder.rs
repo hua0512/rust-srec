@@ -3,6 +3,7 @@ use std::sync::LazyLock;
 use crate::extractor::error::ExtractorError;
 use crate::extractor::platform_extractor::{Extractor, PlatformExtractor};
 use crate::extractor::platforms::huya::huya_tars::decode_get_cdn_token_info_response;
+use crate::extractor::utils::parse_bool_from_extras;
 use crate::media::MediaFormat;
 use crate::media::formats::StreamFormat;
 use crate::media::media_info::MediaInfo;
@@ -60,15 +61,9 @@ impl Huya {
             extractor.set_cookies_from_string(&cookies);
         }
 
-        let force_origin_quality = extras
-            .as_ref()
-            .and_then(|extras| extras.get("force_origin_quality").and_then(|v| v.as_bool()))
-            .unwrap_or(true);
-
-        let use_wup = extras
-            .as_ref()
-            .and_then(|extras| extras.get("use_wup").and_then(|v| v.as_bool()))
-            .unwrap_or(true);
+        let force_origin_quality =
+            parse_bool_from_extras(extras.as_ref(), "force_origin_quality", true);
+        let use_wup = parse_bool_from_extras(extras.as_ref(), "use_wup", true);
 
         Self {
             extractor,
