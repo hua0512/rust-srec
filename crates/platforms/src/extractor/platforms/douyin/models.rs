@@ -40,8 +40,7 @@ pub(crate) struct DouyinPcData<'a> {
     #[serde(borrow)]
     pub id_str: &'a str,
     pub status: i32,
-    #[serde(borrow)]
-    pub title: &'a str,
+    pub title: String,
     #[serde(borrow)]
     pub cover: Option<DouyinCover<'a>>,
     #[serde(borrow)]
@@ -69,8 +68,7 @@ pub(crate) struct DouyinUserInfo<'a> {
     pub id_str: &'a str,
     #[serde(borrow)]
     pub sec_uid: &'a str,
-    #[serde(borrow)]
-    pub nickname: &'a str,
+    pub nickname: String,
     #[serde(borrow)]
     pub avatar_thumb: DouyinAvatarThumb<'a>,
 }
