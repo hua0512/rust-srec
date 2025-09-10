@@ -1,6 +1,6 @@
 [package]
 name = "platforms-parser"
-version = "0.1.5"
+version = "0.1.6"
 edition = "2024"
 description = "A library for extracting streaming data from various online platforms."
 repository = "https://github.com/hua0512/rust-srec"
