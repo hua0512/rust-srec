@@ -13,6 +13,7 @@ use crate::extractor::platforms::douyin::utils::{
     GlobalTtwidManager, extract_rid, fetch_ttwid, generate_ms_token, generate_nonce,
     generate_odin_ttid, get_common_params,
 };
+use crate::extractor::utils::parse_bool_from_extras;
 use crate::media::formats::{MediaFormat, StreamFormat};
 use crate::media::media_info::MediaInfo;
 use crate::media::stream_info::StreamInfo;
@@ -84,10 +85,8 @@ impl Douyin {
         //     extractor.add_param(key.to_string(), value.to_string());
         // }
 
-        let force_origin_quality = extras
-            .as_ref()
-            .and_then(|extras| extras.get("force_origin_quality").and_then(|v| v.as_bool()))
-            .unwrap_or(true);
+        let force_origin_quality =
+            parse_bool_from_extras(extras.as_ref(), "force_origin_quality", false);
 
         let ttwid_management_mode_str = extras
             .as_ref()
@@ -797,7 +796,7 @@ mod tests {
         let config = Douyin::new(TEST_URL.to_string(), default_client(), None, None);
 
         assert_eq!(config.extractor.url, TEST_URL);
-        assert!(config.force_origin_quality);
+        assert!(!config.force_origin_quality);
         assert_eq!(config.ttwid_management_mode, TtwidManagementMode::Global);
         assert!(config.ttwid.is_none());
     }
