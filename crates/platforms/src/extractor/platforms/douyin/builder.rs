@@ -485,6 +485,8 @@ impl<'a> DouyinRequest<'a> {
             .as_ref()
             .ok_or_else(|| ExtractorError::ValidationError("Stream is not live".to_string()))?;
         let streams = self.extract_streams(stream_url)?;
+        let mut extras = self.config.extractor.get_platform_headers_map();
+        extras.insert("id_str".to_string(), self.id_str.clone().unwrap());
 
         Ok(MediaInfo::new(
             self.config.extractor.url.clone(),
@@ -494,7 +496,7 @@ impl<'a> DouyinRequest<'a> {
             avatar_url,
             is_live,
             streams,
-            Some(self.config.extractor.get_platform_headers_map()),
+            Some(extras),
         ))
     }
 
