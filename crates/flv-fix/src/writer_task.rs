@@ -178,7 +178,7 @@ impl FormatStrategy<FlvData> for FlvFormatStrategy {
         self.analyzer.reset();
         self.current_tag_count = 0;
 
-        info!(path = %path.display(), "Opening FLV segment");
+        info!(path = %path.display(), "Opening segment");
 
         self.last_header_received = false;
         Ok(0)
@@ -196,13 +196,6 @@ impl FormatStrategy<FlvData> for FlvFormatStrategy {
         let duration = self.calculate_duration();
         let tag_count = self.current_tag_count;
 
-        info!(
-            path = %path.display(),
-            tags = tag_count,
-            duration_ms = ?duration,
-            "Closed FLV segment"
-        );
-
         if let Ok(stats) = self.analyzer.build_stats() {
             info!("Path : {}: {}", path.display(), stats);
             if let Err(e) =
@@ -218,6 +211,12 @@ impl FormatStrategy<FlvData> for FlvFormatStrategy {
             });
         }
 
+        info!(
+            path = %path.display(),
+            tags = tag_count,
+            duration_ms = ?duration,
+            "Closed segment"
+        );
         Ok(0)
     }
 

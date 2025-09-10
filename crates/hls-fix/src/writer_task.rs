@@ -152,6 +152,9 @@ impl FormatStrategy<HlsData> for HlsFormatStrategy {
                 path: path.to_path_buf().into(),
             });
         }
+
+        info!(path = %path.display(), "Opening segment");
+
         Ok(0)
     }
 
@@ -160,8 +163,11 @@ impl FormatStrategy<HlsData> for HlsFormatStrategy {
         _writer: &mut Self::Writer,
         path: &std::path::Path,
         _config: &WriterConfig,
-        _state: &WriterState,
+        state: &WriterState,
     ) -> Result<u64, Self::StrategyError> {
+        let items_written = state.items_written_current_file;
+        let duration_secs = self.target_duration;
+
         if self.is_finalizing {
             self.reset()?;
         }
@@ -170,6 +176,14 @@ impl FormatStrategy<HlsData> for HlsFormatStrategy {
                 path: path.to_path_buf().into(),
             });
         }
+
+        info!(
+            path = %path.display(),
+            items = items_written,
+            duration_secs = ?duration_secs,
+            "Closed segment"
+        );
+
         Ok(0)
     }
 
