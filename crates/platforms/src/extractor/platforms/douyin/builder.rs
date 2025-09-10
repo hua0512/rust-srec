@@ -777,7 +777,7 @@ mod tests {
     use crate::extractor::platforms::douyin::models::{DouyinAvatarThumb, DouyinUserInfo};
     use crate::extractor::platforms::douyin::utils::GlobalTtwidManager;
 
-    const TEST_URL: &str = "https://live.douyin.com/Shenxin543";
+    const TEST_URL: &str = "https://live.douyin.com/399712108028";
 
     #[tokio::test]
     #[ignore]
@@ -877,7 +877,7 @@ mod tests {
         let banned_user = DouyinUserInfo {
             id_str: "1",
             sec_uid: "1",
-            nickname: "账号已注销",
+            nickname: "账号已注销".to_string(),
             avatar_thumb: DouyinAvatarThumb {
                 url_list: vec!["http://example.com/aweme_default_avatar.png".into()],
             },
@@ -887,7 +887,7 @@ mod tests {
         let active_user = DouyinUserInfo {
             id_str: "2",
             sec_uid: "2",
-            nickname: "ActiveUser",
+            nickname: "ActiveUser".to_string(),
             avatar_thumb: DouyinAvatarThumb {
                 url_list: vec!["http://example.com/real_avatar.png".into()],
             },
