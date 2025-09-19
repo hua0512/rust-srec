@@ -414,6 +414,7 @@ impl<D, S: FormatStrategy<D>> WriterTask<D, S> {
 #[allow(dead_code)]
 pub struct DefaultFileStrategy;
 
+#[allow(dead_code)]
 #[derive(Error, Debug)]
 pub enum DefaultStrategyError {
     #[error("I/O error: {0}")]

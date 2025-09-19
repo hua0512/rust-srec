@@ -227,7 +227,7 @@ impl FormatStrategy<FlvData> for FlvFormatStrategy {
         state: &WriterState,
     ) -> Result<PostWriteAction, Self::StrategyError> {
         self.update_status(state);
-        if state.items_written_total % 50000 == 0 {
+        if state.items_written_total.is_multiple_of(50000) {
             tracing::debug!(
                 tags_written = state.items_written_total,
                 "Writer progress..."
