@@ -8,31 +8,8 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
-  check:
-    name: Check
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v5
-      - uses: dtolnay/rust-toolchain@stable
-      - uses: Swatinem/rust-cache@v2
-      - name: Check
-        run: cargo check --workspace
-
-  test:
-    name: Test Suite
-    strategy:
-      matrix:
-        os: [ubuntu-latest, ubuntu-22.04-arm, windows-latest, macos-latest-large, macos-latest]
-    runs-on: ${{ matrix.os }}
-    steps:
-      - uses: actions/checkout@v5
-      - uses: dtolnay/rust-toolchain@stable
-      - uses: Swatinem/rust-cache@v2
-      - name: Run tests
-        run: cargo test --workspace
-
-  clippy:
-    name: Clippy
+  check-and-clippy:
+    name: Check and Clippy
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
@@ -40,5 +17,20 @@ jobs:
         with:
           components: clippy
       - uses: Swatinem/rust-cache@v2
+      - name: Check
+        run: cargo check --workspace
       - name: Clippy check
         run: cargo clippy --all-targets --all-features -- -D warnings
+
+  test:
+    name: Test Suite
+    strategy:
+      matrix:
+        os: [ubuntu-latest, ubuntu-22.04-arm, windows-latest, macos-15-intel, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v5
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Run tests
+        run: cargo test --workspace

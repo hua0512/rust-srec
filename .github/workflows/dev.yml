@@ -8,31 +8,8 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
-  check:
-    name: Check
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v5
-      - uses: dtolnay/rust-toolchain@stable
-      - uses: Swatinem/rust-cache@v2
-      - name: Check
-        run: cargo check --workspace
-
-  test:
-    name: Test Suite
-    strategy:
-      matrix:
-        os: [ubuntu-latest, ubuntu-22.04-arm, windows-latest, macos-latest-large, macos-latest]
-    runs-on: ${{ matrix.os }}
-    steps:
-      - uses: actions/checkout@v5
-      - uses: dtolnay/rust-toolchain@stable
-      - uses: Swatinem/rust-cache@v2
-      - name: Run tests
-        run: cargo test --workspace
-
-  clippy:
-    name: Clippy
+  check-and-clippy:
+    name: Check and Clippy
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
@@ -40,8 +17,23 @@ jobs:
         with:
           components: clippy
       - uses: Swatinem/rust-cache@v2
+      - name: Check
+        run: cargo check --workspace
       - name: Clippy check
         run: cargo clippy --all-targets --all-features -- -D warnings
+
+  test:
+    name: Test Suite
+    strategy:
+      matrix:
+        os: [ubuntu-latest, ubuntu-22.04-arm, windows-latest, macos-15-intel, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v5
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Run tests
+        run: cargo test --workspace
 
   build:
     name: Build
@@ -86,14 +78,14 @@ jobs:
           targets: ${{ matrix.target }}
           
       - uses: Swatinem/rust-cache@v2
+        with:
+          key: ${{ matrix.target }}
       - name: Install musl-tools on Linux
         if: contains(matrix.os, 'ubuntu')
         run: sudo apt-get update && sudo apt-get install -y musl-tools
 
-      - name: Build mesio release
-        run: cargo build -p mesio --release --target ${{ matrix.target }}
-      - name: Build strev release
-        run: cargo build -p strev --release --target ${{ matrix.target }}
+      - name: Build mesio and strev release
+        run: cargo build -p mesio -p strev --release --target ${{ matrix.target }}
       - name: Upload mesio binary
         uses: actions/upload-artifact@v4
         with:
