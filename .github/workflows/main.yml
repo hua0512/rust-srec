@@ -9,31 +9,8 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
-  check:
-    name: Check
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v5
-      - uses: dtolnay/rust-toolchain@stable
-      - uses: Swatinem/rust-cache@v2
-      - name: Check
-        run: cargo check --workspace
-
-  test:
-    name: Test Suite
-    strategy:
-      matrix:
-        os: [ubuntu-latest, ubuntu-22.04-arm, windows-latest, macos-latest]
-    runs-on: ${{ matrix.os }}
-    steps:
-      - uses: actions/checkout@v5
-      - uses: dtolnay/rust-toolchain@stable
-      - uses: Swatinem/rust-cache@v2
-      - name: Run tests
-        run: cargo test --workspace
-
-  clippy:
-    name: Clippy
+  check-and-clippy:
+    name: Check and Clippy
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
@@ -41,8 +18,23 @@ jobs:
         with:
           components: clippy
       - uses: Swatinem/rust-cache@v2
+      - name: Check
+        run: cargo check --workspace
       - name: Clippy check
         run: cargo clippy --all-targets --all-features -- -D warnings
+
+  test:
+    name: Test Suite
+    strategy:
+      matrix:
+        os: [ubuntu-latest, ubuntu-22.04-arm, windows-latest, macos-15-intel, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v5
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Run tests
+        run: cargo test --workspace
 
   build:
     name: Build
@@ -67,12 +59,18 @@ jobs:
             mesio_asset_name: mesio-windows-amd64.exe
             strev_artifact_name: strev.exe
             strev_asset_name: strev-windows-amd64.exe
-          - os: macos-latest
+          - os: macos-15-intel
             target: x86_64-apple-darwin
             mesio_artifact_name: mesio
             mesio_asset_name: mesio-macos-amd64
             strev_artifact_name: strev
             strev_asset_name: strev-macos-amd64
+          - os: macos-latest
+            target: aarch64-apple-darwin
+            mesio_artifact_name: mesio
+            mesio_asset_name: mesio-macos-arm64
+            strev_artifact_name: strev
+            strev_asset_name: strev-macos-arm64
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v5
@@ -81,14 +79,14 @@ jobs:
           targets: ${{ matrix.target }}
           
       - uses: Swatinem/rust-cache@v2
+        with:
+          key: ${{ matrix.target }}
       - name: Install musl-tools on Linux
         if: contains(matrix.os, 'ubuntu')
         run: sudo apt-get update && sudo apt-get install -y musl-tools
 
-      - name: Build mesio release
-        run: cargo build -p mesio --release --target ${{ matrix.target }}
-      - name: Build strev release
-        run: cargo build -p strev --release --target ${{ matrix.target }}
+      - name: Build mesio and strev release
+        run: cargo build -p mesio -p strev --release --target ${{ matrix.target }}
       - name: Upload mesio binary
         uses: actions/upload-artifact@v4
         with:
@@ -104,7 +102,7 @@ jobs:
 
   release:
     name: Release
-    needs: [check, test, clippy, build]
+    needs: [check-and-clippy, test, build]
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -126,10 +124,12 @@ jobs:
           cp artifacts/mesio-linux-arm64/mesio release-files/mesio-linux-arm64
           cp artifacts/mesio-windows-amd64.exe/mesio.exe release-files/mesio-windows-amd64.exe
           cp artifacts/mesio-macos-amd64/mesio release-files/mesio-macos-amd64
+          cp artifacts/mesio-macos-arm64/mesio release-files/mesio-macos-arm64
           cp artifacts/strev-linux-amd64/strev release-files/strev-linux-amd64
           cp artifacts/strev-linux-arm64/strev release-files/strev-linux-arm64
           cp artifacts/strev-windows-amd64.exe/strev.exe release-files/strev-windows-amd64.exe
           cp artifacts/strev-macos-amd64/strev release-files/strev-macos-amd64
+          cp artifacts/strev-macos-arm64/strev release-files/strev-macos-arm64
 
       - name: Create release
         id: create_release
