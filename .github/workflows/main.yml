@@ -23,7 +23,7 @@ jobs:
     name: Test Suite
     strategy:
       matrix:
-        os: [ubuntu-latest, ubuntu-22.04-arm, windows-latest, macos-latest]
+        os: [ubuntu-latest, ubuntu-22.04-arm, windows-latest, macos-latest-large, macos-latest]
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v5
@@ -67,12 +67,18 @@ jobs:
             mesio_asset_name: mesio-windows-amd64.exe
             strev_artifact_name: strev.exe
             strev_asset_name: strev-windows-amd64.exe
-          - os: macos-latest
+          - os: macos-latest-large
             target: x86_64-apple-darwin
             mesio_artifact_name: mesio
             mesio_asset_name: mesio-macos-amd64
             strev_artifact_name: strev
             strev_asset_name: strev-macos-amd64
+          - os: macos-latest
+            target: aarch64-apple-darwin
+            mesio_artifact_name: mesio
+            mesio_asset_name: mesio-macos-arm64
+            strev_artifact_name: strev
+            strev_asset_name: strev-macos-arm64
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v5
@@ -126,10 +132,12 @@ jobs:
           cp artifacts/mesio-linux-arm64/mesio release-files/mesio-linux-arm64
           cp artifacts/mesio-windows-amd64.exe/mesio.exe release-files/mesio-windows-amd64.exe
           cp artifacts/mesio-macos-amd64/mesio release-files/mesio-macos-amd64
+          cp artifacts/mesio-macos-arm64/mesio release-files/mesio-macos-arm64
           cp artifacts/strev-linux-amd64/strev release-files/strev-linux-amd64
           cp artifacts/strev-linux-arm64/strev release-files/strev-linux-arm64
           cp artifacts/strev-windows-amd64.exe/strev.exe release-files/strev-windows-amd64.exe
           cp artifacts/strev-macos-amd64/strev release-files/strev-macos-amd64
+          cp artifacts/strev-macos-arm64/strev release-files/strev-macos-arm64
 
       - name: Create release
         id: create_release

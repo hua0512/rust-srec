@@ -22,7 +22,7 @@ jobs:
     name: Test Suite
     strategy:
       matrix:
-        os: [ubuntu-latest, ubuntu-22.04-arm, windows-latest, macos-latest]
+        os: [ubuntu-latest, ubuntu-22.04-arm, windows-latest, macos-latest-large, macos-latest]
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v5
