@@ -13,7 +13,7 @@ time = { version = "0.3.44", features = ["local-offset"] }
 
 [dev-dependencies]
 tracing-subscriber = "0.3"
-tempfile = "3.22.0"
+tempfile = "3.23.0"
 criterion = "0.7.0"
 flume = "0.11.1"
 crossbeam-channel = "0.5.10"
