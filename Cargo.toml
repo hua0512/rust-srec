@@ -4,6 +4,7 @@ resolver = "3"
 members = [
     "mesio-cli",
     "strev-cli",
+    "rust-srec",
     "crates/flv",
     "crates/flv-fix",
     "crates/hls",
