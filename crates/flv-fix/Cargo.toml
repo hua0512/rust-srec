@@ -18,7 +18,7 @@ thiserror = "2.0.17"
 
 [dev-dependencies]
 tracing-subscriber = "0.3"
-tokio = { version = "1.47.1", features = [
+tokio = { version = "1.48.0", features = [
     "fs",
     "io-util",
     "rt",
