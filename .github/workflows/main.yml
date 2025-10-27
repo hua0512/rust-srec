@@ -88,13 +88,13 @@ jobs:
       - name: Build mesio and strev release
         run: cargo build -p mesio -p strev --release --target ${{ matrix.target }}
       - name: Upload mesio binary
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: ${{ matrix.mesio_asset_name }}
           path: target/${{ matrix.target }}/release/${{ matrix.mesio_artifact_name }}
           if-no-files-found: error
       - name: Upload strev binary
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: ${{ matrix.strev_asset_name }}
           path: target/${{ matrix.target }}/release/${{ matrix.strev_artifact_name }}
