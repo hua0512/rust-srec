@@ -7,7 +7,7 @@ edition = "2024"
 bytes = "1.10.1"
 byteorder = "1.5.0"
 tokio = { version = "1.48.0", features = ["fs", "io-util", "macros", "rt"] }
-tokio-util = { version = "0.7.16", features = ["io", "codec"] }
+tokio-util = { version = "0.7.17", features = ["io", "codec"] }
 futures = { version = "0.3.31", features = ["std"], default-features = false }
 bytes-util = { path = "../bytes-util" }
 amf0 = { path = "../amf0" }
