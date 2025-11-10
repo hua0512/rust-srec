@@ -129,7 +129,7 @@ async fn bootstrap() -> Result<(), AppError> {
     };
 
     // Handle proxy configuration
-    let (proxy_config, _use_system_proxy) = if args.no_proxy {
+    let (proxy_config, use_system_proxy) = if args.no_proxy {
         // No proxy flag overrides everything else
         info!("All proxy settings disabled (--no-proxy flag)");
         (None, false)
@@ -189,7 +189,7 @@ async fn bootstrap() -> Result<(), AppError> {
         if let Some(proxy) = proxy_config {
             builder = builder.with_proxy(proxy);
         } else {
-            builder = builder.with_system_proxy(args.use_system_proxy);
+            builder = builder.with_system_proxy(use_system_proxy);
         }
         builder.build()
     };
