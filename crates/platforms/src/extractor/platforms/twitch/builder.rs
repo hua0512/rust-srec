@@ -127,9 +127,13 @@ impl Twitch {
         // Try to parse as array first, then as single object if that fails
         let responses: Vec<T> = match serde_json::from_str::<Vec<T>>(&body) {
             Ok(responses) => responses,
-            Err(_) => {
+            Err(e) => {
+                debug!("Failed to parse as array: {}", e);
                 // If parsing as array fails, try parsing as single object
-                let single_response: T = serde_json::from_str(&body)?;
+                let single_response: T = serde_json::from_str(&body).map_err(|e2| {
+                    debug!("Failed to parse as single object: {}", e2);
+                    e2
+                })?;
                 vec![single_response]
             }
         };
@@ -167,18 +171,18 @@ impl Twitch {
         let queries = [
             self.build_persisted_query_request(
                 "ChannelShell",
-                "c3ea5a669ec074a58df5c11ce3c27093fa38534c94286dc14b68a25d5adcbf55",
+                "fea4573a7bf2644f5b3f2cbbdcbee0d17312e48d2e55f080589d053aad353f11",
                 serde_json::json!({
                     "login": room_id,
-                    "lcpVideosEnabled": false,
                 }),
             ),
             self.build_persisted_query_request(
                 "StreamMetadata",
-                "059c4653b788f5bdb2f5a2d2a24b0ddc3831a15079001a3d927556a96fb0517f",
+                "b57f9b910f8cd1a4659d894fe7550ccc81ec9052c01e438b290fd66a040b9b93",
                 serde_json::json!({
                     "channelLogin": room_id,
                     "previewImageURL": "",
+                    "includeIsDJ" : true,
                 }),
             ),
         ];
@@ -196,33 +200,54 @@ impl Twitch {
         let response = self.post_gql::<TwitchResponse>(queries_string).await?;
         debug!("response: {:?}", response);
 
-        if response.len() < 2 {
+        // Filter out responses with errors and keep only valid data responses
+        let valid_responses: Vec<&TwitchResponse> =
+            response.iter().filter(|r| r.data.is_some()).collect();
+
+        if valid_responses.is_empty() {
             return Err(ExtractorError::ValidationError(
-                "Invalid response from Twitch API".to_string(),
+                "No valid response from Twitch API".to_string(),
             ));
         }
 
-        let channel_shell = response.first().unwrap();
-        let stream_metadata = response.get(1).unwrap();
+        let channel_shell = valid_responses.first().unwrap();
 
-        let user_or_error = &channel_shell.data.user_or_error.as_ref().ok_or_else(|| {
-            ExtractorError::ValidationError("Could not find user_or_error".to_string())
-        })?;
+        // Try to get stream_metadata, if not available use channel_shell data
+        let stream_metadata = valid_responses.get(1).unwrap_or(channel_shell);
 
-        let user =
-            &stream_metadata.data.user.as_ref().ok_or_else(|| {
-                ExtractorError::ValidationError("Could not find user".to_string())
+        let user_or_error = &channel_shell
+            .data
+            .as_ref()
+            .and_then(|d| d.user_or_error.as_ref())
+            .ok_or_else(|| {
+                ExtractorError::ValidationError("Could not find user_or_error".to_string())
             })?;
 
-        let is_live = user.stream.is_some()
-            && user.stream.as_ref().unwrap().stream_type == Some("live".to_string());
+        // Try to get detailed user info from stream_metadata, fallback to user_or_error data
+        let user_opt = stream_metadata.data.as_ref().and_then(|d| d.user.as_ref());
+
+        // Determine if the stream is live
+        let is_live = match user_opt {
+            Some(user) => {
+                user.stream.is_some()
+                    && user.stream.as_ref().unwrap().stream_type == Some("live".to_string())
+            }
+            None => {
+                // Fallback to user_or_error stream info
+                user_or_error.stream.is_some()
+            }
+        };
 
         let artist = user_or_error.display_name.to_string();
-        let last_broadcast = user.last_broadcast.as_ref();
-        let title = last_broadcast
+
+        // Get title from user's last_broadcast if available, otherwise use empty string
+        let title = user_opt
+            .and_then(|u| u.last_broadcast.as_ref())
             .map(|l| l.title.to_string())
             .unwrap_or_default();
-        let avatar_url = user.profile_image_url.to_string();
+
+        // Get profile image URL, prefer from user_or_error
+        let avatar_url = user_or_error.profile_image_url.to_string();
 
         if !is_live || self.skip_live_extraction {
             return Ok(self.create_media_info(
@@ -252,7 +277,7 @@ impl Twitch {
     pub async fn get_streams(&self, rid: &str) -> Result<Vec<StreamInfo>, ExtractorError> {
         let live_gpl = self.build_persisted_query_request(
             "PlaybackAccessToken",
-            "0828119ded1c13477966434e15800ff57ddacf13ba1911c129dc2200705b0712",
+            "ed230aa1e33e07eebb8928504583da78a5173989fadfb1ac94be06a04f3cdbe9",
             serde_json::json!({
                 "isLive": true,
                 "login": rid,
@@ -260,7 +285,8 @@ impl Twitch {
                 "vodID": "",
                 "playerType": "site",
                 "isClip": false,
-                "clipID": ""
+                "clipID": "",
+                "platform" : "site",
             }),
         );
 
