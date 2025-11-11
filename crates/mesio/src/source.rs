@@ -14,8 +14,10 @@ use tracing::debug;
 
 /// Strategy for selecting among multiple sources
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Default)]
 pub enum SourceSelectionStrategy {
     /// Select sources in order of priority (lower number = higher priority)
+    #[default]
     Priority,
     /// Round-robin selection between sources
     RoundRobin,
@@ -25,11 +27,6 @@ pub enum SourceSelectionStrategy {
     Random,
 }
 
-impl Default for SourceSelectionStrategy {
-    fn default() -> Self {
-        Self::Priority
-    }
-}
 
 /// Source health status tracking
 #[derive(Debug, Clone)]

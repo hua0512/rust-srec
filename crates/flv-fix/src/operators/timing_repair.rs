@@ -62,19 +62,16 @@ const TOLERANCE: u32 = 1;
 
 /// Defines the strategy for timestamp repair
 #[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Default)]
 pub enum RepairStrategy {
     /// Strict mode enforces exact frame intervals and corrects any deviation
     Strict,
 
     /// Relaxed mode only fixes severe timing issues, allowing minor variations
+    #[default]
     Relaxed,
 }
 
-impl Default for RepairStrategy {
-    fn default() -> Self {
-        Self::Relaxed
-    }
-}
 
 /// Configuration options for the TimingRepairOperator
 #[derive(Debug, Clone)]
