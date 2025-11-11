@@ -106,10 +106,10 @@ impl ScalingListData {
                         next_coef = scaling_list_dc_coef_minus8 + 8;
                     }
 
-                    for i in 0..coef_num {
+                    for coef in scaling_column[matrix_id].iter_mut().take(coef_num) {
                         let scaling_list_delta_coef = bit_reader.read_signed_exp_golomb()?;
                         next_coef = (next_coef + scaling_list_delta_coef + 256) % 256;
-                        scaling_column[matrix_id][i] = next_coef;
+                        *coef = next_coef;
                     }
                 }
 

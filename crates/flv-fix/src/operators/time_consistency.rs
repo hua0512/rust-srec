@@ -57,19 +57,16 @@ use tracing::{debug, trace};
 
 /// Defines how timestamps should be handled across stream splits
 #[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Default)]
 pub enum ContinuityMode {
     /// Maintain a continuous timeline across all segments
+    #[default]
     Continuous,
 
     /// Reset timeline to zero after each split
     Reset,
 }
 
-impl Default for ContinuityMode {
-    fn default() -> Self {
-        Self::Continuous
-    }
-}
 
 /// State tracking for timestamp correction
 struct TimelineState {
