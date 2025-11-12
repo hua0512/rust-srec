@@ -8,13 +8,15 @@ repository = "https://github.com/hua0512/rust-srec"
 
 [dependencies]
 bytes = "1.10.1"
-tokio = { version = "1.48.0", default-features = false, features = ["rt-multi-thread", "macros", "io-util"] }
+tokio = { version = "1.48.0", default-features = false, features = ["rt-multi-thread", "macros", "io-util", "sync"] }
+tokio-util = { version = "0.7.11" }
 futures = "0.3"
 reqwest = { version = "0.12", default-features = false, features = [
     "json",
     "stream",
     "rustls-tls",
 ] }
+crossterm = "0.27.0"
 
 # CLI dependencies
 clap = { version = "4.5", features = ["derive"] }
@@ -33,7 +35,3 @@ mesio-engine = { path = "../crates/mesio", features = ["clap"] }
 indicatif = "0.18.2"
 thiserror = "2.0"
 
-[profile.release]
-lto = true
-codegen-units = 1
-strip = true
