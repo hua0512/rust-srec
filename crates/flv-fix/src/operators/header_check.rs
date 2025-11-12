@@ -70,9 +70,13 @@ impl HeaderCheckOperator {
 impl Processor<FlvData> for HeaderCheckOperator {
     fn process(
         &mut self,
+        context: &Arc<StreamerContext>,
         input: FlvData,
         output: &mut dyn FnMut(FlvData) -> Result<(), PipelineError>,
     ) -> Result<(), PipelineError> {
+        if context.token.is_cancelled() {
+            return Err(PipelineError::Cancelled);
+        }
         if self.first_item {
             self.first_item = false;
 
@@ -100,6 +104,7 @@ impl Processor<FlvData> for HeaderCheckOperator {
 
     fn finish(
         &mut self,
+        _context: &Arc<StreamerContext>,
         _output: &mut dyn FnMut(FlvData) -> Result<(), PipelineError>,
     ) -> Result<(), PipelineError> {
         Ok(())
@@ -114,12 +119,12 @@ impl Processor<FlvData> for HeaderCheckOperator {
 mod tests {
     use super::*;
     use crate::test_utils::{create_test_header, create_video_tag};
-    use pipeline_common::StreamerContext;
+    use pipeline_common::{CancellationToken, StreamerContext};
 
     #[test]
     fn test_with_header_present() {
-        let context = StreamerContext::arc_new();
-        let mut operator = HeaderCheckOperator::new(context, true, true);
+        let context = StreamerContext::arc_new(CancellationToken::new());
+        let mut operator = HeaderCheckOperator::new(context.clone(), true, true);
         let mut output_items = Vec::new();
 
         // Create a mutable output function
@@ -130,11 +135,15 @@ mod tests {
 
         // Process a header followed by some tags
         operator
-            .process(create_test_header(), &mut output_fn)
+            .process(&context, create_test_header(), &mut output_fn)
             .unwrap();
         for i in 0..5 {
             operator
-                .process(create_video_tag(i * 100, i % 3 == 0), &mut output_fn)
+                .process(
+                    &context,
+                    create_video_tag(i * 100, i % 3 == 0),
+                    &mut output_fn,
+                )
                 .unwrap();
         }
 
@@ -147,8 +156,8 @@ mod tests {
 
     #[test]
     fn test_without_header() {
-        let context = StreamerContext::arc_new();
-        let mut operator = HeaderCheckOperator::new(context, true, true);
+        let context = StreamerContext::arc_new(CancellationToken::new());
+        let mut operator = HeaderCheckOperator::new(context.clone(), true, true);
         let mut output_items = Vec::new();
 
         // Create a mutable output function
@@ -160,7 +169,11 @@ mod tests {
         // Send tags without a header
         for i in 0..5 {
             operator
-                .process(create_video_tag(i * 100, i % 3 == 0), &mut output_fn)
+                .process(
+                    &context,
+                    create_video_tag(i * 100, i % 3 == 0),
+                    &mut output_fn,
+                )
                 .unwrap();
         }
 

@@ -2,7 +2,8 @@ use crate::{analyzer::FlvAnalyzer, script_modifier};
 use flv::{FlvData, FlvHeader, FlvWriter};
 use pipeline_common::progress::ProgressEvent;
 use pipeline_common::{
-    FormatStrategy, PostWriteAction, Progress, WriterConfig, WriterState, expand_filename_template,
+    expand_filename_template, FormatStrategy, PostWriteAction, Progress, WriterConfig,
+    WriterState,
 };
 use std::{
     fs::OpenOptions,

@@ -2,15 +2,14 @@ mod flv;
 mod generic;
 mod hls;
 
+use crate::{config::ProgramConfig, error::AppError};
 use mesio_engine::{DownloadManagerConfig, MesioDownloaderFactory, ProtocolType};
-use pipeline_common::progress::ProgressEvent;
+use pipeline_common::{progress::ProgressEvent, CancellationToken};
 use std::{
     path::{Path, PathBuf},
     sync::Arc,
 };
 use tracing::{error, info};
-
-use crate::{config::ProgramConfig, error::AppError};
 
 /// Determine the type of input and process accordingly
 pub async fn process_inputs(
@@ -19,6 +18,7 @@ pub async fn process_inputs(
     config: &ProgramConfig,
     name_template: &str,
     on_progress: Option<Arc<dyn Fn(ProgressEvent) + Send + Sync + 'static>>,
+    token: &CancellationToken,
 ) -> Result<(), AppError> {
     if inputs.is_empty() {
         return Err(AppError::InvalidInput(
@@ -37,7 +37,8 @@ pub async fn process_inputs(
     let factory = MesioDownloaderFactory::new()
         .with_download_config(DownloadManagerConfig::default())
         .with_flv_config(config.flv_config.clone().unwrap_or_default())
-        .with_hls_config(config.hls_config.clone().unwrap_or_default());
+        .with_hls_config(config.hls_config.clone().unwrap_or_default())
+        .with_token(token.clone());
 
     // Process each input
     for (index, input) in inputs.iter().enumerate() {
@@ -60,6 +61,7 @@ pub async fn process_inputs(
                         name_template,
                         on_progress.clone(),
                         &mut downloader,
+                        token,
                     )
                     .await?;
                 }
@@ -71,6 +73,7 @@ pub async fn process_inputs(
                         name_template,
                         on_progress.clone(),
                         &mut downloader,
+                        token,
                     )
                     .await?;
                 }
@@ -89,8 +92,14 @@ pub async fn process_inputs(
                 if let Some(extension) = path.extension().and_then(|ext| ext.to_str()) {
                     match extension.to_lowercase().as_str() {
                         "flv" => {
-                            flv::process_file(&path, output_dir, config, on_progress.clone())
-                                .await?;
+                            flv::process_file(
+                                &path,
+                                output_dir,
+                                config,
+                                on_progress.clone(),
+                                token,
+                            )
+                            .await?;
                         }
                         // "m3u8" | "m3u" => {
                         //     hls::process_hls_file(&path, output_dir, config, &progress_manager).await?;

@@ -13,6 +13,7 @@ use reqwest::Client;
 use std::sync::Arc;
 use tokio::sync::{broadcast, mpsc};
 use tokio::task::JoinHandle;
+use tokio_util::sync::CancellationToken;
 use tracing::{debug, error};
 
 use super::HlsDownloaderError;
@@ -35,6 +36,7 @@ impl HlsStreamCoordinator {
         config: Arc<HlsConfig>,
         http_client: Client,
         cache_manager: Option<Arc<CacheManager>>,
+        token: CancellationToken,
     ) -> Result<
         (
             mpsc::Receiver<Result<HlsStreamEvent, HlsDownloaderError>>, // client_event_rx
@@ -77,6 +79,10 @@ impl HlsStreamCoordinator {
         let shutdown_rx_for_playlist_engine = shutdown_tx.subscribe();
         let shutdown_rx_for_scheduler = shutdown_tx.subscribe();
 
+        let token_for_playlist_engine = token.clone();
+        let token_for_scheduler = token.clone();
+        let token_for_output_manager = token;
+
         // initial playlist
         let initial_playlist_data = playlist_engine.load_initial_playlist(&initial_url).await?;
         let (initial_media_playlist, base_url, is_live, selected_media_playlist_url) =
@@ -115,6 +121,7 @@ impl HlsStreamCoordinator {
             is_live,
             initial_media_playlist.media_sequence,
             shutdown_rx,
+            token_for_output_manager,
         );
 
         let mut segment_scheduler = SegmentScheduler::new(
@@ -124,6 +131,7 @@ impl HlsStreamCoordinator {
             segment_request_rx,
             processed_segments_tx,
             shutdown_rx_for_scheduler,
+            token_for_scheduler,
         );
 
         let mut shutdown_tx_for_playlist_engine = shutdown_tx.subscribe();
@@ -175,6 +183,7 @@ impl HlsStreamCoordinator {
                         base_url_clone,
                         segment_request_tx,
                         shutdown_rx_for_playlist_engine,
+                        token_for_playlist_engine,
                     )
                     .await;
 
@@ -246,8 +255,14 @@ mod tests {
 
         let cache = Some(cache_manager);
 
-        let result =
-            HlsStreamCoordinator::setup_and_spawn(initial_url, config, client, cache).await;
+        let result = HlsStreamCoordinator::setup_and_spawn(
+            initial_url,
+            config,
+            client,
+            cache,
+            CancellationToken::new(),
+        )
+        .await;
 
         assert!(result.is_ok());
         let (mut client_event_rx, _shutdown_tx, _handles) = result.unwrap();

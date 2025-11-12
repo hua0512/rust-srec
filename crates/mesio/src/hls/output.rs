@@ -9,6 +9,7 @@ use std::sync::Arc;
 use std::time::Instant;
 use tokio::sync::{broadcast, mpsc};
 use tokio::time::sleep;
+use tokio_util::sync::CancellationToken;
 use tracing::{debug, error, warn};
 
 use super::HlsDownloaderError;
@@ -22,6 +23,7 @@ pub struct OutputManager {
     expected_next_media_sequence: u64,
     playlist_ended: bool,
     shutdown_rx: broadcast::Receiver<()>,
+    token: CancellationToken,
 
     gap_detected_waiting_for_sequence: Option<u64>,
     segments_received_since_gap_detected: u64,
@@ -37,6 +39,7 @@ impl OutputManager {
         is_live_stream: bool,
         initial_media_sequence: u64,
         shutdown_rx: broadcast::Receiver<()>,
+        token: CancellationToken,
     ) -> Self {
         Self {
             config,
@@ -47,6 +50,7 @@ impl OutputManager {
             expected_next_media_sequence: initial_media_sequence,
             playlist_ended: false,
             shutdown_rx,
+            token,
             gap_detected_waiting_for_sequence: None,
             segments_received_since_gap_detected: 0,
             last_input_received_time: if is_live_stream {
@@ -83,7 +87,13 @@ impl OutputManager {
             tokio::select! {
                 biased;
 
-                // Branch 1: Shutdown Signal
+                // Branch 1: Cancellation Token
+                _ = self.token.cancelled() => {
+                    debug!("Cancellation token received. Preparing to exit.");
+                    break;
+                }
+
+                // Branch 2: Shutdown Signal
                 // This arm is active if it's a live stream, OR if it's VOD and shutdown hasn't been acknowledged yet.
                 // The `recv()` call consumes the signal. If the arm isn't taken due to `global_shutdown_received == true` for VOD,
                 // the signal is effectively ignored for that iteration, allowing input_rx to be processed.

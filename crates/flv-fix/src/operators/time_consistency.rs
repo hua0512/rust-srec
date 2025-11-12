@@ -159,9 +159,13 @@ impl TimeConsistencyOperator {
 impl Processor<FlvData> for TimeConsistencyOperator {
     fn process(
         &mut self,
+        context: &Arc<StreamerContext>,
         input: FlvData,
         output: &mut dyn FnMut(FlvData) -> Result<(), PipelineError>,
     ) -> Result<(), PipelineError> {
+        if context.token.is_cancelled() {
+            return Err(PipelineError::Cancelled);
+        }
         match input {
             FlvData::Header(_) => {
                 // Headers indicate stream splits (except the first one)
@@ -255,6 +259,7 @@ impl Processor<FlvData> for TimeConsistencyOperator {
 
     fn finish(
         &mut self,
+        _context: &Arc<StreamerContext>,
         _output: &mut dyn FnMut(FlvData) -> Result<(), PipelineError>,
     ) -> Result<(), PipelineError> {
         debug!("{} Time consistency operator completed", self.context.name);
@@ -270,14 +275,14 @@ impl Processor<FlvData> for TimeConsistencyOperator {
 mod tests {
 
     use crate::test_utils::{create_audio_tag, create_test_header, create_video_tag};
-    use pipeline_common::{StreamerContext, init_test_tracing};
+    use pipeline_common::{init_test_tracing, CancellationToken, StreamerContext};
 
     use super::*;
 
     #[test]
     fn test_normal_flow() {
-        let context = StreamerContext::arc_new();
-        let mut operator = TimeConsistencyOperator::new(context, ContinuityMode::Reset);
+        let context = StreamerContext::arc_new(CancellationToken::new());
+        let mut operator = TimeConsistencyOperator::new(context.clone(), ContinuityMode::Reset);
         let mut output_items = Vec::new();
 
         // Create a mutable output function
@@ -288,23 +293,23 @@ mod tests {
 
         // Process a header followed by some tags
         operator
-            .process(create_test_header(), &mut output_fn)
+            .process(&context, create_test_header(), &mut output_fn)
             .unwrap();
         operator
-            .process(create_video_tag(0, true), &mut output_fn)
+            .process(&context, create_video_tag(0, true), &mut output_fn)
             .unwrap();
         operator
-            .process(create_audio_tag(10), &mut output_fn)
+            .process(&context, create_audio_tag(10), &mut output_fn)
             .unwrap();
         operator
-            .process(create_video_tag(20, false), &mut output_fn)
+            .process(&context, create_video_tag(20, false), &mut output_fn)
             .unwrap();
         operator
-            .process(create_audio_tag(30), &mut output_fn)
+            .process(&context, create_audio_tag(30), &mut output_fn)
             .unwrap();
 
         // Finish processing
-        operator.finish(&mut output_fn).unwrap();
+        operator.finish(&context, &mut output_fn).unwrap();
 
         // Validate tags have correct timestamps
         assert_eq!(output_items.len(), 5);
@@ -327,8 +332,8 @@ mod tests {
 
     #[test]
     fn test_timestamp_reset() {
-        let context = StreamerContext::arc_new();
-        let mut operator = TimeConsistencyOperator::new(context, ContinuityMode::Reset);
+        let context = StreamerContext::arc_new(CancellationToken::new());
+        let mut operator = TimeConsistencyOperator::new(context.clone(), ContinuityMode::Reset);
         let mut output_items = Vec::new();
 
         // Create a mutable output function
@@ -339,34 +344,34 @@ mod tests {
 
         // Process a header followed by some tags with increasing timestamps
         operator
-            .process(create_test_header(), &mut output_fn)
+            .process(&context, create_test_header(), &mut output_fn)
             .unwrap();
         operator
-            .process(create_video_tag(1000, true), &mut output_fn)
+            .process(&context, create_video_tag(1000, true), &mut output_fn)
             .unwrap();
         operator
-            .process(create_audio_tag(1010), &mut output_fn)
+            .process(&context, create_audio_tag(1010), &mut output_fn)
             .unwrap();
         operator
-            .process(create_video_tag(1020, false), &mut output_fn)
+            .process(&context, create_video_tag(1020, false), &mut output_fn)
             .unwrap();
 
         // Send another header (should reset timebase)
         operator
-            .process(create_test_header(), &mut output_fn)
+            .process(&context, create_test_header(), &mut output_fn)
             .unwrap();
         operator
-            .process(create_video_tag(500, true), &mut output_fn)
+            .process(&context, create_video_tag(500, true), &mut output_fn)
             .unwrap();
         operator
-            .process(create_audio_tag(510), &mut output_fn)
+            .process(&context, create_audio_tag(510), &mut output_fn)
             .unwrap();
         operator
-            .process(create_video_tag(520, false), &mut output_fn)
+            .process(&context, create_video_tag(520, false), &mut output_fn)
             .unwrap();
 
         // Finish processing
-        operator.finish(&mut output_fn).unwrap();
+        operator.finish(&context, &mut output_fn).unwrap();
 
         // Extract tags and verify timestamps
         let timestamps: Vec<u32> = output_items
@@ -386,8 +391,8 @@ mod tests {
 
     #[test]
     fn test_timestamp_continue_mode() {
-        let context = StreamerContext::arc_new();
-        let mut operator = TimeConsistencyOperator::new(context, ContinuityMode::Continuous);
+        let context = StreamerContext::arc_new(CancellationToken::new());
+        let mut operator = TimeConsistencyOperator::new(context.clone(), ContinuityMode::Continuous);
         let mut output_items = Vec::new();
 
         // Create a mutable output function
@@ -398,34 +403,34 @@ mod tests {
 
         // Process a header followed by some tags with increasing timestamps
         operator
-            .process(create_test_header(), &mut output_fn)
+            .process(&context, create_test_header(), &mut output_fn)
             .unwrap();
         operator
-            .process(create_video_tag(1000, true), &mut output_fn)
+            .process(&context, create_video_tag(1000, true), &mut output_fn)
             .unwrap();
         operator
-            .process(create_audio_tag(1010), &mut output_fn)
+            .process(&context, create_audio_tag(1010), &mut output_fn)
             .unwrap();
         operator
-            .process(create_video_tag(1020, false), &mut output_fn)
+            .process(&context, create_video_tag(1020, false), &mut output_fn)
             .unwrap();
 
         // Send another header (should continue timing)
         operator
-            .process(create_test_header(), &mut output_fn)
+            .process(&context, create_test_header(), &mut output_fn)
             .unwrap();
         operator
-            .process(create_video_tag(500, true), &mut output_fn)
+            .process(&context, create_video_tag(500, true), &mut output_fn)
             .unwrap();
         operator
-            .process(create_audio_tag(510), &mut output_fn)
+            .process(&context, create_audio_tag(510), &mut output_fn)
             .unwrap();
         operator
-            .process(create_video_tag(520, false), &mut output_fn)
+            .process(&context, create_video_tag(520, false), &mut output_fn)
             .unwrap();
 
         // Finish processing
-        operator.finish(&mut output_fn).unwrap();
+        operator.finish(&context, &mut output_fn).unwrap();
 
         // Extract tags and verify timestamps
         let timestamps: Vec<u32> = output_items
@@ -450,8 +455,8 @@ mod tests {
     #[test]
     fn test_decreasing_timestamp_handling() {
         init_test_tracing!();
-        let context = StreamerContext::arc_new();
-        let mut operator = TimeConsistencyOperator::new(context, ContinuityMode::Reset);
+        let context = StreamerContext::arc_new(CancellationToken::new());
+        let mut operator = TimeConsistencyOperator::new(context.clone(), ContinuityMode::Reset);
         let mut output_items = Vec::new();
 
         // Create a mutable output function
@@ -462,26 +467,26 @@ mod tests {
 
         // Process tags with non-monotonic timestamps (decreasing)
         operator
-            .process(create_test_header(), &mut output_fn)
+            .process(&context, create_test_header(), &mut output_fn)
             .unwrap();
         operator
-            .process(create_video_tag(1000, true), &mut output_fn)
+            .process(&context, create_video_tag(1000, true), &mut output_fn)
             .unwrap();
         operator
-            .process(create_audio_tag(1010), &mut output_fn)
+            .process(&context, create_audio_tag(1010), &mut output_fn)
             .unwrap();
         operator
-            .process(create_video_tag(1020, false), &mut output_fn)
+            .process(&context, create_video_tag(1020, false), &mut output_fn)
             .unwrap();
         operator
-            .process(create_audio_tag(990), &mut output_fn)
+            .process(&context, create_audio_tag(990), &mut output_fn)
             .unwrap(); // Decreasing timestamp
         operator
-            .process(create_video_tag(1030, false), &mut output_fn)
+            .process(&context, create_video_tag(1030, false), &mut output_fn)
             .unwrap();
 
         // Finish processing
-        operator.finish(&mut output_fn).unwrap();
+        operator.finish(&context, &mut output_fn).unwrap();
 
         // Extract tags and verify timestamps
         let timestamps: Vec<u32> = output_items
@@ -524,7 +529,7 @@ mod tests {
     #[test]
     fn test_multiple_splits() {
         init_test_tracing!();
-        let context = StreamerContext::arc_new();
+        let context = StreamerContext::arc_new(CancellationToken::new());
 
         // Test with Continuous mode
         {
@@ -539,48 +544,48 @@ mod tests {
 
             // First segment: starts at 1000
             operator
-                .process(create_test_header(), &mut output_fn)
+                .process(&context, create_test_header(), &mut output_fn)
                 .unwrap();
             operator
-                .process(create_video_tag(1000, true), &mut output_fn)
+                .process(&context, create_video_tag(1000, true), &mut output_fn)
                 .unwrap();
             operator
-                .process(create_audio_tag(1010), &mut output_fn)
+                .process(&context, create_audio_tag(1010), &mut output_fn)
                 .unwrap();
             operator
-                .process(create_video_tag(1020, false), &mut output_fn)
+                .process(&context, create_video_tag(1020, false), &mut output_fn)
                 .unwrap();
 
             // Second segment: starts at 500
             operator
-                .process(create_test_header(), &mut output_fn)
+                .process(&context, create_test_header(), &mut output_fn)
                 .unwrap();
             operator
-                .process(create_video_tag(500, true), &mut output_fn)
+                .process(&context, create_video_tag(500, true), &mut output_fn)
                 .unwrap();
             operator
-                .process(create_audio_tag(510), &mut output_fn)
+                .process(&context, create_audio_tag(510), &mut output_fn)
                 .unwrap();
             operator
-                .process(create_video_tag(520, false), &mut output_fn)
+                .process(&context, create_video_tag(520, false), &mut output_fn)
                 .unwrap();
 
             // Third segment: starts at 200
             operator
-                .process(create_test_header(), &mut output_fn)
+                .process(&context, create_test_header(), &mut output_fn)
                 .unwrap();
             operator
-                .process(create_video_tag(200, true), &mut output_fn)
+                .process(&context, create_video_tag(200, true), &mut output_fn)
                 .unwrap();
             operator
-                .process(create_audio_tag(210), &mut output_fn)
+                .process(&context, create_audio_tag(210), &mut output_fn)
                 .unwrap();
             operator
-                .process(create_video_tag(220, false), &mut output_fn)
+                .process(&context, create_video_tag(220, false), &mut output_fn)
                 .unwrap();
 
             // Finish processing
-            operator.finish(&mut output_fn).unwrap();
+            operator.finish(&context, &mut output_fn).unwrap();
 
             // Extract tags and verify timestamps
             let timestamps: Vec<u32> = output_items
@@ -617,48 +622,48 @@ mod tests {
 
             // First segment: starts at 1000
             operator
-                .process(create_test_header(), &mut output_fn)
+                .process(&context, create_test_header(), &mut output_fn)
                 .unwrap();
             operator
-                .process(create_video_tag(1000, true), &mut output_fn)
+                .process(&context, create_video_tag(1000, true), &mut output_fn)
                 .unwrap();
             operator
-                .process(create_audio_tag(1010), &mut output_fn)
+                .process(&context, create_audio_tag(1010), &mut output_fn)
                 .unwrap();
             operator
-                .process(create_video_tag(1020, false), &mut output_fn)
+                .process(&context, create_video_tag(1020, false), &mut output_fn)
                 .unwrap();
 
             // Second segment: starts at 500
             operator
-                .process(create_test_header(), &mut output_fn)
+                .process(&context, create_test_header(), &mut output_fn)
                 .unwrap();
             operator
-                .process(create_video_tag(500, true), &mut output_fn)
+                .process(&context, create_video_tag(500, true), &mut output_fn)
                 .unwrap();
             operator
-                .process(create_audio_tag(510), &mut output_fn)
+                .process(&context, create_audio_tag(510), &mut output_fn)
                 .unwrap();
             operator
-                .process(create_video_tag(520, false), &mut output_fn)
+                .process(&context, create_video_tag(520, false), &mut output_fn)
                 .unwrap();
 
             // Third segment: starts at 200
             operator
-                .process(create_test_header(), &mut output_fn)
+                .process(&context, create_test_header(), &mut output_fn)
                 .unwrap();
             operator
-                .process(create_video_tag(200, true), &mut output_fn)
+                .process(&context, create_video_tag(200, true), &mut output_fn)
                 .unwrap();
             operator
-                .process(create_audio_tag(210), &mut output_fn)
+                .process(&context, create_audio_tag(210), &mut output_fn)
                 .unwrap();
             operator
-                .process(create_video_tag(220, false), &mut output_fn)
+                .process(&context, create_video_tag(220, false), &mut output_fn)
                 .unwrap();
 
             // Finish processing
-            operator.finish(&mut output_fn).unwrap();
+            operator.finish(&context, &mut output_fn).unwrap();
 
             // Extract tags and verify timestamps
             let timestamps: Vec<u32> = output_items

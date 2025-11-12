@@ -1,7 +1,8 @@
 use crate::error::AppError;
 use futures::{Stream, StreamExt};
 use pipeline_common::{
-    PipelineError, PipelineProvider, ProtocolWriter, StreamerContext, config::PipelineConfig,
+    config::PipelineConfig, CancellationToken, PipelineError, PipelineProvider, ProtocolWriter,
+    StreamerContext,
 };
 use std::pin::Pin;
 use std::sync::mpsc;
@@ -12,6 +13,7 @@ pub async fn process_stream<P, W>(
     pipeline_config: P::Config,
     stream: Pin<Box<dyn Stream<Item = Result<P::Item, PipelineError>> + Send>>,
     writer_initializer: impl FnOnce() -> W,
+    token: CancellationToken,
 ) -> Result<W::Stats, AppError>
 where
     P: PipelineProvider,
@@ -22,7 +24,7 @@ where
     let (tx, rx) = mpsc::sync_channel(pipeline_common_config.channel_size);
     let (processed_tx, processed_rx) = mpsc::sync_channel(pipeline_common_config.channel_size);
 
-    let context = StreamerContext::new();
+    let context = StreamerContext::new(token.clone());
     let pipeline_provider = P::with_config(context, pipeline_common_config, pipeline_config);
 
     let processing_task = tokio::task::spawn_blocking(move || {
@@ -41,7 +43,7 @@ where
             }
         };
 
-        if let Err(e) = pipeline.process(input_iter, &mut output) {
+        if let Err(e) = pipeline.run(input_iter, &mut output) {
             tracing::error!("Pipeline processing failed: {}", e);
         }
     });

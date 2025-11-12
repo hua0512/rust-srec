@@ -3,7 +3,7 @@ use pipeline_common::{PipelineError, ProtocolWriter, WriterError};
 
 use crate::writer_task::FlvFormatStrategy;
 use flv::data::FlvData;
-use pipeline_common::{WriterConfig, WriterState, WriterTask, progress::ProgressEvent};
+use pipeline_common::{progress::ProgressEvent, WriterConfig, WriterState, WriterTask};
 use std::collections::HashMap;
 use std::sync::mpsc;
 use std::{path::PathBuf, sync::Arc};

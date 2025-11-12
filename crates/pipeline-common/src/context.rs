@@ -4,6 +4,7 @@
 //! FLV stream processing. It includes statistics tracking, processing configuration
 //! options, and shared context for operators in the processing pipeline.
 
+use crate::cancellation::CancellationToken;
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
@@ -47,6 +48,8 @@ pub struct StreamerContext {
     pub statistics: Arc<Mutex<Statistics>>,
     /// Additional metadata properties
     pub metadata: Arc<Mutex<HashMap<String, String>>>,
+    /// The cancellation token
+    pub token: CancellationToken,
 }
 
 impl StreamerContext {
@@ -56,28 +59,29 @@ impl StreamerContext {
     ///
     /// # Returns
     /// A new StreamerContext with the given configuration and default values for other fields
-    pub fn new() -> Self {
+    pub fn new(token: CancellationToken) -> Self {
         Self {
             name: "DefaultStreamer".to_string(),
             statistics: Arc::new(Mutex::new(Statistics::default())),
             metadata: Arc::new(Mutex::new(HashMap::new())),
+            token,
         }
     }
 
-    pub fn arc_new() -> Arc<Self> {
-        Arc::new(Self::new())
+    pub fn arc_new(token: CancellationToken) -> Arc<Self> {
+        Arc::new(Self::new(token))
     }
 
-    pub fn with_name(name: impl Into<String>) -> Self {
+    pub fn with_name(name: impl Into<String>, token: CancellationToken) -> Self {
         Self {
             name: name.into(),
-            ..Self::new()
+            ..Self::new(token)
         }
     }
 }
 
 impl Default for StreamerContext {
     fn default() -> Self {
-        Self::new()
+        panic!("StreamerContext must be created with a CancellationToken")
     }
 }

@@ -37,7 +37,9 @@ pub enum HlsStrategyError {
 }
 
 impl HlsFormatStrategy {
-    pub fn new(on_progress: Option<Arc<dyn Fn(ProgressEvent) + Send + Sync + 'static>>) -> Self {
+    pub fn new(
+        on_progress: Option<Arc<dyn Fn(ProgressEvent) + Send + Sync + 'static>>,
+    ) -> Self {
         Self {
             analyzer: HlsAnalyzer::new(),
             current_offset: 0,

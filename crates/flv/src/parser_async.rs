@@ -284,6 +284,53 @@ impl Decoder for FlvDecoder {
             }
         }
     }
+
+    fn decode_eof(&mut self, src: &mut BytesMut) -> Result<Option<Self::Item>, Self::Error> {
+        // At EOF, we attempt to decode all remaining complete frames in the buffer.
+        let mut first_frame = None;
+
+        loop {
+            let initial_len = src.len();
+            if initial_len == 0 {
+                break;
+            }
+
+            match self.decode(src) {
+                Ok(Some(frame)) => {
+                    if first_frame.is_none() {
+                        first_frame = Some(frame);
+                    } else {
+                        // We already have a frame to return. The trait doesn't allow more.
+                        // We've consumed this frame from the buffer, so it's "processed" but will be dropped.
+                        warn!("Additional frame decoded at EOF was discarded due to Decoder trait limitations.");
+                    }
+                }
+                Ok(None) => {
+                    // Incomplete frame, this is the remainder to be discarded.
+                    if !src.is_empty() {
+                        warn!(
+                            "{} bytes remaining in buffer at EOF, discarding final partial tag.",
+                            src.len()
+                        );
+                        src.clear();
+                    }
+                    break;
+                }
+                Err(e) => {
+                    // On error, we should probably stop and return the error.
+                    // Any frame we found before this will be lost.
+                    return Err(e);
+                }
+            }
+
+            // Safeguard against infinite loops if decode succeeds but doesn't consume.
+            if src.len() == initial_len {
+                break;
+            }
+        }
+
+        Ok(first_frame)
+    }
 }
 
 pub struct FlvDecoderStream<R> {

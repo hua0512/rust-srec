@@ -10,17 +10,19 @@ use hls_fix::HlsPipelineConfig;
 use indicatif::MultiProgress;
 use mesio_engine::flv::FlvProtocolConfig;
 use mesio_engine::{DownloaderConfig, HlsProtocolBuilder, ProxyAuth, ProxyConfig, ProxyType};
-use pipeline_common::config::PipelineConfig;
-use tracing::{Level, error, info};
+use pipeline_common::{config::PipelineConfig, CancellationToken};
+use tracing::{error, info, Level};
 
 mod cli;
 mod config;
 mod error;
+mod input;
 mod output;
 mod processor;
 mod utils;
 
 use cli::CliArgs;
+use input::input_handler;
 use tracing_subscriber::FmtSubscriber;
 use tracing_subscriber::fmt::writer::MakeWriterExt;
 use utils::progress::ProgressManager;
@@ -37,6 +39,11 @@ fn main() {
 
 #[tokio::main]
 async fn bootstrap() -> Result<(), AppError> {
+    // Create a cancellation token
+    let token = CancellationToken::new();
+
+    // Spawn the input handler
+    tokio::spawn(input_handler(token.clone()));
     // Parse command-line arguments
     let args = CliArgs::parse();
 
@@ -227,7 +234,7 @@ async fn bootstrap() -> Result<(), AppError> {
         .map_err(|err| AppError::InvalidInput(err.to_string()))?;
 
     // Process input files
-    processor::process_inputs(
+    let result = processor::process_inputs(
         &args.input,
         &output_dir,
         &program_config,
@@ -235,7 +242,16 @@ async fn bootstrap() -> Result<(), AppError> {
         Some(Arc::new(move |event| {
             progress_manager.handle_event(event);
         })),
+        &token,
     )
-    .await?;
+    .await;
+
+    // Check if the operation was cancelled
+    if token.is_cancelled() {
+        info!("Operation cancelled by user. Exiting gracefully.");
+        return Ok(());
+    }
+
+    result?;
     Ok(())
 }

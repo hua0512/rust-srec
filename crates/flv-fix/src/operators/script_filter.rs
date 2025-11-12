@@ -61,9 +61,13 @@ impl ScriptFilterOperator {
 impl Processor<FlvData> for ScriptFilterOperator {
     fn process(
         &mut self,
+        context: &Arc<StreamerContext>,
         input: FlvData,
         output: &mut dyn FnMut(FlvData) -> Result<(), PipelineError>,
     ) -> Result<(), PipelineError> {
+        if context.token.is_cancelled() {
+            return Err(PipelineError::Cancelled);
+        }
         match input {
             FlvData::Header(_) => {
                 debug!("{} Resetting script tag filter state", self.context.name);
@@ -94,6 +98,7 @@ impl Processor<FlvData> for ScriptFilterOperator {
 
     fn finish(
         &mut self,
+        _context: &Arc<StreamerContext>,
         _output: &mut dyn FnMut(FlvData) -> Result<(), PipelineError>,
     ) -> Result<(), PipelineError> {
         if self.script_tag_count > 1 {
@@ -116,14 +121,13 @@ impl Processor<FlvData> for ScriptFilterOperator {
 mod tests {
     use super::*;
     use crate::test_utils::{create_script_tag, create_test_header, create_video_tag};
-    use pipeline_common::StreamerContext;
-    use pipeline_common::init_test_tracing;
+    use pipeline_common::{init_test_tracing, CancellationToken, StreamerContext};
 
     #[test]
     fn test_filter_script_tags() {
         init_test_tracing!();
-        let context = StreamerContext::arc_new();
-        let mut operator = ScriptFilterOperator::new(context);
+        let context = StreamerContext::arc_new(CancellationToken::new());
+        let mut operator = ScriptFilterOperator::new(context.clone());
         let mut output_items = Vec::new();
 
         // Create a mutable output function
@@ -134,39 +138,39 @@ mod tests {
 
         // Send header
         operator
-            .process(create_test_header(), &mut output_fn)
+            .process(&context, create_test_header(), &mut output_fn)
             .unwrap();
 
         // Send first script tag - should be kept
         operator
-            .process(create_script_tag(0, true), &mut output_fn)
+            .process(&context, create_script_tag(0, true), &mut output_fn)
             .unwrap();
 
         // Send some video tags
         operator
-            .process(create_video_tag(10, true), &mut output_fn)
+            .process(&context, create_video_tag(10, true), &mut output_fn)
             .unwrap();
         operator
-            .process(create_video_tag(20, false), &mut output_fn)
+            .process(&context, create_video_tag(20, false), &mut output_fn)
             .unwrap();
 
         // Send another script tag - should be discarded
         operator
-            .process(create_script_tag(30, false), &mut output_fn)
+            .process(&context, create_script_tag(30, false), &mut output_fn)
             .unwrap();
 
         // Send more video tags
         operator
-            .process(create_video_tag(40, true), &mut output_fn)
+            .process(&context, create_video_tag(40, true), &mut output_fn)
             .unwrap();
 
         // Send a third script tag - should be discarded
         operator
-            .process(create_script_tag(50, false), &mut output_fn)
+            .process(&context, create_script_tag(50, false), &mut output_fn)
             .unwrap();
 
         // Finish processing
-        operator.finish(&mut output_fn).unwrap();
+        operator.finish(&context, &mut output_fn).unwrap();
 
         // Check we have the correct number of items (header + 1 script tag + 3 video tags = 5)
         assert_eq!(
@@ -201,8 +205,8 @@ mod tests {
     #[test]
     fn test_multiple_headers_reset_filtering() {
         init_test_tracing!();
-        let context = StreamerContext::arc_new();
-        let mut operator = ScriptFilterOperator::new(context);
+        let context = StreamerContext::arc_new(CancellationToken::new());
+        let mut operator = ScriptFilterOperator::new(context.clone());
         let mut output_items = Vec::new();
 
         // Create a mutable output function
@@ -213,34 +217,34 @@ mod tests {
 
         // First segment
         operator
-            .process(create_test_header(), &mut output_fn)
+            .process(&context, create_test_header(), &mut output_fn)
             .unwrap();
         operator
-            .process(create_script_tag(0, true), &mut output_fn)
+            .process(&context, create_script_tag(0, true), &mut output_fn)
             .unwrap();
         operator
-            .process(create_video_tag(10, true), &mut output_fn)
+            .process(&context, create_video_tag(10, true), &mut output_fn)
             .unwrap();
         operator
-            .process(create_script_tag(20, false), &mut output_fn)
+            .process(&context, create_script_tag(20, false), &mut output_fn)
             .unwrap(); // Should be discarded
 
         // Second segment (new header should reset filtering)
         operator
-            .process(create_test_header(), &mut output_fn)
+            .process(&context, create_test_header(), &mut output_fn)
             .unwrap();
         operator
-            .process(create_script_tag(0, true), &mut output_fn)
+            .process(&context, create_script_tag(0, true), &mut output_fn)
             .unwrap(); // Should be kept
         operator
-            .process(create_video_tag(10, false), &mut output_fn)
+            .process(&context, create_video_tag(10, false), &mut output_fn)
             .unwrap();
         operator
-            .process(create_script_tag(20, false), &mut output_fn)
+            .process(&context, create_script_tag(20, false), &mut output_fn)
             .unwrap(); // Should be discarded
 
         // Finish processing
-        operator.finish(&mut output_fn).unwrap();
+        operator.finish(&context, &mut output_fn).unwrap();
 
         // Check we have the correct number of items (2 headers + 2 script tags + 2 video tags = 6)
         assert_eq!(
