@@ -637,13 +637,9 @@ impl Processor<FlvData> for TimingRepairOperator {
 
     fn finish(
         &mut self,
-        context: &Arc<StreamerContext>,
-        output: &mut dyn FnMut(FlvData) -> Result<(), PipelineError>,
+        _context: &Arc<StreamerContext>,
+        _output: &mut dyn FnMut(FlvData) -> Result<(), PipelineError>,
     ) -> Result<(), PipelineError> {
-        if context.token.is_cancelled() {
-            return Err(PipelineError::Cancelled);
-        }
-        let _ = output;
         // Finalize processing and log statistics
         info!(
             "{} TimingRepair complete: Processed {} tags, applied {} corrections, detected {} rebounds and {} discontinuities",

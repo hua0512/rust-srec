@@ -229,13 +229,10 @@ impl Processor<FlvData> for GopSortOperator {
 
     fn finish(
         &mut self,
-        context: &Arc<StreamerContext>,
+        _context: &Arc<StreamerContext>,
         output: &mut dyn FnMut(FlvData) -> Result<(), PipelineError>,
     ) -> Result<(), PipelineError> {
-        if context.token.is_cancelled() {
-            return Err(PipelineError::Cancelled);
-        }
-        // Process any remaining buffered tags at end of stream
+        // Process any remaining buffered tags at end of stream, even if cancelled
         self.push_tags(output)?;
         info!("{} GOP sort completed", self.context.name);
         Ok(())
