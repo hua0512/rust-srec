@@ -65,9 +65,6 @@ pub struct LimitConfig {
     /// Whether to split at keyframes only (may exceed limits slightly)
     pub split_at_keyframes_only: bool,
 
-    /// Whether to use retrospective splitting (split at last keyframe when limit is reached)
-    pub use_retrospective_splitting: bool,
-
     /// Optional callback when a split occurs, receives:
     /// - The reason for the split
     /// - The accumulated size in bytes
@@ -81,7 +78,6 @@ impl Default for LimitConfig {
             max_size_bytes: None,
             max_duration_ms: None,
             split_at_keyframes_only: true,
-            use_retrospective_splitting: false,
             on_split: None,
         }
     }
@@ -308,7 +304,7 @@ impl Processor<FlvData> for LimitOperator {
                 // Inside the process method where split decisions are made
                 let has_video = self.state.header.as_ref().is_some_and(|h| h.has_video);
                 let can_split_on_tag = if has_video {
-                    !self.config.split_at_keyframes_only || tag.is_key_frame_nalu()
+                    tag.is_key_frame_nalu()
                 } else {
                     // For audio-only, we can split on any tag
                     true
@@ -328,32 +324,7 @@ impl Processor<FlvData> for LimitOperator {
                     self.split_stream(output)?;
 
                     // Emit current tag after the split
-                    if !has_video || tag.is_key_frame_nalu() || !self.config.split_at_keyframes_only
-                    {
-                        output(FlvData::Tag(tag))?;
-                    }
-                } else if should_split
-                    && self.config.split_at_keyframes_only
-                    && self.config.use_retrospective_splitting
-                    && self.state.last_keyframe_position.is_some()
-                {
-                    // Retrospective splitting logic - only used if enabled
-                    // let split_reason = self.determine_split_reason();
-
-                    // We're not at a keyframe but need to split at a keyframe
-                    // Emit this tag then trigger split
                     output(FlvData::Tag(tag))?;
-
-                    if let Some((size, timestamp)) = self.state.last_keyframe_position {
-                        // Use the position of the last keyframe for stats
-                        if let Some(callback) = &self.config.on_split {
-                            let duration = timestamp.saturating_sub(self.state.start_timestamp);
-                            (callback)(self.determine_split_reason(), size, duration);
-                        }
-                    }
-
-                    // Perform the split
-                    self.split_stream(output)?;
                 } else {
                     // No split needed, just forward the tag
                     output(FlvData::Tag(tag))?;
@@ -402,7 +373,6 @@ mod tests {
             max_size_bytes: Some(100 * 1024),
             max_duration_ms: None,
             split_at_keyframes_only: true,
-            use_retrospective_splitting: false,
             on_split: Some(Box::new(move |_, _, _| {
                 split_counter.fetch_add(1, Ordering::SeqCst);
             })),
@@ -507,7 +477,6 @@ mod tests {
             max_size_bytes: None,
             max_duration_ms: Some(500),
             split_at_keyframes_only: true,
-            use_retrospective_splitting: false,
             on_split: Some(Box::new(move |_, _, _| {
                 split_counter.fetch_add(1, Ordering::SeqCst);
             })),
@@ -618,7 +587,6 @@ mod tests {
             max_size_bytes: None,
             max_duration_ms: None,
             split_at_keyframes_only: true,
-            use_retrospective_splitting: false,
             on_split: Some(Box::new(move |_, _, _| {
                 split_counter.fetch_add(1, Ordering::SeqCst);
             })),
@@ -690,7 +658,6 @@ mod tests {
             max_size_bytes: Some(500),
             max_duration_ms: Some(300),
             split_at_keyframes_only: false,
-            use_retrospective_splitting: false,
             on_split: Some(Box::new(move |_, _, _| {
                 split_count.fetch_add(1, Ordering::SeqCst);
             })),
@@ -784,7 +751,6 @@ mod tests {
             max_size_bytes: None,
             max_duration_ms: Some(400),
             split_at_keyframes_only: true,
-            use_retrospective_splitting: false,
             on_split: Some(Box::new({
                 let st_clone = Arc::clone(&split_timestamps);
                 move |_, _, duration| {
@@ -925,7 +891,6 @@ mod tests {
             max_size_bytes: Some(1000),
             max_duration_ms: None,
             split_at_keyframes_only: false,
-            use_retrospective_splitting: false,
             on_split: Some(Box::new(move |_, _, _| {
                 split_count.fetch_add(1, Ordering::SeqCst);
             })),
@@ -964,108 +929,6 @@ mod tests {
     }
 
     #[test]
-    fn test_retrospective_splitting() {
-        let context = StreamerContext::arc_new(CancellationToken::new());
-
-        // Track split information
-        let split_timestamps = Arc::new(Mutex::new(Vec::new()));
-        let split_timestamps_clone = Arc::clone(&split_timestamps);
-
-        // Configure with size limit and retrospective splitting
-        let config = LimitConfig {
-            max_size_bytes: Some(500),
-            max_duration_ms: None,
-            split_at_keyframes_only: true,
-            use_retrospective_splitting: true, // Enable retrospective splitting
-            on_split: Some(Box::new({
-                let callback_split_timestamps = Arc::clone(&split_timestamps);
-                move |_, _, ts| {
-                    callback_split_timestamps.lock().unwrap().push(ts);
-                }
-            })),
-        };
-
-        let mut operator = LimitOperator::with_config(context.clone(), config);
-        let mut output_items = Vec::new();
-
-        // Create a mutable output function
-        let mut output_fn = |item: FlvData| -> Result<(), PipelineError> {
-            output_items.push(item);
-            Ok(())
-        };
-
-        // Process a header
-        operator
-            .process(&context, test_utils::create_test_header(), &mut output_fn)
-            .unwrap();
-
-        // Send a sequence with a keyframe followed by normal frames
-        operator
-            .process(
-                &context,
-                test_utils::create_video_tag_with_size(0, true, 200),
-                &mut output_fn,
-            )
-            .unwrap(); // Keyframe
-        operator
-            .process(
-                &context,
-                test_utils::create_video_tag_with_size(100, false, 100),
-                &mut output_fn,
-            )
-            .unwrap();
-        operator
-            .process(
-                &context,
-                test_utils::create_video_tag_with_size(200, false, 100),
-                &mut output_fn,
-            )
-            .unwrap();
-
-        // Send more non-keyframes to exceed the size limit
-        operator
-            .process(
-                &context,
-                test_utils::create_video_tag_with_size(300, false, 200),
-                &mut output_fn,
-            )
-            .unwrap(); // This should trigger size limit
-        operator
-            .process(
-                &context,
-                test_utils::create_video_tag_with_size(400, false, 100),
-                &mut output_fn,
-            )
-            .unwrap();
-
-        // Now send a keyframe - this is where the split should happen
-        operator
-            .process(
-                &context,
-                test_utils::create_video_tag_with_size(500, true, 100),
-                &mut output_fn,
-            )
-            .unwrap();
-
-        // Finish processing
-        operator.finish(&context, &mut output_fn).unwrap();
-
-        // Check that a split occurred
-        let split_timestamps = split_timestamps_clone.lock().unwrap().clone();
-        assert!(
-            !split_timestamps.is_empty(),
-            "Should have performed at least one split"
-        );
-
-        // Verify headers were inserted properly
-        let header_count = output_items
-            .iter()
-            .filter(|item| matches!(item, FlvData::Header(_)))
-            .count();
-
-        assert!(header_count > 1, "Should have more than the initial header");
-    }
-    #[test]
     fn test_audio_only_size_limit_split() {
         let context = StreamerContext::arc_new(CancellationToken::new());
         let split_counter = Arc::new(AtomicUsize::new(0));
@@ -1076,7 +939,6 @@ mod tests {
             max_size_bytes: Some(1024), // 1KB limit
             max_duration_ms: None,
             split_at_keyframes_only: true, // This should be ignored for audio-only
-            use_retrospective_splitting: false,
             on_split: Some(Box::new(move |_, _, _| {
                 split_counter.fetch_add(1, Ordering::SeqCst);
             })),
