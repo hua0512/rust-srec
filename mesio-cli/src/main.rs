@@ -246,14 +246,14 @@ async fn bootstrap() -> Result<(), AppError> {
     )
     .await;
 
-    // Check if the operation was cancelled
-    if token.is_cancelled() {
+    // Ensure the token is always cancelled to terminate the input_handler.
+    let final_result = if token.is_cancelled() {
         info!("Operation cancelled by user. Exiting gracefully.");
-        return Ok(());
-    }
+        Ok(())
+    } else {
+        result
+    };
 
-    result?;
-    // Signal the input_handler to terminate.
     token.cancel();
-    Ok(())
+    final_result
 }
