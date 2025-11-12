@@ -1,7 +1,6 @@
-use crate::config::ProgramConfig;
-use crate::error::AppError;
-use crate::processor::generic::process_stream;
-use crate::utils::{create_dirs, expand_name_url, format_bytes};
+use crate::utils::{expand_name_url, format_bytes};
+use crate::{config::ProgramConfig, error::AppError};
+use crate::{processor::generic::process_stream, utils::create_dirs};
 use flv::data::FlvData;
 use flv::parser_async::FlvDecoderStream;
 use flv_fix::FlvPipeline;
@@ -9,7 +8,8 @@ use flv_fix::writer::FlvWriter;
 use futures::{Stream, StreamExt};
 use mesio_engine::DownloaderInstance;
 use pipeline_common::{
-    PipelineError, ProtocolWriter, config::PipelineConfig, progress::ProgressEvent,
+    CancellationToken, PipelineError, ProtocolWriter, config::PipelineConfig,
+    progress::ProgressEvent,
 };
 use std::collections::HashMap;
 use std::pin::Pin;
@@ -60,6 +60,7 @@ pub async fn process_file(
     output_dir: &Path,
     config: &ProgramConfig,
     on_progress: Option<Arc<dyn Fn(ProgressEvent) + Send + Sync + 'static>>,
+    token: &CancellationToken,
 ) -> Result<(), AppError> {
     // Create output directory if it doesn't exist
     create_dirs(output_dir).await?;
@@ -95,13 +96,14 @@ pub async fn process_file(
                     output_dir.to_path_buf(),
                     base_name.to_string(),
                     "flv".to_string(),
-                    on_progress,
+                    on_progress.clone(),
                     Some(HashMap::from([(
                         "enable_low_latency".to_string(),
                         config.flv_pipeline_config.enable_low_latency.to_string(),
                     )])),
                 )
             },
+            token.clone(),
         )
         .await?
     } else {
@@ -137,6 +139,7 @@ pub async fn process_flv_stream(
     name_template: &str,
     on_progress: Option<Arc<dyn Fn(ProgressEvent) + Send + Sync + 'static>>,
     downloader: &mut DownloaderInstance,
+    token: &CancellationToken,
 ) -> Result<u64, AppError> {
     // Create output directory if it doesn't exist
     create_dirs(output_dir).await?;
@@ -168,13 +171,14 @@ pub async fn process_flv_stream(
                     output_dir.to_path_buf(),
                     base_name.clone(),
                     "flv".to_string(),
-                    on_progress,
+                    on_progress.clone(),
                     Some(HashMap::from([(
                         "enable_low_latency".to_string(),
                         config.flv_pipeline_config.enable_low_latency.to_string(),
                     )])),
                 )
             },
+            token.clone(),
         )
         .await?
     } else {

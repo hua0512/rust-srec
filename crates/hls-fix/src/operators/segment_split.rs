@@ -350,9 +350,13 @@ impl SegmentSplitOperator {
 impl Processor<HlsData> for SegmentSplitOperator {
     fn process(
         &mut self,
+        context: &Arc<StreamerContext>,
         input: HlsData,
         output: &mut dyn FnMut(HlsData) -> Result<(), PipelineError>,
     ) -> Result<(), PipelineError> {
+        if context.token.is_cancelled() {
+            return Err(PipelineError::Cancelled);
+        }
         let mut need_split = false;
 
         // Check if we need to split based on segment type
@@ -398,6 +402,7 @@ impl Processor<HlsData> for SegmentSplitOperator {
 
     fn finish(
         &mut self,
+        _context: &Arc<StreamerContext>,
         _output: &mut dyn FnMut(HlsData) -> Result<(), PipelineError>,
     ) -> Result<(), PipelineError> {
         self.reset();
@@ -415,6 +420,7 @@ mod tests {
     use bytes::Bytes;
     use m3u8_rs::MediaSegment;
     use pipeline_common::init_test_tracing;
+    use tokio_util::sync::CancellationToken;
 
     // Helper function to create a working TS data with specific codec combinations
     fn create_ts_data_with_codecs(video_codec: u8, audio_codec: u8, program_num: u16) -> Vec<u8> {
@@ -483,8 +489,9 @@ mod tests {
 
     #[test]
     fn test_stream_change_detection() {
-        let context = StreamerContext::arc_new();
-        let mut operator = SegmentSplitOperator::new(context);
+        let token = CancellationToken::new();
+        let context = StreamerContext::arc_new(token);
+        let mut operator = SegmentSplitOperator::new(context.clone());
         let mut output_items = Vec::new();
 
         // Create a mutable output function
@@ -501,7 +508,9 @@ mod tests {
         });
 
         // Process the initial segment
-        operator.process(ts_segment1, &mut output_fn).unwrap();
+        operator
+            .process(&context, ts_segment1, &mut output_fn)
+            .unwrap();
 
         // Create second TS segment with H.265 + AC-3 (different codecs)
         let ts_data2 = create_ts_data_with_codecs(0x24, 0x81, 1); // H.265 + AC-3
@@ -511,7 +520,9 @@ mod tests {
         });
 
         // Process the modified segment
-        operator.process(ts_segment2, &mut output_fn).unwrap();
+        operator
+            .process(&context, ts_segment2, &mut output_fn)
+            .unwrap();
 
         // Should have split the stream (segment1 + end marker + segment2)
         assert_eq!(output_items.len(), 3);
@@ -523,8 +534,9 @@ mod tests {
 
     #[test]
     fn test_program_change_detection() {
-        let context = StreamerContext::arc_new();
-        let mut operator = SegmentSplitOperator::new(context);
+        let token = CancellationToken::new();
+        let context = StreamerContext::arc_new(token);
+        let mut operator = SegmentSplitOperator::new(context.clone());
         let mut output_items = Vec::new();
 
         // Create a mutable output function
@@ -541,7 +553,9 @@ mod tests {
         });
 
         // Process the initial segment
-        operator.process(ts_segment1, &mut output_fn).unwrap();
+        operator
+            .process(&context, ts_segment1, &mut output_fn)
+            .unwrap();
 
         // Create second TS segment with program 2 (different program number)
         let ts_data2 = create_ts_data_with_codecs(0x1B, 0x0F, 2); // H.264 + AAC, program 2
@@ -551,7 +565,9 @@ mod tests {
         });
 
         // Process the segment with different program
-        operator.process(ts_segment2, &mut output_fn).unwrap();
+        operator
+            .process(&context, ts_segment2, &mut output_fn)
+            .unwrap();
 
         // Should have split the stream (segment1 + end marker + segment2)
         assert_eq!(output_items.len(), 3);
@@ -564,8 +580,9 @@ mod tests {
     #[test]
     fn test_resolution_change_detection() {
         init_test_tracing!();
-        let context = StreamerContext::arc_new();
-        let mut operator = SegmentSplitOperator::new(context);
+        let token = CancellationToken::new();
+        let context = StreamerContext::arc_new(token);
+        let mut operator = SegmentSplitOperator::new(context.clone());
         let mut output_items = Vec::new();
 
         // Create a mutable output function
@@ -582,7 +599,9 @@ mod tests {
         });
 
         // Process the initial segment
-        operator.process(ts_segment1, &mut output_fn).unwrap();
+        operator
+            .process(&context, ts_segment1, &mut output_fn)
+            .unwrap();
 
         // Create second TS segment with H.265 (which typically defaults to 3840x2160)
         let ts_data2 = create_ts_data_with_codecs(0x24, 0x0F, 1); // H.265 + AAC
@@ -592,7 +611,9 @@ mod tests {
         });
 
         // Process the segment with different codec (and implied resolution)
-        operator.process(ts_segment2, &mut output_fn).unwrap();
+        operator
+            .process(&context, ts_segment2, &mut output_fn)
+            .unwrap();
 
         // Should have split the stream due to both codec and resolution change
         // (segment1 + end marker + segment2)

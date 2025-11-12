@@ -10,7 +10,8 @@
 //! to a processing pipeline.
 //!
 
-use crate::PipelineError;
+use crate::{context::StreamerContext, PipelineError};
+use std::sync::Arc;
 
 /// A generic processor trait for handling data of type T.
 ///
@@ -26,6 +27,7 @@ pub trait Processor<T> {
     ///
     /// # Arguments
     ///
+    /// * `context` - The streamer context, containing the cancellation token.
     /// * `input` - The input data item to process
     /// * `output` - A mutable function that accepts processed items
     ///
@@ -34,6 +36,7 @@ pub trait Processor<T> {
     /// `Result<(), PipelineError>` - Success or an error if processing failed
     fn process(
         &mut self,
+        context: &Arc<StreamerContext>,
         input: T,
         output: &mut dyn FnMut(T) -> Result<(), PipelineError>,
     ) -> Result<(), PipelineError>;
@@ -45,6 +48,7 @@ pub trait Processor<T> {
     ///
     /// # Arguments
     ///
+    /// * `context` - The streamer context, containing the cancellation token.
     /// * `output` - A mutable function that accepts processed items
     ///
     /// # Returns
@@ -52,6 +56,7 @@ pub trait Processor<T> {
     /// `Result<(), PipelineError>` - Success or an error if finalization failed
     fn finish(
         &mut self,
+        context: &Arc<StreamerContext>,
         output: &mut dyn FnMut(T) -> Result<(), PipelineError>,
     ) -> Result<(), PipelineError>;
 

@@ -247,9 +247,13 @@ impl LimitOperator {
 impl Processor<FlvData> for LimitOperator {
     fn process(
         &mut self,
+        context: &Arc<StreamerContext>,
         input: FlvData,
         output: &mut dyn FnMut(FlvData) -> Result<(), PipelineError>,
     ) -> Result<(), PipelineError> {
+        if context.token.is_cancelled() {
+            return Err(PipelineError::Cancelled);
+        }
         match input {
             FlvData::Header(header) => {
                 // Reset state for a new stream
@@ -365,6 +369,7 @@ impl Processor<FlvData> for LimitOperator {
 
     fn finish(
         &mut self,
+        _context: &Arc<StreamerContext>,
         _output: &mut dyn FnMut(FlvData) -> Result<(), PipelineError>,
     ) -> Result<(), PipelineError> {
         debug!("{} completed.", self.context.name);
@@ -382,13 +387,13 @@ mod tests {
     use crate::test_utils::{self, create_script_tag};
     use bytes::Bytes;
     use flv::tag::{FlvTag, FlvTagType};
-    use pipeline_common::StreamerContext;
+    use pipeline_common::{CancellationToken, StreamerContext};
     use std::sync::atomic::{AtomicUsize, Ordering};
     use std::sync::{Arc, Mutex};
 
     #[test]
     fn test_size_limit_with_keyframe_splitting() {
-        let context = StreamerContext::arc_new();
+        let context = StreamerContext::arc_new(CancellationToken::new());
         let split_counter = Arc::new(AtomicUsize::new(0));
         let split_counter_clone = split_counter.clone();
 
@@ -403,7 +408,7 @@ mod tests {
             })),
         };
 
-        let mut operator = LimitOperator::with_config(context, config);
+        let mut operator = LimitOperator::with_config(context.clone(), config);
         let mut output_items = Vec::new();
 
         // Create a mutable output function
@@ -414,55 +419,62 @@ mod tests {
 
         // Process a header
         operator
-            .process(test_utils::create_test_header(), &mut output_fn)
+            .process(&context, test_utils::create_test_header(), &mut output_fn)
             .unwrap();
 
         // Send tags with increasing size, starting with a keyframe
         operator
             .process(
+                &context,
                 test_utils::create_video_tag_with_size(0, true, 10 * 1024),
                 &mut output_fn,
             )
             .unwrap(); // 10KB keyframe
         operator
             .process(
+                &context,
                 test_utils::create_video_tag_with_size(100, false, 30 * 1024),
                 &mut output_fn,
             )
             .unwrap(); // 30KB P-frame
         operator
             .process(
+                &context,
                 test_utils::create_video_tag_with_size(200, false, 40 * 1024),
                 &mut output_fn,
             )
             .unwrap(); // 40KB P-frame
         operator
             .process(
+                &context,
                 test_utils::create_video_tag_with_size(300, true, 10 * 1024),
                 &mut output_fn,
             )
             .unwrap(); // 10KB keyframe
         operator
             .process(
+                &context,
                 test_utils::create_video_tag_with_size(400, false, 50 * 1024),
                 &mut output_fn,
             )
             .unwrap(); // 50KB P-frame
         operator
             .process(
+                &context,
                 test_utils::create_video_tag_with_size(500, false, 60 * 1024),
                 &mut output_fn,
             )
             .unwrap(); // 60KB P-frame
         operator
             .process(
+                &context,
                 test_utils::create_video_tag_with_size(600, true, 10 * 1024),
                 &mut output_fn,
             )
             .unwrap(); // 10KB keyframe
 
         // Finish processing
-        operator.finish(&mut output_fn).unwrap();
+        operator.finish(&context, &mut output_fn).unwrap();
 
         // Check that splits occurred (should be at least 1 split)
         assert!(
@@ -486,7 +498,7 @@ mod tests {
 
     #[test]
     fn test_duration_limit_with_keyframe_splitting() {
-        let context = StreamerContext::arc_new();
+        let context = StreamerContext::arc_new(CancellationToken::new());
         let split_counter = Arc::new(AtomicUsize::new(0));
         let split_counter_clone = split_counter.clone();
 
@@ -501,7 +513,7 @@ mod tests {
             })),
         };
 
-        let mut operator = LimitOperator::with_config(context, config);
+        let mut operator = LimitOperator::with_config(context.clone(), config);
         let mut output_items = Vec::new();
 
         // Create a mutable output function
@@ -512,40 +524,68 @@ mod tests {
 
         // Process a header
         operator
-            .process(test_utils::create_test_header(), &mut output_fn)
+            .process(&context, test_utils::create_test_header(), &mut output_fn)
             .unwrap();
 
         // Send tags with increasing timestamps
         operator
-            .process(test_utils::create_video_tag(0, true), &mut output_fn)
+            .process(&context, test_utils::create_video_tag(0, true), &mut output_fn)
             .unwrap(); // keyframe at 0ms
         operator
-            .process(test_utils::create_video_tag(100, false), &mut output_fn)
+            .process(
+                &context,
+                test_utils::create_video_tag(100, false),
+                &mut output_fn,
+            )
             .unwrap(); // P-frame at 100ms
         operator
-            .process(test_utils::create_video_tag(200, false), &mut output_fn)
+            .process(
+                &context,
+                test_utils::create_video_tag(200, false),
+                &mut output_fn,
+            )
             .unwrap(); // P-frame at 200ms
         operator
-            .process(test_utils::create_video_tag(400, false), &mut output_fn)
+            .process(
+                &context,
+                test_utils::create_video_tag(400, false),
+                &mut output_fn,
+            )
             .unwrap(); // P-frame at 400ms
         operator
-            .process(test_utils::create_video_tag(600, true), &mut output_fn)
+            .process(&context, test_utils::create_video_tag(600, true), &mut output_fn)
             .unwrap(); // keyframe at 600ms (should cause split)
         operator
-            .process(test_utils::create_video_tag(700, false), &mut output_fn)
+            .process(
+                &context,
+                test_utils::create_video_tag(700, false),
+                &mut output_fn,
+            )
             .unwrap(); // P-frame at 700ms
         operator
-            .process(test_utils::create_video_tag(800, false), &mut output_fn)
+            .process(
+                &context,
+                test_utils::create_video_tag(800, false),
+                &mut output_fn,
+            )
             .unwrap(); // P-frame at 800ms
         operator
-            .process(test_utils::create_video_tag(1000, true), &mut output_fn)
+            .process(
+                &context,
+                test_utils::create_video_tag(1000, true),
+                &mut output_fn,
+            )
             .unwrap(); // keyframe at 1000ms (should cause split)
         operator
-            .process(test_utils::create_video_tag(1100, false), &mut output_fn)
+            .process(
+                &context,
+                test_utils::create_video_tag(1100, false),
+                &mut output_fn,
+            )
             .unwrap(); // P-frame at 1100ms
 
         // Finish processing
-        operator.finish(&mut output_fn).unwrap();
+        operator.finish(&context, &mut output_fn).unwrap();
 
         // Check that splits occurred (should be at least 1 split)
         assert!(
@@ -569,7 +609,7 @@ mod tests {
 
     #[test]
     fn test_no_limits() {
-        let context = StreamerContext::arc_new();
+        let context = StreamerContext::arc_new(CancellationToken::new());
         let split_counter = Arc::new(AtomicUsize::new(0));
         let split_counter_clone = split_counter.clone();
 
@@ -584,7 +624,7 @@ mod tests {
             })),
         };
 
-        let mut operator = LimitOperator::with_config(context, config);
+        let mut operator = LimitOperator::with_config(context.clone(), config);
         let mut output_items = Vec::new();
 
         // Create a mutable output function
@@ -595,7 +635,7 @@ mod tests {
 
         // Process a header
         operator
-            .process(test_utils::create_test_header(), &mut output_fn)
+            .process(&context, test_utils::create_test_header(), &mut output_fn)
             .unwrap();
 
         // Send several tags
@@ -603,6 +643,7 @@ mod tests {
             let is_keyframe = i % 3 == 0;
             operator
                 .process(
+                    &context,
                     test_utils::create_video_tag(i * 100, is_keyframe),
                     &mut output_fn,
                 )
@@ -610,7 +651,7 @@ mod tests {
         }
 
         // Finish processing
-        operator.finish(&mut output_fn).unwrap();
+        operator.finish(&context, &mut output_fn).unwrap();
 
         // No splits should have occurred
         assert_eq!(
@@ -638,7 +679,7 @@ mod tests {
 
     #[test]
     fn test_sequential_splits() {
-        let context = StreamerContext::arc_new();
+        let context = StreamerContext::arc_new(CancellationToken::new());
 
         // Track split count
         let split_count = Arc::new(AtomicUsize::new(0));
@@ -655,7 +696,7 @@ mod tests {
             })),
         };
 
-        let mut operator = LimitOperator::with_config(context, config);
+        let mut operator = LimitOperator::with_config(context.clone(), config);
         let mut output_items = Vec::new();
 
         // Create a mutable output function
@@ -666,19 +707,21 @@ mod tests {
 
         // Send a stream with sequence headers
         operator
-            .process(test_utils::create_test_header(), &mut output_fn)
+            .process(&context, test_utils::create_test_header(), &mut output_fn)
             .unwrap();
         operator
-            .process(create_script_tag(0, false), &mut output_fn)
+            .process(&context, create_script_tag(0, false), &mut output_fn)
             .unwrap();
         operator
             .process(
+                &context,
                 test_utils::create_video_sequence_header(0, 1),
                 &mut output_fn,
             )
             .unwrap();
         operator
             .process(
+                &context,
                 test_utils::create_audio_sequence_header(0, 1),
                 &mut output_fn,
             )
@@ -688,6 +731,7 @@ mod tests {
         for i in 0..3 {
             operator
                 .process(
+                    &context,
                     test_utils::create_video_tag_with_size(i * 50, i % 2 == 0, 200),
                     &mut output_fn,
                 )
@@ -698,6 +742,7 @@ mod tests {
         for i in 0..4 {
             operator
                 .process(
+                    &context,
                     test_utils::create_video_tag_with_size(i * 100 + 300, i % 2 == 0, 50),
                     &mut output_fn,
                 )
@@ -705,7 +750,7 @@ mod tests {
         }
 
         // Finish processing
-        operator.finish(&mut output_fn).unwrap();
+        operator.finish(&context, &mut output_fn).unwrap();
 
         // Check split count
         let final_split_count = split_count_clone.load(Ordering::SeqCst);
@@ -729,7 +774,7 @@ mod tests {
 
     #[test]
     fn test_split_with_interleaved_audio_video() {
-        let context = StreamerContext::arc_new();
+        let context = StreamerContext::arc_new(CancellationToken::new());
 
         // Track split timestamps
         let split_timestamps = Arc::new(Mutex::new(Vec::new()));
@@ -748,7 +793,7 @@ mod tests {
             })),
         };
 
-        let mut operator = LimitOperator::with_config(context, config);
+        let mut operator = LimitOperator::with_config(context.clone(), config);
         let mut output_items = Vec::new();
 
         // Create a mutable output function
@@ -770,19 +815,21 @@ mod tests {
 
         // Send initial headers
         operator
-            .process(test_utils::create_test_header(), &mut output_fn)
+            .process(&context, test_utils::create_test_header(), &mut output_fn)
             .unwrap();
         operator
-            .process(create_script_tag(0, false), &mut output_fn)
+            .process(&context, create_script_tag(0, false), &mut output_fn)
             .unwrap();
         operator
             .process(
+                &context,
                 test_utils::create_video_sequence_header(0, 1),
                 &mut output_fn,
             )
             .unwrap();
         operator
             .process(
+                &context,
                 test_utils::create_audio_sequence_header(0, 1),
                 &mut output_fn,
             )
@@ -791,55 +838,60 @@ mod tests {
         // Interleaved audio and video with keyframes at 0ms and 500ms
         operator
             .process(
+                &context,
                 test_utils::create_video_tag_with_size(0, true, 100),
                 &mut output_fn,
             )
             .unwrap(); // Keyframe
         operator
-            .process(create_audio_tag(50, 20), &mut output_fn)
+            .process(&context, create_audio_tag(50, 20), &mut output_fn)
             .unwrap();
         operator
-            .process(create_audio_tag(100, 20), &mut output_fn)
+            .process(&context, create_audio_tag(100, 20), &mut output_fn)
             .unwrap();
         operator
             .process(
+                &context,
                 test_utils::create_video_tag_with_size(150, false, 100),
                 &mut output_fn,
             )
             .unwrap(); // Non-keyframe
         operator
-            .process(create_audio_tag(200, 20), &mut output_fn)
+            .process(&context, create_audio_tag(200, 20), &mut output_fn)
             .unwrap();
         operator
-            .process(create_audio_tag(250, 20), &mut output_fn)
+            .process(&context, create_audio_tag(250, 20), &mut output_fn)
             .unwrap();
         operator
             .process(
+                &context,
                 test_utils::create_video_tag_with_size(300, false, 100),
                 &mut output_fn,
             )
             .unwrap(); // Non-keyframe
         operator
-            .process(create_audio_tag(350, 20), &mut output_fn)
+            .process(&context, create_audio_tag(350, 20), &mut output_fn)
             .unwrap();
         operator
-            .process(create_audio_tag(400, 20), &mut output_fn)
+            .process(&context, create_audio_tag(400, 20), &mut output_fn)
             .unwrap(); // Should exceed duration limit (400ms)
         operator
             .process(
+                &context,
                 test_utils::create_video_tag_with_size(450, false, 100),
                 &mut output_fn,
             )
             .unwrap(); // Non-keyframe
         operator
             .process(
+                &context,
                 test_utils::create_video_tag_with_size(500, true, 100),
                 &mut output_fn,
             )
             .unwrap(); // Keyframe - split should happen here
 
         // Finish processing
-        operator.finish(&mut output_fn).unwrap();
+        operator.finish(&context, &mut output_fn).unwrap();
 
         // Check that split happened at the keyframe
         let timestamps = split_timestamps.lock().unwrap().clone();
@@ -862,7 +914,7 @@ mod tests {
 
     #[test]
     fn test_empty_stream_no_splits() {
-        let context = StreamerContext::arc_new();
+        let context = StreamerContext::arc_new(CancellationToken::new());
 
         // Track split events
         let split_count = Arc::new(AtomicUsize::new(0));
@@ -879,7 +931,7 @@ mod tests {
             })),
         };
 
-        let mut operator = LimitOperator::with_config(context, config);
+        let mut operator = LimitOperator::with_config(context.clone(), config);
         let mut output_items = Vec::new();
 
         // Create a mutable output function
@@ -890,11 +942,11 @@ mod tests {
 
         // Send just a header with no actual content
         operator
-            .process(test_utils::create_test_header(), &mut output_fn)
+            .process(&context, test_utils::create_test_header(), &mut output_fn)
             .unwrap();
 
         // Finish processing immediately
-        operator.finish(&mut output_fn).unwrap();
+        operator.finish(&context, &mut output_fn).unwrap();
 
         // Verify no splits occurred
         let final_split_count = split_count_clone.load(Ordering::SeqCst);
@@ -913,7 +965,7 @@ mod tests {
 
     #[test]
     fn test_retrospective_splitting() {
-        let context = StreamerContext::arc_new();
+        let context = StreamerContext::arc_new(CancellationToken::new());
 
         // Track split information
         let split_timestamps = Arc::new(Mutex::new(Vec::new()));
@@ -933,7 +985,7 @@ mod tests {
             })),
         };
 
-        let mut operator = LimitOperator::with_config(context, config);
+        let mut operator = LimitOperator::with_config(context.clone(), config);
         let mut output_items = Vec::new();
 
         // Create a mutable output function
@@ -944,24 +996,27 @@ mod tests {
 
         // Process a header
         operator
-            .process(test_utils::create_test_header(), &mut output_fn)
+            .process(&context, test_utils::create_test_header(), &mut output_fn)
             .unwrap();
 
         // Send a sequence with a keyframe followed by normal frames
         operator
             .process(
+                &context,
                 test_utils::create_video_tag_with_size(0, true, 200),
                 &mut output_fn,
             )
             .unwrap(); // Keyframe
         operator
             .process(
+                &context,
                 test_utils::create_video_tag_with_size(100, false, 100),
                 &mut output_fn,
             )
             .unwrap();
         operator
             .process(
+                &context,
                 test_utils::create_video_tag_with_size(200, false, 100),
                 &mut output_fn,
             )
@@ -970,12 +1025,14 @@ mod tests {
         // Send more non-keyframes to exceed the size limit
         operator
             .process(
+                &context,
                 test_utils::create_video_tag_with_size(300, false, 200),
                 &mut output_fn,
             )
             .unwrap(); // This should trigger size limit
         operator
             .process(
+                &context,
                 test_utils::create_video_tag_with_size(400, false, 100),
                 &mut output_fn,
             )
@@ -984,13 +1041,14 @@ mod tests {
         // Now send a keyframe - this is where the split should happen
         operator
             .process(
+                &context,
                 test_utils::create_video_tag_with_size(500, true, 100),
                 &mut output_fn,
             )
             .unwrap();
 
         // Finish processing
-        operator.finish(&mut output_fn).unwrap();
+        operator.finish(&context, &mut output_fn).unwrap();
 
         // Check that a split occurred
         let split_timestamps = split_timestamps_clone.lock().unwrap().clone();
@@ -1009,7 +1067,7 @@ mod tests {
     }
     #[test]
     fn test_audio_only_size_limit_split() {
-        let context = StreamerContext::arc_new();
+        let context = StreamerContext::arc_new(CancellationToken::new());
         let split_counter = Arc::new(AtomicUsize::new(0));
         let split_counter_clone = split_counter.clone();
 
@@ -1024,7 +1082,7 @@ mod tests {
             })),
         };
 
-        let mut operator = LimitOperator::with_config(context, config);
+        let mut operator = LimitOperator::with_config(context.clone(), config);
         let mut output_items = Vec::new();
 
         let mut output_fn = |item: FlvData| -> Result<(), PipelineError> {
@@ -1046,12 +1104,13 @@ mod tests {
         // Process an audio-only header
         let header = FlvHeader::new(true, false);
         operator
-            .process(FlvData::Header(header), &mut output_fn)
+            .process(&context, FlvData::Header(header), &mut output_fn)
             .unwrap();
 
         // Send audio sequence header
         operator
             .process(
+                &context,
                 test_utils::create_audio_sequence_header(0, 1),
                 &mut output_fn,
             )
@@ -1059,16 +1118,16 @@ mod tests {
 
         // Send audio tags to exceed size limit
         operator
-            .process(create_audio_tag(0, 500), &mut output_fn)
+            .process(&context, create_audio_tag(0, 500), &mut output_fn)
             .unwrap();
         operator
-            .process(create_audio_tag(100, 500), &mut output_fn)
+            .process(&context, create_audio_tag(100, 500), &mut output_fn)
             .unwrap();
         operator
-            .process(create_audio_tag(200, 500), &mut output_fn)
+            .process(&context, create_audio_tag(200, 500), &mut output_fn)
             .unwrap(); // Should split after this tag
 
-        operator.finish(&mut output_fn).unwrap();
+        operator.finish(&context, &mut output_fn).unwrap();
 
         assert_eq!(
             split_counter_clone.load(Ordering::SeqCst),

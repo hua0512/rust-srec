@@ -3,6 +3,7 @@ use crate::{
     flv::{FlvDownloader, FlvProtocolConfig},
     hls::{HlsConfig, HlsDownloader},
 };
+use tokio_util::sync::CancellationToken;
 use url::Url;
 
 /// Protocol type enumeration
@@ -17,7 +18,7 @@ pub enum ProtocolType {
 }
 
 /// Mesio downloader factory for creating appropriate download managers
-#[derive(Debug, Default)]
+#[derive(Debug)]
 pub struct MesioDownloaderFactory {
     /// Base download manager configuration
     download_config: DownloadManagerConfig,
@@ -25,12 +26,19 @@ pub struct MesioDownloaderFactory {
     flv_config: FlvProtocolConfig,
     /// HLS protocol configuration
     hls_config: HlsConfig,
+    /// Cancellation token
+    token: CancellationToken,
 }
 
 impl MesioDownloaderFactory {
     /// Create a new mesio downloader factory with default settings
     pub fn new() -> Self {
-        Self::default()
+        Self {
+            download_config: DownloadManagerConfig::default(),
+            flv_config: FlvProtocolConfig::default(),
+            hls_config: HlsConfig::default(),
+            token: CancellationToken::new(),
+        }
     }
 
     /// Set download manager configuration
@@ -48,6 +56,12 @@ impl MesioDownloaderFactory {
     /// Set HLS protocol configuration
     pub fn with_hls_config(mut self, config: HlsConfig) -> Self {
         self.hls_config = config;
+        self
+    }
+
+    /// Set cancellation token
+    pub fn with_token(mut self, token: CancellationToken) -> Self {
+        self.token = token;
         self
     }
 
@@ -104,14 +118,22 @@ impl MesioDownloaderFactory {
         match protocol {
             ProtocolType::Flv => {
                 let flv = FlvDownloader::with_config(self.flv_config.clone())?;
-                let manager =
-                    DownloadManager::with_config(flv, self.download_config.clone()).await?;
+                let manager = DownloadManager::with_config(
+                    flv,
+                    self.download_config.clone(),
+                    self.token.clone(),
+                )
+                .await?;
                 Ok(DownloaderInstance::Flv(Box::new(manager)))
             }
             ProtocolType::Hls => {
                 let hls = HlsDownloader::with_config(self.hls_config.clone())?;
-                let manager =
-                    DownloadManager::with_config(hls, self.download_config.clone()).await?;
+                let manager = DownloadManager::with_config(
+                    hls,
+                    self.download_config.clone(),
+                    self.token.clone(),
+                )
+                .await?;
                 Ok(DownloaderInstance::Hls(Box::new(manager)))
             }
             ProtocolType::Auto => unreachable!(),
@@ -123,7 +145,8 @@ impl MesioDownloaderFactory {
         &self,
     ) -> Result<DownloadManager<FlvDownloader>, DownloadError> {
         let protocol = FlvDownloader::with_config(self.flv_config.clone())?;
-        DownloadManager::with_config(protocol, self.download_config.clone()).await
+        DownloadManager::with_config(protocol, self.download_config.clone(), self.token.clone())
+            .await
     }
 
     /// Create a download manager for HLS protocol (direct method for when type is known)
@@ -131,7 +154,8 @@ impl MesioDownloaderFactory {
         &self,
     ) -> Result<DownloadManager<HlsDownloader>, DownloadError> {
         let protocol = HlsDownloader::with_config(self.hls_config.clone())?;
-        DownloadManager::with_config(protocol, self.download_config.clone()).await
+        DownloadManager::with_config(protocol, self.download_config.clone(), self.token.clone())
+            .await
     }
 }
 

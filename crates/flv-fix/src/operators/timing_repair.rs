@@ -520,9 +520,13 @@ impl Processor<FlvData> for TimingRepairOperator {
     /// Process method that receives FLV data, corrects timing issues, and forwards the data
     fn process(
         &mut self,
+        context: &Arc<StreamerContext>,
         input: FlvData,
         output: &mut dyn FnMut(FlvData) -> Result<(), PipelineError>,
     ) -> Result<(), PipelineError> {
+        if context.token.is_cancelled() {
+            return Err(PipelineError::Cancelled);
+        }
         match input {
             FlvData::Header(header) => {
                 // Reset state when encountering a header
@@ -633,8 +637,12 @@ impl Processor<FlvData> for TimingRepairOperator {
 
     fn finish(
         &mut self,
+        context: &Arc<StreamerContext>,
         output: &mut dyn FnMut(FlvData) -> Result<(), PipelineError>,
     ) -> Result<(), PipelineError> {
+        if context.token.is_cancelled() {
+            return Err(PipelineError::Cancelled);
+        }
         let _ = output;
         // Finalize processing and log statistics
         info!(
@@ -655,7 +663,7 @@ impl Processor<FlvData> for TimingRepairOperator {
 
 #[cfg(test)]
 mod tests {
-    use pipeline_common::StreamerContext;
+    use pipeline_common::{CancellationToken, StreamerContext};
 
     use super::*;
     use crate::test_utils::{
@@ -667,8 +675,8 @@ mod tests {
         config: TimingRepairConfig,
         input_tags: Vec<FlvData>,
     ) -> Vec<FlvData> {
-        let context = StreamerContext::arc_new();
-        let mut operator = TimingRepairOperator::new(context, config);
+        let context = StreamerContext::arc_new(CancellationToken::new());
+        let mut operator = TimingRepairOperator::new(context.clone(), config);
 
         // Collect results in a vector
         let mut results = Vec::new();
@@ -681,7 +689,7 @@ mod tests {
             };
 
             // Process the tag
-            operator.process(tag, &mut output_fn).unwrap();
+            operator.process(&context, tag, &mut output_fn).unwrap();
         }
 
         // Finish processing
@@ -689,7 +697,7 @@ mod tests {
             results.push(item);
             Ok(())
         };
-        operator.finish(&mut finish_output).unwrap();
+        operator.finish(&context, &mut finish_output).unwrap();
 
         results
     }

@@ -1,5 +1,5 @@
-use criterion::{Criterion, criterion_group, criterion_main};
-use pipeline_common::{Pipeline, PipelineError, Processor};
+use criterion::{criterion_group, criterion_main, Criterion};
+use pipeline_common::{Pipeline, PipelineError, Processor, StreamerContext};
 use std::sync::Arc;
 
 // A simple processor that increments a counter.
@@ -9,6 +9,7 @@ struct CounterProcessor;
 impl Processor<u32> for CounterProcessor {
     fn process(
         &mut self,
+        _context: &Arc<StreamerContext>,
         data: u32,
         output: &mut dyn FnMut(u32) -> Result<(), PipelineError>,
     ) -> Result<(), PipelineError> {
@@ -17,6 +18,7 @@ impl Processor<u32> for CounterProcessor {
 
     fn finish(
         &mut self,
+        _context: &Arc<StreamerContext>,
         _output: &mut dyn FnMut(u32) -> Result<(), PipelineError>,
     ) -> Result<(), PipelineError> {
         Ok(())
@@ -44,24 +46,25 @@ impl<T: Clone> RecursivePipeline<T> {
         self
     }
 
-    fn process(&mut self, data: T) -> Result<Vec<T>, PipelineError> {
+    fn process(&mut self, context: &Arc<StreamerContext>, data: T) -> Result<Vec<T>, PipelineError> {
         fn process_recursive<T: Clone>(
             processors: &mut [Box<dyn Processor<T>>],
+            context: &Arc<StreamerContext>,
             data: T,
         ) -> Result<Vec<T>, PipelineError> {
             if let Some((processor, rest)) = processors.split_first_mut() {
                 let mut results = Vec::new();
                 let mut output_fn = |d: T| {
-                    results.extend(process_recursive(rest, d.clone())?);
+                    results.extend(process_recursive(rest, context, d.clone())?);
                     Ok(())
                 };
-                processor.process(data, &mut output_fn)?;
+                processor.process(context, data, &mut output_fn)?;
                 Ok(results)
             } else {
                 Ok(vec![data])
             }
         }
-        process_recursive(&mut self.processors, data)
+        process_recursive(&mut self.processors, context, data)
     }
 }
 
@@ -100,7 +103,7 @@ fn pipeline_benchmark(c: &mut Criterion) {
                             }
                         };
                         pipeline
-                            .process(std::hint::black_box(vec![Ok(0)].into_iter()), &mut output)
+                            .run(std::hint::black_box(vec![Ok(0)].into_iter()), &mut output)
                             .unwrap();
                         assert_eq!(result, num_processors as u32);
                     },
@@ -113,9 +116,16 @@ fn pipeline_benchmark(c: &mut Criterion) {
             count,
             |b, &num_processors| {
                 b.iter_with_setup(
-                    || build_recursive_pipeline(num_processors),
-                    |mut pipeline| {
-                        let result = pipeline.process(std::hint::black_box(0)).unwrap();
+                    || {
+                        (
+                            build_recursive_pipeline(num_processors),
+                            Arc::new(StreamerContext::default()),
+                        )
+                    },
+                    |(mut pipeline, context)| {
+                        let result = pipeline
+                            .process(&context, std::hint::black_box(0))
+                            .unwrap();
                         assert_eq!(result, vec![num_processors as u32]);
                     },
                 )

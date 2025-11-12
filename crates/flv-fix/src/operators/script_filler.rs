@@ -237,9 +237,13 @@ impl ScriptKeyframesFillerOperator {
 impl Processor<FlvData> for ScriptKeyframesFillerOperator {
     fn process(
         &mut self,
+        context: &Arc<StreamerContext>,
         input: FlvData,
         output: &mut dyn FnMut(FlvData) -> Result<(), PipelineError>,
     ) -> Result<(), PipelineError> {
+        if context.token.is_cancelled() {
+            return Err(PipelineError::Cancelled);
+        }
         match input {
             FlvData::Header(header) => {
                 debug!("{} Received Header. Forwarding.", self.context.name);
@@ -278,6 +282,7 @@ impl Processor<FlvData> for ScriptKeyframesFillerOperator {
 
     fn finish(
         &mut self,
+        _context: &Arc<StreamerContext>,
         _output: &mut dyn FnMut(FlvData) -> Result<(), PipelineError>,
     ) -> Result<(), PipelineError> {
         info!(
@@ -299,8 +304,7 @@ mod tests {
     use amf0::Amf0Value;
     use bytes::Bytes;
     use flv::{header::FlvHeader, tag::FlvTagType};
-    use pipeline_common::StreamerContext;
-    use pipeline_common::init_test_tracing;
+    use pipeline_common::{init_test_tracing, CancellationToken, StreamerContext};
 
     use std::collections::HashMap;
 
@@ -340,7 +344,7 @@ mod tests {
     #[test]
     fn test_add_keyframes_to_amf() {
         init_test_tracing!();
-        let context = StreamerContext::arc_new();
+        let context = StreamerContext::arc_new(CancellationToken::new());
         let config = ScriptFillerConfig::default();
         let operator = ScriptKeyframesFillerOperator::new(context, config);
 
@@ -386,9 +390,9 @@ mod tests {
     #[test]
     fn test_process_flow() {
         init_test_tracing!();
-        let context = StreamerContext::arc_new();
+        let context = StreamerContext::arc_new(CancellationToken::new());
         let config = ScriptFillerConfig::default();
-        let mut operator = ScriptKeyframesFillerOperator::new(context, config);
+        let mut operator = ScriptKeyframesFillerOperator::new(context.clone(), config);
         let mut output_items = Vec::new();
 
         // Create a mutable output function
@@ -399,21 +403,29 @@ mod tests {
 
         // Send header
         operator
-            .process(FlvData::Header(FlvHeader::new(true, true)), &mut output_fn)
+            .process(
+                &context,
+                FlvData::Header(FlvHeader::new(true, true)),
+                &mut output_fn,
+            )
             .unwrap();
 
         // Send script tag
         let script_tag = create_script_tag(0, false);
-        operator.process(script_tag, &mut output_fn).unwrap();
+        operator.process(&context, script_tag, &mut output_fn).unwrap();
 
         // Send video tag
         let video_tag = test_utils::create_video_tag(10, true);
         let video_tag_clone = video_tag.clone();
-        operator.process(video_tag, &mut output_fn).unwrap();
+        operator
+            .process(&context, video_tag, &mut output_fn)
+            .unwrap();
 
         // Send another script tag (should be forwarded without modification)
         let second_script_tag = create_script_tag(0, false);
-        operator.process(second_script_tag, &mut output_fn).unwrap();
+        operator
+            .process(&context, second_script_tag, &mut output_fn)
+            .unwrap();
 
         // Check outputs
         assert_eq!(output_items.len(), 4, "Should have 4 items in output");
@@ -467,9 +479,9 @@ mod tests {
     #[test]
     fn test_malformed_script_data() {
         init_test_tracing!();
-        let context = StreamerContext::arc_new();
+        let context = StreamerContext::arc_new(CancellationToken::new());
         let config = ScriptFillerConfig::default();
-        let mut operator = ScriptKeyframesFillerOperator::new(context, config);
+        let mut operator = ScriptKeyframesFillerOperator::new(context.clone(), config);
         let mut output_items = Vec::new();
 
         // Create a mutable output function
@@ -480,7 +492,11 @@ mod tests {
 
         // Send header
         operator
-            .process(FlvData::Header(FlvHeader::new(true, true)), &mut output_fn)
+            .process(
+                &context,
+                FlvData::Header(FlvHeader::new(true, true)),
+                &mut output_fn,
+            )
             .unwrap();
 
         // Create a malformed script tag with invalid AMF data
@@ -495,7 +511,7 @@ mod tests {
 
         // Process should handle malformed data and create a fallback
         operator
-            .process(FlvData::Tag(invalid_script_tag), &mut output_fn)
+            .process(&context, FlvData::Tag(invalid_script_tag), &mut output_fn)
             .unwrap();
 
         // Check that we got a valid script tag back

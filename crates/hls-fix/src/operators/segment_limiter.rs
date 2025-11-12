@@ -1,6 +1,7 @@
 use bytes::Bytes;
 use hls::{HlsData, M4sData, M4sInitSegmentData, SegmentType};
-use pipeline_common::{PipelineError, Processor};
+use pipeline_common::{PipelineError, Processor, StreamerContext};
+use std::sync::Arc;
 use std::time::Duration;
 use tracing::debug;
 
@@ -86,9 +87,13 @@ impl SegmentLimiterOperator {
 impl Processor<HlsData> for SegmentLimiterOperator {
     fn process(
         &mut self,
+        context: &Arc<StreamerContext>,
         input: HlsData,
         output: &mut dyn FnMut(HlsData) -> Result<(), PipelineError>,
     ) -> Result<(), PipelineError> {
+        if context.token.is_cancelled() {
+            return Err(PipelineError::Cancelled);
+        }
         match input.segment_type() {
             SegmentType::Ts => {
                 if let HlsData::TsData(ts_data) = input {
@@ -148,6 +153,7 @@ impl Processor<HlsData> for SegmentLimiterOperator {
 
     fn finish(
         &mut self,
+        _context: &Arc<StreamerContext>,
         _output: &mut dyn FnMut(HlsData) -> Result<(), PipelineError>,
     ) -> Result<(), PipelineError> {
         Ok(())

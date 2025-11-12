@@ -15,6 +15,7 @@ crc32fast = "1.4.2"
 time = { version = "0.3.44", features = ["macros", "formatting", "parsing"] }
 tracing = "0.1.41"
 thiserror = "2.0.17"
+tokio = { version = "1.48.0", features = ["rt", "macros"] }
 
 [dev-dependencies]
 tracing-subscriber = "0.3"

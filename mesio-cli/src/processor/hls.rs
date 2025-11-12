@@ -1,9 +1,10 @@
-use crate::error::AppError;
-use crate::processor::generic::process_stream;
-use crate::utils::expand_name_url;
-use crate::{config::ProgramConfig, utils::create_dirs};
-use futures::{StreamExt, stream};
+use crate::{
+    config::ProgramConfig, error::AppError, processor::generic::process_stream,
+    utils::create_dirs, utils::expand_name_url,
+};
+use futures::{stream, StreamExt};
 use hls::HlsData;
+use pipeline_common::CancellationToken;
 use hls_fix::{HlsPipeline, HlsWriter};
 use mesio_engine::{DownloadError, DownloaderInstance};
 use pipeline_common::{PipelineError, ProtocolWriter, progress::ProgressEvent};
@@ -19,6 +20,7 @@ pub async fn process_hls_stream(
     name_template: &str,
     on_progress: Option<Arc<dyn Fn(ProgressEvent) + Send + Sync + 'static>>,
     downloader: &mut DownloaderInstance,
+    token: &CancellationToken,
 ) -> Result<u64, AppError> {
     // Create output directory if it doesn't exist
     create_dirs(output_dir).await?;
@@ -93,6 +95,7 @@ pub async fn process_hls_stream(
                 None,
             )
         },
+        token.clone(),
     )
     .await?;
 

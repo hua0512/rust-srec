@@ -123,9 +123,13 @@ impl SplitOperator {
 impl Processor<FlvData> for SplitOperator {
     fn process(
         &mut self,
+        context: &Arc<StreamerContext>,
         input: FlvData,
         output: &mut dyn FnMut(FlvData) -> Result<(), PipelineError>,
     ) -> Result<(), PipelineError> {
+        if context.token.is_cancelled() {
+            return Err(PipelineError::Cancelled);
+        }
         match &input {
             FlvData::Header(header) => {
                 // Reset state when a new header is encountered
@@ -187,6 +191,7 @@ impl Processor<FlvData> for SplitOperator {
 
     fn finish(
         &mut self,
+        _context: &Arc<StreamerContext>,
         _output: &mut dyn FnMut(FlvData) -> Result<(), PipelineError>,
     ) -> Result<(), PipelineError> {
         debug!("{} completed.", self.context.name);
@@ -201,7 +206,7 @@ impl Processor<FlvData> for SplitOperator {
 
 #[cfg(test)]
 mod tests {
-    use pipeline_common::StreamerContext;
+    use pipeline_common::{CancellationToken, StreamerContext};
 
     use super::*;
     use crate::test_utils::{
@@ -211,8 +216,8 @@ mod tests {
 
     #[test]
     fn test_video_codec_change_detection() {
-        let context = StreamerContext::arc_new();
-        let mut operator = SplitOperator::new(context);
+        let context = StreamerContext::arc_new(CancellationToken::new());
+        let mut operator = SplitOperator::new(context.clone());
         let mut output_items = Vec::new();
 
         // Create a mutable output function
@@ -223,28 +228,36 @@ mod tests {
 
         // Add a header and first video sequence header (version 1)
         operator
-            .process(create_test_header(), &mut output_fn)
+            .process(&context, create_test_header(), &mut output_fn)
             .unwrap();
         operator
-            .process(create_video_sequence_header(0, 1), &mut output_fn)
+            .process(&context, create_video_sequence_header(0, 1), &mut output_fn)
             .unwrap();
 
         // Add some content tags
         for i in 1..5 {
             operator
-                .process(create_video_tag(i * 100, i % 3 == 0), &mut output_fn)
+                .process(
+                    &context,
+                    create_video_tag(i * 100, i % 3 == 0),
+                    &mut output_fn,
+                )
                 .unwrap();
         }
 
         // Add a different video sequence header (version 2) - should trigger a split
         operator
-            .process(create_video_sequence_header(0, 2), &mut output_fn)
+            .process(&context, create_video_sequence_header(0, 2), &mut output_fn)
             .unwrap();
 
         // Add more content tags
         for i in 5..10 {
             operator
-                .process(create_video_tag(i * 100, i % 3 == 0), &mut output_fn)
+                .process(
+                    &context,
+                    create_video_tag(i * 100, i % 3 == 0),
+                    &mut output_fn,
+                )
                 .unwrap();
         }
 
@@ -263,8 +276,8 @@ mod tests {
 
     #[test]
     fn test_audio_codec_change_detection() {
-        let context = StreamerContext::arc_new();
-        let mut operator = SplitOperator::new(context);
+        let context = StreamerContext::arc_new(CancellationToken::new());
+        let mut operator = SplitOperator::new(context.clone());
         let mut output_items = Vec::new();
 
         // Create a mutable output function
@@ -275,28 +288,28 @@ mod tests {
 
         // Add a header and first audio sequence header
         operator
-            .process(create_test_header(), &mut output_fn)
+            .process(&context, create_test_header(), &mut output_fn)
             .unwrap();
         operator
-            .process(create_audio_sequence_header(0, 1), &mut output_fn)
+            .process(&context, create_audio_sequence_header(0, 1), &mut output_fn)
             .unwrap();
 
         // Add some content tags
         for i in 1..5 {
             operator
-                .process(create_audio_tag(i * 100), &mut output_fn)
+                .process(&context, create_audio_tag(i * 100), &mut output_fn)
                 .unwrap();
         }
 
         // Add a different audio sequence header - should trigger a split
         operator
-            .process(create_audio_sequence_header(0, 2), &mut output_fn)
+            .process(&context, create_audio_sequence_header(0, 2), &mut output_fn)
             .unwrap();
 
         // Add more content tags
         for i in 5..10 {
             operator
-                .process(create_audio_tag(i * 100), &mut output_fn)
+                .process(&context, create_audio_tag(i * 100), &mut output_fn)
                 .unwrap();
         }
 
@@ -315,8 +328,8 @@ mod tests {
 
     #[test]
     fn test_no_codec_change() {
-        let context = StreamerContext::arc_new();
-        let mut operator = SplitOperator::new(context);
+        let context = StreamerContext::arc_new(CancellationToken::new());
+        let mut operator = SplitOperator::new(context.clone());
         let mut output_items = Vec::new();
 
         // Create a mutable output function
@@ -327,40 +340,48 @@ mod tests {
 
         // Add a header and codec headers
         operator
-            .process(create_test_header(), &mut output_fn)
+            .process(&context, create_test_header(), &mut output_fn)
             .unwrap();
         operator
-            .process(create_video_sequence_header(0, 1), &mut output_fn)
+            .process(&context, create_video_sequence_header(0, 1), &mut output_fn)
             .unwrap();
         operator
-            .process(create_audio_sequence_header(0, 1), &mut output_fn)
+            .process(&context, create_audio_sequence_header(0, 1), &mut output_fn)
             .unwrap();
 
         // Add some content tags
         for i in 1..5 {
             operator
-                .process(create_video_tag(i * 100, i % 3 == 0), &mut output_fn)
+                .process(
+                    &context,
+                    create_video_tag(i * 100, i % 3 == 0),
+                    &mut output_fn,
+                )
                 .unwrap();
             operator
-                .process(create_audio_tag(i * 100), &mut output_fn)
+                .process(&context, create_audio_tag(i * 100), &mut output_fn)
                 .unwrap();
         }
 
         // Add identical codec headers again - should NOT trigger a split
         operator
-            .process(create_video_sequence_header(0, 1), &mut output_fn)
+            .process(&context, create_video_sequence_header(0, 1), &mut output_fn)
             .unwrap();
         operator
-            .process(create_audio_sequence_header(0, 1), &mut output_fn)
+            .process(&context, create_audio_sequence_header(0, 1), &mut output_fn)
             .unwrap();
 
         // Add more content tags
         for i in 5..10 {
             operator
-                .process(create_video_tag(i * 100, i % 3 == 0), &mut output_fn)
+                .process(
+                    &context,
+                    create_video_tag(i * 100, i % 3 == 0),
+                    &mut output_fn,
+                )
                 .unwrap();
             operator
-                .process(create_audio_tag(i * 100), &mut output_fn)
+                .process(&context, create_audio_tag(i * 100), &mut output_fn)
                 .unwrap();
         }
 
@@ -379,8 +400,8 @@ mod tests {
 
     #[test]
     fn test_multiple_codec_changes() {
-        let context = StreamerContext::arc_new();
-        let mut operator = SplitOperator::new(context);
+        let context = StreamerContext::arc_new(CancellationToken::new());
+        let mut operator = SplitOperator::new(context.clone());
         let mut output_items = Vec::new();
 
         // Create a mutable output function
@@ -391,43 +412,43 @@ mod tests {
 
         // First segment
         operator
-            .process(create_test_header(), &mut output_fn)
+            .process(&context, create_test_header(), &mut output_fn)
             .unwrap();
         operator
-            .process(create_video_sequence_header(0, 1), &mut output_fn)
+            .process(&context, create_video_sequence_header(0, 1), &mut output_fn)
             .unwrap();
         operator
-            .process(create_audio_sequence_header(0, 1), &mut output_fn)
+            .process(&context, create_audio_sequence_header(0, 1), &mut output_fn)
             .unwrap();
         operator
-            .process(create_video_tag(100, true), &mut output_fn)
+            .process(&context, create_video_tag(100, true), &mut output_fn)
             .unwrap();
 
         // Second segment (video codec change)
         operator
-            .process(create_video_sequence_header(0, 2), &mut output_fn)
+            .process(&context, create_video_sequence_header(0, 2), &mut output_fn)
             .unwrap();
         operator
-            .process(create_video_tag(200, true), &mut output_fn)
+            .process(&context, create_video_tag(200, true), &mut output_fn)
             .unwrap();
 
         // Third segment (audio codec change)
         operator
-            .process(create_audio_sequence_header(0, 2), &mut output_fn)
+            .process(&context, create_audio_sequence_header(0, 2), &mut output_fn)
             .unwrap();
         operator
-            .process(create_audio_tag(300), &mut output_fn)
+            .process(&context, create_audio_tag(300), &mut output_fn)
             .unwrap();
 
         // Fourth segment (both codecs change)
         operator
-            .process(create_video_sequence_header(0, 3), &mut output_fn)
+            .process(&context, create_video_sequence_header(0, 3), &mut output_fn)
             .unwrap();
         operator
-            .process(create_audio_sequence_header(0, 3), &mut output_fn)
+            .process(&context, create_audio_sequence_header(0, 3), &mut output_fn)
             .unwrap();
         operator
-            .process(create_video_tag(400, true), &mut output_fn)
+            .process(&context, create_video_tag(400, true), &mut output_fn)
             .unwrap();
 
         // The header count indicates how many segments we have

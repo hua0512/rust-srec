@@ -7,7 +7,9 @@
 use bytes::Bytes;
 use flv::{data::FlvData, parser_async::FlvDecoderStream};
 use futures::StreamExt;
-use humansize::{BINARY, format_size};
+use humansize::{format_size, BINARY};
+use tokio::sync::mpsc;
+use tokio_stream::wrappers::ReceiverStream;
 use reqwest::{Client, Response, StatusCode, Url};
 use std::sync::Arc;
 use std::time::Instant;
@@ -17,12 +19,13 @@ use super::error::FlvDownloadError;
 use super::flv_config::FlvProtocolConfig;
 use crate::bytes_stream::BytesStreamReader;
 use crate::{
-    DownloadError,
     cache::{CacheKey, CacheManager, CacheMetadata, CacheResourceType, CacheStatus},
     downloader::create_client,
     media_protocol::BoxMediaStream,
     source::{ContentSource, SourceManager},
+    DownloadError,
 };
+use tokio_util::sync::CancellationToken;
 
 // Import new capability-based traits
 use crate::{Cacheable, Download, MultiSource, ProtocolBase, RawDownload, RawResumable, Resumable};
@@ -50,11 +53,12 @@ impl FlvDownloader {
     pub(crate) async fn download_flv(
         &self,
         url_str: &str,
+        token: CancellationToken,
     ) -> Result<BoxMediaStream<FlvData, FlvDownloadError>, DownloadError> {
         let url = url_str
             .parse::<Url>()
             .map_err(|_| DownloadError::UrlError(url_str.to_string()))?;
-        self.download_url(url).await
+        self.download_url(url, token).await
     }
 
     /// Download a stream from a URL string and return a raw byte stream without parsing
@@ -62,16 +66,17 @@ impl FlvDownloader {
     pub(crate) async fn download_raw(
         &self,
         url_str: &str,
+        token: CancellationToken,
     ) -> Result<BoxMediaStream<Bytes, FlvDownloadError>, DownloadError> {
         let url = url_str
             .parse::<Url>()
             .map_err(|e| DownloadError::UrlError(format!("{url_str}: {e}")))?;
-        self.download_url_raw(url).await
+        self.download_url_raw(url, token).await
     }
 
     /// Core method to start a download request and return the response
     async fn start_download_request(&self, url: &Url) -> Result<Response, DownloadError> {
-        info!(url = %url, "Starting download request");
+        info!(url = %url, "Starting FLV download request");
         let response = self
             .client
             .get(url.clone())
@@ -89,10 +94,10 @@ impl FlvDownloader {
             info!(
                 url = %url,
                 size = %format_size(content_length, BINARY),
-                "Download size information available"
+                "FLV download started"
             );
         } else {
-            debug!(url = %url, "Content length not available");
+            debug!(url = %url, "FLV content length not available");
         }
 
         Ok(response)
@@ -125,14 +130,47 @@ impl FlvDownloader {
     pub(crate) async fn download_url(
         &self,
         url: Url,
+        token: CancellationToken,
     ) -> Result<BoxMediaStream<FlvData, FlvDownloadError>, DownloadError> {
-        info!(url = %url, "Starting FLV download");
 
-        let response = self.start_download_request(&url).await?;
-        let bytes_stream = response.bytes_stream();
-        let reader = BytesStreamReader::new(bytes_stream);
+        tokio::select! {
+            _ = token.cancelled() => {
+                info!(url = %url, "Download cancelled");
+                return Err(DownloadError::Cancelled);
+            }
+            response = self.start_download_request(&url) => {
+                let response = response?;
+                let mut byte_stream = response.bytes_stream();
 
-        Ok(self.create_decoder_stream(reader))
+                let (tx, rx) = mpsc::channel(2);
+
+                let stream_token = token.clone();
+                tokio::spawn(async move {
+                    loop {
+                        tokio::select! {
+                            _ = stream_token.cancelled() => {
+                                debug!("FLV download stream cancelled");
+                                break;
+                            }
+                            data = byte_stream.next() => {
+                                match data {
+                                    Some(item) => {
+                                        if tx.send(item).await.is_err() {
+                                            break;
+                                        }
+                                    }
+                                    None => break,
+                                }
+                            }
+                        }
+                    }
+                });
+
+                let stream = ReceiverStream::new(rx);
+                let reader = BytesStreamReader::new(stream.boxed());
+                Ok(self.create_decoder_stream(reader))
+            }
+        }
     }
 
     /// Download a stream from a URL and return a raw byte stream without parsing
@@ -140,20 +178,49 @@ impl FlvDownloader {
     pub(crate) async fn download_url_raw(
         &self,
         url: Url,
+        token: CancellationToken,
     ) -> Result<BoxMediaStream<Bytes, FlvDownloadError>, DownloadError> {
         info!(url = %url, "Starting raw download");
 
-        let response = self.start_download_request(&url).await?;
+        tokio::select! {
+            _ = token.cancelled() => {
+                info!(url = %url, "Download cancelled");
+                return Err(DownloadError::Cancelled);
+            }
+            response = self.start_download_request(&url) => {
+                let response = response?;
+                let mut byte_stream = response.bytes_stream();
+                let (tx, rx) = mpsc::channel(2);
 
-        // Transform the reqwest bytes stream into our raw byte stream
-        let raw_stream = response
-            .bytes_stream()
-            .map(|result| {
-                result.map_err(|e| FlvDownloadError::Download(DownloadError::HttpError(e)))
-            })
-            .boxed();
+                let stream_token = token.clone();
+                tokio::spawn(async move {
+                    loop {
+                        tokio::select! {
+                            _ = stream_token.cancelled() => {
+                                debug!("Raw download stream cancelled");
+                                break;
+                            }
+                            data = byte_stream.next() => {
+                                match data {
+                                    Some(Ok(bytes)) => {
+                                        if tx.send(Ok(bytes)).await.is_err() {
+                                            break;
+                                        }
+                                    }
+                                    Some(Err(e)) => {
+                                        let _ = tx.send(Err(FlvDownloadError::Download(DownloadError::HttpError(e)))).await;
+                                        break;
+                                    }
+                                    None => break,
+                                }
+                            }
+                        }
+                    }
+                });
 
-        Ok(raw_stream)
+                Ok(ReceiverStream::new(rx).boxed())
+            }
+        }
     }
 
     /// Try to validate cached content using conditional requests
@@ -193,6 +260,7 @@ impl FlvDownloader {
         &self,
         url_str: &str,
         cache_manager: Arc<CacheManager>,
+        token: CancellationToken,
     ) -> Result<BoxMediaStream<FlvData, FlvDownloadError>, DownloadError> {
         // Validate URL
         let url = url_str
@@ -285,10 +353,11 @@ impl FlvDownloader {
         &self,
         source: &ContentSource,
         source_manager: &mut SourceManager,
+        token: CancellationToken,
     ) -> Result<BoxMediaStream<FlvData, FlvDownloadError>, DownloadError> {
         let start_time = Instant::now();
 
-        match self.download_flv(&source.url).await {
+        match self.download_flv(&source.url, token).await {
             Ok(stream) => {
                 // Record success for this source
                 let elapsed = start_time.elapsed();
@@ -316,6 +385,7 @@ impl FlvDownloader {
         &self,
         url_str: &str,
         range: (u64, Option<u64>),
+        token: CancellationToken,
     ) -> Result<BoxMediaStream<FlvData, FlvDownloadError>, DownloadError> {
         let url = url_str
             .parse::<Url>()
@@ -365,10 +435,11 @@ impl FlvDownloader {
         source: &ContentSource,
         range: (u64, Option<u64>),
         source_manager: &mut SourceManager,
+        token: CancellationToken,
     ) -> Result<BoxMediaStream<FlvData, FlvDownloadError>, DownloadError> {
         let start_time = Instant::now();
 
-        match self.download_range(&source.url, range).await {
+        match self.download_range(&source.url, range, token).await {
             Ok(stream) => {
                 // Record success
                 let elapsed = start_time.elapsed();
@@ -390,10 +461,11 @@ impl FlvDownloader {
         &self,
         source: &ContentSource,
         source_manager: &mut SourceManager,
+        token: CancellationToken,
     ) -> Result<BoxMediaStream<Bytes, FlvDownloadError>, DownloadError> {
         let start_time = Instant::now();
 
-        match self.download_raw(&source.url).await {
+        match self.download_raw(&source.url, token).await {
             Ok(stream) => {
                 // Record success for this source
                 let elapsed = start_time.elapsed();
@@ -421,6 +493,7 @@ impl FlvDownloader {
         &self,
         url_str: &str,
         range: (u64, Option<u64>),
+        token: CancellationToken,
     ) -> Result<BoxMediaStream<Bytes, FlvDownloadError>, DownloadError> {
         let url = url_str
             .parse::<Url>()
@@ -471,10 +544,11 @@ impl FlvDownloader {
         source: &ContentSource,
         range: (u64, Option<u64>),
         source_manager: &mut SourceManager,
+        token: CancellationToken,
     ) -> Result<BoxMediaStream<Bytes, FlvDownloadError>, DownloadError> {
         let start_time = Instant::now();
 
-        match self.download_raw_range(&source.url, range).await {
+        match self.download_raw_range(&source.url, range, token).await {
             Ok(stream) => {
                 // Record success
                 let elapsed = start_time.elapsed();
@@ -506,8 +580,12 @@ impl Download for FlvDownloader {
     type Error = FlvDownloadError;
     type Stream = BoxMediaStream<Self::Data, Self::Error>;
 
-    async fn download(&self, url: &str) -> Result<Self::Stream, DownloadError> {
-        self.download_flv(url).await
+    async fn download(
+        &self,
+        url: &str,
+        token: CancellationToken,
+    ) -> Result<Self::Stream, DownloadError> {
+        self.download_flv(url, token).await
     }
 }
 
@@ -517,8 +595,9 @@ impl Resumable for FlvDownloader {
         &self,
         url: &str,
         range: (u64, Option<u64>),
+        token: CancellationToken,
     ) -> Result<Self::Stream, DownloadError> {
-        self.download_range(url, range).await
+        self.download_range(url, range, token).await
     }
 }
 
@@ -528,6 +607,7 @@ impl MultiSource for FlvDownloader {
         &self,
         url: &str,
         source_manager: &mut SourceManager,
+        token: CancellationToken,
     ) -> Result<Self::Stream, DownloadError> {
         if !source_manager.has_sources() {
             source_manager.add_url(url, 0);
@@ -537,7 +617,10 @@ impl MultiSource for FlvDownloader {
 
         // Try sources until one succeeds or all active sources are tried
         while let Some(source) = source_manager.select_source() {
-            match self.try_download_from_source(&source, source_manager).await {
+            match self
+                .try_download_from_source(&source, source_manager, token.clone())
+                .await
+            {
                 Ok(stream) => return Ok(stream),
                 Err(err) => {
                     last_error = Some(err);
@@ -557,8 +640,10 @@ impl Cacheable for FlvDownloader {
         &self,
         url: &str,
         cache_manager: Arc<CacheManager>,
+        token: CancellationToken,
     ) -> Result<Self::Stream, DownloadError> {
-        self.perform_download_with_cache(url, cache_manager).await
+        self.perform_download_with_cache(url, cache_manager, token)
+            .await
     }
 }
 
@@ -567,8 +652,12 @@ impl RawDownload for FlvDownloader {
     type Error = FlvDownloadError;
     type RawStream = BoxMediaStream<bytes::Bytes, Self::Error>;
 
-    async fn download_raw(&self, url: &str) -> Result<Self::RawStream, DownloadError> {
-        self.download_raw(url).await
+    async fn download_raw(
+        &self,
+        url: &str,
+        token: CancellationToken,
+    ) -> Result<Self::RawStream, DownloadError> {
+        self.download_raw(url, token).await
     }
 }
 
@@ -578,7 +667,8 @@ impl RawResumable for FlvDownloader {
         &self,
         url: &str,
         range: (u64, Option<u64>),
+        token: CancellationToken,
     ) -> Result<Self::RawStream, DownloadError> {
-        self.download_raw_range(url, range).await
+        self.download_raw_range(url, range, token).await
     }
 }

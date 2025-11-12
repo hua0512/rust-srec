@@ -9,9 +9,10 @@ use std::pin::Pin;
 use std::{fmt::Debug, sync::Arc};
 
 use crate::{
-    DownloadError, cache::CacheManager, flv::FlvProtocolConfig, hls::HlsConfig,
-    source::SourceManager,
+    cache::CacheManager, flv::FlvProtocolConfig, hls::HlsConfig, source::SourceManager,
+    DownloadError,
 };
+use tokio_util::sync::CancellationToken;
 
 /// A type alias for a boxed media stream
 pub type BoxMediaStream<D, E> = Pin<Box<dyn Stream<Item = Result<D, E>> + Send>>;
@@ -54,6 +55,7 @@ pub trait Download: ProtocolBase {
     fn download(
         &self,
         url: &str,
+        token: CancellationToken,
     ) -> impl Future<Output = Result<Self::Stream, DownloadError>> + Send;
 }
 
@@ -66,6 +68,7 @@ pub trait Resumable: Download {
         &self,
         url: &str,
         range: (u64, Option<u64>),
+        token: CancellationToken,
     ) -> impl Future<Output = Result<Self::Stream, DownloadError>> + Send;
 }
 
@@ -78,6 +81,7 @@ pub trait MultiSource: Download {
         &self,
         url: &str,
         source_manager: &mut SourceManager,
+        token: CancellationToken,
     ) -> impl Future<Output = Result<Self::Stream, DownloadError>> + Send;
 }
 
@@ -90,6 +94,7 @@ pub trait Cacheable: Download {
         &self,
         url: &str,
         cache_manager: Arc<CacheManager>,
+        token: CancellationToken,
     ) -> impl Future<Output = Result<Self::Stream, DownloadError>> + Send;
 }
 
@@ -107,6 +112,7 @@ pub trait RawDownload: ProtocolBase {
     fn download_raw(
         &self,
         url: &str,
+        token: CancellationToken,
     ) -> impl Future<Output = Result<Self::RawStream, DownloadError>> + Send;
 }
 
@@ -119,6 +125,7 @@ pub trait RawResumable: RawDownload {
         &self,
         url: &str,
         range: (u64, Option<u64>),
+        token: CancellationToken,
     ) -> impl Future<Output = Result<Self::RawStream, DownloadError>> + Send;
 }
 
@@ -131,14 +138,17 @@ pub async fn download_with_resume<P>(
     protocol: &P,
     url: &str,
     range: Option<(u64, u64)>,
+    token: CancellationToken,
 ) -> Result<P::Stream, DownloadError>
 where
     P: Download + Resumable,
 {
     if let Some(range) = range {
-        protocol.resume(url, (range.0, Some(range.1))).await
+        protocol
+            .resume(url, (range.0, Some(range.1)), token)
+            .await
     } else {
-        protocol.download(url).await
+        protocol.download(url, token).await
     }
 }
 
@@ -147,6 +157,7 @@ pub async fn download_with_sources<P>(
     protocol: &P,
     url: &str,
     source_manager: &mut SourceManager,
+    token: CancellationToken,
 ) -> Result<P::Stream, DownloadError>
 where
     P: Download + MultiSource,
@@ -156,7 +167,9 @@ where
         source_manager.add_url(url, 0);
     }
 
-    protocol.download_with_sources(url, source_manager).await
+    protocol
+        .download_with_sources(url, source_manager, token)
+        .await
 }
 
 /// Download content with combined source management and cache support
@@ -165,16 +178,20 @@ pub async fn download_with_sources_and_cache<P>(
     url: &str,
     source_manager: &mut SourceManager,
     cache_manager: Arc<CacheManager>,
+    token: CancellationToken,
 ) -> Result<P::Stream, DownloadError>
 where
     P: Download + MultiSource + Cacheable,
 {
     // First check cache
-    match protocol.download_with_cache(url, cache_manager).await {
+    match protocol
+        .download_with_cache(url, cache_manager, token.clone())
+        .await
+    {
         Ok(stream) => Ok(stream),
         Err(_) => {
             // Cache miss, try sources
-            download_with_sources(protocol, url, source_manager).await
+            download_with_sources(protocol, url, source_manager, token).await
         }
     }
 }
@@ -184,13 +201,16 @@ pub async fn download_raw_with_resume<P>(
     protocol: &P,
     url: &str,
     range: Option<(u64, u64)>,
+    token: CancellationToken,
 ) -> Result<P::RawStream, DownloadError>
 where
     P: RawDownload + RawResumable,
 {
     if let Some(range) = range {
-        protocol.resume_raw(url, (range.0, Some(range.1))).await
+        protocol
+            .resume_raw(url, (range.0, Some(range.1)), token)
+            .await
     } else {
-        protocol.download_raw(url).await
+        protocol.download_raw(url, token).await
     }
 }

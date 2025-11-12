@@ -42,6 +42,9 @@ pub enum DownloadError {
 
     #[error("Generic download error: {0}")]
     Generic(String),
+    /// Download was cancelled
+    #[error("Download was cancelled")]
+    Cancelled,
 }
 
 impl From<DownloadError> for FlvError {

@@ -24,6 +24,7 @@ impl LoggingProcessor {
 impl Processor<MediaData> for LoggingProcessor {
     fn process(
         &mut self,
+        _context: &Arc<StreamerContext>,
         input: MediaData,
         output: &mut dyn FnMut(MediaData) -> Result<(), PipelineError>,
     ) -> Result<(), PipelineError> {
@@ -34,6 +35,7 @@ impl Processor<MediaData> for LoggingProcessor {
 
     fn finish(
         &mut self,
+        _context: &Arc<StreamerContext>,
         _output: &mut dyn FnMut(MediaData) -> Result<(), PipelineError>,
     ) -> Result<(), PipelineError> {
         println!("{}: Finishing", self.name);
@@ -61,6 +63,7 @@ impl MetadataEnricher {
 impl Processor<MediaData> for MetadataEnricher {
     fn process(
         &mut self,
+        _context: &Arc<StreamerContext>,
         input: MediaData,
         output: &mut dyn FnMut(MediaData) -> Result<(), PipelineError>,
     ) -> Result<(), PipelineError> {
@@ -76,6 +79,7 @@ impl Processor<MediaData> for MetadataEnricher {
 
     fn finish(
         &mut self,
+        _context: &Arc<StreamerContext>,
         _output: &mut dyn FnMut(MediaData) -> Result<(), PipelineError>,
     ) -> Result<(), PipelineError> {
         println!("MetadataEnricher: Finishing");
@@ -107,7 +111,7 @@ fn main() -> Result<(), PipelineError> {
 
     // Process the data through the pipeline
     let mut results = Vec::new();
-    pipeline.process(data.into_iter(), &mut |result| {
+    pipeline.run(data.into_iter(), &mut |result| {
         results.push(result);
     })?;
 

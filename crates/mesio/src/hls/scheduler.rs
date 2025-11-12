@@ -10,6 +10,7 @@ use hls::HlsData;
 use m3u8_rs::{ByteRange as M3u8ByteRange, Key as M3u8Key, MediaSegment};
 use std::sync::Arc;
 use tokio::sync::{broadcast, mpsc};
+use tokio_util::sync::CancellationToken;
 use tracing::{debug, error, info, warn};
 
 #[derive(Debug, Clone)]
@@ -41,6 +42,7 @@ pub struct SegmentScheduler {
     output_tx: mpsc::Sender<Result<ProcessedSegmentOutput, HlsDownloaderError>>,
     #[allow(dead_code)]
     shutdown_rx: broadcast::Receiver<()>,
+    token: CancellationToken,
 }
 
 impl SegmentScheduler {
@@ -51,6 +53,7 @@ impl SegmentScheduler {
         segment_request_rx: mpsc::Receiver<ScheduledSegmentJob>,
         output_tx: mpsc::Sender<Result<ProcessedSegmentOutput, HlsDownloaderError>>,
         shutdown_rx: broadcast::Receiver<()>,
+        token: CancellationToken,
     ) -> Self {
         Self {
             config,
@@ -59,6 +62,7 @@ impl SegmentScheduler {
             segment_request_rx,
             output_tx,
             shutdown_rx,
+            token,
         }
     }
 
@@ -113,6 +117,12 @@ impl SegmentScheduler {
 
             tokio::select! {
                 biased;
+
+                // Branch 1: Cancellation Token
+                _ = self.token.cancelled() => {
+                    info!("Cancellation token received. SegmentScheduler shutting down.");
+                    break;
+                }
 
                 // Receive new segment jobs
                 // Only accept new jobs if we are below the concurrency limit

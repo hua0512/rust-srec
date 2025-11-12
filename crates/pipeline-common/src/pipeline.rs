@@ -39,102 +39,122 @@ impl<T> Pipeline<T> {
         self
     }
 
-    /// Process all input through the pipeline.
+    /// Runs the pipeline, processing all input and then finalizing the processors.
     ///
     /// Takes an iterator of input data and a function to handle output data.
     /// Returns an error if any processor in the pipeline fails.
-    pub fn process<I, O, E>(mut self, input: I, output: &mut O) -> Result<(), PipelineError>
+    /// On cancellation, it stops processing new items but still finalizes all processors.
+    pub fn run<I, O, E>(mut self, input: I, output: &mut O) -> Result<(), PipelineError>
     where
         I: Iterator<Item = Result<T, E>>,
         O: FnMut(Result<T, E>),
         E: Into<PipelineError> + From<PipelineError>,
     {
-        // Process the input stream
-        for item_result in input {
-            match item_result {
-                Ok(initial_data) => {
-                    let mut current_stage_items: Vec<T> = vec![initial_data];
+        let processing_result = {
+            let mut result: Result<(), PipelineError> = Ok(());
+            'processing_loop: for item_result in input {
+                if self.context.token.is_cancelled() {
+                    result = Err(PipelineError::Cancelled);
+                    break 'processing_loop;
+                }
 
-                    for processor_index in 0..self.processors.len() {
-                        let mut next_stage_items: Vec<T> = Vec::new();
-                        // Get a mutable reference to the current processor.
-                        // This is safe because we are iterating by index and only borrowing one at a time.
-                        let processor = &mut self.processors[processor_index];
+                match item_result {
+                    Ok(initial_data) => {
+                        let mut current_stage_items: Vec<T> = vec![initial_data];
 
-                        for item_to_process in current_stage_items {
-                            let mut processor_output_handler = |processed_item: T| {
-                                next_stage_items.push(processed_item);
-                                Ok(())
-                            };
-                            processor.process(item_to_process, &mut processor_output_handler)?;
+                        for processor_index in 0..self.processors.len() {
+                            let mut next_stage_items: Vec<T> = Vec::new();
+                            let processor = &mut self.processors[processor_index];
+
+                            for item_to_process in current_stage_items {
+                                let mut processor_output_handler = |processed_item: T| {
+                                    next_stage_items.push(processed_item);
+                                    Ok(())
+                                };
+
+                                if let Err(e) = processor.process(
+                                    &self.context,
+                                    item_to_process,
+                                    &mut processor_output_handler,
+                                ) {
+                                    result = Err(e);
+                                    break 'processing_loop;
+                                }
+                            }
+                            current_stage_items = next_stage_items;
+
+                            if current_stage_items.is_empty() {
+                                break;
+                            }
                         }
-                        current_stage_items = next_stage_items;
 
-                        // If a stage produces no items, subsequent stages have nothing to process for this initial_data
-                        if current_stage_items.is_empty() {
-                            break;
+                        for final_item in current_stage_items {
+                            output(Ok(final_item));
                         }
                     }
-
-                    // After all processors, items in current_stage_items are final outputs
-                    for final_item in current_stage_items {
-                        output(Ok(final_item));
+                    Err(e) => {
+                        output(Err(e));
                     }
                 }
-                Err(e) => {
-                    output(Err(e));
-                }
             }
-        }
+            result
+        };
 
-        // Finalize processing for all processors in the chain
-        let mut final_flushed_outputs: Vec<T> = Vec::new();
+        // Finalize processing for all processors in the chain. This runs even if processing was
+        // cancelled or errored.
+        let finalization_result = (|| -> Result<(), PipelineError> {
+            let mut final_flushed_outputs: Vec<T> = Vec::new();
 
-        for i in 0..self.processors.len() {
-            // Split processors into the current one and the subsequent ones.
-            // `split_at_mut` provides non-overlapping mutable slices.
-            let (current_processor_slice, subsequent_processors_slice) =
-                self.processors.split_at_mut(i + 1);
-            let current_processor = &mut current_processor_slice[i]; // The current processor is the last one in the first slice
+            for i in 0..self.processors.len() {
+                let (current_processor_slice, subsequent_processors_slice) =
+                    self.processors.split_at_mut(i + 1);
+                let current_processor = &mut current_processor_slice[i];
 
-            let mut items_flushed_by_current: Vec<T> = Vec::new();
-            let mut current_finish_handler = |flushed_item: T| {
-                items_flushed_by_current.push(flushed_item);
-                Ok(())
-            };
-            current_processor.finish(&mut current_finish_handler)?;
+                let mut items_flushed_by_current: Vec<T> = Vec::new();
+                let mut current_finish_handler = |flushed_item: T| {
+                    items_flushed_by_current.push(flushed_item);
+                    Ok(())
+                };
+                current_processor.finish(&self.context, &mut current_finish_handler)?;
 
-            // Process items_flushed_by_current through subsequent_processors_slice
-            let mut items_for_subsequent_processing = items_flushed_by_current;
+                let mut items_for_subsequent_processing = items_flushed_by_current;
 
-            for subsequent_processor in subsequent_processors_slice {
-                let mut next_stage_flushed_items: Vec<T> = Vec::new();
+                for subsequent_processor in subsequent_processors_slice {
+                    let mut next_stage_flushed_items: Vec<T> = Vec::new();
 
-                for item_to_process in items_for_subsequent_processing {
-                    let mut subsequent_process_handler = |processed_item: T| {
-                        next_stage_flushed_items.push(processed_item);
-                        Ok(())
-                    };
-                    subsequent_processor
-                        .process(item_to_process, &mut subsequent_process_handler)?;
+                    for item_to_process in items_for_subsequent_processing {
+                        let mut subsequent_process_handler = |processed_item: T| {
+                            next_stage_flushed_items.push(processed_item);
+                            Ok(())
+                        };
+                        subsequent_processor.process(
+                            &self.context,
+                            item_to_process,
+                            &mut subsequent_process_handler,
+                        )?;
+                    }
+                    items_for_subsequent_processing = next_stage_flushed_items;
+
+                    if items_for_subsequent_processing.is_empty() {
+                        break;
+                    }
                 }
-                items_for_subsequent_processing = next_stage_flushed_items;
 
-                if items_for_subsequent_processing.is_empty() {
-                    break; // No more items to process for the subsequent stages from this flush
-                }
+                final_flushed_outputs.extend(items_for_subsequent_processing);
             }
 
-            // Items that made it through all subsequent processors are added to final_flushed_outputs
-            final_flushed_outputs.extend(items_for_subsequent_processing);
-        }
+            for final_item in final_flushed_outputs {
+                output(Ok(final_item));
+            }
 
-        // Output all fully processed flushed items
-        for final_item in final_flushed_outputs {
-            output(Ok(final_item));
-        }
+            Ok(())
+        })();
 
-        Ok(())
+        // Prioritize returning the finalization error if one occurred.
+        finalization_result?;
+
+        // Otherwise, return the result of the main processing.
+        processing_result
     }
 
     // Recursive implementation

@@ -376,16 +376,25 @@ impl DefragmentOperator {
 impl Processor<HlsData> for DefragmentOperator {
     fn process(
         &mut self,
+        context: &Arc<StreamerContext>,
         input: HlsData,
         output: &mut dyn FnMut(HlsData) -> Result<(), PipelineError>,
     ) -> Result<(), PipelineError> {
+        if context.token.is_cancelled() {
+            return Err(PipelineError::Cancelled);
+        }
         self.process_internal(input, output)
     }
 
     fn finish(
         &mut self,
+        context: &Arc<StreamerContext>,
         output: &mut dyn FnMut(HlsData) -> Result<(), PipelineError>,
     ) -> Result<(), PipelineError> {
+        if context.token.is_cancelled() {
+            debug!("Cancellation requested during finish, attempting to flush buffer.");
+        }
+
         if self.buffer.is_empty() {
             return Ok(());
         }
@@ -419,6 +428,13 @@ impl Processor<HlsData> for DefragmentOperator {
             let count = self.buffer.len();
 
             for item in self.buffer.drain(..) {
+                if context.token.is_cancelled() {
+                    warn!(
+                        "{} Cancellation occurred during flush, some data might be lost.",
+                        self.context.name
+                    );
+                    return Err(PipelineError::Cancelled);
+                }
                 output(item)?;
             }
             self.reset();

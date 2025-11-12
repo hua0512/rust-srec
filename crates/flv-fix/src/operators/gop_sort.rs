@@ -194,9 +194,13 @@ impl GopSortOperator {
 impl Processor<FlvData> for GopSortOperator {
     fn process(
         &mut self,
+        context: &Arc<StreamerContext>,
         input: FlvData,
         output: &mut dyn FnMut(FlvData) -> Result<(), PipelineError>,
     ) -> Result<(), PipelineError> {
+        if context.token.is_cancelled() {
+            return Err(PipelineError::Cancelled);
+        }
         match input {
             FlvData::Header(header) => {
                 // Process any buffered tags first
@@ -225,8 +229,12 @@ impl Processor<FlvData> for GopSortOperator {
 
     fn finish(
         &mut self,
+        context: &Arc<StreamerContext>,
         output: &mut dyn FnMut(FlvData) -> Result<(), PipelineError>,
     ) -> Result<(), PipelineError> {
+        if context.token.is_cancelled() {
+            return Err(PipelineError::Cancelled);
+        }
         // Process any remaining buffered tags at end of stream
         self.push_tags(output)?;
         info!("{} GOP sort completed", self.context.name);
@@ -246,12 +254,12 @@ mod tests {
         create_test_header, create_video_sequence_header, create_video_tag,
     };
     use flv::tag::FlvTagType;
-    use pipeline_common::StreamerContext;
+    use pipeline_common::{CancellationToken, StreamerContext};
 
     #[test]
     fn test_sequence_header_special_handling() {
-        let context = StreamerContext::arc_new();
-        let mut operator = GopSortOperator::new(context);
+        let context = StreamerContext::arc_new(CancellationToken::new());
+        let mut operator = GopSortOperator::new(context.clone());
         let mut output_items = Vec::new();
 
         // Create a mutable output function
@@ -262,33 +270,33 @@ mod tests {
 
         // Send header
         operator
-            .process(create_test_header(), &mut output_fn)
+            .process(&context, create_test_header(), &mut output_fn)
             .unwrap();
 
         // Send script tag + sequence headers (in mixed order) + a few regular tags
         operator
-            .process(create_audio_tag(5), &mut output_fn)
+            .process(&context, create_audio_tag(5), &mut output_fn)
             .unwrap();
         operator
-            .process(create_script_tag(0, false), &mut output_fn)
+            .process(&context, create_script_tag(0, false), &mut output_fn)
             .unwrap();
         operator
-            .process(create_video_sequence_header(0, 1), &mut output_fn)
+            .process(&context, create_video_sequence_header(0, 1), &mut output_fn)
             .unwrap();
         operator
-            .process(create_audio_sequence_header(0, 1), &mut output_fn)
+            .process(&context, create_audio_sequence_header(0, 1), &mut output_fn)
             .unwrap();
         operator
-            .process(create_video_tag(20, false), &mut output_fn)
+            .process(&context, create_video_tag(20, false), &mut output_fn)
             .unwrap();
 
         // Send a keyframe to trigger emission
         operator
-            .process(create_video_tag(30, true), &mut output_fn)
+            .process(&context, create_video_tag(30, true), &mut output_fn)
             .unwrap();
 
         // Finish processing
-        operator.finish(&mut output_fn).unwrap();
+        operator.finish(&context, &mut output_fn).unwrap();
 
         test_utils::print_tags(&output_items);
 
@@ -318,8 +326,8 @@ mod tests {
 
     #[test]
     fn test_interleaving() {
-        let context = StreamerContext::arc_new();
-        let mut operator = GopSortOperator::new(context);
+        let context = StreamerContext::arc_new(CancellationToken::new());
+        let mut operator = GopSortOperator::new(context.clone());
         let mut output_items = Vec::new();
 
         // Create a mutable output function
@@ -330,33 +338,33 @@ mod tests {
 
         // Send header
         operator
-            .process(create_test_header(), &mut output_fn)
+            .process(&context, create_test_header(), &mut output_fn)
             .unwrap();
 
         // Send audio and video tags with specific timestamps for testing interleaving
         operator
-            .process(create_audio_tag(10), &mut output_fn)
+            .process(&context, create_audio_tag(10), &mut output_fn)
             .unwrap(); // A10
         operator
-            .process(create_video_tag(20, false), &mut output_fn)
+            .process(&context, create_video_tag(20, false), &mut output_fn)
             .unwrap(); // V20
         operator
-            .process(create_audio_tag(25), &mut output_fn)
+            .process(&context, create_audio_tag(25), &mut output_fn)
             .unwrap(); // A25
         operator
-            .process(create_video_tag(30, false), &mut output_fn)
+            .process(&context, create_video_tag(30, false), &mut output_fn)
             .unwrap(); // V30
         operator
-            .process(create_audio_tag(35), &mut output_fn)
+            .process(&context, create_audio_tag(35), &mut output_fn)
             .unwrap(); // A35
 
         // Send keyframe to trigger emission
         operator
-            .process(create_video_tag(40, true), &mut output_fn)
+            .process(&context, create_video_tag(40, true), &mut output_fn)
             .unwrap(); // V40 (keyframe)
 
         // Finish processing
-        operator.finish(&mut output_fn).unwrap();
+        operator.finish(&context, &mut output_fn).unwrap();
 
         test_utils::print_tags(&output_items);
 
@@ -395,8 +403,8 @@ mod tests {
     #[test]
     fn test_audio_tags_before_first_video() {
         // Setup with audio tags having earlier timestamps than any video tag
-        let context = StreamerContext::arc_new();
-        let mut operator = GopSortOperator::new(context);
+        let context = StreamerContext::arc_new(CancellationToken::new());
+        let mut operator = GopSortOperator::new(context.clone());
         let mut output_items = Vec::new();
 
         // Create a mutable output function
@@ -407,27 +415,27 @@ mod tests {
 
         // Send header
         operator
-            .process(create_test_header(), &mut output_fn)
+            .process(&context, create_test_header(), &mut output_fn)
             .unwrap();
 
         // Send audio tags with timestamps before any video tag
         operator
-            .process(create_audio_tag(5), &mut output_fn)
+            .process(&context, create_audio_tag(5), &mut output_fn)
             .unwrap(); // A5
         operator
-            .process(create_audio_tag(10), &mut output_fn)
+            .process(&context, create_audio_tag(10), &mut output_fn)
             .unwrap(); // A10
 
         // Send video tags with higher timestamps
         operator
-            .process(create_video_tag(20, false), &mut output_fn)
+            .process(&context, create_video_tag(20, false), &mut output_fn)
             .unwrap(); // V20
         operator
-            .process(create_video_tag(30, true), &mut output_fn)
+            .process(&context, create_video_tag(30, true), &mut output_fn)
             .unwrap(); // V30 (keyframe)
 
         // Finish processing
-        operator.finish(&mut output_fn).unwrap();
+        operator.finish(&context, &mut output_fn).unwrap();
 
         test_utils::print_tags(&output_items);
 
@@ -451,8 +459,8 @@ mod tests {
     }
     #[test]
     fn test_audio_only_stream() {
-        let context = StreamerContext::arc_new();
-        let mut operator = GopSortOperator::new(context);
+        let context = StreamerContext::arc_new(CancellationToken::new());
+        let mut operator = GopSortOperator::new(context.clone());
         let mut output_items = Vec::new();
 
         let mut output_fn = |item: FlvData| -> Result<(), PipelineError> {
@@ -466,16 +474,16 @@ mod tests {
             h.has_video = false;
         }
 
-        operator.process(header, &mut output_fn).unwrap();
+        operator.process(&context, header, &mut output_fn).unwrap();
 
         // Send more than TAGS_BUFFER_SIZE audio tags
         for i in 0..15 {
             operator
-                .process(create_audio_tag(i * 10), &mut output_fn)
+                .process(&context, create_audio_tag(i * 10), &mut output_fn)
                 .unwrap();
         }
 
-        operator.finish(&mut output_fn).unwrap();
+        operator.finish(&context, &mut output_fn).unwrap();
 
         test_utils::print_tags(&output_items);
 

@@ -11,9 +11,10 @@ use tokio_stream::wrappers::ReceiverStream;
 use tracing::debug;
 
 use crate::{
-    BoxMediaStream, CacheManager, Download, DownloadError, ProtocolBase, SourceManager,
-    create_client, hls::HlsDownloaderError,
+    create_client, hls::HlsDownloaderError, BoxMediaStream, CacheManager, Download, DownloadError,
+    ProtocolBase, SourceManager,
 };
+use tokio_util::sync::CancellationToken;
 
 use super::{HlsConfig, HlsStreamCoordinator, HlsStreamEvent};
 
@@ -46,10 +47,11 @@ impl HlsDownloader {
         &self,
         source: &ContentSource,
         source_manager: &mut SourceManager,
+        token: CancellationToken,
     ) -> Result<BoxMediaStream<HlsData, HlsDownloaderError>, DownloadError> {
         let start_time = Instant::now();
         match self
-            .perform_download(&source.url, Some(source_manager), None)
+            .perform_download(&source.url, Some(source_manager), None, token)
             .await
         {
             Ok(stream) => {
@@ -75,6 +77,7 @@ impl HlsDownloader {
         url: &str,
         _source_manager: Option<&mut SourceManager>,
         cache_manager: Option<Arc<CacheManager>>,
+        token: CancellationToken,
     ) -> Result<BoxMediaStream<HlsData, HlsDownloaderError>, DownloadError> {
         let config = Arc::new(self.config.clone());
         let (client_event_rx, _shutdown_tx, _handles) = HlsStreamCoordinator::setup_and_spawn(
@@ -82,6 +85,7 @@ impl HlsDownloader {
             config.clone(),
             self.client.clone(),
             cache_manager,
+            token,
         )
         .await
         .map_err(DownloadError::HlsError)?;
@@ -121,8 +125,12 @@ impl Download for HlsDownloader {
     type Error = HlsDownloaderError;
     type Stream = BoxMediaStream<Self::Data, Self::Error>;
 
-    async fn download(&self, url: &str) -> Result<Self::Stream, DownloadError> {
-        self.perform_download(url, None, None).await
+    async fn download(
+        &self,
+        url: &str,
+        token: CancellationToken,
+    ) -> Result<Self::Stream, DownloadError> {
+        self.perform_download(url, None, None, token).await
     }
 }
 
@@ -131,6 +139,7 @@ impl MultiSource for HlsDownloader {
         &self,
         url: &str,
         source_manager: &mut SourceManager,
+        token: CancellationToken,
     ) -> Result<Self::Stream, DownloadError> {
         if !source_manager.has_sources() {
             source_manager.add_url(url, 0);
@@ -140,7 +149,7 @@ impl MultiSource for HlsDownloader {
 
         while let Some(content_source) = source_manager.select_source() {
             match self
-                .try_download_from_source(&content_source, source_manager)
+                .try_download_from_source(&content_source, source_manager, token.clone())
                 .await
             {
                 Ok(stream) => return Ok(stream),
@@ -159,7 +168,9 @@ impl Cacheable for HlsDownloader {
         &self,
         url: &str,
         cache_manager: Arc<CacheManager>,
+        token: CancellationToken,
     ) -> Result<Self::Stream, DownloadError> {
-        self.perform_download(url, None, Some(cache_manager)).await
+        self.perform_download(url, None, Some(cache_manager), token)
+            .await
     }
 }

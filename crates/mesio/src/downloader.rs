@@ -7,7 +7,8 @@ use crate::{
     Cacheable, Download, DownloaderConfig, MultiSource, ProtocolBase, RawDownload, RawResumable,
     Resumable,
 };
-use crate::{DownloadError, proxy::build_proxy_from_config};
+use crate::{proxy::build_proxy_from_config, DownloadError};
+use tokio_util::sync::CancellationToken;
 
 /// Create a reqwest Client with the provided configuration
 pub fn create_client(config: &DownloaderConfig) -> Result<Client, DownloadError> {
@@ -103,6 +104,8 @@ pub struct DownloadManager<P> {
     /// Configuration for this download manager
     #[allow(dead_code)]
     config: DownloadManagerConfig,
+    /// Cancellation token
+    token: CancellationToken,
 }
 
 impl<P> DownloadManager<P>
@@ -111,13 +114,19 @@ where
 {
     /// Create a new download manager with the given protocol handler and default configuration
     pub async fn new(protocol: P) -> Result<Self, DownloadError> {
-        Self::with_config(protocol, DownloadManagerConfig::default()).await
+        Self::with_config(
+            protocol,
+            DownloadManagerConfig::default(),
+            CancellationToken::new(),
+        )
+        .await
     }
 
     /// Create a new download manager with custom configuration
     pub async fn with_config(
         protocol: P,
         config: DownloadManagerConfig,
+        token: CancellationToken,
     ) -> Result<Self, DownloadError> {
         // Initialize cache if enabled
         let cache_manager = if let Some(cache_config) = &config.cache_config {
@@ -134,6 +143,7 @@ where
             source_manager,
             cache_manager,
             config,
+            token,
         })
     }
 
@@ -155,7 +165,7 @@ where
 {
     /// Start a simple download
     pub async fn download(&self, url: &str) -> Result<P::Stream, DownloadError> {
-        self.protocol.download(url).await
+        self.protocol.download(url, self.token.clone()).await
     }
 }
 
@@ -170,7 +180,7 @@ where
         url: &str,
         range: (u64, Option<u64>),
     ) -> Result<P::Stream, DownloadError> {
-        self.protocol.resume(url, range).await
+        self.protocol.resume(url, range, self.token.clone()).await
     }
 
     /// Download with automatic resume if range is provided
@@ -199,7 +209,7 @@ where
         }
 
         self.protocol
-            .download_with_sources(url, &mut self.source_manager)
+            .download_with_sources(url, &mut self.source_manager, self.token.clone())
             .await
     }
 }
@@ -223,7 +233,7 @@ where
         if let Some(cache_manager) = &self.cache_manager {
             match self
                 .protocol
-                .download_with_cache(url, cache_manager.clone())
+                .download_with_cache(url, cache_manager.clone(), self.token.clone())
                 .await
             {
                 Ok(stream) => return Ok(stream),
@@ -235,7 +245,7 @@ where
 
         // Cache miss or no cache, try sources
         self.protocol
-            .download_with_sources(url, &mut self.source_manager)
+            .download_with_sources(url, &mut self.source_manager, self.token.clone())
             .await
     }
 }
@@ -247,7 +257,7 @@ where
 {
     /// Download raw bytes
     pub async fn download_raw(&self, url: &str) -> Result<P::RawStream, DownloadError> {
-        self.protocol.download_raw(url).await
+        self.protocol.download_raw(url, self.token.clone()).await
     }
 }
 
@@ -262,7 +272,9 @@ where
         url: &str,
         range: (u64, Option<u64>),
     ) -> Result<P::RawStream, DownloadError> {
-        self.protocol.resume_raw(url, range).await
+        self.protocol
+            .resume_raw(url, range, self.token.clone())
+            .await
     }
 
     /// Download raw with automatic resume if range is provided
