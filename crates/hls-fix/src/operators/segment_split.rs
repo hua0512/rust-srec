@@ -310,14 +310,14 @@ impl SegmentSplitOperator {
                 .any(|p| !p.video_streams.is_empty()))
             && let Some(current_resolution) = current_profile.as_ref().and_then(|p| p.resolution)
         {
-            if let Some(previous_resolution) = &self.last_resolution
-                && previous_resolution != &current_resolution
-            {
-                info!(
-                    "{} Video resolution changed: {} -> {}",
-                    self.context.name, previous_resolution, current_resolution
-                );
-                needs_split = true;
+            if let Some(last_resolution) = self.last_resolution {
+                if last_resolution != current_resolution {
+                    info!(
+                        "{} Video resolution changed: {} -> {}",
+                        self.context.name, last_resolution, current_resolution
+                    );
+                    needs_split = true;
+                }
             } else {
                 // First time we detect resolution
                 info!(
