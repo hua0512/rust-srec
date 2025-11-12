@@ -7,6 +7,8 @@ use rand::Rng;
 use rand::seq::IndexedRandom;
 use std::collections::HashMap;
 
+use crate::extractor::default::DEFAULT_UA;
+
 pub struct StringProcessor;
 
 impl StringProcessor {
@@ -310,7 +312,7 @@ impl ABogus {
 
         let final_user_agent = user_agent
             .filter(|s| !s.is_empty())
-            .unwrap_or("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36 Edg/130.0.0.0")
+            .unwrap_or(DEFAULT_UA)
             .to_string();
 
         let final_fp = fp

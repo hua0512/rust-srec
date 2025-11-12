@@ -26,6 +26,8 @@ pub mod protocol_builder;
 pub mod proxy;
 pub mod source;
 
+pub use config::DEFAULT_USER_AGENT;
+
 pub use builder::DownloaderConfigBuilder;
 pub use cache::{CacheConfig, CacheManager};
 pub use config::DownloaderConfig;

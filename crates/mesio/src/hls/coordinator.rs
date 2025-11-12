@@ -204,6 +204,7 @@ impl HlsStreamCoordinator {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::config::DEFAULT_USER_AGENT;
     use crate::hls::config::HlsConfig;
     use crate::{CacheConfig, CacheManager, create_client};
     use std::sync::Arc;
@@ -234,7 +235,7 @@ mod tests {
 
         let config = Arc::new(config);
         let downloader_config = crate::DownloaderConfig::builder()
-            .with_user_agent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/58.0.3029.110 Safari/537.3")
+            .with_user_agent(DEFAULT_USER_AGENT)
             .with_timeout(std::time::Duration::from_secs(30))
             .with_header("referer", "http://live.douyin.com")
             .build();
