@@ -39,13 +39,14 @@ fn main() {
 
 #[tokio::main]
 async fn bootstrap() -> Result<(), AppError> {
+    // Parse command-line arguments
+    let args = CliArgs::parse();
+
     // Create a cancellation token
     let token = CancellationToken::new();
 
     // Spawn the input handler
     tokio::spawn(input_handler(token.clone()));
-    // Parse command-line arguments
-    let args = CliArgs::parse();
 
     // Setup logging
     let log_level = if args.verbose {
