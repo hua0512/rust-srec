@@ -13,7 +13,7 @@ use reqwest::Client;
 use std::borrow::Cow;
 use std::sync::Arc;
 use std::time::Duration;
-use tokio::sync::{broadcast, mpsc};
+use tokio::sync::mpsc;
 use tokio_util::sync::CancellationToken;
 use tracing::{debug, error, info, trace};
 use url::Url;
@@ -35,7 +35,6 @@ pub trait PlaylistProvider: Send + Sync {
         initial_playlist: MediaPlaylist,
         base_url: String,
         segment_request_tx: mpsc::Sender<ScheduledSegmentJob>,
-        mut shutdown_rx: broadcast::Receiver<()>,
         token: CancellationToken,
     ) -> Result<(), HlsDownloaderError>;
 }
@@ -306,7 +305,6 @@ impl PlaylistProvider for PlaylistEngine {
         mut current_playlist: MediaPlaylist,
         base_url: String,
         segment_request_tx: mpsc::Sender<ScheduledSegmentJob>,
-        mut shutdown_rx: broadcast::Receiver<()>,
         token: CancellationToken,
     ) -> Result<(), HlsDownloaderError> {
         let playlist_url = Url::parse(playlist_url_str).map_err(|e| {
@@ -383,10 +381,6 @@ impl PlaylistProvider for PlaylistEngine {
                 biased;
                 _ = token.cancelled() => {
                     info!("Cancellation token received during monitoring for {}.", playlist_url_str);
-                    return Ok(());
-                }
-                _ = shutdown_rx.recv() => {
-                    info!("Shutdown signal received during monitoring for {}.", playlist_url_str);
                     return Ok(());
                 }
                 _ = tokio::time::sleep(refresh_delay) => {
