@@ -53,13 +53,9 @@ async fn bootstrap() -> Result<(), AppError> {
     } else {
         Level::INFO
     };
-    let log_file = std::fs::OpenOptions::new()
-        .create(true)
-        .write(true)
-        .truncate(true)
-        .open("mesio.log")?;
-
-    let multi_writer = MakeWriterExt::and(std::io::stdout, log_file);
+    let file_appender = tracing_appender::rolling::daily(".", "mesio.log");
+    let (non_blocking, _guard) = tracing_appender::non_blocking(file_appender);
+    let multi_writer = MakeWriterExt::and(std::io::stdout, non_blocking);
 
     let subscriber = FmtSubscriber::builder()
         .with_max_level(log_level)
