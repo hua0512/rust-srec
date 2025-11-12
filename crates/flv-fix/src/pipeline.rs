@@ -307,7 +307,6 @@ mod test {
                 "flv".to_string(),
                 None,
                 None,
-                StreamerContext::arc_new(pipeline_common::CancellationToken::new()),
             );
 
             writer_task.run(output_rx)?;
