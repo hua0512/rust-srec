@@ -253,5 +253,7 @@ async fn bootstrap() -> Result<(), AppError> {
     }
 
     result?;
+    // Signal the input_handler to terminate.
+    token.cancel();
     Ok(())
 }
