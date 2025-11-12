@@ -174,7 +174,6 @@ impl PipelineProvider for FlvPipeline {
                 None
             },
             split_at_keyframes_only: true,
-            use_retrospective_splitting: false,
             on_split: None,
         };
         let limit_operator = LimitOperator::with_config(context.clone(), limit_config);
