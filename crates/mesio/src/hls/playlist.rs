@@ -79,8 +79,8 @@ impl PlaylistProvider for PlaylistEngine {
         })?;
         let cache_key = CacheKey::new(CacheResourceType::Playlist, playlist_url.as_str(), None);
 
-        if let Some(cache_service) = &self.cache_service {
-            if let Ok(Some((cached_data, _, _))) = cache_service.get(&cache_key).await {
+        if let Some(cache_service) = &self.cache_service
+            && let Ok(Some((cached_data, _, _))) = cache_service.get(&cache_key).await {
                 let mut playlist_content =
                     String::from_utf8(cached_data.to_vec()).map_err(|e| {
                         HlsDownloaderError::PlaylistError(format!(
@@ -106,7 +106,6 @@ impl PlaylistProvider for PlaylistEngine {
                     ))),
                 };
             }
-        }
 
         let response = self
             .http_client
@@ -466,8 +465,8 @@ impl PlaylistEngine {
         })?;
 
         // Fast path: check if we have a previous playlist and if lengths differ
-        if let Some(last_bytes) = last_playlist_bytes.as_ref() {
-            if last_bytes.len() == playlist_bytes.len() {
+        if let Some(last_bytes) = last_playlist_bytes.as_ref()
+            && last_bytes.len() == playlist_bytes.len() {
                 // Same length, do full byte comparison
                 if last_bytes == &playlist_bytes {
                     debug!(
@@ -477,7 +476,6 @@ impl PlaylistEngine {
                     return Ok(None);
                 }
             }
-        }
 
         let playlist_bytes_to_parse: Cow<[u8]> =
             if TwitchPlaylistProcessor::is_twitch_playlist(playlist_url.as_str()) {

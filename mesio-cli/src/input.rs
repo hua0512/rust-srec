@@ -24,8 +24,8 @@ pub async fn input_handler(token: CancellationToken) {
         }
 
         // Poll for keyboard events with a timeout.
-        if let Ok(true) = event::poll(Duration::from_millis(100)) {
-            if let Ok(Event::Key(KeyEvent {
+        if let Ok(true) = event::poll(Duration::from_millis(100))
+            && let Ok(Event::Key(KeyEvent {
                 code: KeyCode::Char('q'),
                 modifiers: KeyModifiers::NONE,
                 ..
@@ -35,7 +35,6 @@ pub async fn input_handler(token: CancellationToken) {
                 token.cancel();
                 break;
             }
-        }
     }
 
     if terminal::disable_raw_mode().is_err() {

@@ -30,6 +30,12 @@ pub struct MesioDownloaderFactory {
     token: CancellationToken,
 }
 
+impl Default for MesioDownloaderFactory {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl MesioDownloaderFactory {
     /// Create a new mesio downloader factory with default settings
     pub fn new() -> Self {
