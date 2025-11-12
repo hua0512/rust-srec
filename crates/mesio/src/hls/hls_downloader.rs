@@ -11,8 +11,9 @@ use tokio_stream::wrappers::ReceiverStream;
 use tracing::debug;
 
 use crate::{
-    create_client, hls::HlsDownloaderError, BoxMediaStream, CacheManager, Download, DownloadError,
-    ProtocolBase, SourceManager,
+    create_client,
+    hls::{coordinator::AllTaskHandles, HlsDownloaderError},
+    BoxMediaStream, CacheManager, Download, DownloadError, ProtocolBase, SourceManager,
 };
 use tokio_util::sync::CancellationToken;
 
@@ -80,7 +81,7 @@ impl HlsDownloader {
         token: CancellationToken,
     ) -> Result<BoxMediaStream<HlsData, HlsDownloaderError>, DownloadError> {
         let config = Arc::new(self.config.clone());
-        let (client_event_rx, _shutdown_tx, _handles) = HlsStreamCoordinator::setup_and_spawn(
+        let (client_event_rx, handles) = HlsStreamCoordinator::setup_and_spawn(
             url.to_string(),
             config.clone(),
             self.client.clone(),
@@ -91,6 +92,30 @@ impl HlsDownloader {
         .map_err(DownloadError::HlsError)?;
 
         let stream = ReceiverStream::new(client_event_rx);
+
+        // Spawn a separate task to await the completion of all pipeline components.
+        // This ensures that graceful shutdown logic is fully executed.
+        tokio::spawn(async move {
+            let AllTaskHandles {
+                playlist_engine_handle,
+                scheduler_handle,
+                output_manager_handle,
+            } = handles;
+
+            // It's important to await all handles to ensure cleanup.
+            if let Some(handle) = playlist_engine_handle {
+                if let Err(e) = handle.await {
+                    warn!("Playlist engine task finished with error: {:?}", e);
+                }
+            }
+            if let Err(e) = scheduler_handle.await {
+                warn!("Scheduler task finished with error: {:?}", e);
+            }
+            if let Err(e) = output_manager_handle.await {
+                warn!("Output manager task finished with error: {:?}", e);
+            }
+            debug!("All HLS pipeline tasks have completed.");
+        });
 
         // map receiver stream to BoxMediaStream
         let stream = stream.filter_map(|event| async move {

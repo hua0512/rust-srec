@@ -9,7 +9,7 @@ use futures::stream::FuturesUnordered;
 use hls::HlsData;
 use m3u8_rs::{ByteRange as M3u8ByteRange, Key as M3u8Key, MediaSegment};
 use std::sync::Arc;
-use tokio::sync::{broadcast, mpsc};
+use tokio::sync::mpsc;
 use tokio_util::sync::CancellationToken;
 use tracing::{debug, error, info, warn};
 
@@ -40,8 +40,6 @@ pub struct SegmentScheduler {
     segment_processor: Arc<dyn SegmentTransformer>,
     segment_request_rx: mpsc::Receiver<ScheduledSegmentJob>,
     output_tx: mpsc::Sender<Result<ProcessedSegmentOutput, HlsDownloaderError>>,
-    #[allow(dead_code)]
-    shutdown_rx: broadcast::Receiver<()>,
     token: CancellationToken,
 }
 
@@ -52,7 +50,6 @@ impl SegmentScheduler {
         segment_processor: Arc<dyn SegmentTransformer>,
         segment_request_rx: mpsc::Receiver<ScheduledSegmentJob>,
         output_tx: mpsc::Sender<Result<ProcessedSegmentOutput, HlsDownloaderError>>,
-        shutdown_rx: broadcast::Receiver<()>,
         token: CancellationToken,
     ) -> Self {
         Self {
@@ -61,7 +58,6 @@ impl SegmentScheduler {
             segment_processor,
             segment_request_rx,
             output_tx,
-            shutdown_rx,
             token,
         }
     }
@@ -106,92 +102,81 @@ impl SegmentScheduler {
 
     pub async fn run(&mut self) {
         info!("SegmentScheduler started.");
-        // Unordered futures, as we don't care about the order of completion
-        // OutputManager will handle the order of segments
-        // We could use buffer_unordered here, but we have to convert into a ReceiverStream
         let mut futures = FuturesUnordered::new();
+        let mut draining = false;
 
         loop {
-            // Current count of in-progress futures
             let in_progress_count = futures.len();
 
             tokio::select! {
                 biased;
 
-                // Branch 1: Cancellation Token
-                _ = self.token.cancelled() => {
-                    info!("Cancellation token received. SegmentScheduler shutting down.");
-                    break;
+                // 1. Cancellation Token
+                _ = self.token.cancelled(), if !draining => {
+                    info!("Cancellation token received. SegmentScheduler entering draining state.");
+                    draining = true;
+                    // Close the segment request channel to prevent new jobs from being added
+                    // while we drain the existing ones.
+                    self.segment_request_rx.close();
                 }
 
-                // Receive new segment jobs
-                // Only accept new jobs if we are below the concurrency limit
-                maybe_job_request = self.segment_request_rx.recv(), if in_progress_count < self.config.scheduler_config.download_concurrency => {
-                    match maybe_job_request {
-                        Some(job_request) => {
-                            debug!(uri = %job_request.segment_uri, msn = %job_request.media_sequence_number, "Received new segment job.");
-                            let fetcher_clone = Arc::clone(&self.segment_fetcher);
-                            let processor_clone = Arc::clone(&self.segment_processor);
-                            // Push the new job to the futures queue
-                            futures.push(Self::perform_segment_processing(
-                                fetcher_clone,
-                                processor_clone,
-                                job_request,
-                            ));
-                        }
-                        None => {
-                            info!("Segment request channel closed. No new jobs will be accepted.");
-                            // If the input channel is closed and no tasks are in progress, we can shut down.
-                            if futures.is_empty() {
-                                info!("All pending segments processed. SegmentScheduler shutting down.");
-                                break;
-                            }
-                            // Otherwise, we just stop receiving new jobs but continue processing existing ones.
-                        }
+                // 2. Receive new segment jobs
+                // This branch is disabled when `draining` is true.
+                maybe_job_request = self.segment_request_rx.recv(), if !draining && in_progress_count < self.config.scheduler_config.download_concurrency => {
+                    if let Some(job_request) = maybe_job_request {
+                        debug!(uri = %job_request.segment_uri, msn = %job_request.media_sequence_number, "Received new segment job.");
+                        let fetcher_clone = Arc::clone(&self.segment_fetcher);
+                        let processor_clone = Arc::clone(&self.segment_processor);
+                        futures.push(Self::perform_segment_processing(
+                            fetcher_clone,
+                            processor_clone,
+                            job_request,
+                        ));
+                    } else {
+                        // The input channel was closed by the PlaylistEngine.
+                        // This is a natural end, so we start draining.
+                        info!("Segment request channel closed. No new jobs will be accepted. Draining in-progress tasks.");
+                        draining = true;
                     }
                 }
 
-                // Handle completed futures
-                // This will be triggered when any of the futures in `futures` completes
-                Some(processed_result_from_spawn) = futures.next(), if in_progress_count > 0 => {
-                    match processed_result_from_spawn {
+                // 3. Handle completed futures
+                // This branch remains active during draining to finish in-progress work.
+                Some(processed_result) = futures.next() => {
+                    match processed_result {
                         Ok(processed_output) => {
-                            // debug!(uri = %processed_output.original_segment_uri, msn = %processed_output.media_sequence_number, "Segment processed, sending to output.");
                             if self.output_tx.send(Ok(processed_output)).await.is_err() {
                                 error!("Output channel closed while trying to send processed segment. Shutting down scheduler.");
                                 break;
                             }
                         }
                         Err(e) => {
-                            // Error from perform_segment_processing
                             warn!(error = %e, "Segment processing task failed.");
                             if self.output_tx.send(Err(e)).await.is_err() {
                                 error!("Output channel closed while trying to send segment processing error. Shutting down scheduler.");
-                                break; // Exit loop if output channel is closed
+                                break;
                             }
                         }
                     }
                 }
 
-                // Branch to handle shutdown signal
-                // _ = self.shutdown_rx.recv() => {
-                //     info!("Shutdown signal received. SegmentScheduler will stop accepting new jobs and complete in-progress tasks.");
-                //     // We could implement a more graceful shutdown by not accepting new jobs
-                //     // and waiting for existing futures to complete, or by cancelling them.
-                //     // For now, just break the loop.
-                //     // To prevent new jobs, we can close self.segment_request_rx or simply rely on the select behavior.
-                //     // The current logic will stop accepting new jobs if segment_request_rx is None.
-                //     // If shutdown is received, we might want to drain futures or set a flag.
-                //     // For simplicity, we break. If futures are still running, they will be dropped.
-                //     break;
-                // }
-
-                // This 'else' branch is crucial for `tokio::select!`.
-                // It ensures the loop terminates if all other branches are disabled or complete.
-                // Specifically, if `segment_request_rx` is closed (becomes None) AND `futures` is empty.
+                // 4. Shutdown condition
+                // This `else` branch is taken when all other branches are disabled.
+                // This happens when:
+                //  - `draining` is true, so `recv()` is disabled.
+                //  - `futures` is empty, so `futures.next()` returns `Poll::Pending` and the branch is not taken.
+                // This is our signal to exit the loop.
                 else => {
-                    info!("All channels closed or futures completed. SegmentScheduler shutting down.");
-                    break;
+                    if draining && futures.is_empty() {
+                        info!("Draining complete. SegmentScheduler shutting down.");
+                        break;
+                    }
+                    if !draining && self.segment_request_rx.is_closed() && futures.is_empty() {
+                        info!("All pending segments processed and input is closed. SegmentScheduler shutting down.");
+                        break;
+                    }
+                    // If we get here, it means we are waiting for new jobs or for futures to complete.
+                    // The select will keep polling.
                 }
             }
         }
