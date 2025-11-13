@@ -71,9 +71,13 @@ async fn bootstrap() -> Result<(), AppError> {
         let indicatif_layer = IndicatifLayer::new().with_max_progress_bars(8, None);
 
         // Create console logging layer that writes through indicatif
+        // Use compact format to reduce verbosity
         let console_layer = tracing_subscriber::fmt::layer()
             .with_writer(indicatif_layer.get_stderr_writer())
-            .with_ansi(true);
+            .with_ansi(true)
+            .without_time()
+            .with_target(true)
+            .compact(); // Use compact format without full span paths
 
         tracing_subscriber::registry()
             .with(filter)
@@ -83,8 +87,12 @@ async fn bootstrap() -> Result<(), AppError> {
             .init();
     } else {
         // Simple console output without progress bars
+        // Use compact format to reduce verbosity
         let console_layer = tracing_subscriber::fmt::layer()
-            .with_ansi(true);
+            .with_ansi(true)
+            .without_time()
+            .with_target(true)
+            .compact(); // Use compact format without full span paths
 
         tracing_subscriber::registry()
             .with(filter)
