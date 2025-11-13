@@ -449,8 +449,7 @@ impl Processor<HlsData> for DefragmentOperator {
 
             info!(
                 "{} Flushed complete segment ({} items)",
-                self.context.name,
-                count
+                self.context.name, count
             );
         } else {
             warn!(

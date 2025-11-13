@@ -7,23 +7,23 @@
 use bytes::Bytes;
 use flv::{data::FlvData, parser_async::FlvDecoderStream};
 use futures::StreamExt;
-use humansize::{format_size, BINARY};
-use tokio::sync::mpsc;
-use tokio_stream::wrappers::ReceiverStream;
+use humansize::{BINARY, format_size};
 use reqwest::{Client, Response, StatusCode, Url};
 use std::sync::Arc;
 use std::time::Instant;
+use tokio::sync::mpsc;
+use tokio_stream::wrappers::ReceiverStream;
 use tracing::{debug, info, instrument, warn};
 
 use super::error::FlvDownloadError;
 use super::flv_config::FlvProtocolConfig;
 use crate::bytes_stream::BytesStreamReader;
 use crate::{
+    DownloadError,
     cache::{CacheKey, CacheManager, CacheMetadata, CacheResourceType, CacheStatus},
     downloader::create_client,
     media_protocol::BoxMediaStream,
     source::{ContentSource, SourceManager},
-    DownloadError,
 };
 use tokio_util::sync::CancellationToken;
 
@@ -96,7 +96,7 @@ impl FlvDownloader {
                 size = %format_size(content_length, BINARY),
                 "FLV download started"
             );
-            
+
             // Update the current span's progress bar length
             use tracing::Span;
             use tracing_indicatif::span_ext::IndicatifSpanExt;
@@ -138,7 +138,6 @@ impl FlvDownloader {
         url: Url,
         token: CancellationToken,
     ) -> Result<BoxMediaStream<FlvData, FlvDownloadError>, DownloadError> {
-
         tokio::select! {
             _ = token.cancelled() => {
                 info!(url = %url, "Download cancelled");

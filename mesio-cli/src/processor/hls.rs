@@ -131,7 +131,11 @@ pub async fn process_hls_stream(
 
     // Log summary
     // file_sequence_number starts at 0, so add 1 to get actual file count
-    let actual_files_created = if total_items_written > 0 { files_created + 1 } else { 0 };
+    let actual_files_created = if total_items_written > 0 {
+        files_created + 1
+    } else {
+        0
+    };
     info!(
         url = %url_str,
         items = total_items_written,

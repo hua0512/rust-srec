@@ -1,12 +1,12 @@
 // HLS Playlist Engine: Handles fetching, parsing, and managing HLS playlists.
 
-use crate::cache::{CacheKey, CacheMetadata, CacheResourceType, CacheManager};
+use crate::cache::{CacheKey, CacheManager, CacheMetadata, CacheResourceType};
+use crate::hls::HlsDownloaderError;
 use crate::hls::config::{HlsConfig, HlsVariantSelectionPolicy};
 use crate::hls::scheduler::ScheduledSegmentJob;
 use crate::hls::twitch_processor::{ProcessedSegment, TwitchPlaylistProcessor};
-use crate::hls::HlsDownloaderError;
 use async_trait::async_trait;
-use m3u8_rs::{parse_playlist_res, MasterPlaylist, MediaPlaylist};
+use m3u8_rs::{MasterPlaylist, MediaPlaylist, parse_playlist_res};
 use moka::future::Cache;
 use moka::policy::EvictionPolicy;
 use reqwest::Client;
@@ -20,10 +20,8 @@ use url::Url;
 
 #[async_trait]
 pub trait PlaylistProvider: Send + Sync {
-    async fn load_initial_playlist(
-        &self,
-        url: &str,
-    ) -> Result<InitialPlaylist, HlsDownloaderError>;
+    async fn load_initial_playlist(&self, url: &str)
+    -> Result<InitialPlaylist, HlsDownloaderError>;
     async fn select_media_playlist(
         &self,
         initial_playlist_with_base_url: &InitialPlaylist,
@@ -79,32 +77,32 @@ impl PlaylistProvider for PlaylistEngine {
         let cache_key = CacheKey::new(CacheResourceType::Playlist, playlist_url.as_str(), None);
 
         if let Some(cache_service) = &self.cache_service
-            && let Ok(Some((cached_data, _, _))) = cache_service.get(&cache_key).await {
-                let mut playlist_content =
-                    String::from_utf8(cached_data.to_vec()).map_err(|e| {
-                        HlsDownloaderError::PlaylistError(format!(
-                            "Failed to parse cached playlist from UTF-8: {e}"
-                        ))
-                    })?;
-                if TwitchPlaylistProcessor::is_twitch_playlist(playlist_url.as_str()) {
-                    playlist_content = self.preprocess_twitch_playlist(&playlist_content);
-                }
-                let base_url_obj = playlist_url.join(".").map_err(|e| {
-                    HlsDownloaderError::PlaylistError(format!("Failed to determine base URL: {e}"))
-                })?;
-                let base_url = base_url_obj.to_string();
-                return match parse_playlist_res(playlist_content.as_bytes()) {
-                    Ok(m3u8_rs::Playlist::MasterPlaylist(pl)) => {
-                        Ok(InitialPlaylist::Master(pl, base_url))
-                    }
-                    Ok(m3u8_rs::Playlist::MediaPlaylist(pl)) => {
-                        Ok(InitialPlaylist::Media(pl, base_url))
-                    }
-                    Err(e) => Err(HlsDownloaderError::PlaylistError(format!(
-                        "Failed to parse cached playlist: {e}"
-                    ))),
-                };
+            && let Ok(Some((cached_data, _, _))) = cache_service.get(&cache_key).await
+        {
+            let mut playlist_content = String::from_utf8(cached_data.to_vec()).map_err(|e| {
+                HlsDownloaderError::PlaylistError(format!(
+                    "Failed to parse cached playlist from UTF-8: {e}"
+                ))
+            })?;
+            if TwitchPlaylistProcessor::is_twitch_playlist(playlist_url.as_str()) {
+                playlist_content = self.preprocess_twitch_playlist(&playlist_content);
             }
+            let base_url_obj = playlist_url.join(".").map_err(|e| {
+                HlsDownloaderError::PlaylistError(format!("Failed to determine base URL: {e}"))
+            })?;
+            let base_url = base_url_obj.to_string();
+            return match parse_playlist_res(playlist_content.as_bytes()) {
+                Ok(m3u8_rs::Playlist::MasterPlaylist(pl)) => {
+                    Ok(InitialPlaylist::Master(pl, base_url))
+                }
+                Ok(m3u8_rs::Playlist::MediaPlaylist(pl)) => {
+                    Ok(InitialPlaylist::Media(pl, base_url))
+                }
+                Err(e) => Err(HlsDownloaderError::PlaylistError(format!(
+                    "Failed to parse cached playlist: {e}"
+                ))),
+            };
+        }
 
         let response = self
             .http_client
@@ -122,11 +120,13 @@ impl PlaylistProvider for PlaylistEngine {
                 response.status()
             )));
         }
-        let playlist_bytes = response.bytes().await.map_err(|e| {
-            HlsDownloaderError::NetworkError {
-                source: Arc::new(e),
-            }
-        })?;
+        let playlist_bytes =
+            response
+                .bytes()
+                .await
+                .map_err(|e| HlsDownloaderError::NetworkError {
+                    source: Arc::new(e),
+                })?;
 
         if let Some(cache_service) = &self.cache_service {
             let metadata = CacheMetadata::new(playlist_bytes.len() as u64)
@@ -160,15 +160,14 @@ impl PlaylistProvider for PlaylistEngine {
         initial_playlist_with_base_url: &InitialPlaylist,
         policy: &HlsVariantSelectionPolicy,
     ) -> Result<MediaPlaylistDetails, HlsDownloaderError> {
-        let (master_playlist_ref, master_base_url_str) = match initial_playlist_with_base_url {
-            InitialPlaylist::Master(pl, base) => (pl, base),
-            InitialPlaylist::Media(_, _) => {
-                return Err(HlsDownloaderError::PlaylistError(
+        let (master_playlist_ref, master_base_url_str) =
+            match initial_playlist_with_base_url {
+                InitialPlaylist::Master(pl, base) => (pl, base),
+                InitialPlaylist::Media(_, _) => return Err(HlsDownloaderError::PlaylistError(
                     "select_media_playlist called with a MediaPlaylist, expected MasterPlaylist"
                         .to_string(),
-                ))
-            }
-        };
+                )),
+            };
         if master_playlist_ref.variants.is_empty() {
             return Err(HlsDownloaderError::PlaylistError(
                 "Master playlist has no variants".to_string(),
@@ -216,21 +215,18 @@ impl PlaylistProvider for PlaylistEngine {
                 .ok_or_else(|| {
                     HlsDownloaderError::PlaylistError("No VideoOnly variant".to_string())
                 })?,
-            HlsVariantSelectionPolicy::MatchingResolution { width, height } => {
-                master_playlist_ref
-                    .variants
-                    .iter()
-                    .find(|v| {
-                        v.resolution.is_some_and(|r| {
-                            r.width == (*width as u64) && r.height == (*height as u64)
-                        })
-                    })
-                    .ok_or_else(|| {
-                        HlsDownloaderError::PlaylistError(format!(
-                            "No variant for resolution {width}x{height}"
-                        ))
-                    })?
-            }
+            HlsVariantSelectionPolicy::MatchingResolution { width, height } => master_playlist_ref
+                .variants
+                .iter()
+                .find(|v| {
+                    v.resolution
+                        .is_some_and(|r| r.width == (*width as u64) && r.height == (*height as u64))
+                })
+                .ok_or_else(|| {
+                    HlsDownloaderError::PlaylistError(format!(
+                        "No variant for resolution {width}x{height}"
+                    ))
+                })?,
             HlsVariantSelectionPolicy::Custom(name) => {
                 error!("Warning: Custom policy '{name}' selecting first variant.");
                 master_playlist_ref.variants.first().ok_or_else(|| {
@@ -243,15 +239,14 @@ impl PlaylistProvider for PlaylistEngine {
                 "Invalid master base URL {master_base_url_str}: {e}"
             ))
         })?;
-        let media_playlist_url =
-            master_playlist_url
-                .join(&selected_variant.uri)
-                .map_err(|e| {
-                    HlsDownloaderError::PlaylistError(format!(
-                        "Could not join master URL with variant URI {}: {e}",
-                        selected_variant.uri
-                    ))
-                })?;
+        let media_playlist_url = master_playlist_url
+            .join(&selected_variant.uri)
+            .map_err(|e| {
+                HlsDownloaderError::PlaylistError(format!(
+                    "Could not join master URL with variant URI {}: {e}",
+                    selected_variant.uri
+                ))
+            })?;
 
         debug!("Selected media playlist URL: {media_playlist_url}");
         let response = self
@@ -270,13 +265,16 @@ impl PlaylistProvider for PlaylistEngine {
                 response.status()
             )));
         }
-        let playlist_bytes = response.bytes().await.map_err(|e| {
-            HlsDownloaderError::NetworkError {
-                source: Arc::new(e),
-            }
+        let playlist_bytes =
+            response
+                .bytes()
+                .await
+                .map_err(|e| HlsDownloaderError::NetworkError {
+                    source: Arc::new(e),
+                })?;
+        let mut playlist_content = String::from_utf8(playlist_bytes.to_vec()).map_err(|e| {
+            HlsDownloaderError::PlaylistError(format!("Media playlist not UTF-8: {e}"))
         })?;
-        let mut playlist_content = String::from_utf8(playlist_bytes.to_vec())
-            .map_err(|e| HlsDownloaderError::PlaylistError(format!("Media playlist not UTF-8: {e}")))?;
         if TwitchPlaylistProcessor::is_twitch_playlist(media_playlist_url.as_str()) {
             playlist_content = self.preprocess_twitch_playlist(&playlist_content);
         }
@@ -452,24 +450,27 @@ impl PlaylistEngine {
             )));
         }
 
-        let playlist_bytes = response.bytes().await.map_err(|e| {
-            HlsDownloaderError::NetworkError {
-                source: Arc::new(e),
-            }
-        })?;
+        let playlist_bytes =
+            response
+                .bytes()
+                .await
+                .map_err(|e| HlsDownloaderError::NetworkError {
+                    source: Arc::new(e),
+                })?;
 
         // Fast path: check if we have a previous playlist and if lengths differ
         if let Some(last_bytes) = last_playlist_bytes.as_ref()
-            && last_bytes.len() == playlist_bytes.len() {
-                // Same length, do full byte comparison
-                if last_bytes == &playlist_bytes {
-                    debug!(
-                        "Playlist content for {} has not changed. Skipping parsing.",
-                        playlist_url
-                    );
-                    return Ok(None);
-                }
+            && last_bytes.len() == playlist_bytes.len()
+        {
+            // Same length, do full byte comparison
+            if last_bytes == &playlist_bytes {
+                debug!(
+                    "Playlist content for {} has not changed. Skipping parsing.",
+                    playlist_url
+                );
+                return Ok(None);
             }
+        }
 
         let playlist_bytes_to_parse: Cow<[u8]> =
             if TwitchPlaylistProcessor::is_twitch_playlist(playlist_url.as_str()) {

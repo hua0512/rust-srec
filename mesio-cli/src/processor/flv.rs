@@ -133,7 +133,11 @@ pub async fn process_file(
 
     let elapsed = start_time.elapsed();
     // file_sequence_number starts at 0, so add 1 to get actual file count
-    let actual_files_created = if tags_written > 0 { files_created + 1 } else { 0 };
+    let actual_files_created = if tags_written > 0 {
+        files_created + 1
+    } else {
+        0
+    };
     info!(
         path = %input_path.display(),
         input_size = %format_bytes(file_size),
@@ -213,7 +217,11 @@ pub async fn process_flv_stream(
 
     let elapsed = start_time.elapsed();
     // file_sequence_number starts at 0, so add 1 to get actual file count
-    let actual_files_created = if tags_written > 0 { files_created + 1 } else { 0 };
+    let actual_files_created = if tags_written > 0 {
+        files_created + 1
+    } else {
+        0
+    };
     info!(
         url = %url_str,
         duration = ?elapsed,

@@ -5,8 +5,8 @@ use crate::writer_task::FlvFormatStrategy;
 use flv::data::FlvData;
 use pipeline_common::{WriterConfig, WriterState, WriterTask};
 use std::collections::HashMap;
-use std::sync::mpsc;
 use std::path::PathBuf;
+use std::sync::mpsc;
 
 #[derive(Clone, Debug, Default)]
 pub struct FlvWriterConfig {

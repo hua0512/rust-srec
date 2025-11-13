@@ -6,13 +6,13 @@ use std::{
 };
 
 use hls::{HlsData, M4sData};
-use pipeline_common::{
-    FormatStrategy, PostWriteAction, ProtocolWriter, WriterConfig, WriterState,
-    WriterTask, expand_filename_template,
-};
 use pipeline_common::WriterError;
+use pipeline_common::{
+    FormatStrategy, PostWriteAction, ProtocolWriter, WriterConfig, WriterState, WriterTask,
+    expand_filename_template,
+};
 use std::sync::mpsc;
-use tracing::{debug, error, info, Span};
+use tracing::{Span, debug, error, info};
 use tracing_indicatif::span_ext::IndicatifSpanExt;
 
 use crate::analyzer::HlsAnalyzer;
@@ -145,11 +145,11 @@ impl FormatStrategy<HlsData> for HlsFormatStrategy {
         _state: &WriterState,
     ) -> Result<u64, Self::StrategyError> {
         info!(path = %path.display(), "Opening segment");
-        
+
         // Initialize the span's progress bar
         let span = Span::current();
         span.pb_set_message(&format!("Writing {}", path.display()));
-        
+
         // Set progress bar length from max_file_size if available
         if let Some(max_size) = self.max_file_size {
             span.pb_set_length(max_size);
@@ -219,13 +219,13 @@ impl ProtocolWriter for HlsWriter {
         extras: Option<HashMap<String, String>>,
     ) -> Self {
         let writer_config = WriterConfig::new(output_dir, base_name, extension);
-        
+
         // Extract max_file_size from extras if provided
         let max_file_size = extras
             .as_ref()
             .and_then(|e| e.get("max_file_size"))
             .and_then(|s| s.parse::<u64>().ok());
-        
+
         let strategy = HlsFormatStrategy::new(max_file_size);
         let writer_task = WriterTask::new(writer_config, strategy);
         Self { writer_task }

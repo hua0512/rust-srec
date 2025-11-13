@@ -56,8 +56,7 @@ use std::sync::Arc;
 use tracing::{debug, trace};
 
 /// Defines how timestamps should be handled across stream splits
-#[derive(Debug, Clone, Copy, PartialEq)]
-#[derive(Default)]
+#[derive(Debug, Clone, Copy, PartialEq, Default)]
 pub enum ContinuityMode {
     /// Maintain a continuous timeline across all segments
     #[default]
@@ -66,7 +65,6 @@ pub enum ContinuityMode {
     /// Reset timeline to zero after each split
     Reset,
 }
-
 
 /// State tracking for timestamp correction
 struct TimelineState {
@@ -275,7 +273,7 @@ impl Processor<FlvData> for TimeConsistencyOperator {
 mod tests {
 
     use crate::test_utils::{create_audio_tag, create_test_header, create_video_tag};
-    use pipeline_common::{init_test_tracing, CancellationToken, StreamerContext};
+    use pipeline_common::{CancellationToken, StreamerContext, init_test_tracing};
 
     use super::*;
 
@@ -392,7 +390,8 @@ mod tests {
     #[test]
     fn test_timestamp_continue_mode() {
         let context = StreamerContext::arc_new(CancellationToken::new());
-        let mut operator = TimeConsistencyOperator::new(context.clone(), ContinuityMode::Continuous);
+        let mut operator =
+            TimeConsistencyOperator::new(context.clone(), ContinuityMode::Continuous);
         let mut output_items = Vec::new();
 
         // Create a mutable output function

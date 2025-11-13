@@ -1,8 +1,7 @@
 use crate::{analyzer::FlvAnalyzer, script_modifier};
 use flv::{FlvData, FlvHeader, FlvWriter};
 use pipeline_common::{
-    expand_filename_template, FormatStrategy, PostWriteAction, WriterConfig,
-    WriterState,
+    FormatStrategy, PostWriteAction, WriterConfig, WriterState, expand_filename_template,
 };
 use std::{
     fs::OpenOptions,
@@ -11,7 +10,7 @@ use std::{
     time::Instant,
 };
 
-use tracing::{info, Span};
+use tracing::{Span, info};
 use tracing_indicatif::span_ext::IndicatifSpanExt;
 
 /// Error type for FLV strategy
@@ -154,7 +153,7 @@ impl FormatStrategy<FlvData> for FlvFormatStrategy {
         self.current_tag_count = 0;
 
         info!(path = %path.display(), "Opening segment");
-        
+
         // Initialize the span's progress bar
         let span = Span::current();
         span.pb_set_message(&format!("Writing {}", path.display()));

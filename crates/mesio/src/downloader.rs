@@ -7,7 +7,7 @@ use crate::{
     Cacheable, Download, DownloaderConfig, MultiSource, ProtocolBase, RawDownload, RawResumable,
     Resumable,
 };
-use crate::{proxy::build_proxy_from_config, DownloadError};
+use crate::{DownloadError, proxy::build_proxy_from_config};
 use tokio_util::sync::CancellationToken;
 
 /// Create a reqwest Client with the provided configuration
