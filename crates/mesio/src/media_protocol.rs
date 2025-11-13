@@ -9,8 +9,8 @@ use std::pin::Pin;
 use std::{fmt::Debug, sync::Arc};
 
 use crate::{
-    cache::CacheManager, flv::FlvProtocolConfig, hls::HlsConfig, source::SourceManager,
-    DownloadError,
+    DownloadError, cache::CacheManager, flv::FlvProtocolConfig, hls::HlsConfig,
+    source::SourceManager,
 };
 use tokio_util::sync::CancellationToken;
 
@@ -144,9 +144,7 @@ where
     P: Download + Resumable,
 {
     if let Some(range) = range {
-        protocol
-            .resume(url, (range.0, Some(range.1)), token)
-            .await
+        protocol.resume(url, (range.0, Some(range.1)), token).await
     } else {
         protocol.download(url, token).await
     }

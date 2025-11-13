@@ -1,5 +1,5 @@
-use criterion::{criterion_group, criterion_main, Criterion};
-use pipeline_common::{Pipeline, PipelineError, Processor, StreamerContext};
+use criterion::{Criterion, criterion_group, criterion_main};
+use pipeline_common::{CancellationToken, Pipeline, PipelineError, Processor, StreamerContext};
 use std::sync::Arc;
 
 // A simple processor that increments a counter.
@@ -46,7 +46,11 @@ impl<T: Clone> RecursivePipeline<T> {
         self
     }
 
-    fn process(&mut self, context: &Arc<StreamerContext>, data: T) -> Result<Vec<T>, PipelineError> {
+    fn process(
+        &mut self,
+        context: &Arc<StreamerContext>,
+        data: T,
+    ) -> Result<Vec<T>, PipelineError> {
         fn process_recursive<T: Clone>(
             processors: &mut [Box<dyn Processor<T>>],
             context: &Arc<StreamerContext>,
@@ -69,7 +73,7 @@ impl<T: Clone> RecursivePipeline<T> {
 }
 
 fn build_iterative_pipeline(num_processors: usize) -> Pipeline<u32> {
-    let mut pipeline = Pipeline::new(Arc::new(Default::default()));
+    let mut pipeline = Pipeline::new(Arc::new(StreamerContext::new(CancellationToken::new())));
     for _ in 0..num_processors {
         pipeline = pipeline.add_processor(CounterProcessor);
     }
@@ -119,13 +123,11 @@ fn pipeline_benchmark(c: &mut Criterion) {
                     || {
                         (
                             build_recursive_pipeline(num_processors),
-                            Arc::new(StreamerContext::default()),
+                            Arc::new(StreamerContext::new(CancellationToken::new())),
                         )
                     },
                     |(mut pipeline, context)| {
-                        let result = pipeline
-                            .process(&context, std::hint::black_box(0))
-                            .unwrap();
+                        let result = pipeline.process(&context, std::hint::black_box(0)).unwrap();
                         assert_eq!(result, vec![num_processors as u32]);
                     },
                 )

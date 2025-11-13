@@ -1,6 +1,6 @@
 [package]
 name = "flv-fix"
-version = "0.1.4"
+version = "0.1.6"
 edition = "2024"
 
 [dependencies]
@@ -14,8 +14,9 @@ pipeline-common = { path = "../pipeline-common" }
 crc32fast = "1.4.2"
 time = { version = "0.3.44", features = ["macros", "formatting", "parsing"] }
 tracing = "0.1.41"
+tracing-indicatif = "0.3"
 thiserror = "2.0.17"
-tokio = { version = "1.48.0", features = ["rt", "macros"] }
+tokio = { version = "1.48.0", features = ["rt", "macros", "rt-multi-thread"] }
 
 [dev-dependencies]
 tracing-subscriber = "0.3"

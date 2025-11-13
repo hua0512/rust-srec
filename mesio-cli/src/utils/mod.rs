@@ -1,8 +1,8 @@
 mod files;
 mod headers;
 mod params;
-pub mod progress;
 mod size;
+pub mod spans;
 mod time;
 
 // Export utility functions

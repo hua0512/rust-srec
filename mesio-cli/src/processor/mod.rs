@@ -4,12 +4,9 @@ mod hls;
 
 use crate::{config::ProgramConfig, error::AppError};
 use mesio_engine::{DownloadManagerConfig, MesioDownloaderFactory, ProtocolType};
-use pipeline_common::{progress::ProgressEvent, CancellationToken};
-use std::{
-    path::{Path, PathBuf},
-    sync::Arc,
-};
-use tracing::{error, info};
+use pipeline_common::CancellationToken;
+use std::path::{Path, PathBuf};
+use tracing::{Level, error, info, span};
 
 /// Determine the type of input and process accordingly
 pub async fn process_inputs(
@@ -17,7 +14,6 @@ pub async fn process_inputs(
     output_dir: &Path,
     config: &ProgramConfig,
     name_template: &str,
-    on_progress: Option<Arc<dyn Fn(ProgressEvent) + Send + Sync + 'static>>,
     token: &CancellationToken,
 ) -> Result<(), AppError> {
     if inputs.is_empty() {
@@ -27,6 +23,11 @@ pub async fn process_inputs(
     }
 
     let inputs_len = inputs.len();
+
+    // Create a span for overall processing
+    let processing_span = span!(Level::INFO, "processing_inputs", count = inputs_len);
+    let _enter = processing_span.enter();
+
     info!(
         inputs_count = inputs_len,
         "Starting processing of {} input{}",
@@ -42,10 +43,15 @@ pub async fn process_inputs(
 
     // Process each input
     for (index, input) in inputs.iter().enumerate() {
-        let _input_index = index + 1;
+        let input_index = index + 1;
 
         // trim urls for better usability
         let input = input.trim();
+
+        // Create a span for this specific input
+        let input_span = span!(Level::INFO, "process_input", index = input_index, input = %input);
+        let _input_enter = input_span.enter();
+
         // Process based on input type
         if input.starts_with("http://") || input.starts_with("https://") {
             let mut downloader = factory.create_for_url(input, ProtocolType::Auto).await?;
@@ -59,7 +65,6 @@ pub async fn process_inputs(
                         output_dir,
                         config,
                         name_template,
-                        on_progress.clone(),
                         &mut downloader,
                         token,
                     )
@@ -71,7 +76,6 @@ pub async fn process_inputs(
                         output_dir,
                         config,
                         name_template,
-                        on_progress.clone(),
                         &mut downloader,
                         token,
                     )
@@ -92,14 +96,7 @@ pub async fn process_inputs(
                 if let Some(extension) = path.extension().and_then(|ext| ext.to_str()) {
                     match extension.to_lowercase().as_str() {
                         "flv" => {
-                            flv::process_file(
-                                &path,
-                                output_dir,
-                                config,
-                                on_progress.clone(),
-                                token,
-                            )
-                            .await?;
+                            flv::process_file(&path, output_dir, config, token).await?;
                         }
                         // "m3u8" | "m3u" => {
                         //     hls::process_hls_file(&path, output_dir, config, &progress_manager).await?;
