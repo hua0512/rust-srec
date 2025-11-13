@@ -58,27 +58,40 @@ async fn bootstrap() -> Result<(), AppError> {
     let file_appender = tracing_appender::rolling::daily(".", "mesio.log");
     let (non_blocking_file, _guard) = tracing_appender::non_blocking(file_appender);
 
-    // Create IndicatifLayer for progress bars and console output
-    let indicatif_layer = IndicatifLayer::new().with_max_progress_bars(8, None); // Show max 8 concurrent progress bars
-
     // Create file logging layer
     let file_layer = tracing_subscriber::fmt::layer()
         .with_writer(non_blocking_file)
         .with_ansi(false);
 
-    // Create console logging layer that writes through indicatif
-    let console_layer = tracing_subscriber::fmt::layer()
-        .with_writer(indicatif_layer.get_stderr_writer())
-        .with_ansi(true);
-
-    // Combine layers
     let filter = tracing_subscriber::filter::LevelFilter::from_level(log_level);
-    tracing_subscriber::registry()
-        .with(filter)
-        .with(file_layer)
-        .with(console_layer)
-        .with(indicatif_layer)
-        .init();
+
+    // Conditionally setup progress bars based on --progress flag
+    if args.show_progress {
+        // Create IndicatifLayer for progress bars and console output
+        let indicatif_layer = IndicatifLayer::new().with_max_progress_bars(8, None);
+
+        // Create console logging layer that writes through indicatif
+        let console_layer = tracing_subscriber::fmt::layer()
+            .with_writer(indicatif_layer.get_stderr_writer())
+            .with_ansi(true);
+
+        tracing_subscriber::registry()
+            .with(filter)
+            .with(file_layer)
+            .with(console_layer)
+            .with(indicatif_layer)
+            .init();
+    } else {
+        // Simple console output without progress bars
+        let console_layer = tracing_subscriber::fmt::layer()
+            .with_ansi(true);
+
+        tracing_subscriber::registry()
+            .with(filter)
+            .with(file_layer)
+            .with(console_layer)
+            .init();
+    }
 
     info!("███╗   ███╗███████╗███████╗██╗ ██████╗ ");
     info!("████╗ ████║██╔════╝██╔════╝██║██╔═══██╗");
