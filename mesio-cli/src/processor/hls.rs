@@ -130,10 +130,12 @@ pub async fn process_hls_stream(
     let elapsed = start_time.elapsed();
 
     // Log summary
+    // file_sequence_number starts at 0, so add 1 to get actual file count
+    let actual_files_created = if total_items_written > 0 { files_created + 1 } else { 0 };
     info!(
         url = %url_str,
         items = total_items_written,
-        files = files_created,
+        files = actual_files_created,
         duration = ?elapsed,
         "HLS download complete"
     );
