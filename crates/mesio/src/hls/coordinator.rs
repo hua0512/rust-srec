@@ -14,7 +14,7 @@ use std::sync::Arc;
 use tokio::sync::mpsc;
 use tokio::task::JoinHandle;
 use tokio_util::sync::CancellationToken;
-use tracing::{debug, error};
+use tracing::{Instrument, debug, error};
 
 use super::HlsDownloaderError;
 
@@ -31,12 +31,15 @@ pub struct HlsStreamCoordinator;
 impl HlsStreamCoordinator {
     /// Sets up all components, spawns their tasks, and returns the client event receiver,
     /// a shutdown sender, and handles to the spawned tasks.
+    ///
+    /// Optional parent_span can be provided for progress bar hierarchy.
     pub async fn setup_and_spawn(
         initial_url: String,
         config: Arc<HlsConfig>,
         http_client: Client,
         cache_manager: Option<Arc<CacheManager>>,
         token: CancellationToken,
+        parent_span: Option<tracing::Span>,
     ) -> Result<
         (
             mpsc::Receiver<Result<HlsStreamEvent, HlsDownloaderError>>, // client_event_rx
@@ -132,9 +135,19 @@ impl HlsStreamCoordinator {
             debug!("OutputManager task finished.");
         });
 
-        let scheduler_handle = tokio::spawn(async move {
-            segment_scheduler.run().await;
-        });
+        let scheduler_parent_span = parent_span.clone();
+        let scheduler_handle = if let Some(span) = scheduler_parent_span {
+            tokio::spawn(
+                async move {
+                    segment_scheduler.run().await;
+                }
+                .instrument(span),
+            )
+        } else {
+            tokio::spawn(async move {
+                segment_scheduler.run().await;
+            })
+        };
 
         let playlist_engine_handle = {
             let playlist_url = selected_media_playlist_url.unwrap_or(initial_url);
@@ -226,6 +239,7 @@ mod tests {
             client,
             cache,
             CancellationToken::new(),
+            None, // No parent span for test
         )
         .await;
 

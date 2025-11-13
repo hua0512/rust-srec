@@ -1,4 +1,4 @@
-use std::{path::PathBuf, sync::Arc, time::Duration};
+use std::{path::PathBuf, time::Duration};
 
 use clap::Parser;
 use config::ProgramConfig;
@@ -7,11 +7,13 @@ use flv_fix::FlvPipelineConfig;
 use flv_fix::RepairStrategy;
 use flv_fix::ScriptFillerConfig;
 use hls_fix::HlsPipelineConfig;
-use indicatif::MultiProgress;
 use mesio_engine::flv::FlvProtocolConfig;
 use mesio_engine::{DownloaderConfig, HlsProtocolBuilder, ProxyAuth, ProxyConfig, ProxyType};
-use pipeline_common::{config::PipelineConfig, CancellationToken};
-use tracing::{error, info, Level};
+use pipeline_common::{CancellationToken, config::PipelineConfig};
+use tracing::{Level, error, info};
+use tracing_indicatif::IndicatifLayer;
+use tracing_subscriber::layer::SubscriberExt;
+use tracing_subscriber::util::SubscriberInitExt;
 
 mod cli;
 mod config;
@@ -23,9 +25,6 @@ mod utils;
 
 use cli::CliArgs;
 use input::input_handler;
-use tracing_subscriber::FmtSubscriber;
-use tracing_subscriber::fmt::writer::MakeWriterExt;
-use utils::progress::ProgressManager;
 use utils::{parse_headers, parse_params, parse_size, parse_time};
 
 fn main() {
@@ -48,23 +47,38 @@ async fn bootstrap() -> Result<(), AppError> {
     // Spawn the input handler
     tokio::spawn(input_handler(token.clone()));
 
-    // Setup logging
+    // Setup logging with tracing-indicatif
     let log_level = if args.verbose {
         Level::DEBUG
     } else {
         Level::INFO
     };
-    let file_appender = tracing_appender::rolling::daily(".", "mesio.log");
-    let (non_blocking, _guard) = tracing_appender::non_blocking(file_appender);
-    let multi_writer = MakeWriterExt::and(std::io::stdout, non_blocking);
 
-    let subscriber = FmtSubscriber::builder()
-        .with_max_level(log_level)
-        .with_writer(multi_writer)
-        .with_ansi(true)
-        .finish();
-    tracing::subscriber::set_global_default(subscriber)
-        .map_err(|e| AppError::Initialization(e.to_string()))?;
+    // Create file appender for mesio.log
+    let file_appender = tracing_appender::rolling::daily(".", "mesio.log");
+    let (non_blocking_file, _guard) = tracing_appender::non_blocking(file_appender);
+
+    // Create IndicatifLayer for progress bars and console output
+    let indicatif_layer = IndicatifLayer::new().with_max_progress_bars(8, None); // Show max 8 concurrent progress bars
+
+    // Create file logging layer
+    let file_layer = tracing_subscriber::fmt::layer()
+        .with_writer(non_blocking_file)
+        .with_ansi(false);
+
+    // Create console logging layer that writes through indicatif
+    let console_layer = tracing_subscriber::fmt::layer()
+        .with_writer(indicatif_layer.get_stderr_writer())
+        .with_ansi(true);
+
+    // Combine layers
+    let filter = tracing_subscriber::filter::LevelFilter::from_level(log_level);
+    tracing_subscriber::registry()
+        .with(filter)
+        .with(file_layer)
+        .with(console_layer)
+        .with(indicatif_layer)
+        .init();
 
     info!("███╗   ███╗███████╗███████╗██╗ ██████╗ ");
     info!("████╗ ████║██╔════╝██╔════╝██║██╔═══██╗");
@@ -123,14 +137,6 @@ async fn bootstrap() -> Result<(), AppError> {
 
     // Determine output directory
     let output_dir = args.output_dir.unwrap_or_else(|| PathBuf::from("./fix"));
-
-    // Create a progress manager based on show_progress flag
-    let multi = MultiProgress::new();
-    let progress_manager = if args.show_progress {
-        ProgressManager::new(multi.clone())
-    } else {
-        ProgressManager::new_disabled(multi.clone())
-    };
 
     // Handle proxy configuration
     let (proxy_config, use_system_proxy) = if args.no_proxy {
@@ -236,9 +242,6 @@ async fn bootstrap() -> Result<(), AppError> {
         &output_dir,
         &program_config,
         &args.output_name_template,
-        Some(Arc::new(move |event| {
-            progress_manager.handle_event(event);
-        })),
         &token,
     )
     .await;
@@ -252,5 +255,9 @@ async fn bootstrap() -> Result<(), AppError> {
     };
 
     token.cancel();
+
+    // Give a moment for any background spans to complete
+    tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+
     final_result
 }

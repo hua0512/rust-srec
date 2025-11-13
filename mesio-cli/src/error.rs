@@ -3,8 +3,6 @@ use thiserror::Error;
 
 #[derive(Debug, Error)]
 pub enum AppError {
-    // #[error("Configuration error: {0}")]
-    // Config(String),
     #[error("I/O error: {0}")]
     Io(#[from] std::io::Error),
 
@@ -19,9 +17,6 @@ pub enum AppError {
 
     #[error("Parse error: {0}")]
     ParseError(String),
-
-    #[error("Initialization failed: {0}")]
-    Initialization(String),
 
     #[error("Processor error: {0}")]
     Processor(#[from] Box<dyn std::error::Error>),

@@ -215,12 +215,12 @@ impl PipelineProvider for FlvPipeline {
 /// Tests for the FLV processing pipeline
 mod test {
     use super::*;
-    use crate::{writer::FlvWriter, FlvStrategyError};
-    
+    use crate::{FlvStrategyError, writer::FlvWriter};
+
     use flv::data::FlvData;
     use flv::parser_async::FlvDecoderStream;
     use futures::StreamExt;
-    use pipeline_common::{init_test_tracing, PipelineError, ProtocolWriter, WriterError};
+    use pipeline_common::{PipelineError, ProtocolWriter, WriterError, init_test_tracing};
     use std::sync::mpsc;
 
     use std::path::Path;
@@ -287,26 +287,20 @@ mod test {
                 }
             };
 
-            if let Err(err) = pipeline.run(input, &mut output) {
-                if !matches!(err, PipelineError::Cancelled) {
-                    output_tx
-                        .send(Err(PipelineError::Processing(format!(
-                            "Pipeline error: {err}"
-                        ))))
-                        .ok();
-                }
+            if let Err(err) = pipeline.run(input, &mut output)
+                && !matches!(err, PipelineError::Cancelled)
+            {
+                output_tx
+                    .send(Err(PipelineError::Processing(format!(
+                        "Pipeline error: {err}"
+                    ))))
+                    .ok();
             }
         }));
 
         // Run the writer task with the receiver
         let writer_handle = tokio::task::spawn_blocking(move || {
-            let mut writer_task = FlvWriter::new(
-                output_dir,
-                base_name,
-                "flv".to_string(),
-                None,
-                None,
-            );
+            let mut writer_task = FlvWriter::new(output_dir, base_name, "flv".to_string(), None);
 
             writer_task.run(output_rx)?;
 

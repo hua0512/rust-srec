@@ -89,13 +89,19 @@ impl FlvDownloader {
             return Err(DownloadError::StatusCode(response.status()));
         }
 
-        // Log file size if available
+        // Log file size and update progress bar if available
         if let Some(content_length) = response.content_length() {
             info!(
                 url = %url,
                 size = %format_size(content_length, BINARY),
                 "FLV download started"
             );
+            
+            // Update the current span's progress bar length
+            use tracing::Span;
+            use tracing_indicatif::span_ext::IndicatifSpanExt;
+            let span = Span::current();
+            span.pb_set_length(content_length);
         } else {
             debug!(url = %url, "FLV content length not available");
         }

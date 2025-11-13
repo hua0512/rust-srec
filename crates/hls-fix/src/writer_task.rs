@@ -3,18 +3,17 @@ use std::{
     fs::OpenOptions,
     io::{BufWriter, Write},
     path::PathBuf,
-    sync::Arc,
-    time::Duration,
 };
 
 use hls::{HlsData, M4sData};
 use pipeline_common::{
-    FormatStrategy, PostWriteAction, Progress, ProtocolWriter, WriterConfig, WriterState,
+    FormatStrategy, PostWriteAction, ProtocolWriter, WriterConfig, WriterState,
     WriterTask, expand_filename_template,
 };
-use pipeline_common::{WriterError, progress::ProgressEvent};
+use pipeline_common::WriterError;
 use std::sync::mpsc;
-use tracing::{debug, error, info};
+use tracing::{debug, error, info, Span};
+use tracing_indicatif::span_ext::IndicatifSpanExt;
 
 use crate::analyzer::HlsAnalyzer;
 
@@ -23,7 +22,7 @@ pub struct HlsFormatStrategy {
     current_offset: u64,
     is_finalizing: bool,
     target_duration: f32,
-    on_progress: Option<Arc<dyn Fn(ProgressEvent) + Send + Sync + 'static>>,
+    max_file_size: Option<u64>,
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -37,15 +36,13 @@ pub enum HlsStrategyError {
 }
 
 impl HlsFormatStrategy {
-    pub fn new(
-        on_progress: Option<Arc<dyn Fn(ProgressEvent) + Send + Sync + 'static>>,
-    ) -> Self {
+    pub fn new(max_file_size: Option<u64>) -> Self {
         Self {
             analyzer: HlsAnalyzer::new(),
             current_offset: 0,
             is_finalizing: false,
             target_duration: 0.0,
-            on_progress,
+            max_file_size,
         }
     }
 
@@ -58,19 +55,15 @@ impl HlsFormatStrategy {
     }
 
     fn update_status(&self, state: &WriterState) {
-        if let Some(callback) = &self.on_progress {
-            let progress = Progress {
-                bytes_written: state.bytes_written_current_file,
-                total_bytes: None, // HLS streams don't have a known total size
-                items_processed: state.items_written_current_file as u64,
-                rate: 0.0,
-                duration: Some(Duration::from_secs_f32(self.target_duration)),
-            };
-            callback(ProgressEvent::ProgressUpdate {
-                path: state.current_path.clone().into(),
-                progress,
-            });
-        }
+        // Update the current span with progress information
+        let span = Span::current();
+        span.pb_set_position(state.bytes_written_current_file);
+        span.pb_set_message(&format!(
+            "{} | {} segments | {:.1}s",
+            state.current_path.display(),
+            state.items_written_current_file,
+            self.target_duration
+        ));
     }
 }
 
@@ -100,6 +93,8 @@ impl FormatStrategy<HlsData> for HlsFormatStrategy {
                     .map_err(HlsStrategyError::Analyzer)?;
                 let bytes_written = ts.data.len() as u64;
                 writer.write_all(&ts.data)?;
+                // Accumulate TS segment duration
+                self.target_duration += ts.segment.duration;
                 Ok(bytes_written)
             }
             HlsData::M4sData(m4s_data) => {
@@ -116,7 +111,7 @@ impl FormatStrategy<HlsData> for HlsFormatStrategy {
                     M4sData::Segment(segment) => {
                         let bytes_written = segment.data.len() as u64;
                         writer.write_all(&segment.data)?;
-                        self.target_duration = self.target_duration.max(segment.segment.duration);
+                        self.target_duration += segment.segment.duration;
                         bytes_written
                     }
                 };
@@ -149,13 +144,16 @@ impl FormatStrategy<HlsData> for HlsFormatStrategy {
         _config: &WriterConfig,
         _state: &WriterState,
     ) -> Result<u64, Self::StrategyError> {
-        if let Some(callback) = &self.on_progress {
-            callback(ProgressEvent::FileOpened {
-                path: path.to_path_buf().into(),
-            });
-        }
-
         info!(path = %path.display(), "Opening segment");
+        
+        // Initialize the span's progress bar
+        let span = Span::current();
+        span.pb_set_message(&format!("Writing {}", path.display()));
+        
+        // Set progress bar length from max_file_size if available
+        if let Some(max_size) = self.max_file_size {
+            span.pb_set_length(max_size);
+        }
 
         Ok(0)
     }
@@ -172,11 +170,6 @@ impl FormatStrategy<HlsData> for HlsFormatStrategy {
 
         if self.is_finalizing {
             self.reset()?;
-        }
-        if let Some(callback) = &self.on_progress {
-            callback(ProgressEvent::FileClosed {
-                path: path.to_path_buf().into(),
-            });
         }
 
         info!(
@@ -223,11 +216,17 @@ impl ProtocolWriter for HlsWriter {
         output_dir: PathBuf,
         base_name: String,
         extension: String,
-        on_progress: Option<Arc<dyn Fn(ProgressEvent) + Send + Sync + 'static>>,
-        _extras: Option<HashMap<String, String>>,
+        extras: Option<HashMap<String, String>>,
     ) -> Self {
         let writer_config = WriterConfig::new(output_dir, base_name, extension);
-        let strategy = HlsFormatStrategy::new(on_progress);
+        
+        // Extract max_file_size from extras if provided
+        let max_file_size = extras
+            .as_ref()
+            .and_then(|e| e.get("max_file_size"))
+            .and_then(|s| s.parse::<u64>().ok());
+        
+        let strategy = HlsFormatStrategy::new(max_file_size);
         let writer_task = WriterTask::new(writer_config, strategy);
         Self { writer_task }
     }

@@ -1,16 +1,15 @@
-use crate::{
-    config::ProgramConfig, error::AppError, processor::generic::process_stream,
-    utils::create_dirs, utils::expand_name_url,
-};
-use futures::{stream, StreamExt};
+use crate::utils::spans;
+use crate::{config::ProgramConfig, error::AppError, utils::create_dirs, utils::expand_name_url};
+use futures::{StreamExt, stream};
 use hls::HlsData;
-use pipeline_common::CancellationToken;
 use hls_fix::{HlsPipeline, HlsWriter};
 use mesio_engine::{DownloadError, DownloaderInstance};
-use pipeline_common::{PipelineError, ProtocolWriter, progress::ProgressEvent};
+use pipeline_common::CancellationToken;
+use pipeline_common::{PipelineError, ProtocolWriter};
+use std::path::Path;
 use std::time::Instant;
-use std::{path::Path, sync::Arc};
-use tracing::{debug, info};
+use tracing::{Level, debug, info, span};
+use tracing_indicatif::span_ext::IndicatifSpanExt;
 
 /// Process an HLS stream
 pub async fn process_hls_stream(
@@ -18,7 +17,6 @@ pub async fn process_hls_stream(
     output_dir: &Path,
     config: &ProgramConfig,
     name_template: &str,
-    on_progress: Option<Arc<dyn Fn(ProgressEvent) + Send + Sync + 'static>>,
     downloader: &mut DownloaderInstance,
     token: &CancellationToken,
 ) -> Result<u64, AppError> {
@@ -30,13 +28,26 @@ pub async fn process_hls_stream(
     let base_name = expand_name_url(name_template, url_str)?;
     downloader.add_source(url_str, 10);
 
-    // Start the download
-    let mut stream = match downloader {
-        DownloaderInstance::Hls(hls_manager) => hls_manager.download_with_sources(url_str).await?,
-        _ => {
-            return Err(AppError::InvalidInput(
-                "Expected HLS downloader".to_string(),
-            ));
+    // Create the writer progress span up-front so downloads inherit it
+    let writer_span = span!(Level::INFO, "writer_processing");
+    spans::init_writing_span(&writer_span, format!("Writing HLS {}", base_name));
+
+    let download_span = span!(parent: &writer_span, Level::INFO, "download_hls", url = %url_str);
+    spans::init_spinner_span(&download_span, format!("Downloading {}", url_str));
+
+    // Start the download while the download span is active so child spans attach correctly
+    let mut stream = {
+        let _writer_enter = writer_span.enter();
+        let _download_enter = download_span.enter();
+        match downloader {
+            DownloaderInstance::Hls(hls_manager) => {
+                hls_manager.download_with_sources(url_str).await?
+            }
+            _ => {
+                return Err(AppError::InvalidInput(
+                    "Expected HLS downloader".to_string(),
+                ));
+            }
         }
     };
 
@@ -73,41 +84,59 @@ pub async fn process_hls_stream(
         extension
     );
 
+    // Prepend the first segment back to the stream
+    let stream_with_first_segment = stream::once(async { Ok(first_segment) }).chain(stream);
+    let stream = stream_with_first_segment;
+
     let hls_pipe_config = config.hls_pipeline_config.clone();
     debug!("Pipeline config: {:?}", hls_pipe_config);
 
-    // Prepend the first segment back to the stream
-    let stream_with_first_segment = stream::once(async { Ok(first_segment) }).chain(stream);
+    let stream = stream.map(|r| r.map_err(|e| PipelineError::Processing(e.to_string())));
 
-    let stream =
-        stream_with_first_segment.map(|r| r.map_err(|e| PipelineError::Processing(e.to_string())));
+    let (total_items_written, files_created) =
+        crate::processor::generic::process_stream_with_span::<HlsPipeline, HlsWriter>(
+            &config.pipeline_config,
+            hls_pipe_config,
+            Box::pin(stream),
+            writer_span.clone(),
+            |_writer_span| {
+                use std::collections::HashMap;
+                let mut extras = HashMap::new();
+                // Pass max_file_size to writer for progress bar length
+                if config.pipeline_config.max_file_size > 0 {
+                    extras.insert(
+                        "max_file_size".to_string(),
+                        config.pipeline_config.max_file_size.to_string(),
+                    );
+                }
+                HlsWriter::new(
+                    output_dir.to_path_buf(),
+                    base_name.to_string(),
+                    extension.to_string(),
+                    if extras.is_empty() {
+                        None
+                    } else {
+                        Some(extras)
+                    },
+                )
+            },
+            token.clone(),
+        )
+        .await?;
 
-    let (_ts_segments_written, total_segments_written) = process_stream::<HlsPipeline, HlsWriter>(
-        &config.pipeline_config,
-        hls_pipe_config,
-        Box::pin(stream),
-        || {
-            HlsWriter::new(
-                output_dir.to_path_buf(),
-                base_name.to_string(),
-                extension.to_string(),
-                on_progress,
-                None,
-            )
-        },
-        token.clone(),
-    )
-    .await?;
+    download_span.pb_set_finish_message(&format!("Downloaded {}", url_str));
+    drop(download_span);
 
     let elapsed = start_time.elapsed();
 
     // Log summary
     info!(
         url = %url_str,
-        segments = total_segments_written,
+        items = total_items_written,
+        files = files_created,
         duration = ?elapsed,
         "HLS download complete"
     );
 
-    Ok(total_segments_written as u64)
+    Ok(total_items_written as u64)
 }

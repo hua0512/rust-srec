@@ -8,7 +8,8 @@ use async_trait::async_trait;
 use bytes::Bytes;
 use reqwest::Client;
 use std::sync::Arc;
-use tracing::{debug, error};
+use tracing::{Span, debug, error, instrument};
+use tracing_indicatif::span_ext::IndicatifSpanExt;
 use url::Url;
 
 use crate::hls::scheduler::ScheduledSegmentJob;
@@ -46,6 +47,7 @@ impl SegmentFetcher {
         &self,
         segment_url: &Url,
         byte_range: Option<&m3u8_rs::ByteRange>,
+        segment_span: &Span,
     ) -> Result<Bytes, HlsDownloaderError> {
         let mut attempts = 0;
         loop {
@@ -70,16 +72,23 @@ impl SegmentFetcher {
             {
                 Ok(response) => {
                     if response.status().is_success() {
-                        return response.bytes().await.map_err(HlsDownloaderError::from);
+                        if let Some(len) = response.content_length() {
+                            segment_span.pb_set_length(len);
+                        }
+
+                        // Use bytes() instead of streaming to avoid memory accumulation
+                        // reqwest internally handles chunked downloads efficiently
+                        let bytes = response.bytes().await.map_err(HlsDownloaderError::from)?;
+                        segment_span.pb_set_position(bytes.len() as u64);
+
+                        return Ok(bytes);
                     } else if response.status().is_client_error() {
-                        // Non-retryable client errors (4xx)
                         return Err(HlsDownloaderError::SegmentFetchError(format!(
                             "Client error {} for segment {}",
                             response.status(),
                             segment_url
                         )));
                     }
-                    // Server errors (5xx) or other retryable issues
                     if attempts > self.config.fetcher_config.max_segment_retries {
                         return Err(HlsDownloaderError::SegmentFetchError(format!(
                             "Max retries ({}) exceeded for segment {}. Last status: {}",
@@ -91,7 +100,6 @@ impl SegmentFetcher {
                 }
                 Err(e) => {
                     if !e.is_connect() && !e.is_timeout() && !e.is_request() {
-                        // Non-retryable network errors
                         return Err(HlsDownloaderError::from(e));
                     }
                     if attempts > self.config.fetcher_config.max_segment_retries {
@@ -116,18 +124,25 @@ impl SegmentDownloader for SegmentFetcher {
     /// If the segment is already cached, it retrieves it from the cache.
     /// If not, it downloads the segment and caches it.
     /// Returns the raw bytes of the segment.
+    #[instrument(skip(self, job), fields(msn = job.media_sequence_number))]
     async fn download_segment_from_job(
         &self,
         job: &ScheduledSegmentJob,
     ) -> Result<Bytes, HlsDownloaderError> {
-        // segment_uri is already absolute if resolved by PlaylistEngine, or needs resolving with job.base_url
-        // Assuming job.segment_uri is the absolute URL for now.
-        // If not, PlaylistEngine should resolve it before creating the job, or fetcher needs base_url.
-        // For consistency, let's assume segment_uri in ScheduledSegmentJob is absolute.
-        // If job.segment_uri can be relative, then:
-        // let absolute_segment_url = Url::parse(&job.base_url)?
-        //     .join(&job.segment_uri)
-        //     .map_err(|e| HlsDownloaderError::PlaylistError(format!("Could not join base URL {} with segment URI {}: {}", job.base_url, job.segment_uri, e)))?;
+        let segment_label = format!("Segment #{}", job.media_sequence_number);
+        // current download span
+        let current_span = Span::current();
+
+        use indicatif::ProgressStyle;
+        let style = ProgressStyle::default_bar()
+            .template(&format!(
+                "{{span_child_prefix}}{{spinner:.yellow}} [{{bar:20.yellow/white}}] {{bytes}}/{{total_bytes}} {}",
+                segment_label
+            ))
+            .unwrap()
+            .progress_chars("=> ");
+        current_span.pb_set_style(&style);
+        current_span.pb_set_message(&segment_label);
 
         let segment_url = Url::parse(&job.segment_uri).map_err(|e| {
             HlsDownloaderError::PlaylistError(format!(
@@ -136,38 +151,66 @@ impl SegmentDownloader for SegmentFetcher {
             ))
         })?;
 
-        // Check if the segment is already cached
         let cache_key = CacheKey::new(CacheResourceType::Segment, segment_url.to_string(), None);
-        if let Some(cache) = &self.cache_service
-            && let Ok(Some(data)) = cache.get(&cache_key).await
-        {
-            return Ok(data.0);
-        }
 
-        let downloaded_bytes = self
-            .fetch_with_retries(&segment_url, job.byte_range.as_ref())
-            .await?;
-
+        let mut cached_bytes: Option<Bytes> = None;
         if let Some(cache) = &self.cache_service {
-            let metadata = CacheMetadata::new(downloaded_bytes.len() as u64)
-                .with_expiration(self.config.fetcher_config.segment_raw_cache_ttl);
-
-            if let Err(e) = cache
-                .put(cache_key, downloaded_bytes.clone(), metadata)
-                .await
-            {
-                error!(
-                    "Warning: Failed to cache raw segment {}: {}",
-                    segment_url, e
-                );
+            match cache.get(&cache_key).await {
+                Ok(Some(data)) => {
+                    debug!(msn = job.media_sequence_number, "Segment loaded from cache");
+                    current_span.pb_set_length(data.0.len() as u64);
+                    current_span.pb_set_position(data.0.len() as u64);
+                    cached_bytes = Some(data.0);
+                }
+                Ok(None) => {}
+                Err(e) => {
+                    error!(
+                        "Warning: Failed to read segment {} from cache: {}",
+                        segment_url, e
+                    );
+                }
             }
         }
 
-        debug!(
-            "Downloaded {} bytes from segment URL: {}",
-            downloaded_bytes.len(),
-            segment_url
-        );
-        Ok(downloaded_bytes)
+        let result = if let Some(bytes) = cached_bytes {
+            Ok(bytes)
+        } else {
+            let downloaded_bytes = self
+                .fetch_with_retries(&segment_url, job.byte_range.as_ref(), &current_span)
+                .await?;
+
+            if let Some(cache) = &self.cache_service {
+                let metadata = CacheMetadata::new(downloaded_bytes.len() as u64)
+                    .with_expiration(self.config.fetcher_config.segment_raw_cache_ttl);
+                if let Err(e) = cache
+                    .put(cache_key, downloaded_bytes.clone(), metadata)
+                    .await
+                {
+                    error!(
+                        "Warning: Failed to cache raw segment {}: {}",
+                        segment_url, e
+                    );
+                }
+            }
+
+            debug!(
+                msn = job.media_sequence_number,
+                size = downloaded_bytes.len(),
+                "Downloaded segment"
+            );
+
+            Ok(downloaded_bytes)
+        };
+
+        match &result {
+            Ok(_) => current_span.pb_set_finish_message(&segment_label),
+            Err(err) => current_span.pb_set_finish_message(&format!(
+                "Segment #{} failed: {}",
+                job.media_sequence_number, err
+            )),
+        }
+
+        current_span.pb_reset();
+        result
     }
 }
