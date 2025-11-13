@@ -27,7 +27,6 @@ pub fn writing_progress_style() -> ProgressStyle {
 }
 
 /// Creates a spinner style for operations without known progress
-#[allow(dead_code)]
 pub fn spinner_style() -> ProgressStyle {
     ProgressStyle::default_spinner()
         .template("{span_child_prefix}{spinner:.green} {span_name} {msg} [{elapsed_precise}]")
@@ -56,7 +55,6 @@ pub fn init_writing_span(span: &Span, message: impl Into<String>) {
 }
 
 /// Initialize a span with a spinner (for unknown duration operations)
-#[allow(dead_code)]
 pub fn init_spinner_span(span: &Span, message: impl Into<String>) {
     span.pb_set_style(&spinner_style());
     let msg = message.into();

@@ -210,7 +210,6 @@ impl SegmentDownloader for SegmentFetcher {
             )),
         }
 
-        current_span.pb_reset();
         result
     }
 }
