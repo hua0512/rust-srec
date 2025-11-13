@@ -30,11 +30,11 @@ pub async fn input_handler(token: CancellationToken) {
                 modifiers: KeyModifiers::NONE,
                 ..
             })) = event::read()
-            {
-                println!("Cancellation requested. Shutting down gracefully...");
-                token.cancel();
-                break;
-            }
+        {
+            println!("Cancellation requested. Shutting down gracefully...");
+            token.cancel();
+            break;
+        }
     }
 
     if terminal::disable_raw_mode().is_err() {

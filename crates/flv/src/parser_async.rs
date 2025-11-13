@@ -302,7 +302,9 @@ impl Decoder for FlvDecoder {
                     } else {
                         // We already have a frame to return. The trait doesn't allow more.
                         // We've consumed this frame from the buffer, so it's "processed" but will be dropped.
-                        warn!("Additional frame decoded at EOF was discarded due to Decoder trait limitations.");
+                        warn!(
+                            "Additional frame decoded at EOF was discarded due to Decoder trait limitations."
+                        );
                     }
                 }
                 Ok(None) => {

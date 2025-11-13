@@ -61,8 +61,7 @@ use tracing::{debug, error, info, trace, warn};
 const TOLERANCE: u32 = 1;
 
 /// Defines the strategy for timestamp repair
-#[derive(Debug, Clone, Copy, PartialEq)]
-#[derive(Default)]
+#[derive(Debug, Clone, Copy, PartialEq, Default)]
 pub enum RepairStrategy {
     /// Strict mode enforces exact frame intervals and corrects any deviation
     Strict,
@@ -71,7 +70,6 @@ pub enum RepairStrategy {
     #[default]
     Relaxed,
 }
-
 
 /// Configuration options for the TimingRepairOperator
 #[derive(Debug, Clone)]

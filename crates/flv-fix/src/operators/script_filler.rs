@@ -304,7 +304,7 @@ mod tests {
     use amf0::Amf0Value;
     use bytes::Bytes;
     use flv::{header::FlvHeader, tag::FlvTagType};
-    use pipeline_common::{init_test_tracing, CancellationToken, StreamerContext};
+    use pipeline_common::{CancellationToken, StreamerContext, init_test_tracing};
 
     use std::collections::HashMap;
 
@@ -412,7 +412,9 @@ mod tests {
 
         // Send script tag
         let script_tag = create_script_tag(0, false);
-        operator.process(&context, script_tag, &mut output_fn).unwrap();
+        operator
+            .process(&context, script_tag, &mut output_fn)
+            .unwrap();
 
         // Send video tag
         let video_tag = test_utils::create_video_tag(10, true);

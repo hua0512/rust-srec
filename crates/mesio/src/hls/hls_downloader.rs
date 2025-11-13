@@ -11,9 +11,9 @@ use tokio_stream::wrappers::ReceiverStream;
 use tracing::debug;
 
 use crate::{
-    create_client,
-    hls::{coordinator::AllTaskHandles, HlsDownloaderError},
     BoxMediaStream, CacheManager, Download, DownloadError, ProtocolBase, SourceManager,
+    create_client,
+    hls::{HlsDownloaderError, coordinator::AllTaskHandles},
 };
 use tokio_util::sync::CancellationToken;
 
@@ -81,12 +81,22 @@ impl HlsDownloader {
         token: CancellationToken,
     ) -> Result<BoxMediaStream<HlsData, HlsDownloaderError>, DownloadError> {
         let config = Arc::new(self.config.clone());
+
+        // Capture current span for HLS segment downloads to be children
+        let parent_span = tracing::Span::current();
+        let parent_span = if parent_span.is_none() {
+            None
+        } else {
+            Some(parent_span)
+        };
+
         let (client_event_rx, handles) = HlsStreamCoordinator::setup_and_spawn(
             url.to_string(),
             config.clone(),
             self.client.clone(),
             cache_manager,
             token,
+            parent_span,
         )
         .await
         .map_err(DownloadError::HlsError)?;
@@ -103,11 +113,12 @@ impl HlsDownloader {
             } = handles;
 
             // It's important to await all handles to ensure cleanup.
-            if let Some(handle) = playlist_engine_handle {
-                if let Err(e) = handle.await {
-                    warn!("Playlist engine task finished with error: {:?}", e);
-                }
+            if let Some(handle) = playlist_engine_handle
+                && let Err(e) = handle.await
+            {
+                warn!("Playlist engine task finished with error: {:?}", e);
             }
+
             if let Err(e) = scheduler_handle.await {
                 warn!("Scheduler task finished with error: {:?}", e);
             }

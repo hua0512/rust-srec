@@ -416,7 +416,15 @@ impl Processor<HlsData> for DefragmentOperator {
         // Enhanced segment validation before flushing
         let is_valid_segment = match self.segment_type {
             Some(SegmentType::Ts) => {
-                self.buffer.len() >= min_required && self.validate_ts_segment_completeness()
+                // For TS segments in gathering mode, we've already validated the stream
+                // and established it's valid, so we can be more lenient with the final flush
+                if self.is_gathering {
+                    // Still validate completeness, but allow smaller buffers if we have PSI tables
+                    self.validate_ts_segment_completeness()
+                } else {
+                    // Not yet gathering, need full validation
+                    self.buffer.len() >= min_required && self.validate_ts_segment_completeness()
+                }
             }
             Some(SegmentType::M4sInit) | Some(SegmentType::M4sMedia) => {
                 self.buffer.len() >= min_required

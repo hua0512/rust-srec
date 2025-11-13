@@ -9,6 +9,7 @@ license = "MIT"
 [dependencies]
 thiserror = "2.0"
 tracing = "0.1"
+tracing-indicatif = "0.3"
 time = { version = "0.3.44", features = ["local-offset"] }
 tokio = { version = "1.48.0", default-features = false, features = ["sync"] }
 tokio-util = { version = "0.7.17" }

@@ -121,7 +121,7 @@ impl Processor<FlvData> for ScriptFilterOperator {
 mod tests {
     use super::*;
     use crate::test_utils::{create_script_tag, create_test_header, create_video_tag};
-    use pipeline_common::{init_test_tracing, CancellationToken, StreamerContext};
+    use pipeline_common::{CancellationToken, StreamerContext, init_test_tracing};
 
     #[test]
     fn test_filter_script_tags() {

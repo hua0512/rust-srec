@@ -10,7 +10,7 @@
 //! to a processing pipeline.
 //!
 
-use crate::{context::StreamerContext, PipelineError};
+use crate::{PipelineError, context::StreamerContext};
 use std::sync::Arc;
 
 /// A generic processor trait for handling data of type T.

@@ -498,7 +498,11 @@ mod tests {
 
         // Send tags with increasing timestamps
         operator
-            .process(&context, test_utils::create_video_tag(0, true), &mut output_fn)
+            .process(
+                &context,
+                test_utils::create_video_tag(0, true),
+                &mut output_fn,
+            )
             .unwrap(); // keyframe at 0ms
         operator
             .process(
@@ -522,7 +526,11 @@ mod tests {
             )
             .unwrap(); // P-frame at 400ms
         operator
-            .process(&context, test_utils::create_video_tag(600, true), &mut output_fn)
+            .process(
+                &context,
+                test_utils::create_video_tag(600, true),
+                &mut output_fn,
+            )
             .unwrap(); // keyframe at 600ms (should cause split)
         operator
             .process(

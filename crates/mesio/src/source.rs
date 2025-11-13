@@ -13,8 +13,7 @@ use std::time::{Duration, Instant};
 use tracing::debug;
 
 /// Strategy for selecting among multiple sources
-#[derive(Debug, Clone, PartialEq, Eq)]
-#[derive(Default)]
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub enum SourceSelectionStrategy {
     /// Select sources in order of priority (lower number = higher priority)
     #[default]
@@ -26,7 +25,6 @@ pub enum SourceSelectionStrategy {
     /// Select a random source each time
     Random,
 }
-
 
 /// Source health status tracking
 #[derive(Debug, Clone)]

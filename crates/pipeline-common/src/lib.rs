@@ -67,11 +67,12 @@ pub trait ProtocolWriter: Send + 'static {
     type Stats: Send + 'static;
     type Error: std::error::Error + Send + Sync + 'static;
 
+    /// Creates a new writer instance.
+    /// Progress tracking is now handled via tracing spans instead of callbacks.
     fn new(
         output_dir: PathBuf,
         base_name: String,
         extension: String,
-        on_progress: Option<std::sync::Arc<dyn Fn(ProgressEvent) + Send + Sync + 'static>>,
         extras: Option<HashMap<String, String>>,
     ) -> Self;
 

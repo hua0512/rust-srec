@@ -1,18 +1,17 @@
 use crate::{analyzer::FlvAnalyzer, script_modifier};
 use flv::{FlvData, FlvHeader, FlvWriter};
-use pipeline_common::progress::ProgressEvent;
 use pipeline_common::{
-    expand_filename_template, FormatStrategy, PostWriteAction, Progress, WriterConfig,
-    WriterState,
+    FormatStrategy, PostWriteAction, WriterConfig, WriterState, expand_filename_template,
 };
 use std::{
     fs::OpenOptions,
     io::BufWriter,
     path::{Path, PathBuf},
-    sync::Arc,
-    time::{Duration, Instant},
+    time::Instant,
 };
-use tracing::info;
+
+use tracing::{Span, info};
+use tracing_indicatif::span_ext::IndicatifSpanExt;
 
 /// Error type for FLV strategy
 #[derive(Debug, thiserror::Error)]
@@ -37,37 +36,20 @@ pub struct FlvFormatStrategy {
     last_header_received: bool,
     current_tag_count: u64,
 
-    // Callbacks
-    on_progress: Option<Arc<dyn Fn(ProgressEvent) + Send + Sync + 'static>>,
-
     // Whether to use low-latency mode for metadata modification.
     enable_low_latency: bool,
 }
 
 impl FlvFormatStrategy {
-    pub fn new(
-        enable_low_latency: bool,
-        on_progress: Option<Arc<dyn Fn(ProgressEvent) + Send + Sync + 'static>>,
-    ) -> Self {
+    pub fn new(enable_low_latency: bool) -> Self {
         Self {
             analyzer: FlvAnalyzer::default(),
             pending_header: None,
             file_start_instant: None,
             last_header_received: false,
             current_tag_count: 0,
-            on_progress,
             enable_low_latency,
         }
-    }
-
-    fn calculate_write_rate(&self, file_size: u64) -> f64 {
-        if let Some(start_time) = self.file_start_instant {
-            let elapsed = start_time.elapsed().as_secs_f64();
-            if elapsed > 0.0 {
-                return file_size as f64 / elapsed;
-            }
-        }
-        0.0
     }
 
     fn calculate_duration(&self) -> u32 {
@@ -75,19 +57,15 @@ impl FlvFormatStrategy {
     }
 
     fn update_status(&self, state: &WriterState) {
-        if let Some(callback) = &self.on_progress {
-            let progress = Progress {
-                bytes_written: state.bytes_written_current_file,
-                total_bytes: None, // FLV streams don't have a known total size
-                items_processed: self.current_tag_count,
-                rate: self.calculate_write_rate(state.bytes_written_current_file),
-                duration: Some(Duration::from_millis(self.calculate_duration() as u64)),
-            };
-            callback(ProgressEvent::ProgressUpdate {
-                path: state.current_path.clone().into(),
-                progress,
-            });
-        }
+        // Update the current span with progress information
+        let span = Span::current();
+        span.pb_set_position(state.bytes_written_current_file);
+        span.pb_set_message(&format!(
+            "{} | {} tags | {} ms",
+            state.current_path.display(),
+            self.current_tag_count,
+            self.calculate_duration()
+        ));
     }
 }
 
@@ -170,16 +148,15 @@ impl FormatStrategy<FlvData> for FlvFormatStrategy {
         _config: &WriterConfig,
         _state: &WriterState,
     ) -> Result<u64, Self::StrategyError> {
-        if let Some(callback) = &self.on_progress {
-            callback(ProgressEvent::FileOpened {
-                path: path.to_path_buf().into(),
-            });
-        }
         self.file_start_instant = Some(Instant::now());
         self.analyzer.reset();
         self.current_tag_count = 0;
 
         info!(path = %path.display(), "Opening segment");
+
+        // Initialize the span's progress bar
+        let span = Span::current();
+        span.pb_set_message(&format!("Writing {}", path.display()));
 
         self.last_header_received = false;
         Ok(0)
@@ -196,28 +173,48 @@ impl FormatStrategy<FlvData> for FlvFormatStrategy {
 
         let duration = self.calculate_duration();
         let tag_count = self.current_tag_count;
+        let mut analyzer = std::mem::take(&mut self.analyzer);
 
-        if let Ok(stats) = self.analyzer.build_stats() {
-            info!("Path : {}: {}", path.display(), stats);
-            if let Err(e) =
-                script_modifier::inject_stats_into_script_data(path, stats, self.enable_low_latency)
-            {
-                tracing::warn!(path = %path.display(), error = ?e, "Failed to inject stats into script data section");
-            }
-        }
+        if let Ok(stats) = analyzer.build_stats().cloned() {
+            info!("Path : {}: {}", path.display(), &stats);
+            let path_buf = path.to_path_buf();
+            let enable_low_latency = self.enable_low_latency;
 
-        if let Some(callback) = &self.on_progress {
-            callback(ProgressEvent::FileClosed {
-                path: path.to_path_buf().into(),
+            // Spawn the blocking I/O operation in a separate thread.
+            tokio::task::spawn_blocking(move || {
+                match script_modifier::inject_stats_into_script_data(
+                    &path_buf,
+                    &stats,
+                    enable_low_latency,
+                ) {
+                    Ok(_) => {
+                        tracing::info!(path = %path_buf.display(), "Successfully injected stats in background task");
+                    }
+                    Err(e) => {
+                        tracing::warn!(path = %path_buf.display(), error = ?e, "Failed to inject stats into script data section in background task");
+                    }
+                }
+
+                info!(
+                    path = %path_buf.display(),
+                    tags = tag_count,
+                    duration_ms = ?duration,
+                    "Closed segment"
+                );
             });
+        } else {
+            info!(
+                path = %path.display(),
+                tags = tag_count,
+                duration_ms = ?duration,
+                "Closed segment"
+            );
         }
 
-        info!(
-            path = %path.display(),
-            tags = tag_count,
-            duration_ms = ?duration,
-            "Closed segment"
-        );
+        // Reset the analyzer and place it back into the strategy object for the next file segment.
+        analyzer.reset();
+        self.analyzer = analyzer;
+
         Ok(0)
     }
 
