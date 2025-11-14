@@ -37,7 +37,8 @@ pub struct UserOrError {
     pub id: String,
     pub login: String,
     pub display_name: String,
-    pub primary_color_hex: String,
+    #[serde(default)]
+    pub primary_color_hex: Option<String>,
     #[serde(rename = "profileImageURL")]
     pub profile_image_url: String,
     pub stream: Option<Stream>,
