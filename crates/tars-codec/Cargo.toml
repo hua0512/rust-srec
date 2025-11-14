@@ -4,7 +4,7 @@ version = "0.1.1"
 edition = "2024"
 
 [dependencies]
-bytes = "1.0"
+bytes = "1.11"
 tokio-util = { version = "0.7", features = ["codec"] }
 thiserror = "2.0"
 smallvec = "1.15.1"
