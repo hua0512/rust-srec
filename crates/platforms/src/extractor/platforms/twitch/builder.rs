@@ -243,7 +243,7 @@ impl Twitch {
         // Get title from user's last_broadcast if available, otherwise use empty string
         let title = user_opt
             .and_then(|u| u.last_broadcast.as_ref())
-            .map(|l| l.title.to_string())
+            .and_then(|l| l.title.clone())
             .unwrap_or_default();
 
         // Get profile image URL, prefer from user_or_error

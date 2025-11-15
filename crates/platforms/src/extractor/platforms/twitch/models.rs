@@ -150,8 +150,8 @@ pub struct PrimaryTeam {
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct LastBroadcast {
-    pub id: String,
-    pub title: String,
+    pub id: Option<String>,
+    pub title: Option<String>,
     #[serde(rename = "__typename")]
     pub typename: String,
 }
