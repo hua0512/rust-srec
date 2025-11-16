@@ -2,16 +2,36 @@ use crossterm::{
     event::{self, Event, KeyCode, KeyEvent, KeyModifiers},
     terminal,
 };
+use is_terminal::IsTerminal;
 use pipeline_common::CancellationToken;
+use std::io::{self, BufRead};
 use std::time::Duration;
 use tracing::info;
 
 /// Asynchronously listens for user input to trigger cancellation.
 ///
-/// This function enables raw mode for the terminal and listens for key presses.
-/// If the 'q' key or Ctrl+C is pressed, it triggers the cancellation token.
+/// This function checks if stdin is a terminal or piped input:
+/// - If stdin is a terminal, it enables raw mode and listens for key presses.
+///   Pressing 'q' or Ctrl+C will trigger the cancellation token.
+/// - If stdin is not a terminal (piped input), it reads lines from stdin.
+///   If a line contains 'q', it triggers the cancellation token.
+///
 /// The function will clean up by disabling raw mode when the token is cancelled.
 pub async fn input_handler(token: CancellationToken) {
+    let stdin = io::stdin();
+    
+    // Check if stdin is a terminal
+    if stdin.is_terminal() {
+        // Terminal mode: use keyboard events
+        handle_terminal_input(token).await;
+    } else {
+        // Stdin mode: read from piped input
+        handle_stdin_input(token).await;
+    }
+}
+
+/// Handle input from terminal keyboard events
+async fn handle_terminal_input(token: CancellationToken) {
     if terminal::enable_raw_mode().is_err() {
         info!("Failed to enable raw mode. Input handling will be disabled.");
         return;
@@ -54,4 +74,34 @@ pub async fn input_handler(token: CancellationToken) {
     if terminal::disable_raw_mode().is_err() {
         info!("Failed to disable raw mode.");
     }
+}
+
+/// Handle input from stdin (piped input)
+async fn handle_stdin_input(token: CancellationToken) {
+    // Spawn a blocking task to read from stdin
+    tokio::task::spawn_blocking(move || {
+        let stdin = io::stdin();
+        let reader = stdin.lock();
+        
+        for line in reader.lines() {
+            if token.is_cancelled() {
+                break;
+            }
+            
+            match line {
+                Ok(line) => {
+                    let trimmed = line.trim();
+                    if trimmed == "q" {
+                        println!("Cancellation requested. Shutting down gracefully...");
+                        token.cancel();
+                        break;
+                    }
+                }
+                Err(e) => {
+                    info!("Error reading from stdin: {}", e);
+                    break;
+                }
+            }
+        }
+    }).await.ok();
 }
