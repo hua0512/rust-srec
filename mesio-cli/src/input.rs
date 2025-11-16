@@ -9,7 +9,7 @@ use tracing::info;
 /// Asynchronously listens for user input to trigger cancellation.
 ///
 /// This function enables raw mode for the terminal and listens for key presses.
-/// If the 'q' key is pressed, it triggers the cancellation token.
+/// If the 'q' key or Ctrl+C is pressed, it triggers the cancellation token.
 /// The function will clean up by disabling raw mode when the token is cancelled.
 pub async fn input_handler(token: CancellationToken) {
     if terminal::enable_raw_mode().is_err() {
@@ -25,15 +25,29 @@ pub async fn input_handler(token: CancellationToken) {
 
         // Poll for keyboard events with a timeout.
         if let Ok(true) = event::poll(Duration::from_millis(100))
-            && let Ok(Event::Key(KeyEvent {
-                code: KeyCode::Char('q'),
-                modifiers: KeyModifiers::NONE,
-                ..
-            })) = event::read()
+            && let Ok(Event::Key(key_event)) = event::read()
         {
-            println!("Cancellation requested. Shutting down gracefully...");
-            token.cancel();
-            break;
+            let should_cancel = match key_event {
+                // Handle 'q' key press
+                KeyEvent {
+                    code: KeyCode::Char('q'),
+                    modifiers: KeyModifiers::NONE,
+                    ..
+                } => true,
+                // Handle Ctrl+C
+                KeyEvent {
+                    code: KeyCode::Char('c'),
+                    modifiers: KeyModifiers::CONTROL,
+                    ..
+                } => true,
+                _ => false,
+            };
+
+            if should_cancel {
+                println!("Cancellation requested. Shutting down gracefully...");
+                token.cancel();
+                break;
+            }
         }
     }
 
