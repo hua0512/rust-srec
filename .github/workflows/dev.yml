@@ -3,6 +3,7 @@ name: Dev CI
 on:
   push:
     branches: [dev]
+  workflow_dispatch:
 
 env:
   CARGO_TERM_COLOR: always
@@ -26,7 +27,14 @@ jobs:
     name: Test Suite
     strategy:
       matrix:
-        os: [ubuntu-latest, ubuntu-22.04-arm, windows-latest, macos-15-intel, macos-latest]
+        os:
+          [
+            ubuntu-latest,
+            ubuntu-22.04-arm,
+            windows-latest,
+            macos-15-intel,
+            macos-latest,
+          ]
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v5
@@ -76,7 +84,7 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: ${{ matrix.target }}
-          
+
       - uses: Swatinem/rust-cache@v2
         with:
           key: ${{ matrix.target }}
