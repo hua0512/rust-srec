@@ -2,9 +2,8 @@ use crossterm::{
     event::{self, Event, KeyCode, KeyEvent, KeyModifiers},
     terminal,
 };
-use is_terminal::IsTerminal;
 use pipeline_common::CancellationToken;
-use std::io::{self, BufRead};
+use std::io::{self, BufRead, IsTerminal};
 use std::sync::mpsc;
 use std::thread;
 use std::time::Duration;
@@ -21,7 +20,7 @@ use tracing::info;
 /// The function will clean up by disabling raw mode when the token is cancelled.
 pub async fn input_handler(token: CancellationToken) {
     let stdin = io::stdin();
-    
+
     // Check if stdin is a terminal
     if stdin.is_terminal() {
         // Terminal mode: use keyboard events
@@ -81,12 +80,12 @@ async fn handle_terminal_input(token: CancellationToken) {
 /// Handle input from stdin (piped input)
 async fn handle_stdin_input(token: CancellationToken) {
     let (tx, rx) = mpsc::channel();
-    
+
     // Spawn a blocking thread to read from stdin
     thread::spawn(move || {
         let stdin = io::stdin();
         let reader = stdin.lock();
-        
+
         for line in reader.lines() {
             match line {
                 Ok(line) => {
@@ -98,13 +97,13 @@ async fn handle_stdin_input(token: CancellationToken) {
             }
         }
     });
-    
+
     loop {
         // Check for cancellation signal first.
         if token.is_cancelled() {
             break;
         }
-        
+
         // Try to receive a line from stdin with timeout
         match rx.recv_timeout(Duration::from_millis(100)) {
             Ok(line) => {
