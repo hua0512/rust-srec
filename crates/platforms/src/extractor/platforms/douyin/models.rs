@@ -105,19 +105,33 @@ pub struct DouyinStreamUrl<'a> {
 
 #[derive(Debug)]
 pub(crate) struct DouyinPullDatas {
-    pub data: FxHashMap<String, DouyinPullDataEntry>,
+    pub data: FxHashMap<String, DouyinSdkPullDataOwned>,
 }
 
-#[derive(Deserialize, Debug)]
-pub(crate) struct DouyinPullDataEntry {
-    pub url: String,
-    #[serde(rename = "type", default)]
-    pub format: String,
-    pub quality: Option<i32>,
-    pub bitrate: Option<i64>,
-    pub codec: Option<String>,
-    #[serde(flatten)]
-    pub extra_params: FxHashMap<String, serde_json::Value>,
+#[derive(Deserialize, Debug, Clone)]
+pub(crate) struct DouyinSdkPullDataOwned {
+    pub options: DouyinStreamOptionsOwned,
+    #[serde(deserialize_with = "deserialize_stream_data")]
+    pub stream_data: DouyinStreamDataParsed,
+}
+
+#[derive(Deserialize, Debug, Clone)]
+pub(crate) struct DouyinStreamOptionsOwned {
+    pub default_quality: DouyinQualityOwned,
+    pub qualities: Vec<DouyinQualityOwned>,
+}
+
+#[derive(Deserialize, Debug, Clone)]
+pub(crate) struct DouyinQualityOwned {
+    pub name: String,
+    pub sdk_key: String,
+    pub v_codec: String,
+    pub resolution: String,
+    pub level: i32,
+    pub v_bit_rate: i32,
+    pub additional_content: String,
+    pub fps: i32,
+    pub disable: i32,
 }
 
 // Custom deserializer for pull_datas
@@ -125,13 +139,13 @@ fn deserialize_pull_datas<'de, D>(deserializer: D) -> Result<DouyinPullDatas, D:
 where
     D: Deserializer<'de>,
 {
-    // First deserialize as a generic map
+    // Deserialize as a generic map first
     let map: FxHashMap<String, serde_json::Value> = FxHashMap::deserialize(deserializer)?;
     let mut data = FxHashMap::default();
 
-    // Try to convert each value to DouyinPullDataEntry
+    // Try to convert each value to DouyinSdkPullDataOwned
     for (key, value) in map {
-        if let Ok(entry) = serde_json::from_value::<DouyinPullDataEntry>(value) {
+        if let Ok(entry) = serde_json::from_value::<DouyinSdkPullDataOwned>(value) {
             data.insert(key, entry);
         }
         // If conversion fails, we just skip this entry
@@ -154,13 +168,13 @@ pub(crate) struct DouyinSdkPullData<'a> {
     pub stream_data: DouyinStreamDataParsed,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub(crate) struct DouyinStreamDataParsed {
     pub common: Option<DouyinStreamDataCommon>,
     pub data: FxHashMap<String, DouyinStreamDataQuality>,
 }
 
-#[derive(Deserialize, Debug)]
+#[derive(Deserialize, Debug, Clone)]
 pub(crate) struct DouyinStreamDataCommon {
     pub ts: String,
     pub session_id: String,
@@ -180,12 +194,12 @@ pub(crate) struct DouyinStreamDataCommon {
     pub backup_push_id: i32,
 }
 
-#[derive(Deserialize, Debug)]
+#[derive(Deserialize, Debug, Clone)]
 pub(crate) struct DouyinStreamDataQuality {
     pub main: DouyinStreamDataMain,
 }
 
-#[derive(Deserialize, Debug)]
+#[derive(Deserialize, Debug, Clone)]
 pub(crate) struct DouyinStreamDataMain {
     pub flv: String,
     pub hls: String,
@@ -502,18 +516,48 @@ mod tests {
             },
             "pull_datas": {
                 "stream1": {
-                    "url": "http://example.com/stream1.flv",
-                    "type": "flv",
-                    "quality": 720,
-                    "bitrate": 2000000,
-                    "codec": "h264"
+                    "options": {
+                        "default_quality": {
+                            "name": "HD",
+                            "sdk_key": "hd",
+                            "v_codec": "h264",
+                            "resolution": "1280x720",
+                            "level": 2,
+                            "v_bit_rate": 2000000,
+                            "additional_content": "",
+                            "fps": 30,
+                            "disable": 0
+                        },
+                        "qualities": [{
+                            "name": "原画",
+                            "sdk_key": "origin",
+                            "v_codec": "h264",
+                            "resolution": "1920x1080",
+                            "level": 4,
+                            "v_bit_rate": 4000000,
+                            "additional_content": "",
+                            "fps": 30,
+                            "disable": 0
+                        }]
+                    },
+                    "stream_data": "{\"data\":{\"origin\":{\"main\":{\"flv\":\"http://example.com/stream1.flv\",\"hls\":\"http://example.com/stream1.m3u8\",\"cmaf\":\"\",\"dash\":\"\",\"lls\":\"\",\"tsl\":\"\",\"tile\":\"\",\"http_ts\":\"\",\"ll_hls\":\"\",\"sdk_params\":\"\",\"enableEncryption\":false}}}}"
                 },
                 "stream2": {
-                    "url": "http://example.com/stream2.m3u8",
-                    "type": "hls",
-                    "quality": 1080,
-                    "bitrate": 4000000,
-                    "codec": "h264"
+                    "options": {
+                        "default_quality": {
+                            "name": "HD",
+                            "sdk_key": "hd",
+                            "v_codec": "h264",
+                            "resolution": "1280x720",
+                            "level": 2,
+                            "v_bit_rate": 2000000,
+                            "additional_content": "",
+                            "fps": 30,
+                            "disable": 0
+                        },
+                        "qualities": []
+                    },
+                    "stream_data": "{}"
                 }
             }
         }"#;
@@ -525,10 +569,12 @@ mod tests {
         assert!(stream_url.pull_datas.data.contains_key("stream1"));
         assert!(stream_url.pull_datas.data.contains_key("stream2"));
 
+        // Verify that stream1 has the expected structure
         let stream1 = &stream_url.pull_datas.data["stream1"];
-        assert_eq!(stream1.url, "http://example.com/stream1.flv");
-        assert_eq!(stream1.format, "flv");
-        assert_eq!(stream1.quality, Some(720));
+        assert!(!stream1.stream_data.data.is_empty());
+        assert!(stream1.stream_data.data.contains_key("origin"));
+        assert_eq!(stream1.options.qualities.len(), 1);
+        assert_eq!(stream1.options.qualities[0].sdk_key, "origin");
     }
 
     #[test]

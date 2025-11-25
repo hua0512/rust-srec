@@ -52,6 +52,8 @@ pub struct DouyinExtractorConfig {
     pub ttwid_management_mode: TtwidManagementMode,
     /// A specific `ttwid` to use when in `PerExtractor` mode.
     pub ttwid: Option<String>,
+    /// Whether to use double screen stream data if available.
+    pub double_screen: bool,
 }
 
 /// Builder for `DouyinExtractorConfig`.
@@ -60,6 +62,7 @@ pub struct Douyin {
     force_origin_quality: bool,
     ttwid_management_mode: TtwidManagementMode,
     ttwid: Option<String>,
+    double_screen: bool,
 }
 
 impl Douyin {
@@ -88,6 +91,8 @@ impl Douyin {
         let force_origin_quality =
             parse_bool_from_extras(extras.as_ref(), "force_origin_quality", false);
 
+        let double_screen = parse_bool_from_extras(extras.as_ref(), "double_screen", true);
+
         let ttwid_management_mode_str = extras
             .as_ref()
             .and_then(|extras| extras.get("ttwid_management_mode").and_then(|v| v.as_str()))
@@ -110,11 +115,17 @@ impl Douyin {
             force_origin_quality,
             ttwid_management_mode,
             ttwid,
+            double_screen,
         }
     }
 
     pub fn force_origin_quality(mut self, force: bool) -> Self {
         self.force_origin_quality = force;
+        self
+    }
+
+    pub fn double_screen(mut self, enable: bool) -> Self {
+        self.double_screen = enable;
         self
     }
 
@@ -380,6 +391,41 @@ impl<'a> DouyinRequest<'a> {
         }
 
         let response: DouyinPcResponse = serde_json::from_str(body)?;
+
+        // Check for "直播已结束" prompt
+        if let Some(prompts) = &response.data.prompts {
+            if prompts.contains("直播已结束") {
+                if let Some(user) = &response.data.user {
+                    // If we have user info, we can return offline info
+                    // Try to get title from room data if available, otherwise use default
+                    let title = response
+                        .data
+                        .data
+                        .as_ref()
+                        .and_then(|d| d.first())
+                        .map(|d| d.title.as_str())
+                        .unwrap_or("");
+
+                    let artist = &user.nickname;
+                    let cover_url = response
+                        .data
+                        .data
+                        .as_ref()
+                        .and_then(|d| d.first())
+                        .and_then(|d| d.cover.as_ref())
+                        .and_then(|cover| cover.url_list.first())
+                        .map(|url| url.to_string());
+                    let avatar_url = user
+                        .avatar_thumb
+                        .url_list
+                        .first()
+                        .map(|url| url.to_string());
+
+                    return Ok(self.create_offline_media_info(title, artist, cover_url, avatar_url));
+                }
+            }
+        }
+
         self._validate_response(&response)?;
 
         let user = response.data.user.as_ref().unwrap();
@@ -394,6 +440,31 @@ impl<'a> DouyinRequest<'a> {
     fn parse_app_response(&mut self, body: &str) -> Result<MediaInfo, ExtractorError> {
         let response: DouyinAppResponse = serde_json::from_str(body)?;
         if let Some(prompts) = &response.data.prompts {
+            if prompts.contains("直播已结束") {
+                if let Some(user) = &response.data.user {
+                    let title = response
+                        .data
+                        .room
+                        .as_ref()
+                        .map(|r| r.title.as_str())
+                        .unwrap_or("");
+                    let artist = &user.nickname;
+                    let cover_url = response
+                        .data
+                        .room
+                        .as_ref()
+                        .and_then(|r| r.cover.as_ref())
+                        .and_then(|cover| cover.url_list.first())
+                        .map(|url| url.to_string());
+                    let avatar_url = user
+                        .avatar_thumb
+                        .url_list
+                        .first()
+                        .map(|url| url.to_string());
+
+                    return Ok(self.create_offline_media_info(title, artist, cover_url, avatar_url));
+                }
+            }
             return Err(ExtractorError::ValidationError(format!(
                 "API error: {prompts}",
             )));
@@ -527,13 +598,184 @@ impl<'a> DouyinRequest<'a> {
                 .any(|url| url.contains("aweme_default_avatar.png"))
     }
 
+    /// Extract streams using owned quality data (from pull_datas)
+    fn extract_streams_with_owned_qualities(
+        &self,
+        stream_data: &DouyinStreamDataParsed,
+        owned_qualities: &[crate::extractor::platforms::douyin::models::DouyinQualityOwned],
+        stream_url: &DouyinStreamUrl,
+    ) -> Result<Vec<StreamInfo>, ExtractorError> {
+        let mut streams = Vec::new();
+
+        // 1. Attempt to extract origin quality stream if forced
+        let mut origin_quality_filled = false;
+        if self.config.force_origin_quality {
+            if let Some(origin_stream) =
+                self._extract_origin_stream_owned(stream_data, owned_qualities)
+            {
+                streams.push(origin_stream);
+                origin_quality_filled = true;
+            }
+        }
+
+        // 2. Extract streams from SDK data with owned qualities
+        if !stream_data.data.is_empty() {
+            let sdk_streams = self._extract_sdk_streams_owned(
+                stream_data,
+                owned_qualities,
+                origin_quality_filled,
+            );
+            streams.extend(sdk_streams);
+        }
+
+        // 3. Fallback to legacy stream URLs if no other streams were found
+        if streams.is_empty() {
+            let legacy_streams = self._extract_legacy_streams(stream_url);
+            streams.extend(legacy_streams);
+        }
+
+        Ok(streams)
+    }
+
+    /// Extracts the "origin" quality stream with owned quality data
+    fn _extract_origin_stream_owned(
+        &self,
+        stream_data: &DouyinStreamDataParsed,
+        qualities: &[crate::extractor::platforms::douyin::models::DouyinQualityOwned],
+    ) -> Option<StreamInfo> {
+        let ao_quality_data = stream_data.data.get("ao")?;
+        if ao_quality_data.main.flv.is_empty() {
+            return None;
+        }
+
+        let origin_url = ao_quality_data
+            .main
+            .flv
+            .replace("&only_audio=1", "&only_audio=0");
+        let origin_quality_details = qualities.iter().find(|q| q.sdk_key == "origin");
+
+        let (quality_name, bitrate, codec, fps, extras) = match origin_quality_details {
+            Some(details) => (
+                "原画",
+                Self::normalize_bitrate(details.v_bit_rate.try_into().unwrap()),
+                Self::normalize_codec(&details.v_codec),
+                details.fps,
+                Some(Arc::new(DouyinStreamExtras {
+                    resolution: details.resolution.clone(),
+                    sdk_key: details.sdk_key.clone(),
+                })),
+            ),
+            None => ("原画", 0, String::new(), 0, None),
+        };
+
+        Some(StreamInfo {
+            url: origin_url,
+            stream_format: StreamFormat::Flv,
+            media_format: MediaFormat::Flv,
+            quality: quality_name.to_string(),
+            bitrate: bitrate as u64,
+            priority: 10,
+            extras: extras.map(|e| serde_json::to_value(e).unwrap_or(serde_json::Value::Null)),
+            codec,
+            fps: fps as f64,
+            is_headers_needed: false,
+        })
+    }
+
+    /// Extracts all available streams from the SDK data with owned qualities
+    fn _extract_sdk_streams_owned(
+        &self,
+        stream_data: &DouyinStreamDataParsed,
+        qualities: &[crate::extractor::platforms::douyin::models::DouyinQualityOwned],
+        origin_quality_filled: bool,
+    ) -> Vec<StreamInfo> {
+        use crate::extractor::platforms::douyin::models::DouyinQualityOwned;
+
+        let mut streams = Vec::new();
+        let quality_map: FxHashMap<&str, &DouyinQualityOwned> =
+            qualities.iter().map(|q| (q.sdk_key.as_str(), q)).collect();
+
+        for (sdk_key, quality_data) in stream_data.data.iter() {
+            let quality_details = quality_map.get(sdk_key.as_str());
+            let (quality_name, bitrate, fps, codec) = match quality_details {
+                Some(details) => (
+                    details.name.as_str(),
+                    Self::normalize_bitrate(details.v_bit_rate as u32),
+                    details.fps,
+                    Self::normalize_codec(&details.v_codec),
+                ),
+                None => (sdk_key.as_str(), 0, 0, String::new()),
+            };
+
+            let extras = quality_details.map(|details| {
+                Arc::new(DouyinStreamExtras {
+                    resolution: details.resolution.clone(),
+                    sdk_key: details.sdk_key.clone(),
+                })
+            });
+
+            // Skip FLV if origin quality filled and this is origin quality
+            if !(origin_quality_filled && sdk_key == "origin") {
+                self._add_stream_if_url_present(
+                    &quality_data.main.flv,
+                    StreamFormat::Flv,
+                    MediaFormat::Flv,
+                    quality_name,
+                    bitrate as u64,
+                    &codec,
+                    fps,
+                    extras.as_ref(),
+                    &mut streams,
+                );
+            }
+
+            self._add_stream_if_url_present(
+                &quality_data.main.hls,
+                StreamFormat::Hls,
+                MediaFormat::Ts,
+                quality_name,
+                bitrate as u64,
+                &codec,
+                fps,
+                extras.as_ref(),
+                &mut streams,
+            );
+        }
+        streams
+    }
+
     /// Orchestrates the extraction of all available streams.
     fn extract_streams(
         &self,
         stream_url: &DouyinStreamUrl,
     ) -> Result<Vec<StreamInfo>, ExtractorError> {
+        use crate::extractor::platforms::douyin::models::DouyinStreamDataParsed;
+
+        // Check if we should use double_screen data
+        let double_screen_pull_data =
+            if self.config.double_screen && !stream_url.pull_datas.data.is_empty() {
+                debug!("Using double screen data");
+                stream_url.pull_datas.data.values().next()
+            } else {
+                None
+            };
+
+        // Get the stream data and qualities
         let sdk_pull_data = &stream_url.live_core_sdk_data.pull_data;
-        let stream_data = &sdk_pull_data.stream_data;
+        let stream_data: &DouyinStreamDataParsed;
+
+        if let Some(pull_data) = double_screen_pull_data {
+            stream_data = &pull_data.stream_data;
+            // Use owned qualities from pull_data
+            return self.extract_streams_with_owned_qualities(
+                stream_data,
+                &pull_data.options.qualities,
+                stream_url,
+            );
+        } else {
+            stream_data = &sdk_pull_data.stream_data;
+        }
+
         let qualities = &sdk_pull_data.options.qualities;
 
         let mut streams = Vec::new();
@@ -776,7 +1018,7 @@ mod tests {
     use crate::extractor::platforms::douyin::models::{DouyinAvatarThumb, DouyinUserInfo};
     use crate::extractor::platforms::douyin::utils::GlobalTtwidManager;
 
-    const TEST_URL: &str = "https://live.douyin.com/399712108028";
+    const TEST_URL: &str = "https://live.douyin.com/403593241280";
 
     #[tokio::test]
     #[ignore]
@@ -797,6 +1039,7 @@ mod tests {
 
         assert_eq!(config.extractor.url, TEST_URL);
         assert!(!config.force_origin_quality);
+        assert!(config.double_screen); // defaults to true
         assert_eq!(config.ttwid_management_mode, TtwidManagementMode::Global);
         assert!(config.ttwid.is_none());
     }
@@ -805,9 +1048,11 @@ mod tests {
     fn test_builder_custom_options() {
         let config = Douyin::new(TEST_URL.to_string(), default_client(), None, None)
             .force_origin_quality(false)
+            .double_screen(false)
             .ttwid_mode(TtwidManagementMode::PerExtractor);
 
         assert!(!config.force_origin_quality);
+        assert!(!config.double_screen);
         assert_eq!(
             config.ttwid_management_mode,
             TtwidManagementMode::PerExtractor
@@ -892,5 +1137,46 @@ mod tests {
             },
         };
         assert!(!request.is_account_banned(&active_user));
+    }
+
+    #[test]
+    fn test_parse_pc_response_stream_ended() {
+        let config = Douyin::new(TEST_URL.to_string(), default_client(), None, None);
+        let mut request =
+            DouyinRequest::new(config.extractor.cookies.clone(), &config, "123".to_string());
+
+        let json_response = r#"{
+            "data": {
+                "prompts": "直播已结束",
+                "user": {
+                    "id_str": "12345",
+                    "sec_uid": "sec_uid_123",
+                    "nickname": "Test User",
+                    "avatar_thumb": {
+                        "url_list": ["http://example.com/avatar.jpg"]
+                    }
+                },
+                "data": [{
+                    "id_str": "room_123",
+                    "status": 4,
+                    "title": "Test Room Title",
+                    "cover": {
+                        "url_list": ["http://example.com/cover.jpg"]
+                    },
+                    "stream_url": null
+                }],
+                "enter_room_id": "room_123"
+            }
+        }"#;
+
+        let result = request.parse_pc_response(json_response);
+        assert!(
+            result.is_ok(),
+            "Should return Ok for stream ended with data"
+        );
+        let media_info = result.unwrap();
+        assert!(!media_info.is_live, "Should be offline");
+        assert_eq!(media_info.title, "Test Room Title");
+        assert_eq!(media_info.artist, "Test User");
     }
 }
