@@ -1,7 +1,7 @@
 use std::{sync::Arc, time::Duration};
 
 use hls::HlsData;
-use pipeline_common::{Pipeline, PipelineProvider, StreamerContext, config::PipelineConfig};
+use pipeline_common::{ChannelPipeline, PipelineProvider, StreamerContext, config::PipelineConfig};
 
 use crate::operators::{DefragmentOperator, SegmentLimiterOperator, SegmentSplitOperator};
 
@@ -75,24 +75,26 @@ impl PipelineProvider for HlsPipeline {
         }
     }
 
-    fn build_pipeline(&self) -> Pipeline<Self::Item> {
-        let mut pipeline = Pipeline::new(self.context.clone());
+    fn build_pipeline(&self) -> ChannelPipeline<Self::Item> {
+        let mut sync_pipeline = pipeline_common::Pipeline::new(self.context.clone());
 
         if self.config.defragment {
-            pipeline = pipeline.add_processor(DefragmentOperator::new(self.context.clone()));
+            sync_pipeline =
+                sync_pipeline.add_processor(DefragmentOperator::new(self.context.clone()));
         }
 
         if self.config.split_segments {
-            pipeline = pipeline.add_processor(SegmentSplitOperator::new(self.context.clone()));
+            sync_pipeline =
+                sync_pipeline.add_processor(SegmentSplitOperator::new(self.context.clone()));
         }
 
         if self.config.segment_limiter {
-            pipeline = pipeline.add_processor(SegmentLimiterOperator::new(
+            sync_pipeline = sync_pipeline.add_processor(SegmentLimiterOperator::new(
                 self.max_duration,
                 Some(self.max_file_size),
             ));
         }
 
-        pipeline
+        ChannelPipeline::new(self.context.clone()).add_processor(sync_pipeline)
     }
 }

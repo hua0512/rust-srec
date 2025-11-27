@@ -27,6 +27,9 @@ use cli::CliArgs;
 use input::input_handler;
 use utils::{parse_headers, parse_params, parse_size, parse_time};
 
+#[global_allocator]
+static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;
+
 fn main() {
     if let Err(e) = bootstrap() {
         eprintln!("Error: {e}");

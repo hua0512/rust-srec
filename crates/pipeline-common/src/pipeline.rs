@@ -21,7 +21,7 @@ const DEFAULT_STAGE_CAPACITY: usize = 8;
 /// The pipeline coordinates a sequence of processors, with each processor
 /// receiving outputs from the previous one in the chain.
 pub struct Pipeline<T> {
-    processors: Vec<Box<dyn Processor<T>>>,
+    processors: Vec<Box<dyn Processor<T> + Send>>,
     context: Arc<StreamerContext>,
 }
 
@@ -37,7 +37,7 @@ impl<T> Pipeline<T> {
     /// Add a processor to the end of the pipeline.
     ///
     /// Returns self for method chaining.
-    pub fn add_processor<P: Processor<T> + 'static>(mut self, processor: P) -> Self {
+    pub fn add_processor<P: Processor<T> + Send + 'static>(mut self, processor: P) -> Self {
         self.processors.push(Box::new(processor));
         self
     }
@@ -240,6 +240,81 @@ impl<T> Pipeline<T> {
         }
 
         Ok(())
+    }
+}
+
+impl<T> Processor<T> for Pipeline<T>
+where
+    T: Send + 'static,
+{
+    fn name(&self) -> &'static str {
+        "Pipeline"
+    }
+
+    fn process(
+        &mut self,
+        _context: &Arc<StreamerContext>,
+        input: T,
+        output: &mut dyn FnMut(T) -> Result<(), PipelineError>,
+    ) -> Result<(), PipelineError> {
+        let input_iter = std::iter::once(Ok(input));
+        let mut output_error = None;
+
+        let mut wrapped_output = |res: Result<T, PipelineError>| {
+            if output_error.is_some() {
+                return;
+            }
+            match res {
+                Ok(item) => {
+                    if let Err(e) = output(item) {
+                        output_error = Some(e);
+                    }
+                }
+                Err(e) => {
+                    output_error = Some(e);
+                }
+            }
+        };
+
+        self.process_items(input_iter, &mut wrapped_output)?;
+
+        if let Some(e) = output_error {
+            Err(e)
+        } else {
+            Ok(())
+        }
+    }
+
+    fn finish(
+        &mut self,
+        _context: &Arc<StreamerContext>,
+        output: &mut dyn FnMut(T) -> Result<(), PipelineError>,
+    ) -> Result<(), PipelineError> {
+        let mut output_error = None;
+
+        let mut wrapped_output = |res: Result<T, PipelineError>| {
+            if output_error.is_some() {
+                return;
+            }
+            match res {
+                Ok(item) => {
+                    if let Err(e) = output(item) {
+                        output_error = Some(e);
+                    }
+                }
+                Err(e) => {
+                    output_error = Some(e);
+                }
+            }
+        };
+
+        self.finalize_processors(&mut wrapped_output)?;
+
+        if let Some(e) = output_error {
+            Err(e)
+        } else {
+            Ok(())
+        }
     }
 }
 
