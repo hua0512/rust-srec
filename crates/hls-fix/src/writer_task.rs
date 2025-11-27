@@ -11,7 +11,7 @@ use pipeline_common::{
     FormatStrategy, PostWriteAction, ProtocolWriter, WriterConfig, WriterState, WriterTask,
     expand_filename_template,
 };
-use std::sync::mpsc;
+
 use tracing::{Span, debug, error, info};
 use tracing_indicatif::span_ext::IndicatifSpanExt;
 
@@ -237,9 +237,9 @@ impl ProtocolWriter for HlsWriter {
 
     fn run(
         &mut self,
-        receiver: mpsc::Receiver<Result<HlsData, pipeline_common::PipelineError>>,
+        mut receiver: tokio::sync::mpsc::Receiver<Result<HlsData, pipeline_common::PipelineError>>,
     ) -> Result<(usize, u32), WriterError<HlsStrategyError>> {
-        for result in receiver.iter() {
+        while let Some(result) = receiver.blocking_recv() {
             match result {
                 Ok(hls_data) => {
                     debug!("Received HLS data: {:?}", hls_data.tag_type());
