@@ -52,7 +52,7 @@ pub enum SplitReason {
 }
 
 /// Optional callback for when a stream split occurs
-pub type SplitCallback = Box<dyn Fn(SplitReason, u64, u32)>;
+pub type SplitCallback = Box<dyn Fn(SplitReason, u64, u32) + Send + Sync>;
 
 /// Configuration options for the limit operator
 pub struct LimitConfig {

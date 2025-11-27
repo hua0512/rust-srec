@@ -31,7 +31,7 @@ use flv::data::FlvData;
 use flv::error::FlvError;
 use futures::stream::Stream;
 use pipeline_common::config::PipelineConfig;
-use pipeline_common::{Pipeline, PipelineProvider, StreamerContext};
+use pipeline_common::{ChannelPipeline, PipelineProvider, StreamerContext};
 use std::pin::Pin;
 use std::sync::Arc;
 use std::time::Duration;
@@ -153,7 +153,7 @@ impl PipelineProvider for FlvPipeline {
     }
 
     /// Create and configure the pipeline with all necessary operators
-    fn build_pipeline(&self) -> Pipeline<FlvData> {
+    fn build_pipeline(&self) -> ChannelPipeline<FlvData> {
         let context = Arc::clone(&self.context);
         let config = self.config.clone();
 
@@ -186,7 +186,7 @@ impl PipelineProvider for FlvPipeline {
         let split_operator = SplitOperator::new(context.clone());
         let time_consistency_operator =
             TimeConsistencyOperator::new(context.clone(), config.continuity_mode);
-        let time_consistency_2_operator =
+        let time_consistency_operator_2 =
             TimeConsistencyOperator::new(context.clone(), config.continuity_mode);
 
         // Create the KeyframeIndexInjector operator if enabled
@@ -196,8 +196,8 @@ impl PipelineProvider for FlvPipeline {
             ScriptKeyframesFillerOperator::new(context.clone(), ScriptFillerConfig::default())
         };
 
-        // Build the pipeline using the generic Pipeline implementation
-        Pipeline::new(context)
+        // Build the synchronous pipeline
+        let sync_pipeline = pipeline_common::Pipeline::new(context.clone())
             .add_processor(defrag_operator)
             .add_processor(header_check_operator)
             .add_processor(split_operator)
@@ -205,9 +205,12 @@ impl PipelineProvider for FlvPipeline {
             .add_processor(time_consistency_operator)
             .add_processor(timing_repair_operator)
             .add_processor(limit_operator)
-            .add_processor(time_consistency_2_operator)
+            .add_processor(time_consistency_operator_2)
             .add_processor(keyframe_index_operator)
-            .add_processor(script_filter_operator)
+            .add_processor(script_filter_operator);
+
+        // Wrap it in a ChannelPipeline to offload processing to a dedicated thread
+        ChannelPipeline::new(context).add_processor(sync_pipeline)
     }
 }
 
@@ -272,14 +275,17 @@ mod test {
             32 * 1024, // Input buffer capacity
         );
 
-        let (sender, receiver) = mpsc::sync_channel::<Result<FlvData, PipelineError>>(8);
+        // Use tokio channel for input to allow blocking_recv which is Sync friendly
+        let (sender, mut receiver) =
+            tokio::sync::mpsc::channel::<Result<FlvData, PipelineError>>(8);
 
         let (output_tx, output_rx) = mpsc::sync_channel::<Result<FlvData, PipelineError>>(8);
 
         let process_task = Some(tokio::task::spawn_blocking(move || {
             let pipeline = pipeline.build_pipeline();
 
-            let input = std::iter::from_fn(|| receiver.recv().map(Some).unwrap_or(None));
+            let input =
+                std::iter::from_fn(move || receiver.blocking_recv().map(Some).unwrap_or(None));
 
             let mut output = |result: Result<FlvData, PipelineError>| {
                 if output_tx.send(result).is_err() {
@@ -312,9 +318,13 @@ mod test {
 
         // Ensure the forwarding task completes
         while let Some(result) = decoder_stream.next().await {
-            sender
+            if sender
                 .send(result.map_err(|e| PipelineError::Processing(e.to_string())))
-                .unwrap();
+                .await
+                .is_err()
+            {
+                break;
+            }
         }
         drop(sender); // Close the channel to signal completion
 
