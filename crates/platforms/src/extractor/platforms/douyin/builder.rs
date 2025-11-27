@@ -393,37 +393,36 @@ impl<'a> DouyinRequest<'a> {
         let response: DouyinPcResponse = serde_json::from_str(body)?;
 
         // Check for "直播已结束" prompt
-        if let Some(prompts) = &response.data.prompts {
-            if prompts.contains("直播已结束") {
-                if let Some(user) = &response.data.user {
-                    // If we have user info, we can return offline info
-                    // Try to get title from room data if available, otherwise use default
-                    let title = response
-                        .data
-                        .data
-                        .as_ref()
-                        .and_then(|d| d.first())
-                        .map(|d| d.title.as_str())
-                        .unwrap_or("");
+        if let Some(prompts) = &response.data.prompts
+            && prompts.contains("直播已结束")
+            && let Some(user) = &response.data.user
+        {
+            // If we have user info, we can return offline info
+            // Try to get title from room data if available, otherwise use default
+            let title = response
+                .data
+                .data
+                .as_ref()
+                .and_then(|d| d.first())
+                .map(|d| d.title.as_str())
+                .unwrap_or("");
 
-                    let artist = &user.nickname;
-                    let cover_url = response
-                        .data
-                        .data
-                        .as_ref()
-                        .and_then(|d| d.first())
-                        .and_then(|d| d.cover.as_ref())
-                        .and_then(|cover| cover.url_list.first())
-                        .map(|url| url.to_string());
-                    let avatar_url = user
-                        .avatar_thumb
-                        .url_list
-                        .first()
-                        .map(|url| url.to_string());
+            let artist = &user.nickname;
+            let cover_url = response
+                .data
+                .data
+                .as_ref()
+                .and_then(|d| d.first())
+                .and_then(|d| d.cover.as_ref())
+                .and_then(|cover| cover.url_list.first())
+                .map(|url| url.to_string());
+            let avatar_url = user
+                .avatar_thumb
+                .url_list
+                .first()
+                .map(|url| url.to_string());
 
-                    return Ok(self.create_offline_media_info(title, artist, cover_url, avatar_url));
-                }
-            }
+            return Ok(self.create_offline_media_info(title, artist, cover_url, avatar_url));
         }
 
         self._validate_response(&response)?;
@@ -440,31 +439,32 @@ impl<'a> DouyinRequest<'a> {
     fn parse_app_response(&mut self, body: &str) -> Result<MediaInfo, ExtractorError> {
         let response: DouyinAppResponse = serde_json::from_str(body)?;
         if let Some(prompts) = &response.data.prompts {
-            if prompts.contains("直播已结束") {
-                if let Some(user) = &response.data.user {
-                    let title = response
-                        .data
-                        .room
-                        .as_ref()
-                        .map(|r| r.title.as_str())
-                        .unwrap_or("");
-                    let artist = &user.nickname;
-                    let cover_url = response
-                        .data
-                        .room
-                        .as_ref()
-                        .and_then(|r| r.cover.as_ref())
-                        .and_then(|cover| cover.url_list.first())
-                        .map(|url| url.to_string());
-                    let avatar_url = user
-                        .avatar_thumb
-                        .url_list
-                        .first()
-                        .map(|url| url.to_string());
+            if prompts.contains("直播已结束")
+                && let Some(user) = &response.data.user
+            {
+                let title = response
+                    .data
+                    .room
+                    .as_ref()
+                    .map(|r| r.title.as_str())
+                    .unwrap_or("");
+                let artist = &user.nickname;
+                let cover_url = response
+                    .data
+                    .room
+                    .as_ref()
+                    .and_then(|r| r.cover.as_ref())
+                    .and_then(|cover| cover.url_list.first())
+                    .map(|url| url.to_string());
+                let avatar_url = user
+                    .avatar_thumb
+                    .url_list
+                    .first()
+                    .map(|url| url.to_string());
 
-                    return Ok(self.create_offline_media_info(title, artist, cover_url, avatar_url));
-                }
+                return Ok(self.create_offline_media_info(title, artist, cover_url, avatar_url));
             }
+
             return Err(ExtractorError::ValidationError(format!(
                 "API error: {prompts}",
             )));
@@ -609,13 +609,12 @@ impl<'a> DouyinRequest<'a> {
 
         // 1. Attempt to extract origin quality stream if forced
         let mut origin_quality_filled = false;
-        if self.config.force_origin_quality {
-            if let Some(origin_stream) =
+        if self.config.force_origin_quality
+            && let Some(origin_stream) =
                 self._extract_origin_stream_owned(stream_data, owned_qualities)
-            {
-                streams.push(origin_stream);
-                origin_quality_filled = true;
-            }
+        {
+            streams.push(origin_stream);
+            origin_quality_filled = true;
         }
 
         // 2. Extract streams from SDK data with owned qualities
