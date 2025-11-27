@@ -224,7 +224,6 @@ mod test {
     use flv::parser_async::FlvDecoderStream;
     use futures::StreamExt;
     use pipeline_common::{PipelineError, ProtocolWriter, WriterError, init_test_tracing};
-    use std::sync::mpsc;
 
     use std::path::Path;
     use tracing::info;
@@ -279,7 +278,8 @@ mod test {
         let (sender, mut receiver) =
             tokio::sync::mpsc::channel::<Result<FlvData, PipelineError>>(8);
 
-        let (output_tx, output_rx) = mpsc::sync_channel::<Result<FlvData, PipelineError>>(8);
+        let (output_tx, output_rx) =
+            tokio::sync::mpsc::channel::<Result<FlvData, PipelineError>>(8);
 
         let process_task = Some(tokio::task::spawn_blocking(move || {
             let pipeline = pipeline.build_pipeline();
@@ -288,7 +288,7 @@ mod test {
                 std::iter::from_fn(move || receiver.blocking_recv().map(Some).unwrap_or(None));
 
             let mut output = |result: Result<FlvData, PipelineError>| {
-                if output_tx.send(result).is_err() {
+                if output_tx.blocking_send(result).is_err() {
                     tracing::warn!("Output channel closed, astopping processing");
                 }
             };
@@ -297,7 +297,7 @@ mod test {
                 && !matches!(err, PipelineError::Cancelled)
             {
                 output_tx
-                    .send(Err(PipelineError::Processing(format!(
+                    .blocking_send(Err(PipelineError::Processing(format!(
                         "Pipeline error: {err}"
                     ))))
                     .ok();

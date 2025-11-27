@@ -82,7 +82,7 @@ pub trait ProtocolWriter: Send + 'static {
 
     fn run(
         &mut self,
-        input_stream: std::sync::mpsc::Receiver<Result<Self::Item, PipelineError>>,
+        input_stream: tokio::sync::mpsc::Receiver<Result<Self::Item, PipelineError>>,
     ) -> Result<Self::Stats, Self::Error>;
 }
 

@@ -11,7 +11,7 @@ use pipeline_common::{CancellationToken, PipelineError, ProtocolWriter, config::
 use std::collections::HashMap;
 use std::path::Path;
 use std::pin::Pin;
-use std::sync::mpsc;
+
 use std::time::Instant;
 use tokio::fs::File;
 use tokio::io::BufReader;
@@ -23,7 +23,7 @@ async fn process_raw_stream(
     base_name: &str,
     pipeline_common_config: &PipelineConfig,
 ) -> Result<(usize, u32), AppError> {
-    let (tx, rx) = mpsc::sync_channel(pipeline_common_config.channel_size);
+    let (tx, rx) = tokio::sync::mpsc::channel(pipeline_common_config.channel_size);
     let mut writer = FlvWriter::new(
         output_dir.to_path_buf(),
         base_name.to_string(),
@@ -43,7 +43,7 @@ async fn process_raw_stream(
 
     let mut stream = stream;
     while let Some(item_result) = stream.next().await {
-        if tx.send(item_result).is_err() {
+        if tx.send(item_result).await.is_err() {
             break;
         }
     }
