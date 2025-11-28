@@ -3,13 +3,14 @@
 /// `0` and `1` are special values.
 ///
 /// Any other value represents the actual number of temporal layers.
-#[derive(Debug, Clone, PartialEq, Copy, PartialOrd, Ord, Eq)]
-#[repr(u8)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum NumTemporalLayers {
     /// The stream might be temporally scalable.
-    Unknown = 0,
+    Unknown,
     /// The stream is not temporally scalable.
-    NotScalable = 1,
+    NotScalable,
+    /// A specific number of temporal layers, represented by the enclosed value.
+    Count(u8),
 }
 
 impl From<u8> for NumTemporalLayers {
@@ -17,7 +18,18 @@ impl From<u8> for NumTemporalLayers {
         match value {
             0 => NumTemporalLayers::Unknown,
             1 => NumTemporalLayers::NotScalable,
-            _ => panic!("invalid num_temporal_layers: {value}"),
+            _ => NumTemporalLayers::Count(value),
+        }
+    }
+}
+
+
+impl From<&NumTemporalLayers> for u8 {
+    fn from(value: &NumTemporalLayers) -> Self {
+        match *value {
+            NumTemporalLayers::Unknown => 0,
+            NumTemporalLayers::NotScalable => 1,
+            NumTemporalLayers::Count(count) => count,
         }
     }
 }
