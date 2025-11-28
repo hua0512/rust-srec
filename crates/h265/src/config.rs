@@ -256,7 +256,8 @@ impl HEVCDecoderConfigurationRecord {
         bit_writer.write_u16::<BigEndian>(self.avg_frame_rate)?;
         bit_writer.write_bits(self.constant_frame_rate as u64, 2)?;
 
-        bit_writer.write_bits(self.num_temporal_layers as u64, 3)?;
+        let num_temporal_layers: u8 = (&self.num_temporal_layers).into();
+        bit_writer.write_bits(num_temporal_layers as u64, 3)?;
         bit_writer.write_bit(self.temporal_id_nested)?;
         bit_writer.write_bits(self.length_size_minus_one as u64, 2)?;
 
@@ -356,3 +357,4 @@ mod tests {
         assert_eq!(buf, data.to_vec());
     }
 }
+
