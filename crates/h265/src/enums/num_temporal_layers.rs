@@ -3,7 +3,8 @@
 /// `0` and `1` are special values.
 ///
 /// Any other value represents the actual number of temporal layers.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[repr(u8)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub enum NumTemporalLayers {
     /// The stream might be temporally scalable.
     Unknown,
