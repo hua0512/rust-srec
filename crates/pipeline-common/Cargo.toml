@@ -17,7 +17,7 @@ tokio-util = { version = "0.7.17" }
 [dev-dependencies]
 tracing-subscriber = "0.3"
 tempfile = "3.23.0"
-criterion = "0.7.0"
+criterion = { version = "0.5", features = ["async_tokio"] }
 flume = "0.11.1"
 crossbeam-channel = "0.5.10"
 
