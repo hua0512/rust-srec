@@ -1,0 +1,385 @@
+//! Individual stream detection.
+//!
+//! This module handles checking the live status of individual streamers.
+
+use chrono::{DateTime, Utc};
+use platforms_parser::extractor::error::ExtractorError;
+use platforms_parser::extractor::factory::ExtractorFactory;
+use serde::{Deserialize, Serialize};
+use tracing::{debug, warn};
+
+use crate::domain::filter::{Filter, FilterType};
+use crate::streamer::StreamerMetadata;
+use crate::Result;
+
+/// Live status of a streamer.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub enum LiveStatus {
+    /// Streamer is currently live.
+    Live {
+        /// Stream title.
+        title: String,
+        /// Stream category (if available).
+        category: Option<String>,
+        /// Stream start time (if available).
+        started_at: Option<DateTime<Utc>>,
+        /// Viewer count (if available).
+        viewer_count: Option<u64>,
+    },
+    /// Streamer is offline.
+    Offline,
+    /// Streamer is live but filtered out (e.g., out of schedule).
+    Filtered {
+        /// Reason for filtering.
+        reason: FilterReason,
+        /// Original live status.
+        title: String,
+        category: Option<String>,
+    },
+    /// Fatal error - streamer not found on platform.
+    NotFound,
+    /// Fatal error - streamer is banned on platform.
+    Banned,
+    /// Fatal error - content is age-restricted.
+    AgeRestricted,
+    /// Fatal error - content is region-locked.
+    RegionLocked,
+    /// Fatal error - content is private.
+    Private,
+    /// Fatal error - unsupported platform.
+    UnsupportedPlatform,
+}
+
+/// Reason why a stream was filtered.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub enum FilterReason {
+    /// Outside scheduled time window.
+    OutOfSchedule,
+    /// Title doesn't match keyword filter.
+    TitleMismatch,
+    /// Category doesn't match filter.
+    CategoryMismatch,
+}
+
+impl LiveStatus {
+    /// Check if the status indicates the streamer is live.
+    pub fn is_live(&self) -> bool {
+        matches!(self, LiveStatus::Live { .. })
+    }
+
+    /// Check if the status indicates the streamer is offline.
+    pub fn is_offline(&self) -> bool {
+        matches!(self, LiveStatus::Offline)
+    }
+
+    /// Check if the status was filtered.
+    pub fn is_filtered(&self) -> bool {
+        matches!(self, LiveStatus::Filtered { .. })
+    }
+
+    /// Check if the status indicates a fatal error.
+    pub fn is_fatal_error(&self) -> bool {
+        matches!(
+            self,
+            LiveStatus::NotFound
+                | LiveStatus::Banned
+                | LiveStatus::AgeRestricted
+                | LiveStatus::RegionLocked
+                | LiveStatus::Private
+                | LiveStatus::UnsupportedPlatform
+        )
+    }
+
+    /// Get the stream title if live.
+    pub fn title(&self) -> Option<&str> {
+        match self {
+            LiveStatus::Live { title, .. } => Some(title),
+            LiveStatus::Filtered { title, .. } => Some(title),
+            _ => None,
+        }
+    }
+
+    /// Get the stream category if available.
+    pub fn category(&self) -> Option<&str> {
+        match self {
+            LiveStatus::Live { category, .. } => category.as_deref(),
+            LiveStatus::Filtered { category, .. } => category.as_deref(),
+            _ => None,
+        }
+    }
+
+    /// Get a description of the fatal error, if any.
+    pub fn fatal_error_description(&self) -> Option<&'static str> {
+        match self {
+            LiveStatus::NotFound => Some("Streamer not found on platform"),
+            LiveStatus::Banned => Some("Streamer is banned on platform"),
+            LiveStatus::AgeRestricted => Some("Content is age-restricted"),
+            LiveStatus::RegionLocked => Some("Content is region-locked"),
+            LiveStatus::Private => Some("Content is private"),
+            LiveStatus::UnsupportedPlatform => Some("Platform is not supported"),
+            _ => None,
+        }
+    }
+}
+
+/// Stream detector for checking live status.
+pub struct StreamDetector {
+    /// HTTP client for API requests (kept for potential direct use).
+    #[allow(dead_code)]
+    client: reqwest::Client,
+    /// Platform extractor factory.
+    extractor_factory: ExtractorFactory,
+}
+
+impl StreamDetector {
+    /// Create a new stream detector.
+    pub fn new() -> Self {
+        Self::with_client(reqwest::Client::new())
+    }
+
+    /// Create a new stream detector with a custom HTTP client.
+    pub fn with_client(client: reqwest::Client) -> Self {
+        let extractor_factory = ExtractorFactory::new(client.clone());
+        Self { 
+            client,
+            extractor_factory,
+        }
+    }
+
+    /// Check the live status of a streamer.
+    ///
+    /// Uses the platforms crate to extract media information from the streamer's URL.
+    pub async fn check_status(&self, streamer: &StreamerMetadata) -> Result<LiveStatus> {
+        self.check_status_with_cookies(streamer, None).await
+    }
+
+    /// Check the live status of a streamer with optional cookies.
+    pub async fn check_status_with_cookies(
+        &self,
+        streamer: &StreamerMetadata,
+        cookies: Option<String>,
+    ) -> Result<LiveStatus> {
+        debug!("Checking status for streamer: {} ({})", streamer.name, streamer.url);
+
+        // Create platform extractor for this streamer's URL
+        let extractor = match self.extractor_factory.create_extractor(&streamer.url, cookies, None) {
+            Ok(ext) => ext,
+            Err(ExtractorError::UnsupportedExtractor) => {
+                warn!("Unsupported platform for URL: {}", streamer.url);
+                return Ok(LiveStatus::UnsupportedPlatform);
+            }
+            Err(e) => {
+                return Err(crate::Error::Monitor(format!(
+                    "Failed to create extractor: {}",
+                    e
+                )));
+            }
+        };
+
+        // Extract media information
+        let media_info = match extractor.extract().await {
+            Ok(info) => info,
+            // Fatal errors - these should stop monitoring
+            Err(ExtractorError::StreamerNotFound) => {
+                warn!("Streamer not found on platform: {}", streamer.name);
+                return Ok(LiveStatus::NotFound);
+            }
+            Err(ExtractorError::StreamerBanned) => {
+                warn!("Streamer is banned: {}", streamer.name);
+                return Ok(LiveStatus::Banned);
+            }
+            Err(ExtractorError::AgeRestrictedContent) => {
+                warn!("Age-restricted content: {}", streamer.name);
+                return Ok(LiveStatus::AgeRestricted);
+            }
+            Err(ExtractorError::RegionLockedContent) => {
+                warn!("Region-locked content: {}", streamer.name);
+                return Ok(LiveStatus::RegionLocked);
+            }
+            Err(ExtractorError::PrivateContent) => {
+                warn!("Private content: {}", streamer.name);
+                return Ok(LiveStatus::Private);
+            }
+            // Non-fatal - streamer is just offline
+            Err(ExtractorError::NoStreamsFound) => {
+                debug!("No streams found for: {}", streamer.name);
+                return Ok(LiveStatus::Offline);
+            }
+            // Transient errors - should be retried
+            Err(e) => {
+                return Err(crate::Error::Monitor(format!(
+                    "Failed to extract media info: {}",
+                    e
+                )));
+            }
+        };
+
+        if media_info.is_live {
+            // Extract additional metadata from extras if available
+            let category = media_info.extras
+                .as_ref()
+                .and_then(|extras| extras.get("category"))
+                .cloned();
+
+            let viewer_count = media_info.extras
+                .as_ref()
+                .and_then(|extras| extras.get("viewer_count"))
+                .and_then(|v| v.parse::<u64>().ok());
+
+            debug!(
+                "Streamer {} is LIVE: {} (category: {:?}, viewers: {:?})",
+                streamer.name, media_info.title, category, viewer_count
+            );
+
+            Ok(LiveStatus::Live {
+                title: media_info.title,
+                category,
+                started_at: None, // TODO: platforms crate doesn't provide start time
+                viewer_count,
+            })
+        } else {
+            debug!("Streamer {} is OFFLINE", streamer.name);
+            Ok(LiveStatus::Offline)
+        }
+    }
+
+    /// Check status and apply filters.
+    pub async fn check_status_with_filters(
+        &self,
+        streamer: &StreamerMetadata,
+        filters: &[Filter],
+    ) -> Result<LiveStatus> {
+        let status = self.check_status(streamer).await?;
+
+        // If offline, no need to filter
+        if status.is_offline() {
+            return Ok(status);
+        }
+
+        // Apply filters
+        if let LiveStatus::Live { title, category, .. } = &status {
+            let now = Utc::now();
+
+            for filter in filters {
+                let matches = filter.matches(
+                    title,
+                    category.as_deref().unwrap_or(""),
+                    now,
+                );
+
+                if !matches {
+                    let reason = match filter.filter_type() {
+                        FilterType::TimeBased => FilterReason::OutOfSchedule,
+                        FilterType::Keyword => FilterReason::TitleMismatch,
+                        FilterType::Category => FilterReason::CategoryMismatch,
+                    };
+
+                    return Ok(LiveStatus::Filtered {
+                        reason,
+                        title: title.clone(),
+                        category: category.clone(),
+                    });
+                }
+            }
+        }
+
+        Ok(status)
+    }
+}
+
+impl Default for StreamDetector {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_live_status_is_live() {
+        let status = LiveStatus::Live {
+            title: "Test Stream".to_string(),
+            category: Some("Gaming".to_string()),
+            started_at: None,
+            viewer_count: None,
+        };
+        assert!(status.is_live());
+        assert!(!status.is_offline());
+        assert!(!status.is_filtered());
+    }
+
+    #[test]
+    fn test_live_status_is_offline() {
+        let status = LiveStatus::Offline;
+        assert!(!status.is_live());
+        assert!(status.is_offline());
+        assert!(!status.is_filtered());
+    }
+
+    #[test]
+    fn test_live_status_is_filtered() {
+        let status = LiveStatus::Filtered {
+            reason: FilterReason::OutOfSchedule,
+            title: "Test Stream".to_string(),
+            category: None,
+        };
+        assert!(!status.is_live());
+        assert!(!status.is_offline());
+        assert!(status.is_filtered());
+    }
+
+    #[test]
+    fn test_live_status_title() {
+        let live = LiveStatus::Live {
+            title: "Live Title".to_string(),
+            category: None,
+            started_at: None,
+            viewer_count: None,
+        };
+        assert_eq!(live.title(), Some("Live Title"));
+
+        let filtered = LiveStatus::Filtered {
+            reason: FilterReason::OutOfSchedule,
+            title: "Filtered Title".to_string(),
+            category: None,
+        };
+        assert_eq!(filtered.title(), Some("Filtered Title"));
+
+        let offline = LiveStatus::Offline;
+        assert_eq!(offline.title(), None);
+    }
+
+    #[test]
+    fn test_live_status_is_fatal_error() {
+        assert!(LiveStatus::NotFound.is_fatal_error());
+        assert!(LiveStatus::Banned.is_fatal_error());
+        assert!(LiveStatus::AgeRestricted.is_fatal_error());
+        assert!(LiveStatus::RegionLocked.is_fatal_error());
+        assert!(LiveStatus::Private.is_fatal_error());
+        assert!(LiveStatus::UnsupportedPlatform.is_fatal_error());
+        
+        // Non-fatal statuses
+        assert!(!LiveStatus::Offline.is_fatal_error());
+        assert!(!LiveStatus::Live {
+            title: "Test".to_string(),
+            category: None,
+            started_at: None,
+            viewer_count: None,
+        }.is_fatal_error());
+    }
+
+    #[test]
+    fn test_fatal_error_description() {
+        assert_eq!(
+            LiveStatus::NotFound.fatal_error_description(),
+            Some("Streamer not found on platform")
+        );
+        assert_eq!(
+            LiveStatus::Banned.fatal_error_description(),
+            Some("Streamer is banned on platform")
+        );
+        assert_eq!(LiveStatus::Offline.fatal_error_description(), None);
+    }
+}

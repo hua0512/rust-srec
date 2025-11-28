@@ -1086,3 +1086,369 @@ mod streamer_manager_tests {
         assert_eq!(p2_streamers.len(), 1);
     }
 }
+
+
+/// End-to-end verification tests for Sprint 3.
+/// These tests verify the complete flow: add streamer → detect status → update state → emit events.
+mod end_to_end_tests {
+    use super::*;
+    use rust_srec::config::ConfigEventBroadcaster;
+    use rust_srec::database::repositories::streamer::SqlxStreamerRepository;
+    use rust_srec::database::repositories::filter::SqlxFilterRepository;
+    use rust_srec::database::repositories::session::SqlxSessionRepository;
+    use rust_srec::streamer::{StreamerManager, StreamerMetadata};
+    use rust_srec::monitor::{LiveStatus, MonitorEvent, StreamMonitor};
+    use rust_srec::domain::StreamerState;
+    use std::sync::Arc;
+    use chrono::Utc;
+
+    async fn setup_platform(pool: &DbPool) -> String {
+        let id = uuid::Uuid::new_v4().to_string();
+        sqlx::query(
+            "INSERT INTO platform_config (id, platform_name, fetch_delay_ms, download_delay_ms)
+             VALUES (?, 'twitch', 60000, 1000)"
+        )
+            .bind(&id)
+            .execute(pool)
+            .await
+            .expect("Failed to insert platform config");
+        id
+    }
+
+    fn create_test_metadata(id: &str, name: &str, url: &str, platform_id: &str, state: StreamerState) -> StreamerMetadata {
+        StreamerMetadata {
+            id: id.to_string(),
+            name: name.to_string(),
+            url: url.to_string(),
+            platform_config_id: platform_id.to_string(),
+            template_config_id: None,
+            state,
+            priority: rust_srec::domain::Priority::Normal,
+            consecutive_error_count: 0,
+            disabled_until: None,
+            last_live_time: None,
+        }
+    }
+
+    #[tokio::test]
+    async fn test_e2e_live_status_processing() {
+        // Setup database
+        let pool = setup_test_db().await;
+        let platform_id = setup_platform(&pool).await;
+
+        // Insert a streamer
+        let streamer_id = uuid::Uuid::new_v4().to_string();
+        sqlx::query(
+            "INSERT INTO streamers (id, name, url, platform_config_id, state, priority, consecutive_error_count)
+             VALUES (?, 'TestStreamer', 'https://twitch.tv/teststreamer', ?, 'NOT_LIVE', 'NORMAL', 0)"
+        )
+            .bind(&streamer_id)
+            .bind(&platform_id)
+            .execute(&pool)
+            .await
+            .expect("Failed to insert streamer");
+
+        // Create services
+        let streamer_repo = Arc::new(SqlxStreamerRepository::new(pool.clone()));
+        let filter_repo = Arc::new(SqlxFilterRepository::new(pool.clone()));
+        let session_repo = Arc::new(SqlxSessionRepository::new(pool.clone()));
+        let broadcaster = ConfigEventBroadcaster::new();
+        
+        let streamer_manager = Arc::new(StreamerManager::new(streamer_repo, broadcaster));
+        streamer_manager.hydrate().await.expect("Failed to hydrate");
+
+        // Create monitor
+        let monitor = StreamMonitor::new(
+            streamer_manager.clone(),
+            filter_repo,
+            session_repo,
+        );
+
+        // Subscribe to events
+        let mut event_rx = monitor.subscribe_events();
+
+        // Create test metadata
+        let metadata = create_test_metadata(
+            &streamer_id,
+            "TestStreamer",
+            "https://twitch.tv/teststreamer",
+            &platform_id,
+            StreamerState::NotLive,
+        );
+
+        // Simulate live status detection
+        let live_status = LiveStatus::Live {
+            title: "Playing Rust!".to_string(),
+            category: Some("Gaming".to_string()),
+            started_at: Some(Utc::now()),
+            viewer_count: Some(1000),
+        };
+
+        // Process the status
+        monitor.process_status(&metadata, live_status).await.expect("Failed to process status");
+
+        // Verify state was updated
+        let updated = streamer_manager.get_streamer(&streamer_id).expect("Streamer not found");
+        assert_eq!(updated.state, StreamerState::Live);
+
+        // Verify event was emitted
+        let event = event_rx.try_recv().expect("No event received");
+        match event {
+            MonitorEvent::StreamerLive { streamer_name, title, .. } => {
+                assert_eq!(streamer_name, "TestStreamer");
+                assert_eq!(title, "Playing Rust!");
+            }
+            _ => panic!("Expected StreamerLive event"),
+        }
+    }
+
+    #[tokio::test]
+    async fn test_e2e_offline_status_processing() {
+        // Setup database
+        let pool = setup_test_db().await;
+        let platform_id = setup_platform(&pool).await;
+
+        // Insert a streamer that is currently live
+        let streamer_id = uuid::Uuid::new_v4().to_string();
+        sqlx::query(
+            "INSERT INTO streamers (id, name, url, platform_config_id, state, priority, consecutive_error_count)
+             VALUES (?, 'LiveStreamer', 'https://twitch.tv/livestreamer', ?, 'LIVE', 'NORMAL', 0)"
+        )
+            .bind(&streamer_id)
+            .bind(&platform_id)
+            .execute(&pool)
+            .await
+            .expect("Failed to insert streamer");
+
+        // Create services
+        let streamer_repo = Arc::new(SqlxStreamerRepository::new(pool.clone()));
+        let filter_repo = Arc::new(SqlxFilterRepository::new(pool.clone()));
+        let session_repo = Arc::new(SqlxSessionRepository::new(pool.clone()));
+        let broadcaster = ConfigEventBroadcaster::new();
+        
+        let streamer_manager = Arc::new(StreamerManager::new(streamer_repo, broadcaster));
+        streamer_manager.hydrate().await.expect("Failed to hydrate");
+
+        // Create monitor
+        let monitor = StreamMonitor::new(
+            streamer_manager.clone(),
+            filter_repo,
+            session_repo,
+        );
+
+        // Subscribe to events
+        let mut event_rx = monitor.subscribe_events();
+
+        // Create test metadata (currently live)
+        let metadata = create_test_metadata(
+            &streamer_id,
+            "LiveStreamer",
+            "https://twitch.tv/livestreamer",
+            &platform_id,
+            StreamerState::Live,
+        );
+
+        // Process offline status
+        monitor.process_status(&metadata, LiveStatus::Offline).await.expect("Failed to process status");
+
+        // Verify state was updated
+        let updated = streamer_manager.get_streamer(&streamer_id).expect("Streamer not found");
+        assert_eq!(updated.state, StreamerState::NotLive);
+
+        // Verify event was emitted
+        let event = event_rx.try_recv().expect("No event received");
+        match event {
+            MonitorEvent::StreamerOffline { streamer_name, .. } => {
+                assert_eq!(streamer_name, "LiveStreamer");
+            }
+            _ => panic!("Expected StreamerOffline event"),
+        }
+    }
+
+    #[tokio::test]
+    async fn test_e2e_fatal_error_processing() {
+        // Setup database
+        let pool = setup_test_db().await;
+        let platform_id = setup_platform(&pool).await;
+
+        // Insert a streamer
+        let streamer_id = uuid::Uuid::new_v4().to_string();
+        sqlx::query(
+            "INSERT INTO streamers (id, name, url, platform_config_id, state, priority, consecutive_error_count)
+             VALUES (?, 'MissingStreamer', 'https://twitch.tv/missingstreamer', ?, 'NOT_LIVE', 'NORMAL', 0)"
+        )
+            .bind(&streamer_id)
+            .bind(&platform_id)
+            .execute(&pool)
+            .await
+            .expect("Failed to insert streamer");
+
+        // Create services
+        let streamer_repo = Arc::new(SqlxStreamerRepository::new(pool.clone()));
+        let filter_repo = Arc::new(SqlxFilterRepository::new(pool.clone()));
+        let session_repo = Arc::new(SqlxSessionRepository::new(pool.clone()));
+        let broadcaster = ConfigEventBroadcaster::new();
+        
+        let streamer_manager = Arc::new(StreamerManager::new(streamer_repo, broadcaster));
+        streamer_manager.hydrate().await.expect("Failed to hydrate");
+
+        // Create monitor
+        let monitor = StreamMonitor::new(
+            streamer_manager.clone(),
+            filter_repo,
+            session_repo,
+        );
+
+        // Subscribe to events
+        let mut event_rx = monitor.subscribe_events();
+
+        // Create test metadata
+        let metadata = create_test_metadata(
+            &streamer_id,
+            "MissingStreamer",
+            "https://twitch.tv/missingstreamer",
+            &platform_id,
+            StreamerState::NotLive,
+        );
+
+        // Process NotFound status (fatal error)
+        monitor.process_status(&metadata, LiveStatus::NotFound).await.expect("Failed to process status");
+
+        // Verify state was updated to NotFound
+        let updated = streamer_manager.get_streamer(&streamer_id).expect("Streamer not found");
+        assert_eq!(updated.state, StreamerState::NotFound);
+
+        // Verify fatal error event was emitted
+        let event = event_rx.try_recv().expect("No event received");
+        match event {
+            MonitorEvent::FatalError { streamer_name, error_type, new_state, .. } => {
+                assert_eq!(streamer_name, "MissingStreamer");
+                assert_eq!(error_type, rust_srec::monitor::FatalErrorType::NotFound);
+                assert_eq!(new_state, StreamerState::NotFound);
+            }
+            _ => panic!("Expected FatalError event"),
+        }
+    }
+
+    #[tokio::test]
+    async fn test_e2e_filter_evaluation() {
+        // Setup database
+        let pool = setup_test_db().await;
+        let platform_id = setup_platform(&pool).await;
+
+        // Insert a streamer
+        let streamer_id = uuid::Uuid::new_v4().to_string();
+        sqlx::query(
+            "INSERT INTO streamers (id, name, url, platform_config_id, state, priority, consecutive_error_count)
+             VALUES (?, 'FilteredStreamer', 'https://twitch.tv/filteredstreamer', ?, 'NOT_LIVE', 'NORMAL', 0)"
+        )
+            .bind(&streamer_id)
+            .bind(&platform_id)
+            .execute(&pool)
+            .await
+            .expect("Failed to insert streamer");
+
+        // Create services
+        let streamer_repo = Arc::new(SqlxStreamerRepository::new(pool.clone()));
+        let filter_repo = Arc::new(SqlxFilterRepository::new(pool.clone()));
+        let session_repo = Arc::new(SqlxSessionRepository::new(pool.clone()));
+        let broadcaster = ConfigEventBroadcaster::new();
+        
+        let streamer_manager = Arc::new(StreamerManager::new(streamer_repo, broadcaster));
+        streamer_manager.hydrate().await.expect("Failed to hydrate");
+
+        // Create monitor
+        let monitor = StreamMonitor::new(
+            streamer_manager.clone(),
+            filter_repo,
+            session_repo,
+        );
+
+        // Create test metadata
+        let metadata = create_test_metadata(
+            &streamer_id,
+            "FilteredStreamer",
+            "https://twitch.tv/filteredstreamer",
+            &platform_id,
+            StreamerState::NotLive,
+        );
+
+        // Process filtered status (out of schedule)
+        let filtered_status = LiveStatus::Filtered {
+            reason: rust_srec::monitor::FilterReason::OutOfSchedule,
+            title: "Late Night Stream".to_string(),
+            category: Some("Just Chatting".to_string()),
+        };
+
+        monitor.process_status(&metadata, filtered_status).await.expect("Failed to process status");
+
+        // Verify state was updated to OutOfSchedule
+        let updated = streamer_manager.get_streamer(&streamer_id).expect("Streamer not found");
+        assert_eq!(updated.state, StreamerState::OutOfSchedule);
+    }
+
+    #[tokio::test]
+    async fn test_e2e_transient_error_handling() {
+        // Setup database
+        let pool = setup_test_db().await;
+        let platform_id = setup_platform(&pool).await;
+
+        // Insert a streamer
+        let streamer_id = uuid::Uuid::new_v4().to_string();
+        sqlx::query(
+            "INSERT INTO streamers (id, name, url, platform_config_id, state, priority, consecutive_error_count)
+             VALUES (?, 'ErrorStreamer', 'https://twitch.tv/errorstreamer', ?, 'NOT_LIVE', 'NORMAL', 0)"
+        )
+            .bind(&streamer_id)
+            .bind(&platform_id)
+            .execute(&pool)
+            .await
+            .expect("Failed to insert streamer");
+
+        // Create services
+        let streamer_repo = Arc::new(SqlxStreamerRepository::new(pool.clone()));
+        let filter_repo = Arc::new(SqlxFilterRepository::new(pool.clone()));
+        let session_repo = Arc::new(SqlxSessionRepository::new(pool.clone()));
+        let broadcaster = ConfigEventBroadcaster::new();
+        
+        let streamer_manager = Arc::new(StreamerManager::new(streamer_repo, broadcaster));
+        streamer_manager.hydrate().await.expect("Failed to hydrate");
+
+        // Create monitor
+        let monitor = StreamMonitor::new(
+            streamer_manager.clone(),
+            filter_repo,
+            session_repo,
+        );
+
+        // Subscribe to events
+        let mut event_rx = monitor.subscribe_events();
+
+        // Create test metadata
+        let metadata = create_test_metadata(
+            &streamer_id,
+            "ErrorStreamer",
+            "https://twitch.tv/errorstreamer",
+            &platform_id,
+            StreamerState::NotLive,
+        );
+
+        // Handle transient error
+        monitor.handle_error(&metadata, "Network timeout").await.expect("Failed to handle error");
+
+        // Verify error count was incremented
+        let updated = streamer_manager.get_streamer(&streamer_id).expect("Streamer not found");
+        assert_eq!(updated.consecutive_error_count, 1);
+
+        // Verify transient error event was emitted
+        let event = event_rx.try_recv().expect("No event received");
+        match event {
+            MonitorEvent::TransientError { streamer_name, error_message, consecutive_errors, .. } => {
+                assert_eq!(streamer_name, "ErrorStreamer");
+                assert_eq!(error_message, "Network timeout");
+                assert_eq!(consecutive_errors, 1);
+            }
+            _ => panic!("Expected TransientError event"),
+        }
+    }
+}

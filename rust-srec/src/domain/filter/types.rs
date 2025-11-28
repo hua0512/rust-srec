@@ -40,6 +40,58 @@ impl Filter {
             Self::Category(_) => FilterType::Category,
         }
     }
+
+    /// Check if the filter matches the given context.
+    pub fn matches(
+        &self,
+        title: &str,
+        category: &str,
+        now: chrono::DateTime<chrono::Utc>,
+    ) -> bool {
+        match self {
+            Self::TimeBased(f) => f.matches(now),
+            Self::Keyword(f) => f.matches(title),
+            Self::Category(f) => f.matches(category),
+        }
+    }
+
+    /// Create a Filter from a database model.
+    pub fn from_db_model(model: &crate::database::models::FilterDbModel) -> Result<Self, String> {
+        use crate::database::models::filter::FilterType as DbFilterType;
+
+        let filter_type = DbFilterType::parse(&model.filter_type)
+            .ok_or_else(|| format!("Unknown filter type: {}", model.filter_type))?;
+
+        match filter_type {
+            DbFilterType::TimeBased => {
+                let config: crate::database::models::filter::TimeBasedFilterConfig =
+                    serde_json::from_str(&model.config)
+                        .map_err(|e| format!("Failed to parse time-based filter config: {}", e))?;
+                Ok(Filter::TimeBased(TimeBasedFilter {
+                    days_of_week: config.days_of_week,
+                    start_time: config.start_time,
+                    end_time: config.end_time,
+                }))
+            }
+            DbFilterType::Keyword => {
+                let config: crate::database::models::filter::KeywordFilterConfig =
+                    serde_json::from_str(&model.config)
+                        .map_err(|e| format!("Failed to parse keyword filter config: {}", e))?;
+                Ok(Filter::Keyword(KeywordFilter {
+                    include: config.include,
+                    exclude: config.exclude,
+                }))
+            }
+            DbFilterType::Category => {
+                let config: crate::database::models::filter::CategoryFilterConfig =
+                    serde_json::from_str(&model.config)
+                        .map_err(|e| format!("Failed to parse category filter config: {}", e))?;
+                Ok(Filter::Category(CategoryFilter {
+                    categories: config.categories,
+                }))
+            }
+        }
+    }
 }
 
 /// Time-based filter with days of week and time ranges.

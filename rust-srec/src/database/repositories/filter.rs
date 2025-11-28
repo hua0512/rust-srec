@@ -15,6 +15,11 @@ pub trait FilterRepository: Send + Sync {
     async fn update_filter(&self, filter: &FilterDbModel) -> Result<()>;
     async fn delete_filter(&self, id: &str) -> Result<()>;
     async fn delete_filters_for_streamer(&self, streamer_id: &str) -> Result<()>;
+
+    /// Alias for get_filters_for_streamer.
+    async fn get_by_streamer(&self, streamer_id: &str) -> Result<Vec<FilterDbModel>> {
+        self.get_filters_for_streamer(streamer_id).await
+    }
 }
 
 /// SQLx implementation of FilterRepository.

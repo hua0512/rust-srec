@@ -32,6 +32,9 @@ pub enum Error {
     #[error("IO error: {0}")]
     Io(#[from] std::io::Error),
 
+    #[error("Monitor error: {0}")]
+    Monitor(String),
+
     #[error("{0}")]
     Other(String),
 }
