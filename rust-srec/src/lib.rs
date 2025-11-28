@@ -2,7 +2,9 @@
 //!
 //! This module exposes the core functionality for integration testing.
 
+pub mod api;
 pub mod config;
+pub mod danmu;
 pub mod database;
 pub mod domain;
 pub mod downloader;

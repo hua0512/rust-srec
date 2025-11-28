@@ -19,6 +19,7 @@ pub enum MonitorEvent {
     StreamerLive {
         streamer_id: String,
         streamer_name: String,
+        streamer_url: String,
         title: String,
         category: Option<String>,
         /// Available streams for download from platform parser.
@@ -31,6 +32,8 @@ pub enum MonitorEvent {
     StreamerOffline {
         streamer_id: String,
         streamer_name: String,
+        /// Session ID if a session was active.
+        session_id: Option<String>,
         timestamp: DateTime<Utc>,
     },
     /// Fatal error occurred - monitoring stopped.
@@ -187,6 +190,7 @@ mod tests {
         let event = MonitorEvent::StreamerLive {
             streamer_id: "123".to_string(),
             streamer_name: "TestStreamer".to_string(),
+            streamer_url: "https://example.com/streamer".to_string(),
             title: "Playing Games".to_string(),
             category: Some("Gaming".to_string()),
             streams: vec![create_test_stream()],
@@ -201,6 +205,7 @@ mod tests {
         let live_event = MonitorEvent::StreamerLive {
             streamer_id: "123".to_string(),
             streamer_name: "Test".to_string(),
+            streamer_url: "https://example.com/test".to_string(),
             title: "Test".to_string(),
             category: None,
             streams: vec![],
@@ -235,6 +240,7 @@ mod tests {
         let event = MonitorEvent::StreamerOffline {
             streamer_id: "123".to_string(),
             streamer_name: "Test".to_string(),
+            session_id: None,
             timestamp: Utc::now(),
         };
 

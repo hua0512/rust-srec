@@ -35,6 +35,18 @@ pub enum Error {
     #[error("Monitor error: {0}")]
     Monitor(String),
 
+    #[error("Danmu error: {0}")]
+    DanmuError(String),
+
+    #[error("Download error: {0}")]
+    DownloadError(String),
+
+    #[error("Pipeline error: {0}")]
+    PipelineError(String),
+
+    #[error("API error: {0}")]
+    ApiError(String),
+
     #[error("{0}")]
     Other(String),
 }

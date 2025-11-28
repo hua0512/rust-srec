@@ -271,6 +271,7 @@ impl<
         let event = MonitorEvent::StreamerLive {
             streamer_id: streamer.id.clone(),
             streamer_name: streamer.name.clone(),
+            streamer_url: streamer.url.clone(),
             title: title.clone(),
             category: category.clone(),
             streams,
@@ -290,6 +291,15 @@ impl<
 
     /// Handle a streamer going offline.
     async fn handle_offline(&self, streamer: &StreamerMetadata) -> Result<()> {
+        self.handle_offline_with_session(streamer, None).await
+    }
+
+    /// Handle a streamer going offline with optional session ID.
+    pub async fn handle_offline_with_session(
+        &self,
+        streamer: &StreamerMetadata,
+        session_id: Option<String>,
+    ) -> Result<()> {
         debug!("Streamer {} is OFFLINE", streamer.name);
 
         // Only update if currently live
@@ -305,6 +315,7 @@ impl<
             let event = MonitorEvent::StreamerOffline {
                 streamer_id: streamer.id.clone(),
                 streamer_name: streamer.name.clone(),
+                session_id,
                 timestamp: chrono::Utc::now(),
             };
             let _ = self.event_broadcaster.publish(event);
@@ -454,27 +465,27 @@ mod tests {
     #[test]
     fn test_status_summary() {
         assert_eq!(status_summary(&LiveStatus::Offline), "Offline");
-        assert_eq!(
-            status_summary(&LiveStatus::Live {
-                title: "Test".to_string(),
-                category: None,
-                started_at: None,
-                viewer_count: None,
-                streams: vec![platforms_parser::media::StreamInfo {
-                    url: "https://example.com/stream.flv".to_string(),
-                    stream_format: platforms_parser::media::StreamFormat::Flv,
-                    media_format: platforms_parser::media::formats::MediaFormat::Flv,
-                    quality: "best".to_string(),
-                    bitrate: 5000000,
-                    priority: 1,
-                    extras: None,
-                    codec: "h264".to_string(),
-                    fps: 30.0,
-                    is_headers_needed: false,
-                }],
-            }),
-            "Live"
-        );
+        
+        let live_status = LiveStatus::Live {
+            title: "Test".to_string(),
+            category: None,
+            started_at: None,
+            viewer_count: None,
+            streams: vec![platforms_parser::media::StreamInfo {
+                url: "https://example.com/stream.flv".to_string(),
+                stream_format: platforms_parser::media::StreamFormat::Flv,
+                media_format: platforms_parser::media::formats::MediaFormat::Flv,
+                quality: "best".to_string(),
+                bitrate: 5000000,
+                priority: 1,
+                extras: None,
+                codec: "h264".to_string(),
+                fps: 30.0,
+                is_headers_needed: false,
+            }],
+        };
+        assert_eq!(status_summary(&live_status), "Live");
+        
         assert_eq!(
             status_summary(&LiveStatus::Filtered {
                 reason: FilterReason::OutOfSchedule,

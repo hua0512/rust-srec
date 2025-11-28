@@ -10,7 +10,9 @@ use sqlx::SqlitePool;
 use tokio_util::sync::CancellationToken;
 use tracing::{debug, info, warn};
 
+use crate::api::{ApiServer, server::{ApiServerConfig, AppState}};
 use crate::config::{ConfigCache, ConfigEventBroadcaster, ConfigService};
+use crate::danmu::{DanmuService, service::{DanmuEvent, DanmuServiceConfig}};
 use crate::database::repositories::{
     config::SqlxConfigRepository,
     streamer::SqlxStreamerRepository,
@@ -46,6 +48,10 @@ pub struct ServiceContainer {
     pub pipeline_manager: Arc<PipelineManager>,
     /// Monitor event broadcaster.
     pub monitor_event_broadcaster: MonitorEventBroadcaster,
+    /// Danmu service.
+    pub danmu_service: Arc<DanmuService>,
+    /// API server configuration.
+    api_server_config: ApiServerConfig,
     /// Cancellation token for graceful shutdown.
     cancellation_token: CancellationToken,
 }
@@ -98,6 +104,9 @@ impl ServiceContainer {
         // Create monitor event broadcaster
         let monitor_event_broadcaster = MonitorEventBroadcaster::with_capacity(event_capacity);
 
+        // Create danmu service with default config
+        let danmu_service = Arc::new(DanmuService::new(DanmuServiceConfig::default()));
+
         // Create cancellation token for graceful shutdown
         let cancellation_token = CancellationToken::new();
 
@@ -111,6 +120,8 @@ impl ServiceContainer {
             download_manager,
             pipeline_manager,
             monitor_event_broadcaster,
+            danmu_service,
+            api_server_config: ApiServerConfig::default(),
             cancellation_token,
         })
     }
@@ -122,6 +133,8 @@ impl ServiceContainer {
         event_capacity: usize,
         download_config: DownloadManagerConfig,
         pipeline_config: PipelineManagerConfig,
+        danmu_config: DanmuServiceConfig,
+        api_config: ApiServerConfig,
     ) -> Result<Self> {
         info!("Initializing service container with full configuration");
 
@@ -155,6 +168,9 @@ impl ServiceContainer {
         // Create monitor event broadcaster
         let monitor_event_broadcaster = MonitorEventBroadcaster::with_capacity(event_capacity);
 
+        // Create danmu service with custom config
+        let danmu_service = Arc::new(DanmuService::new(danmu_config));
+
         // Create cancellation token for graceful shutdown
         let cancellation_token = CancellationToken::new();
 
@@ -168,6 +184,8 @@ impl ServiceContainer {
             download_manager,
             pipeline_manager,
             monitor_event_broadcaster,
+            danmu_service,
+            api_server_config: api_config,
             cancellation_token,
         })
     }
@@ -190,10 +208,50 @@ impl ServiceContainer {
         // Wire download events to pipeline manager
         self.setup_download_event_subscriptions();
 
-        // Wire monitor events to download manager
+        // Wire monitor events to download manager and danmu service
         self.setup_monitor_event_subscriptions();
 
+        // Wire danmu events to download manager for segment coordination
+        self.setup_danmu_event_subscriptions();
+
         info!("Services initialized");
+        Ok(())
+    }
+
+    /// Initialize and start the API server.
+    /// This should be called after initialize() and runs the server in the background.
+    pub async fn start_api_server(&self) -> Result<()> {
+        let state = AppState::with_services(
+            self.config_service.clone(),
+            self.streamer_manager.clone(),
+            self.pipeline_manager.clone(),
+            self.danmu_service.clone(),
+            self.download_manager.clone(),
+        );
+
+        let server = ApiServer::with_state(self.api_server_config.clone(), state);
+        let cancel_token = self.cancellation_token.clone();
+
+        // Link server shutdown to container shutdown
+        let server_cancel = server.cancel_token();
+        tokio::spawn(async move {
+            cancel_token.cancelled().await;
+            server_cancel.cancel();
+        });
+
+        // Start server in background
+        let addr = format!(
+            "{}:{}",
+            self.api_server_config.bind_address, self.api_server_config.port
+        );
+        info!("Starting API server on http://{}", addr);
+
+        tokio::spawn(async move {
+            if let Err(e) = server.run().await {
+                tracing::error!("API server error: {}", e);
+            }
+        });
+
         Ok(())
     }
 
@@ -280,11 +338,12 @@ impl ServiceContainer {
         });
     }
 
-    /// Set up monitor event subscriptions to download manager.
+    /// Set up monitor event subscriptions to download manager and danmu service.
     fn setup_monitor_event_subscriptions(&self) {
         let download_manager = self.download_manager.clone();
         let streamer_manager = self.streamer_manager.clone();
         let config_service = self.config_service.clone();
+        let danmu_service = self.danmu_service.clone();
         let mut receiver = self.monitor_event_broadcaster.subscribe();
         let cancellation_token = self.cancellation_token.clone();
 
@@ -302,6 +361,7 @@ impl ServiceContainer {
                                     &download_manager,
                                     &streamer_manager,
                                     &config_service,
+                                    &danmu_service,
                                     event,
                                 ).await;
                             }
@@ -313,11 +373,80 @@ impl ServiceContainer {
         });
     }
 
-    /// Handle monitor events to trigger downloads.
+    /// Set up danmu event subscriptions for segment coordination.
+    fn setup_danmu_event_subscriptions(&self) {
+        let mut receiver = self.danmu_service.subscribe();
+        let cancellation_token = self.cancellation_token.clone();
+
+        tokio::spawn(async move {
+            loop {
+                tokio::select! {
+                    _ = cancellation_token.cancelled() => {
+                        debug!("Danmu event handler shutting down");
+                        break;
+                    }
+                    result = receiver.recv() => {
+                        match result {
+                            Ok(event) => {
+                                match event {
+                                    DanmuEvent::CollectionStarted { session_id, streamer_id } => {
+                                        info!(
+                                            "Danmu collection started for session {} (streamer: {})",
+                                            session_id, streamer_id
+                                        );
+                                    }
+                                    DanmuEvent::CollectionStopped { session_id, statistics } => {
+                                        info!(
+                                            "Danmu collection stopped for session {}: {} messages",
+                                            session_id, statistics.total_count
+                                        );
+                                    }
+                                    DanmuEvent::SegmentStarted { session_id, segment_id, output_path } => {
+                                        debug!(
+                                            "Danmu segment started: session={}, segment={}, path={:?}",
+                                            session_id, segment_id, output_path
+                                        );
+                                    }
+                                    DanmuEvent::SegmentCompleted { session_id, segment_id, message_count, .. } => {
+                                        info!(
+                                            "Danmu segment completed: session={}, segment={}, messages={}",
+                                            session_id, segment_id, message_count
+                                        );
+                                    }
+                                    DanmuEvent::Reconnecting { session_id, attempt } => {
+                                        warn!(
+                                            "Danmu reconnecting for session {}: attempt {}",
+                                            session_id, attempt
+                                        );
+                                    }
+                                    DanmuEvent::ReconnectFailed { session_id, error } => {
+                                        warn!(
+                                            "Danmu reconnect failed for session {}: {}",
+                                            session_id, error
+                                        );
+                                    }
+                                    DanmuEvent::Error { session_id, error } => {
+                                        warn!(
+                                            "Danmu error for session {}: {}",
+                                            session_id, error
+                                        );
+                                    }
+                                }
+                            }
+                            Err(_) => break,
+                        }
+                    }
+                }
+            }
+        });
+    }
+
+    /// Handle monitor events to trigger downloads and danmu collection.
     async fn handle_monitor_event(
         download_manager: &Arc<DownloadManager>,
         streamer_manager: &Arc<StreamerManager<SqlxStreamerRepository>>,
         config_service: &Arc<ConfigService<SqlxConfigRepository, SqlxStreamerRepository>>,
+        danmu_service: &Arc<DanmuService>,
         event: MonitorEvent,
     ) {
         match event {
@@ -326,6 +455,7 @@ impl ServiceContainer {
                 streamer_name,
                 title,
                 streams,
+                streamer_url,
                 ..
             } => {
                 info!(
@@ -380,7 +510,7 @@ impl ServiceContainer {
                         return;
                     }
                 };
-                let stream_url = best_stream.url.clone();
+                let stream_url_selected = best_stream.url.clone();
                 let stream_format = best_stream.stream_format.as_str();
                 let media_format = best_stream.media_format.as_str();
 
@@ -408,10 +538,10 @@ impl ServiceContainer {
                 let output_dir = format!("{}/{}/{}", merged_config.output_folder, streamer_id, session_id);
 
                 let mut config = DownloadConfig::new(
-                    stream_url.clone(),
-                    output_dir,
+                    stream_url_selected.clone(),
+                    output_dir.clone(),
                     streamer_id.clone(),
-                    session_id,
+                    session_id.clone(),
                 )
                 .with_filename_template(&merged_config.output_filename_template.replace("{streamer}", &streamer_name))
                 .with_output_format(&merged_config.output_file_format)
@@ -424,7 +554,7 @@ impl ServiceContainer {
 
                 info!(
                     "Starting download for {} with stream URL: {} (stream_format: {}, media_format: {}, headers_needed: {}, output: {})",
-                    streamer_name, stream_url, stream_format, media_format, best_stream.is_headers_needed, merged_config.output_folder
+                    streamer_name, stream_url_selected, stream_format, media_format, best_stream.is_headers_needed, merged_config.output_folder
                 );
 
                 // Start download
@@ -447,13 +577,61 @@ impl ServiceContainer {
                         );
                     }
                 }
+
+                // Start danmu collection if enabled
+                if merged_config.record_danmu {
+                    let sampling_config = Some(merged_config.danmu_sampling_config.clone());
+                    match danmu_service
+                        .start_collection(
+                            &session_id,
+                            &streamer_id,
+                            &streamer_url,
+                            sampling_config,
+                        )
+                        .await
+                    {
+                        Ok(handle) => {
+                            info!(
+                                "Started danmu collection for session {} (streamer: {})",
+                                handle.session_id(), streamer_id
+                            );
+                        }
+                        Err(e) => {
+                            warn!(
+                                "Failed to start danmu collection for streamer {}: {}",
+                                streamer_id, e
+                            );
+                        }
+                    }
+                }
             }
             MonitorEvent::StreamerOffline {
                 streamer_id,
                 streamer_name,
+                session_id,
                 ..
             } => {
                 info!("Streamer {} ({}) went offline", streamer_name, streamer_id);
+
+                // Stop danmu collection if active
+                if let Some(sid) = session_id {
+                    if danmu_service.is_collecting(&sid) {
+                        match danmu_service.stop_collection(&sid).await {
+                            Ok(stats) => {
+                                info!(
+                                    "Stopped danmu collection for session {}: {} messages collected",
+                                    sid, stats.total_count
+                                );
+                            }
+                            Err(e) => {
+                                warn!(
+                                    "Failed to stop danmu collection for session {}: {}",
+                                    sid, e
+                                );
+                            }
+                        }
+                    }
+                }
 
                 // Stop download if active
                 if let Some(download_info) = download_manager.get_download_by_streamer(&streamer_id) {
@@ -490,6 +668,11 @@ impl ServiceContainer {
 
         // Signal all background tasks to stop
         self.cancellation_token.cancel();
+
+        // Stop danmu service first (finalize XML files)
+        info!("Stopping danmu service...");
+        self.danmu_service.shutdown().await;
+        info!("Danmu service stopped");
 
         // Stop accepting new downloads
         info!("Stopping download manager...");
@@ -541,7 +724,18 @@ impl ServiceContainer {
             event_subscriber_count: self.event_broadcaster.subscriber_count(),
             active_downloads: self.download_manager.active_count(),
             pipeline_queue_depth: self.pipeline_manager.queue_depth(),
+            active_danmu_collections: self.danmu_service.active_sessions().len(),
         }
+    }
+
+    /// Subscribe to danmu events.
+    pub fn subscribe_danmu_events(&self) -> tokio::sync::broadcast::Receiver<DanmuEvent> {
+        self.danmu_service.subscribe()
+    }
+
+    /// Get the danmu service for direct access.
+    pub fn danmu_service(&self) -> &Arc<DanmuService> {
+        &self.danmu_service
     }
 
     /// Subscribe to pipeline events.
@@ -579,6 +773,8 @@ pub struct ServiceStats {
     pub active_downloads: usize,
     /// Pipeline job queue depth.
     pub pipeline_queue_depth: usize,
+    /// Number of active danmu collections.
+    pub active_danmu_collections: usize,
 }
 
 #[cfg(test)]
