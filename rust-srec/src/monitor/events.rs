@@ -9,6 +9,9 @@ use tokio::sync::broadcast;
 
 use crate::domain::StreamerState;
 
+/// Re-export StreamInfo from platforms_parser for convenience.
+pub use platforms_parser::media::StreamInfo;
+
 /// Events emitted by the Stream Monitor.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum MonitorEvent {
@@ -18,6 +21,10 @@ pub enum MonitorEvent {
         streamer_name: String,
         title: String,
         category: Option<String>,
+        /// Available streams for download from platform parser.
+        /// Note: Some platforms require calling get_url() to resolve the final URL.
+        /// The StreamInfo contains headers in extras if is_headers_needed is true.
+        streams: Vec<StreamInfo>,
         timestamp: DateTime<Utc>,
     },
     /// Streamer went offline.
@@ -158,6 +165,23 @@ impl Clone for MonitorEventBroadcaster {
 mod tests {
     use super::*;
 
+    use platforms_parser::media::{StreamFormat, formats::MediaFormat};
+
+    fn create_test_stream() -> StreamInfo {
+        StreamInfo {
+            url: "https://example.com/stream.flv".to_string(),
+            stream_format: StreamFormat::Flv,
+            media_format: MediaFormat::Flv,
+            quality: "best".to_string(),
+            bitrate: 5000000,
+            priority: 1,
+            extras: None,
+            codec: "h264".to_string(),
+            fps: 30.0,
+            is_headers_needed: false,
+        }
+    }
+
     #[test]
     fn test_event_description() {
         let event = MonitorEvent::StreamerLive {
@@ -165,6 +189,7 @@ mod tests {
             streamer_name: "TestStreamer".to_string(),
             title: "Playing Games".to_string(),
             category: Some("Gaming".to_string()),
+            streams: vec![create_test_stream()],
             timestamp: Utc::now(),
         };
         assert!(event.description().contains("TestStreamer"));
@@ -178,6 +203,7 @@ mod tests {
             streamer_name: "Test".to_string(),
             title: "Test".to_string(),
             category: None,
+            streams: vec![],
             timestamp: Utc::now(),
         };
         assert!(live_event.should_notify());

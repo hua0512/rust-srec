@@ -8,6 +8,7 @@ pub mod domain;
 pub mod downloader;
 pub mod error;
 pub mod monitor;
+pub mod pipeline;
 pub mod scheduler;
 pub mod services;
 pub mod streamer;

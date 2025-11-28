@@ -82,6 +82,10 @@ impl<R: ConfigRepository> ConfigResolver<R> {
                 .as_ref()
                 .and_then(|s| serde_json::from_str(s).ok());
             
+            let template_stream_selection = template_config.stream_selection_config
+                .as_ref()
+                .and_then(|s| serde_json::from_str(s).ok());
+            
             builder = builder.with_template(
                 template_config.output_folder,
                 template_config.output_filename_template,
@@ -97,6 +101,7 @@ impl<R: ConfigRepository> ConfigResolver<R> {
                 template_danmu,
                 template_config.max_bitrate,
                 template_hooks,
+                template_stream_selection,
             );
         }
 

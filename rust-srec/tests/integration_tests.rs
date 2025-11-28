@@ -1182,6 +1182,7 @@ mod end_to_end_tests {
             category: Some("Gaming".to_string()),
             started_at: Some(Utc::now()),
             viewer_count: Some(1000),
+            streams: vec![],
         };
 
         // Process the status

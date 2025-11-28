@@ -299,6 +299,7 @@ mod tests {
             category: None,
             started_at: None,
             viewer_count: None,
+            streams: vec![],
         });
         result.add_failure("streamer-3".to_string(), "Network error".to_string());
 

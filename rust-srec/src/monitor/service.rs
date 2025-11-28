@@ -214,8 +214,8 @@ impl<
         );
 
         match status {
-            LiveStatus::Live { title, category, started_at, .. } => {
-                self.handle_live(streamer, title, category, started_at).await?;
+            LiveStatus::Live { title, category, started_at, streams, .. } => {
+                self.handle_live(streamer, title, category, started_at, streams).await?;
             }
             LiveStatus::Offline => {
                 self.handle_offline(streamer).await?;
@@ -254,8 +254,9 @@ impl<
         title: String,
         category: Option<String>,
         started_at: Option<chrono::DateTime<chrono::Utc>>,
+        streams: Vec<platforms_parser::media::StreamInfo>,
     ) -> Result<()> {
-        info!("Streamer {} is LIVE: {}", streamer.name, title);
+        info!("Streamer {} is LIVE: {} ({} streams available)", streamer.name, title, streams.len());
 
         // Update state to Live
         self.streamer_manager
@@ -265,12 +266,14 @@ impl<
         // Record success (resets error count, mark as going live)
         self.streamer_manager.record_success(&streamer.id, true).await?;
 
-        // Emit live event for notifications
+        // Emit live event for notifications and download triggering
+        // Streams are passed directly from platform parser
         let event = MonitorEvent::StreamerLive {
             streamer_id: streamer.id.clone(),
             streamer_name: streamer.name.clone(),
             title: title.clone(),
             category: category.clone(),
+            streams,
             timestamp: chrono::Utc::now(),
         };
         let _ = self.event_broadcaster.publish(event);
@@ -457,6 +460,18 @@ mod tests {
                 category: None,
                 started_at: None,
                 viewer_count: None,
+                streams: vec![platforms_parser::media::StreamInfo {
+                    url: "https://example.com/stream.flv".to_string(),
+                    stream_format: platforms_parser::media::StreamFormat::Flv,
+                    media_format: platforms_parser::media::formats::MediaFormat::Flv,
+                    quality: "best".to_string(),
+                    bitrate: 5000000,
+                    priority: 1,
+                    extras: None,
+                    codec: "h264".to_string(),
+                    fps: 30.0,
+                    is_headers_needed: false,
+                }],
             }),
             "Live"
         );

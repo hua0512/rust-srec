@@ -15,7 +15,7 @@ mod rate_limiter;
 mod service;
 
 pub use batch_detector::BatchDetector;
-pub use detector::{FilterReason, LiveStatus, StreamDetector};
+pub use detector::{FilterReason, LiveStatus, StreamDetector, StreamInfo};
 pub use events::{FatalErrorType, MonitorEvent, MonitorEventBroadcaster};
 pub use rate_limiter::{RateLimiter, RateLimiterConfig};
 pub use service::{StreamMonitor, StreamMonitorConfig};

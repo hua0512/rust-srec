@@ -2,6 +2,7 @@
 
 use serde::{Deserialize, Serialize};
 use crate::domain::{ProxyConfig, RetryPolicy, DanmuSamplingConfig, EventHooks};
+use crate::downloader::StreamSelectionConfig;
 
 /// Fully resolved configuration for a streamer.
 /// 
@@ -40,6 +41,9 @@ pub struct MergedConfig {
     // Platform-specific
     pub fetch_delay_ms: i64,
     pub download_delay_ms: i64,
+    
+    // Stream selection settings
+    pub stream_selection: StreamSelectionConfig,
 }
 
 impl MergedConfig {
@@ -68,6 +72,7 @@ pub struct MergedConfigBuilder {
     event_hooks: Option<EventHooks>,
     fetch_delay_ms: Option<i64>,
     download_delay_ms: Option<i64>,
+    stream_selection: Option<StreamSelectionConfig>,
 }
 
 impl MergedConfigBuilder {
@@ -142,6 +147,7 @@ impl MergedConfigBuilder {
         danmu_sampling_config: Option<DanmuSamplingConfig>,
         max_bitrate: Option<i32>,
         event_hooks: Option<EventHooks>,
+        stream_selection: Option<StreamSelectionConfig>,
     ) -> Self {
         if let Some(v) = output_folder {
             self.output_folder = Some(v);
@@ -190,6 +196,14 @@ impl MergedConfigBuilder {
                 self.event_hooks = Some(v);
             }
         }
+        if let Some(v) = stream_selection {
+            // Merge stream selection config
+            if let Some(existing) = &self.stream_selection {
+                self.stream_selection = Some(existing.merge(&v));
+            } else {
+                self.stream_selection = Some(v);
+            }
+        }
         self
     }
 
@@ -227,6 +241,16 @@ impl MergedConfigBuilder {
             if let Some(v) = config.get("max_bitrate").and_then(|v| v.as_i64()) {
                 self.max_bitrate = Some(v as i32);
             }
+            // Parse stream selection config from streamer-specific config
+            if let Some(stream_sel) = config.get("stream_selection") {
+                if let Ok(v) = serde_json::from_value::<StreamSelectionConfig>(stream_sel.clone()) {
+                    if let Some(existing) = &self.stream_selection {
+                        self.stream_selection = Some(existing.merge(&v));
+                    } else {
+                        self.stream_selection = Some(v);
+                    }
+                }
+            }
         }
         self
     }
@@ -251,6 +275,7 @@ impl MergedConfigBuilder {
             event_hooks: self.event_hooks.unwrap_or_default(),
             fetch_delay_ms: self.fetch_delay_ms.unwrap_or(60000),
             download_delay_ms: self.download_delay_ms.unwrap_or(1000),
+            stream_selection: self.stream_selection.unwrap_or_default(),
         }
     }
 }
@@ -311,6 +336,7 @@ mod tests {
                 None,
                 None,
                 None,
+                None, // stream_selection
             )
             .build();
 

@@ -12,8 +12,11 @@ use crate::domain::filter::{Filter, FilterType};
 use crate::streamer::StreamerMetadata;
 use crate::Result;
 
+/// Re-export StreamInfo from platforms_parser for convenience.
+pub use platforms_parser::media::StreamInfo;
+
 /// Live status of a streamer.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum LiveStatus {
     /// Streamer is currently live.
     Live {
@@ -25,6 +28,9 @@ pub enum LiveStatus {
         started_at: Option<DateTime<Utc>>,
         /// Viewer count (if available).
         viewer_count: Option<u64>,
+        /// Stream information from platform parser (URLs, format, quality, headers).
+        /// Note: Some platforms require calling get_url() to resolve the final URL.
+        streams: Vec<StreamInfo>,
     },
     /// Streamer is offline.
     Offline,
@@ -226,9 +232,22 @@ impl StreamDetector {
                 .and_then(|extras| extras.get("viewer_count"))
                 .and_then(|v| v.parse::<u64>().ok());
 
+            // Resolve final URLs for streams that need it
+            // Some platforms (Huya, Douyu, Bilibili) require get_url() to get the real stream URL
+            let mut streams = media_info.streams;
+            for stream in &mut streams {
+                if let Err(e) = extractor.get_url(stream).await {
+                    warn!(
+                        "Failed to resolve stream URL for {}: {}",
+                        streamer.name, e
+                    );
+                    // Continue with the original URL if resolution fails
+                }
+            }
+
             debug!(
-                "Streamer {} is LIVE: {} (category: {:?}, viewers: {:?})",
-                streamer.name, media_info.title, category, viewer_count
+                "Streamer {} is LIVE: {} (category: {:?}, viewers: {:?}, streams: {})",
+                streamer.name, media_info.title, category, viewer_count, streams.len()
             );
 
             Ok(LiveStatus::Live {
@@ -236,6 +255,7 @@ impl StreamDetector {
                 category,
                 started_at: None, // TODO: platforms crate doesn't provide start time
                 viewer_count,
+                streams,
             })
         } else {
             debug!("Streamer {} is OFFLINE", streamer.name);
@@ -297,6 +317,23 @@ impl Default for StreamDetector {
 mod tests {
     use super::*;
 
+    use platforms_parser::media::{StreamFormat, formats::MediaFormat};
+
+    fn create_test_stream() -> StreamInfo {
+        StreamInfo {
+            url: "https://example.com/stream.flv".to_string(),
+            stream_format: StreamFormat::Flv,
+            media_format: MediaFormat::Flv,
+            quality: "best".to_string(),
+            bitrate: 5000000,
+            priority: 1,
+            extras: None,
+            codec: "h264".to_string(),
+            fps: 30.0,
+            is_headers_needed: false,
+        }
+    }
+
     #[test]
     fn test_live_status_is_live() {
         let status = LiveStatus::Live {
@@ -304,6 +341,7 @@ mod tests {
             category: Some("Gaming".to_string()),
             started_at: None,
             viewer_count: None,
+            streams: vec![create_test_stream()],
         };
         assert!(status.is_live());
         assert!(!status.is_offline());
@@ -337,6 +375,7 @@ mod tests {
             category: None,
             started_at: None,
             viewer_count: None,
+            streams: vec![create_test_stream()],
         };
         assert_eq!(live.title(), Some("Live Title"));
 
@@ -367,6 +406,7 @@ mod tests {
             category: None,
             started_at: None,
             viewer_count: None,
+            streams: vec![create_test_stream()],
         }.is_fatal_error());
     }
 

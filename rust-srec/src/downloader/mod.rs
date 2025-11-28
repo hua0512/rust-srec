@@ -6,11 +6,14 @@
 //! - Handling segment completion events
 //! - Implementing retry logic with circuit breaker pattern
 //! - Supporting priority-based download scheduling
+//! - Stream selection based on quality, format, and CDN preferences
 
 mod engine;
 mod manager;
 mod resilience;
+mod stream_selector;
 
 pub use engine::{DownloadConfig, DownloadEngine, DownloadHandle, DownloadInfo, SegmentEvent};
-pub use manager::{DownloadManager, DownloadManagerConfig};
+pub use manager::{DownloadManager, DownloadManagerConfig, DownloadManagerEvent};
 pub use resilience::{CircuitBreaker, RetryConfig};
+pub use stream_selector::{StreamSelectionConfig, StreamSelector};

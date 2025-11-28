@@ -336,6 +336,7 @@ where
                 template.danmu_sampling_config.as_ref().and_then(|s| serde_json::from_str(s).ok()),
                 template.max_bitrate,
                 template.event_hooks.as_ref().and_then(|s| serde_json::from_str(s).ok()),
+                template.stream_selection_config.as_ref().and_then(|s| serde_json::from_str(s).ok()),
             );
         }
         

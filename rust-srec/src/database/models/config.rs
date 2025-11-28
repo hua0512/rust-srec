@@ -99,6 +99,8 @@ pub struct TemplateConfigDbModel {
     pub proxy_config: Option<String>,
     /// JSON serialized EventHooks
     pub event_hooks: Option<String>,
+    /// JSON serialized StreamSelectionConfig
+    pub stream_selection_config: Option<String>,
 }
 
 impl TemplateConfigDbModel {
@@ -122,6 +124,7 @@ impl TemplateConfigDbModel {
             engines_override: None,
             proxy_config: None,
             event_hooks: None,
+            stream_selection_config: None,
         }
     }
 }

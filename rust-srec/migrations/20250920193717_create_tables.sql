@@ -51,7 +51,8 @@ CREATE TABLE template_config (
     download_engine TEXT,
     engines_override TEXT,
     proxy_config TEXT,
-    event_hooks TEXT
+    event_hooks TEXT,
+    stream_selection_config TEXT
 );
 
 -- `streamers` table: The central entity representing a content creator to be monitored.
