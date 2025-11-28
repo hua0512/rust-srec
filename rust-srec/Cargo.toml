@@ -1,0 +1,69 @@
+[package]
+name = "rust-srec"
+version = "0.1.0"
+edition = "2024"
+description = "An automatic online streaming recorder"
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/hua0512/rust-srec"
+
+[dependencies]
+axum = "0.8.4"
+serde = { version = "1.0", features = ["derive"] }
+uuid = { version = "1.18.1", features = ["v4", "serde"] }
+chrono = { version = "0.4", features = ["serde"] }
+bytes = "1"
+tokio = { version = "1", features = ["full"] }
+futures = "0.3"
+anyhow = "1.0"
+serde_json = "1.0"
+async-trait = "0.1"
+strum = { version = "0.27.2", features = ["derive"] }
+reqwest = { version = "0.12.23", default-features = false, features = [
+    "json",
+    "stream",
+    "rustls-tls",
+] }
+sqlx = { version = "0.8.6", features = [
+    "runtime-tokio-rustls",
+    "sqlite",
+    "macros",
+    "uuid",
+    "chrono",
+    "json",
+] }
+
+# Caching
+moka = { version = "0.12", features = ["future"] }
+dashmap = "5.5"
+
+# CLI dependencies
+clap = { version = "4.5.48", features = ["derive"] }
+
+# Logging
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
+
+sysinfo = { version = "0.30" }
+tokio-tungstenite = { version = "0.23.1", features = ["native-tls"] }
+quick-xml = { version = "0.36.0", features = ["serde", "serialize"] }
+
+# Workspace crates
+# pipeline-common = { path = "../crates/pipeline-common" }
+# flv = { path = "../crates/flv" }
+# flv-fix = { path = "../crates/flv-fix" }
+# hls = { path = "../crates/hls" }
+# hls-fix = { path = "../crates/hls-fix" }
+mesio-engine = { path = "../crates/mesio" }
+thiserror = "1.0"
+dotenvy = "0.15"
+rand = "0.9.2"
+rayon = "1.10.0"
+
+[dev-dependencies]
+mockall = "0.12.1"
+rstest = "0.26.1"
+tempfile = "3"
+
+
+[profile.dev.package.sqlx-macros]
+opt-level = 3

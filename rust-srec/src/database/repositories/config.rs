@@ -1,0 +1,342 @@
+//! Configuration repository.
+
+use async_trait::async_trait;
+use sqlx::SqlitePool;
+
+use crate::database::models::{GlobalConfigDbModel, PlatformConfigDbModel, TemplateConfigDbModel};
+use crate::{Error, Result};
+
+/// Configuration repository trait.
+#[async_trait]
+pub trait ConfigRepository: Send + Sync {
+    // Global Config
+    async fn get_global_config(&self) -> Result<GlobalConfigDbModel>;
+    async fn update_global_config(&self, config: &GlobalConfigDbModel) -> Result<()>;
+    async fn create_global_config(&self, config: &GlobalConfigDbModel) -> Result<()>;
+
+    // Platform Config
+    async fn get_platform_config(&self, id: &str) -> Result<PlatformConfigDbModel>;
+    async fn get_platform_config_by_name(&self, name: &str) -> Result<PlatformConfigDbModel>;
+    async fn list_platform_configs(&self) -> Result<Vec<PlatformConfigDbModel>>;
+    async fn create_platform_config(&self, config: &PlatformConfigDbModel) -> Result<()>;
+    async fn update_platform_config(&self, config: &PlatformConfigDbModel) -> Result<()>;
+    async fn delete_platform_config(&self, id: &str) -> Result<()>;
+
+    // Template Config
+    async fn get_template_config(&self, id: &str) -> Result<TemplateConfigDbModel>;
+    async fn get_template_config_by_name(&self, name: &str) -> Result<TemplateConfigDbModel>;
+    async fn list_template_configs(&self) -> Result<Vec<TemplateConfigDbModel>>;
+    async fn create_template_config(&self, config: &TemplateConfigDbModel) -> Result<()>;
+    async fn update_template_config(&self, config: &TemplateConfigDbModel) -> Result<()>;
+    async fn delete_template_config(&self, id: &str) -> Result<()>;
+}
+
+/// SQLx implementation of ConfigRepository.
+pub struct SqlxConfigRepository {
+    pool: SqlitePool,
+}
+
+impl SqlxConfigRepository {
+    pub fn new(pool: SqlitePool) -> Self {
+        Self { pool }
+    }
+}
+
+#[async_trait]
+impl ConfigRepository for SqlxConfigRepository {
+    async fn get_global_config(&self) -> Result<GlobalConfigDbModel> {
+        sqlx::query_as::<_, GlobalConfigDbModel>("SELECT * FROM global_config LIMIT 1")
+            .fetch_optional(&self.pool)
+            .await?
+            .ok_or_else(|| Error::not_found("GlobalConfig", "singleton"))
+    }
+
+    async fn update_global_config(&self, config: &GlobalConfigDbModel) -> Result<()> {
+        sqlx::query(
+            r#"
+            UPDATE global_config SET
+                output_folder = ?,
+                output_filename_template = ?,
+                output_file_format = ?,
+                min_segment_size_bytes = ?,
+                max_download_duration_secs = ?,
+                max_part_size_bytes = ?,
+                record_danmu = ?,
+                max_concurrent_downloads = ?,
+                max_concurrent_uploads = ?,
+                streamer_check_delay_ms = ?,
+                proxy_config = ?,
+                offline_check_delay_ms = ?,
+                offline_check_count = ?,
+                default_download_engine = ?,
+                max_concurrent_cpu_jobs = ?,
+                max_concurrent_io_jobs = ?,
+                job_history_retention_days = ?
+            WHERE id = ?
+            "#,
+        )
+        .bind(&config.output_folder)
+        .bind(&config.output_filename_template)
+        .bind(&config.output_file_format)
+        .bind(config.min_segment_size_bytes)
+        .bind(config.max_download_duration_secs)
+        .bind(config.max_part_size_bytes)
+        .bind(config.record_danmu)
+        .bind(config.max_concurrent_downloads)
+        .bind(config.max_concurrent_uploads)
+        .bind(config.streamer_check_delay_ms)
+        .bind(&config.proxy_config)
+        .bind(config.offline_check_delay_ms)
+        .bind(config.offline_check_count)
+        .bind(&config.default_download_engine)
+        .bind(config.max_concurrent_cpu_jobs)
+        .bind(config.max_concurrent_io_jobs)
+        .bind(config.job_history_retention_days)
+        .bind(&config.id)
+        .execute(&self.pool)
+        .await?;
+        Ok(())
+    }
+
+    async fn create_global_config(&self, config: &GlobalConfigDbModel) -> Result<()> {
+        sqlx::query(
+            r#"
+            INSERT INTO global_config (
+                id, output_folder, output_filename_template, output_file_format,
+                min_segment_size_bytes, max_download_duration_secs, max_part_size_bytes,
+                record_danmu, max_concurrent_downloads, max_concurrent_uploads,
+                streamer_check_delay_ms, proxy_config, offline_check_delay_ms,
+                offline_check_count, default_download_engine, max_concurrent_cpu_jobs,
+                max_concurrent_io_jobs, job_history_retention_days
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            "#,
+        )
+        .bind(&config.id)
+        .bind(&config.output_folder)
+        .bind(&config.output_filename_template)
+        .bind(&config.output_file_format)
+        .bind(config.min_segment_size_bytes)
+        .bind(config.max_download_duration_secs)
+        .bind(config.max_part_size_bytes)
+        .bind(config.record_danmu)
+        .bind(config.max_concurrent_downloads)
+        .bind(config.max_concurrent_uploads)
+        .bind(config.streamer_check_delay_ms)
+        .bind(&config.proxy_config)
+        .bind(config.offline_check_delay_ms)
+        .bind(config.offline_check_count)
+        .bind(&config.default_download_engine)
+        .bind(config.max_concurrent_cpu_jobs)
+        .bind(config.max_concurrent_io_jobs)
+        .bind(config.job_history_retention_days)
+        .execute(&self.pool)
+        .await?;
+        Ok(())
+    }
+
+    async fn get_platform_config(&self, id: &str) -> Result<PlatformConfigDbModel> {
+        sqlx::query_as::<_, PlatformConfigDbModel>("SELECT * FROM platform_config WHERE id = ?")
+            .bind(id)
+            .fetch_optional(&self.pool)
+            .await?
+            .ok_or_else(|| Error::not_found("PlatformConfig", id))
+    }
+
+    async fn get_platform_config_by_name(&self, name: &str) -> Result<PlatformConfigDbModel> {
+        sqlx::query_as::<_, PlatformConfigDbModel>(
+            "SELECT * FROM platform_config WHERE platform_name = ?",
+        )
+        .bind(name)
+        .fetch_optional(&self.pool)
+        .await?
+        .ok_or_else(|| Error::not_found("PlatformConfig", name))
+    }
+
+    async fn list_platform_configs(&self) -> Result<Vec<PlatformConfigDbModel>> {
+        let configs =
+            sqlx::query_as::<_, PlatformConfigDbModel>("SELECT * FROM platform_config ORDER BY platform_name")
+                .fetch_all(&self.pool)
+                .await?;
+        Ok(configs)
+    }
+
+    async fn create_platform_config(&self, config: &PlatformConfigDbModel) -> Result<()> {
+        sqlx::query(
+            r#"
+            INSERT INTO platform_config (
+                id, platform_name, fetch_delay_ms, download_delay_ms,
+                cookies, platform_specific_config, proxy_config, record_danmu
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            "#,
+        )
+        .bind(&config.id)
+        .bind(&config.platform_name)
+        .bind(config.fetch_delay_ms)
+        .bind(config.download_delay_ms)
+        .bind(&config.cookies)
+        .bind(&config.platform_specific_config)
+        .bind(&config.proxy_config)
+        .bind(config.record_danmu)
+        .execute(&self.pool)
+        .await?;
+        Ok(())
+    }
+
+    async fn update_platform_config(&self, config: &PlatformConfigDbModel) -> Result<()> {
+        sqlx::query(
+            r#"
+            UPDATE platform_config SET
+                platform_name = ?,
+                fetch_delay_ms = ?,
+                download_delay_ms = ?,
+                cookies = ?,
+                platform_specific_config = ?,
+                proxy_config = ?,
+                record_danmu = ?
+            WHERE id = ?
+            "#,
+        )
+        .bind(&config.platform_name)
+        .bind(config.fetch_delay_ms)
+        .bind(config.download_delay_ms)
+        .bind(&config.cookies)
+        .bind(&config.platform_specific_config)
+        .bind(&config.proxy_config)
+        .bind(config.record_danmu)
+        .bind(&config.id)
+        .execute(&self.pool)
+        .await?;
+        Ok(())
+    }
+
+    async fn delete_platform_config(&self, id: &str) -> Result<()> {
+        sqlx::query("DELETE FROM platform_config WHERE id = ?")
+            .bind(id)
+            .execute(&self.pool)
+            .await?;
+        Ok(())
+    }
+
+    async fn get_template_config(&self, id: &str) -> Result<TemplateConfigDbModel> {
+        sqlx::query_as::<_, TemplateConfigDbModel>("SELECT * FROM template_config WHERE id = ?")
+            .bind(id)
+            .fetch_optional(&self.pool)
+            .await?
+            .ok_or_else(|| Error::not_found("TemplateConfig", id))
+    }
+
+    async fn get_template_config_by_name(&self, name: &str) -> Result<TemplateConfigDbModel> {
+        sqlx::query_as::<_, TemplateConfigDbModel>(
+            "SELECT * FROM template_config WHERE name = ?",
+        )
+        .bind(name)
+        .fetch_optional(&self.pool)
+        .await?
+        .ok_or_else(|| Error::not_found("TemplateConfig", name))
+    }
+
+    async fn list_template_configs(&self) -> Result<Vec<TemplateConfigDbModel>> {
+        let configs =
+            sqlx::query_as::<_, TemplateConfigDbModel>("SELECT * FROM template_config ORDER BY name")
+                .fetch_all(&self.pool)
+                .await?;
+        Ok(configs)
+    }
+
+    async fn create_template_config(&self, config: &TemplateConfigDbModel) -> Result<()> {
+        sqlx::query(
+            r#"
+            INSERT INTO template_config (
+                id, name, output_folder, output_filename_template, max_bitrate,
+                cookies, output_file_format, min_segment_size_bytes,
+                max_download_duration_secs, max_part_size_bytes, record_danmu,
+                platform_overrides, download_retry_policy, danmu_sampling_config,
+                download_engine, engines_override, proxy_config, event_hooks
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            "#,
+        )
+        .bind(&config.id)
+        .bind(&config.name)
+        .bind(&config.output_folder)
+        .bind(&config.output_filename_template)
+        .bind(config.max_bitrate)
+        .bind(&config.cookies)
+        .bind(&config.output_file_format)
+        .bind(config.min_segment_size_bytes)
+        .bind(config.max_download_duration_secs)
+        .bind(config.max_part_size_bytes)
+        .bind(config.record_danmu)
+        .bind(&config.platform_overrides)
+        .bind(&config.download_retry_policy)
+        .bind(&config.danmu_sampling_config)
+        .bind(&config.download_engine)
+        .bind(&config.engines_override)
+        .bind(&config.proxy_config)
+        .bind(&config.event_hooks)
+        .execute(&self.pool)
+        .await?;
+        Ok(())
+    }
+
+    async fn update_template_config(&self, config: &TemplateConfigDbModel) -> Result<()> {
+        sqlx::query(
+            r#"
+            UPDATE template_config SET
+                name = ?,
+                output_folder = ?,
+                output_filename_template = ?,
+                max_bitrate = ?,
+                cookies = ?,
+                output_file_format = ?,
+                min_segment_size_bytes = ?,
+                max_download_duration_secs = ?,
+                max_part_size_bytes = ?,
+                record_danmu = ?,
+                platform_overrides = ?,
+                download_retry_policy = ?,
+                danmu_sampling_config = ?,
+                download_engine = ?,
+                engines_override = ?,
+                proxy_config = ?,
+                event_hooks = ?
+            WHERE id = ?
+            "#,
+        )
+        .bind(&config.name)
+        .bind(&config.output_folder)
+        .bind(&config.output_filename_template)
+        .bind(config.max_bitrate)
+        .bind(&config.cookies)
+        .bind(&config.output_file_format)
+        .bind(config.min_segment_size_bytes)
+        .bind(config.max_download_duration_secs)
+        .bind(config.max_part_size_bytes)
+        .bind(config.record_danmu)
+        .bind(&config.platform_overrides)
+        .bind(&config.download_retry_policy)
+        .bind(&config.danmu_sampling_config)
+        .bind(&config.download_engine)
+        .bind(&config.engines_override)
+        .bind(&config.proxy_config)
+        .bind(&config.event_hooks)
+        .bind(&config.id)
+        .execute(&self.pool)
+        .await?;
+        Ok(())
+    }
+
+    async fn delete_template_config(&self, id: &str) -> Result<()> {
+        sqlx::query("DELETE FROM template_config WHERE id = ?")
+            .bind(id)
+            .execute(&self.pool)
+            .await?;
+        Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // Integration tests would go here with a test database
+}
