@@ -1,0 +1,324 @@
+//! Configuration cache implementation.
+//!
+//! This module provides a thread-safe cache for merged configurations
+//! with TTL-based eviction and request deduplication.
+
+use dashmap::DashMap;
+use std::sync::Arc;
+use std::time::{Duration, Instant};
+use tokio::sync::OnceCell;
+
+use crate::domain::config::MergedConfig;
+
+/// Default TTL for cached configurations (1 hour).
+const DEFAULT_TTL: Duration = Duration::from_secs(3600);
+
+/// A cached configuration entry with expiration time.
+#[derive(Debug, Clone)]
+struct CacheEntry {
+    config: MergedConfig,
+    expires_at: Instant,
+}
+
+impl CacheEntry {
+    fn new(config: MergedConfig, ttl: Duration) -> Self {
+        Self {
+            config,
+            expires_at: Instant::now() + ttl,
+        }
+    }
+
+    fn is_expired(&self) -> bool {
+        Instant::now() >= self.expires_at
+    }
+}
+
+/// In-flight request tracker for deduplication.
+/// 
+/// When multiple requests come in for the same streamer config simultaneously,
+/// only one will actually resolve the config while others wait for the result.
+type InFlightRequest = Arc<OnceCell<MergedConfig>>;
+
+/// Thread-safe cache for merged configurations.
+///
+/// Uses DashMap for concurrent access and supports TTL-based eviction.
+/// Also provides request deduplication to prevent duplicate config resolution.
+#[derive(Clone)]
+pub struct ConfigCache {
+    /// Cache for streamer merged configs.
+    streamer_configs: Arc<DashMap<String, CacheEntry>>,
+    /// In-flight requests for deduplication.
+    in_flight: Arc<DashMap<String, InFlightRequest>>,
+    /// TTL for cache entries.
+    ttl: Duration,
+}
+
+impl ConfigCache {
+    /// Create a new cache with default TTL.
+    pub fn new() -> Self {
+        Self::with_ttl(DEFAULT_TTL)
+    }
+
+    /// Create a new cache with specified TTL.
+    pub fn with_ttl(ttl: Duration) -> Self {
+        Self {
+            streamer_configs: Arc::new(DashMap::new()),
+            in_flight: Arc::new(DashMap::new()),
+            ttl,
+        }
+    }
+
+    /// Get a cached configuration for a streamer.
+    ///
+    /// Returns None if not cached or expired.
+    pub fn get(&self, streamer_id: &str) -> Option<MergedConfig> {
+        let entry = self.streamer_configs.get(streamer_id)?;
+        
+        if entry.is_expired() {
+            drop(entry); // Release the lock before removing
+            self.streamer_configs.remove(streamer_id);
+            return None;
+        }
+        
+        Some(entry.config.clone())
+    }
+
+    /// Insert a configuration into the cache.
+    pub fn insert(&self, streamer_id: String, config: MergedConfig) {
+        let entry = CacheEntry::new(config, self.ttl);
+        self.streamer_configs.insert(streamer_id, entry);
+    }
+
+    /// Remove a specific streamer's configuration from the cache.
+    pub fn invalidate(&self, streamer_id: &str) {
+        self.streamer_configs.remove(streamer_id);
+        self.in_flight.remove(streamer_id);
+    }
+
+    /// Invalidate all cached configurations.
+    pub fn invalidate_all(&self) {
+        self.streamer_configs.clear();
+        self.in_flight.clear();
+    }
+
+    /// Invalidate configurations for streamers matching a predicate.
+    pub fn invalidate_where<F>(&self, predicate: F)
+    where
+        F: Fn(&str) -> bool,
+    {
+        self.streamer_configs.retain(|key, _| !predicate(key));
+        self.in_flight.retain(|key, _| !predicate(key));
+    }
+
+    /// Get the number of cached entries.
+    pub fn len(&self) -> usize {
+        self.streamer_configs.len()
+    }
+
+    /// Check if the cache is empty.
+    pub fn is_empty(&self) -> bool {
+        self.streamer_configs.is_empty()
+    }
+
+    /// Remove all expired entries from the cache.
+    pub fn cleanup_expired(&self) -> usize {
+        let before = self.len();
+        self.streamer_configs.retain(|_, entry| !entry.is_expired());
+        before - self.len()
+    }
+
+    /// Get cache statistics.
+    pub fn stats(&self) -> CacheStats {
+        CacheStats {
+            entry_count: self.len(),
+            in_flight_count: self.in_flight.len(),
+            ttl: self.ttl,
+        }
+    }
+
+    // ========== Request Deduplication ==========
+
+    /// Get or create an in-flight request for a streamer.
+    /// 
+    /// This is used to deduplicate concurrent requests for the same streamer's config.
+    /// Returns (OnceCell, is_new) where is_new indicates if this is a new request.
+    pub fn get_or_create_in_flight(&self, streamer_id: &str) -> (InFlightRequest, bool) {
+        // Try to get existing in-flight request
+        if let Some(existing) = self.in_flight.get(streamer_id) {
+            return (existing.clone(), false);
+        }
+        
+        // Create new in-flight request
+        let cell = Arc::new(OnceCell::new());
+        
+        // Use entry API to handle race condition
+        match self.in_flight.entry(streamer_id.to_string()) {
+            dashmap::mapref::entry::Entry::Occupied(entry) => {
+                // Another thread beat us to it
+                (entry.get().clone(), false)
+            }
+            dashmap::mapref::entry::Entry::Vacant(entry) => {
+                entry.insert(cell.clone());
+                (cell, true)
+            }
+        }
+    }
+
+    /// Complete an in-flight request by setting its result.
+    /// 
+    /// This will also cache the result and remove the in-flight entry.
+    pub fn complete_in_flight(&self, streamer_id: &str, config: MergedConfig) {
+        // Cache the result
+        self.insert(streamer_id.to_string(), config.clone());
+        
+        // Set the OnceCell value for any waiting requests
+        if let Some((_, cell)) = self.in_flight.remove(streamer_id) {
+            // Ignore error if already set (shouldn't happen)
+            let _ = cell.set(config);
+        }
+    }
+
+    /// Wait for an in-flight request to complete.
+    /// 
+    /// Returns the config once it's available.
+    pub async fn wait_for_in_flight(&self, cell: &InFlightRequest) -> MergedConfig {
+        cell.get().cloned().expect("In-flight request should be completed")
+    }
+
+    /// Check if there's an in-flight request for a streamer.
+    pub fn has_in_flight(&self, streamer_id: &str) -> bool {
+        self.in_flight.contains_key(streamer_id)
+    }
+
+    /// Get the number of in-flight requests.
+    pub fn in_flight_count(&self) -> usize {
+        self.in_flight.len()
+    }
+}
+
+impl Default for ConfigCache {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+/// Statistics about the configuration cache.
+#[derive(Debug, Clone)]
+pub struct CacheStats {
+    /// Number of entries in the cache.
+    pub entry_count: usize,
+    /// Number of in-flight requests.
+    pub in_flight_count: usize,
+    /// TTL for cache entries.
+    pub ttl: Duration,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::domain::ProxyConfig;
+
+    fn create_test_config() -> MergedConfig {
+        MergedConfig::builder()
+            .with_global(
+                "./downloads".to_string(),
+                "{streamer}-{title}".to_string(),
+                "flv".to_string(),
+                1024,
+                0,
+                8589934592,
+                false,
+                ProxyConfig::disabled(),
+                "ffmpeg".to_string(),
+            )
+            .with_platform(60000, 1000, None, None, None)
+            .build()
+    }
+
+    #[test]
+    fn test_cache_insert_and_get() {
+        let cache = ConfigCache::new();
+        let config = create_test_config();
+        
+        cache.insert("streamer-1".to_string(), config.clone());
+        
+        let cached = cache.get("streamer-1");
+        assert!(cached.is_some());
+        assert_eq!(cached.unwrap().output_folder, config.output_folder);
+    }
+
+    #[test]
+    fn test_cache_miss() {
+        let cache = ConfigCache::new();
+        assert!(cache.get("nonexistent").is_none());
+    }
+
+    #[test]
+    fn test_cache_invalidate() {
+        let cache = ConfigCache::new();
+        cache.insert("streamer-1".to_string(), create_test_config());
+        
+        assert!(cache.get("streamer-1").is_some());
+        
+        cache.invalidate("streamer-1");
+        
+        assert!(cache.get("streamer-1").is_none());
+    }
+
+    #[test]
+    fn test_cache_invalidate_all() {
+        let cache = ConfigCache::new();
+        cache.insert("streamer-1".to_string(), create_test_config());
+        cache.insert("streamer-2".to_string(), create_test_config());
+        
+        assert_eq!(cache.len(), 2);
+        
+        cache.invalidate_all();
+        
+        assert!(cache.is_empty());
+    }
+
+    #[test]
+    fn test_cache_ttl_expiration() {
+        let cache = ConfigCache::with_ttl(Duration::from_millis(10));
+        cache.insert("streamer-1".to_string(), create_test_config());
+        
+        // Should be present immediately
+        assert!(cache.get("streamer-1").is_some());
+        
+        // Wait for expiration
+        std::thread::sleep(Duration::from_millis(20));
+        
+        // Should be expired now
+        assert!(cache.get("streamer-1").is_none());
+    }
+
+    #[test]
+    fn test_cache_invalidate_where() {
+        let cache = ConfigCache::new();
+        cache.insert("platform-a-streamer-1".to_string(), create_test_config());
+        cache.insert("platform-a-streamer-2".to_string(), create_test_config());
+        cache.insert("platform-b-streamer-1".to_string(), create_test_config());
+        
+        assert_eq!(cache.len(), 3);
+        
+        // Invalidate all platform-a streamers
+        cache.invalidate_where(|key| key.starts_with("platform-a"));
+        
+        assert_eq!(cache.len(), 1);
+        assert!(cache.get("platform-b-streamer-1").is_some());
+    }
+
+    #[test]
+    fn test_cache_cleanup_expired() {
+        let cache = ConfigCache::with_ttl(Duration::from_millis(10));
+        cache.insert("streamer-1".to_string(), create_test_config());
+        cache.insert("streamer-2".to_string(), create_test_config());
+        
+        std::thread::sleep(Duration::from_millis(20));
+        
+        let removed = cache.cleanup_expired();
+        assert_eq!(removed, 2);
+        assert!(cache.is_empty());
+    }
+}

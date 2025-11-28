@@ -26,6 +26,10 @@ pub enum StreamerState {
     InspectingLive,
     /// The streamer has been temporarily disabled due to repeated errors.
     TemporalDisabled,
+    /// The streamer is in an error state (generic).
+    Error,
+    /// The streamer has been manually disabled.
+    Disabled,
 }
 
 impl StreamerState {
@@ -41,6 +45,8 @@ impl StreamerState {
             Self::NotFound => "NOT_FOUND",
             Self::InspectingLive => "INSPECTING_LIVE",
             Self::TemporalDisabled => "TEMPORAL_DISABLED",
+            Self::Error => "ERROR",
+            Self::Disabled => "DISABLED",
         }
     }
 
@@ -56,13 +62,15 @@ impl StreamerState {
             "NOT_FOUND" => Some(Self::NotFound),
             "INSPECTING_LIVE" => Some(Self::InspectingLive),
             "TEMPORAL_DISABLED" => Some(Self::TemporalDisabled),
+            "ERROR" => Some(Self::Error),
+            "DISABLED" => Some(Self::Disabled),
             _ => None,
         }
     }
 
     /// Check if this is an error state.
     pub fn is_error(&self) -> bool {
-        matches!(self, Self::FatalError | Self::OutOfSpace | Self::NotFound | Self::TemporalDisabled)
+        matches!(self, Self::FatalError | Self::OutOfSpace | Self::NotFound | Self::TemporalDisabled | Self::Error)
     }
 
     /// Check if this state allows monitoring.
@@ -72,7 +80,7 @@ impl StreamerState {
 
     /// Check if this state indicates the streamer is active (being monitored).
     pub fn is_active(&self) -> bool {
-        !matches!(self, Self::Cancelled | Self::FatalError | Self::NotFound)
+        !matches!(self, Self::Cancelled | Self::FatalError | Self::NotFound | Self::Disabled | Self::Error)
     }
 
     /// Validate a state transition.

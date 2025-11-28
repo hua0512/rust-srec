@@ -861,3 +861,228 @@ mod concurrent_access_tests {
         }
     }
 }
+
+
+mod streamer_manager_tests {
+    use super::*;
+    use rust_srec::config::ConfigEventBroadcaster;
+    use rust_srec::database::repositories::streamer::SqlxStreamerRepository;
+    use rust_srec::streamer::StreamerManager;
+    use rust_srec::domain::StreamerState;
+    use std::sync::Arc;
+
+    async fn setup_platform(pool: &DbPool) -> String {
+        let id = uuid::Uuid::new_v4().to_string();
+        sqlx::query(
+            "INSERT INTO platform_config (id, platform_name, fetch_delay_ms, download_delay_ms)
+             VALUES (?, 'test_platform', 60000, 1000)"
+        )
+            .bind(&id)
+            .execute(pool)
+            .await
+            .expect("Failed to insert platform config");
+        id
+    }
+
+    async fn insert_streamer(pool: &DbPool, platform_id: &str, name: &str, state: &str, priority: &str) -> String {
+        let id = uuid::Uuid::new_v4().to_string();
+        let url = format!("https://twitch.tv/{}", name.to_lowercase());
+        sqlx::query(
+            "INSERT INTO streamers (id, name, url, platform_config_id, state, priority, consecutive_error_count)
+             VALUES (?, ?, ?, ?, ?, ?, 0)"
+        )
+            .bind(&id)
+            .bind(name)
+            .bind(&url)
+            .bind(platform_id)
+            .bind(state)
+            .bind(priority)
+            .execute(pool)
+            .await
+            .expect("Failed to insert streamer");
+        id
+    }
+
+    #[tokio::test]
+    async fn test_streamer_manager_hydration() {
+        let pool = setup_test_db().await;
+        let platform_id = setup_platform(&pool).await;
+
+        // Insert some streamers
+        insert_streamer(&pool, &platform_id, "Streamer1", "NOT_LIVE", "NORMAL").await;
+        insert_streamer(&pool, &platform_id, "Streamer2", "LIVE", "HIGH").await;
+        insert_streamer(&pool, &platform_id, "Streamer3", "NOT_LIVE", "LOW").await;
+
+        // Create manager and hydrate
+        let repo = Arc::new(SqlxStreamerRepository::new(pool.clone()));
+        let broadcaster = ConfigEventBroadcaster::new();
+        let manager = StreamerManager::new(repo, broadcaster);
+
+        let count = manager.hydrate().await.expect("Failed to hydrate");
+        assert_eq!(count, 3);
+        assert_eq!(manager.count(), 3);
+    }
+
+    #[tokio::test]
+    async fn test_streamer_manager_get_all_active() {
+        let pool = setup_test_db().await;
+        let platform_id = setup_platform(&pool).await;
+
+        // Insert streamers with different states
+        insert_streamer(&pool, &platform_id, "Active1", "NOT_LIVE", "NORMAL").await;
+        insert_streamer(&pool, &platform_id, "Active2", "LIVE", "HIGH").await;
+        insert_streamer(&pool, &platform_id, "Inactive1", "CANCELLED", "NORMAL").await;
+        insert_streamer(&pool, &platform_id, "Inactive2", "FATAL_ERROR", "NORMAL").await;
+
+        let repo = Arc::new(SqlxStreamerRepository::new(pool.clone()));
+        let broadcaster = ConfigEventBroadcaster::new();
+        let manager = StreamerManager::new(repo, broadcaster);
+        manager.hydrate().await.expect("Failed to hydrate");
+
+        let active = manager.get_all_active();
+        assert_eq!(active.len(), 2);
+    }
+
+    #[tokio::test]
+    async fn test_streamer_manager_update_state() {
+        let pool = setup_test_db().await;
+        let platform_id = setup_platform(&pool).await;
+        let streamer_id = insert_streamer(&pool, &platform_id, "TestStreamer", "NOT_LIVE", "NORMAL").await;
+
+        let repo = Arc::new(SqlxStreamerRepository::new(pool.clone()));
+        let broadcaster = ConfigEventBroadcaster::new();
+        let manager = StreamerManager::new(repo, broadcaster);
+        manager.hydrate().await.expect("Failed to hydrate");
+
+        // Update state
+        manager.update_state(&streamer_id, StreamerState::Live).await.expect("Failed to update state");
+
+        // Verify in-memory
+        let metadata = manager.get_streamer(&streamer_id).expect("Streamer not found");
+        assert_eq!(metadata.state, StreamerState::Live);
+
+        // Verify in database
+        let result: (String,) = sqlx::query_as("SELECT state FROM streamers WHERE id = ?")
+            .bind(&streamer_id)
+            .fetch_one(&pool)
+            .await
+            .expect("Failed to query");
+        assert_eq!(result.0, "LIVE");
+    }
+
+    #[tokio::test]
+    async fn test_streamer_manager_error_backoff() {
+        let pool = setup_test_db().await;
+        let platform_id = setup_platform(&pool).await;
+        let streamer_id = insert_streamer(&pool, &platform_id, "TestStreamer", "NOT_LIVE", "NORMAL").await;
+
+        let repo = Arc::new(SqlxStreamerRepository::new(pool.clone()));
+        let broadcaster = ConfigEventBroadcaster::new();
+        let manager = StreamerManager::with_error_threshold(repo, broadcaster, 2);
+        manager.hydrate().await.expect("Failed to hydrate");
+
+        // Record errors until backoff triggers
+        manager.record_error(&streamer_id, "Error 1").await.expect("Failed to record error");
+        assert!(!manager.is_disabled(&streamer_id));
+
+        manager.record_error(&streamer_id, "Error 2").await.expect("Failed to record error");
+        assert!(manager.is_disabled(&streamer_id));
+
+        // Verify in database
+        let result: (Option<String>,) = sqlx::query_as("SELECT disabled_until FROM streamers WHERE id = ?")
+            .bind(&streamer_id)
+            .fetch_one(&pool)
+            .await
+            .expect("Failed to query");
+        assert!(result.0.is_some());
+    }
+
+    #[tokio::test]
+    async fn test_streamer_manager_record_success() {
+        let pool = setup_test_db().await;
+        let platform_id = setup_platform(&pool).await;
+        let streamer_id = insert_streamer(&pool, &platform_id, "TestStreamer", "NOT_LIVE", "NORMAL").await;
+
+        let repo = Arc::new(SqlxStreamerRepository::new(pool.clone()));
+        let broadcaster = ConfigEventBroadcaster::new();
+        let manager = StreamerManager::with_error_threshold(repo, broadcaster, 1);
+        manager.hydrate().await.expect("Failed to hydrate");
+
+        // Trigger backoff
+        manager.record_error(&streamer_id, "Error").await.expect("Failed to record error");
+        assert!(manager.is_disabled(&streamer_id));
+
+        // Record success
+        manager.record_success(&streamer_id, true).await.expect("Failed to record success");
+        assert!(!manager.is_disabled(&streamer_id));
+
+        // Verify last_live_time is set
+        let metadata = manager.get_streamer(&streamer_id).expect("Streamer not found");
+        assert!(metadata.last_live_time.is_some());
+    }
+
+    #[tokio::test]
+    async fn test_streamer_manager_concurrent_access() {
+        let pool = Arc::new(setup_test_db().await);
+        let platform_id = setup_platform(&pool).await;
+
+        // Insert streamers
+        for i in 0..10 {
+            insert_streamer(&pool, &platform_id, &format!("Streamer{}", i), "NOT_LIVE", "NORMAL").await;
+        }
+
+        let repo = Arc::new(SqlxStreamerRepository::new((*pool).clone()));
+        let broadcaster = ConfigEventBroadcaster::new();
+        let manager = Arc::new(StreamerManager::new(repo, broadcaster));
+        manager.hydrate().await.expect("Failed to hydrate");
+
+        // Spawn concurrent read tasks
+        let mut handles = vec![];
+        for _ in 0..20 {
+            let manager_clone = manager.clone();
+            handles.push(tokio::spawn(async move {
+                let all = manager_clone.get_all();
+                all.len()
+            }));
+        }
+
+        // All reads should succeed
+        for handle in handles {
+            let count = handle.await.expect("Task failed");
+            assert_eq!(count, 10);
+        }
+    }
+
+    #[tokio::test]
+    async fn test_streamer_manager_get_by_platform() {
+        let pool = setup_test_db().await;
+        let platform1 = setup_platform(&pool).await;
+        
+        // Create second platform
+        let platform2 = uuid::Uuid::new_v4().to_string();
+        sqlx::query(
+            "INSERT INTO platform_config (id, platform_name, fetch_delay_ms, download_delay_ms)
+             VALUES (?, 'platform2', 60000, 1000)"
+        )
+            .bind(&platform2)
+            .execute(&pool)
+            .await
+            .expect("Failed to insert platform config");
+
+        // Insert streamers on different platforms
+        insert_streamer(&pool, &platform1, "P1S1", "NOT_LIVE", "NORMAL").await;
+        insert_streamer(&pool, &platform1, "P1S2", "NOT_LIVE", "NORMAL").await;
+        insert_streamer(&pool, &platform2, "P2S1", "NOT_LIVE", "NORMAL").await;
+
+        let repo = Arc::new(SqlxStreamerRepository::new(pool.clone()));
+        let broadcaster = ConfigEventBroadcaster::new();
+        let manager = StreamerManager::new(repo, broadcaster);
+        manager.hydrate().await.expect("Failed to hydrate");
+
+        let p1_streamers = manager.get_by_platform(&platform1);
+        assert_eq!(p1_streamers.len(), 2);
+
+        let p2_streamers = manager.get_by_platform(&platform2);
+        assert_eq!(p2_streamers.len(), 1);
+    }
+}

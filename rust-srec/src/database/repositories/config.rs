@@ -3,7 +3,9 @@
 use async_trait::async_trait;
 use sqlx::SqlitePool;
 
-use crate::database::models::{GlobalConfigDbModel, PlatformConfigDbModel, TemplateConfigDbModel};
+use crate::database::models::{
+    EngineConfigurationDbModel, GlobalConfigDbModel, PlatformConfigDbModel, TemplateConfigDbModel,
+};
 use crate::{Error, Result};
 
 /// Configuration repository trait.
@@ -29,6 +31,13 @@ pub trait ConfigRepository: Send + Sync {
     async fn create_template_config(&self, config: &TemplateConfigDbModel) -> Result<()>;
     async fn update_template_config(&self, config: &TemplateConfigDbModel) -> Result<()>;
     async fn delete_template_config(&self, id: &str) -> Result<()>;
+
+    // Engine Config
+    async fn get_engine_config(&self, id: &str) -> Result<EngineConfigurationDbModel>;
+    async fn list_engine_configs(&self) -> Result<Vec<EngineConfigurationDbModel>>;
+    async fn create_engine_config(&self, config: &EngineConfigurationDbModel) -> Result<()>;
+    async fn update_engine_config(&self, config: &EngineConfigurationDbModel) -> Result<()>;
+    async fn delete_engine_config(&self, id: &str) -> Result<()>;
 }
 
 /// SQLx implementation of ConfigRepository.
@@ -327,6 +336,68 @@ impl ConfigRepository for SqlxConfigRepository {
 
     async fn delete_template_config(&self, id: &str) -> Result<()> {
         sqlx::query("DELETE FROM template_config WHERE id = ?")
+            .bind(id)
+            .execute(&self.pool)
+            .await?;
+        Ok(())
+    }
+
+    async fn get_engine_config(&self, id: &str) -> Result<EngineConfigurationDbModel> {
+        sqlx::query_as::<_, EngineConfigurationDbModel>(
+            "SELECT * FROM engine_configuration WHERE id = ?",
+        )
+        .bind(id)
+        .fetch_optional(&self.pool)
+        .await?
+        .ok_or_else(|| Error::not_found("EngineConfiguration", id))
+    }
+
+    async fn list_engine_configs(&self) -> Result<Vec<EngineConfigurationDbModel>> {
+        let configs = sqlx::query_as::<_, EngineConfigurationDbModel>(
+            "SELECT * FROM engine_configuration ORDER BY name",
+        )
+        .fetch_all(&self.pool)
+        .await?;
+        Ok(configs)
+    }
+
+    async fn create_engine_config(&self, config: &EngineConfigurationDbModel) -> Result<()> {
+        sqlx::query(
+            r#"
+            INSERT INTO engine_configuration (id, name, engine_type, config)
+            VALUES (?, ?, ?, ?)
+            "#,
+        )
+        .bind(&config.id)
+        .bind(&config.name)
+        .bind(&config.engine_type)
+        .bind(&config.config)
+        .execute(&self.pool)
+        .await?;
+        Ok(())
+    }
+
+    async fn update_engine_config(&self, config: &EngineConfigurationDbModel) -> Result<()> {
+        sqlx::query(
+            r#"
+            UPDATE engine_configuration SET
+                name = ?,
+                engine_type = ?,
+                config = ?
+            WHERE id = ?
+            "#,
+        )
+        .bind(&config.name)
+        .bind(&config.engine_type)
+        .bind(&config.config)
+        .bind(&config.id)
+        .execute(&self.pool)
+        .await?;
+        Ok(())
+    }
+
+    async fn delete_engine_config(&self, id: &str) -> Result<()> {
+        sqlx::query("DELETE FROM engine_configuration WHERE id = ?")
             .bind(id)
             .execute(&self.pool)
             .await?;

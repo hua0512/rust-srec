@@ -6,15 +6,19 @@ use sqlx::SqlitePool;
 use crate::database::models::StreamerDbModel;
 use crate::{Error, Result};
 
+use chrono::{DateTime, Utc};
+
 /// Streamer repository trait.
 #[async_trait]
 pub trait StreamerRepository: Send + Sync {
     async fn get_streamer(&self, id: &str) -> Result<StreamerDbModel>;
     async fn get_streamer_by_url(&self, url: &str) -> Result<StreamerDbModel>;
     async fn list_streamers(&self) -> Result<Vec<StreamerDbModel>>;
+    async fn list_all_streamers(&self) -> Result<Vec<StreamerDbModel>>;
     async fn list_streamers_by_state(&self, state: &str) -> Result<Vec<StreamerDbModel>>;
     async fn list_streamers_by_priority(&self, priority: &str) -> Result<Vec<StreamerDbModel>>;
     async fn list_streamers_by_platform(&self, platform_id: &str) -> Result<Vec<StreamerDbModel>>;
+    async fn list_streamers_by_template(&self, template_id: &str) -> Result<Vec<StreamerDbModel>>;
     async fn list_active_streamers(&self) -> Result<Vec<StreamerDbModel>>;
     async fn create_streamer(&self, streamer: &StreamerDbModel) -> Result<()>;
     async fn update_streamer(&self, streamer: &StreamerDbModel) -> Result<()>;
@@ -25,6 +29,20 @@ pub trait StreamerRepository: Send + Sync {
     async fn set_disabled_until(&self, id: &str, until: Option<&str>) -> Result<()>;
     async fn update_last_live_time(&self, id: &str, time: &str) -> Result<()>;
     async fn delete_streamer(&self, id: &str) -> Result<()>;
+    
+    // Methods for StreamerManager
+    async fn clear_streamer_error_state(&self, id: &str) -> Result<()>;
+    async fn record_streamer_error(
+        &self,
+        id: &str,
+        error_count: i32,
+        disabled_until: Option<DateTime<Utc>>,
+    ) -> Result<()>;
+    async fn record_streamer_success(
+        &self,
+        id: &str,
+        last_live_time: Option<DateTime<Utc>>,
+    ) -> Result<()>;
 }
 
 /// SQLx implementation of StreamerRepository.
@@ -90,6 +108,16 @@ impl StreamerRepository for SqlxStreamerRepository {
             "SELECT * FROM streamers WHERE platform_config_id = ? ORDER BY priority DESC, name",
         )
         .bind(platform_id)
+        .fetch_all(&self.pool)
+        .await?;
+        Ok(streamers)
+    }
+
+    async fn list_streamers_by_template(&self, template_id: &str) -> Result<Vec<StreamerDbModel>> {
+        let streamers = sqlx::query_as::<_, StreamerDbModel>(
+            "SELECT * FROM streamers WHERE template_config_id = ? ORDER BY priority DESC, name",
+        )
+        .bind(template_id)
         .fetch_all(&self.pool)
         .await?;
         Ok(streamers)
@@ -243,6 +271,73 @@ impl StreamerRepository for SqlxStreamerRepository {
             .bind(id)
             .execute(&self.pool)
             .await?;
+        Ok(())
+    }
+
+    async fn list_all_streamers(&self) -> Result<Vec<StreamerDbModel>> {
+        let streamers = sqlx::query_as::<_, StreamerDbModel>(
+            "SELECT * FROM streamers ORDER BY priority DESC, name",
+        )
+        .fetch_all(&self.pool)
+        .await?;
+        Ok(streamers)
+    }
+
+    async fn clear_streamer_error_state(&self, id: &str) -> Result<()> {
+        sqlx::query(
+            "UPDATE streamers SET consecutive_error_count = 0, disabled_until = NULL, state = 'NOT_LIVE' WHERE id = ?",
+        )
+        .bind(id)
+        .execute(&self.pool)
+        .await?;
+        Ok(())
+    }
+
+    async fn record_streamer_error(
+        &self,
+        id: &str,
+        error_count: i32,
+        disabled_until: Option<DateTime<Utc>>,
+    ) -> Result<()> {
+        sqlx::query(
+            r#"
+            UPDATE streamers SET 
+                consecutive_error_count = ?,
+                disabled_until = ?,
+                state = CASE WHEN ? IS NOT NULL THEN 'ERROR' ELSE state END
+            WHERE id = ?
+            "#,
+        )
+        .bind(error_count)
+        .bind(disabled_until)
+        .bind(disabled_until)
+        .bind(id)
+        .execute(&self.pool)
+        .await?;
+        Ok(())
+    }
+
+    async fn record_streamer_success(
+        &self,
+        id: &str,
+        last_live_time: Option<DateTime<Utc>>,
+    ) -> Result<()> {
+        if let Some(time) = last_live_time {
+            sqlx::query(
+                "UPDATE streamers SET consecutive_error_count = 0, disabled_until = NULL, last_live_time = ? WHERE id = ?",
+            )
+            .bind(time)
+            .bind(id)
+            .execute(&self.pool)
+            .await?;
+        } else {
+            sqlx::query(
+                "UPDATE streamers SET consecutive_error_count = 0, disabled_until = NULL WHERE id = ?",
+            )
+            .bind(id)
+            .execute(&self.pool)
+            .await?;
+        }
         Ok(())
     }
 }
