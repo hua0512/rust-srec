@@ -5,6 +5,7 @@
 pub mod config;
 pub mod database;
 pub mod domain;
+pub mod downloader;
 pub mod error;
 pub mod monitor;
 pub mod scheduler;

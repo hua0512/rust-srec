@@ -36,6 +36,7 @@ sqlx = { version = "0.8.6", features = [
 # Caching
 moka = { version = "0.12", features = ["future"] }
 dashmap = "5.5"
+parking_lot = "0.12"
 
 # CLI dependencies
 clap = { version = "4.5.48", features = ["derive"] }
