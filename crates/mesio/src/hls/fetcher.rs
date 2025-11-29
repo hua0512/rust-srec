@@ -43,6 +43,7 @@ impl SegmentFetcher {
 
     /// Fetches a segment with retry logic.
     /// Retries on network errors and server errors (5xx).
+    /// For large segments (above streaming_threshold_bytes), uses streaming to reduce memory spikes.
     async fn fetch_with_retries(
         &self,
         segment_url: &Url,
@@ -50,6 +51,8 @@ impl SegmentFetcher {
         segment_span: &Span,
     ) -> Result<Bytes, HlsDownloaderError> {
         let mut attempts = 0;
+        let streaming_threshold = self.config.fetcher_config.streaming_threshold_bytes;
+
         loop {
             attempts += 1;
             let mut request_builder = self
@@ -72,14 +75,20 @@ impl SegmentFetcher {
             {
                 Ok(response) => {
                     if response.status().is_success() {
-                        if let Some(len) = response.content_length() {
+                        let content_length = response.content_length();
+                        if let Some(len) = content_length {
                             segment_span.pb_set_length(len);
                         }
 
-                        // Use bytes() instead of streaming to avoid memory accumulation
-                        // reqwest internally handles chunked downloads efficiently
-                        let bytes = response.bytes().await.map_err(HlsDownloaderError::from)?;
-                        segment_span.pb_set_position(bytes.len() as u64);
+                        // Use streaming for large segments to reduce memory spikes
+                        let bytes = if content_length.is_some_and(|len| len as usize > streaming_threshold) {
+                            self.stream_response(response, segment_span).await?
+                        } else {
+                            // Small segments: use simple bytes() for efficiency
+                            let bytes = response.bytes().await.map_err(HlsDownloaderError::from)?;
+                            segment_span.pb_set_position(bytes.len() as u64);
+                            bytes
+                        };
 
                         return Ok(bytes);
                     } else if response.status().is_client_error() {
@@ -115,6 +124,31 @@ impl SegmentFetcher {
                 * (2_u32.pow(attempts.saturating_sub(1)));
             tokio::time::sleep(delay).await;
         }
+    }
+
+    /// Streams a response body in chunks to reduce memory pressure for large segments.
+    /// Updates progress as chunks are received.
+    async fn stream_response(
+        &self,
+        response: reqwest::Response,
+        segment_span: &Span,
+    ) -> Result<Bytes, HlsDownloaderError> {
+        use bytes::BytesMut;
+        use futures::StreamExt;
+
+        let content_length = response.content_length().unwrap_or(0) as usize;
+        let mut buffer = BytesMut::with_capacity(content_length);
+        let mut stream = response.bytes_stream();
+        let mut downloaded: u64 = 0;
+
+        while let Some(chunk_result) = stream.next().await {
+            let chunk = chunk_result.map_err(HlsDownloaderError::from)?;
+            downloaded += chunk.len() as u64;
+            buffer.extend_from_slice(&chunk);
+            segment_span.pb_set_position(downloaded);
+        }
+
+        Ok(buffer.freeze())
     }
 }
 

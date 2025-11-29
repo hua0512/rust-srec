@@ -70,12 +70,16 @@ impl HlsStreamCoordinator {
             Arc::clone(&config),
         ));
 
-        // Channels
+        // Channels - sized for optimal throughput
         let (client_event_tx, client_event_rx) = mpsc::channel(32);
+        // Processed segments buffer: concurrency * multiplier for smooth flow
+        let processed_segments_buffer_size = config.scheduler_config.download_concurrency
+            * config.scheduler_config.processed_segment_buffer_multiplier;
         let (processed_segments_tx, processed_segments_rx) =
-            mpsc::channel(config.scheduler_config.download_concurrency * 2);
+            mpsc::channel(processed_segments_buffer_size);
+        // Segment request buffer: enough headroom for scheduler
         let (segment_request_tx, segment_request_rx) =
-            mpsc::channel::<ScheduledSegmentJob>(config.scheduler_config.download_concurrency + 5);
+            mpsc::channel::<ScheduledSegmentJob>(config.scheduler_config.download_concurrency * 2);
 
         let token_for_playlist_engine = token.clone();
         let token_for_scheduler = token.clone();

@@ -65,6 +65,84 @@ pub struct PlaylistEngine {
     config: Arc<HlsConfig>,
 }
 
+/// Tracks segment arrival patterns to adaptively adjust playlist refresh intervals.
+/// This helps reduce unnecessary network requests when segments arrive predictably,
+/// while being more aggressive when segments are arriving faster than expected.
+struct AdaptiveRefreshTracker {
+    enabled: bool,
+    min_interval: Duration,
+    max_interval: Duration,
+    /// Recent refresh results: true = got new segments, false = no new segments
+    recent_results: std::collections::VecDeque<bool>,
+    /// Number of consecutive refreshes with no new segments
+    consecutive_empty: u32,
+    /// Last time we got new segments
+    last_segment_time: Option<std::time::Instant>,
+}
+
+impl AdaptiveRefreshTracker {
+    fn new(enabled: bool, min_interval: Duration, max_interval: Duration) -> Self {
+        Self {
+            enabled,
+            min_interval,
+            max_interval,
+            recent_results: std::collections::VecDeque::with_capacity(10),
+            consecutive_empty: 0,
+            last_segment_time: None,
+        }
+    }
+
+    /// Record the result of a playlist refresh
+    fn record_refresh(&mut self, new_segments_count: usize) {
+        let got_segments = new_segments_count > 0;
+
+        // Track recent results (keep last 10)
+        if self.recent_results.len() >= 10 {
+            self.recent_results.pop_front();
+        }
+        self.recent_results.push_back(got_segments);
+
+        if got_segments {
+            self.consecutive_empty = 0;
+            self.last_segment_time = Some(std::time::Instant::now());
+        } else {
+            self.consecutive_empty += 1;
+        }
+    }
+
+    /// Get the recommended refresh interval based on recent patterns
+    fn get_refresh_interval(&self, default_interval: Duration) -> Duration {
+        if !self.enabled {
+            return default_interval;
+        }
+
+        // If we've had multiple consecutive empty refreshes, back off
+        if self.consecutive_empty >= 3 {
+            // Exponential backoff, capped at max_interval
+            let backoff_factor = 1.5_f64.powi(self.consecutive_empty.min(5) as i32);
+            let backed_off = Duration::from_secs_f64(default_interval.as_secs_f64() * backoff_factor);
+            return backed_off.min(self.max_interval);
+        }
+
+        // If we're consistently getting segments, we can be more aggressive
+        let recent_success_rate = self
+            .recent_results
+            .iter()
+            .filter(|&&got| got)
+            .count() as f64
+            / self.recent_results.len().max(1) as f64;
+
+        if recent_success_rate > 0.8 && self.recent_results.len() >= 5 {
+            // High success rate - can poll slightly faster
+            let faster = Duration::from_secs_f64(default_interval.as_secs_f64() * 0.8);
+            return faster.max(self.min_interval);
+        }
+
+        // Default behavior
+        default_interval.max(self.min_interval).min(self.max_interval)
+    }
+}
+
 #[async_trait]
 impl PlaylistProvider for PlaylistEngine {
     async fn load_initial_playlist(
@@ -321,11 +399,18 @@ impl PlaylistProvider for PlaylistEngine {
             None
         };
 
-        const SEEN_SEGMENTS_LRU_CAPACITY: usize = 30;
+        const SEEN_SEGMENTS_LRU_CAPACITY: usize = 100;
         let seen_segment_uris: Cache<String, ()> = Cache::builder()
             .max_capacity(SEEN_SEGMENTS_LRU_CAPACITY as u64)
             .eviction_policy(EvictionPolicy::lru())
             .build();
+
+        // Adaptive refresh tracking
+        let mut adaptive_tracker = AdaptiveRefreshTracker::new(
+            self.config.playlist_config.adaptive_refresh_enabled,
+            self.config.playlist_config.adaptive_refresh_min_interval,
+            self.config.playlist_config.adaptive_refresh_max_interval,
+        );
 
         loop {
             match self
@@ -344,6 +429,10 @@ impl PlaylistProvider for PlaylistEngine {
                         )
                         .await?;
 
+                    // Update adaptive tracker with segment arrival info
+                    let new_segments_count = jobs.len();
+                    adaptive_tracker.record_refresh(new_segments_count);
+
                     self.send_jobs(jobs, &segment_request_tx, playlist_url_str)
                         .await?;
 
@@ -358,6 +447,7 @@ impl PlaylistProvider for PlaylistEngine {
                 Ok(None) => {
                     // Playlist unchanged or parse error, just wait for next refresh
                     retries = 0;
+                    adaptive_tracker.record_refresh(0); // No new segments
                 }
                 Err(e) => {
                     error!("Error refreshing playlist {playlist_url}: {e}");
@@ -372,8 +462,11 @@ impl PlaylistProvider for PlaylistEngine {
                 }
             }
 
-            let refresh_delay = Duration::from_secs(current_playlist.target_duration / 2)
-                .max(self.config.playlist_config.live_refresh_interval);
+            // Calculate refresh delay - use adaptive if enabled, otherwise use target_duration/2
+            let refresh_delay = adaptive_tracker.get_refresh_interval(
+                Duration::from_secs(current_playlist.target_duration / 2)
+                    .max(self.config.playlist_config.live_refresh_interval),
+            );
 
             tokio::select! {
                 biased;

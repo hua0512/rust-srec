@@ -24,6 +24,12 @@ pub struct HlsPlaylistConfig {
     pub live_max_refresh_retries: u32,
     pub live_refresh_retry_delay: Duration,
     pub variant_selection_policy: HlsVariantSelectionPolicy,
+    /// Enable adaptive refresh interval based on actual segment arrival rate
+    pub adaptive_refresh_enabled: bool,
+    /// Minimum adaptive refresh interval (won't go below this)
+    pub adaptive_refresh_min_interval: Duration,
+    /// Maximum adaptive refresh interval (won't go above this)
+    pub adaptive_refresh_max_interval: Duration,
 }
 
 impl Default for HlsPlaylistConfig {
@@ -34,6 +40,9 @@ impl Default for HlsPlaylistConfig {
             live_max_refresh_retries: 5,
             live_refresh_retry_delay: Duration::from_secs(1),
             variant_selection_policy: Default::default(),
+            adaptive_refresh_enabled: true,
+            adaptive_refresh_min_interval: Duration::from_millis(500),
+            adaptive_refresh_max_interval: Duration::from_secs(5),
         }
     }
 }
@@ -56,13 +65,18 @@ pub enum HlsVariantSelectionPolicy {
 // --- Scheduler Configuration ---
 #[derive(Debug, Clone)]
 pub struct HlsSchedulerConfig {
-    pub download_concurrency: usize, // Max concurrent segment downloads
+    /// Max concurrent segment downloads (default: 5)
+    pub download_concurrency: usize,
+    /// Channel buffer multiplier for processed segments (default: 4)
+    /// Actual buffer size = download_concurrency * buffer_multiplier
+    pub processed_segment_buffer_multiplier: usize,
 }
 
 impl Default for HlsSchedulerConfig {
     fn default() -> Self {
         Self {
-            download_concurrency: 3,
+            download_concurrency: 5,
+            processed_segment_buffer_multiplier: 4,
         }
     }
 }
@@ -77,6 +91,9 @@ pub struct HlsFetcherConfig {
     pub max_key_retries: u32,
     pub key_retry_delay_base: Duration,
     pub segment_raw_cache_ttl: Duration, // TTL for caching raw (undecrypted) segments
+    /// Threshold in bytes above which segments are streamed instead of buffered entirely
+    /// This reduces memory spikes for large segments (default: 2MB)
+    pub streaming_threshold_bytes: usize,
 }
 
 impl Default for HlsFetcherConfig {
@@ -89,6 +106,7 @@ impl Default for HlsFetcherConfig {
             max_key_retries: 3,
             key_retry_delay_base: Duration::from_millis(200),
             segment_raw_cache_ttl: Duration::from_secs(60), // Default 1 minutes for raw segments
+            streaming_threshold_bytes: 2 * 1024 * 1024,     // 2MB threshold for streaming
         }
     }
 }

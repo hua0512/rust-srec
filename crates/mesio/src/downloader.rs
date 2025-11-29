@@ -13,7 +13,8 @@ use tokio_util::sync::CancellationToken;
 /// Create a reqwest Client with the provided configuration
 pub fn create_client(config: &DownloaderConfig) -> Result<Client, DownloadError> {
     let mut client_builder = Client::builder()
-        .pool_max_idle_per_host(5) // Allow multiple connections to same host
+        .pool_max_idle_per_host(10) // Keep connections warm for HLS segment downloads
+        .pool_idle_timeout(std::time::Duration::from_secs(30)) // Reuse connections for 30s
         .user_agent(&config.user_agent)
         .default_headers(config.headers.clone())
         .use_rustls_tls()
