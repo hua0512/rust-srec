@@ -169,6 +169,83 @@ where
         Ok(())
     }
 
+    /// Update a streamer with new metadata.
+    ///
+    /// Persists to database first, then updates in-memory cache.
+    /// This method allows updating all mutable fields of a streamer.
+    pub async fn update_streamer(&self, metadata: StreamerMetadata) -> Result<()> {
+        debug!("Updating streamer: {}", metadata.id);
+
+        // Check if streamer exists
+        if !self.metadata.contains_key(&metadata.id) {
+            return Err(crate::Error::not_found("Streamer", &metadata.id));
+        }
+
+        // Convert to DB model and persist
+        let db_model = self.metadata_to_db_model(&metadata);
+        self.repo.update_streamer(&db_model).await?;
+
+        // Update in-memory cache
+        self.metadata.insert(metadata.id.clone(), metadata.clone());
+
+        // Broadcast event
+        self.broadcaster.publish(ConfigUpdateEvent::StreamerUpdated {
+            streamer_id: metadata.id,
+        });
+
+        Ok(())
+    }
+
+    /// Partially update a streamer.
+    ///
+    /// Only updates the fields that are provided (Some values).
+    /// Persists to database first, then updates in-memory cache.
+    pub async fn partial_update_streamer(
+        &self,
+        id: &str,
+        name: Option<String>,
+        template_config_id: Option<Option<String>>,
+        priority: Option<Priority>,
+        state: Option<StreamerState>,
+    ) -> Result<StreamerMetadata> {
+        debug!("Partially updating streamer: {}", id);
+
+        // Get current metadata
+        let mut metadata = self
+            .metadata
+            .get(id)
+            .map(|entry| entry.clone())
+            .ok_or_else(|| crate::Error::not_found("Streamer", id))?;
+
+        // Apply updates
+        if let Some(new_name) = name {
+            metadata.name = new_name;
+        }
+        if let Some(new_template) = template_config_id {
+            metadata.template_config_id = new_template;
+        }
+        if let Some(new_priority) = priority {
+            metadata.priority = new_priority;
+        }
+        if let Some(new_state) = state {
+            metadata.state = new_state;
+        }
+
+        // Convert to DB model and persist
+        let db_model = self.metadata_to_db_model(&metadata);
+        self.repo.update_streamer(&db_model).await?;
+
+        // Update in-memory cache
+        self.metadata.insert(id.to_string(), metadata.clone());
+
+        // Broadcast event
+        self.broadcaster.publish(ConfigUpdateEvent::StreamerUpdated {
+            streamer_id: id.to_string(),
+        });
+
+        Ok(metadata)
+    }
+
     /// Delete a streamer.
     ///
     /// Removes from database first, then from in-memory cache.
@@ -484,7 +561,19 @@ mod tests {
             Ok(())
         }
 
-        async fn update_streamer(&self, _streamer: &StreamerDbModel) -> Result<()> {
+        async fn update_streamer(&self, streamer: &StreamerDbModel) -> Result<()> {
+            let mut streamers = self.streamers.lock().unwrap();
+            if let Some(s) = streamers.iter_mut().find(|s| s.id == streamer.id) {
+                s.name = streamer.name.clone();
+                s.url = streamer.url.clone();
+                s.platform_config_id = streamer.platform_config_id.clone();
+                s.template_config_id = streamer.template_config_id.clone();
+                s.state = streamer.state.clone();
+                s.priority = streamer.priority.clone();
+                s.last_live_time = streamer.last_live_time.clone();
+                s.consecutive_error_count = streamer.consecutive_error_count;
+                s.disabled_until = streamer.disabled_until.clone();
+            }
             Ok(())
         }
 
@@ -705,5 +794,105 @@ mod tests {
         manager.delete_streamer("s1").await.unwrap();
 
         assert!(manager.get_streamer("s1").is_none());
+    }
+
+    #[tokio::test]
+    async fn test_update_streamer() {
+        let repo = MockStreamerRepository::with_streamers(vec![create_test_db_model("s1", "twitch")]);
+        let broadcaster = ConfigEventBroadcaster::new();
+        let manager = StreamerManager::new(Arc::new(repo), broadcaster);
+        manager.hydrate().await.unwrap();
+
+        // Get current metadata and modify it
+        let mut metadata = manager.get_streamer("s1").unwrap();
+        metadata.name = "Updated Name".to_string();
+        metadata.priority = Priority::High;
+        metadata.template_config_id = Some("template-1".to_string());
+
+        // Update the streamer
+        manager.update_streamer(metadata).await.unwrap();
+
+        // Verify the update
+        let updated = manager.get_streamer("s1").unwrap();
+        assert_eq!(updated.name, "Updated Name");
+        assert_eq!(updated.priority, Priority::High);
+        assert_eq!(updated.template_config_id, Some("template-1".to_string()));
+    }
+
+    #[tokio::test]
+    async fn test_update_streamer_not_found() {
+        let repo = MockStreamerRepository::new();
+        let broadcaster = ConfigEventBroadcaster::new();
+        let manager = StreamerManager::new(Arc::new(repo), broadcaster);
+
+        let metadata = StreamerMetadata {
+            id: "nonexistent".to_string(),
+            name: "Test".to_string(),
+            url: "https://example.com".to_string(),
+            platform_config_id: "twitch".to_string(),
+            template_config_id: None,
+            state: StreamerState::NotLive,
+            priority: Priority::Normal,
+            consecutive_error_count: 0,
+            disabled_until: None,
+            last_live_time: None,
+        };
+
+        let result = manager.update_streamer(metadata).await;
+        assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn test_partial_update_streamer() {
+        let repo = MockStreamerRepository::with_streamers(vec![create_test_db_model("s1", "twitch")]);
+        let broadcaster = ConfigEventBroadcaster::new();
+        let manager = StreamerManager::new(Arc::new(repo), broadcaster);
+        manager.hydrate().await.unwrap();
+
+        // Partial update - only name and priority
+        let updated = manager
+            .partial_update_streamer(
+                "s1",
+                Some("New Name".to_string()),
+                None, // Don't change template
+                Some(Priority::High),
+                None, // Don't change state
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(updated.name, "New Name");
+        assert_eq!(updated.priority, Priority::High);
+        // URL should remain unchanged
+        assert_eq!(updated.url, "https://example.com/s1");
+    }
+
+    #[tokio::test]
+    async fn test_partial_update_template_to_none() {
+        let mut db_model = create_test_db_model("s1", "twitch");
+        db_model.template_config_id = Some("old-template".to_string());
+        
+        let repo = MockStreamerRepository::with_streamers(vec![db_model]);
+        let broadcaster = ConfigEventBroadcaster::new();
+        let manager = StreamerManager::new(Arc::new(repo), broadcaster);
+        manager.hydrate().await.unwrap();
+
+        // Verify initial template
+        let initial = manager.get_streamer("s1").unwrap();
+        assert_eq!(initial.template_config_id, Some("old-template".to_string()));
+
+        // Update template to None
+        let updated = manager
+            .partial_update_streamer(
+                "s1",
+                None,
+                Some(None), // Set template to None
+                None,
+                None,
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(updated.template_config_id, None);
     }
 }
