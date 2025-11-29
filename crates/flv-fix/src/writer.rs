@@ -56,6 +56,12 @@ impl ProtocolWriter for FlvWriter {
                 }
                 Err(e) => {
                     tracing::error!("Error in received FLV data: {}", e);
+                    if let Err(close_err) = self.writer_task.close() {
+                        tracing::error!(
+                            "Failed to close writer task after input error: {}",
+                            close_err
+                        );
+                    }
                     return Err(WriterError::InputError(e.to_string()));
                 }
             }

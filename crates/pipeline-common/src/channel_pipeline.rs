@@ -93,7 +93,10 @@ where
 
                             if let Err(e) = processor.process(&context, item, &mut output_fn) {
                                 error!(processor = processor_name, error = ?e, "Processor failed");
-                                return Err(e);
+                                let _ = tx.blocking_send(Err(e));
+                                return Err(PipelineError::Processing(
+                                    "Processor failed".to_string(),
+                                ));
                             }
                         }
                         Err(e) => {
@@ -117,7 +120,10 @@ where
 
                 if let Err(e) = processor.finish(&context, &mut output_fn) {
                     error!(processor = processor_name, error = ?e, "Processor finish failed");
-                    return Err(e);
+                    let _ = tx.blocking_send(Err(e));
+                    return Err(PipelineError::Processing(
+                        "Processor finish failed".to_string(),
+                    ));
                 }
 
                 Ok(())
@@ -178,7 +184,10 @@ where
 
         // Pump output
         while let Some(item) = output_rx.blocking_recv() {
-            output(item.map_err(|e| e.into()));
+            match item {
+                Ok(t) => output(Ok(t)),
+                Err(e) => return Err(e),
+            }
         }
 
         // We don't strictly wait for tasks here in the sync wrapper,
@@ -266,5 +275,51 @@ mod tests {
         assert_eq!(final_results[1], "item2-processed");
         assert_eq!(final_results[2], "item3-processed");
         assert_eq!(counter.load(Ordering::SeqCst), 3);
+    }
+    struct FailingProcessor;
+
+    impl Processor<String> for FailingProcessor {
+        fn name(&self) -> &'static str {
+            "FailingProcessor"
+        }
+
+        fn process(
+            &mut self,
+            _context: &Arc<StreamerContext>,
+            _input: String,
+            _output: &mut dyn FnMut(String) -> Result<(), PipelineError>,
+        ) -> Result<(), PipelineError> {
+            Err(PipelineError::Processing("Intentional failure".to_string()))
+        }
+
+        fn finish(
+            &mut self,
+            _context: &Arc<StreamerContext>,
+            _output: &mut dyn FnMut(String) -> Result<(), PipelineError>,
+        ) -> Result<(), PipelineError> {
+            Ok(())
+        }
+    }
+
+    #[tokio::test]
+    async fn test_channel_pipeline_error_propagation() {
+        let token = CancellationToken::new();
+        let context = StreamerContext::arc_new(token);
+
+        let pipeline = ChannelPipeline::new(context.clone()).add_processor(FailingProcessor);
+
+        let input = vec![Ok("item1".to_string())];
+
+        let pipeline_task = tokio::task::spawn_blocking(move || {
+            let mut output_fn = |_res: Result<String, PipelineError>| {};
+            pipeline.run(input.into_iter(), &mut output_fn)
+        });
+
+        let result = pipeline_task.await.unwrap();
+        assert!(result.is_err());
+        match result {
+            Err(PipelineError::Processing(msg)) => assert_eq!(msg, "Intentional failure"),
+            _ => panic!("Expected Processing error, got {:?}", result),
+        }
     }
 }
