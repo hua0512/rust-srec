@@ -18,7 +18,9 @@ use crate::database::repositories::{
     streamer::SqlxStreamerRepository,
 };
 use crate::downloader::{DownloadConfig, DownloadManager, DownloadManagerConfig, StreamSelector};
+use crate::metrics::{HealthChecker, MetricsCollector, PrometheusExporter};
 use crate::monitor::{MonitorEvent, MonitorEventBroadcaster};
+use crate::notification::{NotificationService, NotificationServiceConfig};
 use crate::pipeline::{PipelineManager, PipelineManagerConfig, PipelineEvent};
 use crate::streamer::StreamerManager;
 use crate::Result;
@@ -50,6 +52,12 @@ pub struct ServiceContainer {
     pub monitor_event_broadcaster: MonitorEventBroadcaster,
     /// Danmu service.
     pub danmu_service: Arc<DanmuService>,
+    /// Notification service.
+    pub notification_service: Arc<NotificationService>,
+    /// Metrics collector.
+    pub metrics_collector: Arc<MetricsCollector>,
+    /// Health checker.
+    pub health_checker: Arc<HealthChecker>,
     /// API server configuration.
     api_server_config: ApiServerConfig,
     /// Cancellation token for graceful shutdown.
@@ -107,6 +115,17 @@ impl ServiceContainer {
         // Create danmu service with default config
         let danmu_service = Arc::new(DanmuService::new(DanmuServiceConfig::default()));
 
+        // Create notification service with default config
+        let notification_service = Arc::new(NotificationService::with_config(
+            NotificationServiceConfig::default(),
+        ));
+
+        // Create metrics collector
+        let metrics_collector = Arc::new(MetricsCollector::new());
+
+        // Create health checker
+        let health_checker = Arc::new(HealthChecker::new());
+
         // Create cancellation token for graceful shutdown
         let cancellation_token = CancellationToken::new();
 
@@ -121,6 +140,9 @@ impl ServiceContainer {
             pipeline_manager,
             monitor_event_broadcaster,
             danmu_service,
+            notification_service,
+            metrics_collector,
+            health_checker,
             api_server_config: ApiServerConfig::default(),
             cancellation_token,
         })
@@ -171,6 +193,17 @@ impl ServiceContainer {
         // Create danmu service with custom config
         let danmu_service = Arc::new(DanmuService::new(danmu_config));
 
+        // Create notification service with default config
+        let notification_service = Arc::new(NotificationService::with_config(
+            NotificationServiceConfig::default(),
+        ));
+
+        // Create metrics collector
+        let metrics_collector = Arc::new(MetricsCollector::new());
+
+        // Create health checker
+        let health_checker = Arc::new(HealthChecker::new());
+
         // Create cancellation token for graceful shutdown
         let cancellation_token = CancellationToken::new();
 
@@ -185,6 +218,9 @@ impl ServiceContainer {
             pipeline_manager,
             monitor_event_broadcaster,
             danmu_service,
+            notification_service,
+            metrics_collector,
+            health_checker,
             api_server_config: api_config,
             cancellation_token,
         })
@@ -213,6 +249,12 @@ impl ServiceContainer {
 
         // Wire danmu events to download manager for segment coordination
         self.setup_danmu_event_subscriptions();
+
+        // Wire notification service to system events
+        self.setup_notification_event_subscriptions();
+
+        // Register health checks
+        self.register_health_checks().await;
 
         info!("Services initialized");
         Ok(())
@@ -439,6 +481,103 @@ impl ServiceContainer {
                 }
             }
         });
+    }
+
+    /// Set up notification service event subscriptions.
+    fn setup_notification_event_subscriptions(&self) {
+        let notification_service = self.notification_service.clone();
+        let monitor_rx = self.monitor_event_broadcaster.subscribe();
+        let download_rx = self.download_manager.subscribe();
+        let pipeline_rx = self.pipeline_manager.subscribe();
+
+        notification_service.start_event_listeners(monitor_rx, download_rx, pipeline_rx);
+        info!("Notification service event listeners started");
+    }
+
+    /// Register health checks for all components.
+    async fn register_health_checks(&self) {
+        use crate::metrics::ComponentHealth;
+
+        let pool = self.pool.clone();
+        let download_manager = self.download_manager.clone();
+        let pipeline_manager = self.pipeline_manager.clone();
+        let danmu_service = self.danmu_service.clone();
+
+        // Database health check
+        self.health_checker
+            .register(
+                "database",
+                Arc::new(move || {
+                    if pool.is_closed() {
+                        ComponentHealth::unhealthy("database", "Connection pool is closed")
+                    } else {
+                        ComponentHealth::healthy("database")
+                    }
+                }),
+            )
+            .await;
+
+        // Download manager health check
+        let dm = download_manager.clone();
+        self.health_checker
+            .register(
+                "download_manager",
+                Arc::new(move || {
+                    let active = dm.active_count();
+                    if active > 50 {
+                        ComponentHealth::degraded(
+                            "download_manager",
+                            format!("High number of active downloads: {}", active),
+                        )
+                    } else {
+                        ComponentHealth::healthy("download_manager")
+                    }
+                }),
+            )
+            .await;
+
+        // Pipeline manager health check
+        let pm = pipeline_manager.clone();
+        self.health_checker
+            .register(
+                "pipeline_manager",
+                Arc::new(move || {
+                    let depth = pm.queue_depth();
+                    let status = pm.queue_status();
+                    match status {
+                        crate::pipeline::QueueDepthStatus::Critical => {
+                            ComponentHealth::unhealthy(
+                                "pipeline_manager",
+                                format!("Queue depth critical: {}", depth),
+                            )
+                        }
+                        crate::pipeline::QueueDepthStatus::Warning => {
+                            ComponentHealth::degraded(
+                                "pipeline_manager",
+                                format!("Queue depth warning: {}", depth),
+                            )
+                        }
+                        crate::pipeline::QueueDepthStatus::Normal => {
+                            ComponentHealth::healthy("pipeline_manager")
+                        }
+                    }
+                }),
+            )
+            .await;
+
+        // Danmu service health check
+        let ds = danmu_service.clone();
+        self.health_checker
+            .register(
+                "danmu_service",
+                Arc::new(move || {
+                    let _active = ds.active_sessions().len();
+                    ComponentHealth::healthy("danmu_service")
+                }),
+            )
+            .await;
+
+        info!("Health checks registered");
     }
 
     /// Handle monitor events to trigger downloads and danmu collection.
@@ -669,7 +808,12 @@ impl ServiceContainer {
         // Signal all background tasks to stop
         self.cancellation_token.cancel();
 
-        // Stop danmu service first (finalize XML files)
+        // Stop notification service
+        info!("Stopping notification service...");
+        self.notification_service.stop().await;
+        info!("Notification service stopped");
+
+        // Stop danmu service (finalize XML files)
         info!("Stopping danmu service...");
         self.danmu_service.shutdown().await;
         info!("Danmu service stopped");
@@ -725,7 +869,29 @@ impl ServiceContainer {
             active_downloads: self.download_manager.active_count(),
             pipeline_queue_depth: self.pipeline_manager.queue_depth(),
             active_danmu_collections: self.danmu_service.active_sessions().len(),
+            notification_stats: self.notification_service.stats(),
         }
+    }
+
+    /// Get the metrics collector.
+    pub fn metrics_collector(&self) -> &Arc<MetricsCollector> {
+        &self.metrics_collector
+    }
+
+    /// Get the health checker.
+    pub fn health_checker(&self) -> &Arc<HealthChecker> {
+        &self.health_checker
+    }
+
+    /// Get the notification service.
+    pub fn notification_service(&self) -> &Arc<NotificationService> {
+        &self.notification_service
+    }
+
+    /// Get Prometheus metrics export.
+    pub fn prometheus_metrics(&self) -> String {
+        let exporter = PrometheusExporter::new(self.metrics_collector.clone());
+        exporter.export()
     }
 
     /// Subscribe to danmu events.
@@ -775,6 +941,8 @@ pub struct ServiceStats {
     pub pipeline_queue_depth: usize,
     /// Number of active danmu collections.
     pub active_danmu_collections: usize,
+    /// Notification service statistics.
+    pub notification_stats: crate::notification::NotificationStats,
 }
 
 #[cfg(test)]
