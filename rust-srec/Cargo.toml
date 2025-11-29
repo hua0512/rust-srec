@@ -64,9 +64,11 @@ regex = "1.10"
 tower = { version = "0.5", features = ["full"] }
 tower-http = { version = "0.6", features = ["cors", "trace", "request-id"] }
 rayon = "1.10.0"
+jsonwebtoken = "9"
 
 [dev-dependencies]
 mockall = "0.12.1"
+proptest = "1.4"
 rstest = "0.26.1"
 tempfile = "3"
 

@@ -8,7 +8,6 @@ use tokio_util::sync::CancellationToken;
 use tower_http::cors::{Any, CorsLayer};
 use tower_http::trace::TraceLayer;
 
-use crate::api::middleware::ApiKeyAuthLayer;
 use crate::api::routes;
 use crate::error::Result;
 
@@ -41,6 +40,7 @@ impl Default for ApiServerConfig {
 
 use std::sync::Arc;
 
+use crate::api::jwt::JwtService;
 use crate::config::ConfigService;
 use crate::danmu::DanmuService;
 use crate::database::repositories::{
@@ -56,6 +56,8 @@ use crate::streamer::StreamerManager;
 pub struct AppState {
     /// Server start time for uptime calculation
     pub start_time: Instant,
+    /// JWT service for authentication
+    pub jwt_service: Option<Arc<JwtService>>,
     /// Configuration service
     pub config_service: Option<Arc<ConfigService<SqlxConfigRepository, SqlxStreamerRepository>>>,
     /// Streamer manager
@@ -73,6 +75,7 @@ impl AppState {
     pub fn new() -> Self {
         Self {
             start_time: Instant::now(),
+            jwt_service: None,
             config_service: None,
             streamer_manager: None,
             pipeline_manager: None,
@@ -81,8 +84,41 @@ impl AppState {
         }
     }
 
+    /// Create a new application state with JWT service from environment variables.
+    pub fn with_jwt_from_env() -> Self {
+        let jwt_service = Self::create_jwt_service_from_env();
+        Self {
+            start_time: Instant::now(),
+            jwt_service,
+            config_service: None,
+            streamer_manager: None,
+            pipeline_manager: None,
+            danmu_service: None,
+            download_manager: None,
+        }
+    }
+
+    /// Create JWT service from environment variables.
+    fn create_jwt_service_from_env() -> Option<Arc<JwtService>> {
+        let secret = std::env::var("JWT_SECRET").ok()?;
+        let issuer = std::env::var("JWT_ISSUER").unwrap_or_else(|_| "rust-srec".to_string());
+        let audience = std::env::var("JWT_AUDIENCE").unwrap_or_else(|_| "rust-srec-api".to_string());
+        let expiration_secs = std::env::var("JWT_EXPIRATION_SECS")
+            .ok()
+            .and_then(|s| s.parse().ok())
+            .unwrap_or(3600);
+
+        Some(Arc::new(JwtService::new(
+            &secret,
+            &issuer,
+            &audience,
+            Some(expiration_secs),
+        )))
+    }
+
     /// Create application state with all services.
     pub fn with_services(
+        jwt_service: Option<Arc<JwtService>>,
         config_service: Arc<ConfigService<SqlxConfigRepository, SqlxStreamerRepository>>,
         streamer_manager: Arc<StreamerManager<SqlxStreamerRepository>>,
         pipeline_manager: Arc<PipelineManager>,
@@ -91,12 +127,19 @@ impl AppState {
     ) -> Self {
         Self {
             start_time: Instant::now(),
+            jwt_service,
             config_service: Some(config_service),
             streamer_manager: Some(streamer_manager),
             pipeline_manager: Some(pipeline_manager),
             danmu_service: Some(danmu_service),
             download_manager: Some(download_manager),
         }
+    }
+
+    /// Set the JWT service.
+    pub fn with_jwt_service(mut self, jwt_service: Arc<JwtService>) -> Self {
+        self.jwt_service = Some(jwt_service);
+        self
     }
 }
 
@@ -153,10 +196,8 @@ impl ApiServer {
         // Add tracing
         router = router.layer(TraceLayer::new_for_http());
 
-        // Add authentication if API keys are configured
-        if !self.config.api_keys.is_empty() {
-            router = router.layer(ApiKeyAuthLayer::new(self.config.api_keys.clone()));
-        }
+        // Note: JWT authentication is now handled in the router via JwtAuthLayer
+        // The api_keys field is kept for backward compatibility but not used
 
         router
     }

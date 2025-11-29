@@ -10,7 +10,7 @@ use sqlx::SqlitePool;
 use tokio_util::sync::CancellationToken;
 use tracing::{debug, info, warn};
 
-use crate::api::{ApiServer, server::{ApiServerConfig, AppState}};
+use crate::api::{ApiServer, JwtService, server::{ApiServerConfig, AppState}};
 use crate::config::{ConfigCache, ConfigEventBroadcaster, ConfigService};
 use crate::danmu::{DanmuService, service::{DanmuEvent, DanmuServiceConfig}};
 use crate::database::repositories::{
@@ -263,7 +263,11 @@ impl ServiceContainer {
     /// Initialize and start the API server.
     /// This should be called after initialize() and runs the server in the background.
     pub async fn start_api_server(&self) -> Result<()> {
+        // Create JWT service from environment if configured
+        let jwt_service = Self::create_jwt_service_from_env();
+
         let state = AppState::with_services(
+            jwt_service,
             self.config_service.clone(),
             self.streamer_manager.clone(),
             self.pipeline_manager.clone(),
@@ -917,6 +921,34 @@ impl ServiceContainer {
     /// Get the monitor event broadcaster for external use.
     pub fn monitor_broadcaster(&self) -> &MonitorEventBroadcaster {
         &self.monitor_event_broadcaster
+    }
+
+    /// Create JWT service from environment variables.
+    ///
+    /// Required environment variable:
+    /// - `JWT_SECRET`: Secret key for signing tokens
+    ///
+    /// Optional environment variables:
+    /// - `JWT_ISSUER`: Token issuer (default: "rust-srec")
+    /// - `JWT_AUDIENCE`: Token audience (default: "rust-srec-api")
+    /// - `JWT_EXPIRATION_SECS`: Token expiration in seconds (default: 3600)
+    fn create_jwt_service_from_env() -> Option<Arc<JwtService>> {
+        let secret = std::env::var("JWT_SECRET").ok()?;
+        let issuer = std::env::var("JWT_ISSUER").unwrap_or_else(|_| "rust-srec".to_string());
+        let audience = std::env::var("JWT_AUDIENCE").unwrap_or_else(|_| "rust-srec-api".to_string());
+        let expiration_secs = std::env::var("JWT_EXPIRATION_SECS")
+            .ok()
+            .and_then(|s| s.parse().ok())
+            .unwrap_or(3600);
+
+        info!("JWT authentication enabled (issuer: {}, audience: {})", issuer, audience);
+
+        Some(Arc::new(JwtService::new(
+            &secret,
+            &issuer,
+            &audience,
+            Some(expiration_secs),
+        )))
     }
 }
 
