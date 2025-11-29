@@ -6,7 +6,6 @@ use flv::data::FlvData;
 use pipeline_common::{WriterConfig, WriterState, WriterTask};
 use std::collections::HashMap;
 use std::path::PathBuf;
-use std::sync::mpsc;
 
 #[derive(Clone, Debug, Default)]
 pub struct FlvWriterConfig {
@@ -45,9 +44,9 @@ impl ProtocolWriter for FlvWriter {
 
     fn run(
         &mut self,
-        input_stream: mpsc::Receiver<Result<Self::Item, PipelineError>>,
+        mut input_stream: tokio::sync::mpsc::Receiver<Result<Self::Item, PipelineError>>,
     ) -> Result<Self::Stats, Self::Error> {
-        for result in input_stream.iter() {
+        while let Some(result) = input_stream.blocking_recv() {
             match result {
                 Ok(flv_data) => {
                     if let Err(e) = self.writer_task.process_item(flv_data) {
@@ -57,6 +56,12 @@ impl ProtocolWriter for FlvWriter {
                 }
                 Err(e) => {
                     tracing::error!("Error in received FLV data: {}", e);
+                    if let Err(close_err) = self.writer_task.close() {
+                        tracing::error!(
+                            "Failed to close writer task after input error: {}",
+                            close_err
+                        );
+                    }
                     return Err(WriterError::InputError(e.to_string()));
                 }
             }
