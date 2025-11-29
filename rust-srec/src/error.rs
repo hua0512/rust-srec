@@ -47,6 +47,9 @@ pub enum Error {
     #[error("API error: {0}")]
     ApiError(String),
 
+    #[error("TARS codec error: {0}")]
+    TarsError(#[from] tars_codec::TarsError),
+
     #[error("{0}")]
     Other(String),
 }

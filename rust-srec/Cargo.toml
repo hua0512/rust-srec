@@ -47,6 +47,8 @@ tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
 
 sysinfo = { version = "0.30" }
 tokio-tungstenite = { version = "0.23.1", features = ["native-tls"] }
+tokio-rustls = { version = "0.26", default-features = false, features = ["ring", "tls12"] }
+webpki-roots = "0.26"
 quick-xml = { version = "0.36.0", features = ["serde", "serialize"] }
 
 # Workspace crates
@@ -57,6 +59,7 @@ quick-xml = { version = "0.36.0", features = ["serde", "serialize"] }
 # hls-fix = { path = "../crates/hls-fix" }
 mesio-engine = { path = "../crates/mesio" }
 platforms-parser = { path = "../crates/platforms" }
+tars-codec = { path = "../crates/tars-codec" }
 thiserror = "1.0"
 dotenvy = "0.15"
 rand = "0.9.2"
@@ -65,6 +68,7 @@ tower = { version = "0.5", features = ["full"] }
 tower-http = { version = "0.6", features = ["cors", "trace", "request-id"] }
 rayon = "1.10.0"
 jsonwebtoken = "9"
+rustc-hash = "2.0"
 
 [dev-dependencies]
 mockall = "0.12.1"

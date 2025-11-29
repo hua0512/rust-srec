@@ -3357,14 +3357,17 @@ dependencies = [
  "regex",
  "reqwest",
  "rstest",
+ "rustc-hash",
  "serde",
  "serde_json",
  "sqlx",
  "strum",
  "sysinfo",
+ "tars-codec",
  "tempfile",
  "thiserror 1.0.69",
  "tokio",
+ "tokio-rustls",
  "tokio-tungstenite",
  "tokio-util",
  "tower",
@@ -3372,6 +3375,7 @@ dependencies = [
  "tracing",
  "tracing-subscriber",
  "uuid",
+ "webpki-roots 0.26.11",
 ]
 
 [[package]]
