@@ -4,7 +4,7 @@ use crate::CacheManager;
 use crate::hls::config::HlsConfig;
 use crate::hls::decryption::{DecryptionService, KeyFetcher};
 use crate::hls::events::HlsStreamEvent;
-use crate::hls::fetcher::{SegmentDownloader, SegmentFetcher};
+use crate::hls::fetcher::{Http2Stats, SegmentDownloader, SegmentFetcher};
 use crate::hls::output::OutputManager;
 use crate::hls::playlist::{InitialPlaylist, PlaylistEngine, PlaylistProvider};
 use crate::hls::processor::{SegmentProcessor, SegmentTransformer};
@@ -18,11 +18,13 @@ use tracing::{Instrument, debug, error};
 
 use super::HlsDownloaderError;
 
-// Struct to hold all spawned task handles
+// Struct to hold all spawned task handles and shared resources
 pub struct AllTaskHandles {
     pub playlist_engine_handle: Option<JoinHandle<Result<(), HlsDownloaderError>>>,
     pub scheduler_handle: JoinHandle<()>,
     pub output_manager_handle: JoinHandle<()>,
+    /// HTTP/2 connection statistics for observability
+    pub http2_stats: Arc<Http2Stats>,
 }
 
 /// HLS Stream Coordinator: Sets up and spawns all HLS download pipeline components.
@@ -54,10 +56,13 @@ impl HlsStreamCoordinator {
             Arc::clone(&key_fetcher),
             cache_manager.clone(),
         ));
-        let segment_fetcher: Arc<dyn SegmentDownloader> = Arc::new(SegmentFetcher::new(
+        // Create shared HTTP/2 stats tracker
+        let http2_stats = Arc::new(Http2Stats::new());
+        let segment_fetcher: Arc<dyn SegmentDownloader> = Arc::new(SegmentFetcher::with_stats(
             http_client.clone(),
             Arc::clone(&config),
             cache_manager.clone(),
+            Arc::clone(&http2_stats),
         ));
         let segment_processor: Arc<dyn SegmentTransformer> = Arc::new(SegmentProcessor::new(
             Arc::clone(&config),
@@ -186,6 +191,7 @@ impl HlsStreamCoordinator {
             playlist_engine_handle,
             scheduler_handle,
             output_manager_handle,
+            http2_stats,
         };
 
         Ok((client_event_rx, handles))

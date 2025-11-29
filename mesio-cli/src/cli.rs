@@ -86,7 +86,7 @@ pub struct CliArgs {
     #[arg(
         short = 'b',
         long,
-        default_value = "32",
+        default_value = "64",
         help = "Channel size for internal processing channels"
     )]
     pub channel_size: usize,
@@ -274,4 +274,21 @@ pub struct CliArgs {
         default_value = "false"
     )]
     pub force_ipv6: bool,
+
+    /// HTTP version preference
+    #[arg(
+        long = "http-version",
+        help = "HTTP version preference: 'auto' (default, prefers HTTP/2), 'http2' (prefer HTTP/2), 'http1' (force HTTP/1.1 only)",
+        default_value = "auto",
+        value_parser = ["auto", "http2", "http1"]
+    )]
+    pub http_version: String,
+
+    /// TCP keep-alive interval for HTTP/2 connections (seconds)
+    #[arg(
+        long = "http2-keepalive",
+        help = "TCP keep-alive interval in seconds for maintaining HTTP/2 connections (default: 20)",
+        default_value = "20"
+    )]
+    pub http2_keepalive: u64,
 }

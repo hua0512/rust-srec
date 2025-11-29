@@ -6,6 +6,18 @@ use crate::{CacheConfig, proxy::ProxyConfig};
 
 pub const DEFAULT_USER_AGENT: &str = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/142.0.0.0 Safari/537.36";
 
+/// HTTP version preference for connections
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum HttpVersionPreference {
+    /// Let ALPN negotiate the best version (default)
+    #[default]
+    Auto,
+    /// Force HTTP/2 only (fails if server doesn't support)
+    Http2Only,
+    /// Force HTTP/1.1 only (disable HTTP/2)
+    Http1Only,
+}
+
 /// Configurable options for the downloader
 #[derive(Debug, Clone)]
 pub struct DownloaderConfig {
@@ -47,6 +59,16 @@ pub struct DownloaderConfig {
     pub force_ipv4: bool,
 
     pub force_ipv6: bool,
+
+    // --- HTTP/2 Configuration ---
+    /// HTTP version preference (Auto, Http2Only, Http1Only)
+    /// Note: With rustls-tls, HTTP/2 is automatically negotiated via ALPN
+    pub http_version: HttpVersionPreference,
+
+    /// TCP keep-alive interval for maintaining long-lived connections
+    /// This helps keep HTTP/2 connections alive for multiplexing benefits
+    /// Recommended: 15-30 seconds for media streaming
+    pub http2_keep_alive_interval: Option<Duration>,
 }
 
 impl Default for DownloaderConfig {
@@ -62,10 +84,13 @@ impl Default for DownloaderConfig {
             headers: DownloaderConfig::get_default_headers(),
             params: Vec::new(),
             proxy: None,
-            use_system_proxy: true, // Enable system proxy by default
-            danger_accept_invalid_certs: false, // Default to not accepting invalid certs
+            use_system_proxy: true,
+            danger_accept_invalid_certs: false,
             force_ipv4: false,
             force_ipv6: false,
+            // HTTP/2 defaults - optimized for media streaming
+            http_version: HttpVersionPreference::Auto,
+            http2_keep_alive_interval: Some(Duration::from_secs(20)),
         }
     }
 }
@@ -101,6 +126,9 @@ impl DownloaderConfig {
             danger_accept_invalid_certs: config.danger_accept_invalid_certs,
             force_ipv4: config.force_ipv4,
             force_ipv6: config.force_ipv6,
+            // HTTP/2 settings
+            http_version: config.http_version,
+            http2_keep_alive_interval: config.http2_keep_alive_interval,
         }
     }
 

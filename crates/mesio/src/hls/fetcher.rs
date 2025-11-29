@@ -8,11 +8,73 @@ use async_trait::async_trait;
 use bytes::Bytes;
 use reqwest::Client;
 use std::sync::Arc;
-use tracing::{Span, debug, error, instrument};
+use std::sync::atomic::{AtomicU64, Ordering};
+use tracing::{Span, debug, error, info, instrument, trace};
 use tracing_indicatif::span_ext::IndicatifSpanExt;
 use url::Url;
 
 use crate::hls::scheduler::ScheduledSegmentJob;
+
+/// Tracks HTTP/2 connection statistics for observability
+#[derive(Debug, Default)]
+pub struct Http2Stats {
+    /// Number of requests using HTTP/2
+    pub http2_requests: AtomicU64,
+    /// Number of requests using HTTP/1.x
+    pub http1_requests: AtomicU64,
+    /// Total bytes downloaded via HTTP/2
+    pub http2_bytes: AtomicU64,
+    /// Total bytes downloaded via HTTP/1.x
+    pub http1_bytes: AtomicU64,
+}
+
+impl Http2Stats {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    pub fn record_request(&self, version: reqwest::Version, bytes: u64) {
+        match version {
+            reqwest::Version::HTTP_2 => {
+                self.http2_requests.fetch_add(1, Ordering::Relaxed);
+                self.http2_bytes.fetch_add(bytes, Ordering::Relaxed);
+            }
+            _ => {
+                self.http1_requests.fetch_add(1, Ordering::Relaxed);
+                self.http1_bytes.fetch_add(bytes, Ordering::Relaxed);
+            }
+        }
+    }
+
+    pub fn http2_percentage(&self) -> f64 {
+        let h2 = self.http2_requests.load(Ordering::Relaxed);
+        let h1 = self.http1_requests.load(Ordering::Relaxed);
+        let total = h2 + h1;
+        if total == 0 {
+            0.0
+        } else {
+            (h2 as f64 / total as f64) * 100.0
+        }
+    }
+
+    pub fn log_summary(&self) {
+        let h2_reqs = self.http2_requests.load(Ordering::Relaxed);
+        let h1_reqs = self.http1_requests.load(Ordering::Relaxed);
+        let h2_bytes = self.http2_bytes.load(Ordering::Relaxed);
+        let h1_bytes = self.http1_bytes.load(Ordering::Relaxed);
+
+        if h2_reqs + h1_reqs > 0 {
+            info!(
+                http2_requests = h2_reqs,
+                http1_requests = h1_reqs,
+                http2_bytes = h2_bytes,
+                http1_bytes = h1_bytes,
+                http2_percentage = format!("{:.1}%", self.http2_percentage()),
+                "HTTP connection statistics"
+            );
+        }
+    }
+}
 
 #[async_trait]
 pub trait SegmentDownloader: Send + Sync {
@@ -26,6 +88,7 @@ pub struct SegmentFetcher {
     http_client: Client,
     config: Arc<HlsConfig>,
     cache_service: Option<Arc<CacheManager>>,
+    http2_stats: Arc<Http2Stats>,
 }
 
 impl SegmentFetcher {
@@ -38,7 +101,28 @@ impl SegmentFetcher {
             http_client,
             config,
             cache_service,
+            http2_stats: Arc::new(Http2Stats::new()),
         }
+    }
+
+    /// Create a new fetcher with a shared HTTP/2 stats tracker
+    pub fn with_stats(
+        http_client: Client,
+        config: Arc<HlsConfig>,
+        cache_service: Option<Arc<CacheManager>>,
+        http2_stats: Arc<Http2Stats>,
+    ) -> Self {
+        Self {
+            http_client,
+            config,
+            cache_service,
+            http2_stats,
+        }
+    }
+
+    /// Get the HTTP/2 statistics tracker
+    pub fn http2_stats(&self) -> &Http2Stats {
+        &self.http2_stats
     }
 
     /// Fetches a segment with retry logic.
@@ -75,6 +159,15 @@ impl SegmentFetcher {
             {
                 Ok(response) => {
                     if response.status().is_success() {
+                        let http_version = response.version();
+                        
+                        // Log HTTP version for observability
+                        trace!(
+                            url = %segment_url,
+                            http_version = ?http_version,
+                            "Segment download using HTTP version"
+                        );
+
                         let content_length = response.content_length();
                         if let Some(len) = content_length {
                             segment_span.pb_set_length(len);
@@ -89,6 +182,9 @@ impl SegmentFetcher {
                             segment_span.pb_set_position(bytes.len() as u64);
                             bytes
                         };
+
+                        // Record HTTP/2 statistics
+                        self.http2_stats.record_request(http_version, bytes.len() as u64);
 
                         return Ok(bytes);
                     } else if response.status().is_client_error() {
