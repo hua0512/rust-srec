@@ -93,14 +93,24 @@ where
     drop(_writer_guard);
 
     // We should also wait for processing tasks to ensure clean shutdown
-    for task in processing_tasks {
-        task.await
-            .map_err(|e| AppError::Pipeline(PipelineError::Processing(e.to_string())))??;
-    }
     let writer_result = writer_task
         .await
         .map_err(|e| AppError::Writer(e.to_string()))?
-        .map_err(|e| AppError::Writer(e.to_string()))?;
+        .map_err(|e| AppError::Writer(e.to_string()));
 
-    Ok(writer_result)
+    // We should also wait for processing tasks to ensure clean shutdown
+    // If writer failed, we still want to wait for tasks but maybe we prioritize writer error
+    for task in processing_tasks {
+        let task_result = task
+            .await
+            .map_err(|e| AppError::Pipeline(PipelineError::Processing(e.to_string())))?;
+
+        // If writer succeeded, we care about task errors.
+        // If writer failed, we might ignore task errors (which are likely "channel closed")
+        if writer_result.is_ok() {
+            task_result?;
+        }
+    }
+
+    writer_result
 }
