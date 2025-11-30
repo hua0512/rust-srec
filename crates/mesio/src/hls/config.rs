@@ -2,6 +2,52 @@ use std::time::Duration;
 
 use crate::DownloaderConfig;
 
+// --- Gap Skip Strategy ---
+/// Strategy for handling gaps in segment sequences
+#[derive(Debug, Clone)]
+pub enum GapSkipStrategy {
+    /// Wait indefinitely for missing segments (VOD default)
+    WaitIndefinitely,
+    /// Skip after receiving N subsequent segments
+    SkipAfterCount(u64),
+    /// Skip after waiting for a duration
+    SkipAfterDuration(Duration),
+    /// Skip when EITHER count OR duration threshold is exceeded
+    SkipAfterBoth {
+        count: u64,
+        duration: Duration,
+    },
+}
+
+impl Default for GapSkipStrategy {
+    fn default() -> Self {
+        // Default: skip after 3 segments OR 5 seconds for live
+        GapSkipStrategy::SkipAfterBoth {
+            count: 3,
+            duration: Duration::from_secs(5),
+        }
+    }
+}
+
+// --- Buffer Limits ---
+/// Configuration for buffer size limits
+#[derive(Debug, Clone)]
+pub struct BufferLimits {
+    /// Maximum number of segments in buffer (0 = unlimited)
+    pub max_segments: usize,
+    /// Maximum total bytes in buffer (0 = unlimited)
+    pub max_bytes: usize,
+}
+
+impl Default for BufferLimits {
+    fn default() -> Self {
+        Self {
+            max_segments: 50,                  // Reasonable default for most streams
+            max_bytes: 100 * 1024 * 1024,      // 100MB
+        }
+    }
+}
+
 // --- Top-Level Configuration ---
 #[derive(Debug, Clone, Default)]
 pub struct HlsConfig {
@@ -163,18 +209,26 @@ impl Default for HlsCacheConfig {
 
 #[derive(Debug, Clone)]
 pub struct HlsOutputConfig {
-    pub live_reorder_buffer_duration: Duration, // Max duration of segments to hold in reorder buffer
-    pub live_reorder_buffer_max_segments: usize, // Max number of segments in reorder buffer
-    /// Enables skipping of missing segments in a live stream after a threshold.
-    pub live_gap_skip_enabled: bool,
-    /// The number of newer media segments that must be received after a gap
-    /// is detected before the OutputManager attempts to skip the missing segment(s).
-    pub live_gap_skip_threshold_segments: u64,
+    /// Max duration of segments to hold in reorder buffer
+    pub live_reorder_buffer_duration: Duration,
+    /// Max number of segments in reorder buffer
+    pub live_reorder_buffer_max_segments: usize,
 
     /// Duration to wait for a segment to be received before considering it stalled.
     /// If the overall stall duration exceeds this value, the downloader will throw an error.
     /// If None, this timeout is disabled.
     pub live_max_overall_stall_duration: Option<Duration>,
+
+    /// Gap skip strategy for live streams
+    pub live_gap_strategy: GapSkipStrategy,
+    /// Gap skip strategy for VOD streams (default: WaitIndefinitely)
+    pub vod_gap_strategy: GapSkipStrategy,
+    /// Per-segment timeout for VOD (None = wait indefinitely)
+    pub vod_segment_timeout: Option<Duration>,
+    /// Buffer limits for memory management
+    pub buffer_limits: BufferLimits,
+    /// Enable metrics collection
+    pub metrics_enabled: bool,
 }
 
 impl Default for HlsOutputConfig {
@@ -182,9 +236,12 @@ impl Default for HlsOutputConfig {
         Self {
             live_reorder_buffer_duration: Duration::from_secs(30),
             live_reorder_buffer_max_segments: 10,
-            live_gap_skip_enabled: true,
-            live_gap_skip_threshold_segments: 3, // Default to 3 segments
-            live_max_overall_stall_duration: Some(Duration::from_secs(60)), // Default to 60 seconds
+            live_max_overall_stall_duration: Some(Duration::from_secs(60)),
+            live_gap_strategy: GapSkipStrategy::default(),
+            vod_gap_strategy: GapSkipStrategy::WaitIndefinitely,
+            vod_segment_timeout: None,
+            buffer_limits: BufferLimits::default(),
+            metrics_enabled: true,
         }
     }
 }

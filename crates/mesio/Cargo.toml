@@ -46,3 +46,4 @@ hls = { path = "../hls" }
 
 [dev-dependencies]
 tokio = { version = "1.48.0", features = ["rt-multi-thread", "macros", "time"] }
+proptest = "1.5"

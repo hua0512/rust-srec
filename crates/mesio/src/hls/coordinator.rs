@@ -281,6 +281,18 @@ mod tests {
                     debug!("Received StreamEnded event");
                     break;
                 }
+                Ok(HlsStreamEvent::SegmentTimeout { sequence_number, waited_duration }) => {
+                    debug!(
+                        "Received SegmentTimeout event: seq={}, waited={:?}",
+                        sequence_number, waited_duration
+                    );
+                }
+                Ok(HlsStreamEvent::GapSkipped { from_sequence, to_sequence, reason }) => {
+                    debug!(
+                        "Received GapSkipped event: from={}, to={}, reason={:?}",
+                        from_sequence, to_sequence, reason
+                    );
+                }
                 Err(e) => {
                     debug!("Received error event: {:?}", e);
                 }

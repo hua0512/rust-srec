@@ -15,8 +15,8 @@ pub(crate) mod segment_utils;
 pub mod twitch_processor;
 
 // Re-exports for easier access
-pub use config::HlsConfig;
+pub use config::{BufferLimits, GapSkipStrategy, HlsConfig};
 pub use coordinator::HlsStreamCoordinator;
 pub use error::HlsDownloaderError;
-pub use events::HlsStreamEvent;
+pub use events::{GapSkipReason, HlsStreamEvent};
 pub use hls_downloader::HlsDownloader;
