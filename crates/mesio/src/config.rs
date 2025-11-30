@@ -69,6 +69,17 @@ pub struct DownloaderConfig {
     /// This helps keep HTTP/2 connections alive for multiplexing benefits
     /// Recommended: 15-30 seconds for media streaming
     pub http2_keep_alive_interval: Option<Duration>,
+
+    // --- Connection Pool Configuration ---
+    /// Maximum idle connections to keep per host
+    /// Higher values improve HTTP/2 multiplexing for HLS segment downloads
+    /// Default: 10
+    pub pool_max_idle_per_host: usize,
+
+    /// Duration to keep idle connections alive before closing
+    /// Longer timeouts improve connection reuse for streaming
+    /// Default: 30 seconds
+    pub pool_idle_timeout: Duration,
 }
 
 impl Default for DownloaderConfig {
@@ -91,6 +102,9 @@ impl Default for DownloaderConfig {
             // HTTP/2 defaults - optimized for media streaming
             http_version: HttpVersionPreference::Auto,
             http2_keep_alive_interval: Some(Duration::from_secs(20)),
+            // Connection pool defaults - optimized for HLS segment downloads
+            pool_max_idle_per_host: 10,
+            pool_idle_timeout: Duration::from_secs(30),
         }
     }
 }
@@ -129,6 +143,9 @@ impl DownloaderConfig {
             // HTTP/2 settings
             http_version: config.http_version,
             http2_keep_alive_interval: config.http2_keep_alive_interval,
+            // Connection pool settings
+            pool_max_idle_per_host: config.pool_max_idle_per_host,
+            pool_idle_timeout: config.pool_idle_timeout,
         }
     }
 

@@ -120,16 +120,13 @@ impl AdaptiveRefreshTracker {
         if self.consecutive_empty >= 3 {
             // Exponential backoff, capped at max_interval
             let backoff_factor = 1.5_f64.powi(self.consecutive_empty.min(5) as i32);
-            let backed_off = Duration::from_secs_f64(default_interval.as_secs_f64() * backoff_factor);
+            let backed_off =
+                Duration::from_secs_f64(default_interval.as_secs_f64() * backoff_factor);
             return backed_off.min(self.max_interval);
         }
 
         // If we're consistently getting segments, we can be more aggressive
-        let recent_success_rate = self
-            .recent_results
-            .iter()
-            .filter(|&&got| got)
-            .count() as f64
+        let recent_success_rate = self.recent_results.iter().filter(|&&got| got).count() as f64
             / self.recent_results.len().max(1) as f64;
 
         if recent_success_rate > 0.8 && self.recent_results.len() >= 5 {
@@ -139,7 +136,9 @@ impl AdaptiveRefreshTracker {
         }
 
         // Default behavior
-        default_interval.max(self.min_interval).min(self.max_interval)
+        default_interval
+            .max(self.min_interval)
+            .min(self.max_interval)
     }
 }
 
@@ -636,6 +635,7 @@ impl PlaylistEngine {
                         discontinuity: segment.discontinuity,
                         media_segment: segment.clone(),
                         is_init_segment: true,
+                        is_prefetch: false,
                     };
                     jobs_to_send.push(init_job);
                     *last_map_uri = Some(absolute_map_uri);
@@ -673,6 +673,7 @@ impl PlaylistEngine {
                     discontinuity: segment.discontinuity,
                     media_segment: segment.clone(),
                     is_init_segment: false,
+                    is_prefetch: false,
                 };
                 jobs_to_send.push(job);
             } else {

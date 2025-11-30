@@ -24,8 +24,8 @@ pub fn create_client(config: &DownloaderConfig) -> Result<Client, DownloadError>
     use crate::config::HttpVersionPreference;
 
     let mut client_builder = Client::builder()
-        .pool_max_idle_per_host(10) // Keep connections warm for HLS segment downloads
-        .pool_idle_timeout(std::time::Duration::from_secs(30)) // Reuse connections for 30s
+        .pool_max_idle_per_host(config.pool_max_idle_per_host) // Configurable: Keep connections warm for HLS segment downloads
+        .pool_idle_timeout(config.pool_idle_timeout) // Configurable: Reuse connections for specified duration
         .user_agent(&config.user_agent)
         .default_headers(config.headers.clone())
         .use_rustls_tls()
@@ -34,6 +34,12 @@ pub fn create_client(config: &DownloaderConfig) -> Result<Client, DownloadError>
         } else {
             reqwest::redirect::Policy::none()
         });
+
+    debug!(
+        pool_max_idle_per_host = config.pool_max_idle_per_host,
+        pool_idle_timeout_secs = config.pool_idle_timeout.as_secs(),
+        "HTTP connection pool configured"
+    );
 
     // --- HTTP Version Configuration ---
     // Note: reqwest with rustls-tls automatically negotiates HTTP/2 via ALPN
@@ -70,7 +76,10 @@ pub fn create_client(config: &DownloaderConfig) -> Result<Client, DownloadError>
     // This helps maintain HTTP/2 connections for multiplexing
     if let Some(interval) = config.http2_keep_alive_interval {
         client_builder = client_builder.tcp_keepalive(interval);
-        debug!(?interval, "TCP keep-alive configured for HTTP/2 connection reuse");
+        debug!(
+            ?interval,
+            "TCP keep-alive configured for HTTP/2 connection reuse"
+        );
     }
 
     // Force IP Version

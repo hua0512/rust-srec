@@ -5,8 +5,8 @@ use crate::hls::config::HlsConfig;
 use crate::hls::events::HlsStreamEvent;
 use crate::hls::scheduler::ProcessedSegmentOutput;
 use std::collections::BTreeMap;
-use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Instant;
 use tokio::sync::mpsc;
 use tokio::time::sleep;
@@ -184,7 +184,8 @@ impl ReorderBufferMetrics {
     /// Records a gap skip event with the number of segments skipped.
     pub fn record_gap_skip(&self, segments_skipped: u64) {
         self.gap_skips.fetch_add(1, Ordering::Relaxed);
-        self.total_segments_skipped.fetch_add(segments_skipped, Ordering::Relaxed);
+        self.total_segments_skipped
+            .fetch_add(segments_skipped, Ordering::Relaxed);
     }
 
     /// Updates the current buffer depth and tracks max depth.
@@ -212,7 +213,8 @@ impl ReorderBufferMetrics {
 
     /// Records reorder delay in milliseconds.
     pub fn record_reorder_delay(&self, delay_ms: u64) {
-        self.total_reorder_delay_ms.fetch_add(delay_ms, Ordering::Relaxed);
+        self.total_reorder_delay_ms
+            .fetch_add(delay_ms, Ordering::Relaxed);
     }
 
     /// Returns the current buffer depth.
@@ -239,6 +241,7 @@ impl ReorderBufferMetrics {
 use super::HlsDownloaderError;
 use crate::hls::config::GapSkipStrategy;
 use crate::hls::events::GapSkipReason;
+use crate::hls::metrics::PerformanceMetrics;
 
 /// Statistics about the current state of the reorder buffer.
 #[derive(Debug, Clone)]
@@ -257,7 +260,7 @@ pub struct OutputManager {
     config: Arc<HlsConfig>,
     input_rx: mpsc::Receiver<Result<ProcessedSegmentOutput, HlsDownloaderError>>,
     event_tx: mpsc::Sender<Result<HlsStreamEvent, HlsDownloaderError>>,
-    /// Reorder buffer storing segments with metadata (Requirements 1.1, 3.1)
+    /// Reorder buffer storing segments with metadata
     reorder_buffer: BTreeMap<u64, BufferedSegment>,
     is_live_stream: bool,
     expected_next_media_sequence: u64,
@@ -265,29 +268,33 @@ pub struct OutputManager {
     token: CancellationToken,
 
     /// Gap tracking state - replaces gap_detected_waiting_for_sequence and segments_received_since_gap_detected
-    /// (Requirements 1.1)
+    ///
     gap_state: Option<GapState>,
 
     last_input_received_time: Option<Instant>,
 
-    /// Metrics for observability (Requirements 5.1)
+    /// Metrics for observability
     metrics: Arc<ReorderBufferMetrics>,
 
-    /// Current total bytes in the reorder buffer (Requirements 3.1)
+    /// Current total bytes in the reorder buffer
     current_buffer_bytes: usize,
 
-    /// Runtime-configurable gap strategy for live streams (Requirements 6.4)
+    /// Runtime-configurable gap strategy for live streams
     /// This overrides config.output_config.live_gap_strategy when set
     live_gap_strategy_override: Option<GapSkipStrategy>,
 
-    /// Runtime-configurable gap strategy for VOD streams (Requirements 6.4)
+    /// Runtime-configurable gap strategy for VOD streams
     /// This overrides config.output_config.vod_gap_strategy when set
     vod_gap_strategy_override: Option<GapSkipStrategy>,
+
+    /// Performance metrics for the HLS pipeline
+    /// Used to log performance summary on stream end
+    performance_metrics: Option<Arc<PerformanceMetrics>>,
 }
 
 impl OutputManager {
     /// Create new OutputManager with improved configuration.
-    /// (Requirements 1.1, 5.1)
+    ///
     pub fn new(
         config: Arc<HlsConfig>,
         input_rx: mpsc::Receiver<Result<ProcessedSegmentOutput, HlsDownloaderError>>,
@@ -315,11 +322,46 @@ impl OutputManager {
             current_buffer_bytes: 0,
             live_gap_strategy_override: None,
             vod_gap_strategy_override: None,
+            performance_metrics: None,
+        }
+    }
+
+    /// Create new OutputManager with performance metrics tracking.
+    ///
+    pub fn with_performance_metrics(
+        config: Arc<HlsConfig>,
+        input_rx: mpsc::Receiver<Result<ProcessedSegmentOutput, HlsDownloaderError>>,
+        event_tx: mpsc::Sender<Result<HlsStreamEvent, HlsDownloaderError>>,
+        is_live_stream: bool,
+        initial_media_sequence: u64,
+        token: CancellationToken,
+        performance_metrics: Arc<PerformanceMetrics>,
+    ) -> Self {
+        Self {
+            config,
+            input_rx,
+            event_tx,
+            reorder_buffer: BTreeMap::new(),
+            is_live_stream,
+            expected_next_media_sequence: initial_media_sequence,
+            playlist_ended: false,
+            token,
+            gap_state: None,
+            last_input_received_time: if is_live_stream {
+                Some(Instant::now())
+            } else {
+                None
+            },
+            metrics: Arc::new(ReorderBufferMetrics::new()),
+            current_buffer_bytes: 0,
+            live_gap_strategy_override: None,
+            vod_gap_strategy_override: None,
+            performance_metrics: Some(performance_metrics),
         }
     }
 
     /// Get current metrics snapshot.
-    /// (Requirements 5.4)
+    ///
     pub fn metrics(&self) -> &ReorderBufferMetrics {
         // Note: We return a reference to the inner ReorderBufferMetrics
         // The Arc is used internally for potential future sharing
@@ -327,7 +369,7 @@ impl OutputManager {
     }
 
     /// Get current buffer statistics.
-    /// (Requirements 5.4)
+    ///
     pub fn buffer_stats(&self) -> BufferStats {
         BufferStats {
             segment_count: self.reorder_buffer.len(),
@@ -339,24 +381,24 @@ impl OutputManager {
 
     /// Check if buffer is at capacity.
     /// Returns true if either segment count or byte size limit is reached.
-    /// (Requirements 3.1, 3.3)
+    ///
     pub fn is_buffer_full(&self) -> bool {
         let limits = &self.config.output_config.buffer_limits;
 
         // Check segment count limit (0 = unlimited)
-        let segment_limit_reached = limits.max_segments > 0
-            && self.reorder_buffer.len() >= limits.max_segments;
+        let segment_limit_reached =
+            limits.max_segments > 0 && self.reorder_buffer.len() >= limits.max_segments;
 
         // Check byte size limit (0 = unlimited)
-        let byte_limit_reached = limits.max_bytes > 0
-            && self.current_buffer_bytes >= limits.max_bytes;
+        let byte_limit_reached =
+            limits.max_bytes > 0 && self.current_buffer_bytes >= limits.max_bytes;
 
         segment_limit_reached || byte_limit_reached
     }
 
     /// Update gap strategy at runtime.
     /// The new strategy applies to subsequent gaps only (doesn't affect current gap state).
-    /// (Requirements 6.4)
+    ///
     ///
     /// This method stores the strategy in a local override field, which takes precedence
     /// over the config's gap strategy. The new strategy will be used for evaluating
@@ -364,23 +406,17 @@ impl OutputManager {
     /// with the new strategy on the next check.
     pub fn set_gap_strategy(&mut self, strategy: GapSkipStrategy) {
         if self.is_live_stream {
-            debug!(
-                "Updating live gap strategy at runtime: {:?}",
-                strategy
-            );
+            debug!("Updating live gap strategy at runtime: {:?}", strategy);
             self.live_gap_strategy_override = Some(strategy);
         } else {
-            debug!(
-                "Updating VOD gap strategy at runtime: {:?}",
-                strategy
-            );
+            debug!("Updating VOD gap strategy at runtime: {:?}", strategy);
             self.vod_gap_strategy_override = Some(strategy);
         }
     }
 
     /// Get the current effective gap strategy for this stream.
     /// Returns the runtime override if set, otherwise falls back to config.
-    /// (Requirements 6.4)
+    ///
     pub fn get_gap_strategy(&self) -> &GapSkipStrategy {
         if self.is_live_stream {
             self.live_gap_strategy_override
@@ -395,20 +431,20 @@ impl OutputManager {
 
     /// Evaluates whether the current gap should be skipped based on the configured strategy.
     /// Returns Some(GapSkipReason) if the gap should be skipped, None otherwise.
-    /// (Requirements 1.2, 6.2, 6.4)
+    ///
     ///
     /// Note: This method only evaluates gap-specific skip conditions. The overall stall timeout
     /// (live_max_overall_stall_duration) is handled separately in the run() loop and will still
     /// trigger even when this returns None (e.g., for WaitIndefinitely strategy).
-    /// (Requirements 6.3)
+    ///
     ///
     /// The strategy used is determined by get_gap_strategy(), which returns the runtime
-    /// override if set, otherwise falls back to the config value. (Requirements 6.4)
+    /// override if set, otherwise falls back to the config value.
     fn should_skip_gap(&self) -> Option<GapSkipReason> {
         let gap_state = self.gap_state.as_ref()?;
 
         // Get the appropriate strategy based on stream type, using runtime override if set
-        // (Requirements 6.4)
+        //
         let strategy = self.get_gap_strategy();
 
         match strategy {
@@ -416,7 +452,7 @@ impl OutputManager {
                 // Never skip based on gap strategy alone.
                 // However, the overall stall timeout (live_max_overall_stall_duration) in the
                 // run() loop will still trigger if no input is received for the configured
-                // duration, regardless of this strategy. (Requirements 6.3)
+                // duration, regardless of this strategy.
                 None
             }
             GapSkipStrategy::SkipAfterCount(threshold) => {
@@ -488,7 +524,7 @@ impl OutputManager {
                 }
 
                 // Branch 2: Max Overall Stall Timeout (Live streams only)
-                // This timeout is independent of the gap skip strategy (Requirements 6.3).
+                // This timeout is independent of the gap skip strategy.
                 // Even when live_gap_strategy is WaitIndefinitely, this overall stall timeout
                 // will still trigger if no input is received for the configured duration.
                 // This ensures the stream doesn't hang indefinitely waiting for segments.
@@ -510,7 +546,7 @@ impl OutputManager {
                 }
 
                 // Branch 3: Input from SegmentScheduler
-                // --- Buffer Capacity Check (Requirements 3.1, 3.3, 3.4) ---
+                // --- Buffer Capacity Check ---
                 // Apply backpressure by not receiving from input channel when buffer is full
                 processed_result = self.input_rx.recv(), if !self.is_buffer_full() => {
 
@@ -526,7 +562,7 @@ impl OutputManager {
                             // Record segment received in metrics
                             self.metrics.record_segment_received();
 
-                            // --- Stale Segment Rejection (Requirements 4.2) ---
+                            // --- Stale Segment Rejection ---
                             // Check if segment is stale (MSN < expected_next_media_sequence)
                             // Reject immediately without buffering
                             if current_segment_sequence < self.expected_next_media_sequence {
@@ -545,16 +581,15 @@ impl OutputManager {
 
                             // For both live and VOD, add to reorder buffer.
                             // If it's a live stream and we are waiting for a gap, update counter.
-                            if self.is_live_stream {
-                                if let Some(ref mut gap_state) = self.gap_state {
-                                    if current_segment_sequence > gap_state.missing_sequence {
-                                        gap_state.increment_segments_since_gap();
-                                        debug!(
-                                            "Live stream: Received segment {} while waiting for {}. Segments since gap: {}.",
-                                            current_segment_sequence, gap_state.missing_sequence, gap_state.segments_since_gap
-                                        );
-                                    }
-                                }
+                            if self.is_live_stream
+                                && let Some(ref mut gap_state) = self.gap_state
+                                && current_segment_sequence > gap_state.missing_sequence
+                            {
+                                gap_state.increment_segments_since_gap();
+                                debug!(
+                                    "Live stream: Received segment {} while waiting for {}. Segments since gap: {}.",
+                                    current_segment_sequence, gap_state.missing_sequence, gap_state.segments_since_gap
+                                );
                             }
 
                             // Create BufferedSegment with metadata
@@ -570,7 +605,7 @@ impl OutputManager {
                             self.metrics.update_buffer_depth(self.reorder_buffer.len() as u64);
                             self.metrics.update_buffer_bytes(self.current_buffer_bytes as u64);
 
-                            // Log warning if buffer is now at capacity (Requirements 3.4)
+                            // Log warning if buffer is now at capacity
                             if self.is_buffer_full() {
                                 let limits = &self.config.output_config.buffer_limits;
                                 warn!(
@@ -624,17 +659,23 @@ impl OutputManager {
             debug!("Reorder buffer already empty post-loop.");
         }
 
-        // --- Stream End Cleanup (Requirements 5.3, 7.1) ---
-        
-        // Reset gap state on stream end (Requirements 7.1)
+        // --- Stream End Cleanup ---
+
+        // Reset gap state on stream end
         if self.gap_state.is_some() {
             debug!("Resetting gap state on stream end.");
             self.gap_state = None;
         }
 
-        // Log metrics summary before sending StreamEnded event (Requirements 5.3)
+        // Log metrics summary before sending StreamEnded event
         debug!("Logging reorder buffer metrics summary on stream end.");
         self.metrics.log_summary();
+
+        // Log performance metrics summary on stream end
+        if let Some(ref performance_metrics) = self.performance_metrics {
+            debug!("Logging HLS performance metrics summary on stream end.");
+            performance_metrics.log_summary();
+        }
 
         debug!("Sending StreamEnded event.");
         if self
@@ -662,7 +703,9 @@ impl OutputManager {
                     self.reorder_buffer.remove_entry(&segment_sequence)
                 {
                     // Update buffer byte tracking
-                    self.current_buffer_bytes = self.current_buffer_bytes.saturating_sub(buffered_segment.size_bytes);
+                    self.current_buffer_bytes = self
+                        .current_buffer_bytes
+                        .saturating_sub(buffered_segment.size_bytes);
 
                     // Record reorder delay (time spent in buffer)
                     let delay_ms = buffered_segment.time_in_buffer().as_millis() as u64;
@@ -673,16 +716,17 @@ impl OutputManager {
 
                     if segment_output.discontinuity {
                         debug!("sending discontinuity tag encountered");
-                        
-                        // Pre-discontinuity flush (Requirements 7.2)
+
+                        // Pre-discontinuity flush
                         // Ensure all buffered segments with lower MSN are emitted before the discontinuity event
                         // This handles edge cases where gap skipping might have left segments in the buffer
-                        let segments_to_flush: Vec<u64> = self.reorder_buffer
+                        let segments_to_flush: Vec<u64> = self
+                            .reorder_buffer
                             .keys()
                             .filter(|&&msn| msn < segment_sequence)
                             .cloned()
                             .collect();
-                        
+
                         if !segments_to_flush.is_empty() {
                             debug!(
                                 "Pre-discontinuity flush: emitting {} segments with MSN < {} before discontinuity event",
@@ -692,14 +736,17 @@ impl OutputManager {
                             for msn in segments_to_flush {
                                 if let Some(buffered_seg) = self.reorder_buffer.remove(&msn) {
                                     // Update buffer byte tracking
-                                    self.current_buffer_bytes = self.current_buffer_bytes.saturating_sub(buffered_seg.size_bytes);
-                                    
+                                    self.current_buffer_bytes = self
+                                        .current_buffer_bytes
+                                        .saturating_sub(buffered_seg.size_bytes);
+
                                     // Record reorder delay
                                     let delay = buffered_seg.time_in_buffer().as_millis() as u64;
                                     self.metrics.record_reorder_delay(delay);
-                                    
+
                                     // Emit the segment data
-                                    let event = HlsStreamEvent::Data(Box::new(buffered_seg.output.data));
+                                    let event =
+                                        HlsStreamEvent::Data(Box::new(buffered_seg.output.data));
                                     if self.event_tx.send(Ok(event)).await.is_err() {
                                         return Err(());
                                     }
@@ -707,16 +754,21 @@ impl OutputManager {
                                 }
                             }
                             // Update metrics for buffer depth after flush
-                            self.metrics.update_buffer_depth(self.reorder_buffer.len() as u64);
-                            self.metrics.update_buffer_bytes(self.current_buffer_bytes as u64);
+                            self.metrics
+                                .update_buffer_depth(self.reorder_buffer.len() as u64);
+                            self.metrics
+                                .update_buffer_bytes(self.current_buffer_bytes as u64);
                         }
-                        
-                        // Reset gap state on discontinuity (Requirements 7.1)
+
+                        // Reset gap state on discontinuity
                         // This ensures gap tracking starts fresh for the new sequence
                         if self.gap_state.is_some() {
                             debug!(
                                 "Resetting gap state due to discontinuity. Previous gap was waiting for sequence {}",
-                                self.gap_state.as_ref().map(|g| g.missing_sequence).unwrap_or(0)
+                                self.gap_state
+                                    .as_ref()
+                                    .map(|g| g.missing_sequence)
+                                    .unwrap_or(0)
                             );
                             self.gap_state = None;
                         }
@@ -743,8 +795,10 @@ impl OutputManager {
                     self.gap_state = None;
 
                     // Update metrics for buffer depth
-                    self.metrics.update_buffer_depth(self.reorder_buffer.len() as u64);
-                    self.metrics.update_buffer_bytes(self.current_buffer_bytes as u64);
+                    self.metrics
+                        .update_buffer_depth(self.reorder_buffer.len() as u64);
+                    self.metrics
+                        .update_buffer_bytes(self.current_buffer_bytes as u64);
                 } else {
                     // Should not happen if first_entry returned Some
                     break;
@@ -757,19 +811,25 @@ impl OutputManager {
                 );
                 if let Some(buffered_segment) = self.reorder_buffer.remove(&segment_sequence) {
                     // Update buffer byte tracking
-                    self.current_buffer_bytes = self.current_buffer_bytes.saturating_sub(buffered_segment.size_bytes);
+                    self.current_buffer_bytes = self
+                        .current_buffer_bytes
+                        .saturating_sub(buffered_segment.size_bytes);
                     // Record stale rejection in metrics
                     self.metrics.record_segment_rejected_stale();
                     // Update metrics for buffer depth
-                    self.metrics.update_buffer_depth(self.reorder_buffer.len() as u64);
-                    self.metrics.update_buffer_bytes(self.current_buffer_bytes as u64);
+                    self.metrics
+                        .update_buffer_depth(self.reorder_buffer.len() as u64);
+                    self.metrics
+                        .update_buffer_bytes(self.current_buffer_bytes as u64);
                 }
             } else {
                 // Gap detected (segment_sequence > self.expected_next_media_sequence)
                 // If a new gap is identified or the gap we are waiting for has changed:
                 let is_new_gap = match &self.gap_state {
                     None => true,
-                    Some(gap_state) => gap_state.missing_sequence != self.expected_next_media_sequence,
+                    Some(gap_state) => {
+                        gap_state.missing_sequence != self.expected_next_media_sequence
+                    }
                 };
 
                 if is_new_gap {
@@ -795,52 +855,51 @@ impl OutputManager {
                     debug!(
                         "After re-counting buffered segments, segments_since_gap for expected {}: {}.",
                         self.expected_next_media_sequence,
-                        self.gap_state.as_ref().map(|g| g.segments_since_gap).unwrap_or(0)
+                        self.gap_state
+                            .as_ref()
+                            .map(|g| g.segments_since_gap)
+                            .unwrap_or(0)
                     );
                 }
 
-                // --- VOD Segment Timeout Check (Requirements 2.1, 2.4) ---
+                // --- VOD Segment Timeout Check ---
                 // For VOD streams with vod_segment_timeout configured, check if the gap has exceeded the timeout
-                if !self.is_live_stream {
-                    if let Some(vod_timeout) = self.config.output_config.vod_segment_timeout {
-                        if let Some(ref gap_state) = self.gap_state {
-                            let elapsed = gap_state.elapsed();
-                            if elapsed >= vod_timeout {
-                                // VOD segment timeout exceeded - emit SegmentTimeout event
-                                warn!(
-                                    "VOD segment {} timed out after {:?} (timeout: {:?}). Skipping to next available segment {}.",
-                                    gap_state.missing_sequence,
-                                    elapsed,
-                                    vod_timeout,
-                                    segment_sequence
-                                );
+                if !self.is_live_stream
+                    && let Some(vod_timeout) = self.config.output_config.vod_segment_timeout
+                    && let Some(ref gap_state) = self.gap_state
+                {
+                    let elapsed = gap_state.elapsed();
+                    if elapsed >= vod_timeout {
+                        // VOD segment timeout exceeded - emit SegmentTimeout event
+                        warn!(
+                            "VOD segment {} timed out after {:?} (timeout: {:?}). Skipping to next available segment {}.",
+                            gap_state.missing_sequence, elapsed, vod_timeout, segment_sequence
+                        );
 
-                                // Emit SegmentTimeout event (Requirements 2.4)
-                                let timeout_event = HlsStreamEvent::SegmentTimeout {
-                                    sequence_number: gap_state.missing_sequence,
-                                    waited_duration: elapsed,
-                                };
-                                if self.event_tx.send(Ok(timeout_event)).await.is_err() {
-                                    return Err(());
-                                }
-
-                                // Record gap skip in metrics
-                                let skipped_count = segment_sequence - self.expected_next_media_sequence;
-                                self.metrics.record_gap_skip(skipped_count);
-
-                                // Advance to next available segment (Requirements 2.2)
-                                self.expected_next_media_sequence = segment_sequence;
-
-                                // Reset gap state
-                                self.gap_state = None;
-                                continue; // Attempt to emit the new expected_next_media_sequence
-                            }
+                        // Emit SegmentTimeout event
+                        let timeout_event = HlsStreamEvent::SegmentTimeout {
+                            sequence_number: gap_state.missing_sequence,
+                            waited_duration: elapsed,
+                        };
+                        if self.event_tx.send(Ok(timeout_event)).await.is_err() {
+                            return Err(());
                         }
+
+                        // Record gap skip in metrics
+                        let skipped_count = segment_sequence - self.expected_next_media_sequence;
+                        self.metrics.record_gap_skip(skipped_count);
+
+                        // Advance to next available segment
+                        self.expected_next_media_sequence = segment_sequence;
+
+                        // Reset gap state
+                        self.gap_state = None;
+                        continue; // Attempt to emit the new expected_next_media_sequence
                     }
                 }
 
                 // --- Gap Skipping Logic using GapSkipStrategy ---
-                // Evaluate whether to skip based on the configured strategy (Requirements 1.2, 6.2)
+                // Evaluate whether to skip based on the configured strategy
                 if let Some(skip_reason) = self.should_skip_gap() {
                     let gap_state = self.gap_state.as_ref().unwrap(); // Safe: should_skip_gap returns Some only if gap_state exists
                     let elapsed = gap_state.elapsed();
@@ -904,13 +963,13 @@ impl OutputManager {
 
     /// Prunes the reorder buffer based on configuration (duration/max_segments).
     /// Uses `BTreeMap::split_off` for O(log n) bulk removal of stale segments.
-    /// (Requirements 4.1, 4.4, 5.1)
+    ///
     fn prune_reorder_buffer(&mut self) {
         if !self.is_live_stream {
             return;
         }
 
-        // --- Pruning by segment count using split_off (Requirements 4.1) ---
+        // --- Pruning by segment count using split_off ---
         let max_segments = self.config.output_config.live_reorder_buffer_max_segments;
         if self.reorder_buffer.len() > max_segments {
             // Calculate how many segments to remove
@@ -938,11 +997,8 @@ impl OutputManager {
                     let kept = self.reorder_buffer.split_off(&threshold);
 
                     // Calculate bytes removed from the segments being pruned
-                    let bytes_removed: usize = self
-                        .reorder_buffer
-                        .values()
-                        .map(|seg| seg.size_bytes)
-                        .sum();
+                    let bytes_removed: usize =
+                        self.reorder_buffer.values().map(|seg| seg.size_bytes).sum();
 
                     debug!(
                         "Bulk pruning {} segments by count (max_segments: {}), removed {} bytes",
@@ -952,7 +1008,8 @@ impl OutputManager {
                     );
 
                     // Update buffer byte tracking
-                    self.current_buffer_bytes = self.current_buffer_bytes.saturating_sub(bytes_removed);
+                    self.current_buffer_bytes =
+                        self.current_buffer_bytes.saturating_sub(bytes_removed);
 
                     // Replace the buffer with the kept segments
                     self.reorder_buffer = kept;
@@ -960,7 +1017,7 @@ impl OutputManager {
             }
         }
 
-        // --- Pruning by duration using split_off (Requirements 4.1) ---
+        // --- Pruning by duration using split_off ---
         let max_buffer_duration_secs = self
             .config
             .output_config
@@ -1001,11 +1058,8 @@ impl OutputManager {
                 let kept = self.reorder_buffer.split_off(&threshold_seq);
 
                 // Calculate bytes removed
-                let bytes_removed: usize = self
-                    .reorder_buffer
-                    .values()
-                    .map(|seg| seg.size_bytes)
-                    .sum();
+                let bytes_removed: usize =
+                    self.reorder_buffer.values().map(|seg| seg.size_bytes).sum();
 
                 debug!(
                     "Bulk pruning {} segments by duration (max buffer duration: {:.2}s), removed {} bytes",
@@ -1022,10 +1076,11 @@ impl OutputManager {
             }
         }
 
-        // --- Update metrics after pruning (Requirements 4.4, 5.1) ---
+        // --- Update metrics after pruning ---
         let current_depth = self.reorder_buffer.len() as u64;
         self.metrics.update_buffer_depth(current_depth);
-        self.metrics.update_buffer_bytes(self.current_buffer_bytes as u64);
+        self.metrics
+            .update_buffer_bytes(self.current_buffer_bytes as u64);
     }
 
     /// Flushes remaining segments from the reorder buffer.
@@ -1034,7 +1089,9 @@ impl OutputManager {
         // Removes and returns the first element (smallest key),
         while let Some((_key, buffered_segment)) = self.reorder_buffer.pop_first() {
             // Update buffer byte tracking
-            self.current_buffer_bytes = self.current_buffer_bytes.saturating_sub(buffered_segment.size_bytes);
+            self.current_buffer_bytes = self
+                .current_buffer_bytes
+                .saturating_sub(buffered_segment.size_bytes);
 
             // Record reorder delay (time spent in buffer)
             let delay_ms = buffered_segment.time_in_buffer().as_millis() as u64;
@@ -1045,11 +1102,14 @@ impl OutputManager {
 
             if segment_output.discontinuity {
                 debug!("sending discontinuity tag encountered in flush_reorder_buffer");
-                // Reset gap state on discontinuity (Requirements 7.1)
+                // Reset gap state on discontinuity
                 if self.gap_state.is_some() {
                     debug!(
                         "Resetting gap state due to discontinuity in flush. Previous gap was waiting for sequence {}",
-                        self.gap_state.as_ref().map(|g| g.missing_sequence).unwrap_or(0)
+                        self.gap_state
+                            .as_ref()
+                            .map(|g| g.missing_sequence)
+                            .unwrap_or(0)
                     );
                     self.gap_state = None;
                 }
@@ -1117,7 +1177,7 @@ impl OutputManager {
         // Reset buffer byte tracking
         self.current_buffer_bytes = 0;
         self.last_input_received_time = if is_live { Some(Instant::now()) } else { None };
-        // Reset gap strategy overrides (Requirements 6.4)
+        // Reset gap strategy overrides
         self.live_gap_strategy_override = None;
         self.vod_gap_strategy_override = None;
 
@@ -1126,7 +1186,6 @@ impl OutputManager {
         self.metrics.update_buffer_bytes(0);
     }
 }
-
 
 #[cfg(test)]
 mod tests {
@@ -1791,7 +1850,7 @@ mod tests {
             };
 
             // Simulate should_skip_gap logic for WaitIndefinitely strategy
-            let should_skip = matches!(GapSkipStrategy::WaitIndefinitely, GapSkipStrategy::WaitIndefinitely) == false;
+            let should_skip = !matches!(GapSkipStrategy::WaitIndefinitely, GapSkipStrategy::WaitIndefinitely);
 
             // WaitIndefinitely should never trigger a skip
             prop_assert!(
@@ -2315,7 +2374,7 @@ mod tests {
             buffer = kept;
 
             // Verify all segments below threshold were removed
-            for (&msn, _) in &buffer {
+            for &msn in buffer.keys() {
                 prop_assert!(
                     msn >= threshold,
                     "Segment with MSN {} should have been removed (threshold: {})",
@@ -2500,7 +2559,7 @@ mod tests {
             );
 
             // Verify all remaining segments are >= threshold
-            for (&msn, _) in &buffer {
+            for &msn in buffer.keys() {
                 prop_assert!(
                     msn >= threshold,
                     "Remaining segment MSN {} should be >= threshold {}",
@@ -2891,7 +2950,7 @@ mod tests {
                 .filter(|&&msn| msn < discontinuity_msn)
                 .cloned()
                 .collect();
-            
+
             for i in 1..before_emission.len() {
                 prop_assert!(
                     before_emission[i] > before_emission[i - 1],
@@ -2905,7 +2964,7 @@ mod tests {
                 .filter(|&&msn| msn > discontinuity_msn)
                 .cloned()
                 .collect();
-            
+
             for i in 1..after_emission.len() {
                 prop_assert!(
                     after_emission[i] > after_emission[i - 1],
@@ -2968,7 +3027,7 @@ mod tests {
                 .filter(|&&msn| msn < discontinuity_msn)
                 .cloned()
                 .collect();
-            
+
             let after_disc: Vec<u64> = emission_order.iter()
                 .filter(|&&msn| msn >= discontinuity_msn)
                 .cloned()
@@ -3306,13 +3365,13 @@ mod tests {
         ) {
             use std::time::Duration;
 
-            let stall_timeout = Some(Duration::from_millis(stall_timeout_ms));
+            let stall_timeout = Duration::from_millis(stall_timeout_ms);
             let time_since_last_input = Duration::from_millis(time_since_last_input_ms);
 
             // Simulate the stall timeout check condition from run() loop
             // The check only applies when is_live_stream is true
-            let should_check_stall = is_live_stream && stall_timeout.is_some();
-            let would_trigger = time_since_last_input >= stall_timeout.unwrap_or(Duration::MAX);
+            let should_check_stall = is_live_stream;
+            let would_trigger = time_since_last_input >= stall_timeout;
             let should_trigger_stall = should_check_stall && would_trigger;
 
             if is_live_stream {
@@ -3351,7 +3410,7 @@ mod tests {
             // Simulate the runtime strategy update logic for live streams
             // Initial strategy: SkipAfterCount with low threshold
             let initial_strategy = GapSkipStrategy::SkipAfterCount(initial_count_threshold);
-            
+
             // New strategy: SkipAfterCount with higher threshold
             let new_strategy = GapSkipStrategy::SkipAfterCount(new_count_threshold);
 
@@ -3400,7 +3459,7 @@ mod tests {
             let effective_strategy_before = live_gap_strategy_override
                 .as_ref()
                 .unwrap_or(&config_strategy);
-            
+
             prop_assert!(
                 matches!(effective_strategy_before, GapSkipStrategy::SkipAfterCount(t) if *t == initial_count_threshold),
                 "Before update, effective strategy should be the config strategy"
@@ -3413,7 +3472,7 @@ mod tests {
             let effective_strategy_after = live_gap_strategy_override
                 .as_ref()
                 .unwrap_or(&config_strategy);
-            
+
             prop_assert!(
                 matches!(effective_strategy_after, GapSkipStrategy::SkipAfterCount(t) if *t == new_count_threshold),
                 "After update, effective strategy should be the override"
@@ -3435,7 +3494,7 @@ mod tests {
             // Simulate the runtime strategy update logic for VOD streams
             // Initial strategy: SkipAfterDuration with short timeout
             let initial_strategy = GapSkipStrategy::SkipAfterDuration(Duration::from_millis(initial_timeout_ms));
-            
+
             // New strategy: SkipAfterDuration with longer timeout
             let new_strategy = GapSkipStrategy::SkipAfterDuration(Duration::from_millis(new_timeout_ms));
 
@@ -3517,13 +3576,13 @@ mod tests {
 
             // Before update
             let effective_before = strategy_override.as_ref().unwrap_or(&config_strategy);
-            
+
             // Verify we're using the config strategy
             prop_assert!(
                 strategy_override.is_none(),
                 "Override should be None before update"
             );
-            
+
             // The effective strategy should match the config
             let _ = effective_before; // Use to avoid warning
 
@@ -3543,7 +3602,7 @@ mod tests {
             // We check by comparing the discriminant (strategy type)
             let effective_type = std::mem::discriminant(effective_after);
             let expected_type = std::mem::discriminant(&to_strategy);
-            
+
             prop_assert_eq!(
                 effective_type,
                 expected_type,
@@ -3599,14 +3658,10 @@ mod tests {
             // (We can't directly compare Instants, but we verify the elapsed time is similar)
             let elapsed_before = gap_state_before.elapsed();
             let elapsed_after = gap_state_after.elapsed();
-            
+
             // Allow 10ms tolerance for test execution time
-            let diff = if elapsed_after > elapsed_before {
-                elapsed_after - elapsed_before
-            } else {
-                elapsed_before - elapsed_after
-            };
-            
+            let diff = elapsed_after.abs_diff(elapsed_before);
+
             prop_assert!(
                 diff.as_millis() <= 10,
                 "detected_at should be preserved (elapsed time diff: {:?})",

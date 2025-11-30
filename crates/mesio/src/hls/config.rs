@@ -2,6 +2,101 @@ use std::time::Duration;
 
 use crate::DownloaderConfig;
 
+// --- Performance Configuration Types ---
+
+/// Configuration for segment prefetching
+#[derive(Debug, Clone)]
+pub struct PrefetchConfig {
+    /// Enable prefetching
+    pub enabled: bool,
+    /// Number of segments to prefetch ahead
+    pub prefetch_count: usize,
+    /// Maximum buffer size before skipping prefetch
+    pub max_buffer_before_skip: usize,
+}
+
+impl Default for PrefetchConfig {
+    fn default() -> Self {
+        Self {
+            enabled: true,
+            prefetch_count: 2,
+            max_buffer_before_skip: 40,
+        }
+    }
+}
+
+/// Configuration for buffer pooling
+#[derive(Debug, Clone)]
+pub struct BufferPoolConfig {
+    /// Enable buffer pooling
+    pub enabled: bool,
+    /// Maximum buffers to keep in pool
+    pub pool_size: usize,
+    /// Default buffer capacity
+    pub default_capacity: usize,
+}
+
+impl Default for BufferPoolConfig {
+    fn default() -> Self {
+        Self {
+            enabled: true,
+            pool_size: 10,
+            default_capacity: 2 * 1024 * 1024, // 2MB
+        }
+    }
+}
+
+/// Configuration for batch scheduling
+#[derive(Debug, Clone)]
+pub struct BatchSchedulerConfig {
+    /// Enable batch scheduling
+    pub enabled: bool,
+    /// Time window to collect batch (ms)
+    pub batch_window_ms: u64,
+    /// Maximum segments per batch
+    pub max_batch_size: usize,
+}
+
+impl Default for BatchSchedulerConfig {
+    fn default() -> Self {
+        Self {
+            enabled: true,
+            batch_window_ms: 50,
+            max_batch_size: 5,
+        }
+    }
+}
+
+/// Aggregated performance configuration for HLS pipeline
+#[derive(Debug, Clone)]
+pub struct HlsPerformanceConfig {
+    /// Decryption offloading to blocking thread pool
+    pub decryption_offload_enabled: bool,
+    /// Prefetch configuration
+    pub prefetch: PrefetchConfig,
+    /// Buffer pool configuration
+    pub buffer_pool: BufferPoolConfig,
+    /// Batch scheduler configuration
+    pub batch_scheduler: BatchSchedulerConfig,
+    /// Zero-copy forwarding enabled
+    pub zero_copy_enabled: bool,
+    /// Performance metrics enabled
+    pub metrics_enabled: bool,
+}
+
+impl Default for HlsPerformanceConfig {
+    fn default() -> Self {
+        Self {
+            decryption_offload_enabled: true,
+            prefetch: PrefetchConfig::default(),
+            buffer_pool: BufferPoolConfig::default(),
+            batch_scheduler: BatchSchedulerConfig::default(),
+            zero_copy_enabled: true,
+            metrics_enabled: true,
+        }
+    }
+}
+
 // --- Gap Skip Strategy ---
 /// Strategy for handling gaps in segment sequences
 #[derive(Debug, Clone)]
@@ -13,10 +108,7 @@ pub enum GapSkipStrategy {
     /// Skip after waiting for a duration
     SkipAfterDuration(Duration),
     /// Skip when EITHER count OR duration threshold is exceeded
-    SkipAfterBoth {
-        count: u64,
-        duration: Duration,
-    },
+    SkipAfterBoth { count: u64, duration: Duration },
 }
 
 impl Default for GapSkipStrategy {
@@ -42,8 +134,8 @@ pub struct BufferLimits {
 impl Default for BufferLimits {
     fn default() -> Self {
         Self {
-            max_segments: 50,                  // Reasonable default for most streams
-            max_bytes: 100 * 1024 * 1024,      // 100MB
+            max_segments: 50,             // Reasonable default for most streams
+            max_bytes: 100 * 1024 * 1024, // 100MB
         }
     }
 }
@@ -60,6 +152,8 @@ pub struct HlsConfig {
     pub decryption_config: HlsDecryptionConfig,
     pub cache_config: HlsCacheConfig,
     pub output_config: HlsOutputConfig,
+    /// Performance optimization configuration
+    pub performance_config: HlsPerformanceConfig,
 }
 
 // --- Playlist Configuration ---
