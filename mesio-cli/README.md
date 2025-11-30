@@ -209,19 +209,46 @@ Stream data directly to stdout for processing with external tools:
 
 ```bash
 # Pipe FLV stream to ffmpeg for transcoding
-mesio -O stdout https://example.com/stream.flv | ffmpeg -i - -c:v libx264 output.mp4
+mesio -O stdout https://example.com/stream.flv 2>$null | ffmpeg -i pipe:0 -c:v libx264 output.mp4
+
+# Pipe with --fix to apply timestamp repair before transcoding
+mesio --fix -O stdout https://example.com/stream.flv 2>$null | ffmpeg -i pipe:0 -c:v libx264 output.mp4
 
 # Pipe HLS stream to mpv for playback
-mesio -O stdout https://example.com/playlist.m3u8 | mpv -
+mesio -O stdout https://example.com/playlist.m3u8 2>/dev/null | mpv -
 
 # Pipe to VLC
-mesio -O stdout https://example.com/stream.flv | vlc -
+mesio -O stdout https://example.com/stream.flv 2>/dev/null | vlc -
+```
+
+#### Stderr Redirection
+
+When using pipe output mode, mesio writes:
+- **Binary media data** to **stdout** (piped to ffmpeg/mpv/etc.)
+- **Log messages** to **stderr** (INFO, WARN, progress, etc.)
+
+You must redirect stderr to prevent log messages from corrupting the binary stream:
+
+| Shell | Discard stderr | Save to file |
+|-------|----------------|--------------|
+| PowerShell | `2>$null` | `2>mesio.log` |
+| Bash/Zsh | `2>/dev/null` | `2>mesio.log` |
+| CMD | `2>nul` | `2>mesio.log` |
+
+**Example with logging preserved:**
+```bash
+# PowerShell - save logs while piping to ffmpeg
+mesio --fix -O stdout https://example.com/stream.flv 2>mesio.log | ffmpeg -i pipe:0 -y output.mp4
+
+# Bash - save logs while piping to ffmpeg  
+mesio --fix -O stdout https://example.com/stream.flv 2>mesio.log | ffmpeg -i pipe:0 -y output.mp4
 ```
 
 When using pipe output mode:
 - Progress bars are automatically disabled to avoid corrupting the output stream
 - All logging is redirected to stderr
 - The pipe closes automatically on segment boundaries (FLV headers, HLS discontinuities)
+- Use `--fix` flag to enable FLV processing (timestamp repair, GOP sorting) before piping
 
 ## License
 

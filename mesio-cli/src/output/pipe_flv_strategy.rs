@@ -170,12 +170,13 @@ impl PipeFlvStrategy {
 }
 
 impl FormatStrategy<FlvData> for PipeFlvStrategy {
-    type Writer = BufWriter<Box<dyn Write + Send + Sync>>;
+    type Writer = BufWriter<std::io::Stdout>;
     type StrategyError = PipeFlvStrategyError;
 
     fn create_writer(&self, _path: &Path) -> Result<Self::Writer, Self::StrategyError> {
         // For pipe output, we always write to stdout
-        Ok(BufWriter::new(Box::new(io::stdout())))
+        // Use Stdout directly for better performance and to avoid boxing overhead
+        Ok(BufWriter::with_capacity(64 * 1024, io::stdout()))
     }
 
     fn write_item(
@@ -189,18 +190,33 @@ impl FormatStrategy<FlvData> for PipeFlvStrategy {
 
         let bytes_written = match item {
             FlvData::Header(header) => {
+                tracing::debug!(
+                    has_audio = header.has_audio,
+                    has_video = header.has_video,
+                    "Writing FLV header to pipe"
+                );
                 let bytes = Self::write_header(writer, header)
                     .map_err(PipeFlvStrategyError::from_io_error)?;
+                // Flush after header to ensure it's sent immediately
+                writer
+                    .flush()
+                    .map_err(PipeFlvStrategyError::from_io_error)?;
+                tracing::debug!(bytes_written = bytes, "FLV header written and flushed");
                 self.has_written_data = true;
                 bytes
             }
             FlvData::Tag(tag) => {
                 let bytes =
                     Self::write_tag(writer, tag).map_err(PipeFlvStrategyError::from_io_error)?;
+                // Flush after each tag to ensure data is sent to pipe consumer
+                writer
+                    .flush()
+                    .map_err(PipeFlvStrategyError::from_io_error)?;
                 self.has_written_data = true;
                 bytes
             }
             FlvData::EndOfSequence(_) => {
+                tracing::debug!("Received EndOfSequence in pipe strategy");
                 // EndOfSequence doesn't write any data, just signals end
                 0
             }
@@ -258,8 +274,9 @@ impl FormatStrategy<FlvData> for PipeFlvStrategy {
         _bytes_written: u64,
         _state: &WriterState,
     ) -> Result<PostWriteAction, Self::StrategyError> {
-        // Signal closure if a boundary was detected
-        if self.should_close_pipe(item) {
+        // Signal closure if a boundary was detected BEFORE writing
+        // We use self.should_close which was set in write_item before has_written_data was updated
+        if self.should_close {
             self.segment_count += 1;
 
             // Log segment boundary event to stderr
