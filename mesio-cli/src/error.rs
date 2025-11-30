@@ -23,6 +23,17 @@ pub enum AppError {
 
     #[error("Writer error: {0}")]
     Writer(String),
+
+    #[error("Broken pipe: consumer closed the connection")]
+    BrokenPipe,
+}
+
+/// Check if an error string indicates a broken pipe error
+pub fn is_broken_pipe_error(err_str: &str) -> bool {
+    err_str.contains("Broken pipe") 
+        || err_str.contains("broken pipe")
+        || err_str.contains("os error 32")  // Windows broken pipe error code
+        || err_str.contains("EPIPE")
 }
 
 impl<StrategyError: std::error::Error + Send + Sync + 'static> From<WriterError<StrategyError>>

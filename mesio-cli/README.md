@@ -19,6 +19,7 @@ Mesio is a powerful command-line tool for downloading, processing, and repairing
   - Automatic retries for failed segments
   - Playlist caching to reduce redundant requests
   - Adaptive refresh intervals for live streams
+- **Pipe Output**: Stream data directly to stdout for integration with external tools like ffmpeg or mpv.
 - **Advanced Proxy Support**: HTTP, HTTPS, and SOCKS5 proxies for all downloads.
 - **File Segmentation**: Split output files by size or duration.
 - **Customizable Output**: Use templates for file naming.
@@ -201,6 +202,26 @@ Enable the processing pipeline to repair FLV files:
 ```bash
 mesio --progress --fix file.flv
 ```
+
+### Pipe Output to External Tools
+
+Stream data directly to stdout for processing with external tools:
+
+```bash
+# Pipe FLV stream to ffmpeg for transcoding
+mesio -O stdout https://example.com/stream.flv | ffmpeg -i - -c:v libx264 output.mp4
+
+# Pipe HLS stream to mpv for playback
+mesio -O stdout https://example.com/playlist.m3u8 | mpv -
+
+# Pipe to VLC
+mesio -O stdout https://example.com/stream.flv | vlc -
+```
+
+When using pipe output mode:
+- Progress bars are automatically disabled to avoid corrupting the output stream
+- All logging is redirected to stderr
+- The pipe closes automatically on segment boundaries (FLV headers, HLS discontinuities)
 
 ## License
 
