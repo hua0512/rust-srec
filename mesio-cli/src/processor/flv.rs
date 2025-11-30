@@ -86,7 +86,7 @@ pub async fn process_file(
     let file = File::open(input_path).await?;
     let file_reader = BufReader::new(file);
     let file_size = file_reader.get_ref().metadata().await?.len();
-    let decoder_stream = FlvDecoderStream::with_capacity(file_reader, 1024 * 1024)
+    let decoder_stream = FlvDecoderStream::with_capacity(file_reader, 4 * 1024 * 1024) // 4MB buffer for better I/O throughput
         .map(|r| r.map_err(|e| PipelineError::Processing(e.to_string())));
 
     let (tags_written, files_created) = if config.enable_processing {

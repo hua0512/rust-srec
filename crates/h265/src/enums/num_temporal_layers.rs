@@ -24,7 +24,6 @@ impl From<u8> for NumTemporalLayers {
     }
 }
 
-
 impl From<&NumTemporalLayers> for u8 {
     fn from(value: &NumTemporalLayers) -> Self {
         match *value {

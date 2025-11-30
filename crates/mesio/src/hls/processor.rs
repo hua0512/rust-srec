@@ -6,13 +6,15 @@ use crate::cache::{CacheKey, CacheMetadata, CacheResourceType};
 use crate::hls::HlsDownloaderError;
 use crate::hls::config::HlsConfig;
 use crate::hls::decryption::DecryptionService;
+use crate::hls::metrics::PerformanceMetrics;
 use crate::hls::scheduler::ScheduledSegmentJob;
 use crate::hls::segment_utils::create_hls_data;
 use async_trait::async_trait;
 use bytes::Bytes;
 use hls::HlsData;
 use std::sync::Arc;
-use tracing::error;
+use std::time::Instant;
+use tracing::{debug, error};
 
 #[async_trait]
 pub trait SegmentTransformer: Send + Sync {
@@ -27,6 +29,7 @@ pub struct SegmentProcessor {
     config: Arc<HlsConfig>,
     decryption_service: Arc<DecryptionService>,
     cache_service: Option<Arc<CacheManager>>,
+    metrics: Option<Arc<PerformanceMetrics>>,
 }
 
 impl SegmentProcessor {
@@ -39,6 +42,22 @@ impl SegmentProcessor {
             config,
             decryption_service,
             cache_service,
+            metrics: None,
+        }
+    }
+
+    /// Create a new SegmentProcessor with performance metrics tracking
+    pub fn with_metrics(
+        config: Arc<HlsConfig>,
+        decryption_service: Arc<DecryptionService>,
+        cache_service: Option<Arc<CacheManager>>,
+        metrics: Arc<PerformanceMetrics>,
+    ) -> Self {
+        Self {
+            config,
+            decryption_service,
+            cache_service,
+            metrics: Some(metrics),
         }
     }
 
@@ -56,28 +75,75 @@ impl SegmentTransformer for SegmentProcessor {
         raw_data_input: Bytes,
         job: &ScheduledSegmentJob,
     ) -> Result<HlsData, HlsDownloaderError> {
-        let mut current_data = raw_data_input;
+        let zero_copy_enabled = self.config.performance_config.zero_copy_enabled;
 
-        // Decryption (if needed)
-        if let Some(key_info) = &job.key {
-            if key_info.method == m3u8_rs::KeyMethod::AES128 {
-                let iv_override = if key_info.iv.is_none() {
-                    Some(Self::u64_to_iv_bytes(job.media_sequence_number))
-                } else {
-                    None
-                };
+        // Check if segment requires decryption
+        let requires_decryption = job
+            .key
+            .as_ref()
+            .is_some_and(|key_info| key_info.method == m3u8_rs::KeyMethod::AES128);
 
-                current_data = self
-                    .decryption_service
-                    .decrypt(current_data, key_info, iv_override, &job.base_url)
-                    .await?;
-            } else if key_info.method != m3u8_rs::KeyMethod::None {
+        // Process data: either zero-copy forward or decrypt
+        let current_data = if requires_decryption {
+            // Decryption required - cannot use zero-copy
+            let key_info = job.key.as_ref().unwrap(); // Safe: we checked above
+
+            if zero_copy_enabled {
+                debug!(
+                    uri = %job.segment_uri,
+                    "Zero-copy disabled for segment: decryption required"
+                );
+            }
+
+            let iv_override = if key_info.iv.is_none() {
+                Some(Self::u64_to_iv_bytes(job.media_sequence_number))
+            } else {
+                None
+            };
+
+            // Record segment size before decryption
+            let segment_size = raw_data_input.len() as u64;
+
+            // Measure decryption duration
+            let decryption_start = Instant::now();
+            let decrypted_data = self
+                .decryption_service
+                .decrypt(raw_data_input, key_info, iv_override, &job.base_url)
+                .await?;
+            let decryption_duration_ms = decryption_start.elapsed().as_millis() as u64;
+
+            // Record decryption metrics
+            if let Some(metrics) = &self.metrics {
+                metrics.record_decryption(segment_size, decryption_duration_ms);
+            }
+
+            decrypted_data
+        } else if let Some(key_info) = &job.key {
+            // Key exists but method is not AES128
+            if key_info.method != m3u8_rs::KeyMethod::None {
                 return Err(HlsDownloaderError::DecryptionError(format!(
                     "Segment processing encountered unsupported encryption method: {:?}",
                     key_info.method
                 )));
             }
-        }
+            // KeyMethod::None - no decryption needed, use zero-copy if enabled
+            if zero_copy_enabled {
+                debug!(
+                    uri = %job.segment_uri,
+                    "Zero-copy forwarding: unencrypted segment (KeyMethod::None)"
+                );
+            }
+            raw_data_input
+        } else {
+            // No key at all - unencrypted segment, use zero-copy if enabled
+            if zero_copy_enabled {
+                debug!(
+                    uri = %job.segment_uri,
+                    "Zero-copy forwarding: unencrypted segment (no key)"
+                );
+            }
+            raw_data_input
+        };
 
         // Construct HlsData
         let segment_url = url::Url::parse(&job.segment_uri)
@@ -110,5 +176,236 @@ impl SegmentTransformer for SegmentProcessor {
         }
 
         Ok(hls_data)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::hls::config::HlsConfig;
+    use crate::hls::decryption::KeyFetcher;
+    use bytes::Bytes;
+    use m3u8_rs::MediaSegment;
+    use proptest::prelude::*;
+    use std::sync::Arc;
+
+    /// Helper to create a minimal DecryptionService for testing
+    fn create_test_decryption_service(config: Arc<HlsConfig>) -> Arc<DecryptionService> {
+        let http_client = reqwest::Client::new();
+        let key_fetcher = Arc::new(KeyFetcher::new(http_client, config.clone()));
+        Arc::new(DecryptionService::new(config, key_fetcher, None))
+    }
+
+    /// Helper to create a test ScheduledSegmentJob without encryption
+    fn create_unencrypted_job(uri: &str, msn: u64) -> ScheduledSegmentJob {
+        ScheduledSegmentJob {
+            segment_uri: uri.to_string(),
+            base_url: "https://example.com/".to_string(),
+            media_sequence_number: msn,
+            duration: 6.0,
+            key: None,
+            byte_range: None,
+            discontinuity: false,
+            media_segment: MediaSegment::default(),
+            is_init_segment: false,
+            is_prefetch: false,
+        }
+    }
+
+    /// Helper to create a test ScheduledSegmentJob with KeyMethod::None
+    fn create_job_with_none_key(uri: &str, msn: u64) -> ScheduledSegmentJob {
+        ScheduledSegmentJob {
+            segment_uri: uri.to_string(),
+            base_url: "https://example.com/".to_string(),
+            media_sequence_number: msn,
+            duration: 6.0,
+            key: Some(m3u8_rs::Key {
+                method: m3u8_rs::KeyMethod::None,
+                uri: None,
+                iv: None,
+                keyformat: None,
+                keyformatversions: None,
+            }),
+            byte_range: None,
+            discontinuity: false,
+            media_segment: MediaSegment::default(),
+            is_init_segment: false,
+            is_prefetch: false,
+        }
+    }
+
+    /// Helper to extract Bytes from HlsData
+    fn extract_bytes_from_hls_data(hls_data: &HlsData) -> Option<&Bytes> {
+        hls_data.data()
+    }
+
+    proptest! {
+        #![proptest_config(ProptestConfig::with_cases(100))]
+
+        /// **Feature: hls-performance-optimization, Property 11: Zero-copy forwarding for unencrypted segments**
+        ///
+        ///
+        /// *For any* unencrypted segment processed with zero_copy_enabled, the output Bytes
+        /// SHALL share the same underlying allocation as the input Bytes (verified by Bytes::ptr_eq).
+        #[test]
+        fn prop_zero_copy_forwarding_unencrypted(
+            // Generate segment data of various sizes (100 to 10000 bytes)
+            data_len in 100usize..10000,
+            msn in 0u64..1000,
+        ) {
+            // Create runtime for async tests
+            let rt = tokio::runtime::Runtime::new().unwrap();
+
+            // Generate test data
+            let test_data: Vec<u8> = (0..data_len).map(|i| (i % 256) as u8).collect();
+            let input_bytes = Bytes::from(test_data);
+
+            // Create config with zero_copy_enabled = true
+            let mut config = HlsConfig::default();
+            config.performance_config.zero_copy_enabled = true;
+            let config = Arc::new(config);
+
+            // Create processor
+            let decryption_service = create_test_decryption_service(config.clone());
+            let processor = SegmentProcessor::new(config, decryption_service, None);
+
+            // Create unencrypted job (no key)
+            let job = create_unencrypted_job(
+                &format!("https://example.com/segment_{}.ts", msn),
+                msn,
+            );
+
+            // Process the segment
+            let result = rt.block_on(async {
+                processor.process_segment_from_job(input_bytes.clone(), &job).await
+            });
+
+            // Verify processing succeeded
+            prop_assert!(result.is_ok(), "Processing should succeed for unencrypted segment");
+
+            let hls_data = result.unwrap();
+
+            // Extract the output bytes
+            let output_bytes = extract_bytes_from_hls_data(&hls_data);
+            prop_assert!(output_bytes.is_some(), "HlsData should contain bytes");
+
+            let output_bytes = output_bytes.unwrap();
+
+            // Verify zero-copy: the output should share the same underlying allocation
+            // Bytes::ptr_eq checks if two Bytes instances point to the same memory
+            // Note: We compare the data pointers since Bytes::clone() creates a new Bytes
+            // that shares the same underlying buffer
+            prop_assert_eq!(
+                input_bytes.as_ptr(),
+                output_bytes.as_ptr(),
+                "Zero-copy: output Bytes should share the same underlying allocation as input"
+            );
+
+            // Also verify the data is identical
+            prop_assert_eq!(
+                input_bytes.as_ref(),
+                output_bytes.as_ref(),
+                "Data content should be identical"
+            );
+        }
+
+        /// **Feature: hls-performance-optimization, Property 11: Zero-copy forwarding for KeyMethod::None**
+        ///
+        ///
+        /// *For any* segment with KeyMethod::None processed with zero_copy_enabled, the output Bytes
+        /// SHALL share the same underlying allocation as the input Bytes.
+        #[test]
+        fn prop_zero_copy_forwarding_key_method_none(
+            // Generate segment data of various sizes (100 to 10000 bytes)
+            data_len in 100usize..10000,
+            msn in 0u64..1000,
+        ) {
+            // Create runtime for async tests
+            let rt = tokio::runtime::Runtime::new().unwrap();
+
+            // Generate test data
+            let test_data: Vec<u8> = (0..data_len).map(|i| (i % 256) as u8).collect();
+            let input_bytes = Bytes::from(test_data);
+
+            // Create config with zero_copy_enabled = true
+            let mut config = HlsConfig::default();
+            config.performance_config.zero_copy_enabled = true;
+            let config = Arc::new(config);
+
+            // Create processor
+            let decryption_service = create_test_decryption_service(config.clone());
+            let processor = SegmentProcessor::new(config, decryption_service, None);
+
+            // Create job with KeyMethod::None
+            let job = create_job_with_none_key(
+                &format!("https://example.com/segment_{}.ts", msn),
+                msn,
+            );
+
+            // Process the segment
+            let result = rt.block_on(async {
+                processor.process_segment_from_job(input_bytes.clone(), &job).await
+            });
+
+            // Verify processing succeeded
+            prop_assert!(result.is_ok(), "Processing should succeed for KeyMethod::None segment");
+
+            let hls_data = result.unwrap();
+
+            // Extract the output bytes
+            let output_bytes = extract_bytes_from_hls_data(&hls_data);
+            prop_assert!(output_bytes.is_some(), "HlsData should contain bytes");
+
+            let output_bytes = output_bytes.unwrap();
+
+            // Verify zero-copy: the output should share the same underlying allocation
+            prop_assert_eq!(
+                input_bytes.as_ptr(),
+                output_bytes.as_ptr(),
+                "Zero-copy: output Bytes should share the same underlying allocation as input"
+            );
+
+            // Also verify the data is identical
+            prop_assert_eq!(
+                input_bytes.as_ref(),
+                output_bytes.as_ref(),
+                "Data content should be identical"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn test_zero_copy_disabled_logs_fallback() {
+        // This test verifies that when zero_copy_enabled is false,
+        // the processor still works correctly (just without zero-copy optimization)
+
+        let test_data = vec![0u8; 1000];
+        let input_bytes = Bytes::from(test_data);
+
+        // Create config with zero_copy_enabled = false
+        let mut config = HlsConfig::default();
+        config.performance_config.zero_copy_enabled = false;
+        let config = Arc::new(config);
+
+        // Create processor
+        let decryption_service = create_test_decryption_service(config.clone());
+        let processor = SegmentProcessor::new(config, decryption_service, None);
+
+        // Create unencrypted job
+        let job = create_unencrypted_job("https://example.com/segment_1.ts", 1);
+
+        // Process the segment
+        let result = processor
+            .process_segment_from_job(input_bytes.clone(), &job)
+            .await;
+
+        // Verify processing succeeded
+        assert!(result.is_ok(), "Processing should succeed");
+
+        let hls_data = result.unwrap();
+        let output_bytes = extract_bytes_from_hls_data(&hls_data).unwrap();
+
+        // Data should still be identical even without zero-copy logging
+        assert_eq!(input_bytes.as_ref(), output_bytes.as_ref());
     }
 }

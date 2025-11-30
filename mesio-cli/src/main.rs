@@ -209,6 +209,8 @@ async fn bootstrap() -> Result<(), AppError> {
 
     // Create common download configuration
     let download_config = {
+        use mesio_engine::config::HttpVersionPreference;
+
         let mut builder = DownloaderConfig::builder()
             .with_timeout(Duration::from_secs(args.timeout))
             .with_connect_timeout(Duration::from_secs(args.connect_timeout))
@@ -219,6 +221,16 @@ async fn bootstrap() -> Result<(), AppError> {
             .with_caching_enabled(false)
             .with_force_ipv4(args.force_ipv4)
             .with_force_ipv6(args.force_ipv6);
+
+        // Configure HTTP version preference
+        let http_version = match args.http_version.as_str() {
+            "http1" => HttpVersionPreference::Http1Only,
+            "http2" => HttpVersionPreference::Http2Only,
+            _ => HttpVersionPreference::Auto,
+        };
+        builder = builder
+            .with_http_version(http_version)
+            .with_http2_keep_alive_interval(Duration::from_secs(args.http2_keepalive));
 
         if let Some(proxy) = proxy_config {
             builder = builder.with_proxy(proxy);

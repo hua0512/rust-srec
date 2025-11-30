@@ -168,6 +168,42 @@ impl DownloaderConfigBuilder {
         self
     }
 
+    // --- HTTP/2 Configuration Methods ---
+
+    /// Set the HTTP version preference
+    ///
+    /// - `Auto`: Let ALPN negotiate (HTTP/2 preferred with rustls-tls)
+    /// - `Http2Only`: Prefer HTTP/2 (ALPN will negotiate)
+    /// - `Http1Only`: Force HTTP/1.1 only
+    pub fn with_http_version(mut self, version: crate::config::HttpVersionPreference) -> Self {
+        self.config.http_version = version;
+        self
+    }
+
+    /// Force HTTP/1.1 only (disable HTTP/2)
+    pub fn with_http1_only(mut self) -> Self {
+        self.config.http_version = crate::config::HttpVersionPreference::Http1Only;
+        self
+    }
+
+    /// Set the TCP keep-alive interval for maintaining long-lived HTTP/2 connections
+    ///
+    /// This helps keep HTTP/2 connections alive for multiplexing benefits.
+    /// Recommended: 15-30 seconds for media streaming workloads.
+    pub fn with_http2_keep_alive_interval(mut self, interval: Duration) -> Self {
+        self.config.http2_keep_alive_interval = Some(interval);
+        self
+    }
+
+    /// Configure settings optimized for HLS media streaming
+    ///
+    /// This sets:
+    /// - Keep-alive interval: 20s (maintains HTTP/2 connections for multiplexing)
+    pub fn with_http2_hls_optimized(mut self) -> Self {
+        self.config.http2_keep_alive_interval = Some(Duration::from_secs(20));
+        self
+    }
+
     /// Build the DownloaderConfig instance
     pub fn build(self) -> DownloaderConfig {
         self.config
@@ -258,5 +294,43 @@ mod tests {
         assert_eq!(stored_proxy.auth.as_ref().unwrap().username, "user");
         assert_eq!(stored_proxy.auth.as_ref().unwrap().password, "pass");
         assert_eq!(stored_proxy.proxy_type, proxy_config.proxy_type);
+    }
+
+    #[test]
+    fn test_http2_configuration() {
+        use crate::config::HttpVersionPreference;
+
+        // Test HTTP/2 defaults
+        let default_config = DownloaderConfigBuilder::new().build();
+        assert_eq!(default_config.http_version, HttpVersionPreference::Auto);
+        assert_eq!(
+            default_config.http2_keep_alive_interval,
+            Some(Duration::from_secs(20))
+        );
+
+        // Test HTTP/2 customization
+        let custom_config = DownloaderConfigBuilder::new()
+            .with_http_version(HttpVersionPreference::Http2Only)
+            .with_http2_keep_alive_interval(Duration::from_secs(30))
+            .build();
+
+        assert_eq!(custom_config.http_version, HttpVersionPreference::Http2Only);
+        assert_eq!(
+            custom_config.http2_keep_alive_interval,
+            Some(Duration::from_secs(30))
+        );
+
+        // Test HTTP/1 only mode
+        let http1_config = DownloaderConfigBuilder::new().with_http1_only().build();
+        assert_eq!(http1_config.http_version, HttpVersionPreference::Http1Only);
+
+        // Test HLS optimized preset
+        let hls_config = DownloaderConfigBuilder::new()
+            .with_http2_hls_optimized()
+            .build();
+        assert_eq!(
+            hls_config.http2_keep_alive_interval,
+            Some(Duration::from_secs(20))
+        );
     }
 }

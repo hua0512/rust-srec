@@ -30,7 +30,7 @@ pub use config::DEFAULT_USER_AGENT;
 
 pub use builder::DownloaderConfigBuilder;
 pub use cache::{CacheConfig, CacheManager};
-pub use config::DownloaderConfig;
+pub use config::{DownloaderConfig, HttpVersionPreference};
 pub use error::DownloadError;
 
 // Re-export legacy protocol traits for backward compatibility

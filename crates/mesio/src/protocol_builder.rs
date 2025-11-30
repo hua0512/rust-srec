@@ -371,19 +371,6 @@ impl HlsProtocolBuilder {
         self
     }
 
-    /// Enable or disable skipping of missing segments in a live stream.
-    pub fn live_gap_skip_enabled(mut self, enabled: bool) -> Self {
-        self.config.output_config.live_gap_skip_enabled = enabled;
-        self
-    }
-
-    /// Set the number of newer media segments that must be received after a gap
-    /// before attempting to skip missing segments.
-    pub fn live_gap_skip_threshold_segments(mut self, threshold: u64) -> Self {
-        self.config.output_config.live_gap_skip_threshold_segments = threshold;
-        self
-    }
-
     /// Set the maximum duration to wait for a segment before considering it stalled.
     /// If None, this timeout is disabled.
     pub fn live_max_overall_stall_duration(mut self, duration: Option<Duration>) -> Self {

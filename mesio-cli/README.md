@@ -14,9 +14,11 @@ Mesio is a powerful command-line tool for downloading, processing, and repairing
   - Duration problems
   - Metadata inconsistencies
 - **HLS Downloader**:
-  - Concurrent segment downloads for faster performance.
-  - Automatic retries for failed segments.
-  - Playlist caching to reduce redundant requests.
+  - HTTP/2 multiplexing for efficient concurrent downloads
+  - Concurrent segment downloads for faster performance
+  - Automatic retries for failed segments
+  - Playlist caching to reduce redundant requests
+  - Adaptive refresh intervals for live streams
 - **Advanced Proxy Support**: HTTP, HTTPS, and SOCKS5 proxies for all downloads.
 - **File Segmentation**: Split output files by size or duration.
 - **Customizable Output**: Use templates for file naming.
@@ -115,7 +117,20 @@ OPTIONS:
   -p, --param <PARAM>              Add custom parameter to requests (can be used multiple times). Format: 'Name=Value'
   -4, --ipv4                       Force IPv4 for downloads
   -6, --ipv6                       Force IPv6 for downloads
+      --http-version <VERSION>     HTTP version preference: auto, http2, http1 [default: auto]
+      --http2-keepalive <SECONDS>  TCP keep-alive interval for HTTP/2 connections [default: 20]
 ```
+
+### HTTP/2 Support
+
+Mesio automatically negotiates HTTP/2 when available, providing significant performance benefits for HLS streaming:
+
+- **Connection Multiplexing**: Multiple segment downloads share a single TCP connection
+- **Reduced Latency**: No TCP handshake overhead per segment
+- **Header Compression**: HPACK compression reduces repeated header overhead
+- **Better Bandwidth Utilization**: Concurrent streams without head-of-line blocking
+
+HTTP/2 is enabled by default (`--http-version auto`). Use `--http-version http1` to force HTTP/1.1 if needed.
 
 ### Proxy Options
 
