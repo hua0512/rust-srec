@@ -208,17 +208,25 @@ mesio --progress --fix file.flv
 Stream data directly to stdout for processing with external tools:
 
 ```bash
-# Pipe FLV stream to ffmpeg for transcoding
-mesio -O stdout https://example.com/stream.flv 2>$null | ffmpeg -i pipe:0 -c:v libx264 output.mp4
+# Pipe FLV stream to ffmpeg for transcoding (Bash/Zsh)
+mesio -O stdout https://example.com/stream.flv 2>/dev/null | ffmpeg -i pipe:0 -c:v libx264 output.mp4
 
-# Pipe with --fix to apply timestamp repair before transcoding
-mesio --fix -O stdout https://example.com/stream.flv 2>$null | ffmpeg -i pipe:0 -c:v libx264 output.mp4
+# Pipe with --fix to apply timestamp repair before transcoding (Bash/Zsh)
+mesio --fix -O stdout https://example.com/stream.flv 2>/dev/null | ffmpeg -i pipe:0 -c:v libx264 output.mp4
 
-# Pipe HLS stream to mpv for playback
+# Pipe HLS stream to mpv for playback (Bash/Zsh)
 mesio -O stdout https://example.com/playlist.m3u8 2>/dev/null | mpv -
 
-# Pipe to VLC
+# Pipe to VLC (Bash/Zsh)
 mesio -O stdout https://example.com/stream.flv 2>/dev/null | vlc -
+```
+
+```powershell
+# PowerShell - Pipe FLV stream to ffmpeg
+mesio -O stdout https://example.com/stream.flv 2>$null | ffmpeg -i pipe:0 -c:v libx264 output.mp4
+
+# PowerShell - Pipe with --fix
+mesio --fix -O stdout https://example.com/stream.flv 2>$null | ffmpeg -i pipe:0 -c:v libx264 output.mp4
 ```
 
 #### Stderr Redirection
@@ -234,7 +242,7 @@ You must redirect stderr to prevent log messages from corrupting the binary stre
 |-------|----------------|--------------|
 | PowerShell | `2>$null` | `2>mesio.log` |
 | Bash/Zsh | `2>/dev/null` | `2>mesio.log` |
-| CMD | `2>nul` | `2>mesio.log` |
+| CMD | `2>NUL` | `2>mesio.log` |
 
 **Example with logging preserved:**
 

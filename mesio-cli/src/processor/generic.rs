@@ -148,6 +148,7 @@ where
     tokio::task::spawn_blocking(move || {
         let _enter = current_span.enter();
         let mut rx = rx;
+        let mut broken_pipe_detected = false;
 
         while let Some(item_result) = rx.blocking_recv() {
             match item_result {
@@ -157,6 +158,7 @@ where
                         if is_broken_pipe_error(&err_str) {
                             warn!("Pipe closed by consumer (broken pipe), cancelling upstream");
                             token.cancel();
+                            broken_pipe_detected = true;
                             break;
                         }
                         return Err((format!("Writer error: {}", err_str), false));
@@ -173,9 +175,15 @@ where
             if is_broken_pipe_error(&err_str) {
                 warn!("Broken pipe during close: consumer already disconnected");
                 token.cancel();
+                broken_pipe_detected = true;
             } else {
                 return Err((format!("Close error: {}", err_str), false));
             }
+        }
+
+        // Return error if broken pipe was detected at any point
+        if broken_pipe_detected {
+            return Err(("Broken pipe".to_string(), true));
         }
 
         let state = writer_task_instance.get_state();
