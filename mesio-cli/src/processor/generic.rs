@@ -125,10 +125,12 @@ pub struct PipeStreamStats {
 
 /// Spawn a blocking writer task that reads from a channel and writes to stdout.
 /// Generic over the data type `D` and strategy `S`.
+/// When a broken pipe is detected, the cancellation token is triggered to stop upstream processing.
 fn spawn_pipe_writer_task<D, S>(
     rx: tokio::sync::mpsc::Receiver<Result<D, PipelineError>>,
     strategy: S,
     extension: &str,
+    token: CancellationToken,
 ) -> tokio::task::JoinHandle<Result<PipeStreamStats, (String, bool)>>
 where
     D: Send + 'static,
@@ -153,7 +155,8 @@ where
                     if let Err(e) = writer_task_instance.process_item(item) {
                         let err_str = e.to_string();
                         if is_broken_pipe_error(&err_str) {
-                            warn!("Pipe closed by consumer (broken pipe)");
+                            warn!("Pipe closed by consumer (broken pipe), cancelling upstream");
+                            token.cancel();
                             break;
                         }
                         return Err((format!("Writer error: {}", err_str), false));
@@ -169,6 +172,7 @@ where
             let err_str = e.to_string();
             if is_broken_pipe_error(&err_str) {
                 warn!("Broken pipe during close: consumer already disconnected");
+                token.cancel();
             } else {
                 return Err((format!("Close error: {}", err_str), false));
             }
@@ -204,6 +208,7 @@ fn handle_pipe_writer_result(
 /// Process a stream to pipe output (stdout) using the provided strategy.
 /// This is a generic helper that handles channel creation, writer task spawning,
 /// stream forwarding, and broken pipe handling.
+/// When a broken pipe is detected, upstream reading is stopped via cancellation.
 pub async fn process_pipe_stream<D, S>(
     stream: Pin<Box<dyn Stream<Item = Result<D, PipelineError>> + Send>>,
     pipeline_config: &PipelineConfig,
@@ -215,11 +220,16 @@ where
     S: FormatStrategy<D>,
     S::Writer: Send,
 {
+    let token = CancellationToken::new();
     let (tx, rx) = tokio::sync::mpsc::channel(pipeline_config.channel_size);
-    let writer_task = spawn_pipe_writer_task(rx, strategy, extension);
+    let writer_task = spawn_pipe_writer_task(rx, strategy, extension, token.clone());
 
     let mut stream = stream;
     while let Some(item_result) = stream.next().await {
+        // Check if cancellation was requested (e.g., broken pipe)
+        if token.is_cancelled() {
+            break;
+        }
         if tx.send(item_result).await.is_err() {
             break;
         }
@@ -231,6 +241,7 @@ where
 
 /// Process a stream through a pipeline and then to pipe output (stdout).
 /// Chains the pipeline processing with pipe output using the provided strategy.
+/// When a broken pipe is detected, the entire pipeline and upstream reading are stopped.
 pub async fn process_pipe_stream_with_processing<P, S>(
     stream: Pin<Box<dyn Stream<Item = Result<P::Item, PipelineError>> + Send>>,
     pipeline_config: &PipelineConfig,
@@ -245,7 +256,9 @@ where
     S: FormatStrategy<P::Item>,
     S::Writer: Send,
 {
-    let context = StreamerContext::new(CancellationToken::new());
+    // Create a shared cancellation token for the entire pipe processing chain
+    let token = CancellationToken::new();
+    let context = StreamerContext::new(token.clone());
     let pipeline_provider = P::with_config(context, pipeline_config, pipeline_type_config);
     let pipeline = pipeline_provider.build_pipeline();
 
@@ -255,10 +268,15 @@ where
         tasks: processing_tasks,
     } = pipeline.spawn();
 
-    let writer_task = spawn_pipe_writer_task(output_rx, strategy, extension);
+    // Pass the token to the writer task so it can cancel on broken pipe
+    let writer_task = spawn_pipe_writer_task(output_rx, strategy, extension, token.clone());
 
     let mut stream = stream;
     while let Some(item_result) = stream.next().await {
+        // Check if cancellation was requested (e.g., broken pipe detected by writer)
+        if token.is_cancelled() {
+            break;
+        }
         if input_tx.send(item_result).await.is_err() {
             break;
         }
@@ -274,7 +292,8 @@ where
             .map_err(|e| AppError::Pipeline(PipelineError::Processing(e.to_string())))?;
 
         // If writer succeeded, we care about task errors
-        // If writer failed, we might ignore task errors (which are likely "channel closed")
+        // If writer failed (including broken pipe), we ignore task errors
+        // (which are likely "channel closed" or "cancelled")
         if writer_result.is_ok() {
             task_result?;
         }
