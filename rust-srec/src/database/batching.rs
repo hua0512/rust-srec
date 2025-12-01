@@ -2,6 +2,24 @@
 //!
 //! This module provides a generic batch writer that buffers writes and flushes
 //! them periodically or when the buffer reaches a certain size.
+//!
+//! # Usage
+//!
+//! ```ignore
+//! use rust_srec::database::batching::{BatchWriter, BatchWriterConfig, StatsUpdate};
+//!
+//! let config = BatchWriterConfig::default();
+//! let writer = BatchWriter::new(config, |updates: Vec<StatsUpdate>| async move {
+//!     // Batch insert/update to database
+//!     Ok(())
+//! });
+//!
+//! writer.add(StatsUpdate {
+//!     streamer_id: "streamer-1".to_string(),
+//!     bytes_downloaded: 1024,
+//!     segments_completed: 1,
+//! }).await?;
+//! ```
 
 use std::sync::Arc;
 use std::time::Duration;

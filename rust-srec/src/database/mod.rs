@@ -8,6 +8,10 @@ pub mod maintenance;
 pub mod models;
 pub mod repositories;
 
+// Re-export commonly used types
+pub use batching::{BatchWriter, BatchWriterConfig, JobStatusUpdate, StatsUpdate};
+pub use maintenance::{MaintenanceConfig, MaintenanceScheduler};
+
 use sqlx::sqlite::{SqliteConnectOptions, SqliteJournalMode, SqlitePoolOptions, SqliteSynchronous};
 use sqlx::{Pool, Sqlite};
 use std::str::FromStr;
