@@ -1,8 +1,8 @@
 //! Worker pool implementation for pipeline processing.
 
 use serde::{Deserialize, Serialize};
-use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicUsize, Ordering};
 use tokio::sync::Semaphore;
 use tokio::task::JoinSet;
 use tokio_util::sync::CancellationToken;
@@ -93,7 +93,10 @@ impl WorkerPool {
         let job_timeout = std::time::Duration::from_secs(self.config.job_timeout_secs);
         let _active_workers = &self.active_workers;
 
-        info!("Starting {} worker pool with {} max workers", worker_type, self.config.max_workers);
+        info!(
+            "Starting {} worker pool with {} max workers",
+            worker_type, self.config.max_workers
+        );
 
         // Spawn worker tasks
         let mut tasks = self.tasks.lock();
@@ -150,12 +153,15 @@ impl WorkerPool {
 
                         // Find a processor for this job
                         let processor = processors.iter().find(|p| p.can_process(&job.job_type));
-                        
+
                         if let Some(processor) = processor {
                             let job_id = job.id.clone();
                             let job_type = job.job_type.clone();
-                            
-                            debug!("{} worker {} processing job {} ({})", worker_type, i, job_id, job_type);
+
+                            debug!(
+                                "{} worker {} processing job {} ({})",
+                                worker_type, i, job_id, job_type
+                            );
 
                             // Process the job with timeout
                             let input = ProcessorInput {
@@ -166,18 +172,21 @@ impl WorkerPool {
                                 session_id: job.session_id.clone(),
                             };
 
-                            let result = tokio::time::timeout(
-                                job_timeout,
-                                processor.process(&input),
-                            ).await;
+                            let result =
+                                tokio::time::timeout(job_timeout, processor.process(&input)).await;
 
                             match result {
                                 Ok(Ok(output)) => {
-                                    let _ = job_queue.complete(&job_id, JobResult {
-                                        output: output.output_path,
-                                        duration_secs: output.duration_secs,
-                                        metadata: output.metadata,
-                                    }).await;
+                                    let _ = job_queue
+                                        .complete(
+                                            &job_id,
+                                            JobResult {
+                                                output: output.output_path,
+                                                duration_secs: output.duration_secs,
+                                                metadata: output.metadata,
+                                            },
+                                        )
+                                        .await;
                                 }
                                 Ok(Err(e)) => {
                                     let _ = job_queue.fail(&job_id, &e.to_string()).await;

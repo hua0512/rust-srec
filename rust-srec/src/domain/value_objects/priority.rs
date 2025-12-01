@@ -4,7 +4,7 @@ use serde::{Deserialize, Serialize};
 use std::cmp::Ordering;
 
 /// Priority level for resource allocation.
-/// 
+///
 /// Higher priority streamers get preferential treatment for download slots
 /// and are the last to be paused during resource constraints.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize, Hash)]
@@ -122,7 +122,7 @@ mod tests {
         let priority = Priority::High;
         let json = serde_json::to_string(&priority).unwrap();
         assert_eq!(json, "\"HIGH\"");
-        
+
         let parsed: Priority = serde_json::from_str(&json).unwrap();
         assert_eq!(parsed, Priority::High);
     }

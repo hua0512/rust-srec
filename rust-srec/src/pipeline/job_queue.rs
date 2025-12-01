@@ -2,8 +2,8 @@
 
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
-use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicUsize, Ordering};
 use tokio::sync::Notify;
 use tracing::{debug, info, warn};
 
@@ -129,8 +129,6 @@ impl Job {
     }
 }
 
-
-
 /// Result of a completed job.
 #[derive(Debug, Clone)]
 pub struct JobResult {
@@ -170,16 +168,16 @@ impl JobQueue {
     /// Enqueue a new job.
     pub async fn enqueue(&self, job: Job) -> Result<String> {
         let job_id = job.id.clone();
-        
+
         // In a real implementation, this would persist to the database
         // For now, we just track the depth
         self.depth.fetch_add(1, Ordering::SeqCst);
-        
+
         info!("Enqueued job {} of type {}", job_id, job.job_type);
-        
+
         // Notify waiting workers
         self.notify.notify_one();
-        
+
         Ok(job_id)
     }
 
@@ -199,10 +197,7 @@ impl JobQueue {
     /// Mark a job as completed.
     pub async fn complete(&self, job_id: &str, result: JobResult) -> Result<()> {
         self.depth.fetch_sub(1, Ordering::SeqCst);
-        info!(
-            "Job {} completed in {:.2}s",
-            job_id, result.duration_secs
-        );
+        info!("Job {} completed in {:.2}s", job_id, result.duration_secs);
         Ok(())
     }
 
@@ -265,9 +260,15 @@ mod tests {
 
     #[test]
     fn test_job_creation() {
-        let job = Job::new("remux", "/input.flv", "/output.mp4", "streamer-1", "session-1")
-            .with_priority(10);
-        
+        let job = Job::new(
+            "remux",
+            "/input.flv",
+            "/output.mp4",
+            "streamer-1",
+            "session-1",
+        )
+        .with_priority(10);
+
         assert_eq!(job.job_type, "remux");
         assert_eq!(job.priority, 10);
         assert_eq!(job.status, JobStatus::Pending);
@@ -281,17 +282,17 @@ mod tests {
             poll_interval_ms: 100,
         };
         let queue = JobQueue::with_config(config);
-        
+
         assert_eq!(queue.depth_status(), QueueDepthStatus::Normal);
     }
 
     #[tokio::test]
     async fn test_enqueue_dequeue() {
         let queue = JobQueue::new();
-        
+
         let job = Job::new("test", "input", "output", "streamer", "session");
         let job_id = queue.enqueue(job).await.unwrap();
-        
+
         assert!(!job_id.is_empty());
         assert_eq!(queue.depth(), 1);
     }

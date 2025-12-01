@@ -9,8 +9,7 @@ use crate::streamer::StreamerMetadata;
 
 /// Platforms that support batch status detection.
 const BATCH_SUPPORTED_PLATFORMS: &[&str] = &[
-    "twitch",
-    "youtube",
+    "twitch", "youtube",
     // Add more platforms as they implement batch detection
 ];
 

@@ -110,13 +110,16 @@ mod tests {
     fn test_proxy_with_url() {
         let config = ProxyConfig::with_url("http://proxy.example.com:8080");
         assert!(config.enabled);
-        assert_eq!(config.url, Some("http://proxy.example.com:8080".to_string()));
+        assert_eq!(
+            config.url,
+            Some("http://proxy.example.com:8080".to_string())
+        );
     }
 
     #[test]
     fn test_proxy_with_auth() {
-        let config = ProxyConfig::with_url("http://proxy.example.com:8080")
-            .with_auth("user", "pass");
+        let config =
+            ProxyConfig::with_url("http://proxy.example.com:8080").with_auth("user", "pass");
         assert!(config.has_auth());
         assert_eq!(
             config.effective_url(),

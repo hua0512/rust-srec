@@ -1,10 +1,10 @@
 //! Streamer URL value object.
 
-use serde::{Deserialize, Serialize};
 use crate::Error;
+use serde::{Deserialize, Serialize};
 
 /// A validated streamer URL.
-/// 
+///
 /// This value object ensures that streamer URLs are valid and provides
 /// utilities for extracting platform information.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -32,7 +32,7 @@ impl StreamerUrl {
     /// Get the platform name from the URL.
     pub fn platform(&self) -> Option<&'static str> {
         let url_lower = self.0.to_lowercase();
-        
+
         if url_lower.contains("twitch.tv") {
             Some("Twitch")
         } else if url_lower.contains("huya.com") {
@@ -77,7 +77,7 @@ impl StreamerUrl {
     /// Normalize a URL (remove trailing slashes, lowercase domain).
     fn normalize(url: &str) -> String {
         let url = url.trim_end_matches('/');
-        
+
         // Find the end of the domain part
         if let Some(pos) = url.find("://") {
             let (scheme, rest) = url.split_at(pos + 3);
@@ -165,7 +165,7 @@ mod tests {
         let url = StreamerUrl::new("https://www.twitch.tv/streamer").unwrap();
         let json = serde_json::to_string(&url).unwrap();
         assert_eq!(json, "\"https://www.twitch.tv/streamer\"");
-        
+
         let parsed: StreamerUrl = serde_json::from_str(&json).unwrap();
         assert_eq!(parsed, url);
     }

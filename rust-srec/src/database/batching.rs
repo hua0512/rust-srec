@@ -41,12 +41,8 @@ impl<T: Send + 'static> BatchWriter<T> {
     {
         let (sender, receiver) = mpsc::channel::<T>(config.max_buffer_size * 2);
         let flush_fn = Arc::new(flush_fn);
-        
-        let handle = tokio::spawn(Self::run_flush_loop(
-            receiver,
-            config,
-            flush_fn,
-        ));
+
+        let handle = tokio::spawn(Self::run_flush_loop(receiver, config, flush_fn));
 
         Self {
             sender,
@@ -81,7 +77,7 @@ impl<T: Send + 'static> BatchWriter<T> {
                     match item {
                         Some(item) => {
                             buffer.push(item);
-                            
+
                             // Flush if buffer is full
                             if buffer.len() >= config.max_buffer_size {
                                 if let Err(e) = flush_fn(std::mem::take(&mut buffer)).await {
@@ -99,7 +95,7 @@ impl<T: Send + 'static> BatchWriter<T> {
                         }
                     }
                 }
-                
+
                 // Periodic flush
                 _ = flush_timer.tick() => {
                     if !buffer.is_empty() {
@@ -139,7 +135,7 @@ mod tests {
     async fn test_batch_writer_flush_on_size() {
         let flush_count = Arc::new(AtomicUsize::new(0));
         let flush_count_clone = flush_count.clone();
-        
+
         let config = BatchWriterConfig {
             max_buffer_size: 3,
             flush_interval: Duration::from_secs(60), // Long interval to test size-based flush

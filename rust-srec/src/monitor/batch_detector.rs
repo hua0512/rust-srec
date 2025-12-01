@@ -8,8 +8,8 @@ use std::time::Duration;
 
 use tracing::{debug, warn};
 
-use crate::streamer::StreamerMetadata;
 use crate::Result;
+use crate::streamer::StreamerMetadata;
 
 use super::detector::LiveStatus;
 use super::rate_limiter::RateLimiterManager;
@@ -294,13 +294,16 @@ mod tests {
         let mut result = BatchResult::new();
 
         result.add_result("streamer-1".to_string(), LiveStatus::Offline);
-        result.add_result("streamer-2".to_string(), LiveStatus::Live {
-            title: "Test".to_string(),
-            category: None,
-            started_at: None,
-            viewer_count: None,
-            streams: vec![],
-        });
+        result.add_result(
+            "streamer-2".to_string(),
+            LiveStatus::Live {
+                title: "Test".to_string(),
+                category: None,
+                started_at: None,
+                viewer_count: None,
+                streams: vec![],
+            },
+        );
         result.add_failure("streamer-3".to_string(), "Network error".to_string());
 
         assert_eq!(result.total_count(), 3);
@@ -329,8 +332,7 @@ mod tests {
     #[test]
     fn test_calculate_backoff() {
         let rate_limiter = RateLimiterManager::new();
-        let detector = BatchDetector::new(rate_limiter)
-            .with_retry_delay(Duration::from_secs(1));
+        let detector = BatchDetector::new(rate_limiter).with_retry_delay(Duration::from_secs(1));
 
         // First retry should be around 1 second
         let delay0 = detector.calculate_backoff(0);

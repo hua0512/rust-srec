@@ -2,7 +2,7 @@
 //!
 //! Provides JWT token generation and validation for API authentication.
 
-use jsonwebtoken::{decode, encode, DecodingKey, EncodingKey, Header, Validation};
+use jsonwebtoken::{DecodingKey, EncodingKey, Header, Validation, decode, encode};
 use serde::{Deserialize, Serialize};
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -146,7 +146,12 @@ mod tests {
     use super::*;
 
     fn create_test_service() -> JwtService {
-        JwtService::new("test-secret-key-32-chars-long!!", "test-issuer", "test-audience", Some(3600))
+        JwtService::new(
+            "test-secret-key-32-chars-long!!",
+            "test-issuer",
+            "test-audience",
+            Some(3600),
+        )
     }
 
     #[test]
@@ -171,13 +176,18 @@ mod tests {
         let service = create_test_service();
         let result = service.validate_token("invalid.token.here");
 
-        assert!(matches!(result, Err(JwtError::InvalidToken) | Err(JwtError::TokenValidation(_))));
+        assert!(matches!(
+            result,
+            Err(JwtError::InvalidToken) | Err(JwtError::TokenValidation(_))
+        ));
     }
 
     #[test]
     fn test_wrong_secret() {
-        let service1 = JwtService::new("secret1-32-chars-long-key!!!!!", "issuer", "audience", None);
-        let service2 = JwtService::new("secret2-32-chars-long-key!!!!!", "issuer", "audience", None);
+        let service1 =
+            JwtService::new("secret1-32-chars-long-key!!!!!", "issuer", "audience", None);
+        let service2 =
+            JwtService::new("secret2-32-chars-long-key!!!!!", "issuer", "audience", None);
 
         let token = service1
             .generate_token("user", vec![])

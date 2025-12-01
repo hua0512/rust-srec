@@ -48,10 +48,7 @@ impl ProviderRegistry {
 
     /// Get a provider that supports the given URL.
     pub fn get_by_url(&self, url: &str) -> Option<Arc<dyn DanmuProvider>> {
-        self.providers
-            .iter()
-            .find(|p| p.supports_url(url))
-            .cloned()
+        self.providers.iter().find(|p| p.supports_url(url)).cloned()
     }
 
     /// List all registered platforms.
@@ -68,7 +65,7 @@ mod tests {
     fn test_registry_with_defaults() {
         let registry = ProviderRegistry::with_defaults();
         let platforms = registry.platforms();
-        
+
         assert!(platforms.contains(&"huya"));
         assert!(platforms.contains(&"twitch"));
     }
@@ -76,11 +73,11 @@ mod tests {
     #[test]
     fn test_get_by_platform() {
         let registry = ProviderRegistry::with_defaults();
-        
+
         let huya = registry.get_by_platform("huya");
         assert!(huya.is_some());
         assert_eq!(huya.unwrap().platform(), "huya");
-        
+
         let twitch = registry.get_by_platform("Twitch"); // case insensitive
         assert!(twitch.is_some());
     }
@@ -88,11 +85,11 @@ mod tests {
     #[test]
     fn test_get_by_url() {
         let registry = ProviderRegistry::with_defaults();
-        
+
         let huya = registry.get_by_url("https://www.huya.com/12345");
         assert!(huya.is_some());
         assert_eq!(huya.unwrap().platform(), "huya");
-        
+
         let twitch = registry.get_by_url("https://www.twitch.tv/streamer");
         assert!(twitch.is_some());
         assert_eq!(twitch.unwrap().platform(), "twitch");

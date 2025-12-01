@@ -3,8 +3,8 @@
 use async_trait::async_trait;
 use chrono::Utc;
 use std::path::PathBuf;
-use std::sync::atomic::{AtomicU32, AtomicU64, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicU32, AtomicU64, Ordering};
 use tokio::fs::File;
 use tokio::io::AsyncWriteExt;
 use tracing::{debug, error, info, warn};
@@ -72,7 +72,7 @@ impl MesioEngine {
 
             // Fetch the playlist
             let mut request = client.get(&config.url);
-            
+
             // Add headers
             for (key, value) in &config.headers {
                 request = request.header(key.as_str(), value.as_str());
@@ -103,7 +103,7 @@ impl MesioEngine {
 
             // Parse HLS playlist and find new segments
             let segments = parse_hls_playlist(&playlist_text, &config.url);
-            
+
             for segment_url in segments {
                 if handle.is_cancelled() {
                     break;
@@ -182,7 +182,7 @@ impl MesioEngine {
         progress: Arc<DownloadProgressTracker>,
     ) -> Result<()> {
         let config = &handle.config;
-        
+
         let client = reqwest::Client::builder()
             .timeout(std::time::Duration::from_secs(30))
             .build()
@@ -203,7 +203,7 @@ impl MesioEngine {
         };
 
         let mut request = client.get(&config.url);
-        
+
         // Add headers
         for (key, value) in &config.headers {
             request = request.header(key.as_str(), value.as_str());
@@ -254,7 +254,7 @@ impl MesioEngine {
             };
 
             let chunk_len = chunk.len() as u64;
-            
+
             if let Err(e) = file.write_all(&chunk).await {
                 error!("Failed to write chunk: {}", e);
                 break;
@@ -266,7 +266,7 @@ impl MesioEngine {
             // Check if we need to split to a new segment
             if segment_bytes >= max_segment_size {
                 file.flush().await.ok();
-                
+
                 // Emit segment completion
                 let _ = handle
                     .event_tx
@@ -288,9 +288,9 @@ impl MesioEngine {
                     "{}_{:03}.{}",
                     config.filename_template, segment_index, config.output_format
                 ));
-                file = File::create(&new_path)
-                    .await
-                    .map_err(|e| crate::Error::Other(format!("Failed to create segment file: {}", e)))?;
+                file = File::create(&new_path).await.map_err(|e| {
+                    crate::Error::Other(format!("Failed to create segment file: {}", e))
+                })?;
             }
 
             // Emit progress periodically
@@ -330,15 +330,17 @@ impl DownloadEngine for MesioEngine {
         let streamer_id = handle.config.streamer_id.clone();
 
         // Determine stream type from URL
-        let is_hls = handle.config.url.contains(".m3u8") 
+        let is_hls = handle.config.url.contains(".m3u8")
             || handle.config.url.contains("hls")
             || handle.config.output_format == "ts";
 
         // Spawn download task
         let download_result = if is_hls {
-            self.download_hls(handle_clone.clone(), progress_clone).await
+            self.download_hls(handle_clone.clone(), progress_clone)
+                .await
         } else {
-            self.download_flv(handle_clone.clone(), progress_clone).await
+            self.download_flv(handle_clone.clone(), progress_clone)
+                .await
         };
 
         // Send completion or failure event
@@ -444,7 +446,7 @@ impl DownloadProgressTracker {
 /// Parse HLS playlist and extract segment URLs.
 fn parse_hls_playlist(playlist: &str, base_url: &str) -> Vec<String> {
     let base = reqwest::Url::parse(base_url).ok();
-    
+
     playlist
         .lines()
         .filter(|line| !line.starts_with('#') && !line.is_empty())
@@ -465,15 +467,15 @@ async fn write_segment(path: &PathBuf, data: &[u8]) -> Result<()> {
     let mut file = File::create(path)
         .await
         .map_err(|e| crate::Error::Other(format!("Failed to create segment file: {}", e)))?;
-    
+
     file.write_all(data)
         .await
         .map_err(|e| crate::Error::Other(format!("Failed to write segment data: {}", e)))?;
-    
+
     file.flush()
         .await
         .map_err(|e| crate::Error::Other(format!("Failed to flush segment file: {}", e)))?;
-    
+
     Ok(())
 }
 
@@ -504,7 +506,7 @@ segment002.ts
 #EXTINF:2.0,
 https://example.com/segment003.ts
 "#;
-        
+
         let segments = parse_hls_playlist(playlist, "https://example.com/playlist.m3u8");
         assert_eq!(segments.len(), 3);
         assert!(segments[0].contains("segment001.ts"));
@@ -517,7 +519,7 @@ https://example.com/segment003.ts
         tracker.add_bytes(1000);
         tracker.add_bytes(500);
         tracker.increment_segments();
-        
+
         assert_eq!(tracker.total_bytes(), 1500);
         assert_eq!(tracker.segments_completed(), 1);
     }

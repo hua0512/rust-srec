@@ -226,7 +226,11 @@ impl NotificationEvent {
             Self::PipelineFailed { job_type, .. } => {
                 format!("❌ Failed {} job", job_type)
             }
-            Self::FatalError { streamer_name, error_type, .. } => {
+            Self::FatalError {
+                streamer_name,
+                error_type,
+                ..
+            } => {
                 format!("🚨 Fatal error for {}: {}", streamer_name, error_type)
             }
             Self::OutOfSpace { path, .. } => {
@@ -247,33 +251,38 @@ impl NotificationEvent {
         }
     }
 
-
     /// Get a detailed description of this event.
     pub fn description(&self) -> String {
         match self {
-            Self::StreamOnline { title, category, .. } => {
-                match category {
-                    Some(cat) => format!("{} ({})", title, cat),
-                    None => title.clone(),
-                }
-            }
-            Self::StreamOffline { duration_secs, .. } => {
-                match duration_secs {
-                    Some(secs) => format!("Stream duration: {}", format_duration(*secs)),
-                    None => "Stream ended".to_string(),
-                }
-            }
+            Self::StreamOnline {
+                title, category, ..
+            } => match category {
+                Some(cat) => format!("{} ({})", title, cat),
+                None => title.clone(),
+            },
+            Self::StreamOffline { duration_secs, .. } => match duration_secs {
+                Some(secs) => format!("Stream duration: {}", format_duration(*secs)),
+                None => "Stream ended".to_string(),
+            },
             Self::DownloadStarted { session_id, .. } => {
                 format!("Session: {}", session_id)
             }
-            Self::DownloadCompleted { file_size_bytes, duration_secs, .. } => {
+            Self::DownloadCompleted {
+                file_size_bytes,
+                duration_secs,
+                ..
+            } => {
                 format!(
                     "Size: {}, Duration: {}",
                     format_bytes(*file_size_bytes),
                     format_duration(*duration_secs)
                 )
             }
-            Self::DownloadError { error_message, recoverable, .. } => {
+            Self::DownloadError {
+                error_message,
+                recoverable,
+                ..
+            } => {
                 if *recoverable {
                     format!("{} (will retry)", error_message)
                 } else {
@@ -283,37 +292,49 @@ impl NotificationEvent {
             Self::PipelineStarted { job_id, .. } => {
                 format!("Job ID: {}", job_id)
             }
-            Self::PipelineCompleted { output_path, duration_secs, .. } => {
-                match output_path {
-                    Some(path) => format!("Output: {} ({})", path, format_duration(*duration_secs)),
-                    None => format!("Completed in {}", format_duration(*duration_secs)),
-                }
-            }
-            Self::PipelineFailed { error_message, .. } => {
-                error_message.clone()
-            }
-            Self::FatalError { message, .. } => {
-                message.clone()
-            }
-            Self::OutOfSpace { available_bytes, threshold_bytes, .. } => {
+            Self::PipelineCompleted {
+                output_path,
+                duration_secs,
+                ..
+            } => match output_path {
+                Some(path) => format!("Output: {} ({})", path, format_duration(*duration_secs)),
+                None => format!("Completed in {}", format_duration(*duration_secs)),
+            },
+            Self::PipelineFailed { error_message, .. } => error_message.clone(),
+            Self::FatalError { message, .. } => message.clone(),
+            Self::OutOfSpace {
+                available_bytes,
+                threshold_bytes,
+                ..
+            } => {
                 format!(
                     "Available: {} (threshold: {})",
                     format_bytes(*available_bytes),
                     format_bytes(*threshold_bytes)
                 )
             }
-            Self::PipelineQueueWarning { queue_depth, threshold, .. } => {
-                format!("Queue depth {} exceeds warning threshold {}", queue_depth, threshold)
+            Self::PipelineQueueWarning {
+                queue_depth,
+                threshold,
+                ..
+            } => {
+                format!(
+                    "Queue depth {} exceeds warning threshold {}",
+                    queue_depth, threshold
+                )
             }
-            Self::PipelineQueueCritical { queue_depth, threshold, .. } => {
-                format!("Queue depth {} exceeds critical threshold {}", queue_depth, threshold)
+            Self::PipelineQueueCritical {
+                queue_depth,
+                threshold,
+                ..
+            } => {
+                format!(
+                    "Queue depth {} exceeds critical threshold {}",
+                    queue_depth, threshold
+                )
             }
-            Self::SystemStartup { .. } => {
-                "System initialized successfully".to_string()
-            }
-            Self::SystemShutdown { reason, .. } => {
-                reason.clone()
-            }
+            Self::SystemStartup { .. } => "System initialized successfully".to_string(),
+            Self::SystemShutdown { reason, .. } => reason.clone(),
         }
     }
 

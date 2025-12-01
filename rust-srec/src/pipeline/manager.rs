@@ -11,8 +11,8 @@ use super::processors::{
     ExecuteCommandProcessor, Processor, RemuxProcessor, ThumbnailProcessor, UploadProcessor,
 };
 use super::worker_pool::{WorkerPool, WorkerPoolConfig, WorkerType};
-use crate::downloader::DownloadManagerEvent;
 use crate::Result;
+use crate::downloader::DownloadManagerEvent;
 
 /// Configuration for the Pipeline Manager.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -54,10 +54,7 @@ pub enum PipelineEvent {
         streamer_id: String,
     },
     /// Job started processing.
-    JobStarted {
-        job_id: String,
-        job_type: String,
-    },
+    JobStarted { job_id: String, job_type: String },
     /// Job completed successfully.
     JobCompleted {
         job_id: String,
@@ -71,13 +68,9 @@ pub enum PipelineEvent {
         error: String,
     },
     /// Queue depth warning.
-    QueueWarning {
-        depth: usize,
-    },
+    QueueWarning { depth: usize },
     /// Queue depth critical.
-    QueueCritical {
-        depth: usize,
-    },
+    QueueCritical { depth: usize },
 }
 
 /// The Pipeline Manager service.
@@ -225,7 +218,13 @@ impl PipelineManager {
         session_id: &str,
         config: Option<&str>,
     ) -> Result<String> {
-        let mut job = Job::new("thumbnail", input_path, output_path, streamer_id, session_id);
+        let mut job = Job::new(
+            "thumbnail",
+            input_path,
+            output_path,
+            streamer_id,
+            session_id,
+        );
         if let Some(cfg) = config {
             job = job.with_config(cfg);
         }
@@ -240,10 +239,7 @@ impl PipelineManager {
                 segment_path,
                 ..
             } => {
-                debug!(
-                    "Segment completed for {}: {}",
-                    streamer_id, segment_path
-                );
+                debug!("Segment completed for {}: {}", streamer_id, segment_path);
                 // Could create jobs for real-time processing here
             }
             DownloadManagerEvent::DownloadCompleted {
@@ -358,10 +354,16 @@ mod tests {
     #[tokio::test]
     async fn test_enqueue_job() {
         let manager = PipelineManager::new();
-        
-        let job = Job::new("remux", "/input.flv", "/output.mp4", "streamer-1", "session-1");
+
+        let job = Job::new(
+            "remux",
+            "/input.flv",
+            "/output.mp4",
+            "streamer-1",
+            "session-1",
+        );
         let job_id = manager.enqueue(job).await.unwrap();
-        
+
         assert!(!job_id.is_empty());
         assert_eq!(manager.queue_depth(), 1);
     }
@@ -369,12 +371,12 @@ mod tests {
     #[tokio::test]
     async fn test_create_remux_job() {
         let manager = PipelineManager::new();
-        
+
         let job_id = manager
             .create_remux_job("/input.flv", "/output.mp4", "streamer-1", "session-1")
             .await
             .unwrap();
-        
+
         assert!(!job_id.is_empty());
     }
 }

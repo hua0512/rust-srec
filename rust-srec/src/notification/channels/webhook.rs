@@ -1,14 +1,14 @@
 //! Generic webhook notification channel.
 
 use async_trait::async_trait;
-use reqwest::{header::HeaderMap, Client};
+use reqwest::{Client, header::HeaderMap};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use tracing::{debug, warn};
 
 use super::NotificationChannel;
-use crate::notification::events::{NotificationEvent, NotificationPriority};
 use crate::Result;
+use crate::notification::events::{NotificationEvent, NotificationPriority};
 
 /// Webhook channel configuration.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -257,7 +257,7 @@ mod tests {
         };
         let channel = WebhookChannel::new(config);
         let headers = channel.build_headers();
-        
+
         assert!(headers.contains_key(reqwest::header::AUTHORIZATION));
     }
 }

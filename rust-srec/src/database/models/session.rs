@@ -80,7 +80,9 @@ impl MediaOutputDbModel {
 }
 
 /// Media file types.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, strum::Display, strum::EnumString)]
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, strum::Display, strum::EnumString,
+)]
 #[strum(serialize_all = "SCREAMING_SNAKE_CASE")]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
 pub enum MediaFileType {
@@ -168,14 +170,22 @@ mod tests {
 
     #[test]
     fn test_media_output_with_parent() {
-        let output = MediaOutputDbModel::new("session-1", "/path/to/video.mp4", MediaFileType::Video, 1024)
-            .with_parent("parent-1");
+        let output = MediaOutputDbModel::new(
+            "session-1",
+            "/path/to/video.mp4",
+            MediaFileType::Video,
+            1024,
+        )
+        .with_parent("parent-1");
         assert_eq!(output.parent_media_output_id, Some("parent-1".to_string()));
     }
 
     #[test]
     fn test_media_file_type() {
         assert_eq!(MediaFileType::Video.as_str(), "VIDEO");
-        assert_eq!(MediaFileType::parse("THUMBNAIL"), Some(MediaFileType::Thumbnail));
+        assert_eq!(
+            MediaFileType::parse("THUMBNAIL"),
+            Some(MediaFileType::Thumbnail)
+        );
     }
 }

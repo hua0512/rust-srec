@@ -88,11 +88,10 @@ impl Processor for ThumbnailProcessor {
 
     async fn process(&self, input: &ProcessorInput) -> Result<ProcessorOutput> {
         let start = std::time::Instant::now();
-        
+
         // Parse config or use defaults
         let config: ThumbnailConfig = if let Some(ref config_str) = input.config {
-            serde_json::from_str(config_str)
-                .unwrap_or_default()
+            serde_json::from_str(config_str).unwrap_or_default()
         } else {
             ThumbnailConfig::default()
         };
@@ -107,21 +106,29 @@ impl Processor for ThumbnailProcessor {
         cmd.args([
             "-y",
             "-hide_banner",
-            "-ss", &format!("{:.2}", config.timestamp_secs),
-            "-i", &input.input_path,
-            "-vframes", "1",
-            "-vf", &format!("scale={}:-1", config.width),
-            "-q:v", &config.quality.to_string(),
+            "-ss",
+            &format!("{:.2}", config.timestamp_secs),
+            "-i",
+            &input.input_path,
+            "-vframes",
+            "1",
+            "-vf",
+            &format!("scale={}:-1", config.width),
+            "-q:v",
+            &config.quality.to_string(),
             &input.output_path,
         ])
         .env("LC_ALL", "C")
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
 
-        let child = cmd.spawn()
+        let child = cmd
+            .spawn()
             .map_err(|e| crate::Error::Other(format!("Failed to spawn ffmpeg: {}", e)))?;
 
-        let output = child.wait_with_output().await
+        let output = child
+            .wait_with_output()
+            .await
             .map_err(|e| crate::Error::Other(format!("Failed to wait for ffmpeg: {}", e)))?;
 
         if !output.status.success() {
@@ -134,9 +141,9 @@ impl Processor for ThumbnailProcessor {
         }
 
         let duration = start.elapsed().as_secs_f64();
-        
+
         debug!("ffmpeg output: {}", String::from_utf8_lossy(&output.stderr));
-        
+
         info!(
             "Thumbnail extracted in {:.2}s: {}",
             duration, input.output_path
@@ -145,10 +152,13 @@ impl Processor for ThumbnailProcessor {
         Ok(ProcessorOutput {
             output_path: input.output_path.clone(),
             duration_secs: duration,
-            metadata: Some(serde_json::json!({
-                "timestamp_secs": config.timestamp_secs,
-                "width": config.width,
-            }).to_string()),
+            metadata: Some(
+                serde_json::json!({
+                    "timestamp_secs": config.timestamp_secs,
+                    "width": config.width,
+                })
+                .to_string(),
+            ),
         })
     }
 }
@@ -182,7 +192,7 @@ mod tests {
     fn test_thumbnail_config_parse() {
         let json = r#"{"timestamp_secs": 30.0, "width": 640}"#;
         let config: ThumbnailConfig = serde_json::from_str(json).unwrap();
-        
+
         assert_eq!(config.timestamp_secs, 30.0);
         assert_eq!(config.width, 640);
         assert_eq!(config.quality, 2); // default

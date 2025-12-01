@@ -84,19 +84,41 @@ impl MonitorEvent {
     /// Get a human-readable description of the event.
     pub fn description(&self) -> String {
         match self {
-            MonitorEvent::StreamerLive { streamer_name, title, .. } => {
+            MonitorEvent::StreamerLive {
+                streamer_name,
+                title,
+                ..
+            } => {
                 format!("{} is now live: {}", streamer_name, title)
             }
             MonitorEvent::StreamerOffline { streamer_name, .. } => {
                 format!("{} went offline", streamer_name)
             }
-            MonitorEvent::FatalError { streamer_name, error_type, message, .. } => {
+            MonitorEvent::FatalError {
+                streamer_name,
+                error_type,
+                message,
+                ..
+            } => {
                 format!("{}: {:?} - {}", streamer_name, error_type, message)
             }
-            MonitorEvent::TransientError { streamer_name, error_message, consecutive_errors, .. } => {
-                format!("{}: {} (attempt {})", streamer_name, error_message, consecutive_errors)
+            MonitorEvent::TransientError {
+                streamer_name,
+                error_message,
+                consecutive_errors,
+                ..
+            } => {
+                format!(
+                    "{}: {} (attempt {})",
+                    streamer_name, error_message, consecutive_errors
+                )
             }
-            MonitorEvent::StateChanged { streamer_name, old_state, new_state, .. } => {
+            MonitorEvent::StateChanged {
+                streamer_name,
+                old_state,
+                new_state,
+                ..
+            } => {
                 format!("{}: {} -> {}", streamer_name, old_state, new_state)
             }
         }
@@ -108,7 +130,9 @@ impl MonitorEvent {
             MonitorEvent::StreamerLive { .. } => true,
             MonitorEvent::StreamerOffline { .. } => true,
             MonitorEvent::FatalError { .. } => true,
-            MonitorEvent::TransientError { consecutive_errors, .. } => {
+            MonitorEvent::TransientError {
+                consecutive_errors, ..
+            } => {
                 // Only notify after multiple consecutive errors
                 *consecutive_errors >= 3
             }
@@ -140,7 +164,10 @@ impl MonitorEventBroadcaster {
     }
 
     /// Publish a monitor event.
-    pub fn publish(&self, event: MonitorEvent) -> Result<usize, broadcast::error::SendError<MonitorEvent>> {
+    pub fn publish(
+        &self,
+        event: MonitorEvent,
+    ) -> Result<usize, broadcast::error::SendError<MonitorEvent>> {
         self.sender.send(event)
     }
 

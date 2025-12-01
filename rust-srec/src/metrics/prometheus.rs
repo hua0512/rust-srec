@@ -111,7 +111,11 @@ impl PrometheusExporter {
             &mut output,
             "streamers_live",
             "Number of live streamers",
-            snapshot.streamers_by_state.get("Live").copied().unwrap_or(0) as f64,
+            snapshot
+                .streamers_by_state
+                .get("Live")
+                .copied()
+                .unwrap_or(0) as f64,
         );
 
         for (streamer_id, count) in &snapshot.streamer_errors {

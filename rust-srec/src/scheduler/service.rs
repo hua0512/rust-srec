@@ -12,11 +12,11 @@ use tokio::task::JoinSet;
 use tokio_util::sync::CancellationToken;
 use tracing::{debug, error, info, warn};
 
+use crate::Result;
 use crate::config::{ConfigEventBroadcaster, ConfigUpdateEvent};
 use crate::streamer::{StreamerManager, StreamerMetadata};
-use crate::Result;
 
-use super::batch::{group_by_platform, BatchGroup};
+use super::batch::{BatchGroup, group_by_platform};
 use super::task::{MonitoringTask, TaskHandle, TaskStatus};
 
 /// Default check interval (60 seconds).
@@ -88,7 +88,11 @@ impl<R: crate::database::repositories::StreamerRepository + Send + Sync + 'stati
         streamer_manager: Arc<StreamerManager<R>>,
         event_broadcaster: ConfigEventBroadcaster,
     ) -> Self {
-        Self::with_config(streamer_manager, event_broadcaster, SchedulerConfig::default())
+        Self::with_config(
+            streamer_manager,
+            event_broadcaster,
+            SchedulerConfig::default(),
+        )
     }
 
     /// Create a new scheduler with custom configuration.
@@ -229,15 +233,15 @@ impl<R: crate::database::repositories::StreamerRepository + Send + Sync + 'stati
         self.task_set.spawn(async move {
             // Placeholder for actual batch monitoring logic
             // This will be implemented in the monitor module
-            let result = run_batch_monitoring_task(
-                group,
-                config,
-                cancellation_token,
-            ).await;
+            let result = run_batch_monitoring_task(group, config, cancellation_token).await;
 
             TaskResult {
                 streamer_id: task_id,
-                status: if result.is_ok() { TaskStatus::Completed } else { TaskStatus::Failed },
+                status: if result.is_ok() {
+                    TaskStatus::Completed
+                } else {
+                    TaskStatus::Failed
+                },
                 error: result.err().map(|e| e.to_string()),
             }
         });
@@ -280,14 +284,15 @@ impl<R: crate::database::repositories::StreamerRepository + Send + Sync + 'stati
         self.task_set.spawn(async move {
             // Placeholder for actual monitoring logic
             // This will be implemented in the monitor module
-            let result = run_individual_monitoring_task(
-                task,
-                cancellation_token,
-            ).await;
+            let result = run_individual_monitoring_task(task, cancellation_token).await;
 
             TaskResult {
                 streamer_id: task_id,
-                status: if result.is_ok() { TaskStatus::Completed } else { TaskStatus::Failed },
+                status: if result.is_ok() {
+                    TaskStatus::Completed
+                } else {
+                    TaskStatus::Failed
+                },
                 error: result.err().map(|e| e.to_string()),
             }
         });
@@ -308,7 +313,10 @@ impl<R: crate::database::repositories::StreamerRepository + Send + Sync + 'stati
             }
             ConfigUpdateEvent::PlatformUpdated { platform_id } => {
                 // Platform update affects streamers on that platform
-                info!("Platform {} config updated, rescheduling affected streamers", platform_id);
+                info!(
+                    "Platform {} config updated, rescheduling affected streamers",
+                    platform_id
+                );
                 self.cancel_platform_tasks(&platform_id);
                 // Streamers will be rescheduled on next periodic check
             }
@@ -362,7 +370,11 @@ impl<R: crate::database::repositories::StreamerRepository + Send + Sync + 'stati
             .map(|(id, _)| id.clone())
             .collect();
 
-        debug!("Cancelling {} tasks for platform {}", to_cancel.len(), platform_id);
+        debug!(
+            "Cancelling {} tasks for platform {}",
+            to_cancel.len(),
+            platform_id
+        );
 
         for id in to_cancel {
             if let Some(handle) = self.active_tasks.remove(&id) {

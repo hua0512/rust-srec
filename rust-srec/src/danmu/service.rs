@@ -1,7 +1,7 @@
 //! Danmu collection service.
 //!
 //! Manages danmu collection for live sessions with segment-based file writing.
-//! 
+//!
 //! The danmu collection follows this model:
 //! - **Session level**: WebSocket connection stays alive, statistics are aggregated
 //! - **Segment level**: XML files are created/finalized per download segment
@@ -14,11 +14,11 @@ use chrono::{DateTime, Utc};
 use dashmap::DashMap;
 use std::path::PathBuf;
 use std::sync::Arc;
-use tokio::sync::{broadcast, mpsc, Mutex};
+use tokio::sync::{Mutex, broadcast, mpsc};
 use tokio_util::sync::CancellationToken;
 
 use crate::danmu::providers::ProviderRegistry;
-use crate::danmu::sampler::{create_sampler, DanmuSamplingConfig as SamplerConfig, DanmuSampler};
+use crate::danmu::sampler::{DanmuSampler, DanmuSamplingConfig as SamplerConfig, create_sampler};
 use crate::danmu::statistics::{DanmuStatistics, StatisticsAggregator};
 use crate::danmu::{DanmuMessage, DanmuProvider, DanmuType};
 use crate::domain::DanmuSamplingConfig;
@@ -51,27 +51,21 @@ pub enum DanmuEvent {
         message_count: u64,
     },
     /// Connection lost and reconnecting
-    Reconnecting {
-        session_id: String,
-        attempt: u32,
-    },
+    Reconnecting { session_id: String, attempt: u32 },
     /// Reconnection failed
-    ReconnectFailed {
-        session_id: String,
-        error: String,
-    },
+    ReconnectFailed { session_id: String, error: String },
     /// Error during collection
-    Error {
-        session_id: String,
-        error: String,
-    },
+    Error { session_id: String, error: String },
 }
 
 /// Commands sent to the collection task.
 #[derive(Debug)]
 enum CollectionCommand {
     /// Start a new segment file
-    StartSegment { segment_id: String, output_path: PathBuf },
+    StartSegment {
+        segment_id: String,
+        output_path: PathBuf,
+    },
     /// End the current segment file
     EndSegment { segment_id: String },
     /// Stop collection entirely
@@ -111,7 +105,7 @@ impl Default for DanmuServiceConfig {
 /// Convert domain DanmuSamplingConfig to sampler config.
 fn to_sampler_config(config: &DanmuSamplingConfig) -> SamplerConfig {
     use crate::domain::value_objects::SamplingStrategy;
-    
+
     match config.strategy {
         SamplingStrategy::Fixed => SamplerConfig::Fixed {
             interval_secs: config.interval_secs as u64,
@@ -346,10 +340,12 @@ impl DanmuService {
 
     /// Get a handle for an existing collection.
     pub fn get_handle(&self, session_id: &str) -> Option<CollectionHandle> {
-        self.collections.get(session_id).map(|state| CollectionHandle {
-            session_id: session_id.to_string(),
-            command_tx: state.command_tx.clone(),
-        })
+        self.collections
+            .get(session_id)
+            .map(|state| CollectionHandle {
+                session_id: session_id.to_string(),
+                command_tx: state.command_tx.clone(),
+            })
     }
 
     /// Check if collection is active for a session.

@@ -133,7 +133,11 @@ pub struct DanmuConnection {
 
 impl DanmuConnection {
     /// Create a new connection handle.
-    pub fn new(id: impl Into<String>, platform: impl Into<String>, room_id: impl Into<String>) -> Self {
+    pub fn new(
+        id: impl Into<String>,
+        platform: impl Into<String>,
+        room_id: impl Into<String>,
+    ) -> Self {
         Self {
             id: id.into(),
             platform: platform.into(),
@@ -191,7 +195,7 @@ mod tests {
     #[test]
     fn test_danmu_message_chat() {
         let msg = DanmuMessage::chat("1", "user1", "TestUser", "Hello world!");
-        
+
         assert_eq!(msg.id, "1");
         assert_eq!(msg.user_id, "user1");
         assert_eq!(msg.username, "TestUser");
@@ -203,7 +207,7 @@ mod tests {
     #[test]
     fn test_danmu_message_gift() {
         let msg = DanmuMessage::gift("2", "user2", "GiftUser", "Rocket", 5);
-        
+
         assert_eq!(msg.message_type, DanmuType::Gift);
         let metadata = msg.metadata.as_ref().unwrap();
         assert_eq!(metadata.get("gift_name").unwrap(), "Rocket");
@@ -214,7 +218,7 @@ mod tests {
     fn test_danmu_message_with_metadata() {
         let msg = DanmuMessage::chat("1", "user1", "Test", "Hi")
             .with_metadata("color", serde_json::json!("#FF0000"));
-        
+
         let metadata = msg.metadata.as_ref().unwrap();
         assert_eq!(metadata.get("color").unwrap(), "#FF0000");
     }
@@ -222,16 +226,16 @@ mod tests {
     #[test]
     fn test_danmu_connection() {
         let mut conn = DanmuConnection::new("conn1", "huya", "12345");
-        
+
         assert!(!conn.is_connected);
         assert_eq!(conn.reconnect_count, 0);
-        
+
         conn.set_connected();
         assert!(conn.is_connected);
-        
+
         conn.set_disconnected();
         assert!(!conn.is_connected);
-        
+
         conn.increment_reconnect();
         assert_eq!(conn.reconnect_count, 1);
     }

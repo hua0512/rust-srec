@@ -27,8 +27,8 @@ async fn main() -> anyhow::Result<()> {
     dotenvy::dotenv().ok();
 
     // Initialize database
-    let database_url = std::env::var("DATABASE_URL")
-        .unwrap_or_else(|_| "sqlite:srec.db?mode=rwc".to_string());
+    let database_url =
+        std::env::var("DATABASE_URL").unwrap_or_else(|_| "sqlite:srec.db?mode=rwc".to_string());
 
     info!("Connecting to database: {}", database_url);
     let pool = database::init_pool(&database_url).await?;
@@ -75,7 +75,11 @@ async fn main() -> anyhow::Result<()> {
         reason: "Signal received".to_string(),
         timestamp: chrono::Utc::now(),
     };
-    if let Err(e) = container.notification_service().notify(shutdown_event).await {
+    if let Err(e) = container
+        .notification_service()
+        .notify(shutdown_event)
+        .await
+    {
         warn!("Failed to send shutdown notification: {}", e);
     }
 
@@ -92,7 +96,7 @@ async fn main() -> anyhow::Result<()> {
 /// Wait for SIGTERM signal (Unix only).
 #[cfg(unix)]
 async fn wait_for_sigterm() {
-    use tokio::signal::unix::{signal, SignalKind};
+    use tokio::signal::unix::{SignalKind, signal};
     let mut sigterm = signal(SignalKind::terminate()).expect("Failed to register SIGTERM handler");
     sigterm.recv().await;
 }

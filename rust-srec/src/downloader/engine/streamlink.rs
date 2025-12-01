@@ -26,12 +26,11 @@ pub struct StreamlinkEngine {
 impl StreamlinkEngine {
     /// Create a new Streamlink engine.
     pub fn new() -> Self {
-        let streamlink_path = std::env::var("STREAMLINK_PATH")
-            .unwrap_or_else(|_| "streamlink".to_string());
-        let ffmpeg_path = std::env::var("FFMPEG_PATH")
-            .unwrap_or_else(|_| "ffmpeg".to_string());
+        let streamlink_path =
+            std::env::var("STREAMLINK_PATH").unwrap_or_else(|_| "streamlink".to_string());
+        let ffmpeg_path = std::env::var("FFMPEG_PATH").unwrap_or_else(|_| "ffmpeg".to_string());
         let version = Self::detect_version(&streamlink_path);
-        
+
         Self {
             streamlink_path,
             ffmpeg_path,
@@ -110,7 +109,7 @@ impl StreamlinkEngine {
                 "-reset_timestamps".to_string(),
                 "1".to_string(),
             ]);
-            
+
             // Use segment pattern
             let pattern = config.output_dir.join(format!(
                 "{}_%03d.{}",
@@ -170,7 +169,7 @@ impl DownloadEngine for StreamlinkEngine {
     async fn start(&self, handle: Arc<DownloadHandle>) -> Result<()> {
         let streamlink_args = self.build_streamlink_args(&handle);
         let ffmpeg_args = self.build_ffmpeg_args(&handle);
-        
+
         info!(
             "Starting streamlink download for streamer {} with args: {:?}",
             handle.config.streamer_id, streamlink_args
@@ -184,10 +183,12 @@ impl DownloadEngine for StreamlinkEngine {
             .spawn()
             .map_err(|e| crate::Error::Other(format!("Failed to spawn streamlink: {}", e)))?;
 
-        let mut streamlink_stdout = streamlink.stdout.take()
-            .ok_or_else(|| crate::Error::Other("Failed to capture streamlink stdout".to_string()))?;
-        let streamlink_stderr = streamlink.stderr.take()
-            .ok_or_else(|| crate::Error::Other("Failed to capture streamlink stderr".to_string()))?;
+        let mut streamlink_stdout = streamlink.stdout.take().ok_or_else(|| {
+            crate::Error::Other("Failed to capture streamlink stdout".to_string())
+        })?;
+        let streamlink_stderr = streamlink.stderr.take().ok_or_else(|| {
+            crate::Error::Other("Failed to capture streamlink stderr".to_string())
+        })?;
 
         // Spawn ffmpeg process with stdin piped
         let mut ffmpeg = Command::new(&self.ffmpeg_path)
@@ -199,9 +200,13 @@ impl DownloadEngine for StreamlinkEngine {
             .spawn()
             .map_err(|e| crate::Error::Other(format!("Failed to spawn ffmpeg: {}", e)))?;
 
-        let mut ffmpeg_stdin = ffmpeg.stdin.take()
+        let mut ffmpeg_stdin = ffmpeg
+            .stdin
+            .take()
             .ok_or_else(|| crate::Error::Other("Failed to capture ffmpeg stdin".to_string()))?;
-        let ffmpeg_stderr = ffmpeg.stderr.take()
+        let ffmpeg_stderr = ffmpeg
+            .stderr
+            .take()
             .ok_or_else(|| crate::Error::Other("Failed to capture ffmpeg stderr".to_string()))?;
 
         let event_tx = handle.event_tx.clone();
@@ -213,7 +218,7 @@ impl DownloadEngine for StreamlinkEngine {
         tokio::spawn(async move {
             use tokio::io::{AsyncReadExt, AsyncWriteExt};
             let mut buffer = [0u8; 8192];
-            
+
             loop {
                 tokio::select! {
                     _ = cancellation_token_pipe.cancelled() => {
@@ -324,11 +329,13 @@ impl DownloadEngine for StreamlinkEngine {
             }
 
             // Send completion event
-            let _ = event_tx_clone.send(SegmentEvent::DownloadCompleted {
-                total_bytes,
-                total_duration_secs: total_duration,
-                total_segments: segment_index,
-            }).await;
+            let _ = event_tx_clone
+                .send(SegmentEvent::DownloadCompleted {
+                    total_bytes,
+                    total_duration_secs: total_duration,
+                    total_segments: segment_index,
+                })
+                .await;
         });
 
         // Spawn task to wait for processes and handle cancellation

@@ -1,9 +1,9 @@
 //! Template management routes.
 
 use axum::{
+    Json, Router,
     extract::{Path, Query, State},
     routing::{delete, get, patch, post},
-    Json, Router,
 };
 
 use crate::api::error::{ApiError, ApiResult};
@@ -69,7 +69,10 @@ async fn get_template(
     Path(id): Path<String>,
 ) -> ApiResult<Json<TemplateResponse>> {
     // TODO: Implement actual retrieval logic using ConfigService
-    Err(ApiError::not_found(format!("Template with id '{}' not found", id)))
+    Err(ApiError::not_found(format!(
+        "Template with id '{}' not found",
+        id
+    )))
 }
 
 /// Update a template.
@@ -79,7 +82,10 @@ async fn update_template(
     Json(request): Json<UpdateTemplateRequest>,
 ) -> ApiResult<Json<TemplateResponse>> {
     // TODO: Implement actual update logic using ConfigService
-    Err(ApiError::not_found(format!("Template with id '{}' not found", id)))
+    Err(ApiError::not_found(format!(
+        "Template with id '{}' not found",
+        id
+    )))
 }
 
 /// Delete a template.
@@ -89,7 +95,10 @@ async fn delete_template(
 ) -> ApiResult<Json<serde_json::Value>> {
     // TODO: Implement actual deletion logic using ConfigService
     // Should check if any streamers are using this template
-    Err(ApiError::not_found(format!("Template with id '{}' not found", id)))
+    Err(ApiError::not_found(format!(
+        "Template with id '{}' not found",
+        id
+    )))
 }
 
 #[cfg(test)]
@@ -112,7 +121,7 @@ mod tests {
             created_at: chrono::Utc::now(),
             updated_at: chrono::Utc::now(),
         };
-        
+
         let json = serde_json::to_string(&response).unwrap();
         assert!(json.contains("Test Template"));
         assert!(json.contains("mp4"));

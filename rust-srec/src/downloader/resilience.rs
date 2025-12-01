@@ -1,8 +1,8 @@
 //! Retry logic and circuit breaker for download resilience.
 
 use std::collections::HashMap;
-use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicU32, Ordering};
 use std::time::{Duration, Instant};
 
 use parking_lot::RwLock;
@@ -46,8 +46,10 @@ impl RetryConfig {
         }
 
         let base_delay = self.initial_delay_ms as f64
-            * self.backoff_multiplier.powi(attempt.saturating_sub(1) as i32);
-        
+            * self
+                .backoff_multiplier
+                .powi(attempt.saturating_sub(1) as i32);
+
         let delay_ms = base_delay.min(self.max_delay_ms as f64) as u64;
 
         let final_delay = if self.use_jitter {
@@ -128,7 +130,7 @@ impl CircuitBreaker {
     /// Record a successful operation.
     pub fn record_success(&self) {
         let state = *self.state.read();
-        
+
         match state {
             CircuitState::Closed => {
                 // Reset failure count on success
@@ -154,7 +156,7 @@ impl CircuitBreaker {
     /// Record a failed operation.
     pub fn record_failure(&self) {
         let state = *self.state.read();
-        
+
         match state {
             CircuitState::Closed => {
                 let failures = self.failure_count.fetch_add(1, Ordering::SeqCst) + 1;
@@ -193,7 +195,7 @@ impl CircuitBreaker {
     /// Check if state should transition (open -> half-open after cooldown).
     fn check_state_transition(&self) {
         let state = *self.state.read();
-        
+
         if state == CircuitState::Open {
             if let Some(opened_at) = *self.opened_at.read() {
                 if opened_at.elapsed() >= self.cooldown_duration {
@@ -241,7 +243,12 @@ impl CircuitBreakerManager {
         let mut breakers = self.breakers.write();
         breakers
             .entry(engine_type)
-            .or_insert_with(|| Arc::new(CircuitBreaker::new(self.failure_threshold, self.cooldown_secs)))
+            .or_insert_with(|| {
+                Arc::new(CircuitBreaker::new(
+                    self.failure_threshold,
+                    self.cooldown_secs,
+                ))
+            })
             .clone()
     }
 
@@ -307,13 +314,13 @@ mod tests {
     #[test]
     fn test_circuit_breaker_opens_on_failures() {
         let breaker = CircuitBreaker::new(3, 60);
-        
+
         breaker.record_failure();
         assert_eq!(breaker.state(), CircuitState::Closed);
-        
+
         breaker.record_failure();
         assert_eq!(breaker.state(), CircuitState::Closed);
-        
+
         breaker.record_failure();
         assert_eq!(breaker.state(), CircuitState::Open);
         assert!(!breaker.is_allowed());
@@ -322,11 +329,11 @@ mod tests {
     #[test]
     fn test_circuit_breaker_success_resets_failures() {
         let breaker = CircuitBreaker::new(3, 60);
-        
+
         breaker.record_failure();
         breaker.record_failure();
         breaker.record_success();
-        
+
         // Failure count should be reset
         breaker.record_failure();
         breaker.record_failure();
@@ -336,12 +343,12 @@ mod tests {
     #[test]
     fn test_circuit_breaker_reset() {
         let breaker = CircuitBreaker::new(3, 60);
-        
+
         breaker.record_failure();
         breaker.record_failure();
         breaker.record_failure();
         assert_eq!(breaker.state(), CircuitState::Open);
-        
+
         breaker.reset();
         assert_eq!(breaker.state(), CircuitState::Closed);
         assert!(breaker.is_allowed());
@@ -350,13 +357,13 @@ mod tests {
     #[test]
     fn test_circuit_breaker_manager() {
         let manager = CircuitBreakerManager::new(3, 60);
-        
+
         assert!(manager.is_engine_allowed(EngineType::Ffmpeg));
-        
+
         manager.record_failure(EngineType::Ffmpeg);
         manager.record_failure(EngineType::Ffmpeg);
         manager.record_failure(EngineType::Ffmpeg);
-        
+
         assert!(!manager.is_engine_allowed(EngineType::Ffmpeg));
         assert!(manager.is_engine_allowed(EngineType::Streamlink)); // Different engine
     }

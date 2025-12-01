@@ -6,16 +6,12 @@
 use std::sync::Arc;
 use tokio::sync::broadcast;
 
-use crate::database::models::{
-    GlobalConfigDbModel, PlatformConfigDbModel, TemplateConfigDbModel,
-    EngineConfigurationDbModel,
-};
-use crate::database::repositories::{
-    config::ConfigRepository,
-    streamer::StreamerRepository,
-};
-use crate::domain::config::MergedConfig;
 use crate::Result;
+use crate::database::models::{
+    EngineConfigurationDbModel, GlobalConfigDbModel, PlatformConfigDbModel, TemplateConfigDbModel,
+};
+use crate::database::repositories::{config::ConfigRepository, streamer::StreamerRepository};
+use crate::domain::config::MergedConfig;
 
 use super::cache::ConfigCache;
 use super::events::{ConfigEventBroadcaster, ConfigUpdateEvent};
@@ -82,13 +78,13 @@ where
     /// Update the global configuration.
     pub async fn update_global_config(&self, config: &GlobalConfigDbModel) -> Result<()> {
         self.config_repo.update_global_config(config).await?;
-        
+
         // Invalidate all cached configs since global affects everything
         self.cache.invalidate_all();
-        
+
         // Broadcast update event
         self.broadcaster.publish(ConfigUpdateEvent::GlobalUpdated);
-        
+
         tracing::info!("Global config updated, cache invalidated");
         Ok(())
     }
@@ -113,25 +109,27 @@ where
     /// Create a new platform configuration.
     pub async fn create_platform_config(&self, config: &PlatformConfigDbModel) -> Result<()> {
         self.config_repo.create_platform_config(config).await?;
-        
-        self.broadcaster.publish(ConfigUpdateEvent::PlatformUpdated {
-            platform_id: config.id.clone(),
-        });
-        
+
+        self.broadcaster
+            .publish(ConfigUpdateEvent::PlatformUpdated {
+                platform_id: config.id.clone(),
+            });
+
         Ok(())
     }
 
     /// Update a platform configuration.
     pub async fn update_platform_config(&self, config: &PlatformConfigDbModel) -> Result<()> {
         self.config_repo.update_platform_config(config).await?;
-        
+
         // Invalidate configs for streamers on this platform
         self.invalidate_streamers_by_platform(&config.id).await?;
-        
-        self.broadcaster.publish(ConfigUpdateEvent::PlatformUpdated {
-            platform_id: config.id.clone(),
-        });
-        
+
+        self.broadcaster
+            .publish(ConfigUpdateEvent::PlatformUpdated {
+                platform_id: config.id.clone(),
+            });
+
         tracing::info!("Platform config {} updated", config.id);
         Ok(())
     }
@@ -151,25 +149,27 @@ where
     /// Create a new template configuration.
     pub async fn create_template_config(&self, config: &TemplateConfigDbModel) -> Result<()> {
         self.config_repo.create_template_config(config).await?;
-        
-        self.broadcaster.publish(ConfigUpdateEvent::TemplateUpdated {
-            template_id: config.id.clone(),
-        });
-        
+
+        self.broadcaster
+            .publish(ConfigUpdateEvent::TemplateUpdated {
+                template_id: config.id.clone(),
+            });
+
         Ok(())
     }
 
     /// Update a template configuration.
     pub async fn update_template_config(&self, config: &TemplateConfigDbModel) -> Result<()> {
         self.config_repo.update_template_config(config).await?;
-        
+
         // Invalidate configs for streamers using this template
         self.invalidate_streamers_by_template(&config.id).await?;
-        
-        self.broadcaster.publish(ConfigUpdateEvent::TemplateUpdated {
-            template_id: config.id.clone(),
-        });
-        
+
+        self.broadcaster
+            .publish(ConfigUpdateEvent::TemplateUpdated {
+                template_id: config.id.clone(),
+            });
+
         tracing::info!("Template config {} updated", config.id);
         Ok(())
     }
@@ -178,13 +178,14 @@ where
     pub async fn delete_template_config(&self, id: &str) -> Result<()> {
         // Invalidate before delete
         self.invalidate_streamers_by_template(id).await?;
-        
+
         self.config_repo.delete_template_config(id).await?;
-        
-        self.broadcaster.publish(ConfigUpdateEvent::TemplateUpdated {
-            template_id: id.to_string(),
-        });
-        
+
+        self.broadcaster
+            .publish(ConfigUpdateEvent::TemplateUpdated {
+                template_id: id.to_string(),
+            });
+
         Ok(())
     }
 
@@ -203,26 +204,26 @@ where
     /// Create a new engine configuration.
     pub async fn create_engine_config(&self, config: &EngineConfigurationDbModel) -> Result<()> {
         self.config_repo.create_engine_config(config).await?;
-        
+
         self.broadcaster.publish(ConfigUpdateEvent::EngineUpdated {
             engine_id: config.id.clone(),
         });
-        
+
         Ok(())
     }
 
     /// Update an engine configuration.
     pub async fn update_engine_config(&self, config: &EngineConfigurationDbModel) -> Result<()> {
         self.config_repo.update_engine_config(config).await?;
-        
+
         // Engine updates may affect any streamer using this engine
         // For now, we don't track which streamers use which engines
         // so we just broadcast the event
-        
+
         self.broadcaster.publish(ConfigUpdateEvent::EngineUpdated {
             engine_id: config.id.clone(),
         });
-        
+
         tracing::info!("Engine config {} updated", config.id);
         Ok(())
     }
@@ -244,11 +245,11 @@ where
 
         // Check for in-flight request (deduplication)
         let (cell, is_new) = self.cache.get_or_create_in_flight(streamer_id);
-        
+
         if !is_new {
             // Another request is already resolving this config, wait for it
             tracing::trace!("Waiting for in-flight request for streamer {}", streamer_id);
-            
+
             // Wait for the OnceCell to be populated
             loop {
                 if let Some(config) = cell.get() {
@@ -264,7 +265,7 @@ where
         }
 
         tracing::trace!("Cache miss for streamer {}, resolving config", streamer_id);
-        
+
         // Resolve the config
         match self.resolve_config_for_streamer(streamer_id).await {
             Ok(config) => {
@@ -284,20 +285,23 @@ where
     async fn resolve_config_for_streamer(&self, streamer_id: &str) -> Result<MergedConfig> {
         // Get the streamer
         let streamer = self.streamer_repo.get_streamer(streamer_id).await?;
-        
+
         // Get global config
         let global = self.config_repo.get_global_config().await?;
-        
+
         // Get platform config
-        let platform = self.config_repo.get_platform_config(&streamer.platform_config_id).await?;
-        
+        let platform = self
+            .config_repo
+            .get_platform_config(&streamer.platform_config_id)
+            .await?;
+
         // Get template config if specified
         let template = if let Some(ref template_id) = streamer.template_config_id {
             Some(self.config_repo.get_template_config(template_id).await?)
         } else {
             None
         };
-        
+
         // Build merged config
         let mut builder = MergedConfig::builder()
             .with_global(
@@ -315,10 +319,13 @@ where
                 platform.fetch_delay_ms,
                 platform.download_delay_ms,
                 platform.cookies.clone(),
-                platform.proxy_config.as_ref().map(|s| parse_proxy_config(s)),
+                platform
+                    .proxy_config
+                    .as_ref()
+                    .map(|s| parse_proxy_config(s)),
                 platform.record_danmu,
             );
-        
+
         // Apply template if present
         if let Some(template) = template {
             builder = builder.with_template(
@@ -329,38 +336,61 @@ where
                 template.max_download_duration_secs,
                 template.max_part_size_bytes,
                 template.record_danmu,
-                template.proxy_config.as_ref().map(|s| parse_proxy_config(s)),
+                template
+                    .proxy_config
+                    .as_ref()
+                    .map(|s| parse_proxy_config(s)),
                 template.cookies,
                 template.download_engine,
-                template.download_retry_policy.as_ref().and_then(|s| serde_json::from_str(s).ok()),
-                template.danmu_sampling_config.as_ref().and_then(|s| serde_json::from_str(s).ok()),
+                template
+                    .download_retry_policy
+                    .as_ref()
+                    .and_then(|s| serde_json::from_str(s).ok()),
+                template
+                    .danmu_sampling_config
+                    .as_ref()
+                    .and_then(|s| serde_json::from_str(s).ok()),
                 template.max_bitrate,
-                template.event_hooks.as_ref().and_then(|s| serde_json::from_str(s).ok()),
-                template.stream_selection_config.as_ref().and_then(|s| serde_json::from_str(s).ok()),
+                template
+                    .event_hooks
+                    .as_ref()
+                    .and_then(|s| serde_json::from_str(s).ok()),
+                template
+                    .stream_selection_config
+                    .as_ref()
+                    .and_then(|s| serde_json::from_str(s).ok()),
             );
         }
-        
+
         // Apply streamer-specific config
-        let streamer_config = streamer.streamer_specific_config
+        let streamer_config = streamer
+            .streamer_specific_config
             .as_ref()
             .and_then(|s| serde_json::from_str(s).ok());
-        
+
         builder = builder.with_streamer(
-            streamer.download_retry_policy.as_ref().and_then(|s| serde_json::from_str(s).ok()),
-            streamer.danmu_sampling_config.as_ref().and_then(|s| serde_json::from_str(s).ok()),
+            streamer
+                .download_retry_policy
+                .as_ref()
+                .and_then(|s| serde_json::from_str(s).ok()),
+            streamer
+                .danmu_sampling_config
+                .as_ref()
+                .and_then(|s| serde_json::from_str(s).ok()),
             streamer_config.as_ref(),
         );
-        
+
         Ok(builder.build())
     }
 
     /// Invalidate the cached config for a specific streamer.
     pub fn invalidate_streamer(&self, streamer_id: &str) {
         self.cache.invalidate(streamer_id);
-        
-        self.broadcaster.publish(ConfigUpdateEvent::StreamerUpdated {
-            streamer_id: streamer_id.to_string(),
-        });
+
+        self.broadcaster
+            .publish(ConfigUpdateEvent::StreamerUpdated {
+                streamer_id: streamer_id.to_string(),
+            });
     }
 
     // ========== Cache Management ==========
@@ -379,33 +409,39 @@ where
 
     /// Invalidate cached configs for all streamers on a platform.
     async fn invalidate_streamers_by_platform(&self, platform_id: &str) -> Result<()> {
-        let streamers = self.streamer_repo.list_streamers_by_platform(platform_id).await?;
-        
+        let streamers = self
+            .streamer_repo
+            .list_streamers_by_platform(platform_id)
+            .await?;
+
         for streamer in streamers {
             self.cache.invalidate(&streamer.id);
         }
-        
+
         tracing::debug!(
             "Invalidated cache for streamers on platform {}",
             platform_id
         );
-        
+
         Ok(())
     }
 
     /// Invalidate cached configs for all streamers using a template.
     async fn invalidate_streamers_by_template(&self, template_id: &str) -> Result<()> {
-        let streamers = self.streamer_repo.list_streamers_by_template(template_id).await?;
-        
+        let streamers = self
+            .streamer_repo
+            .list_streamers_by_template(template_id)
+            .await?;
+
         for streamer in streamers {
             self.cache.invalidate(&streamer.id);
         }
-        
+
         tracing::debug!(
             "Invalidated cache for streamers using template {}",
             template_id
         );
-        
+
         Ok(())
     }
 }

@@ -61,13 +61,15 @@ impl Processor for ExecuteCommandProcessor {
 
     async fn process(&self, input: &ProcessorInput) -> Result<ProcessorOutput> {
         let start = std::time::Instant::now();
-        
+
         // Get command from config
-        let command = input.config.as_ref()
+        let command = input
+            .config
+            .as_ref()
             .ok_or_else(|| crate::Error::Other("No command specified in config".to_string()))?;
 
         let command = Self::substitute_variables(command, input);
-        
+
         info!("Executing command: {}", command);
 
         // Build command
@@ -85,10 +87,10 @@ impl Processor for ExecuteCommandProcessor {
             c
         };
 
-        cmd.stdout(Stdio::piped())
-           .stderr(Stdio::piped());
+        cmd.stdout(Stdio::piped()).stderr(Stdio::piped());
 
-        let mut child = cmd.spawn()
+        let mut child = cmd
+            .spawn()
             .map_err(|e| crate::Error::Other(format!("Failed to spawn command: {}", e)))?;
 
         // Read stdout and stderr
@@ -124,7 +126,8 @@ impl Processor for ExecuteCommandProcessor {
         let result = tokio::time::timeout(
             std::time::Duration::from_secs(self.timeout_secs),
             child.wait(),
-        ).await;
+        )
+        .await;
 
         // Wait for output readers
         if let Some(h) = stdout_handle {
@@ -137,7 +140,10 @@ impl Processor for ExecuteCommandProcessor {
         let status = match result {
             Ok(Ok(s)) => s,
             Ok(Err(e)) => {
-                return Err(crate::Error::Other(format!("Failed to wait for command: {}", e)));
+                return Err(crate::Error::Other(format!(
+                    "Failed to wait for command: {}",
+                    e
+                )));
             }
             Err(_) => {
                 error!("Command timed out after {}s", self.timeout_secs);
@@ -155,7 +161,7 @@ impl Processor for ExecuteCommandProcessor {
         }
 
         let duration = start.elapsed().as_secs_f64();
-        
+
         info!("Command completed in {:.2}s", duration);
 
         Ok(ProcessorOutput {
@@ -196,7 +202,7 @@ mod tests {
 
         let command = "echo {input} {output} {streamer_id}";
         let result = ExecuteCommandProcessor::substitute_variables(command, &input);
-        
+
         assert_eq!(result, "echo /input.flv /output.mp4 streamer-1");
     }
 

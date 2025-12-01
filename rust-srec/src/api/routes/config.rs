@@ -1,9 +1,9 @@
 //! Configuration routes.
 
 use axum::{
+    Json, Router,
     extract::{Path, State},
     routing::{get, patch},
-    Json, Router,
 };
 
 use crate::api::error::{ApiError, ApiResult};
@@ -55,9 +55,7 @@ fn map_platform_config_to_response(config: PlatformConfigDbModel) -> PlatformCon
 }
 
 /// Get global configuration.
-async fn get_global_config(
-    State(state): State<AppState>,
-) -> ApiResult<Json<GlobalConfigResponse>> {
+async fn get_global_config(State(state): State<AppState>) -> ApiResult<Json<GlobalConfigResponse>> {
     let config_service = state
         .config_service
         .as_ref()
@@ -166,16 +164,13 @@ async fn get_platform_config(
         .as_ref()
         .ok_or_else(|| ApiError::internal("ConfigService not available"))?;
 
-    let config = config_service
-        .get_platform_config(&id)
-        .await
-        .map_err(|e| {
-            if e.to_string().contains("not found") {
-                ApiError::not_found(format!("Platform config with id '{}' not found", id))
-            } else {
-                ApiError::internal(format!("Failed to get platform config: {}", e))
-            }
-        })?;
+    let config = config_service.get_platform_config(&id).await.map_err(|e| {
+        if e.to_string().contains("not found") {
+            ApiError::not_found(format!("Platform config with id '{}' not found", id))
+        } else {
+            ApiError::internal(format!("Failed to get platform config: {}", e))
+        }
+    })?;
 
     Ok(Json(map_platform_config_to_response(config)))
 }
@@ -192,16 +187,13 @@ async fn update_platform_config(
         .ok_or_else(|| ApiError::internal("ConfigService not available"))?;
 
     // Get current config to apply partial updates
-    let mut config = config_service
-        .get_platform_config(&id)
-        .await
-        .map_err(|e| {
-            if e.to_string().contains("not found") {
-                ApiError::not_found(format!("Platform config with id '{}' not found", id))
-            } else {
-                ApiError::internal(format!("Failed to get platform config: {}", e))
-            }
-        })?;
+    let mut config = config_service.get_platform_config(&id).await.map_err(|e| {
+        if e.to_string().contains("not found") {
+            ApiError::not_found(format!("Platform config with id '{}' not found", id))
+        } else {
+            ApiError::internal(format!("Failed to get platform config: {}", e))
+        }
+    })?;
 
     // Apply partial updates
     if let Some(fetch_delay_ms) = request.fetch_delay_ms {
@@ -246,7 +238,7 @@ mod tests {
             default_download_engine: "mesio".to_string(),
             record_danmu: false,
         };
-        
+
         let json = serde_json::to_string(&response).unwrap();
         assert!(json.contains("downloads"));
         assert!(json.contains("mesio"));
@@ -255,8 +247,8 @@ mod tests {
 
 #[cfg(test)]
 mod property_tests {
-    use crate::database::models::{GlobalConfigDbModel, PlatformConfigDbModel};
     use crate::api::models::{UpdateGlobalConfigRequest, UpdatePlatformConfigRequest};
+    use crate::database::models::{GlobalConfigDbModel, PlatformConfigDbModel};
     use proptest::prelude::*;
 
     /// Apply partial updates from UpdateGlobalConfigRequest to GlobalConfigDbModel

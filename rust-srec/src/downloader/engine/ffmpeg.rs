@@ -7,9 +7,7 @@ use tokio::io::{AsyncBufReadExt, BufReader};
 use tokio::process::Command;
 use tracing::{debug, error, info, warn};
 
-use super::traits::{
-    DownloadEngine, DownloadHandle, DownloadProgress, EngineType, SegmentEvent,
-};
+use super::traits::{DownloadEngine, DownloadHandle, DownloadProgress, EngineType, SegmentEvent};
 use crate::Result;
 
 /// FFmpeg-based download engine.
@@ -25,7 +23,7 @@ impl FfmpegEngine {
     pub fn new() -> Self {
         let ffmpeg_path = std::env::var("FFMPEG_PATH").unwrap_or_else(|_| "ffmpeg".to_string());
         let version = Self::detect_version(&ffmpeg_path);
-        
+
         Self {
             ffmpeg_path,
             version,
@@ -36,7 +34,7 @@ impl FfmpegEngine {
     pub fn with_path(path: impl Into<String>) -> Self {
         let ffmpeg_path = path.into();
         let version = Self::detect_version(&ffmpeg_path);
-        
+
         Self {
             ffmpeg_path,
             version,
@@ -97,7 +95,7 @@ impl FfmpegEngine {
             "{}.{}",
             config.filename_template, config.output_format
         ));
-        
+
         if config.max_segment_duration_secs > 0 {
             // Use segment pattern
             let pattern = config.output_dir.join(format!(
@@ -186,7 +184,7 @@ impl DownloadEngine for FfmpegEngine {
 
     async fn start(&self, handle: Arc<DownloadHandle>) -> Result<()> {
         let args = self.build_args(&handle);
-        
+
         info!(
             "Starting ffmpeg download for streamer {} with args: {:?}",
             handle.config.streamer_id, args
@@ -201,7 +199,9 @@ impl DownloadEngine for FfmpegEngine {
             .spawn()
             .map_err(|e| crate::Error::Other(format!("Failed to spawn ffmpeg: {}", e)))?;
 
-        let stderr = child.stderr.take()
+        let stderr = child
+            .stderr
+            .take()
             .ok_or_else(|| crate::Error::Other("Failed to capture ffmpeg stderr".to_string()))?;
 
         let event_tx = handle.event_tx.clone();
@@ -235,7 +235,7 @@ impl DownloadEngine for FfmpegEngine {
                                 if let Some(progress) = Self::parse_progress(&line) {
                                     total_bytes = progress.bytes_downloaded;
                                     total_duration = progress.duration_secs;
-                                    
+
                                     let _ = event_tx.send(SegmentEvent::Progress(progress)).await;
                                 }
 
@@ -259,11 +259,13 @@ impl DownloadEngine for FfmpegEngine {
             }
 
             // Send completion event
-            let _ = event_tx.send(SegmentEvent::DownloadCompleted {
-                total_bytes,
-                total_duration_secs: total_duration,
-                total_segments: segment_index,
-            }).await;
+            let _ = event_tx
+                .send(SegmentEvent::DownloadCompleted {
+                    total_bytes,
+                    total_duration_secs: total_duration,
+                    total_segments: segment_index,
+                })
+                .await;
         });
 
         // Wait for process to complete or cancellation
@@ -293,7 +295,10 @@ impl DownloadEngine for FfmpegEngine {
     }
 
     async fn stop(&self, handle: &DownloadHandle) -> Result<()> {
-        info!("Stopping ffmpeg download for streamer {}", handle.config.streamer_id);
+        info!(
+            "Stopping ffmpeg download for streamer {}",
+            handle.config.streamer_id
+        );
         handle.cancel();
         Ok(())
     }
@@ -322,7 +327,7 @@ mod tests {
     fn test_parse_progress() {
         let line = "frame=  100 fps=25 q=-1.0 size=    1024kB time=00:00:04.00 bitrate=2097.2kbits/s speed=1.00x";
         let progress = FfmpegEngine::parse_progress(line);
-        
+
         assert!(progress.is_some());
         let p = progress.unwrap();
         assert_eq!(p.bytes_downloaded, 1024 * 1024);

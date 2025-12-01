@@ -40,12 +40,12 @@ impl Default for ApiServerConfig {
 
 use std::sync::Arc;
 
+use crate::api::auth_service::AuthService;
 use crate::api::jwt::JwtService;
 use crate::config::ConfigService;
 use crate::danmu::DanmuService;
 use crate::database::repositories::{
-    config::SqlxConfigRepository,
-    streamer::SqlxStreamerRepository,
+    config::SqlxConfigRepository, streamer::SqlxStreamerRepository,
 };
 use crate::downloader::DownloadManager;
 use crate::pipeline::PipelineManager;
@@ -58,6 +58,8 @@ pub struct AppState {
     pub start_time: Instant,
     /// JWT service for authentication
     pub jwt_service: Option<Arc<JwtService>>,
+    /// Auth service for user authentication and token management
+    pub auth_service: Option<Arc<AuthService>>,
     /// Configuration service
     pub config_service: Option<Arc<ConfigService<SqlxConfigRepository, SqlxStreamerRepository>>>,
     /// Streamer manager
@@ -76,6 +78,7 @@ impl AppState {
         Self {
             start_time: Instant::now(),
             jwt_service: None,
+            auth_service: None,
             config_service: None,
             streamer_manager: None,
             pipeline_manager: None,
@@ -90,6 +93,7 @@ impl AppState {
         Self {
             start_time: Instant::now(),
             jwt_service,
+            auth_service: None,
             config_service: None,
             streamer_manager: None,
             pipeline_manager: None,
@@ -102,7 +106,8 @@ impl AppState {
     fn create_jwt_service_from_env() -> Option<Arc<JwtService>> {
         let secret = std::env::var("JWT_SECRET").ok()?;
         let issuer = std::env::var("JWT_ISSUER").unwrap_or_else(|_| "rust-srec".to_string());
-        let audience = std::env::var("JWT_AUDIENCE").unwrap_or_else(|_| "rust-srec-api".to_string());
+        let audience =
+            std::env::var("JWT_AUDIENCE").unwrap_or_else(|_| "rust-srec-api".to_string());
         let expiration_secs = std::env::var("JWT_EXPIRATION_SECS")
             .ok()
             .and_then(|s| s.parse().ok())
@@ -128,6 +133,7 @@ impl AppState {
         Self {
             start_time: Instant::now(),
             jwt_service,
+            auth_service: None,
             config_service: Some(config_service),
             streamer_manager: Some(streamer_manager),
             pipeline_manager: Some(pipeline_manager),
@@ -139,6 +145,12 @@ impl AppState {
     /// Set the JWT service.
     pub fn with_jwt_service(mut self, jwt_service: Arc<JwtService>) -> Self {
         self.jwt_service = Some(jwt_service);
+        self
+    }
+
+    /// Set the auth service.
+    pub fn with_auth_service(mut self, auth_service: Arc<AuthService>) -> Self {
+        self.auth_service = Some(auth_service);
         self
     }
 }
@@ -214,7 +226,7 @@ impl ApiServer {
         tracing::info!("API server listening on http://{}", addr);
 
         let cancel_token = self.cancel_token.clone();
-        
+
         axum::serve(listener, router)
             .with_graceful_shutdown(async move {
                 cancel_token.cancelled().await;
@@ -255,7 +267,7 @@ mod tests {
     fn test_server_creation() {
         let config = ApiServerConfig::default();
         let server = ApiServer::new(config);
-        
+
         // Server should have a valid cancel token
         let token = server.cancel_token();
         assert!(!token.is_cancelled());

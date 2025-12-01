@@ -3,9 +3,9 @@
 use chrono::{DateTime, Duration, Utc};
 use serde::{Deserialize, Serialize};
 
-use crate::domain::{Priority, RetryPolicy, DanmuSamplingConfig, StreamerUrl};
-use crate::Error;
 use super::StreamerState;
+use crate::Error;
+use crate::domain::{DanmuSamplingConfig, Priority, RetryPolicy, StreamerUrl};
 
 /// Error threshold before applying exponential backoff.
 const ERROR_THRESHOLD: i32 = 3;
@@ -105,7 +105,7 @@ impl Streamer {
     /// Enter error state and potentially apply backoff.
     pub fn enter_error_state(&mut self, error: &str) -> Result<(), Error> {
         self.consecutive_error_count += 1;
-        
+
         tracing::warn!(
             streamer_id = %self.id,
             streamer_name = %self.name,
@@ -119,7 +119,7 @@ impl Streamer {
             let backoff_secs = self.calculate_backoff_duration();
             self.disabled_until = Some(Utc::now() + Duration::seconds(backoff_secs));
             self.state = self.state.transition_to(StreamerState::TemporalDisabled)?;
-            
+
             tracing::info!(
                 streamer_id = %self.id,
                 disabled_until = ?self.disabled_until,
@@ -229,14 +229,14 @@ mod tests {
     #[test]
     fn test_error_handling() {
         let mut streamer = create_test_streamer();
-        
+
         // First few errors don't disable
         for _ in 0..2 {
             streamer.enter_error_state("test error").unwrap();
         }
         assert_eq!(streamer.state, StreamerState::FatalError);
         assert!(streamer.disabled_until.is_none());
-        
+
         // Third error triggers backoff
         streamer.enter_error_state("test error").unwrap();
         assert_eq!(streamer.state, StreamerState::TemporalDisabled);
@@ -249,7 +249,7 @@ mod tests {
         for _ in 0..3 {
             streamer.enter_error_state("test error").unwrap();
         }
-        
+
         streamer.clear_error_state().unwrap();
         assert_eq!(streamer.state, StreamerState::NotLive);
         assert_eq!(streamer.consecutive_error_count, 0);
@@ -261,10 +261,10 @@ mod tests {
         let mut streamer = create_test_streamer();
         streamer.consecutive_error_count = 3;
         assert_eq!(streamer.calculate_backoff_duration(), 60); // BASE_BACKOFF_SECS
-        
+
         streamer.consecutive_error_count = 4;
         assert_eq!(streamer.calculate_backoff_duration(), 120); // 60 * 2
-        
+
         streamer.consecutive_error_count = 5;
         assert_eq!(streamer.calculate_backoff_duration(), 240); // 60 * 4
     }
@@ -273,7 +273,7 @@ mod tests {
     fn test_priority() {
         let mut streamer = create_test_streamer();
         assert_eq!(streamer.priority, Priority::Normal);
-        
+
         streamer.set_priority(Priority::High);
         assert_eq!(streamer.priority, Priority::High);
     }
@@ -282,7 +282,7 @@ mod tests {
     fn test_should_monitor() {
         let mut streamer = create_test_streamer();
         assert!(streamer.should_monitor());
-        
+
         streamer.cancel().unwrap();
         assert!(!streamer.should_monitor());
     }

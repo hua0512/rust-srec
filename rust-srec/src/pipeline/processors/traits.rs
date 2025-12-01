@@ -74,7 +74,7 @@ mod tests {
             streamer_id: "streamer-1".to_string(),
             session_id: "session-1".to_string(),
         };
-        
+
         assert_eq!(input.input_path, "/input.flv");
         assert_eq!(input.output_path, "/output.mp4");
     }
@@ -86,7 +86,7 @@ mod tests {
             duration_secs: 10.5,
             metadata: Some(r#"{"size": 1024}"#.to_string()),
         };
-        
+
         assert_eq!(output.duration_secs, 10.5);
     }
 }

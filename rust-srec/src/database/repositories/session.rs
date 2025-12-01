@@ -11,8 +11,15 @@ use crate::{Error, Result};
 pub trait SessionRepository: Send + Sync {
     // Live Sessions
     async fn get_session(&self, id: &str) -> Result<LiveSessionDbModel>;
-    async fn get_active_session_for_streamer(&self, streamer_id: &str) -> Result<Option<LiveSessionDbModel>>;
-    async fn list_sessions_for_streamer(&self, streamer_id: &str, limit: i32) -> Result<Vec<LiveSessionDbModel>>;
+    async fn get_active_session_for_streamer(
+        &self,
+        streamer_id: &str,
+    ) -> Result<Option<LiveSessionDbModel>>;
+    async fn list_sessions_for_streamer(
+        &self,
+        streamer_id: &str,
+        limit: i32,
+    ) -> Result<Vec<LiveSessionDbModel>>;
     async fn create_session(&self, session: &LiveSessionDbModel) -> Result<()>;
     async fn end_session(&self, id: &str, end_time: &str) -> Result<()>;
     async fn update_session_titles(&self, id: &str, titles: &str) -> Result<()>;
@@ -20,12 +27,18 @@ pub trait SessionRepository: Send + Sync {
 
     // Media Outputs
     async fn get_media_output(&self, id: &str) -> Result<MediaOutputDbModel>;
-    async fn get_media_outputs_for_session(&self, session_id: &str) -> Result<Vec<MediaOutputDbModel>>;
+    async fn get_media_outputs_for_session(
+        &self,
+        session_id: &str,
+    ) -> Result<Vec<MediaOutputDbModel>>;
     async fn create_media_output(&self, output: &MediaOutputDbModel) -> Result<()>;
     async fn delete_media_output(&self, id: &str) -> Result<()>;
 
     // Danmu Statistics
-    async fn get_danmu_statistics(&self, session_id: &str) -> Result<Option<DanmuStatisticsDbModel>>;
+    async fn get_danmu_statistics(
+        &self,
+        session_id: &str,
+    ) -> Result<Option<DanmuStatisticsDbModel>>;
     async fn create_danmu_statistics(&self, stats: &DanmuStatisticsDbModel) -> Result<()>;
     async fn update_danmu_statistics(&self, stats: &DanmuStatisticsDbModel) -> Result<()>;
 }
@@ -51,7 +64,10 @@ impl SessionRepository for SqlxSessionRepository {
             .ok_or_else(|| Error::not_found("LiveSession", id))
     }
 
-    async fn get_active_session_for_streamer(&self, streamer_id: &str) -> Result<Option<LiveSessionDbModel>> {
+    async fn get_active_session_for_streamer(
+        &self,
+        streamer_id: &str,
+    ) -> Result<Option<LiveSessionDbModel>> {
         let session = sqlx::query_as::<_, LiveSessionDbModel>(
             "SELECT * FROM live_sessions WHERE streamer_id = ? AND end_time IS NULL ORDER BY start_time DESC LIMIT 1",
         )
@@ -61,7 +77,11 @@ impl SessionRepository for SqlxSessionRepository {
         Ok(session)
     }
 
-    async fn list_sessions_for_streamer(&self, streamer_id: &str, limit: i32) -> Result<Vec<LiveSessionDbModel>> {
+    async fn list_sessions_for_streamer(
+        &self,
+        streamer_id: &str,
+        limit: i32,
+    ) -> Result<Vec<LiveSessionDbModel>> {
         let sessions = sqlx::query_as::<_, LiveSessionDbModel>(
             "SELECT * FROM live_sessions WHERE streamer_id = ? ORDER BY start_time DESC LIMIT ?",
         )
@@ -124,7 +144,10 @@ impl SessionRepository for SqlxSessionRepository {
             .ok_or_else(|| Error::not_found("MediaOutput", id))
     }
 
-    async fn get_media_outputs_for_session(&self, session_id: &str) -> Result<Vec<MediaOutputDbModel>> {
+    async fn get_media_outputs_for_session(
+        &self,
+        session_id: &str,
+    ) -> Result<Vec<MediaOutputDbModel>> {
         let outputs = sqlx::query_as::<_, MediaOutputDbModel>(
             "SELECT * FROM media_outputs WHERE session_id = ? ORDER BY created_at",
         )
@@ -161,7 +184,10 @@ impl SessionRepository for SqlxSessionRepository {
         Ok(())
     }
 
-    async fn get_danmu_statistics(&self, session_id: &str) -> Result<Option<DanmuStatisticsDbModel>> {
+    async fn get_danmu_statistics(
+        &self,
+        session_id: &str,
+    ) -> Result<Option<DanmuStatisticsDbModel>> {
         let stats = sqlx::query_as::<_, DanmuStatisticsDbModel>(
             "SELECT * FROM danmu_statistics WHERE session_id = ?",
         )

@@ -130,84 +130,84 @@ pub struct RemuxConfig {
     /// Video codec to use.
     #[serde(default)]
     pub video_codec: VideoCodec,
-    
+
     /// Audio codec to use.
     #[serde(default)]
     pub audio_codec: AudioCodec,
-    
+
     /// Output container format (e.g., "mp4", "mkv", "webm").
     /// If not specified, inferred from output file extension.
     #[serde(default)]
     pub format: Option<String>,
-    
+
     /// Video bitrate (e.g., "2M", "5000k").
     #[serde(default)]
     pub video_bitrate: Option<String>,
-    
+
     /// Audio bitrate (e.g., "128k", "320k").
     #[serde(default)]
     pub audio_bitrate: Option<String>,
-    
+
     /// Constant Rate Factor for quality-based encoding (0-51, lower is better).
     #[serde(default)]
     pub crf: Option<u8>,
-    
+
     /// Encoding preset (speed vs quality tradeoff).
     #[serde(default)]
     pub preset: Option<Preset>,
-    
+
     /// Video resolution (e.g., "1920x1080", "1280x720").
     #[serde(default)]
     pub resolution: Option<String>,
-    
+
     /// Frame rate (e.g., 30, 60).
     #[serde(default)]
     pub fps: Option<f32>,
-    
+
     /// Start time in seconds (for trimming).
     #[serde(default)]
     pub start_time: Option<f64>,
-    
+
     /// Duration in seconds (for trimming).
     #[serde(default)]
     pub duration: Option<f64>,
-    
+
     /// End time in seconds (alternative to duration).
     #[serde(default)]
     pub end_time: Option<f64>,
-    
+
     /// Video filters (e.g., "scale=1280:720,fps=30").
     #[serde(default)]
     pub video_filter: Option<String>,
-    
+
     /// Audio filters (e.g., "volume=2.0").
     #[serde(default)]
     pub audio_filter: Option<String>,
-    
+
     /// Hardware acceleration (e.g., "cuda", "vaapi", "qsv").
     #[serde(default)]
     pub hwaccel: Option<String>,
-    
+
     /// Additional FFmpeg input options.
     #[serde(default)]
     pub input_options: Vec<String>,
-    
+
     /// Additional FFmpeg output options.
     #[serde(default)]
     pub output_options: Vec<String>,
-    
+
     /// Whether to use fast start for MP4 (moves moov atom to beginning).
     #[serde(default = "default_faststart")]
     pub faststart: bool,
-    
+
     /// Whether to overwrite output file if it exists.
     #[serde(default = "default_overwrite")]
     pub overwrite: bool,
-    
+
     /// Map specific streams (e.g., ["0:v:0", "0:a:0"]).
     #[serde(default)]
     pub map_streams: Vec<String>,
-    
+
     /// Metadata to add (key-value pairs).
     #[serde(default)]
     pub metadata: Vec<(String, String)>,
@@ -339,19 +339,19 @@ impl RemuxProcessor {
 
         // Video filters
         let mut vf_parts = Vec::new();
-        
+
         if let Some(ref resolution) = config.resolution {
             vf_parts.push(format!("scale={}", resolution.replace('x', ":")));
         }
-        
+
         if let Some(fps) = config.fps {
             vf_parts.push(format!("fps={}", fps));
         }
-        
+
         if let Some(ref filter) = config.video_filter {
             vf_parts.push(filter.clone());
         }
-        
+
         if !vf_parts.is_empty() {
             args.extend(["-vf".to_string(), vf_parts.join(",")]);
         }
@@ -410,7 +410,7 @@ impl Processor for RemuxProcessor {
 
     async fn process(&self, input: &ProcessorInput) -> Result<ProcessorOutput> {
         let start = std::time::Instant::now();
-        
+
         // Parse config or use defaults
         let config: RemuxConfig = if let Some(ref config_str) = input.config {
             serde_json::from_str(config_str).unwrap_or_else(|e| {
@@ -530,7 +530,7 @@ mod tests {
             "resolution": "1920x1080",
             "fps": 30.0
         }"#;
-        
+
         let config: RemuxConfig = serde_json::from_str(json).unwrap();
         assert!(matches!(config.video_codec, VideoCodec::H264));
         assert!(matches!(config.audio_codec, AudioCodec::Aac));
@@ -564,9 +564,9 @@ mod tests {
             session_id: "test".to_string(),
         };
         let config = RemuxConfig::default();
-        
+
         let args = processor.build_args(&input, &config);
-        
+
         assert!(args.contains(&"-y".to_string()));
         assert!(args.contains(&"-i".to_string()));
         assert!(args.contains(&"/input.flv".to_string()));
@@ -593,9 +593,9 @@ mod tests {
             resolution: Some("1280x720".to_string()),
             ..Default::default()
         };
-        
+
         let args = processor.build_args(&input, &config);
-        
+
         assert!(args.contains(&"libx264".to_string()));
         assert!(args.contains(&"aac".to_string()));
         assert!(args.contains(&"-crf".to_string()));

@@ -168,7 +168,8 @@ impl RateLimiterManager {
 
     /// Set a platform-specific configuration.
     pub fn set_platform_config(&mut self, platform_id: &str, config: RateLimiterConfig) {
-        self.platform_configs.insert(platform_id.to_string(), config);
+        self.platform_configs
+            .insert(platform_id.to_string(), config);
     }
 
     /// Try to acquire a token for a platform.

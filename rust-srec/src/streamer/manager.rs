@@ -9,10 +9,10 @@ use chrono::{DateTime, Utc};
 use dashmap::DashMap;
 use tracing::{debug, info, warn};
 
+use crate::Result;
 use crate::config::{ConfigEventBroadcaster, ConfigUpdateEvent};
 use crate::database::repositories::streamer::StreamerRepository;
 use crate::domain::{Priority, StreamerState};
-use crate::Result;
 
 use super::metadata::StreamerMetadata;
 
@@ -108,9 +108,10 @@ where
         self.metadata.insert(metadata.id.clone(), metadata.clone());
 
         // Broadcast event
-        self.broadcaster.publish(ConfigUpdateEvent::StreamerUpdated {
-            streamer_id: metadata.id,
-        });
+        self.broadcaster
+            .publish(ConfigUpdateEvent::StreamerUpdated {
+                streamer_id: metadata.id,
+            });
 
         Ok(())
     }
@@ -122,7 +123,9 @@ where
         debug!("Updating state for streamer {}: {:?}", id, state);
 
         // Persist to database
-        self.repo.update_streamer_state(id, &state.to_string()).await?;
+        self.repo
+            .update_streamer_state(id, &state.to_string())
+            .await?;
 
         // Update in-memory cache
         if let Some(mut entry) = self.metadata.get_mut(id) {
@@ -139,7 +142,9 @@ where
         debug!("Updating priority for streamer {}: {:?}", id, priority);
 
         // Persist to database
-        self.repo.update_streamer_priority(id, &priority.to_string()).await?;
+        self.repo
+            .update_streamer_priority(id, &priority.to_string())
+            .await?;
 
         // Update in-memory cache
         if let Some(mut entry) = self.metadata.get_mut(id) {
@@ -189,9 +194,10 @@ where
         self.metadata.insert(metadata.id.clone(), metadata.clone());
 
         // Broadcast event
-        self.broadcaster.publish(ConfigUpdateEvent::StreamerUpdated {
-            streamer_id: metadata.id,
-        });
+        self.broadcaster
+            .publish(ConfigUpdateEvent::StreamerUpdated {
+                streamer_id: metadata.id,
+            });
 
         Ok(())
     }
@@ -239,9 +245,10 @@ where
         self.metadata.insert(id.to_string(), metadata.clone());
 
         // Broadcast event
-        self.broadcaster.publish(ConfigUpdateEvent::StreamerUpdated {
-            streamer_id: id.to_string(),
-        });
+        self.broadcaster
+            .publish(ConfigUpdateEvent::StreamerUpdated {
+                streamer_id: id.to_string(),
+            });
 
         Ok(metadata)
     }
@@ -454,7 +461,10 @@ where
     }
 
     /// Convert metadata to database model.
-    fn metadata_to_db_model(&self, metadata: &StreamerMetadata) -> crate::database::models::StreamerDbModel {
+    fn metadata_to_db_model(
+        &self,
+        metadata: &StreamerMetadata,
+    ) -> crate::database::models::StreamerDbModel {
         crate::database::models::StreamerDbModel {
             id: metadata.id.clone(),
             name: metadata.name.clone(),
@@ -627,7 +637,10 @@ mod tests {
             Ok(())
         }
 
-        async fn list_streamers_by_platform(&self, platform_id: &str) -> Result<Vec<StreamerDbModel>> {
+        async fn list_streamers_by_platform(
+            &self,
+            platform_id: &str,
+        ) -> Result<Vec<StreamerDbModel>> {
             Ok(self
                 .streamers
                 .lock()
@@ -638,7 +651,10 @@ mod tests {
                 .collect())
         }
 
-        async fn list_streamers_by_template(&self, template_id: &str) -> Result<Vec<StreamerDbModel>> {
+        async fn list_streamers_by_template(
+            &self,
+            template_id: &str,
+        ) -> Result<Vec<StreamerDbModel>> {
             Ok(self
                 .streamers
                 .lock()
@@ -710,7 +726,8 @@ mod tests {
 
     #[tokio::test]
     async fn test_update_state() {
-        let repo = MockStreamerRepository::with_streamers(vec![create_test_db_model("s1", "twitch")]);
+        let repo =
+            MockStreamerRepository::with_streamers(vec![create_test_db_model("s1", "twitch")]);
         let broadcaster = ConfigEventBroadcaster::new();
         let manager = StreamerManager::new(Arc::new(repo), broadcaster);
         manager.hydrate().await.unwrap();
@@ -744,7 +761,8 @@ mod tests {
 
     #[tokio::test]
     async fn test_record_error_with_backoff() {
-        let repo = MockStreamerRepository::with_streamers(vec![create_test_db_model("s1", "twitch")]);
+        let repo =
+            MockStreamerRepository::with_streamers(vec![create_test_db_model("s1", "twitch")]);
         let broadcaster = ConfigEventBroadcaster::new();
         let manager = StreamerManager::with_error_threshold(Arc::new(repo), broadcaster, 2);
         manager.hydrate().await.unwrap();
@@ -765,7 +783,8 @@ mod tests {
 
     #[tokio::test]
     async fn test_record_success_clears_errors() {
-        let repo = MockStreamerRepository::with_streamers(vec![create_test_db_model("s1", "twitch")]);
+        let repo =
+            MockStreamerRepository::with_streamers(vec![create_test_db_model("s1", "twitch")]);
         let broadcaster = ConfigEventBroadcaster::new();
         let manager = StreamerManager::with_error_threshold(Arc::new(repo), broadcaster, 1);
         manager.hydrate().await.unwrap();
@@ -784,7 +803,8 @@ mod tests {
 
     #[tokio::test]
     async fn test_delete_streamer() {
-        let repo = MockStreamerRepository::with_streamers(vec![create_test_db_model("s1", "twitch")]);
+        let repo =
+            MockStreamerRepository::with_streamers(vec![create_test_db_model("s1", "twitch")]);
         let broadcaster = ConfigEventBroadcaster::new();
         let manager = StreamerManager::new(Arc::new(repo), broadcaster);
         manager.hydrate().await.unwrap();
@@ -798,7 +818,8 @@ mod tests {
 
     #[tokio::test]
     async fn test_update_streamer() {
-        let repo = MockStreamerRepository::with_streamers(vec![create_test_db_model("s1", "twitch")]);
+        let repo =
+            MockStreamerRepository::with_streamers(vec![create_test_db_model("s1", "twitch")]);
         let broadcaster = ConfigEventBroadcaster::new();
         let manager = StreamerManager::new(Arc::new(repo), broadcaster);
         manager.hydrate().await.unwrap();
@@ -844,7 +865,8 @@ mod tests {
 
     #[tokio::test]
     async fn test_partial_update_streamer() {
-        let repo = MockStreamerRepository::with_streamers(vec![create_test_db_model("s1", "twitch")]);
+        let repo =
+            MockStreamerRepository::with_streamers(vec![create_test_db_model("s1", "twitch")]);
         let broadcaster = ConfigEventBroadcaster::new();
         let manager = StreamerManager::new(Arc::new(repo), broadcaster);
         manager.hydrate().await.unwrap();
@@ -871,7 +893,7 @@ mod tests {
     async fn test_partial_update_template_to_none() {
         let mut db_model = create_test_db_model("s1", "twitch");
         db_model.template_config_id = Some("old-template".to_string());
-        
+
         let repo = MockStreamerRepository::with_streamers(vec![db_model]);
         let broadcaster = ConfigEventBroadcaster::new();
         let manager = StreamerManager::new(Arc::new(repo), broadcaster);

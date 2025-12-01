@@ -1,7 +1,7 @@
 //! Filter domain module.
 
-mod types;
 mod logic;
+mod types;
 
-pub use types::{TimeBasedFilter, KeywordFilter, CategoryFilter, Filter, FilterType};
-pub use logic::{FilterSet, FilterContext};
+pub use logic::{FilterContext, FilterSet};
+pub use types::{CategoryFilter, Filter, FilterType, KeywordFilter, TimeBasedFilter};

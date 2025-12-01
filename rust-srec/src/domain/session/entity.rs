@@ -199,23 +199,34 @@ mod tests {
         let mut session = LiveSession::new("streamer-1");
         session.add_title("First title");
         session.add_title("Second title");
-        
+
         assert_eq!(session.titles.len(), 2);
         assert_eq!(session.current_title(), Some("Second title"));
     }
 
     #[test]
     fn test_media_output_new() {
-        let output = MediaOutput::new("session-1", "/path/to/video.mp4", MediaFileType::Video, 1024);
+        let output = MediaOutput::new(
+            "session-1",
+            "/path/to/video.mp4",
+            MediaFileType::Video,
+            1024,
+        );
         assert_eq!(output.file_type, MediaFileType::Video);
         assert!(!output.is_derived());
     }
 
     #[test]
     fn test_media_output_derived() {
-        let video = MediaOutput::new("session-1", "/path/to/video.mp4", MediaFileType::Video, 1024);
-        let thumbnail = MediaOutput::derived(&video, "/path/to/thumb.jpg", MediaFileType::Thumbnail, 100);
-        
+        let video = MediaOutput::new(
+            "session-1",
+            "/path/to/video.mp4",
+            MediaFileType::Video,
+            1024,
+        );
+        let thumbnail =
+            MediaOutput::derived(&video, "/path/to/thumb.jpg", MediaFileType::Thumbnail, 100);
+
         assert!(thumbnail.is_derived());
         assert_eq!(thumbnail.parent_media_output_id, Some(video.id));
     }

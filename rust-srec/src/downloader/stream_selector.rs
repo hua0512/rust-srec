@@ -3,17 +3,17 @@
 //! This module provides filtering and sorting logic to select the optimal
 //! stream based on user preferences (quality, format, CDN, bitrate, etc.).
 
-use platforms_parser::media::{formats::MediaFormat, StreamFormat, StreamInfo};
+use platforms_parser::media::{StreamFormat, StreamInfo, formats::MediaFormat};
 use serde::{Deserialize, Serialize};
 use tracing::debug;
 
 /// Configuration for stream selection preferences.
-/// 
+///
 /// Quality names vary by platform:
 /// - Chinese platforms (Huya, Douyu, Bilibili): "原画", "蓝光", "超清", "高清", "流畅"
 /// - Western platforms (Twitch, YouTube): "1080p60", "1080p", "720p60", "720p", "480p", "360p"
 /// - Some platforms use descriptive names: "source", "high", "medium", "low"
-/// 
+///
 /// Configure platform-specific quality preferences at the platform or template level.
 /// The matching uses substring matching, so "1080" will match "1080p", "1080p60", etc.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -60,7 +60,7 @@ impl Default for StreamSelectionConfig {
 
 impl StreamSelectionConfig {
     /// Merge another config into this one, with the other config taking precedence.
-    /// 
+    ///
     /// Non-empty/non-zero values from `other` override values from `self`.
     /// This supports the layered config hierarchy (global → platform → template → streamer).
     pub fn merge(&self, other: &Self) -> Self {
@@ -96,7 +96,7 @@ impl StreamSelectionConfig {
                 other.max_bitrate
             } else {
                 self.max_bitrate
-            }
+            },
         }
     }
 }
@@ -158,14 +158,20 @@ impl StreamSelector {
 
         // Check format constraints (if specified)
         if !self.config.preferred_formats.is_empty()
-            && !self.config.preferred_formats.contains(&stream.stream_format)
+            && !self
+                .config
+                .preferred_formats
+                .contains(&stream.stream_format)
         {
             return false;
         }
 
         // Check media format constraints (if specified)
         if !self.config.preferred_media_formats.is_empty()
-            && !self.config.preferred_media_formats.contains(&stream.media_format)
+            && !self
+                .config
+                .preferred_media_formats
+                .contains(&stream.media_format)
         {
             return false;
         }
@@ -219,22 +225,23 @@ impl StreamSelector {
     }
 
     /// Get the quality preference score (lower is better).
-    /// 
+    ///
     /// Uses case-insensitive substring matching to handle platform variations.
     fn quality_score(&self, stream: &StreamInfo) -> usize {
         if self.config.preferred_qualities.is_empty() {
             return 0;
         }
-        
+
         let stream_quality_lower = stream.quality.to_lowercase();
-        
+
         self.config
             .preferred_qualities
             .iter()
             .position(|q| {
                 let pref_lower = q.to_lowercase();
                 // Check both directions for flexibility
-                stream_quality_lower.contains(&pref_lower) || pref_lower.contains(&stream_quality_lower)
+                stream_quality_lower.contains(&pref_lower)
+                    || pref_lower.contains(&stream_quality_lower)
             })
             .unwrap_or(usize::MAX)
     }
@@ -269,7 +276,6 @@ impl Default for StreamSelector {
         Self::new()
     }
 }
-
 
 #[cfg(test)]
 mod tests {
@@ -318,7 +324,7 @@ mod tests {
         };
 
         let merged = base.merge(&other);
-        
+
         assert_eq!(merged.preferred_formats, vec![StreamFormat::Flv]);
         assert_eq!(merged.preferred_qualities, vec!["1080p".to_string()]);
         assert_eq!(merged.preferred_cdns, vec!["cdn1".to_string()]);
@@ -342,7 +348,7 @@ mod tests {
         };
 
         let merged = base.merge(&other);
-        
+
         assert_eq!(merged.preferred_formats, vec![StreamFormat::Hls]);
         assert_eq!(merged.preferred_qualities, vec!["720p".to_string()]);
         assert_eq!(merged.min_bitrate, 2000);
@@ -360,15 +366,15 @@ mod tests {
         };
         let other = StreamSelectionConfig {
             preferred_formats: vec![StreamFormat::Hls], // Override
-            preferred_qualities: vec![],                 // Keep base
-            preferred_cdns: vec![],                      // Keep base
-            min_bitrate: 0,                              // Keep base
-            max_bitrate: 8000,                           // Override
+            preferred_qualities: vec![],                // Keep base
+            preferred_cdns: vec![],                     // Keep base
+            min_bitrate: 0,                             // Keep base
+            max_bitrate: 8000,                          // Override
             ..Default::default()
         };
 
         let merged = base.merge(&other);
-        
+
         assert_eq!(merged.preferred_formats, vec![StreamFormat::Hls]); // Overridden
         assert_eq!(merged.preferred_qualities, vec!["1080p".to_string()]); // Kept
         assert_eq!(merged.preferred_cdns, vec!["cdn1".to_string()]); // Kept
@@ -408,8 +414,20 @@ mod tests {
         let selector = StreamSelector::with_config(config);
 
         let streams = vec![
-            create_test_stream("http://example.com/stream.m3u8", StreamFormat::Hls, "1080p", 5000000, 1),
-            create_test_stream("http://example.com/stream.flv", StreamFormat::Flv, "1080p", 5000000, 1),
+            create_test_stream(
+                "http://example.com/stream.m3u8",
+                StreamFormat::Hls,
+                "1080p",
+                5000000,
+                1,
+            ),
+            create_test_stream(
+                "http://example.com/stream.flv",
+                StreamFormat::Flv,
+                "1080p",
+                5000000,
+                1,
+            ),
         ];
 
         let best = selector.select_best(&streams);
@@ -426,8 +444,20 @@ mod tests {
         let selector = StreamSelector::with_config(config);
 
         let streams = vec![
-            create_test_stream("http://example.com/720p.flv", StreamFormat::Flv, "720p", 3000000, 1),
-            create_test_stream("http://example.com/1080p.flv", StreamFormat::Flv, "1080p", 5000000, 1),
+            create_test_stream(
+                "http://example.com/720p.flv",
+                StreamFormat::Flv,
+                "720p",
+                3000000,
+                1,
+            ),
+            create_test_stream(
+                "http://example.com/1080p.flv",
+                StreamFormat::Flv,
+                "1080p",
+                5000000,
+                1,
+            ),
         ];
 
         let best = selector.select_best(&streams);
@@ -444,8 +474,20 @@ mod tests {
         let selector = StreamSelector::with_config(config);
 
         let streams = vec![
-            create_test_stream("http://example.com/low.flv", StreamFormat::Flv, "720p", 3000000, 1),
-            create_test_stream("http://example.com/high.flv", StreamFormat::Flv, "1080p", 5000000, 1),
+            create_test_stream(
+                "http://example.com/low.flv",
+                StreamFormat::Flv,
+                "720p",
+                3000000,
+                1,
+            ),
+            create_test_stream(
+                "http://example.com/high.flv",
+                StreamFormat::Flv,
+                "1080p",
+                5000000,
+                1,
+            ),
         ];
 
         let best = selector.select_best(&streams);
@@ -458,8 +500,20 @@ mod tests {
         let selector = StreamSelector::new();
 
         let streams = vec![
-            create_test_stream("http://example.com/low.flv", StreamFormat::Flv, "1080p", 5000000, 2),
-            create_test_stream("http://example.com/high.flv", StreamFormat::Flv, "1080p", 5000000, 1),
+            create_test_stream(
+                "http://example.com/low.flv",
+                StreamFormat::Flv,
+                "1080p",
+                5000000,
+                2,
+            ),
+            create_test_stream(
+                "http://example.com/high.flv",
+                StreamFormat::Flv,
+                "1080p",
+                5000000,
+                1,
+            ),
         ];
 
         let best = selector.select_best(&streams);
@@ -477,8 +531,20 @@ mod tests {
         let selector = StreamSelector::with_config(config);
 
         let streams = vec![
-            create_test_stream("http://example.com/720p.flv", StreamFormat::Flv, "720p", 3000000, 1),
-            create_test_stream("http://example.com/1080p.flv", StreamFormat::Flv, "1080p", 5000000, 1),
+            create_test_stream(
+                "http://example.com/720p.flv",
+                StreamFormat::Flv,
+                "720p",
+                3000000,
+                1,
+            ),
+            create_test_stream(
+                "http://example.com/1080p.flv",
+                StreamFormat::Flv,
+                "1080p",
+                5000000,
+                1,
+            ),
         ];
 
         let best = selector.select_best(&streams);
@@ -496,8 +562,20 @@ mod tests {
         let selector = StreamSelector::with_config(config);
 
         let streams = vec![
-            create_test_stream("http://example.com/hd.flv", StreamFormat::Flv, "蓝光4M", 4000000, 1),
-            create_test_stream("http://example.com/source.flv", StreamFormat::Flv, "原画", 8000000, 1),
+            create_test_stream(
+                "http://example.com/hd.flv",
+                StreamFormat::Flv,
+                "蓝光4M",
+                4000000,
+                1,
+            ),
+            create_test_stream(
+                "http://example.com/source.flv",
+                StreamFormat::Flv,
+                "原画",
+                8000000,
+                1,
+            ),
         ];
 
         let best = selector.select_best(&streams);
@@ -515,8 +593,20 @@ mod tests {
         let selector = StreamSelector::with_config(config);
 
         let streams = vec![
-            create_test_stream("http://example.com/low.flv", StreamFormat::Flv, "720p", 3000000, 1),
-            create_test_stream("http://example.com/high.flv", StreamFormat::Flv, "1080p", 5000000, 1),
+            create_test_stream(
+                "http://example.com/low.flv",
+                StreamFormat::Flv,
+                "720p",
+                3000000,
+                1,
+            ),
+            create_test_stream(
+                "http://example.com/high.flv",
+                StreamFormat::Flv,
+                "1080p",
+                5000000,
+                1,
+            ),
         ];
 
         let best = selector.select_best(&streams);

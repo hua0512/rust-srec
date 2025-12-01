@@ -31,7 +31,9 @@ impl NotificationChannelDbModel {
 }
 
 /// Notification channel types.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, strum::Display, strum::EnumString)]
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, strum::Display, strum::EnumString,
+)]
 #[strum(serialize_all = "PascalCase")]
 #[serde(rename_all = "PascalCase")]
 pub enum ChannelType {
@@ -148,7 +150,9 @@ impl NotificationDeadLetterDbModel {
 }
 
 /// System event names for notifications.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, strum::Display, strum::EnumString)]
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, strum::Display, strum::EnumString,
+)]
 pub enum SystemEvent {
     StreamOnline,
     StreamOffline,

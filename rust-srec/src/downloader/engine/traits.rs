@@ -221,10 +221,7 @@ pub enum SegmentEvent {
         total_segments: u32,
     },
     /// Download failed.
-    DownloadFailed {
-        error: String,
-        recoverable: bool,
-    },
+    DownloadFailed { error: String, recoverable: bool },
 }
 
 /// Handle to an active download.
@@ -323,7 +320,10 @@ mod tests {
     fn test_engine_type_from_str() {
         assert_eq!(EngineType::from_str("ffmpeg"), Some(EngineType::Ffmpeg));
         assert_eq!(EngineType::from_str("FFMPEG"), Some(EngineType::Ffmpeg));
-        assert_eq!(EngineType::from_str("streamlink"), Some(EngineType::Streamlink));
+        assert_eq!(
+            EngineType::from_str("streamlink"),
+            Some(EngineType::Streamlink)
+        );
         assert_eq!(EngineType::from_str("mesio"), Some(EngineType::Mesio));
         assert_eq!(EngineType::from_str("unknown"), None);
     }

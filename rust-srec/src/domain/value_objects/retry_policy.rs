@@ -71,9 +71,9 @@ impl RetryPolicy {
             return Duration::from_millis(self.max_delay_ms);
         }
 
-        let base_delay = self.initial_delay_ms as f64 
-            * self.backoff_multiplier.powi(attempt as i32);
-        
+        let base_delay =
+            self.initial_delay_ms as f64 * self.backoff_multiplier.powi(attempt as i32);
+
         let delay_ms = base_delay.min(self.max_delay_ms as f64) as u64;
 
         if self.use_jitter {
@@ -94,8 +94,8 @@ impl RetryPolicy {
     pub fn max_total_delay(&self) -> Duration {
         let mut total = 0u64;
         for attempt in 0..self.max_retries {
-            let base_delay = self.initial_delay_ms as f64 
-                * self.backoff_multiplier.powi(attempt as i32);
+            let base_delay =
+                self.initial_delay_ms as f64 * self.backoff_multiplier.powi(attempt as i32);
             total += base_delay.min(self.max_delay_ms as f64) as u64;
         }
         // Add potential jitter

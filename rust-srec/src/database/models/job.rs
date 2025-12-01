@@ -38,7 +38,9 @@ impl JobDbModel {
 }
 
 /// Job types.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, strum::Display, strum::EnumString)]
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, strum::Display, strum::EnumString,
+)]
 #[strum(serialize_all = "SCREAMING_SNAKE_CASE")]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
 pub enum JobType {
@@ -64,7 +66,9 @@ impl JobType {
 }
 
 /// Job status values.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, strum::Display, strum::EnumString)]
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, strum::Display, strum::EnumString,
+)]
 #[strum(serialize_all = "SCREAMING_SNAKE_CASE")]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
 pub enum JobStatus {
@@ -208,8 +212,8 @@ mod tests {
 
     #[test]
     fn test_log_entry() {
-        let entry = LogEntry::info("Test message")
-            .with_details(serde_json::json!({"key": "value"}));
+        let entry =
+            LogEntry::info("Test message").with_details(serde_json::json!({"key": "value"}));
         assert_eq!(entry.level, "INFO");
         assert!(entry.details.is_some());
     }

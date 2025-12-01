@@ -8,7 +8,7 @@
 use std::collections::HashSet;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
-use tokio::sync::{broadcast, Mutex};
+use tokio::sync::{Mutex, broadcast};
 
 /// Events broadcast when configuration changes occur.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -344,12 +344,16 @@ mod tests {
         let coalescer = UpdateCoalescer::with_window(broadcaster, Duration::from_millis(50));
 
         // Queue various events
-        coalescer.queue(ConfigUpdateEvent::StreamerUpdated {
-            streamer_id: "streamer-1".to_string(),
-        }).await;
-        coalescer.queue(ConfigUpdateEvent::PlatformUpdated {
-            platform_id: "twitch".to_string(),
-        }).await;
+        coalescer
+            .queue(ConfigUpdateEvent::StreamerUpdated {
+                streamer_id: "streamer-1".to_string(),
+            })
+            .await;
+        coalescer
+            .queue(ConfigUpdateEvent::PlatformUpdated {
+                platform_id: "twitch".to_string(),
+            })
+            .await;
         coalescer.queue(ConfigUpdateEvent::GlobalUpdated).await;
 
         // Flush - should only get GlobalUpdated
@@ -375,9 +379,11 @@ mod tests {
         tokio::time::sleep(Duration::from_millis(30)).await;
 
         // Queue another event - should trigger flush of first
-        coalescer.queue(ConfigUpdateEvent::StreamerUpdated {
-            streamer_id: "test".to_string(),
-        }).await;
+        coalescer
+            .queue(ConfigUpdateEvent::StreamerUpdated {
+                streamer_id: "test".to_string(),
+            })
+            .await;
 
         // Should have received the global update
         let received = receiver.recv().await.unwrap();

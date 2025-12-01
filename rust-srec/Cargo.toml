@@ -70,6 +70,11 @@ rayon = "1.10.0"
 jsonwebtoken = "9"
 rustc-hash = "2.0"
 
+# Cryptography for password hashing and token generation
+argon2 = "0.5"
+sha2 = "0.10"
+hex = "0.4"
+
 [dev-dependencies]
 mockall = "0.12.1"
 proptest = "1.4"

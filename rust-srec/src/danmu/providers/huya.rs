@@ -14,10 +14,10 @@ use std::sync::{Arc, OnceLock};
 use std::time::Duration;
 use tars_codec::{TarsMessage, TarsRequestHeader};
 use tokio::net::TcpStream;
-use tokio::sync::{mpsc, Mutex, RwLock};
+use tokio::sync::{Mutex, RwLock, mpsc};
 use tokio::task::JoinHandle;
 use tokio_tungstenite::{
-    connect_async, tungstenite::protocol::Message, MaybeTlsStream, WebSocketStream,
+    MaybeTlsStream, WebSocketStream, connect_async, tungstenite::protocol::Message,
 };
 use tracing::{debug, error, info, warn};
 
@@ -229,9 +229,9 @@ impl HuyaDanmuProvider {
         let url = format!("{}?roomId={}", HUYA_WS_URL, room_id);
         info!("Connecting to Huya WebSocket: {}", url);
 
-        let (ws_stream, _) = connect_async(&url)
-            .await
-            .map_err(|e| Error::DanmuError(format!("Failed to connect to Huya WebSocket: {}", e)))?;
+        let (ws_stream, _) = connect_async(&url).await.map_err(|e| {
+            Error::DanmuError(format!("Failed to connect to Huya WebSocket: {}", e))
+        })?;
 
         info!("Connected to Huya WebSocket for room {}", room_id);
 
@@ -249,13 +249,13 @@ impl HuyaDanmuProvider {
     }
 
     /// Create a TARS-encoded authentication packet for establishing identity.
-    /// 
+    ///
     /// This packet is sent first to authenticate with the Huya server.
     /// For anonymous connections, use `HuyaAuthPacket::default()`.
-    /// 
+    ///
     /// # Arguments
     /// * `auth` - The authentication packet containing user credentials or anonymous session info
-    /// 
+    ///
     /// # Returns
     /// * `Result<Bytes>` - The TARS-encoded authentication packet
     pub fn create_auth_packet(auth: &HuyaAuthPacket) -> Result<Bytes> {
@@ -299,12 +299,12 @@ impl HuyaDanmuProvider {
     }
 
     /// Create a TARS-encoded room join packet for subscribing to a room's danmu stream.
-    /// 
+    ///
     /// This packet is sent after authentication to join a specific room.
-    /// 
+    ///
     /// # Arguments
     /// * `room_join` - The room join packet containing room ID and session info
-    /// 
+    ///
     /// # Returns
     /// * `Result<Bytes>` - The TARS-encoded room join packet
     pub fn create_room_join_packet(room_join: &HuyaRoomJoinPacket) -> Result<Bytes> {
@@ -350,13 +350,13 @@ impl HuyaDanmuProvider {
     }
 
     /// Create a TARS-encoded register packet for joining a room (legacy method).
-    /// 
+    ///
     /// This is a convenience method that creates a room join packet from a room ID string.
     /// For more control, use `create_room_join_packet` with a `HuyaRoomJoinPacket`.
-    /// 
+    ///
     /// # Arguments
     /// * `room_id` - The room ID as a string
-    /// 
+    ///
     /// # Returns
     /// * `Result<Bytes>` - The TARS-encoded register packet
     pub fn create_register_packet(room_id: &str) -> Result<Bytes> {
@@ -369,13 +369,13 @@ impl HuyaDanmuProvider {
     }
 
     /// Create a TARS-encoded heartbeat packet to maintain the WebSocket connection.
-    /// 
+    ///
     /// This packet should be sent at regular intervals (typically every 30 seconds)
     /// to keep the connection alive.
-    /// 
+    ///
     /// # Arguments
     /// * `heartbeat` - The heartbeat packet configuration
-    /// 
+    ///
     /// # Returns
     /// * `Result<Bytes>` - The TARS-encoded heartbeat packet
     pub fn create_heartbeat_packet_with_config(heartbeat: &HuyaHeartbeatPacket) -> Result<Bytes> {
@@ -413,10 +413,10 @@ impl HuyaDanmuProvider {
     }
 
     /// Create a TARS-encoded heartbeat packet with default configuration.
-    /// 
+    ///
     /// This is a convenience method that creates a heartbeat packet with default settings.
     /// For more control, use `create_heartbeat_packet_with_config`.
-    /// 
+    ///
     /// # Returns
     /// * `Result<Bytes>` - The TARS-encoded heartbeat packet
     pub fn create_heartbeat_packet() -> Result<Bytes> {
@@ -424,30 +424,32 @@ impl HuyaDanmuProvider {
     }
 
     /// Create a TARS packet from a `HuyaTarsPacket` enum.
-    /// 
+    ///
     /// This is a unified method for creating any type of Huya TARS packet.
-    /// 
+    ///
     /// # Arguments
     /// * `packet` - The packet to encode
-    /// 
+    ///
     /// # Returns
     /// * `Result<Bytes>` - The TARS-encoded packet
     pub fn create_tars_packet(packet: &HuyaTarsPacket) -> Result<Bytes> {
         match packet {
             HuyaTarsPacket::Auth(auth) => Self::create_auth_packet(auth),
             HuyaTarsPacket::RoomJoin(room_join) => Self::create_room_join_packet(room_join),
-            HuyaTarsPacket::Heartbeat(heartbeat) => Self::create_heartbeat_packet_with_config(heartbeat),
+            HuyaTarsPacket::Heartbeat(heartbeat) => {
+                Self::create_heartbeat_packet_with_config(heartbeat)
+            }
         }
     }
 
     /// Parse a TARS message from raw WebSocket data.
-    /// 
+    ///
     /// This function decodes the raw WebSocket binary data using the TARS protocol
     /// and extracts danmu messages based on the message type.
-    /// 
+    ///
     /// # Arguments
     /// * `data` - Raw binary data from WebSocket
-    /// 
+    ///
     /// # Returns
     /// * `Result<Option<DanmuMessage>>` - Parsed danmu message or None if not a chat message
     pub fn parse_tars_message(data: &[u8]) -> Result<Option<DanmuMessage>> {
@@ -487,7 +489,7 @@ impl HuyaDanmuProvider {
     }
 
     /// Parse a push message to extract danmu content.
-    /// 
+    ///
     /// Huya push messages contain nested TARS structures with different URIs
     /// indicating the message type (chat, gift, etc.).
     fn parse_push_message(message: &TarsMessage) -> Result<Option<DanmuMessage>> {
@@ -512,19 +514,19 @@ impl HuyaDanmuProvider {
     }
 
     /// Parse danmu message from TARS-encoded bytes.
-    /// 
+    ///
     /// This function handles the nested TARS structure used by Huya for chat messages.
     /// The structure typically contains:
     /// - iUri (tag 0): Message type identifier
     /// - sMsg (tag 1): Nested message content as bytes
-    /// 
+    ///
     /// For chat messages (iUri = 1400), the nested content contains:
     /// - tUserInfo (tag 0): User information struct
     /// - sContent (tag 2): Message content
-    /// 
+    ///
     /// # Arguments
     /// * `data` - TARS-encoded bytes containing the message
-    /// 
+    ///
     /// # Returns
     /// * `Result<Option<DanmuMessage>>` - Parsed danmu message or None
     fn parse_danmu_from_bytes(data: &Bytes) -> Result<Option<DanmuMessage>> {
@@ -542,7 +544,7 @@ impl HuyaDanmuProvider {
         if let tars_codec::TarsValue::Struct(fields) = value {
             // Check if this is a Huya push message with iUri
             let uri = fields.get(&0).and_then(|v| v.as_i32());
-            
+
             match uri {
                 Some(huya_uri::MESSAGE_NOTICE) => {
                     // Chat message - parse the nested content
@@ -552,9 +554,9 @@ impl HuyaDanmuProvider {
                     // Gift message
                     Self::parse_gift_message_content(&fields)
                 }
-                Some(huya_uri::USER_ENTER_NOTICE) | 
-                Some(huya_uri::NOBLE_ENTER_NOTICE) |
-                Some(huya_uri::VIP_ENTER_BANNER) => {
+                Some(huya_uri::USER_ENTER_NOTICE)
+                | Some(huya_uri::NOBLE_ENTER_NOTICE)
+                | Some(huya_uri::VIP_ENTER_BANNER) => {
                     // User enter notifications - skip these
                     Ok(None)
                 }
@@ -570,15 +572,15 @@ impl HuyaDanmuProvider {
     }
 
     /// Parse a sequence of tagged TARS values from bytes.
-    /// 
+    ///
     /// This handles the case where the data contains multiple tagged values
     /// at the top level (not wrapped in a struct).
     fn parse_tagged_values_from_bytes(data: &Bytes) -> Result<Option<DanmuMessage>> {
         use tars_codec::de::TarsDeserializer;
-        
+
         let mut deserializer = TarsDeserializer::new(data.clone());
         let mut fields = rustc_hash::FxHashMap::default();
-        
+
         // Read all tagged values
         while !deserializer.is_empty() {
             match deserializer.read_value() {
@@ -588,34 +590,26 @@ impl HuyaDanmuProvider {
                 Err(_) => break,
             }
         }
-        
+
         if fields.is_empty() {
             return Ok(None);
         }
-        
+
         // Check if this is a Huya push message with iUri
         let uri = fields.get(&0).and_then(|v| v.as_i32());
-        
+
         match uri {
-            Some(huya_uri::MESSAGE_NOTICE) => {
-                Self::parse_chat_message_content(&fields)
-            }
-            Some(huya_uri::SEND_ITEM_SUB_BROADCAST) => {
-                Self::parse_gift_message_content(&fields)
-            }
-            Some(huya_uri::USER_ENTER_NOTICE) | 
-            Some(huya_uri::NOBLE_ENTER_NOTICE) |
-            Some(huya_uri::VIP_ENTER_BANNER) => {
-                Ok(None)
-            }
-            _ => {
-                Self::parse_direct_chat_message(&fields)
-            }
+            Some(huya_uri::MESSAGE_NOTICE) => Self::parse_chat_message_content(&fields),
+            Some(huya_uri::SEND_ITEM_SUB_BROADCAST) => Self::parse_gift_message_content(&fields),
+            Some(huya_uri::USER_ENTER_NOTICE)
+            | Some(huya_uri::NOBLE_ENTER_NOTICE)
+            | Some(huya_uri::VIP_ENTER_BANNER) => Ok(None),
+            _ => Self::parse_direct_chat_message(&fields),
         }
     }
 
     /// Parse chat message content from Huya's MessageNotice structure.
-    /// 
+    ///
     /// The MessageNotice structure (iUri = 1400) contains:
     /// - tag 0: tUserInfo (user information struct)
     /// - tag 2: sContent (message content string)
@@ -690,8 +684,16 @@ impl HuyaDanmuProvider {
             if !content.is_empty() {
                 return Ok(Some(DanmuMessage {
                     id: uuid::Uuid::new_v4().to_string(),
-                    user_id: if user_id.is_empty() { "unknown".to_string() } else { user_id },
-                    username: if username.is_empty() { "Unknown".to_string() } else { username },
+                    user_id: if user_id.is_empty() {
+                        "unknown".to_string()
+                    } else {
+                        user_id
+                    },
+                    username: if username.is_empty() {
+                        "Unknown".to_string()
+                    } else {
+                        username
+                    },
                     content,
                     timestamp: Utc::now(),
                     message_type: DanmuType::Chat,
@@ -768,8 +770,16 @@ impl HuyaDanmuProvider {
             if !gift_name.is_empty() || !username.is_empty() {
                 let mut danmu = DanmuMessage::gift(
                     uuid::Uuid::new_v4().to_string(),
-                    if user_id.is_empty() { "unknown".to_string() } else { user_id },
-                    if username.is_empty() { "Unknown".to_string() } else { username },
+                    if user_id.is_empty() {
+                        "unknown".to_string()
+                    } else {
+                        user_id
+                    },
+                    if username.is_empty() {
+                        "Unknown".to_string()
+                    } else {
+                        username
+                    },
                     gift_name,
                     gift_count,
                 );
@@ -782,7 +792,7 @@ impl HuyaDanmuProvider {
     }
 
     /// Parse a direct chat message structure (fallback for simpler formats).
-    /// 
+    ///
     /// This handles cases where the message is not wrapped in the standard
     /// Huya push message format.
     fn parse_direct_chat_message(
@@ -878,8 +888,16 @@ impl HuyaDanmuProvider {
         if !content.is_empty() || !username.is_empty() {
             return Ok(Some(DanmuMessage {
                 id: uuid::Uuid::new_v4().to_string(),
-                user_id: if user_id.is_empty() { "unknown".to_string() } else { user_id },
-                username: if username.is_empty() { "Unknown".to_string() } else { username },
+                user_id: if user_id.is_empty() {
+                    "unknown".to_string()
+                } else {
+                    user_id
+                },
+                username: if username.is_empty() {
+                    "Unknown".to_string()
+                } else {
+                    username
+                },
                 content,
                 timestamp: Utc::now(),
                 message_type,
@@ -891,25 +909,25 @@ impl HuyaDanmuProvider {
     }
 
     /// Create a test chat message in Huya's TARS format.
-    /// 
+    ///
     /// This is useful for testing the parsing logic without a live connection.
     /// The format matches what the parser expects:
     /// - Outer: tagged values with iUri (tag 0) and sMsg (tag 1 as SimpleList)
     /// - Inner (sMsg): struct with tUserInfo (tag 0 as Struct) and sContent (tag 2)
     /// - User info: struct with lUid (tag 0) and sNickName (tag 1)
-    /// 
+    ///
     /// # Arguments
     /// * `user_id` - The user ID
     /// * `username` - The username/nickname
     /// * `content` - The message content
-    /// 
+    ///
     /// # Returns
     /// * `Result<Bytes>` - TARS-encoded chat message
     #[cfg(test)]
     pub fn create_test_chat_message(user_id: i64, username: &str, content: &str) -> Result<Bytes> {
-        use tars_codec::ser::TarsSerializer;
-        use tars_codec::TarsValue;
         use rustc_hash::FxHashMap;
+        use tars_codec::TarsValue;
+        use tars_codec::ser::TarsSerializer;
 
         // Create user info as a proper struct
         let mut user_fields: FxHashMap<u8, TarsValue> = FxHashMap::default();
@@ -930,12 +948,12 @@ impl HuyaDanmuProvider {
         let mut outer_ser = TarsSerializer::new();
         outer_ser.write_i32(0, huya_uri::MESSAGE_NOTICE)?; // iUri
         outer_ser.write_simple_list(1, &inner_bytes)?; // sMsg as SimpleList
-        
+
         Ok(outer_ser.into_bytes())
     }
 
     /// Create a test gift message in Huya's TARS format.
-    /// 
+    ///
     /// The format matches what the parser expects:
     /// - Outer: tagged values with iUri (tag 0) and sMsg (tag 1 as SimpleList)
     /// - Inner (sMsg): struct with sender info (tag 0 as Struct), gift name (tag 1), count (tag 2)
@@ -947,9 +965,9 @@ impl HuyaDanmuProvider {
         gift_name: &str,
         gift_count: i32,
     ) -> Result<Bytes> {
-        use tars_codec::ser::TarsSerializer;
-        use tars_codec::TarsValue;
         use rustc_hash::FxHashMap;
+        use tars_codec::TarsValue;
+        use tars_codec::ser::TarsSerializer;
 
         // Create sender info as a proper struct
         let mut sender_fields: FxHashMap<u8, TarsValue> = FxHashMap::default();
@@ -971,13 +989,15 @@ impl HuyaDanmuProvider {
         let mut outer_ser = TarsSerializer::new();
         outer_ser.write_i32(0, huya_uri::SEND_ITEM_SUB_BROADCAST)?; // iUri
         outer_ser.write_simple_list(1, &inner_bytes)?; // sMsg as SimpleList
-        
+
         Ok(outer_ser.into_bytes())
     }
 
     /// Start the heartbeat task
     fn start_heartbeat_task(
-        ws_sender: Arc<Mutex<futures::stream::SplitSink<WebSocketStream<MaybeTlsStream<TcpStream>>, Message>>>,
+        ws_sender: Arc<
+            Mutex<futures::stream::SplitSink<WebSocketStream<MaybeTlsStream<TcpStream>>, Message>>,
+        >,
         is_connected: Arc<AtomicBool>,
     ) -> JoinHandle<()> {
         tokio::spawn(async move {
@@ -1246,9 +1266,9 @@ impl DanmuProvider for HuyaDanmuProvider {
         }
 
         let connections = self.connections.read().await;
-        let conn_state = connections.get(&connection.id).ok_or_else(|| {
-            Error::DanmuError(format!("Connection {} not found", connection.id))
-        })?;
+        let conn_state = connections
+            .get(&connection.id)
+            .ok_or_else(|| Error::DanmuError(format!("Connection {} not found", connection.id)))?;
 
         let mut state = conn_state.lock().await;
 
@@ -1562,11 +1582,8 @@ mod tests {
     #[test]
     fn test_create_test_chat_message() {
         // Test the test helper function
-        let result = HuyaDanmuProvider::create_test_chat_message(
-            12345,
-            "TestUser",
-            "Hello from test!",
-        );
+        let result =
+            HuyaDanmuProvider::create_test_chat_message(12345, "TestUser", "Hello from test!");
         assert!(result.is_ok());
         let bytes = result.unwrap();
         assert!(!bytes.is_empty());
@@ -1575,12 +1592,7 @@ mod tests {
     #[test]
     fn test_create_test_gift_message() {
         // Test the gift message helper function
-        let result = HuyaDanmuProvider::create_test_gift_message(
-            67890,
-            "GiftUser",
-            "Rocket",
-            5,
-        );
+        let result = HuyaDanmuProvider::create_test_gift_message(67890, "GiftUser", "Rocket", 5);
         assert!(result.is_ok());
         let bytes = result.unwrap();
         assert!(!bytes.is_empty());

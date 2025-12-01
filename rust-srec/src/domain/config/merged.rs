@@ -1,11 +1,11 @@
 //! Merged configuration.
 
-use serde::{Deserialize, Serialize};
-use crate::domain::{ProxyConfig, RetryPolicy, DanmuSamplingConfig, EventHooks};
+use crate::domain::{DanmuSamplingConfig, EventHooks, ProxyConfig, RetryPolicy};
 use crate::downloader::StreamSelectionConfig;
+use serde::{Deserialize, Serialize};
 
 /// Fully resolved configuration for a streamer.
-/// 
+///
 /// This represents the result of merging the 4-layer configuration hierarchy:
 /// Global → Platform → Template → Streamer
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -14,34 +14,34 @@ pub struct MergedConfig {
     pub output_folder: String,
     pub output_filename_template: String,
     pub output_file_format: String,
-    
+
     // Size and duration limits
     pub min_segment_size_bytes: i64,
     pub max_download_duration_secs: i64,
     pub max_part_size_bytes: i64,
-    
+
     // Danmu settings
     pub record_danmu: bool,
     pub danmu_sampling_config: DanmuSamplingConfig,
-    
+
     // Network settings
     pub proxy_config: ProxyConfig,
     pub cookies: Option<String>,
-    
+
     // Engine settings
     pub download_engine: String,
     pub download_retry_policy: RetryPolicy,
-    
+
     // Quality settings
     pub max_bitrate: Option<i32>,
-    
+
     // Event hooks
     pub event_hooks: EventHooks,
-    
+
     // Platform-specific
     pub fetch_delay_ms: i64,
     pub download_delay_ms: i64,
-    
+
     // Stream selection settings
     pub stream_selection: StreamSelectionConfig,
 }
@@ -116,7 +116,7 @@ impl MergedConfigBuilder {
     ) -> Self {
         self.fetch_delay_ms = Some(fetch_delay_ms);
         self.download_delay_ms = Some(download_delay_ms);
-        
+
         if cookies.is_some() {
             self.cookies = cookies;
         }
@@ -220,13 +220,16 @@ impl MergedConfigBuilder {
         if let Some(v) = danmu_sampling_config {
             self.danmu_sampling_config = Some(v);
         }
-        
+
         // Parse streamer-specific config JSON
         if let Some(config) = streamer_config {
             if let Some(v) = config.get("output_folder").and_then(|v| v.as_str()) {
                 self.output_folder = Some(v.to_string());
             }
-            if let Some(v) = config.get("output_filename_template").and_then(|v| v.as_str()) {
+            if let Some(v) = config
+                .get("output_filename_template")
+                .and_then(|v| v.as_str())
+            {
                 self.output_filename_template = Some(v.to_string());
             }
             if let Some(v) = config.get("download_engine").and_then(|v| v.as_str()) {
@@ -258,8 +261,11 @@ impl MergedConfigBuilder {
     /// Build the final MergedConfig.
     pub fn build(self) -> MergedConfig {
         MergedConfig {
-            output_folder: self.output_folder.unwrap_or_else(|| "./downloads".to_string()),
-            output_filename_template: self.output_filename_template
+            output_folder: self
+                .output_folder
+                .unwrap_or_else(|| "./downloads".to_string()),
+            output_filename_template: self
+                .output_filename_template
                 .unwrap_or_else(|| "{streamer}-{title}-{%Y%m%d-%H%M%S}".to_string()),
             output_file_format: self.output_file_format.unwrap_or_else(|| "flv".to_string()),
             min_segment_size_bytes: self.min_segment_size_bytes.unwrap_or(1048576),

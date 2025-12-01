@@ -1,7 +1,7 @@
 //! Filter evaluation logic.
 
-use chrono::{DateTime, Utc};
 use super::types::Filter;
+use chrono::{DateTime, Utc};
 
 /// Context for filter evaluation.
 #[derive(Debug, Clone)]
@@ -58,7 +58,9 @@ pub struct FilterSet {
 impl FilterSet {
     /// Create an empty filter set.
     pub fn new() -> Self {
-        Self { filters: Vec::new() }
+        Self {
+            filters: Vec::new(),
+        }
     }
 
     /// Create a filter set from a vector of filters.
@@ -126,7 +128,7 @@ impl FilterSet {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::domain::filter::{KeywordFilter, CategoryFilter};
+    use crate::domain::filter::{CategoryFilter, KeywordFilter};
 
     #[test]
     fn test_empty_filter_set() {
@@ -157,9 +159,9 @@ mod tests {
             vec!["live".to_string()],
             vec![],
         )));
-        set.add(Filter::Category(CategoryFilter::new(
-            vec!["Just Chatting".to_string()],
-        )));
+        set.add(Filter::Category(CategoryFilter::new(vec![
+            "Just Chatting".to_string(),
+        ])));
 
         // Both pass
         let context = FilterContext::new()

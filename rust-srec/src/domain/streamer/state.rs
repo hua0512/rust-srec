@@ -1,7 +1,7 @@
 //! Streamer state machine.
 
-use serde::{Deserialize, Serialize};
 use crate::Error;
+use serde::{Deserialize, Serialize};
 
 /// Streamer operational states.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default, Serialize, Deserialize)]
@@ -70,54 +70,69 @@ impl StreamerState {
 
     /// Check if this is an error state.
     pub fn is_error(&self) -> bool {
-        matches!(self, Self::FatalError | Self::OutOfSpace | Self::NotFound | Self::TemporalDisabled | Self::Error)
+        matches!(
+            self,
+            Self::FatalError
+                | Self::OutOfSpace
+                | Self::NotFound
+                | Self::TemporalDisabled
+                | Self::Error
+        )
     }
 
     /// Check if this state allows monitoring.
     pub fn allows_monitoring(&self) -> bool {
-        matches!(self, Self::NotLive | Self::Live | Self::OutOfSchedule | Self::InspectingLive)
+        matches!(
+            self,
+            Self::NotLive | Self::Live | Self::OutOfSchedule | Self::InspectingLive
+        )
     }
 
     /// Check if this state indicates the streamer is active (being monitored).
     pub fn is_active(&self) -> bool {
-        !matches!(self, Self::Cancelled | Self::FatalError | Self::NotFound | Self::Disabled | Self::Error)
+        !matches!(
+            self,
+            Self::Cancelled | Self::FatalError | Self::NotFound | Self::Disabled | Self::Error
+        )
     }
 
     /// Validate a state transition.
     pub fn can_transition_to(&self, target: StreamerState) -> bool {
         use StreamerState::*;
-        
+
         match (self, target) {
             // Same state is always allowed
             (from, to) if from == &to => true,
-            
+
             // From NotLive
-            (NotLive, Live | InspectingLive | FatalError | NotFound | OutOfSpace | Cancelled) => true,
-            
+            (NotLive, Live | InspectingLive | FatalError | NotFound | OutOfSpace | Cancelled) => {
+                true
+            }
+
             // From Live
             (Live, NotLive | OutOfSchedule | FatalError | OutOfSpace | Cancelled) => true,
-            
+
             // From InspectingLive - can go to any state
             (InspectingLive, _) => true,
-            
+
             // From OutOfSchedule
             (OutOfSchedule, Live | NotLive | FatalError | OutOfSpace | Cancelled) => true,
-            
+
             // From error states - can recover to NotLive or InspectingLive
             (FatalError | OutOfSpace | NotFound, NotLive | InspectingLive | Cancelled) => true,
-            
+
             // From TemporalDisabled - can recover
             (TemporalDisabled, NotLive | InspectingLive | Cancelled) => true,
-            
+
             // FatalError can transition to TemporalDisabled
             (FatalError, TemporalDisabled) => true,
-            
+
             // Cancelled can only go to NotLive
             (Cancelled, NotLive) => true,
-            
+
             // Any state can be cancelled
             (_, Cancelled) => true,
-            
+
             _ => false,
         }
     }
@@ -148,7 +163,10 @@ mod tests {
     #[test]
     fn test_state_from_str() {
         assert_eq!(StreamerState::parse("LIVE"), Some(StreamerState::Live));
-        assert_eq!(StreamerState::parse("NOT_LIVE"), Some(StreamerState::NotLive));
+        assert_eq!(
+            StreamerState::parse("NOT_LIVE"),
+            Some(StreamerState::NotLive)
+        );
         assert_eq!(StreamerState::parse("invalid"), None);
     }
 

@@ -87,7 +87,11 @@ impl StatisticsAggregator {
     }
 
     /// Create a new statistics aggregator with custom configuration.
-    pub fn with_config(max_top_talkers: usize, max_words: usize, bucket_duration_secs: u64) -> Self {
+    pub fn with_config(
+        max_top_talkers: usize,
+        max_words: usize,
+        bucket_duration_secs: u64,
+    ) -> Self {
         Self {
             total_count: 0,
             chat_count: 0,
@@ -145,7 +149,7 @@ impl StatisticsAggregator {
     fn process_words(&mut self, content: &str) {
         for word in tokenize(content) {
             let word_lower = word.to_lowercase();
-            
+
             // Skip stop words and very short words
             if word_lower.len() < 2 || self.stop_words.contains(&word_lower) {
                 continue;
@@ -193,7 +197,8 @@ impl StatisticsAggregator {
     /// Get the bucket start time for a timestamp.
     fn get_bucket_start(&self, timestamp: DateTime<Utc>) -> DateTime<Utc> {
         let secs = timestamp.timestamp();
-        let bucket_secs = (secs / self.bucket_duration_secs as i64) * self.bucket_duration_secs as i64;
+        let bucket_secs =
+            (secs / self.bucket_duration_secs as i64) * self.bucket_duration_secs as i64;
         DateTime::from_timestamp(bucket_secs, 0).unwrap_or(timestamp)
     }
 
@@ -208,13 +213,14 @@ impl StatisticsAggregator {
         }
 
         // Calculate duration
-        let duration_secs = self.start_time
+        let duration_secs = self
+            .start_time
             .map(|start| (end_time - start).num_seconds().max(0) as u64)
             .unwrap_or(0);
 
         // Get top talkers
         let mut user_list: Vec<_> = self.user_counts.into_iter().collect();
-        user_list.sort_by(|a, b| b.1 .1.cmp(&a.1 .1));
+        user_list.sort_by(|a, b| b.1.1.cmp(&a.1.1));
         let top_talkers: Vec<TopTalker> = user_list
             .into_iter()
             .take(self.max_top_talkers)
@@ -251,7 +257,7 @@ impl StatisticsAggregator {
     pub fn current_stats(&self) -> DanmuStatistics {
         // Get top talkers
         let mut user_list: Vec<_> = self.user_counts.iter().collect();
-        user_list.sort_by(|a, b| b.1 .1.cmp(&a.1 .1));
+        user_list.sort_by(|a, b| b.1.1.cmp(&a.1.1));
         let top_talkers: Vec<TopTalker> = user_list
             .into_iter()
             .take(self.max_top_talkers)
@@ -315,27 +321,21 @@ fn tokenize(content: &str) -> Vec<&str> {
 fn default_stop_words() -> std::collections::HashSet<String> {
     let words = [
         // English
-        "the", "a", "an", "is", "are", "was", "were", "be", "been", "being",
-        "have", "has", "had", "do", "does", "did", "will", "would", "could",
-        "should", "may", "might", "must", "shall", "can", "need", "dare",
-        "to", "of", "in", "for", "on", "with", "at", "by", "from", "as",
-        "into", "through", "during", "before", "after", "above", "below",
-        "between", "under", "again", "further", "then", "once", "here",
-        "there", "when", "where", "why", "how", "all", "each", "few",
-        "more", "most", "other", "some", "such", "no", "nor", "not",
-        "only", "own", "same", "so", "than", "too", "very", "just",
-        "and", "but", "if", "or", "because", "until", "while", "this",
-        "that", "these", "those", "it", "its", "he", "she", "they",
-        "them", "his", "her", "their", "what", "which", "who", "whom",
-        // Chinese common words
-        "的", "了", "是", "在", "我", "有", "和", "就", "不", "人",
-        "都", "一", "一个", "上", "也", "很", "到", "说", "要", "去",
-        "你", "会", "着", "没有", "看", "好", "自己", "这", "那",
+        "the", "a", "an", "is", "are", "was", "were", "be", "been", "being", "have", "has", "had",
+        "do", "does", "did", "will", "would", "could", "should", "may", "might", "must", "shall",
+        "can", "need", "dare", "to", "of", "in", "for", "on", "with", "at", "by", "from", "as",
+        "into", "through", "during", "before", "after", "above", "below", "between", "under",
+        "again", "further", "then", "once", "here", "there", "when", "where", "why", "how", "all",
+        "each", "few", "more", "most", "other", "some", "such", "no", "nor", "not", "only", "own",
+        "same", "so", "than", "too", "very", "just", "and", "but", "if", "or", "because", "until",
+        "while", "this", "that", "these", "those", "it", "its", "he", "she", "they", "them", "his",
+        "her", "their", "what", "which", "who", "whom", // Chinese common words
+        "的", "了", "是", "在", "我", "有", "和", "就", "不", "人", "都", "一", "一个", "上", "也",
+        "很", "到", "说", "要", "去", "你", "会", "着", "没有", "看", "好", "自己", "这", "那",
         // Common chat expressions
-        "lol", "lmao", "haha", "hehe", "xd", "gg", "ez", "wp",
-        "666", "233", "哈哈", "呵呵", "嘿嘿",
+        "lol", "lmao", "haha", "hehe", "xd", "gg", "ez", "wp", "666", "233", "哈哈", "呵呵", "嘿嘿",
     ];
-    
+
     words.iter().map(|s| s.to_string()).collect()
 }
 
@@ -348,11 +348,11 @@ mod tests {
     fn test_record_message() {
         let mut agg = StatisticsAggregator::new();
         let now = Utc::now();
-        
+
         agg.record_message("user1", "User One", "Hello world!", false, now);
         agg.record_message("user2", "User Two", "Hi there!", false, now);
         agg.record_message("user1", "User One", "Another message", false, now);
-        
+
         let stats = agg.current_stats();
         assert_eq!(stats.total_count, 3);
         assert_eq!(stats.chat_count, 3);
@@ -363,7 +363,7 @@ mod tests {
     fn test_top_talkers() {
         let mut agg = StatisticsAggregator::with_config(3, 10, 10);
         let now = Utc::now();
-        
+
         // User1: 5 messages, User2: 3 messages, User3: 1 message
         for _ in 0..5 {
             agg.record_message("user1", "User One", "msg", false, now);
@@ -372,7 +372,7 @@ mod tests {
             agg.record_message("user2", "User Two", "msg", false, now);
         }
         agg.record_message("user3", "User Three", "msg", false, now);
-        
+
         let stats = agg.current_stats();
         assert_eq!(stats.top_talkers.len(), 3);
         assert_eq!(stats.top_talkers[0].user_id, "user1");
@@ -385,12 +385,12 @@ mod tests {
     fn test_word_frequency() {
         let mut agg = StatisticsAggregator::with_config(10, 10, 10);
         let now = Utc::now();
-        
+
         agg.record_message("user1", "User", "hello world hello", false, now);
         agg.record_message("user2", "User", "hello rust world", false, now);
-        
+
         let stats = agg.current_stats();
-        
+
         // "hello" should appear 3 times, "world" 2 times, "rust" 1 time
         let hello = stats.word_frequency.iter().find(|w| w.word == "hello");
         assert!(hello.is_some());
@@ -401,17 +401,29 @@ mod tests {
     fn test_rate_timeseries() {
         let mut agg = StatisticsAggregator::with_config(10, 10, 10);
         let base = Utc.with_ymd_and_hms(2024, 1, 1, 12, 0, 0).unwrap();
-        
+
         // Messages in first bucket
         agg.record_message("user1", "User", "msg1", false, base);
-        agg.record_message("user1", "User", "msg2", false, base + chrono::Duration::seconds(5));
-        
+        agg.record_message(
+            "user1",
+            "User",
+            "msg2",
+            false,
+            base + chrono::Duration::seconds(5),
+        );
+
         // Messages in second bucket
-        agg.record_message("user1", "User", "msg3", false, base + chrono::Duration::seconds(15));
-        
+        agg.record_message(
+            "user1",
+            "User",
+            "msg3",
+            false,
+            base + chrono::Duration::seconds(15),
+        );
+
         let end_time = base + chrono::Duration::seconds(20);
         let stats = agg.finalize(end_time);
-        
+
         assert_eq!(stats.rate_timeseries.len(), 2);
         assert_eq!(stats.rate_timeseries[0].count, 2); // First bucket
         assert_eq!(stats.rate_timeseries[1].count, 1); // Second bucket
@@ -422,11 +434,11 @@ mod tests {
         let mut agg = StatisticsAggregator::new();
         let start = Utc.with_ymd_and_hms(2024, 1, 1, 12, 0, 0).unwrap();
         let end = start + chrono::Duration::minutes(30);
-        
+
         agg.record_message("user1", "User", "Hello", false, start);
-        
+
         let stats = agg.finalize(end);
-        
+
         assert_eq!(stats.start_time, Some(start));
         assert_eq!(stats.end_time, Some(end));
         assert_eq!(stats.duration_secs, 1800); // 30 minutes
@@ -436,11 +448,11 @@ mod tests {
     fn test_gift_counting() {
         let mut agg = StatisticsAggregator::new();
         let now = Utc::now();
-        
+
         agg.record_message("user1", "User", "chat", false, now);
         agg.record_message("user2", "User", "gift", true, now);
         agg.record_message("user3", "User", "gift", true, now);
-        
+
         let stats = agg.current_stats();
         assert_eq!(stats.total_count, 3);
         assert_eq!(stats.chat_count, 1);
@@ -451,7 +463,7 @@ mod tests {
     fn test_tokenize() {
         let tokens = tokenize("Hello, world! How are you?");
         assert_eq!(tokens, vec!["Hello", "world", "How", "are", "you"]);
-        
+
         let cjk_tokens = tokenize("你好 世界");
         assert_eq!(cjk_tokens, vec!["你好", "世界"]);
     }

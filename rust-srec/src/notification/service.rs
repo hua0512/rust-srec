@@ -8,8 +8,8 @@
 //! - Maintaining a dead letter queue for failed notifications
 
 use std::collections::HashMap;
-use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Duration;
 
 use chrono::{DateTime, Utc};
@@ -25,10 +25,10 @@ use super::channels::{
     ChannelConfig, DiscordChannel, EmailChannel, NotificationChannel, WebhookChannel,
 };
 use super::events::NotificationEvent;
+use crate::Result;
 use crate::downloader::DownloadManagerEvent;
 use crate::monitor::MonitorEvent;
 use crate::pipeline::PipelineEvent;
-use crate::Result;
 
 /// Configuration for the notification service.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -97,10 +97,7 @@ impl CircuitBreakerState {
         if self.failures >= threshold && !self.is_open {
             self.is_open = true;
             self.opened_at = Some(Utc::now());
-            warn!(
-                "Circuit breaker opened after {} failures",
-                self.failures
-            );
+            warn!("Circuit breaker opened after {} failures", self.failures);
         }
     }
 
@@ -215,11 +212,17 @@ impl NotificationService {
                     CircuitBreakerState::new(self.config.circuit_breaker_cooldown_secs),
                 );
                 channels.push(channel);
-                info!("Initialized notification channel: {}", channel_config.channel_type());
+                info!(
+                    "Initialized notification channel: {}",
+                    channel_config.channel_type()
+                );
             }
         }
 
-        info!("Notification service initialized with {} channels", channels.len());
+        info!(
+            "Notification service initialized with {} channels",
+            channels.len()
+        );
     }
 
     /// Add a channel dynamically.
@@ -244,7 +247,6 @@ impl NotificationService {
     pub fn subscribe(&self) -> broadcast::Receiver<NotificationEvent> {
         self.event_tx.subscribe()
     }
-
 
     /// Send a notification to all enabled channels.
     pub async fn notify(&self, event: NotificationEvent) -> Result<()> {
@@ -320,10 +322,7 @@ impl NotificationService {
                     if let Some(mut cb) = self.circuit_breakers.get_mut(&channel_type) {
                         cb.record_success();
                     }
-                    debug!(
-                        "Notification {} sent via {}",
-                        id, channel_type
-                    );
+                    debug!("Notification {} sent via {}", id, channel_type);
                 }
                 Err(e) => {
                     // Record failure
@@ -393,19 +392,19 @@ impl NotificationService {
     /// Schedule a retry for a notification.
     fn schedule_retry(&self, id: u64, delay: Duration) {
         debug!("Scheduling retry for notification {} in {:?}", id, delay);
-        
+
         let pending_queue = self.pending_queue.clone();
         let channels = self.channels.read().clone();
         let circuit_breakers = self.circuit_breakers.clone();
         let config = self.config.clone();
-        
+
         tokio::spawn(async move {
             sleep(delay).await;
 
             if let Some(pending) = pending_queue.get(&id) {
                 let event = pending.event.clone();
                 drop(pending);
-                
+
                 // Process notification inline instead of recursive call
                 for channel in &channels {
                     let channel_type = channel.channel_type().to_string();
@@ -433,7 +432,7 @@ impl NotificationService {
                         }
                     }
                 }
-                
+
                 pending_queue.remove(&id);
             }
         });
@@ -464,7 +463,8 @@ impl NotificationService {
         let retention = chrono::Duration::days(self.config.dead_letter_retention_days as i64);
         let cutoff = Utc::now() - retention;
 
-        self.dead_letters.retain(|_, entry| entry.dead_lettered_at > cutoff);
+        self.dead_letters
+            .retain(|_, entry| entry.dead_lettered_at > cutoff);
     }
 
     /// Get queue statistics.
@@ -480,7 +480,6 @@ impl NotificationService {
                 .collect(),
         }
     }
-
 
     /// Start listening for system events.
     pub fn start_event_listeners(
@@ -847,7 +846,7 @@ mod tests {
     #[test]
     fn test_add_channel() {
         let service = NotificationService::new();
-        
+
         let config = ChannelConfig::Discord(DiscordConfig {
             enabled: true,
             webhook_url: "https://discord.com/api/webhooks/test".to_string(),

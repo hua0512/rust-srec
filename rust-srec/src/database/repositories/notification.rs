@@ -3,9 +3,7 @@
 use async_trait::async_trait;
 use sqlx::SqlitePool;
 
-use crate::database::models::{
-    NotificationChannelDbModel, NotificationDeadLetterDbModel,
-};
+use crate::database::models::{NotificationChannelDbModel, NotificationDeadLetterDbModel};
 use crate::{Error, Result};
 
 /// Notification repository trait.
@@ -20,14 +18,21 @@ pub trait NotificationRepository: Send + Sync {
 
     // Subscriptions
     async fn get_subscriptions_for_channel(&self, channel_id: &str) -> Result<Vec<String>>;
-    async fn get_channels_for_event(&self, event_name: &str) -> Result<Vec<NotificationChannelDbModel>>;
+    async fn get_channels_for_event(
+        &self,
+        event_name: &str,
+    ) -> Result<Vec<NotificationChannelDbModel>>;
     async fn subscribe(&self, channel_id: &str, event_name: &str) -> Result<()>;
     async fn unsubscribe(&self, channel_id: &str, event_name: &str) -> Result<()>;
     async fn unsubscribe_all(&self, channel_id: &str) -> Result<()>;
 
     // Dead Letter Queue
     async fn add_to_dead_letter(&self, entry: &NotificationDeadLetterDbModel) -> Result<()>;
-    async fn list_dead_letters(&self, channel_id: Option<&str>, limit: i32) -> Result<Vec<NotificationDeadLetterDbModel>>;
+    async fn list_dead_letters(
+        &self,
+        channel_id: Option<&str>,
+        limit: i32,
+    ) -> Result<Vec<NotificationDeadLetterDbModel>>;
     async fn get_dead_letter(&self, id: &str) -> Result<NotificationDeadLetterDbModel>;
     async fn delete_dead_letter(&self, id: &str) -> Result<()>;
     async fn cleanup_old_dead_letters(&self, retention_days: i32) -> Result<i32>;
@@ -124,7 +129,10 @@ impl NotificationRepository for SqlxNotificationRepository {
         Ok(subs.into_iter().map(|(e,)| e).collect())
     }
 
-    async fn get_channels_for_event(&self, event_name: &str) -> Result<Vec<NotificationChannelDbModel>> {
+    async fn get_channels_for_event(
+        &self,
+        event_name: &str,
+    ) -> Result<Vec<NotificationChannelDbModel>> {
         let channels = sqlx::query_as::<_, NotificationChannelDbModel>(
             r#"
             SELECT nc.* FROM notification_channel nc

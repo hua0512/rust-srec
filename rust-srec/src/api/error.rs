@@ -3,9 +3,9 @@
 //! Provides consistent error responses for the API.
 
 use axum::{
+    Json,
     http::StatusCode,
     response::{IntoResponse, Response},
-    Json,
 };
 use serde::Serialize;
 
@@ -76,7 +76,11 @@ impl ApiError {
 
     /// Create a 422 Unprocessable Entity error.
     pub fn validation(message: impl Into<String>) -> Self {
-        Self::new(StatusCode::UNPROCESSABLE_ENTITY, "VALIDATION_ERROR", message)
+        Self::new(
+            StatusCode::UNPROCESSABLE_ENTITY,
+            "VALIDATION_ERROR",
+            message,
+        )
     }
 
     /// Create a 500 Internal Server Error.
@@ -86,7 +90,11 @@ impl ApiError {
 
     /// Create a 503 Service Unavailable error.
     pub fn service_unavailable(message: impl Into<String>) -> Self {
-        Self::new(StatusCode::SERVICE_UNAVAILABLE, "SERVICE_UNAVAILABLE", message)
+        Self::new(
+            StatusCode::SERVICE_UNAVAILABLE,
+            "SERVICE_UNAVAILABLE",
+            message,
+        )
     }
 }
 
@@ -152,7 +160,7 @@ mod tests {
     fn test_api_error_with_details() {
         let err = ApiError::validation("Invalid input")
             .with_details(serde_json::json!({"field": "email", "reason": "invalid format"}));
-        
+
         assert!(err.details.is_some());
     }
 
@@ -160,7 +168,7 @@ mod tests {
     fn test_from_domain_error() {
         let domain_err = Error::not_found("Streamer", "123");
         let api_err: ApiError = domain_err.into();
-        
+
         assert_eq!(api_err.status, StatusCode::NOT_FOUND);
         assert!(api_err.message.contains("123"));
     }

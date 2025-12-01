@@ -237,11 +237,7 @@ impl HealthChecker {
                 ),
             )
         } else {
-            debug!(
-                "Disk space OK on {}: {:.1}% used",
-                path,
-                used_ratio * 100.0
-            );
+            debug!("Disk space OK on {}: {:.1}% used", path, used_ratio * 100.0);
             ComponentHealth::healthy(format!("disk:{}", path))
         }
     }
@@ -323,8 +319,7 @@ mod tests {
 
     #[test]
     fn test_component_health_with_duration() {
-        let health =
-            ComponentHealth::healthy("test").with_duration(Duration::from_millis(100));
+        let health = ComponentHealth::healthy("test").with_duration(Duration::from_millis(100));
         assert_eq!(health.check_duration_ms, Some(100));
     }
 
@@ -364,7 +359,8 @@ mod tests {
     #[test]
     fn test_disk_space_check_healthy() {
         let checker = HealthChecker::new();
-        let health = checker.check_disk_space("/data", 50 * 1024 * 1024 * 1024, 100 * 1024 * 1024 * 1024);
+        let health =
+            checker.check_disk_space("/data", 50 * 1024 * 1024 * 1024, 100 * 1024 * 1024 * 1024);
         assert_eq!(health.status, HealthStatus::Healthy);
     }
 
@@ -372,7 +368,8 @@ mod tests {
     fn test_disk_space_check_warning() {
         let checker = HealthChecker::new();
         // 85% used = 15% available
-        let health = checker.check_disk_space("/data", 15 * 1024 * 1024 * 1024, 100 * 1024 * 1024 * 1024);
+        let health =
+            checker.check_disk_space("/data", 15 * 1024 * 1024 * 1024, 100 * 1024 * 1024 * 1024);
         assert_eq!(health.status, HealthStatus::Degraded);
     }
 
@@ -380,7 +377,8 @@ mod tests {
     fn test_disk_space_check_critical() {
         let checker = HealthChecker::new();
         // 97% used = 3% available
-        let health = checker.check_disk_space("/data", 3 * 1024 * 1024 * 1024, 100 * 1024 * 1024 * 1024);
+        let health =
+            checker.check_disk_space("/data", 3 * 1024 * 1024 * 1024, 100 * 1024 * 1024 * 1024);
         assert_eq!(health.status, HealthStatus::Unhealthy);
     }
 

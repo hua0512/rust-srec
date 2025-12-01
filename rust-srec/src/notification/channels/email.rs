@@ -5,8 +5,8 @@ use serde::{Deserialize, Serialize};
 use tracing::{debug, warn};
 
 use super::NotificationChannel;
-use crate::notification::events::{NotificationEvent, NotificationPriority};
 use crate::Result;
+use crate::notification::events::{NotificationEvent, NotificationPriority};
 
 /// Email channel configuration.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -214,7 +214,7 @@ mod tests {
     fn test_build_subject() {
         let config = EmailConfig::default();
         let channel = EmailChannel::new(config);
-        
+
         let event = NotificationEvent::StreamOnline {
             streamer_id: "123".to_string(),
             streamer_name: "TestStreamer".to_string(),

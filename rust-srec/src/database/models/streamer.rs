@@ -56,7 +56,9 @@ impl StreamerDbModel {
 }
 
 /// Streamer operational states.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, strum::Display, strum::EnumString)]
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, strum::Display, strum::EnumString,
+)]
 #[strum(serialize_all = "SCREAMING_SNAKE_CASE")]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
 pub enum StreamerState {
@@ -123,7 +125,9 @@ impl StreamerState {
             // From OutOfSchedule, can go to Live, NotLive, or error states
             (OutOfSchedule, Live | NotLive | FatalError | OutOfSpace) => true,
             // From error states, can recover to NotLive or InspectingLive
-            (FatalError | OutOfSpace | NotFound | TemporalDisabled, NotLive | InspectingLive) => true,
+            (FatalError | OutOfSpace | NotFound | TemporalDisabled, NotLive | InspectingLive) => {
+                true
+            }
             // Cancelled can only go to NotLive
             (Cancelled, NotLive) => true,
             // Any state can be cancelled
@@ -137,7 +141,18 @@ impl StreamerState {
 
 /// Streamer priority levels for resource allocation.
 /// Note: Ord is manually implemented so High > Normal > Low
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize, strum::Display, strum::EnumString)]
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    Default,
+    Serialize,
+    Deserialize,
+    strum::Display,
+    strum::EnumString,
+)]
 #[strum(serialize_all = "SCREAMING_SNAKE_CASE")]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
 pub enum Priority {

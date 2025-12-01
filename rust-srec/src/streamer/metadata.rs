@@ -90,11 +90,7 @@ impl StreamerMetadata {
     pub fn remaining_backoff(&self) -> Option<chrono::Duration> {
         self.disabled_until.and_then(|until| {
             let now = Utc::now();
-            if until > now {
-                Some(until - now)
-            } else {
-                None
-            }
+            if until > now { Some(until - now) } else { None }
         })
     }
 }

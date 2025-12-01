@@ -4,15 +4,15 @@
 
 use async_trait::async_trait;
 use regex::Regex;
+use rustc_hash::FxHashMap;
 use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::sync::{Arc, OnceLock};
 use std::time::Duration;
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::net::TcpStream;
-use tokio::sync::{mpsc, Mutex, RwLock};
+use tokio::sync::{Mutex, RwLock, mpsc};
 use tokio::task::JoinHandle;
 use tracing::{debug, error, info, warn};
-use rustc_hash::FxHashMap;
 
 use crate::danmu::{DanmuConnection, DanmuMessage, DanmuProvider, DanmuType};
 use crate::error::{Error, Result};
@@ -93,7 +93,10 @@ impl TwitchDanmuProvider {
         SharedConnectionState,
         mpsc::Receiver<DanmuMessage>,
     )> {
-        info!("Connecting to Twitch IRC server: {}:{}", TWITCH_IRC_HOST, TWITCH_IRC_TLS_PORT);
+        info!(
+            "Connecting to Twitch IRC server: {}:{}",
+            TWITCH_IRC_HOST, TWITCH_IRC_TLS_PORT
+        );
 
         // Create TCP connection
         let tcp_stream = TcpStream::connect((TWITCH_IRC_HOST, TWITCH_IRC_TLS_PORT))
@@ -117,7 +120,10 @@ impl TwitchDanmuProvider {
             .await
             .map_err(|e| Error::DanmuError(format!("TLS handshake failed: {}", e)))?;
 
-        info!("Connected to Twitch IRC server with TLS for channel #{}", channel);
+        info!(
+            "Connected to Twitch IRC server with TLS for channel #{}",
+            channel
+        );
 
         let (message_tx, message_rx) = mpsc::channel(1000);
         let (shutdown_tx, shutdown_rx) = mpsc::channel(1);
@@ -154,16 +160,14 @@ impl TwitchDanmuProvider {
     }
 
     /// Authenticate with Twitch IRC (anonymous)
-    async fn authenticate(
-        stream: &mut tokio_rustls::client::TlsStream<TcpStream>,
-    ) -> Result<()> {
+    async fn authenticate(stream: &mut tokio_rustls::client::TlsStream<TcpStream>) -> Result<()> {
         // Generate random anonymous username
         let random_num: u32 = rand::random::<u32>() % 100000;
         let nick = format!("justinfan{}", random_num);
 
         // Send PASS (empty for anonymous)
         Self::send_command(stream, "PASS oauth:").await?;
-        
+
         // Send NICK
         Self::send_command(stream, &format!("NICK {}", nick)).await?;
 
@@ -203,20 +207,20 @@ impl TwitchDanmuProvider {
         is_connected: &Arc<AtomicBool>,
     ) -> Result<tokio_rustls::client::TlsStream<TcpStream>> {
         let mut attempt = 0;
-        
+
         while attempt < MAX_RECONNECT_ATTEMPTS {
             let current_count = reconnect_count.fetch_add(1, Ordering::SeqCst);
             let delay = Self::calculate_reconnect_delay(current_count);
-            
+
             warn!(
                 "Attempting to reconnect to Twitch IRC (attempt {}/{}), waiting {:?}",
                 attempt + 1,
                 MAX_RECONNECT_ATTEMPTS,
                 delay
             );
-            
+
             tokio::time::sleep(delay).await;
-            
+
             // Try to establish new connection
             match TcpStream::connect((TWITCH_IRC_HOST, TWITCH_IRC_TLS_PORT)).await {
                 Ok(tcp_stream) => {
@@ -229,8 +233,11 @@ impl TwitchDanmuProvider {
                         .with_no_client_auth();
 
                     let connector = tokio_rustls::TlsConnector::from(Arc::new(config));
-                    let server_name = tokio_rustls::rustls::pki_types::ServerName::try_from(TWITCH_IRC_HOST)
-                        .map_err(|e| Error::DanmuError(format!("Invalid server name: {}", e)))?;
+                    let server_name =
+                        tokio_rustls::rustls::pki_types::ServerName::try_from(TWITCH_IRC_HOST)
+                            .map_err(|e| {
+                                Error::DanmuError(format!("Invalid server name: {}", e))
+                            })?;
 
                     match connector.connect(server_name.to_owned(), tcp_stream).await {
                         Ok(mut tls_stream) => {
@@ -240,17 +247,20 @@ impl TwitchDanmuProvider {
                                 attempt += 1;
                                 continue;
                             }
-                            
+
                             if let Err(e) = Self::join_channel(&mut tls_stream, channel).await {
                                 error!("Failed to join channel after reconnect: {}", e);
                                 attempt += 1;
                                 continue;
                             }
-                            
+
                             // Reset reconnect count on successful connection
                             reconnect_count.store(0, Ordering::SeqCst);
                             is_connected.store(true, Ordering::SeqCst);
-                            info!("Successfully reconnected to Twitch IRC for channel #{}", channel);
+                            info!(
+                                "Successfully reconnected to Twitch IRC for channel #{}",
+                                channel
+                            );
                             return Ok(tls_stream);
                         }
                         Err(e) => {
@@ -262,10 +272,10 @@ impl TwitchDanmuProvider {
                     error!("Failed to connect during reconnect: {}", e);
                 }
             }
-            
+
             attempt += 1;
         }
-        
+
         Err(Error::DanmuError(format!(
             "Failed to reconnect after {} attempts",
             MAX_RECONNECT_ATTEMPTS
@@ -288,7 +298,7 @@ impl TwitchDanmuProvider {
             let mut current_write_half = write_half;
             let mut current_reader = reader;
             let mut shutdown_rx = shutdown_rx;
-            
+
             loop {
                 // Check for shutdown signal
                 tokio::select! {
@@ -302,7 +312,7 @@ impl TwitchDanmuProvider {
                                 // Connection closed - attempt reconnection
                                 warn!("Twitch IRC connection closed, attempting reconnection");
                                 is_connected.store(false, Ordering::SeqCst);
-                                
+
                                 match Self::attempt_reconnect(
                                     &channel,
                                     &reconnect_count,
@@ -327,9 +337,9 @@ impl TwitchDanmuProvider {
                                     line.clear();
                                     continue;
                                 }
-                                
+
                                 debug!("Received IRC line: {}", trimmed);
-                                
+
                                 // Handle PING
                                 if trimmed.starts_with("PING") {
                                     let ping_data = trimmed.strip_prefix("PING ").unwrap_or(":tmi.twitch.tv");
@@ -345,7 +355,7 @@ impl TwitchDanmuProvider {
                                     line.clear();
                                     continue;
                                 }
-                                
+
                                 // Parse IRC message
                                 match parse_twitch_irc_message(trimmed) {
                                     Ok(Some(msg)) => {
@@ -366,7 +376,7 @@ impl TwitchDanmuProvider {
                             Err(e) => {
                                 error!("Error reading from IRC stream: {}", e);
                                 is_connected.store(false, Ordering::SeqCst);
-                                
+
                                 // Attempt reconnection
                                 match Self::attempt_reconnect(
                                     &channel,
@@ -390,7 +400,7 @@ impl TwitchDanmuProvider {
                     }
                 }
             }
-            
+
             debug!("Message processing task stopped");
         })
     }
@@ -410,18 +420,18 @@ impl DanmuProvider for TwitchDanmuProvider {
 
     async fn connect(&self, room_id: &str) -> Result<DanmuConnection> {
         let connection_id = format!("twitch-{}-{}", room_id, uuid::Uuid::new_v4());
-        
+
         // Establish IRC connection
         let (mut tls_stream, shared_state, message_rx) = self.connect_irc(room_id).await?;
-        
+
         // Authenticate and join channel
         Self::authenticate(&mut tls_stream).await?;
         Self::join_channel(&mut tls_stream, room_id).await?;
-        
+
         // Split the stream for reading and writing
         let (read_half, write_half) = tokio::io::split(tls_stream);
         let write_half = Arc::new(Mutex::new(write_half));
-        
+
         // Start message processing task with reconnection support
         let message_handle = Self::start_message_task(
             read_half,
@@ -432,11 +442,11 @@ impl DanmuProvider for TwitchDanmuProvider {
             room_id.to_string(),
             shared_state.shutdown_rx,
         );
-        
+
         // Create connection
         let mut connection = DanmuConnection::new(connection_id.clone(), "twitch", room_id);
         connection.set_connected();
-        
+
         // Store connection state
         let state = TwitchConnectionState {
             channel: room_id.to_string(),
@@ -447,38 +457,38 @@ impl DanmuProvider for TwitchDanmuProvider {
             reconnect_handle: None,
             shutdown_tx: Some(shared_state.shutdown_tx),
         };
-        
+
         self.connections
             .write()
             .await
             .insert(connection_id, Arc::new(Mutex::new(state)));
-        
+
         Ok(connection)
     }
 
     async fn disconnect(&self, connection: &mut DanmuConnection) -> Result<()> {
         if let Some(state) = self.connections.write().await.remove(&connection.id) {
             let mut state = state.lock().await;
-            
+
             // Send shutdown signal to stop reconnection attempts
             if let Some(shutdown_tx) = state.shutdown_tx.take() {
                 let _ = shutdown_tx.send(()).await;
             }
-            
+
             // Cancel message processing task
             if let Some(handle) = state.message_handle.take() {
                 handle.abort();
             }
-            
+
             // Cancel reconnection task if running
             if let Some(handle) = state.reconnect_handle.take() {
                 handle.abort();
             }
-            
+
             state.is_connected.store(false, Ordering::SeqCst);
             info!("Disconnected from Twitch IRC channel #{}", state.channel);
         }
-        
+
         connection.set_disconnected();
         Ok(())
     }
@@ -491,19 +501,14 @@ impl DanmuProvider for TwitchDanmuProvider {
         let connections = self.connections.read().await;
         if let Some(state) = connections.get(&connection.id) {
             let mut state = state.lock().await;
-            
+
             // Check if still connected
             if !state.is_connected.load(Ordering::SeqCst) {
                 return Err(Error::DanmuError("Connection lost".to_string()));
             }
-            
+
             // Try to receive a message with timeout
-            match tokio::time::timeout(
-                Duration::from_millis(100),
-                state.message_rx.recv(),
-            )
-            .await
-            {
+            match tokio::time::timeout(Duration::from_millis(100), state.message_rx.recv()).await {
                 Ok(Some(msg)) => Ok(Some(msg)),
                 Ok(None) => {
                     // Channel closed
@@ -532,10 +537,10 @@ impl DanmuProvider for TwitchDanmuProvider {
 }
 
 /// Parse a Twitch IRC message into a DanmuMessage.
-/// 
+///
 /// Twitch IRC format with tags:
 /// @badge-info=;badges=;color=#FF0000;display-name=User;emotes=;id=xxx;mod=0;room-id=123;
-/// subscriber=0;tmi-sent-ts=1234567890;turbo=0;user-id=456;user-type= 
+/// subscriber=0;tmi-sent-ts=1234567890;turbo=0;user-id=456;user-type=
 /// :user!user@user.tmi.twitch.tv PRIVMSG #channel :message content
 pub fn parse_twitch_irc_message(line: &str) -> Result<Option<DanmuMessage>> {
     if line.starts_with("PING") {
@@ -551,7 +556,7 @@ pub fn parse_twitch_irc_message(line: &str) -> Result<Option<DanmuMessage>> {
     // Parse tags
     let mut tags = std::collections::HashMap::new();
     let mut remaining = line;
-    
+
     if line.starts_with('@') {
         if let Some(space_idx) = line.find(' ') {
             let tag_str = &line[1..space_idx];
@@ -591,19 +596,19 @@ pub fn parse_twitch_irc_message(line: &str) -> Result<Option<DanmuMessage>> {
         .get("display-name")
         .cloned()
         .unwrap_or_else(|| username.to_string());
-    
+
     let user_id = tags
         .get("user-id")
         .cloned()
         .unwrap_or_else(|| username.to_string());
-    
+
     let message_id = tags
         .get("id")
         .cloned()
         .unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
 
     let mut msg = DanmuMessage::chat(message_id, user_id, display_name, content.trim());
-    
+
     // Add color if present
     if let Some(color) = tags.get("color") {
         if !color.is_empty() {
@@ -634,11 +639,11 @@ mod tests {
     #[test]
     fn test_supports_url() {
         let provider = TwitchDanmuProvider::new();
-        
+
         assert!(provider.supports_url("https://www.twitch.tv/streamer"));
         assert!(provider.supports_url("http://twitch.tv/another_streamer"));
         assert!(provider.supports_url("twitch.tv/test123"));
-        
+
         assert!(!provider.supports_url("https://www.huya.com/12345"));
         assert!(!provider.supports_url("https://www.youtube.com/watch?v=xxx"));
     }
@@ -646,7 +651,7 @@ mod tests {
     #[test]
     fn test_extract_room_id() {
         let provider = TwitchDanmuProvider::new();
-        
+
         assert_eq!(
             provider.extract_room_id("https://www.twitch.tv/Streamer"),
             Some("streamer".to_string()) // lowercase
@@ -655,19 +660,16 @@ mod tests {
             provider.extract_room_id("http://twitch.tv/another_streamer"),
             Some("another_streamer".to_string())
         );
-        assert_eq!(
-            provider.extract_room_id("https://www.huya.com/12345"),
-            None
-        );
+        assert_eq!(provider.extract_room_id("https://www.huya.com/12345"), None);
     }
 
     #[test]
     fn test_parse_twitch_irc_message() {
         let line = "@badge-info=;badges=broadcaster/1;color=#FF0000;display-name=TestUser;emotes=;id=abc123;mod=0;room-id=12345;subscriber=0;tmi-sent-ts=1234567890;turbo=0;user-id=67890;user-type= :testuser!testuser@testuser.tmi.twitch.tv PRIVMSG #channel :Hello world!";
-        
+
         let result = parse_twitch_irc_message(line).unwrap();
         assert!(result.is_some());
-        
+
         let msg = result.unwrap();
         assert_eq!(msg.username, "TestUser");
         assert_eq!(msg.user_id, "67890");
@@ -685,10 +687,10 @@ mod tests {
     #[test]
     fn test_parse_bits_message() {
         let line = "@badge-info=;badges=bits/100;bits=100;color=#FF0000;display-name=Cheerer;emotes=;id=abc123;mod=0;room-id=12345;subscriber=0;tmi-sent-ts=1234567890;turbo=0;user-id=67890;user-type= :cheerer!cheerer@cheerer.tmi.twitch.tv PRIVMSG #channel :cheer100 Great stream!";
-        
+
         let result = parse_twitch_irc_message(line).unwrap();
         assert!(result.is_some());
-        
+
         let msg = result.unwrap();
         assert_eq!(msg.message_type, DanmuType::Gift);
         assert!(msg.metadata.is_some());

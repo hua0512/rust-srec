@@ -393,7 +393,7 @@ mod tests {
     fn test_paginated_response() {
         let items = vec![1, 2, 3];
         let response = PaginatedResponse::new(items, 100, 20, 0);
-        
+
         assert_eq!(response.items.len(), 3);
         assert_eq!(response.total, 100);
         assert_eq!(response.limit, 20);
@@ -407,7 +407,7 @@ mod tests {
             "url": "https://example.com/stream",
             "platform_config_id": "platform1"
         }"#;
-        
+
         let request: CreateStreamerRequest = serde_json::from_str(json).unwrap();
         assert_eq!(request.name, "Test Streamer");
         assert_eq!(request.priority, Priority::Normal);

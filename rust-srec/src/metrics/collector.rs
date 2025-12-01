@@ -76,7 +76,8 @@ impl MetricsCollector {
     /// Record a download completed.
     pub fn record_download_completed(&self, bytes: u64, duration_ms: u64) {
         self.active_downloads.fetch_sub(1, Ordering::Relaxed);
-        self.download_bytes_total.fetch_add(bytes, Ordering::Relaxed);
+        self.download_bytes_total
+            .fetch_add(bytes, Ordering::Relaxed);
         self.download_duration_total_ms
             .fetch_add(duration_ms, Ordering::Relaxed);
         self.download_count.fetch_add(1, Ordering::Relaxed);
@@ -84,7 +85,8 @@ impl MetricsCollector {
 
     /// Record download bytes (incremental).
     pub fn record_download_bytes(&self, bytes: u64) {
-        self.download_bytes_total.fetch_add(bytes, Ordering::Relaxed);
+        self.download_bytes_total
+            .fetch_add(bytes, Ordering::Relaxed);
     }
 
     /// Record a download error.
@@ -101,7 +103,6 @@ impl MetricsCollector {
     pub fn active_downloads(&self) -> u64 {
         self.active_downloads.load(Ordering::Relaxed)
     }
-
 
     // ========== Pipeline Metrics ==========
 

@@ -10,20 +10,27 @@ use sqlx::SqlitePool;
 use tokio_util::sync::CancellationToken;
 use tracing::{debug, info, warn};
 
-use crate::api::{ApiServer, JwtService, server::{ApiServerConfig, AppState}};
+use crate::Result;
+use crate::api::auth_service::{AuthConfig, AuthService};
+use crate::api::{
+    ApiServer, JwtService,
+    server::{ApiServerConfig, AppState},
+};
 use crate::config::{ConfigCache, ConfigEventBroadcaster, ConfigService};
-use crate::danmu::{DanmuService, service::{DanmuEvent, DanmuServiceConfig}};
+use crate::danmu::{
+    DanmuService,
+    service::{DanmuEvent, DanmuServiceConfig},
+};
 use crate::database::repositories::{
-    config::SqlxConfigRepository,
-    streamer::SqlxStreamerRepository,
+    config::SqlxConfigRepository, refresh_token::SqlxRefreshTokenRepository,
+    streamer::SqlxStreamerRepository, user::SqlxUserRepository,
 };
 use crate::downloader::{DownloadConfig, DownloadManager, DownloadManagerConfig, StreamSelector};
 use crate::metrics::{HealthChecker, MetricsCollector, PrometheusExporter};
 use crate::monitor::{MonitorEvent, MonitorEventBroadcaster};
 use crate::notification::{NotificationService, NotificationServiceConfig};
-use crate::pipeline::{PipelineManager, PipelineManagerConfig, PipelineEvent};
+use crate::pipeline::{PipelineEvent, PipelineManager, PipelineManagerConfig};
 use crate::streamer::StreamerManager;
-use crate::Result;
 
 /// Default cache TTL (1 hour).
 const DEFAULT_CACHE_TTL: Duration = Duration::from_secs(3600);
@@ -266,7 +273,23 @@ impl ServiceContainer {
         // Create JWT service from environment if configured
         let jwt_service = Self::create_jwt_service_from_env();
 
-        let state = AppState::with_services(
+        // Create AuthService if JWT is configured
+        let auth_service = if let Some(ref jwt) = jwt_service {
+            // Create user and refresh token repositories
+            let user_repo = Arc::new(SqlxUserRepository::new(self.pool.clone()));
+            let token_repo = Arc::new(SqlxRefreshTokenRepository::new(self.pool.clone()));
+
+            // Create AuthService with default config
+            let auth_config = AuthConfig::default();
+            let auth_svc = AuthService::new(user_repo, token_repo, jwt.clone(), auth_config);
+            info!("AuthService initialized with user database authentication");
+            Some(Arc::new(auth_svc))
+        } else {
+            debug!("JWT not configured, AuthService disabled");
+            None
+        };
+
+        let mut state = AppState::with_services(
             jwt_service,
             self.config_service.clone(),
             self.streamer_manager.clone(),
@@ -274,6 +297,11 @@ impl ServiceContainer {
             self.danmu_service.clone(),
             self.download_manager.clone(),
         );
+
+        // Wire AuthService into AppState if available
+        if let Some(auth_svc) = auth_service {
+            state = state.with_auth_service(auth_svc);
+        }
 
         let server = ApiServer::with_state(self.api_server_config.clone(), state);
         let cancel_token = self.cancellation_token.clone();
@@ -549,18 +577,14 @@ impl ServiceContainer {
                     let depth = pm.queue_depth();
                     let status = pm.queue_status();
                     match status {
-                        crate::pipeline::QueueDepthStatus::Critical => {
-                            ComponentHealth::unhealthy(
-                                "pipeline_manager",
-                                format!("Queue depth critical: {}", depth),
-                            )
-                        }
-                        crate::pipeline::QueueDepthStatus::Warning => {
-                            ComponentHealth::degraded(
-                                "pipeline_manager",
-                                format!("Queue depth warning: {}", depth),
-                            )
-                        }
+                        crate::pipeline::QueueDepthStatus::Critical => ComponentHealth::unhealthy(
+                            "pipeline_manager",
+                            format!("Queue depth critical: {}", depth),
+                        ),
+                        crate::pipeline::QueueDepthStatus::Warning => ComponentHealth::degraded(
+                            "pipeline_manager",
+                            format!("Queue depth warning: {}", depth),
+                        ),
                         crate::pipeline::QueueDepthStatus::Normal => {
                             ComponentHealth::healthy("pipeline_manager")
                         }
@@ -603,7 +627,10 @@ impl ServiceContainer {
             } => {
                 info!(
                     "Streamer {} ({}) went live: {} ({} streams available)",
-                    streamer_name, streamer_id, title, streams.len()
+                    streamer_name,
+                    streamer_id,
+                    title,
+                    streams.len()
                 );
 
                 // Check if already downloading
@@ -629,7 +656,8 @@ impl ServiceContainer {
                     .unwrap_or(false);
 
                 // Load merged config for this streamer to get stream selection preferences
-                let merged_config = match config_service.get_config_for_streamer(&streamer_id).await {
+                let merged_config = match config_service.get_config_for_streamer(&streamer_id).await
+                {
                     Ok(config) => config,
                     Err(e) => {
                         warn!(
@@ -642,7 +670,8 @@ impl ServiceContainer {
                 };
 
                 // Select the best stream based on merged config preferences
-                let stream_selector = StreamSelector::with_config(merged_config.stream_selection.clone());
+                let stream_selector =
+                    StreamSelector::with_config(merged_config.stream_selection.clone());
                 let best_stream = match stream_selector.select_best(&streams) {
                     Some(stream) => stream,
                     None => {
@@ -659,7 +688,8 @@ impl ServiceContainer {
 
                 // Extract headers from stream extras if needed
                 let headers: Vec<(String, String)> = if best_stream.is_headers_needed {
-                    best_stream.extras
+                    best_stream
+                        .extras
                         .as_ref()
                         .and_then(|extras| extras.get("headers"))
                         .and_then(|h| h.as_object())
@@ -678,7 +708,10 @@ impl ServiceContainer {
 
                 // Create download config using the actual stream URL and merged config settings
                 let session_id = uuid::Uuid::new_v4().to_string();
-                let output_dir = format!("{}/{}/{}", merged_config.output_folder, streamer_id, session_id);
+                let output_dir = format!(
+                    "{}/{}/{}",
+                    merged_config.output_folder, streamer_id, session_id
+                );
 
                 let mut config = DownloadConfig::new(
                     stream_url_selected.clone(),
@@ -686,7 +719,11 @@ impl ServiceContainer {
                     streamer_id.clone(),
                     session_id.clone(),
                 )
-                .with_filename_template(&merged_config.output_filename_template.replace("{streamer}", &streamer_name))
+                .with_filename_template(
+                    &merged_config
+                        .output_filename_template
+                        .replace("{streamer}", &streamer_name),
+                )
                 .with_output_format(&merged_config.output_file_format)
                 .with_max_segment_duration(merged_config.max_download_duration_secs as u64);
 
@@ -697,7 +734,12 @@ impl ServiceContainer {
 
                 info!(
                     "Starting download for {} with stream URL: {} (stream_format: {}, media_format: {}, headers_needed: {}, output: {})",
-                    streamer_name, stream_url_selected, stream_format, media_format, best_stream.is_headers_needed, merged_config.output_folder
+                    streamer_name,
+                    stream_url_selected,
+                    stream_format,
+                    media_format,
+                    best_stream.is_headers_needed,
+                    merged_config.output_folder
                 );
 
                 // Start download
@@ -725,18 +767,14 @@ impl ServiceContainer {
                 if merged_config.record_danmu {
                     let sampling_config = Some(merged_config.danmu_sampling_config.clone());
                     match danmu_service
-                        .start_collection(
-                            &session_id,
-                            &streamer_id,
-                            &streamer_url,
-                            sampling_config,
-                        )
+                        .start_collection(&session_id, &streamer_id, &streamer_url, sampling_config)
                         .await
                     {
                         Ok(handle) => {
                             info!(
                                 "Started danmu collection for session {} (streamer: {})",
-                                handle.session_id(), streamer_id
+                                handle.session_id(),
+                                streamer_id
                             );
                         }
                         Err(e) => {
@@ -767,17 +805,15 @@ impl ServiceContainer {
                                 );
                             }
                             Err(e) => {
-                                warn!(
-                                    "Failed to stop danmu collection for session {}: {}",
-                                    sid, e
-                                );
+                                warn!("Failed to stop danmu collection for session {}: {}", sid, e);
                             }
                         }
                     }
                 }
 
                 // Stop download if active
-                if let Some(download_info) = download_manager.get_download_by_streamer(&streamer_id) {
+                if let Some(download_info) = download_manager.get_download_by_streamer(&streamer_id)
+                {
                     match download_manager.stop_download(&download_info.id).await {
                         Ok(()) => {
                             info!(
@@ -935,13 +971,17 @@ impl ServiceContainer {
     fn create_jwt_service_from_env() -> Option<Arc<JwtService>> {
         let secret = std::env::var("JWT_SECRET").ok()?;
         let issuer = std::env::var("JWT_ISSUER").unwrap_or_else(|_| "rust-srec".to_string());
-        let audience = std::env::var("JWT_AUDIENCE").unwrap_or_else(|_| "rust-srec-api".to_string());
+        let audience =
+            std::env::var("JWT_AUDIENCE").unwrap_or_else(|_| "rust-srec-api".to_string());
         let expiration_secs = std::env::var("JWT_EXPIRATION_SECS")
             .ok()
             .and_then(|s| s.parse().ok())
             .unwrap_or(3600);
 
-        info!("JWT authentication enabled (issuer: {}, audience: {})", issuer, audience);
+        info!(
+            "JWT authentication enabled (issuer: {}, audience: {})",
+            issuer, audience
+        );
 
         Some(Arc::new(JwtService::new(
             &secret,

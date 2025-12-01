@@ -5,7 +5,7 @@
 use axum::{
     body::Body,
     extract::Request,
-    http::{header::AUTHORIZATION, StatusCode},
+    http::{StatusCode, header::AUTHORIZATION},
     middleware::Next,
     response::{IntoResponse, Response},
 };
@@ -118,7 +118,6 @@ pub struct JwtAuthService<S> {
     inner: S,
     jwt_service: Arc<JwtService>,
 }
-
 
 impl<S, B> tower::Service<axum::http::Request<B>> for JwtAuthService<S>
 where
@@ -240,7 +239,6 @@ mod tests {
     }
 }
 
-
 #[cfg(test)]
 mod property_tests {
     use super::*;
@@ -259,7 +257,7 @@ mod property_tests {
 
     /// Create an expired token directly using jsonwebtoken
     fn create_expired_token(user_id: &str, roles: Vec<String>) -> String {
-        use jsonwebtoken::{encode, EncodingKey, Header};
+        use jsonwebtoken::{EncodingKey, Header, encode};
         use std::time::{SystemTime, UNIX_EPOCH};
 
         let now = SystemTime::now()

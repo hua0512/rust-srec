@@ -1,6 +1,6 @@
 //! Health check routes.
 
-use axum::{extract::State, routing::get, Json, Router};
+use axum::{Json, Router, extract::State, routing::get};
 use std::time::Instant;
 
 use crate::api::error::ApiResult;
@@ -18,30 +18,30 @@ pub fn router() -> Router<AppState> {
 /// Health check endpoint.
 async fn health_check(State(state): State<AppState>) -> ApiResult<Json<HealthResponse>> {
     let uptime = state.start_time.elapsed().as_secs();
-    
+
     let mut components = Vec::new();
-    
+
     // Check database
     components.push(ComponentHealth {
         name: "database".to_string(),
         status: "healthy".to_string(),
         message: None,
     });
-    
+
     // Check scheduler
     components.push(ComponentHealth {
         name: "scheduler".to_string(),
         status: "healthy".to_string(),
         message: None,
     });
-    
+
     // Check download manager
     components.push(ComponentHealth {
         name: "download_manager".to_string(),
         status: "healthy".to_string(),
         message: None,
     });
-    
+
     // Check pipeline manager
     components.push(ComponentHealth {
         name: "pipeline_manager".to_string(),
@@ -79,15 +79,13 @@ mod tests {
             status: "healthy".to_string(),
             version: "0.1.0".to_string(),
             uptime_secs: 3600,
-            components: vec![
-                ComponentHealth {
-                    name: "database".to_string(),
-                    status: "healthy".to_string(),
-                    message: None,
-                },
-            ],
+            components: vec![ComponentHealth {
+                name: "database".to_string(),
+                status: "healthy".to_string(),
+                message: None,
+            }],
         };
-        
+
         let json = serde_json::to_string(&response).unwrap();
         assert!(json.contains("healthy"));
         assert!(json.contains("database"));

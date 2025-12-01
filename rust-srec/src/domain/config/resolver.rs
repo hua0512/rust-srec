@@ -4,11 +4,11 @@
 //! configuration for a streamer by merging the 4-layer hierarchy:
 //! Global → Platform → Template → Streamer
 
+use crate::Error;
 use crate::database::repositories::config::ConfigRepository;
 use crate::domain::config::MergedConfig;
 use crate::domain::streamer::Streamer;
-use crate::domain::{ProxyConfig, RetryPolicy, DanmuSamplingConfig, EventHooks};
-use crate::Error;
+use crate::domain::{DanmuSamplingConfig, EventHooks, ProxyConfig, RetryPolicy};
 use std::sync::Arc;
 
 /// Service for resolving configuration for streamers.
@@ -29,15 +29,18 @@ impl<R: ConfigRepository> ConfigResolver<R> {
     /// 2. Platform config (overrides global)
     /// 3. Template config (overrides platform)
     /// 4. Streamer-specific config (overrides template)
-    pub async fn resolve_config_for_streamer(&self, streamer: &Streamer) -> Result<MergedConfig, Error> {
+    pub async fn resolve_config_for_streamer(
+        &self,
+        streamer: &Streamer,
+    ) -> Result<MergedConfig, Error> {
         // Start with builder
         let mut builder = MergedConfig::builder();
 
         // Layer 1: Global config
         let global_config = self.config_repo.get_global_config().await?;
-        let global_proxy: ProxyConfig = serde_json::from_str(&global_config.proxy_config)
-            .unwrap_or_default();
-        
+        let global_proxy: ProxyConfig =
+            serde_json::from_str(&global_config.proxy_config).unwrap_or_default();
+
         builder = builder.with_global(
             global_config.output_folder,
             global_config.output_filename_template,
@@ -51,11 +54,15 @@ impl<R: ConfigRepository> ConfigResolver<R> {
         );
 
         // Layer 2: Platform config
-        let platform_config = self.config_repo.get_platform_config(&streamer.platform_config_id).await?;
-        let platform_proxy: Option<ProxyConfig> = platform_config.proxy_config
+        let platform_config = self
+            .config_repo
+            .get_platform_config(&streamer.platform_config_id)
+            .await?;
+        let platform_proxy: Option<ProxyConfig> = platform_config
+            .proxy_config
             .as_ref()
             .and_then(|s| serde_json::from_str(s).ok());
-        
+
         builder = builder.with_platform(
             platform_config.fetch_delay_ms,
             platform_config.download_delay_ms,
@@ -67,25 +74,30 @@ impl<R: ConfigRepository> ConfigResolver<R> {
         // Layer 3: Template config (if assigned)
         if let Some(ref template_id) = streamer.template_config_id {
             let template_config = self.config_repo.get_template_config(template_id).await?;
-            
+
             // Parse JSON fields
-            let template_proxy: Option<ProxyConfig> = template_config.proxy_config
+            let template_proxy: Option<ProxyConfig> = template_config
+                .proxy_config
                 .as_ref()
                 .and_then(|s| serde_json::from_str(s).ok());
-            let template_retry: Option<RetryPolicy> = template_config.download_retry_policy
+            let template_retry: Option<RetryPolicy> = template_config
+                .download_retry_policy
                 .as_ref()
                 .and_then(|s| serde_json::from_str(s).ok());
-            let template_danmu: Option<DanmuSamplingConfig> = template_config.danmu_sampling_config
+            let template_danmu: Option<DanmuSamplingConfig> = template_config
+                .danmu_sampling_config
                 .as_ref()
                 .and_then(|s| serde_json::from_str(s).ok());
-            let template_hooks: Option<EventHooks> = template_config.event_hooks
+            let template_hooks: Option<EventHooks> = template_config
+                .event_hooks
                 .as_ref()
                 .and_then(|s| serde_json::from_str(s).ok());
-            
-            let template_stream_selection = template_config.stream_selection_config
+
+            let template_stream_selection = template_config
+                .stream_selection_config
                 .as_ref()
                 .and_then(|s| serde_json::from_str(s).ok());
-            
+
             builder = builder.with_template(
                 template_config.output_folder,
                 template_config.output_filename_template,

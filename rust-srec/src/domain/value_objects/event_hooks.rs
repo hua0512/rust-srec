@@ -3,7 +3,7 @@
 use serde::{Deserialize, Serialize};
 
 /// Event hooks for streamer lifecycle events.
-/// 
+///
 /// Allows executing custom commands when certain events occur.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
 pub struct EventHooks {
@@ -84,10 +84,22 @@ impl EventHooks {
         EventHooks {
             on_online: other.on_online.clone().or_else(|| self.on_online.clone()),
             on_offline: other.on_offline.clone().or_else(|| self.on_offline.clone()),
-            on_download_start: other.on_download_start.clone().or_else(|| self.on_download_start.clone()),
-            on_download_complete: other.on_download_complete.clone().or_else(|| self.on_download_complete.clone()),
-            on_download_error: other.on_download_error.clone().or_else(|| self.on_download_error.clone()),
-            on_pipeline_complete: other.on_pipeline_complete.clone().or_else(|| self.on_pipeline_complete.clone()),
+            on_download_start: other
+                .on_download_start
+                .clone()
+                .or_else(|| self.on_download_start.clone()),
+            on_download_complete: other
+                .on_download_complete
+                .clone()
+                .or_else(|| self.on_download_complete.clone()),
+            on_download_error: other
+                .on_download_error
+                .clone()
+                .or_else(|| self.on_download_error.clone()),
+            on_pipeline_complete: other
+                .on_pipeline_complete
+                .clone()
+                .or_else(|| self.on_pipeline_complete.clone()),
         }
     }
 }
@@ -107,7 +119,7 @@ mod tests {
         let hooks = EventHooks::new()
             .with_on_online("echo online")
             .with_on_offline("echo offline");
-        
+
         assert!(hooks.has_any());
         assert_eq!(hooks.on_online, Some("echo online".to_string()));
         assert_eq!(hooks.on_offline, Some("echo offline".to_string()));
@@ -118,24 +130,22 @@ mod tests {
         let base = EventHooks::new()
             .with_on_online("base online")
             .with_on_offline("base offline");
-        
-        let override_hooks = EventHooks::new()
-            .with_on_online("override online");
-        
+
+        let override_hooks = EventHooks::new().with_on_online("override online");
+
         let merged = base.merge(&override_hooks);
-        
+
         assert_eq!(merged.on_online, Some("override online".to_string()));
         assert_eq!(merged.on_offline, Some("base offline".to_string()));
     }
 
     #[test]
     fn test_event_hooks_serialization() {
-        let hooks = EventHooks::new()
-            .with_on_online("echo online");
-        
+        let hooks = EventHooks::new().with_on_online("echo online");
+
         let json = serde_json::to_string(&hooks).unwrap();
         let parsed: EventHooks = serde_json::from_str(&json).unwrap();
-        
+
         assert_eq!(parsed.on_online, hooks.on_online);
     }
 }

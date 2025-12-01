@@ -29,7 +29,7 @@ pub trait StreamerRepository: Send + Sync {
     async fn set_disabled_until(&self, id: &str, until: Option<&str>) -> Result<()>;
     async fn update_last_live_time(&self, id: &str, time: &str) -> Result<()>;
     async fn delete_streamer(&self, id: &str) -> Result<()>;
-    
+
     // Methods for StreamerManager
     async fn clear_streamer_error_state(&self, id: &str) -> Result<()>;
     async fn record_streamer_error(
@@ -241,10 +241,12 @@ impl StreamerRepository for SqlxStreamerRepository {
     }
 
     async fn reset_error_count(&self, id: &str) -> Result<()> {
-        sqlx::query("UPDATE streamers SET consecutive_error_count = 0, disabled_until = NULL WHERE id = ?")
-            .bind(id)
-            .execute(&self.pool)
-            .await?;
+        sqlx::query(
+            "UPDATE streamers SET consecutive_error_count = 0, disabled_until = NULL WHERE id = ?",
+        )
+        .bind(id)
+        .execute(&self.pool)
+        .await?;
         Ok(())
     }
 

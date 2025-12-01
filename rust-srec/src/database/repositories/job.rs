@@ -69,12 +69,11 @@ impl JobRepository for SqlxJobRepository {
     }
 
     async fn list_recent_jobs(&self, limit: i32) -> Result<Vec<JobDbModel>> {
-        let jobs = sqlx::query_as::<_, JobDbModel>(
-            "SELECT * FROM job ORDER BY created_at DESC LIMIT ?",
-        )
-        .bind(limit)
-        .fetch_all(&self.pool)
-        .await?;
+        let jobs =
+            sqlx::query_as::<_, JobDbModel>("SELECT * FROM job ORDER BY created_at DESC LIMIT ?")
+                .bind(limit)
+                .fetch_all(&self.pool)
+                .await?;
         Ok(jobs)
     }
 

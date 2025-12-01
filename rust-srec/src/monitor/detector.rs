@@ -8,9 +8,9 @@ use platforms_parser::extractor::factory::ExtractorFactory;
 use serde::{Deserialize, Serialize};
 use tracing::{debug, warn};
 
+use crate::Result;
 use crate::domain::filter::{Filter, FilterType};
 use crate::streamer::StreamerMetadata;
-use crate::Result;
 
 /// Re-export StreamInfo from platforms_parser for convenience.
 pub use platforms_parser::media::StreamInfo;
@@ -146,7 +146,7 @@ impl StreamDetector {
     /// Create a new stream detector with a custom HTTP client.
     pub fn with_client(client: reqwest::Client) -> Self {
         let extractor_factory = ExtractorFactory::new(client.clone());
-        Self { 
+        Self {
             client,
             extractor_factory,
         }
@@ -165,10 +165,16 @@ impl StreamDetector {
         streamer: &StreamerMetadata,
         cookies: Option<String>,
     ) -> Result<LiveStatus> {
-        debug!("Checking status for streamer: {} ({})", streamer.name, streamer.url);
+        debug!(
+            "Checking status for streamer: {} ({})",
+            streamer.name, streamer.url
+        );
 
         // Create platform extractor for this streamer's URL
-        let extractor = match self.extractor_factory.create_extractor(&streamer.url, cookies, None) {
+        let extractor = match self
+            .extractor_factory
+            .create_extractor(&streamer.url, cookies, None)
+        {
             Ok(ext) => ext,
             Err(ExtractorError::UnsupportedExtractor) => {
                 warn!("Unsupported platform for URL: {}", streamer.url);
@@ -222,12 +228,14 @@ impl StreamDetector {
 
         if media_info.is_live {
             // Extract additional metadata from extras if available
-            let category = media_info.extras
+            let category = media_info
+                .extras
                 .as_ref()
                 .and_then(|extras| extras.get("category"))
                 .cloned();
 
-            let viewer_count = media_info.extras
+            let viewer_count = media_info
+                .extras
                 .as_ref()
                 .and_then(|extras| extras.get("viewer_count"))
                 .and_then(|v| v.parse::<u64>().ok());
@@ -237,17 +245,18 @@ impl StreamDetector {
             let mut streams = media_info.streams;
             for stream in &mut streams {
                 if let Err(e) = extractor.get_url(stream).await {
-                    warn!(
-                        "Failed to resolve stream URL for {}: {}",
-                        streamer.name, e
-                    );
+                    warn!("Failed to resolve stream URL for {}: {}", streamer.name, e);
                     // Continue with the original URL if resolution fails
                 }
             }
 
             debug!(
                 "Streamer {} is LIVE: {} (category: {:?}, viewers: {:?}, streams: {})",
-                streamer.name, media_info.title, category, viewer_count, streams.len()
+                streamer.name,
+                media_info.title,
+                category,
+                viewer_count,
+                streams.len()
             );
 
             Ok(LiveStatus::Live {
@@ -277,15 +286,14 @@ impl StreamDetector {
         }
 
         // Apply filters
-        if let LiveStatus::Live { title, category, .. } = &status {
+        if let LiveStatus::Live {
+            title, category, ..
+        } = &status
+        {
             let now = Utc::now();
 
             for filter in filters {
-                let matches = filter.matches(
-                    title,
-                    category.as_deref().unwrap_or(""),
-                    now,
-                );
+                let matches = filter.matches(title, category.as_deref().unwrap_or(""), now);
 
                 if !matches {
                     let reason = match filter.filter_type() {
@@ -398,16 +406,19 @@ mod tests {
         assert!(LiveStatus::RegionLocked.is_fatal_error());
         assert!(LiveStatus::Private.is_fatal_error());
         assert!(LiveStatus::UnsupportedPlatform.is_fatal_error());
-        
+
         // Non-fatal statuses
         assert!(!LiveStatus::Offline.is_fatal_error());
-        assert!(!LiveStatus::Live {
-            title: "Test".to_string(),
-            category: None,
-            started_at: None,
-            viewer_count: None,
-            streams: vec![create_test_stream()],
-        }.is_fatal_error());
+        assert!(
+            !LiveStatus::Live {
+                title: "Test".to_string(),
+                category: None,
+                started_at: None,
+                viewer_count: None,
+                streams: vec![create_test_stream()],
+            }
+            .is_fatal_error()
+        );
     }
 
     #[test]

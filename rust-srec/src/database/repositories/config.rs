@@ -162,10 +162,11 @@ impl ConfigRepository for SqlxConfigRepository {
     }
 
     async fn list_platform_configs(&self) -> Result<Vec<PlatformConfigDbModel>> {
-        let configs =
-            sqlx::query_as::<_, PlatformConfigDbModel>("SELECT * FROM platform_config ORDER BY platform_name")
-                .fetch_all(&self.pool)
-                .await?;
+        let configs = sqlx::query_as::<_, PlatformConfigDbModel>(
+            "SELECT * FROM platform_config ORDER BY platform_name",
+        )
+        .fetch_all(&self.pool)
+        .await?;
         Ok(configs)
     }
 
@@ -235,20 +236,19 @@ impl ConfigRepository for SqlxConfigRepository {
     }
 
     async fn get_template_config_by_name(&self, name: &str) -> Result<TemplateConfigDbModel> {
-        sqlx::query_as::<_, TemplateConfigDbModel>(
-            "SELECT * FROM template_config WHERE name = ?",
-        )
-        .bind(name)
-        .fetch_optional(&self.pool)
-        .await?
-        .ok_or_else(|| Error::not_found("TemplateConfig", name))
+        sqlx::query_as::<_, TemplateConfigDbModel>("SELECT * FROM template_config WHERE name = ?")
+            .bind(name)
+            .fetch_optional(&self.pool)
+            .await?
+            .ok_or_else(|| Error::not_found("TemplateConfig", name))
     }
 
     async fn list_template_configs(&self) -> Result<Vec<TemplateConfigDbModel>> {
-        let configs =
-            sqlx::query_as::<_, TemplateConfigDbModel>("SELECT * FROM template_config ORDER BY name")
-                .fetch_all(&self.pool)
-                .await?;
+        let configs = sqlx::query_as::<_, TemplateConfigDbModel>(
+            "SELECT * FROM template_config ORDER BY name",
+        )
+        .fetch_all(&self.pool)
+        .await?;
         Ok(configs)
     }
 

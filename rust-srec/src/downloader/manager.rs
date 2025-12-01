@@ -6,12 +6,12 @@ use std::sync::Arc;
 use dashmap::DashMap;
 use parking_lot::RwLock;
 use serde::{Deserialize, Serialize};
-use tokio::sync::{mpsc, Semaphore};
+use tokio::sync::{Semaphore, mpsc};
 use tracing::{debug, error, info, warn};
 
 use super::engine::{
-    DownloadConfig, DownloadEngine, DownloadHandle, DownloadInfo, DownloadProgress,
-    DownloadStatus, EngineType, FfmpegEngine, MesioEngine, SegmentEvent, StreamlinkEngine,
+    DownloadConfig, DownloadEngine, DownloadHandle, DownloadInfo, DownloadProgress, DownloadStatus,
+    EngineType, FfmpegEngine, MesioEngine, SegmentEvent, StreamlinkEngine,
 };
 use super::resilience::{CircuitBreakerManager, RetryConfig};
 use crate::Result;
@@ -151,9 +151,18 @@ impl DownloadManager {
         // Register default engines
         {
             let mut engines = manager.engines.write();
-            engines.insert(EngineType::Ffmpeg, Arc::new(FfmpegEngine::new()) as Arc<dyn DownloadEngine>);
-            engines.insert(EngineType::Streamlink, Arc::new(StreamlinkEngine::new()) as Arc<dyn DownloadEngine>);
-            engines.insert(EngineType::Mesio, Arc::new(MesioEngine::new()) as Arc<dyn DownloadEngine>);
+            engines.insert(
+                EngineType::Ffmpeg,
+                Arc::new(FfmpegEngine::new()) as Arc<dyn DownloadEngine>,
+            );
+            engines.insert(
+                EngineType::Streamlink,
+                Arc::new(StreamlinkEngine::new()) as Arc<dyn DownloadEngine>,
+            );
+            engines.insert(
+                EngineType::Mesio,
+                Arc::new(MesioEngine::new()) as Arc<dyn DownloadEngine>,
+            );
         }
 
         manager
@@ -226,9 +235,9 @@ impl DownloadManager {
         is_high_priority: bool,
     ) -> Result<String> {
         // Get the engine
-        let engine = self.get_engine(engine_type).ok_or_else(|| {
-            crate::Error::Other(format!("Engine {} not registered", engine_type))
-        })?;
+        let engine = self
+            .get_engine(engine_type)
+            .ok_or_else(|| crate::Error::Other(format!("Engine {} not registered", engine_type)))?;
 
         if !engine.is_available() {
             return Err(crate::Error::Other(format!(
@@ -242,13 +251,12 @@ impl DownloadManager {
             // Try high priority semaphore first, then fall back to normal
             match self.high_priority_semaphore.clone().try_acquire_owned() {
                 Ok(permit) => permit,
-                Err(_) => {
-                    self.normal_semaphore
-                        .clone()
-                        .acquire_owned()
-                        .await
-                        .map_err(|e| crate::Error::Other(format!("Semaphore error: {}", e)))?
-                }
+                Err(_) => self
+                    .normal_semaphore
+                    .clone()
+                    .acquire_owned()
+                    .await
+                    .map_err(|e| crate::Error::Other(format!("Semaphore error: {}", e)))?,
             }
         } else {
             self.normal_semaphore
@@ -313,7 +321,7 @@ impl DownloadManager {
         let event_tx = self.event_tx.clone();
         let streamer_id = config.streamer_id.clone();
         let session_id = config.session_id.clone();
-        
+
         // Clone references for the spawned task
         let active_downloads = self.active_downloads.clone();
         let circuit_breakers_ref = self.circuit_breakers.get(engine_type);
@@ -345,7 +353,7 @@ impl DownloadManager {
                         total_segments,
                     } => {
                         circuit_breakers_ref.record_success();
-                        
+
                         if let Some(mut download) = active_downloads.get_mut(&download_id_clone) {
                             download.status = DownloadStatus::Completed;
                         }
@@ -366,7 +374,7 @@ impl DownloadManager {
                     }
                     SegmentEvent::DownloadFailed { error, recoverable } => {
                         circuit_breakers_ref.record_failure();
-                        
+
                         if let Some(mut download) = active_downloads.get_mut(&download_id_clone) {
                             download.status = DownloadStatus::Failed;
                         }
@@ -394,7 +402,7 @@ impl DownloadManager {
     pub async fn stop_download(&self, download_id: &str) -> Result<()> {
         if let Some((_, download)) = self.active_downloads.remove(download_id) {
             let engine_type = download.handle.engine_type;
-            
+
             if let Some(engine) = self.get_engine(engine_type) {
                 engine.stop(&download.handle).await?;
             }
@@ -451,7 +459,7 @@ impl DownloadManager {
     }
 
     /// Update configuration for an active download.
-    /// 
+    ///
     /// Some config changes are applied immediately (cookies, retry policy),
     /// while others are applied to the next segment (output settings).
     pub fn update_download_config(
@@ -474,7 +482,7 @@ impl DownloadManager {
             // Store pending config updates
             // Note: In a full implementation, we'd store these in a pending_updates map
             // and apply them when the next segment starts
-            
+
             debug!(
                 "Download {} for streamer {} will apply config on next segment",
                 download_id, download.handle.config.streamer_id
@@ -537,7 +545,8 @@ impl DownloadManager {
 
     /// Stop all active downloads.
     pub async fn stop_all(&self) -> Vec<String> {
-        let download_ids: Vec<String> = self.active_downloads
+        let download_ids: Vec<String> = self
+            .active_downloads
             .iter()
             .map(|entry| entry.key().clone())
             .collect();
@@ -582,7 +591,7 @@ mod tests {
     #[test]
     fn test_engine_registration() {
         let mut manager = DownloadManager::new();
-        
+
         // FFmpeg should be registered by default
         assert!(manager.get_engine(EngineType::Ffmpeg).is_some());
         assert!(manager.get_engine(EngineType::Streamlink).is_some());

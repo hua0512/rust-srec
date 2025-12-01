@@ -63,11 +63,8 @@ impl Processor for UploadProcessor {
 
     async fn process(&self, input: &ProcessorInput) -> Result<ProcessorOutput> {
         let start = std::time::Instant::now();
-        
-        info!(
-            "Uploading {} to {}",
-            input.input_path, input.output_path
-        );
+
+        info!("Uploading {} to {}", input.input_path, input.output_path);
 
         let mut last_error = None;
 
@@ -79,14 +76,9 @@ impl Processor for UploadProcessor {
 
             // Build rclone command
             let mut cmd = Command::new(&self.rclone_path);
-            cmd.args([
-                "copy",
-                "--progress",
-                &input.input_path,
-                &input.output_path,
-            ])
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped());
+            cmd.args(["copy", "--progress", &input.input_path, &input.output_path])
+                .stdout(Stdio::piped())
+                .stderr(Stdio::piped());
 
             let mut child = match cmd.spawn() {
                 Ok(c) => c,
@@ -100,7 +92,7 @@ impl Processor for UploadProcessor {
             if let Some(stderr) = child.stderr.take() {
                 let reader = BufReader::new(stderr);
                 let mut lines = reader.lines();
-                
+
                 while let Ok(Some(line)) = lines.next_line().await {
                     debug!("rclone: {}", line);
                 }
@@ -116,7 +108,7 @@ impl Processor for UploadProcessor {
 
             if status.success() {
                 let duration = start.elapsed().as_secs_f64();
-                
+
                 info!(
                     "Upload completed in {:.2}s: {}",
                     duration, input.output_path
@@ -136,7 +128,9 @@ impl Processor for UploadProcessor {
         }
 
         error!("Upload failed after {} attempts", self.max_retries);
-        Err(crate::Error::Other(last_error.unwrap_or_else(|| "Upload failed".to_string())))
+        Err(crate::Error::Other(
+            last_error.unwrap_or_else(|| "Upload failed".to_string()),
+        ))
     }
 }
 

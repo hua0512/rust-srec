@@ -1,9 +1,9 @@
 //! Streamer management routes.
 
 use axum::{
+    Json, Router,
     extract::{Path, Query, State},
     routing::{delete, get, patch, post},
-    Json, Router,
 };
 
 use crate::api::error::{ApiError, ApiResult};
@@ -12,8 +12,8 @@ use crate::api::models::{
     StreamerResponse, UpdatePriorityRequest, UpdateStreamerRequest,
 };
 use crate::api::server::AppState;
-use crate::domain::streamer::StreamerState;
 use crate::domain::Priority as DomainPriority;
+use crate::domain::streamer::StreamerState;
 use crate::domain::value_objects::Priority as ApiPriority;
 use crate::streamer::StreamerMetadata;
 
@@ -67,7 +67,7 @@ fn metadata_to_response(metadata: &StreamerMetadata) -> StreamerResponse {
 }
 
 /// Create a new streamer.
-/// 
+///
 /// POST /api/streamers
 async fn create_streamer(
     State(state): State<AppState>,
@@ -115,7 +115,7 @@ async fn create_streamer(
 }
 
 /// List streamers with pagination and filtering.
-/// 
+///
 /// GET /api/streamers
 async fn list_streamers(
     State(state): State<AppState>,
@@ -152,19 +152,31 @@ async fn list_streamers(
         match sort_by.as_str() {
             "name" => {
                 streamers.sort_by(|a, b| {
-                    if desc { b.name.cmp(&a.name) } else { a.name.cmp(&b.name) }
+                    if desc {
+                        b.name.cmp(&a.name)
+                    } else {
+                        a.name.cmp(&b.name)
+                    }
                 });
             }
             "priority" => {
                 streamers.sort_by(|a, b| {
-                    if desc { b.priority.cmp(&a.priority) } else { a.priority.cmp(&b.priority) }
+                    if desc {
+                        b.priority.cmp(&a.priority)
+                    } else {
+                        a.priority.cmp(&b.priority)
+                    }
                 });
             }
             "state" => {
                 streamers.sort_by(|a, b| {
                     let a_str = a.state.as_str();
                     let b_str = b.state.as_str();
-                    if desc { b_str.cmp(a_str) } else { a_str.cmp(b_str) }
+                    if desc {
+                        b_str.cmp(a_str)
+                    } else {
+                        a_str.cmp(b_str)
+                    }
                 });
             }
             _ => {}
@@ -189,7 +201,7 @@ async fn list_streamers(
 }
 
 /// Get a single streamer by ID.
-/// 
+///
 /// GET /api/streamers/:id
 async fn get_streamer(
     State(state): State<AppState>,
@@ -209,9 +221,8 @@ async fn get_streamer(
     Ok(Json(metadata_to_response(&metadata)))
 }
 
-
 /// Update a streamer.
-/// 
+///
 /// PATCH /api/streamers/:id
 async fn update_streamer(
     State(state): State<AppState>,
@@ -256,7 +267,7 @@ async fn update_streamer(
 }
 
 /// Delete a streamer.
-/// 
+///
 /// DELETE /api/streamers/:id
 async fn delete_streamer(
     State(state): State<AppState>,
@@ -270,7 +281,10 @@ async fn delete_streamer(
 
     // Check if streamer exists first
     if streamer_manager.get_streamer(&id).is_none() {
-        return Err(ApiError::not_found(format!("Streamer with id '{}' not found", id)));
+        return Err(ApiError::not_found(format!(
+            "Streamer with id '{}' not found",
+            id
+        )));
     }
 
     // Delete the streamer
@@ -286,7 +300,7 @@ async fn delete_streamer(
 }
 
 /// Clear error state for a streamer.
-/// 
+///
 /// POST /api/streamers/:id/clear-error
 async fn clear_error(
     State(state): State<AppState>,
@@ -300,7 +314,10 @@ async fn clear_error(
 
     // Check if streamer exists first
     if streamer_manager.get_streamer(&id).is_none() {
-        return Err(ApiError::not_found(format!("Streamer with id '{}' not found", id)));
+        return Err(ApiError::not_found(format!(
+            "Streamer with id '{}' not found",
+            id
+        )));
     }
 
     // Clear error state (resets consecutive_error_count and disabled_until)
@@ -318,7 +335,7 @@ async fn clear_error(
 }
 
 /// Update streamer priority.
-/// 
+///
 /// PATCH /api/streamers/:id/priority
 async fn update_priority(
     State(state): State<AppState>,
@@ -333,7 +350,10 @@ async fn update_priority(
 
     // Check if streamer exists first
     if streamer_manager.get_streamer(&id).is_none() {
-        return Err(ApiError::not_found(format!("Streamer with id '{}' not found", id)));
+        return Err(ApiError::not_found(format!(
+            "Streamer with id '{}' not found",
+            id
+        )));
     }
 
     // Update priority
@@ -365,7 +385,7 @@ mod tests {
             priority: ApiPriority::Normal,
             enabled: true,
         };
-        
+
         // URL is empty, should fail validation
         assert!(request.url.is_empty());
     }
@@ -386,7 +406,7 @@ mod tests {
         };
 
         let response = metadata_to_response(&metadata);
-        
+
         assert_eq!(response.id, "test-id");
         assert_eq!(response.name, "Test Streamer");
         assert_eq!(response.url, "https://twitch.tv/test");
@@ -419,17 +439,34 @@ mod tests {
     #[test]
     fn test_priority_conversion() {
         // API to Domain
-        assert_eq!(api_to_domain_priority(ApiPriority::High), DomainPriority::High);
-        assert_eq!(api_to_domain_priority(ApiPriority::Normal), DomainPriority::Normal);
-        assert_eq!(api_to_domain_priority(ApiPriority::Low), DomainPriority::Low);
+        assert_eq!(
+            api_to_domain_priority(ApiPriority::High),
+            DomainPriority::High
+        );
+        assert_eq!(
+            api_to_domain_priority(ApiPriority::Normal),
+            DomainPriority::Normal
+        );
+        assert_eq!(
+            api_to_domain_priority(ApiPriority::Low),
+            DomainPriority::Low
+        );
 
         // Domain to API
-        assert_eq!(domain_to_api_priority(DomainPriority::High), ApiPriority::High);
-        assert_eq!(domain_to_api_priority(DomainPriority::Normal), ApiPriority::Normal);
-        assert_eq!(domain_to_api_priority(DomainPriority::Low), ApiPriority::Low);
+        assert_eq!(
+            domain_to_api_priority(DomainPriority::High),
+            ApiPriority::High
+        );
+        assert_eq!(
+            domain_to_api_priority(DomainPriority::Normal),
+            ApiPriority::Normal
+        );
+        assert_eq!(
+            domain_to_api_priority(DomainPriority::Low),
+            ApiPriority::Low
+        );
     }
 }
-
 
 #[cfg(test)]
 mod property_tests {
@@ -486,7 +523,10 @@ mod property_tests {
             Ok(self.streamers.lock().unwrap().clone())
         }
 
-        async fn list_streamers_by_state(&self, state: &str) -> crate::Result<Vec<StreamerDbModel>> {
+        async fn list_streamers_by_state(
+            &self,
+            state: &str,
+        ) -> crate::Result<Vec<StreamerDbModel>> {
             Ok(self
                 .streamers
                 .lock()
@@ -497,7 +537,10 @@ mod property_tests {
                 .collect())
         }
 
-        async fn list_streamers_by_priority(&self, priority: &str) -> crate::Result<Vec<StreamerDbModel>> {
+        async fn list_streamers_by_priority(
+            &self,
+            priority: &str,
+        ) -> crate::Result<Vec<StreamerDbModel>> {
             Ok(self
                 .streamers
                 .lock()
@@ -527,14 +570,26 @@ mod property_tests {
         }
 
         async fn update_streamer_state(&self, id: &str, state: &str) -> crate::Result<()> {
-            if let Some(s) = self.streamers.lock().unwrap().iter_mut().find(|s| s.id == id) {
+            if let Some(s) = self
+                .streamers
+                .lock()
+                .unwrap()
+                .iter_mut()
+                .find(|s| s.id == id)
+            {
                 s.state = state.to_string();
             }
             Ok(())
         }
 
         async fn update_streamer_priority(&self, id: &str, priority: &str) -> crate::Result<()> {
-            if let Some(s) = self.streamers.lock().unwrap().iter_mut().find(|s| s.id == id) {
+            if let Some(s) = self
+                .streamers
+                .lock()
+                .unwrap()
+                .iter_mut()
+                .find(|s| s.id == id)
+            {
                 s.priority = priority.to_string();
             }
             Ok(())
@@ -557,7 +612,13 @@ mod property_tests {
         }
 
         async fn clear_streamer_error_state(&self, id: &str) -> crate::Result<()> {
-            if let Some(s) = self.streamers.lock().unwrap().iter_mut().find(|s| s.id == id) {
+            if let Some(s) = self
+                .streamers
+                .lock()
+                .unwrap()
+                .iter_mut()
+                .find(|s| s.id == id)
+            {
                 s.consecutive_error_count = Some(0);
                 s.disabled_until = None;
                 s.state = "NOT_LIVE".to_string();
@@ -571,7 +632,13 @@ mod property_tests {
             error_count: i32,
             disabled_until: Option<DateTime<Utc>>,
         ) -> crate::Result<()> {
-            if let Some(s) = self.streamers.lock().unwrap().iter_mut().find(|s| s.id == id) {
+            if let Some(s) = self
+                .streamers
+                .lock()
+                .unwrap()
+                .iter_mut()
+                .find(|s| s.id == id)
+            {
                 s.consecutive_error_count = Some(error_count);
                 s.disabled_until = disabled_until.map(|dt| dt.to_rfc3339());
             }
@@ -583,7 +650,13 @@ mod property_tests {
             id: &str,
             last_live_time: Option<DateTime<Utc>>,
         ) -> crate::Result<()> {
-            if let Some(s) = self.streamers.lock().unwrap().iter_mut().find(|s| s.id == id) {
+            if let Some(s) = self
+                .streamers
+                .lock()
+                .unwrap()
+                .iter_mut()
+                .find(|s| s.id == id)
+            {
                 s.consecutive_error_count = Some(0);
                 s.disabled_until = None;
                 if let Some(time) = last_live_time {
@@ -593,7 +666,10 @@ mod property_tests {
             Ok(())
         }
 
-        async fn list_streamers_by_platform(&self, platform_id: &str) -> crate::Result<Vec<StreamerDbModel>> {
+        async fn list_streamers_by_platform(
+            &self,
+            platform_id: &str,
+        ) -> crate::Result<Vec<StreamerDbModel>> {
             Ok(self
                 .streamers
                 .lock()
@@ -604,7 +680,10 @@ mod property_tests {
                 .collect())
         }
 
-        async fn list_streamers_by_template(&self, template_id: &str) -> crate::Result<Vec<StreamerDbModel>> {
+        async fn list_streamers_by_template(
+            &self,
+            template_id: &str,
+        ) -> crate::Result<Vec<StreamerDbModel>> {
             Ok(self
                 .streamers
                 .lock()
@@ -624,7 +703,8 @@ mod property_tests {
 
     // Strategy for generating valid streamer names
     fn streamer_name_strategy() -> impl Strategy<Value = String> {
-        "[a-zA-Z][a-zA-Z0-9_ ]{0,49}".prop_map(|s| s.trim().to_string())
+        "[a-zA-Z][a-zA-Z0-9_ ]{0,49}"
+            .prop_map(|s| s.trim().to_string())
             .prop_filter("Name must not be empty", |s| !s.is_empty())
     }
 
@@ -693,7 +773,7 @@ mod property_tests {
                 prop_assert!(retrieved.is_some(), "Streamer should exist after creation");
 
                 let retrieved = retrieved.unwrap();
-                
+
                 // Property: Retrieved data should match created data
                 prop_assert_eq!(&retrieved.id, &id, "ID should match");
                 prop_assert_eq!(&retrieved.name, &name, "Name should match");
@@ -750,10 +830,10 @@ mod property_tests {
                 prop_assert!(retrieved.is_some(), "Streamer should exist after update");
 
                 let retrieved = retrieved.unwrap();
-                
+
                 // Property: Updated values should be persisted
                 prop_assert_eq!(retrieved.priority, new_priority, "Priority should be updated");
-                
+
                 // Other fields should remain unchanged
                 prop_assert_eq!(&retrieved.name, &name, "Name should remain unchanged");
                 prop_assert_eq!(&retrieved.url, &url, "URL should remain unchanged");

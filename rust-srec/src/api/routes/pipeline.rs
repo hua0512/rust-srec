@@ -1,9 +1,9 @@
 //! Pipeline management routes.
 
 use axum::{
+    Json, Router,
     extract::{Path, Query, State},
     routing::{delete, get, post},
-    Json, Router,
 };
 
 use crate::api::error::{ApiError, ApiResult};
@@ -42,7 +42,10 @@ async fn get_job(
     Path(id): Path<String>,
 ) -> ApiResult<Json<JobResponse>> {
     // TODO: Implement actual retrieval logic using PipelineManager
-    Err(ApiError::not_found(format!("Job with id '{}' not found", id)))
+    Err(ApiError::not_found(format!(
+        "Job with id '{}' not found",
+        id
+    )))
 }
 
 /// Retry a failed job.
@@ -52,7 +55,10 @@ async fn retry_job(
 ) -> ApiResult<Json<JobResponse>> {
     // TODO: Implement actual retry logic using PipelineManager
     // Should reset job status to Pending and re-enqueue
-    Err(ApiError::not_found(format!("Job with id '{}' not found", id)))
+    Err(ApiError::not_found(format!(
+        "Job with id '{}' not found",
+        id
+    )))
 }
 
 /// Cancel or delete a job.
@@ -62,7 +68,10 @@ async fn cancel_job(
 ) -> ApiResult<Json<serde_json::Value>> {
     // TODO: Implement actual cancellation logic using PipelineManager
     // Should cancel if in progress, delete if pending
-    Err(ApiError::not_found(format!("Job with id '{}' not found", id)))
+    Err(ApiError::not_found(format!(
+        "Job with id '{}' not found",
+        id
+    )))
 }
 
 /// List media outputs with pagination.
@@ -103,7 +112,7 @@ mod tests {
             failed_count: 5,
             avg_processing_time_secs: Some(45.5),
         };
-        
+
         let json = serde_json::to_string(&response).unwrap();
         assert!(json.contains("pending_count"));
         assert!(json.contains("45.5"));

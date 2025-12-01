@@ -16,7 +16,7 @@ use std::sync::Arc;
 use crate::api::middleware::JwtAuthLayer;
 use crate::api::server::AppState;
 
-pub use auth::{AuthState, LoginRequest, LoginResponse};
+pub use auth::{LoginRequest, LoginResponse};
 
 /// Create the main API router with all routes.
 ///

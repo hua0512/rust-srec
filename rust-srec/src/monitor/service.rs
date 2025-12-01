@@ -10,11 +10,11 @@ use dashmap::DashMap;
 use tokio::sync::OnceCell;
 use tracing::{debug, info, warn};
 
-use crate::database::repositories::{FilterRepository, SessionRepository, StreamerRepository};
-use crate::domain::filter::Filter;
-use crate::domain::StreamerState;
-use crate::streamer::{StreamerManager, StreamerMetadata};
 use crate::Result;
+use crate::database::repositories::{FilterRepository, SessionRepository, StreamerRepository};
+use crate::domain::StreamerState;
+use crate::domain::filter::Filter;
+use crate::streamer::{StreamerManager, StreamerMetadata};
 
 use super::batch_detector::{BatchDetector, BatchResult};
 use super::detector::{FilterReason, LiveStatus, StreamDetector};
@@ -38,10 +38,7 @@ impl Default for StreamMonitorConfig {
     fn default() -> Self {
         Self {
             default_rate_limit: 1.0,
-            platform_rate_limits: vec![
-                ("twitch".to_string(), 2.0),
-                ("youtube".to_string(), 1.0),
-            ],
+            platform_rate_limits: vec![("twitch".to_string(), 2.0), ("youtube".to_string(), 1.0)],
             request_timeout: Duration::from_secs(30),
             max_concurrent_requests: 10,
         }
@@ -104,9 +101,8 @@ impl<
         config: StreamMonitorConfig,
     ) -> Self {
         // Create rate limiter with platform-specific configs
-        let mut rate_limiter = RateLimiterManager::with_config(
-            RateLimiterConfig::with_rps(config.default_rate_limit),
-        );
+        let mut rate_limiter =
+            RateLimiterManager::with_config(RateLimiterConfig::with_rps(config.default_rate_limit));
 
         for (platform, rps) in &config.platform_rate_limits {
             rate_limiter.set_platform_config(platform, RateLimiterConfig::with_rps(*rps));
@@ -163,7 +159,10 @@ impl<
         }
 
         // Acquire rate limit token
-        let wait_time = self.rate_limiter.acquire(&streamer.platform_config_id).await;
+        let wait_time = self
+            .rate_limiter
+            .acquire(&streamer.platform_config_id)
+            .await;
         if !wait_time.is_zero() {
             debug!("Rate limited for {:?}", wait_time);
         }
@@ -198,7 +197,9 @@ impl<
             platform_id
         );
 
-        self.batch_detector.batch_check(platform_id, streamers).await
+        self.batch_detector
+            .batch_check(platform_id, streamers)
+            .await
     }
 
     /// Process a status check result and update state.
@@ -214,33 +215,71 @@ impl<
         );
 
         match status {
-            LiveStatus::Live { title, category, started_at, streams, .. } => {
-                self.handle_live(streamer, title, category, started_at, streams).await?;
+            LiveStatus::Live {
+                title,
+                category,
+                started_at,
+                streams,
+                ..
+            } => {
+                self.handle_live(streamer, title, category, started_at, streams)
+                    .await?;
             }
             LiveStatus::Offline => {
                 self.handle_offline(streamer).await?;
             }
-            LiveStatus::Filtered { reason, title, category } => {
-                self.handle_filtered(streamer, reason, title, category).await?;
+            LiveStatus::Filtered {
+                reason,
+                title,
+                category,
+            } => {
+                self.handle_filtered(streamer, reason, title, category)
+                    .await?;
             }
             // Fatal errors - stop monitoring until manually cleared
             LiveStatus::NotFound => {
-                self.handle_fatal_error(streamer, StreamerState::NotFound, "Streamer not found on platform").await?;
+                self.handle_fatal_error(
+                    streamer,
+                    StreamerState::NotFound,
+                    "Streamer not found on platform",
+                )
+                .await?;
             }
             LiveStatus::Banned => {
-                self.handle_fatal_error(streamer, StreamerState::FatalError, "Streamer is banned on platform").await?;
+                self.handle_fatal_error(
+                    streamer,
+                    StreamerState::FatalError,
+                    "Streamer is banned on platform",
+                )
+                .await?;
             }
             LiveStatus::AgeRestricted => {
-                self.handle_fatal_error(streamer, StreamerState::FatalError, "Content is age-restricted").await?;
+                self.handle_fatal_error(
+                    streamer,
+                    StreamerState::FatalError,
+                    "Content is age-restricted",
+                )
+                .await?;
             }
             LiveStatus::RegionLocked => {
-                self.handle_fatal_error(streamer, StreamerState::FatalError, "Content is region-locked").await?;
+                self.handle_fatal_error(
+                    streamer,
+                    StreamerState::FatalError,
+                    "Content is region-locked",
+                )
+                .await?;
             }
             LiveStatus::Private => {
-                self.handle_fatal_error(streamer, StreamerState::FatalError, "Content is private").await?;
+                self.handle_fatal_error(streamer, StreamerState::FatalError, "Content is private")
+                    .await?;
             }
             LiveStatus::UnsupportedPlatform => {
-                self.handle_fatal_error(streamer, StreamerState::FatalError, "Platform is not supported").await?;
+                self.handle_fatal_error(
+                    streamer,
+                    StreamerState::FatalError,
+                    "Platform is not supported",
+                )
+                .await?;
             }
         }
 
@@ -256,7 +295,12 @@ impl<
         started_at: Option<chrono::DateTime<chrono::Utc>>,
         streams: Vec<platforms_parser::media::StreamInfo>,
     ) -> Result<()> {
-        info!("Streamer {} is LIVE: {} ({} streams available)", streamer.name, title, streams.len());
+        info!(
+            "Streamer {} is LIVE: {} ({} streams available)",
+            streamer.name,
+            title,
+            streams.len()
+        );
 
         // Update state to Live
         self.streamer_manager
@@ -264,7 +308,9 @@ impl<
             .await?;
 
         // Record success (resets error count, mark as going live)
-        self.streamer_manager.record_success(&streamer.id, true).await?;
+        self.streamer_manager
+            .record_success(&streamer.id, true)
+            .await?;
 
         // Emit live event for notifications and download triggering
         // Streams are passed directly from platform parser
@@ -403,7 +449,8 @@ impl<
             .await?;
 
         // Get updated error count
-        let consecutive_errors = self.streamer_manager
+        let consecutive_errors = self
+            .streamer_manager
             .get_streamer(&streamer.id)
             .map(|s| s.consecutive_error_count)
             .unwrap_or(1);
@@ -465,7 +512,7 @@ mod tests {
     #[test]
     fn test_status_summary() {
         assert_eq!(status_summary(&LiveStatus::Offline), "Offline");
-        
+
         let live_status = LiveStatus::Live {
             title: "Test".to_string(),
             category: None,
@@ -485,7 +532,7 @@ mod tests {
             }],
         };
         assert_eq!(status_summary(&live_status), "Live");
-        
+
         assert_eq!(
             status_summary(&LiveStatus::Filtered {
                 reason: FilterReason::OutOfSchedule,
@@ -497,6 +544,9 @@ mod tests {
         // Test fatal error statuses
         assert_eq!(status_summary(&LiveStatus::NotFound), "NotFound");
         assert_eq!(status_summary(&LiveStatus::Banned), "Banned");
-        assert_eq!(status_summary(&LiveStatus::UnsupportedPlatform), "UnsupportedPlatform");
+        assert_eq!(
+            status_summary(&LiveStatus::UnsupportedPlatform),
+            "UnsupportedPlatform"
+        );
     }
 }

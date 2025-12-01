@@ -176,6 +176,33 @@ CREATE TABLE notification_dead_letter (
 );
 
 -- Security and Notifications
+
+-- Users table: Stores user accounts for authentication
+CREATE TABLE users (
+    id TEXT PRIMARY KEY NOT NULL,
+    username TEXT NOT NULL UNIQUE,
+    password_hash TEXT NOT NULL,
+    email TEXT UNIQUE,
+    roles TEXT NOT NULL DEFAULT '["user"]',
+    is_active BOOLEAN NOT NULL DEFAULT TRUE,
+    must_change_password BOOLEAN NOT NULL DEFAULT TRUE,
+    last_login_at TEXT,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+);
+
+-- Refresh tokens table: Stores refresh tokens for JWT authentication
+CREATE TABLE refresh_tokens (
+    id TEXT PRIMARY KEY NOT NULL,
+    user_id TEXT NOT NULL,
+    token_hash TEXT NOT NULL UNIQUE,
+    expires_at TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    revoked_at TEXT,
+    device_info TEXT,
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+);
+
 CREATE TABLE api_key (
     id TEXT PRIMARY KEY,
     key_hash TEXT NOT NULL UNIQUE,
@@ -235,3 +262,28 @@ CREATE INDEX idx_job_execution_logs_job_id ON job_execution_logs(job_id);
 -- Indexes for the notification_dead_letter table
 CREATE INDEX idx_dead_letter_channel ON notification_dead_letter(channel_id);
 CREATE INDEX idx_dead_letter_created ON notification_dead_letter(created_at);
+
+-- Indexes for the users table
+CREATE INDEX idx_users_username ON users(username);
+CREATE INDEX idx_users_email ON users(email);
+CREATE INDEX idx_users_is_active ON users(is_active);
+
+-- Indexes for the refresh_tokens table
+CREATE INDEX idx_refresh_tokens_user_id ON refresh_tokens(user_id);
+CREATE INDEX idx_refresh_tokens_token_hash ON refresh_tokens(token_hash);
+CREATE INDEX idx_refresh_tokens_expires_at ON refresh_tokens(expires_at);
+
+-- Default admin user (password: admin123!)
+-- Argon2id hash generated with OWASP recommended parameters: m=19456, t=2, p=1
+INSERT INTO users (id, username, password_hash, email, roles, is_active, must_change_password, created_at, updated_at)
+VALUES (
+    'default-admin-00000000-0000-0000-0000-000000000001',
+    'admin',
+    '$argon2id$v=19$m=19456,t=2,p=1$K6NWuoVhfzt4UgqNyZeejQ$wK1P6/r0MM2IK+Mzk9j9PZYz9V2M3u4+eSKZBMEaNI8',
+    NULL,
+    '["admin", "user"]',
+    TRUE,
+    TRUE,
+    datetime('now'),
+    datetime('now')
+);

@@ -158,7 +158,8 @@ impl MonitoringTask {
         match self.last_check_time {
             Some(last) => {
                 let elapsed = Utc::now().signed_duration_since(last);
-                let interval = chrono::Duration::from_std(self.current_interval()).unwrap_or_default();
+                let interval =
+                    chrono::Duration::from_std(self.current_interval()).unwrap_or_default();
                 if elapsed >= interval {
                     Duration::ZERO
                 } else {

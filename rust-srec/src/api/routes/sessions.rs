@@ -1,9 +1,9 @@
 //! Session management routes.
 
 use axum::{
+    Json, Router,
     extract::{Path, Query, State},
     routing::get,
-    Json, Router,
 };
 
 use crate::api::error::{ApiError, ApiResult};
@@ -37,7 +37,10 @@ async fn get_session(
     Path(id): Path<String>,
 ) -> ApiResult<Json<SessionResponse>> {
     // TODO: Implement actual retrieval logic using SessionRepository
-    Err(ApiError::not_found(format!("Session with id '{}' not found", id)))
+    Err(ApiError::not_found(format!(
+        "Session with id '{}' not found",
+        id
+    )))
 }
 
 #[cfg(test)]

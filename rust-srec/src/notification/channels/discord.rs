@@ -7,8 +7,8 @@ use serde_json::json;
 use tracing::{debug, warn};
 
 use super::NotificationChannel;
-use crate::notification::events::{NotificationEvent, NotificationPriority};
 use crate::Result;
+use crate::notification::events::{NotificationEvent, NotificationPriority};
 
 /// Discord channel configuration.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -163,7 +163,13 @@ mod tests {
 
     #[test]
     fn test_get_color() {
-        assert_eq!(DiscordChannel::get_color(NotificationPriority::Low), 0x808080);
-        assert_eq!(DiscordChannel::get_color(NotificationPriority::Critical), 0xe74c3c);
+        assert_eq!(
+            DiscordChannel::get_color(NotificationPriority::Low),
+            0x808080
+        );
+        assert_eq!(
+            DiscordChannel::get_color(NotificationPriority::Critical),
+            0xe74c3c
+        );
     }
 }

@@ -1,6 +1,6 @@
 //! Filter types.
 
-use chrono::{NaiveTime, Weekday, Datelike};
+use chrono::{Datelike, NaiveTime, Weekday};
 use serde::{Deserialize, Serialize};
 
 /// Filter type enum.
@@ -42,12 +42,7 @@ impl Filter {
     }
 
     /// Check if the filter matches the given context.
-    pub fn matches(
-        &self,
-        title: &str,
-        category: &str,
-        now: chrono::DateTime<chrono::Utc>,
-    ) -> bool {
+    pub fn matches(&self, title: &str, category: &str, now: chrono::DateTime<chrono::Utc>) -> bool {
         match self {
             Self::TimeBased(f) => f.matches(now),
             Self::Keyword(f) => f.matches(title),
@@ -124,11 +119,19 @@ impl TimeBasedFilter {
 
         // Check if current day is in allowed days
         let day_name = weekday_to_string(weekday);
-        if !self.days_of_week.iter().any(|d| d.eq_ignore_ascii_case(&day_name)) {
+        if !self
+            .days_of_week
+            .iter()
+            .any(|d| d.eq_ignore_ascii_case(&day_name))
+        {
             // Also check if we're in an overnight range from the previous day
             let prev_day = prev_weekday(weekday);
             let prev_day_name = weekday_to_string(prev_day);
-            if !self.days_of_week.iter().any(|d| d.eq_ignore_ascii_case(&prev_day_name)) {
+            if !self
+                .days_of_week
+                .iter()
+                .any(|d| d.eq_ignore_ascii_case(&prev_day_name))
+            {
                 return false;
             }
             // We're checking from previous day's overnight range
@@ -238,7 +241,9 @@ impl CategoryFilter {
             return true;
         }
 
-        self.categories.iter().any(|c| c.eq_ignore_ascii_case(category))
+        self.categories
+            .iter()
+            .any(|c| c.eq_ignore_ascii_case(category))
     }
 }
 
@@ -255,7 +260,8 @@ fn weekday_to_string(weekday: Weekday) -> String {
         Weekday::Fri => "Friday",
         Weekday::Sat => "Saturday",
         Weekday::Sun => "Sunday",
-    }.to_string()
+    }
+    .to_string()
 }
 
 fn prev_weekday(weekday: Weekday) -> Weekday {
@@ -291,10 +297,7 @@ mod tests {
 
     #[test]
     fn test_keyword_filter_both() {
-        let filter = KeywordFilter::new(
-            vec!["live".to_string()],
-            vec!["rerun".to_string()],
-        );
+        let filter = KeywordFilter::new(vec!["live".to_string()], vec!["rerun".to_string()]);
         assert!(filter.matches("Going live!"));
         assert!(!filter.matches("Live rerun"));
         assert!(!filter.matches("Just chatting"));
@@ -317,12 +320,8 @@ mod tests {
 
     #[test]
     fn test_time_filter_normal_range() {
-        let filter = TimeBasedFilter::new(
-            vec!["Saturday".to_string()],
-            "09:00",
-            "17:00",
-        );
-        
+        let filter = TimeBasedFilter::new(vec!["Saturday".to_string()], "09:00", "17:00");
+
         // Saturday 12:00 UTC
         let time = chrono::Utc.with_ymd_and_hms(2024, 1, 6, 12, 0, 0).unwrap();
         // Note: This test may fail depending on local timezone
@@ -335,10 +334,10 @@ mod tests {
             vec!["live".to_string()],
             vec!["rerun".to_string()],
         ));
-        
+
         let json = serde_json::to_string(&filter).unwrap();
         let parsed: Filter = serde_json::from_str(&json).unwrap();
-        
+
         match parsed {
             Filter::Keyword(kf) => {
                 assert_eq!(kf.include, vec!["live"]);
