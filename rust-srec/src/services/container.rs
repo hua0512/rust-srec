@@ -21,6 +21,7 @@ use crate::danmu::{
     DanmuService,
     service::{DanmuEvent, DanmuServiceConfig},
 };
+use crate::database::maintenance::{MaintenanceConfig, MaintenanceScheduler};
 use crate::database::repositories::{
     config::SqlxConfigRepository, refresh_token::SqlxRefreshTokenRepository,
     streamer::SqlxStreamerRepository, user::SqlxUserRepository,
@@ -65,6 +66,8 @@ pub struct ServiceContainer {
     pub metrics_collector: Arc<MetricsCollector>,
     /// Health checker.
     pub health_checker: Arc<HealthChecker>,
+    /// Database maintenance scheduler.
+    pub maintenance_scheduler: Arc<MaintenanceScheduler>,
     /// API server configuration.
     api_server_config: ApiServerConfig,
     /// Cancellation token for graceful shutdown.
@@ -133,6 +136,12 @@ impl ServiceContainer {
         // Create health checker
         let health_checker = Arc::new(HealthChecker::new());
 
+        // Create database maintenance scheduler with default config
+        let maintenance_scheduler = Arc::new(MaintenanceScheduler::new(
+            pool.clone(),
+            MaintenanceConfig::default(),
+        ));
+
         // Create cancellation token for graceful shutdown
         let cancellation_token = CancellationToken::new();
 
@@ -150,6 +159,7 @@ impl ServiceContainer {
             notification_service,
             metrics_collector,
             health_checker,
+            maintenance_scheduler,
             api_server_config: ApiServerConfig::default(),
             cancellation_token,
         })
@@ -211,6 +221,12 @@ impl ServiceContainer {
         // Create health checker
         let health_checker = Arc::new(HealthChecker::new());
 
+        // Create database maintenance scheduler with default config
+        let maintenance_scheduler = Arc::new(MaintenanceScheduler::new(
+            pool.clone(),
+            MaintenanceConfig::default(),
+        ));
+
         // Create cancellation token for graceful shutdown
         let cancellation_token = CancellationToken::new();
 
@@ -228,6 +244,7 @@ impl ServiceContainer {
             notification_service,
             metrics_collector,
             health_checker,
+            maintenance_scheduler,
             api_server_config: api_config,
             cancellation_token,
         })
@@ -262,6 +279,10 @@ impl ServiceContainer {
 
         // Register health checks
         self.register_health_checks().await;
+
+        // Start database maintenance scheduler
+        self.maintenance_scheduler.clone().start();
+        info!("Database maintenance scheduler started");
 
         info!("Services initialized");
         Ok(())
@@ -847,6 +868,11 @@ impl ServiceContainer {
 
         // Signal all background tasks to stop
         self.cancellation_token.cancel();
+
+        // Stop database maintenance scheduler
+        info!("Stopping maintenance scheduler...");
+        self.maintenance_scheduler.stop();
+        info!("Maintenance scheduler stopped");
 
         // Stop notification service
         info!("Stopping notification service...");
