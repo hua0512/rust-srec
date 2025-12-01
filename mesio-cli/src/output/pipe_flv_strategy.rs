@@ -188,11 +188,18 @@ impl FormatStrategy<FlvData> for PipeFlvStrategy {
         // This is important for boundary detection
         self.should_close = self.should_close_pipe(item);
 
+        // If we should close, don't write the boundary item (second header or EOS)
+        // Just return 0 bytes written and let after_item_written handle the closure
+        if self.should_close {
+            return Ok(0);
+        }
+
         let bytes_written = match item {
             FlvData::Header(header) => {
-                tracing::debug!(
+                tracing::info!(
                     has_audio = header.has_audio,
                     has_video = header.has_video,
+                    version = header.version,
                     "Writing FLV header to pipe"
                 );
                 let bytes = Self::write_header(writer, header)
@@ -201,7 +208,7 @@ impl FormatStrategy<FlvData> for PipeFlvStrategy {
                 writer
                     .flush()
                     .map_err(PipeFlvStrategyError::from_io_error)?;
-                tracing::debug!(bytes_written = bytes, "FLV header written and flushed");
+                tracing::info!(bytes_written = bytes, "FLV header written and flushed");
                 self.has_written_data = true;
                 bytes
             }
