@@ -1,6 +1,10 @@
-use crate::utils::{expand_name_url, format_bytes};
+use crate::output::pipe_flv_strategy::PipeFlvStrategy;
+use crate::output::provider::OutputFormat;
+use crate::processor::generic::{
+    process_pipe_stream, process_pipe_stream_with_processing, process_stream,
+};
+use crate::utils::{create_dirs, expand_name_url, format_bytes, spans};
 use crate::{config::ProgramConfig, error::AppError};
-use crate::{processor::generic::process_stream, utils::create_dirs, utils::spans};
 use flv::data::FlvData;
 use flv::parser_async::FlvDecoderStream;
 use flv_fix::FlvPipeline;
@@ -11,7 +15,6 @@ use pipeline_common::{CancellationToken, PipelineError, ProtocolWriter, config::
 use std::collections::HashMap;
 use std::path::Path;
 use std::pin::Pin;
-
 use std::time::Instant;
 use tokio::fs::File;
 use tokio::io::BufReader;
@@ -62,8 +65,16 @@ pub async fn process_file(
     config: &ProgramConfig,
     token: &CancellationToken,
 ) -> Result<(), AppError> {
-    // Create output directory if it doesn't exist
-    create_dirs(output_dir).await?;
+    // Check if we're in pipe output mode
+    let is_pipe_mode = matches!(
+        config.output_format,
+        OutputFormat::Stdout | OutputFormat::Stderr
+    );
+
+    // Only create output directory for file mode
+    if !is_pipe_mode {
+        create_dirs(output_dir).await?;
+    }
 
     let base_name = input_path
         .file_stem()
@@ -89,7 +100,53 @@ pub async fn process_file(
     let decoder_stream = FlvDecoderStream::with_capacity(file_reader, 4 * 1024 * 1024) // 4MB buffer for better I/O throughput
         .map(|r| r.map_err(|e| PipelineError::Processing(e.to_string())));
 
-    let (tags_written, files_created) = if config.enable_processing {
+    // Use pipe output strategy when stdout mode is active
+    let (tags_written, files_created) = if is_pipe_mode {
+        // Pipe mode: write to stdout using PipeFlvStrategy
+        let stats = if config.enable_processing {
+            // Processing enabled: run through FlvPipeline before writing to stdout
+            info!(
+                path = %input_path.display(),
+                processing_enabled = true,
+                low_latency = config.flv_pipeline_config.enable_low_latency,
+                output_mode = %config.output_format,
+                "Starting pipe output with FLV processing"
+            );
+            process_pipe_stream_with_processing::<FlvPipeline, _>(
+                Box::pin(decoder_stream),
+                &config.pipeline_config,
+                config.flv_pipeline_config.clone(),
+                PipeFlvStrategy::new(),
+                "flv",
+            )
+            .await?
+        } else {
+            // Raw output: bypass processing pipeline
+            process_pipe_stream(
+                Box::pin(decoder_stream),
+                &config.pipeline_config,
+                PipeFlvStrategy::new(),
+                "flv",
+            )
+            .await?
+        };
+
+        // Log completion statistics for pipe mode
+        let elapsed = start_time.elapsed();
+        info!(
+            path = %input_path.display(),
+            input_size = %format_bytes(file_size),
+            duration = ?elapsed,
+            tags_written = stats.items_written,
+            bytes_written = stats.bytes_written,
+            segment_count = stats.segment_count,
+            output_mode = %config.output_format,
+            processing_enabled = config.enable_processing,
+            "FLV pipe output complete"
+        );
+
+        return Ok(());
+    } else if config.enable_processing {
         // we need to expand base_name with %i for output file numbering
         let base_name = format!("{base_name}_p%i");
         // Create a span for pipeline processing
@@ -160,15 +217,28 @@ pub async fn process_flv_stream(
     downloader: &mut DownloaderInstance,
     token: &CancellationToken,
 ) -> Result<u64, AppError> {
-    // Create output directory if it doesn't exist
-    create_dirs(output_dir).await?;
+    // Check if we're in pipe output mode
+    let is_pipe_mode = matches!(
+        config.output_format,
+        OutputFormat::Stdout | OutputFormat::Stderr
+    );
+
+    // Only create output directory for file mode
+    if !is_pipe_mode {
+        create_dirs(output_dir).await?;
+    }
 
     let start_time = Instant::now();
 
     // Create span for FLV stream download
+    // Note: Progress bars are disabled in pipe mode via main.rs configuration
     let download_span = span!(Level::INFO, "download_flv", url = %url_str);
     let _download_enter = download_span.enter();
-    spans::init_download_span(&download_span, format!("Downloading {}", url_str));
+
+    // Only initialize download span visuals if not in pipe mode
+    if !is_pipe_mode {
+        spans::init_download_span(&download_span, format!("Downloading {}", url_str));
+    }
 
     // Expand the name template with the URL filename
     let base_name = expand_name_url(name_template, url_str)?;
@@ -185,8 +255,54 @@ pub async fn process_flv_stream(
 
     let stream = stream.map(|r| r.map_err(|e| PipelineError::Processing(e.to_string())));
 
-    let (tags_written, files_created) = if config.enable_processing {
-        process_stream::<FlvPipeline, FlvWriter>(
+    // Use pipe output strategy when stdout mode is active
+    let (tags_written, files_created, _bytes_written) = if is_pipe_mode {
+        // Pipe mode: write to stdout using PipeFlvStrategy
+        // Check if processing is enabled to determine whether to use FlvPipeline
+        let stats = if config.enable_processing {
+            // Processing enabled: run through FlvPipeline before writing to stdout
+            info!(
+                url = %url_str,
+                processing_enabled = true,
+                low_latency = config.flv_pipeline_config.enable_low_latency,
+                output_mode = %config.output_format,
+                "Starting pipe output with FLV processing"
+            );
+            process_pipe_stream_with_processing::<FlvPipeline, _>(
+                Box::pin(stream),
+                &config.pipeline_config,
+                config.flv_pipeline_config.clone(),
+                PipeFlvStrategy::new(),
+                "flv",
+            )
+            .await?
+        } else {
+            // Raw output: bypass processing pipeline
+            process_pipe_stream(
+                Box::pin(stream),
+                &config.pipeline_config,
+                PipeFlvStrategy::new(),
+                "flv",
+            )
+            .await?
+        };
+
+        // Log completion statistics for pipe mode
+        let elapsed = start_time.elapsed();
+        info!(
+            url = %url_str,
+            duration = ?elapsed,
+            tags_written = stats.items_written,
+            bytes_written = stats.bytes_written,
+            segment_count = stats.segment_count,
+            output_mode = %config.output_format,
+            processing_enabled = config.enable_processing,
+            "FLV pipe output complete"
+        );
+
+        return Ok(stats.items_written as u64);
+    } else if config.enable_processing {
+        let result = process_stream::<FlvPipeline, FlvWriter>(
             &config.pipeline_config,
             config.flv_pipeline_config.clone(),
             Box::pin(stream),
@@ -204,15 +320,17 @@ pub async fn process_flv_stream(
             },
             token.clone(),
         )
-        .await?
+        .await?;
+        (result.0, result.1, 0u64)
     } else {
-        process_raw_stream(
+        let result = process_raw_stream(
             Box::pin(stream),
             output_dir,
             &base_name,
             &config.pipeline_config,
         )
-        .await?
+        .await?;
+        (result.0, result.1, 0u64)
     };
 
     let elapsed = start_time.elapsed();
@@ -222,11 +340,14 @@ pub async fn process_flv_stream(
     } else {
         0
     };
+
+    // Log completion (goes to stderr in pipe mode)
     info!(
         url = %url_str,
         duration = ?elapsed,
         tags_written,
         files_created = actual_files_created,
+        output_mode = %config.output_format,
         "FLV processing complete"
     );
 

@@ -19,6 +19,7 @@ Mesio is a powerful command-line tool for downloading, processing, and repairing
   - Automatic retries for failed segments
   - Playlist caching to reduce redundant requests
   - Adaptive refresh intervals for live streams
+- **Pipe Output**: Stream data directly to stdout for integration with external tools like ffmpeg or mpv.
 - **Advanced Proxy Support**: HTTP, HTTPS, and SOCKS5 proxies for all downloads.
 - **File Segmentation**: Split output files by size or duration.
 - **Customizable Output**: Use templates for file naming.
@@ -201,6 +202,64 @@ Enable the processing pipeline to repair FLV files:
 ```bash
 mesio --progress --fix file.flv
 ```
+
+### Pipe Output to External Tools
+
+Stream data directly to stdout for processing with external tools:
+
+```bash
+# Pipe FLV stream to ffmpeg for transcoding (Bash/Zsh)
+mesio -O stdout https://example.com/stream.flv 2>/dev/null | ffmpeg -i pipe:0 -c:v libx264 output.mp4
+
+# Pipe with --fix to apply timestamp repair before transcoding (Bash/Zsh)
+mesio --fix -O stdout https://example.com/stream.flv 2>/dev/null | ffmpeg -i pipe:0 -c:v libx264 output.mp4
+
+# Pipe HLS stream to mpv for playback (Bash/Zsh)
+mesio -O stdout https://example.com/playlist.m3u8 2>/dev/null | mpv -
+
+# Pipe to VLC (Bash/Zsh)
+mesio -O stdout https://example.com/stream.flv 2>/dev/null | vlc -
+```
+
+```powershell
+# PowerShell - Pipe FLV stream to ffmpeg
+mesio -O stdout https://example.com/stream.flv 2>$null | ffmpeg -i pipe:0 -c:v libx264 output.mp4
+
+# PowerShell - Pipe with --fix
+mesio --fix -O stdout https://example.com/stream.flv 2>$null | ffmpeg -i pipe:0 -c:v libx264 output.mp4
+```
+
+#### Stderr Redirection
+
+When using pipe output mode, mesio writes:
+
+- **Binary media data** to **stdout** (piped to ffmpeg/mpv/etc.)
+- **Log messages** to **stderr** (INFO, WARN, progress, etc.)
+
+You must redirect stderr to prevent log messages from corrupting the binary stream:
+
+| Shell | Discard stderr | Save to file |
+|-------|----------------|--------------|
+| PowerShell | `2>$null` | `2>mesio.log` |
+| Bash/Zsh | `2>/dev/null` | `2>mesio.log` |
+| CMD | `2>NUL` | `2>mesio.log` |
+
+**Example with logging preserved:**
+
+```bash
+# PowerShell - save logs while piping to ffmpeg
+mesio --fix -O stdout https://example.com/stream.flv 2>mesio.log | ffmpeg -i pipe:0 -y output.mp4
+
+# Bash - save logs while piping to ffmpeg
+mesio --fix -O stdout https://example.com/stream.flv 2>mesio.log | ffmpeg -i pipe:0 -y output.mp4
+```
+
+When using pipe output mode:
+
+- Progress bars are automatically disabled to avoid corrupting the output stream
+- All logging is redirected to stderr
+- The pipe closes automatically on segment boundaries (FLV headers, HLS discontinuities)
+- Use `--fix` flag to enable FLV processing (timestamp repair, GOP sorting) before piping
 
 ## License
 

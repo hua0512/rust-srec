@@ -55,6 +55,8 @@ pub struct FlvPipelineConfig {
     pub keyframe_index_config: Option<ScriptFillerConfig>,
 
     pub enable_low_latency: bool,
+
+    pub pipe_mode: bool,
 }
 
 impl Default for FlvPipelineConfig {
@@ -65,6 +67,7 @@ impl Default for FlvPipelineConfig {
             continuity_mode: ContinuityMode::Reset,
             keyframe_index_config: Some(ScriptFillerConfig::default()),
             enable_low_latency: true,
+            pipe_mode: false,
         }
     }
 }
@@ -112,6 +115,13 @@ impl FlvPipelineConfigBuilder {
 
     pub fn enable_low_latency(mut self, enable_low_latency: bool) -> Self {
         self.config.enable_low_latency = enable_low_latency;
+        self
+    }
+
+    /// Set pipe mode for the keyframe index config.
+    /// When true, AMF0 processing is skipped since keyframe injection is not needed for pipe output.
+    pub fn pipe_mode(mut self, pipe_mode: bool) -> Self {
+        self.config.pipe_mode = pipe_mode;
         self
     }
 
@@ -180,7 +190,6 @@ impl PipelineProvider for FlvPipeline {
 
         // Create remaining operators
         let gop_sort_operator = GopSortOperator::new(context.clone());
-        let script_filter_operator = ScriptFilterOperator::new(context.clone());
         let timing_repair_operator =
             TimingRepairOperator::new(context.clone(), TimingRepairConfig::default());
         let split_operator = SplitOperator::new(context.clone());
@@ -189,15 +198,28 @@ impl PipelineProvider for FlvPipeline {
         let time_consistency_operator_2 =
             TimeConsistencyOperator::new(context.clone(), config.continuity_mode);
 
-        // Create the KeyframeIndexInjector operator if enabled
-        let keyframe_index_operator = if let Some(keyframe_config) = config.keyframe_index_config {
-            ScriptKeyframesFillerOperator::new(context.clone(), keyframe_config)
+        // Determine if we're in pipe mode - skip script-related operators
+        // In pipe mode, AMF0 metadata modification is unnecessary overhead
+        let is_pipe_mode = config.pipe_mode;
+
+        // Create the KeyframeIndexInjector operator if enabled and not in pipe mode
+        let keyframe_index_operator = if !is_pipe_mode && config.keyframe_index_config.is_some() {
+            config
+                .keyframe_index_config
+                .map(|c| ScriptKeyframesFillerOperator::new(context.clone(), c))
         } else {
-            ScriptKeyframesFillerOperator::new(context.clone(), ScriptFillerConfig::default())
+            None
+        };
+
+        // Create the ScriptFilter operator only if not in pipe mode
+        let script_filter_operator = if !is_pipe_mode {
+            Some(ScriptFilterOperator::new(context.clone()))
+        } else {
+            None
         };
 
         // Build the synchronous pipeline
-        let sync_pipeline = pipeline_common::Pipeline::new(context.clone())
+        let mut sync_pipeline = pipeline_common::Pipeline::new(context.clone())
             .add_processor(defrag_operator)
             .add_processor(header_check_operator)
             .add_processor(split_operator)
@@ -205,9 +227,19 @@ impl PipelineProvider for FlvPipeline {
             .add_processor(time_consistency_operator)
             .add_processor(timing_repair_operator)
             .add_processor(limit_operator)
-            .add_processor(time_consistency_operator_2)
-            .add_processor(keyframe_index_operator)
-            .add_processor(script_filter_operator);
+            .add_processor(time_consistency_operator_2);
+
+        // Add keyframe filler
+        if let Some(keyframe_op) = keyframe_index_operator {
+            sync_pipeline = sync_pipeline.add_processor(keyframe_op);
+        }
+
+        // Add script filter
+        let sync_pipeline = if let Some(script_filter_op) = script_filter_operator {
+            sync_pipeline.add_processor(script_filter_op)
+        } else {
+            sync_pipeline
+        };
 
         // Wrap it in a ChannelPipeline to offload processing to a dedicated thread
         ChannelPipeline::new(context).add_processor(sync_pipeline)

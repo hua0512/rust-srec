@@ -2,6 +2,8 @@ use clap::Parser;
 use mesio_engine::ProxyType;
 use std::path::PathBuf;
 
+use crate::output::provider::OutputFormat;
+
 /// Define CLI arguments
 #[derive(Parser)]
 #[command(
@@ -31,6 +33,16 @@ pub struct CliArgs {
         help = "Directory where processed files will be saved (default: ./fix)"
     )]
     pub output_dir: Option<PathBuf>,
+
+    /// Output format for processed data
+    #[arg(
+        short = 'O',
+        long = "output-format",
+        default_value = "file",
+        value_enum,
+        help = "Output format: 'file' for files, 'stdout' for pipe output"
+    )]
+    pub output_format: OutputFormat,
 
     /// Maximum file size with optional unit (B, KB, MB, GB, TB)
     /// Examples: "4GB", "500MB", "2048KB"
