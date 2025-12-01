@@ -168,6 +168,12 @@ async fn bootstrap() -> Result<(), AppError> {
         args.timeout, args.connect_timeout, args.read_timeout, args.write_timeout
     );
 
+    // Check if we're in pipe mode (stdout/stderr output)
+    let is_pipe_mode = matches!(
+        args.output_format,
+        OutputFormat::Stdout | OutputFormat::Stderr
+    );
+
     // Configure flv pipeline config
     let flv_pipeline_config = FlvPipelineConfig::builder()
         .duplicate_tag_filtering(false)
@@ -181,12 +187,15 @@ async fn bootstrap() -> Result<(), AppError> {
                 })
             } else {
                 info!("Keyframe index enabled with default configuration");
-                Some(ScriptFillerConfig::default())
+                Some(ScriptFillerConfig {
+                    ..Default::default()
+                })
             }
         } else {
             None
         })
         .enable_low_latency(args.low_latency_fix)
+        .pipe_mode(is_pipe_mode)
         .build();
 
     // Configure HLS pipeline config
