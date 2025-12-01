@@ -6,7 +6,7 @@ use std::sync::Arc;
 use dashmap::DashMap;
 use parking_lot::RwLock;
 use serde::{Deserialize, Serialize};
-use tokio::sync::{Semaphore, mpsc};
+use tokio::sync::{Semaphore, broadcast, mpsc};
 use tracing::{debug, error, info, warn};
 
 use super::engine::{
@@ -70,11 +70,8 @@ pub struct DownloadManager {
     engines: RwLock<HashMap<EngineType, Arc<dyn DownloadEngine>>>,
     /// Circuit breaker manager.
     circuit_breakers: CircuitBreakerManager,
-    /// Event sender for download events.
-    event_tx: mpsc::Sender<DownloadManagerEvent>,
-    /// Event receiver (for external consumption).
-    #[allow(dead_code)]
-    event_rx: RwLock<Option<mpsc::Receiver<DownloadManagerEvent>>>,
+    /// Broadcast sender for download events (supports multiple subscribers).
+    event_tx: broadcast::Sender<DownloadManagerEvent>,
 }
 
 /// Events emitted by the Download Manager.
@@ -127,7 +124,8 @@ impl DownloadManager {
 
     /// Create a new Download Manager with custom configuration.
     pub fn with_config(config: DownloadManagerConfig) -> Self {
-        let (event_tx, event_rx) = mpsc::channel(256);
+        // Use broadcast channel to support multiple subscribers
+        let (event_tx, _) = broadcast::channel(256);
 
         let normal_semaphore = Arc::new(Semaphore::new(config.max_concurrent_downloads));
         let high_priority_semaphore = Arc::new(Semaphore::new(config.high_priority_extra_slots));
@@ -145,7 +143,6 @@ impl DownloadManager {
             engines: RwLock::new(HashMap::new()),
             circuit_breakers,
             event_tx,
-            event_rx: RwLock::new(Some(event_rx)),
         };
 
         // Register default engines
@@ -291,16 +288,13 @@ impl DownloadManager {
             },
         );
 
-        // Emit start event
-        let _ = self
-            .event_tx
-            .send(DownloadManagerEvent::DownloadStarted {
-                download_id: download_id.clone(),
-                streamer_id: config.streamer_id.clone(),
-                session_id: config.session_id.clone(),
-                engine_type,
-            })
-            .await;
+        // Emit start event (broadcast send is synchronous, ignore if no receivers)
+        let _ = self.event_tx.send(DownloadManagerEvent::DownloadStarted {
+            download_id: download_id.clone(),
+            streamer_id: config.streamer_id.clone(),
+            session_id: config.session_id.clone(),
+            engine_type,
+        });
 
         info!(
             "Starting download {} for streamer {} with engine {}",
@@ -330,16 +324,15 @@ impl DownloadManager {
             while let Some(event) = segment_rx.recv().await {
                 match event {
                     SegmentEvent::SegmentCompleted(info) => {
-                        let _ = event_tx
-                            .send(DownloadManagerEvent::SegmentCompleted {
-                                download_id: download_id_clone.clone(),
-                                streamer_id: streamer_id.clone(),
-                                segment_path: info.path.to_string_lossy().to_string(),
-                                segment_index: info.index,
-                                duration_secs: info.duration_secs,
-                                size_bytes: info.size_bytes,
-                            })
-                            .await;
+                        // Broadcast send is synchronous, ignore if no receivers
+                        let _ = event_tx.send(DownloadManagerEvent::SegmentCompleted {
+                            download_id: download_id_clone.clone(),
+                            streamer_id: streamer_id.clone(),
+                            segment_path: info.path.to_string_lossy().to_string(),
+                            segment_index: info.index,
+                            duration_secs: info.duration_secs,
+                            size_bytes: info.size_bytes,
+                        });
                     }
                     SegmentEvent::Progress(progress) => {
                         if let Some(mut download) = active_downloads.get_mut(&download_id_clone) {
@@ -358,16 +351,14 @@ impl DownloadManager {
                             download.status = DownloadStatus::Completed;
                         }
 
-                        let _ = event_tx
-                            .send(DownloadManagerEvent::DownloadCompleted {
-                                download_id: download_id_clone.clone(),
-                                streamer_id: streamer_id.clone(),
-                                session_id: session_id.clone(),
-                                total_bytes,
-                                total_duration_secs,
-                                total_segments,
-                            })
-                            .await;
+                        let _ = event_tx.send(DownloadManagerEvent::DownloadCompleted {
+                            download_id: download_id_clone.clone(),
+                            streamer_id: streamer_id.clone(),
+                            session_id: session_id.clone(),
+                            total_bytes,
+                            total_duration_secs,
+                            total_segments,
+                        });
 
                         active_downloads.remove(&download_id_clone);
                         break;
@@ -379,14 +370,12 @@ impl DownloadManager {
                             download.status = DownloadStatus::Failed;
                         }
 
-                        let _ = event_tx
-                            .send(DownloadManagerEvent::DownloadFailed {
-                                download_id: download_id_clone.clone(),
-                                streamer_id: streamer_id.clone(),
-                                error,
-                                recoverable,
-                            })
-                            .await;
+                        let _ = event_tx.send(DownloadManagerEvent::DownloadFailed {
+                            download_id: download_id_clone.clone(),
+                            streamer_id: streamer_id.clone(),
+                            error,
+                            recoverable,
+                        });
 
                         active_downloads.remove(&download_id_clone);
                         break;
@@ -407,13 +396,11 @@ impl DownloadManager {
                 engine.stop(&download.handle).await?;
             }
 
-            let _ = self
-                .event_tx
-                .send(DownloadManagerEvent::DownloadCancelled {
-                    download_id: download_id.to_string(),
-                    streamer_id: download.handle.config.streamer_id.clone(),
-                })
-                .await;
+            // Broadcast send is synchronous, ignore if no receivers
+            let _ = self.event_tx.send(DownloadManagerEvent::DownloadCancelled {
+                download_id: download_id.to_string(),
+                streamer_id: download.handle.config.streamer_id.clone(),
+            });
 
             info!("Stopped download {}", download_id);
             Ok(())
@@ -450,12 +437,11 @@ impl DownloadManager {
     }
 
     /// Subscribe to download events.
-    pub fn subscribe(&self) -> mpsc::Receiver<DownloadManagerEvent> {
-        let (tx, rx) = mpsc::channel(256);
-        // Note: In a real implementation, we'd use a broadcast channel
-        // For now, this creates a new channel
-        let _ = tx; // Suppress unused warning
-        rx
+    ///
+    /// Returns a broadcast receiver that will receive all download events.
+    /// Multiple subscribers can receive the same events concurrently.
+    pub fn subscribe(&self) -> broadcast::Receiver<DownloadManagerEvent> {
+        self.event_tx.subscribe()
     }
 
     /// Update configuration for an active download.

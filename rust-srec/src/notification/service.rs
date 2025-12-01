@@ -16,7 +16,7 @@ use chrono::{DateTime, Utc};
 use dashmap::DashMap;
 use parking_lot::RwLock;
 use serde::{Deserialize, Serialize};
-use tokio::sync::{broadcast, mpsc};
+use tokio::sync::broadcast;
 use tokio::time::sleep;
 use tokio_util::sync::CancellationToken;
 use tracing::{debug, info, warn};
@@ -485,7 +485,7 @@ impl NotificationService {
     pub fn start_event_listeners(
         &self,
         monitor_rx: broadcast::Receiver<MonitorEvent>,
-        download_rx: mpsc::Receiver<DownloadManagerEvent>,
+        download_rx: broadcast::Receiver<DownloadManagerEvent>,
         pipeline_rx: broadcast::Receiver<PipelineEvent>,
     ) {
         self.listen_for_monitor_events(monitor_rx);
@@ -575,7 +575,7 @@ impl NotificationService {
     }
 
     /// Listen for download events.
-    fn listen_for_download_events(&self, mut rx: mpsc::Receiver<DownloadManagerEvent>) {
+    fn listen_for_download_events(&self, mut rx: broadcast::Receiver<DownloadManagerEvent>) {
         let config = self.config.clone();
         let event_tx = self.event_tx.clone();
         let cancellation_token = self.cancellation_token.clone();
@@ -587,9 +587,9 @@ impl NotificationService {
                         debug!("Download event listener shutting down");
                         break;
                     }
-                    event = rx.recv() => {
-                        match event {
-                            Some(event) => {
+                    result = rx.recv() => {
+                        match result {
+                            Ok(event) => {
                                 if !config.enabled {
                                     continue;
                                 }
@@ -638,7 +638,10 @@ impl NotificationService {
                                     let _ = event_tx.send(notification);
                                 }
                             }
-                            None => {
+                            Err(broadcast::error::RecvError::Lagged(n)) => {
+                                warn!("Download event listener lagged {} events", n);
+                            }
+                            Err(broadcast::error::RecvError::Closed) => {
                                 debug!("Download event channel closed");
                                 break;
                             }

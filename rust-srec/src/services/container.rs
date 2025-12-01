@@ -31,6 +31,7 @@ use crate::metrics::{HealthChecker, MetricsCollector, PrometheusExporter};
 use crate::monitor::{MonitorEvent, MonitorEventBroadcaster};
 use crate::notification::{NotificationService, NotificationServiceConfig};
 use crate::pipeline::{PipelineEvent, PipelineManager, PipelineManagerConfig};
+use crate::scheduler::Scheduler;
 use crate::streamer::StreamerManager;
 
 /// Default cache TTL (1 hour).
@@ -68,6 +69,8 @@ pub struct ServiceContainer {
     pub health_checker: Arc<HealthChecker>,
     /// Database maintenance scheduler.
     pub maintenance_scheduler: Arc<MaintenanceScheduler>,
+    /// Scheduler service
+    pub scheduler: Arc<tokio::sync::RwLock<Scheduler<SqlxStreamerRepository>>>,
     /// API server configuration.
     api_server_config: ApiServerConfig,
     /// Cancellation token for graceful shutdown.
@@ -142,8 +145,15 @@ impl ServiceContainer {
             MaintenanceConfig::default(),
         ));
 
-        // Create cancellation token for graceful shutdown
+        // Create cancellation token for graceful shutdown (before scheduler so it can be shared)
         let cancellation_token = CancellationToken::new();
+
+        // Create scheduler with shared cancellation token (will be started in initialize())
+        let scheduler = Arc::new(tokio::sync::RwLock::new(Scheduler::with_cancellation(
+            streamer_manager.clone(),
+            event_broadcaster.clone(),
+            cancellation_token.child_token(),
+        )));
 
         info!("Service container initialized");
 
@@ -160,6 +170,7 @@ impl ServiceContainer {
             metrics_collector,
             health_checker,
             maintenance_scheduler,
+            scheduler,
             api_server_config: ApiServerConfig::default(),
             cancellation_token,
         })
@@ -227,8 +238,15 @@ impl ServiceContainer {
             MaintenanceConfig::default(),
         ));
 
-        // Create cancellation token for graceful shutdown
+        // Create cancellation token for graceful shutdown (before scheduler so it can be shared)
         let cancellation_token = CancellationToken::new();
+
+        // Create scheduler with shared cancellation token (will be started in initialize())
+        let scheduler = Arc::new(tokio::sync::RwLock::new(Scheduler::with_cancellation(
+            streamer_manager.clone(),
+            event_broadcaster.clone(),
+            cancellation_token.child_token(),
+        )));
 
         info!("Service container initialized with full configuration");
 
@@ -245,6 +263,7 @@ impl ServiceContainer {
             metrics_collector,
             health_checker,
             maintenance_scheduler,
+            scheduler,
             api_server_config: api_config,
             cancellation_token,
         })
@@ -284,8 +303,34 @@ impl ServiceContainer {
         self.maintenance_scheduler.clone().start();
         info!("Database maintenance scheduler started");
 
+        // Start scheduler in background
+        self.start_scheduler().await;
+
         info!("Services initialized");
         Ok(())
+    }
+
+    /// Start the scheduler service in a background task.
+    ///
+    /// The scheduler uses a child token of the container's cancellation token,
+    /// so it will automatically stop when the container is shut down.
+    async fn start_scheduler(&self) {
+        // Set download receiver before starting
+        {
+            let mut scheduler = self.scheduler.write().await;
+            scheduler.set_download_receiver(self.download_manager.subscribe());
+        }
+
+        // Run scheduler in background task
+        let scheduler = self.scheduler.clone();
+        tokio::spawn(async move {
+            let mut guard = scheduler.write().await;
+            if let Err(e) = guard.run().await {
+                tracing::error!("Scheduler error: {}", e);
+            }
+        });
+
+        info!("Scheduler started");
     }
 
     /// Initialize and start the API server.
@@ -420,12 +465,18 @@ impl ServiceContainer {
                         debug!("Download event handler shutting down");
                         break;
                     }
-                    event = receiver.recv() => {
-                        match event {
-                            Some(download_event) => {
+                    result = receiver.recv() => {
+                        match result {
+                            Ok(download_event) => {
                                 pipeline_manager.handle_download_event(download_event).await;
                             }
-                            None => break,
+                            Err(tokio::sync::broadcast::error::RecvError::Lagged(n)) => {
+                                warn!("Download event handler lagged {} events", n);
+                            }
+                            Err(tokio::sync::broadcast::error::RecvError::Closed) => {
+                                debug!("Download event channel closed");
+                                break;
+                            }
                         }
                     }
                 }
@@ -894,6 +945,9 @@ impl ServiceContainer {
         self.pipeline_manager.stop().await;
         info!("Pipeline manager stopped");
 
+        // Stop scheduler (cancellation already triggered via linked token above)
+        info!("Stopping scheduler...");
+
         // Wait for background tasks with timeout
         let shutdown_result = tokio::time::timeout(timeout, async {
             // Give background tasks time to clean up
@@ -925,6 +979,13 @@ impl ServiceContainer {
 
     /// Get service statistics.
     pub fn stats(&self) -> ServiceStats {
+        // Try to get scheduler stats without blocking
+        let scheduler_stats = self
+            .scheduler
+            .try_read()
+            .ok()
+            .map(|guard| guard.stats());
+
         ServiceStats {
             streamer_count: self.streamer_manager.count(),
             active_streamer_count: self.streamer_manager.active_count(),
@@ -936,6 +997,7 @@ impl ServiceContainer {
             pipeline_queue_depth: self.pipeline_manager.queue_depth(),
             active_danmu_collections: self.danmu_service.active_sessions().len(),
             notification_stats: self.notification_service.stats(),
+            scheduler_stats,
         }
     }
 
@@ -1041,6 +1103,8 @@ pub struct ServiceStats {
     pub active_danmu_collections: usize,
     /// Notification service statistics.
     pub notification_stats: crate::notification::NotificationStats,
+    /// Scheduler statistics (if available).
+    pub scheduler_stats: Option<crate::scheduler::actor::SupervisorStats>,
 }
 
 #[cfg(test)]
