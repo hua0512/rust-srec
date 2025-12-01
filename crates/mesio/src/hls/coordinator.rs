@@ -1,10 +1,12 @@
 // HLS Stream Coordinator: Sets up and spawns all HLS download pipeline components.
 
 use crate::CacheManager;
+use crate::hls::buffer_pool::BufferPool;
 use crate::hls::config::HlsConfig;
 use crate::hls::decryption::{DecryptionService, KeyFetcher};
 use crate::hls::events::HlsStreamEvent;
-use crate::hls::fetcher::{SegmentDownloader, SegmentFetcher};
+use crate::hls::fetcher::{Http2Stats, SegmentDownloader, SegmentFetcher};
+use crate::hls::metrics::PerformanceMetrics;
 use crate::hls::output::OutputManager;
 use crate::hls::playlist::{InitialPlaylist, PlaylistEngine, PlaylistProvider};
 use crate::hls::processor::{SegmentProcessor, SegmentTransformer};
@@ -18,11 +20,13 @@ use tracing::{Instrument, debug, error};
 
 use super::HlsDownloaderError;
 
-// Struct to hold all spawned task handles
+// Struct to hold all spawned task handles and shared resources
 pub struct AllTaskHandles {
     pub playlist_engine_handle: Option<JoinHandle<Result<(), HlsDownloaderError>>>,
     pub scheduler_handle: JoinHandle<()>,
     pub output_manager_handle: JoinHandle<()>,
+    /// HTTP/2 connection statistics for observability
+    pub http2_stats: Arc<Http2Stats>,
 }
 
 /// HLS Stream Coordinator: Sets up and spawns all HLS download pipeline components.
@@ -48,34 +52,55 @@ impl HlsStreamCoordinator {
         HlsDownloaderError,
     > {
         // Initialize Services & Components
+
+        // Create shared performance metrics for the pipeline (Requirements 7.3)
+        let performance_metrics = Arc::new(PerformanceMetrics::new());
+
+        // Create shared buffer pool for decryption operations with metrics
+        let buffer_pool = Arc::new(BufferPool::with_metrics(
+            config.performance_config.buffer_pool.clone(),
+            Arc::clone(&performance_metrics),
+        ));
+
         let key_fetcher = Arc::new(KeyFetcher::new(http_client.clone(), Arc::clone(&config)));
-        let decryption_service = Arc::new(DecryptionService::new(
+        let decryption_service = Arc::new(DecryptionService::with_buffer_pool(
             Arc::clone(&config),
             Arc::clone(&key_fetcher),
             cache_manager.clone(),
+            Arc::clone(&buffer_pool),
         ));
-        let segment_fetcher: Arc<dyn SegmentDownloader> = Arc::new(SegmentFetcher::new(
+        // Create shared HTTP/2 stats tracker
+        let http2_stats = Arc::new(Http2Stats::new());
+        let segment_fetcher: Arc<dyn SegmentDownloader> = Arc::new(SegmentFetcher::with_metrics(
             http_client.clone(),
             Arc::clone(&config),
             cache_manager.clone(),
+            Arc::clone(&http2_stats),
+            Arc::clone(&performance_metrics),
         ));
-        let segment_processor: Arc<dyn SegmentTransformer> = Arc::new(SegmentProcessor::new(
-            Arc::clone(&config),
-            Arc::clone(&decryption_service),
-            cache_manager.clone(),
-        ));
+        let segment_processor: Arc<dyn SegmentTransformer> =
+            Arc::new(SegmentProcessor::with_metrics(
+                Arc::clone(&config),
+                Arc::clone(&decryption_service),
+                cache_manager.clone(),
+                Arc::clone(&performance_metrics),
+            ));
         let playlist_engine: Arc<dyn PlaylistProvider> = Arc::new(PlaylistEngine::new(
             http_client.clone(),
             cache_manager,
             Arc::clone(&config),
         ));
 
-        // Channels
+        // Channels - sized for optimal throughput
         let (client_event_tx, client_event_rx) = mpsc::channel(32);
+        // Processed segments buffer: concurrency * multiplier for smooth flow
+        let processed_segments_buffer_size = config.scheduler_config.download_concurrency
+            * config.scheduler_config.processed_segment_buffer_multiplier;
         let (processed_segments_tx, processed_segments_rx) =
-            mpsc::channel(config.scheduler_config.download_concurrency * 2);
+            mpsc::channel(processed_segments_buffer_size);
+        // Segment request buffer: enough headroom for scheduler
         let (segment_request_tx, segment_request_rx) =
-            mpsc::channel::<ScheduledSegmentJob>(config.scheduler_config.download_concurrency + 5);
+            mpsc::channel::<ScheduledSegmentJob>(config.scheduler_config.download_concurrency * 2);
 
         let token_for_playlist_engine = token.clone();
         let token_for_scheduler = token.clone();
@@ -112,22 +137,25 @@ impl HlsStreamCoordinator {
             };
 
         // OutputManager is responsible for managing the output of the stream
-        let mut output_manager = OutputManager::new(
+        // Pass performance_metrics to log summary on stream end (Requirements 7.3)
+        let mut output_manager = OutputManager::with_performance_metrics(
             Arc::clone(&config),
             processed_segments_rx,
             client_event_tx.clone(),
             is_live,
             initial_media_playlist.media_sequence,
             token_for_output_manager,
+            Arc::clone(&performance_metrics),
         );
 
-        let mut segment_scheduler = SegmentScheduler::new(
+        let mut segment_scheduler = SegmentScheduler::with_metrics(
             Arc::clone(&config),
             segment_fetcher,
             segment_processor,
             segment_request_rx,
             processed_segments_tx,
             token_for_scheduler,
+            Arc::clone(&performance_metrics),
         );
 
         let output_manager_handle = tokio::spawn(async move {
@@ -182,6 +210,7 @@ impl HlsStreamCoordinator {
             playlist_engine_handle,
             scheduler_handle,
             output_manager_handle,
+            http2_stats,
         };
 
         Ok((client_event_rx, handles))
@@ -270,6 +299,25 @@ mod tests {
                 Ok(HlsStreamEvent::StreamEnded) => {
                     debug!("Received StreamEnded event");
                     break;
+                }
+                Ok(HlsStreamEvent::SegmentTimeout {
+                    sequence_number,
+                    waited_duration,
+                }) => {
+                    debug!(
+                        "Received SegmentTimeout event: seq={}, waited={:?}",
+                        sequence_number, waited_duration
+                    );
+                }
+                Ok(HlsStreamEvent::GapSkipped {
+                    from_sequence,
+                    to_sequence,
+                    reason,
+                }) => {
+                    debug!(
+                        "Received GapSkipped event: from={}, to={}, reason={:?}",
+                        from_sequence, to_sequence, reason
+                    );
                 }
                 Err(e) => {
                     debug!("Received error event: {:?}", e);

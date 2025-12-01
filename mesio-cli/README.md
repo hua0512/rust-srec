@@ -14,9 +14,12 @@ Mesio is a powerful command-line tool for downloading, processing, and repairing
   - Duration problems
   - Metadata inconsistencies
 - **HLS Downloader**:
-  - Concurrent segment downloads for faster performance.
-  - Automatic retries for failed segments.
-  - Playlist caching to reduce redundant requests.
+  - HTTP/2 multiplexing for efficient concurrent downloads
+  - Concurrent segment downloads for faster performance
+  - Automatic retries for failed segments
+  - Playlist caching to reduce redundant requests
+  - Adaptive refresh intervals for live streams
+- **Pipe Output**: Stream data directly to stdout for integration with external tools like ffmpeg or mpv.
 - **Advanced Proxy Support**: HTTP, HTTPS, and SOCKS5 proxies for all downloads.
 - **File Segmentation**: Split output files by size or duration.
 - **Customizable Output**: Use templates for file naming.
@@ -115,7 +118,20 @@ OPTIONS:
   -p, --param <PARAM>              Add custom parameter to requests (can be used multiple times). Format: 'Name=Value'
   -4, --ipv4                       Force IPv4 for downloads
   -6, --ipv6                       Force IPv6 for downloads
+      --http-version <VERSION>     HTTP version preference: auto, http2, http1 [default: auto]
+      --http2-keepalive <SECONDS>  TCP keep-alive interval for HTTP/2 connections [default: 20]
 ```
+
+### HTTP/2 Support
+
+Mesio automatically negotiates HTTP/2 when available, providing significant performance benefits for HLS streaming:
+
+- **Connection Multiplexing**: Multiple segment downloads share a single TCP connection
+- **Reduced Latency**: No TCP handshake overhead per segment
+- **Header Compression**: HPACK compression reduces repeated header overhead
+- **Better Bandwidth Utilization**: Concurrent streams without head-of-line blocking
+
+HTTP/2 is enabled by default (`--http-version auto`). Use `--http-version http1` to force HTTP/1.1 if needed.
 
 ### Proxy Options
 
@@ -186,6 +202,64 @@ Enable the processing pipeline to repair FLV files:
 ```bash
 mesio --progress --fix file.flv
 ```
+
+### Pipe Output to External Tools
+
+Stream data directly to stdout for processing with external tools:
+
+```bash
+# Pipe FLV stream to ffmpeg for transcoding (Bash/Zsh)
+mesio -O stdout https://example.com/stream.flv 2>/dev/null | ffmpeg -i pipe:0 -c:v libx264 output.mp4
+
+# Pipe with --fix to apply timestamp repair before transcoding (Bash/Zsh)
+mesio --fix -O stdout https://example.com/stream.flv 2>/dev/null | ffmpeg -i pipe:0 -c:v libx264 output.mp4
+
+# Pipe HLS stream to mpv for playback (Bash/Zsh)
+mesio -O stdout https://example.com/playlist.m3u8 2>/dev/null | mpv -
+
+# Pipe to VLC (Bash/Zsh)
+mesio -O stdout https://example.com/stream.flv 2>/dev/null | vlc -
+```
+
+```powershell
+# PowerShell - Pipe FLV stream to ffmpeg
+mesio -O stdout https://example.com/stream.flv 2>$null | ffmpeg -i pipe:0 -c:v libx264 output.mp4
+
+# PowerShell - Pipe with --fix
+mesio --fix -O stdout https://example.com/stream.flv 2>$null | ffmpeg -i pipe:0 -c:v libx264 output.mp4
+```
+
+#### Stderr Redirection
+
+When using pipe output mode, mesio writes:
+
+- **Binary media data** to **stdout** (piped to ffmpeg/mpv/etc.)
+- **Log messages** to **stderr** (INFO, WARN, progress, etc.)
+
+You must redirect stderr to prevent log messages from corrupting the binary stream:
+
+| Shell | Discard stderr | Save to file |
+|-------|----------------|--------------|
+| PowerShell | `2>$null` | `2>mesio.log` |
+| Bash/Zsh | `2>/dev/null` | `2>mesio.log` |
+| CMD | `2>NUL` | `2>mesio.log` |
+
+**Example with logging preserved:**
+
+```bash
+# PowerShell - save logs while piping to ffmpeg
+mesio --fix -O stdout https://example.com/stream.flv 2>mesio.log | ffmpeg -i pipe:0 -y output.mp4
+
+# Bash - save logs while piping to ffmpeg
+mesio --fix -O stdout https://example.com/stream.flv 2>mesio.log | ffmpeg -i pipe:0 -y output.mp4
+```
+
+When using pipe output mode:
+
+- Progress bars are automatically disabled to avoid corrupting the output stream
+- All logging is redirected to stderr
+- The pipe closes automatically on segment boundaries (FLV headers, HLS discontinuities)
+- Use `--fix` flag to enable FLV processing (timestamp repair, GOP sorting) before piping
 
 ## License
 

@@ -11,9 +11,21 @@ use crate::{DownloadError, proxy::build_proxy_from_config};
 use tokio_util::sync::CancellationToken;
 
 /// Create a reqwest Client with the provided configuration
+///
+/// HTTP/2 is automatically negotiated via ALPN when using rustls-tls.
+/// The connection pool settings help maximize HTTP/2 multiplexing benefits.
+///
+/// HTTP/2 Multiplexing Benefits for HLS:
+/// - Single TCP connection handles multiple concurrent segment downloads
+/// - Reduced connection overhead (no TCP handshake per segment)
+/// - Better utilization of available bandwidth
+/// - Header compression (HPACK) reduces overhead for repeated headers
 pub fn create_client(config: &DownloaderConfig) -> Result<Client, DownloadError> {
+    use crate::config::HttpVersionPreference;
+
     let mut client_builder = Client::builder()
-        .pool_max_idle_per_host(5) // Allow multiple connections to same host
+        .pool_max_idle_per_host(config.pool_max_idle_per_host) // Configurable: Keep connections warm for HLS segment downloads
+        .pool_idle_timeout(config.pool_idle_timeout) // Configurable: Reuse connections for specified duration
         .user_agent(&config.user_agent)
         .default_headers(config.headers.clone())
         .use_rustls_tls()
@@ -22,6 +34,53 @@ pub fn create_client(config: &DownloaderConfig) -> Result<Client, DownloadError>
         } else {
             reqwest::redirect::Policy::none()
         });
+
+    debug!(
+        pool_max_idle_per_host = config.pool_max_idle_per_host,
+        pool_idle_timeout_secs = config.pool_idle_timeout.as_secs(),
+        "HTTP connection pool configured"
+    );
+
+    // --- HTTP Version Configuration ---
+    // Note: reqwest with rustls-tls automatically negotiates HTTP/2 via ALPN
+    // These options control fallback behavior
+    match config.http_version {
+        HttpVersionPreference::Http2Only => {
+            // With rustls-tls, HTTP/2 is preferred via ALPN
+            // We can't force it, but we log the preference
+            debug!("HTTP/2 preferred mode (ALPN will negotiate)");
+        }
+        HttpVersionPreference::Http1Only => {
+            client_builder = client_builder.http1_only();
+            debug!("HTTP/1.1 only mode enabled");
+        }
+        HttpVersionPreference::Auto => {
+            // Default: let ALPN negotiate (HTTP/2 preferred with rustls)
+            debug!("HTTP version: Auto (ALPN negotiation, HTTP/2 preferred)");
+        }
+    }
+
+    // --- HTTP/2 Configuration Notes ---
+    // With rustls-tls backend, HTTP/2 is automatically negotiated via ALPN.
+    // The flow control window sizes use hyper's defaults which are reasonable
+    // for most use cases. The key optimizations we can apply are:
+    // 1. Connection pooling (configured above)
+    // 2. TCP keep-alive to maintain connections
+    // 3. Proper timeout configuration
+    //
+    // Note: HTTP/2 specific methods like http2_adaptive_window() require
+    // the native-tls backend. With rustls-tls, HTTP/2 works but with
+    // default flow control settings.
+
+    // --- TCP Keep-Alive for long-lived connections ---
+    // This helps maintain HTTP/2 connections for multiplexing
+    if let Some(interval) = config.http2_keep_alive_interval {
+        client_builder = client_builder.tcp_keepalive(interval);
+        debug!(
+            ?interval,
+            "TCP keep-alive configured for HTTP/2 connection reuse"
+        );
+    }
 
     // Force IP Version
     client_builder = match (config.force_ipv4, config.force_ipv6) {

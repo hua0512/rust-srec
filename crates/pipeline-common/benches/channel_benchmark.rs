@@ -126,6 +126,32 @@ fn crossbeam_bounded_benchmark(c: &mut Criterion) {
     });
 }
 
+fn tokio_mpsc_bounded_benchmark(c: &mut Criterion) {
+    c.bench_function("tokio_mpsc_bounded", |b| {
+        b.to_async(
+            tokio::runtime::Builder::new_current_thread()
+                .enable_all()
+                .build()
+                .unwrap(),
+        )
+        .iter(|| async {
+            let (tx, mut rx) = tokio::sync::mpsc::channel(32);
+            let sender = tokio::spawn(async move {
+                for i in 0..NUM_MESSAGES {
+                    tx.send(i).await.unwrap();
+                }
+            });
+            let receiver = tokio::spawn(async move {
+                for _ in 0..NUM_MESSAGES {
+                    black_box(rx.recv().await.unwrap());
+                }
+            });
+            sender.await.unwrap();
+            receiver.await.unwrap();
+        })
+    });
+}
+
 criterion_group!(
     name = benches;
     config = Criterion::default().measurement_time(Duration::from_secs(50));
@@ -134,6 +160,7 @@ criterion_group!(
     crossbeam_benchmark,
     flume_bounded_benchmark,
     mpsc_bounded_benchmark,
-    crossbeam_bounded_benchmark
+    crossbeam_bounded_benchmark,
+    tokio_mpsc_bounded_benchmark
 );
 criterion_main!(benches);

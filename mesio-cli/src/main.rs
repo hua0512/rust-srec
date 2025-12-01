@@ -1,3 +1,4 @@
+use std::io;
 use std::{path::PathBuf, time::Duration};
 
 use clap::Parser;
@@ -9,6 +10,7 @@ use flv_fix::ScriptFillerConfig;
 use hls_fix::HlsPipelineConfig;
 use mesio_engine::flv::FlvProtocolConfig;
 use mesio_engine::{DownloaderConfig, HlsProtocolBuilder, ProxyAuth, ProxyConfig, ProxyType};
+use output::provider::OutputFormat;
 use pipeline_common::{CancellationToken, config::PipelineConfig};
 use tracing::{Level, error, info};
 use tracing_indicatif::IndicatifLayer;
@@ -27,8 +29,20 @@ use cli::CliArgs;
 use input::input_handler;
 use utils::{parse_headers, parse_params, parse_size, parse_time};
 
+#[global_allocator]
+static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;
+
 fn main() {
     if let Err(e) = bootstrap() {
+        // Check if it's a broken pipe error - this is expected behavior
+        // when the consumer closes the pipe (e.g., `mesio ... | head -c 1000`)
+        if matches!(e, AppError::BrokenPipe) {
+            // Exit code 141 is the standard for SIGPIPE (128 + 13)
+            // This indicates the pipe was closed by the consumer, which is normal
+            eprintln!("Pipe closed by consumer");
+            std::process::exit(141);
+        }
+
         eprintln!("Error: {e}");
         // Log the full error for debugging
         error!(error = ?e, "Application failed");
@@ -65,8 +79,15 @@ async fn bootstrap() -> Result<(), AppError> {
 
     let filter = tracing_subscriber::filter::LevelFilter::from_level(log_level);
 
+    // Check if we're in pipe mode (stdout output)
+    // In pipe mode, we must:
+    // 1. Disable progress bars to avoid corrupting the output stream
+    // 2. Redirect all logging to stderr
+    let is_pipe_mode = matches!(args.output_format, OutputFormat::Stdout);
+
     // Conditionally setup progress bars based on --progress flag
-    if args.show_progress {
+    // Progress bars are always disabled in pipe mode to avoid corrupting stdout
+    if args.show_progress && !is_pipe_mode {
         // Create IndicatifLayer for progress bars and console output
         let indicatif_layer = IndicatifLayer::new().with_max_progress_bars(8, None);
 
@@ -84,6 +105,21 @@ async fn bootstrap() -> Result<(), AppError> {
             .with(file_layer)
             .with(console_layer)
             .with(indicatif_layer)
+            .init();
+    } else if is_pipe_mode {
+        // Pipe mode: all logging goes to stderr, no progress bars
+        // This ensures stdout is reserved exclusively for binary data output
+        let console_layer = tracing_subscriber::fmt::layer()
+            .with_writer(io::stderr)
+            .with_ansi(true)
+            .without_time()
+            .with_target(true)
+            .compact();
+
+        tracing_subscriber::registry()
+            .with(filter)
+            .with(file_layer)
+            .with(console_layer)
             .init();
     } else {
         // Simple console output without progress bars
@@ -132,6 +168,12 @@ async fn bootstrap() -> Result<(), AppError> {
         args.timeout, args.connect_timeout, args.read_timeout, args.write_timeout
     );
 
+    // Check if we're in pipe mode (stdout/stderr output)
+    let is_pipe_mode = matches!(
+        args.output_format,
+        OutputFormat::Stdout | OutputFormat::Stderr
+    );
+
     // Configure flv pipeline config
     let flv_pipeline_config = FlvPipelineConfig::builder()
         .duplicate_tag_filtering(false)
@@ -151,6 +193,7 @@ async fn bootstrap() -> Result<(), AppError> {
             None
         })
         .enable_low_latency(args.low_latency_fix)
+        .pipe_mode(is_pipe_mode)
         .build();
 
     // Configure HLS pipeline config
@@ -206,6 +249,8 @@ async fn bootstrap() -> Result<(), AppError> {
 
     // Create common download configuration
     let download_config = {
+        use mesio_engine::config::HttpVersionPreference;
+
         let mut builder = DownloaderConfig::builder()
             .with_timeout(Duration::from_secs(args.timeout))
             .with_connect_timeout(Duration::from_secs(args.connect_timeout))
@@ -216,6 +261,16 @@ async fn bootstrap() -> Result<(), AppError> {
             .with_caching_enabled(false)
             .with_force_ipv4(args.force_ipv4)
             .with_force_ipv6(args.force_ipv6);
+
+        // Configure HTTP version preference
+        let http_version = match args.http_version.as_str() {
+            "http1" => HttpVersionPreference::Http1Only,
+            "http2" => HttpVersionPreference::Http2Only,
+            _ => HttpVersionPreference::Auto,
+        };
+        builder = builder
+            .with_http_version(http_version)
+            .with_http2_keep_alive_interval(Duration::from_secs(args.http2_keepalive));
 
         if let Some(proxy) = proxy_config {
             builder = builder.with_proxy(proxy);
@@ -254,8 +309,12 @@ async fn bootstrap() -> Result<(), AppError> {
         .flv_config(flv_config)
         .hls_config(hls_config)
         .enable_processing(args.enable_fix)
+        .output_format(args.output_format)
         .build()
         .map_err(|err| AppError::InvalidInput(err.to_string()))?;
+
+    // Log output format
+    info!("Output format: {}", args.output_format);
 
     // Process input files
     let result = processor::process_inputs(

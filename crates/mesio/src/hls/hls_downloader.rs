@@ -110,6 +110,7 @@ impl HlsDownloader {
                 playlist_engine_handle,
                 scheduler_handle,
                 output_manager_handle,
+                http2_stats,
             } = handles;
 
             // It's important to await all handles to ensure cleanup.
@@ -125,6 +126,10 @@ impl HlsDownloader {
             if let Err(e) = output_manager_handle.await {
                 warn!("Output manager task finished with error: {:?}", e);
             }
+
+            // Log HTTP/2 connection statistics
+            http2_stats.log_summary();
+
             debug!("All HLS pipeline tasks have completed.");
         });
 

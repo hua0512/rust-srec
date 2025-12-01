@@ -17,7 +17,7 @@ impl Default for PipelineConfig {
         Self {
             max_file_size: 0,
             max_duration: None,
-            channel_size: 32,
+            channel_size: 64,
         }
     }
 }

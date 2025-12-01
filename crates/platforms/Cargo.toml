@@ -52,6 +52,7 @@ uuid  = {version = "1.18.1", features = ["v4"], optional = true}
 m3u8-rs = "6.0.0"
 md-5 = "0.10.6"
 num_enum = "0.7.5"
+urlencoding = "2.1"
 
 [features]
 default = ["douyu"]

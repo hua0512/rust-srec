@@ -1,6 +1,6 @@
 [package]
 name = "strev"
-version = "0.1.7"
+version = "0.1.8"
 edition = "2024"
 description = "Strev (Streev) - CLI tool for streaming media extraction and retrieval from various platforms"
 authors = ["rust-srec team"]

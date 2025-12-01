@@ -2,6 +2,8 @@ use clap::Parser;
 use mesio_engine::ProxyType;
 use std::path::PathBuf;
 
+use crate::output::provider::OutputFormat;
+
 /// Define CLI arguments
 #[derive(Parser)]
 #[command(
@@ -31,6 +33,16 @@ pub struct CliArgs {
         help = "Directory where processed files will be saved (default: ./fix)"
     )]
     pub output_dir: Option<PathBuf>,
+
+    /// Output format for processed data
+    #[arg(
+        short = 'O',
+        long = "output-format",
+        default_value = "file",
+        value_enum,
+        help = "Output format: 'file' for files, 'stdout' for pipe output"
+    )]
+    pub output_format: OutputFormat,
 
     /// Maximum file size with optional unit (B, KB, MB, GB, TB)
     /// Examples: "4GB", "500MB", "2048KB"
@@ -86,7 +98,7 @@ pub struct CliArgs {
     #[arg(
         short = 'b',
         long,
-        default_value = "32",
+        default_value = "64",
         help = "Channel size for internal processing channels"
     )]
     pub channel_size: usize,
@@ -274,4 +286,21 @@ pub struct CliArgs {
         default_value = "false"
     )]
     pub force_ipv6: bool,
+
+    /// HTTP version preference
+    #[arg(
+        long = "http-version",
+        help = "HTTP version preference: 'auto' (default, prefers HTTP/2), 'http2' (prefer HTTP/2), 'http1' (force HTTP/1.1 only)",
+        default_value = "auto",
+        value_parser = ["auto", "http2", "http1"]
+    )]
+    pub http_version: String,
+
+    /// TCP keep-alive interval for HTTP/2 connections (seconds)
+    #[arg(
+        long = "http2-keepalive",
+        help = "TCP keep-alive interval in seconds for maintaining HTTP/2 connections (default: 20)",
+        default_value = "20"
+    )]
+    pub http2_keepalive: u64,
 }

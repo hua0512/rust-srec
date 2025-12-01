@@ -15,10 +15,10 @@ av1 = { path = "../av1" }
 h264 = { path = "../h264" }
 h265 = { path = "../h265" }
 thiserror = "2.0.17"
-tracing = "0.1.41"
+tracing = "0.1.43"
 
 [dev-dependencies]
-tracing-subscriber = "0.3.20"
+tracing-subscriber = "0.3.22"
 
 [lints.rust]
 unexpected_cfgs = { level = "warn", check-cfg = ['cfg(coverage_nightly)'] }

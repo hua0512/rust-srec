@@ -24,6 +24,7 @@ use std::{collections::HashMap, path::PathBuf};
 use thiserror::Error;
 
 pub mod cancellation;
+pub mod channel_pipeline;
 pub mod config;
 mod context;
 pub mod pipeline;
@@ -32,6 +33,7 @@ pub mod progress;
 mod utils;
 mod writer_task;
 
+pub use channel_pipeline::ChannelPipeline;
 /// Re-export key traits and types
 pub use context::{Statistics, StreamerContext};
 pub use pipeline::Pipeline;
@@ -80,7 +82,7 @@ pub trait ProtocolWriter: Send + 'static {
 
     fn run(
         &mut self,
-        input_stream: std::sync::mpsc::Receiver<Result<Self::Item, PipelineError>>,
+        input_stream: tokio::sync::mpsc::Receiver<Result<Self::Item, PipelineError>>,
     ) -> Result<Self::Stats, Self::Error>;
 }
 
@@ -94,5 +96,5 @@ pub trait PipelineProvider: Send + 'static {
         config: Self::Config,
     ) -> Self;
 
-    fn build_pipeline(&self) -> Pipeline<Self::Item>;
+    fn build_pipeline(&self) -> ChannelPipeline<Self::Item>;
 }

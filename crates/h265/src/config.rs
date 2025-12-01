@@ -357,4 +357,3 @@ mod tests {
         assert_eq!(buf, data.to_vec());
     }
 }
-
