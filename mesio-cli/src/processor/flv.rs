@@ -1,29 +1,24 @@
-use crate::error::is_broken_pipe_error;
 use crate::output::pipe_flv_strategy::PipeFlvStrategy;
 use crate::output::provider::OutputFormat;
-use crate::utils::{expand_name_url, format_bytes};
+use crate::processor::generic::{
+    process_pipe_stream, process_pipe_stream_with_processing, process_stream,
+};
+use crate::utils::{create_dirs, expand_name_url, format_bytes, spans};
 use crate::{config::ProgramConfig, error::AppError};
-use crate::{processor::generic::process_stream, utils::create_dirs, utils::spans};
 use flv::data::FlvData;
 use flv::parser_async::FlvDecoderStream;
 use flv_fix::FlvPipeline;
-use flv_fix::FlvPipelineConfig;
 use flv_fix::writer::FlvWriter;
 use futures::{Stream, StreamExt};
 use mesio_engine::DownloaderInstance;
-use pipeline_common::{
-    CancellationToken, PipelineError, PipelineProvider, ProtocolWriter, StreamerContext,
-    config::PipelineConfig,
-};
-use pipeline_common::{WriterConfig, WriterTask};
+use pipeline_common::{CancellationToken, PipelineError, ProtocolWriter, config::PipelineConfig};
 use std::collections::HashMap;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::pin::Pin;
-
 use std::time::Instant;
 use tokio::fs::File;
 use tokio::io::BufReader;
-use tracing::{Level, Span, info, span, warn};
+use tracing::{Level, Span, info, span};
 
 async fn process_raw_stream(
     stream: Pin<Box<dyn Stream<Item = Result<FlvData, PipelineError>> + Send>>,
@@ -61,210 +56,6 @@ async fn process_raw_stream(
         .await
         .map_err(|e| AppError::Writer(e.to_string()))?
         .map_err(|e| AppError::Writer(e.to_string()))
-}
-
-/// Statistics from pipe stream processing
-struct PipeStreamStats {
-    items_written: usize,
-    segment_count: u32,
-    bytes_written: u64,
-}
-
-/// Process FLV stream to pipe output (stdout)
-/// Uses PipeFlvStrategy for segment boundary detection
-async fn process_pipe_stream(
-    stream: Pin<Box<dyn Stream<Item = Result<FlvData, PipelineError>> + Send>>,
-    pipeline_common_config: &PipelineConfig,
-) -> Result<PipeStreamStats, AppError> {
-    let (tx, mut rx) = tokio::sync::mpsc::channel(pipeline_common_config.channel_size);
-
-    // Create the pipe strategy and writer task config
-    let strategy = PipeFlvStrategy::new();
-    let config = WriterConfig::new(PathBuf::from("."), "stdout".to_string(), "flv".to_string());
-
-    let mut writer_task_instance = WriterTask::new(config, strategy);
-
-    // Capture the current span to propagate to the blocking task
-    let current_span = Span::current();
-
-    // Use a Result<_, (String, bool)> where bool indicates if it's a broken pipe error
-    let writer_task =
-        tokio::task::spawn_blocking(move || -> Result<PipeStreamStats, (String, bool)> {
-            let _enter = current_span.enter();
-
-            // Process items from the receiver using blocking_recv
-            while let Some(item_result) = rx.blocking_recv() {
-                match item_result {
-                    Ok(item) => {
-                        if let Err(e) = writer_task_instance.process_item(item) {
-                            // Check if it's a broken pipe error
-                            let err_str = e.to_string();
-                            if is_broken_pipe_error(&err_str) {
-                                warn!("Pipe closed by consumer (broken pipe)");
-                                // Broken pipe is not an error - consumer just closed the connection
-                                break;
-                            }
-                            return Err((format!("Writer error: {}", err_str), false));
-                        }
-                    }
-                    Err(e) => {
-                        return Err((format!("Pipeline error: {}", e), false));
-                    }
-                }
-            }
-
-            // Close the writer task - handle broken pipe gracefully
-            if let Err(e) = writer_task_instance.close() {
-                let err_str = e.to_string();
-                if is_broken_pipe_error(&err_str) {
-                    warn!("Broken pipe during close: consumer already disconnected");
-                    // Not an error - just return current state
-                } else {
-                    return Err((format!("Close error: {}", err_str), false));
-                }
-            }
-
-            let state = writer_task_instance.get_state();
-            Ok(PipeStreamStats {
-                items_written: state.items_written_total,
-                segment_count: state.file_sequence_number,
-                bytes_written: state.bytes_written_total,
-            })
-        });
-
-    let mut stream = stream;
-    while let Some(item_result) = stream.next().await {
-        if tx.send(item_result).await.is_err() {
-            // Receiver dropped - likely due to broken pipe
-            break;
-        }
-    }
-    drop(tx);
-
-    match writer_task.await {
-        Ok(Ok(stats)) => Ok(stats),
-        Ok(Err((msg, is_broken_pipe))) => {
-            if is_broken_pipe {
-                // Broken pipe is expected behavior when consumer closes
-                Err(AppError::BrokenPipe)
-            } else {
-                Err(AppError::Writer(msg))
-            }
-        }
-        Err(e) => Err(AppError::Writer(e.to_string())),
-    }
-}
-
-/// Process FLV stream to pipe output (stdout) with FlvPipeline processing
-/// This function chains the FlvPipeline with PipeFlvStrategy for processed pipe output
-async fn process_pipe_stream_with_processing(
-    stream: Pin<Box<dyn Stream<Item = Result<FlvData, PipelineError>> + Send>>,
-    pipeline_config: &PipelineConfig,
-    flv_pipeline_config: FlvPipelineConfig,
-) -> Result<PipeStreamStats, AppError> {
-    // Create the context and pipeline
-    let context = StreamerContext::new(CancellationToken::new());
-    let pipeline_provider = FlvPipeline::with_config(context, pipeline_config, flv_pipeline_config);
-    let pipeline = pipeline_provider.build_pipeline();
-
-    // Spawn the pipeline tasks - this gives us input_tx, output_rx, and task handles
-    let pipeline_common::channel_pipeline::SpawnedPipeline {
-        input_tx,
-        output_rx,
-        tasks: processing_tasks,
-    } = pipeline.spawn();
-
-    // Create the pipe strategy and writer task config
-    let strategy = PipeFlvStrategy::new();
-    let config = WriterConfig::new(PathBuf::from("."), "stdout".to_string(), "flv".to_string());
-    let mut writer_task_instance = WriterTask::new(config, strategy);
-
-    // Capture the current span to propagate to the blocking task
-    let current_span = Span::current();
-
-    // Spawn the writer task that reads from pipeline output
-    let writer_task =
-        tokio::task::spawn_blocking(move || -> Result<PipeStreamStats, (String, bool)> {
-            let _enter = current_span.enter();
-            let mut output_rx = output_rx;
-
-            // Process items from the pipeline output using blocking_recv
-            while let Some(item_result) = output_rx.blocking_recv() {
-                match item_result {
-                    Ok(item) => {
-                        if let Err(e) = writer_task_instance.process_item(item) {
-                            // Check if it's a broken pipe error
-                            let err_str = e.to_string();
-                            if is_broken_pipe_error(&err_str) {
-                                warn!("Pipe closed by consumer (broken pipe)");
-                                // Broken pipe is not an error - consumer just closed the connection
-                                break;
-                            }
-                            return Err((format!("Writer error: {}", err_str), false));
-                        }
-                    }
-                    Err(e) => {
-                        return Err((format!("Pipeline error: {}", e), false));
-                    }
-                }
-            }
-
-            // Close the writer task - handle broken pipe gracefully
-            if let Err(e) = writer_task_instance.close() {
-                let err_str = e.to_string();
-                if is_broken_pipe_error(&err_str) {
-                    warn!("Broken pipe during close: consumer already disconnected");
-                    // Not an error - just return current state
-                } else {
-                    return Err((format!("Close error: {}", err_str), false));
-                }
-            }
-
-            let state = writer_task_instance.get_state();
-            Ok(PipeStreamStats {
-                items_written: state.items_written_total,
-                segment_count: state.file_sequence_number,
-                bytes_written: state.bytes_written_total,
-            })
-        });
-
-    // Feed the input stream to the pipeline
-    let mut stream = stream;
-    while let Some(item_result) = stream.next().await {
-        if input_tx.send(item_result).await.is_err() {
-            // Pipeline input channel closed - likely due to downstream error
-            break;
-        }
-    }
-    drop(input_tx); // Close the input channel to signal completion to the pipeline
-
-    // Wait for the writer task to complete
-    let writer_result = match writer_task.await {
-        Ok(Ok(stats)) => Ok(stats),
-        Ok(Err((msg, is_broken_pipe))) => {
-            if is_broken_pipe {
-                Err(AppError::BrokenPipe)
-            } else {
-                Err(AppError::Writer(msg))
-            }
-        }
-        Err(e) => Err(AppError::Writer(e.to_string())),
-    };
-
-    // Wait for processing tasks to ensure clean shutdown
-    for task in processing_tasks {
-        let task_result = task
-            .await
-            .map_err(|e| AppError::Pipeline(PipelineError::Processing(e.to_string())))?;
-
-        // If writer succeeded, we care about task errors
-        // If writer failed, we might ignore task errors (which are likely "channel closed")
-        if writer_result.is_ok() {
-            task_result?;
-        }
-    }
-
-    writer_result
 }
 
 /// Process a single FLV file
@@ -321,15 +112,23 @@ pub async fn process_file(
                 output_mode = %config.output_format,
                 "Starting pipe output with FLV processing"
             );
-            process_pipe_stream_with_processing(
+            process_pipe_stream_with_processing::<FlvPipeline, _>(
                 Box::pin(decoder_stream),
                 &config.pipeline_config,
                 config.flv_pipeline_config.clone(),
+                PipeFlvStrategy::new(),
+                "flv",
             )
             .await?
         } else {
             // Raw output: bypass processing pipeline
-            process_pipe_stream(Box::pin(decoder_stream), &config.pipeline_config).await?
+            process_pipe_stream(
+                Box::pin(decoder_stream),
+                &config.pipeline_config,
+                PipeFlvStrategy::new(),
+                "flv",
+            )
+            .await?
         };
 
         // Log completion statistics for pipe mode
@@ -457,7 +256,7 @@ pub async fn process_flv_stream(
     let stream = stream.map(|r| r.map_err(|e| PipelineError::Processing(e.to_string())));
 
     // Use pipe output strategy when stdout mode is active
-    let (tags_written, files_created, bytes_written) = if is_pipe_mode {
+    let (tags_written, files_created, _bytes_written) = if is_pipe_mode {
         // Pipe mode: write to stdout using PipeFlvStrategy
         // Check if processing is enabled to determine whether to use FlvPipeline
         let stats = if config.enable_processing {
@@ -469,15 +268,23 @@ pub async fn process_flv_stream(
                 output_mode = %config.output_format,
                 "Starting pipe output with FLV processing"
             );
-            process_pipe_stream_with_processing(
+            process_pipe_stream_with_processing::<FlvPipeline, _>(
                 Box::pin(stream),
                 &config.pipeline_config,
                 config.flv_pipeline_config.clone(),
+                PipeFlvStrategy::new(),
+                "flv",
             )
             .await?
         } else {
             // Raw output: bypass processing pipeline
-            process_pipe_stream(Box::pin(stream), &config.pipeline_config).await?
+            process_pipe_stream(
+                Box::pin(stream),
+                &config.pipeline_config,
+                PipeFlvStrategy::new(),
+                "flv",
+            )
+            .await?
         };
 
         // Log completion statistics for pipe mode
@@ -544,6 +351,5 @@ pub async fn process_flv_stream(
         "FLV processing complete"
     );
 
-    let _ = bytes_written; // Suppress unused warning for file mode
     Ok(tags_written as u64)
 }

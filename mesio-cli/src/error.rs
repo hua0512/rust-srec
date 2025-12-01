@@ -30,9 +30,9 @@ pub enum AppError {
 
 /// Check if an error string indicates a broken pipe error
 pub fn is_broken_pipe_error(err_str: &str) -> bool {
-    err_str.contains("Broken pipe") 
+    err_str.contains("Broken pipe")
         || err_str.contains("broken pipe")
-        || err_str.contains("os error 32")  // Windows broken pipe error code
+        || err_str.contains("os error 109")  // Windows broken pipe error code
         || err_str.contains("EPIPE")
 }
 

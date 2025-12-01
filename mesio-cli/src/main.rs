@@ -187,9 +187,7 @@ async fn bootstrap() -> Result<(), AppError> {
                 })
             } else {
                 info!("Keyframe index enabled with default configuration");
-                Some(ScriptFillerConfig {
-                    ..Default::default()
-                })
+                Some(ScriptFillerConfig::default())
             }
         } else {
             None

@@ -175,7 +175,6 @@ impl FormatStrategy<FlvData> for PipeFlvStrategy {
 
     fn create_writer(&self, _path: &Path) -> Result<Self::Writer, Self::StrategyError> {
         // For pipe output, we always write to stdout
-        // Use Stdout directly for better performance and to avoid boxing overhead
         Ok(BufWriter::with_capacity(64 * 1024, io::stdout()))
     }
 
@@ -215,10 +214,6 @@ impl FormatStrategy<FlvData> for PipeFlvStrategy {
             FlvData::Tag(tag) => {
                 let bytes =
                     Self::write_tag(writer, tag).map_err(PipeFlvStrategyError::from_io_error)?;
-                // Flush after each tag to ensure data is sent to pipe consumer
-                writer
-                    .flush()
-                    .map_err(PipeFlvStrategyError::from_io_error)?;
                 self.has_written_data = true;
                 bytes
             }

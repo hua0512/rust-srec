@@ -1,115 +1,18 @@
-use crate::error::is_broken_pipe_error;
 use crate::output::pipe_hls_strategy::PipeHlsStrategy;
 use crate::output::provider::OutputFormat;
+use crate::processor::generic::process_pipe_stream;
 use crate::utils::spans;
 use crate::{config::ProgramConfig, error::AppError, utils::create_dirs, utils::expand_name_url};
-use futures::{Stream, StreamExt, stream};
+use futures::{StreamExt, stream};
 use hls::HlsData;
 use hls_fix::{HlsPipeline, HlsWriter};
 use mesio_engine::{DownloadError, DownloaderInstance};
 use pipeline_common::CancellationToken;
-use pipeline_common::{PipelineError, ProtocolWriter, WriterConfig, WriterTask};
-use std::path::{Path, PathBuf};
-use std::pin::Pin;
+use pipeline_common::{PipelineError, ProtocolWriter};
+use std::path::Path;
 use std::time::Instant;
-use tracing::{Level, Span, debug, info, span, warn};
+use tracing::{Level, debug, info, span};
 use tracing_indicatif::span_ext::IndicatifSpanExt;
-
-/// Statistics from pipe stream processing
-struct PipeStreamStats {
-    items_written: usize,
-    segment_count: u32,
-    bytes_written: u64,
-}
-
-/// Process HLS stream to pipe output (stdout)
-/// Uses PipeHlsStrategy for segment boundary detection
-async fn process_pipe_stream(
-    stream: Pin<Box<dyn Stream<Item = Result<HlsData, PipelineError>> + Send>>,
-    pipeline_common_config: &pipeline_common::config::PipelineConfig,
-) -> Result<PipeStreamStats, AppError> {
-    let (tx, mut rx) = tokio::sync::mpsc::channel(pipeline_common_config.channel_size);
-
-    // Create the pipe strategy and writer task config
-    let strategy = PipeHlsStrategy::new();
-    let config = WriterConfig::new(
-        PathBuf::from("."),
-        "stdout".to_string(),
-        "ts".to_string(), // Default extension, actual data format is determined by content
-    );
-
-    let mut writer_task_instance = WriterTask::new(config, strategy);
-
-    // Capture the current span to propagate to the blocking task
-    let current_span = Span::current();
-
-    // Use a Result<_, (String, bool)> where bool indicates if it's a broken pipe error
-    let writer_task =
-        tokio::task::spawn_blocking(move || -> Result<PipeStreamStats, (String, bool)> {
-            let _enter = current_span.enter();
-
-            // Process items from the receiver using blocking_recv
-            while let Some(item_result) = rx.blocking_recv() {
-                match item_result {
-                    Ok(item) => {
-                        if let Err(e) = writer_task_instance.process_item(item) {
-                            // Check if it's a broken pipe error
-                            let err_str = e.to_string();
-                            if is_broken_pipe_error(&err_str) {
-                                warn!("Pipe closed by consumer (broken pipe)");
-                                // Broken pipe is not an error - consumer just closed the connection
-                                break;
-                            }
-                            return Err((format!("Writer error: {}", err_str), false));
-                        }
-                    }
-                    Err(e) => {
-                        return Err((format!("Pipeline error: {}", e), false));
-                    }
-                }
-            }
-
-            // Close the writer task - handle broken pipe gracefully
-            if let Err(e) = writer_task_instance.close() {
-                let err_str = e.to_string();
-                if is_broken_pipe_error(&err_str) {
-                    warn!("Broken pipe during close: consumer already disconnected");
-                    // Not an error - just return current state
-                } else {
-                    return Err((format!("Close error: {}", err_str), false));
-                }
-            }
-
-            let state = writer_task_instance.get_state();
-            Ok(PipeStreamStats {
-                items_written: state.items_written_total,
-                segment_count: state.file_sequence_number,
-                bytes_written: state.bytes_written_total,
-            })
-        });
-
-    let mut stream = stream;
-    while let Some(item_result) = stream.next().await {
-        if tx.send(item_result).await.is_err() {
-            // Receiver dropped - likely due to broken pipe
-            break;
-        }
-    }
-    drop(tx);
-
-    match writer_task.await {
-        Ok(Ok(stats)) => Ok(stats),
-        Ok(Err((msg, is_broken_pipe))) => {
-            if is_broken_pipe {
-                // Broken pipe is expected behavior when consumer closes
-                Err(AppError::BrokenPipe)
-            } else {
-                Err(AppError::Writer(msg))
-            }
-        }
-        Err(e) => Err(AppError::Writer(e.to_string())),
-    }
-}
 
 /// Process an HLS stream
 pub async fn process_hls_stream(
@@ -213,7 +116,13 @@ pub async fn process_hls_stream(
     // Use pipe output strategy when stdout mode is active
     let (total_items_written, files_created) = if is_pipe_mode {
         // Pipe mode: write directly to stdout using PipeHlsStrategy
-        let stats = process_pipe_stream(Box::pin(stream), &config.pipeline_config).await?;
+        let stats = process_pipe_stream(
+            Box::pin(stream),
+            &config.pipeline_config,
+            PipeHlsStrategy::new(),
+            extension,
+        )
+        .await?;
 
         // Log completion statistics for pipe mode
         let elapsed = start_time.elapsed();

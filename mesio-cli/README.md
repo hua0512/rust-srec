@@ -224,6 +224,7 @@ mesio -O stdout https://example.com/stream.flv 2>/dev/null | vlc -
 #### Stderr Redirection
 
 When using pipe output mode, mesio writes:
+
 - **Binary media data** to **stdout** (piped to ffmpeg/mpv/etc.)
 - **Log messages** to **stderr** (INFO, WARN, progress, etc.)
 
@@ -236,15 +237,17 @@ You must redirect stderr to prevent log messages from corrupting the binary stre
 | CMD | `2>nul` | `2>mesio.log` |
 
 **Example with logging preserved:**
+
 ```bash
 # PowerShell - save logs while piping to ffmpeg
 mesio --fix -O stdout https://example.com/stream.flv 2>mesio.log | ffmpeg -i pipe:0 -y output.mp4
 
-# Bash - save logs while piping to ffmpeg  
+# Bash - save logs while piping to ffmpeg
 mesio --fix -O stdout https://example.com/stream.flv 2>mesio.log | ffmpeg -i pipe:0 -y output.mp4
 ```
 
 When using pipe output mode:
+
 - Progress bars are automatically disabled to avoid corrupting the output stream
 - All logging is redirected to stderr
 - The pipe closes automatically on segment boundaries (FLV headers, HLS discontinuities)

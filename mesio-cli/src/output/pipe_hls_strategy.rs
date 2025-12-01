@@ -107,22 +107,14 @@ impl PipeHlsStrategy {
     pub fn discontinuity_count(&self) -> u32 {
         self.discontinuity_count
     }
-}
 
-impl FormatStrategy<HlsData> for PipeHlsStrategy {
-    type Writer = BufWriter<Box<dyn Write + Send + Sync>>;
-    type StrategyError = PipeHlsStrategyError;
-
-    fn create_writer(&self, _path: &Path) -> Result<Self::Writer, Self::StrategyError> {
-        // For pipe output, we always write to stdout
-        Ok(BufWriter::new(Box::new(io::stdout())))
-    }
-
-    fn write_item(
+    /// Write an HLS data item to any writer.
+    /// This is the core write logic, usable with any `Write` implementation.
+    pub fn write_to<W: io::Write>(
         &mut self,
-        writer: &mut Self::Writer,
+        writer: &mut W,
         item: &HlsData,
-    ) -> Result<u64, Self::StrategyError> {
+    ) -> Result<u64, PipeHlsStrategyError> {
         // Check if this item should trigger pipe closure BEFORE writing
         // This is important for boundary detection
         self.should_close = self.should_close_pipe(item);
@@ -166,6 +158,24 @@ impl FormatStrategy<HlsData> for PipeHlsStrategy {
 
         self.bytes_written += bytes_written;
         Ok(bytes_written)
+    }
+}
+
+impl FormatStrategy<HlsData> for PipeHlsStrategy {
+    type Writer = BufWriter<std::io::Stdout>;
+    type StrategyError = PipeHlsStrategyError;
+
+    fn create_writer(&self, _path: &Path) -> Result<Self::Writer, Self::StrategyError> {
+        // For pipe output, we always write to stdout
+        Ok(BufWriter::with_capacity(64 * 1024, io::stdout()))
+    }
+
+    fn write_item(
+        &mut self,
+        writer: &mut Self::Writer,
+        item: &HlsData,
+    ) -> Result<u64, Self::StrategyError> {
+        self.write_to(writer, item)
     }
 
     fn should_rotate_file(&self, _config: &WriterConfig, _state: &WriterState) -> bool {
@@ -378,15 +388,13 @@ mod tests {
 
     #[test]
     fn test_write_ts_segment() {
-        let buffer = SharedBuffer::new();
-        let mut writer = BufWriter::new(Box::new(buffer.clone()) as Box<dyn Write + Send + Sync>);
+        let mut buffer = SharedBuffer::new();
 
         let mut strategy = PipeHlsStrategy::new();
         let test_data = vec![0x47, 0x00, 0x11, 0x10, 0x00];
         let ts_segment = create_test_ts_segment(false, test_data.clone());
 
-        let bytes_written = strategy.write_item(&mut writer, &ts_segment).unwrap();
-        writer.flush().unwrap();
+        let bytes_written = strategy.write_to(&mut buffer, &ts_segment).unwrap();
 
         assert_eq!(bytes_written, test_data.len() as u64);
         assert_eq!(buffer.get_data(), test_data);
@@ -395,15 +403,13 @@ mod tests {
 
     #[test]
     fn test_write_m4s_init_segment() {
-        let buffer = SharedBuffer::new();
-        let mut writer = BufWriter::new(Box::new(buffer.clone()) as Box<dyn Write + Send + Sync>);
+        let mut buffer = SharedBuffer::new();
 
         let mut strategy = PipeHlsStrategy::new();
         let test_data = vec![0x00, 0x00, 0x00, 0x18, b'f', b't', b'y', b'p'];
         let m4s_init = create_test_m4s_init_segment(false, test_data.clone());
 
-        let bytes_written = strategy.write_item(&mut writer, &m4s_init).unwrap();
-        writer.flush().unwrap();
+        let bytes_written = strategy.write_to(&mut buffer, &m4s_init).unwrap();
 
         assert_eq!(bytes_written, test_data.len() as u64);
         assert_eq!(buffer.get_data(), test_data);
@@ -412,15 +418,13 @@ mod tests {
 
     #[test]
     fn test_write_m4s_media_segment() {
-        let buffer = SharedBuffer::new();
-        let mut writer = BufWriter::new(Box::new(buffer.clone()) as Box<dyn Write + Send + Sync>);
+        let mut buffer = SharedBuffer::new();
 
         let mut strategy = PipeHlsStrategy::new();
         let test_data = vec![0x00, 0x00, 0x00, 0x08, b'm', b'o', b'o', b'f'];
         let m4s_segment = create_test_m4s_segment(false, test_data.clone());
 
-        let bytes_written = strategy.write_item(&mut writer, &m4s_segment).unwrap();
-        writer.flush().unwrap();
+        let bytes_written = strategy.write_to(&mut buffer, &m4s_segment).unwrap();
 
         assert_eq!(bytes_written, test_data.len() as u64);
         assert_eq!(buffer.get_data(), test_data);
@@ -429,14 +433,12 @@ mod tests {
 
     #[test]
     fn test_write_end_marker() {
-        let buffer = SharedBuffer::new();
-        let mut writer = BufWriter::new(Box::new(buffer.clone()) as Box<dyn Write + Send + Sync>);
+        let mut buffer = SharedBuffer::new();
 
         let mut strategy = PipeHlsStrategy::new();
         let end_marker = HlsData::EndMarker;
 
-        let bytes_written = strategy.write_item(&mut writer, &end_marker).unwrap();
-        writer.flush().unwrap();
+        let bytes_written = strategy.write_to(&mut buffer, &end_marker).unwrap();
 
         // EndMarker should write 0 bytes
         assert_eq!(bytes_written, 0);
@@ -445,24 +447,23 @@ mod tests {
 
     #[test]
     fn test_discontinuity_count() {
-        let buffer = SharedBuffer::new();
-        let mut writer = BufWriter::new(Box::new(buffer.clone()) as Box<dyn Write + Send + Sync>);
+        let mut buffer = SharedBuffer::new();
 
         let mut strategy = PipeHlsStrategy::new();
 
         // Write a segment with discontinuity
         let ts_with_disc = create_test_ts_segment(true, vec![0x47]);
-        strategy.write_item(&mut writer, &ts_with_disc).unwrap();
+        strategy.write_to(&mut buffer, &ts_with_disc).unwrap();
         assert_eq!(strategy.discontinuity_count(), 1);
 
         // Write a segment without discontinuity
         let ts_without_disc = create_test_ts_segment(false, vec![0x47]);
-        strategy.write_item(&mut writer, &ts_without_disc).unwrap();
+        strategy.write_to(&mut buffer, &ts_without_disc).unwrap();
         assert_eq!(strategy.discontinuity_count(), 1);
 
         // Write another segment with discontinuity
         let ts_with_disc2 = create_test_ts_segment(true, vec![0x47]);
-        strategy.write_item(&mut writer, &ts_with_disc2).unwrap();
+        strategy.write_to(&mut buffer, &ts_with_disc2).unwrap();
         assert_eq!(strategy.discontinuity_count(), 2);
     }
 }
@@ -628,10 +629,7 @@ mod property_tests {
             discontinuity_flags in proptest::collection::vec(any::<bool>(), 1..20),
             data_sizes in proptest::collection::vec(1..100usize, 1..20),
         ) {
-            let buffer = SharedBuffer::new();
-            let mut writer = std::io::BufWriter::new(
-                Box::new(buffer.clone()) as Box<dyn Write + Send + Sync>
-            );
+            let mut buffer = SharedBuffer::new();
 
             let mut strategy = PipeHlsStrategy::new();
 
@@ -651,7 +649,7 @@ mod property_tests {
                 let segment = create_ts_segment(discontinuity, data);
 
                 // Write the item
-                strategy.write_item(&mut writer, &segment).unwrap();
+                strategy.write_to(&mut buffer, &segment).unwrap();
 
                 // Check if closure was signaled
                 if strategy.should_close_pipe(&segment) {

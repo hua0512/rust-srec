@@ -34,22 +34,6 @@ pub enum OutputFormat {
     Stderr,
 }
 
-impl std::str::FromStr for OutputFormat {
-    type Err = String;
-
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        match s.to_lowercase().as_str() {
-            "file" => Ok(OutputFormat::File),
-            "stdout" => Ok(OutputFormat::Stdout),
-            "stderr" => Ok(OutputFormat::Stderr),
-            _ => Err(format!(
-                "Unknown output format: '{}'. Valid values are: file, stdout, stderr",
-                s
-            )),
-        }
-    }
-}
-
 impl std::fmt::Display for OutputFormat {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
@@ -186,7 +170,7 @@ impl PipeOutputProvider {
     }
 
     /// Create a new pipe output provider with a custom writer (for testing)
-    #[cfg(test)]
+    #[doc(hidden)]
     pub fn with_writer(writer: Box<dyn Write + Send + Sync>, close_on_boundary: bool) -> Self {
         Self {
             writer: BufWriter::new(writer),
