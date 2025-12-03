@@ -190,12 +190,8 @@ impl<B: BatchChecker> PlatformActor<B> {
         let (priority_tx, priority_rx) = mpsc::channel(DEFAULT_PRIORITY_MAILBOX_CAPACITY);
 
         let actor_metadata = ActorMetadata::platform(&platform_id);
-        let handle = ActorHandle::with_priority(
-            tx,
-            priority_tx,
-            cancellation_token.clone(),
-            actor_metadata,
-        );
+        let handle =
+            ActorHandle::with_priority(tx, priority_tx, cancellation_token.clone(), actor_metadata);
 
         let batch_window = Duration::from_millis(config.batch_window_ms);
         let max_batch_size = config.max_batch_size;
@@ -231,7 +227,11 @@ impl<B: BatchChecker> PlatformActor<B> {
     }
 
     /// Register a streamer actor handle for result distribution.
-    pub fn register_streamer(&mut self, streamer_id: String, handle: mpsc::Sender<StreamerMessage>) {
+    pub fn register_streamer(
+        &mut self,
+        streamer_id: String,
+        handle: mpsc::Sender<StreamerMessage>,
+    ) {
         self.streamer_handles.insert(streamer_id, handle);
         self.state.streamer_count = self.streamer_handles.len();
     }
@@ -275,7 +275,6 @@ impl<B: BatchChecker> PlatformActor<B> {
         self.pending_requests.len()
     }
 
-
     /// Run the actor's event loop.
     ///
     /// This method runs until the actor receives a Stop message or the
@@ -296,7 +295,10 @@ impl<B: BatchChecker> PlatformActor<B> {
                 self.metrics.record_message(start.elapsed());
 
                 if should_stop {
-                    debug!("PlatformActor {} received stop signal from priority channel", self.platform_id);
+                    debug!(
+                        "PlatformActor {} received stop signal from priority channel",
+                        self.platform_id
+                    );
                     break;
                 }
                 // Continue to check for more priority messages
@@ -494,7 +496,6 @@ impl<B: BatchChecker> PlatformActor<B> {
         let _ = reply.send(self.state.clone());
     }
 
-
     /// Execute a batch of pending check requests.
     ///
     /// This method:
@@ -587,7 +588,11 @@ impl<B: BatchChecker> PlatformActor<B> {
         }
 
         // Perform the actual batch check using the batch checker
-        match self.batch_checker.batch_check(&self.platform_id, streamers).await {
+        match self
+            .batch_checker
+            .batch_check(&self.platform_id, streamers)
+            .await
+        {
             Ok(mut results) => {
                 // Add fallback results for streamers without metadata
                 let result_ids: std::collections::HashSet<_> =
@@ -725,7 +730,10 @@ mod tests {
 
         // Query state
         let (reply_tx, reply_rx) = oneshot::channel();
-        handle.send(PlatformMessage::GetState(reply_tx)).await.unwrap();
+        handle
+            .send(PlatformMessage::GetState(reply_tx))
+            .await
+            .unwrap();
 
         let state = reply_rx.await.unwrap();
         assert_eq!(state.streamer_count, 0);

@@ -234,7 +234,10 @@ impl<'a> ConfigRouter<'a> {
                     result.record_success();
                 }
                 Err(e) => {
-                    warn!("Failed to route config update to streamer {}: {}", streamer_id, e);
+                    warn!(
+                        "Failed to route config update to streamer {}: {}",
+                        streamer_id, e
+                    );
                     result.record_failure(streamer_id);
                 }
             }
@@ -321,7 +324,10 @@ impl<'a> ConfigRouter<'a> {
             let config = platform_config_fn(platform_id);
             match handle.send(PlatformMessage::ConfigUpdate(config)).await {
                 Ok(()) => {
-                    debug!("Routed global config update to platform actor {}", platform_id);
+                    debug!(
+                        "Routed global config update to platform actor {}",
+                        platform_id
+                    );
                     result.record_success();
                 }
                 Err(e) => {
@@ -410,11 +416,16 @@ impl<'a> ConfigRouter<'a> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::scheduler::actor::handle::ActorMetadata;
     use tokio::sync::mpsc;
     use tokio_util::sync::CancellationToken;
-    use crate::scheduler::actor::handle::ActorMetadata;
 
-    fn create_test_streamer_handle(id: &str) -> (ActorHandle<StreamerMessage>, mpsc::Receiver<StreamerMessage>) {
+    fn create_test_streamer_handle(
+        id: &str,
+    ) -> (
+        ActorHandle<StreamerMessage>,
+        mpsc::Receiver<StreamerMessage>,
+    ) {
         let (tx, rx) = mpsc::channel(10);
         let token = CancellationToken::new();
         let metadata = ActorMetadata::streamer(id, false);
@@ -422,7 +433,12 @@ mod tests {
         (handle, rx)
     }
 
-    fn create_test_platform_handle(id: &str) -> (ActorHandle<PlatformMessage>, mpsc::Receiver<PlatformMessage>) {
+    fn create_test_platform_handle(
+        id: &str,
+    ) -> (
+        ActorHandle<PlatformMessage>,
+        mpsc::Receiver<PlatformMessage>,
+    ) {
         let (tx, rx) = mpsc::channel(10);
         let token = CancellationToken::new();
         let metadata = ActorMetadata::platform(id);
@@ -490,8 +506,14 @@ mod tests {
         mapping.register("streamer-3", "youtube");
 
         assert_eq!(mapping.len(), 3);
-        assert_eq!(mapping.get_platform("streamer-1"), Some(&"twitch".to_string()));
-        assert_eq!(mapping.get_platform("streamer-3"), Some(&"youtube".to_string()));
+        assert_eq!(
+            mapping.get_platform("streamer-1"),
+            Some(&"twitch".to_string())
+        );
+        assert_eq!(
+            mapping.get_platform("streamer-3"),
+            Some(&"youtube".to_string())
+        );
         assert_eq!(mapping.get_platform("unknown"), None);
 
         let twitch_streamers = mapping.streamers_on_platform("twitch");
@@ -646,9 +668,18 @@ mod tests {
         assert_eq!(result.failed, 0);
 
         // Verify messages were received
-        assert!(matches!(platform_rx.try_recv().unwrap(), PlatformMessage::ConfigUpdate(_)));
-        assert!(matches!(rx1.try_recv().unwrap(), StreamerMessage::ConfigUpdate(_)));
-        assert!(matches!(rx2.try_recv().unwrap(), StreamerMessage::ConfigUpdate(_)));
+        assert!(matches!(
+            platform_rx.try_recv().unwrap(),
+            PlatformMessage::ConfigUpdate(_)
+        ));
+        assert!(matches!(
+            rx1.try_recv().unwrap(),
+            StreamerMessage::ConfigUpdate(_)
+        ));
+        assert!(matches!(
+            rx2.try_recv().unwrap(),
+            StreamerMessage::ConfigUpdate(_)
+        ));
 
         // streamer-3 should NOT have received a message (on youtube, not twitch)
         assert!(rx3.try_recv().is_err());
@@ -672,7 +703,11 @@ mod tests {
         let router = ConfigRouter::new(&streamer_handles, &platform_handles, &platform_mapping);
 
         let result = router
-            .route_with_scope(&ConfigScope::Global, default_streamer_config, default_platform_config)
+            .route_with_scope(
+                &ConfigScope::Global,
+                default_streamer_config,
+                default_platform_config,
+            )
             .await;
 
         // Should deliver to all actors
@@ -680,9 +715,18 @@ mod tests {
         assert_eq!(result.failed, 0);
 
         // Verify all received messages
-        assert!(matches!(platform_rx.try_recv().unwrap(), PlatformMessage::ConfigUpdate(_)));
-        assert!(matches!(rx1.try_recv().unwrap(), StreamerMessage::ConfigUpdate(_)));
-        assert!(matches!(rx2.try_recv().unwrap(), StreamerMessage::ConfigUpdate(_)));
+        assert!(matches!(
+            platform_rx.try_recv().unwrap(),
+            PlatformMessage::ConfigUpdate(_)
+        ));
+        assert!(matches!(
+            rx1.try_recv().unwrap(),
+            StreamerMessage::ConfigUpdate(_)
+        ));
+        assert!(matches!(
+            rx2.try_recv().unwrap(),
+            StreamerMessage::ConfigUpdate(_)
+        ));
     }
 
     #[tokio::test]
@@ -706,7 +750,10 @@ mod tests {
             .await;
 
         assert_eq!(result.delivered, 1);
-        assert!(matches!(rx1.try_recv().unwrap(), StreamerMessage::ConfigUpdate(_)));
+        assert!(matches!(
+            rx1.try_recv().unwrap(),
+            StreamerMessage::ConfigUpdate(_)
+        ));
     }
 
     #[tokio::test]

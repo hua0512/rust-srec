@@ -980,11 +980,7 @@ impl ServiceContainer {
     /// Get service statistics.
     pub fn stats(&self) -> ServiceStats {
         // Try to get scheduler stats without blocking
-        let scheduler_stats = self
-            .scheduler
-            .try_read()
-            .ok()
-            .map(|guard| guard.stats());
+        let scheduler_stats = self.scheduler.try_read().ok().map(|guard| guard.stats());
 
         ServiceStats {
             streamer_count: self.streamer_manager.count(),

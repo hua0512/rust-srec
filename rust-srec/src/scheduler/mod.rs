@@ -24,8 +24,8 @@ mod task;
 
 // Actor model exports (primary API)
 pub use actor::{
-    ActorError, ActorHandle, ActorMetadata, ActorMetrics, ActorOutcome, ActorRegistry,
-    ActorResult, ActorTaskResult, BatchDetectionResult, CheckResult, ConfigRouter, ConfigScope,
+    ActorError, ActorHandle, ActorMetadata, ActorMetrics, ActorOutcome, ActorRegistry, ActorResult,
+    ActorTaskResult, BatchDetectionResult, CheckResult, ConfigRouter, ConfigScope,
     PersistedActorState, PersistedConfig, PlatformActorState, PlatformConfig, PlatformMapping,
     PlatformMessage, RegistryError, RestartTracker, RestartTrackerConfig, RestartTrackerStats,
     RoutingResult, SendError, ShutdownReport, SpawnError, StreamerActor, StreamerActorState,

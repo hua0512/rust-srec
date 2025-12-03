@@ -4,8 +4,8 @@
 //! including message processing latency, mailbox size, error counts, and lifecycle events.
 
 use std::collections::HashMap;
-use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{Duration, Instant};
 
 use parking_lot::RwLock;
@@ -167,11 +167,7 @@ impl ActorMetrics {
     /// Get the minimum observed latency in microseconds.
     pub fn min_latency_us(&self) -> u64 {
         let samples = self.latency_samples.read();
-        if samples.count == 0 {
-            0
-        } else {
-            samples.min
-        }
+        if samples.count == 0 { 0 } else { samples.min }
     }
 
     /// Get the maximum observed latency in microseconds.
@@ -437,7 +433,12 @@ impl SchedulerMetrics {
     }
 
     /// Record an actor restart.
-    pub fn record_actor_restarted(&self, actor_id: &str, actor_type: ActorType, restart_count: u32) {
+    pub fn record_actor_restarted(
+        &self,
+        actor_id: &str,
+        actor_type: ActorType,
+        restart_count: u32,
+    ) {
         self.actors_restarted.fetch_add(1, Ordering::Relaxed);
 
         let event = LifecycleEvent::ActorRestarted {
@@ -451,7 +452,8 @@ impl SchedulerMetrics {
 
     /// Record a message being processed.
     pub fn record_message_processed(&self) {
-        self.total_messages_processed.fetch_add(1, Ordering::Relaxed);
+        self.total_messages_processed
+            .fetch_add(1, Ordering::Relaxed);
     }
 
     /// Record an error.
@@ -479,7 +481,9 @@ impl SchedulerMetrics {
 
     /// Register actor metrics for tracking.
     pub fn register_actor_metrics(&self, actor_id: &str, metrics: SharedActorMetrics) {
-        self.actor_metrics.write().insert(actor_id.to_string(), metrics);
+        self.actor_metrics
+            .write()
+            .insert(actor_id.to_string(), metrics);
     }
 
     /// Get actor metrics by ID.
@@ -824,7 +828,11 @@ mod tests {
         let event = receiver.try_recv();
         assert!(event.is_ok());
         match event.unwrap() {
-            LifecycleEvent::ActorSpawned { actor_id, actor_type, .. } => {
+            LifecycleEvent::ActorSpawned {
+                actor_id,
+                actor_type,
+                ..
+            } => {
                 assert_eq!(actor_id, "streamer-1");
                 assert_eq!(actor_type, ActorType::Streamer);
             }

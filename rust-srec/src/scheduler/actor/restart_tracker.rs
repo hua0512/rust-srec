@@ -54,7 +54,6 @@ impl Default for RestartTrackerConfig {
     }
 }
 
-
 /// Restart history for a single actor.
 #[derive(Debug, Clone)]
 struct RestartHistory {
@@ -194,7 +193,10 @@ impl RestartTracker {
 
     /// Get the total restart count for an actor.
     pub fn total_restarts(&self, actor_id: &str) -> u64 {
-        self.history.get(actor_id).map(|h| h.total_restarts).unwrap_or(0)
+        self.history
+            .get(actor_id)
+            .map(|h| h.total_restarts)
+            .unwrap_or(0)
     }
 
     /// Clear failure history for an actor.
@@ -257,7 +259,6 @@ pub struct RestartTrackerStats {
     pub total_restarts: u64,
 }
 
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -276,7 +277,12 @@ mod tests {
         // Failures 1 and 2 should have no backoff (under threshold of 3)
         for i in 0..2 {
             let backoff = tracker.record_failure("test");
-            assert_eq!(backoff, Duration::ZERO, "Failure {} should have no backoff", i + 1);
+            assert_eq!(
+                backoff,
+                Duration::ZERO,
+                "Failure {} should have no backoff",
+                i + 1
+            );
         }
 
         assert_eq!(tracker.recent_failures("test"), 2);

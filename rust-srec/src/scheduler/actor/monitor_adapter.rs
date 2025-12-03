@@ -35,7 +35,11 @@ pub trait StatusChecker: Send + Sync + 'static {
     ) -> Result<(), CheckError>;
 
     /// Handle an error during status checking.
-    async fn handle_error(&self, streamer: &StreamerMetadata, error: &str) -> Result<(), CheckError>;
+    async fn handle_error(
+        &self,
+        streamer: &StreamerMetadata,
+        error: &str,
+    ) -> Result<(), CheckError>;
 }
 
 /// Trait for batch status checking.
@@ -96,7 +100,6 @@ impl From<crate::Error> for CheckError {
     }
 }
 
-
 /// Real implementation of StatusChecker using StreamMonitor.
 ///
 /// This adapter connects StreamerActors to the actual monitoring infrastructure.
@@ -149,7 +152,11 @@ where
         Ok(())
     }
 
-    async fn handle_error(&self, streamer: &StreamerMetadata, error: &str) -> Result<(), CheckError> {
+    async fn handle_error(
+        &self,
+        streamer: &StreamerMetadata,
+        error: &str,
+    ) -> Result<(), CheckError> {
         self.monitor.handle_error(streamer, error).await?;
         Ok(())
     }
@@ -191,7 +198,10 @@ where
         platform_id: &str,
         streamers: Vec<StreamerMetadata>,
     ) -> Result<Vec<BatchDetectionResult>, CheckError> {
-        let batch_result = self.monitor.batch_check(platform_id, streamers.clone()).await?;
+        let batch_result = self
+            .monitor
+            .batch_check(platform_id, streamers.clone())
+            .await?;
 
         // Convert BatchResult to Vec<BatchDetectionResult>
         let mut results = Vec::new();
@@ -312,7 +322,11 @@ impl StatusChecker for NoOpStatusChecker {
         Ok(())
     }
 
-    async fn handle_error(&self, _streamer: &StreamerMetadata, _error: &str) -> Result<(), CheckError> {
+    async fn handle_error(
+        &self,
+        _streamer: &StreamerMetadata,
+        _error: &str,
+    ) -> Result<(), CheckError> {
         Ok(())
     }
 }

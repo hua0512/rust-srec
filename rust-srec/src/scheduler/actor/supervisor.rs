@@ -43,7 +43,6 @@ impl Default for SupervisorConfig {
     }
 }
 
-
 /// Pending restart information.
 #[derive(Debug)]
 struct PendingRestart {
@@ -164,7 +163,8 @@ impl Supervisor {
         };
 
         // Cache metadata for potential restart
-        self.streamer_metadata.insert(id.clone(), (metadata, config));
+        self.streamer_metadata
+            .insert(id.clone(), (metadata, config));
         if let Some(sender) = platform_actor {
             self.platform_senders.insert(id.clone(), sender);
         }
@@ -227,7 +227,6 @@ impl Supervisor {
         self.registry.remove_platform(platform_id).is_some()
     }
 
-
     /// Handle a completed actor task.
     ///
     /// This is the core crash detection logic. When an actor task completes,
@@ -263,10 +262,7 @@ impl Supervisor {
                         restart_at,
                     });
 
-                    return TaskCompletionAction::RestartScheduled {
-                        actor_id,
-                        backoff,
-                    };
+                    return TaskCompletionAction::RestartScheduled { actor_id, backoff };
                 } else {
                     warn!("No metadata found for restarting actor {}", actor_id);
                     return TaskCompletionAction::RestartFailed {
@@ -275,10 +271,7 @@ impl Supervisor {
                     };
                 }
             } else {
-                warn!(
-                    "Actor {} exceeded restart limit, not restarting",
-                    actor_id
-                );
+                warn!("Actor {} exceeded restart limit, not restarting", actor_id);
                 return TaskCompletionAction::RestartLimitExceeded { actor_id };
             }
         }
@@ -363,7 +356,10 @@ impl Supervisor {
 
     /// Execute a pending restart.
     fn execute_restart(&mut self, restart: PendingRestart) -> Result<(), SpawnError> {
-        info!("Restarting actor {} ({})", restart.actor_id, restart.actor_type);
+        info!(
+            "Restarting actor {} ({})",
+            restart.actor_id, restart.actor_type
+        );
 
         match restart.metadata {
             RestartMetadata::Streamer {
@@ -377,7 +373,10 @@ impl Supervisor {
 
                 self.spawn_streamer(metadata, config, platform_actor)?;
             }
-            RestartMetadata::Platform { platform_id, config } => {
+            RestartMetadata::Platform {
+                platform_id,
+                config,
+            } => {
                 // Remove old config (will be re-added by spawn_platform)
                 self.platform_configs.remove(&platform_id);
 
@@ -397,7 +396,6 @@ impl Supervisor {
     pub fn pending_restart_count(&self) -> usize {
         self.pending_restarts.len()
     }
-
 
     /// Initiate graceful shutdown.
     ///
@@ -419,11 +417,17 @@ impl Supervisor {
         // Phase 1: Send Stop messages to all actors via priority channel
         // Using priority channel ensures Stop messages are processed promptly
         // even when actors are under backpressure
-        info!("Phase 1: Sending Stop messages to {} actors via priority channel", total_actors);
-        
+        info!(
+            "Phase 1: Sending Stop messages to {} actors via priority channel",
+            total_actors
+        );
+
         // Send Stop to all streamer actors via priority channel
         for (id, handle) in self.registry.streamer_handles() {
-            debug!("Sending Stop to streamer actor via priority channel: {}", id);
+            debug!(
+                "Sending Stop to streamer actor via priority channel: {}",
+                id
+            );
             // Use send_priority to ensure Stop is processed before normal messages
             match handle.send_priority(StreamerMessage::Stop).await {
                 Ok(()) => {}
@@ -436,11 +440,13 @@ impl Supervisor {
 
         // Send Stop to all platform actors via priority channel
         for (id, handle) in self.registry.platform_handles() {
-            debug!("Sending Stop to platform actor via priority channel: {}", id);
+            debug!(
+                "Sending Stop to platform actor via priority channel: {}",
+                id
+            );
             // Use send_priority to ensure Stop is processed before normal messages
             match handle.send_priority(PlatformMessage::Stop).await {
-                Ok(()) => {
-                }
+                Ok(()) => {}
                 Err(e) => {
                     warn!("Failed to send Stop to platform {}: {:?}", id, e);
                     stop_message_failures += 1;
@@ -455,7 +461,10 @@ impl Supervisor {
         );
 
         // Phase 2: Wait for actors to complete with timeout
-        info!("Phase 2: Waiting for actors to stop gracefully (timeout: {:?})", self.config.shutdown_timeout);
+        info!(
+            "Phase 2: Waiting for actors to stop gracefully (timeout: {:?})",
+            self.config.shutdown_timeout
+        );
         let deadline = tokio::time::Instant::now() + self.config.shutdown_timeout;
 
         while self.registry.has_pending_tasks() {
@@ -466,16 +475,16 @@ impl Supervisor {
                         "Shutdown timeout reached, {} tasks still running",
                         remaining
                     );
-                    
+
                     // Phase 3: Forcefully terminate non-responsive actors
                     info!("Phase 3: Forcefully terminating {} non-responsive actors", remaining);
-                    
+
                     // First try cancellation tokens
                     self.registry.cancel_all();
-                    
+
                     // Give a brief grace period for cancellation to take effect
                     tokio::time::sleep(Duration::from_millis(100)).await;
-                    
+
                     // If still running, abort tasks
                     if self.registry.has_pending_tasks() {
                         forced_terminations = self.registry.pending_task_count();
@@ -625,7 +634,6 @@ pub struct SupervisorStats {
     pub restart_stats: super::restart_tracker::RestartTrackerStats,
 }
 
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -703,7 +711,9 @@ mod tests {
         let metadata = create_test_metadata("test-1");
         let config = create_test_config();
 
-        supervisor.spawn_streamer(metadata.clone(), config.clone(), None).unwrap();
+        supervisor
+            .spawn_streamer(metadata.clone(), config.clone(), None)
+            .unwrap();
 
         // Try to spawn duplicate
         let result = supervisor.spawn_streamer(metadata, config, None);
@@ -780,12 +790,17 @@ mod tests {
         // Simulate crash
         let result = ActorTaskResult::streamer(
             "test-1",
-            Err(crate::scheduler::actor::streamer_actor::ActorError::fatal("test crash")),
+            Err(crate::scheduler::actor::streamer_actor::ActorError::fatal(
+                "test crash",
+            )),
         );
         let action = supervisor.handle_task_completion(result);
 
         // First crash should schedule immediate restart (no backoff)
-        assert!(matches!(action, TaskCompletionAction::RestartScheduled { .. }));
+        assert!(matches!(
+            action,
+            TaskCompletionAction::RestartScheduled { .. }
+        ));
         assert_eq!(supervisor.pending_restart_count(), 1);
 
         token.cancel();
@@ -811,7 +826,9 @@ mod tests {
         // Simulate crash
         let result = ActorTaskResult::streamer(
             "test-1",
-            Err(crate::scheduler::actor::streamer_actor::ActorError::fatal("test crash")),
+            Err(crate::scheduler::actor::streamer_actor::ActorError::fatal(
+                "test crash",
+            )),
         );
         supervisor.handle_task_completion(result);
 
@@ -891,7 +908,9 @@ mod tests {
         }
 
         let platform_config = create_test_platform_config("twitch");
-        supervisor.spawn_platform("twitch", platform_config).unwrap();
+        supervisor
+            .spawn_platform("twitch", platform_config)
+            .unwrap();
 
         assert_eq!(supervisor.registry().streamer_count(), 2);
         assert_eq!(supervisor.registry().platform_count(), 1);
@@ -973,8 +992,11 @@ mod tests {
         // If priority channel wasn't configured, send_priority would fall back to normal send
         // but we can verify it works without error
         let (reply_tx, reply_rx) = tokio::sync::oneshot::channel();
-        handle.send_priority(StreamerMessage::GetState(reply_tx)).await.unwrap();
-        
+        handle
+            .send_priority(StreamerMessage::GetState(reply_tx))
+            .await
+            .unwrap();
+
         // Should receive state response
         let state = reply_rx.await.unwrap();
         assert_eq!(state.streamer_state, StreamerState::NotLive);
@@ -999,8 +1021,11 @@ mod tests {
 
         // Verify the handle supports priority sending
         let (reply_tx, reply_rx) = tokio::sync::oneshot::channel();
-        handle.send_priority(PlatformMessage::GetState(reply_tx)).await.unwrap();
-        
+        handle
+            .send_priority(PlatformMessage::GetState(reply_tx))
+            .await
+            .unwrap();
+
         // Should receive state response
         let state = reply_rx.await.unwrap();
         assert_eq!(state.streamer_count, 0);

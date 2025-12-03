@@ -65,7 +65,6 @@ impl ActorTaskResult {
     }
 }
 
-
 /// Registry for tracking and managing actors.
 ///
 /// The registry maintains handles to all active actors and integrates
@@ -138,12 +137,16 @@ impl ActorRegistry {
     }
 
     /// Get all streamer handles.
-    pub fn streamer_handles(&self) -> impl Iterator<Item = (&String, &ActorHandle<StreamerMessage>)> {
+    pub fn streamer_handles(
+        &self,
+    ) -> impl Iterator<Item = (&String, &ActorHandle<StreamerMessage>)> {
         self.streamers.iter()
     }
 
     /// Get all platform handles.
-    pub fn platform_handles(&self) -> impl Iterator<Item = (&String, &ActorHandle<PlatformMessage>)> {
+    pub fn platform_handles(
+        &self,
+    ) -> impl Iterator<Item = (&String, &ActorHandle<PlatformMessage>)> {
         self.platforms.iter()
     }
 
@@ -159,7 +162,11 @@ impl ActorRegistry {
     ///
     /// Returns the actor handle if successful, or an error if an actor
     /// with the same ID already exists.
-    pub fn spawn_streamer(&mut self, actor: StreamerActor, handle: ActorHandle<StreamerMessage>) -> Result<ActorHandle<StreamerMessage>, RegistryError> {
+    pub fn spawn_streamer(
+        &mut self,
+        actor: StreamerActor,
+        handle: ActorHandle<StreamerMessage>,
+    ) -> Result<ActorHandle<StreamerMessage>, RegistryError> {
         let id = actor.id().to_string();
 
         if self.streamers.contains_key(&id) {
@@ -187,7 +194,11 @@ impl ActorRegistry {
     ///
     /// Returns the actor handle if successful, or an error if an actor
     /// with the same platform ID already exists.
-    pub fn spawn_platform(&mut self, actor: PlatformActor, handle: ActorHandle<PlatformMessage>) -> Result<ActorHandle<PlatformMessage>, RegistryError> {
+    pub fn spawn_platform(
+        &mut self,
+        actor: PlatformActor,
+        handle: ActorHandle<PlatformMessage>,
+    ) -> Result<ActorHandle<PlatformMessage>, RegistryError> {
         let platform_id = actor.platform_id().to_string();
 
         if self.platforms.contains_key(&platform_id) {
@@ -310,7 +321,6 @@ impl ActorRegistry {
     }
 }
 
-
 /// Error type for registry operations.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum RegistryError {
@@ -400,7 +410,8 @@ mod tests {
         let config = create_test_config();
 
         // Spawn first actor
-        let (actor1, handle1) = StreamerActor::new(metadata.clone(), config.clone(), token.child_token());
+        let (actor1, handle1) =
+            StreamerActor::new(metadata.clone(), config.clone(), token.child_token());
         registry.spawn_streamer(actor1, handle1).unwrap();
 
         // Try to spawn duplicate
@@ -469,7 +480,9 @@ mod tests {
 
         let error = ActorTaskResult::streamer(
             "test",
-            Err(crate::scheduler::actor::streamer_actor::ActorError::fatal("test error")),
+            Err(crate::scheduler::actor::streamer_actor::ActorError::fatal(
+                "test error",
+            )),
         );
         assert!(error.is_crash());
         assert_eq!(error.error_message(), Some("test error"));

@@ -31,9 +31,13 @@ pub use messages::{
     PlatformMessage, StreamerActorState, StreamerConfig, StreamerMessage, SupervisorMessage,
 };
 pub use metrics::{
-    create_metrics, create_scheduler_metrics, ActorMetrics, ActorType, LifecycleEvent,
-    MetricsSnapshot, SchedulerMetrics, SchedulerMetricsSnapshot, SharedActorMetrics,
-    SharedSchedulerMetrics,
+    ActorMetrics, ActorType, LifecycleEvent, MetricsSnapshot, SchedulerMetrics,
+    SchedulerMetricsSnapshot, SharedActorMetrics, SharedSchedulerMetrics, create_metrics,
+    create_scheduler_metrics,
+};
+pub use monitor_adapter::{
+    BatchChecker, CheckError, MonitorBatchChecker, MonitorStatusChecker, NoOpBatchChecker,
+    NoOpStatusChecker, StatusChecker,
 };
 pub use platform_actor::PlatformActor;
 pub use registry::{ActorRegistry, ActorTaskResult, RegistryError};
@@ -42,10 +46,5 @@ pub use streamer_actor::{
     ActorError, ActorOutcome, ActorResult, PersistedActorState, PersistedConfig, StreamerActor,
 };
 pub use supervisor::{
-    ShutdownReport, SpawnError, Supervisor, SupervisorConfig, SupervisorStats,
-    TaskCompletionAction,
-};
-pub use monitor_adapter::{
-    BatchChecker, CheckError, MonitorBatchChecker, MonitorStatusChecker, NoOpBatchChecker,
-    NoOpStatusChecker, StatusChecker,
+    ShutdownReport, SpawnError, Supervisor, SupervisorConfig, SupervisorStats, TaskCompletionAction,
 };

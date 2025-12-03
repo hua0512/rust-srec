@@ -52,12 +52,12 @@ webpki-roots = "0.26"
 quick-xml = { version = "0.36.0", features = ["serde", "serialize"] }
 
 # Workspace crates
-# pipeline-common = { path = "../crates/pipeline-common" }
-# flv = { path = "../crates/flv" }
-# flv-fix = { path = "../crates/flv-fix" }
-# hls = { path = "../crates/hls" }
-# hls-fix = { path = "../crates/hls-fix" }
-mesio-engine = { path = "../crates/mesio" }
+pipeline-common = { path = "../crates/pipeline-common" }
+flv = { path = "../crates/flv" }
+flv-fix = { path = "../crates/flv-fix" }
+hls = { path = "../crates/hls" }
+hls-fix = { path = "../crates/hls-fix" }
+mesio = { path = "../crates/mesio", package = "mesio-engine" }
 platforms-parser = { path = "../crates/platforms" }
 tars-codec = { path = "../crates/tars-codec" }
 thiserror = "1.0"

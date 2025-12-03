@@ -2,9 +2,13 @@
 
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
+use flv_fix::FlvPipelineConfig;
+use hls_fix::HlsPipelineConfig;
+use pipeline_common::config::PipelineConfig;
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 use std::sync::Arc;
+use std::time::Duration;
 use tokio::sync::mpsc;
 use tokio_util::sync::CancellationToken;
 
@@ -80,6 +84,24 @@ pub struct DownloadConfig {
     pub streamer_id: String,
     /// Session ID for tracking.
     pub session_id: String,
+
+    // --- Pipeline Configuration Fields ---
+    /// Whether to enable stream processing through fix pipelines (HlsPipeline/FlvPipeline).
+    /// When false, stream data is written directly without pipeline processing.
+    /// Default: false
+    pub enable_processing: bool,
+
+    /// Common pipeline configuration (max_file_size, max_duration, channel_size).
+    /// Used by both HLS and FLV pipelines.
+    pub pipeline_config: Option<PipelineConfig>,
+
+    /// HLS-specific pipeline configuration.
+    /// Controls defragment, split_segments, and segment_limiter options.
+    pub hls_pipeline_config: Option<HlsPipelineConfig>,
+
+    /// FLV-specific pipeline configuration.
+    /// Controls duplicate_tag_filtering, repair_strategy, continuity_mode, etc.
+    pub flv_pipeline_config: Option<FlvPipelineConfig>,
 }
 
 impl DownloadConfig {
@@ -102,6 +124,10 @@ impl DownloadConfig {
             headers: Vec::new(),
             streamer_id: streamer_id.into(),
             session_id: session_id.into(),
+            enable_processing: false,
+            pipeline_config: None,
+            hls_pipeline_config: None,
+            flv_pipeline_config: None,
         }
     }
 
@@ -145,6 +171,66 @@ impl DownloadConfig {
     pub fn with_header(mut self, key: impl Into<String>, value: impl Into<String>) -> Self {
         self.headers.push((key.into(), value.into()));
         self
+    }
+
+    /// Enable or disable stream processing through fix pipelines.
+    pub fn with_processing_enabled(mut self, enabled: bool) -> Self {
+        self.enable_processing = enabled;
+        self
+    }
+
+    /// Set the common pipeline configuration.
+    pub fn with_pipeline_config(mut self, config: PipelineConfig) -> Self {
+        self.pipeline_config = Some(config);
+        self
+    }
+
+    /// Set the HLS-specific pipeline configuration.
+    pub fn with_hls_pipeline_config(mut self, config: HlsPipelineConfig) -> Self {
+        self.hls_pipeline_config = Some(config);
+        self
+    }
+
+    /// Set the FLV-specific pipeline configuration.
+    pub fn with_flv_pipeline_config(mut self, config: FlvPipelineConfig) -> Self {
+        self.flv_pipeline_config = Some(config);
+        self
+    }
+
+    /// Build a PipelineConfig from this DownloadConfig.
+    ///
+    /// If `pipeline_config` is set, returns a clone of it.
+    /// Otherwise, builds a new PipelineConfig from the individual settings.
+    pub fn build_pipeline_config(&self) -> PipelineConfig {
+        if let Some(ref config) = self.pipeline_config {
+            config.clone()
+        } else {
+            let mut builder = PipelineConfig::builder()
+                .max_file_size(self.max_segment_size_bytes)
+                .channel_size(64);
+
+            if self.max_segment_duration_secs > 0 {
+                builder = builder.max_duration(Duration::from_secs(self.max_segment_duration_secs));
+            }
+
+            builder.build()
+        }
+    }
+
+    /// Build an HlsPipelineConfig from this DownloadConfig.
+    ///
+    /// If `hls_pipeline_config` is set, returns a clone of it.
+    /// Otherwise, returns the default HlsPipelineConfig.
+    pub fn build_hls_pipeline_config(&self) -> HlsPipelineConfig {
+        self.hls_pipeline_config.clone().unwrap_or_default()
+    }
+
+    /// Build a FlvPipelineConfig from this DownloadConfig.
+    ///
+    /// If `flv_pipeline_config` is set, returns a clone of it.
+    /// Otherwise, returns the default FlvPipelineConfig.
+    pub fn build_flv_pipeline_config(&self) -> FlvPipelineConfig {
+        self.flv_pipeline_config.clone().unwrap_or_default()
     }
 }
 
@@ -210,6 +296,13 @@ pub struct SegmentInfo {
 /// Events emitted by download engines.
 #[derive(Debug, Clone)]
 pub enum SegmentEvent {
+    /// A new segment has started recording.
+    SegmentStarted {
+        /// Path to the segment file being written.
+        path: PathBuf,
+        /// Sequence number of the segment (0-based).
+        sequence: u32,
+    },
     /// A segment was completed.
     SegmentCompleted(SegmentInfo),
     /// Download progress update.

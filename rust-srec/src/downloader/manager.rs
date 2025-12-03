@@ -70,7 +70,7 @@ pub struct DownloadManager {
     engines: RwLock<HashMap<EngineType, Arc<dyn DownloadEngine>>>,
     /// Circuit breaker manager.
     circuit_breakers: CircuitBreakerManager,
-    /// Broadcast sender for download events (supports multiple subscribers).
+    /// Broadcast sender for download events
     event_tx: broadcast::Sender<DownloadManagerEvent>,
 }
 
@@ -379,6 +379,15 @@ impl DownloadManager {
 
                         active_downloads.remove(&download_id_clone);
                         break;
+                    }
+                    SegmentEvent::SegmentStarted { path, sequence } => {
+                        // Segment started event - a new segment file has been opened
+                        tracing::debug!(
+                            download_id = %download_id_clone,
+                            path = %path.display(),
+                            sequence = sequence,
+                            "Segment started"
+                        );
                     }
                 }
             }
