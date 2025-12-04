@@ -1,14 +1,121 @@
 //! Job database models.
 
+use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use sqlx::FromRow;
+
+/// Filter criteria for querying jobs.
+#[derive(Debug, Clone, Default)]
+pub struct JobFilters {
+    /// Filter by job status.
+    pub status: Option<JobStatus>,
+    /// Filter by streamer ID.
+    pub streamer_id: Option<String>,
+    /// Filter by session ID.
+    pub session_id: Option<String>,
+    /// Filter jobs created after this date.
+    pub from_date: Option<DateTime<Utc>>,
+    /// Filter jobs created before this date.
+    pub to_date: Option<DateTime<Utc>>,
+    /// Filter by job type.
+    pub job_type: Option<String>,
+}
+
+impl JobFilters {
+    /// Create a new empty filter.
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Filter by status.
+    pub fn with_status(mut self, status: JobStatus) -> Self {
+        self.status = Some(status);
+        self
+    }
+
+    /// Filter by streamer ID.
+    pub fn with_streamer_id(mut self, streamer_id: impl Into<String>) -> Self {
+        self.streamer_id = Some(streamer_id.into());
+        self
+    }
+
+    /// Filter by session ID.
+    pub fn with_session_id(mut self, session_id: impl Into<String>) -> Self {
+        self.session_id = Some(session_id.into());
+        self
+    }
+
+    /// Filter by date range.
+    pub fn with_date_range(
+        mut self,
+        from: Option<DateTime<Utc>>,
+        to: Option<DateTime<Utc>>,
+    ) -> Self {
+        self.from_date = from;
+        self.to_date = to;
+        self
+    }
+
+    /// Filter by job type.
+    pub fn with_job_type(mut self, job_type: impl Into<String>) -> Self {
+        self.job_type = Some(job_type.into());
+        self
+    }
+}
+
+/// Pagination parameters for list queries.
+#[derive(Debug, Clone)]
+pub struct Pagination {
+    /// Maximum number of items to return.
+    pub limit: u32,
+    /// Number of items to skip.
+    pub offset: u32,
+}
+
+impl Pagination {
+    /// Create new pagination parameters.
+    pub fn new(limit: u32, offset: u32) -> Self {
+        Self { limit, offset }
+    }
+}
+
+impl Default for Pagination {
+    fn default() -> Self {
+        Self {
+            limit: 50,
+            offset: 0,
+        }
+    }
+}
+
+/// Job counts by status.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct JobCounts {
+    /// Number of pending jobs.
+    pub pending: u64,
+    /// Number of processing jobs.
+    pub processing: u64,
+    /// Number of completed jobs.
+    pub completed: u64,
+    /// Number of failed jobs.
+    pub failed: u64,
+    /// Number of interrupted jobs.
+    pub interrupted: u64,
+}
+
+impl JobCounts {
+    /// Get total count of all jobs.
+    pub fn total(&self) -> u64 {
+        self.pending + self.processing + self.completed + self.failed + self.interrupted
+    }
+}
 
 /// Job database model.
 /// Represents a single asynchronous task (download or pipeline process).
 #[derive(Debug, Clone, FromRow, Serialize, Deserialize)]
 pub struct JobDbModel {
     pub id: String,
-    /// Job type: DOWNLOAD, PIPELINE
+    /// Job type: DOWNLOAD, PIPELINE, or specific step types like "remux", "upload", "thumbnail"
     pub job_type: String,
     /// Status: PENDING, PROCESSING, COMPLETED, FAILED, INTERRUPTED
     pub status: String,
@@ -20,6 +127,32 @@ pub struct JobDbModel {
     pub created_at: String,
     /// ISO 8601 timestamp when the job was last updated
     pub updated_at: String,
+    // Pipeline-specific fields (Requirements 6.1, 6.2, 6.4)
+    /// Input path or source for the job (single input file)
+    pub input: Option<String>,
+    /// Output paths produced by the job (JSON array, can be 0, 1, or more outputs)
+    pub outputs: Option<String>,
+    /// Job priority (higher values = higher priority)
+    pub priority: i32,
+    /// Associated streamer ID
+    pub streamer_id: Option<String>,
+    /// Associated session ID
+    pub session_id: Option<String>,
+    /// ISO 8601 timestamp when the job started processing
+    pub started_at: Option<String>,
+    /// ISO 8601 timestamp when the job completed
+    pub completed_at: Option<String>,
+    /// Error message if the job failed
+    pub error: Option<String>,
+    /// Number of retry attempts
+    pub retry_count: i32,
+    // Pipeline chain fields (Requirements 7.1, 7.2)
+    /// Next job type to create on completion (e.g., "upload" after "remux")
+    pub next_job_type: Option<String>,
+    /// Pipeline steps remaining after this job (JSON array)
+    pub remaining_steps: Option<String>,
+    /// Pipeline ID to group related jobs (first job's ID)
+    pub pipeline_id: Option<String>,
 }
 
 impl JobDbModel {
@@ -33,7 +166,173 @@ impl JobDbModel {
             state: "{}".to_string(),
             created_at: now.clone(),
             updated_at: now,
+            input: None,
+            outputs: None,
+            priority: 0,
+            streamer_id: None,
+            session_id: None,
+            started_at: None,
+            completed_at: None,
+            error: None,
+            retry_count: 0,
+            next_job_type: None,
+            remaining_steps: None,
+            pipeline_id: None,
         }
+    }
+
+    /// Create a new pipeline job with all fields.
+    pub fn new_pipeline(
+        input: impl Into<String>,
+        priority: i32,
+        streamer_id: Option<String>,
+        session_id: Option<String>,
+        config: impl Into<String>,
+    ) -> Self {
+        let now = chrono::Utc::now().to_rfc3339();
+        Self {
+            id: uuid::Uuid::new_v4().to_string(),
+            job_type: JobType::Pipeline.as_str().to_string(),
+            status: JobStatus::Pending.as_str().to_string(),
+            config: config.into(),
+            state: "{}".to_string(),
+            created_at: now.clone(),
+            updated_at: now,
+            input: Some(input.into()),
+            outputs: None, // Outputs are populated during/after job execution
+            priority,
+            streamer_id,
+            session_id,
+            started_at: None,
+            completed_at: None,
+            error: None,
+            retry_count: 0,
+            next_job_type: None,
+            remaining_steps: None,
+            pipeline_id: None,
+        }
+    }
+
+    /// Create a new pipeline step job with chain information.
+    /// This is used for sequential pipeline job creation.
+    pub fn new_pipeline_step(
+        job_type: impl Into<String>,
+        input: impl Into<String>,
+        output: impl Into<String>,
+        priority: i32,
+        streamer_id: Option<String>,
+        session_id: Option<String>,
+        pipeline_id: Option<String>,
+        next_job_type: Option<String>,
+        remaining_steps: Option<Vec<String>>,
+    ) -> Self {
+        let now = chrono::Utc::now().to_rfc3339();
+        let id = uuid::Uuid::new_v4().to_string();
+        let output_str = output.into();
+        Self {
+            id: id.clone(),
+            job_type: job_type.into(),
+            status: JobStatus::Pending.as_str().to_string(),
+            config: "{}".to_string(),
+            state: "{}".to_string(),
+            created_at: now.clone(),
+            updated_at: now,
+            input: Some(input.into()),
+            outputs: Some(format!("[\"{}\"]", output_str)),
+            priority,
+            streamer_id,
+            session_id,
+            started_at: None,
+            completed_at: None,
+            error: None,
+            retry_count: 0,
+            next_job_type,
+            remaining_steps: remaining_steps.map(|steps| {
+                serde_json::to_string(&steps).unwrap_or_else(|_| "[]".to_string())
+            }),
+            pipeline_id,
+        }
+    }
+
+    /// Get the remaining pipeline steps.
+    pub fn get_remaining_steps(&self) -> Vec<String> {
+        self.remaining_steps
+            .as_ref()
+            .and_then(|s| serde_json::from_str(s).ok())
+            .unwrap_or_default()
+    }
+
+    /// Set the remaining pipeline steps.
+    pub fn set_remaining_steps(&mut self, steps: &[String]) {
+        self.remaining_steps = Some(serde_json::to_string(steps).unwrap_or_else(|_| "[]".to_string()));
+        self.updated_at = chrono::Utc::now().to_rfc3339();
+    }
+
+    /// Get the list of output paths produced by this job.
+    pub fn get_outputs(&self) -> Vec<String> {
+        self.outputs
+            .as_ref()
+            .and_then(|s| serde_json::from_str(s).ok())
+            .unwrap_or_default()
+    }
+
+    /// Set the output paths for this job.
+    pub fn set_outputs(&mut self, outputs: &[String]) {
+        self.outputs = Some(serde_json::to_string(outputs).unwrap_or_else(|_| "[]".to_string()));
+        self.updated_at = chrono::Utc::now().to_rfc3339();
+    }
+
+    /// Add an output path to this job.
+    pub fn add_output(&mut self, output: impl Into<String>) {
+        let mut outputs = self.get_outputs();
+        outputs.push(output.into());
+        self.set_outputs(&outputs);
+    }
+
+    /// Mark the job as started processing.
+    pub fn mark_started(&mut self) {
+        let now = chrono::Utc::now().to_rfc3339();
+        self.status = JobStatus::Processing.as_str().to_string();
+        self.started_at = Some(now.clone());
+        self.updated_at = now;
+    }
+
+    /// Mark the job as completed.
+    pub fn mark_completed(&mut self) {
+        let now = chrono::Utc::now().to_rfc3339();
+        self.status = JobStatus::Completed.as_str().to_string();
+        self.completed_at = Some(now.clone());
+        self.updated_at = now;
+    }
+
+    /// Mark the job as failed with an error message.
+    pub fn mark_failed(&mut self, error: impl Into<String>) {
+        let now = chrono::Utc::now().to_rfc3339();
+        self.status = JobStatus::Failed.as_str().to_string();
+        self.completed_at = Some(now.clone());
+        self.error = Some(error.into());
+        self.updated_at = now;
+    }
+
+    /// Reset the job for retry.
+    pub fn reset_for_retry(&mut self) {
+        let now = chrono::Utc::now().to_rfc3339();
+        self.status = JobStatus::Pending.as_str().to_string();
+        self.started_at = None;
+        self.completed_at = None;
+        self.error = None;
+        self.retry_count += 1;
+        self.updated_at = now;
+    }
+
+    /// Get the job status as an enum.
+    pub fn get_status(&self) -> Option<JobStatus> {
+        JobStatus::parse(&self.status)
+    }
+
+    /// Get the job type as an enum.
+    pub fn get_job_type(&self) -> Option<JobType> {
+        JobType::parse(&self.job_type)
     }
 }
 
@@ -179,6 +478,69 @@ pub struct PipelineStep {
     pub config: serde_json::Value,
 }
 
+/// Pipeline definition with ordered steps.
+/// Used to define the sequence of jobs in a pipeline.
+/// Requirements: 6.1, 6.2, 7.1
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PipelineDefinition {
+    /// Ordered list of job types to execute (e.g., ["remux", "upload", "thumbnail"])
+    pub steps: Vec<String>,
+}
+
+impl PipelineDefinition {
+    /// Create a new pipeline definition with the given steps.
+    pub fn new(steps: Vec<String>) -> Self {
+        Self { steps }
+    }
+
+    /// Create the default pipeline definition: remux -> upload -> thumbnail.
+    pub fn default_pipeline() -> Self {
+        Self {
+            steps: vec![
+                "remux".to_string(),
+                "upload".to_string(),
+                "thumbnail".to_string(),
+            ],
+        }
+    }
+
+    /// Get the first step in the pipeline.
+    pub fn first_step(&self) -> Option<&str> {
+        self.steps.first().map(|s| s.as_str())
+    }
+
+    /// Get the next step after the given step.
+    pub fn next_step(&self, current: &str) -> Option<&str> {
+        let pos = self.steps.iter().position(|s| s == current)?;
+        self.steps.get(pos + 1).map(|s| s.as_str())
+    }
+
+    /// Get the remaining steps after the given step (excluding the current step).
+    pub fn remaining_steps(&self, current: &str) -> Vec<String> {
+        if let Some(pos) = self.steps.iter().position(|s| s == current) {
+            self.steps.iter().skip(pos + 1).cloned().collect()
+        } else {
+            vec![]
+        }
+    }
+
+    /// Check if the pipeline is empty.
+    pub fn is_empty(&self) -> bool {
+        self.steps.is_empty()
+    }
+
+    /// Get the number of steps in the pipeline.
+    pub fn len(&self) -> usize {
+        self.steps.len()
+    }
+}
+
+impl Default for PipelineDefinition {
+    fn default() -> Self {
+        Self::default_pipeline()
+    }
+}
+
 /// Pipeline job state.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct PipelineJobState {
@@ -199,6 +561,113 @@ mod tests {
         let job = JobDbModel::new(JobType::Pipeline, r#"{"steps":[]}"#);
         assert_eq!(job.status, "PENDING");
         assert_eq!(job.job_type, "PIPELINE");
+        assert_eq!(job.priority, 0);
+        assert_eq!(job.retry_count, 0);
+        assert!(job.input.is_none());
+        assert!(job.outputs.is_none());
+        assert!(job.get_outputs().is_empty());
+        assert!(job.streamer_id.is_none());
+        assert!(job.session_id.is_none());
+        assert!(job.started_at.is_none());
+        assert!(job.completed_at.is_none());
+        assert!(job.error.is_none());
+    }
+
+    #[test]
+    fn test_job_new_pipeline() {
+        let job = JobDbModel::new_pipeline(
+            "/input/file.flv",
+            10,
+            Some("streamer-123".to_string()),
+            Some("session-456".to_string()),
+            r#"{"steps":[]}"#,
+        );
+        assert_eq!(job.status, "PENDING");
+        assert_eq!(job.job_type, "PIPELINE");
+        assert_eq!(job.input, Some("/input/file.flv".to_string()));
+        assert!(job.outputs.is_none()); // Outputs start empty
+        assert!(job.get_outputs().is_empty());
+        assert_eq!(job.priority, 10);
+        assert_eq!(job.streamer_id, Some("streamer-123".to_string()));
+        assert_eq!(job.session_id, Some("session-456".to_string()));
+        assert_eq!(job.retry_count, 0);
+    }
+
+    #[test]
+    fn test_job_outputs() {
+        let mut job = JobDbModel::new_pipeline(
+            "/input/file.flv",
+            5,
+            None,
+            None,
+            r#"{"steps":[]}"#,
+        );
+        
+        // Initially no outputs
+        assert!(job.get_outputs().is_empty());
+        
+        // Add single output
+        job.add_output("/output/file1.mp4");
+        assert_eq!(job.get_outputs(), vec!["/output/file1.mp4".to_string()]);
+        
+        // Add more outputs
+        job.add_output("/output/file2.mp4");
+        job.add_output("/output/thumbnail.jpg");
+        assert_eq!(job.get_outputs(), vec![
+            "/output/file1.mp4".to_string(),
+            "/output/file2.mp4".to_string(),
+            "/output/thumbnail.jpg".to_string(),
+        ]);
+        
+        // Set outputs directly
+        job.set_outputs(&["/new/output.mp4".to_string()]);
+        assert_eq!(job.get_outputs(), vec!["/new/output.mp4".to_string()]);
+        
+        // Set empty outputs
+        job.set_outputs(&[]);
+        assert!(job.get_outputs().is_empty());
+    }
+
+    #[test]
+    fn test_job_lifecycle_methods() {
+        let mut job = JobDbModel::new(JobType::Pipeline, r#"{"steps":[]}"#);
+        
+        // Test mark_started
+        job.mark_started();
+        assert_eq!(job.status, "PROCESSING");
+        assert!(job.started_at.is_some());
+        
+        // Test mark_completed
+        job.mark_completed();
+        assert_eq!(job.status, "COMPLETED");
+        assert!(job.completed_at.is_some());
+    }
+
+    #[test]
+    fn test_job_mark_failed() {
+        let mut job = JobDbModel::new(JobType::Pipeline, r#"{"steps":[]}"#);
+        job.mark_started();
+        job.mark_failed("Something went wrong");
+        
+        assert_eq!(job.status, "FAILED");
+        assert!(job.completed_at.is_some());
+        assert_eq!(job.error, Some("Something went wrong".to_string()));
+    }
+
+    #[test]
+    fn test_job_reset_for_retry() {
+        let mut job = JobDbModel::new(JobType::Pipeline, r#"{"steps":[]}"#);
+        job.mark_started();
+        job.mark_failed("Error");
+        
+        let original_retry_count = job.retry_count;
+        job.reset_for_retry();
+        
+        assert_eq!(job.status, "PENDING");
+        assert!(job.started_at.is_none());
+        assert!(job.completed_at.is_none());
+        assert!(job.error.is_none());
+        assert_eq!(job.retry_count, original_retry_count + 1);
     }
 
     #[test]
@@ -216,5 +685,12 @@ mod tests {
             LogEntry::info("Test message").with_details(serde_json::json!({"key": "value"}));
         assert_eq!(entry.level, "INFO");
         assert!(entry.details.is_some());
+    }
+
+    #[test]
+    fn test_get_status_and_type() {
+        let job = JobDbModel::new(JobType::Pipeline, r#"{"steps":[]}"#);
+        assert_eq!(job.get_status(), Some(JobStatus::Pending));
+        assert_eq!(job.get_job_type(), Some(JobType::Pipeline));
     }
 }

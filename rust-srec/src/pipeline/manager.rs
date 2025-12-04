@@ -11,8 +11,10 @@ use super::processors::{
     ExecuteCommandProcessor, Processor, RemuxProcessor, ThumbnailProcessor, UploadProcessor,
 };
 use super::worker_pool::{WorkerPool, WorkerPoolConfig, WorkerType};
-use crate::Result;
+use crate::database::models::{JobFilters, Pagination};
+use crate::database::repositories::JobRepository;
 use crate::downloader::DownloadManagerEvent;
+use crate::Result;
 
 /// Configuration for the Pipeline Manager.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -119,6 +121,66 @@ impl PipelineManager {
             event_tx,
             cancellation_token: CancellationToken::new(),
         }
+    }
+
+    /// Create a new Pipeline Manager with custom configuration and job repository.
+    /// This enables database persistence and job recovery on startup.
+    /// Requirements: 6.1, 6.3
+    pub fn with_repository(config: PipelineManagerConfig, repository: Arc<dyn JobRepository>) -> Self {
+        let (event_tx, _) = broadcast::channel(256);
+        let job_queue = Arc::new(JobQueue::with_repository(config.job_queue.clone(), repository));
+
+        // Create default processors
+        let processors: Vec<Arc<dyn Processor>> = vec![
+            Arc::new(RemuxProcessor::new()),
+            Arc::new(UploadProcessor::new()),
+            Arc::new(ExecuteCommandProcessor::new()),
+            Arc::new(ThumbnailProcessor::new()),
+        ];
+
+        Self {
+            cpu_pool: WorkerPool::with_config(WorkerType::Cpu, config.cpu_pool.clone()),
+            io_pool: WorkerPool::with_config(WorkerType::Io, config.io_pool.clone()),
+            config,
+            job_queue,
+            processors,
+            event_tx,
+            cancellation_token: CancellationToken::new(),
+        }
+    }
+
+    /// Set the job repository for database persistence.
+    /// This enables job recovery on startup and persistent job tracking.
+    /// Requirements: 6.1, 6.3
+    /// 
+    /// Note: This method is deprecated. Use `with_repository` constructor instead
+    /// for full functionality. Setting the repository after construction has
+    /// limited effect due to the immutable nature of the internal JobQueue.
+    #[deprecated(note = "Use with_repository constructor instead")]
+    pub fn set_job_repository(&self, _repository: Arc<dyn JobRepository>) {
+        // Note: In a production system, you'd want to either:
+        // 1. Pass the repository at construction time (preferred - use with_repository)
+        // 2. Use Arc<RwLock<JobQueue>> for interior mutability
+        // 3. Use a different pattern for dependency injection
+        
+        // For now, we log a warning that this should be done at construction time
+        warn!("set_job_repository called after construction - use with_repository constructor for full functionality");
+    }
+
+    /// Recover jobs from database on startup.
+    /// Resets PROCESSING jobs to PENDING for re-execution.
+    /// For sequential pipelines, no special handling is needed since only one job
+    /// per pipeline exists at a time.
+    /// Requirements: 6.3, 7.4
+    pub async fn recover_jobs(&self) -> Result<usize> {
+        info!("Recovering jobs from database...");
+        let recovered = self.job_queue.recover_jobs().await?;
+        if recovered > 0 {
+            info!("Recovered {} jobs from database", recovered);
+        } else {
+            debug!("No jobs to recover from database");
+        }
+        Ok(recovered)
     }
 
     /// Start the pipeline manager.
@@ -231,6 +293,82 @@ impl PipelineManager {
         self.enqueue(job).await
     }
 
+    /// Create a new pipeline with sequential job execution.
+    /// Only the first job is created immediately; subsequent jobs are created
+    /// atomically when each job completes.
+    /// 
+    /// Returns the pipeline_id (which is the first job's ID) for tracking.
+    /// 
+    /// Requirements: 6.1, 7.1, 7.5
+    pub async fn create_pipeline(
+        &self,
+        session_id: &str,
+        streamer_id: &str,
+        input_path: &str,
+        steps: Option<Vec<String>>,
+    ) -> Result<PipelineCreationResult> {
+        // Use default steps if not provided
+        let steps = steps.unwrap_or_else(|| {
+            vec![
+                "remux".to_string(),
+                "upload".to_string(),
+                "thumbnail".to_string(),
+            ]
+        });
+
+        if steps.is_empty() {
+            return Err(crate::Error::Validation("Pipeline must have at least one step".to_string()));
+        }
+
+        // Get the first step
+        let first_step = &steps[0];
+
+        // Calculate next_job_type and remaining_steps for the first job
+        let (next_job_type, remaining_steps) = if steps.len() > 1 {
+            let next = steps.get(1).cloned();
+            let remaining: Vec<String> = steps.iter().skip(2).cloned().collect();
+            (next, if remaining.is_empty() { None } else { Some(remaining) })
+        } else {
+            (None, None)
+        };
+
+        // Create the first job with pipeline chain information
+        let first_job = Job::new_pipeline_step(
+            first_step.clone(),
+            input_path,
+            input_path, // Output path will be determined by the processor
+            streamer_id,
+            session_id,
+            None, // pipeline_id will be set to this job's ID
+            next_job_type,
+            remaining_steps,
+        );
+
+        // The pipeline_id is the first job's ID
+        let pipeline_id = first_job.id.clone();
+
+        // Set the pipeline_id on the first job
+        let first_job = first_job.with_pipeline_id(pipeline_id.clone());
+
+        // Enqueue the first job
+        let job_id = self.enqueue(first_job.clone()).await?;
+
+        info!(
+            "Created pipeline {} with {} steps for session {}",
+            pipeline_id,
+            steps.len(),
+            session_id
+        );
+
+        Ok(PipelineCreationResult {
+            pipeline_id,
+            first_job_id: job_id,
+            first_job_type: first_step.clone(),
+            total_steps: steps.len(),
+            steps,
+        })
+    }
+
     /// Handle download manager events.
     pub async fn handle_download_event(&self, event: DownloadManagerEvent) {
         match event {
@@ -324,6 +462,114 @@ impl PipelineManager {
     pub fn should_throttle(&self) -> bool {
         self.config.enable_throttling && self.job_queue.is_critical()
     }
+
+    // ========================================================================
+    // Query and Management Methods (Requirements 1.1-1.5, 2.1-2.5, 3.1-3.3)
+    // ========================================================================
+
+    /// List jobs with filters and pagination.
+    /// Delegates to JobQueue/JobRepository.
+    /// Requirements: 1.1, 1.3, 1.4, 1.5
+    pub async fn list_jobs(
+        &self,
+        filters: &JobFilters,
+        pagination: &Pagination,
+    ) -> Result<(Vec<Job>, u64)> {
+        self.job_queue.list_jobs(filters, pagination).await
+    }
+
+    /// Get a job by ID.
+    /// Retrieves job from repository.
+    /// Requirements: 1.2
+    pub async fn get_job(&self, id: &str) -> Result<Option<Job>> {
+        self.job_queue.get_job(id).await
+    }
+
+    /// Retry a failed job.
+    /// Delegates to JobQueue.
+    /// Requirements: 2.1, 2.2
+    pub async fn retry_job(&self, id: &str) -> Result<Job> {
+        let job = self.job_queue.retry_job(id).await?;
+
+        // Emit event for the retried job
+        let _ = self.event_tx.send(PipelineEvent::JobEnqueued {
+            job_id: job.id.clone(),
+            job_type: job.job_type.clone(),
+            streamer_id: job.streamer_id.clone(),
+        });
+
+        // Check queue depth after retry
+        self.check_queue_depth();
+
+        Ok(job)
+    }
+
+    /// Cancel a job.
+    /// For Pending jobs: removes from queue and marks as Interrupted.
+    /// For Processing jobs: signals cancellation and marks as Interrupted.
+    /// Returns error for Completed/Failed jobs.
+    /// Delegates to JobQueue.
+    /// Requirements: 2.3, 2.4, 2.5
+    pub async fn cancel_job(&self, id: &str) -> Result<()> {
+        self.job_queue.cancel_job(id).await
+    }
+
+    /// Get comprehensive pipeline statistics.
+    /// Returns counts by status (pending, processing, completed, failed)
+    /// and average processing time.
+    /// Requirements: 3.1, 3.2, 3.3
+    pub async fn get_stats(&self) -> Result<PipelineStats> {
+        let job_stats = self.job_queue.get_stats().await?;
+
+        Ok(PipelineStats {
+            pending: job_stats.pending,
+            processing: job_stats.processing,
+            completed: job_stats.completed,
+            failed: job_stats.failed,
+            interrupted: job_stats.interrupted,
+            avg_processing_time_secs: job_stats.avg_processing_time_secs,
+            queue_depth: self.queue_depth(),
+            queue_status: self.queue_status(),
+        })
+    }
+}
+
+/// Comprehensive pipeline statistics.
+/// Requirements: 3.1, 3.2, 3.3
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PipelineStats {
+    /// Number of pending jobs.
+    pub pending: u64,
+    /// Number of processing jobs.
+    pub processing: u64,
+    /// Number of completed jobs.
+    pub completed: u64,
+    /// Number of failed jobs.
+    pub failed: u64,
+    /// Number of interrupted jobs.
+    pub interrupted: u64,
+    /// Average processing time in seconds for completed jobs.
+    pub avg_processing_time_secs: Option<f64>,
+    /// Current queue depth.
+    pub queue_depth: usize,
+    /// Current queue status.
+    pub queue_status: QueueDepthStatus,
+}
+
+/// Result of creating a new pipeline.
+/// Requirements: 6.1, 7.1
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PipelineCreationResult {
+    /// Pipeline ID (same as first job's ID).
+    pub pipeline_id: String,
+    /// ID of the first job in the pipeline.
+    pub first_job_id: String,
+    /// Type of the first job.
+    pub first_job_type: String,
+    /// Total number of steps in the pipeline.
+    pub total_steps: usize,
+    /// List of all steps in the pipeline.
+    pub steps: Vec<String>,
 }
 
 impl Default for PipelineManager {
@@ -378,5 +624,178 @@ mod tests {
             .unwrap();
 
         assert!(!job_id.is_empty());
+    }
+
+    #[tokio::test]
+    async fn test_list_jobs() {
+        use crate::database::models::{JobFilters, Pagination};
+
+        let manager = PipelineManager::new();
+
+        // Enqueue some jobs
+        let job1 = Job::new("remux", "/input1.flv", "/output1.mp4", "streamer-1", "session-1");
+        let job2 = Job::new("upload", "/input2.flv", "/output2.mp4", "streamer-2", "session-2");
+        manager.enqueue(job1).await.unwrap();
+        manager.enqueue(job2).await.unwrap();
+
+        // List all jobs
+        let filters = JobFilters::default();
+        let pagination = Pagination::new(10, 0);
+        let (jobs, total) = manager.list_jobs(&filters, &pagination).await.unwrap();
+
+        assert_eq!(total, 2);
+        assert_eq!(jobs.len(), 2);
+    }
+
+    #[tokio::test]
+    async fn test_list_jobs_with_filter() {
+        use crate::database::models::{JobFilters, Pagination};
+
+        let manager = PipelineManager::new();
+
+        // Enqueue jobs for different streamers
+        let job1 = Job::new("remux", "/input1.flv", "/output1.mp4", "streamer-1", "session-1");
+        let job2 = Job::new("upload", "/input2.flv", "/output2.mp4", "streamer-2", "session-2");
+        manager.enqueue(job1).await.unwrap();
+        manager.enqueue(job2).await.unwrap();
+
+        // Filter by streamer_id
+        let filters = JobFilters::new().with_streamer_id("streamer-1");
+        let pagination = Pagination::new(10, 0);
+        let (jobs, total) = manager.list_jobs(&filters, &pagination).await.unwrap();
+
+        assert_eq!(total, 1);
+        assert_eq!(jobs.len(), 1);
+        assert_eq!(jobs[0].streamer_id, "streamer-1");
+    }
+
+    #[tokio::test]
+    async fn test_get_job() {
+        let manager = PipelineManager::new();
+
+        let job = Job::new("remux", "/input.flv", "/output.mp4", "streamer-1", "session-1");
+        let job_id = job.id.clone();
+        manager.enqueue(job).await.unwrap();
+
+        // Get existing job
+        let retrieved = manager.get_job(&job_id).await.unwrap();
+        assert!(retrieved.is_some());
+        assert_eq!(retrieved.unwrap().id, job_id);
+
+        // Get non-existing job
+        let not_found = manager.get_job("non-existent-id").await.unwrap();
+        assert!(not_found.is_none());
+    }
+
+    #[tokio::test]
+    async fn test_get_stats() {
+        let manager = PipelineManager::new();
+
+        // Enqueue some jobs
+        let job1 = Job::new("remux", "/input1.flv", "/output1.mp4", "streamer-1", "session-1");
+        let job2 = Job::new("upload", "/input2.flv", "/output2.mp4", "streamer-2", "session-2");
+        manager.enqueue(job1).await.unwrap();
+        manager.enqueue(job2).await.unwrap();
+
+        let stats = manager.get_stats().await.unwrap();
+
+        assert_eq!(stats.pending, 2);
+        assert_eq!(stats.processing, 0);
+        assert_eq!(stats.completed, 0);
+        assert_eq!(stats.failed, 0);
+        assert_eq!(stats.queue_depth, 2);
+        assert_eq!(stats.queue_status, QueueDepthStatus::Normal);
+    }
+
+    #[tokio::test]
+    async fn test_cancel_pending_job() {
+        use crate::pipeline::JobStatus;
+
+        let manager = PipelineManager::new();
+
+        let job = Job::new("remux", "/input.flv", "/output.mp4", "streamer-1", "session-1");
+        let job_id = job.id.clone();
+        manager.enqueue(job).await.unwrap();
+
+        // Cancel the pending job
+        manager.cancel_job(&job_id).await.unwrap();
+
+        // Verify job is now interrupted
+        let cancelled = manager.get_job(&job_id).await.unwrap().unwrap();
+        assert_eq!(cancelled.status, JobStatus::Interrupted);
+    }
+
+    #[tokio::test]
+    async fn test_create_pipeline_default_steps() {
+        let manager = PipelineManager::new();
+
+        let result = manager
+            .create_pipeline("session-1", "streamer-1", "/input.flv", None)
+            .await
+            .unwrap();
+
+        assert!(!result.pipeline_id.is_empty());
+        assert_eq!(result.first_job_id, result.pipeline_id);
+        assert_eq!(result.first_job_type, "remux");
+        assert_eq!(result.total_steps, 3);
+        assert_eq!(result.steps, vec!["remux", "upload", "thumbnail"]);
+
+        // Verify the first job was created
+        let job = manager.get_job(&result.first_job_id).await.unwrap().unwrap();
+        assert_eq!(job.job_type, "remux");
+        assert_eq!(job.next_job_type, Some("upload".to_string()));
+        assert_eq!(job.remaining_steps, Some(vec!["thumbnail".to_string()]));
+        assert_eq!(job.pipeline_id, Some(result.pipeline_id.clone()));
+    }
+
+    #[tokio::test]
+    async fn test_create_pipeline_custom_steps() {
+        let manager = PipelineManager::new();
+
+        let custom_steps = vec!["remux".to_string(), "upload".to_string()];
+        let result = manager
+            .create_pipeline("session-1", "streamer-1", "/input.flv", Some(custom_steps))
+            .await
+            .unwrap();
+
+        assert_eq!(result.total_steps, 2);
+        assert_eq!(result.steps, vec!["remux", "upload"]);
+        assert_eq!(result.first_job_type, "remux");
+
+        // Verify the first job has correct chain info
+        let job = manager.get_job(&result.first_job_id).await.unwrap().unwrap();
+        assert_eq!(job.next_job_type, Some("upload".to_string()));
+        assert_eq!(job.remaining_steps, None); // No steps after upload
+    }
+
+    #[tokio::test]
+    async fn test_create_pipeline_single_step() {
+        let manager = PipelineManager::new();
+
+        let single_step = vec!["remux".to_string()];
+        let result = manager
+            .create_pipeline("session-1", "streamer-1", "/input.flv", Some(single_step))
+            .await
+            .unwrap();
+
+        assert_eq!(result.total_steps, 1);
+        assert_eq!(result.first_job_type, "remux");
+
+        // Verify the first job has no next job
+        let job = manager.get_job(&result.first_job_id).await.unwrap().unwrap();
+        assert_eq!(job.next_job_type, None);
+        assert_eq!(job.remaining_steps, None);
+    }
+
+    #[tokio::test]
+    async fn test_create_pipeline_empty_steps_error() {
+        let manager = PipelineManager::new();
+
+        let empty_steps: Vec<String> = vec![];
+        let result = manager
+            .create_pipeline("session-1", "streamer-1", "/input.flv", Some(empty_steps))
+            .await;
+
+        assert!(result.is_err());
     }
 }

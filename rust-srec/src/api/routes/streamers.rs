@@ -40,11 +40,11 @@ pub fn router() -> Router<AppState> {
     Router::new()
         .route("/", post(create_streamer))
         .route("/", get(list_streamers))
-        .route("/:id", get(get_streamer))
-        .route("/:id", patch(update_streamer))
-        .route("/:id", delete(delete_streamer))
-        .route("/:id/clear-error", post(clear_error))
-        .route("/:id/priority", patch(update_priority))
+        .route("/{id}", get(get_streamer))
+        .route("/{id}", patch(update_streamer))
+        .route("/{id}", delete(delete_streamer))
+        .route("/{id}/clear-error", post(clear_error))
+        .route("/{id}/priority", patch(update_priority))
 }
 
 /// Convert StreamerMetadata to StreamerResponse.

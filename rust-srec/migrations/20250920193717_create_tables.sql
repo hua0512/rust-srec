@@ -131,7 +131,19 @@ CREATE TABLE job (
     config TEXT NOT NULL,
     state TEXT NOT NULL,
     created_at TEXT NOT NULL,
-    updated_at TEXT NOT NULL
+    updated_at TEXT NOT NULL,
+    input TEXT,                              -- Input path or source for the job
+    outputs TEXT,                            -- Output paths (JSON array)
+    priority INTEGER NOT NULL DEFAULT 0,     -- Job priority (higher = more urgent)
+    streamer_id TEXT,                        -- Associated streamer ID
+    session_id TEXT,                         -- Associated session ID
+    started_at TEXT,                         -- When job started processing
+    completed_at TEXT,                       -- When job completed
+    error TEXT,                              -- Error message if failed
+    retry_count INTEGER NOT NULL DEFAULT 0,  -- Number of retry attempts
+    next_job_type TEXT,                      -- Next job type to create on completion
+    remaining_steps TEXT,                    -- Pipeline steps remaining (JSON array)
+    pipeline_id TEXT                         -- Pipeline ID to group related jobs
 );
 
 CREATE TABLE job_execution_logs (
@@ -255,6 +267,12 @@ CREATE INDEX idx_notification_subscription_channel_id ON notification_subscripti
 CREATE INDEX idx_job_status_type ON job(status, job_type);
 CREATE INDEX idx_job_updated_at ON job(updated_at);
 CREATE INDEX idx_job_created_at ON job(created_at);
+CREATE INDEX idx_job_streamer_id ON job(streamer_id);
+CREATE INDEX idx_job_session_id ON job(session_id);
+CREATE INDEX idx_job_priority ON job(priority DESC);
+CREATE INDEX idx_job_started_at ON job(started_at);
+CREATE INDEX idx_job_completed_at ON job(completed_at);
+CREATE INDEX idx_job_pipeline_id ON job(pipeline_id);
 
 -- Index for the job_execution_logs table
 CREATE INDEX idx_job_execution_logs_job_id ON job_execution_logs(job_id);

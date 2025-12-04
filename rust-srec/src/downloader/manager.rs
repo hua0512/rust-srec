@@ -3,6 +3,7 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 
+use chrono::{DateTime, Utc};
 use dashmap::DashMap;
 use parking_lot::RwLock;
 use serde::{Deserialize, Serialize};
@@ -15,6 +16,57 @@ use super::engine::{
 };
 use super::resilience::{CircuitBreakerManager, RetryConfig};
 use crate::Result;
+
+/// Pending configuration update for an active download.
+///
+/// Stores configuration changes that will be applied when the next segment starts.
+/// Multiple updates can be merged, with newer values overwriting older ones.
+#[derive(Debug, Clone, Default)]
+pub struct PendingConfigUpdate {
+    /// Updated cookies (if any).
+    pub cookies: Option<String>,
+    /// Updated headers (if any).
+    pub headers: Option<Vec<(String, String)>>,
+    /// Updated retry configuration (if any).
+    pub retry_config: Option<RetryConfig>,
+    /// Timestamp when the update was queued.
+    pub queued_at: DateTime<Utc>,
+}
+
+impl PendingConfigUpdate {
+    /// Create a new pending config update with the current timestamp.
+    pub fn new(
+        cookies: Option<String>,
+        headers: Option<Vec<(String, String)>>,
+        retry_config: Option<RetryConfig>,
+    ) -> Self {
+        Self {
+            cookies,
+            headers,
+            retry_config,
+            queued_at: Utc::now(),
+        }
+    }
+
+    /// Check if there are any pending updates.
+    pub fn has_updates(&self) -> bool {
+        self.cookies.is_some() || self.headers.is_some() || self.retry_config.is_some()
+    }
+
+    /// Merge another update into this one (newer values overwrite).
+    pub fn merge(&mut self, other: PendingConfigUpdate) {
+        if other.cookies.is_some() {
+            self.cookies = other.cookies;
+        }
+        if other.headers.is_some() {
+            self.headers = other.headers;
+        }
+        if other.retry_config.is_some() {
+            self.retry_config = other.retry_config;
+        }
+        self.queued_at = other.queued_at;
+    }
+}
 
 /// Configuration for the Download Manager.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -66,12 +118,27 @@ pub struct DownloadManager {
     high_priority_semaphore: Arc<Semaphore>,
     /// Active downloads.
     active_downloads: DashMap<String, ActiveDownload>,
+    /// Pending configuration updates keyed by download_id.
+    pending_updates: DashMap<String, PendingConfigUpdate>,
     /// Engine registry.
     engines: RwLock<HashMap<EngineType, Arc<dyn DownloadEngine>>>,
     /// Circuit breaker manager.
     circuit_breakers: CircuitBreakerManager,
     /// Broadcast sender for download events
     event_tx: broadcast::Sender<DownloadManagerEvent>,
+}
+
+/// Type of configuration that was updated.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ConfigUpdateType {
+    /// Only cookies were updated.
+    Cookies,
+    /// Only headers were updated.
+    Headers,
+    /// Only retry configuration was updated.
+    RetryConfig,
+    /// Multiple configuration types were updated.
+    Multiple,
 }
 
 /// Events emitted by the Download Manager.
@@ -114,6 +181,18 @@ pub enum DownloadManagerEvent {
         download_id: String,
         streamer_id: String,
     },
+    /// Configuration was updated for a download.
+    ConfigUpdated {
+        download_id: String,
+        streamer_id: String,
+        update_type: ConfigUpdateType,
+    },
+    /// Configuration update failed to apply.
+    ConfigUpdateFailed {
+        download_id: String,
+        streamer_id: String,
+        error: String,
+    },
 }
 
 impl DownloadManager {
@@ -140,6 +219,7 @@ impl DownloadManager {
             normal_semaphore,
             high_priority_semaphore,
             active_downloads: DashMap::new(),
+            pending_updates: DashMap::new(),
             engines: RwLock::new(HashMap::new()),
             circuit_breakers,
             event_tx,
@@ -455,8 +535,19 @@ impl DownloadManager {
 
     /// Update configuration for an active download.
     ///
-    /// Some config changes are applied immediately (cookies, retry policy),
-    /// while others are applied to the next segment (output settings).
+    /// Queues configuration updates (cookies, headers, retry policy) to be applied
+    /// when the next segment starts. Multiple updates are merged, with newer values
+    /// overwriting older ones.
+    ///
+    /// # Arguments
+    /// * `download_id` - The ID of the download to update
+    /// * `cookies` - Optional new cookies to apply
+    /// * `headers` - Optional new headers to apply
+    /// * `retry_config` - Optional new retry configuration to apply
+    ///
+    /// # Returns
+    /// * `Ok(())` if the update was queued successfully
+    /// * `Err(NotFound)` if the download does not exist
     pub fn update_download_config(
         &self,
         download_id: &str,
@@ -464,8 +555,32 @@ impl DownloadManager {
         headers: Option<Vec<(String, String)>>,
         retry_config: Option<RetryConfig>,
     ) -> Result<()> {
-        if let Some(download) = self.active_downloads.get(download_id) {
-            // Log the config update - actual application happens on next segment
+        // Validate download exists in active_downloads
+        let download = self.active_downloads.get(download_id).ok_or_else(|| {
+            crate::Error::NotFound {
+                entity_type: "Download".to_string(),
+                id: download_id.to_string(),
+            }
+        })?;
+
+        let streamer_id = download.handle.config.streamer_id.clone();
+        // Drop the reference to avoid holding the lock while updating pending_updates
+        drop(download);
+
+        // Create the new pending update
+        let new_update = PendingConfigUpdate::new(cookies.clone(), headers.clone(), retry_config.clone());
+
+        // Only store if there are actual updates
+        if new_update.has_updates() {
+            // Create or merge PendingConfigUpdate in pending_updates map
+            self.pending_updates
+                .entry(download_id.to_string())
+                .and_modify(|existing| {
+                    existing.merge(new_update.clone());
+                })
+                .or_insert(new_update);
+
+            // Log the queued update
             info!(
                 "Config update queued for download {}: cookies={}, headers={}, retry={}",
                 download_id,
@@ -474,22 +589,18 @@ impl DownloadManager {
                 retry_config.is_some()
             );
 
-            // Store pending config updates
-            // Note: In a full implementation, we'd store these in a pending_updates map
-            // and apply them when the next segment starts
-
             debug!(
                 "Download {} for streamer {} will apply config on next segment",
-                download_id, download.handle.config.streamer_id
+                download_id, streamer_id
             );
-
-            Ok(())
         } else {
-            Err(crate::Error::NotFound {
-                entity_type: "Download".to_string(),
-                id: download_id.to_string(),
-            })
+            debug!(
+                "Empty config update for download {} - no changes queued",
+                download_id
+            );
         }
+
+        Ok(())
     }
 
     /// Get download by streamer ID.
@@ -516,6 +627,164 @@ impl DownloadManager {
         self.active_downloads
             .iter()
             .any(|entry| entry.value().handle.config.streamer_id == streamer_id)
+    }
+
+    /// Take pending updates for a download (called by engines at segment boundaries).
+    ///
+    /// Atomically removes and returns the pending configuration update for the specified
+    /// download. This should be called by download engines when starting a new segment
+    /// to apply any queued configuration changes.
+    ///
+    /// # Arguments
+    /// * `download_id` - The ID of the download to take pending updates for
+    ///
+    /// # Returns
+    /// * `Some(PendingConfigUpdate)` if there were pending updates
+    /// * `None` if no updates were pending for this download
+    pub fn take_pending_updates(&self, download_id: &str) -> Option<PendingConfigUpdate> {
+        self.pending_updates
+            .remove(download_id)
+            .map(|(_, update)| update)
+    }
+
+    /// Check if a download has pending configuration updates.
+    ///
+    /// # Arguments
+    /// * `download_id` - The ID of the download to check
+    ///
+    /// # Returns
+    /// * `true` if there are pending updates for this download
+    /// * `false` otherwise
+    pub fn has_pending_updates(&self, download_id: &str) -> bool {
+        self.pending_updates.contains_key(download_id)
+    }
+
+    /// Emit a ConfigUpdated event for a successfully applied configuration update.
+    ///
+    /// This helper method determines the appropriate `ConfigUpdateType` based on which
+    /// fields were present in the `PendingConfigUpdate` and emits the event via the
+    /// broadcast channel.
+    ///
+    /// # Arguments
+    /// * `download_id` - The ID of the download that was updated
+    /// * `streamer_id` - The streamer ID associated with the download
+    /// * `update` - The pending config update that was applied
+    ///
+    /// # Returns
+    /// * `true` if the event was sent successfully (at least one receiver)
+    /// * `false` if there were no receivers or the update had no changes
+    pub fn emit_config_updated(
+        &self,
+        download_id: &str,
+        streamer_id: &str,
+        update: &PendingConfigUpdate,
+    ) -> bool {
+        // Don't emit if there are no actual updates
+        if !update.has_updates() {
+            return false;
+        }
+
+        let update_type = Self::determine_config_update_type(update);
+
+        let event = DownloadManagerEvent::ConfigUpdated {
+            download_id: download_id.to_string(),
+            streamer_id: streamer_id.to_string(),
+            update_type,
+        };
+
+        // Broadcast send returns Ok if at least one receiver got the message
+        // Returns Err if there are no receivers, which is fine
+        match self.event_tx.send(event) {
+            Ok(_) => {
+                debug!(
+                    "Emitted ConfigUpdated event for download {} (streamer {})",
+                    download_id, streamer_id
+                );
+                true
+            }
+            Err(_) => {
+                // No receivers - this is not an error, just means no one is listening
+                debug!(
+                    "ConfigUpdated event for download {} had no receivers",
+                    download_id
+                );
+                false
+            }
+        }
+    }
+
+    /// Emit a ConfigUpdateFailed event when a configuration update fails to apply.
+    ///
+    /// # Arguments
+    /// * `download_id` - The ID of the download that failed to update
+    /// * `streamer_id` - The streamer ID associated with the download
+    /// * `error` - Description of the error that occurred
+    ///
+    /// # Returns
+    /// * `true` if the event was sent successfully (at least one receiver)
+    /// * `false` if there were no receivers
+    pub fn emit_config_update_failed(
+        &self,
+        download_id: &str,
+        streamer_id: &str,
+        error: &str,
+    ) -> bool {
+        let event = DownloadManagerEvent::ConfigUpdateFailed {
+            download_id: download_id.to_string(),
+            streamer_id: streamer_id.to_string(),
+            error: error.to_string(),
+        };
+
+        match self.event_tx.send(event) {
+            Ok(_) => {
+                warn!(
+                    "Emitted ConfigUpdateFailed event for download {}: {}",
+                    download_id, error
+                );
+                true
+            }
+            Err(_) => {
+                debug!(
+                    "ConfigUpdateFailed event for download {} had no receivers",
+                    download_id
+                );
+                false
+            }
+        }
+    }
+
+    /// Determine the ConfigUpdateType based on which fields are present in the update.
+    ///
+    /// # Arguments
+    /// * `update` - The pending config update to analyze
+    ///
+    /// # Returns
+    /// The appropriate `ConfigUpdateType` variant:
+    /// - `Multiple` if more than one field is set
+    /// - `Cookies`, `Headers`, or `RetryConfig` if only one field is set
+    /// - `Multiple` as fallback (should not happen if `has_updates()` is true)
+    fn determine_config_update_type(update: &PendingConfigUpdate) -> ConfigUpdateType {
+        let has_cookies = update.cookies.is_some();
+        let has_headers = update.headers.is_some();
+        let has_retry = update.retry_config.is_some();
+
+        let count = [has_cookies, has_headers, has_retry]
+            .iter()
+            .filter(|&&x| x)
+            .count();
+
+        if count > 1 {
+            ConfigUpdateType::Multiple
+        } else if has_cookies {
+            ConfigUpdateType::Cookies
+        } else if has_headers {
+            ConfigUpdateType::Headers
+        } else if has_retry {
+            ConfigUpdateType::RetryConfig
+        } else {
+            // Fallback - should not happen if has_updates() returned true
+            ConfigUpdateType::Multiple
+        }
     }
 
     /// Get downloads by status.
@@ -567,6 +836,9 @@ impl Default for DownloadManager {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use proptest::prelude::*;
+    use std::sync::Arc;
+    use std::thread;
 
     #[test]
     fn test_download_manager_config_default() {
@@ -585,11 +857,254 @@ mod tests {
 
     #[test]
     fn test_engine_registration() {
-        let mut manager = DownloadManager::new();
+        let manager = DownloadManager::new();
 
         // FFmpeg should be registered by default
         assert!(manager.get_engine(EngineType::Ffmpeg).is_some());
         assert!(manager.get_engine(EngineType::Streamlink).is_some());
         assert!(manager.get_engine(EngineType::Mesio).is_some());
+    }
+
+    #[test]
+    fn test_determine_config_update_type_cookies_only() {
+        let update = PendingConfigUpdate::new(
+            Some("session=abc123".to_string()),
+            None,
+            None,
+        );
+        assert_eq!(
+            DownloadManager::determine_config_update_type(&update),
+            ConfigUpdateType::Cookies
+        );
+    }
+
+    #[test]
+    fn test_determine_config_update_type_headers_only() {
+        let update = PendingConfigUpdate::new(
+            None,
+            Some(vec![("Authorization".to_string(), "Bearer token".to_string())]),
+            None,
+        );
+        assert_eq!(
+            DownloadManager::determine_config_update_type(&update),
+            ConfigUpdateType::Headers
+        );
+    }
+
+    #[test]
+    fn test_determine_config_update_type_retry_only() {
+        let update = PendingConfigUpdate::new(
+            None,
+            None,
+            Some(RetryConfig::default()),
+        );
+        assert_eq!(
+            DownloadManager::determine_config_update_type(&update),
+            ConfigUpdateType::RetryConfig
+        );
+    }
+
+    #[test]
+    fn test_determine_config_update_type_multiple() {
+        let update = PendingConfigUpdate::new(
+            Some("session=abc123".to_string()),
+            Some(vec![("Authorization".to_string(), "Bearer token".to_string())]),
+            None,
+        );
+        assert_eq!(
+            DownloadManager::determine_config_update_type(&update),
+            ConfigUpdateType::Multiple
+        );
+    }
+
+    #[test]
+    fn test_determine_config_update_type_all_three() {
+        let update = PendingConfigUpdate::new(
+            Some("session=abc123".to_string()),
+            Some(vec![("Authorization".to_string(), "Bearer token".to_string())]),
+            Some(RetryConfig::default()),
+        );
+        assert_eq!(
+            DownloadManager::determine_config_update_type(&update),
+            ConfigUpdateType::Multiple
+        );
+    }
+
+    #[test]
+    fn test_emit_config_updated_with_subscriber() {
+        let manager = DownloadManager::new();
+        let mut receiver = manager.subscribe();
+
+        let update = PendingConfigUpdate::new(
+            Some("session=abc123".to_string()),
+            None,
+            None,
+        );
+
+        let result = manager.emit_config_updated("download-123", "streamer-456", &update);
+        assert!(result);
+
+        // Verify the event was received
+        let event = receiver.try_recv().unwrap();
+        match event {
+            DownloadManagerEvent::ConfigUpdated {
+                download_id,
+                streamer_id,
+                update_type,
+            } => {
+                assert_eq!(download_id, "download-123");
+                assert_eq!(streamer_id, "streamer-456");
+                assert_eq!(update_type, ConfigUpdateType::Cookies);
+            }
+            _ => panic!("Expected ConfigUpdated event"),
+        }
+    }
+
+    #[test]
+    fn test_emit_config_updated_no_updates() {
+        let manager = DownloadManager::new();
+        let _receiver = manager.subscribe();
+
+        let update = PendingConfigUpdate::default();
+        assert!(!update.has_updates());
+
+        let result = manager.emit_config_updated("download-123", "streamer-456", &update);
+        assert!(!result);
+    }
+
+    #[test]
+    fn test_emit_config_update_failed_with_subscriber() {
+        let manager = DownloadManager::new();
+        let mut receiver = manager.subscribe();
+
+        let result = manager.emit_config_update_failed(
+            "download-123",
+            "streamer-456",
+            "Connection timeout",
+        );
+        assert!(result);
+
+        // Verify the event was received
+        let event = receiver.try_recv().unwrap();
+        match event {
+            DownloadManagerEvent::ConfigUpdateFailed {
+                download_id,
+                streamer_id,
+                error,
+            } => {
+                assert_eq!(download_id, "download-123");
+                assert_eq!(streamer_id, "streamer-456");
+                assert_eq!(error, "Connection timeout");
+            }
+            _ => panic!("Expected ConfigUpdateFailed event"),
+        }
+    }
+
+    // Helper function to create a test download manager with a mock active download
+    fn create_manager_with_active_download(download_id: &str, streamer_id: &str) -> DownloadManager {
+        let manager = DownloadManager::new();
+        
+        // Create a mock active download entry
+        let (segment_tx, _segment_rx) = tokio::sync::mpsc::channel::<SegmentEvent>(32);
+        let config = DownloadConfig::new(
+            "http://test.example.com/stream",
+            "/tmp/test",
+            streamer_id,
+            "test-session",
+        );
+        
+        let handle = Arc::new(DownloadHandle::new(
+            download_id.to_string(),
+            EngineType::Ffmpeg,
+            config,
+            segment_tx,
+        ));
+        
+        let active_download = ActiveDownload {
+            handle,
+            status: DownloadStatus::Downloading,
+            progress: DownloadProgress::default(),
+            is_high_priority: false,
+        };
+        
+        manager.active_downloads.insert(download_id.to_string(), active_download);
+        manager
+    }
+
+    // **Feature: download-config-updates, Property 5: Concurrent updates are thread-safe**
+    // **Validates: Requirements 4.1, 4.3**
+    proptest! {
+        #![proptest_config(ProptestConfig::with_cases(100))]
+
+        #[test]
+        fn prop_concurrent_updates_are_thread_safe(
+            num_threads in 2usize..5usize,
+            updates_per_thread in 1usize..4usize,
+            cookies in prop::collection::vec("[a-zA-Z0-9]{5,15}", 1..3),
+        ) {
+            // Create a manager with an active download
+            let download_id = "test-download-concurrent";
+            let streamer_id = "test-streamer";
+            let manager = Arc::new(create_manager_with_active_download(download_id, streamer_id));
+
+            // Spawn multiple threads that concurrently update the config
+            let handles: Vec<_> = (0..num_threads)
+                .map(|thread_idx| {
+                    let manager_clone = Arc::clone(&manager);
+                    let cookies_clone = cookies.clone();
+                    let download_id = download_id.to_string();
+
+                    thread::spawn(move || {
+                        for update_idx in 0..updates_per_thread {
+                            // Each thread uses a different cookie value based on thread and update index
+                            let cookie_idx = (thread_idx + update_idx) % cookies_clone.len();
+                            let cookie = Some(cookies_clone[cookie_idx].clone());
+
+                            // This should not panic or cause data races
+                            let result = manager_clone.update_download_config(
+                                &download_id,
+                                cookie,
+                                None,
+                                None,
+                            );
+                            
+                            // All updates should succeed since the download exists
+                            assert!(result.is_ok(), "Update should succeed for existing download");
+                        }
+                    })
+                })
+                .collect();
+
+            // Wait for all threads to complete
+            for handle in handles {
+                handle.join().expect("Thread should not panic");
+            }
+
+            // Property: After all concurrent updates, the pending_updates map should contain
+            // a valid merged update (the final state should reflect a valid merge of all updates)
+            let final_update = manager.take_pending_updates(download_id);
+            
+            // There should be a pending update since we made updates
+            prop_assert!(
+                final_update.is_some(),
+                "Should have pending updates after concurrent updates"
+            );
+
+            let update = final_update.unwrap();
+            
+            // The update should have valid data (one of the cookies we provided)
+            if let Some(ref cookie) = update.cookies {
+                prop_assert!(
+                    cookies.contains(cookie),
+                    "Final cookie should be one of the provided cookies"
+                );
+            }
+
+            // After taking, there should be no more pending updates
+            prop_assert!(
+                !manager.has_pending_updates(download_id),
+                "Pending updates should be cleared after take"
+            );
+        }
     }
 }

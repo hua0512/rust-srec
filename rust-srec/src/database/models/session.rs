@@ -1,7 +1,81 @@
 //! Session and media output database models.
 
+use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use sqlx::FromRow;
+
+/// Filter criteria for querying media outputs.
+/// Requirements: 5.1, 5.2, 5.3, 5.4
+#[derive(Debug, Clone, Default)]
+pub struct OutputFilters {
+    /// Filter by session ID.
+    pub session_id: Option<String>,
+    /// Filter by streamer ID (requires join with live_sessions).
+    pub streamer_id: Option<String>,
+}
+
+impl OutputFilters {
+    /// Create a new empty filter.
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Filter by session ID.
+    pub fn with_session_id(mut self, session_id: impl Into<String>) -> Self {
+        self.session_id = Some(session_id.into());
+        self
+    }
+
+    /// Filter by streamer ID.
+    pub fn with_streamer_id(mut self, streamer_id: impl Into<String>) -> Self {
+        self.streamer_id = Some(streamer_id.into());
+        self
+    }
+}
+
+/// Filter criteria for querying sessions.
+/// Requirements: 4.1, 4.3, 4.4, 4.5
+#[derive(Debug, Clone, Default)]
+pub struct SessionFilters {
+    /// Filter by streamer ID.
+    pub streamer_id: Option<String>,
+    /// Filter sessions started after this date.
+    pub from_date: Option<DateTime<Utc>>,
+    /// Filter sessions started before this date.
+    pub to_date: Option<DateTime<Utc>>,
+    /// Filter for active sessions only (sessions without an end_time).
+    pub active_only: Option<bool>,
+}
+
+impl SessionFilters {
+    /// Create a new empty filter.
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Filter by streamer ID.
+    pub fn with_streamer_id(mut self, streamer_id: impl Into<String>) -> Self {
+        self.streamer_id = Some(streamer_id.into());
+        self
+    }
+
+    /// Filter by date range.
+    pub fn with_date_range(
+        mut self,
+        from: Option<DateTime<Utc>>,
+        to: Option<DateTime<Utc>>,
+    ) -> Self {
+        self.from_date = from;
+        self.to_date = to;
+        self
+    }
+
+    /// Filter for active sessions only.
+    pub fn with_active_only(mut self, active_only: bool) -> Self {
+        self.active_only = Some(active_only);
+        self
+    }
+}
 
 /// Live session database model.
 /// Represents a single, continuous live stream event.

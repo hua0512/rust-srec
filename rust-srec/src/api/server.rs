@@ -46,6 +46,7 @@ use crate::config::ConfigService;
 use crate::danmu::DanmuService;
 use crate::database::repositories::{
     config::SqlxConfigRepository, streamer::SqlxStreamerRepository,
+    session::SessionRepository,
 };
 use crate::downloader::DownloadManager;
 use crate::pipeline::PipelineManager;
@@ -70,6 +71,8 @@ pub struct AppState {
     pub danmu_service: Option<Arc<DanmuService>>,
     /// Download manager
     pub download_manager: Option<Arc<DownloadManager>>,
+    /// Session repository for session and output queries
+    pub session_repository: Option<Arc<dyn SessionRepository>>,
 }
 
 impl AppState {
@@ -84,6 +87,7 @@ impl AppState {
             pipeline_manager: None,
             danmu_service: None,
             download_manager: None,
+            session_repository: None,
         }
     }
 
@@ -99,6 +103,7 @@ impl AppState {
             pipeline_manager: None,
             danmu_service: None,
             download_manager: None,
+            session_repository: None,
         }
     }
 
@@ -139,7 +144,14 @@ impl AppState {
             pipeline_manager: Some(pipeline_manager),
             danmu_service: Some(danmu_service),
             download_manager: Some(download_manager),
+            session_repository: None,
         }
+    }
+
+    /// Set the session repository.
+    pub fn with_session_repository(mut self, session_repository: Arc<dyn SessionRepository>) -> Self {
+        self.session_repository = Some(session_repository);
+        self
     }
 
     /// Set the JWT service.

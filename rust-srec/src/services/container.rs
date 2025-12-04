@@ -23,7 +23,7 @@ use crate::danmu::{
 };
 use crate::database::maintenance::{MaintenanceConfig, MaintenanceScheduler};
 use crate::database::repositories::{
-    config::SqlxConfigRepository, refresh_token::SqlxRefreshTokenRepository,
+    config::SqlxConfigRepository, job::SqlxJobRepository, refresh_token::SqlxRefreshTokenRepository,
     streamer::SqlxStreamerRepository, user::SqlxUserRepository,
 };
 use crate::downloader::{DownloadConfig, DownloadManager, DownloadManagerConfig, StreamSelector};
@@ -117,9 +117,13 @@ impl ServiceContainer {
             DownloadManagerConfig::default(),
         ));
 
-        // Create pipeline manager with default config
-        let pipeline_manager = Arc::new(PipelineManager::with_config(
+        // Create job repository for pipeline persistence (Requirements 6.1, 6.3)
+        let job_repo = Arc::new(SqlxJobRepository::new(pool.clone()));
+
+        // Create pipeline manager with job repository for database persistence
+        let pipeline_manager = Arc::new(PipelineManager::with_repository(
             PipelineManagerConfig::default(),
+            job_repo,
         ));
 
         // Create monitor event broadcaster
@@ -212,8 +216,11 @@ impl ServiceContainer {
         // Create download manager with custom config
         let download_manager = Arc::new(DownloadManager::with_config(download_config));
 
-        // Create pipeline manager with custom config
-        let pipeline_manager = Arc::new(PipelineManager::with_config(pipeline_config));
+        // Create job repository for pipeline persistence (Requirements 6.1, 6.3)
+        let job_repo = Arc::new(SqlxJobRepository::new(pool.clone()));
+
+        // Create pipeline manager with job repository for database persistence
+        let pipeline_manager = Arc::new(PipelineManager::with_repository(pipeline_config, job_repo));
 
         // Create monitor event broadcaster
         let monitor_event_broadcaster = MonitorEventBroadcaster::with_capacity(event_capacity);
@@ -276,6 +283,15 @@ impl ServiceContainer {
         // Hydrate streamer manager from database
         let streamer_count = self.streamer_manager.hydrate().await?;
         info!("Hydrated {} streamers", streamer_count);
+
+        // Recover jobs from database on startup (Requirements 6.3, 7.4)
+        // This resets PROCESSING jobs to PENDING for re-execution.
+        // For sequential pipelines, no special handling is needed since only one job
+        // per pipeline exists at a time.
+        let recovered_jobs = self.pipeline_manager.recover_jobs().await?;
+        if recovered_jobs > 0 {
+            info!("Recovered {} jobs from database", recovered_jobs);
+        }
 
         // Start pipeline manager
         self.pipeline_manager.start();

@@ -1,6 +1,18 @@
 //! API request and response models (DTOs).
 //!
-//! Defines the data transfer objects for API endpoints.
+//! This module defines the data transfer objects for all API endpoints.
+//! These models handle serialization/deserialization between the API layer
+//! and internal domain models.
+//!
+//! # Model Categories
+//!
+//! - **Pagination**: Generic pagination parameters and response wrappers
+//! - **Streamer**: Streamer CRUD operations
+//! - **Config**: Global and platform configuration
+//! - **Template**: Recording templates
+//! - **Pipeline**: Job queue and processing pipeline
+//! - **Session**: Recording sessions and outputs
+//! - **Health**: System health checks
 
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
@@ -13,6 +25,17 @@ use crate::domain::value_objects::Priority;
 // ============================================================================
 
 /// Pagination parameters for list endpoints.
+///
+/// # Query Parameters
+///
+/// - `limit` - Maximum number of items to return (default: 20, max: 100)
+/// - `offset` - Number of items to skip for pagination (default: 0)
+///
+/// # Example
+///
+/// ```
+/// GET /api/pipeline/jobs?limit=50&offset=100
+/// ```
 #[derive(Debug, Clone, Deserialize)]
 pub struct PaginationParams {
     /// Number of items to return (default: 20, max: 100)
@@ -36,7 +59,25 @@ impl Default for PaginationParams {
     }
 }
 
-/// Paginated response wrapper.
+/// Paginated response wrapper for list endpoints.
+///
+/// # Response Format
+///
+/// ```json
+/// {
+///     "items": [...],
+///     "total": 100,
+///     "limit": 20,
+///     "offset": 0
+/// }
+/// ```
+///
+/// # Fields
+///
+/// - `items` - Array of items for the current page
+/// - `total` - Total number of items matching the query (for calculating pages)
+/// - `limit` - Number of items requested per page
+/// - `offset` - Number of items skipped (for calculating current page)
 #[derive(Debug, Clone, Serialize)]
 pub struct PaginatedResponse<T> {
     /// Items in this page
@@ -251,7 +292,25 @@ pub struct TemplateResponse {
 // Pipeline DTOs
 // ============================================================================
 
-/// Pipeline job status.
+/// Pipeline job status enumeration.
+///
+/// # Status Values
+///
+/// - `pending` - Job is queued and waiting to be processed
+/// - `processing` - Job is currently being executed by a worker
+/// - `completed` - Job finished successfully
+/// - `failed` - Job encountered an error during processing
+/// - `interrupted` - Job was cancelled by user or system
+///
+/// # State Transitions
+///
+/// ```text
+/// pending -> processing -> completed
+///                      \-> failed
+/// pending -> interrupted (via cancel)
+/// processing -> interrupted (via cancel)
+/// failed -> pending (via retry)
+/// ```
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum JobStatus {
@@ -263,6 +322,40 @@ pub enum JobStatus {
 }
 
 /// Pipeline job response.
+///
+/// # Example Response
+///
+/// ```json
+/// {
+///     "id": "job-uuid-123",
+///     "session_id": "session-123",
+///     "streamer_id": "streamer-456",
+///     "status": "completed",
+///     "processor_type": "remux",
+///     "input_path": "/recordings/stream.flv",
+///     "output_path": "/recordings/stream.mp4",
+///     "error_message": null,
+///     "progress": null,
+///     "created_at": "2025-12-03T10:00:00Z",
+///     "started_at": "2025-12-03T10:00:01Z",
+///     "completed_at": "2025-12-03T10:05:00Z"
+/// }
+/// ```
+///
+/// # Fields
+///
+/// - `id` - Unique job identifier (UUID)
+/// - `session_id` - Associated recording session ID
+/// - `streamer_id` - Associated streamer ID
+/// - `status` - Current job status (pending, processing, completed, failed, interrupted)
+/// - `processor_type` - Type of processing (remux, upload, thumbnail)
+/// - `input_path` - Path to input file
+/// - `output_path` - Path to output file (set after completion)
+/// - `error_message` - Error details if job failed
+/// - `progress` - Processing progress (0.0-1.0) if available
+/// - `created_at` - When the job was created
+/// - `started_at` - When processing started
+/// - `completed_at` - When processing finished
 #[derive(Debug, Clone, Serialize)]
 pub struct JobResponse {
     pub id: String,
@@ -280,6 +373,20 @@ pub struct JobResponse {
 }
 
 /// Filter parameters for listing jobs.
+///
+/// # Query Parameters
+///
+/// - `status` - Filter by job status (pending, processing, completed, failed, interrupted)
+/// - `streamer_id` - Filter by streamer ID
+/// - `session_id` - Filter by session ID
+/// - `from_date` - Filter jobs created after this date (ISO 8601 format)
+/// - `to_date` - Filter jobs created before this date (ISO 8601 format)
+///
+/// # Example
+///
+/// ```
+/// GET /api/pipeline/jobs?status=failed&streamer_id=streamer-123&from_date=2025-01-01T00:00:00Z
+/// ```
 #[derive(Debug, Clone, Deserialize, Default)]
 pub struct JobFilterParams {
     /// Filter by status
@@ -295,6 +402,26 @@ pub struct JobFilterParams {
 }
 
 /// Pipeline statistics response.
+///
+/// # Example Response
+///
+/// ```json
+/// {
+///     "pending_count": 5,
+///     "processing_count": 2,
+///     "completed_count": 100,
+///     "failed_count": 3,
+///     "avg_processing_time_secs": 45.5
+/// }
+/// ```
+///
+/// # Fields
+///
+/// - `pending_count` - Number of jobs waiting to be processed
+/// - `processing_count` - Number of jobs currently being processed
+/// - `completed_count` - Number of successfully completed jobs
+/// - `failed_count` - Number of failed jobs
+/// - `avg_processing_time_secs` - Average processing time in seconds (null if no completed jobs)
 #[derive(Debug, Clone, Serialize)]
 pub struct PipelineStatsResponse {
     pub pending_count: u64,
@@ -305,6 +432,32 @@ pub struct PipelineStatsResponse {
 }
 
 /// Media output response.
+///
+/// # Example Response
+///
+/// ```json
+/// {
+///     "id": "output-uuid-123",
+///     "session_id": "session-123",
+///     "streamer_id": "streamer-456",
+///     "file_path": "/recordings/stream.mp4",
+///     "file_size_bytes": 1073741824,
+///     "duration_secs": 3600.5,
+///     "format": "mp4",
+///     "created_at": "2025-12-03T10:05:00Z"
+/// }
+/// ```
+///
+/// # Fields
+///
+/// - `id` - Unique output identifier
+/// - `session_id` - Associated recording session ID
+/// - `streamer_id` - Associated streamer ID
+/// - `file_path` - Path to the output file
+/// - `file_size_bytes` - File size in bytes
+/// - `duration_secs` - Duration in seconds (if applicable)
+/// - `format` - File format (mp4, flv, ts, etc.)
+/// - `created_at` - When the output was created
 #[derive(Debug, Clone, Serialize)]
 pub struct MediaOutputResponse {
     pub id: String,
@@ -321,7 +474,42 @@ pub struct MediaOutputResponse {
 // Session DTOs
 // ============================================================================
 
-/// Live session response.
+/// Recording session response.
+///
+/// # Example Response
+///
+/// ```json
+/// {
+///     "id": "session-123",
+///     "streamer_id": "streamer-456",
+///     "streamer_name": "StreamerName",
+///     "title": "Current Stream Title",
+///     "titles": [
+///         {"title": "Initial Title", "timestamp": "2025-12-03T10:00:00Z"},
+///         {"title": "Current Stream Title", "timestamp": "2025-12-03T12:00:00Z"}
+///     ],
+///     "start_time": "2025-12-03T10:00:00Z",
+///     "end_time": "2025-12-03T14:00:00Z",
+///     "duration_secs": 14400,
+///     "output_count": 3,
+///     "total_size_bytes": 5368709120,
+///     "danmu_count": 15000
+/// }
+/// ```
+///
+/// # Fields
+///
+/// - `id` - Unique session identifier
+/// - `streamer_id` - Associated streamer ID
+/// - `streamer_name` - Streamer display name
+/// - `title` - Current/last stream title
+/// - `titles` - History of title changes during the session
+/// - `start_time` - When the recording started
+/// - `end_time` - When the recording ended (null if still active)
+/// - `duration_secs` - Total duration in seconds (null if still active)
+/// - `output_count` - Number of output files produced
+/// - `total_size_bytes` - Total size of all output files
+/// - `danmu_count` - Number of danmu (chat) messages recorded
 #[derive(Debug, Clone, Serialize)]
 pub struct SessionResponse {
     pub id: String,
@@ -337,7 +525,16 @@ pub struct SessionResponse {
     pub danmu_count: Option<u64>,
 }
 
-/// Title change entry.
+/// Title change entry representing a stream title update.
+///
+/// # Example
+///
+/// ```json
+/// {
+///     "title": "Playing Game XYZ",
+///     "timestamp": "2025-12-03T12:00:00Z"
+/// }
+/// ```
 #[derive(Debug, Clone, Serialize)]
 pub struct TitleChange {
     pub title: String,
@@ -345,6 +542,20 @@ pub struct TitleChange {
 }
 
 /// Filter parameters for listing sessions.
+///
+/// # Query Parameters
+///
+/// - `streamer_id` - Filter by streamer ID
+/// - `from_date` - Filter sessions started after this date (ISO 8601 format)
+/// - `to_date` - Filter sessions started before this date (ISO 8601 format)
+/// - `active_only` - If true, return only sessions without an end_time
+///
+/// # Example
+///
+/// ```
+/// GET /api/sessions?streamer_id=streamer-123&active_only=true
+/// GET /api/sessions?from_date=2025-01-01T00:00:00Z&to_date=2025-12-31T23:59:59Z
+/// ```
 #[derive(Debug, Clone, Deserialize, Default)]
 pub struct SessionFilterParams {
     /// Filter by streamer ID

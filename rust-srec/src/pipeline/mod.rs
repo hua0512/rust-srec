@@ -11,8 +11,8 @@ mod manager;
 mod processors;
 mod worker_pool;
 
-pub use job_queue::{JobQueue, JobQueueConfig, QueueDepthStatus};
-pub use manager::{PipelineEvent, PipelineManager, PipelineManagerConfig};
+pub use job_queue::{Job, JobQueue, JobQueueConfig, JobResult, JobStats, JobStatus, QueueDepthStatus};
+pub use manager::{PipelineCreationResult, PipelineEvent, PipelineManager, PipelineManagerConfig, PipelineStats};
 pub use processors::{
     ExecuteCommandProcessor, Processor, ProcessorInput, ProcessorOutput, ProcessorType,
     RemuxProcessor, ThumbnailProcessor, UploadProcessor,

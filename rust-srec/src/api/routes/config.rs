@@ -20,8 +20,8 @@ pub fn router() -> Router<AppState> {
         .route("/global", get(get_global_config))
         .route("/global", patch(update_global_config))
         .route("/platforms", get(list_platform_configs))
-        .route("/platforms/:id", get(get_platform_config))
-        .route("/platforms/:id", patch(update_platform_config))
+        .route("/platforms/{id}", get(get_platform_config))
+        .route("/platforms/{id}", patch(update_platform_config))
 }
 
 /// Map GlobalConfigDbModel to GlobalConfigResponse.
