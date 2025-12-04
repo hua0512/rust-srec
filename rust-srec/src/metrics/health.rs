@@ -32,6 +32,17 @@ impl Default for HealthStatus {
     }
 }
 
+impl std::fmt::Display for HealthStatus {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            HealthStatus::Healthy => write!(f, "healthy"),
+            HealthStatus::Degraded => write!(f, "degraded"),
+            HealthStatus::Unhealthy => write!(f, "unhealthy"),
+            HealthStatus::Unknown => write!(f, "unknown"),
+        }
+    }
+}
+
 /// Health information for a single component.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ComponentHealth {

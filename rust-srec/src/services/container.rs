@@ -385,6 +385,9 @@ impl ServiceContainer {
             state = state.with_auth_service(auth_svc);
         }
 
+        // Wire HealthChecker into AppState for health endpoints
+        state = state.with_health_checker(self.health_checker.clone());
+
         let server = ApiServer::with_state(self.api_server_config.clone(), state);
         let cancel_token = self.cancellation_token.clone();
 
@@ -690,6 +693,40 @@ impl ServiceContainer {
                     let _active = ds.active_sessions().len();
                     ComponentHealth::healthy("danmu_service")
                 }),
+            )
+            .await;
+
+        // Scheduler health check
+        // Check if scheduler is running (not cancelled)
+        let cancellation_token = self.cancellation_token.clone();
+        self.health_checker
+            .register(
+                "scheduler",
+                Arc::new(move || {
+                    if cancellation_token.is_cancelled() {
+                        ComponentHealth::unhealthy("scheduler", "Scheduler has been cancelled")
+                    } else {
+                        ComponentHealth::healthy("scheduler")
+                    }
+                }),
+            )
+            .await;
+
+        // Notification service health check
+        // Notification service is healthy if it exists
+        self.health_checker
+            .register(
+                "notification_service",
+                Arc::new(|| ComponentHealth::healthy("notification_service")),
+            )
+            .await;
+
+        // Maintenance scheduler health check
+        // Maintenance scheduler is healthy if it exists
+        self.health_checker
+            .register(
+                "maintenance_scheduler",
+                Arc::new(|| ComponentHealth::healthy("maintenance_scheduler")),
             )
             .await;
 

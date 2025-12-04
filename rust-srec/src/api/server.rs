@@ -49,6 +49,7 @@ use crate::database::repositories::{
     session::SessionRepository,
 };
 use crate::downloader::DownloadManager;
+use crate::metrics::HealthChecker;
 use crate::pipeline::PipelineManager;
 use crate::streamer::StreamerManager;
 
@@ -73,6 +74,8 @@ pub struct AppState {
     pub download_manager: Option<Arc<DownloadManager>>,
     /// Session repository for session and output queries
     pub session_repository: Option<Arc<dyn SessionRepository>>,
+    /// Health checker for real health status
+    pub health_checker: Option<Arc<HealthChecker>>,
 }
 
 impl AppState {
@@ -88,6 +91,7 @@ impl AppState {
             danmu_service: None,
             download_manager: None,
             session_repository: None,
+            health_checker: None,
         }
     }
 
@@ -104,6 +108,7 @@ impl AppState {
             danmu_service: None,
             download_manager: None,
             session_repository: None,
+            health_checker: None,
         }
     }
 
@@ -145,6 +150,7 @@ impl AppState {
             danmu_service: Some(danmu_service),
             download_manager: Some(download_manager),
             session_repository: None,
+            health_checker: None,
         }
     }
 
@@ -163,6 +169,12 @@ impl AppState {
     /// Set the auth service.
     pub fn with_auth_service(mut self, auth_service: Arc<AuthService>) -> Self {
         self.auth_service = Some(auth_service);
+        self
+    }
+
+    /// Set the health checker.
+    pub fn with_health_checker(mut self, health_checker: Arc<HealthChecker>) -> Self {
+        self.health_checker = Some(health_checker);
         self
     }
 }

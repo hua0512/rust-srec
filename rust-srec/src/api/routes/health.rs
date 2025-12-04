@@ -1,7 +1,6 @@
 //! Health check routes.
 
-use axum::{Json, Router, extract::State, routing::get};
-use std::time::Instant;
+use axum::{Json, Router, extract::State, http::StatusCode, response::IntoResponse, routing::get};
 
 use crate::api::error::ApiResult;
 use crate::api::models::{ComponentHealth, HealthResponse};
@@ -19,54 +18,66 @@ pub fn router() -> Router<AppState> {
 async fn health_check(State(state): State<AppState>) -> ApiResult<Json<HealthResponse>> {
     let uptime = state.start_time.elapsed().as_secs();
 
-    let mut components = Vec::new();
+    // Use HealthChecker if available, otherwise return fallback response
+    if let Some(health_checker) = &state.health_checker {
+        let system_health = health_checker.check_all().await;
 
-    // Check database
-    components.push(ComponentHealth {
-        name: "database".to_string(),
-        status: "healthy".to_string(),
-        message: None,
-    });
+        let components: Vec<ComponentHealth> = system_health
+            .components
+            .into_iter()
+            .map(|(name, health)| ComponentHealth {
+                name,
+                status: health.status.to_string(),
+                message: health.message,
+            })
+            .collect();
 
-    // Check scheduler
-    components.push(ComponentHealth {
-        name: "scheduler".to_string(),
-        status: "healthy".to_string(),
-        message: None,
-    });
+        let response = HealthResponse {
+            status: system_health.status.to_string(),
+            version: env!("CARGO_PKG_VERSION").to_string(),
+            uptime_secs: uptime,
+            components,
+        };
 
-    // Check download manager
-    components.push(ComponentHealth {
-        name: "download_manager".to_string(),
-        status: "healthy".to_string(),
-        message: None,
-    });
-
-    // Check pipeline manager
-    components.push(ComponentHealth {
-        name: "pipeline_manager".to_string(),
-        status: "healthy".to_string(),
-        message: None,
-    });
-
-    let response = HealthResponse {
-        status: "healthy".to_string(),
-        version: env!("CARGO_PKG_VERSION").to_string(),
-        uptime_secs: uptime,
-        components,
-    };
-
-    Ok(Json(response))
+        Ok(Json(response))
+    } else {
+        // Fallback for testing without full service setup
+        Ok(Json(HealthResponse {
+            status: "healthy".to_string(),
+            version: env!("CARGO_PKG_VERSION").to_string(),
+            uptime_secs: uptime,
+            components: vec![],
+        }))
+    }
 }
 
 /// Readiness check - is the service ready to accept traffic?
-async fn readiness_check() -> &'static str {
-    "ready"
+/// Returns HTTP 200 if healthy/degraded, HTTP 503 if unhealthy/unknown.
+async fn readiness_check(State(state): State<AppState>) -> impl IntoResponse {
+    if let Some(health_checker) = &state.health_checker {
+        let is_ready = health_checker.check_ready().await;
+        if is_ready {
+            (StatusCode::OK, "ready")
+        } else {
+            (StatusCode::SERVICE_UNAVAILABLE, "not ready")
+        }
+    } else {
+        // Fallback for testing without full service setup
+        (StatusCode::OK, "ready")
+    }
 }
 
 /// Liveness check - is the service alive?
-async fn liveness_check() -> &'static str {
-    "alive"
+/// Returns HTTP 200 with status and uptime if the service is responsive.
+async fn liveness_check(State(state): State<AppState>) -> impl IntoResponse {
+    let uptime = state.start_time.elapsed().as_secs();
+    (
+        StatusCode::OK,
+        Json(serde_json::json!({
+            "status": "alive",
+            "uptime_secs": uptime
+        })),
+    )
 }
 
 #[cfg(test)]
