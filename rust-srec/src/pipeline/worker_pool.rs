@@ -35,6 +35,9 @@ pub struct WorkerPoolConfig {
     /// Maximum concurrent workers.
     pub max_workers: usize,
     /// Job timeout in seconds.
+    ///
+    /// If a job exceeds this duration, the `process` future will be cancelled.
+    /// Processors must be cancel-safe to handle this gracefully.
     pub job_timeout_secs: u64,
     /// Poll interval in milliseconds.
     pub poll_interval_ms: u64,

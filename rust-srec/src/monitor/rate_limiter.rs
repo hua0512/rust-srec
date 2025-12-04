@@ -173,6 +173,12 @@ impl RateLimiterManager {
     }
 
     /// Try to acquire a token for a platform.
+    ///
+    /// # Cancel Safety
+    ///
+    /// This method is cancel-safe. The mutex is only held for the duration of
+    /// the synchronous `try_acquire()` call, with no await points while holding
+    /// the lock.
     pub async fn try_acquire(&self, platform_id: &str) -> bool {
         let mut limiters = self.limiters.lock().await;
         let limiter = self.get_or_create_limiter(&mut limiters, platform_id);
@@ -180,10 +186,51 @@ impl RateLimiterManager {
     }
 
     /// Acquire a token for a platform, waiting if necessary.
+    ///
+    /// Returns the duration waited.
+    ///
+    /// # Cancel Safety
+    ///
+    /// This method is cancel-safe. If the future is dropped before completion:
+    /// - No tokens are consumed
+    /// - The rate limiter state remains consistent
+    /// - Subsequent calls will work correctly
+    ///
+    /// The implementation uses a split operation pattern:
+    /// 1. Lock mutex, check availability, release mutex
+    /// 2. Sleep without holding the lock (cancel-safe point)
+    /// 3. Retry in a loop to handle race conditions
     pub async fn acquire(&self, platform_id: &str) -> Duration {
-        let mut limiters = self.limiters.lock().await;
-        let limiter = self.get_or_create_limiter(&mut limiters, platform_id);
-        limiter.acquire().await
+        let mut total_wait = Duration::ZERO;
+        let platform_id = platform_id.to_string();
+
+        loop {
+            // Phase 1: Check availability and try to acquire (with lock)
+            let wait_duration = {
+                let mut limiters = self.limiters.lock().await;
+                let limiter = self.get_or_create_limiter(&mut limiters, &platform_id);
+
+                // Try to acquire immediately
+                if limiter.try_acquire() {
+                    return total_wait;
+                }
+
+                // Calculate wait time for next token
+                limiter.time_until_available()
+            }; // Lock released here - CANCEL SAFE POINT
+
+            // Phase 2: Wait without holding the lock
+            // If cancelled here, no state is corrupted
+            debug!(
+                "Rate limited for {}, waiting {:?}",
+                platform_id, wait_duration
+            );
+            tokio::time::sleep(wait_duration).await;
+            total_wait += wait_duration;
+
+            // Phase 3: Loop back to try again
+            // Another caller may have acquired the token, so we retry
+        }
     }
 
     /// Get available tokens for a platform.
@@ -274,5 +321,72 @@ mod tests {
         // Check available tokens
         let tokens = manager.available_tokens("twitch").await;
         assert!(tokens < 10.0); // Should have used one token
+    }
+
+    #[tokio::test]
+    async fn test_rate_limiter_manager_acquire_cancel_safe() {
+        use std::sync::Arc;
+
+        let manager = Arc::new(RateLimiterManager::with_config(RateLimiterConfig {
+            max_tokens: 1,
+            refill_rate: 10.0, // 10 tokens per second for fast test
+            initial_tokens: 0, // Start with no tokens
+        }));
+
+        // First acquire will need to wait
+        let manager_clone = manager.clone();
+        let handle = tokio::spawn(async move { manager_clone.acquire("test").await });
+
+        // Cancel the acquire after a short delay
+        tokio::time::sleep(Duration::from_millis(10)).await;
+        handle.abort();
+
+        // Wait for abort to complete
+        let _ = handle.await;
+
+        // The manager should still be usable - this is the key cancel safety test
+        // If the mutex was held across the await, this would deadlock
+        let tokens = manager.available_tokens("test").await;
+        assert!(tokens >= 0.0); // Should be able to check tokens without deadlock
+
+        // Should be able to acquire after cancellation
+        let wait = manager.acquire("test").await;
+        assert!(wait <= Duration::from_millis(200)); // Should complete quickly
+    }
+
+    #[tokio::test]
+    async fn test_rate_limiter_manager_concurrent_acquire() {
+        use std::sync::Arc;
+        use std::sync::atomic::{AtomicU32, Ordering};
+
+        let manager = Arc::new(RateLimiterManager::with_config(RateLimiterConfig {
+            max_tokens: 5,
+            refill_rate: 100.0, // Fast refill for testing
+            initial_tokens: 5,
+        }));
+
+        let success_count = Arc::new(AtomicU32::new(0));
+        let mut handles = vec![];
+
+        // Spawn 10 concurrent acquire tasks
+        for _ in 0..10 {
+            let manager_clone = manager.clone();
+            let success_clone = success_count.clone();
+            handles.push(tokio::spawn(async move {
+                let _ = manager_clone.acquire("concurrent").await;
+                success_clone.fetch_add(1, Ordering::SeqCst);
+            }));
+        }
+
+        // Wait for all with timeout to detect deadlocks
+        let result =
+            tokio::time::timeout(Duration::from_secs(2), futures::future::join_all(handles)).await;
+
+        assert!(result.is_ok(), "Concurrent acquires should not deadlock");
+        assert_eq!(
+            success_count.load(Ordering::SeqCst),
+            10,
+            "All acquires should complete"
+        );
     }
 }

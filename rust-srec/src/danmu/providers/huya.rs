@@ -183,6 +183,8 @@ struct HuyaConnectionState {
     heartbeat_handle: Option<JoinHandle<()>>,
     /// Message processing task handle
     message_handle: Option<JoinHandle<()>>,
+    /// Shutdown signal broadcaster for graceful task termination
+    shutdown_tx: Option<ShutdownBroadcaster>,
 }
 
 /// Shared state between connection and tasks
@@ -193,6 +195,34 @@ struct SharedConnectionState {
     reconnect_count: Arc<AtomicU32>,
     /// Message sender channel
     message_tx: mpsc::Sender<DanmuMessage>,
+    /// Shutdown signal broadcaster for graceful task termination
+    shutdown_tx: ShutdownBroadcaster,
+    /// Shutdown signal receiver for heartbeat task
+    heartbeat_shutdown_rx: mpsc::Receiver<()>,
+    /// Shutdown signal receiver for message task
+    message_shutdown_rx: mpsc::Receiver<()>,
+}
+
+/// Helper struct to broadcast shutdown signal to multiple tasks
+struct ShutdownBroadcaster {
+    heartbeat_tx: mpsc::Sender<()>,
+    message_tx: mpsc::Sender<()>,
+}
+
+impl ShutdownBroadcaster {
+    fn new(heartbeat_tx: mpsc::Sender<()>, message_tx: mpsc::Sender<()>) -> Self {
+        Self {
+            heartbeat_tx,
+            message_tx,
+        }
+    }
+
+    /// Send shutdown signal to all tasks
+    async fn shutdown(&self) {
+        // Send to both tasks, ignoring errors if receivers are already dropped
+        let _ = self.heartbeat_tx.send(()).await;
+        let _ = self.message_tx.send(()).await;
+    }
 }
 
 /// Huya danmu provider.
@@ -239,10 +269,21 @@ impl HuyaDanmuProvider {
         let is_connected = Arc::new(AtomicBool::new(true));
         let reconnect_count = Arc::new(AtomicU32::new(0));
 
+        // Create shutdown channels for graceful task termination
+        // We use separate receivers for each task to allow independent shutdown
+        let (heartbeat_shutdown_tx, heartbeat_shutdown_rx) = mpsc::channel(1);
+        let (message_shutdown_tx, message_shutdown_rx) = mpsc::channel(1);
+
+        // Create a broadcast-like sender that sends to both task shutdown channels
+        let shutdown_tx = ShutdownBroadcaster::new(heartbeat_shutdown_tx, message_shutdown_tx);
+
         let shared_state = SharedConnectionState {
             is_connected,
             reconnect_count,
             message_tx,
+            shutdown_tx,
+            heartbeat_shutdown_rx,
+            message_shutdown_rx,
         };
 
         Ok((ws_stream, shared_state, message_rx))
@@ -994,34 +1035,49 @@ impl HuyaDanmuProvider {
     }
 
     /// Start the heartbeat task
+    ///
+    /// # Cancel Safety
+    /// This task is cancel-safe. It listens for a shutdown signal and exits cleanly
+    /// when received, ensuring proper resource cleanup.
     fn start_heartbeat_task(
         ws_sender: Arc<
             Mutex<futures::stream::SplitSink<WebSocketStream<MaybeTlsStream<TcpStream>>, Message>>,
         >,
         is_connected: Arc<AtomicBool>,
+        mut shutdown_rx: mpsc::Receiver<()>,
     ) -> JoinHandle<()> {
         tokio::spawn(async move {
             let mut interval = tokio::time::interval(Duration::from_secs(HEARTBEAT_INTERVAL_SECS));
 
-            while is_connected.load(Ordering::SeqCst) {
-                interval.tick().await;
+            loop {
+                tokio::select! {
+                    biased;
 
-                if !is_connected.load(Ordering::SeqCst) {
-                    break;
-                }
+                    // Check shutdown signal first (biased ensures this is checked first)
+                    _ = shutdown_rx.recv() => {
+                        debug!("Heartbeat task received shutdown signal");
+                        break;
+                    }
 
-                match Self::create_heartbeat_packet() {
-                    Ok(packet) => {
-                        let mut sender = ws_sender.lock().await;
-                        if let Err(e) = sender.send(Message::Binary(packet.to_vec().into())).await {
-                            warn!("Failed to send heartbeat: {}", e);
-                            is_connected.store(false, Ordering::SeqCst);
+                    _ = interval.tick() => {
+                        if !is_connected.load(Ordering::SeqCst) {
                             break;
                         }
-                        debug!("Sent heartbeat packet");
-                    }
-                    Err(e) => {
-                        error!("Failed to create heartbeat packet: {}", e);
+
+                        match Self::create_heartbeat_packet() {
+                            Ok(packet) => {
+                                let mut sender = ws_sender.lock().await;
+                                if let Err(e) = sender.send(Message::Binary(packet.to_vec().into())).await {
+                                    warn!("Failed to send heartbeat: {}", e);
+                                    is_connected.store(false, Ordering::SeqCst);
+                                    break;
+                                }
+                                debug!("Sent heartbeat packet");
+                            }
+                            Err(e) => {
+                                error!("Failed to create heartbeat packet: {}", e);
+                            }
+                        }
                     }
                 }
             }
@@ -1031,52 +1087,73 @@ impl HuyaDanmuProvider {
     }
 
     /// Start the message processing task
+    ///
+    /// # Cancel Safety
+    /// This task is cancel-safe. It listens for a shutdown signal and exits cleanly
+    /// when received, ensuring proper resource cleanup.
     fn start_message_task(
         mut ws_receiver: futures::stream::SplitStream<WebSocketStream<MaybeTlsStream<TcpStream>>>,
         message_tx: mpsc::Sender<DanmuMessage>,
         is_connected: Arc<AtomicBool>,
+        mut shutdown_rx: mpsc::Receiver<()>,
     ) -> JoinHandle<()> {
         tokio::spawn(async move {
-            while is_connected.load(Ordering::SeqCst) {
-                match ws_receiver.next().await {
-                    Some(Ok(Message::Binary(data))) => {
-                        match Self::parse_tars_message(&data) {
-                            Ok(Some(danmu)) => {
-                                if message_tx.send(danmu).await.is_err() {
-                                    debug!("Message channel closed");
-                                    break;
+            loop {
+                tokio::select! {
+                    biased;
+
+                    // Check shutdown signal first (biased ensures this is checked first)
+                    _ = shutdown_rx.recv() => {
+                        debug!("Message task received shutdown signal");
+                        break;
+                    }
+
+                    msg = ws_receiver.next() => {
+                        if !is_connected.load(Ordering::SeqCst) {
+                            break;
+                        }
+
+                        match msg {
+                            Some(Ok(Message::Binary(data))) => {
+                                match Self::parse_tars_message(&data) {
+                                    Ok(Some(danmu)) => {
+                                        if message_tx.send(danmu).await.is_err() {
+                                            debug!("Message channel closed");
+                                            break;
+                                        }
+                                    }
+                                    Ok(None) => {
+                                        // Non-danmu message (heartbeat, register response, etc.)
+                                    }
+                                    Err(e) => {
+                                        debug!("Failed to parse message: {}", e);
+                                    }
                                 }
                             }
-                            Ok(None) => {
-                                // Non-danmu message (heartbeat, register response, etc.)
+                            Some(Ok(Message::Close(_))) => {
+                                info!("WebSocket connection closed by server");
+                                is_connected.store(false, Ordering::SeqCst);
+                                break;
                             }
-                            Err(e) => {
-                                debug!("Failed to parse message: {}", e);
+                            Some(Ok(Message::Ping(data))) => {
+                                debug!("Received ping, will respond with pong");
+                                // Pong is handled automatically by tungstenite
+                                let _ = data;
+                            }
+                            Some(Ok(_)) => {
+                                // Ignore other message types
+                            }
+                            Some(Err(e)) => {
+                                error!("WebSocket error: {}", e);
+                                is_connected.store(false, Ordering::SeqCst);
+                                break;
+                            }
+                            None => {
+                                info!("WebSocket stream ended");
+                                is_connected.store(false, Ordering::SeqCst);
+                                break;
                             }
                         }
-                    }
-                    Some(Ok(Message::Close(_))) => {
-                        info!("WebSocket connection closed by server");
-                        is_connected.store(false, Ordering::SeqCst);
-                        break;
-                    }
-                    Some(Ok(Message::Ping(data))) => {
-                        debug!("Received ping, will respond with pong");
-                        // Pong is handled automatically by tungstenite
-                        let _ = data;
-                    }
-                    Some(Ok(_)) => {
-                        // Ignore other message types
-                    }
-                    Some(Err(e)) => {
-                        error!("WebSocket error: {}", e);
-                        is_connected.store(false, Ordering::SeqCst);
-                        break;
-                    }
-                    None => {
-                        info!("WebSocket stream ended");
-                        is_connected.store(false, Ordering::SeqCst);
-                        break;
                     }
                 }
             }
@@ -1121,16 +1198,18 @@ impl HuyaDanmuProvider {
 
                     let ws_sender = Arc::new(Mutex::new(write));
 
-                    // Start background tasks
+                    // Start background tasks with shutdown receivers
                     let heartbeat_handle = Self::start_heartbeat_task(
                         ws_sender.clone(),
                         shared_state.is_connected.clone(),
+                        shared_state.heartbeat_shutdown_rx,
                     );
 
                     let message_handle = Self::start_message_task(
                         read,
                         shared_state.message_tx.clone(),
                         shared_state.is_connected.clone(),
+                        shared_state.message_shutdown_rx,
                     );
 
                     // Update connection state
@@ -1142,6 +1221,7 @@ impl HuyaDanmuProvider {
                         state.message_rx = message_rx;
                         state.heartbeat_handle = Some(heartbeat_handle);
                         state.message_handle = Some(message_handle);
+                        state.shutdown_tx = Some(shared_state.shutdown_tx);
                         state.reconnect_count.fetch_add(1, Ordering::SeqCst);
                     }
 
@@ -1194,15 +1274,19 @@ impl DanmuProvider for HuyaDanmuProvider {
 
         let ws_sender = Arc::new(Mutex::new(write));
 
-        // Start heartbeat task
-        let heartbeat_handle =
-            Self::start_heartbeat_task(ws_sender.clone(), shared_state.is_connected.clone());
+        // Start heartbeat task with shutdown receiver
+        let heartbeat_handle = Self::start_heartbeat_task(
+            ws_sender.clone(),
+            shared_state.is_connected.clone(),
+            shared_state.heartbeat_shutdown_rx,
+        );
 
-        // Start message processing task
+        // Start message processing task with shutdown receiver
         let message_handle = Self::start_message_task(
             read,
             shared_state.message_tx.clone(),
             shared_state.is_connected.clone(),
+            shared_state.message_shutdown_rx,
         );
 
         // Create connection state
@@ -1221,6 +1305,7 @@ impl DanmuProvider for HuyaDanmuProvider {
             message_rx,
             heartbeat_handle: Some(heartbeat_handle),
             message_handle: Some(message_handle),
+            shutdown_tx: Some(shared_state.shutdown_tx),
         };
 
         // Store connection state
@@ -1236,21 +1321,58 @@ impl DanmuProvider for HuyaDanmuProvider {
         Ok(connection)
     }
 
+    /// Disconnect from the Huya danmu stream.
+    ///
+    /// # Cancel Safety
+    /// This method uses graceful shutdown to ensure tasks are properly terminated.
+    /// It sends a shutdown signal and waits with a timeout before forcing abort.
     async fn disconnect(&self, connection: &mut DanmuConnection) -> Result<()> {
+        /// Timeout for graceful shutdown in seconds
+        const GRACEFUL_SHUTDOWN_TIMEOUT_SECS: u64 = 5;
+
         let mut connections = self.connections.write().await;
 
         if let Some(conn_state) = connections.remove(&connection.id) {
             let mut state = conn_state.lock().await;
 
-            // Stop the connection
+            // Step 1: Signal graceful shutdown via shutdown broadcaster
+            if let Some(shutdown_tx) = state.shutdown_tx.take() {
+                shutdown_tx.shutdown().await;
+            }
+
+            // Mark connection as disconnected
             state.is_connected.store(false, Ordering::SeqCst);
 
-            // Abort background tasks
+            // Step 2: Wait for graceful shutdown with timeout for heartbeat task
             if let Some(handle) = state.heartbeat_handle.take() {
-                handle.abort();
+                match tokio::time::timeout(
+                    Duration::from_secs(GRACEFUL_SHUTDOWN_TIMEOUT_SECS),
+                    handle,
+                )
+                .await
+                {
+                    Ok(_) => debug!("Heartbeat task stopped gracefully"),
+                    Err(_) => {
+                        warn!("Heartbeat task did not stop in time, forcing abort");
+                        // Task is already dropped by timeout
+                    }
+                }
             }
+
+            // Step 3: Wait for graceful shutdown with timeout for message task
             if let Some(handle) = state.message_handle.take() {
-                handle.abort();
+                match tokio::time::timeout(
+                    Duration::from_secs(GRACEFUL_SHUTDOWN_TIMEOUT_SECS),
+                    handle,
+                )
+                .await
+                {
+                    Ok(_) => debug!("Message task stopped gracefully"),
+                    Err(_) => {
+                        warn!("Message task did not stop in time, forcing abort");
+                        // Task is already dropped by timeout
+                    }
+                }
             }
 
             info!("Disconnected from Huya room {}", state.room_id);

@@ -466,26 +466,69 @@ impl DanmuProvider for TwitchDanmuProvider {
         Ok(connection)
     }
 
+    /// Disconnect from Twitch IRC.
+    ///
+    /// # Cancel Safety
+    ///
+    /// This method uses graceful shutdown with timeout. If cancelled:
+    /// - The shutdown signal may or may not have been sent
+    /// - Tasks may continue running until their next check point
+    /// - Connection state will be marked as disconnected on next call
     async fn disconnect(&self, connection: &mut DanmuConnection) -> Result<()> {
+        /// Timeout for graceful shutdown of tasks
+        const GRACEFUL_SHUTDOWN_TIMEOUT: Duration = Duration::from_secs(5);
+        /// Shorter timeout for reconnect task
+        const RECONNECT_SHUTDOWN_TIMEOUT: Duration = Duration::from_secs(2);
+
         if let Some(state) = self.connections.write().await.remove(&connection.id) {
             let mut state = state.lock().await;
 
-            // Send shutdown signal to stop reconnection attempts
+            // Step 1: Signal graceful shutdown via existing shutdown_tx channel
             if let Some(shutdown_tx) = state.shutdown_tx.take() {
                 let _ = shutdown_tx.send(()).await;
             }
 
-            // Cancel message processing task
-            if let Some(handle) = state.message_handle.take() {
-                handle.abort();
-            }
-
-            // Cancel reconnection task if running
-            if let Some(handle) = state.reconnect_handle.take() {
-                handle.abort();
-            }
-
             state.is_connected.store(false, Ordering::SeqCst);
+
+            // Step 2: Wait for message task to complete gracefully with timeout
+            if let Some(handle) = state.message_handle.take() {
+                match tokio::time::timeout(GRACEFUL_SHUTDOWN_TIMEOUT, handle).await {
+                    Ok(Ok(())) => {
+                        debug!("Message task stopped gracefully");
+                    }
+                    Ok(Err(e)) => {
+                        // Task panicked or was cancelled
+                        debug!("Message task ended with error: {}", e);
+                    }
+                    Err(_) => {
+                        // Timeout - task didn't respond to shutdown signal
+                        warn!(
+                            "Message task did not stop within {:?}, task will be dropped",
+                            GRACEFUL_SHUTDOWN_TIMEOUT
+                        );
+                        // Note: The JoinHandle is dropped here, which cancels the task
+                    }
+                }
+            }
+
+            // Step 3: Wait for reconnect task to complete gracefully with timeout
+            if let Some(handle) = state.reconnect_handle.take() {
+                match tokio::time::timeout(RECONNECT_SHUTDOWN_TIMEOUT, handle).await {
+                    Ok(Ok(())) => {
+                        debug!("Reconnect task stopped gracefully");
+                    }
+                    Ok(Err(e)) => {
+                        debug!("Reconnect task ended with error: {}", e);
+                    }
+                    Err(_) => {
+                        warn!(
+                            "Reconnect task did not stop within {:?}, task will be dropped",
+                            RECONNECT_SHUTDOWN_TIMEOUT
+                        );
+                    }
+                }
+            }
+
             info!("Disconnected from Twitch IRC channel #{}", state.channel);
         }
 

@@ -55,6 +55,12 @@ pub trait Processor: Send + Sync {
     }
 
     /// Process the input and produce output.
+    ///
+    /// # Cancel Safety
+    ///
+    /// This method MUST be cancel-safe. The worker pool may cancel the future if the job times out
+    /// or if the application is shutting down. Implementations should ensure that cancellation
+    /// does not leave the system in an inconsistent state (e.g., partial files should be cleaned up).
     async fn process(&self, input: &ProcessorInput) -> Result<ProcessorOutput>;
 
     /// Get the processor name.

@@ -155,9 +155,12 @@ impl<M> ActorHandle<M> {
         match self.sender.try_send(msg) {
             Ok(()) => Ok(()),
             Err(mpsc::error::TrySendError::Full(msg)) => {
-                // Slow path: wait with timeout
-                match tokio::time::timeout(timeout, self.sender.send(msg)).await {
-                    Ok(Ok(())) => Ok(()),
+                // Slow path: wait for permit with timeout
+                match tokio::time::timeout(timeout, self.sender.reserve()).await {
+                    Ok(Ok(permit)) => {
+                        permit.send(msg);
+                        Ok(())
+                    }
                     Ok(Err(_)) => Err(SendError::ActorStopped),
                     Err(_) => Err(SendError::Timeout),
                 }
@@ -175,10 +178,13 @@ impl<M> ActorHandle<M> {
             match priority_sender.try_send(msg) {
                 Ok(()) => Ok(()),
                 Err(mpsc::error::TrySendError::Full(msg)) => {
-                    match tokio::time::timeout(DEFAULT_SEND_TIMEOUT, priority_sender.send(msg))
+                    match tokio::time::timeout(DEFAULT_SEND_TIMEOUT, priority_sender.reserve())
                         .await
                     {
-                        Ok(Ok(())) => Ok(()),
+                        Ok(Ok(permit)) => {
+                            permit.send(msg);
+                            Ok(())
+                        }
                         Ok(Err(_)) => Err(SendError::ActorStopped),
                         Err(_) => Err(SendError::Timeout),
                     }
