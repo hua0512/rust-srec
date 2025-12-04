@@ -493,15 +493,10 @@ impl PipelineDefinition {
         Self { steps }
     }
 
-    /// Create the default pipeline definition: remux -> upload -> thumbnail.
+    /// Create the default pipeline definition: empty (no steps).
+    /// Pipeline steps should be explicitly provided or configured per-streamer.
     pub fn default_pipeline() -> Self {
-        Self {
-            steps: vec![
-                "remux".to_string(),
-                "upload".to_string(),
-                "thumbnail".to_string(),
-            ],
-        }
+        Self { steps: vec![] }
     }
 
     /// Get the first step in the pipeline.
