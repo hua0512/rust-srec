@@ -139,7 +139,7 @@ impl StreamerRepository for SqlxStreamerRepository {
     }
 
     async fn create_streamer(&self, streamer: &StreamerDbModel) -> Result<()> {
-        sqlx::query(
+        let result = sqlx::query(
             r#"
             INSERT INTO streamers (
                 id, name, url, platform_config_id, template_config_id,
@@ -163,12 +163,19 @@ impl StreamerRepository for SqlxStreamerRepository {
         .bind(streamer.consecutive_error_count)
         .bind(&streamer.disabled_until)
         .execute(&self.pool)
-        .await?;
-        Ok(())
+        .await;
+
+        match result {
+            Ok(_) => Ok(()),
+            Err(sqlx::Error::Database(db_err)) if db_err.is_unique_violation() => {
+                Err(Error::duplicate_url(&streamer.url))
+            }
+            Err(e) => Err(e.into()),
+        }
     }
 
     async fn update_streamer(&self, streamer: &StreamerDbModel) -> Result<()> {
-        sqlx::query(
+        let result = sqlx::query(
             r#"
             UPDATE streamers SET
                 name = ?,
@@ -200,8 +207,15 @@ impl StreamerRepository for SqlxStreamerRepository {
         .bind(&streamer.disabled_until)
         .bind(&streamer.id)
         .execute(&self.pool)
-        .await?;
-        Ok(())
+        .await;
+
+        match result {
+            Ok(_) => Ok(()),
+            Err(sqlx::Error::Database(db_err)) if db_err.is_unique_violation() => {
+                Err(Error::duplicate_url(&streamer.url))
+            }
+            Err(e) => Err(e.into()),
+        }
     }
 
     async fn update_streamer_state(&self, id: &str, state: &str) -> Result<()> {

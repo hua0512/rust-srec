@@ -243,6 +243,8 @@ CREATE INDEX idx_streamer_template_config_id ON streamers(template_config_id);
 CREATE INDEX idx_streamer_state ON streamers(state);
 CREATE INDEX idx_streamer_priority_state ON streamers(priority, state);
 CREATE INDEX idx_streamer_priority ON streamers(priority);
+-- Case-insensitive unique index on URL to prevent duplicate streamers
+CREATE UNIQUE INDEX idx_streamers_url_unique ON streamers (url COLLATE NOCASE);
 
 -- Index for the filter table
 CREATE INDEX idx_filter_streamer_id ON filters(streamer_id);

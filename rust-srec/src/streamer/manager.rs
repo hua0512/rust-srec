@@ -210,6 +210,7 @@ where
         &self,
         id: &str,
         name: Option<String>,
+        url: Option<String>,
         template_config_id: Option<Option<String>>,
         priority: Option<Priority>,
         state: Option<StreamerState>,
@@ -226,6 +227,9 @@ where
         // Apply updates
         if let Some(new_name) = name {
             metadata.name = new_name;
+        }
+        if let Some(new_url) = url {
+            metadata.url = new_url;
         }
         if let Some(new_template) = template_config_id {
             metadata.template_config_id = new_template;
@@ -449,6 +453,29 @@ where
             .iter()
             .filter(|e| e.state == StreamerState::Live)
             .count()
+    }
+
+    // ========== URL Uniqueness Checks ==========
+
+    /// Check if a URL already exists in the system.
+    ///
+    /// Performs case-insensitive comparison.
+    pub fn url_exists(&self, url: &str) -> bool {
+        let url_lower = url.to_lowercase();
+        self.metadata
+            .iter()
+            .any(|entry| entry.url.to_lowercase() == url_lower)
+    }
+
+    /// Check if a URL exists for any streamer other than the specified one.
+    ///
+    /// Used during updates to allow a streamer to keep its own URL.
+    /// Performs case-insensitive comparison.
+    pub fn url_exists_for_other(&self, url: &str, exclude_id: &str) -> bool {
+        let url_lower = url.to_lowercase();
+        self.metadata
+            .iter()
+            .any(|entry| entry.url.to_lowercase() == url_lower && entry.id != exclude_id)
     }
 
     // ========== Private Helpers ==========
@@ -876,6 +903,7 @@ mod tests {
             .partial_update_streamer(
                 "s1",
                 Some("New Name".to_string()),
+                None, // Don't change URL
                 None, // Don't change template
                 Some(Priority::High),
                 None, // Don't change state
@@ -908,6 +936,7 @@ mod tests {
             .partial_update_streamer(
                 "s1",
                 None,
+                None, // Don't change URL
                 Some(None), // Set template to None
                 None,
                 None,

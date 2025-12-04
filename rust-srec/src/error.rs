@@ -52,6 +52,9 @@ pub enum Error {
 
     #[error("{0}")]
     Other(String),
+
+    #[error("Duplicate URL: a streamer with URL '{0}' already exists")]
+    DuplicateUrl(String),
 }
 
 impl Error {
@@ -68,5 +71,9 @@ impl Error {
 
     pub fn config(msg: impl Into<String>) -> Self {
         Self::Configuration(msg.into())
+    }
+
+    pub fn duplicate_url(url: impl Into<String>) -> Self {
+        Self::DuplicateUrl(url.into())
     }
 }

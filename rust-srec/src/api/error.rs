@@ -128,6 +128,9 @@ impl From<Error> for ApiError {
             Error::InvalidStateTransition { from, to } => {
                 ApiError::conflict(format!("Cannot transition from {} to {}", from, to))
             }
+            Error::DuplicateUrl(url) => {
+                ApiError::conflict(format!("A streamer with URL '{}' already exists", url))
+            }
             Error::Io(e) => {
                 tracing::error!("IO error: {}", e);
                 ApiError::internal("IO error occurred")

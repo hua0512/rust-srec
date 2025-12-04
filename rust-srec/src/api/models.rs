@@ -134,6 +134,8 @@ fn default_true() -> bool {
 pub struct UpdateStreamerRequest {
     /// Streamer name
     pub name: Option<String>,
+    /// Streamer URL
+    pub url: Option<String>,
     /// Template ID
     pub template_id: Option<String>,
     /// Priority
