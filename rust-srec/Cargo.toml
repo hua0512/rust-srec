@@ -11,6 +11,8 @@ axum = "0.8.4"
 serde = { version = "1.0", features = ["derive"] }
 uuid = { version = "1.18.1", features = ["v4", "serde"] }
 chrono = { version = "0.4", features = ["serde"] }
+chrono-tz = "0.10"
+cron = "0.15"
 bytes = "1"
 tokio = { version = "1", features = ["full"] }
 tokio-util = { version = "0.7", features = ["rt"] }

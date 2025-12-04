@@ -10,6 +10,8 @@ pub enum FilterType {
     TimeBased,
     Keyword,
     Category,
+    Cron,
+    Regex,
 }
 
 impl FilterType {
@@ -18,6 +20,8 @@ impl FilterType {
             Self::TimeBased => "TIME_BASED",
             Self::Keyword => "KEYWORD",
             Self::Category => "CATEGORY",
+            Self::Cron => "CRON",
+            Self::Regex => "REGEX",
         }
     }
 }
@@ -29,6 +33,8 @@ pub enum Filter {
     TimeBased(TimeBasedFilter),
     Keyword(KeywordFilter),
     Category(CategoryFilter),
+    Cron(CronFilter),
+    Regex(RegexFilter),
 }
 
 impl Filter {
@@ -38,15 +44,20 @@ impl Filter {
             Self::TimeBased(_) => FilterType::TimeBased,
             Self::Keyword(_) => FilterType::Keyword,
             Self::Category(_) => FilterType::Category,
+            Self::Cron(_) => FilterType::Cron,
+            Self::Regex(_) => FilterType::Regex,
         }
     }
 
     /// Check if the filter matches the given context.
+    /// For Cron and Regex filters, use the FilterEvaluator directly for more control.
     pub fn matches(&self, title: &str, category: &str, now: chrono::DateTime<chrono::Utc>) -> bool {
         match self {
             Self::TimeBased(f) => f.matches(now),
             Self::Keyword(f) => f.matches(title),
             Self::Category(f) => f.matches(category),
+            Self::Cron(f) => f.matches(now),
+            Self::Regex(f) => f.matches(title),
         }
     }
 
@@ -83,6 +94,25 @@ impl Filter {
                         .map_err(|e| format!("Failed to parse category filter config: {}", e))?;
                 Ok(Filter::Category(CategoryFilter {
                     categories: config.categories,
+                }))
+            }
+            DbFilterType::Cron => {
+                let config: crate::database::models::filter::CronFilterConfig =
+                    serde_json::from_str(&model.config)
+                        .map_err(|e| format!("Failed to parse cron filter config: {}", e))?;
+                Ok(Filter::Cron(CronFilter {
+                    expression: config.expression,
+                    timezone: config.timezone,
+                }))
+            }
+            DbFilterType::Regex => {
+                let config: crate::database::models::filter::RegexFilterConfig =
+                    serde_json::from_str(&model.config)
+                        .map_err(|e| format!("Failed to parse regex filter config: {}", e))?;
+                Ok(Filter::Regex(RegexFilter {
+                    pattern: config.pattern,
+                    case_insensitive: config.case_insensitive,
+                    exclude: config.exclude,
                 }))
             }
         }
@@ -244,6 +274,102 @@ impl CategoryFilter {
         self.categories
             .iter()
             .any(|c| c.eq_ignore_ascii_case(category))
+    }
+}
+
+/// Cron-based filter using standard cron expressions.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CronFilter {
+    /// Cron expression (6 fields, with seconds).
+    /// Format: "second minute hour day-of-month month day-of-week"
+    pub expression: String,
+    /// Optional timezone (IANA format, e.g., "Asia/Shanghai").
+    #[serde(default)]
+    pub timezone: Option<String>,
+}
+
+impl CronFilter {
+    /// Create a new cron filter.
+    pub fn new(expression: impl Into<String>) -> Self {
+        Self {
+            expression: expression.into(),
+            timezone: None,
+        }
+    }
+
+    /// Create a new cron filter with timezone.
+    pub fn with_timezone(expression: impl Into<String>, timezone: impl Into<String>) -> Self {
+        Self {
+            expression: expression.into(),
+            timezone: Some(timezone.into()),
+        }
+    }
+
+    /// Check if the current time matches this cron schedule.
+    pub fn matches(&self, now: chrono::DateTime<chrono::Utc>) -> bool {
+        use crate::database::models::filter::CronFilterConfig;
+        use crate::domain::filter::FilterEvaluator;
+
+        let config = CronFilterConfig {
+            expression: self.expression.clone(),
+            timezone: self.timezone.clone(),
+        };
+        FilterEvaluator::evaluate_cron(&config, now).unwrap_or(false)
+    }
+}
+
+/// Regex-based filter for stream title pattern matching.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RegexFilter {
+    /// Regex pattern to match against stream title.
+    pub pattern: String,
+    /// Whether to perform case-insensitive matching.
+    #[serde(default)]
+    pub case_insensitive: bool,
+    /// If true, filter matches when pattern does NOT match the title.
+    #[serde(default)]
+    pub exclude: bool,
+}
+
+impl RegexFilter {
+    /// Create a new regex filter.
+    pub fn new(pattern: impl Into<String>) -> Self {
+        Self {
+            pattern: pattern.into(),
+            case_insensitive: false,
+            exclude: false,
+        }
+    }
+
+    /// Create a new case-insensitive regex filter.
+    pub fn case_insensitive(pattern: impl Into<String>) -> Self {
+        Self {
+            pattern: pattern.into(),
+            case_insensitive: true,
+            exclude: false,
+        }
+    }
+
+    /// Create a new exclude regex filter (matches when pattern does NOT match).
+    pub fn exclude(pattern: impl Into<String>) -> Self {
+        Self {
+            pattern: pattern.into(),
+            case_insensitive: false,
+            exclude: true,
+        }
+    }
+
+    /// Check if a title matches this regex filter.
+    pub fn matches(&self, title: &str) -> bool {
+        use crate::database::models::filter::RegexFilterConfig;
+        use crate::domain::filter::FilterEvaluator;
+
+        let config = RegexFilterConfig {
+            pattern: self.pattern.clone(),
+            case_insensitive: self.case_insensitive,
+            exclude: self.exclude,
+        };
+        FilterEvaluator::evaluate_regex(&config, title).unwrap_or(false)
     }
 }
 

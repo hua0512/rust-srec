@@ -116,6 +116,13 @@ impl FilterSet {
                     None => true, // No category = pass category filter
                 }
             }
+            Filter::Cron(cf) => cf.matches(context.current_time),
+            Filter::Regex(rf) => {
+                match &context.title {
+                    Some(title) => rf.matches(title),
+                    None => true, // No title = pass regex filter
+                }
+            }
         }
     }
 

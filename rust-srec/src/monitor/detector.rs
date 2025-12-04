@@ -300,6 +300,8 @@ impl StreamDetector {
                         FilterType::TimeBased => FilterReason::OutOfSchedule,
                         FilterType::Keyword => FilterReason::TitleMismatch,
                         FilterType::Category => FilterReason::CategoryMismatch,
+                        FilterType::Cron => FilterReason::OutOfSchedule,
+                        FilterType::Regex => FilterReason::TitleMismatch,
                     };
 
                     return Ok(LiveStatus::Filtered {
