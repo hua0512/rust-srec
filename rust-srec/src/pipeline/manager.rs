@@ -11,10 +11,10 @@ use super::processors::{
     ExecuteCommandProcessor, Processor, RemuxProcessor, ThumbnailProcessor, UploadProcessor,
 };
 use super::worker_pool::{WorkerPool, WorkerPoolConfig, WorkerType};
+use crate::Result;
 use crate::database::models::{JobFilters, Pagination};
 use crate::database::repositories::JobRepository;
 use crate::downloader::DownloadManagerEvent;
-use crate::Result;
 
 /// Configuration for the Pipeline Manager.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -126,9 +126,15 @@ impl PipelineManager {
     /// Create a new Pipeline Manager with custom configuration and job repository.
     /// This enables database persistence and job recovery on startup.
     /// Requirements: 6.1, 6.3
-    pub fn with_repository(config: PipelineManagerConfig, repository: Arc<dyn JobRepository>) -> Self {
+    pub fn with_repository(
+        config: PipelineManagerConfig,
+        repository: Arc<dyn JobRepository>,
+    ) -> Self {
         let (event_tx, _) = broadcast::channel(256);
-        let job_queue = Arc::new(JobQueue::with_repository(config.job_queue.clone(), repository));
+        let job_queue = Arc::new(JobQueue::with_repository(
+            config.job_queue.clone(),
+            repository,
+        ));
 
         // Create default processors
         let processors: Vec<Arc<dyn Processor>> = vec![
@@ -152,7 +158,7 @@ impl PipelineManager {
     /// Set the job repository for database persistence.
     /// This enables job recovery on startup and persistent job tracking.
     /// Requirements: 6.1, 6.3
-    /// 
+    ///
     /// Note: This method is deprecated. Use `with_repository` constructor instead
     /// for full functionality. Setting the repository after construction has
     /// limited effect due to the immutable nature of the internal JobQueue.
@@ -162,9 +168,11 @@ impl PipelineManager {
         // 1. Pass the repository at construction time (preferred - use with_repository)
         // 2. Use Arc<RwLock<JobQueue>> for interior mutability
         // 3. Use a different pattern for dependency injection
-        
+
         // For now, we log a warning that this should be done at construction time
-        warn!("set_job_repository called after construction - use with_repository constructor for full functionality");
+        warn!(
+            "set_job_repository called after construction - use with_repository constructor for full functionality"
+        );
     }
 
     /// Recover jobs from database on startup.
@@ -296,9 +304,9 @@ impl PipelineManager {
     /// Create a new pipeline with sequential job execution.
     /// Only the first job is created immediately; subsequent jobs are created
     /// atomically when each job completes.
-    /// 
+    ///
     /// Returns the pipeline_id (which is the first job's ID) for tracking.
-    /// 
+    ///
     /// Requirements: 6.1, 7.1, 7.5
     pub async fn create_pipeline(
         &self,
@@ -317,7 +325,9 @@ impl PipelineManager {
         });
 
         if steps.is_empty() {
-            return Err(crate::Error::Validation("Pipeline must have at least one step".to_string()));
+            return Err(crate::Error::Validation(
+                "Pipeline must have at least one step".to_string(),
+            ));
         }
 
         // Get the first step
@@ -327,7 +337,14 @@ impl PipelineManager {
         let (next_job_type, remaining_steps) = if steps.len() > 1 {
             let next = steps.get(1).cloned();
             let remaining: Vec<String> = steps.iter().skip(2).cloned().collect();
-            (next, if remaining.is_empty() { None } else { Some(remaining) })
+            (
+                next,
+                if remaining.is_empty() {
+                    None
+                } else {
+                    Some(remaining)
+                },
+            )
         } else {
             (None, None)
         };
@@ -633,8 +650,20 @@ mod tests {
         let manager = PipelineManager::new();
 
         // Enqueue some jobs
-        let job1 = Job::new("remux", "/input1.flv", "/output1.mp4", "streamer-1", "session-1");
-        let job2 = Job::new("upload", "/input2.flv", "/output2.mp4", "streamer-2", "session-2");
+        let job1 = Job::new(
+            "remux",
+            "/input1.flv",
+            "/output1.mp4",
+            "streamer-1",
+            "session-1",
+        );
+        let job2 = Job::new(
+            "upload",
+            "/input2.flv",
+            "/output2.mp4",
+            "streamer-2",
+            "session-2",
+        );
         manager.enqueue(job1).await.unwrap();
         manager.enqueue(job2).await.unwrap();
 
@@ -654,8 +683,20 @@ mod tests {
         let manager = PipelineManager::new();
 
         // Enqueue jobs for different streamers
-        let job1 = Job::new("remux", "/input1.flv", "/output1.mp4", "streamer-1", "session-1");
-        let job2 = Job::new("upload", "/input2.flv", "/output2.mp4", "streamer-2", "session-2");
+        let job1 = Job::new(
+            "remux",
+            "/input1.flv",
+            "/output1.mp4",
+            "streamer-1",
+            "session-1",
+        );
+        let job2 = Job::new(
+            "upload",
+            "/input2.flv",
+            "/output2.mp4",
+            "streamer-2",
+            "session-2",
+        );
         manager.enqueue(job1).await.unwrap();
         manager.enqueue(job2).await.unwrap();
 
@@ -673,7 +714,13 @@ mod tests {
     async fn test_get_job() {
         let manager = PipelineManager::new();
 
-        let job = Job::new("remux", "/input.flv", "/output.mp4", "streamer-1", "session-1");
+        let job = Job::new(
+            "remux",
+            "/input.flv",
+            "/output.mp4",
+            "streamer-1",
+            "session-1",
+        );
         let job_id = job.id.clone();
         manager.enqueue(job).await.unwrap();
 
@@ -692,8 +739,20 @@ mod tests {
         let manager = PipelineManager::new();
 
         // Enqueue some jobs
-        let job1 = Job::new("remux", "/input1.flv", "/output1.mp4", "streamer-1", "session-1");
-        let job2 = Job::new("upload", "/input2.flv", "/output2.mp4", "streamer-2", "session-2");
+        let job1 = Job::new(
+            "remux",
+            "/input1.flv",
+            "/output1.mp4",
+            "streamer-1",
+            "session-1",
+        );
+        let job2 = Job::new(
+            "upload",
+            "/input2.flv",
+            "/output2.mp4",
+            "streamer-2",
+            "session-2",
+        );
         manager.enqueue(job1).await.unwrap();
         manager.enqueue(job2).await.unwrap();
 
@@ -713,7 +772,13 @@ mod tests {
 
         let manager = PipelineManager::new();
 
-        let job = Job::new("remux", "/input.flv", "/output.mp4", "streamer-1", "session-1");
+        let job = Job::new(
+            "remux",
+            "/input.flv",
+            "/output.mp4",
+            "streamer-1",
+            "session-1",
+        );
         let job_id = job.id.clone();
         manager.enqueue(job).await.unwrap();
 
@@ -741,7 +806,11 @@ mod tests {
         assert_eq!(result.steps, vec!["remux", "upload", "thumbnail"]);
 
         // Verify the first job was created
-        let job = manager.get_job(&result.first_job_id).await.unwrap().unwrap();
+        let job = manager
+            .get_job(&result.first_job_id)
+            .await
+            .unwrap()
+            .unwrap();
         assert_eq!(job.job_type, "remux");
         assert_eq!(job.next_job_type, Some("upload".to_string()));
         assert_eq!(job.remaining_steps, Some(vec!["thumbnail".to_string()]));
@@ -763,7 +832,11 @@ mod tests {
         assert_eq!(result.first_job_type, "remux");
 
         // Verify the first job has correct chain info
-        let job = manager.get_job(&result.first_job_id).await.unwrap().unwrap();
+        let job = manager
+            .get_job(&result.first_job_id)
+            .await
+            .unwrap()
+            .unwrap();
         assert_eq!(job.next_job_type, Some("upload".to_string()));
         assert_eq!(job.remaining_steps, None); // No steps after upload
     }
@@ -782,7 +855,11 @@ mod tests {
         assert_eq!(result.first_job_type, "remux");
 
         // Verify the first job has no next job
-        let job = manager.get_job(&result.first_job_id).await.unwrap().unwrap();
+        let job = manager
+            .get_job(&result.first_job_id)
+            .await
+            .unwrap()
+            .unwrap();
         assert_eq!(job.next_job_type, None);
         assert_eq!(job.remaining_steps, None);
     }

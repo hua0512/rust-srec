@@ -152,16 +152,13 @@ async fn get_template(
     let streamer_manager = state.streamer_manager.as_ref();
 
     // Get the template
-    let template = config_service
-        .get_template_config(&id)
-        .await
-        .map_err(|e| {
-            if e.to_string().contains("not found") {
-                ApiError::not_found(format!("Template with id '{}' not found", id))
-            } else {
-                ApiError::internal(format!("Failed to get template: {}", e))
-            }
-        })?;
+    let template = config_service.get_template_config(&id).await.map_err(|e| {
+        if e.to_string().contains("not found") {
+            ApiError::not_found(format!("Template with id '{}' not found", id))
+        } else {
+            ApiError::internal(format!("Failed to get template: {}", e))
+        }
+    })?;
 
     // Count streamers using this template
     let usage_count = streamer_manager
@@ -189,16 +186,13 @@ async fn update_template(
     let streamer_manager = state.streamer_manager.as_ref();
 
     // Get the existing template
-    let mut template = config_service
-        .get_template_config(&id)
-        .await
-        .map_err(|e| {
-            if e.to_string().contains("not found") {
-                ApiError::not_found(format!("Template with id '{}' not found", id))
-            } else {
-                ApiError::internal(format!("Failed to get template: {}", e))
-            }
-        })?;
+    let mut template = config_service.get_template_config(&id).await.map_err(|e| {
+        if e.to_string().contains("not found") {
+            ApiError::not_found(format!("Template with id '{}' not found", id))
+        } else {
+            ApiError::internal(format!("Failed to get template: {}", e))
+        }
+    })?;
 
     // Apply partial updates
     if let Some(name) = request.name {
@@ -223,10 +217,12 @@ async fn update_template(
         template.record_danmu = Some(record_danmu);
     }
     if let Some(platform_overrides) = request.platform_overrides {
-        template.platform_overrides = Some(serde_json::to_string(&platform_overrides).unwrap_or_default());
+        template.platform_overrides =
+            Some(serde_json::to_string(&platform_overrides).unwrap_or_default());
     }
     if let Some(engines_override) = request.engines_override {
-        template.engines_override = Some(serde_json::to_string(&engines_override).unwrap_or_default());
+        template.engines_override =
+            Some(serde_json::to_string(&engines_override).unwrap_or_default());
     }
 
     // Update the template
@@ -260,16 +256,13 @@ async fn delete_template(
     let streamer_manager = state.streamer_manager.as_ref();
 
     // Check if template exists
-    config_service
-        .get_template_config(&id)
-        .await
-        .map_err(|e| {
-            if e.to_string().contains("not found") {
-                ApiError::not_found(format!("Template with id '{}' not found", id))
-            } else {
-                ApiError::internal(format!("Failed to get template: {}", e))
-            }
-        })?;
+    config_service.get_template_config(&id).await.map_err(|e| {
+        if e.to_string().contains("not found") {
+            ApiError::not_found(format!("Template with id '{}' not found", id))
+        } else {
+            ApiError::internal(format!("Failed to get template: {}", e))
+        }
+    })?;
 
     // Check if any streamers are using this template
     if let Some(sm) = streamer_manager {

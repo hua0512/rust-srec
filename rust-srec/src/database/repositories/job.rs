@@ -3,7 +3,9 @@
 use async_trait::async_trait;
 use sqlx::SqlitePool;
 
-use crate::database::models::{JobCounts, JobDbModel, JobExecutionLogDbModel, JobFilters, Pagination};
+use crate::database::models::{
+    JobCounts, JobDbModel, JobExecutionLogDbModel, JobFilters, Pagination,
+};
 use crate::{Error, Result};
 
 /// Job repository trait.

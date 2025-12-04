@@ -151,7 +151,12 @@ async fn list_sessions(
         });
     }
 
-    let response = PaginatedResponse::new(session_responses, total, pagination.limit, pagination.offset);
+    let response = PaginatedResponse::new(
+        session_responses,
+        total,
+        pagination.limit,
+        pagination.offset,
+    );
     Ok(Json(response))
 }
 
@@ -212,10 +217,7 @@ async fn get_session(
         .map_err(ApiError::from)?;
 
     // Get output count
-    let output_count = session_repository
-        .get_output_count(&id)
-        .await
-        .unwrap_or(0);
+    let output_count = session_repository.get_output_count(&id).await.unwrap_or(0);
 
     // Parse start_time
     let start_time = chrono::DateTime::parse_from_rfc3339(&session.start_time)

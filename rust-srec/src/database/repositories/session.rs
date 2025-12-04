@@ -288,7 +288,10 @@ impl SessionRepository for SqlxSessionRepository {
         };
 
         // Count query
-        let count_sql = format!("SELECT COUNT(*) as count FROM live_sessions {}", where_clause);
+        let count_sql = format!(
+            "SELECT COUNT(*) as count FROM live_sessions {}",
+            where_clause
+        );
 
         // Data query with pagination, ordered by start_time descending
         let data_sql = format!(
@@ -336,12 +339,11 @@ impl SessionRepository for SqlxSessionRepository {
     }
 
     async fn get_output_count(&self, session_id: &str) -> Result<u32> {
-        let count: i64 = sqlx::query_scalar(
-            "SELECT COUNT(*) FROM media_outputs WHERE session_id = ?",
-        )
-        .bind(session_id)
-        .fetch_one(&self.pool)
-        .await?;
+        let count: i64 =
+            sqlx::query_scalar("SELECT COUNT(*) FROM media_outputs WHERE session_id = ?")
+                .bind(session_id)
+                .fetch_one(&self.pool)
+                .await?;
 
         Ok(count as u32)
     }

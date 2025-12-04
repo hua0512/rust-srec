@@ -86,7 +86,9 @@ async fn create_streamer(
 
     // Check URL uniqueness (case-insensitive)
     if streamer_manager.url_exists(&request.url) {
-        return Err(ApiError::conflict("A streamer with this URL already exists"));
+        return Err(ApiError::conflict(
+            "A streamer with this URL already exists",
+        ));
     }
 
     // Generate a new ID for the streamer
@@ -243,7 +245,9 @@ async fn update_streamer(
     // Check URL uniqueness if URL is being changed (case-insensitive)
     if let Some(ref new_url) = request.url {
         if streamer_manager.url_exists_for_other(new_url, &id) {
-            return Err(ApiError::conflict("A streamer with this URL already exists"));
+            return Err(ApiError::conflict(
+                "A streamer with this URL already exists",
+            ));
         }
     }
 

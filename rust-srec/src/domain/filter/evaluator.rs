@@ -1,8 +1,8 @@
 //! Filter evaluation logic for cron and regex filters.
 
 use crate::database::models::filter::{
-    CronFilterConfig, FilterValidationError, RegexFilterConfig, FilterType, FilterDbModel,
-    TimeBasedFilterConfig, KeywordFilterConfig, CategoryFilterConfig,
+    CategoryFilterConfig, CronFilterConfig, FilterDbModel, FilterType, FilterValidationError,
+    KeywordFilterConfig, RegexFilterConfig, TimeBasedFilterConfig,
 };
 use chrono::{DateTime, Datelike, TimeZone, Timelike, Utc};
 use chrono_tz::Tz;
@@ -121,16 +121,22 @@ impl FilterEvaluator {
     /// };
     /// let result = FilterEvaluator::evaluate_cron(&config, Utc::now());
     /// ```
-    pub fn evaluate_cron(config: &CronFilterConfig, now: DateTime<Utc>) -> Result<bool, FilterEvalError> {
+    pub fn evaluate_cron(
+        config: &CronFilterConfig,
+        now: DateTime<Utc>,
+    ) -> Result<bool, FilterEvalError> {
         // Parse the cron expression
         let schedule = cron::Schedule::from_str(&config.expression)
             .map_err(|e| FilterEvalError::InvalidCronExpression(e.to_string()))?;
 
         // Determine the timezone to use
         let tz: Tz = match &config.timezone {
-            Some(tz_str) => tz_str
-                .parse()
-                .map_err(|_| FilterEvalError::InvalidTimezone(format!("'{}' is not a valid IANA timezone", tz_str)))?,
+            Some(tz_str) => tz_str.parse().map_err(|_| {
+                FilterEvalError::InvalidTimezone(format!(
+                    "'{}' is not a valid IANA timezone",
+                    tz_str
+                ))
+            })?,
             None => chrono_tz::UTC,
         };
 
@@ -159,12 +165,14 @@ impl FilterEvaluator {
         let now_truncated = now
             .with_second(0)
             .and_then(|t| t.with_nanosecond(0))
-            .ok_or_else(|| FilterEvalError::CronScheduleError("Failed to truncate time".to_string()))?;
+            .ok_or_else(|| {
+                FilterEvalError::CronScheduleError("Failed to truncate time".to_string())
+            })?;
 
         // Check if there's a scheduled time at exactly this minute
         // by looking at upcoming times from one minute before
         let one_minute_ago = now_truncated.clone() - chrono::Duration::minutes(1);
-        
+
         for scheduled_time in schedule.after(&one_minute_ago).take(2) {
             // Check if the scheduled time is at the same minute as now
             if scheduled_time.year() == now_truncated.year()
@@ -175,7 +183,7 @@ impl FilterEvaluator {
             {
                 return Ok(true);
             }
-            
+
             // If we've passed the current minute, no need to continue
             if scheduled_time > now_truncated {
                 break;
@@ -213,7 +221,10 @@ impl FilterEvaluator {
     /// let result = FilterEvaluator::evaluate_regex(&config, "LIVE streaming gaming");
     /// assert!(result.unwrap()); // Matches because case_insensitive is true
     /// ```
-    pub fn evaluate_regex(config: &RegexFilterConfig, title: &str) -> Result<bool, FilterEvalError> {
+    pub fn evaluate_regex(
+        config: &RegexFilterConfig,
+        title: &str,
+    ) -> Result<bool, FilterEvalError> {
         // Build regex with case-insensitive flag when configured
         let regex = RegexBuilder::new(&config.pattern)
             .case_insensitive(config.case_insensitive)
@@ -281,25 +292,36 @@ impl FilterEvaluator {
     }
 
     /// Evaluates a single filter against the context.
-    fn evaluate_single(filter: &FilterDbModel, context: &EvalContext) -> Result<bool, FilterEvalError> {
-        let filter_type = FilterType::parse(&filter.filter_type)
-            .ok_or_else(|| FilterEvalError::CronScheduleError(
-                format!("Unknown filter type: {}", filter.filter_type)
-            ))?;
+    fn evaluate_single(
+        filter: &FilterDbModel,
+        context: &EvalContext,
+    ) -> Result<bool, FilterEvalError> {
+        let filter_type = FilterType::parse(&filter.filter_type).ok_or_else(|| {
+            FilterEvalError::CronScheduleError(format!(
+                "Unknown filter type: {}",
+                filter.filter_type
+            ))
+        })?;
 
         match filter_type {
             FilterType::Cron => {
-                let config: CronFilterConfig = serde_json::from_str(&filter.config)
-                    .map_err(|e| FilterEvalError::CronScheduleError(
-                        format!("Failed to parse cron config: {}", e)
-                    ))?;
+                let config: CronFilterConfig =
+                    serde_json::from_str(&filter.config).map_err(|e| {
+                        FilterEvalError::CronScheduleError(format!(
+                            "Failed to parse cron config: {}",
+                            e
+                        ))
+                    })?;
                 Self::evaluate_cron(&config, context.current_time)
             }
             FilterType::Regex => {
-                let config: RegexFilterConfig = serde_json::from_str(&filter.config)
-                    .map_err(|e| FilterEvalError::InvalidRegexPattern(
-                        format!("Failed to parse regex config: {}", e)
-                    ))?;
+                let config: RegexFilterConfig =
+                    serde_json::from_str(&filter.config).map_err(|e| {
+                        FilterEvalError::InvalidRegexPattern(format!(
+                            "Failed to parse regex config: {}",
+                            e
+                        ))
+                    })?;
                 // If no title provided, regex filter passes (similar to existing behavior)
                 match &context.stream_title {
                     Some(title) => Self::evaluate_regex(&config, title),
@@ -307,17 +329,23 @@ impl FilterEvaluator {
                 }
             }
             FilterType::TimeBased => {
-                let config: TimeBasedFilterConfig = serde_json::from_str(&filter.config)
-                    .map_err(|e| FilterEvalError::CronScheduleError(
-                        format!("Failed to parse time-based config: {}", e)
-                    ))?;
+                let config: TimeBasedFilterConfig =
+                    serde_json::from_str(&filter.config).map_err(|e| {
+                        FilterEvalError::CronScheduleError(format!(
+                            "Failed to parse time-based config: {}",
+                            e
+                        ))
+                    })?;
                 Ok(Self::evaluate_time_based(&config, context.current_time))
             }
             FilterType::Keyword => {
-                let config: KeywordFilterConfig = serde_json::from_str(&filter.config)
-                    .map_err(|e| FilterEvalError::CronScheduleError(
-                        format!("Failed to parse keyword config: {}", e)
-                    ))?;
+                let config: KeywordFilterConfig =
+                    serde_json::from_str(&filter.config).map_err(|e| {
+                        FilterEvalError::CronScheduleError(format!(
+                            "Failed to parse keyword config: {}",
+                            e
+                        ))
+                    })?;
                 // If no title provided, keyword filter passes
                 match &context.stream_title {
                     Some(title) => Ok(Self::evaluate_keyword(&config, title)),
@@ -325,10 +353,13 @@ impl FilterEvaluator {
                 }
             }
             FilterType::Category => {
-                let config: CategoryFilterConfig = serde_json::from_str(&filter.config)
-                    .map_err(|e| FilterEvalError::CronScheduleError(
-                        format!("Failed to parse category config: {}", e)
-                    ))?;
+                let config: CategoryFilterConfig =
+                    serde_json::from_str(&filter.config).map_err(|e| {
+                        FilterEvalError::CronScheduleError(format!(
+                            "Failed to parse category config: {}",
+                            e
+                        ))
+                    })?;
                 // If no category provided, category filter passes
                 match &context.stream_category {
                     Some(category) => Ok(Self::evaluate_category(&config, category)),
@@ -348,11 +379,19 @@ impl FilterEvaluator {
 
         // Check if current day is in allowed days
         let day_name = Self::weekday_to_string(weekday);
-        if !config.days_of_week.iter().any(|d| d.eq_ignore_ascii_case(&day_name)) {
+        if !config
+            .days_of_week
+            .iter()
+            .any(|d| d.eq_ignore_ascii_case(&day_name))
+        {
             // Also check if we're in an overnight range from the previous day
             let prev_day = Self::prev_weekday(weekday);
             let prev_day_name = Self::weekday_to_string(prev_day);
-            if !config.days_of_week.iter().any(|d| d.eq_ignore_ascii_case(&prev_day_name)) {
+            if !config
+                .days_of_week
+                .iter()
+                .any(|d| d.eq_ignore_ascii_case(&prev_day_name))
+            {
                 return false;
             }
             // We're checking from previous day's overnight range
@@ -379,7 +418,10 @@ impl FilterEvaluator {
         }
     }
 
-    fn is_in_overnight_range_next_day(config: &TimeBasedFilterConfig, current_time: chrono::NaiveTime) -> bool {
+    fn is_in_overnight_range_next_day(
+        config: &TimeBasedFilterConfig,
+        current_time: chrono::NaiveTime,
+    ) -> bool {
         use chrono::NaiveTime;
 
         let start = match NaiveTime::parse_from_str(&config.start_time, "%H:%M").ok() {
@@ -457,7 +499,10 @@ impl FilterEvaluator {
             return true;
         }
 
-        config.categories.iter().any(|c| c.eq_ignore_ascii_case(category))
+        config
+            .categories
+            .iter()
+            .any(|c| c.eq_ignore_ascii_case(category))
     }
 }
 
@@ -474,7 +519,7 @@ mod tests {
             expression: "0 * * * * *".to_string(),
             timezone: None,
         };
-        
+
         // Any time should match since it runs every minute
         let now = Utc::now();
         let result = FilterEvaluator::evaluate_cron(&config, now);
@@ -489,7 +534,7 @@ mod tests {
             expression: "0 0 22 * * *".to_string(),
             timezone: None,
         };
-        
+
         // Create a time at exactly 22:00 UTC
         let now = Utc.with_ymd_and_hms(2024, 12, 4, 22, 0, 0).unwrap();
         let result = FilterEvaluator::evaluate_cron(&config, now);
@@ -504,12 +549,15 @@ mod tests {
             expression: "0 0 22 * * *".to_string(),
             timezone: None,
         };
-        
+
         // Create a time at 15:00 UTC (should not match)
         let now = Utc.with_ymd_and_hms(2024, 12, 4, 15, 0, 0).unwrap();
         let result = FilterEvaluator::evaluate_cron(&config, now);
         assert!(result.is_ok());
-        assert!(!result.unwrap(), "15:00 should not match the 22:00 cron schedule");
+        assert!(
+            !result.unwrap(),
+            "15:00 should not match the 22:00 cron schedule"
+        );
     }
 
     #[test]
@@ -519,12 +567,15 @@ mod tests {
             expression: "0 0 22 * * *".to_string(),
             timezone: Some("Asia/Shanghai".to_string()),
         };
-        
+
         // Asia/Shanghai is UTC+8, so 22:00 Shanghai = 14:00 UTC
         let now = Utc.with_ymd_and_hms(2024, 12, 4, 14, 0, 0).unwrap();
         let result = FilterEvaluator::evaluate_cron(&config, now);
         assert!(result.is_ok());
-        assert!(result.unwrap(), "14:00 UTC should match 22:00 Asia/Shanghai");
+        assert!(
+            result.unwrap(),
+            "14:00 UTC should match 22:00 Asia/Shanghai"
+        );
     }
 
     #[test]
@@ -534,12 +585,15 @@ mod tests {
             expression: "0 0 22 * * *".to_string(),
             timezone: Some("Asia/Shanghai".to_string()),
         };
-        
+
         // 22:00 UTC is 06:00 next day in Shanghai, should not match
         let now = Utc.with_ymd_and_hms(2024, 12, 4, 22, 0, 0).unwrap();
         let result = FilterEvaluator::evaluate_cron(&config, now);
         assert!(result.is_ok());
-        assert!(!result.unwrap(), "22:00 UTC should not match 22:00 Asia/Shanghai");
+        assert!(
+            !result.unwrap(),
+            "22:00 UTC should not match 22:00 Asia/Shanghai"
+        );
     }
 
     #[test]
@@ -549,19 +603,19 @@ mod tests {
             expression: "0 0 22 * * FRI,SAT".to_string(),
             timezone: None,
         };
-        
+
         // December 6, 2024 is a Friday
         let friday = Utc.with_ymd_and_hms(2024, 12, 6, 22, 0, 0).unwrap();
         let result = FilterEvaluator::evaluate_cron(&config, friday);
         assert!(result.is_ok());
         assert!(result.unwrap(), "Friday 22:00 should match");
-        
+
         // December 7, 2024 is a Saturday
         let saturday = Utc.with_ymd_and_hms(2024, 12, 7, 22, 0, 0).unwrap();
         let result = FilterEvaluator::evaluate_cron(&config, saturday);
         assert!(result.is_ok());
         assert!(result.unwrap(), "Saturday 22:00 should match");
-        
+
         // December 4, 2024 is a Wednesday
         let wednesday = Utc.with_ymd_and_hms(2024, 12, 4, 22, 0, 0).unwrap();
         let result = FilterEvaluator::evaluate_cron(&config, wednesday);
@@ -575,11 +629,14 @@ mod tests {
             expression: "invalid cron".to_string(),
             timezone: None,
         };
-        
+
         let now = Utc::now();
         let result = FilterEvaluator::evaluate_cron(&config, now);
         assert!(result.is_err());
-        assert!(matches!(result.unwrap_err(), FilterEvalError::InvalidCronExpression(_)));
+        assert!(matches!(
+            result.unwrap_err(),
+            FilterEvalError::InvalidCronExpression(_)
+        ));
     }
 
     #[test]
@@ -588,11 +645,14 @@ mod tests {
             expression: "0 0 22 * * *".to_string(),
             timezone: Some("Invalid/Timezone".to_string()),
         };
-        
+
         let now = Utc::now();
         let result = FilterEvaluator::evaluate_cron(&config, now);
         assert!(result.is_err());
-        assert!(matches!(result.unwrap_err(), FilterEvalError::InvalidTimezone(_)));
+        assert!(matches!(
+            result.unwrap_err(),
+            FilterEvalError::InvalidTimezone(_)
+        ));
     }
 
     #[test]
@@ -602,23 +662,23 @@ mod tests {
             expression: "0 */15 * * * *".to_string(),
             timezone: None,
         };
-        
+
         // 14:00 should match (0 minutes)
         let at_00 = Utc.with_ymd_and_hms(2024, 12, 4, 14, 0, 0).unwrap();
         assert!(FilterEvaluator::evaluate_cron(&config, at_00).unwrap());
-        
+
         // 14:15 should match
         let at_15 = Utc.with_ymd_and_hms(2024, 12, 4, 14, 15, 0).unwrap();
         assert!(FilterEvaluator::evaluate_cron(&config, at_15).unwrap());
-        
+
         // 14:30 should match
         let at_30 = Utc.with_ymd_and_hms(2024, 12, 4, 14, 30, 0).unwrap();
         assert!(FilterEvaluator::evaluate_cron(&config, at_30).unwrap());
-        
+
         // 14:45 should match
         let at_45 = Utc.with_ymd_and_hms(2024, 12, 4, 14, 45, 0).unwrap();
         assert!(FilterEvaluator::evaluate_cron(&config, at_45).unwrap());
-        
+
         // 14:10 should not match
         let at_10 = Utc.with_ymd_and_hms(2024, 12, 4, 14, 10, 0).unwrap();
         assert!(!FilterEvaluator::evaluate_cron(&config, at_10).unwrap());
@@ -637,7 +697,7 @@ mod tests {
                 case_insensitive: false,
                 exclude: false,
             };
-            
+
             assert!(FilterEvaluator::evaluate_regex(&config, "Going live now!").unwrap());
             assert!(!FilterEvaluator::evaluate_regex(&config, "Going LIVE now!").unwrap());
             assert!(!FilterEvaluator::evaluate_regex(&config, "Rerun of yesterday").unwrap());
@@ -650,7 +710,7 @@ mod tests {
                 case_insensitive: true,
                 exclude: false,
             };
-            
+
             assert!(FilterEvaluator::evaluate_regex(&config, "Going live now!").unwrap());
             assert!(FilterEvaluator::evaluate_regex(&config, "Going LIVE now!").unwrap());
             assert!(FilterEvaluator::evaluate_regex(&config, "Going LiVe now!").unwrap());
@@ -664,7 +724,7 @@ mod tests {
                 case_insensitive: true,
                 exclude: true,
             };
-            
+
             // With exclude=true, returns true when pattern does NOT match
             assert!(FilterEvaluator::evaluate_regex(&config, "Going live now!").unwrap());
             assert!(!FilterEvaluator::evaluate_regex(&config, "This is a RERUN").unwrap());
@@ -678,7 +738,7 @@ mod tests {
                 case_insensitive: true,
                 exclude: false,
             };
-            
+
             assert!(FilterEvaluator::evaluate_regex(&config, "LIVE streaming gaming").unwrap());
             assert!(FilterEvaluator::evaluate_regex(&config, "live - gaming session").unwrap());
             assert!(!FilterEvaluator::evaluate_regex(&config, "gaming live").unwrap()); // Wrong order
@@ -692,7 +752,7 @@ mod tests {
                 case_insensitive: false,
                 exclude: false,
             };
-            
+
             assert!(FilterEvaluator::evaluate_regex(&config, "live stream today").unwrap());
             assert!(!FilterEvaluator::evaluate_regex(&config, "Going live now").unwrap());
         }
@@ -704,10 +764,13 @@ mod tests {
                 case_insensitive: false,
                 exclude: false,
             };
-            
+
             let result = FilterEvaluator::evaluate_regex(&config, "any title");
             assert!(result.is_err());
-            assert!(matches!(result.unwrap_err(), FilterEvalError::InvalidRegexPattern(_)));
+            assert!(matches!(
+                result.unwrap_err(),
+                FilterEvalError::InvalidRegexPattern(_)
+            ));
         }
 
         #[test]
@@ -717,7 +780,7 @@ mod tests {
                 case_insensitive: false,
                 exclude: false,
             };
-            
+
             assert!(!FilterEvaluator::evaluate_regex(&config, "").unwrap());
         }
 
@@ -728,7 +791,7 @@ mod tests {
                 case_insensitive: false,
                 exclude: false,
             };
-            
+
             // Empty pattern matches everything
             assert!(FilterEvaluator::evaluate_regex(&config, "any title").unwrap());
             assert!(FilterEvaluator::evaluate_regex(&config, "").unwrap());
@@ -741,7 +804,7 @@ mod tests {
                 case_insensitive: false,
                 exclude: false,
             };
-            
+
             assert!(FilterEvaluator::evaluate_regex(&config, "[LIVE] Gaming session").unwrap());
             assert!(!FilterEvaluator::evaluate_regex(&config, "LIVE Gaming session").unwrap());
         }
@@ -753,7 +816,7 @@ mod tests {
                 case_insensitive: true,
                 exclude: false,
             };
-            
+
             assert!(FilterEvaluator::evaluate_regex(&config, "Going live now").unwrap());
             assert!(!FilterEvaluator::evaluate_regex(&config, "Delivered today").unwrap()); // "live" is part of "Delivered"
         }
@@ -765,7 +828,7 @@ mod tests {
                 case_insensitive: true,
                 exclude: true,
             };
-            
+
             // Should return true for titles that don't contain "rerun" or "replay"
             assert!(FilterEvaluator::evaluate_regex(&config, "Live gaming session").unwrap());
             assert!(!FilterEvaluator::evaluate_regex(&config, "RERUN of yesterday").unwrap());
@@ -797,10 +860,7 @@ mod tests {
         #[test]
         fn test_evaluate_all_single_cron_filter_matches() {
             // Create a cron filter that matches every minute
-            let filter = create_filter(
-                FilterType::Cron,
-                r#"{"expression": "0 * * * * *"}"#,
-            );
+            let filter = create_filter(FilterType::Cron, r#"{"expression": "0 * * * * *"}"#);
             let filters = vec![filter];
             let context = EvalContext::new();
             assert!(FilterEvaluator::evaluate_all(&filters, &context));
@@ -810,13 +870,11 @@ mod tests {
         fn test_evaluate_all_single_cron_filter_no_match() {
             // Create a cron filter for a specific time that won't match now
             // 10 PM on December 31st only
-            let filter = create_filter(
-                FilterType::Cron,
-                r#"{"expression": "0 0 22 31 12 *"}"#,
-            );
+            let filter = create_filter(FilterType::Cron, r#"{"expression": "0 0 22 31 12 *"}"#);
             let filters = vec![filter];
             // Use a time that doesn't match
-            let context = EvalContext::with_time(Utc.with_ymd_and_hms(2024, 6, 15, 10, 0, 0).unwrap());
+            let context =
+                EvalContext::with_time(Utc.with_ymd_and_hms(2024, 6, 15, 10, 0, 0).unwrap());
             assert!(!FilterEvaluator::evaluate_all(&filters, &context));
         }
 
@@ -901,10 +959,7 @@ mod tests {
         #[test]
         fn test_evaluate_all_invalid_cron_expression_fails() {
             // Invalid cron expression should cause filter to fail
-            let filter = create_filter(
-                FilterType::Cron,
-                r#"{"expression": "invalid cron"}"#,
-            );
+            let filter = create_filter(FilterType::Cron, r#"{"expression": "invalid cron"}"#);
             let filters = vec![filter];
             let context = EvalContext::new();
             assert!(!FilterEvaluator::evaluate_all(&filters, &context));
@@ -929,15 +984,15 @@ mod tests {
                 r#"{"include": ["live"], "exclude": ["rerun"]}"#,
             );
             let filters = vec![filter];
-            
+
             // Should pass - contains "live", no "rerun"
             let context = EvalContext::new().title("Going live now!");
             assert!(FilterEvaluator::evaluate_all(&filters, &context));
-            
+
             // Should fail - contains "rerun"
             let context = EvalContext::new().title("Live rerun");
             assert!(!FilterEvaluator::evaluate_all(&filters, &context));
-            
+
             // Should fail - no "live"
             let context = EvalContext::new().title("Just chatting");
             assert!(!FilterEvaluator::evaluate_all(&filters, &context));
@@ -950,15 +1005,15 @@ mod tests {
                 r#"{"categories": ["Just Chatting", "Art"]}"#,
             );
             let filters = vec![filter];
-            
+
             // Should pass - matching category
             let context = EvalContext::new().category("Just Chatting");
             assert!(FilterEvaluator::evaluate_all(&filters, &context));
-            
+
             // Should pass - case insensitive
             let context = EvalContext::new().category("just chatting");
             assert!(FilterEvaluator::evaluate_all(&filters, &context));
-            
+
             // Should fail - non-matching category
             let context = EvalContext::new().category("Gaming");
             assert!(!FilterEvaluator::evaluate_all(&filters, &context));
@@ -981,30 +1036,23 @@ mod tests {
         #[test]
         fn test_evaluate_all_mixed_filter_types() {
             // Test with multiple different filter types
-            let cron_filter = create_filter(
-                FilterType::Cron,
-                r#"{"expression": "0 * * * * *"}"#,
-            );
+            let cron_filter = create_filter(FilterType::Cron, r#"{"expression": "0 * * * * *"}"#);
             let regex_filter = create_filter(
                 FilterType::Regex,
                 r#"{"pattern": "live", "case_insensitive": true, "exclude": false}"#,
             );
-            let category_filter = create_filter(
-                FilterType::Category,
-                r#"{"categories": ["Gaming"]}"#,
-            );
+            let category_filter =
+                create_filter(FilterType::Category, r#"{"categories": ["Gaming"]}"#);
             let filters = vec![cron_filter, regex_filter, category_filter];
-            
+
             // All should pass
             let context = EvalContext::new()
                 .title("Going LIVE now!")
                 .category("Gaming");
             assert!(FilterEvaluator::evaluate_all(&filters, &context));
-            
+
             // Category fails
-            let context = EvalContext::new()
-                .title("Going LIVE now!")
-                .category("Art");
+            let context = EvalContext::new().title("Going LIVE now!").category("Art");
             assert!(!FilterEvaluator::evaluate_all(&filters, &context));
         }
 
@@ -1014,7 +1062,7 @@ mod tests {
             let context = EvalContext::with_time(time)
                 .title("Test title")
                 .category("Test category");
-            
+
             assert_eq!(context.current_time, time);
             assert_eq!(context.stream_title, Some("Test title".to_string()));
             assert_eq!(context.stream_category, Some("Test category".to_string()));

@@ -24,8 +24,8 @@ use serde::{Deserialize, Serialize};
 
 use crate::api::error::{ApiError, ApiResult};
 use crate::api::models::{
-    JobFilterParams, JobResponse, JobStatus as ApiJobStatus, MediaOutputResponse, PaginatedResponse,
-    PaginationParams, PipelineStatsResponse,
+    JobFilterParams, JobResponse, JobStatus as ApiJobStatus, MediaOutputResponse,
+    PaginatedResponse, PaginationParams, PipelineStatsResponse,
 };
 use crate::api::server::AppState;
 use crate::database::models::{JobFilters, JobStatus as DbJobStatus, OutputFilters, Pagination};
@@ -192,7 +192,8 @@ async fn list_jobs(
     // Convert jobs to API response format
     let job_responses: Vec<JobResponse> = jobs.iter().map(job_to_response).collect();
 
-    let response = PaginatedResponse::new(job_responses, total, pagination.limit, pagination.offset);
+    let response =
+        PaginatedResponse::new(job_responses, total, pagination.limit, pagination.offset);
     Ok(Json(response))
 }
 
@@ -449,7 +450,8 @@ async fn list_outputs(
         })
         .collect();
 
-    let response = PaginatedResponse::new(output_responses, total, pagination.limit, pagination.offset);
+    let response =
+        PaginatedResponse::new(output_responses, total, pagination.limit, pagination.offset);
     Ok(Json(response))
 }
 
@@ -486,10 +488,7 @@ async fn get_stats(State(state): State<AppState>) -> ApiResult<Json<PipelineStat
         .ok_or_else(|| ApiError::service_unavailable("Pipeline service not available"))?;
 
     // Call PipelineManager.get_stats
-    let stats = pipeline_manager
-        .get_stats()
-        .await
-        .map_err(ApiError::from)?;
+    let stats = pipeline_manager.get_stats().await.map_err(ApiError::from)?;
 
     let response = PipelineStatsResponse {
         pending_count: stats.pending,
@@ -626,7 +625,11 @@ fn job_to_response(job: &Job) -> JobResponse {
         status: queue_status_to_api_status(job.status),
         processor_type: job.job_type.clone(),
         input_path: job.input.clone(),
-        output_path: if job.output.is_empty() { None } else { Some(job.output.clone()) },
+        output_path: if job.output.is_empty() {
+            None
+        } else {
+            Some(job.output.clone())
+        },
         error_message: job.error.clone(),
         progress: None, // Progress tracking not implemented yet
         created_at: job.created_at,
@@ -679,24 +682,57 @@ mod tests {
         }"#;
 
         let request: CreatePipelineRequest = serde_json::from_str(json).unwrap();
-        assert_eq!(request.steps, Some(vec!["remux".to_string(), "upload".to_string()]));
+        assert_eq!(
+            request.steps,
+            Some(vec!["remux".to_string(), "upload".to_string()])
+        );
     }
 
     #[test]
     fn test_api_status_to_db_status() {
-        assert_eq!(api_status_to_db_status(ApiJobStatus::Pending), DbJobStatus::Pending);
-        assert_eq!(api_status_to_db_status(ApiJobStatus::Processing), DbJobStatus::Processing);
-        assert_eq!(api_status_to_db_status(ApiJobStatus::Completed), DbJobStatus::Completed);
-        assert_eq!(api_status_to_db_status(ApiJobStatus::Failed), DbJobStatus::Failed);
-        assert_eq!(api_status_to_db_status(ApiJobStatus::Interrupted), DbJobStatus::Interrupted);
+        assert_eq!(
+            api_status_to_db_status(ApiJobStatus::Pending),
+            DbJobStatus::Pending
+        );
+        assert_eq!(
+            api_status_to_db_status(ApiJobStatus::Processing),
+            DbJobStatus::Processing
+        );
+        assert_eq!(
+            api_status_to_db_status(ApiJobStatus::Completed),
+            DbJobStatus::Completed
+        );
+        assert_eq!(
+            api_status_to_db_status(ApiJobStatus::Failed),
+            DbJobStatus::Failed
+        );
+        assert_eq!(
+            api_status_to_db_status(ApiJobStatus::Interrupted),
+            DbJobStatus::Interrupted
+        );
     }
 
     #[test]
     fn test_queue_status_to_api_status() {
-        assert_eq!(queue_status_to_api_status(QueueJobStatus::Pending), ApiJobStatus::Pending);
-        assert_eq!(queue_status_to_api_status(QueueJobStatus::Processing), ApiJobStatus::Processing);
-        assert_eq!(queue_status_to_api_status(QueueJobStatus::Completed), ApiJobStatus::Completed);
-        assert_eq!(queue_status_to_api_status(QueueJobStatus::Failed), ApiJobStatus::Failed);
-        assert_eq!(queue_status_to_api_status(QueueJobStatus::Interrupted), ApiJobStatus::Interrupted);
+        assert_eq!(
+            queue_status_to_api_status(QueueJobStatus::Pending),
+            ApiJobStatus::Pending
+        );
+        assert_eq!(
+            queue_status_to_api_status(QueueJobStatus::Processing),
+            ApiJobStatus::Processing
+        );
+        assert_eq!(
+            queue_status_to_api_status(QueueJobStatus::Completed),
+            ApiJobStatus::Completed
+        );
+        assert_eq!(
+            queue_status_to_api_status(QueueJobStatus::Failed),
+            ApiJobStatus::Failed
+        );
+        assert_eq!(
+            queue_status_to_api_status(QueueJobStatus::Interrupted),
+            ApiJobStatus::Interrupted
+        );
     }
 }

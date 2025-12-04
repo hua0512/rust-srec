@@ -247,9 +247,8 @@ impl JobDbModel {
             error: None,
             retry_count: 0,
             next_job_type,
-            remaining_steps: remaining_steps.map(|steps| {
-                serde_json::to_string(&steps).unwrap_or_else(|_| "[]".to_string())
-            }),
+            remaining_steps: remaining_steps
+                .map(|steps| serde_json::to_string(&steps).unwrap_or_else(|_| "[]".to_string())),
             pipeline_id,
         }
     }
@@ -264,7 +263,8 @@ impl JobDbModel {
 
     /// Set the remaining pipeline steps.
     pub fn set_remaining_steps(&mut self, steps: &[String]) {
-        self.remaining_steps = Some(serde_json::to_string(steps).unwrap_or_else(|_| "[]".to_string()));
+        self.remaining_steps =
+            Some(serde_json::to_string(steps).unwrap_or_else(|_| "[]".to_string()));
         self.updated_at = chrono::Utc::now().to_rfc3339();
     }
 
@@ -595,34 +595,31 @@ mod tests {
 
     #[test]
     fn test_job_outputs() {
-        let mut job = JobDbModel::new_pipeline(
-            "/input/file.flv",
-            5,
-            None,
-            None,
-            r#"{"steps":[]}"#,
-        );
-        
+        let mut job = JobDbModel::new_pipeline("/input/file.flv", 5, None, None, r#"{"steps":[]}"#);
+
         // Initially no outputs
         assert!(job.get_outputs().is_empty());
-        
+
         // Add single output
         job.add_output("/output/file1.mp4");
         assert_eq!(job.get_outputs(), vec!["/output/file1.mp4".to_string()]);
-        
+
         // Add more outputs
         job.add_output("/output/file2.mp4");
         job.add_output("/output/thumbnail.jpg");
-        assert_eq!(job.get_outputs(), vec![
-            "/output/file1.mp4".to_string(),
-            "/output/file2.mp4".to_string(),
-            "/output/thumbnail.jpg".to_string(),
-        ]);
-        
+        assert_eq!(
+            job.get_outputs(),
+            vec![
+                "/output/file1.mp4".to_string(),
+                "/output/file2.mp4".to_string(),
+                "/output/thumbnail.jpg".to_string(),
+            ]
+        );
+
         // Set outputs directly
         job.set_outputs(&["/new/output.mp4".to_string()]);
         assert_eq!(job.get_outputs(), vec!["/new/output.mp4".to_string()]);
-        
+
         // Set empty outputs
         job.set_outputs(&[]);
         assert!(job.get_outputs().is_empty());
@@ -631,12 +628,12 @@ mod tests {
     #[test]
     fn test_job_lifecycle_methods() {
         let mut job = JobDbModel::new(JobType::Pipeline, r#"{"steps":[]}"#);
-        
+
         // Test mark_started
         job.mark_started();
         assert_eq!(job.status, "PROCESSING");
         assert!(job.started_at.is_some());
-        
+
         // Test mark_completed
         job.mark_completed();
         assert_eq!(job.status, "COMPLETED");
@@ -648,7 +645,7 @@ mod tests {
         let mut job = JobDbModel::new(JobType::Pipeline, r#"{"steps":[]}"#);
         job.mark_started();
         job.mark_failed("Something went wrong");
-        
+
         assert_eq!(job.status, "FAILED");
         assert!(job.completed_at.is_some());
         assert_eq!(job.error, Some("Something went wrong".to_string()));
@@ -659,10 +656,10 @@ mod tests {
         let mut job = JobDbModel::new(JobType::Pipeline, r#"{"steps":[]}"#);
         job.mark_started();
         job.mark_failed("Error");
-        
+
         let original_retry_count = job.retry_count;
         job.reset_for_retry();
-        
+
         assert_eq!(job.status, "PENDING");
         assert!(job.started_at.is_none());
         assert!(job.completed_at.is_none());

@@ -45,8 +45,7 @@ use crate::api::jwt::JwtService;
 use crate::config::ConfigService;
 use crate::danmu::DanmuService;
 use crate::database::repositories::{
-    config::SqlxConfigRepository, streamer::SqlxStreamerRepository,
-    session::SessionRepository,
+    config::SqlxConfigRepository, session::SessionRepository, streamer::SqlxStreamerRepository,
 };
 use crate::downloader::DownloadManager;
 use crate::metrics::HealthChecker;
@@ -155,7 +154,10 @@ impl AppState {
     }
 
     /// Set the session repository.
-    pub fn with_session_repository(mut self, session_repository: Arc<dyn SessionRepository>) -> Self {
+    pub fn with_session_repository(
+        mut self,
+        session_repository: Arc<dyn SessionRepository>,
+    ) -> Self {
         self.session_repository = Some(session_repository);
         self
     }

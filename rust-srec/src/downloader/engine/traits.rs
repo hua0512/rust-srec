@@ -431,11 +431,13 @@ mod tests {
         )
         .with_output_format("mp4")
         .with_max_segment_duration(3600)
+        .with_max_segment_size(1024 * 1024)
         .with_proxy("http://proxy:8080");
 
         assert_eq!(config.url, "https://example.com/stream");
         assert_eq!(config.output_format, "mp4");
         assert_eq!(config.max_segment_duration_secs, 3600);
+        assert_eq!(config.max_segment_size_bytes, 1024 * 1024);
         assert_eq!(config.proxy_url, Some("http://proxy:8080".to_string()));
     }
 

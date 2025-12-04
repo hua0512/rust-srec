@@ -23,8 +23,9 @@ use crate::danmu::{
 };
 use crate::database::maintenance::{MaintenanceConfig, MaintenanceScheduler};
 use crate::database::repositories::{
-    config::SqlxConfigRepository, job::SqlxJobRepository, refresh_token::SqlxRefreshTokenRepository,
-    streamer::SqlxStreamerRepository, user::SqlxUserRepository,
+    config::SqlxConfigRepository, job::SqlxJobRepository,
+    refresh_token::SqlxRefreshTokenRepository, streamer::SqlxStreamerRepository,
+    user::SqlxUserRepository,
 };
 use crate::downloader::{DownloadConfig, DownloadManager, DownloadManagerConfig, StreamSelector};
 use crate::metrics::{HealthChecker, MetricsCollector, PrometheusExporter};
@@ -220,7 +221,8 @@ impl ServiceContainer {
         let job_repo = Arc::new(SqlxJobRepository::new(pool.clone()));
 
         // Create pipeline manager with job repository for database persistence
-        let pipeline_manager = Arc::new(PipelineManager::with_repository(pipeline_config, job_repo));
+        let pipeline_manager =
+            Arc::new(PipelineManager::with_repository(pipeline_config, job_repo));
 
         // Create monitor event broadcaster
         let monitor_event_broadcaster = MonitorEventBroadcaster::with_capacity(event_capacity);
@@ -850,7 +852,8 @@ impl ServiceContainer {
                         .replace("{streamer}", &streamer_name),
                 )
                 .with_output_format(&merged_config.output_file_format)
-                .with_max_segment_duration(merged_config.max_download_duration_secs as u64);
+                .with_max_segment_duration(merged_config.max_download_duration_secs as u64)
+                .with_max_segment_size(merged_config.max_part_size_bytes as u64);
 
                 // Add headers if needed
                 for (key, value) in headers {

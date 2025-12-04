@@ -298,7 +298,8 @@ impl JobQueue {
 
             if let Some(db_job) = jobs.into_iter().next() {
                 // Update status to Processing
-                repo.update_job_status(&db_job.id, DbJobStatus::Processing.as_str()).await?;
+                repo.update_job_status(&db_job.id, DbJobStatus::Processing.as_str())
+                    .await?;
 
                 let mut job = db_model_to_job(&db_job);
                 job.status = JobStatus::Processing;
@@ -394,7 +395,11 @@ impl JobQueue {
     /// This ensures crash-safe transition between pipeline steps.
     /// Returns the ID of the newly created job, if any.
     /// Requirements: 7.2, 7.3
-    pub async fn complete_with_next(&self, job_id: &str, result: JobResult) -> Result<Option<String>> {
+    pub async fn complete_with_next(
+        &self,
+        job_id: &str,
+        result: JobResult,
+    ) -> Result<Option<String>> {
         let Some(repo) = &self.job_repository else {
             // Without repository, fall back to simple completion
             self.complete(job_id, result).await?;
@@ -436,11 +441,9 @@ impl JobQueue {
         };
 
         // Perform atomic completion and next job creation
-        let next_job_id = repo.complete_job_and_create_next(
-            job_id,
-            &result.output,
-            next_job.as_ref(),
-        ).await?;
+        let next_job_id = repo
+            .complete_job_and_create_next(job_id, &result.output, next_job.as_ref())
+            .await?;
 
         // Update cache for completed job
         {
@@ -576,7 +579,9 @@ impl JobQueue {
     /// Returns error if job is not in Failed status.
     pub async fn retry_job(&self, id: &str) -> Result<Job> {
         // Get the job
-        let job = self.get_job(id).await?
+        let job = self
+            .get_job(id)
+            .await?
             .ok_or_else(|| Error::not_found("Job", id))?;
 
         // Validate job is in Failed status
@@ -630,7 +635,9 @@ impl JobQueue {
     /// Returns error for Completed/Failed jobs.
     pub async fn cancel_job(&self, id: &str) -> Result<()> {
         // Get the job
-        let job = self.get_job(id).await?
+        let job = self
+            .get_job(id)
+            .await?
             .ok_or_else(|| Error::not_found("Job", id))?;
 
         // Validate job is not in terminal status
@@ -651,7 +658,8 @@ impl JobQueue {
 
         // Update database if repository is available
         if let Some(repo) = &self.job_repository {
-            repo.update_job_status(id, DbJobStatus::Interrupted.as_str()).await?;
+            repo.update_job_status(id, DbJobStatus::Interrupted.as_str())
+                .await?;
         }
 
         // Update cache
@@ -838,9 +846,10 @@ fn job_to_db_model(job: &Job) -> JobDbModel {
         error: job.error.clone(),
         retry_count: job.retry_count,
         next_job_type: job.next_job_type.clone(),
-        remaining_steps: job.remaining_steps.as_ref().map(|steps| {
-            serde_json::to_string(steps).unwrap_or_else(|_| "[]".to_string())
-        }),
+        remaining_steps: job
+            .remaining_steps
+            .as_ref()
+            .map(|steps| serde_json::to_string(steps).unwrap_or_else(|_| "[]".to_string())),
         pipeline_id: job.pipeline_id.clone(),
     }
 }
@@ -873,13 +882,17 @@ fn db_model_to_job(db_job: &JobDbModel) -> Job {
     });
 
     // Parse outputs JSON array to get the first output
-    let output = db_job.outputs.as_ref()
+    let output = db_job
+        .outputs
+        .as_ref()
         .and_then(|s| serde_json::from_str::<Vec<String>>(s).ok())
         .and_then(|v| v.into_iter().next())
         .unwrap_or_default();
 
     // Parse remaining_steps JSON array
-    let remaining_steps = db_job.remaining_steps.as_ref()
+    let remaining_steps = db_job
+        .remaining_steps
+        .as_ref()
         .and_then(|s| serde_json::from_str::<Vec<String>>(s).ok());
 
     Job {
@@ -891,7 +904,11 @@ fn db_model_to_job(db_job: &JobDbModel) -> Job {
         status,
         streamer_id: db_job.streamer_id.clone().unwrap_or_default(),
         session_id: db_job.session_id.clone().unwrap_or_default(),
-        config: if db_job.config == "{}" { None } else { Some(db_job.config.clone()) },
+        config: if db_job.config == "{}" {
+            None
+        } else {
+            Some(db_job.config.clone())
+        },
         created_at,
         started_at,
         completed_at,

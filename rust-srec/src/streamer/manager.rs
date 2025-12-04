@@ -936,7 +936,7 @@ mod tests {
             .partial_update_streamer(
                 "s1",
                 None,
-                None, // Don't change URL
+                None,       // Don't change URL
                 Some(None), // Set template to None
                 None,
                 None,

@@ -142,9 +142,8 @@ pub struct CronFilterConfig {
 impl FilterConfigValidator for CronFilterConfig {
     fn validate(&self) -> Result<(), FilterValidationError> {
         // Validate cron expression using the cron crate parser
-        cron::Schedule::from_str(&self.expression).map_err(|e| {
-            FilterValidationError::InvalidCronExpression(e.to_string())
-        })?;
+        cron::Schedule::from_str(&self.expression)
+            .map_err(|e| FilterValidationError::InvalidCronExpression(e.to_string()))?;
 
         // Validate timezone if provided
         if let Some(ref tz) = self.timezone {
@@ -180,9 +179,8 @@ pub struct RegexFilterConfig {
 impl FilterConfigValidator for RegexFilterConfig {
     fn validate(&self) -> Result<(), FilterValidationError> {
         // Validate regex pattern using the regex crate
-        regex::Regex::new(&self.pattern).map_err(|e| {
-            FilterValidationError::InvalidRegexPattern(e.to_string())
-        })?;
+        regex::Regex::new(&self.pattern)
+            .map_err(|e| FilterValidationError::InvalidRegexPattern(e.to_string()))?;
 
         Ok(())
     }
@@ -304,7 +302,10 @@ mod tests {
         let result = config.validate();
         assert!(result.is_err());
         let err = result.unwrap_err();
-        assert!(matches!(err, FilterValidationError::InvalidCronExpression(_)));
+        assert!(matches!(
+            err,
+            FilterValidationError::InvalidCronExpression(_)
+        ));
     }
 
     #[test]
@@ -336,15 +337,15 @@ mod tests {
         // cron crate uses 6-field format: sec min hour day-of-month month day-of-week
         // Day of week: 1=Monday, 7=Sunday (or SUN, MON, etc.)
         let valid_expressions = vec![
-            "* * * * * *",           // Every second
-            "0 * * * * *",           // Every minute
-            "0 0 * * * *",           // Every hour
-            "0 0 0 * * *",           // Every day at midnight
-            "0 0 0 * * SUN",         // Every Sunday at midnight
-            "0 0 0 1 * *",           // First day of every month
-            "0 */15 * * * *",        // Every 15 minutes
-            "0 0 9-17 * * MON-FRI",  // 9 AM to 5 PM, Monday to Friday
-            "0 0 22 * * FRI,SAT",    // 10 PM on Fridays and Saturdays
+            "* * * * * *",          // Every second
+            "0 * * * * *",          // Every minute
+            "0 0 * * * *",          // Every hour
+            "0 0 0 * * *",          // Every day at midnight
+            "0 0 0 * * SUN",        // Every Sunday at midnight
+            "0 0 0 1 * *",          // First day of every month
+            "0 */15 * * * *",       // Every 15 minutes
+            "0 0 9-17 * * MON-FRI", // 9 AM to 5 PM, Monday to Friday
+            "0 0 22 * * FRI,SAT",   // 10 PM on Fridays and Saturdays
         ];
 
         for expr in valid_expressions {
@@ -352,11 +353,7 @@ mod tests {
                 expression: expr.to_string(),
                 timezone: None,
             };
-            assert!(
-                config.validate().is_ok(),
-                "Expected '{}' to be valid",
-                expr
-            );
+            assert!(config.validate().is_ok(), "Expected '{}' to be valid", expr);
         }
     }
 

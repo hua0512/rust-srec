@@ -556,19 +556,21 @@ impl DownloadManager {
         retry_config: Option<RetryConfig>,
     ) -> Result<()> {
         // Validate download exists in active_downloads
-        let download = self.active_downloads.get(download_id).ok_or_else(|| {
-            crate::Error::NotFound {
-                entity_type: "Download".to_string(),
-                id: download_id.to_string(),
-            }
-        })?;
+        let download =
+            self.active_downloads
+                .get(download_id)
+                .ok_or_else(|| crate::Error::NotFound {
+                    entity_type: "Download".to_string(),
+                    id: download_id.to_string(),
+                })?;
 
         let streamer_id = download.handle.config.streamer_id.clone();
         // Drop the reference to avoid holding the lock while updating pending_updates
         drop(download);
 
         // Create the new pending update
-        let new_update = PendingConfigUpdate::new(cookies.clone(), headers.clone(), retry_config.clone());
+        let new_update =
+            PendingConfigUpdate::new(cookies.clone(), headers.clone(), retry_config.clone());
 
         // Only store if there are actual updates
         if new_update.has_updates() {
@@ -867,11 +869,7 @@ mod tests {
 
     #[test]
     fn test_determine_config_update_type_cookies_only() {
-        let update = PendingConfigUpdate::new(
-            Some("session=abc123".to_string()),
-            None,
-            None,
-        );
+        let update = PendingConfigUpdate::new(Some("session=abc123".to_string()), None, None);
         assert_eq!(
             DownloadManager::determine_config_update_type(&update),
             ConfigUpdateType::Cookies
@@ -882,7 +880,10 @@ mod tests {
     fn test_determine_config_update_type_headers_only() {
         let update = PendingConfigUpdate::new(
             None,
-            Some(vec![("Authorization".to_string(), "Bearer token".to_string())]),
+            Some(vec![(
+                "Authorization".to_string(),
+                "Bearer token".to_string(),
+            )]),
             None,
         );
         assert_eq!(
@@ -893,11 +894,7 @@ mod tests {
 
     #[test]
     fn test_determine_config_update_type_retry_only() {
-        let update = PendingConfigUpdate::new(
-            None,
-            None,
-            Some(RetryConfig::default()),
-        );
+        let update = PendingConfigUpdate::new(None, None, Some(RetryConfig::default()));
         assert_eq!(
             DownloadManager::determine_config_update_type(&update),
             ConfigUpdateType::RetryConfig
@@ -908,7 +905,10 @@ mod tests {
     fn test_determine_config_update_type_multiple() {
         let update = PendingConfigUpdate::new(
             Some("session=abc123".to_string()),
-            Some(vec![("Authorization".to_string(), "Bearer token".to_string())]),
+            Some(vec![(
+                "Authorization".to_string(),
+                "Bearer token".to_string(),
+            )]),
             None,
         );
         assert_eq!(
@@ -921,7 +921,10 @@ mod tests {
     fn test_determine_config_update_type_all_three() {
         let update = PendingConfigUpdate::new(
             Some("session=abc123".to_string()),
-            Some(vec![("Authorization".to_string(), "Bearer token".to_string())]),
+            Some(vec![(
+                "Authorization".to_string(),
+                "Bearer token".to_string(),
+            )]),
             Some(RetryConfig::default()),
         );
         assert_eq!(
@@ -935,11 +938,7 @@ mod tests {
         let manager = DownloadManager::new();
         let mut receiver = manager.subscribe();
 
-        let update = PendingConfigUpdate::new(
-            Some("session=abc123".to_string()),
-            None,
-            None,
-        );
+        let update = PendingConfigUpdate::new(Some("session=abc123".to_string()), None, None);
 
         let result = manager.emit_config_updated("download-123", "streamer-456", &update);
         assert!(result);
@@ -977,11 +976,8 @@ mod tests {
         let manager = DownloadManager::new();
         let mut receiver = manager.subscribe();
 
-        let result = manager.emit_config_update_failed(
-            "download-123",
-            "streamer-456",
-            "Connection timeout",
-        );
+        let result =
+            manager.emit_config_update_failed("download-123", "streamer-456", "Connection timeout");
         assert!(result);
 
         // Verify the event was received
@@ -1001,9 +997,12 @@ mod tests {
     }
 
     // Helper function to create a test download manager with a mock active download
-    fn create_manager_with_active_download(download_id: &str, streamer_id: &str) -> DownloadManager {
+    fn create_manager_with_active_download(
+        download_id: &str,
+        streamer_id: &str,
+    ) -> DownloadManager {
         let manager = DownloadManager::new();
-        
+
         // Create a mock active download entry
         let (segment_tx, _segment_rx) = tokio::sync::mpsc::channel::<SegmentEvent>(32);
         let config = DownloadConfig::new(
@@ -1012,22 +1011,24 @@ mod tests {
             streamer_id,
             "test-session",
         );
-        
+
         let handle = Arc::new(DownloadHandle::new(
             download_id.to_string(),
             EngineType::Ffmpeg,
             config,
             segment_tx,
         ));
-        
+
         let active_download = ActiveDownload {
             handle,
             status: DownloadStatus::Downloading,
             progress: DownloadProgress::default(),
             is_high_priority: false,
         };
-        
-        manager.active_downloads.insert(download_id.to_string(), active_download);
+
+        manager
+            .active_downloads
+            .insert(download_id.to_string(), active_download);
         manager
     }
 
@@ -1067,7 +1068,7 @@ mod tests {
                                 None,
                                 None,
                             );
-                            
+
                             // All updates should succeed since the download exists
                             assert!(result.is_ok(), "Update should succeed for existing download");
                         }
@@ -1083,7 +1084,7 @@ mod tests {
             // Property: After all concurrent updates, the pending_updates map should contain
             // a valid merged update (the final state should reflect a valid merge of all updates)
             let final_update = manager.take_pending_updates(download_id);
-            
+
             // There should be a pending update since we made updates
             prop_assert!(
                 final_update.is_some(),
@@ -1091,7 +1092,7 @@ mod tests {
             );
 
             let update = final_update.unwrap();
-            
+
             // The update should have valid data (one of the cookies we provided)
             if let Some(ref cookie) = update.cookies {
                 prop_assert!(
