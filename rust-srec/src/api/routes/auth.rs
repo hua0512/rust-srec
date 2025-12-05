@@ -81,12 +81,17 @@ pub struct ChangePasswordRequest {
     pub new_password: String,
 }
 
-/// Create the auth router.
-pub fn router() -> Router<AppState> {
+/// Create the public auth router (no JWT required).
+pub fn public_router() -> Router<AppState> {
     Router::new()
         .route("/login", post(login))
         .route("/refresh", post(refresh))
         .route("/logout", post(logout))
+}
+
+/// Create the protected auth router (JWT required).
+pub fn protected_router() -> Router<AppState> {
+    Router::new()
         .route("/logout-all", post(logout_all))
         .route("/change-password", post(change_password))
         .route("/sessions", get(list_sessions))

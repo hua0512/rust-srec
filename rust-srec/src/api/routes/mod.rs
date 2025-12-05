@@ -30,7 +30,8 @@ pub fn create_router(state: AppState) -> Router {
         .nest("/api/config", config::router())
         .nest("/api/templates", templates::router())
         .nest("/api/pipeline", pipeline::router())
-        .nest("/api/sessions", sessions::router());
+        .nest("/api/sessions", sessions::router())
+        .nest("/api/auth", auth::protected_router());
 
     // Apply JWT auth layer to protected routes if JWT service is configured
     // The layer wraps the router, so we need to handle the type conversion
@@ -43,8 +44,8 @@ pub fn create_router(state: AppState) -> Router {
     // Build the main router with public routes first, then merge protected routes
     Router::new()
         // Public routes (no authentication required)
-        .nest("/health", health::router())
-        .nest("/api/auth", auth::router())
+        .nest("/api/health", health::router())
+        .nest("/api/auth", auth::public_router())
         // Merge protected routes
         .merge(protected_routes)
         // Apply state to all routes
