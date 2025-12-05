@@ -18,8 +18,6 @@ pub struct ApiServerConfig {
     pub bind_address: String,
     /// Server port
     pub port: u16,
-    /// API keys for authentication (empty = no auth)
-    pub api_keys: Vec<String>,
     /// Enable CORS
     pub enable_cors: bool,
     /// Request body size limit in bytes
@@ -30,8 +28,7 @@ impl Default for ApiServerConfig {
     fn default() -> Self {
         Self {
             bind_address: "0.0.0.0".to_string(),
-            port: 8080,
-            api_keys: Vec::new(),
+            port: 12555,
             enable_cors: true,
             body_limit: 10 * 1024 * 1024, // 10MB
         }
@@ -233,10 +230,6 @@ impl ApiServer {
 
         // Add tracing
         router = router.layer(TraceLayer::new_for_http());
-
-        // Note: JWT authentication is now handled in the router via JwtAuthLayer
-        // The api_keys field is kept for backward compatibility but not used
-
         router
     }
 
@@ -279,7 +272,6 @@ mod tests {
         let config = ApiServerConfig::default();
         assert_eq!(config.bind_address, "0.0.0.0");
         assert_eq!(config.port, 8080);
-        assert!(config.api_keys.is_empty());
         assert!(config.enable_cors);
     }
 
