@@ -7,7 +7,8 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use serde::{Deserialize, Serialize};
-use tokio::sync::RwLock;
+use sysinfo::{CpuRefreshKind, MemoryRefreshKind, RefreshKind, System};
+use tokio::sync::{Mutex, RwLock};
 use tracing::{debug, warn};
 
 use crate::notification::NotificationEvent;
@@ -112,6 +113,10 @@ pub struct SystemHealth {
     pub uptime_secs: u64,
     /// Timestamp of the health check.
     pub timestamp: String,
+    /// CPU usage percentage (0-100).
+    pub cpu_usage: f32,
+    /// Memory usage percentage (0-100).
+    pub memory_usage: f32,
 }
 
 impl SystemHealth {
@@ -141,6 +146,8 @@ pub struct HealthChecker {
     disk_warning_threshold: f64,
     /// Disk space critical threshold (percentage).
     disk_critical_threshold: f64,
+    /// System metrics collector.
+    system: Mutex<System>,
 }
 
 impl HealthChecker {
@@ -152,6 +159,11 @@ impl HealthChecker {
             version: env!("CARGO_PKG_VERSION").to_string(),
             disk_warning_threshold: 0.80,
             disk_critical_threshold: 0.95,
+            system: Mutex::new(System::new_with_specifics(
+                RefreshKind::new()
+                    .with_cpu(CpuRefreshKind::everything())
+                    .with_memory(MemoryRefreshKind::everything()),
+            )),
         }
     }
 
@@ -163,6 +175,11 @@ impl HealthChecker {
             version: env!("CARGO_PKG_VERSION").to_string(),
             disk_warning_threshold: disk_warning,
             disk_critical_threshold: disk_critical,
+            system: Mutex::new(System::new_with_specifics(
+                RefreshKind::new()
+                    .with_cpu(CpuRefreshKind::everything())
+                    .with_memory(MemoryRefreshKind::everything()),
+            )),
         }
     }
 
@@ -176,6 +193,23 @@ impl HealthChecker {
         let checks = self.checks.read().await;
         let mut components = HashMap::new();
         let mut overall_status = HealthStatus::Healthy;
+
+        // Collect system metrics
+        let (cpu_usage, memory_usage) = {
+            let mut system = self.system.lock().await;
+            system.refresh_cpu();
+            system.refresh_memory();
+
+            let cpu = system.global_cpu_info().cpu_usage();
+            let total_mem = system.total_memory();
+            let used_mem = system.used_memory();
+            let mem_usage = if total_mem > 0 {
+                (used_mem as f64 / total_mem as f64 * 100.0) as f32
+            } else {
+                0.0
+            };
+            (cpu, mem_usage)
+        };
 
         for (name, check) in checks.iter() {
             let start = Instant::now();
@@ -202,6 +236,8 @@ impl HealthChecker {
             version: self.version.clone(),
             uptime_secs: self.start_time.elapsed().as_secs(),
             timestamp: chrono::Utc::now().to_rfc3339(),
+            cpu_usage,
+            memory_usage,
         }
     }
 
@@ -401,6 +437,8 @@ mod tests {
             version: "0.1.0".to_string(),
             uptime_secs: 100,
             timestamp: chrono::Utc::now().to_rfc3339(),
+            cpu_usage: 0.0,
+            memory_usage: 0.0,
         };
         assert!(health.is_ready());
         assert!(health.is_healthy());

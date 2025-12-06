@@ -37,6 +37,8 @@ async fn health_check(State(state): State<AppState>) -> ApiResult<Json<HealthRes
             version: env!("CARGO_PKG_VERSION").to_string(),
             uptime_secs: uptime,
             components,
+            cpu_usage: system_health.cpu_usage,
+            memory_usage: system_health.memory_usage,
         };
 
         Ok(Json(response))
@@ -47,6 +49,8 @@ async fn health_check(State(state): State<AppState>) -> ApiResult<Json<HealthRes
             version: env!("CARGO_PKG_VERSION").to_string(),
             uptime_secs: uptime,
             components: vec![],
+            cpu_usage: 0.0,
+            memory_usage: 0.0,
         }))
     }
 }
@@ -95,6 +99,8 @@ mod tests {
                 status: "healthy".to_string(),
                 message: None,
             }],
+            cpu_usage: 10.5,
+            memory_usage: 45.2,
         };
 
         let json = serde_json::to_string(&response).unwrap();
