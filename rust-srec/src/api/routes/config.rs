@@ -30,15 +30,20 @@ fn map_global_config_to_response(config: GlobalConfigDbModel) -> GlobalConfigRes
         output_folder: config.output_folder,
         output_filename_template: config.output_filename_template,
         output_file_format: config.output_file_format,
+        min_segment_size_bytes: config.min_segment_size_bytes as u64,
+        max_download_duration_secs: config.max_download_duration_secs as u64,
+        max_part_size_bytes: config.max_part_size_bytes as u64,
         max_concurrent_downloads: config.max_concurrent_downloads as u32,
         max_concurrent_uploads: config.max_concurrent_uploads as u32,
         max_concurrent_cpu_jobs: config.max_concurrent_cpu_jobs as u32,
         max_concurrent_io_jobs: config.max_concurrent_io_jobs as u32,
         streamer_check_delay_ms: config.streamer_check_delay_ms as u64,
+        proxy_config: Some(config.proxy_config),
         offline_check_delay_ms: config.offline_check_delay_ms as u64,
         offline_check_count: config.offline_check_count as u32,
         default_download_engine: config.default_download_engine,
         record_danmu: config.record_danmu,
+        job_history_retention_days: config.job_history_retention_days as u32,
     }
 }
 
@@ -121,6 +126,9 @@ async fn update_global_config(
     }
     if let Some(record_danmu) = request.record_danmu {
         config.record_danmu = record_danmu;
+    }
+    if let Some(ref proxy_config) = request.proxy_config {
+        config.proxy_config = proxy_config.clone();
     }
 
     // Update config (cache invalidation is handled automatically by ConfigService)
@@ -228,15 +236,20 @@ mod tests {
             output_folder: "./downloads".to_string(),
             output_filename_template: "{name}".to_string(),
             output_file_format: "flv".to_string(),
+            min_segment_size_bytes: 1048576,
+            max_download_duration_secs: 0,
+            max_part_size_bytes: 8589934592,
+            record_danmu: false,
             max_concurrent_downloads: 6,
             max_concurrent_uploads: 3,
-            max_concurrent_cpu_jobs: 0,
-            max_concurrent_io_jobs: 8,
             streamer_check_delay_ms: 60000,
+            proxy_config: None,
             offline_check_delay_ms: 20000,
             offline_check_count: 3,
             default_download_engine: "mesio".to_string(),
-            record_danmu: false,
+            max_concurrent_cpu_jobs: 0,
+            max_concurrent_io_jobs: 8,
+            job_history_retention_days: 30,
         };
 
         let json = serde_json::to_string(&response).unwrap();
@@ -291,6 +304,9 @@ mod property_tests {
         }
         if let Some(record_danmu) = request.record_danmu {
             config.record_danmu = record_danmu;
+        }
+        if let Some(ref proxy_config) = request.proxy_config {
+            config.proxy_config = proxy_config.clone();
         }
     }
 
@@ -353,6 +369,14 @@ mod property_tests {
             .prop_filter("non-empty cookies", |s| !s.is_empty())
     }
 
+    /// Strategy for generating valid proxy config JSON
+    fn proxy_config_strategy() -> impl Strategy<Value = String> {
+        prop::string::string_regex(
+            r#"\{"enabled": (true|false), "use_system_proxy": (true|false)\}"#,
+        )
+        .unwrap()
+    }
+
     // **Feature: jwt-auth-and-api-implementation, Property 8: Config Update Persistence**
     // **Validates: Requirements 3.2, 3.5**
     proptest! {
@@ -375,6 +399,7 @@ mod property_tests {
             offline_check_count in prop::option::of(1u32..10u32),
             default_download_engine in prop::option::of(download_engine_strategy()),
             record_danmu in prop::option::of(prop::bool::ANY),
+            proxy_config in prop::option::of(proxy_config_strategy()),
         ) {
             // Start with default config
             let mut config = GlobalConfigDbModel::default();
@@ -394,6 +419,7 @@ mod property_tests {
                 offline_check_count,
                 default_download_engine: default_download_engine.clone(),
                 record_danmu,
+                proxy_config: proxy_config.clone(),
             };
 
             // Apply the update
@@ -470,6 +496,12 @@ mod property_tests {
                 prop_assert_eq!(config.record_danmu, danmu, "record_danmu should be updated");
             } else {
                 prop_assert_eq!(config.record_danmu, original_config.record_danmu, "record_danmu should remain unchanged");
+            }
+
+            if let Some(ref proxy) = proxy_config {
+                prop_assert_eq!(&config.proxy_config, proxy, "proxy_config should be updated");
+            } else {
+                prop_assert_eq!(&config.proxy_config, &original_config.proxy_config, "proxy_config should remain unchanged");
             }
         }
 

@@ -266,7 +266,7 @@ impl MergedConfigBuilder {
                 .unwrap_or_else(|| "./downloads".to_string()),
             output_filename_template: self
                 .output_filename_template
-                .unwrap_or_else(|| "{streamer}-{title}-{%Y%m%d-%H%M%S}".to_string()),
+                .unwrap_or_else(|| "{streamer}-{title}-%Y%m%d-%H%M%S".to_string()),
             output_file_format: self.output_file_format.unwrap_or_else(|| "flv".to_string()),
             min_segment_size_bytes: self.min_segment_size_bytes.unwrap_or(1048576),
             max_download_duration_secs: self.max_download_duration_secs.unwrap_or(0),
@@ -275,7 +275,7 @@ impl MergedConfigBuilder {
             danmu_sampling_config: self.danmu_sampling_config.unwrap_or_default(),
             proxy_config: self.proxy_config.unwrap_or_default(),
             cookies: self.cookies,
-            download_engine: self.download_engine.unwrap_or_else(|| "ffmpeg".to_string()),
+            download_engine: self.download_engine.unwrap_or_else(|| "mesio".to_string()),
             download_retry_policy: self.download_retry_policy.unwrap_or_default(),
             max_bitrate: self.max_bitrate,
             event_hooks: self.event_hooks.unwrap_or_default(),
@@ -302,13 +302,13 @@ mod tests {
                 8589934592,
                 false,
                 ProxyConfig::disabled(),
-                "ffmpeg".to_string(),
+                "mesio".to_string(),
             )
             .with_platform(60000, 1000, None, None, None)
             .build();
 
         assert_eq!(config.output_folder, "./downloads");
-        assert_eq!(config.download_engine, "ffmpeg");
+        assert_eq!(config.download_engine, "mesio");
         assert!(!config.record_danmu);
     }
 
@@ -324,7 +324,7 @@ mod tests {
                 8589934592,
                 false,
                 ProxyConfig::disabled(),
-                "ffmpeg".to_string(),
+                "mesio".to_string(),
             )
             .with_platform(60000, 1000, None, None, Some(true))
             .with_template(

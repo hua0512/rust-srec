@@ -54,10 +54,19 @@ impl SqlxConfigRepository {
 #[async_trait]
 impl ConfigRepository for SqlxConfigRepository {
     async fn get_global_config(&self) -> Result<GlobalConfigDbModel> {
-        sqlx::query_as::<_, GlobalConfigDbModel>("SELECT * FROM global_config LIMIT 1")
-            .fetch_optional(&self.pool)
-            .await?
-            .ok_or_else(|| Error::not_found("GlobalConfig", "singleton"))
+        let config =
+            sqlx::query_as::<_, GlobalConfigDbModel>("SELECT * FROM global_config LIMIT 1")
+                .fetch_optional(&self.pool)
+                .await?;
+
+        match config {
+            Some(c) => Ok(c),
+            None => {
+                let default_config = GlobalConfigDbModel::default();
+                self.create_global_config(&default_config).await?;
+                Ok(default_config)
+            }
+        }
     }
 
     async fn update_global_config(&self, config: &GlobalConfigDbModel) -> Result<()> {

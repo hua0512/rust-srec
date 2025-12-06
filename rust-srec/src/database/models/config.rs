@@ -34,7 +34,7 @@ impl Default for GlobalConfigDbModel {
         Self {
             id: uuid::Uuid::new_v4().to_string(),
             output_folder: "./downloads".to_string(),
-            output_filename_template: "{streamer}-{title}-{%Y%m%d-%H%M%S}".to_string(),
+            output_filename_template: "{streamer}-{title}-%Y%m%d-%H%M%S".to_string(),
             output_file_format: "flv".to_string(),
             min_segment_size_bytes: 1048576, // 1MB
             max_download_duration_secs: 0,   // No limit
@@ -46,7 +46,7 @@ impl Default for GlobalConfigDbModel {
             proxy_config: r#"{"enabled":false,"url":null}"#.to_string(),
             offline_check_delay_ms: 20000,
             offline_check_count: 3,
-            default_download_engine: "ffmpeg".to_string(),
+            default_download_engine: "mesio".to_string(),
             max_concurrent_cpu_jobs: 0, // Auto
             max_concurrent_io_jobs: 8,
             job_history_retention_days: 30,

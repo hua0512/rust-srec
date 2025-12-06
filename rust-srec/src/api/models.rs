@@ -195,15 +195,20 @@ pub struct GlobalConfigResponse {
     pub output_folder: String,
     pub output_filename_template: String,
     pub output_file_format: String,
+    pub min_segment_size_bytes: u64,
+    pub max_download_duration_secs: u64,
+    pub max_part_size_bytes: u64,
+    pub record_danmu: bool,
     pub max_concurrent_downloads: u32,
     pub max_concurrent_uploads: u32,
-    pub max_concurrent_cpu_jobs: u32,
-    pub max_concurrent_io_jobs: u32,
     pub streamer_check_delay_ms: u64,
+    pub proxy_config: Option<String>,
     pub offline_check_delay_ms: u64,
     pub offline_check_count: u32,
     pub default_download_engine: String,
-    pub record_danmu: bool,
+    pub max_concurrent_cpu_jobs: u32,
+    pub max_concurrent_io_jobs: u32,
+    pub job_history_retention_days: u32,
 }
 
 /// Request to update global configuration.
@@ -221,6 +226,7 @@ pub struct UpdateGlobalConfigRequest {
     pub offline_check_count: Option<u32>,
     pub default_download_engine: Option<String>,
     pub record_danmu: Option<bool>,
+    pub proxy_config: Option<String>,
 }
 
 /// Platform configuration response.
@@ -580,6 +586,8 @@ pub struct HealthResponse {
     pub status: String,
     pub version: String,
     pub uptime_secs: u64,
+    pub cpu_usage: f32,
+    pub memory_usage: f32,
     pub components: Vec<ComponentHealth>,
 }
 
