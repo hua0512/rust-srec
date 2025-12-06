@@ -836,24 +836,13 @@ impl ServiceContainer {
 
                 // Create download config using the actual stream URL and merged config settings
                 let session_id = uuid::Uuid::new_v4().to_string();
-                let output_dir = if merged_config.output_folder.contains('{')
-                    || merged_config.output_folder.contains('%')
-                {
-                    // Custom template logic
-                    let dir = merged_config
-                        .output_folder
-                        .replace("{streamer}", &streamer_name)
-                        .replace("{title}", &title);
+                let dir = merged_config
+                    .output_folder
+                    .replace("{streamer}", &streamer_name)
+                    .replace("{title}", &title)
+                    .replace("{session_id}", &session_id);
 
-                    // Expand time variables
-                    expand_filename_template(&dir, None)
-                } else {
-                    // Legacy logic
-                    format!(
-                        "{}/{}/{}",
-                        merged_config.output_folder, streamer_id, session_id
-                    )
-                };
+                let output_dir = expand_filename_template(&dir, None);
 
                 let mut config = DownloadConfig::new(
                     stream_url_selected.clone(),
