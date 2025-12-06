@@ -17,6 +17,31 @@ pub struct FlvWriter {
     writer_task: WriterTask<FlvData, FlvFormatStrategy>,
 }
 
+impl FlvWriter {
+    /// Set a callback to be invoked when a new segment starts recording.
+    ///
+    /// The callback receives the file path and sequence number (0-based).
+    /// This is useful for emitting `SegmentEvent::SegmentStarted` notifications.
+    pub fn set_on_segment_start_callback<F>(&mut self, callback: F)
+    where
+        F: Fn(&std::path::Path, u32) + Send + Sync + 'static,
+    {
+        self.writer_task.set_on_file_open_callback(callback);
+    }
+
+    /// Set a callback to be invoked when a segment is completed.
+    ///
+    /// The callback receives the file path and sequence number (0-based).
+    /// Note: For detailed segment info (duration, size), use `SegmentEvent::SegmentCompleted` instead.
+    /// This callback is primarily for internal tracking when the underlying file is closed.
+    pub fn set_on_segment_complete_callback<F>(&mut self, callback: F)
+    where
+        F: Fn(&std::path::Path, u32) + Send + Sync + 'static,
+    {
+        self.writer_task.set_on_file_close_callback(callback);
+    }
+}
+
 impl ProtocolWriter for FlvWriter {
     type Item = FlvData;
     type Stats = (usize, u32);

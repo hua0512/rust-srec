@@ -46,4 +46,5 @@ pub use pipeline::*;
 pub use script_modifier::*;
 pub use utils::*;
 
-pub use crate::writer_task::FlvStrategyError;
+pub use crate::writer::FlvWriter;
+pub use crate::writer_task::{FlvFormatStrategy, FlvStrategyError};

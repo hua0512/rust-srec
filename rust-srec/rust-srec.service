@@ -1,0 +1,62 @@
+[Unit]
+Description=rust-srec Streaming Recorder Service
+Documentation=https://github.com/your-repo/rust-srec
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=rust-srec
+Group=rust-srec
+
+# Working directory
+WorkingDirectory=/opt/rust-srec
+
+# Environment
+Environment=RUST_LOG=info
+Environment=DATABASE_URL=sqlite:///var/lib/rust-srec/rust-srec.db
+Environment=OUTPUT_DIR=/var/lib/rust-srec/output
+Environment=CONFIG_DIR=/etc/rust-srec
+
+# Executable
+ExecStart=/opt/rust-srec/rust-srec --config /etc/rust-srec/config.toml
+
+# Restart policy
+Restart=on-failure
+RestartSec=5
+StartLimitIntervalSec=60
+StartLimitBurst=3
+
+# Resource limits
+MemoryMax=4G
+MemoryHigh=3G
+CPUQuota=400%
+
+# Security hardening
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+RestrictRealtime=yes
+RestrictSUIDSGID=yes
+
+# Allow write access to data directories
+ReadWritePaths=/var/lib/rust-srec
+ReadWritePaths=/var/log/rust-srec
+
+# Logging
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=rust-srec
+
+# Graceful shutdown
+TimeoutStopSec=30
+KillMode=mixed
+KillSignal=SIGTERM
+
+[Install]
+WantedBy=multi-user.target
