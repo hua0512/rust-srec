@@ -34,6 +34,7 @@ use crate::notification::{NotificationService, NotificationServiceConfig};
 use crate::pipeline::{PipelineEvent, PipelineManager, PipelineManagerConfig};
 use crate::scheduler::Scheduler;
 use crate::streamer::StreamerManager;
+use pipeline_common::expand_filename_template;
 
 /// Default cache TTL (1 hour).
 const DEFAULT_CACHE_TTL: Duration = Duration::from_secs(3600);
@@ -835,10 +836,24 @@ impl ServiceContainer {
 
                 // Create download config using the actual stream URL and merged config settings
                 let session_id = uuid::Uuid::new_v4().to_string();
-                let output_dir = format!(
-                    "{}/{}/{}",
-                    merged_config.output_folder, streamer_id, session_id
-                );
+                let output_dir = if merged_config.output_folder.contains('{')
+                    || merged_config.output_folder.contains('%')
+                {
+                    // Custom template logic
+                    let dir = merged_config
+                        .output_folder
+                        .replace("{streamer}", &streamer_name)
+                        .replace("{title}", &title);
+
+                    // Expand time variables
+                    expand_filename_template(&dir, None)
+                } else {
+                    // Legacy logic
+                    format!(
+                        "{}/{}/{}",
+                        merged_config.output_folder, streamer_id, session_id
+                    )
+                };
 
                 let mut config = DownloadConfig::new(
                     stream_url_selected.clone(),
@@ -849,7 +864,8 @@ impl ServiceContainer {
                 .with_filename_template(
                     &merged_config
                         .output_filename_template
-                        .replace("{streamer}", &streamer_name),
+                        .replace("{streamer}", &streamer_name)
+                        .replace("{title}", &title),
                 )
                 .with_output_format(&merged_config.output_file_format)
                 .with_max_segment_duration(merged_config.max_download_duration_secs as u64)
