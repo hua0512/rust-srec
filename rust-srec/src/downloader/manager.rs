@@ -16,6 +16,10 @@ use super::engine::{
 };
 use super::resilience::{CircuitBreakerManager, RetryConfig};
 use crate::Result;
+use crate::database::models::engine::{
+    FfmpegEngineConfig, MesioEngineConfig, StreamlinkEngineConfig,
+};
+use crate::database::repositories::config::ConfigRepository;
 
 /// Pending configuration update for an active download.
 ///
@@ -126,6 +130,8 @@ pub struct DownloadManager {
     circuit_breakers: CircuitBreakerManager,
     /// Broadcast sender for download events
     event_tx: broadcast::Sender<DownloadManagerEvent>,
+    /// Config repository for resolving custom engines.
+    config_repo: Option<Arc<dyn ConfigRepository>>,
 }
 
 /// Type of configuration that was updated.
@@ -223,6 +229,7 @@ impl DownloadManager {
             engines: RwLock::new(HashMap::new()),
             circuit_breakers,
             event_tx,
+            config_repo: None,
         };
 
         // Register default engines
@@ -243,6 +250,12 @@ impl DownloadManager {
         }
 
         manager
+    }
+
+    /// Set the config repository.
+    pub fn with_config_repo(mut self, config_repo: Arc<dyn ConfigRepository>) -> Self {
+        self.config_repo = Some(config_repo);
+        self
     }
 
     /// Register a download engine.
@@ -271,10 +284,11 @@ impl DownloadManager {
     pub async fn start_download(
         &self,
         config: DownloadConfig,
-        engine_type: Option<EngineType>,
+        engine_id: Option<String>,
         is_high_priority: bool,
     ) -> Result<String> {
-        let engine_type = engine_type.unwrap_or(self.config.default_engine);
+        let overrides = config.engines_override.as_ref();
+        let (engine, engine_type) = self.resolve_engine(engine_id.as_deref(), overrides).await?;
 
         // Check circuit breaker
         if !self.circuit_breakers.is_engine_allowed(engine_type) {
@@ -283,39 +297,245 @@ impl DownloadManager {
                 engine_type
             );
             // Try to find an alternative engine
-            let available = self.available_engines();
-            let fallback = available
-                .iter()
-                .find(|&&t| t != engine_type && self.circuit_breakers.is_engine_allowed(t));
+            // For now, fallback to default ffmpeg if validation fails
+            // TODO: Implement smarter fallback
+            return Err(crate::Error::Other(format!(
+                "Engine {} is disabled by circuit breaker",
+                engine_type
+            )));
+        }
 
-            if let Some(&fallback_type) = fallback {
-                info!("Using fallback engine: {}", fallback_type);
-                return self
-                    .start_download_with_engine(config, fallback_type, is_high_priority)
-                    .await;
+        self.start_download_with_engine(config, engine, engine_type, is_high_priority)
+            .await
+    }
+
+    /// Resolve engine from ID string.
+    ///
+    /// Returns (Engine instance, EngineType).
+    /// Resolve engine to use.
+    ///
+    /// If an override value is provided for the resolved engine ID (either passed ID or global default),
+    /// a new engine instance is created with the merged configuration.
+    /// Otherwise, the shared cached engine instance is returned.
+    async fn resolve_engine(
+        &self,
+        engine_id: Option<&str>,
+        overrides: Option<&serde_json::Value>,
+    ) -> Result<(Arc<dyn DownloadEngine>, EngineType)> {
+        // Determine which engine ID we are using
+        let target_id = if let Some(id) = engine_id {
+            id
+        } else {
+            // Fallback to default engine type string
+            self.config.default_engine.as_str()
+        };
+
+        // 1. Check for overrides first
+        let specific_override = overrides.and_then(|o| o.get(target_id));
+
+        // If we have an override, we MUST create a new engine instance
+        // We cannot reuse the shared engine because it has different config
+        if let Some(override_config) = specific_override {
+            debug!("Applying engine override for {}", target_id);
+
+            // Need to know the type first
+            // Try to parse ID as type, or look up in DB to get type
+            let engine_type = if let Some(t) = EngineType::from_str(target_id) {
+                t
+            } else if let Some(repo) = &self.config_repo {
+                if let Ok(config) = repo.get_engine_config(target_id).await {
+                    EngineType::from_str(&config.engine_type).ok_or_else(|| {
+                        crate::Error::Other(format!("Unknown engine type: {}", config.engine_type))
+                    })?
+                } else {
+                    // Config not found, but we have override?
+                    // Fallback to default? Or error?
+                    // If ID was not a type and not in DB, we can't do much.
+                    return Err(crate::Error::Other(format!(
+                        "Unknown engine: {}",
+                        target_id
+                    )));
+                }
             } else {
-                return Err(crate::Error::Other(
-                    "All download engines are disabled by circuit breaker".to_string(),
-                ));
+                return Err(crate::Error::Other(format!(
+                    "Unknown engine: {}",
+                    target_id
+                )));
+            };
+
+            // Now we have the type. We need the BASE config to merge with.
+            // If ID was a known type (e.g. "ffmpeg"), base config is Default::default().
+            // If ID was a DB config, base config is from DB.
+
+            match engine_type {
+                EngineType::Ffmpeg => {
+                    let mut base_config = if let Some(repo) = &self.config_repo {
+                        if let Ok(c) = repo.get_engine_config(target_id).await {
+                            serde_json::from_str::<FfmpegEngineConfig>(&c.config)
+                                .unwrap_or_default()
+                        } else {
+                            FfmpegEngineConfig::default()
+                        }
+                    } else {
+                        FfmpegEngineConfig::default()
+                    };
+
+                    // Merge override
+                    if let Ok(merged) = Self::merge_config_json(&base_config, override_config) {
+                        base_config = serde_json::from_value(merged).unwrap_or(base_config);
+                    }
+
+                    return Ok((
+                        Arc::new(FfmpegEngine::with_config(base_config)),
+                        EngineType::Ffmpeg,
+                    ));
+                }
+                EngineType::Streamlink => {
+                    let mut base_config = if let Some(repo) = &self.config_repo {
+                        if let Ok(c) = repo.get_engine_config(target_id).await {
+                            serde_json::from_str::<StreamlinkEngineConfig>(&c.config)
+                                .unwrap_or_default()
+                        } else {
+                            StreamlinkEngineConfig::default()
+                        }
+                    } else {
+                        StreamlinkEngineConfig::default()
+                    };
+
+                    // Merge override
+                    if let Ok(merged) = Self::merge_config_json(&base_config, override_config) {
+                        base_config = serde_json::from_value(merged).unwrap_or(base_config);
+                    }
+
+                    return Ok((
+                        Arc::new(StreamlinkEngine::with_config(base_config)),
+                        EngineType::Streamlink,
+                    ));
+                }
+                EngineType::Mesio => {
+                    let mut base_config = if let Some(repo) = &self.config_repo {
+                        if let Ok(c) = repo.get_engine_config(target_id).await {
+                            serde_json::from_str::<MesioEngineConfig>(&c.config).unwrap_or_default()
+                        } else {
+                            MesioEngineConfig::default()
+                        }
+                    } else {
+                        MesioEngineConfig::default()
+                    };
+
+                    // Merge override
+                    if let Ok(merged) = Self::merge_config_json(&base_config, override_config) {
+                        base_config = serde_json::from_value(merged).unwrap_or(base_config);
+                    }
+
+                    return Ok((
+                        Arc::new(MesioEngine::with_config(base_config)),
+                        EngineType::Mesio,
+                    ));
+                }
             }
         }
 
-        self.start_download_with_engine(config, engine_type, is_high_priority)
-            .await
+        // 2. Normal resolution (no overrides)
+        // If explicit ID provided
+        if let Some(id) = engine_id {
+            // Check if it's a known type string
+            if let Some(known_type) = EngineType::from_str(id) {
+                // Use default registered engine for this type
+                let engine = self.get_engine(known_type).ok_or_else(|| {
+                    crate::Error::Other(format!("Default engine {} not registered", known_type))
+                })?;
+                return Ok((engine, known_type));
+            }
+
+            // Otherwise try to look up in DB
+            if let Some(repo) = &self.config_repo {
+                if let Ok(config) = repo.get_engine_config(id).await {
+                    // Found valid config, instantiate specific engine
+                    if let Some(engine_type) = EngineType::from_str(&config.engine_type) {
+                        return match engine_type {
+                            EngineType::Ffmpeg => {
+                                let engine_config: FfmpegEngineConfig =
+                                    serde_json::from_str(&config.config).map_err(|e| {
+                                        crate::Error::Other(format!(
+                                            "Failed to parse ffmpeg config: {}",
+                                            e
+                                        ))
+                                    })?;
+                                Ok((
+                                    Arc::new(FfmpegEngine::with_config(engine_config))
+                                        as Arc<dyn DownloadEngine>,
+                                    engine_type,
+                                ))
+                            }
+                            EngineType::Streamlink => {
+                                let engine_config: StreamlinkEngineConfig =
+                                    serde_json::from_str(&config.config).map_err(|e| {
+                                        crate::Error::Other(format!(
+                                            "Failed to parse streamlink config: {}",
+                                            e
+                                        ))
+                                    })?;
+                                Ok((
+                                    Arc::new(StreamlinkEngine::with_config(engine_config))
+                                        as Arc<dyn DownloadEngine>,
+                                    engine_type,
+                                ))
+                            }
+                            EngineType::Mesio => {
+                                let engine_config: MesioEngineConfig =
+                                    serde_json::from_str(&config.config).map_err(|e| {
+                                        crate::Error::Other(format!(
+                                            "Failed to parse mesio config: {}",
+                                            e
+                                        ))
+                                    })?;
+                                Ok((
+                                    Arc::new(MesioEngine::with_config(engine_config))
+                                        as Arc<dyn DownloadEngine>,
+                                    engine_type,
+                                ))
+                            }
+                        };
+                    } else {
+                        return Err(crate::Error::Other(format!(
+                            "Unknown engine type in config: {}",
+                            config.engine_type
+                        )));
+                    }
+                } else {
+                    warn!("Engine config {} not found, using default", id);
+                }
+            }
+        }
+
+        // Return default
+        let default_type = self.config.default_engine;
+        let engine = self.get_engine(default_type).ok_or_else(|| {
+            crate::Error::Other(format!("Default engine {} not registered", default_type))
+        })?;
+        Ok((engine, default_type))
+    }
+
+    /// Helper to merge a base config with JSON overrides
+    fn merge_config_json<T: Serialize>(
+        base: &T,
+        override_val: &serde_json::Value,
+    ) -> Result<serde_json::Value> {
+        let mut base_val =
+            serde_json::to_value(base).map_err(|e| crate::Error::Other(e.to_string()))?;
+        json_patch::merge(&mut base_val, override_val);
+        Ok(base_val)
     }
 
     /// Start a download with a specific engine.
     async fn start_download_with_engine(
         &self,
         config: DownloadConfig,
+        engine: Arc<dyn DownloadEngine>,
         engine_type: EngineType,
         is_high_priority: bool,
     ) -> Result<String> {
-        // Get the engine
-        let engine = self
-            .get_engine(engine_type)
-            .ok_or_else(|| crate::Error::Other(format!("Engine {} not registered", engine_type)))?;
-
         if !engine.is_available() {
             return Err(crate::Error::Other(format!(
                 "Engine {} is not available",

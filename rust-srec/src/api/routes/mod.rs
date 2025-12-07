@@ -4,6 +4,7 @@
 
 pub mod auth;
 pub mod config;
+pub mod engines;
 pub mod health;
 pub mod pipeline;
 pub mod sessions;
@@ -29,6 +30,7 @@ pub fn create_router(state: AppState) -> Router {
         .nest("/api/streamers", streamers::router())
         .nest("/api/config", config::router())
         .nest("/api/templates", templates::router())
+        .nest("/api/engines", engines::router())
         .nest("/api/pipeline", pipeline::router())
         .nest("/api/sessions", sessions::router())
         .nest("/api/auth", auth::protected_router());

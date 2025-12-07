@@ -9,36 +9,27 @@ use tracing::{debug, error, info, warn};
 
 use super::traits::{DownloadEngine, DownloadHandle, DownloadProgress, EngineType, SegmentEvent};
 use crate::Result;
+use crate::database::models::engine::FfmpegEngineConfig;
 
 /// FFmpeg-based download engine.
 pub struct FfmpegEngine {
-    /// Path to ffmpeg binary.
-    ffmpeg_path: String,
+    /// Engine configuration.
+    config: FfmpegEngineConfig,
     /// Cached version string.
     version: Option<String>,
 }
 
 impl FfmpegEngine {
-    /// Create a new FFmpeg engine.
+    /// Create a new FFmpeg engine with default configuration.
     pub fn new() -> Self {
-        let ffmpeg_path = std::env::var("FFMPEG_PATH").unwrap_or_else(|_| "ffmpeg".to_string());
-        let version = Self::detect_version(&ffmpeg_path);
-
-        Self {
-            ffmpeg_path,
-            version,
-        }
+        Self::with_config(FfmpegEngineConfig::default())
     }
 
-    /// Create with a custom ffmpeg path.
-    pub fn with_path(path: impl Into<String>) -> Self {
-        let ffmpeg_path = path.into();
-        let version = Self::detect_version(&ffmpeg_path);
+    /// Create with a custom configuration.
+    pub fn with_config(config: FfmpegEngineConfig) -> Self {
+        let version = Self::detect_version(&config.binary_path);
 
-        Self {
-            ffmpeg_path,
-            version,
-        }
+        Self { config, version }
     }
 
     /// Detect ffmpeg version.
@@ -59,10 +50,20 @@ impl FfmpegEngine {
         let config = &handle.config;
         let mut args = Vec::new();
 
-        // Force consistent output format
+        // 1. Force consistent output format
         args.extend(["-y".to_string(), "-hide_banner".to_string()]);
 
-        // Input options
+        // 2. Extra input arguments from config
+        args.extend(self.config.input_args.clone());
+
+        // 3. User Agent (if configured in engine or handle)
+        // Handle config takes precedence if both set? Or engine config?
+        // Usually engine config sets the default for the engine instance.
+        if let Some(ref ua) = self.config.user_agent {
+            args.extend(["-user_agent".to_string(), ua.clone()]);
+        }
+
+        // 4. Input options
         if let Some(ref proxy) = config.proxy_url {
             args.extend(["-http_proxy".to_string(), proxy.clone()]);
         }
@@ -72,11 +73,14 @@ impl FfmpegEngine {
             args.extend(["-headers".to_string(), format!("{}: {}", key, value)]);
         }
 
-        // Input URL
+        // 5. Input URL
         args.extend(["-i".to_string(), config.url.clone()]);
 
-        // Output options
+        // 6. Output options
         args.extend(["-c".to_string(), "copy".to_string()]); // Copy streams without re-encoding
+
+        // 7. Extra output arguments from config
+        args.extend(self.config.output_args.clone());
 
         // Segment options if splitting is enabled
         if config.max_segment_duration_secs > 0 {
@@ -191,7 +195,7 @@ impl DownloadEngine for FfmpegEngine {
         );
 
         // Spawn ffmpeg process
-        let mut child = Command::new(&self.ffmpeg_path)
+        let mut child = Command::new(&self.config.binary_path)
             .args(&args)
             .env("LC_ALL", "C") // Force consistent output
             .stdout(Stdio::piped())

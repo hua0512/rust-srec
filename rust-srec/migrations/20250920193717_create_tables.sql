@@ -335,3 +335,50 @@ INSERT INTO platform_config (id, platform_name, fetch_delay_ms, download_delay_m
 ('platform-twitcasting', 'twitcasting', NULL, NULL),
 ('platform-twitch', 'twitch', NULL, NULL),
 ('platform-weibo', 'weibo', NULL, NULL);
+
+-- Seed default engines
+INSERT INTO engine_configuration (id, name, engine_type, config) VALUES
+('default-ffmpeg', 'default-ffmpeg', 'FFMPEG', '{"binary_path":"ffmpeg","input_args":[],"output_args":[],"timeout_secs":30,"user_agent":null}'),
+('default-streamlink', 'default-streamlink', 'STREAMLINK', '{"binary_path":"streamlink","quality":"best","extra_args":[]}'),
+('default-mesio', 'default-mesio', 'MESIO', '{"buffer_size":8388608,"fix_flv":true,"fix_hls":true}');
+
+-- Seed default global configuration
+INSERT INTO global_config (
+    id,
+    output_folder,
+    output_filename_template,
+    output_file_format,
+    min_segment_size_bytes,
+    max_download_duration_secs,
+    max_part_size_bytes,
+    record_danmu,
+    max_concurrent_downloads,
+    max_concurrent_uploads,
+    streamer_check_delay_ms,
+    proxy_config,
+    offline_check_delay_ms,
+    offline_check_count,
+    default_download_engine,
+    max_concurrent_cpu_jobs,
+    max_concurrent_io_jobs,
+    job_history_retention_days
+) VALUES (
+    'global-configuration',
+    './downloads',
+    '{streamer}-{title}-%Y%m%d-%H%M%S',
+    'flv',
+    1048576,                 -- 1MB
+    0,                       -- No limit
+    8589934592,              -- 8GB
+    FALSE,
+    6,
+    3,
+    60000,                   -- 60s
+    '',                      -- No proxy
+    10000,                   -- 10s
+    3,
+    'default-ffmpeg',
+    0,                       -- Auto
+    8,
+    30
+);

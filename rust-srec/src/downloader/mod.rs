@@ -8,7 +8,7 @@
 //! - Supporting priority-based download scheduling
 //! - Stream selection based on quality, format, and CDN preferences
 
-mod engine;
+pub mod engine;
 mod manager;
 mod resilience;
 mod stream_selector;

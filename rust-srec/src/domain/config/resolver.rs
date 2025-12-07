@@ -139,6 +139,10 @@ impl<R: ConfigRepository> ConfigResolver<R> {
                 template_config.max_bitrate,
                 template_hooks,
                 template_stream_selection,
+                template_config
+                    .engines_override
+                    .as_ref()
+                    .and_then(|s| serde_json::from_str(s).ok()),
             );
         }
 

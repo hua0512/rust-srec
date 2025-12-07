@@ -115,9 +115,10 @@ impl ServiceContainer {
         ));
 
         // Create download manager with default config
-        let download_manager = Arc::new(DownloadManager::with_config(
-            DownloadManagerConfig::default(),
-        ));
+        let download_manager = Arc::new(
+            DownloadManager::with_config(DownloadManagerConfig::default())
+                .with_config_repo(config_repo.clone()),
+        );
 
         // Create job repository for pipeline persistence (Requirements 6.1, 6.3)
         let job_repo = Arc::new(SqlxJobRepository::new(pool.clone()));
@@ -216,7 +217,9 @@ impl ServiceContainer {
         ));
 
         // Create download manager with custom config
-        let download_manager = Arc::new(DownloadManager::with_config(download_config));
+        let download_manager = Arc::new(
+            DownloadManager::with_config(download_config).with_config_repo(config_repo.clone()),
+        );
 
         // Create job repository for pipeline persistence (Requirements 6.1, 6.3)
         let job_repo = Arc::new(SqlxJobRepository::new(pool.clone()));
@@ -858,7 +861,8 @@ impl ServiceContainer {
                 )
                 .with_output_format(&merged_config.output_file_format)
                 .with_max_segment_duration(merged_config.max_download_duration_secs as u64)
-                .with_max_segment_size(merged_config.max_part_size_bytes as u64);
+                .with_max_segment_size(merged_config.max_part_size_bytes as u64)
+                .with_engines_override(merged_config.engines_override.clone());
 
                 // Add headers if needed
                 for (key, value) in headers {
@@ -877,7 +881,11 @@ impl ServiceContainer {
 
                 // Start download
                 match download_manager
-                    .start_download(config, None, is_high_priority)
+                    .start_download(
+                        config,
+                        Some(merged_config.download_engine),
+                        is_high_priority,
+                    )
                     .await
                 {
                     Ok(download_id) => {

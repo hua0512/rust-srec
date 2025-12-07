@@ -228,6 +228,18 @@ where
         Ok(())
     }
 
+    /// Delete an engine configuration.
+    pub async fn delete_engine_config(&self, id: &str) -> Result<()> {
+        self.config_repo.delete_engine_config(id).await?;
+
+        self.broadcaster.publish(ConfigUpdateEvent::EngineUpdated {
+            engine_id: id.to_string(),
+        });
+
+        tracing::info!("Engine config {} deleted", id);
+        Ok(())
+    }
+
     // ========== Merged Config (Cached) ==========
 
     /// Get the merged configuration for a streamer.
@@ -382,6 +394,10 @@ where
                     .and_then(|s| serde_json::from_str(s).ok()),
                 template
                     .stream_selection_config
+                    .as_ref()
+                    .and_then(|s| serde_json::from_str(s).ok()),
+                template
+                    .engines_override
                     .as_ref()
                     .and_then(|s| serde_json::from_str(s).ok()),
             );

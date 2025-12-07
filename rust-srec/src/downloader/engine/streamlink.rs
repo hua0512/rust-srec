@@ -9,14 +9,15 @@ use tracing::{debug, error, info, warn};
 
 use super::traits::{DownloadEngine, DownloadHandle, DownloadProgress, EngineType, SegmentEvent};
 use crate::Result;
+use crate::database::models::engine::StreamlinkEngineConfig;
 
 /// Streamlink-based download engine.
 ///
 /// Streamlink is used for platforms that require special handling
 /// or authentication. It pipes output to ffmpeg for remuxing.
 pub struct StreamlinkEngine {
-    /// Path to streamlink binary.
-    streamlink_path: String,
+    /// Engine configuration.
+    config: StreamlinkEngineConfig,
     /// Path to ffmpeg binary (for remuxing).
     ffmpeg_path: String,
     /// Cached version string.
@@ -24,15 +25,18 @@ pub struct StreamlinkEngine {
 }
 
 impl StreamlinkEngine {
-    /// Create a new Streamlink engine.
+    /// Create a new Streamlink engine with default configuration.
     pub fn new() -> Self {
-        let streamlink_path =
-            std::env::var("STREAMLINK_PATH").unwrap_or_else(|_| "streamlink".to_string());
+        Self::with_config(StreamlinkEngineConfig::default())
+    }
+
+    /// Create with a custom configuration.
+    pub fn with_config(config: StreamlinkEngineConfig) -> Self {
         let ffmpeg_path = std::env::var("FFMPEG_PATH").unwrap_or_else(|_| "ffmpeg".to_string());
-        let version = Self::detect_version(&streamlink_path);
+        let version = Self::detect_version(&config.binary_path);
 
         Self {
-            streamlink_path,
+            config,
             ffmpeg_path,
             version,
         }
@@ -59,8 +63,8 @@ impl StreamlinkEngine {
         // Output to stdout for piping
         args.extend(["--stdout".to_string()]);
 
-        // Quality selection (best by default)
-        args.extend(["best".to_string()]);
+        // Quality selection (from config)
+        args.push(self.config.quality.clone());
 
         // Add proxy if configured
         if let Some(ref proxy) = config.proxy_url {
@@ -76,6 +80,9 @@ impl StreamlinkEngine {
         for (key, value) in &config.headers {
             args.extend(["--http-header".to_string(), format!("{}={}", key, value)]);
         }
+
+        // Add extra arguments from config
+        args.extend(self.config.extra_args.clone());
 
         // Stream URL
         args.push(config.url.clone());
@@ -176,7 +183,7 @@ impl DownloadEngine for StreamlinkEngine {
         );
 
         // Spawn streamlink process
-        let mut streamlink = Command::new(&self.streamlink_path)
+        let mut streamlink = Command::new(&self.config.binary_path)
             .args(&streamlink_args)
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())

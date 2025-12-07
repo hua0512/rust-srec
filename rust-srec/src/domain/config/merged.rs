@@ -44,6 +44,9 @@ pub struct MergedConfig {
 
     // Stream selection settings
     pub stream_selection: StreamSelectionConfig,
+
+    // Engine overrides from template
+    pub engines_override: Option<serde_json::Value>,
 }
 
 impl MergedConfig {
@@ -73,6 +76,7 @@ pub struct MergedConfigBuilder {
     fetch_delay_ms: Option<i64>,
     download_delay_ms: Option<i64>,
     stream_selection: Option<StreamSelectionConfig>,
+    engines_override: Option<serde_json::Value>,
 }
 
 impl MergedConfigBuilder {
@@ -304,6 +308,7 @@ impl MergedConfigBuilder {
         max_bitrate: Option<i32>,
         event_hooks: Option<EventHooks>,
         stream_selection: Option<StreamSelectionConfig>,
+        engines_override: Option<serde_json::Value>,
     ) -> Self {
         if let Some(v) = output_folder {
             self.output_folder = Some(v);
@@ -359,6 +364,9 @@ impl MergedConfigBuilder {
             } else {
                 self.stream_selection = Some(v);
             }
+        }
+        if let Some(v) = engines_override {
+            self.engines_override = Some(v);
         }
         self
     }
@@ -438,6 +446,7 @@ impl MergedConfigBuilder {
             fetch_delay_ms: self.fetch_delay_ms.unwrap_or(60000),
             download_delay_ms: self.download_delay_ms.unwrap_or(1000),
             stream_selection: self.stream_selection.unwrap_or_default(),
+            engines_override: self.engines_override,
         }
     }
 }
@@ -535,6 +544,7 @@ mod tests {
                 None,
                 None,
                 None, // stream_selection
+                None, // engines_override
             )
             .build();
 

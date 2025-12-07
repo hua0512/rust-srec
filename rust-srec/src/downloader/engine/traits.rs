@@ -102,6 +102,10 @@ pub struct DownloadConfig {
     /// FLV-specific pipeline configuration.
     /// Controls duplicate_tag_filtering, repair_strategy, continuity_mode, etc.
     pub flv_pipeline_config: Option<FlvPipelineConfig>,
+
+    /// Override configuration for engines.
+    /// Map of engine_id -> config value.
+    pub engines_override: Option<serde_json::Value>,
 }
 
 impl DownloadConfig {
@@ -128,6 +132,7 @@ impl DownloadConfig {
             pipeline_config: None,
             hls_pipeline_config: None,
             flv_pipeline_config: None,
+            engines_override: None,
         }
     }
 
@@ -194,6 +199,12 @@ impl DownloadConfig {
     /// Set the FLV-specific pipeline configuration.
     pub fn with_flv_pipeline_config(mut self, config: FlvPipelineConfig) -> Self {
         self.flv_pipeline_config = Some(config);
+        self
+    }
+
+    /// Set engine overrides.
+    pub fn with_engines_override(mut self, overrides: Option<serde_json::Value>) -> Self {
+        self.engines_override = overrides;
         self
     }
 

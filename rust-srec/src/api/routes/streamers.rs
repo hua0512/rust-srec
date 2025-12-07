@@ -142,8 +142,14 @@ async fn list_streamers(
     if let Some(platform) = &filters.platform {
         streamers.retain(|s| &s.platform_config_id == platform);
     }
-    if let Some(filter_state) = &filters.state {
-        streamers.retain(|s| &s.state == filter_state);
+    if let Some(state_str) = &filters.state {
+        if !state_str.is_empty() {
+            let states: Vec<StreamerState> = state_str
+                .split(',')
+                .filter_map(|s| StreamerState::parse(&s.trim().to_uppercase()))
+                .collect();
+            streamers.retain(|s| states.contains(&s.state));
+        }
     }
     if let Some(priority) = &filters.priority {
         let domain_priority = api_to_domain_priority(*priority);

@@ -28,13 +28,6 @@ use mesio::proxy::{ProxyConfig, ProxyType};
 use mesio::{
     DownloadStream, FlvProtocolBuilder, HlsProtocolBuilder, MesioDownloaderFactory, ProtocolType,
 };
-
-use pipeline_common::config::PipelineConfig;
-use pipeline_common::{PipelineError, PipelineProvider, ProtocolWriter, StreamerContext};
-use std::collections::HashMap;
-use std::sync::Arc;
-use std::sync::atomic::{AtomicU32, AtomicU64, Ordering};
-use tokio_util::sync::CancellationToken;
 use tracing::{debug, error, info, warn};
 
 use super::traits::{
@@ -42,6 +35,13 @@ use super::traits::{
     SegmentInfo,
 };
 use crate::Result;
+use crate::database::models::engine::MesioEngineConfig;
+use pipeline_common::config::PipelineConfig;
+use pipeline_common::{PipelineError, PipelineProvider, ProtocolWriter, StreamerContext};
+use std::collections::HashMap;
+use std::sync::Arc;
+use std::sync::atomic::{AtomicU32, AtomicU64, Ordering};
+use tokio_util::sync::CancellationToken;
 
 /// Native Mesio download engine.
 ///
@@ -53,6 +53,8 @@ pub struct MesioEngine {
     available: bool,
     /// Engine version.
     version: String,
+    /// Engine configuration.
+    config: MesioEngineConfig,
     /// Default HLS configuration.
     hls_config: Option<mesio::hls::HlsConfig>,
     /// Default FLV configuration.
@@ -62,9 +64,15 @@ pub struct MesioEngine {
 impl MesioEngine {
     /// Create a new Mesio engine with default configurations.
     pub fn new() -> Self {
+        Self::with_config(MesioEngineConfig::default())
+    }
+
+    /// Create with a custom configuration.
+    pub fn with_config(config: MesioEngineConfig) -> Self {
         Self {
-            available: true, // Mesio is always available as it's a Rust crate
+            available: true,
             version: env!("CARGO_PKG_VERSION").to_string(),
+            config,
             hls_config: Some(HlsProtocolBuilder::new().get_config()),
             flv_config: Some(FlvProtocolBuilder::new().get_config()),
         }
@@ -221,8 +229,8 @@ impl MesioEngine {
             None
         };
 
-        // Route based on enable_processing flag
-        if config.enable_processing {
+        // Route based on enable_processing flag AND engine config
+        if config.enable_processing && self.config.fix_hls {
             // Process stream through HlsPipeline before writing
             self.download_hls_with_pipeline(
                 handle,
@@ -692,8 +700,8 @@ impl MesioEngine {
             Some(map)
         };
 
-        // Route based on enable_processing flag
-        if config.enable_processing {
+        // Route based on enable_processing flag AND engine config
+        if config.enable_processing && self.config.fix_flv {
             // Process stream through FlvPipeline before writing
             self.download_flv_with_pipeline(
                 handle,
@@ -1563,6 +1571,7 @@ mod tests {
             pipeline_config: None,
             hls_pipeline_config: None,
             flv_pipeline_config: None,
+            engines_override: None,
         }
     }
 

@@ -173,8 +173,8 @@ pub struct StreamerResponse {
 pub struct StreamerFilterParams {
     /// Filter by platform
     pub platform: Option<String>,
-    /// Filter by state
-    pub state: Option<StreamerState>,
+    /// Filter by state (comma-separated for multiple)
+    pub state: Option<String>,
     /// Filter by priority
     pub priority: Option<Priority>,
     /// Filter by enabled status
