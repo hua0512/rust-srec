@@ -63,7 +63,9 @@ CREATE TABLE template_config (
     engines_override TEXT,
     proxy_config TEXT,
     event_hooks TEXT,
-    stream_selection_config TEXT
+    stream_selection_config TEXT,
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
 -- `streamers` table: The central entity representing a content creator to be monitored.

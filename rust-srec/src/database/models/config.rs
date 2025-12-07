@@ -1,5 +1,6 @@
 //! Configuration database models.
 
+use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use sqlx::FromRow;
 
@@ -117,6 +118,8 @@ pub struct TemplateConfigDbModel {
     pub event_hooks: Option<String>,
     /// JSON serialized StreamSelectionConfig
     pub stream_selection_config: Option<String>,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
 }
 
 impl TemplateConfigDbModel {
@@ -141,6 +144,8 @@ impl TemplateConfigDbModel {
             proxy_config: None,
             event_hooks: None,
             stream_selection_config: None,
+            created_at: Utc::now(),
+            updated_at: Utc::now(),
         }
     }
 }

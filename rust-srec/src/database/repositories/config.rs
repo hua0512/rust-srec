@@ -1,6 +1,7 @@
 //! Configuration repository.
 
 use async_trait::async_trait;
+use chrono::Utc;
 use sqlx::SqlitePool;
 
 use crate::database::models::{
@@ -305,8 +306,10 @@ impl ConfigRepository for SqlxConfigRepository {
                 cookies, output_file_format, min_segment_size_bytes,
                 max_download_duration_secs, max_part_size_bytes, record_danmu,
                 platform_overrides, download_retry_policy, danmu_sampling_config,
-                download_engine, engines_override, proxy_config, event_hooks
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                download_engine, engines_override, proxy_config, event_hooks, stream_selection_config,
+                created_at, updated_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+
             "#,
         )
         .bind(&config.id)
@@ -327,6 +330,9 @@ impl ConfigRepository for SqlxConfigRepository {
         .bind(&config.engines_override)
         .bind(&config.proxy_config)
         .bind(&config.event_hooks)
+        .bind(&config.stream_selection_config)
+        .bind(config.created_at)
+        .bind(config.updated_at)
         .execute(&self.pool)
         .await?;
         Ok(())
@@ -352,7 +358,9 @@ impl ConfigRepository for SqlxConfigRepository {
                 download_engine = ?,
                 engines_override = ?,
                 proxy_config = ?,
-                event_hooks = ?
+                event_hooks = ?,
+                stream_selection_config = ?,
+                updated_at = ?
             WHERE id = ?
             "#,
         )
@@ -373,6 +381,8 @@ impl ConfigRepository for SqlxConfigRepository {
         .bind(&config.engines_override)
         .bind(&config.proxy_config)
         .bind(&config.event_hooks)
+        .bind(&config.stream_selection_config)
+        .bind(Utc::now())
         .bind(&config.id)
         .execute(&self.pool)
         .await?;

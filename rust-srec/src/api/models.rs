@@ -290,6 +290,7 @@ pub struct CreateTemplateRequest {
     pub record_danmu: Option<bool>,
     pub platform_overrides: Option<serde_json::Value>,
     pub engines_override: Option<serde_json::Value>,
+    pub stream_selection_config: Option<String>,
 }
 
 /// Request to update a template.
@@ -303,6 +304,7 @@ pub struct UpdateTemplateRequest {
     pub record_danmu: Option<bool>,
     pub platform_overrides: Option<serde_json::Value>,
     pub engines_override: Option<serde_json::Value>,
+    pub stream_selection_config: Option<String>,
 }
 
 /// Template response.
@@ -317,6 +319,7 @@ pub struct TemplateResponse {
     pub record_danmu: Option<bool>,
     pub platform_overrides: Option<serde_json::Value>,
     pub engines_override: Option<serde_json::Value>,
+    pub stream_selection_config: Option<String>,
     pub usage_count: u32,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,

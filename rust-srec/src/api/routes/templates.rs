@@ -5,7 +5,6 @@ use axum::{
     extract::{Path, Query, State},
     routing::{delete, get, patch, post},
 };
-use chrono::Utc;
 
 use crate::api::error::{ApiError, ApiResult};
 use crate::api::models::{
@@ -43,9 +42,10 @@ fn db_model_to_response(model: &TemplateConfigDbModel, usage_count: u32) -> Temp
             .engines_override
             .as_ref()
             .and_then(|s| serde_json::from_str(s).ok()),
+        stream_selection_config: model.stream_selection_config.clone(),
         usage_count,
-        created_at: Utc::now(), // Not stored in DB model
-        updated_at: Utc::now(), // Not stored in DB model
+        created_at: model.created_at,
+        updated_at: model.updated_at,
     }
 }
 
@@ -80,6 +80,7 @@ async fn create_template(
     template.engines_override = request
         .engines_override
         .map(|v| serde_json::to_string(&v).unwrap_or_default());
+    template.stream_selection_config = request.stream_selection_config;
 
     // Create the template
     config_service
@@ -224,6 +225,9 @@ async fn update_template(
         template.engines_override =
             Some(serde_json::to_string(&engines_override).unwrap_or_default());
     }
+    if let Some(stream_selection_config) = request.stream_selection_config {
+        template.stream_selection_config = Some(stream_selection_config);
+    }
 
     // Update the template
     config_service
@@ -304,6 +308,7 @@ mod tests {
             record_danmu: Some(true),
             platform_overrides: None,
             engines_override: None,
+            stream_selection_config: None,
             usage_count: 5,
             created_at: chrono::Utc::now(),
             updated_at: chrono::Utc::now(),
