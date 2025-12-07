@@ -184,8 +184,11 @@ impl ConfigRepository for SqlxConfigRepository {
             r#"
             INSERT INTO platform_config (
                 id, platform_name, fetch_delay_ms, download_delay_ms,
-                cookies, platform_specific_config, proxy_config, record_danmu
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                cookies, platform_specific_config, proxy_config, record_danmu,
+                output_folder, output_filename_template, download_engine, max_bitrate, stream_selection_config,
+                output_file_format, min_segment_size_bytes, max_download_duration_secs, max_part_size_bytes,
+                download_retry_policy, event_hooks
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             "#,
         )
         .bind(&config.id)
@@ -196,6 +199,17 @@ impl ConfigRepository for SqlxConfigRepository {
         .bind(&config.platform_specific_config)
         .bind(&config.proxy_config)
         .bind(config.record_danmu)
+        .bind(&config.output_folder)
+        .bind(&config.output_filename_template)
+        .bind(&config.download_engine)
+        .bind(config.max_bitrate)
+        .bind(&config.stream_selection_config)
+        .bind(&config.output_file_format)
+        .bind(config.min_segment_size_bytes)
+        .bind(config.max_download_duration_secs)
+        .bind(config.max_part_size_bytes)
+        .bind(&config.download_retry_policy)
+        .bind(&config.event_hooks)
         .execute(&self.pool)
         .await?;
         Ok(())
@@ -211,7 +225,18 @@ impl ConfigRepository for SqlxConfigRepository {
                 cookies = ?,
                 platform_specific_config = ?,
                 proxy_config = ?,
-                record_danmu = ?
+                record_danmu = ?,
+                output_folder = ?,
+                output_filename_template = ?,
+                download_engine = ?,
+                max_bitrate = ?,
+                stream_selection_config = ?,
+                output_file_format = ?,
+                min_segment_size_bytes = ?,
+                max_download_duration_secs = ?,
+                max_part_size_bytes = ?,
+                download_retry_policy = ?,
+                event_hooks = ?
             WHERE id = ?
             "#,
         )
@@ -222,6 +247,17 @@ impl ConfigRepository for SqlxConfigRepository {
         .bind(&config.platform_specific_config)
         .bind(&config.proxy_config)
         .bind(config.record_danmu)
+        .bind(&config.output_folder)
+        .bind(&config.output_filename_template)
+        .bind(&config.download_engine)
+        .bind(config.max_bitrate)
+        .bind(&config.stream_selection_config)
+        .bind(&config.output_file_format)
+        .bind(config.min_segment_size_bytes)
+        .bind(config.max_download_duration_secs)
+        .bind(config.max_part_size_bytes)
+        .bind(&config.download_retry_policy)
+        .bind(&config.event_hooks)
         .bind(&config.id)
         .execute(&self.pool)
         .await?;

@@ -324,6 +324,31 @@ where
                     .as_ref()
                     .map(|s| parse_proxy_config(s)),
                 platform.record_danmu,
+                platform
+                    .platform_specific_config
+                    .as_ref()
+                    .and_then(|s| serde_json::from_str(s).ok())
+                    .as_ref(), // Pass as Option<&Value>
+                platform.output_folder.clone(),
+                platform.output_filename_template.clone(),
+                platform.download_engine.clone(),
+                platform.max_bitrate,
+                platform
+                    .stream_selection_config
+                    .as_ref()
+                    .and_then(|s| serde_json::from_str(s).ok()),
+                platform.output_file_format.clone(),
+                platform.min_segment_size_bytes,
+                platform.max_download_duration_secs,
+                platform.max_part_size_bytes,
+                platform
+                    .download_retry_policy
+                    .as_ref()
+                    .and_then(|s| serde_json::from_str(s).ok()),
+                platform
+                    .event_hooks
+                    .as_ref()
+                    .and_then(|s| serde_json::from_str(s).ok()),
             );
 
         // Apply template if present

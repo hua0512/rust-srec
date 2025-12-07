@@ -2,11 +2,11 @@
 CREATE TABLE global_config (
     id TEXT PRIMARY KEY NOT NULL,
     output_folder TEXT NOT NULL,
-    output_filename_template TEXT NOT NULL DEFAULT "{streamer}-{title}-{%Y%m%d-%H%M%S}",
+    output_filename_template TEXT NOT NULL DEFAULT "{streamer}-{title}-%Y%m%d-%H%M%S",
     output_file_format TEXT NOT NULL DEFAULT "flv",
     min_segment_size_bytes INTEGER NOT NULL DEFAULT 1048576,
     max_download_duration_secs INTEGER NOT NULL DEFAULT 0,
-    max_part_size_bytes INTEGER NOT NULL DEFAULT 8589934592,
+    max_part_size_bytes BIGINT NOT NULL DEFAULT 8589934592,
     record_danmu BOOLEAN NOT NULL DEFAULT FALSE,
     max_concurrent_downloads INTEGER NOT NULL DEFAULT 6,
     max_concurrent_uploads INTEGER NOT NULL DEFAULT 3,
@@ -24,12 +24,23 @@ CREATE TABLE global_config (
 CREATE TABLE platform_config (
     id TEXT PRIMARY KEY NOT NULL,
     platform_name TEXT NOT NULL UNIQUE,
-    fetch_delay_ms INTEGER NOT NULL,
-    download_delay_ms INTEGER NOT NULL,
+    fetch_delay_ms INTEGER,
+    download_delay_ms INTEGER,
     cookies TEXT,
     platform_specific_config TEXT,
     proxy_config TEXT,
-    record_danmu BOOLEAN
+    record_danmu BOOLEAN,
+    output_folder TEXT,
+    output_filename_template TEXT,
+    download_engine TEXT,
+    max_bitrate INTEGER,
+    stream_selection_config TEXT,
+    output_file_format TEXT,
+    min_segment_size_bytes BIGINT,
+    max_download_duration_secs BIGINT,
+    max_part_size_bytes BIGINT,
+    download_retry_policy TEXT,
+    event_hooks TEXT
 );
 
 -- `template_config` table: Reusable configuration templates for streamers.
@@ -307,3 +318,18 @@ VALUES (
     datetime('now'),
     datetime('now')
 );
+
+-- Seed supported platforms
+INSERT INTO platform_config (id, platform_name, fetch_delay_ms, download_delay_ms) VALUES
+('platform-acfun', 'acfun', NULL, NULL),
+('platform-bilibili', 'bilibili', NULL, NULL),
+('platform-douyin', 'douyin', NULL, NULL),
+('platform-douyu', 'douyu', NULL, NULL),
+('platform-huya', 'huya', NULL, NULL),
+('platform-pandatv', 'pandatv', NULL, NULL),
+('platform-picarto', 'picarto', NULL, NULL),
+('platform-redbook', 'redbook', NULL, NULL),
+('platform-tiktok', 'tiktok', NULL, NULL),
+('platform-twitcasting', 'twitcasting', NULL, NULL),
+('platform-twitch', 'twitch', NULL, NULL),
+('platform-weibo', 'weibo', NULL, NULL);

@@ -60,14 +60,30 @@ impl Default for GlobalConfigDbModel {
 pub struct PlatformConfigDbModel {
     pub id: String,
     pub platform_name: String,
-    pub fetch_delay_ms: i64,
-    pub download_delay_ms: i64,
+    pub fetch_delay_ms: Option<i64>,
+    pub download_delay_ms: Option<i64>,
     pub cookies: Option<String>,
     /// JSON blob for platform-specific settings
     pub platform_specific_config: Option<String>,
     /// JSON serialized ProxyConfig
     pub proxy_config: Option<String>,
     pub record_danmu: Option<bool>,
+
+    // Explicit overrides
+    pub output_folder: Option<String>,
+    pub output_filename_template: Option<String>,
+    pub download_engine: Option<String>,
+    pub max_bitrate: Option<i32>,
+    /// JSON serialized StreamSelectionConfig
+    pub stream_selection_config: Option<String>,
+    pub output_file_format: Option<String>,
+    pub min_segment_size_bytes: Option<i64>,
+    pub max_download_duration_secs: Option<i64>,
+    pub max_part_size_bytes: Option<i64>,
+    /// JSON serialized RetryPolicy
+    pub download_retry_policy: Option<String>,
+    /// JSON serialized EventHooks
+    pub event_hooks: Option<String>,
 }
 
 /// Template configuration database model.

@@ -4,13 +4,14 @@
 rust-toolchain
 rust-toolchain.toml
 
-# Media output
-*.flv
-*.ts
-*.m3u8
-
 # Logs
 *.log
+
+# Env
+.env
+.env.example
+*.env
+*.env.example
 
 # Editor / IDE
 .vscode/

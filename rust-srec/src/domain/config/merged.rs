@@ -106,16 +106,35 @@ impl MergedConfigBuilder {
     }
 
     /// Apply platform config layer.
+    #[allow(clippy::too_many_arguments)]
+    /// Apply platform config layer.
+    #[allow(clippy::too_many_arguments)]
     pub fn with_platform(
         mut self,
-        fetch_delay_ms: i64,
-        download_delay_ms: i64,
+        fetch_delay_ms: Option<i64>,
+        download_delay_ms: Option<i64>,
         cookies: Option<String>,
         proxy_config: Option<ProxyConfig>,
         record_danmu: Option<bool>,
+        platform_specific_config: Option<&serde_json::Value>,
+        output_folder: Option<String>,
+        output_filename_template: Option<String>,
+        download_engine: Option<String>,
+        max_bitrate: Option<i32>,
+        stream_selection: Option<StreamSelectionConfig>,
+        output_file_format: Option<String>,
+        min_segment_size_bytes: Option<i64>,
+        max_download_duration_secs: Option<i64>,
+        max_part_size_bytes: Option<i64>,
+        download_retry_policy: Option<RetryPolicy>,
+        event_hooks: Option<EventHooks>,
     ) -> Self {
-        self.fetch_delay_ms = Some(fetch_delay_ms);
-        self.download_delay_ms = Some(download_delay_ms);
+        if let Some(v) = fetch_delay_ms {
+            self.fetch_delay_ms = Some(v);
+        }
+        if let Some(v) = download_delay_ms {
+            self.download_delay_ms = Some(v);
+        }
 
         if cookies.is_some() {
             self.cookies = cookies;
@@ -126,6 +145,143 @@ impl MergedConfigBuilder {
         if let Some(danmu) = record_danmu {
             self.record_danmu = Some(danmu);
         }
+
+        // Apply platform-specific config overrides (Legacy, but still respected if explicit fields are None)
+        // JSON parsing happens implicitly if matching keys are found, but explicit args override below.
+        if let Some(config) = platform_specific_config {
+            if let Some(v) = config.get("output_folder").and_then(|v| v.as_str()) {
+                if self.output_folder.is_none() {
+                    self.output_folder = Some(v.to_string());
+                }
+            }
+            if let Some(v) = config
+                .get("output_filename_template")
+                .and_then(|v| v.as_str())
+            {
+                if self.output_filename_template.is_none() {
+                    self.output_filename_template = Some(v.to_string());
+                }
+            }
+            if let Some(v) = config.get("download_engine").and_then(|v| v.as_str()) {
+                if self.download_engine.is_none() {
+                    self.download_engine = Some(v.to_string());
+                }
+            }
+            if let Some(v) = config.get("record_danmu").and_then(|v| v.as_bool()) {
+                if self.record_danmu.is_none() {
+                    self.record_danmu = Some(v);
+                }
+            }
+            if let Some(v) = config.get("cookies").and_then(|v| v.as_str()) {
+                if self.cookies.is_none() {
+                    self.cookies = Some(v.to_string());
+                }
+            }
+            if let Some(v) = config.get("max_bitrate").and_then(|v| v.as_i64()) {
+                if self.max_bitrate.is_none() {
+                    self.max_bitrate = Some(v as i32);
+                }
+            }
+            // Stream selection from JSON
+            if let Some(stream_sel) = config.get("stream_selection") {
+                if let Ok(v) = serde_json::from_value::<StreamSelectionConfig>(stream_sel.clone()) {
+                    if self.stream_selection.is_none() {
+                        if let Some(existing) = &self.stream_selection {
+                            self.stream_selection = Some(existing.merge(&v));
+                        } else {
+                            self.stream_selection = Some(v);
+                        }
+                    }
+                }
+            }
+            // Parse new fields from JSON (Legacy support)
+            if let Some(v) = config.get("output_file_format").and_then(|v| v.as_str()) {
+                if self.output_file_format.is_none() {
+                    self.output_file_format = Some(v.to_string());
+                }
+            }
+            if let Some(v) = config
+                .get("min_segment_size_bytes")
+                .and_then(|v| v.as_i64())
+            {
+                if self.min_segment_size_bytes.is_none() {
+                    self.min_segment_size_bytes = Some(v);
+                }
+            }
+            if let Some(v) = config
+                .get("max_download_duration_secs")
+                .and_then(|v| v.as_i64())
+            {
+                if self.max_download_duration_secs.is_none() {
+                    self.max_download_duration_secs = Some(v);
+                }
+            }
+            if let Some(v) = config.get("max_part_size_bytes").and_then(|v| v.as_i64()) {
+                if self.max_part_size_bytes.is_none() {
+                    self.max_part_size_bytes = Some(v);
+                }
+            }
+            // download_retry_policy and event_hooks from JSON?
+            // If they exist in JSON as objects, we can parse them.
+            if let Some(retry) = config.get("download_retry_policy") {
+                if let Ok(v) = serde_json::from_value::<RetryPolicy>(retry.clone()) {
+                    if self.download_retry_policy.is_none() {
+                        self.download_retry_policy = Some(v);
+                    }
+                }
+            }
+            if let Some(hooks) = config.get("event_hooks") {
+                if let Ok(v) = serde_json::from_value::<EventHooks>(hooks.clone()) {
+                    if self.event_hooks.is_none() {
+                        self.event_hooks = Some(v);
+                    }
+                }
+            }
+        }
+
+        // Apply explicit overrides - MOVED executed after JSON parsing below
+        if let Some(v) = output_folder {
+            self.output_folder = Some(v);
+        }
+        if let Some(v) = output_filename_template {
+            self.output_filename_template = Some(v);
+        }
+        if let Some(v) = download_engine {
+            self.download_engine = Some(v);
+        }
+        if let Some(v) = max_bitrate {
+            self.max_bitrate = Some(v);
+        }
+        if let Some(v) = stream_selection {
+            if let Some(existing) = &self.stream_selection {
+                self.stream_selection = Some(existing.merge(&v));
+            } else {
+                self.stream_selection = Some(v);
+            }
+        }
+        if let Some(v) = output_file_format {
+            self.output_file_format = Some(v);
+        }
+        if let Some(v) = min_segment_size_bytes {
+            self.min_segment_size_bytes = Some(v);
+        }
+        if let Some(v) = max_download_duration_secs {
+            self.max_download_duration_secs = Some(v);
+        }
+        if let Some(v) = max_part_size_bytes {
+            self.max_part_size_bytes = Some(v);
+        }
+        if let Some(v) = download_retry_policy {
+            self.download_retry_policy = Some(v);
+        }
+        if let Some(v) = event_hooks {
+            if let Some(existing) = &self.event_hooks {
+                self.event_hooks = Some(existing.merge(&v));
+            } else {
+                self.event_hooks = Some(v);
+            }
+        }
+
         self
     }
 
@@ -304,7 +460,25 @@ mod tests {
                 ProxyConfig::disabled(),
                 "mesio".to_string(),
             )
-            .with_platform(60000, 1000, None, None, None)
+            .with_platform(
+                Some(60000),
+                Some(1000),
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+            )
             .build();
 
         assert_eq!(config.output_folder, "./downloads");
@@ -324,9 +498,27 @@ mod tests {
                 8589934592,
                 false,
                 ProxyConfig::disabled(),
-                "mesio".to_string(),
+                "ffmpeg".to_string(),
             )
-            .with_platform(60000, 1000, None, None, Some(true))
+            .with_platform(
+                Some(60000),
+                Some(1000),
+                None,
+                None,
+                Some(true),
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+            )
             .with_template(
                 Some("./custom".to_string()),
                 None,

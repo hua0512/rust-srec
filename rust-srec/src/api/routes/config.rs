@@ -52,10 +52,23 @@ fn map_platform_config_to_response(config: PlatformConfigDbModel) -> PlatformCon
     PlatformConfigResponse {
         id: config.id,
         name: config.platform_name,
-        fetch_delay_ms: Some(config.fetch_delay_ms as u64),
-        download_delay_ms: Some(config.download_delay_ms as u64),
+        fetch_delay_ms: config.fetch_delay_ms.map(|v| v as u64),
+        download_delay_ms: config.download_delay_ms.map(|v| v as u64),
         record_danmu: config.record_danmu,
         cookies: config.cookies,
+        platform_specific_config: config.platform_specific_config,
+        proxy_config: config.proxy_config,
+        output_folder: config.output_folder,
+        output_filename_template: config.output_filename_template,
+        download_engine: config.download_engine,
+        max_bitrate: config.max_bitrate,
+        stream_selection_config: config.stream_selection_config,
+        output_file_format: config.output_file_format,
+        min_segment_size_bytes: config.min_segment_size_bytes.map(|v| v as u64),
+        max_download_duration_secs: config.max_download_duration_secs.map(|v| v as u64),
+        max_part_size_bytes: config.max_part_size_bytes.map(|v| v as u64),
+        download_retry_policy: config.download_retry_policy,
+        event_hooks: config.event_hooks,
     }
 }
 
@@ -205,16 +218,55 @@ async fn update_platform_config(
 
     // Apply partial updates
     if let Some(fetch_delay_ms) = request.fetch_delay_ms {
-        config.fetch_delay_ms = fetch_delay_ms as i64;
+        config.fetch_delay_ms = Some(fetch_delay_ms as i64);
     }
     if let Some(download_delay_ms) = request.download_delay_ms {
-        config.download_delay_ms = download_delay_ms as i64;
+        config.download_delay_ms = Some(download_delay_ms as i64);
     }
     if let Some(record_danmu) = request.record_danmu {
         config.record_danmu = Some(record_danmu);
     }
     if let Some(cookies) = request.cookies {
         config.cookies = Some(cookies);
+    }
+    if let Some(platform_specific_config) = request.platform_specific_config {
+        config.platform_specific_config = Some(platform_specific_config);
+    }
+    if let Some(proxy_config) = request.proxy_config {
+        config.proxy_config = Some(proxy_config);
+    }
+    if let Some(output_folder) = request.output_folder {
+        config.output_folder = Some(output_folder);
+    }
+    if let Some(output_filename_template) = request.output_filename_template {
+        config.output_filename_template = Some(output_filename_template);
+    }
+    if let Some(download_engine) = request.download_engine {
+        config.download_engine = Some(download_engine);
+    }
+    if let Some(max_bitrate) = request.max_bitrate {
+        config.max_bitrate = Some(max_bitrate);
+    }
+    if let Some(stream_selection_config) = request.stream_selection_config {
+        config.stream_selection_config = Some(stream_selection_config);
+    }
+    if let Some(output_file_format) = request.output_file_format {
+        config.output_file_format = Some(output_file_format);
+    }
+    if let Some(min_segment_size_bytes) = request.min_segment_size_bytes {
+        config.min_segment_size_bytes = Some(min_segment_size_bytes as i64);
+    }
+    if let Some(max_download_duration_secs) = request.max_download_duration_secs {
+        config.max_download_duration_secs = Some(max_download_duration_secs as i64);
+    }
+    if let Some(max_part_size_bytes) = request.max_part_size_bytes {
+        config.max_part_size_bytes = Some(max_part_size_bytes as i64);
+    }
+    if let Some(download_retry_policy) = request.download_retry_policy {
+        config.download_retry_policy = Some(download_retry_policy);
+    }
+    if let Some(event_hooks) = request.event_hooks {
+        config.event_hooks = Some(event_hooks);
     }
 
     // Update config (cache invalidation is handled automatically by ConfigService)
@@ -316,16 +368,55 @@ mod property_tests {
         request: &UpdatePlatformConfigRequest,
     ) {
         if let Some(fetch_delay_ms) = request.fetch_delay_ms {
-            config.fetch_delay_ms = fetch_delay_ms as i64;
+            config.fetch_delay_ms = Some(fetch_delay_ms as i64);
         }
         if let Some(download_delay_ms) = request.download_delay_ms {
-            config.download_delay_ms = download_delay_ms as i64;
+            config.download_delay_ms = Some(download_delay_ms as i64);
         }
         if let Some(record_danmu) = request.record_danmu {
             config.record_danmu = Some(record_danmu);
         }
         if let Some(ref cookies) = request.cookies {
             config.cookies = Some(cookies.clone());
+        }
+        if let Some(ref platform_specific_config) = request.platform_specific_config {
+            config.platform_specific_config = Some(platform_specific_config.clone());
+        }
+        if let Some(ref proxy_config) = request.proxy_config {
+            config.proxy_config = Some(proxy_config.clone());
+        }
+        if let Some(ref output_folder) = request.output_folder {
+            config.output_folder = Some(output_folder.clone());
+        }
+        if let Some(ref output_filename_template) = request.output_filename_template {
+            config.output_filename_template = Some(output_filename_template.clone());
+        }
+        if let Some(ref download_engine) = request.download_engine {
+            config.download_engine = Some(download_engine.clone());
+        }
+        if let Some(max_bitrate) = request.max_bitrate {
+            config.max_bitrate = Some(max_bitrate);
+        }
+        if let Some(ref stream_selection_config) = request.stream_selection_config {
+            config.stream_selection_config = Some(stream_selection_config.clone());
+        }
+        if let Some(ref output_file_format) = request.output_file_format {
+            config.output_file_format = Some(output_file_format.clone());
+        }
+        if let Some(min_segment_size_bytes) = request.min_segment_size_bytes {
+            config.min_segment_size_bytes = Some(min_segment_size_bytes as i64);
+        }
+        if let Some(max_download_duration_secs) = request.max_download_duration_secs {
+            config.max_download_duration_secs = Some(max_download_duration_secs as i64);
+        }
+        if let Some(max_part_size_bytes) = request.max_part_size_bytes {
+            config.max_part_size_bytes = Some(max_part_size_bytes as i64);
+        }
+        if let Some(ref download_retry_policy) = request.download_retry_policy {
+            config.download_retry_policy = Some(download_retry_policy.clone());
+        }
+        if let Some(ref event_hooks) = request.event_hooks {
+            config.event_hooks = Some(event_hooks.clone());
         }
     }
 
@@ -519,17 +610,41 @@ mod property_tests {
             download_delay_ms in prop::option::of(1000u64..120000u64),
             record_danmu in prop::option::of(prop::bool::ANY),
             cookies in prop::option::of(cookies_strategy()),
+            platform_specific_config in prop::option::of(prop::string::string_regex(r#"\{"key": "value"\}"#).unwrap()),
+            proxy_config in prop::option::of(proxy_config_strategy()),
+            output_folder in prop::option::of(output_folder_strategy()),
+            output_filename_template in prop::option::of(filename_template_strategy()),
+            download_engine in prop::option::of(download_engine_strategy()),
+            max_bitrate in prop::option::of(1000i32..10000i32),
+            stream_selection_config in prop::option::of(prop::string::string_regex(r#"\{"mode": "auto"\}"#).unwrap()),
+            output_file_format in prop::option::of(file_format_strategy()),
+            min_segment_size_bytes in prop::option::of(1024u64..10485760u64),
+            max_download_duration_secs in prop::option::of(60u64..3600u64),
+            max_part_size_bytes in prop::option::of(1048576u64..1073741824u64),
+            download_retry_policy in prop::option::of(prop::string::string_regex(r#"\{"max_retries": 5\}"#).unwrap()),
+            event_hooks in prop::option::of(prop::string::string_regex(r#"\{"on_download_start": []\}"#).unwrap()),
         ) {
             // Create initial platform config
             let mut config = PlatformConfigDbModel {
                 id: platform_id,
                 platform_name,
-                fetch_delay_ms: initial_fetch_delay,
-                download_delay_ms: initial_download_delay,
+                fetch_delay_ms: Some(initial_fetch_delay),
+                download_delay_ms: Some(initial_download_delay),
                 cookies: None,
                 platform_specific_config: None,
                 proxy_config: None,
                 record_danmu: None,
+                output_folder: None,
+                output_filename_template: None,
+                download_engine: None,
+                max_bitrate: None,
+                stream_selection_config: None,
+                output_file_format: None,
+                min_segment_size_bytes: None,
+                max_download_duration_secs: None,
+                max_part_size_bytes: None,
+                download_retry_policy: None,
+                event_hooks: None,
             };
             let original_config = config.clone();
 
@@ -539,6 +654,19 @@ mod property_tests {
                 download_delay_ms,
                 record_danmu,
                 cookies: cookies.clone(),
+                platform_specific_config: platform_specific_config.clone(),
+                proxy_config: proxy_config.clone(),
+                output_folder: output_folder.clone(),
+                output_filename_template: output_filename_template.clone(),
+                download_engine: download_engine.clone(),
+                max_bitrate,
+                stream_selection_config: stream_selection_config.clone(),
+                output_file_format: output_file_format.clone(),
+                min_segment_size_bytes,
+                max_download_duration_secs,
+                max_part_size_bytes,
+                download_retry_policy: download_retry_policy.clone(),
+                event_hooks: event_hooks.clone(),
             };
 
             // Apply the update
@@ -546,13 +674,13 @@ mod property_tests {
 
             // Property: Each updated field should reflect the new value
             if let Some(fetch_delay) = fetch_delay_ms {
-                prop_assert_eq!(config.fetch_delay_ms, fetch_delay as i64, "fetch_delay_ms should be updated");
+                prop_assert_eq!(config.fetch_delay_ms, Some(fetch_delay as i64), "fetch_delay_ms should be updated");
             } else {
                 prop_assert_eq!(config.fetch_delay_ms, original_config.fetch_delay_ms, "fetch_delay_ms should remain unchanged");
             }
 
             if let Some(download_delay) = download_delay_ms {
-                prop_assert_eq!(config.download_delay_ms, download_delay as i64, "download_delay_ms should be updated");
+                prop_assert_eq!(config.download_delay_ms, Some(download_delay as i64), "download_delay_ms should be updated");
             } else {
                 prop_assert_eq!(config.download_delay_ms, original_config.download_delay_ms, "download_delay_ms should remain unchanged");
             }
@@ -567,6 +695,84 @@ mod property_tests {
                 prop_assert_eq!(config.cookies.as_ref(), Some(cookie_val), "cookies should be updated");
             } else {
                 prop_assert_eq!(config.cookies, original_config.cookies, "cookies should remain unchanged");
+            }
+
+            if let Some(ref psc_val) = platform_specific_config {
+                prop_assert_eq!(config.platform_specific_config.as_ref(), Some(psc_val), "platform_specific_config should be updated");
+            } else {
+                prop_assert_eq!(config.platform_specific_config, original_config.platform_specific_config, "platform_specific_config should remain unchanged");
+            }
+
+            if let Some(ref proxy_val) = proxy_config {
+                prop_assert_eq!(config.proxy_config.as_ref(), Some(proxy_val), "proxy_config should be updated");
+            } else {
+                prop_assert_eq!(config.proxy_config, original_config.proxy_config, "proxy_config should remain unchanged");
+            }
+
+            if let Some(ref output_folder_val) = output_folder {
+                prop_assert_eq!(config.output_folder.as_ref(), Some(output_folder_val), "output_folder should be updated");
+            } else {
+                prop_assert_eq!(config.output_folder, original_config.output_folder, "output_folder should remain unchanged");
+            }
+
+            if let Some(ref output_filename_template_val) = output_filename_template {
+                prop_assert_eq!(config.output_filename_template.as_ref(), Some(output_filename_template_val), "output_filename_template should be updated");
+            } else {
+                prop_assert_eq!(config.output_filename_template, original_config.output_filename_template, "output_filename_template should remain unchanged");
+            }
+
+            if let Some(ref download_engine_val) = download_engine {
+                prop_assert_eq!(config.download_engine.as_ref(), Some(download_engine_val), "download_engine should be updated");
+            } else {
+                prop_assert_eq!(config.download_engine, original_config.download_engine, "download_engine should remain unchanged");
+            }
+
+            if let Some(max_bitrate_val) = max_bitrate {
+                prop_assert_eq!(config.max_bitrate, Some(max_bitrate_val), "max_bitrate should be updated");
+            } else {
+                prop_assert_eq!(config.max_bitrate, original_config.max_bitrate, "max_bitrate should remain unchanged");
+            }
+
+            if let Some(ref stream_selection_config_val) = stream_selection_config {
+                prop_assert_eq!(config.stream_selection_config.as_ref(), Some(stream_selection_config_val), "stream_selection_config should be updated");
+            } else {
+                prop_assert_eq!(config.stream_selection_config, original_config.stream_selection_config, "stream_selection_config should remain unchanged");
+            }
+
+            if let Some(ref output_file_format_val) = output_file_format {
+                prop_assert_eq!(config.output_file_format.as_ref(), Some(output_file_format_val), "output_file_format should be updated");
+            } else {
+                prop_assert_eq!(config.output_file_format, original_config.output_file_format, "output_file_format should remain unchanged");
+            }
+
+            if let Some(min_segment_size_bytes_val) = min_segment_size_bytes {
+                prop_assert_eq!(config.min_segment_size_bytes, Some(min_segment_size_bytes_val as i64), "min_segment_size_bytes should be updated");
+            } else {
+                prop_assert_eq!(config.min_segment_size_bytes, original_config.min_segment_size_bytes, "min_segment_size_bytes should remain unchanged");
+            }
+
+            if let Some(max_download_duration_secs_val) = max_download_duration_secs {
+                prop_assert_eq!(config.max_download_duration_secs, Some(max_download_duration_secs_val as i64), "max_download_duration_secs should be updated");
+            } else {
+                prop_assert_eq!(config.max_download_duration_secs, original_config.max_download_duration_secs, "max_download_duration_secs should remain unchanged");
+            }
+
+            if let Some(max_part_size_bytes_val) = max_part_size_bytes {
+                prop_assert_eq!(config.max_part_size_bytes, Some(max_part_size_bytes_val as i64), "max_part_size_bytes should be updated");
+            } else {
+                prop_assert_eq!(config.max_part_size_bytes, original_config.max_part_size_bytes, "max_part_size_bytes should remain unchanged");
+            }
+
+            if let Some(ref download_retry_policy_val) = download_retry_policy {
+                prop_assert_eq!(config.download_retry_policy.as_ref(), Some(download_retry_policy_val), "download_retry_policy should be updated");
+            } else {
+                prop_assert_eq!(config.download_retry_policy, original_config.download_retry_policy, "download_retry_policy should remain unchanged");
+            }
+
+            if let Some(ref event_hooks_val) = event_hooks {
+                prop_assert_eq!(config.event_hooks.as_ref(), Some(event_hooks_val), "event_hooks should be updated");
+            } else {
+                prop_assert_eq!(config.event_hooks, original_config.event_hooks, "event_hooks should remain unchanged");
             }
         }
     }

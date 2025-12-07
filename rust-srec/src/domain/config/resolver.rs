@@ -69,6 +69,31 @@ impl<R: ConfigRepository> ConfigResolver<R> {
             platform_config.cookies.clone(),
             platform_proxy,
             platform_config.record_danmu,
+            platform_config
+                .platform_specific_config
+                .as_ref()
+                .and_then(|s| serde_json::from_str(s).ok())
+                .as_ref(), // Pass as Option<&Value>
+            platform_config.output_folder.clone(),
+            platform_config.output_filename_template.clone(),
+            platform_config.download_engine.clone(),
+            platform_config.max_bitrate,
+            platform_config
+                .stream_selection_config
+                .as_ref()
+                .and_then(|s| serde_json::from_str(s).ok()),
+            platform_config.output_file_format.clone(),
+            platform_config.min_segment_size_bytes,
+            platform_config.max_download_duration_secs,
+            platform_config.max_part_size_bytes,
+            platform_config
+                .download_retry_policy
+                .as_ref()
+                .and_then(|s| serde_json::from_str(s).ok()),
+            platform_config
+                .event_hooks
+                .as_ref()
+                .and_then(|s| serde_json::from_str(s).ok()),
         );
 
         // Layer 3: Template config (if assigned)

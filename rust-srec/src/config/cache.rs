@@ -233,7 +233,25 @@ mod tests {
                 ProxyConfig::disabled(),
                 "ffmpeg".to_string(),
             )
-            .with_platform(60000, 1000, None, None, None)
+            .with_platform(
+                Some(60000),
+                Some(1000),
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+            )
             .build()
     }
 
