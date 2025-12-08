@@ -41,6 +41,7 @@ pub struct MergedConfig {
     // Platform-specific
     pub fetch_delay_ms: i64,
     pub download_delay_ms: i64,
+    pub session_gap_time_secs: i64,
 
     // Stream selection settings
     pub stream_selection: StreamSelectionConfig,
@@ -75,6 +76,7 @@ pub struct MergedConfigBuilder {
     event_hooks: Option<EventHooks>,
     fetch_delay_ms: Option<i64>,
     download_delay_ms: Option<i64>,
+    session_gap_time_secs: Option<i64>,
     stream_selection: Option<StreamSelectionConfig>,
     engines_override: Option<serde_json::Value>,
 }
@@ -93,6 +95,7 @@ impl MergedConfigBuilder {
         record_danmu: bool,
         proxy_config: ProxyConfig,
         download_engine: String,
+        session_gap_time_secs: i64,
     ) -> Self {
         self.output_folder = Some(output_folder);
         self.output_filename_template = Some(output_filename_template);
@@ -106,6 +109,7 @@ impl MergedConfigBuilder {
         self.danmu_sampling_config = Some(DanmuSamplingConfig::default());
         self.download_retry_policy = Some(RetryPolicy::default());
         self.event_hooks = Some(EventHooks::default());
+        self.session_gap_time_secs = Some(session_gap_time_secs);
         self
     }
 
@@ -445,6 +449,7 @@ impl MergedConfigBuilder {
             event_hooks: self.event_hooks.unwrap_or_default(),
             fetch_delay_ms: self.fetch_delay_ms.unwrap_or(60000),
             download_delay_ms: self.download_delay_ms.unwrap_or(1000),
+            session_gap_time_secs: self.session_gap_time_secs.unwrap_or(600),
             stream_selection: self.stream_selection.unwrap_or_default(),
             engines_override: self.engines_override,
         }
@@ -468,6 +473,7 @@ mod tests {
                 false,
                 ProxyConfig::disabled(),
                 "mesio".to_string(),
+                600,
             )
             .with_platform(
                 Some(60000),
@@ -508,6 +514,7 @@ mod tests {
                 false,
                 ProxyConfig::disabled(),
                 "ffmpeg".to_string(),
+                600,
             )
             .with_platform(
                 Some(60000),

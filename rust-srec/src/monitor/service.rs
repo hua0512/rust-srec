@@ -12,6 +12,7 @@ use tokio::sync::OnceCell;
 use tracing::{debug, info, warn};
 
 use crate::Result;
+use crate::database::models::LiveSessionDbModel;
 use crate::database::repositories::{FilterRepository, SessionRepository, StreamerRepository};
 use crate::domain::StreamerState;
 use crate::domain::filter::Filter;
@@ -51,6 +52,7 @@ pub struct StreamMonitor<
     SR: StreamerRepository + Send + Sync + 'static,
     FR: FilterRepository + Send + Sync + 'static,
     SSR: SessionRepository + Send + Sync + 'static,
+    CR: crate::database::repositories::ConfigRepository + Send + Sync + 'static,
 > {
     /// Streamer manager for state updates.
     streamer_manager: Arc<StreamerManager<SR>>,
@@ -59,6 +61,8 @@ pub struct StreamMonitor<
     /// Session repository for session management.
     #[allow(dead_code)]
     session_repo: Arc<SSR>,
+    /// Config service for resolving streamer configuration.
+    config_service: Arc<crate::config::ConfigService<CR, SR>>,
     /// Individual stream detector.
     detector: StreamDetector,
     /// Batch detector.
@@ -78,18 +82,21 @@ impl<
     SR: StreamerRepository + Send + Sync + 'static,
     FR: FilterRepository + Send + Sync + 'static,
     SSR: SessionRepository + Send + Sync + 'static,
-> StreamMonitor<SR, FR, SSR>
+    CR: crate::database::repositories::ConfigRepository + Send + Sync + 'static,
+> StreamMonitor<SR, FR, SSR, CR>
 {
     /// Create a new stream monitor.
     pub fn new(
         streamer_manager: Arc<StreamerManager<SR>>,
         filter_repo: Arc<FR>,
         session_repo: Arc<SSR>,
+        config_service: Arc<crate::config::ConfigService<CR, SR>>,
     ) -> Self {
         Self::with_config(
             streamer_manager,
             filter_repo,
             session_repo,
+            config_service,
             StreamMonitorConfig::default(),
         )
     }
@@ -99,6 +106,7 @@ impl<
         streamer_manager: Arc<StreamerManager<SR>>,
         filter_repo: Arc<FR>,
         session_repo: Arc<SSR>,
+        config_service: Arc<crate::config::ConfigService<CR, SR>>,
         config: StreamMonitorConfig,
     ) -> Self {
         // Create rate limiter with platform-specific configs
@@ -131,6 +139,7 @@ impl<
             streamer_manager,
             filter_repo,
             session_repo,
+            config_service,
             detector,
             batch_detector,
             rate_limiter,
@@ -345,11 +354,78 @@ impl<
             .record_success(&streamer.id, true)
             .await?;
 
+        // Logic for session management (creation or resumption)
+        let merged_config = self
+            .config_service
+            .get_config_for_streamer(&streamer.id)
+            .await?;
+        let gap_secs = merged_config.session_gap_time_secs;
+
+        // Check for last session
+        let last_sessions = self
+            .session_repo
+            .list_sessions_for_streamer(&streamer.id, 1)
+            .await?;
+        let last_session = last_sessions.first();
+
+        let session_id = if let Some(session) = last_session {
+            // Check if active or recently ended
+            if session.end_time.is_none() {
+                // Already active, reuse
+                debug!("Reusing active session {}", session.id);
+                session.id.clone()
+            } else {
+                let end_time_str = session.end_time.as_ref().unwrap();
+                let end_time = chrono::DateTime::parse_from_rfc3339(end_time_str)
+                    .map(|dt| dt.with_timezone(&chrono::Utc))
+                    .unwrap_or_else(|_| chrono::Utc::now());
+                let now = chrono::Utc::now();
+
+                if (now - end_time).num_seconds() < gap_secs {
+                    // Resume session
+                    info!(
+                        "Resuming session {} (ended {:?} ago)",
+                        session.id,
+                        now - end_time
+                    );
+                    self.session_repo.resume_session(&session.id).await?;
+                    session.id.clone()
+                } else {
+                    // Start new session
+                    let new_id = uuid::Uuid::new_v4().to_string();
+                    let new_session = LiveSessionDbModel {
+                        id: new_id.clone(),
+                        streamer_id: streamer.id.clone(),
+                        start_time: chrono::Utc::now().to_rfc3339(),
+                        end_time: None,
+                        titles: Some(title.clone()),
+                        danmu_statistics_id: None,
+                    };
+                    self.session_repo.create_session(&new_session).await?;
+                    info!("Created new session {}", new_id);
+                    new_id
+                }
+            }
+        } else {
+            // No previous session, create new
+            let new_id = uuid::Uuid::new_v4().to_string();
+            let new_session = LiveSessionDbModel {
+                id: new_id.clone(),
+                streamer_id: streamer.id.clone(),
+                start_time: chrono::Utc::now().to_rfc3339(),
+                end_time: None,
+                titles: Some(title.clone()),
+                danmu_statistics_id: None,
+            };
+            self.session_repo.create_session(&new_session).await?;
+            info!("Created new session {}", new_id);
+            new_id
+        };
+
         // Emit live event for notifications and download triggering
-        // Streams are passed directly from platform parser
-        // Media headers are passed for platforms that require specific HTTP headers
         let event = MonitorEvent::StreamerLive {
             streamer_id: streamer.id.clone(),
+            session_id: session_id.clone(),
             streamer_name: streamer.name.clone(),
             streamer_url: streamer.url.clone(),
             title: title.clone(),
@@ -359,13 +435,6 @@ impl<
             timestamp: chrono::Utc::now(),
         };
         let _ = self.event_broadcaster.publish(event);
-
-        // Create or update live session
-        // This will be implemented with SessionRepository
-        debug!(
-            "Creating live session for {} (title: {}, category: {:?}, started: {:?})",
-            streamer.id, title, category, started_at
-        );
 
         Ok(())
     }
@@ -392,18 +461,33 @@ impl<
                 .update_state(&streamer.id, StreamerState::NotLive)
                 .await?;
 
+            // Resolve session_id if not provided
+            let resolved_session_id = if let Some(id) = session_id {
+                Some(id)
+            } else {
+                // Find active session
+                self.session_repo
+                    .get_active_session_for_streamer(&streamer.id)
+                    .await?
+                    .map(|s| s.id)
+            };
+
+            // End live session if found
+            if let Some(ref sid) = resolved_session_id {
+                debug!("Ending live session {}", sid);
+                self.session_repo
+                    .end_session(sid, &chrono::Utc::now().to_rfc3339())
+                    .await?;
+            }
+
             // Emit offline event for notifications
             let event = MonitorEvent::StreamerOffline {
                 streamer_id: streamer.id.clone(),
                 streamer_name: streamer.name.clone(),
-                session_id,
+                session_id: resolved_session_id,
                 timestamp: chrono::Utc::now(),
             };
             let _ = self.event_broadcaster.publish(event);
-
-            // End live session
-            // This will be implemented with SessionRepository
-            debug!("Ending live session for {}", streamer.id);
         }
 
         Ok(())

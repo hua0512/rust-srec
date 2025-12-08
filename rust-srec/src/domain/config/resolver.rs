@@ -51,6 +51,7 @@ impl<R: ConfigRepository> ConfigResolver<R> {
             global_config.record_danmu,
             global_proxy,
             global_config.default_download_engine,
+            global_config.session_gap_time_secs,
         );
 
         // Layer 2: Platform config

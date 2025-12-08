@@ -20,7 +20,9 @@ use tracing::{debug, error, info, warn};
 
 use crate::Result;
 use crate::config::{ConfigEventBroadcaster, ConfigUpdateEvent};
-use crate::database::repositories::{FilterRepository, SessionRepository, StreamerRepository};
+use crate::database::repositories::{
+    ConfigRepository, FilterRepository, SessionRepository, StreamerRepository,
+};
 use crate::downloader::DownloadManagerEvent;
 use crate::monitor::StreamMonitor;
 use crate::streamer::{StreamerManager, StreamerMetadata};
@@ -208,15 +210,16 @@ impl<R: StreamerRepository + Send + Sync + 'static> Scheduler<R> {
     ///     monitor,
     /// );
     /// ```
-    pub fn with_monitor<SR, FR, SSR>(
+    pub fn with_monitor<SR, FR, SSR, CR>(
         streamer_manager: Arc<StreamerManager<R>>,
         event_broadcaster: ConfigEventBroadcaster,
-        monitor: Arc<StreamMonitor<SR, FR, SSR>>,
+        monitor: Arc<StreamMonitor<SR, FR, SSR, CR>>,
     ) -> Self
     where
         SR: StreamerRepository + Send + Sync + 'static,
         FR: FilterRepository + Send + Sync + 'static,
         SSR: SessionRepository + Send + Sync + 'static,
+        CR: ConfigRepository + Send + Sync + 'static,
     {
         Self::with_monitor_and_config(
             streamer_manager,
@@ -239,10 +242,10 @@ impl<R: StreamerRepository + Send + Sync + 'static> Scheduler<R> {
     /// * `monitor` - The StreamMonitor for real status detection
     /// * `config` - Custom scheduler configuration
     /// * `cancellation_token` - Shared cancellation token for graceful shutdown
-    pub fn with_monitor_and_config<SR, FR, SSR>(
+    pub fn with_monitor_and_config<SR, FR, SSR, CR>(
         streamer_manager: Arc<StreamerManager<R>>,
         event_broadcaster: ConfigEventBroadcaster,
-        monitor: Arc<StreamMonitor<SR, FR, SSR>>,
+        monitor: Arc<StreamMonitor<SR, FR, SSR, CR>>,
         config: SchedulerConfig,
         cancellation_token: CancellationToken,
     ) -> Self
@@ -250,6 +253,7 @@ impl<R: StreamerRepository + Send + Sync + 'static> Scheduler<R> {
         SR: StreamerRepository + Send + Sync + 'static,
         FR: FilterRepository + Send + Sync + 'static,
         SSR: SessionRepository + Send + Sync + 'static,
+        CR: ConfigRepository + Send + Sync + 'static,
     {
         // Create MonitorCheckerFactory from the StreamMonitor
         let checker_factory = Arc::new(MonitorCheckerFactory::new(monitor.clone()));

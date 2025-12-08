@@ -17,7 +17,8 @@ CREATE TABLE global_config (
     default_download_engine TEXT NOT NULL,
     max_concurrent_cpu_jobs INTEGER NOT NULL DEFAULT 0,
     max_concurrent_io_jobs INTEGER NOT NULL DEFAULT 8,
-    job_history_retention_days INTEGER NOT NULL DEFAULT 30
+    job_history_retention_days INTEGER NOT NULL DEFAULT 30,
+    session_gap_time_secs INTEGER NOT NULL DEFAULT 600
 );
 
 -- `platform_config` table: Stores settings specific to each supported streaming platform.
@@ -362,7 +363,8 @@ INSERT INTO global_config (
     default_download_engine,
     max_concurrent_cpu_jobs,
     max_concurrent_io_jobs,
-    job_history_retention_days
+    job_history_retention_days,
+    session_gap_time_secs
 ) VALUES (
     'global-configuration',
     './downloads',
@@ -381,5 +383,6 @@ INSERT INTO global_config (
     'default-ffmpeg',
     0,                       -- Auto
     8,
-    30
+    30,
+    600                      -- 10 min
 );

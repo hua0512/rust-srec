@@ -20,6 +20,7 @@ pub enum MonitorEvent {
     /// Streamer went live.
     StreamerLive {
         streamer_id: String,
+        session_id: String,
         streamer_name: String,
         streamer_url: String,
         title: String,
@@ -221,6 +222,7 @@ mod tests {
     fn test_event_description() {
         let event = MonitorEvent::StreamerLive {
             streamer_id: "123".to_string(),
+            session_id: "session-123".to_string(),
             streamer_name: "TestStreamer".to_string(),
             streamer_url: "https://example.com/streamer".to_string(),
             title: "Playing Games".to_string(),
@@ -237,6 +239,7 @@ mod tests {
     fn test_should_notify() {
         let live_event = MonitorEvent::StreamerLive {
             streamer_id: "123".to_string(),
+            session_id: "session-123".to_string(),
             streamer_name: "Test".to_string(),
             streamer_url: "https://example.com/test".to_string(),
             title: "Test".to_string(),

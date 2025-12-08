@@ -28,6 +28,7 @@ pub struct GlobalConfigDbModel {
     pub max_concurrent_cpu_jobs: i32,
     pub max_concurrent_io_jobs: i32,
     pub job_history_retention_days: i32,
+    pub session_gap_time_secs: i64,
 }
 
 impl Default for GlobalConfigDbModel {
@@ -51,6 +52,7 @@ impl Default for GlobalConfigDbModel {
             max_concurrent_cpu_jobs: 0, // Auto
             max_concurrent_io_jobs: 8,
             job_history_retention_days: 30,
+            session_gap_time_secs: 600,
         }
     }
 }

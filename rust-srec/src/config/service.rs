@@ -326,6 +326,7 @@ where
                 global.record_danmu,
                 parse_proxy_config(&global.proxy_config),
                 global.default_download_engine,
+                global.session_gap_time_secs,
             )
             .with_platform(
                 platform.fetch_delay_ms,

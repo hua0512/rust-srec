@@ -77,8 +77,14 @@ pub struct ServiceContainer {
     /// Scheduler service (with real status checking via StreamMonitor)
     pub scheduler: Arc<tokio::sync::RwLock<Scheduler<SqlxStreamerRepository>>>,
     /// Stream monitor for real status detection
-    pub stream_monitor:
-        Arc<StreamMonitor<SqlxStreamerRepository, SqlxFilterRepository, SqlxSessionRepository>>,
+    pub stream_monitor: Arc<
+        StreamMonitor<
+            SqlxStreamerRepository,
+            SqlxFilterRepository,
+            SqlxSessionRepository,
+            SqlxConfigRepository,
+        >,
+    >,
     /// API server configuration.
     api_server_config: ApiServerConfig,
     /// Cancellation token for graceful shutdown.
@@ -129,6 +135,7 @@ impl ServiceContainer {
             streamer_manager.clone(),
             filter_repo,
             session_repo,
+            config_service.clone(),
         ));
 
         // Create download manager with default config
@@ -247,6 +254,7 @@ impl ServiceContainer {
             streamer_manager.clone(),
             filter_repo,
             session_repo,
+            config_service.clone(),
         ));
 
         // Create download manager with custom config
@@ -488,7 +496,7 @@ impl ServiceContainer {
                                             "Received streamer config update event: {}",
                                             streamer_id
                                         );
-                                        
+
                                         // Check if streamer is now disabled (Requirements 4.1)
                                         if let Some(metadata) = streamer_manager.get_streamer(&streamer_id) {
                                             if metadata.state == StreamerState::Disabled {
@@ -848,15 +856,9 @@ impl ServiceContainer {
         {
             let mut scheduler_guard = scheduler.write().await;
             if scheduler_guard.remove_streamer(streamer_id) {
-                info!(
-                    "Removed actor for disabled streamer: {}",
-                    streamer_id
-                );
+                info!("Removed actor for disabled streamer: {}", streamer_id);
             } else {
-                debug!(
-                    "No actor found for disabled streamer: {}",
-                    streamer_id
-                );
+                debug!("No actor found for disabled streamer: {}", streamer_id);
             }
         }
 
@@ -918,6 +920,7 @@ impl ServiceContainer {
         match event {
             MonitorEvent::StreamerLive {
                 streamer_id,
+                session_id,
                 streamer_name,
                 title,
                 streams,
@@ -987,7 +990,6 @@ impl ServiceContainer {
                 let stream_format = best_stream.stream_format.as_str();
                 let media_format = best_stream.media_format.as_str();
 
-                // Headers from MediaInfo take precedence
                 let headers = media_headers.as_ref().cloned().unwrap_or_default();
 
                 if !headers.is_empty() {
@@ -997,9 +999,6 @@ impl ServiceContainer {
                         headers.iter().map(|(k, _)| k).collect::<Vec<_>>()
                     );
                 }
-
-                // Create download config using the actual stream URL and merged config settings
-                let session_id = uuid::Uuid::new_v4().to_string();
 
                 // Sanitize streamer name and title for safe filename usage (Requirements 1.1, 2.1, 3.1)
                 let sanitized_streamer = sanitize_filename(&streamer_name);

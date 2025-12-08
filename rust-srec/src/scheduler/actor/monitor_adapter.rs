@@ -182,33 +182,36 @@ impl From<crate::Error> for CheckError {
 /// Real implementation of StatusChecker using StreamMonitor.
 ///
 /// This adapter connects StreamerActors to the actual monitoring infrastructure.
-pub struct MonitorStatusChecker<SR, FR, SSR>
+pub struct MonitorStatusChecker<SR, FR, SSR, CR>
 where
     SR: crate::database::repositories::StreamerRepository + Send + Sync + 'static,
     FR: crate::database::repositories::FilterRepository + Send + Sync + 'static,
     SSR: crate::database::repositories::SessionRepository + Send + Sync + 'static,
+    CR: crate::database::repositories::ConfigRepository + Send + Sync + 'static,
 {
-    monitor: Arc<crate::monitor::StreamMonitor<SR, FR, SSR>>,
+    monitor: Arc<crate::monitor::StreamMonitor<SR, FR, SSR, CR>>,
 }
 
-impl<SR, FR, SSR> MonitorStatusChecker<SR, FR, SSR>
+impl<SR, FR, SSR, CR> MonitorStatusChecker<SR, FR, SSR, CR>
 where
     SR: crate::database::repositories::StreamerRepository + Send + Sync + 'static,
     FR: crate::database::repositories::FilterRepository + Send + Sync + 'static,
     SSR: crate::database::repositories::SessionRepository + Send + Sync + 'static,
+    CR: crate::database::repositories::ConfigRepository + Send + Sync + 'static,
 {
     /// Create a new MonitorStatusChecker.
-    pub fn new(monitor: Arc<crate::monitor::StreamMonitor<SR, FR, SSR>>) -> Self {
+    pub fn new(monitor: Arc<crate::monitor::StreamMonitor<SR, FR, SSR, CR>>) -> Self {
         Self { monitor }
     }
 }
 
 #[async_trait]
-impl<SR, FR, SSR> StatusChecker for MonitorStatusChecker<SR, FR, SSR>
+impl<SR, FR, SSR, CR> StatusChecker for MonitorStatusChecker<SR, FR, SSR, CR>
 where
     SR: crate::database::repositories::StreamerRepository + Send + Sync + 'static,
     FR: crate::database::repositories::FilterRepository + Send + Sync + 'static,
     SSR: crate::database::repositories::SessionRepository + Send + Sync + 'static,
+    CR: crate::database::repositories::ConfigRepository + Send + Sync + 'static,
 {
     async fn check_status(&self, streamer: &StreamerMetadata) -> Result<CheckResult, CheckError> {
         let status = self.monitor.check_streamer(streamer).await?;
@@ -244,33 +247,36 @@ where
 /// Real implementation of BatchChecker using StreamMonitor.
 ///
 /// This adapter connects PlatformActors to the actual batch detection infrastructure.
-pub struct MonitorBatchChecker<SR, FR, SSR>
+pub struct MonitorBatchChecker<SR, FR, SSR, CR>
 where
     SR: crate::database::repositories::StreamerRepository + Send + Sync + 'static,
     FR: crate::database::repositories::FilterRepository + Send + Sync + 'static,
     SSR: crate::database::repositories::SessionRepository + Send + Sync + 'static,
+    CR: crate::database::repositories::ConfigRepository + Send + Sync + 'static,
 {
-    monitor: Arc<crate::monitor::StreamMonitor<SR, FR, SSR>>,
+    monitor: Arc<crate::monitor::StreamMonitor<SR, FR, SSR, CR>>,
 }
 
-impl<SR, FR, SSR> MonitorBatchChecker<SR, FR, SSR>
+impl<SR, FR, SSR, CR> MonitorBatchChecker<SR, FR, SSR, CR>
 where
     SR: crate::database::repositories::StreamerRepository + Send + Sync + 'static,
     FR: crate::database::repositories::FilterRepository + Send + Sync + 'static,
     SSR: crate::database::repositories::SessionRepository + Send + Sync + 'static,
+    CR: crate::database::repositories::ConfigRepository + Send + Sync + 'static,
 {
     /// Create a new MonitorBatchChecker.
-    pub fn new(monitor: Arc<crate::monitor::StreamMonitor<SR, FR, SSR>>) -> Self {
+    pub fn new(monitor: Arc<crate::monitor::StreamMonitor<SR, FR, SSR, CR>>) -> Self {
         Self { monitor }
     }
 }
 
 #[async_trait]
-impl<SR, FR, SSR> BatchChecker for MonitorBatchChecker<SR, FR, SSR>
+impl<SR, FR, SSR, CR> BatchChecker for MonitorBatchChecker<SR, FR, SSR, CR>
 where
     SR: crate::database::repositories::StreamerRepository + Send + Sync + 'static,
     FR: crate::database::repositories::FilterRepository + Send + Sync + 'static,
     SSR: crate::database::repositories::SessionRepository + Send + Sync + 'static,
+    CR: crate::database::repositories::ConfigRepository + Send + Sync + 'static,
 {
     async fn batch_check(
         &self,
@@ -324,32 +330,35 @@ where
 ///
 /// This factory creates `MonitorStatusChecker` and `MonitorBatchChecker` instances
 /// that connect to the actual monitoring infrastructure for real status detection.
-pub struct MonitorCheckerFactory<SR, FR, SSR>
+pub struct MonitorCheckerFactory<SR, FR, SSR, CR>
 where
     SR: crate::database::repositories::StreamerRepository + Send + Sync + 'static,
     FR: crate::database::repositories::FilterRepository + Send + Sync + 'static,
     SSR: crate::database::repositories::SessionRepository + Send + Sync + 'static,
+    CR: crate::database::repositories::ConfigRepository + Send + Sync + 'static,
 {
-    monitor: Arc<crate::monitor::StreamMonitor<SR, FR, SSR>>,
+    monitor: Arc<crate::monitor::StreamMonitor<SR, FR, SSR, CR>>,
 }
 
-impl<SR, FR, SSR> MonitorCheckerFactory<SR, FR, SSR>
+impl<SR, FR, SSR, CR> MonitorCheckerFactory<SR, FR, SSR, CR>
 where
     SR: crate::database::repositories::StreamerRepository + Send + Sync + 'static,
     FR: crate::database::repositories::FilterRepository + Send + Sync + 'static,
     SSR: crate::database::repositories::SessionRepository + Send + Sync + 'static,
+    CR: crate::database::repositories::ConfigRepository + Send + Sync + 'static,
 {
     /// Create a new MonitorCheckerFactory with the given StreamMonitor.
-    pub fn new(monitor: Arc<crate::monitor::StreamMonitor<SR, FR, SSR>>) -> Self {
+    pub fn new(monitor: Arc<crate::monitor::StreamMonitor<SR, FR, SSR, CR>>) -> Self {
         Self { monitor }
     }
 }
 
-impl<SR, FR, SSR> StatusCheckerFactory for MonitorCheckerFactory<SR, FR, SSR>
+impl<SR, FR, SSR, CR> StatusCheckerFactory for MonitorCheckerFactory<SR, FR, SSR, CR>
 where
     SR: crate::database::repositories::StreamerRepository + Send + Sync + 'static,
     FR: crate::database::repositories::FilterRepository + Send + Sync + 'static,
     SSR: crate::database::repositories::SessionRepository + Send + Sync + 'static,
+    CR: crate::database::repositories::ConfigRepository + Send + Sync + 'static,
 {
     fn create_status_checker(&self) -> Arc<dyn StatusChecker> {
         Arc::new(MonitorStatusChecker::new(self.monitor.clone()))
