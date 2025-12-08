@@ -339,14 +339,16 @@ impl<
             .await?;
 
         // Update metadata if changed (e.g. avatar)
-        if avatar.is_some() && avatar != streamer.avatar_url {
-            info!("Updating avatar for streamer {}", streamer.name);
-            if let Err(e) = self
-                .streamer_manager
-                .update_avatar(&streamer.id, avatar)
-                .await
-            {
-                warn!("Failed to update streamer avatar: {}", e);
+        if let Some(ref new_avatar_url) = avatar {
+            if !new_avatar_url.is_empty() && avatar != streamer.avatar_url {
+                info!("Updating avatar for streamer {}", streamer.name);
+                if let Err(e) = self
+                    .streamer_manager
+                    .update_avatar(&streamer.id, avatar)
+                    .await
+                {
+                    warn!("Failed to update streamer avatar: {}", e);
+                }
             }
         }
         // Record success (resets error count, mark as going live)
