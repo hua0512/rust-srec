@@ -229,7 +229,8 @@ impl DownloadEngine for StreamlinkEngine {
             .ok_or_else(|| crate::Error::Other("Failed to capture ffmpeg stderr".to_string()))?;
 
         // 2. Use shared piped process waiter utility (Requirements 3.1, 3.2)
-        let exit_rx = spawn_piped_process_waiter(streamlink, ffmpeg, handle.cancellation_token.clone());
+        let exit_rx =
+            spawn_piped_process_waiter(streamlink, ffmpeg, handle.cancellation_token.clone());
 
         let event_tx = handle.event_tx.clone();
         let cancellation_token = handle.cancellation_token.clone();
@@ -352,7 +353,10 @@ impl DownloadEngine for StreamlinkEngine {
 
             // If cancelled during reading, don't emit any event
             if was_cancelled {
-                debug!("Download cancelled, not emitting completion event for {}", streamer_id_clone);
+                debug!(
+                    "Download cancelled, not emitting completion event for {}",
+                    streamer_id_clone
+                );
                 return;
             }
 
@@ -381,7 +385,10 @@ impl DownloadEngine for StreamlinkEngine {
                 }
                 None => {
                     // Cancelled - don't emit any event (Requirement 1.4)
-                    debug!("Download cancelled, not emitting completion event for {}", streamer_id_clone);
+                    debug!(
+                        "Download cancelled, not emitting completion event for {}",
+                        streamer_id_clone
+                    );
                 }
             }
         });

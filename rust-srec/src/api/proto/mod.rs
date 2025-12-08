@@ -13,8 +13,8 @@ pub mod download_progress {
 // Re-export commonly used types
 pub use download_progress::{
     ClientMessage, DownloadCancelled, DownloadCompleted, DownloadFailed, DownloadProgress,
-    DownloadSnapshot, DownloadStarted, ErrorPayload, EventType, SegmentCompleted,
-    SubscribeRequest, UnsubscribeRequest, WsMessage,
+    DownloadSnapshot, DownloadStarted, ErrorPayload, EventType, SegmentCompleted, SubscribeRequest,
+    UnsubscribeRequest, WsMessage,
 };
 
 impl From<&DownloadInfo> for DownloadProgress {
@@ -47,7 +47,6 @@ impl From<DownloadInfo> for DownloadProgress {
         DownloadProgress::from(&info)
     }
 }
-
 
 /// Safely compute speed, returning 0 if elapsed time is zero to avoid division errors.
 fn safe_speed(bytes: u64, duration_secs: f64) -> u64 {
@@ -85,10 +84,12 @@ pub fn create_snapshot_message(downloads: Vec<DownloadInfo>) -> WsMessage {
 pub fn create_error_message(code: &str, message: &str) -> WsMessage {
     WsMessage {
         event_type: EventType::Error as i32,
-        payload: Some(download_progress::ws_message::Payload::Error(ErrorPayload {
-            code: code.to_string(),
-            message: message.to_string(),
-        })),
+        payload: Some(download_progress::ws_message::Payload::Error(
+            ErrorPayload {
+                code: code.to_string(),
+                message: message.to_string(),
+            },
+        )),
     }
 }
 

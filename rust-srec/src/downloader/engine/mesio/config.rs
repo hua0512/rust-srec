@@ -175,7 +175,6 @@ fn extract_proxy_auth(url: &str) -> Option<mesio::proxy::ProxyAuth> {
     None
 }
 
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -208,7 +207,12 @@ mod tests {
         let hls_config = build_hls_config(&config, None);
 
         // Should have default headers from mesio
-        assert!(hls_config.base.headers.contains_key(reqwest::header::ACCEPT));
+        assert!(
+            hls_config
+                .base
+                .headers
+                .contains_key(reqwest::header::ACCEPT)
+        );
         // Should not have proxy configured
         assert!(hls_config.base.proxy.is_none());
     }
@@ -280,7 +284,12 @@ mod tests {
         let flv_config = build_flv_config(&config, None);
 
         // Should have default headers from mesio
-        assert!(flv_config.base.headers.contains_key(reqwest::header::ACCEPT));
+        assert!(
+            flv_config
+                .base
+                .headers
+                .contains_key(reqwest::header::ACCEPT)
+        );
         // Should not have proxy configured
         assert!(flv_config.base.proxy.is_none());
     }
@@ -405,8 +414,14 @@ mod tests {
         // Should return default config - check individual fields
         let default_config = HlsPipelineConfig::default();
         assert_eq!(hls_pipeline_config.defragment, default_config.defragment);
-        assert_eq!(hls_pipeline_config.split_segments, default_config.split_segments);
-        assert_eq!(hls_pipeline_config.segment_limiter, default_config.segment_limiter);
+        assert_eq!(
+            hls_pipeline_config.split_segments,
+            default_config.split_segments
+        );
+        assert_eq!(
+            hls_pipeline_config.segment_limiter,
+            default_config.segment_limiter
+        );
     }
 
     #[test]
@@ -416,8 +431,14 @@ mod tests {
 
         // Should return default config - check individual fields
         let default_config = FlvPipelineConfig::default();
-        assert_eq!(flv_pipeline_config.duplicate_tag_filtering, default_config.duplicate_tag_filtering);
-        assert_eq!(flv_pipeline_config.enable_low_latency, default_config.enable_low_latency);
+        assert_eq!(
+            flv_pipeline_config.duplicate_tag_filtering,
+            default_config.duplicate_tag_filtering
+        );
+        assert_eq!(
+            flv_pipeline_config.enable_low_latency,
+            default_config.enable_low_latency
+        );
         assert_eq!(flv_pipeline_config.pipe_mode, default_config.pipe_mode);
     }
 

@@ -651,8 +651,6 @@ pub struct ExtractMetadataResponse {
     pub channel_id: Option<String>,
 }
 
-
-
 #[cfg(test)]
 mod tests {
     use super::*;

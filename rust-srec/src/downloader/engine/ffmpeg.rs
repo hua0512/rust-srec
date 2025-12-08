@@ -114,7 +114,6 @@ impl FfmpegEngine {
 
         args
     }
-
 }
 
 impl Default for FfmpegEngine {
@@ -221,7 +220,10 @@ impl DownloadEngine for FfmpegEngine {
 
             // If cancelled during reading, don't emit any event
             if was_cancelled {
-                debug!("Download cancelled, not emitting completion event for {}", streamer_id);
+                debug!(
+                    "Download cancelled, not emitting completion event for {}",
+                    streamer_id
+                );
                 return;
             }
 
@@ -250,7 +252,10 @@ impl DownloadEngine for FfmpegEngine {
                 }
                 None => {
                     // Cancelled - don't emit any event (Requirement 1.4)
-                    debug!("Download cancelled, not emitting completion event for {}", streamer_id);
+                    debug!(
+                        "Download cancelled, not emitting completion event for {}",
+                        streamer_id
+                    );
                 }
             }
         });

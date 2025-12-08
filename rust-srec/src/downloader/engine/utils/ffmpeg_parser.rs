@@ -114,12 +114,12 @@ pub fn parse_progress(line: &str) -> Option<DownloadProgress> {
     let mut progress = DownloadProgress::default();
 
     progress.bytes_downloaded = parse_size(line).unwrap_or(0);
-    
+
     if let Some(media_duration) = parse_time_field(line) {
         progress.media_duration_secs = media_duration;
         progress.duration_secs = media_duration;
     }
-    
+
     progress.playback_ratio = parse_speed(line).unwrap_or(0.0);
     progress.speed_bytes_per_sec = parse_bitrate(line).unwrap_or(0);
 

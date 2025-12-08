@@ -8,8 +8,8 @@ use chrono::Utc;
 use flv::data::FlvData;
 use flv_fix::{FlvPipeline, FlvWriter};
 use futures::StreamExt;
-use mesio::flv::error::FlvDownloadError;
 use mesio::flv::FlvProtocolConfig;
+use mesio::flv::error::FlvDownloadError;
 use mesio::{DownloadStream, MesioDownloaderFactory, ProtocolType};
 use pipeline_common::{PipelineError, PipelineProvider, ProtocolWriter, StreamerContext};
 use std::collections::HashMap;
@@ -19,9 +19,11 @@ use tracing::{debug, error, info, warn};
 
 use super::config::build_flv_config;
 use super::hls_downloader::DownloadStats;
-use crate::downloader::engine::traits::{DownloadConfig, DownloadProgress, SegmentEvent, SegmentInfo};
-use crate::database::models::engine::MesioEngineConfig;
 use crate::Result;
+use crate::database::models::engine::MesioEngineConfig;
+use crate::downloader::engine::traits::{
+    DownloadConfig, DownloadProgress, SegmentEvent, SegmentInfo,
+};
 
 /// FLV-specific download orchestrator.
 ///
@@ -131,7 +133,6 @@ impl FlvDownloader {
         }
     }
 
-
     /// Download FLV stream with pipeline processing enabled.
     ///
     /// Routes the stream through FlvPipeline for defragmentation, GOP sorting,
@@ -140,8 +141,8 @@ impl FlvDownloader {
         &self,
         token: CancellationToken,
         flv_stream: impl futures::Stream<Item = std::result::Result<FlvData, FlvDownloadError>>
-            + Send
-            + Unpin,
+        + Send
+        + Unpin,
     ) -> Result<DownloadStats> {
         info!(
             "Starting FLV download with pipeline processing for {}",
@@ -229,10 +230,7 @@ impl FlvDownloader {
         while let Some(result) = stream.next().await {
             // Check for cancellation
             if self.cancellation_token.is_cancelled() || token.is_cancelled() {
-                debug!(
-                    "FLV download cancelled for {}",
-                    self.config.streamer_id
-                );
+                debug!("FLV download cancelled for {}", self.config.streamer_id);
                 break;
             }
 
@@ -245,10 +243,7 @@ impl FlvDownloader {
                     }
                 }
                 Err(e) => {
-                    error!(
-                        "FLV stream error for {}: {}",
-                        self.config.streamer_id, e
-                    );
+                    error!("FLV stream error for {}: {}", self.config.streamer_id, e);
                     let _ = pipeline_input_tx
                         .send(Err(PipelineError::Processing(e.to_string())))
                         .await;
@@ -325,7 +320,6 @@ impl FlvDownloader {
         }
     }
 
-
     /// Download FLV stream without pipeline processing (raw mode).
     ///
     /// Sends stream data directly to FlvWriter without any processing.
@@ -333,8 +327,8 @@ impl FlvDownloader {
         &self,
         token: CancellationToken,
         flv_stream: impl futures::Stream<Item = std::result::Result<FlvData, FlvDownloadError>>
-            + Send
-            + Unpin,
+        + Send
+        + Unpin,
     ) -> Result<DownloadStats> {
         info!(
             "Starting FLV download without pipeline processing for {}",
@@ -409,10 +403,7 @@ impl FlvDownloader {
         while let Some(result) = stream.next().await {
             // Check for cancellation
             if self.cancellation_token.is_cancelled() || token.is_cancelled() {
-                debug!(
-                    "FLV download cancelled for {}",
-                    self.config.streamer_id
-                );
+                debug!("FLV download cancelled for {}", self.config.streamer_id);
                 break;
             }
 
@@ -426,10 +417,7 @@ impl FlvDownloader {
                 }
                 Err(e) => {
                     // Stream error - send error to writer and emit failure event
-                    error!(
-                        "FLV stream error for {}: {}",
-                        self.config.streamer_id, e
-                    );
+                    error!("FLV stream error for {}: {}", self.config.streamer_id, e);
                     let _ = tx.send(Err(PipelineError::Processing(e.to_string()))).await;
                     let _ = self
                         .event_tx

@@ -16,9 +16,11 @@ use tokio_util::sync::CancellationToken;
 use tracing::{debug, error, info, warn};
 
 use super::config::build_hls_config;
-use crate::downloader::engine::traits::{DownloadConfig, DownloadProgress, SegmentEvent, SegmentInfo};
-use crate::database::models::engine::MesioEngineConfig;
 use crate::Result;
+use crate::database::models::engine::MesioEngineConfig;
+use crate::downloader::engine::traits::{
+    DownloadConfig, DownloadProgress, SegmentEvent, SegmentInfo,
+};
 
 /// Statistics returned after download completes.
 #[derive(Debug, Clone, Default)]
@@ -50,7 +52,6 @@ pub struct HlsDownloader {
     /// Base HLS configuration from the engine.
     hls_config: Option<mesio::hls::HlsConfig>,
 }
-
 
 impl HlsDownloader {
     /// Create a new HLS downloader.
@@ -191,9 +192,9 @@ impl HlsDownloader {
         &self,
         token: CancellationToken,
         hls_stream: impl futures::Stream<
-                Item = std::result::Result<HlsData, mesio::hls::HlsDownloaderError>,
-            > + Send
-            + Unpin,
+            Item = std::result::Result<HlsData, mesio::hls::HlsDownloaderError>,
+        > + Send
+        + Unpin,
         first_segment: HlsData,
         extension: &str,
     ) -> Result<DownloadStats> {
@@ -296,10 +297,7 @@ impl HlsDownloader {
         while let Some(result) = stream.next().await {
             // Check for cancellation
             if self.cancellation_token.is_cancelled() || token.is_cancelled() {
-                debug!(
-                    "HLS download cancelled for {}",
-                    self.config.streamer_id
-                );
+                debug!("HLS download cancelled for {}", self.config.streamer_id);
                 break;
             }
 
@@ -312,10 +310,7 @@ impl HlsDownloader {
                     }
                 }
                 Err(e) => {
-                    error!(
-                        "HLS stream error for {}: {}",
-                        self.config.streamer_id, e
-                    );
+                    error!("HLS stream error for {}: {}", self.config.streamer_id, e);
                     let _ = pipeline_input_tx
                         .send(Err(PipelineError::Processing(e.to_string())))
                         .await;
@@ -392,7 +387,6 @@ impl HlsDownloader {
         }
     }
 
-
     /// Download HLS stream without pipeline processing (raw mode).
     ///
     /// Sends stream data directly to HlsWriter without any processing.
@@ -400,9 +394,9 @@ impl HlsDownloader {
         &self,
         token: CancellationToken,
         hls_stream: impl futures::Stream<
-                Item = std::result::Result<HlsData, mesio::hls::HlsDownloaderError>,
-            > + Send
-            + Unpin,
+            Item = std::result::Result<HlsData, mesio::hls::HlsDownloaderError>,
+        > + Send
+        + Unpin,
         first_segment: HlsData,
         extension: &str,
     ) -> Result<DownloadStats> {
@@ -492,10 +486,7 @@ impl HlsDownloader {
         while let Some(result) = stream.next().await {
             // Check for cancellation
             if self.cancellation_token.is_cancelled() || token.is_cancelled() {
-                debug!(
-                    "HLS download cancelled for {}",
-                    self.config.streamer_id
-                );
+                debug!("HLS download cancelled for {}", self.config.streamer_id);
                 break;
             }
 
@@ -509,10 +500,7 @@ impl HlsDownloader {
                 }
                 Err(e) => {
                     // Stream error - send error to writer and emit failure event
-                    error!(
-                        "HLS stream error for {}: {}",
-                        self.config.streamer_id, e
-                    );
+                    error!("HLS stream error for {}: {}", self.config.streamer_id, e);
                     let _ = tx.send(Err(PipelineError::Processing(e.to_string()))).await;
                     let _ = self
                         .event_tx
