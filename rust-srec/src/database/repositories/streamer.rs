@@ -28,6 +28,7 @@ pub trait StreamerRepository: Send + Sync {
     async fn reset_error_count(&self, id: &str) -> Result<()>;
     async fn set_disabled_until(&self, id: &str, until: Option<&str>) -> Result<()>;
     async fn update_last_live_time(&self, id: &str, time: &str) -> Result<()>;
+    async fn update_avatar(&self, id: &str, avatar_url: Option<&str>) -> Result<()>;
     async fn delete_streamer(&self, id: &str) -> Result<()>;
 
     // Methods for StreamerManager
@@ -143,10 +144,10 @@ impl StreamerRepository for SqlxStreamerRepository {
             r#"
             INSERT INTO streamers (
                 id, name, url, platform_config_id, template_config_id,
-                state, priority, last_live_time, streamer_specific_config,
+                state, priority, avatar, last_live_time, streamer_specific_config,
                 download_retry_policy, danmu_sampling_config,
                 consecutive_error_count, disabled_until
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             "#,
         )
         .bind(&streamer.id)
@@ -156,6 +157,7 @@ impl StreamerRepository for SqlxStreamerRepository {
         .bind(&streamer.template_config_id)
         .bind(&streamer.state)
         .bind(&streamer.priority)
+        .bind(&streamer.avatar)
         .bind(&streamer.last_live_time)
         .bind(&streamer.streamer_specific_config)
         .bind(&streamer.download_retry_policy)
@@ -184,6 +186,7 @@ impl StreamerRepository for SqlxStreamerRepository {
                 template_config_id = ?,
                 state = ?,
                 priority = ?,
+                avatar = ?,
                 last_live_time = ?,
                 streamer_specific_config = ?,
                 download_retry_policy = ?,
@@ -199,6 +202,7 @@ impl StreamerRepository for SqlxStreamerRepository {
         .bind(&streamer.template_config_id)
         .bind(&streamer.state)
         .bind(&streamer.priority)
+        .bind(&streamer.avatar)
         .bind(&streamer.last_live_time)
         .bind(&streamer.streamer_specific_config)
         .bind(&streamer.download_retry_policy)
@@ -276,6 +280,15 @@ impl StreamerRepository for SqlxStreamerRepository {
     async fn update_last_live_time(&self, id: &str, time: &str) -> Result<()> {
         sqlx::query("UPDATE streamers SET last_live_time = ? WHERE id = ?")
             .bind(time)
+            .bind(id)
+            .execute(&self.pool)
+            .await?;
+        Ok(())
+    }
+
+    async fn update_avatar(&self, id: &str, avatar_url: Option<&str>) -> Result<()> {
+        sqlx::query("UPDATE streamers SET avatar = ? WHERE id = ?")
+            .bind(avatar_url)
             .bind(id)
             .execute(&self.pool)
             .await?;

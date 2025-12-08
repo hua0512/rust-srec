@@ -23,17 +23,20 @@ use crate::danmu::{
 };
 use crate::database::maintenance::{MaintenanceConfig, MaintenanceScheduler};
 use crate::database::repositories::{
-    config::SqlxConfigRepository, job::SqlxJobRepository,
-    refresh_token::SqlxRefreshTokenRepository, streamer::SqlxStreamerRepository,
-    user::SqlxUserRepository,
+    config::SqlxConfigRepository, filter::SqlxFilterRepository, job::SqlxJobRepository,
+    refresh_token::SqlxRefreshTokenRepository, session::SqlxSessionRepository,
+    streamer::SqlxStreamerRepository, user::SqlxUserRepository,
 };
-use crate::downloader::{DownloadConfig, DownloadManager, DownloadManagerConfig, StreamSelector};
+use crate::downloader::{
+    DownloadConfig, DownloadManager, DownloadManagerConfig, DownloadManagerEvent, StreamSelector,
+};
 use crate::metrics::{HealthChecker, MetricsCollector, PrometheusExporter};
-use crate::monitor::{MonitorEvent, MonitorEventBroadcaster};
+use crate::monitor::{MonitorEvent, MonitorEventBroadcaster, StreamMonitor};
 use crate::notification::{NotificationService, NotificationServiceConfig};
 use crate::pipeline::{PipelineEvent, PipelineManager, PipelineManagerConfig};
 use crate::scheduler::Scheduler;
 use crate::streamer::StreamerManager;
+use crate::utils::filename::sanitize_filename;
 use pipeline_common::expand_filename_template;
 
 /// Default cache TTL (1 hour).
@@ -71,8 +74,11 @@ pub struct ServiceContainer {
     pub health_checker: Arc<HealthChecker>,
     /// Database maintenance scheduler.
     pub maintenance_scheduler: Arc<MaintenanceScheduler>,
-    /// Scheduler service
+    /// Scheduler service (with real status checking via StreamMonitor)
     pub scheduler: Arc<tokio::sync::RwLock<Scheduler<SqlxStreamerRepository>>>,
+    /// Stream monitor for real status detection
+    pub stream_monitor:
+        Arc<StreamMonitor<SqlxStreamerRepository, SqlxFilterRepository, SqlxSessionRepository>>,
     /// API server configuration.
     api_server_config: ApiServerConfig,
     /// Cancellation token for graceful shutdown.
@@ -100,6 +106,10 @@ impl ServiceContainer {
         // Create shared event broadcaster
         let event_broadcaster = ConfigEventBroadcaster::with_capacity(event_capacity);
 
+        // Create additional repositories for StreamMonitor
+        let filter_repo = Arc::new(SqlxFilterRepository::new(pool.clone()));
+        let session_repo = Arc::new(SqlxSessionRepository::new(pool.clone()));
+
         // Create config service with custom cache
         let cache = ConfigCache::with_ttl(cache_ttl);
         let config_service = Arc::new(ConfigService::with_cache(
@@ -110,8 +120,15 @@ impl ServiceContainer {
 
         // Create streamer manager
         let streamer_manager = Arc::new(StreamerManager::new(
-            streamer_repo,
+            streamer_repo.clone(),
             event_broadcaster.clone(),
+        ));
+
+        // Create stream monitor for real status detection
+        let stream_monitor = Arc::new(StreamMonitor::new(
+            streamer_manager.clone(),
+            filter_repo,
+            session_repo,
         ));
 
         // Create download manager with default config
@@ -129,8 +146,8 @@ impl ServiceContainer {
             job_repo,
         ));
 
-        // Create monitor event broadcaster
-        let monitor_event_broadcaster = MonitorEventBroadcaster::with_capacity(event_capacity);
+        // Event broadcaster
+        let monitor_event_broadcaster = stream_monitor.event_broadcaster().clone();
 
         // Create danmu service with default config
         let danmu_service = Arc::new(DanmuService::new(DanmuServiceConfig::default()));
@@ -155,12 +172,16 @@ impl ServiceContainer {
         // Create cancellation token for graceful shutdown (before scheduler so it can be shared)
         let cancellation_token = CancellationToken::new();
 
-        // Create scheduler with shared cancellation token (will be started in initialize())
-        let scheduler = Arc::new(tokio::sync::RwLock::new(Scheduler::with_cancellation(
-            streamer_manager.clone(),
-            event_broadcaster.clone(),
-            cancellation_token.child_token(),
-        )));
+        // Create scheduler with StreamMonitor for real status checking
+        let scheduler = Arc::new(tokio::sync::RwLock::new(
+            Scheduler::with_monitor_and_config(
+                streamer_manager.clone(),
+                event_broadcaster.clone(),
+                stream_monitor.clone(),
+                crate::scheduler::SchedulerConfig::default(),
+                cancellation_token.child_token(),
+            ),
+        ));
 
         info!("Service container initialized");
 
@@ -178,6 +199,7 @@ impl ServiceContainer {
             health_checker,
             maintenance_scheduler,
             scheduler,
+            stream_monitor,
             api_server_config: ApiServerConfig::default(),
             cancellation_token,
         })
@@ -202,6 +224,10 @@ impl ServiceContainer {
         // Create shared event broadcaster
         let event_broadcaster = ConfigEventBroadcaster::with_capacity(event_capacity);
 
+        // Create additional repositories for StreamMonitor
+        let filter_repo = Arc::new(SqlxFilterRepository::new(pool.clone()));
+        let session_repo = Arc::new(SqlxSessionRepository::new(pool.clone()));
+
         // Create config service with custom cache
         let cache = ConfigCache::with_ttl(cache_ttl);
         let config_service = Arc::new(ConfigService::with_cache(
@@ -212,8 +238,15 @@ impl ServiceContainer {
 
         // Create streamer manager
         let streamer_manager = Arc::new(StreamerManager::new(
-            streamer_repo,
+            streamer_repo.clone(),
             event_broadcaster.clone(),
+        ));
+
+        // Create stream monitor for real status detection
+        let stream_monitor = Arc::new(StreamMonitor::new(
+            streamer_manager.clone(),
+            filter_repo,
+            session_repo,
         ));
 
         // Create download manager with custom config
@@ -228,8 +261,9 @@ impl ServiceContainer {
         let pipeline_manager =
             Arc::new(PipelineManager::with_repository(pipeline_config, job_repo));
 
-        // Create monitor event broadcaster
-        let monitor_event_broadcaster = MonitorEventBroadcaster::with_capacity(event_capacity);
+        // Use StreamMonitor's event broadcaster instead of creating a separate one
+        // This ensures external services receive events when StreamMonitor publishes them
+        let monitor_event_broadcaster = stream_monitor.event_broadcaster().clone();
 
         // Create danmu service with custom config
         let danmu_service = Arc::new(DanmuService::new(danmu_config));
@@ -254,14 +288,18 @@ impl ServiceContainer {
         // Create cancellation token for graceful shutdown (before scheduler so it can be shared)
         let cancellation_token = CancellationToken::new();
 
-        // Create scheduler with shared cancellation token (will be started in initialize())
-        let scheduler = Arc::new(tokio::sync::RwLock::new(Scheduler::with_cancellation(
-            streamer_manager.clone(),
-            event_broadcaster.clone(),
-            cancellation_token.child_token(),
-        )));
+        // Create scheduler with StreamMonitor for real status checking
+        let scheduler = Arc::new(tokio::sync::RwLock::new(
+            Scheduler::with_monitor_and_config(
+                streamer_manager.clone(),
+                event_broadcaster.clone(),
+                stream_monitor.clone(),
+                crate::scheduler::SchedulerConfig::default(),
+                cancellation_token.child_token(),
+            ),
+        ));
 
-        info!("Service container initialized with full configuration");
+        info!("Service container initialized with full configuration and real status checking");
 
         Ok(Self {
             pool,
@@ -277,6 +315,7 @@ impl ServiceContainer {
             health_checker,
             maintenance_scheduler,
             scheduler,
+            stream_monitor,
             api_server_config: api_config,
             cancellation_token,
         })
@@ -422,13 +461,17 @@ impl ServiceContainer {
 
     /// Set up config event subscriptions between services.
     fn setup_config_event_subscriptions(&self) {
-        let _streamer_manager = self.streamer_manager.clone();
+        let streamer_manager = self.streamer_manager.clone();
+        let scheduler = self.scheduler.clone();
+        let download_manager = self.download_manager.clone();
+        let danmu_service = self.danmu_service.clone();
         let mut receiver = self.event_broadcaster.subscribe();
         let cancellation_token = self.cancellation_token.clone();
 
         // Spawn a task to handle config update events
         tokio::spawn(async move {
             use crate::config::ConfigUpdateEvent;
+            use crate::domain::streamer::StreamerState;
 
             loop {
                 tokio::select! {
@@ -445,6 +488,19 @@ impl ServiceContainer {
                                             "Received streamer config update event: {}",
                                             streamer_id
                                         );
+                                        
+                                        // Check if streamer is now disabled (Requirements 4.1)
+                                        if let Some(metadata) = streamer_manager.get_streamer(&streamer_id) {
+                                            if metadata.state == StreamerState::Disabled {
+                                                info!("Streamer {} disabled, initiating cleanup", streamer_id);
+                                                Self::handle_streamer_disabled(
+                                                    &scheduler,
+                                                    &download_manager,
+                                                    &danmu_service,
+                                                    &streamer_id,
+                                                ).await;
+                                            }
+                                        }
                                     }
                                     ConfigUpdateEvent::PlatformUpdated { platform_id } => {
                                         debug!(
@@ -460,6 +516,19 @@ impl ServiceContainer {
                                     }
                                     ConfigUpdateEvent::GlobalUpdated => {
                                         debug!("Received global config update event");
+                                    }
+                                    ConfigUpdateEvent::StreamerDeleted { streamer_id } => {
+                                        info!(
+                                            "Streamer {} deleted, initiating cleanup",
+                                            streamer_id
+                                        );
+                                        // Reuse the same cleanup logic as disabled state
+                                        Self::handle_streamer_disabled(
+                                            &scheduler,
+                                            &download_manager,
+                                            &danmu_service,
+                                            &streamer_id,
+                                        ).await;
                                     }
                                     ConfigUpdateEvent::EngineUpdated { engine_id } => {
                                         debug!(
@@ -480,6 +549,8 @@ impl ServiceContainer {
     /// Set up download event subscriptions to pipeline manager.
     fn setup_download_event_subscriptions(&self) {
         let pipeline_manager = self.pipeline_manager.clone();
+        let stream_monitor = self.stream_monitor.clone();
+        let streamer_manager = self.streamer_manager.clone();
         let mut receiver = self.download_manager.subscribe();
         let cancellation_token = self.cancellation_token.clone();
 
@@ -493,6 +564,19 @@ impl ServiceContainer {
                     result = receiver.recv() => {
                         match result {
                             Ok(download_event) => {
+                                // Handle download failure for error tracking
+                                if let DownloadManagerEvent::DownloadFailed { ref streamer_id, ref error, .. } = download_event {
+                                    // Record error for exponential backoff
+                                    if let Some(metadata) = streamer_manager.get_streamer(streamer_id) {
+                                        if let Err(e) = stream_monitor.handle_error(&metadata, error).await {
+                                            warn!("Failed to record download error for {}: {}", streamer_id, e);
+                                        } else {
+                                            debug!("Recorded download error for {}: {}", streamer_id, error);
+                                        }
+                                    }
+                                }
+
+                                // Forward to pipeline manager
                                 pipeline_manager.handle_download_event(download_event).await;
                             }
                             Err(tokio::sync::broadcast::error::RecvError::Lagged(n)) => {
@@ -739,6 +823,90 @@ impl ServiceContainer {
         info!("Health checks registered");
     }
 
+    /// Handle streamer disabled state transition.
+    ///
+    /// This method coordinates cleanup when a streamer is disabled:
+    /// 1. Removes the streamer actor from the scheduler
+    /// 2. Cancels any active downloads
+    /// 3. Stops any active danmu collection
+    ///
+    /// All errors are logged but do not propagate - cleanup is best-effort
+    /// and should not block other operations.
+    ///
+    /// # Arguments
+    /// * `scheduler` - The scheduler service to remove the actor from
+    /// * `download_manager` - The download manager to cancel downloads
+    /// * `danmu_service` - The danmu service to stop collection
+    /// * `streamer_id` - The ID of the streamer being disabled
+    pub async fn handle_streamer_disabled(
+        scheduler: &Arc<tokio::sync::RwLock<Scheduler<SqlxStreamerRepository>>>,
+        download_manager: &Arc<DownloadManager>,
+        danmu_service: &Arc<DanmuService>,
+        streamer_id: &str,
+    ) {
+        // 1. Remove actor from scheduler
+        {
+            let mut scheduler_guard = scheduler.write().await;
+            if scheduler_guard.remove_streamer(streamer_id) {
+                info!(
+                    "Removed actor for disabled streamer: {}",
+                    streamer_id
+                );
+            } else {
+                debug!(
+                    "No actor found for disabled streamer: {}",
+                    streamer_id
+                );
+            }
+        }
+
+        // 2. Cancel active download if exists
+        if let Some(download_info) = download_manager.get_download_by_streamer(streamer_id) {
+            match download_manager.stop_download(&download_info.id).await {
+                Ok(()) => {
+                    info!(
+                        "Cancelled download {} for disabled streamer {}",
+                        download_info.id, streamer_id
+                    );
+                }
+                Err(e) => {
+                    warn!(
+                        "Failed to cancel download for disabled streamer {}: {}",
+                        streamer_id, e
+                    );
+                }
+            }
+        } else {
+            debug!(
+                "No active download found for disabled streamer: {}",
+                streamer_id
+            );
+        }
+
+        // 3. Stop danmu collection if active
+        if let Some(session_id) = danmu_service.get_session_by_streamer(streamer_id) {
+            match danmu_service.stop_collection(&session_id).await {
+                Ok(stats) => {
+                    info!(
+                        "Stopped danmu collection for disabled streamer {}: {} messages",
+                        streamer_id, stats.total_count
+                    );
+                }
+                Err(e) => {
+                    warn!(
+                        "Failed to stop danmu collection for disabled streamer {}: {}",
+                        streamer_id, e
+                    );
+                }
+            }
+        } else {
+            debug!(
+                "No active danmu session found for disabled streamer: {}",
+                streamer_id
+            );
+        }
+    }
+
     /// Handle monitor events to trigger downloads and danmu collection.
     async fn handle_monitor_event(
         download_manager: &Arc<DownloadManager>,
@@ -754,14 +922,16 @@ impl ServiceContainer {
                 title,
                 streams,
                 streamer_url,
+                media_headers,
                 ..
             } => {
                 info!(
-                    "Streamer {} ({}) went live: {} ({} streams available)",
+                    "Streamer {} ({}) went live: {} ({} streams available, {} media headers)",
                     streamer_name,
                     streamer_id,
                     title,
-                    streams.len()
+                    streams.len(),
+                    media_headers.as_ref().map(|h| h.len()).unwrap_or(0)
                 );
 
                 // Check if already downloading
@@ -817,32 +987,28 @@ impl ServiceContainer {
                 let stream_format = best_stream.stream_format.as_str();
                 let media_format = best_stream.media_format.as_str();
 
-                // Extract headers from stream extras if needed
-                let headers: Vec<(String, String)> = if best_stream.is_headers_needed {
-                    best_stream
-                        .extras
-                        .as_ref()
-                        .and_then(|extras| extras.get("headers"))
-                        .and_then(|h| h.as_object())
-                        .map(|headers_map| {
-                            headers_map
-                                .iter()
-                                .filter_map(|(k, v)| {
-                                    v.as_str().map(|val| (k.clone(), val.to_string()))
-                                })
-                                .collect()
-                        })
-                        .unwrap_or_default()
-                } else {
-                    vec![]
-                };
+                // Headers from MediaInfo take precedence
+                let headers = media_headers.as_ref().cloned().unwrap_or_default();
+
+                if !headers.is_empty() {
+                    debug!(
+                        "Using {} merged headers for download: {:?}",
+                        headers.len(),
+                        headers.iter().map(|(k, _)| k).collect::<Vec<_>>()
+                    );
+                }
 
                 // Create download config using the actual stream URL and merged config settings
                 let session_id = uuid::Uuid::new_v4().to_string();
+
+                // Sanitize streamer name and title for safe filename usage (Requirements 1.1, 2.1, 3.1)
+                let sanitized_streamer = sanitize_filename(&streamer_name);
+                let sanitized_title = sanitize_filename(&title);
+
                 let dir = merged_config
                     .output_folder
-                    .replace("{streamer}", &streamer_name)
-                    .replace("{title}", &title)
+                    .replace("{streamer}", &sanitized_streamer)
+                    .replace("{title}", &sanitized_title)
                     .replace("{session_id}", &session_id);
 
                 let output_dir = expand_filename_template(&dir, None);
@@ -856,8 +1022,8 @@ impl ServiceContainer {
                 .with_filename_template(
                     &merged_config
                         .output_filename_template
-                        .replace("{streamer}", &streamer_name)
-                        .replace("{title}", &title),
+                        .replace("{streamer}", &sanitized_streamer)
+                        .replace("{title}", &sanitized_title),
                 )
                 .with_output_format(&merged_config.output_file_format)
                 .with_max_segment_duration(merged_config.max_download_duration_secs as u64)

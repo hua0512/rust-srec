@@ -16,5 +16,6 @@ pub mod pipeline;
 pub mod scheduler;
 pub mod services;
 pub mod streamer;
+pub mod utils;
 
 pub use error::{Error, Result};

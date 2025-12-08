@@ -42,7 +42,8 @@ pub use progress::{Progress, ProgressEvent};
 pub use utils::{expand_filename_template, sanitize_filename};
 
 pub use writer_task::{
-    FormatStrategy, PostWriteAction, TaskError, WriterConfig, WriterError, WriterState, WriterTask,
+    FormatStrategy, PostWriteAction, ProgressCallback, ProgressConfig, TaskError, WriterConfig,
+    WriterError, WriterProgress, WriterState, WriterTask,
 };
 
 use crate::config::PipelineConfig;

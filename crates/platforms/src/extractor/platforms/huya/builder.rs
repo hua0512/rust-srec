@@ -191,6 +191,7 @@ impl Huya {
                     false,
                     vec![],
                     None,
+                    None,
                 ));
             }
         };
@@ -209,6 +210,7 @@ impl Huya {
                 avatar_url,
                 false,
                 vec![],
+                None,
                 None,
             ));
         }
@@ -241,6 +243,7 @@ impl Huya {
             avatar_url,
             is_live,
             streams,
+            Some(self.extractor.get_platform_headers_map()),
             Some(self.extractor.get_platform_headers_map()),
         ))
     }
@@ -321,6 +324,7 @@ impl Huya {
                 false,
                 vec![],
                 None,
+                None,
             ));
         }
 
@@ -368,6 +372,7 @@ impl Huya {
             avatar_url,
             true,
             streams,
+            Some(self.extractor.get_platform_headers_map()),
             Some(self.extractor.get_platform_headers_map()),
         ))
     }

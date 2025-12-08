@@ -1220,6 +1220,7 @@ mod end_to_end_tests {
             started_at: Some(Utc::now()),
             viewer_count: Some(1000),
             streams: vec![],
+            media_headers: None,
         };
 
         // Process the status

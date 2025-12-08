@@ -1,6 +1,10 @@
 //! Streamer URL value object.
 
 use crate::Error;
+use platforms_parser::extractor::platforms::douyu;
+use platforms_parser::extractor::platforms::{
+    acfun, bilibili, douyin, huya, pandatv, picarto, redbook, tiktok, twitcasting, twitch, weibo,
+};
 use serde::{Deserialize, Serialize};
 
 /// A validated streamer URL.
@@ -31,26 +35,44 @@ impl StreamerUrl {
 
     /// Get the platform name from the URL.
     pub fn platform(&self) -> Option<&'static str> {
-        let url_lower = self.0.to_lowercase();
+        let url = &self.0;
 
-        if url_lower.contains("twitch.tv") {
-            Some("Twitch")
-        } else if url_lower.contains("huya.com") {
-            Some("Huya")
-        } else if url_lower.contains("douyu.com") {
-            Some("Douyu")
-        } else if url_lower.contains("bilibili.com") {
-            Some("Bilibili")
-        } else if url_lower.contains("youtube.com") || url_lower.contains("youtu.be") {
-            Some("YouTube")
-        } else {
-            None
+        if twitch::URL_REGEX.is_match(url) {
+            return Some("Twitch");
+        } else if huya::URL_REGEX.is_match(url) {
+            return Some("Huya");
+        } else if douyin::URL_REGEX.is_match(url) {
+            return Some("Douyin");
+        } else if bilibili::URL_REGEX.is_match(url) {
+            return Some("Bilibili");
+        } else if tiktok::URL_REGEX.is_match(url) {
+            return Some("TikTok");
+        } else if pandatv::URL_REGEX.is_match(url) {
+            return Some("PandaTV");
+        } else if weibo::URL_REGEX.is_match(url) {
+            return Some("Weibo");
+        } else if redbook::URL_REGEX.is_match(url) {
+            return Some("RedBook");
+        } else if picarto::URL_REGEX.is_match(url) {
+            return Some("Picarto");
+        } else if twitcasting::URL_REGEX.is_match(url) {
+            return Some("Twitcasting");
+        } else if acfun::URL_REGEX.is_match(url) {
+            return Some("Acfun");
+        } else if douyu::URL_REGEX.is_match(url) {
+            return Some("Douyu");
         }
+
+        None
     }
 
     /// Extract the channel/room identifier from the URL.
     pub fn channel_id(&self) -> Option<String> {
-        // Extract the last path segment as the channel ID
+        // For simple cases, we can try to extract from the URL path.
+        // However, some platforms might have complex URLs.
+        // Ideally, we'd use the platform regexes to capture the ID if they have capture groups.
+        // But for now, we'll strip trailing slashes and take the last segment,
+        // which works for Twitch, Huya, etc.
         let url = self.0.trim_end_matches('/');
         url.rsplit('/').next().map(|s| s.to_string())
     }
@@ -146,6 +168,9 @@ mod tests {
 
         let huya = StreamerUrl::new("https://www.huya.com/123456").unwrap();
         assert_eq!(huya.platform(), Some("Huya"));
+
+        let bilibili = StreamerUrl::new("https://live.bilibili.com/123456").unwrap();
+        assert_eq!(bilibili.platform(), Some("Bilibili"));
 
         let unknown = StreamerUrl::new("https://unknown.com/streamer").unwrap();
         assert_eq!(unknown.platform(), None);

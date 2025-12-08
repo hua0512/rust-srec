@@ -566,6 +566,7 @@ impl<'a> DouyinRequest<'a> {
             avatar_url,
             is_live,
             streams,
+            Some(self.config.extractor.get_platform_headers_map()),
             Some(extras),
         ))
     }
@@ -585,6 +586,7 @@ impl<'a> DouyinRequest<'a> {
             avatar_url,
             false,
             Vec::new(),
+            None,
             None,
         )
     }
@@ -677,7 +679,7 @@ impl<'a> DouyinRequest<'a> {
             extras: extras.map(|e| serde_json::to_value(e).unwrap_or(serde_json::Value::Null)),
             codec,
             fps: fps as f64,
-            is_headers_needed: false,
+            is_headers_needed: true,
         })
     }
 
@@ -845,7 +847,7 @@ impl<'a> DouyinRequest<'a> {
             extras: extras.map(|e| serde_json::to_value(e).unwrap_or(serde_json::Value::Null)),
             codec,
             fps: fps as f64,
-            is_headers_needed: false,
+            is_headers_needed: true,
         })
     }
 
@@ -934,7 +936,7 @@ impl<'a> DouyinRequest<'a> {
                 extras: extras.map(|e| serde_json::to_value(e).unwrap_or(serde_json::Value::Null)),
                 codec: codec.to_string(),
                 fps: fps as f64,
-                is_headers_needed: false,
+                is_headers_needed: true,
             });
         }
     }
@@ -955,7 +957,7 @@ impl<'a> DouyinRequest<'a> {
                 extras: None,
                 fps: 0.0,
                 codec: String::new(),
-                is_headers_needed: false,
+                is_headers_needed: true,
             });
         }
 
@@ -970,7 +972,7 @@ impl<'a> DouyinRequest<'a> {
                 extras: None,
                 fps: 0.0,
                 codec: String::new(),
-                is_headers_needed: false,
+                is_headers_needed: true,
             });
         }
         streams

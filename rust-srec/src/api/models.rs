@@ -13,6 +13,7 @@
 //! - **Pipeline**: Job queue and processing pipeline
 //! - **Session**: Recording sessions and outputs
 //! - **Health**: System health checks
+//! - **Utilities**: URL metadata extraction
 
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
@@ -156,6 +157,7 @@ pub struct StreamerResponse {
     pub id: String,
     pub name: String,
     pub url: String,
+    pub avatar_url: Option<String>,
     pub platform_config_id: String,
     pub template_id: Option<String>,
     pub state: StreamerState,
@@ -627,6 +629,29 @@ pub struct ComponentHealth {
     pub status: String,
     pub message: Option<String>,
 }
+
+// ============================================================================
+// Utilities DTOs
+// ============================================================================
+
+/// Request to extract metadata from a URL.
+#[derive(Debug, Clone, Deserialize)]
+pub struct ExtractMetadataRequest {
+    pub url: String,
+}
+
+/// Response from metadata extraction.
+#[derive(Debug, Clone, Serialize)]
+pub struct ExtractMetadataResponse {
+    /// Detected platform name (e.g., "Twitch", "YouTube")
+    pub platform: Option<String>,
+    /// List of platform configurations that match the detected platform
+    pub valid_platform_configs: Vec<PlatformConfigResponse>,
+    /// Detected channel ID (if available)
+    pub channel_id: Option<String>,
+}
+
+
 
 #[cfg(test)]
 mod tests {

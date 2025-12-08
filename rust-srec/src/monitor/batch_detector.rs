@@ -283,6 +283,7 @@ mod tests {
             template_config_id: None,
             state: StreamerState::NotLive,
             priority: Priority::Normal,
+            avatar_url: None,
             consecutive_error_count: 0,
             disabled_until: None,
             last_live_time: None,
@@ -299,9 +300,11 @@ mod tests {
             LiveStatus::Live {
                 title: "Test".to_string(),
                 category: None,
+                avatar: None,
                 started_at: None,
                 viewer_count: None,
                 streams: vec![],
+                media_headers: None,
             },
         );
         result.add_failure("streamer-3".to_string(), "Network error".to_string());

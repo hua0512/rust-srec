@@ -119,7 +119,7 @@ impl DownloadConfig {
         Self {
             url: url.into(),
             output_dir: output_dir.into(),
-            filename_template: "{streamer}-{date}-{time}".to_string(),
+            filename_template: "{streamer}-{title}-%Y%m%d-%H%M%S".to_string(),
             output_format: "flv".to_string(),
             max_segment_duration_secs: 0,
             max_segment_size_bytes: 0,
@@ -128,7 +128,7 @@ impl DownloadConfig {
             headers: Vec::new(),
             streamer_id: streamer_id.into(),
             session_id: session_id.into(),
-            enable_processing: false,
+            enable_processing: true,
             pipeline_config: None,
             hls_pipeline_config: None,
             flv_pipeline_config: None,
@@ -267,7 +267,7 @@ pub enum DownloadStatus {
 pub struct DownloadProgress {
     /// Total bytes downloaded.
     pub bytes_downloaded: u64,
-    /// Download duration in seconds.
+    /// Download duration in seconds (wall-clock elapsed time).
     pub duration_secs: f64,
     /// Current download speed in bytes/sec.
     pub speed_bytes_per_sec: u64,
@@ -275,6 +275,10 @@ pub struct DownloadProgress {
     pub segments_completed: u32,
     /// Current segment being downloaded.
     pub current_segment: Option<String>,
+    /// Total media duration in seconds (from segment metadata or timestamps).
+    pub media_duration_secs: f64,
+    /// Playback ratio: media_duration / elapsed_time (>1.0 = faster than real-time).
+    pub playback_ratio: f64,
 }
 
 impl Default for DownloadProgress {
@@ -285,6 +289,8 @@ impl Default for DownloadProgress {
             speed_bytes_per_sec: 0,
             segments_completed: 0,
             current_segment: None,
+            media_duration_secs: 0.0,
+            playback_ratio: 0.0,
         }
     }
 }
@@ -457,5 +463,7 @@ mod tests {
         let progress = DownloadProgress::default();
         assert_eq!(progress.bytes_downloaded, 0);
         assert_eq!(progress.segments_completed, 0);
+        assert_eq!(progress.media_duration_secs, 0.0);
+        assert_eq!(progress.playback_ratio, 0.0);
     }
 }

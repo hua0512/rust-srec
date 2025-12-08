@@ -8,8 +8,9 @@ use axum::{
 
 use crate::api::error::{ApiError, ApiResult};
 use crate::api::models::{
-    CreateStreamerRequest, PaginatedResponse, PaginationParams, StreamerFilterParams,
-    StreamerResponse, UpdatePriorityRequest, UpdateStreamerRequest,
+    CreateStreamerRequest, ExtractMetadataRequest, ExtractMetadataResponse, PaginatedResponse,
+    PaginationParams, PlatformConfigResponse, StreamerFilterParams, StreamerResponse,
+    UpdatePriorityRequest, UpdateStreamerRequest,
 };
 use crate::api::server::AppState;
 use crate::domain::Priority as DomainPriority;
@@ -45,6 +46,7 @@ pub fn router() -> Router<AppState> {
         .route("/{id}", delete(delete_streamer))
         .route("/{id}/clear-error", post(clear_error))
         .route("/{id}/priority", patch(update_priority))
+        .route("/extract-metadata", post(extract_metadata))
 }
 
 /// Convert StreamerMetadata to StreamerResponse.
@@ -60,6 +62,7 @@ fn metadata_to_response(metadata: &StreamerMetadata) -> StreamerResponse {
         enabled: metadata.state != StreamerState::Disabled,
         consecutive_error_count: metadata.consecutive_error_count,
         disabled_until: metadata.disabled_until,
+        avatar_url: metadata.avatar_url.clone(),
         last_live_time: metadata.last_live_time,
         created_at: chrono::Utc::now(), // Not stored in metadata
         updated_at: chrono::Utc::now(), // Not stored in metadata
@@ -109,6 +112,7 @@ async fn create_streamer(
         priority: api_to_domain_priority(request.priority),
         consecutive_error_count: 0,
         disabled_until: None,
+        avatar_url: None,
         last_live_time: None,
     };
 
@@ -206,7 +210,10 @@ async fn list_streamers(
         .into_iter()
         .skip(offset)
         .take(limit)
-        .map(|s| metadata_to_response(&s))
+        .map(|s| {
+            tracing::debug!("Streamer {} state: {:?}", s.name, s.state);
+            metadata_to_response(&s)
+        })
         .collect();
 
     let response = PaginatedResponse::new(streamers, total, pagination.limit, pagination.offset);
@@ -419,6 +426,7 @@ mod tests {
             id: "test-id".to_string(),
             name: "Test Streamer".to_string(),
             url: "https://twitch.tv/test".to_string(),
+            avatar_url: None,
             platform_config_id: "twitch".to_string(),
             template_config_id: Some("template1".to_string()),
             state: StreamerState::Live,
@@ -446,6 +454,7 @@ mod tests {
             id: "test-id".to_string(),
             name: "Test".to_string(),
             url: "https://example.com".to_string(),
+            avatar_url: None,
             platform_config_id: "platform".to_string(),
             template_config_id: None,
             state: StreamerState::Disabled,
@@ -590,6 +599,16 @@ mod property_tests {
         async fn delete_streamer(&self, id: &str) -> crate::Result<()> {
             self.streamers.lock().unwrap().retain(|s| s.id != id);
             Ok(())
+        }
+
+        async fn update_avatar(&self, id: &str, avatar_url: Option<&str>) -> crate::Result<()> {
+            let mut streamers = self.streamers.lock().unwrap();
+            if let Some(s) = streamers.iter_mut().find(|s| s.id == id) {
+                s.avatar = avatar_url.map(|s| s.to_string());
+                Ok(())
+            } else {
+                Err(crate::Error::not_found("Streamer", id))
+            }
         }
 
         async fn update_streamer_state(&self, id: &str, state: &str) -> crate::Result<()> {
@@ -779,6 +798,7 @@ mod property_tests {
                     id: id.clone(),
                     name: name.clone(),
                     url: url.clone(),
+                     avatar_url: None,
                     platform_config_id: platform_id.clone(),
                     template_config_id: None,
                     state: StreamerState::NotLive,
@@ -834,6 +854,7 @@ mod property_tests {
                     id: id.clone(),
                     name: name.clone(),
                     url: url.clone(),
+                     avatar_url: None,
                     platform_config_id: platform_id.clone(),
                     template_config_id: None,
                     state: StreamerState::NotLive,
@@ -888,6 +909,7 @@ mod property_tests {
                     id: id.clone(),
                     name,
                     url,
+                    avatar_url: None,
                     platform_config_id: platform_id,
                     template_config_id: None,
                     state: StreamerState::NotLive,
@@ -912,4 +934,77 @@ mod property_tests {
             })?;
         }
     }
+}
+/// Extract metadata from a streamer URL and return valid platform configs.
+///
+/// POST /api/streamers/extract-metadata
+async fn extract_metadata(
+    State(state): State<AppState>,
+    Json(request): Json<ExtractMetadataRequest>,
+) -> ApiResult<Json<ExtractMetadataResponse>> {
+    use crate::domain::value_objects::StreamerUrl;
+
+    // Validate URL format
+    let url = match StreamerUrl::new(&request.url) {
+        Ok(u) => u,
+        Err(e) => return Err(ApiError::validation(e.to_string())),
+    };
+
+    // Extract platform info
+    let platform_name = url.platform();
+    let channel_id = url.channel_id();
+
+    // Get config service
+    let config_service = state
+        .config_service
+        .as_ref()
+        .ok_or_else(|| ApiError::service_unavailable("Config service not available"))?;
+
+    // Get all platform configs
+    let all_configs = config_service
+        .list_platform_configs()
+        .await
+        .map_err(ApiError::from)?;
+
+    // Filter configs based on detected platform
+    // If platform is detected, only return configs for that platform
+    // If not detected, return all configs (user must choose)
+    // We treat platform names case-insensitively
+    let valid_configs: Vec<_> = all_configs
+        .into_iter()
+        .filter(|c| {
+            if let Some(detected) = platform_name {
+                c.platform_name.eq_ignore_ascii_case(detected)
+            } else {
+                true
+            }
+        })
+        .map(|c| PlatformConfigResponse {
+            id: c.id,
+            name: c.platform_name,
+            fetch_delay_ms: c.fetch_delay_ms.map(|v| v as u64),
+            download_delay_ms: c.download_delay_ms.map(|v| v as u64),
+            record_danmu: c.record_danmu,
+            cookies: c.cookies,
+            platform_specific_config: c.platform_specific_config,
+            proxy_config: c.proxy_config,
+            output_folder: c.output_folder,
+            output_filename_template: c.output_filename_template,
+            download_engine: c.download_engine,
+            max_bitrate: c.max_bitrate,
+            stream_selection_config: c.stream_selection_config,
+            output_file_format: c.output_file_format,
+            min_segment_size_bytes: c.min_segment_size_bytes.map(|v| v as u64),
+            max_download_duration_secs: c.max_download_duration_secs.map(|v| v as u64),
+            max_part_size_bytes: c.max_part_size_bytes.map(|v| v as u64),
+            download_retry_policy: c.download_retry_policy,
+            event_hooks: c.event_hooks,
+        })
+        .collect();
+
+    Ok(Json(ExtractMetadataResponse {
+        platform: platform_name.map(|s| s.to_string()),
+        valid_platform_configs: valid_configs,
+        channel_id,
+    }))
 }

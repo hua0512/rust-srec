@@ -351,6 +351,7 @@ impl<S: StatusChecker> StreamerActor<S> {
             }
 
             // Calculate sleep duration before entering select to avoid borrow issues
+            // Returns None if no check is scheduled (e.g., when streamer is live)
             let sleep_duration = self.state.time_until_next_check();
             let check_timer = Self::create_check_timer(sleep_duration);
 
@@ -430,12 +431,22 @@ impl<S: StatusChecker> StreamerActor<S> {
     ///
     /// This implements self-scheduling by calculating the delay until
     /// the next check based on the actor's internal state.
-    async fn create_check_timer(duration: Duration) {
-        if duration.is_zero() {
-            // Check is due immediately, but yield to allow message processing
-            tokio::task::yield_now().await;
-        } else {
-            tokio::time::sleep(duration).await;
+    ///
+    /// If `duration` is `None`, the timer never fires (waits forever).
+    /// This happens when the streamer is live and no check is scheduled.
+    async fn create_check_timer(duration: Option<Duration>) {
+        match duration {
+            None => {
+                // No check scheduled - wait forever (will be interrupted by other events)
+                std::future::pending::<()>().await;
+            }
+            Some(d) if d.is_zero() => {
+                // Check is due immediately, but yield to allow message processing
+                tokio::task::yield_now().await;
+            }
+            Some(d) => {
+                tokio::time::sleep(d).await;
+            }
         }
     }
 
@@ -602,8 +613,11 @@ impl<S: StatusChecker> StreamerActor<S> {
             );
         }
 
-        // Reschedule next check with new config
-        self.state.schedule_next_check(&self.config);
+        // Only reschedule if a check isn't already due or imminent
+        // This preserves immediate checks scheduled at actor startup
+        if !self.state.is_check_due() {
+            self.state.schedule_next_check(&self.config);
+        }
 
         Ok(())
     }
@@ -978,6 +992,7 @@ impl PersistedActorState {
             streamer_state,
             next_check: None, // Will be recalculated
             offline_count: self.offline_count,
+            was_live: streamer_state == StreamerState::Live,
             last_check,
             error_count: self.error_count,
         };
@@ -1008,6 +1023,7 @@ mod tests {
             template_config_id: None,
             state: StreamerState::NotLive,
             priority: Priority::Normal,
+            avatar_url: None,
             consecutive_error_count: 0,
             disabled_until: None,
             last_live_time: None,
@@ -1185,6 +1201,7 @@ mod tests {
             streamer_state: StreamerState::Live,
             next_check: Some(Instant::now()),
             offline_count: 5,
+            was_live: true,
             last_check: Some(CheckResult::success(StreamerState::Live)),
             error_count: 2,
         };

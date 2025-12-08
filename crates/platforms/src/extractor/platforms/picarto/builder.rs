@@ -93,6 +93,7 @@ impl Picarto {
                 artist_url: Some(avatar_url),
                 is_live,
                 streams: vec![],
+                headers: None,
                 extras: None,
             });
         }
@@ -156,7 +157,8 @@ impl Picarto {
             artist_url: Some(avatar_url),
             is_live,
             streams,
-            extras: Some(self.extractor.get_platform_headers_map()),
+            headers: Some(self.extractor.get_platform_headers_map()),
+            extras: None,
         })
     }
 }

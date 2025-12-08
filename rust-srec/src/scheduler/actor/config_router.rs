@@ -82,6 +82,9 @@ impl ConfigScope {
             ConfigUpdateEvent::StreamerUpdated { streamer_id } => {
                 ConfigScope::Streamer(streamer_id.clone())
             }
+            ConfigUpdateEvent::StreamerDeleted { streamer_id } => {
+                ConfigScope::Streamer(streamer_id.clone())
+            }
             ConfigUpdateEvent::PlatformUpdated { platform_id } => {
                 ConfigScope::Platform(platform_id.clone())
             }

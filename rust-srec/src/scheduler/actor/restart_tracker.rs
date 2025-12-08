@@ -13,7 +13,7 @@
 use std::collections::HashMap;
 use std::time::{Duration, Instant};
 
-use tracing::{debug, info, warn};
+use tracing::{debug, info};
 
 /// Default base backoff duration (1 second).
 pub const DEFAULT_BASE_BACKOFF: Duration = Duration::from_secs(1);

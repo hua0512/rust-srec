@@ -368,6 +368,17 @@ impl DanmuService {
         self.collections.iter().map(|r| r.key().clone()).collect()
     }
 
+    /// Get the session ID for a streamer if one exists.
+    ///
+    /// Iterates over active collections to find a session matching the given streamer ID.
+    /// Returns the session ID if found, None otherwise.
+    pub fn get_session_by_streamer(&self, streamer_id: &str) -> Option<String> {
+        self.collections
+            .iter()
+            .find(|entry| entry.value().streamer_id == streamer_id)
+            .map(|entry| entry.key().clone())
+    }
+
     /// Shutdown the service.
     pub async fn shutdown(&self) {
         // Cancel all collections
@@ -695,5 +706,14 @@ mod tests {
         let service = DanmuService::new(config);
 
         assert!(!service.is_collecting("session1"));
+    }
+
+    #[tokio::test]
+    async fn test_get_session_by_streamer_empty() {
+        let config = DanmuServiceConfig::default();
+        let service = DanmuService::new(config);
+
+        // Should return None when no sessions exist
+        assert!(service.get_session_by_streamer("streamer1").is_none());
     }
 }

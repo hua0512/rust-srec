@@ -2,11 +2,13 @@
 //!
 //! This module handles checking the live status of individual streamers.
 
+use std::collections::HashMap;
+
 use chrono::{DateTime, Utc};
 use platforms_parser::extractor::error::ExtractorError;
 use platforms_parser::extractor::factory::ExtractorFactory;
 use serde::{Deserialize, Serialize};
-use tracing::{debug, warn};
+use tracing::{debug, info, warn};
 
 use crate::Result;
 use crate::domain::filter::{Filter, FilterType};
@@ -28,9 +30,14 @@ pub enum LiveStatus {
         started_at: Option<DateTime<Utc>>,
         /// Viewer count (if available).
         viewer_count: Option<u64>,
+        // Avatar url (if available)
+        avatar: Option<String>,
         /// Stream information from platform parser (URLs, format, quality, headers).
         /// Note: Some platforms require calling get_url() to resolve the final URL.
         streams: Vec<StreamInfo>,
+        /// HTTP headers extracted from MediaInfo.headers (user-agent, referer, etc.).
+        /// These should be passed to download engines for platforms that require specific headers.
+        media_headers: Option<HashMap<String, String>>,
     },
     /// Streamer is offline.
     Offline,
@@ -226,6 +233,11 @@ impl StreamDetector {
             }
         };
 
+        info!(
+            "Detailed media info for {}: {:?}",
+            streamer.name, media_info
+        );
+
         if media_info.is_live {
             // Extract additional metadata from extras if available
             let category = media_info
@@ -240,6 +252,22 @@ impl StreamDetector {
                 .and_then(|extras| extras.get("viewer_count"))
                 .and_then(|v| v.parse::<u64>().ok());
 
+            // Extract HTTP headers from MediaInfo.headers for download engines
+            let media_headers = media_info.headers.as_ref().map(|h| {
+                h.iter()
+                    .map(|(k, v)| (k.clone(), v.clone()))
+                    .collect::<HashMap<_, _>>()
+            });
+
+            if let Some(headers) = &media_headers {
+                debug!(
+                    "Extracted {} media headers for {}: {:?}",
+                    headers.len(),
+                    streamer.name,
+                    headers.keys().collect::<Vec<_>>()
+                );
+            }
+
             // Resolve final URLs for streams that need it
             // Some platforms (Huya, Douyu, Bilibili) require get_url() to get the real stream URL
             let mut streams = media_info.streams;
@@ -251,20 +279,23 @@ impl StreamDetector {
             }
 
             debug!(
-                "Streamer {} is LIVE: {} (category: {:?}, viewers: {:?}, streams: {})",
+                "Streamer {} is LIVE: {} (category: {:?}, viewers: {:?}, streams: {}, media_headers: {})",
                 streamer.name,
                 media_info.title,
                 category,
                 viewer_count,
-                streams.len()
+                streams.len(),
+                media_headers.as_ref().map(|h| h.len()).unwrap_or(0)
             );
 
             Ok(LiveStatus::Live {
                 title: media_info.title,
                 category,
+                avatar: media_info.artist_url.clone(),
                 started_at: None, // TODO: platforms crate doesn't provide start time
                 viewer_count,
                 streams,
+                media_headers,
             })
         } else {
             debug!("Streamer {} is OFFLINE", streamer.name);
@@ -351,7 +382,9 @@ mod tests {
             category: Some("Gaming".to_string()),
             started_at: None,
             viewer_count: None,
+            avatar: None,
             streams: vec![create_test_stream()],
+            media_headers: None,
         };
         assert!(status.is_live());
         assert!(!status.is_offline());
@@ -385,7 +418,9 @@ mod tests {
             category: None,
             started_at: None,
             viewer_count: None,
+            avatar: None,
             streams: vec![create_test_stream()],
+            media_headers: None,
         };
         assert_eq!(live.title(), Some("Live Title"));
 
@@ -416,8 +451,10 @@ mod tests {
                 title: "Test".to_string(),
                 category: None,
                 started_at: None,
+                avatar: None,
                 viewer_count: None,
                 streams: vec![create_test_stream()],
+                media_headers: None,
             }
             .is_fatal_error()
         );

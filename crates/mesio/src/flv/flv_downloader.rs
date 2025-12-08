@@ -77,6 +77,10 @@ impl FlvDownloader {
     /// Core method to start a download request and return the response
     async fn start_download_request(&self, url: &Url) -> Result<Response, DownloadError> {
         info!(url = %url, "Starting FLV download request");
+        debug!(url = %url, params = ?self.config.base.params, "Sending FLV download request");
+
+        debug!(client = ?self.client, "Client: {:#?}", self.client);
+
         let response = self
             .client
             .get(url.clone())

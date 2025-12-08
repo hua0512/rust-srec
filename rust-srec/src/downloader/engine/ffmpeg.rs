@@ -7,7 +7,8 @@ use tokio::io::{AsyncBufReadExt, BufReader};
 use tokio::process::Command;
 use tracing::{debug, error, info, warn};
 
-use super::traits::{DownloadEngine, DownloadHandle, DownloadProgress, EngineType, SegmentEvent};
+use super::traits::{DownloadEngine, DownloadHandle, EngineType, SegmentEvent};
+use super::utils::{ensure_output_dir, is_segment_start, parse_progress, spawn_process_waiter};
 use crate::Result;
 use crate::database::models::engine::FfmpegEngineConfig;
 
@@ -114,64 +115,6 @@ impl FfmpegEngine {
         args
     }
 
-    /// Parse ffmpeg progress output.
-    fn parse_progress(line: &str) -> Option<DownloadProgress> {
-        // FFmpeg progress format: frame=X fps=X q=X size=XkB time=HH:MM:SS.ms bitrate=Xkbits/s speed=Xx
-        if !line.starts_with("frame=") && !line.contains("size=") {
-            return None;
-        }
-
-        let mut progress = DownloadProgress::default();
-
-        // Parse size (format: "size=    1024kB" with possible leading spaces)
-        if let Some(size_start) = line.find("size=") {
-            let size_str = &line[size_start + 5..].trim_start();
-            // Find where the number ends (at 'k' or 'K' for kB)
-            if let Some(end) = size_str.find(|c: char| c == 'k' || c == 'K') {
-                if let Ok(size) = size_str[..end].trim().parse::<u64>() {
-                    // Size is in kB
-                    progress.bytes_downloaded = size * 1024;
-                }
-            }
-        }
-
-        // Parse time
-        if let Some(time_start) = line.find("time=") {
-            let time_str = &line[time_start + 5..];
-            if let Some(end) = time_str.find(' ') {
-                let time_part = &time_str[..end];
-                if let Some(duration) = Self::parse_time(time_part) {
-                    progress.duration_secs = duration;
-                }
-            }
-        }
-
-        // Parse bitrate/speed
-        if let Some(speed_start) = line.find("bitrate=") {
-            let speed_str = &line[speed_start + 8..];
-            if let Some(end) = speed_str.find("kbits/s") {
-                if let Ok(bitrate) = speed_str[..end].trim().parse::<f64>() {
-                    progress.speed_bytes_per_sec = (bitrate * 1024.0 / 8.0) as u64;
-                }
-            }
-        }
-
-        Some(progress)
-    }
-
-    /// Parse time string (HH:MM:SS.ms) to seconds.
-    fn parse_time(time_str: &str) -> Option<f64> {
-        let parts: Vec<&str> = time_str.split(':').collect();
-        if parts.len() != 3 {
-            return None;
-        }
-
-        let hours: f64 = parts[0].parse().ok()?;
-        let minutes: f64 = parts[1].parse().ok()?;
-        let seconds: f64 = parts[2].parse().ok()?;
-
-        Some(hours * 3600.0 + minutes * 60.0 + seconds)
-    }
 }
 
 impl Default for FfmpegEngine {
@@ -187,6 +130,15 @@ impl DownloadEngine for FfmpegEngine {
     }
 
     async fn start(&self, handle: Arc<DownloadHandle>) -> Result<()> {
+        // 1. Ensure output directory exists before spawning process (Requirements 2.1, 2.2)
+        if let Err(e) = ensure_output_dir(&handle.config.output_dir).await {
+            let _ = handle.event_tx.try_send(SegmentEvent::DownloadFailed {
+                error: e.clone(),
+                recoverable: false,
+            });
+            return Err(crate::Error::Other(e));
+        }
+
         let args = self.build_args(&handle);
 
         info!(
@@ -208,35 +160,40 @@ impl DownloadEngine for FfmpegEngine {
             .take()
             .ok_or_else(|| crate::Error::Other("Failed to capture ffmpeg stderr".to_string()))?;
 
+        // 2. Use shared process waiter utility (Requirements 3.1, 3.2)
+        let exit_rx = spawn_process_waiter(child, handle.cancellation_token.clone());
+
         let event_tx = handle.event_tx.clone();
         let cancellation_token = handle.cancellation_token.clone();
         let streamer_id = handle.config.streamer_id.clone();
 
-        // Spawn task to read ffmpeg output
+        // 3. Spawn stderr reader task - waits for exit status before emitting event (Requirements 1.1, 1.3, 1.4)
         tokio::spawn(async move {
             let reader = BufReader::new(stderr);
             let mut lines = reader.lines();
             let mut segment_index = 0u32;
             let mut total_bytes = 0u64;
             let mut total_duration = 0.0f64;
+            let mut was_cancelled = false;
 
             loop {
                 tokio::select! {
                     _ = cancellation_token.cancelled() => {
                         debug!("FFmpeg download cancelled for {}", streamer_id);
+                        was_cancelled = true;
                         break;
                     }
                     line_result = lines.next_line() => {
                         match line_result {
                             Ok(Some(line)) => {
-                                // Check for segment completion
-                                if line.contains("Opening") && line.contains("for writing") {
+                                // Check for segment completion using shared utility
+                                if is_segment_start(&line) {
                                     segment_index += 1;
                                     debug!("FFmpeg segment {} started for {}", segment_index, streamer_id);
                                 }
 
-                                // Parse progress
-                                if let Some(progress) = Self::parse_progress(&line) {
+                                // Parse progress using shared utility
+                                if let Some(progress) = parse_progress(&line) {
                                     total_bytes = progress.bytes_downloaded;
                                     total_duration = progress.duration_secs;
 
@@ -262,35 +219,38 @@ impl DownloadEngine for FfmpegEngine {
                 }
             }
 
-            // Send completion event
-            let _ = event_tx
-                .send(SegmentEvent::DownloadCompleted {
-                    total_bytes,
-                    total_duration_secs: total_duration,
-                    total_segments: segment_index,
-                })
-                .await;
-        });
+            // If cancelled during reading, don't emit any event
+            if was_cancelled {
+                debug!("Download cancelled, not emitting completion event for {}", streamer_id);
+                return;
+            }
 
-        // Wait for process to complete or cancellation
-        let cancellation_token = handle.cancellation_token.clone();
-        tokio::spawn(async move {
-            tokio::select! {
-                _ = cancellation_token.cancelled() => {
-                    // Kill the process
-                    let _ = child.kill().await;
+            // Wait for exit status from process wait task
+            let exit_code = exit_rx.await.ok().flatten();
+
+            match exit_code {
+                Some(0) => {
+                    // Exit code 0 - success (Requirement 1.3)
+                    let _ = event_tx
+                        .send(SegmentEvent::DownloadCompleted {
+                            total_bytes,
+                            total_duration_secs: total_duration,
+                            total_segments: segment_index,
+                        })
+                        .await;
                 }
-                status = child.wait() => {
-                    match status {
-                        Ok(exit_status) => {
-                            if !exit_status.success() {
-                                warn!("FFmpeg exited with status: {}", exit_status);
-                            }
-                        }
-                        Err(e) => {
-                            error!("Error waiting for ffmpeg: {}", e);
-                        }
-                    }
+                Some(code) => {
+                    // Non-zero exit code - failure (Requirements 1.1, 3.3)
+                    let _ = event_tx
+                        .send(SegmentEvent::DownloadFailed {
+                            error: format!("FFmpeg exited with code {}", code),
+                            recoverable: true,
+                        })
+                        .await;
+                }
+                None => {
+                    // Cancelled - don't emit any event (Requirement 1.4)
+                    debug!("Download cancelled, not emitting completion event for {}", streamer_id);
                 }
             }
         });
@@ -319,23 +279,59 @@ impl DownloadEngine for FfmpegEngine {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::downloader::engine::utils::parse_time;
 
     #[test]
     fn test_parse_time() {
-        assert_eq!(FfmpegEngine::parse_time("00:00:10.50"), Some(10.5));
-        assert_eq!(FfmpegEngine::parse_time("01:30:00.00"), Some(5400.0));
-        assert_eq!(FfmpegEngine::parse_time("invalid"), None);
+        // Tests now use shared utility
+        assert_eq!(parse_time("00:00:10.50"), Some(10.5));
+        assert_eq!(parse_time("01:30:00.00"), Some(5400.0));
+        assert_eq!(parse_time("invalid"), None);
     }
 
     #[test]
     fn test_parse_progress() {
+        // Tests now use shared utility
         let line = "frame=  100 fps=25 q=-1.0 size=    1024kB time=00:00:04.00 bitrate=2097.2kbits/s speed=1.00x";
-        let progress = FfmpegEngine::parse_progress(line);
+        let progress = parse_progress(line);
 
         assert!(progress.is_some());
         let p = progress.unwrap();
         assert_eq!(p.bytes_downloaded, 1024 * 1024);
         assert_eq!(p.duration_secs, 4.0);
+        // Verify media_duration_secs is populated from time= field
+        assert_eq!(p.media_duration_secs, 4.0);
+        // Verify playback_ratio is populated from speed= field
+        assert_eq!(p.playback_ratio, 1.0);
+    }
+
+    #[test]
+    fn test_parse_progress_with_different_speed() {
+        // Test with speed=2.00x (downloading faster than real-time)
+        let line = "frame=  200 fps=50 q=-1.0 size=    2048kB time=00:01:30.50 bitrate=1024.0kbits/s speed=2.00x";
+        let progress = parse_progress(line);
+
+        assert!(progress.is_some());
+        let p = progress.unwrap();
+        assert_eq!(p.bytes_downloaded, 2048 * 1024);
+        // 1 minute 30.5 seconds = 90.5 seconds
+        assert_eq!(p.media_duration_secs, 90.5);
+        assert_eq!(p.duration_secs, 90.5);
+        assert_eq!(p.playback_ratio, 2.0);
+    }
+
+    #[test]
+    fn test_parse_progress_without_speed() {
+        // Some FFmpeg outputs may not include speed=
+        let line = "frame=  100 fps=25 q=-1.0 size=    512kB time=00:00:10.00 bitrate=419.4kbits/s";
+        let progress = parse_progress(line);
+
+        assert!(progress.is_some());
+        let p = progress.unwrap();
+        assert_eq!(p.bytes_downloaded, 512 * 1024);
+        assert_eq!(p.media_duration_secs, 10.0);
+        // playback_ratio should be 0.0 when speed= is not present
+        assert_eq!(p.playback_ratio, 0.0);
     }
 
     #[test]

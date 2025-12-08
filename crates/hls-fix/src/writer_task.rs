@@ -8,8 +8,8 @@ use std::{
 use hls::{HlsData, M4sData};
 use pipeline_common::WriterError;
 use pipeline_common::{
-    FormatStrategy, PostWriteAction, ProtocolWriter, WriterConfig, WriterState, WriterTask,
-    expand_filename_template,
+    FormatStrategy, PostWriteAction, ProgressConfig, ProtocolWriter, WriterConfig, WriterProgress,
+    WriterState, WriterTask, expand_filename_template,
 };
 
 use tracing::{Span, debug, error, info};
@@ -201,6 +201,10 @@ impl FormatStrategy<HlsData> for HlsFormatStrategy {
             Ok(PostWriteAction::None)
         }
     }
+
+    fn current_media_duration_secs(&self) -> f64 {
+        self.target_duration as f64
+    }
 }
 
 pub struct HlsWriter {
@@ -221,14 +225,41 @@ impl HlsWriter {
 
     /// Set a callback to be invoked when a segment is completed.
     ///
-    /// The callback receives the file path and sequence number (0-based).
-    /// Note: For detailed segment info (duration, size), use `SegmentEvent::SegmentCompleted` instead.
-    /// This callback is primarily for internal tracking when the underlying file is closed.
+    /// The callback receives the file path, sequence number (0-based), and duration in seconds.
+    /// This callback provides the segment's media duration for tracking purposes.
     pub fn set_on_segment_complete_callback<F>(&mut self, callback: F)
     where
-        F: Fn(&std::path::Path, u32) + Send + Sync + 'static,
+        F: Fn(&std::path::Path, u32, f64) + Send + Sync + 'static,
     {
         self.writer_task.set_on_file_close_callback(callback);
+    }
+
+    /// Set a progress callback with default intervals (1MB bytes, 1000ms time).
+    ///
+    /// The callback receives a `WriterProgress` struct containing metrics about
+    /// bytes written, items processed, media duration, and performance.
+    pub fn set_progress_callback<F>(&mut self, callback: F)
+    where
+        F: Fn(WriterProgress) + Send + Sync + 'static,
+    {
+        self.writer_task.set_progress_callback(callback);
+    }
+
+    /// Set a progress callback with custom intervals.
+    ///
+    /// The callback receives a `WriterProgress` struct containing metrics about
+    /// bytes written, items processed, media duration, and performance.
+    pub fn set_progress_callback_with_config<F>(&mut self, callback: F, config: ProgressConfig)
+    where
+        F: Fn(WriterProgress) + Send + Sync + 'static,
+    {
+        self.writer_task
+            .set_progress_callback_with_config(callback, config);
+    }
+
+    /// Get the total media duration in seconds across all files.
+    pub fn media_duration_secs(&self) -> f64 {
+        self.writer_task.get_state().media_duration_secs_total
     }
 }
 

@@ -8,6 +8,7 @@
 
 use std::collections::HashMap;
 use std::path::PathBuf;
+use std::sync::Arc;
 use std::time::Duration;
 
 use tokio::sync::mpsc;
@@ -16,6 +17,9 @@ use tracing::{debug, error, info, warn};
 
 use super::handle::ActorHandle;
 use super::messages::{PlatformConfig, PlatformMessage, StreamerConfig, StreamerMessage};
+use super::monitor_adapter::{
+    DynBatchChecker, DynStatusChecker, NoOpCheckerFactory, StatusCheckerFactory,
+};
 use super::platform_actor::PlatformActor;
 use super::registry::{ActorRegistry, ActorTaskResult};
 use super::restart_tracker::{RestartTracker, RestartTrackerConfig};
@@ -93,16 +97,38 @@ pub struct Supervisor {
     platform_configs: HashMap<String, PlatformConfig>,
     /// Platform actor senders for streamer-platform association.
     platform_senders: HashMap<String, mpsc::Sender<PlatformMessage>>,
+    /// Factory for creating status checkers.
+    checker_factory: Arc<dyn StatusCheckerFactory>,
 }
 
 impl Supervisor {
     /// Create a new supervisor.
+    ///
+    /// Uses `NoOpCheckerFactory` for backwards compatibility.
     pub fn new(cancellation_token: CancellationToken) -> Self {
         Self::with_config(cancellation_token, SupervisorConfig::default())
     }
 
     /// Create a new supervisor with custom configuration.
+    ///
+    /// Uses `NoOpCheckerFactory` for backwards compatibility.
     pub fn with_config(cancellation_token: CancellationToken, config: SupervisorConfig) -> Self {
+        Self::with_checker_factory(
+            cancellation_token,
+            config,
+            Arc::new(NoOpCheckerFactory::new()),
+        )
+    }
+
+    /// Create a new supervisor with a custom checker factory.
+    ///
+    /// This allows injecting real `MonitorCheckerFactory` for production use
+    /// or `NoOpCheckerFactory` for testing.
+    pub fn with_checker_factory(
+        cancellation_token: CancellationToken,
+        config: SupervisorConfig,
+        checker_factory: Arc<dyn StatusCheckerFactory>,
+    ) -> Self {
         Self {
             registry: ActorRegistry::new(cancellation_token.clone()),
             restart_tracker: RestartTracker::with_config(config.restart_config.clone()),
@@ -112,6 +138,7 @@ impl Supervisor {
             streamer_metadata: HashMap::new(),
             platform_configs: HashMap::new(),
             platform_senders: HashMap::new(),
+            checker_factory,
         }
     }
 
@@ -134,6 +161,7 @@ impl Supervisor {
     ///
     /// Actors are spawned with priority channel support, ensuring that
     /// high-priority messages (like Stop) are processed before normal messages.
+    /// The status checker is created using the configured `StatusCheckerFactory`.
     pub fn spawn_streamer(
         &mut self,
         metadata: StreamerMetadata,
@@ -146,19 +174,26 @@ impl Supervisor {
             return Err(SpawnError::ActorExists(id));
         }
 
-        // Create actor with priority channel support
+        // Create status checker from factory and wrap in DynStatusChecker
+        let status_checker = Arc::new(DynStatusChecker::new(
+            self.checker_factory.create_status_checker(),
+        ));
+
+        // Create actor with priority channel support and injected status checker
         let (actor, handle) = if let Some(ref platform_sender) = platform_actor {
-            StreamerActor::with_priority_and_platform(
+            StreamerActor::with_priority_platform_and_checker(
                 metadata.clone(),
                 config.clone(),
                 self.registry.child_token(),
                 platform_sender.clone(),
+                status_checker,
             )
         } else {
-            StreamerActor::with_priority_channel(
+            StreamerActor::with_priority_channel_and_checker(
                 metadata.clone(),
                 config.clone(),
                 self.registry.child_token(),
+                status_checker,
             )
         };
 
@@ -182,6 +217,7 @@ impl Supervisor {
     ///
     /// Actors are spawned with priority channel support, ensuring that
     /// high-priority messages (like Stop) are processed before normal messages.
+    /// The batch checker is created using the configured `StatusCheckerFactory`.
     pub fn spawn_platform(
         &mut self,
         platform_id: impl Into<String>,
@@ -193,11 +229,17 @@ impl Supervisor {
             return Err(SpawnError::ActorExists(platform_id));
         }
 
-        // Create actor with priority channel support
-        let (actor, handle) = PlatformActor::with_priority_channel(
+        // Create batch checker from factory and wrap in DynBatchChecker
+        let batch_checker = Arc::new(DynBatchChecker::new(
+            self.checker_factory.create_batch_checker(),
+        ));
+
+        // Create actor with priority channel support and injected batch checker
+        let (actor, handle) = PlatformActor::with_priority_channel_and_checker(
             platform_id.clone(),
             config.clone(),
             self.registry.child_token(),
+            batch_checker,
         );
 
         // Cache config for potential restart
@@ -651,6 +693,7 @@ mod tests {
             template_config_id: None,
             state: StreamerState::NotLive,
             priority: Priority::Normal,
+            avatar_url: None,
             consecutive_error_count: 0,
             disabled_until: None,
             last_live_time: None,

@@ -19,6 +19,12 @@ pub fn default_client() -> Client {
 }
 
 pub fn create_client(proxy_config: Option<ProxyConfig>) -> Client {
+    create_client_builder(proxy_config)
+        .build()
+        .expect("Failed to create HTTP client")
+}
+
+pub fn create_client_builder(proxy_config: Option<ProxyConfig>) -> reqwest::ClientBuilder {
     let provider = Arc::new(ring::default_provider());
     let tls_config = ClientConfig::builder_with_provider(provider)
         .with_safe_default_protocol_versions()
@@ -45,7 +51,7 @@ pub fn create_client(proxy_config: Option<ProxyConfig>) -> Client {
         }
     }
 
-    builder.build().expect("Failed to create HTTP client")
+    builder
 }
 
 /// Returns a new `ExtractorFactory` populated with all the supported platforms.

@@ -20,13 +20,15 @@ use tracing::{debug, error, info, warn};
 
 use crate::Result;
 use crate::config::{ConfigEventBroadcaster, ConfigUpdateEvent};
+use crate::database::repositories::{FilterRepository, SessionRepository, StreamerRepository};
 use crate::downloader::DownloadManagerEvent;
+use crate::monitor::StreamMonitor;
 use crate::streamer::{StreamerManager, StreamerMetadata};
 
 use super::actor::{
-    ActorHandle, ConfigRouter, ConfigScope, DownloadEndReason, PlatformConfig, PlatformMapping,
-    PlatformMessage, ShutdownReport, StreamerConfig, StreamerMessage, Supervisor, SupervisorConfig,
-    TaskCompletionAction,
+    ActorHandle, ConfigRouter, ConfigScope, DownloadEndReason, MonitorCheckerFactory,
+    PlatformConfig, PlatformMapping, PlatformMessage, ShutdownReport, StreamerConfig,
+    StreamerMessage, Supervisor, SupervisorConfig, TaskCompletionAction,
 };
 
 /// Default check interval (60 seconds).
@@ -76,7 +78,11 @@ impl Default for SchedulerConfig {
 ///
 /// Unlike the previous implementation, actors manage their own scheduling internally.
 /// This eliminates the need for periodic bulk re-scheduling operations.
-pub struct Scheduler<R: crate::database::repositories::StreamerRepository + Send + Sync + 'static> {
+///
+/// # Generic Type Parameters
+///
+/// - `R`: StreamerRepository used by the StreamerManager
+pub struct Scheduler<R: StreamerRepository + Send + Sync + 'static> {
     /// Streamer manager for accessing streamer state.
     streamer_manager: Arc<StreamerManager<R>>,
     /// Event broadcaster for config updates.
@@ -95,14 +101,15 @@ pub struct Scheduler<R: crate::database::repositories::StreamerRepository + Send
     download_event_rx: Option<broadcast::Receiver<DownloadManagerEvent>>,
 }
 
-impl<R: crate::database::repositories::StreamerRepository + Send + Sync + 'static> Scheduler<R> {
+impl<R: StreamerRepository + Send + Sync + 'static> Scheduler<R> {
     /// Create a new scheduler with actor-based infrastructure.
     ///
     /// This initializes the actor registry and supervisor without spawning any actors.
     /// Actors are spawned when `run()` is called or when streamers are added dynamically.
     ///
-    /// Note: This creates a scheduler with its own cancellation token.
-    /// Use `with_cancellation()` to share a cancellation token with the parent.
+    /// Note: This creates a scheduler with its own cancellation token and uses
+    /// `NoOpCheckerFactory` for status checking. For real status checking, use
+    /// `with_monitor()` instead.
     pub fn new(
         streamer_manager: Arc<StreamerManager<R>>,
         event_broadcaster: ConfigEventBroadcaster,
@@ -118,6 +125,9 @@ impl<R: crate::database::repositories::StreamerRepository + Send + Sync + 'stati
     ///
     /// This allows the parent (e.g., ServiceContainer) to directly cancel the scheduler
     /// without needing a forwarding task.
+    ///
+    /// Note: Uses `NoOpCheckerFactory` for status checking. For real status checking,
+    /// use `with_monitor()` instead.
     pub fn with_cancellation(
         streamer_manager: Arc<StreamerManager<R>>,
         event_broadcaster: ConfigEventBroadcaster,
@@ -133,8 +143,9 @@ impl<R: crate::database::repositories::StreamerRepository + Send + Sync + 'stati
 
     /// Create a new scheduler with custom configuration.
     ///
-    /// Note: This creates a scheduler with its own cancellation token.
-    /// Use `with_full_config()` to provide a shared cancellation token.
+    /// Note: This creates a scheduler with its own cancellation token and uses
+    /// `NoOpCheckerFactory` for status checking. For real status checking, use
+    /// `with_monitor()` instead.
     pub fn with_config(
         streamer_manager: Arc<StreamerManager<R>>,
         event_broadcaster: ConfigEventBroadcaster,
@@ -152,6 +163,9 @@ impl<R: crate::database::repositories::StreamerRepository + Send + Sync + 'stati
     ///
     /// This is the most flexible constructor, allowing full control over configuration
     /// and cancellation behavior.
+    ///
+    /// Note: Uses `NoOpCheckerFactory` for status checking. For real status checking,
+    /// use `with_monitor()` instead.
     pub fn with_full_config(
         streamer_manager: Arc<StreamerManager<R>>,
         event_broadcaster: ConfigEventBroadcaster,
@@ -160,6 +174,92 @@ impl<R: crate::database::repositories::StreamerRepository + Send + Sync + 'stati
     ) -> Self {
         let supervisor =
             Supervisor::with_config(cancellation_token.clone(), config.supervisor_config.clone());
+
+        Self {
+            streamer_manager,
+            event_broadcaster,
+            config,
+            cancellation_token,
+            supervisor,
+            platform_mapping: PlatformMapping::new(),
+            platform_handles: HashMap::new(),
+            download_event_rx: None,
+        }
+    }
+
+    /// Create a new scheduler with a StreamMonitor for real status checking.
+    ///
+    /// This constructor creates a `MonitorCheckerFactory` from the provided StreamMonitor
+    /// and passes it to the Supervisor. Actors spawned by this scheduler will use real
+    /// status checking via the StreamMonitor infrastructure.
+    ///
+    /// # Arguments
+    ///
+    /// * `streamer_manager` - The streamer manager for accessing streamer state
+    /// * `event_broadcaster` - Event broadcaster for config updates
+    /// * `monitor` - The StreamMonitor for real status detection
+    ///
+    /// # Example
+    ///
+    /// ```ignore
+    /// let scheduler = Scheduler::with_monitor(
+    ///     streamer_manager,
+    ///     event_broadcaster,
+    ///     monitor,
+    /// );
+    /// ```
+    pub fn with_monitor<SR, FR, SSR>(
+        streamer_manager: Arc<StreamerManager<R>>,
+        event_broadcaster: ConfigEventBroadcaster,
+        monitor: Arc<StreamMonitor<SR, FR, SSR>>,
+    ) -> Self
+    where
+        SR: StreamerRepository + Send + Sync + 'static,
+        FR: FilterRepository + Send + Sync + 'static,
+        SSR: SessionRepository + Send + Sync + 'static,
+    {
+        Self::with_monitor_and_config(
+            streamer_manager,
+            event_broadcaster,
+            monitor,
+            SchedulerConfig::default(),
+            CancellationToken::new(),
+        )
+    }
+
+    /// Create a new scheduler with a StreamMonitor and custom configuration.
+    ///
+    /// This is the most complete constructor, providing real status checking via
+    /// StreamMonitor along with full control over configuration and cancellation.
+    ///
+    /// # Arguments
+    ///
+    /// * `streamer_manager` - The streamer manager for accessing streamer state
+    /// * `event_broadcaster` - Event broadcaster for config updates
+    /// * `monitor` - The StreamMonitor for real status detection
+    /// * `config` - Custom scheduler configuration
+    /// * `cancellation_token` - Shared cancellation token for graceful shutdown
+    pub fn with_monitor_and_config<SR, FR, SSR>(
+        streamer_manager: Arc<StreamerManager<R>>,
+        event_broadcaster: ConfigEventBroadcaster,
+        monitor: Arc<StreamMonitor<SR, FR, SSR>>,
+        config: SchedulerConfig,
+        cancellation_token: CancellationToken,
+    ) -> Self
+    where
+        SR: StreamerRepository + Send + Sync + 'static,
+        FR: FilterRepository + Send + Sync + 'static,
+        SSR: SessionRepository + Send + Sync + 'static,
+    {
+        // Create MonitorCheckerFactory from the StreamMonitor
+        let checker_factory = Arc::new(MonitorCheckerFactory::new(monitor.clone()));
+
+        // Create supervisor with the real checker factory
+        let supervisor = Supervisor::with_checker_factory(
+            cancellation_token.clone(),
+            config.supervisor_config.clone(),
+            checker_factory,
+        );
 
         Self {
             streamer_manager,
@@ -298,20 +398,20 @@ impl<R: crate::database::repositories::StreamerRepository + Send + Sync + 'stati
                 }
 
                 // Handle actor task completions (crash detection)
-                result = self.supervisor.registry_mut().join_next() => {
-                    match result {
-                        Some(Ok(task_result)) => {
-                            let action = self.supervisor.handle_task_completion(task_result);
-                            self.handle_task_completion_action(action);
-                        }
-                        Some(Err(e)) => {
-                            error!("Actor task panicked: {}", e);
-                        }
-                        None => {
-                            // No more tasks - this shouldn't happen during normal operation
-                            debug!("No more actor tasks");
+                // Only poll join_next if there are pending tasks to avoid busy-looping
+                result = Self::join_next_if_pending(&mut self.supervisor) => {
+                    if let Some(join_result) = result {
+                        match join_result {
+                            Ok(task_result) => {
+                                let action = self.supervisor.handle_task_completion(task_result);
+                                self.handle_task_completion_action(action);
+                            }
+                            Err(e) => {
+                                error!("Actor task panicked: {}", e);
+                            }
                         }
                     }
+                    // None means no pending tasks - we just continue the loop
                 }
 
                 // Process pending restarts
@@ -339,6 +439,19 @@ impl<R: crate::database::repositories::StreamerRepository + Send + Sync + 'stati
         match next_restart {
             Some(instant) => tokio::time::sleep_until(instant).await,
             None => std::future::pending().await,
+        }
+    }
+
+    /// Wait for the next actor task completion, or wait indefinitely if no tasks pending.
+    /// This prevents busy-looping when there are no actor tasks.
+    async fn join_next_if_pending(
+        supervisor: &mut Supervisor,
+    ) -> Option<std::result::Result<super::actor::ActorTaskResult, tokio::task::JoinError>> {
+        if supervisor.registry().has_pending_tasks() {
+            supervisor.registry_mut().join_next().await
+        } else {
+            // No tasks to wait for - wait indefinitely until other events occur
+            std::future::pending().await
         }
     }
 
@@ -447,7 +560,57 @@ impl<R: crate::database::repositories::StreamerRepository + Send + Sync + 'stati
     async fn handle_config_event(&mut self, event: ConfigUpdateEvent) {
         debug!("Handling config event: {}", event.description());
 
+        // Handle streamer deletion - remove actor immediately
+        if let ConfigUpdateEvent::StreamerDeleted { ref streamer_id } = event {
+            if self.remove_streamer(streamer_id) {
+                info!("Removed actor for deleted streamer: {}", streamer_id);
+            }
+            return; // No need to route config to a deleted streamer
+        }
+
         let scope = ConfigScope::from_event(&event);
+
+        // Check if we need to spawn or remove a streamer actor for Streamer-scoped updates
+        if let ConfigScope::Streamer(ref streamer_id) = scope {
+            if let Some(metadata) = self.streamer_manager.get_streamer(streamer_id) {
+                if metadata.is_active() {
+                    // Streamer is active - spawn actor if missing
+                    if !self.supervisor.registry().has_streamer(streamer_id) {
+                        info!(
+                            "Spawning missing actor for active streamer: {}",
+                            streamer_id
+                        );
+                        if let Err(e) = self.spawn_streamer_actor(metadata) {
+                            warn!("Failed to spawn actor for {}: {}", streamer_id, e);
+                        }
+                    }
+                } else {
+                    // Streamer is inactive (disabled, cancelled, etc.) - remove actor if exists
+                    if self.supervisor.registry().has_streamer(streamer_id) {
+                        if self.remove_streamer(streamer_id) {
+                            info!(
+                                "Removed actor for inactive streamer {} (state: {})",
+                                streamer_id, metadata.state
+                            );
+                        }
+                    } else {
+                        debug!(
+                            "Streamer {} is inactive ({}), no actor to remove",
+                            streamer_id, metadata.state
+                        );
+                    }
+                    return; // No need to route config to an inactive streamer
+                }
+            } else {
+                // Streamer not found - might have been deleted, remove actor if exists
+                if self.remove_streamer(streamer_id) {
+                    info!("Removed actor for unknown streamer: {}", streamer_id);
+                } else {
+                    debug!("Streamer {} not found in manager", streamer_id);
+                }
+                return; // No need to route config to a non-existent streamer
+            }
+        }
 
         // Build streamer handles map from registry
         let streamer_handles: HashMap<String, ActorHandle<StreamerMessage>> = self

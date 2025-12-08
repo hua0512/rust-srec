@@ -7,7 +7,7 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use tokio::sync::{Notify, RwLock};
 use tokio_util::sync::CancellationToken;
-use tracing::{debug, info, warn};
+use tracing::{info, warn};
 
 use crate::database::models::{JobDbModel, JobFilters, JobStatus as DbJobStatus, Pagination};
 use crate::database::repositories::JobRepository;
@@ -283,7 +283,8 @@ impl JobQueue {
 
     /// Dequeue a job for processing.
     pub async fn dequeue(&self, job_type: Option<&str>) -> Result<Option<Job>> {
-        debug!("Attempting to dequeue job of type {:?}", job_type);
+        // Note: This is called frequently by worker pools, so we use trace level
+        // to avoid log spam. Use debug level only when a job is actually dequeued.
 
         // Try to get from database if repository is available
         if let Some(repo) = &self.job_repository {

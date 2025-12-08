@@ -935,6 +935,7 @@ impl Douyu {
             is_live,
             streams,
             Some(self.extractor.get_platform_headers_map()),
+            None,
         )
     }
 

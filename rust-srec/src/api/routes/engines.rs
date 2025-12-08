@@ -5,10 +5,9 @@
 use axum::{
     Json, Router,
     extract::{Path, State},
-    routing::{delete, get, patch, post},
+    routing::get,
 };
 
-use crate::Result;
 use crate::api::error::{ApiError, ApiResult};
 use crate::api::server::AppState;
 use crate::database::models::{

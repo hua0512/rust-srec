@@ -100,6 +100,7 @@ impl PandaTV {
         cover_url: Option<String>,
         is_live: bool,
         streams: Vec<StreamInfo>,
+        headers: Option<FxHashMap<String, String>>,
         extras: Option<FxHashMap<String, String>>,
     ) -> MediaInfo {
         MediaInfo {
@@ -110,6 +111,7 @@ impl PandaTV {
             cover_url,
             is_live,
             streams,
+            headers,
             extras,
         }
     }
@@ -130,7 +132,16 @@ impl PandaTV {
         let is_live = media.is_some() && media.as_ref().unwrap().is_live;
 
         if !is_live {
-            return Ok(self.create_media_info(title, artist, None, None, is_live, vec![], None));
+            return Ok(self.create_media_info(
+                title,
+                artist,
+                None,
+                None,
+                is_live,
+                vec![],
+                None,
+                None,
+            ));
         }
 
         let media = media.as_ref().unwrap();
@@ -175,7 +186,8 @@ impl PandaTV {
         extras.insert("t".to_string(), live_info.chat_server.t.to_string());
         extras.insert("token".to_string(), live_info.chat_server.token);
         extras.insert("rid".to_string(), bj_info.id.to_string());
-        extras.extend(self.extractor.get_platform_headers_map());
+        extras.insert("rid".to_string(), bj_info.id.to_string());
+        // extras.extend(self.extractor.get_platform_headers_map());
 
         let headers = self.extractor.get_platform_headers().clone();
         let streams = self
@@ -189,6 +201,7 @@ impl PandaTV {
             cover_url,
             is_live,
             streams,
+            Some(self.extractor.get_platform_headers_map()),
             Some(extras),
         ))
     }

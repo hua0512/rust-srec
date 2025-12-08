@@ -14,6 +14,7 @@ use tracing::{debug, info, warn};
 
 use super::handle::ActorHandle;
 use super::messages::{PlatformMessage, StreamerMessage};
+use super::monitor_adapter::{BatchChecker, StatusChecker};
 use super::platform_actor::PlatformActor;
 use super::streamer_actor::{ActorOutcome, ActorResult, StreamerActor};
 
@@ -162,9 +163,12 @@ impl ActorRegistry {
     ///
     /// Returns the actor handle if successful, or an error if an actor
     /// with the same ID already exists.
-    pub fn spawn_streamer(
+    ///
+    /// This method is generic over the status checker type, allowing
+    /// both `NoOpStatusChecker` (for testing) and real checkers (for production).
+    pub fn spawn_streamer<S: StatusChecker>(
         &mut self,
-        actor: StreamerActor,
+        actor: StreamerActor<S>,
         handle: ActorHandle<StreamerMessage>,
     ) -> Result<ActorHandle<StreamerMessage>, RegistryError> {
         let id = actor.id().to_string();
@@ -194,9 +198,12 @@ impl ActorRegistry {
     ///
     /// Returns the actor handle if successful, or an error if an actor
     /// with the same platform ID already exists.
-    pub fn spawn_platform(
+    ///
+    /// This method is generic over the batch checker type, allowing
+    /// both `NoOpBatchChecker` (for testing) and real checkers (for production).
+    pub fn spawn_platform<B: BatchChecker>(
         &mut self,
-        actor: PlatformActor,
+        actor: PlatformActor<B>,
         handle: ActorHandle<PlatformMessage>,
     ) -> Result<ActorHandle<PlatformMessage>, RegistryError> {
         let platform_id = actor.platform_id().to_string();
@@ -357,6 +364,7 @@ mod tests {
             template_config_id: None,
             state: StreamerState::NotLive,
             priority: Priority::Normal,
+            avatar_url: None,
             consecutive_error_count: 0,
             disabled_until: None,
             last_live_time: None,

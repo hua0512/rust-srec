@@ -157,6 +157,13 @@ pub enum DownloadManagerEvent {
         session_id: String,
         engine_type: EngineType,
     },
+    /// Progress update for a download.
+    Progress {
+        download_id: String,
+        streamer_id: String,
+        session_id: String,
+        progress: DownloadProgress,
+    },
     /// Segment completed.
     SegmentCompleted {
         download_id: String,
@@ -636,9 +643,16 @@ impl DownloadManager {
                     }
                     SegmentEvent::Progress(progress) => {
                         if let Some(mut download) = active_downloads.get_mut(&download_id_clone) {
-                            download.progress = progress;
+                            download.progress = progress.clone();
                             download.status = DownloadStatus::Downloading;
                         }
+                        // Broadcast progress event to WebSocket subscribers
+                        let _ = event_tx.send(DownloadManagerEvent::Progress {
+                            download_id: download_id_clone.clone(),
+                            streamer_id: streamer_id.clone(),
+                            session_id: session_id.clone(),
+                            progress,
+                        });
                     }
                     SegmentEvent::DownloadCompleted {
                         total_bytes,
@@ -845,10 +859,19 @@ impl DownloadManager {
     }
 
     /// Check if a streamer has an active download.
+    ///
+    /// Only considers downloads with status Starting or Downloading as active.
+    /// Failed, Completed, or Cancelled downloads are not considered active,
+    /// preventing race conditions where a failed download blocks new attempts.
     pub fn has_active_download(&self, streamer_id: &str) -> bool {
-        self.active_downloads
-            .iter()
-            .any(|entry| entry.value().handle.config.streamer_id == streamer_id)
+        self.active_downloads.iter().any(|entry| {
+            let download = entry.value();
+            download.handle.config.streamer_id == streamer_id
+                && matches!(
+                    download.status,
+                    DownloadStatus::Starting | DownloadStatus::Downloading
+                )
+        })
     }
 
     /// Take pending updates for a download (called by engines at segment boundaries).

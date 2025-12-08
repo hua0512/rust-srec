@@ -86,8 +86,8 @@ impl Default for DownloaderConfig {
     fn default() -> Self {
         Self {
             cache_config: None,
-            timeout: Duration::from_secs(30),
-            connect_timeout: Duration::from_secs(10),
+            timeout: Duration::from_secs(0),
+            connect_timeout: Duration::from_secs(30),
             read_timeout: Duration::from_secs(30),
             write_timeout: Duration::from_secs(30),
             follow_redirects: true,

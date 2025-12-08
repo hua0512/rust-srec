@@ -3,6 +3,7 @@
 //! The StreamMonitor coordinates live status detection, filter evaluation,
 //! and state updates for streamers.
 
+use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -39,7 +40,7 @@ impl Default for StreamMonitorConfig {
         Self {
             default_rate_limit: 1.0,
             platform_rate_limits: vec![("twitch".to_string(), 2.0), ("youtube".to_string(), 1.0)],
-            request_timeout: Duration::from_secs(30),
+            request_timeout: Duration::from_secs(0),
             max_concurrent_requests: 10,
         }
     }
@@ -108,12 +109,20 @@ impl<
             rate_limiter.set_platform_config(platform, RateLimiterConfig::with_rps(*rps));
         }
 
-        // Create HTTP client with timeout
-        let client = reqwest::Client::builder()
-            .timeout(config.request_timeout)
-            .pool_max_idle_per_host(config.max_concurrent_requests)
+        // Create HTTP client
+        let mut client_builder = platforms_parser::extractor::create_client_builder(None);
+
+        if config.request_timeout > Duration::from_secs(0) {
+            client_builder = client_builder.timeout(config.request_timeout);
+        }
+
+        if config.max_concurrent_requests > 0 {
+            client_builder = client_builder.pool_max_idle_per_host(config.max_concurrent_requests);
+        }
+
+        let client = client_builder
             .build()
-            .unwrap_or_default();
+            .expect("Failed to create HTTP client");
 
         let detector = StreamDetector::with_client(client.clone());
         let batch_detector = BatchDetector::with_client(client, rate_limiter.clone());
@@ -218,12 +227,22 @@ impl<
             LiveStatus::Live {
                 title,
                 category,
+                avatar,
                 started_at,
                 streams,
+                media_headers,
                 ..
             } => {
-                self.handle_live(streamer, title, category, started_at, streams)
-                    .await?;
+                self.handle_live(
+                    streamer,
+                    title,
+                    category,
+                    avatar,
+                    started_at,
+                    streams,
+                    media_headers,
+                )
+                .await?;
             }
             LiveStatus::Offline => {
                 self.handle_offline(streamer).await?;
@@ -292,14 +311,17 @@ impl<
         streamer: &StreamerMetadata,
         title: String,
         category: Option<String>,
+        avatar: Option<String>,
         started_at: Option<chrono::DateTime<chrono::Utc>>,
         streams: Vec<platforms_parser::media::StreamInfo>,
+        media_headers: Option<HashMap<String, String>>,
     ) -> Result<()> {
         info!(
-            "Streamer {} is LIVE: {} ({} streams available)",
+            "Streamer {} is LIVE: {} ({} streams available, {} media headers)",
             streamer.name,
             title,
-            streams.len()
+            streams.len(),
+            media_headers.as_ref().map(|h| h.len()).unwrap_or(0)
         );
 
         // Update state to Live
@@ -307,6 +329,17 @@ impl<
             .update_state(&streamer.id, StreamerState::Live)
             .await?;
 
+        // Update metadata if changed (e.g. avatar)
+        if avatar.is_some() && avatar != streamer.avatar_url {
+            info!("Updating avatar for streamer {}", streamer.name);
+            if let Err(e) = self
+                .streamer_manager
+                .update_avatar(&streamer.id, avatar)
+                .await
+            {
+                warn!("Failed to update streamer avatar: {}", e);
+            }
+        }
         // Record success (resets error count, mark as going live)
         self.streamer_manager
             .record_success(&streamer.id, true)
@@ -314,6 +347,7 @@ impl<
 
         // Emit live event for notifications and download triggering
         // Streams are passed directly from platform parser
+        // Media headers are passed for platforms that require specific HTTP headers
         let event = MonitorEvent::StreamerLive {
             streamer_id: streamer.id.clone(),
             streamer_name: streamer.name.clone(),
@@ -321,6 +355,7 @@ impl<
             title: title.clone(),
             category: category.clone(),
             streams,
+            media_headers,
             timestamp: chrono::Utc::now(),
         };
         let _ = self.event_broadcaster.publish(event);
@@ -506,7 +541,7 @@ mod tests {
     fn test_stream_monitor_config_default() {
         let config = StreamMonitorConfig::default();
         assert_eq!(config.default_rate_limit, 1.0);
-        assert_eq!(config.request_timeout, Duration::from_secs(30));
+        assert_eq!(config.request_timeout, Duration::from_secs(0));
     }
 
     #[test]
@@ -515,6 +550,7 @@ mod tests {
 
         let live_status = LiveStatus::Live {
             title: "Test".to_string(),
+            avatar: None,
             category: None,
             started_at: None,
             viewer_count: None,
@@ -530,6 +566,7 @@ mod tests {
                 fps: 30.0,
                 is_headers_needed: false,
             }],
+            media_headers: None,
         };
         assert_eq!(status_summary(&live_status), "Live");
 

@@ -193,8 +193,10 @@ pub struct StreamerActorState {
     pub streamer_state: StreamerState,
     /// Next scheduled check time.
     pub next_check: Option<Instant>,
-    /// Consecutive offline count.
+    /// Consecutive offline count (after going offline from live).
     pub offline_count: u32,
+    /// Whether the streamer was previously live (used for quick re-detection).
+    pub was_live: bool,
     /// Last check result.
     pub last_check: Option<CheckResult>,
     /// Error count for circuit breaker.
@@ -207,6 +209,7 @@ impl Default for StreamerActorState {
             streamer_state: StreamerState::NotLive,
             next_check: None,
             offline_count: 0,
+            was_live: false,
             last_check: None,
             error_count: 0,
         }
@@ -220,6 +223,7 @@ impl StreamerActorState {
             streamer_state: metadata.state,
             next_check: Some(Instant::now()), // Due immediately
             offline_count: 0,
+            was_live: metadata.state == StreamerState::Live,
             last_check: None,
             error_count: metadata.consecutive_error_count as u32,
         }
@@ -235,10 +239,20 @@ impl StreamerActorState {
             self.error_count = 0;
         }
 
-        if result.state == StreamerState::NotLive {
-            self.offline_count += 1;
-        } else {
+        // Track if streamer was live for quick re-detection logic
+        if result.state == StreamerState::Live {
+            self.was_live = true;
             self.offline_count = 0;
+        } else if result.state == StreamerState::NotLive {
+            // Only count offline checks if streamer was previously live
+            if self.was_live {
+                self.offline_count += 1;
+                // Reset was_live after enough offline checks
+                if self.offline_count >= config.offline_check_count {
+                    self.was_live = false;
+                    self.offline_count = 0;
+                }
+            }
         }
 
         self.last_check = Some(result);
@@ -251,6 +265,12 @@ impl StreamerActorState {
     /// downloading and know they're online. Checks will resume when:
     /// - The download fails/ends (streamer goes offline or network issues)
     /// - The state changes to NotLive
+    ///
+    /// The check interval strategy:
+    /// - Normal case (streamer was never live): Use `check_interval_ms` (longer)
+    /// - Streamer just went offline (was_live && offline_count < offline_check_count):
+    ///   Use `offline_check_interval_ms` (shorter) for quick re-detection
+    /// - After several offline checks: Use `check_interval_ms` (longer)
     pub fn schedule_next_check(&mut self, config: &StreamerConfig) {
         // Don't schedule checks when streamer is live - we're downloading and know they're online
         if self.streamer_state == StreamerState::Live {
@@ -258,8 +278,12 @@ impl StreamerActorState {
             return;
         }
 
-        let interval_ms = if self.streamer_state == StreamerState::NotLive
-            && self.offline_count >= config.offline_check_count
+        // Use shorter interval only when streamer was previously live and just went offline
+        // This enables quick re-detection when a stream ends unexpectedly
+        // For streamers that were never live, use the longer interval
+        let interval_ms = if self.was_live
+            && self.streamer_state == StreamerState::NotLive
+            && self.offline_count < config.offline_check_count
         {
             config.offline_check_interval_ms
         } else {
@@ -282,10 +306,12 @@ impl StreamerActorState {
     }
 
     /// Get time until next check.
-    pub fn time_until_next_check(&self) -> std::time::Duration {
+    ///
+    /// Returns `None` if no check is scheduled (e.g., when streamer is live).
+    /// Returns `Some(Duration::ZERO)` if a check is due immediately.
+    pub fn time_until_next_check(&self) -> Option<std::time::Duration> {
         self.next_check
             .map(|t| t.saturating_duration_since(Instant::now()))
-            .unwrap_or(std::time::Duration::ZERO)
     }
 }
 
@@ -382,17 +408,27 @@ mod tests {
         let mut state = StreamerActorState::default();
         let config = StreamerConfig::default();
 
-        // Record a live check
+        // Record a live check - this sets was_live to true
         state.record_check(CheckResult::success(StreamerState::Live), &config);
         assert_eq!(state.streamer_state, StreamerState::Live);
         assert_eq!(state.offline_count, 0);
         assert_eq!(state.error_count, 0);
+        assert!(state.was_live);
 
-        // Record offline checks
-        for _ in 0..3 {
-            state.record_check(CheckResult::success(StreamerState::NotLive), &config);
-        }
-        assert_eq!(state.offline_count, 3);
+        // Record offline checks - offline_count increments because was_live is true
+        state.record_check(CheckResult::success(StreamerState::NotLive), &config);
+        assert_eq!(state.offline_count, 1);
+        assert!(state.was_live);
+
+        state.record_check(CheckResult::success(StreamerState::NotLive), &config);
+        assert_eq!(state.offline_count, 2);
+        assert!(state.was_live);
+
+        // After 3 offline checks (>= offline_check_count), was_live resets to false
+        // and offline_count resets to 0
+        state.record_check(CheckResult::success(StreamerState::NotLive), &config);
+        assert_eq!(state.offline_count, 0);
+        assert!(!state.was_live);
     }
 
     #[test]

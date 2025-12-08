@@ -124,6 +124,7 @@ impl Twitcasting {
             artist_url: None,
             is_live: false,
             streams: vec![],
+            headers: None,
             extras: None,
         }
     }
@@ -183,6 +184,7 @@ impl Twitcasting {
             artist_url: None,
             is_live: true,
             streams: streams_info,
+            headers: Some(self.extractor.get_platform_headers_map()),
             extras: None,
         })
     }

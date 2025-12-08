@@ -116,25 +116,6 @@ where
         Ok(())
     }
 
-    /// Update streamer state.
-    ///
-    /// Persists to database first, then updates in-memory cache.
-    pub async fn update_state(&self, id: &str, state: StreamerState) -> Result<()> {
-        debug!("Updating state for streamer {}: {:?}", id, state);
-
-        // Persist to database
-        self.repo
-            .update_streamer_state(id, &state.to_string())
-            .await?;
-
-        // Update in-memory cache
-        if let Some(mut entry) = self.metadata.get_mut(id) {
-            entry.state = state;
-        }
-
-        Ok(())
-    }
-
     /// Update streamer priority.
     ///
     /// Persists to database first, then updates in-memory cache.
@@ -169,6 +150,40 @@ where
             entry.consecutive_error_count = 0;
             entry.disabled_until = None;
             entry.state = StreamerState::NotLive;
+        }
+
+        Ok(())
+    }
+
+    /// Update streamer state.
+    ///
+    /// Persists to database first, then updates in-memory cache.
+    pub async fn update_state(&self, id: &str, state: StreamerState) -> Result<()> {
+        debug!("Updating state for streamer {}: {:?}", id, state);
+
+        // Persist to database
+        self.repo
+            .update_streamer_state(id, &state.to_string())
+            .await?;
+
+        // Update in-memory cache
+        if let Some(mut entry) = self.metadata.get_mut(id) {
+            entry.state = state;
+        }
+
+        Ok(())
+    }
+
+    /// Update a streamer's avatar.
+    pub async fn update_avatar(&self, id: &str, avatar_url: Option<String>) -> Result<()> {
+        debug!("Updating avatar for streamer {}", id);
+
+        // Persist to database
+        self.repo.update_avatar(id, avatar_url.as_deref()).await?;
+
+        // Update in-memory cache
+        if let Some(mut entry) = self.metadata.get_mut(id) {
+            entry.avatar_url = avatar_url;
         }
 
         Ok(())
@@ -260,6 +275,7 @@ where
     /// Delete a streamer.
     ///
     /// Removes from database first, then from in-memory cache.
+    /// Broadcasts a StreamerDeleted event to trigger cleanup of active resources.
     pub async fn delete_streamer(&self, id: &str) -> Result<()> {
         debug!("Deleting streamer: {}", id);
 
@@ -268,6 +284,12 @@ where
 
         // Remove from in-memory cache
         self.metadata.remove(id);
+
+        // Broadcast deletion event to trigger cleanup of active resources
+        self.broadcaster
+            .publish(ConfigUpdateEvent::StreamerDeleted {
+                streamer_id: id.to_string(),
+            });
 
         Ok(())
     }
@@ -500,6 +522,7 @@ where
             template_config_id: metadata.template_config_id.clone(),
             state: metadata.state.to_string(),
             priority: metadata.priority.to_string(),
+            avatar: metadata.avatar_url.clone(),
             consecutive_error_count: Some(metadata.consecutive_error_count),
             disabled_until: metadata.disabled_until.map(|dt| dt.to_rfc3339()),
             last_live_time: metadata.last_live_time.map(|dt| dt.to_rfc3339()),
@@ -639,8 +662,24 @@ mod tests {
             Ok(())
         }
 
-        async fn update_last_live_time(&self, _id: &str, _time: &str) -> Result<()> {
-            Ok(())
+        async fn update_last_live_time(&self, id: &str, time: &str) -> Result<()> {
+            let mut streamers = self.streamers.lock().unwrap();
+            if let Some(s) = streamers.iter_mut().find(|s| s.id == id) {
+                s.last_live_time = Some(time.to_string());
+                Ok(())
+            } else {
+                Err(crate::Error::not_found("Streamer", id))
+            }
+        }
+
+        async fn update_avatar(&self, id: &str, avatar_url: Option<&str>) -> Result<()> {
+            let mut streamers = self.streamers.lock().unwrap();
+            if let Some(s) = streamers.iter_mut().find(|s| s.id == id) {
+                s.avatar = avatar_url.map(|s| s.to_string());
+                Ok(())
+            } else {
+                Err(crate::Error::not_found("Streamer", id))
+            }
         }
 
         async fn clear_streamer_error_state(&self, _id: &str) -> Result<()> {
@@ -702,6 +741,7 @@ mod tests {
             template_config_id: None,
             state: "NOT_LIVE".to_string(),
             priority: "NORMAL".to_string(),
+            avatar: None,
             consecutive_error_count: Some(0),
             disabled_until: None,
             last_live_time: None,
@@ -739,6 +779,7 @@ mod tests {
             template_config_id: None,
             state: StreamerState::NotLive,
             priority: Priority::Normal,
+            avatar_url: None,
             consecutive_error_count: 0,
             disabled_until: None,
             last_live_time: None,
@@ -881,6 +922,7 @@ mod tests {
             template_config_id: None,
             state: StreamerState::NotLive,
             priority: Priority::Normal,
+            avatar_url: None,
             consecutive_error_count: 0,
             disabled_until: None,
             last_live_time: None,

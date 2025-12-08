@@ -8,10 +8,23 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 
-use crate::monitor::{BatchResult, LiveStatus};
+use crate::monitor::LiveStatus;
 use crate::streamer::StreamerMetadata;
 
 use super::messages::{BatchDetectionResult, CheckResult};
+
+/// Factory trait for creating status checkers.
+///
+/// This allows the Supervisor to create appropriate checker instances
+/// without being coupled to specific implementations. The factory pattern
+/// enables dependency injection of real or mock checkers.
+pub trait StatusCheckerFactory: Send + Sync + 'static {
+    /// Create a StatusChecker for individual streamer checks.
+    fn create_status_checker(&self) -> Arc<dyn StatusChecker>;
+
+    /// Create a BatchChecker for platform batch checks.
+    fn create_batch_checker(&self) -> Arc<dyn BatchChecker>;
+}
 
 /// Trait for individual streamer status checking.
 ///
@@ -83,6 +96,72 @@ impl CheckError {
             message: message.into(),
             transient: false,
         }
+    }
+}
+
+/// A wrapper type that implements `StatusChecker` by delegating to `Arc<dyn StatusChecker>`.
+///
+/// This allows using dynamic dispatch with the generic `StreamerActor<S>` type,
+/// enabling the Supervisor to inject different checker implementations at runtime.
+#[derive(Clone)]
+pub struct DynStatusChecker {
+    inner: Arc<dyn StatusChecker>,
+}
+
+impl DynStatusChecker {
+    /// Create a new DynStatusChecker wrapping the given checker.
+    pub fn new(checker: Arc<dyn StatusChecker>) -> Self {
+        Self { inner: checker }
+    }
+}
+
+#[async_trait]
+impl StatusChecker for DynStatusChecker {
+    async fn check_status(&self, streamer: &StreamerMetadata) -> Result<CheckResult, CheckError> {
+        self.inner.check_status(streamer).await
+    }
+
+    async fn process_status(
+        &self,
+        streamer: &StreamerMetadata,
+        status: LiveStatus,
+    ) -> Result<(), CheckError> {
+        self.inner.process_status(streamer, status).await
+    }
+
+    async fn handle_error(
+        &self,
+        streamer: &StreamerMetadata,
+        error: &str,
+    ) -> Result<(), CheckError> {
+        self.inner.handle_error(streamer, error).await
+    }
+}
+
+/// A wrapper type that implements `BatchChecker` by delegating to `Arc<dyn BatchChecker>`.
+///
+/// This allows using dynamic dispatch with the generic `PlatformActor<B>` type,
+/// enabling the Supervisor to inject different checker implementations at runtime.
+#[derive(Clone)]
+pub struct DynBatchChecker {
+    inner: Arc<dyn BatchChecker>,
+}
+
+impl DynBatchChecker {
+    /// Create a new DynBatchChecker wrapping the given checker.
+    pub fn new(checker: Arc<dyn BatchChecker>) -> Self {
+        Self { inner: checker }
+    }
+}
+
+#[async_trait]
+impl BatchChecker for DynBatchChecker {
+    async fn batch_check(
+        &self,
+        platform_id: &str,
+        streamers: Vec<StreamerMetadata>,
+    ) -> Result<Vec<BatchDetectionResult>, CheckError> {
+        self.inner.batch_check(platform_id, streamers).await
     }
 }
 
@@ -241,6 +320,46 @@ where
     }
 }
 
+/// Factory that creates real checkers connected to StreamMonitor.
+///
+/// This factory creates `MonitorStatusChecker` and `MonitorBatchChecker` instances
+/// that connect to the actual monitoring infrastructure for real status detection.
+pub struct MonitorCheckerFactory<SR, FR, SSR>
+where
+    SR: crate::database::repositories::StreamerRepository + Send + Sync + 'static,
+    FR: crate::database::repositories::FilterRepository + Send + Sync + 'static,
+    SSR: crate::database::repositories::SessionRepository + Send + Sync + 'static,
+{
+    monitor: Arc<crate::monitor::StreamMonitor<SR, FR, SSR>>,
+}
+
+impl<SR, FR, SSR> MonitorCheckerFactory<SR, FR, SSR>
+where
+    SR: crate::database::repositories::StreamerRepository + Send + Sync + 'static,
+    FR: crate::database::repositories::FilterRepository + Send + Sync + 'static,
+    SSR: crate::database::repositories::SessionRepository + Send + Sync + 'static,
+{
+    /// Create a new MonitorCheckerFactory with the given StreamMonitor.
+    pub fn new(monitor: Arc<crate::monitor::StreamMonitor<SR, FR, SSR>>) -> Self {
+        Self { monitor }
+    }
+}
+
+impl<SR, FR, SSR> StatusCheckerFactory for MonitorCheckerFactory<SR, FR, SSR>
+where
+    SR: crate::database::repositories::StreamerRepository + Send + Sync + 'static,
+    FR: crate::database::repositories::FilterRepository + Send + Sync + 'static,
+    SSR: crate::database::repositories::SessionRepository + Send + Sync + 'static,
+{
+    fn create_status_checker(&self) -> Arc<dyn StatusChecker> {
+        Arc::new(MonitorStatusChecker::new(self.monitor.clone()))
+    }
+
+    fn create_batch_checker(&self) -> Arc<dyn BatchChecker> {
+        Arc::new(MonitorBatchChecker::new(self.monitor.clone()))
+    }
+}
+
 /// Convert a LiveStatus to a CheckResult.
 fn convert_live_status_to_check_result(status: &LiveStatus) -> CheckResult {
     use crate::domain::StreamerState;
@@ -357,5 +476,30 @@ impl BatchChecker for NoOpBatchChecker {
             .collect();
 
         Ok(results)
+    }
+}
+
+/// Factory that creates NoOp checkers for testing.
+///
+/// This factory creates `NoOpStatusChecker` and `NoOpBatchChecker` instances,
+/// which simulate checks without actually performing them. Useful for unit tests
+/// and development scenarios where real monitoring is not needed.
+#[derive(Clone, Default)]
+pub struct NoOpCheckerFactory;
+
+impl NoOpCheckerFactory {
+    /// Create a new NoOpCheckerFactory.
+    pub fn new() -> Self {
+        Self
+    }
+}
+
+impl StatusCheckerFactory for NoOpCheckerFactory {
+    fn create_status_checker(&self) -> Arc<dyn StatusChecker> {
+        Arc::new(NoOpStatusChecker)
+    }
+
+    fn create_batch_checker(&self) -> Arc<dyn BatchChecker> {
+        Arc::new(NoOpBatchChecker)
     }
 }

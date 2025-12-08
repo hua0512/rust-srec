@@ -227,6 +227,7 @@ impl RedBook {
                 artist_url: avatar_url,
                 is_live: false,
                 streams: Vec::new(),
+                headers: None,
                 extras: None,
             });
         }
@@ -263,6 +264,7 @@ impl RedBook {
             is_live,
             streams,
             Some(self.extractor.get_platform_headers_map()),
+            None,
         ))
     }
 }

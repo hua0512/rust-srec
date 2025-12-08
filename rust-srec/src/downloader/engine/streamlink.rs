@@ -7,7 +7,10 @@ use tokio::io::{AsyncBufReadExt, BufReader};
 use tokio::process::Command;
 use tracing::{debug, error, info, warn};
 
-use super::traits::{DownloadEngine, DownloadHandle, DownloadProgress, EngineType, SegmentEvent};
+use super::traits::{DownloadEngine, DownloadHandle, EngineType, SegmentEvent};
+use super::utils::{
+    ensure_output_dir, is_segment_start, parse_progress, spawn_piped_process_waiter,
+};
 use crate::Result;
 use crate::database::models::engine::StreamlinkEngineConfig;
 
@@ -174,6 +177,15 @@ impl DownloadEngine for StreamlinkEngine {
     }
 
     async fn start(&self, handle: Arc<DownloadHandle>) -> Result<()> {
+        // 1. Ensure output directory exists before spawning processes (Requirements 2.1, 2.2)
+        if let Err(e) = ensure_output_dir(&handle.config.output_dir).await {
+            let _ = handle.event_tx.try_send(SegmentEvent::DownloadFailed {
+                error: e.clone(),
+                recoverable: false,
+            });
+            return Err(crate::Error::Other(e));
+        }
+
         let streamlink_args = self.build_streamlink_args(&handle);
         let ffmpeg_args = self.build_ffmpeg_args(&handle);
 
@@ -215,6 +227,9 @@ impl DownloadEngine for StreamlinkEngine {
             .stderr
             .take()
             .ok_or_else(|| crate::Error::Other("Failed to capture ffmpeg stderr".to_string()))?;
+
+        // 2. Use shared piped process waiter utility (Requirements 3.1, 3.2)
+        let exit_rx = spawn_piped_process_waiter(streamlink, ffmpeg, handle.cancellation_token.clone());
 
         let event_tx = handle.event_tx.clone();
         let cancellation_token = handle.cancellation_token.clone();
@@ -287,7 +302,7 @@ impl DownloadEngine for StreamlinkEngine {
             }
         });
 
-        // Spawn task to monitor ffmpeg stderr and emit events
+        // 3. Spawn task to monitor ffmpeg stderr and emit events - waits for exit status (Requirements 1.2, 1.3, 1.4)
         let event_tx_clone = event_tx.clone();
         let streamer_id_clone = streamer_id.clone();
         let cancellation_token_clone = cancellation_token.clone();
@@ -297,29 +312,29 @@ impl DownloadEngine for StreamlinkEngine {
             let mut segment_index = 0u32;
             let mut total_bytes = 0u64;
             let mut total_duration = 0.0f64;
+            let mut was_cancelled = false;
 
             loop {
                 tokio::select! {
                     _ = cancellation_token_clone.cancelled() => {
                         debug!("FFmpeg stderr monitor cancelled for {}", streamer_id_clone);
+                        was_cancelled = true;
                         break;
                     }
                     line_result = lines.next_line() => {
                         match line_result {
                             Ok(Some(line)) => {
-                                // Check for segment completion
-                                if line.contains("Opening") && line.contains("for writing") {
+                                // Check for segment completion using shared utility
+                                if is_segment_start(&line) {
                                     segment_index += 1;
                                     debug!("Segment {} started for {}", segment_index, streamer_id_clone);
                                 }
 
-                                // Parse progress (same format as ffmpeg)
-                                if line.contains("size=") && line.contains("time=") {
-                                    if let Some(progress) = parse_ffmpeg_progress(&line) {
-                                        total_bytes = progress.bytes_downloaded;
-                                        total_duration = progress.duration_secs;
-                                        let _ = event_tx_clone.send(SegmentEvent::Progress(progress)).await;
-                                    }
+                                // Parse progress using shared utility
+                                if let Some(progress) = parse_progress(&line) {
+                                    total_bytes = progress.bytes_downloaded;
+                                    total_duration = progress.duration_secs;
+                                    let _ = event_tx_clone.send(SegmentEvent::Progress(progress)).await;
                                 }
                             }
                             Ok(None) => {
@@ -335,29 +350,39 @@ impl DownloadEngine for StreamlinkEngine {
                 }
             }
 
-            // Send completion event
-            let _ = event_tx_clone
-                .send(SegmentEvent::DownloadCompleted {
-                    total_bytes,
-                    total_duration_secs: total_duration,
-                    total_segments: segment_index,
-                })
-                .await;
-        });
+            // If cancelled during reading, don't emit any event
+            if was_cancelled {
+                debug!("Download cancelled, not emitting completion event for {}", streamer_id_clone);
+                return;
+            }
 
-        // Spawn task to wait for processes and handle cancellation
-        let cancellation_token_clone = cancellation_token.clone();
-        tokio::spawn(async move {
-            tokio::select! {
-                _ = cancellation_token_clone.cancelled() => {
-                    // Kill both processes
-                    let _ = streamlink.kill().await;
-                    let _ = ffmpeg.kill().await;
+            // Wait for exit status from process wait task
+            let exit_code = exit_rx.await.ok().flatten();
+
+            match exit_code {
+                Some(0) => {
+                    // Exit code 0 - success (Requirement 1.3)
+                    let _ = event_tx_clone
+                        .send(SegmentEvent::DownloadCompleted {
+                            total_bytes,
+                            total_duration_secs: total_duration,
+                            total_segments: segment_index,
+                        })
+                        .await;
                 }
-                _ = async {
-                    let _ = streamlink.wait().await;
-                    let _ = ffmpeg.wait().await;
-                } => {}
+                Some(code) => {
+                    // Non-zero exit code - failure (Requirements 1.2, 3.3)
+                    let _ = event_tx_clone
+                        .send(SegmentEvent::DownloadFailed {
+                            error: format!("Streamlink/FFmpeg exited with code {}", code),
+                            recoverable: true,
+                        })
+                        .await;
+                }
+                None => {
+                    // Cancelled - don't emit any event (Requirement 1.4)
+                    debug!("Download cancelled, not emitting completion event for {}", streamer_id_clone);
+                }
             }
         });
 
@@ -382,55 +407,10 @@ impl DownloadEngine for StreamlinkEngine {
     }
 }
 
-/// Parse ffmpeg progress output (shared with FfmpegEngine).
-fn parse_ffmpeg_progress(line: &str) -> Option<DownloadProgress> {
-    if !line.contains("size=") {
-        return None;
-    }
-
-    let mut progress = DownloadProgress::default();
-
-    // Parse size
-    if let Some(size_start) = line.find("size=") {
-        let size_str = &line[size_start + 5..].trim_start();
-        if let Some(end) = size_str.find(|c: char| c == 'k' || c == 'K') {
-            if let Ok(size) = size_str[..end].trim().parse::<u64>() {
-                progress.bytes_downloaded = size * 1024;
-            }
-        }
-    }
-
-    // Parse time
-    if let Some(time_start) = line.find("time=") {
-        let time_str = &line[time_start + 5..];
-        if let Some(end) = time_str.find(' ') {
-            let time_part = &time_str[..end];
-            if let Some(duration) = parse_time(time_part) {
-                progress.duration_secs = duration;
-            }
-        }
-    }
-
-    Some(progress)
-}
-
-/// Parse time string (HH:MM:SS.ms) to seconds.
-fn parse_time(time_str: &str) -> Option<f64> {
-    let parts: Vec<&str> = time_str.split(':').collect();
-    if parts.len() != 3 {
-        return None;
-    }
-
-    let hours: f64 = parts[0].parse().ok()?;
-    let minutes: f64 = parts[1].parse().ok()?;
-    let seconds: f64 = parts[2].parse().ok()?;
-
-    Some(hours * 3600.0 + minutes * 60.0 + seconds)
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::downloader::engine::utils::parse_time;
 
     #[test]
     fn test_engine_type() {
@@ -457,6 +437,7 @@ mod tests {
 
     #[test]
     fn test_parse_time() {
+        // Tests now use shared utility
         assert_eq!(parse_time("00:00:10.50"), Some(10.5));
         assert_eq!(parse_time("01:30:00.00"), Some(5400.0));
         assert_eq!(parse_time("invalid"), None);

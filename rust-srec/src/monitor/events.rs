@@ -3,6 +3,8 @@
 //! This module defines events that are emitted by the Stream Monitor
 //! for consumption by the notification system.
 
+use std::collections::HashMap;
+
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use tokio::sync::broadcast;
@@ -26,6 +28,9 @@ pub enum MonitorEvent {
         /// Note: Some platforms require calling get_url() to resolve the final URL.
         /// The StreamInfo contains headers in extras if is_headers_needed is true.
         streams: Vec<StreamInfo>,
+        /// HTTP headers extracted from MediaInfo.extras (user-agent, referer, etc.).
+        /// These should be merged with StreamInfo headers and passed to download engines.
+        media_headers: Option<HashMap<String, String>>,
         timestamp: DateTime<Utc>,
     },
     /// Streamer went offline.
@@ -221,6 +226,7 @@ mod tests {
             title: "Playing Games".to_string(),
             category: Some("Gaming".to_string()),
             streams: vec![create_test_stream()],
+            media_headers: None,
             timestamp: Utc::now(),
         };
         assert!(event.description().contains("TestStreamer"));
@@ -236,6 +242,7 @@ mod tests {
             title: "Test".to_string(),
             category: None,
             streams: vec![],
+            media_headers: None,
             timestamp: Utc::now(),
         };
         assert!(live_event.should_notify());

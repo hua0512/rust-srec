@@ -15,8 +15,9 @@ async fn main() -> anyhow::Result<()> {
     // Initialize logging
     tracing_subscriber::registry()
         .with(
-            tracing_subscriber::EnvFilter::try_from_default_env()
-                .unwrap_or_else(|_| "rust_srec=info,sqlx=warn".into()),
+            tracing_subscriber::EnvFilter::try_from_default_env().unwrap_or_else(|_| {
+                "rust_srec=trace,tower_http=trace,axum=trace,sqlx=warn,reqwest=trace,mesio=debug".into()
+            }),
         )
         .with(tracing_subscriber::fmt::layer())
         .init();

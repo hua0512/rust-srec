@@ -18,6 +18,7 @@ use serde::{Deserialize, Serialize};
 /// * `artist_url` - Optional URL to the artist's or creator's profile/channel page
 /// * `is_live` - Boolean flag indicating whether the content is a live stream
 /// * `streams` - Vector of available stream information with different qualities/formats
+/// * `headers` - Optional key-value pairs for HTTP headers (Cookie, User-Agent, Referer, etc.)
 /// * `extras` - Optional key-value pairs for additional platform-specific metadata
 ///
 /// # Examples
@@ -34,6 +35,7 @@ use serde::{Deserialize, Serialize};
 ///     artist_url: Some("https://example.com/artist".to_string()),
 ///     is_live: true,
 ///     streams: vec![],
+///     headers: None,
 ///     extras: Some(FxHashMap::default()),
 /// };
 /// ```
@@ -46,6 +48,7 @@ pub struct MediaInfo {
     pub artist_url: Option<String>,
     pub is_live: bool,
     pub streams: Vec<StreamInfo>,
+    pub headers: Option<FxHashMap<String, String>>,
     pub extras: Option<FxHashMap<String, String>>,
 }
 
@@ -60,6 +63,7 @@ impl MediaInfo {
         artist_url: Option<String>,
         is_live: bool,
         streams: Vec<StreamInfo>,
+        headers: Option<FxHashMap<String, String>>,
         extras: Option<FxHashMap<String, String>>,
     ) -> Self {
         Self {
@@ -70,6 +74,7 @@ impl MediaInfo {
             artist_url,
             is_live,
             streams,
+            headers,
             extras,
         }
     }
@@ -83,6 +88,7 @@ impl MediaInfo {
             artist_url: None,
             is_live: false,
             streams: vec![],
+            headers: None,
             extras: None,
         }
     }

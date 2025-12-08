@@ -205,7 +205,8 @@ impl TikTok {
             is_live,
             streams: Vec::new(),
             cover_url: None,
-            extras: Some(self.get_extractor().get_platform_headers_map()),
+            headers: Some(self.get_extractor().get_platform_headers_map()),
+            extras: None,
         };
 
         if !is_live {

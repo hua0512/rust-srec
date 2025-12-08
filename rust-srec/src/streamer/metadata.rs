@@ -28,6 +28,8 @@ pub struct StreamerMetadata {
     pub state: StreamerState,
     /// Priority level.
     pub priority: Priority,
+    /// Avatar URL.
+    pub avatar_url: Option<String>,
     /// Consecutive error count for backoff calculation.
     pub consecutive_error_count: i32,
     /// Disabled until timestamp (for exponential backoff).
@@ -47,6 +49,7 @@ impl StreamerMetadata {
             template_config_id: model.template_config_id.clone(),
             state: StreamerState::parse(&model.state).unwrap_or_default(),
             priority: Priority::parse(&model.priority).unwrap_or_default(),
+            avatar_url: model.avatar.clone(),
             consecutive_error_count: model.consecutive_error_count.unwrap_or(0),
             disabled_until: model.disabled_until.as_ref().and_then(|s| {
                 chrono::DateTime::parse_from_rfc3339(s)
@@ -104,6 +107,7 @@ mod tests {
             id: "streamer-1".to_string(),
             name: "Test Streamer".to_string(),
             url: "https://twitch.tv/test".to_string(),
+            avatar_url: None,
             platform_config_id: "twitch".to_string(),
             template_config_id: None,
             state: StreamerState::NotLive,

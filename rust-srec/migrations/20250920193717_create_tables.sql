@@ -85,6 +85,7 @@ CREATE TABLE streamers (
     danmu_sampling_config TEXT,
     consecutive_error_count INTEGER DEFAULT 0,
     disabled_until TEXT,
+    avatar TEXT,
     FOREIGN KEY (platform_config_id) REFERENCES platform_config(id),
     FOREIGN KEY (template_config_id) REFERENCES template_config(id)
 );

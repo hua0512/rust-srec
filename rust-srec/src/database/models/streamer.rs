@@ -16,6 +16,8 @@ pub struct StreamerDbModel {
     pub state: String,
     /// Priority level for resource allocation (HIGH, NORMAL, LOW)
     pub priority: String,
+    /// Avatar URL (optional).
+    pub avatar: Option<String>,
     /// Timestamp of the last detected live event
     pub last_live_time: Option<String>,
     /// JSON blob for streamer-specific overrides
@@ -45,6 +47,7 @@ impl StreamerDbModel {
             template_config_id: None,
             state: StreamerState::NotLive.as_str().to_string(),
             priority: Priority::Normal.as_str().to_string(),
+            avatar: None,
             last_live_time: None,
             streamer_specific_config: None,
             download_retry_policy: None,

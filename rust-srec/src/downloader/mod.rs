@@ -9,6 +9,7 @@
 //! - Stream selection based on quality, format, and CDN preferences
 
 pub mod engine;
+
 mod manager;
 mod resilience;
 mod stream_selector;
@@ -16,6 +17,7 @@ mod stream_selector;
 pub use engine::{
     DownloadConfig, DownloadEngine, DownloadHandle, DownloadInfo, SegmentEvent, SegmentInfo,
 };
-pub use manager::{DownloadManager, DownloadManagerConfig, DownloadManagerEvent};
+
+pub use manager::{ConfigUpdateType, DownloadManager, DownloadManagerConfig, DownloadManagerEvent};
 pub use resilience::{CircuitBreaker, RetryConfig};
 pub use stream_selector::{StreamSelectionConfig, StreamSelector};

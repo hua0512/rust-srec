@@ -233,4 +233,9 @@ impl FormatStrategy<FlvData> for FlvFormatStrategy {
         }
         Ok(PostWriteAction::None)
     }
+
+    fn current_media_duration_secs(&self) -> f64 {
+        // FLV duration is calculated from max timestamp in milliseconds
+        self.calculate_duration() as f64 / 1000.0
+    }
 }

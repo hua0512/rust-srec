@@ -17,7 +17,10 @@ reqwest = { version = "0.12", default-features = false, features = [
     "stream",
     "rustls-tls",
     "system-proxy",
-    "socks"
+    "socks",
+    "gzip",
+    "brotli",
+    "deflate"
 ] }
 url = "2.5"
 async-trait = "0.1"

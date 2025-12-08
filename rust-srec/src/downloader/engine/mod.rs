@@ -23,9 +23,10 @@ mod ffmpeg;
 mod mesio;
 mod streamlink;
 mod traits;
+pub mod utils;
 
 pub use ffmpeg::FfmpegEngine;
-pub use mesio::MesioEngine;
+pub use mesio::{config, DownloadStats, FlvDownloader, HlsDownloader, MesioEngine};
 pub use streamlink::StreamlinkEngine;
 pub use traits::{
     DownloadConfig, DownloadEngine, DownloadHandle, DownloadInfo, DownloadProgress, DownloadStatus,

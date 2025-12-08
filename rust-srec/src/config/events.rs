@@ -21,6 +21,8 @@ pub enum ConfigUpdateEvent {
     TemplateUpdated { template_id: String },
     /// A streamer configuration was updated.
     StreamerUpdated { streamer_id: String },
+    /// A streamer was deleted.
+    StreamerDeleted { streamer_id: String },
     /// An engine configuration was updated.
     EngineUpdated { engine_id: String },
 }
@@ -38,6 +40,9 @@ impl ConfigUpdateEvent {
             }
             Self::StreamerUpdated { streamer_id } => {
                 format!("Streamer config updated: {}", streamer_id)
+            }
+            Self::StreamerDeleted { streamer_id } => {
+                format!("Streamer deleted: {}", streamer_id)
             }
             Self::EngineUpdated { engine_id } => {
                 format!("Engine config updated: {}", engine_id)
@@ -183,6 +188,7 @@ impl std::hash::Hash for ConfigUpdateEvent {
             ConfigUpdateEvent::PlatformUpdated { platform_id } => platform_id.hash(state),
             ConfigUpdateEvent::TemplateUpdated { template_id } => template_id.hash(state),
             ConfigUpdateEvent::StreamerUpdated { streamer_id } => streamer_id.hash(state),
+            ConfigUpdateEvent::StreamerDeleted { streamer_id } => streamer_id.hash(state),
             ConfigUpdateEvent::EngineUpdated { engine_id } => engine_id.hash(state),
         }
     }

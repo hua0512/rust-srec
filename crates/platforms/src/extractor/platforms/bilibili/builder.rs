@@ -256,7 +256,7 @@ impl Bilibili {
             Vec::new()
         };
 
-        let extras = Some(self.extractor.get_platform_headers_map());
+        let headers = Some(self.extractor.get_platform_headers_map());
 
         Ok(MediaInfo::new(
             self.extractor.url.clone(),
@@ -266,7 +266,8 @@ impl Bilibili {
             artist_url,
             is_live,
             streams,
-            extras,
+            headers,
+            None,
         ))
     }
 }
