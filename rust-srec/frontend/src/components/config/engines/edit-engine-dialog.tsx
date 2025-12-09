@@ -38,7 +38,7 @@ import {
     CreateEngineRequestSchema,
     UpdateEngineRequestSchema,
 } from '@/api/schemas';
-import { engineApi } from '@/api/endpoints';
+import { createEngine, updateEngine } from '@/server/functions';
 import { useState, useEffect } from 'react';
 
 import { FfmpegForm } from './forms/ffmpeg-form';
@@ -117,7 +117,7 @@ export function EditEngineDialog({
     const engineType = form.watch('engine_type');
 
     const createMutation = useMutation({
-        mutationFn: engineApi.create,
+        mutationFn: (data: z.infer<typeof CreateEngineRequestSchema>) => createEngine({ data }),
         onSuccess: () => {
             queryClient.invalidateQueries({ queryKey: ['engines'] });
             toast.success(t`Engine configuration created`);
@@ -131,7 +131,7 @@ export function EditEngineDialog({
 
     const updateMutation = useMutation({
         mutationFn: (data: z.infer<typeof UpdateEngineRequestSchema>) =>
-            engineApi.update(engine!.id, data),
+            updateEngine({ data: { id: engine!.id, data } }),
         onSuccess: () => {
             queryClient.invalidateQueries({ queryKey: ['engines'] });
             toast.success(t`Engine configuration updated`);

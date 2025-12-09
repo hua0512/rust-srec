@@ -1,7 +1,7 @@
 
 import { UseFormReturn } from "react-hook-form";
 import { useQuery } from "@tanstack/react-query";
-import { configApi } from "../../../../api/endpoints";
+import { listPlatformConfigs } from "@/server/functions";
 import { Button } from "../../../ui/button";
 import { Plus, Settings } from "lucide-react";
 import {
@@ -33,7 +33,7 @@ export function PlatformOverridesTab({ form }: PlatformOverridesTabProps) {
     // Let's use `listPlatforms` which returns `PlatformConfigSchema[]`. 
     const { data: platforms = [] } = useQuery({
         queryKey: ['config', 'platforms'],
-        queryFn: configApi.listPlatforms,
+        queryFn: () => listPlatformConfigs(),
     });
 
     const currentOverrides = form.watch('platform_overrides') || {};

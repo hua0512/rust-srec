@@ -19,7 +19,7 @@ import { Form } from '../../ui/form';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '../../ui/tabs';
 import { Settings, Cookie, Shield, Code, Pencil, Loader2, Filter } from 'lucide-react';
 import { PlatformConfigSchema } from '../../../api/schemas';
-import { configApi } from '../../../api/endpoints';
+import { updatePlatformConfig } from '@/server/functions';
 import { GeneralTab } from './tabs/general-tab';
 import { StreamSelectionTab } from './tabs/stream-selection-tab';
 import { AuthTab } from './tabs/auth-tab';
@@ -63,7 +63,7 @@ export function EditPlatformDialog({ platform, trigger }: EditPlatformDialogProp
 
     const updateMutation = useMutation({
         mutationFn: (data: EditPlatformFormValues) =>
-            configApi.updatePlatform(platform.id, data),
+            updatePlatformConfig({ data: { id: platform.id, data } }),
         onSuccess: () => {
             queryClient.invalidateQueries({ queryKey: ['config', 'platforms'] });
             toast.success(`Updated ${platform.name} configuration`);

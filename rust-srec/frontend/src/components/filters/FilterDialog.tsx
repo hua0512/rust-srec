@@ -21,7 +21,7 @@ import {
     CronFilterConfigSchema,
     RegexFilterConfigSchema
 } from '../../api/schemas';
-import { streamerApi } from '../../api/endpoints';
+import { createFilter, updateFilter } from '@/server/functions';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { FilterTypeSelector } from './forms/FilterTypeSelector';
@@ -106,7 +106,7 @@ export function FilterDialog({ streamerId, open, onOpenChange, filterToEdit }: F
 
 
     const createMutation = useMutation({
-        mutationFn: (data: z.infer<typeof CreateFilterRequestSchema>) => streamerApi.createFilter(streamerId, data),
+        mutationFn: (data: z.infer<typeof CreateFilterRequestSchema>) => createFilter({ data: { streamerId, data } }),
         onSuccess: () => {
             toast.success(t`Filter created successfully`);
             queryClient.invalidateQueries({ queryKey: ['streamers', streamerId, 'filters'] });
@@ -118,7 +118,7 @@ export function FilterDialog({ streamerId, open, onOpenChange, filterToEdit }: F
     });
 
     const updateMutation = useMutation({
-        mutationFn: (data: z.infer<typeof CreateFilterRequestSchema>) => streamerApi.updateFilter(streamerId, filterToEdit!.id, data),
+        mutationFn: (data: z.infer<typeof CreateFilterRequestSchema>) => updateFilter({ data: { streamerId, filterId: filterToEdit!.id, data } }),
         onSuccess: () => {
             toast.success(t`Filter updated successfully`);
             queryClient.invalidateQueries({ queryKey: ['streamers', streamerId, 'filters'] });

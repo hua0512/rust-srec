@@ -4,7 +4,7 @@ import { useQuery } from '@tanstack/react-query';
 import { Trans } from '@lingui/react/macro';
 import { t } from '@lingui/core/macro';
 import { Plus, Server } from 'lucide-react';
-import { engineApi } from '@/api/endpoints';
+import { listEngines } from '@/server/functions';
 import { EngineOverrideCard } from './engine-override-card';
 import {
     Command,
@@ -33,7 +33,7 @@ export function EngineOverridesTab({ form }: EngineOverridesTabProps) {
     // Fetch available engines
     const { data: engines = [] } = useQuery({
         queryKey: ['engines'],
-        queryFn: engineApi.list,
+        queryFn: () => listEngines(),
     });
 
     const currentOverrides = form.watch('engines_override') || {};

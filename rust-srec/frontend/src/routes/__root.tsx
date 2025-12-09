@@ -1,39 +1,29 @@
-import { HeadContent, Scripts, createRootRouteWithContext } from '@tanstack/react-router'
-import { TanStackRouterDevtoolsPanel } from '@tanstack/react-router-devtools'
-import { TanStackDevtools } from '@tanstack/react-devtools'
-
-
+import { HeadContent, Scripts, createRootRoute } from '@tanstack/react-router'
+import { TanStackRouterDevtools } from '@tanstack/react-router-devtools'
 
 import appCss from '../styles.css?url'
+import { NotFound } from '@/components/not-found'
+import { createServerFn } from '@tanstack/react-start'
+import { useAppSession } from '@/utils/session'
 
-interface AuthState {
-  isAuthenticated: boolean
-  user: {
-    username: string
-    email?: string
-    roles: string[];
-    must_change_password: boolean;
-  } | null
-}
 
-interface MyRouterContext {
-  auth: AuthState
-}
+const fetchUser = createServerFn({ method: 'GET' }).handler(async () => {
+  // We need to auth on the server so we have access to secure cookies
+  const session = await useAppSession()
 
-import { useAuthStore } from '../store/auth'
+  if (!session.data.username || !session.data.roles) {
+    return null
+  }
 
-export const Route = createRootRouteWithContext<MyRouterContext>()({
-  beforeLoad: () => {
-    const store = useAuthStore.getState()
+  return session.data
+})
+
+
+export const Route = createRootRoute({
+  beforeLoad: async () => {
+    const user = await fetchUser()
     return {
-      auth: {
-        isAuthenticated: store.isAuthenticated,
-        user: store.user ? {
-          username: 'User',
-          ...store.user,
-          email: undefined
-        } : null,
-      }
+      user,
     }
   },
   head: () => ({
@@ -69,16 +59,8 @@ export const Route = createRootRouteWithContext<MyRouterContext>()({
       },
     ],
   }),
-
   shellComponent: RootDocument,
-  notFoundComponent: () => {
-    return (
-      <div className="flex flex-col items-center justify-center p-12 text-center text-muted-foreground w-full h-[50vh]">
-        <h1 className="text-4xl font-bold mb-4">404</h1>
-        <p className="text-xl">Page not found</p>
-      </div>
-    )
-  }
+  notFoundComponent: () => <NotFound />,
 })
 
 import { I18nProvider } from "@lingui/react"
@@ -88,31 +70,24 @@ import { Toaster } from "../components/ui/sonner"
 
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 
-const queryClient = new QueryClient()
+// Export a shared QueryClient so beforeLoad hooks can use ensureQueryData
+export const queryClient = new QueryClient()
+
 
 function RootDocument({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="en" suppressHydrationWarning>
+    <html lang="en">
       <head>
+        <link rel="icon" type="image/svg+xml" href="stream-rec.svg"></link>
         <HeadContent />
       </head>
-      <body suppressHydrationWarning>
+      <body>
         <QueryClientProvider client={queryClient}>
           <I18nProvider i18n={i18n}>
             <ThemeProvider defaultTheme="system" storageKey="vite-ui-theme">
               {children}
               <Toaster />
-              <TanStackDevtools
-                config={{
-                  position: 'bottom-right',
-                }}
-                plugins={[
-                  {
-                    name: 'Tanstack Router',
-                    render: <TanStackRouterDevtoolsPanel />,
-                  },
-                ]}
-              />
+              <TanStackRouterDevtools position="bottom-right" />
               <Scripts />
             </ThemeProvider>
           </I18nProvider>

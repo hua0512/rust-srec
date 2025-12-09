@@ -19,7 +19,7 @@ import { Form, FormControl, FormItem } from '../../ui/form';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '../../ui/tabs';
 import { Settings, Cookie, Shield, Code, Loader2, Filter, LayoutTemplate, Plus, Server } from 'lucide-react';
 import { TemplateSchema, UpdateTemplateRequestSchema } from '../../../api/schemas';
-import { configApi } from '../../../api/endpoints';
+import { createTemplate, updateTemplate } from '@/server/functions';
 import { GeneralTab } from './tabs/general-tab';
 import { StreamSelectionTab } from './tabs/stream-selection-tab';
 import { AuthTab } from './tabs/auth-tab';
@@ -71,11 +71,11 @@ export function EditTemplateDialog({ template, trigger }: EditTemplateDialogProp
     const mutation = useMutation({
         mutationFn: (data: EditTemplateFormValues) => {
             if (isEditing && template) {
-                return configApi.updateTemplate(template.id, data);
+                return updateTemplate({ data: { id: template!.id, data } });
             } else {
                 // Ensure name is present for creation
                 if (!data.name) throw new Error("Name is required");
-                return configApi.createTemplate(data as any);
+                return createTemplate({ data: data as any });
             }
         },
         onSuccess: () => {

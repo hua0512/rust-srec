@@ -4,7 +4,7 @@ import { Trans } from '@lingui/react/macro';
 import { useState } from 'react';
 import { useQueryClient, useMutation } from '@tanstack/react-query';
 import { toast } from 'sonner';
-import { configApi } from '../../../api/endpoints';
+import { deleteTemplate } from '@/server/functions';
 import { Settings, Cookie, Filter, LayoutTemplate, Trash2 } from 'lucide-react';
 import {
     AlertDialog,
@@ -30,7 +30,7 @@ export function TemplateCard({ template }: TemplateCardProps) {
     const queryClient = useQueryClient();
 
     const deleteMutation = useMutation({
-        mutationFn: () => configApi.deleteTemplate(template.id),
+        mutationFn: () => deleteTemplate({ data: template.id }),
         onSuccess: () => {
             queryClient.invalidateQueries({ queryKey: ['templates'] });
             toast.success(`Deleted template "${template.name}"`);

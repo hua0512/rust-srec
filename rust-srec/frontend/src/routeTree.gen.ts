@@ -9,37 +9,39 @@
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
 import { Route as rootRouteImport } from './routes/__root'
-import { Route as LoginRouteImport } from './routes/login'
-import { Route as ChangePasswordRouteImport } from './routes/change-password'
-import { Route as AuthRouteImport } from './routes/_auth'
+import { Route as LogoutRouteImport } from './routes/logout'
+import { Route as PublicRouteImport } from './routes/_public'
+import { Route as AuthedRouteImport } from './routes/_authed'
 import { Route as IndexRouteImport } from './routes/index'
-import { Route as AuthDashboardRouteImport } from './routes/_auth/dashboard'
-import { Route as AuthConfigRouteRouteImport } from './routes/_auth/config/route'
-import { Route as AuthStreamersIndexRouteImport } from './routes/_auth/streamers/index'
-import { Route as AuthSessionsIndexRouteImport } from './routes/_auth/sessions/index'
-import { Route as AuthStreamersNewRouteImport } from './routes/_auth/streamers/new'
-import { Route as AuthSessionsIdRouteImport } from './routes/_auth/sessions/$id'
-import { Route as AuthPipelineOutputsRouteImport } from './routes/_auth/pipeline/outputs'
-import { Route as AuthPipelineJobsRouteImport } from './routes/_auth/pipeline/jobs'
-import { Route as AuthConfigThemeRouteImport } from './routes/_auth/config/theme'
-import { Route as AuthConfigTemplatesRouteImport } from './routes/_auth/config/templates'
-import { Route as AuthConfigPlatformsRouteImport } from './routes/_auth/config/platforms'
-import { Route as AuthConfigGlobalRouteImport } from './routes/_auth/config/global'
-import { Route as AuthConfigEnginesRouteImport } from './routes/_auth/config/engines'
-import { Route as AuthStreamersIdEditRouteImport } from './routes/_auth/streamers/$id.edit'
+import { Route as PublicLoginRouteImport } from './routes/_public/login'
+import { Route as AuthedChangePasswordRouteImport } from './routes/_authed/change-password'
+import { Route as AuthedDashboardRouteImport } from './routes/_authed/_dashboard'
+import { Route as AuthedDashboardDashboardRouteImport } from './routes/_authed/_dashboard/dashboard'
+import { Route as AuthedDashboardConfigRouteRouteImport } from './routes/_authed/_dashboard/config/route'
+import { Route as AuthedDashboardStreamersIndexRouteImport } from './routes/_authed/_dashboard/streamers/index'
+import { Route as AuthedDashboardSessionsIndexRouteImport } from './routes/_authed/_dashboard/sessions/index'
+import { Route as AuthedDashboardStreamersNewRouteImport } from './routes/_authed/_dashboard/streamers/new'
+import { Route as AuthedDashboardSessionsIdRouteImport } from './routes/_authed/_dashboard/sessions/$id'
+import { Route as AuthedDashboardPipelineOutputsRouteImport } from './routes/_authed/_dashboard/pipeline/outputs'
+import { Route as AuthedDashboardPipelineJobsRouteImport } from './routes/_authed/_dashboard/pipeline/jobs'
+import { Route as AuthedDashboardConfigThemeRouteImport } from './routes/_authed/_dashboard/config/theme'
+import { Route as AuthedDashboardConfigTemplatesRouteImport } from './routes/_authed/_dashboard/config/templates'
+import { Route as AuthedDashboardConfigPlatformsRouteImport } from './routes/_authed/_dashboard/config/platforms'
+import { Route as AuthedDashboardConfigGlobalRouteImport } from './routes/_authed/_dashboard/config/global'
+import { Route as AuthedDashboardConfigEnginesRouteImport } from './routes/_authed/_dashboard/config/engines'
+import { Route as AuthedDashboardStreamersIdEditRouteImport } from './routes/_authed/_dashboard/streamers/$id.edit'
 
-const LoginRoute = LoginRouteImport.update({
-  id: '/login',
-  path: '/login',
+const LogoutRoute = LogoutRouteImport.update({
+  id: '/logout',
+  path: '/logout',
   getParentRoute: () => rootRouteImport,
 } as any)
-const ChangePasswordRoute = ChangePasswordRouteImport.update({
-  id: '/change-password',
-  path: '/change-password',
+const PublicRoute = PublicRouteImport.update({
+  id: '/_public',
   getParentRoute: () => rootRouteImport,
 } as any)
-const AuthRoute = AuthRouteImport.update({
-  id: '/_auth',
+const AuthedRoute = AuthedRouteImport.update({
+  id: '/_authed',
   getParentRoute: () => rootRouteImport,
 } as any)
 const IndexRoute = IndexRouteImport.update({
@@ -47,140 +49,174 @@ const IndexRoute = IndexRouteImport.update({
   path: '/',
   getParentRoute: () => rootRouteImport,
 } as any)
-const AuthDashboardRoute = AuthDashboardRouteImport.update({
-  id: '/dashboard',
-  path: '/dashboard',
-  getParentRoute: () => AuthRoute,
+const PublicLoginRoute = PublicLoginRouteImport.update({
+  id: '/login',
+  path: '/login',
+  getParentRoute: () => PublicRoute,
 } as any)
-const AuthConfigRouteRoute = AuthConfigRouteRouteImport.update({
-  id: '/config',
-  path: '/config',
-  getParentRoute: () => AuthRoute,
+const AuthedChangePasswordRoute = AuthedChangePasswordRouteImport.update({
+  id: '/change-password',
+  path: '/change-password',
+  getParentRoute: () => AuthedRoute,
 } as any)
-const AuthStreamersIndexRoute = AuthStreamersIndexRouteImport.update({
-  id: '/streamers/',
-  path: '/streamers/',
-  getParentRoute: () => AuthRoute,
+const AuthedDashboardRoute = AuthedDashboardRouteImport.update({
+  id: '/_dashboard',
+  getParentRoute: () => AuthedRoute,
 } as any)
-const AuthSessionsIndexRoute = AuthSessionsIndexRouteImport.update({
-  id: '/sessions/',
-  path: '/sessions/',
-  getParentRoute: () => AuthRoute,
-} as any)
-const AuthStreamersNewRoute = AuthStreamersNewRouteImport.update({
-  id: '/streamers/new',
-  path: '/streamers/new',
-  getParentRoute: () => AuthRoute,
-} as any)
-const AuthSessionsIdRoute = AuthSessionsIdRouteImport.update({
-  id: '/sessions/$id',
-  path: '/sessions/$id',
-  getParentRoute: () => AuthRoute,
-} as any)
-const AuthPipelineOutputsRoute = AuthPipelineOutputsRouteImport.update({
-  id: '/pipeline/outputs',
-  path: '/pipeline/outputs',
-  getParentRoute: () => AuthRoute,
-} as any)
-const AuthPipelineJobsRoute = AuthPipelineJobsRouteImport.update({
-  id: '/pipeline/jobs',
-  path: '/pipeline/jobs',
-  getParentRoute: () => AuthRoute,
-} as any)
-const AuthConfigThemeRoute = AuthConfigThemeRouteImport.update({
-  id: '/theme',
-  path: '/theme',
-  getParentRoute: () => AuthConfigRouteRoute,
-} as any)
-const AuthConfigTemplatesRoute = AuthConfigTemplatesRouteImport.update({
-  id: '/templates',
-  path: '/templates',
-  getParentRoute: () => AuthConfigRouteRoute,
-} as any)
-const AuthConfigPlatformsRoute = AuthConfigPlatformsRouteImport.update({
-  id: '/platforms',
-  path: '/platforms',
-  getParentRoute: () => AuthConfigRouteRoute,
-} as any)
-const AuthConfigGlobalRoute = AuthConfigGlobalRouteImport.update({
-  id: '/global',
-  path: '/global',
-  getParentRoute: () => AuthConfigRouteRoute,
-} as any)
-const AuthConfigEnginesRoute = AuthConfigEnginesRouteImport.update({
-  id: '/engines',
-  path: '/engines',
-  getParentRoute: () => AuthConfigRouteRoute,
-} as any)
-const AuthStreamersIdEditRoute = AuthStreamersIdEditRouteImport.update({
-  id: '/streamers/$id/edit',
-  path: '/streamers/$id/edit',
-  getParentRoute: () => AuthRoute,
-} as any)
+const AuthedDashboardDashboardRoute =
+  AuthedDashboardDashboardRouteImport.update({
+    id: '/dashboard',
+    path: '/dashboard',
+    getParentRoute: () => AuthedDashboardRoute,
+  } as any)
+const AuthedDashboardConfigRouteRoute =
+  AuthedDashboardConfigRouteRouteImport.update({
+    id: '/config',
+    path: '/config',
+    getParentRoute: () => AuthedDashboardRoute,
+  } as any)
+const AuthedDashboardStreamersIndexRoute =
+  AuthedDashboardStreamersIndexRouteImport.update({
+    id: '/streamers/',
+    path: '/streamers/',
+    getParentRoute: () => AuthedDashboardRoute,
+  } as any)
+const AuthedDashboardSessionsIndexRoute =
+  AuthedDashboardSessionsIndexRouteImport.update({
+    id: '/sessions/',
+    path: '/sessions/',
+    getParentRoute: () => AuthedDashboardRoute,
+  } as any)
+const AuthedDashboardStreamersNewRoute =
+  AuthedDashboardStreamersNewRouteImport.update({
+    id: '/streamers/new',
+    path: '/streamers/new',
+    getParentRoute: () => AuthedDashboardRoute,
+  } as any)
+const AuthedDashboardSessionsIdRoute =
+  AuthedDashboardSessionsIdRouteImport.update({
+    id: '/sessions/$id',
+    path: '/sessions/$id',
+    getParentRoute: () => AuthedDashboardRoute,
+  } as any)
+const AuthedDashboardPipelineOutputsRoute =
+  AuthedDashboardPipelineOutputsRouteImport.update({
+    id: '/pipeline/outputs',
+    path: '/pipeline/outputs',
+    getParentRoute: () => AuthedDashboardRoute,
+  } as any)
+const AuthedDashboardPipelineJobsRoute =
+  AuthedDashboardPipelineJobsRouteImport.update({
+    id: '/pipeline/jobs',
+    path: '/pipeline/jobs',
+    getParentRoute: () => AuthedDashboardRoute,
+  } as any)
+const AuthedDashboardConfigThemeRoute =
+  AuthedDashboardConfigThemeRouteImport.update({
+    id: '/theme',
+    path: '/theme',
+    getParentRoute: () => AuthedDashboardConfigRouteRoute,
+  } as any)
+const AuthedDashboardConfigTemplatesRoute =
+  AuthedDashboardConfigTemplatesRouteImport.update({
+    id: '/templates',
+    path: '/templates',
+    getParentRoute: () => AuthedDashboardConfigRouteRoute,
+  } as any)
+const AuthedDashboardConfigPlatformsRoute =
+  AuthedDashboardConfigPlatformsRouteImport.update({
+    id: '/platforms',
+    path: '/platforms',
+    getParentRoute: () => AuthedDashboardConfigRouteRoute,
+  } as any)
+const AuthedDashboardConfigGlobalRoute =
+  AuthedDashboardConfigGlobalRouteImport.update({
+    id: '/global',
+    path: '/global',
+    getParentRoute: () => AuthedDashboardConfigRouteRoute,
+  } as any)
+const AuthedDashboardConfigEnginesRoute =
+  AuthedDashboardConfigEnginesRouteImport.update({
+    id: '/engines',
+    path: '/engines',
+    getParentRoute: () => AuthedDashboardConfigRouteRoute,
+  } as any)
+const AuthedDashboardStreamersIdEditRoute =
+  AuthedDashboardStreamersIdEditRouteImport.update({
+    id: '/streamers/$id/edit',
+    path: '/streamers/$id/edit',
+    getParentRoute: () => AuthedDashboardRoute,
+  } as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
-  '/change-password': typeof ChangePasswordRoute
-  '/login': typeof LoginRoute
-  '/config': typeof AuthConfigRouteRouteWithChildren
-  '/dashboard': typeof AuthDashboardRoute
-  '/config/engines': typeof AuthConfigEnginesRoute
-  '/config/global': typeof AuthConfigGlobalRoute
-  '/config/platforms': typeof AuthConfigPlatformsRoute
-  '/config/templates': typeof AuthConfigTemplatesRoute
-  '/config/theme': typeof AuthConfigThemeRoute
-  '/pipeline/jobs': typeof AuthPipelineJobsRoute
-  '/pipeline/outputs': typeof AuthPipelineOutputsRoute
-  '/sessions/$id': typeof AuthSessionsIdRoute
-  '/streamers/new': typeof AuthStreamersNewRoute
-  '/sessions': typeof AuthSessionsIndexRoute
-  '/streamers': typeof AuthStreamersIndexRoute
-  '/streamers/$id/edit': typeof AuthStreamersIdEditRoute
+  '/logout': typeof LogoutRoute
+  '/change-password': typeof AuthedChangePasswordRoute
+  '/login': typeof PublicLoginRoute
+  '/config': typeof AuthedDashboardConfigRouteRouteWithChildren
+  '/dashboard': typeof AuthedDashboardDashboardRoute
+  '/config/engines': typeof AuthedDashboardConfigEnginesRoute
+  '/config/global': typeof AuthedDashboardConfigGlobalRoute
+  '/config/platforms': typeof AuthedDashboardConfigPlatformsRoute
+  '/config/templates': typeof AuthedDashboardConfigTemplatesRoute
+  '/config/theme': typeof AuthedDashboardConfigThemeRoute
+  '/pipeline/jobs': typeof AuthedDashboardPipelineJobsRoute
+  '/pipeline/outputs': typeof AuthedDashboardPipelineOutputsRoute
+  '/sessions/$id': typeof AuthedDashboardSessionsIdRoute
+  '/streamers/new': typeof AuthedDashboardStreamersNewRoute
+  '/sessions': typeof AuthedDashboardSessionsIndexRoute
+  '/streamers': typeof AuthedDashboardStreamersIndexRoute
+  '/streamers/$id/edit': typeof AuthedDashboardStreamersIdEditRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
-  '/change-password': typeof ChangePasswordRoute
-  '/login': typeof LoginRoute
-  '/config': typeof AuthConfigRouteRouteWithChildren
-  '/dashboard': typeof AuthDashboardRoute
-  '/config/engines': typeof AuthConfigEnginesRoute
-  '/config/global': typeof AuthConfigGlobalRoute
-  '/config/platforms': typeof AuthConfigPlatformsRoute
-  '/config/templates': typeof AuthConfigTemplatesRoute
-  '/config/theme': typeof AuthConfigThemeRoute
-  '/pipeline/jobs': typeof AuthPipelineJobsRoute
-  '/pipeline/outputs': typeof AuthPipelineOutputsRoute
-  '/sessions/$id': typeof AuthSessionsIdRoute
-  '/streamers/new': typeof AuthStreamersNewRoute
-  '/sessions': typeof AuthSessionsIndexRoute
-  '/streamers': typeof AuthStreamersIndexRoute
-  '/streamers/$id/edit': typeof AuthStreamersIdEditRoute
+  '/logout': typeof LogoutRoute
+  '/change-password': typeof AuthedChangePasswordRoute
+  '/login': typeof PublicLoginRoute
+  '/config': typeof AuthedDashboardConfigRouteRouteWithChildren
+  '/dashboard': typeof AuthedDashboardDashboardRoute
+  '/config/engines': typeof AuthedDashboardConfigEnginesRoute
+  '/config/global': typeof AuthedDashboardConfigGlobalRoute
+  '/config/platforms': typeof AuthedDashboardConfigPlatformsRoute
+  '/config/templates': typeof AuthedDashboardConfigTemplatesRoute
+  '/config/theme': typeof AuthedDashboardConfigThemeRoute
+  '/pipeline/jobs': typeof AuthedDashboardPipelineJobsRoute
+  '/pipeline/outputs': typeof AuthedDashboardPipelineOutputsRoute
+  '/sessions/$id': typeof AuthedDashboardSessionsIdRoute
+  '/streamers/new': typeof AuthedDashboardStreamersNewRoute
+  '/sessions': typeof AuthedDashboardSessionsIndexRoute
+  '/streamers': typeof AuthedDashboardStreamersIndexRoute
+  '/streamers/$id/edit': typeof AuthedDashboardStreamersIdEditRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
-  '/_auth': typeof AuthRouteWithChildren
-  '/change-password': typeof ChangePasswordRoute
-  '/login': typeof LoginRoute
-  '/_auth/config': typeof AuthConfigRouteRouteWithChildren
-  '/_auth/dashboard': typeof AuthDashboardRoute
-  '/_auth/config/engines': typeof AuthConfigEnginesRoute
-  '/_auth/config/global': typeof AuthConfigGlobalRoute
-  '/_auth/config/platforms': typeof AuthConfigPlatformsRoute
-  '/_auth/config/templates': typeof AuthConfigTemplatesRoute
-  '/_auth/config/theme': typeof AuthConfigThemeRoute
-  '/_auth/pipeline/jobs': typeof AuthPipelineJobsRoute
-  '/_auth/pipeline/outputs': typeof AuthPipelineOutputsRoute
-  '/_auth/sessions/$id': typeof AuthSessionsIdRoute
-  '/_auth/streamers/new': typeof AuthStreamersNewRoute
-  '/_auth/sessions/': typeof AuthSessionsIndexRoute
-  '/_auth/streamers/': typeof AuthStreamersIndexRoute
-  '/_auth/streamers/$id/edit': typeof AuthStreamersIdEditRoute
+  '/_authed': typeof AuthedRouteWithChildren
+  '/_public': typeof PublicRouteWithChildren
+  '/logout': typeof LogoutRoute
+  '/_authed/_dashboard': typeof AuthedDashboardRouteWithChildren
+  '/_authed/change-password': typeof AuthedChangePasswordRoute
+  '/_public/login': typeof PublicLoginRoute
+  '/_authed/_dashboard/config': typeof AuthedDashboardConfigRouteRouteWithChildren
+  '/_authed/_dashboard/dashboard': typeof AuthedDashboardDashboardRoute
+  '/_authed/_dashboard/config/engines': typeof AuthedDashboardConfigEnginesRoute
+  '/_authed/_dashboard/config/global': typeof AuthedDashboardConfigGlobalRoute
+  '/_authed/_dashboard/config/platforms': typeof AuthedDashboardConfigPlatformsRoute
+  '/_authed/_dashboard/config/templates': typeof AuthedDashboardConfigTemplatesRoute
+  '/_authed/_dashboard/config/theme': typeof AuthedDashboardConfigThemeRoute
+  '/_authed/_dashboard/pipeline/jobs': typeof AuthedDashboardPipelineJobsRoute
+  '/_authed/_dashboard/pipeline/outputs': typeof AuthedDashboardPipelineOutputsRoute
+  '/_authed/_dashboard/sessions/$id': typeof AuthedDashboardSessionsIdRoute
+  '/_authed/_dashboard/streamers/new': typeof AuthedDashboardStreamersNewRoute
+  '/_authed/_dashboard/sessions/': typeof AuthedDashboardSessionsIndexRoute
+  '/_authed/_dashboard/streamers/': typeof AuthedDashboardStreamersIndexRoute
+  '/_authed/_dashboard/streamers/$id/edit': typeof AuthedDashboardStreamersIdEditRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
   fullPaths:
     | '/'
+    | '/logout'
     | '/change-password'
     | '/login'
     | '/config'
@@ -200,6 +236,7 @@ export interface FileRouteTypes {
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
+    | '/logout'
     | '/change-password'
     | '/login'
     | '/config'
@@ -219,53 +256,56 @@ export interface FileRouteTypes {
   id:
     | '__root__'
     | '/'
-    | '/_auth'
-    | '/change-password'
-    | '/login'
-    | '/_auth/config'
-    | '/_auth/dashboard'
-    | '/_auth/config/engines'
-    | '/_auth/config/global'
-    | '/_auth/config/platforms'
-    | '/_auth/config/templates'
-    | '/_auth/config/theme'
-    | '/_auth/pipeline/jobs'
-    | '/_auth/pipeline/outputs'
-    | '/_auth/sessions/$id'
-    | '/_auth/streamers/new'
-    | '/_auth/sessions/'
-    | '/_auth/streamers/'
-    | '/_auth/streamers/$id/edit'
+    | '/_authed'
+    | '/_public'
+    | '/logout'
+    | '/_authed/_dashboard'
+    | '/_authed/change-password'
+    | '/_public/login'
+    | '/_authed/_dashboard/config'
+    | '/_authed/_dashboard/dashboard'
+    | '/_authed/_dashboard/config/engines'
+    | '/_authed/_dashboard/config/global'
+    | '/_authed/_dashboard/config/platforms'
+    | '/_authed/_dashboard/config/templates'
+    | '/_authed/_dashboard/config/theme'
+    | '/_authed/_dashboard/pipeline/jobs'
+    | '/_authed/_dashboard/pipeline/outputs'
+    | '/_authed/_dashboard/sessions/$id'
+    | '/_authed/_dashboard/streamers/new'
+    | '/_authed/_dashboard/sessions/'
+    | '/_authed/_dashboard/streamers/'
+    | '/_authed/_dashboard/streamers/$id/edit'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
-  AuthRoute: typeof AuthRouteWithChildren
-  ChangePasswordRoute: typeof ChangePasswordRoute
-  LoginRoute: typeof LoginRoute
+  AuthedRoute: typeof AuthedRouteWithChildren
+  PublicRoute: typeof PublicRouteWithChildren
+  LogoutRoute: typeof LogoutRoute
 }
 
 declare module '@tanstack/react-router' {
   interface FileRoutesByPath {
-    '/login': {
-      id: '/login'
-      path: '/login'
-      fullPath: '/login'
-      preLoaderRoute: typeof LoginRouteImport
+    '/logout': {
+      id: '/logout'
+      path: '/logout'
+      fullPath: '/logout'
+      preLoaderRoute: typeof LogoutRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/change-password': {
-      id: '/change-password'
-      path: '/change-password'
-      fullPath: '/change-password'
-      preLoaderRoute: typeof ChangePasswordRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/_auth': {
-      id: '/_auth'
+    '/_public': {
+      id: '/_public'
       path: ''
       fullPath: ''
-      preLoaderRoute: typeof AuthRouteImport
+      preLoaderRoute: typeof PublicRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/_authed': {
+      id: '/_authed'
+      path: ''
+      fullPath: ''
+      preLoaderRoute: typeof AuthedRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/': {
@@ -275,158 +315,207 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof IndexRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/_auth/dashboard': {
-      id: '/_auth/dashboard'
+    '/_public/login': {
+      id: '/_public/login'
+      path: '/login'
+      fullPath: '/login'
+      preLoaderRoute: typeof PublicLoginRouteImport
+      parentRoute: typeof PublicRoute
+    }
+    '/_authed/change-password': {
+      id: '/_authed/change-password'
+      path: '/change-password'
+      fullPath: '/change-password'
+      preLoaderRoute: typeof AuthedChangePasswordRouteImport
+      parentRoute: typeof AuthedRoute
+    }
+    '/_authed/_dashboard': {
+      id: '/_authed/_dashboard'
+      path: ''
+      fullPath: ''
+      preLoaderRoute: typeof AuthedDashboardRouteImport
+      parentRoute: typeof AuthedRoute
+    }
+    '/_authed/_dashboard/dashboard': {
+      id: '/_authed/_dashboard/dashboard'
       path: '/dashboard'
       fullPath: '/dashboard'
-      preLoaderRoute: typeof AuthDashboardRouteImport
-      parentRoute: typeof AuthRoute
+      preLoaderRoute: typeof AuthedDashboardDashboardRouteImport
+      parentRoute: typeof AuthedDashboardRoute
     }
-    '/_auth/config': {
-      id: '/_auth/config'
+    '/_authed/_dashboard/config': {
+      id: '/_authed/_dashboard/config'
       path: '/config'
       fullPath: '/config'
-      preLoaderRoute: typeof AuthConfigRouteRouteImport
-      parentRoute: typeof AuthRoute
+      preLoaderRoute: typeof AuthedDashboardConfigRouteRouteImport
+      parentRoute: typeof AuthedDashboardRoute
     }
-    '/_auth/streamers/': {
-      id: '/_auth/streamers/'
+    '/_authed/_dashboard/streamers/': {
+      id: '/_authed/_dashboard/streamers/'
       path: '/streamers'
       fullPath: '/streamers'
-      preLoaderRoute: typeof AuthStreamersIndexRouteImport
-      parentRoute: typeof AuthRoute
+      preLoaderRoute: typeof AuthedDashboardStreamersIndexRouteImport
+      parentRoute: typeof AuthedDashboardRoute
     }
-    '/_auth/sessions/': {
-      id: '/_auth/sessions/'
+    '/_authed/_dashboard/sessions/': {
+      id: '/_authed/_dashboard/sessions/'
       path: '/sessions'
       fullPath: '/sessions'
-      preLoaderRoute: typeof AuthSessionsIndexRouteImport
-      parentRoute: typeof AuthRoute
+      preLoaderRoute: typeof AuthedDashboardSessionsIndexRouteImport
+      parentRoute: typeof AuthedDashboardRoute
     }
-    '/_auth/streamers/new': {
-      id: '/_auth/streamers/new'
+    '/_authed/_dashboard/streamers/new': {
+      id: '/_authed/_dashboard/streamers/new'
       path: '/streamers/new'
       fullPath: '/streamers/new'
-      preLoaderRoute: typeof AuthStreamersNewRouteImport
-      parentRoute: typeof AuthRoute
+      preLoaderRoute: typeof AuthedDashboardStreamersNewRouteImport
+      parentRoute: typeof AuthedDashboardRoute
     }
-    '/_auth/sessions/$id': {
-      id: '/_auth/sessions/$id'
+    '/_authed/_dashboard/sessions/$id': {
+      id: '/_authed/_dashboard/sessions/$id'
       path: '/sessions/$id'
       fullPath: '/sessions/$id'
-      preLoaderRoute: typeof AuthSessionsIdRouteImport
-      parentRoute: typeof AuthRoute
+      preLoaderRoute: typeof AuthedDashboardSessionsIdRouteImport
+      parentRoute: typeof AuthedDashboardRoute
     }
-    '/_auth/pipeline/outputs': {
-      id: '/_auth/pipeline/outputs'
+    '/_authed/_dashboard/pipeline/outputs': {
+      id: '/_authed/_dashboard/pipeline/outputs'
       path: '/pipeline/outputs'
       fullPath: '/pipeline/outputs'
-      preLoaderRoute: typeof AuthPipelineOutputsRouteImport
-      parentRoute: typeof AuthRoute
+      preLoaderRoute: typeof AuthedDashboardPipelineOutputsRouteImport
+      parentRoute: typeof AuthedDashboardRoute
     }
-    '/_auth/pipeline/jobs': {
-      id: '/_auth/pipeline/jobs'
+    '/_authed/_dashboard/pipeline/jobs': {
+      id: '/_authed/_dashboard/pipeline/jobs'
       path: '/pipeline/jobs'
       fullPath: '/pipeline/jobs'
-      preLoaderRoute: typeof AuthPipelineJobsRouteImport
-      parentRoute: typeof AuthRoute
+      preLoaderRoute: typeof AuthedDashboardPipelineJobsRouteImport
+      parentRoute: typeof AuthedDashboardRoute
     }
-    '/_auth/config/theme': {
-      id: '/_auth/config/theme'
+    '/_authed/_dashboard/config/theme': {
+      id: '/_authed/_dashboard/config/theme'
       path: '/theme'
       fullPath: '/config/theme'
-      preLoaderRoute: typeof AuthConfigThemeRouteImport
-      parentRoute: typeof AuthConfigRouteRoute
+      preLoaderRoute: typeof AuthedDashboardConfigThemeRouteImport
+      parentRoute: typeof AuthedDashboardConfigRouteRoute
     }
-    '/_auth/config/templates': {
-      id: '/_auth/config/templates'
+    '/_authed/_dashboard/config/templates': {
+      id: '/_authed/_dashboard/config/templates'
       path: '/templates'
       fullPath: '/config/templates'
-      preLoaderRoute: typeof AuthConfigTemplatesRouteImport
-      parentRoute: typeof AuthConfigRouteRoute
+      preLoaderRoute: typeof AuthedDashboardConfigTemplatesRouteImport
+      parentRoute: typeof AuthedDashboardConfigRouteRoute
     }
-    '/_auth/config/platforms': {
-      id: '/_auth/config/platforms'
+    '/_authed/_dashboard/config/platforms': {
+      id: '/_authed/_dashboard/config/platforms'
       path: '/platforms'
       fullPath: '/config/platforms'
-      preLoaderRoute: typeof AuthConfigPlatformsRouteImport
-      parentRoute: typeof AuthConfigRouteRoute
+      preLoaderRoute: typeof AuthedDashboardConfigPlatformsRouteImport
+      parentRoute: typeof AuthedDashboardConfigRouteRoute
     }
-    '/_auth/config/global': {
-      id: '/_auth/config/global'
+    '/_authed/_dashboard/config/global': {
+      id: '/_authed/_dashboard/config/global'
       path: '/global'
       fullPath: '/config/global'
-      preLoaderRoute: typeof AuthConfigGlobalRouteImport
-      parentRoute: typeof AuthConfigRouteRoute
+      preLoaderRoute: typeof AuthedDashboardConfigGlobalRouteImport
+      parentRoute: typeof AuthedDashboardConfigRouteRoute
     }
-    '/_auth/config/engines': {
-      id: '/_auth/config/engines'
+    '/_authed/_dashboard/config/engines': {
+      id: '/_authed/_dashboard/config/engines'
       path: '/engines'
       fullPath: '/config/engines'
-      preLoaderRoute: typeof AuthConfigEnginesRouteImport
-      parentRoute: typeof AuthConfigRouteRoute
+      preLoaderRoute: typeof AuthedDashboardConfigEnginesRouteImport
+      parentRoute: typeof AuthedDashboardConfigRouteRoute
     }
-    '/_auth/streamers/$id/edit': {
-      id: '/_auth/streamers/$id/edit'
+    '/_authed/_dashboard/streamers/$id/edit': {
+      id: '/_authed/_dashboard/streamers/$id/edit'
       path: '/streamers/$id/edit'
       fullPath: '/streamers/$id/edit'
-      preLoaderRoute: typeof AuthStreamersIdEditRouteImport
-      parentRoute: typeof AuthRoute
+      preLoaderRoute: typeof AuthedDashboardStreamersIdEditRouteImport
+      parentRoute: typeof AuthedDashboardRoute
     }
   }
 }
 
-interface AuthConfigRouteRouteChildren {
-  AuthConfigEnginesRoute: typeof AuthConfigEnginesRoute
-  AuthConfigGlobalRoute: typeof AuthConfigGlobalRoute
-  AuthConfigPlatformsRoute: typeof AuthConfigPlatformsRoute
-  AuthConfigTemplatesRoute: typeof AuthConfigTemplatesRoute
-  AuthConfigThemeRoute: typeof AuthConfigThemeRoute
+interface AuthedDashboardConfigRouteRouteChildren {
+  AuthedDashboardConfigEnginesRoute: typeof AuthedDashboardConfigEnginesRoute
+  AuthedDashboardConfigGlobalRoute: typeof AuthedDashboardConfigGlobalRoute
+  AuthedDashboardConfigPlatformsRoute: typeof AuthedDashboardConfigPlatformsRoute
+  AuthedDashboardConfigTemplatesRoute: typeof AuthedDashboardConfigTemplatesRoute
+  AuthedDashboardConfigThemeRoute: typeof AuthedDashboardConfigThemeRoute
 }
 
-const AuthConfigRouteRouteChildren: AuthConfigRouteRouteChildren = {
-  AuthConfigEnginesRoute: AuthConfigEnginesRoute,
-  AuthConfigGlobalRoute: AuthConfigGlobalRoute,
-  AuthConfigPlatformsRoute: AuthConfigPlatformsRoute,
-  AuthConfigTemplatesRoute: AuthConfigTemplatesRoute,
-  AuthConfigThemeRoute: AuthConfigThemeRoute,
+const AuthedDashboardConfigRouteRouteChildren: AuthedDashboardConfigRouteRouteChildren =
+  {
+    AuthedDashboardConfigEnginesRoute: AuthedDashboardConfigEnginesRoute,
+    AuthedDashboardConfigGlobalRoute: AuthedDashboardConfigGlobalRoute,
+    AuthedDashboardConfigPlatformsRoute: AuthedDashboardConfigPlatformsRoute,
+    AuthedDashboardConfigTemplatesRoute: AuthedDashboardConfigTemplatesRoute,
+    AuthedDashboardConfigThemeRoute: AuthedDashboardConfigThemeRoute,
+  }
+
+const AuthedDashboardConfigRouteRouteWithChildren =
+  AuthedDashboardConfigRouteRoute._addFileChildren(
+    AuthedDashboardConfigRouteRouteChildren,
+  )
+
+interface AuthedDashboardRouteChildren {
+  AuthedDashboardConfigRouteRoute: typeof AuthedDashboardConfigRouteRouteWithChildren
+  AuthedDashboardDashboardRoute: typeof AuthedDashboardDashboardRoute
+  AuthedDashboardPipelineJobsRoute: typeof AuthedDashboardPipelineJobsRoute
+  AuthedDashboardPipelineOutputsRoute: typeof AuthedDashboardPipelineOutputsRoute
+  AuthedDashboardSessionsIdRoute: typeof AuthedDashboardSessionsIdRoute
+  AuthedDashboardStreamersNewRoute: typeof AuthedDashboardStreamersNewRoute
+  AuthedDashboardSessionsIndexRoute: typeof AuthedDashboardSessionsIndexRoute
+  AuthedDashboardStreamersIndexRoute: typeof AuthedDashboardStreamersIndexRoute
+  AuthedDashboardStreamersIdEditRoute: typeof AuthedDashboardStreamersIdEditRoute
 }
 
-const AuthConfigRouteRouteWithChildren = AuthConfigRouteRoute._addFileChildren(
-  AuthConfigRouteRouteChildren,
+const AuthedDashboardRouteChildren: AuthedDashboardRouteChildren = {
+  AuthedDashboardConfigRouteRoute: AuthedDashboardConfigRouteRouteWithChildren,
+  AuthedDashboardDashboardRoute: AuthedDashboardDashboardRoute,
+  AuthedDashboardPipelineJobsRoute: AuthedDashboardPipelineJobsRoute,
+  AuthedDashboardPipelineOutputsRoute: AuthedDashboardPipelineOutputsRoute,
+  AuthedDashboardSessionsIdRoute: AuthedDashboardSessionsIdRoute,
+  AuthedDashboardStreamersNewRoute: AuthedDashboardStreamersNewRoute,
+  AuthedDashboardSessionsIndexRoute: AuthedDashboardSessionsIndexRoute,
+  AuthedDashboardStreamersIndexRoute: AuthedDashboardStreamersIndexRoute,
+  AuthedDashboardStreamersIdEditRoute: AuthedDashboardStreamersIdEditRoute,
+}
+
+const AuthedDashboardRouteWithChildren = AuthedDashboardRoute._addFileChildren(
+  AuthedDashboardRouteChildren,
 )
 
-interface AuthRouteChildren {
-  AuthConfigRouteRoute: typeof AuthConfigRouteRouteWithChildren
-  AuthDashboardRoute: typeof AuthDashboardRoute
-  AuthPipelineJobsRoute: typeof AuthPipelineJobsRoute
-  AuthPipelineOutputsRoute: typeof AuthPipelineOutputsRoute
-  AuthSessionsIdRoute: typeof AuthSessionsIdRoute
-  AuthStreamersNewRoute: typeof AuthStreamersNewRoute
-  AuthSessionsIndexRoute: typeof AuthSessionsIndexRoute
-  AuthStreamersIndexRoute: typeof AuthStreamersIndexRoute
-  AuthStreamersIdEditRoute: typeof AuthStreamersIdEditRoute
+interface AuthedRouteChildren {
+  AuthedDashboardRoute: typeof AuthedDashboardRouteWithChildren
+  AuthedChangePasswordRoute: typeof AuthedChangePasswordRoute
 }
 
-const AuthRouteChildren: AuthRouteChildren = {
-  AuthConfigRouteRoute: AuthConfigRouteRouteWithChildren,
-  AuthDashboardRoute: AuthDashboardRoute,
-  AuthPipelineJobsRoute: AuthPipelineJobsRoute,
-  AuthPipelineOutputsRoute: AuthPipelineOutputsRoute,
-  AuthSessionsIdRoute: AuthSessionsIdRoute,
-  AuthStreamersNewRoute: AuthStreamersNewRoute,
-  AuthSessionsIndexRoute: AuthSessionsIndexRoute,
-  AuthStreamersIndexRoute: AuthStreamersIndexRoute,
-  AuthStreamersIdEditRoute: AuthStreamersIdEditRoute,
+const AuthedRouteChildren: AuthedRouteChildren = {
+  AuthedDashboardRoute: AuthedDashboardRouteWithChildren,
+  AuthedChangePasswordRoute: AuthedChangePasswordRoute,
 }
 
-const AuthRouteWithChildren = AuthRoute._addFileChildren(AuthRouteChildren)
+const AuthedRouteWithChildren =
+  AuthedRoute._addFileChildren(AuthedRouteChildren)
+
+interface PublicRouteChildren {
+  PublicLoginRoute: typeof PublicLoginRoute
+}
+
+const PublicRouteChildren: PublicRouteChildren = {
+  PublicLoginRoute: PublicLoginRoute,
+}
+
+const PublicRouteWithChildren =
+  PublicRoute._addFileChildren(PublicRouteChildren)
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
-  AuthRoute: AuthRouteWithChildren,
-  ChangePasswordRoute: ChangePasswordRoute,
-  LoginRoute: LoginRoute,
+  AuthedRoute: AuthedRouteWithChildren,
+  PublicRoute: PublicRouteWithChildren,
+  LogoutRoute: LogoutRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

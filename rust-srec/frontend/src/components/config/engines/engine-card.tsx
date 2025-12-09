@@ -4,7 +4,7 @@ import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle }
 import { Button } from '@/components/ui/button';
 import { Settings2, Trash2, Cpu, CheckCircle2, XCircle, Loader2 } from 'lucide-react';
 import { EngineConfigSchema } from '@/api/schemas';
-import { engineApi } from '@/api/endpoints';
+import { testEngine, deleteEngine } from '@/server/functions';
 import { z } from 'zod';
 import { EditEngineDialog } from './edit-engine-dialog';
 import {
@@ -35,7 +35,7 @@ export function EngineCard({ engine }: EngineCardProps) {
         const checkAvailability = async () => {
             setStatus('loading');
             try {
-                const result = await engineApi.test(engine.id);
+                const result = await testEngine({ data: engine.id });
                 if (mounted) {
                     setStatus(result.available ? 'available' : 'unavailable');
                     setVersion(result.version);
@@ -56,7 +56,7 @@ export function EngineCard({ engine }: EngineCardProps) {
     }, [engine.id, engine.config]); // Re-check if config changes
 
     const deleteMutation = useMutation({
-        mutationFn: engineApi.delete,
+        mutationFn: (id: string) => deleteEngine({ data: id }),
         onSuccess: () => {
             queryClient.invalidateQueries({ queryKey: ['engines'] });
             toast.success('Engine configuration deleted');

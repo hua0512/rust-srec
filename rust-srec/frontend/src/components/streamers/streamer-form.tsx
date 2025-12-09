@@ -2,7 +2,7 @@ import { useForm, SubmitHandler, Resolver } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { CreateStreamerSchema, PlatformConfigSchema } from '../../api/schemas';
 import { useQuery } from '@tanstack/react-query';
-import { configApi, streamerApi } from '../../api/endpoints';
+import { listPlatformConfigs, listTemplates, extractMetadata } from '@/server/functions';
 import { Button } from '../ui/button';
 import { Input } from '../ui/input';
 import {
@@ -62,12 +62,12 @@ export function StreamerForm({
     // Fetch dependencies
     const { data: allPlatforms, isLoading: platformsLoading } = useQuery({
         queryKey: ['platforms'],
-        queryFn: configApi.listPlatforms,
+        queryFn: () => listPlatformConfigs(),
     });
 
     const { data: templates, isLoading: templatesLoading } = useQuery({
         queryKey: ['templates'],
-        queryFn: configApi.listTemplates,
+        queryFn: () => listTemplates(),
     });
 
     const defaults: StreamerFormValues = {
@@ -96,7 +96,7 @@ export function StreamerForm({
 
         setDetectingPlatform(true);
         try {
-            const metadata = await streamerApi.extractMetadata(url);
+            const metadata = await extractMetadata({ data: url });
             setDetectedPlatform(metadata.platform);
             setValidPlatformConfigs(metadata.valid_platform_configs);
 
@@ -349,7 +349,7 @@ export function StreamerForm({
                         <div className="flex justify-between pt-6 border-t border-border/40 mt-6">
                             {stage === 1 ? (
                                 <>
-                                    <Button variant="ghost" type="button" onClick={() => navigate({ to: '/streamers' })}>
+                                    <Button variant="ghost" type="button" onClick={() => navigate({ to: '/dashboard' })}>
                                         <Undo2 className="mr-2 h-4 w-4" /> <Trans>Cancel</Trans>
                                     </Button>
                                     <Button
