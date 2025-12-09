@@ -7,15 +7,25 @@ import { useStore } from "@/hooks/use-store";
 import { cn } from "@/lib/utils";
 import { Link } from "@tanstack/react-router";
 
+import { useShallow } from "zustand/react/shallow";
+
 export function Sidebar() {
-    const sidebar = useStore(useSidebar, (x) => x);
+    const sidebar = useStore(
+        useSidebar,
+        useShallow((state) => ({
+            isOpen: state.isOpen || (state.settings.isHoverOpen && state.isHover),
+            settings: state.settings,
+            toggleOpen: state.toggleOpen,
+            setIsHover: state.setIsHover,
+        }))
+    );
     if (!sidebar) return null;
-    const { isOpen, toggleOpen, getOpenState, setIsHover, settings } = sidebar;
+    const { isOpen, toggleOpen, setIsHover, settings } = sidebar;
     return (
         <aside
             className={cn(
-                "fixed top-0 left-0 z-20 h-screen -translate-x-full lg:translate-x-0 transition-[width] ease-in-out duration-300",
-                !getOpenState() ? "w-[90px]" : "w-72",
+                "fixed top-0 left-0 z-20 h-screen -translate-x-full lg:translate-x-0 transition-[width] ease-in-out duration-300 bg-sidebar border-r border-border",
+                !isOpen ? "w-[90px]" : "w-72",
                 settings.disabled && "hidden"
             )}
         >
@@ -23,12 +33,12 @@ export function Sidebar() {
             <div
                 onMouseEnter={() => setIsHover(true)}
                 onMouseLeave={() => setIsHover(false)}
-                className="relative h-full flex flex-col px-3 py-4 overflow-y-auto shadow-md dark:shadow-zinc-800"
+                className="relative h-full flex flex-col px-3 py-4 overflow-hidden shadow-md dark:shadow-zinc-800"
             >
                 <Button
                     className={cn(
                         "transition-transform ease-in-out duration-300 mb-1",
-                        !getOpenState() ? "translate-x-1" : "translate-x-0"
+                        !isOpen ? "translate-x-1" : "translate-x-0"
                     )}
                     variant="link"
                     asChild
@@ -38,7 +48,7 @@ export function Sidebar() {
                         <h1
                             className={cn(
                                 "font-bold text-lg whitespace-nowrap transition-[transform,opacity,display] ease-in-out duration-300",
-                                !getOpenState()
+                                !isOpen
                                     ? "-translate-x-96 opacity-0 hidden"
                                     : "translate-x-0 opacity-100"
                             )}
@@ -47,7 +57,7 @@ export function Sidebar() {
                         </h1>
                     </Link>
                 </Button>
-                <Menu isOpen={getOpenState()} />
+                <Menu isOpen={isOpen} className="flex-1" />
             </div>
         </aside>
     );

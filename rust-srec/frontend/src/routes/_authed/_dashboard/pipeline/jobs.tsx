@@ -32,11 +32,13 @@ function PipelineJobsPage() {
     refetchInterval: 5000,
   });
 
-  const { data: jobs, isLoading: isJobsLoading } = useQuery({
+  const { data: jobsData, isLoading: isJobsLoading } = useQuery({
     queryKey: ['pipeline', 'jobs'],
     queryFn: () => listPipelineJobs(), // TODO: Add filtering support
     refetchInterval: 5000,
   });
+
+  const jobs = jobsData?.items || [];
 
   const retryMutation = useMutation({
     mutationFn: (id: string) => retryPipelineJob({ data: id }),
@@ -62,12 +64,7 @@ function PipelineJobsPage() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <h1 className="text-3xl font-bold tracking-tight"><Trans>Pipeline Jobs</Trans></h1>
-        <Button variant="outline" size="icon" onClick={() => queryClient.invalidateQueries({ queryKey: ["pipeline"] })}>
-          <RefreshCw className="h-4 w-4" />
-        </Button>
-      </div>
+
 
       {/* Stats Overview */}
       <div className="grid gap-4 md:grid-cols-4">

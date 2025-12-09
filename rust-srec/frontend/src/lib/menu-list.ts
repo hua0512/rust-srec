@@ -54,6 +54,12 @@ export function getMenuList(pathname: string): Group[] {
                     label: "Sessions",
                     icon: Film,
                     submenus: []
+                },
+                {
+                    href: "/pipeline/jobs",
+                    label: "Pipeline",
+                    icon: Film,
+                    submenus: []
                 }
             ]
         },
@@ -67,8 +73,8 @@ export function getMenuList(pathname: string): Group[] {
                 //     icon: Users
                 // },
                 {
-                    href: "/config/global",
-                    label: "Global",
+                    href: "/config",
+                    label: "Configuration",
                     icon: Settings
                 }
             ]

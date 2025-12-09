@@ -1,9 +1,16 @@
-import { createFileRoute, Outlet, Link, useLocation } from '@tanstack/react-router';
+import { createFileRoute, Outlet, Link, useLocation, redirect } from '@tanstack/react-router';
 import { Tabs, TabsList, TabsTrigger } from '../../../../components/ui/tabs';
 import { Trans } from '@lingui/react/macro';
 
 export const Route = createFileRoute('/_authed/_dashboard/config')({
   component: ConfigLayout,
+  beforeLoad: ({ location }) => {
+    if (location.pathname === '/config') {
+      throw redirect({
+        to: '/config/global',
+      });
+    }
+  },
 });
 
 function ConfigLayout() {
@@ -18,13 +25,6 @@ function ConfigLayout() {
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-3xl font-bold tracking-tight"><Trans>Configuration</Trans></h1>
-        <p className="text-muted-foreground">
-          <Trans>Manage system settings, platform configurations, and templates.</Trans>
-        </p>
-      </div>
-
       <Tabs value={currentTab} className="space-y-4">
         <TabsList>
           <Link to="/config/global">

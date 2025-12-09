@@ -16,10 +16,10 @@ function PublicLayout() {
   const { session } = Route.useRouteContext()
 
 
-  if (session) {
-    // Redirect to dashboard if authenticated
-    return <Navigate to="/dashboard" />
-  }
+  // if (session) {
+  //   // Redirect to dashboard if authenticated
+  //   return <Navigate to="/dashboard" />
+  // }
 
   return <Outlet />
 }

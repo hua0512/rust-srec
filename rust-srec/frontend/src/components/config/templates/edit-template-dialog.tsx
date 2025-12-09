@@ -47,7 +47,6 @@ export function EditTemplateDialog({ template, trigger }: EditTemplateDialogProp
             output_folder: template.output_folder,
             output_filename_template: template.output_filename_template,
             output_file_format: template.output_file_format,
-            max_bitrate: template.max_bitrate,
             min_segment_size_bytes: template.min_segment_size_bytes,
             max_download_duration_secs: template.max_download_duration_secs,
             max_part_size_bytes: template.max_part_size_bytes,

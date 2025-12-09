@@ -48,7 +48,7 @@ function EditStreamerPage() {
     enabled: !!id,
   });
 
-  const recentSessions = sessions ? [...sessions].sort((a, b) => new Date(b.start_time).getTime() - new Date(a.start_time).getTime()).slice(0, 5) : [];
+  const recentSessions = sessions?.items ? [...sessions.items].sort((a: any, b: any) => new Date(b.start_time).getTime() - new Date(a.start_time).getTime()).slice(0, 5) : [];
 
   const downloads = useDownloadStore(useShallow(state => state.getDownloadsByStreamer(id)));
   const isRecording = downloads.length > 0;
@@ -232,11 +232,9 @@ function EditStreamerPage() {
                           <span className="text-xs font-medium truncate max-w-[120px]" title={session.title}>{session.title}</span>
                           <span className={cn(
                             "text-[10px] px-1.5 py-0.5 rounded-full border",
-                            session.status === 'Active' ? "bg-emerald-500/10 text-emerald-500 border-emerald-500/20" :
-                              session.status === 'Error' ? "bg-red-500/10 text-red-500 border-red-500/20" :
-                                "bg-muted/30 text-muted-foreground border-transparent"
+                            session.end_time ? "bg-muted/30 text-muted-foreground border-transparent" : "bg-emerald-500/10 text-emerald-500 border-emerald-500/20"
                           )}>
-                            {session.status}
+                            {session.end_time ? 'Offline' : 'Live'}
                           </span>
                         </div>
                         <div className="flex items-center gap-3 text-[10px] text-muted-foreground">
@@ -246,7 +244,7 @@ function EditStreamerPage() {
                           </div>
                           <div className="flex items-center gap-1">
                             <Clock className="w-3 h-3" />
-                            <span>{session.duration_seconds ? `${Math.floor(session.duration_seconds / 60)}m` : '-'}</span>
+                            <span>{session.duration_secs ? `${Math.floor(session.duration_secs / 60)}m` : '-'}</span>
                           </div>
                           <div className="flex items-center gap-1 ml-auto">
                             <HardDrive className="w-3 h-3" />
@@ -302,7 +300,7 @@ function EditStreamerPage() {
         onOpenChange={setFilterDialogOpen}
         filterToEdit={filterToEdit}
       />
-    </div>
+    </div >
   );
 }
 

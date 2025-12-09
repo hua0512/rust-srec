@@ -78,8 +78,6 @@ function Dashboard() {
 
   return (
     <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
-      <h1 className="text-3xl font-bold tracking-tight"><Trans>Dashboard</Trans></h1>
-
       {/* System Health */}
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
         <HealthCard

@@ -1,5 +1,6 @@
 import { createFileRoute, Outlet } from '@tanstack/react-router'
 import { redirect } from '@tanstack/react-router'
+import { WebSocketProvider } from '@/providers/WebSocketProvider'
 
 export const Route = createFileRoute('/_authed')({
   beforeLoad: ({ context }) => {
@@ -8,5 +9,9 @@ export const Route = createFileRoute('/_authed')({
       throw redirect({ to: '/login' })
     }
   },
-  component: () => <Outlet />,
+  component: () => (
+    <WebSocketProvider>
+      <Outlet />
+    </WebSocketProvider>
+  ),
 })

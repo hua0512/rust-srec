@@ -217,28 +217,6 @@ export function GeneralTab({ form, basePath }: GeneralTabProps) {
                             </FormItem>
                         )}
                     />
-
-                    <FormField
-                        control={form.control}
-                        name={basePath ? `${basePath}.max_bitrate` : "max_bitrate"}
-                        render={({ field }) => (
-                            <FormItem>
-                                <FormLabel><Trans>Max Bitrate (Kbps)</Trans></FormLabel>
-                                <FormControl>
-                                    <Input
-                                        type="number"
-                                        {...field}
-                                        value={field.value ?? ''}
-                                        onChange={(e) => field.onChange(e.target.value ? Number(e.target.value) : null)}
-                                    />
-                                </FormControl>
-                                <FormDescription>
-                                    <Trans>Max bitrate limit.</Trans>
-                                </FormDescription>
-                                <FormMessage />
-                            </FormItem>
-                        )}
-                    />
                 </div>
             </div>
 

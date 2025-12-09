@@ -11,6 +11,11 @@ import {
     DropdownMenuSeparator,
     DropdownMenuTrigger,
 } from '../ui/dropdown-menu';
+import {
+    Popover,
+    PopoverContent,
+    PopoverTrigger,
+} from "../ui/popover";
 import { Avatar, AvatarFallback, AvatarImage } from '../ui/avatar';
 import { MoreHorizontal, RefreshCw, Trash, Edit, ExternalLink, Play, Pause, Video, Radio } from 'lucide-react';
 import { Link } from '@tanstack/react-router';
@@ -121,9 +126,33 @@ export function StreamerCard({ streamer, onDelete, onToggle, onCheck }: Streamer
                                         <span className="capitalize">{platform}</span>
                                     </div>
                                     {streamer.consecutive_error_count > 0 && (
-                                        <Badge variant="outline" className="text-[10px] h-5 px-1 bg-red-50 text-red-600 border-red-100">
-                                            {streamer.consecutive_error_count} err
-                                        </Badge>
+                                        streamer.last_error ? (
+                                            <Popover>
+                                                <PopoverTrigger asChild>
+                                                    <Badge
+                                                        variant="outline"
+                                                        className="text-[10px] h-5 px-1 bg-red-50 text-red-600 border-red-100 cursor-pointer hover:bg-red-100 transition-colors"
+                                                    >
+                                                        {streamer.consecutive_error_count} err
+                                                    </Badge>
+                                                </PopoverTrigger>
+                                                <PopoverContent className="w-80 p-0 overflow-hidden" align="start">
+                                                    <div className="bg-red-50 border-b border-red-100 p-3">
+                                                        <div className="flex items-center gap-2 text-red-700 font-medium text-sm">
+                                                            <div className="h-2 w-2 rounded-full bg-red-500 animate-pulse" />
+                                                            <Trans>Error Details</Trans>
+                                                        </div>
+                                                    </div>
+                                                    <div className="p-3 bg-white text-sm text-muted-foreground whitespace-pre-wrap font-mono text-xs max-h-[300px] overflow-y-auto">
+                                                        {streamer.last_error}
+                                                    </div>
+                                                </PopoverContent>
+                                            </Popover>
+                                        ) : (
+                                            <Badge variant="outline" className="text-[10px] h-5 px-1 bg-red-50 text-red-600 border-red-100">
+                                                {streamer.consecutive_error_count} err
+                                            </Badge>
+                                        )
                                     )}
 
                                     <TooltipProvider>

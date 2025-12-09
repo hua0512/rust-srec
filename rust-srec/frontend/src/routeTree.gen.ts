@@ -21,7 +21,7 @@ import { Route as AuthedDashboardConfigRouteRouteImport } from './routes/_authed
 import { Route as AuthedDashboardStreamersIndexRouteImport } from './routes/_authed/_dashboard/streamers/index'
 import { Route as AuthedDashboardSessionsIndexRouteImport } from './routes/_authed/_dashboard/sessions/index'
 import { Route as AuthedDashboardStreamersNewRouteImport } from './routes/_authed/_dashboard/streamers/new'
-import { Route as AuthedDashboardSessionsIdRouteImport } from './routes/_authed/_dashboard/sessions/$id'
+import { Route as AuthedDashboardSessionsSessionIdRouteImport } from './routes/_authed/_dashboard/sessions/$sessionId'
 import { Route as AuthedDashboardPipelineOutputsRouteImport } from './routes/_authed/_dashboard/pipeline/outputs'
 import { Route as AuthedDashboardPipelineJobsRouteImport } from './routes/_authed/_dashboard/pipeline/jobs'
 import { Route as AuthedDashboardConfigThemeRouteImport } from './routes/_authed/_dashboard/config/theme'
@@ -93,10 +93,10 @@ const AuthedDashboardStreamersNewRoute =
     path: '/streamers/new',
     getParentRoute: () => AuthedDashboardRoute,
   } as any)
-const AuthedDashboardSessionsIdRoute =
-  AuthedDashboardSessionsIdRouteImport.update({
-    id: '/sessions/$id',
-    path: '/sessions/$id',
+const AuthedDashboardSessionsSessionIdRoute =
+  AuthedDashboardSessionsSessionIdRouteImport.update({
+    id: '/sessions/$sessionId',
+    path: '/sessions/$sessionId',
     getParentRoute: () => AuthedDashboardRoute,
   } as any)
 const AuthedDashboardPipelineOutputsRoute =
@@ -162,7 +162,7 @@ export interface FileRoutesByFullPath {
   '/config/theme': typeof AuthedDashboardConfigThemeRoute
   '/pipeline/jobs': typeof AuthedDashboardPipelineJobsRoute
   '/pipeline/outputs': typeof AuthedDashboardPipelineOutputsRoute
-  '/sessions/$id': typeof AuthedDashboardSessionsIdRoute
+  '/sessions/$sessionId': typeof AuthedDashboardSessionsSessionIdRoute
   '/streamers/new': typeof AuthedDashboardStreamersNewRoute
   '/sessions': typeof AuthedDashboardSessionsIndexRoute
   '/streamers': typeof AuthedDashboardStreamersIndexRoute
@@ -182,7 +182,7 @@ export interface FileRoutesByTo {
   '/config/theme': typeof AuthedDashboardConfigThemeRoute
   '/pipeline/jobs': typeof AuthedDashboardPipelineJobsRoute
   '/pipeline/outputs': typeof AuthedDashboardPipelineOutputsRoute
-  '/sessions/$id': typeof AuthedDashboardSessionsIdRoute
+  '/sessions/$sessionId': typeof AuthedDashboardSessionsSessionIdRoute
   '/streamers/new': typeof AuthedDashboardStreamersNewRoute
   '/sessions': typeof AuthedDashboardSessionsIndexRoute
   '/streamers': typeof AuthedDashboardStreamersIndexRoute
@@ -206,7 +206,7 @@ export interface FileRoutesById {
   '/_authed/_dashboard/config/theme': typeof AuthedDashboardConfigThemeRoute
   '/_authed/_dashboard/pipeline/jobs': typeof AuthedDashboardPipelineJobsRoute
   '/_authed/_dashboard/pipeline/outputs': typeof AuthedDashboardPipelineOutputsRoute
-  '/_authed/_dashboard/sessions/$id': typeof AuthedDashboardSessionsIdRoute
+  '/_authed/_dashboard/sessions/$sessionId': typeof AuthedDashboardSessionsSessionIdRoute
   '/_authed/_dashboard/streamers/new': typeof AuthedDashboardStreamersNewRoute
   '/_authed/_dashboard/sessions/': typeof AuthedDashboardSessionsIndexRoute
   '/_authed/_dashboard/streamers/': typeof AuthedDashboardStreamersIndexRoute
@@ -228,7 +228,7 @@ export interface FileRouteTypes {
     | '/config/theme'
     | '/pipeline/jobs'
     | '/pipeline/outputs'
-    | '/sessions/$id'
+    | '/sessions/$sessionId'
     | '/streamers/new'
     | '/sessions'
     | '/streamers'
@@ -248,7 +248,7 @@ export interface FileRouteTypes {
     | '/config/theme'
     | '/pipeline/jobs'
     | '/pipeline/outputs'
-    | '/sessions/$id'
+    | '/sessions/$sessionId'
     | '/streamers/new'
     | '/sessions'
     | '/streamers'
@@ -271,7 +271,7 @@ export interface FileRouteTypes {
     | '/_authed/_dashboard/config/theme'
     | '/_authed/_dashboard/pipeline/jobs'
     | '/_authed/_dashboard/pipeline/outputs'
-    | '/_authed/_dashboard/sessions/$id'
+    | '/_authed/_dashboard/sessions/$sessionId'
     | '/_authed/_dashboard/streamers/new'
     | '/_authed/_dashboard/sessions/'
     | '/_authed/_dashboard/streamers/'
@@ -371,11 +371,11 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthedDashboardStreamersNewRouteImport
       parentRoute: typeof AuthedDashboardRoute
     }
-    '/_authed/_dashboard/sessions/$id': {
-      id: '/_authed/_dashboard/sessions/$id'
-      path: '/sessions/$id'
-      fullPath: '/sessions/$id'
-      preLoaderRoute: typeof AuthedDashboardSessionsIdRouteImport
+    '/_authed/_dashboard/sessions/$sessionId': {
+      id: '/_authed/_dashboard/sessions/$sessionId'
+      path: '/sessions/$sessionId'
+      fullPath: '/sessions/$sessionId'
+      preLoaderRoute: typeof AuthedDashboardSessionsSessionIdRouteImport
       parentRoute: typeof AuthedDashboardRoute
     }
     '/_authed/_dashboard/pipeline/outputs': {
@@ -464,7 +464,7 @@ interface AuthedDashboardRouteChildren {
   AuthedDashboardDashboardRoute: typeof AuthedDashboardDashboardRoute
   AuthedDashboardPipelineJobsRoute: typeof AuthedDashboardPipelineJobsRoute
   AuthedDashboardPipelineOutputsRoute: typeof AuthedDashboardPipelineOutputsRoute
-  AuthedDashboardSessionsIdRoute: typeof AuthedDashboardSessionsIdRoute
+  AuthedDashboardSessionsSessionIdRoute: typeof AuthedDashboardSessionsSessionIdRoute
   AuthedDashboardStreamersNewRoute: typeof AuthedDashboardStreamersNewRoute
   AuthedDashboardSessionsIndexRoute: typeof AuthedDashboardSessionsIndexRoute
   AuthedDashboardStreamersIndexRoute: typeof AuthedDashboardStreamersIndexRoute
@@ -476,7 +476,7 @@ const AuthedDashboardRouteChildren: AuthedDashboardRouteChildren = {
   AuthedDashboardDashboardRoute: AuthedDashboardDashboardRoute,
   AuthedDashboardPipelineJobsRoute: AuthedDashboardPipelineJobsRoute,
   AuthedDashboardPipelineOutputsRoute: AuthedDashboardPipelineOutputsRoute,
-  AuthedDashboardSessionsIdRoute: AuthedDashboardSessionsIdRoute,
+  AuthedDashboardSessionsSessionIdRoute: AuthedDashboardSessionsSessionIdRoute,
   AuthedDashboardStreamersNewRoute: AuthedDashboardStreamersNewRoute,
   AuthedDashboardSessionsIndexRoute: AuthedDashboardSessionsIndexRoute,
   AuthedDashboardStreamersIndexRoute: AuthedDashboardStreamersIndexRoute,

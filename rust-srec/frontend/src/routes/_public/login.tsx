@@ -20,8 +20,16 @@ import { t } from '@lingui/core/macro';
 import { useState } from 'react';
 import { Eye, EyeOff } from 'lucide-react';
 import { loginFn } from '@/server/auth';
+import { redirect } from '@tanstack/react-router';
 
 export const Route = createFileRoute('/_public/login')({
+    beforeLoad: ({ context }) => {
+        if (context.user && context.user.mustChangePassword) {
+            throw redirect({ to: '/change-password' })
+        } else if (context.user) {
+            throw redirect({ to: '/dashboard' })
+        }
+    },
     component: LoginComp,
 });
 
@@ -66,13 +74,13 @@ function LoginPage() {
                 toast.warning('Password change required');
                 // Invalidate and navigate to change password
                 await router.invalidate();
-                router.navigate({ to: '/change-password' });
+                router.navigate({ to: '/change-password', replace: true });
             } else {
                 toast.success('Logged in successfully');
                 // Invalidate router to re-run guards with new auth state
                 await router.invalidate();
                 // Navigate to the redirect target
-                router.navigate({ to: search.redirect || '/dashboard' });
+                router.navigate({ to: search.redirect || '/dashboard', replace: true });
             }
         } catch (error: unknown) {
             const errorMessage = error instanceof Error ? error.message : 'Login failed';

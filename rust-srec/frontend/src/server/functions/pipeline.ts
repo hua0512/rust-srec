@@ -8,13 +8,19 @@ import {
 import { z } from 'zod';
 
 export const listPipelineJobs = createServerFn({ method: "GET" })
-    .inputValidator((d: { status?: string } = {}) => d)
+    .inputValidator((d: { status?: string; session_id?: string } = {}) => d)
     .handler(async ({ data }) => {
         const params = new URLSearchParams();
         if (data.status) params.set('status', data.status);
+        if (data.session_id) params.set('session_id', data.session_id);
 
         const json = await fetchBackend(`/pipeline/jobs?${params.toString()}`);
-        return z.array(JobSchema).parse(json);
+        return z.object({
+            items: z.array(JobSchema),
+            total: z.number(),
+            limit: z.number(),
+            offset: z.number(),
+        }).parse(json);
     });
 
 export const getPipelineStats = createServerFn({ method: "GET" })
@@ -51,5 +57,10 @@ export const listPipelineOutputs = createServerFn({ method: "GET" })
         if (data.session_id) params.set('session_id', data.session_id);
 
         const json = await fetchBackend(`/pipeline/outputs?${params.toString()}`);
-        return z.array(MediaOutputSchema).parse(json);
+        return z.object({
+            items: z.array(MediaOutputSchema),
+            total: z.number(),
+            limit: z.number(),
+            offset: z.number(),
+        }).parse(json);
     });

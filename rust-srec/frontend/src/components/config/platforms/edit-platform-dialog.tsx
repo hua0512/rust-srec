@@ -50,7 +50,6 @@ export function EditPlatformDialog({ platform, trigger }: EditPlatformDialogProp
             output_folder: platform.output_folder,
             output_filename_template: platform.output_filename_template,
             download_engine: platform.download_engine,
-            max_bitrate: platform.max_bitrate,
             stream_selection_config: platform.stream_selection_config,
             output_file_format: platform.output_file_format,
             min_segment_size_bytes: platform.min_segment_size_bytes,

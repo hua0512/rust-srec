@@ -6,6 +6,12 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "./ui/dropdown-menu"
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+  TooltipProvider
+} from "@/components/ui/tooltip"
 import { useLingui } from "@lingui/react"
 
 export function LanguageSwitcher() {
@@ -18,16 +24,23 @@ export function LanguageSwitcher() {
 
   return (
     <DropdownMenu>
-      <DropdownMenuTrigger asChild>
-        <Button
-          variant="outline"
-          size="icon"
-          className="rounded-full w-8 h-8 bg-background"
-        >
-          <Languages className="h-[1.2rem] w-[1.2rem]" />
-          <span className="sr-only">Switch language</span>
-        </Button>
-      </DropdownMenuTrigger>
+      <TooltipProvider disableHoverableContent>
+        <Tooltip delayDuration={100}>
+          <TooltipTrigger asChild>
+            <DropdownMenuTrigger asChild>
+              <Button
+                variant="outline"
+                size="icon"
+                className="rounded-full w-8 h-8 bg-background"
+              >
+                <Languages className="h-[1.2rem] w-[1.2rem]" />
+                <span className="sr-only">Switch language</span>
+              </Button>
+            </DropdownMenuTrigger>
+          </TooltipTrigger>
+          <TooltipContent side="bottom">Switch language</TooltipContent>
+        </Tooltip>
+      </TooltipProvider>
       <DropdownMenuContent align="end">
         <DropdownMenuItem onClick={() => changeLocale("en")}>
           English

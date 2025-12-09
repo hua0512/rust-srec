@@ -42,7 +42,7 @@ function GlobalConfigPage() {
     } : {
       output_folder: '',
       output_filename_template: '',
-      output_file_format: 'mp4',
+      output_file_format: 'flv',
       min_segment_size_bytes: 0,
       max_download_duration_secs: 0,
       max_part_size_bytes: 0,
@@ -55,7 +55,7 @@ function GlobalConfigPage() {
       proxy_config: '',
       offline_check_delay_ms: 0,
       offline_check_count: 0,
-      default_download_engine: 'mesio',
+      default_download_engine: 'default-mesio',
       job_history_retention_days: 30,
     },
     values: config ? {

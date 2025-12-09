@@ -41,10 +41,11 @@ export const StreamerSchema = z.object({
     enabled: z.boolean(),
     priority: z.enum(['HIGH', 'NORMAL', 'LOW']),
     template_id: z.string().nullable().optional(),
-    platform_config_id: z.string().nullable().optional(),
+    platform_config_id: z.string(),
     consecutive_error_count: z.number(),
-    last_check_time: z.string().nullable().optional(),
-    last_stream_time: z.string().nullable().optional(),
+    disabled_until: z.string().nullable().optional(),
+    last_error: z.string().nullable().optional(),
+    last_live_time: z.string().nullable().optional(),
     created_at: z.string(),
     updated_at: z.string(),
 });
@@ -127,13 +128,20 @@ export const UpdateFilterRequestSchema = z.object({
 export const SessionSchema = z.object({
     id: z.string(),
     streamer_id: z.string(),
+    streamer_name: z.string(),
+    streamer_avatar: z.string().nullable().optional(),
+    titles: z.array(z.object({
+        title: z.string(),
+        timestamp: z.string(),
+    })),
     title: z.string(),
     start_time: z.string(),
     end_time: z.string().nullable().optional(),
-    duration_seconds: z.number().nullable().optional(),
-    status: z.string(), // 'Active' | 'Completed' | 'Error'
+    duration_secs: z.number().nullable().optional(),
     output_count: z.number(),
     total_size_bytes: z.number(),
+    danmu_count: z.number().nullable().optional(),
+    thumbnail_url: z.string().nullable().optional(),
 });
 
 // --- Pipeline Schemas ---
@@ -200,7 +208,6 @@ export const PlatformConfigSchema = z.object({
     output_folder: z.string().nullable().optional(),
     output_filename_template: z.string().nullable().optional(),
     download_engine: z.string().nullable().optional(),
-    max_bitrate: z.number().nullable().optional(),
     stream_selection_config: z.string().nullable().optional(),
     output_file_format: z.string().nullable().optional(),
     min_segment_size_bytes: z.number().nullable().optional(),
@@ -231,7 +238,6 @@ export const TemplateSchema = z.object({
     output_folder: z.string().nullable().optional(),
     output_filename_template: z.string().nullable().optional(),
     output_file_format: z.string().nullable().optional(),
-    max_bitrate: z.number().nullable().optional(),
     min_segment_size_bytes: z.number().nullable().optional(),
     max_download_duration_secs: z.number().nullable().optional(),
     max_part_size_bytes: z.number().nullable().optional(),
@@ -255,7 +261,6 @@ export const CreateTemplateRequestSchema = z.object({
     output_folder: z.string().nullable().optional(),
     output_filename_template: z.string().nullable().optional(),
     output_file_format: z.string().nullable().optional(),
-    max_bitrate: z.number().nullable().optional(),
     min_segment_size_bytes: z.number().nullable().optional(),
     max_download_duration_secs: z.number().nullable().optional(),
     max_part_size_bytes: z.number().nullable().optional(),
@@ -294,8 +299,8 @@ export const PipelineStatsSchema = z.object({
 export const MediaOutputSchema = z.object({
     id: z.string(),
     session_id: z.string(),
-    path: z.string(),
-    size_bytes: z.number(),
+    file_path: z.string(),
+    file_size_bytes: z.number(),
     format: z.string(),
     created_at: z.string(),
 });

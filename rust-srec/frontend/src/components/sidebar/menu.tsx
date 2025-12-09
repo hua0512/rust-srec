@@ -1,5 +1,7 @@
 "use client";
 
+import * as React from "react";
+
 import { Link, useLocation } from "@tanstack/react-router";
 import { Ellipsis, LogOut } from "lucide-react";
 
@@ -17,16 +19,17 @@ import {
 
 interface MenuProps {
     isOpen: boolean | undefined;
+    className?: string;
 }
 
-export function Menu({ isOpen }: MenuProps) {
+export function MenuComponent({ isOpen, className }: MenuProps) {
     const pathname = useLocation({
         select: (location) => location.pathname,
     });
     const menuList = getMenuList(pathname);
 
     return (
-        <ScrollArea className="[&>div>div[style]]:!block">
+        <ScrollArea className={cn("[&>div>div[style]]:!block", className)}>
             <nav className="mt-8 h-full w-full">
                 <ul className="flex flex-col min-h-[calc(100vh-48px-36px-16px-32px)] lg:min-h-[calc(100vh-32px-40px-32px)] items-start space-y-1 px-2">
                     {menuList.map(({ groupLabel, menus }, index) => (
@@ -147,3 +150,5 @@ export function Menu({ isOpen }: MenuProps) {
         </ScrollArea>
     );
 }
+
+export const Menu = React.memo(MenuComponent);

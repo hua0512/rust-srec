@@ -97,10 +97,6 @@ function StreamersPage() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <h1 className="text-3xl font-bold tracking-tight"><Trans>Streamers</Trans></h1>
-      </div>
-
       <StreamersToolbar
         search={search}
         onSearchChange={(v) => { setSearch(v); setPage(1); }}
