@@ -441,6 +441,11 @@ impl ServiceContainer {
         // Wire HealthChecker into AppState for health endpoints
         state = state.with_health_checker(self.health_checker.clone());
 
+        // Wire SessionRepository and FilterRepository into AppState
+        state = state
+            .with_session_repository(Arc::new(SqlxSessionRepository::new(self.pool.clone())))
+            .with_filter_repository(Arc::new(SqlxFilterRepository::new(self.pool.clone())));
+
         let server = ApiServer::with_state(self.api_server_config.clone(), state);
         let cancel_token = self.cancellation_token.clone();
 

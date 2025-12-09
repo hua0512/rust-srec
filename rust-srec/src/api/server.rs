@@ -42,7 +42,8 @@ use crate::api::jwt::JwtService;
 use crate::config::ConfigService;
 use crate::danmu::DanmuService;
 use crate::database::repositories::{
-    config::SqlxConfigRepository, session::SessionRepository, streamer::SqlxStreamerRepository,
+    config::SqlxConfigRepository, filter::FilterRepository, session::SessionRepository,
+    streamer::SqlxStreamerRepository,
 };
 use crate::downloader::DownloadManager;
 use crate::metrics::HealthChecker;
@@ -70,6 +71,8 @@ pub struct AppState {
     pub download_manager: Option<Arc<DownloadManager>>,
     /// Session repository for session and output queries
     pub session_repository: Option<Arc<dyn SessionRepository>>,
+    /// Filter repository for streamer filters
+    pub filter_repository: Option<Arc<dyn FilterRepository>>,
     /// Health checker for real health status
     pub health_checker: Option<Arc<HealthChecker>>,
 }
@@ -87,6 +90,7 @@ impl AppState {
             danmu_service: None,
             download_manager: None,
             session_repository: None,
+            filter_repository: None,
             health_checker: None,
         }
     }
@@ -104,6 +108,7 @@ impl AppState {
             danmu_service: None,
             download_manager: None,
             session_repository: None,
+            filter_repository: None,
             health_checker: None,
         }
     }
@@ -146,6 +151,7 @@ impl AppState {
             danmu_service: Some(danmu_service),
             download_manager: Some(download_manager),
             session_repository: None,
+            filter_repository: None,
             health_checker: None,
         }
     }
@@ -156,6 +162,12 @@ impl AppState {
         session_repository: Arc<dyn SessionRepository>,
     ) -> Self {
         self.session_repository = Some(session_repository);
+        self
+    }
+
+    /// Set the filter repository.
+    pub fn with_filter_repository(mut self, filter_repository: Arc<dyn FilterRepository>) -> Self {
+        self.filter_repository = Some(filter_repository);
         self
     }
 

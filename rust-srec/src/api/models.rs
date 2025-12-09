@@ -651,6 +651,33 @@ pub struct ExtractMetadataResponse {
     pub channel_id: Option<String>,
 }
 
+// ============================================================================
+// Filter DTOs
+// ============================================================================
+
+/// Filter response.
+#[derive(Debug, Clone, Serialize)]
+pub struct FilterResponse {
+    pub id: String,
+    pub streamer_id: String,
+    pub filter_type: String,
+    pub config: serde_json::Value,
+}
+
+/// Request to create a new filter.
+#[derive(Debug, Clone, Deserialize)]
+pub struct CreateFilterRequest {
+    pub filter_type: String,
+    pub config: serde_json::Value,
+}
+
+/// Request to update a filter.
+#[derive(Debug, Clone, Deserialize)]
+pub struct UpdateFilterRequest {
+    pub filter_type: Option<String>,
+    pub config: Option<serde_json::Value>,
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
