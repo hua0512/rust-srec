@@ -285,6 +285,9 @@ export function StreamerForm({
                                                     ))}
                                                 </SelectContent>
                                             </Select>
+                                            <FormDescription>
+                                                <Trans>Apply template settings.</Trans>
+                                            </FormDescription>
                                             <FormMessage />
                                         </FormItem>
                                     )}

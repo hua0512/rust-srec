@@ -6,6 +6,9 @@ import {
     StreamerSchema,
     CreateStreamerSchema,
     UpdateStreamerSchema,
+    FilterSchema,
+    CreateFilterRequestSchema,
+    UpdateFilterRequestSchema,
     SessionSchema,
     JobSchema,
     GlobalConfigSchema,
@@ -119,7 +122,40 @@ export const streamerApi = {
             throw await handleApiError(error);
         }
     },
+    // --- Filters ---
+    getFilters: async (streamerId: string) => {
+        try {
+            const json = await apiClient.get(`streamers/${streamerId}/filters`).json();
+            return z.array(FilterSchema).parse(json);
+        } catch (error) {
+            throw await handleApiError(error);
+        }
+    },
+    createFilter: async (streamerId: string, data: z.infer<typeof CreateFilterRequestSchema>) => {
+        try {
+            const json = await apiClient.post(`streamers/${streamerId}/filters`, { json: data }).json();
+            return FilterSchema.parse(json);
+        } catch (error) {
+            throw await handleApiError(error);
+        }
+    },
+    updateFilter: async (streamerId: string, filterId: string, data: z.infer<typeof UpdateFilterRequestSchema>) => {
+        try {
+            const json = await apiClient.patch(`streamers/${streamerId}/filters/${filterId}`, { json: data }).json();
+            return FilterSchema.parse(json);
+        } catch (error) {
+            throw await handleApiError(error);
+        }
+    },
+    deleteFilter: async (streamerId: string, filterId: string) => {
+        try {
+            await apiClient.delete(`streamers/${streamerId}/filters/${filterId}`).text();
+        } catch (error) {
+            throw await handleApiError(error);
+        }
+    },
 };
+
 
 // --- Engines ---
 export const engineApi = {

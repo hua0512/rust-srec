@@ -27,6 +27,7 @@ export const apiClient = ky.create({
         afterResponse: [
             async (request, _options, response) => {
                 if (response.status === 401) {
+                    console.log('API Client: Intercepted 401 response from', request.url);
                     const { refreshToken, logout, login } = useAuthStore.getState();
 
                     if (!refreshToken) {

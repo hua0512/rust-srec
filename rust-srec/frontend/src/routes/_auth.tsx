@@ -1,5 +1,5 @@
 import { createFileRoute, Outlet, redirect } from '@tanstack/react-router';
-import { useAuthStore } from '../store/auth';
+
 import { SidebarProvider } from '../components/ui/sidebar';
 import { AppSidebar } from '../components/app-sidebar';
 import { TopBar } from '../components/top-bar';
@@ -7,14 +7,19 @@ import { Footer } from '../components/footer';
 import { useDownloadProgress } from '../hooks/useDownloadProgress';
 
 export const Route = createFileRoute('/_auth')({
-  beforeLoad: ({ location }) => {
-    const { isAuthenticated, user } = useAuthStore.getState();
+  beforeLoad: ({ context, location }) => {
+    const { isAuthenticated, user } = context.auth;
+    console.log('Auth Guard: Checking auth', { isAuthenticated, path: location.href });
 
-    // Only check auth on client side
-    if (typeof window !== 'undefined' && !isAuthenticated) {
+    // check auth
+    if (!isAuthenticated) {
+      console.log('Auth Guard: User not authenticated, redirecting to /login');
       throw redirect({
         to: '/login',
         search: {
+          // Use the current location to power a redirect after login
+          // (Do not use `router.state.resolvedLocation` as it can
+          // potentially lag behind the actual current location)
           redirect: location.href,
         },
       });
@@ -31,7 +36,6 @@ export const Route = createFileRoute('/_auth')({
 
 function AuthLayout() {
   // Initialize WebSocket connection for download progress updates
-  // Requirements: 1.1, 1.2 - Establish connection when user is authenticated
   useDownloadProgress();
 
   return (

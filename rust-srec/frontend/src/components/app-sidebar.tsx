@@ -12,7 +12,10 @@ import {
 } from "./ui/sidebar"
 import { Link } from "@tanstack/react-router"
 import { Users, Film, Activity, Settings, LogOut, LayoutGrid } from "lucide-react"
-import { useAuth } from "../hooks/useAuth"
+import { useAuthStore } from "../store/auth"
+import { useRouter } from "@tanstack/react-router"
+import { authApi } from "../api/endpoints"
+import { toast } from "sonner"
 
 const items = [
   {
@@ -43,7 +46,23 @@ const items = [
 ]
 
 export function AppSidebar() {
-  const { logout } = useAuth()
+  const logoutStore = useAuthStore(state => state.logout)
+  const refreshToken = useAuthStore(state => state.refreshToken)
+  const router = useRouter()
+
+  const handleLogout = async () => {
+    try {
+      if (refreshToken) {
+        await authApi.logout(refreshToken)
+      }
+    } catch (error) {
+      console.error('Logout failed', error)
+    } finally {
+      logoutStore()
+      toast.success('Logged out')
+      router.invalidate()
+    }
+  }
 
   return (
     <Sidebar collapsible="icon">
@@ -77,7 +96,7 @@ export function AppSidebar() {
       <SidebarFooter>
         <SidebarMenu>
           <SidebarMenuItem>
-            <SidebarMenuButton onClick={logout}>
+            <SidebarMenuButton onClick={handleLogout}>
               <LogOut />
               <span>Logout</span>
             </SidebarMenuButton>

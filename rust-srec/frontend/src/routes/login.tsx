@@ -1,11 +1,14 @@
-import { createFileRoute } from '@tanstack/react-router';
+import { createFileRoute, redirect } from '@tanstack/react-router';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { LoginRequestSchema } from '../api/schemas';
-import { useAuth } from '../hooks/useAuth';
+import { useAuthStore } from '../store/auth';
+import { authApi } from '../api/endpoints';
+import { useRouter } from '@tanstack/react-router';
 import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
 import { Checkbox } from '../components/ui/checkbox';
+import { toast } from 'sonner';
 import {
   Form,
   FormControl,
@@ -21,6 +24,14 @@ import { useState } from 'react';
 import { Eye, EyeOff } from 'lucide-react';
 
 export const Route = createFileRoute('/login')({
+  validateSearch: (search) => ({
+    redirect: (search.redirect as string) || '/',
+  }),
+  beforeLoad: ({ context, search }) => {
+    if (context.auth.isAuthenticated) {
+      throw redirect({ to: search.redirect })
+    }
+  },
   component: LoginPage,
 });
 
@@ -29,7 +40,10 @@ const LoginFormSchema = LoginRequestSchema.extend({
 });
 
 function LoginPage() {
-  const { login } = useAuth();
+  console.log('LoginPage: Mounted');
+  const loginStore = useAuthStore(state => state.login);
+  const router = useRouter();
+  const search = Route.useSearch();
   const [showPassword, setShowPassword] = useState(false);
   const form = useForm<z.infer<typeof LoginFormSchema>>({
     resolver: zodResolver(LoginFormSchema),
@@ -42,9 +56,26 @@ function LoginPage() {
 
   const onSubmit = async (values: z.infer<typeof LoginFormSchema>) => {
     try {
-      await login(values);
-    } catch {
-      // Error handled by useAuth toast
+      const response = await authApi.login(values);
+      loginStore(
+        response.access_token,
+        response.refresh_token,
+        response.roles,
+        response.must_change_password,
+        values.remember ?? false
+      );
+
+      if (response.must_change_password) {
+        toast.warning('Password change required');
+      } else {
+        toast.success('Logged in successfully');
+      }
+
+      await router.invalidate();
+
+      router.history.push(search.redirect || '/dashboard');
+    } catch (error: any) {
+      toast.error(error.message || 'Login failed');
     }
   };
 

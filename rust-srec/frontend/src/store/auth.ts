@@ -18,7 +18,7 @@ interface AuthState {
 
 const customStorage: StateStorage = {
     getItem: (name: string): string | null => {
-        if (typeof window === 'undefined') return null;
+        // if (typeof window === 'undefined') return null;
         // Try localStorage first (remembered sessions)
         const local = localStorage.getItem(name);
         if (local) return local;
@@ -26,7 +26,7 @@ const customStorage: StateStorage = {
         return sessionStorage.getItem(name);
     },
     setItem: (name: string, value: string): void => {
-        if (typeof window === 'undefined') return;
+        // if (typeof window === 'undefined') return;
         try {
             const parsed = JSON.parse(value);
             const remember = parsed.state?.remember;
@@ -45,7 +45,7 @@ const customStorage: StateStorage = {
         }
     },
     removeItem: (name: string): void => {
-        if (typeof window === 'undefined') return;
+        // if (typeof window === 'undefined') return;
         localStorage.removeItem(name);
         sessionStorage.removeItem(name);
     },
@@ -69,14 +69,16 @@ export const useAuthStore = create<AuthState>()(
                     remember,
                 }),
 
-            logout: () =>
+            logout: () => {
+                console.log('Auth Store: logout called');
                 set({
                     accessToken: null,
                     refreshToken: null,
                     user: null,
                     isAuthenticated: false,
                     remember: false,
-                }),
+                });
+            },
 
             updatePasswordChanged: () =>
                 set((state) => ({

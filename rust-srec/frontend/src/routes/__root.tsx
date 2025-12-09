@@ -1,4 +1,4 @@
-import { HeadContent, Scripts, createRootRoute } from '@tanstack/react-router'
+import { HeadContent, Scripts, createRootRouteWithContext } from '@tanstack/react-router'
 import { TanStackRouterDevtoolsPanel } from '@tanstack/react-router-devtools'
 import { TanStackDevtools } from '@tanstack/react-devtools'
 
@@ -6,7 +6,36 @@ import { TanStackDevtools } from '@tanstack/react-devtools'
 
 import appCss from '../styles.css?url'
 
-export const Route = createRootRoute({
+interface AuthState {
+  isAuthenticated: boolean
+  user: {
+    username: string
+    email?: string
+    roles: string[];
+    must_change_password: boolean;
+  } | null
+}
+
+interface MyRouterContext {
+  auth: AuthState
+}
+
+import { useAuthStore } from '../store/auth'
+
+export const Route = createRootRouteWithContext<MyRouterContext>()({
+  beforeLoad: () => {
+    const store = useAuthStore.getState()
+    return {
+      auth: {
+        isAuthenticated: store.isAuthenticated,
+        user: store.user ? {
+          username: 'User',
+          ...store.user,
+          email: undefined
+        } : null,
+      }
+    }
+  },
   head: () => ({
     meta: [
       {
@@ -17,7 +46,7 @@ export const Route = createRootRoute({
         content: 'width=device-width, initial-scale=1',
       },
       {
-        title: 'TanStack Start Starter',
+        title: 'Stream-rec',
       },
     ],
     links: [

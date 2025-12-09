@@ -2,7 +2,8 @@ import { createFileRoute, redirect } from '@tanstack/react-router';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { ChangePasswordRequestSchema } from '../api/schemas';
-import { useAuth } from '../hooks/useAuth';
+import { authApi } from '../api/endpoints';
+import { toast } from 'sonner';
 import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
 import {
@@ -23,14 +24,15 @@ export const Route = createFileRoute('/change-password')({
   beforeLoad: () => {
     const { isAuthenticated } = useAuthStore.getState();
     if (!isAuthenticated) {
-      throw redirect({ to: '/login' });
+      throw redirect({ to: '/login', search: { redirect: location.href } });
     }
   },
   component: ChangePasswordPage,
 });
 
 function ChangePasswordPage() {
-  const { changePassword, user } = useAuth();
+  const { user } = useAuthStore();
+  const updatePasswordChanged = useAuthStore(state => state.updatePasswordChanged);
   const [showCurrentPassword, setShowCurrentPassword] = useState(false);
   const [showNewPassword, setShowNewPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
@@ -46,9 +48,11 @@ function ChangePasswordPage() {
 
   const onSubmit = async (values: z.infer<typeof ChangePasswordRequestSchema>) => {
     try {
-      await changePassword(values);
-    } catch {
-      // Error handled by useAuth toast
+      await authApi.changePassword(values);
+      updatePasswordChanged();
+      toast.success('Password changed successfully');
+    } catch (error: any) {
+      toast.error(error.message || 'Failed to change password');
     }
   };
 
