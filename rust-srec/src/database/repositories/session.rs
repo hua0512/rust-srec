@@ -120,8 +120,8 @@ impl SessionRepository for SqlxSessionRepository {
     async fn create_session(&self, session: &LiveSessionDbModel) -> Result<()> {
         sqlx::query(
             r#"
-            INSERT INTO live_sessions (id, streamer_id, start_time, end_time, titles, danmu_statistics_id)
-            VALUES (?, ?, ?, ?, ?, ?)
+            INSERT INTO live_sessions (id, streamer_id, start_time, end_time, titles, danmu_statistics_id, total_size_bytes)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
             "#,
         )
         .bind(&session.id)
@@ -130,17 +130,26 @@ impl SessionRepository for SqlxSessionRepository {
         .bind(&session.end_time)
         .bind(&session.titles)
         .bind(&session.danmu_statistics_id)
+        .bind(session.total_size_bytes)
         .execute(&self.pool)
         .await?;
         Ok(())
     }
 
     async fn end_session(&self, id: &str, end_time: &str) -> Result<()> {
-        sqlx::query("UPDATE live_sessions SET end_time = ? WHERE id = ?")
-            .bind(end_time)
-            .bind(id)
-            .execute(&self.pool)
-            .await?;
+        sqlx::query(
+            r#"
+            UPDATE live_sessions 
+            SET end_time = ?,
+                total_size_bytes = (SELECT COALESCE(SUM(size_bytes), 0) FROM media_outputs WHERE session_id = ?)
+            WHERE id = ?
+            "#,
+        )
+        .bind(end_time)
+        .bind(id)
+        .bind(id)
+        .execute(&self.pool)
+        .await?;
         Ok(())
     }
 
@@ -206,14 +215,35 @@ impl SessionRepository for SqlxSessionRepository {
         .bind(&output.created_at)
         .execute(&self.pool)
         .await?;
+
+        // Update session total size
+        sqlx::query(
+            "UPDATE live_sessions SET total_size_bytes = total_size_bytes + ? WHERE id = ?",
+        )
+        .bind(output.size_bytes)
+        .bind(&output.session_id)
+        .execute(&self.pool)
+        .await?;
         Ok(())
     }
 
     async fn delete_media_output(&self, id: &str) -> Result<()> {
+        // Get output info before deletion to update session size
+        let output = self.get_media_output(id).await?;
+
         sqlx::query("DELETE FROM media_outputs WHERE id = ?")
             .bind(id)
             .execute(&self.pool)
             .await?;
+
+        // Update session total size
+        sqlx::query(
+            "UPDATE live_sessions SET total_size_bytes = total_size_bytes - ? WHERE id = ?",
+        )
+        .bind(output.size_bytes)
+        .bind(&output.session_id)
+        .execute(&self.pool)
+        .await?;
         Ok(())
     }
 

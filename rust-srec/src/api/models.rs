@@ -165,6 +165,7 @@ pub struct StreamerResponse {
     pub enabled: bool,
     pub consecutive_error_count: i32,
     pub disabled_until: Option<DateTime<Utc>>,
+    pub last_error: Option<String>,
     pub last_live_time: Option<DateTime<Utc>>,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
@@ -185,6 +186,8 @@ pub struct StreamerFilterParams {
     pub sort_by: Option<String>,
     /// Sort direction (asc/desc)
     pub sort_dir: Option<String>,
+    /// Search query (name or URL)
+    pub search: Option<String>,
 }
 
 // ============================================================================
@@ -245,7 +248,6 @@ pub struct PlatformConfigResponse {
     pub output_folder: Option<String>,
     pub output_filename_template: Option<String>,
     pub download_engine: Option<String>,
-    pub max_bitrate: Option<i32>,
     pub stream_selection_config: Option<String>,
     pub output_file_format: Option<String>,
     pub min_segment_size_bytes: Option<u64>,
@@ -267,7 +269,6 @@ pub struct UpdatePlatformConfigRequest {
     pub output_folder: Option<String>,
     pub output_filename_template: Option<String>,
     pub download_engine: Option<String>,
-    pub max_bitrate: Option<i32>,
     pub stream_selection_config: Option<String>,
     pub output_file_format: Option<String>,
     pub min_segment_size_bytes: Option<u64>,
@@ -554,6 +555,7 @@ pub struct SessionResponse {
     pub id: String,
     pub streamer_id: String,
     pub streamer_name: String,
+    pub streamer_avatar: Option<String>,
     pub title: String,
     pub titles: Vec<TitleChange>,
     pub start_time: DateTime<Utc>,
@@ -562,6 +564,7 @@ pub struct SessionResponse {
     pub output_count: u32,
     pub total_size_bytes: u64,
     pub danmu_count: Option<u64>,
+    pub thumbnail_url: Option<String>,
 }
 
 /// Title change entry representing a stream title update.

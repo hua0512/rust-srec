@@ -44,7 +44,7 @@ impl Huya {
     const MP_URL: &'static str = "https://mp.huya.com/cache.php";
     // WUP User-Agent for Huya
     const WUP_UA: &'static str =
-        "HYSDK(Windows, 30000002)_APP(pc_exe&7030003&official)_SDK(trans&2.29.0.5493)";
+        "HYSDK(Windows, 30000002)_APP(pc_exe&7040102&official)_SDK(trans&2.30.0.5556)";
 
     pub fn new(
         platform_url: String,
@@ -430,7 +430,7 @@ impl Huya {
                         bitrate,
                         priority,
                         codec: "avc".to_string(),
-                        is_headers_needed: false,
+                        is_headers_needed: true,
                         fps: 0.0,
                         extras: Some(extras.clone()),
                     });
@@ -443,7 +443,7 @@ impl Huya {
                         bitrate,
                         priority,
                         codec: "avc".to_string(),
-                        is_headers_needed: false,
+                        is_headers_needed: true,
                         fps: 0.0,
                         extras: Some(extras.clone()),
                     });

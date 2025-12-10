@@ -149,6 +149,7 @@ where
         if let Some(mut entry) = self.metadata.get_mut(id) {
             entry.consecutive_error_count = 0;
             entry.disabled_until = None;
+            entry.last_error = None;
             entry.state = StreamerState::NotLive;
         }
 
@@ -392,13 +393,14 @@ where
 
         // Persist to database
         self.repo
-            .record_streamer_error(id, new_count, disabled_until)
+            .record_streamer_error(id, new_count, disabled_until, Some(error))
             .await?;
 
         // Update in-memory cache
         if let Some(mut entry) = self.metadata.get_mut(id) {
             entry.consecutive_error_count = new_count;
             entry.disabled_until = disabled_until;
+            entry.last_error = Some(error.to_string());
             if disabled_until.is_some() {
                 entry.state = StreamerState::Error;
             }
@@ -436,6 +438,7 @@ where
         if let Some(mut entry) = self.metadata.get_mut(id) {
             entry.consecutive_error_count = 0;
             entry.disabled_until = None;
+            entry.last_error = None;
             if let Some(time) = last_live_time {
                 entry.last_live_time = Some(time);
             }
@@ -524,6 +527,7 @@ where
             priority: metadata.priority.to_string(),
             avatar: metadata.avatar_url.clone(),
             consecutive_error_count: Some(metadata.consecutive_error_count),
+            last_error: metadata.last_error.clone(),
             disabled_until: metadata.disabled_until.map(|dt| dt.to_rfc3339()),
             last_live_time: metadata.last_live_time.map(|dt| dt.to_rfc3339()),
             // These fields are not in metadata, use defaults
@@ -633,6 +637,7 @@ mod tests {
                 s.last_live_time = streamer.last_live_time.clone();
                 s.consecutive_error_count = streamer.consecutive_error_count;
                 s.disabled_until = streamer.disabled_until.clone();
+                s.last_error = streamer.last_error.clone();
             }
             Ok(())
         }
@@ -691,6 +696,7 @@ mod tests {
             _id: &str,
             _error_count: i32,
             _disabled_until: Option<DateTime<Utc>>,
+            _error: Option<&str>,
         ) -> Result<()> {
             Ok(())
         }
@@ -743,6 +749,7 @@ mod tests {
             priority: "NORMAL".to_string(),
             avatar: None,
             consecutive_error_count: Some(0),
+            last_error: None,
             disabled_until: None,
             last_live_time: None,
             download_retry_policy: None,
@@ -781,6 +788,7 @@ mod tests {
             priority: Priority::Normal,
             avatar_url: None,
             consecutive_error_count: 0,
+            last_error: None,
             disabled_until: None,
             last_live_time: None,
         };
@@ -925,6 +933,7 @@ mod tests {
             avatar_url: None,
             consecutive_error_count: 0,
             disabled_until: None,
+            last_error: None,
             last_live_time: None,
         };
 

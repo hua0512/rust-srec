@@ -195,16 +195,18 @@ impl FlvDownloader {
             let _ = event_tx_start.try_send(event);
         });
 
-        writer.set_on_segment_complete_callback(move |path, sequence, duration_secs| {
-            let event = SegmentEvent::SegmentCompleted(SegmentInfo {
-                path: path.to_path_buf(),
-                duration_secs,
-                size_bytes: 0,
-                index: sequence,
-                completed_at: Utc::now(),
-            });
-            let _ = event_tx_complete.try_send(event);
-        });
+        writer.set_on_segment_complete_callback(
+            move |path, sequence, duration_secs, size_bytes| {
+                let event = SegmentEvent::SegmentCompleted(SegmentInfo {
+                    path: path.to_path_buf(),
+                    duration_secs,
+                    size_bytes,
+                    index: sequence,
+                    completed_at: Utc::now(),
+                });
+                let _ = event_tx_complete.try_send(event);
+            },
+        );
 
         // Setup progress callback
         let event_tx_progress = self.event_tx.clone();
@@ -282,12 +284,12 @@ impl FlvDownloader {
         }
 
         match writer_result {
-            Ok((items_written, files_created)) => {
+            Ok((items_written, files_created, total_bytes, total_duration)) => {
                 // Get final stats from writer state
                 let stats = DownloadStats {
-                    total_bytes: 0, // Will be updated from writer state when available
+                    total_bytes,
                     total_items: items_written,
-                    total_duration_secs: 0.0, // Will be updated from writer state when available
+                    total_duration_secs: total_duration,
                     files_created: files_created + 1,
                 };
 
@@ -368,16 +370,18 @@ impl FlvDownloader {
             let _ = event_tx_start.try_send(event);
         });
 
-        writer.set_on_segment_complete_callback(move |path, sequence, duration_secs| {
-            let event = SegmentEvent::SegmentCompleted(SegmentInfo {
-                path: path.to_path_buf(),
-                duration_secs,
-                size_bytes: 0,
-                index: sequence,
-                completed_at: Utc::now(),
-            });
-            let _ = event_tx_complete.try_send(event);
-        });
+        writer.set_on_segment_complete_callback(
+            move |path, sequence, duration_secs, size_bytes| {
+                let event = SegmentEvent::SegmentCompleted(SegmentInfo {
+                    path: path.to_path_buf(),
+                    duration_secs,
+                    size_bytes,
+                    index: sequence,
+                    completed_at: Utc::now(),
+                });
+                let _ = event_tx_complete.try_send(event);
+            },
+        );
 
         // Setup progress callback
         let event_tx_progress = self.event_tx.clone();
@@ -440,12 +444,12 @@ impl FlvDownloader {
             .map_err(|e| crate::Error::Other(format!("Writer task panicked: {}", e)))?;
 
         match writer_result {
-            Ok((items_written, files_created)) => {
+            Ok((items_written, files_created, total_bytes, total_duration)) => {
                 // Get final stats from writer state
                 let stats = DownloadStats {
-                    total_bytes: 0, // Will be updated from writer state when available
+                    total_bytes,
                     total_items: items_written,
-                    total_duration_secs: 0.0, // Will be updated from writer state when available
+                    total_duration_secs: total_duration,
                     files_created: files_created + 1,
                 };
 

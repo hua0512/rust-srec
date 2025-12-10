@@ -12,7 +12,7 @@ use tokio::sync::OnceCell;
 use tracing::{debug, info, warn};
 
 use crate::Result;
-use crate::database::models::LiveSessionDbModel;
+use crate::database::models::{LiveSessionDbModel, TitleEntry};
 use crate::database::repositories::{FilterRepository, SessionRepository, StreamerRepository};
 use crate::domain::StreamerState;
 use crate::domain::filter::Filter;
@@ -188,10 +188,16 @@ impl<
         // Load filters for this streamer
         let filters = self.load_filters(&streamer.id).await?;
 
-        // Check status with filters
+        // Get merged configuration to access stream selection preference
+        let config = self
+            .config_service
+            .get_config_for_streamer(&streamer.id)
+            .await?;
+
+        // Check status with filters and selection config
         let status = self
             .detector
-            .check_status_with_filters(streamer, &filters)
+            .check_status_with_filters(streamer, &filters, Some(&config.stream_selection))
             .await?;
 
         // Store result for deduplication
@@ -321,7 +327,7 @@ impl<
         title: String,
         category: Option<String>,
         avatar: Option<String>,
-        started_at: Option<chrono::DateTime<chrono::Utc>>,
+        _started_at: Option<chrono::DateTime<chrono::Utc>>,
         streams: Vec<platforms_parser::media::StreamInfo>,
         media_headers: Option<HashMap<String, String>>,
     ) -> Result<()> {
@@ -375,6 +381,10 @@ impl<
             if session.end_time.is_none() {
                 // Already active, reuse
                 debug!("Reusing active session {}", session.id);
+                // Check if title changed and update if needed
+                if let Err(e) = self.update_session_title(&session, &title).await {
+                    warn!("Failed to update session title: {}", e);
+                }
                 session.id.clone()
             } else {
                 let end_time_str = session.end_time.as_ref().unwrap();
@@ -391,17 +401,28 @@ impl<
                         now - end_time
                     );
                     self.session_repo.resume_session(&session.id).await?;
+                    // Check if title changed and update if needed
+                    if let Err(e) = self.update_session_title(&session, &title).await {
+                        warn!("Failed to update session title: {}", e);
+                    }
                     session.id.clone()
                 } else {
-                    // Start new session
                     let new_id = uuid::Uuid::new_v4().to_string();
+                    let initial_titles = vec![TitleEntry {
+                        ts: chrono::Utc::now().to_rfc3339(),
+                        title: title.clone(),
+                    }];
+                    let titles_json =
+                        serde_json::to_string(&initial_titles).unwrap_or("[]".to_string());
+
                     let new_session = LiveSessionDbModel {
                         id: new_id.clone(),
                         streamer_id: streamer.id.clone(),
                         start_time: chrono::Utc::now().to_rfc3339(),
                         end_time: None,
-                        titles: Some(title.clone()),
+                        titles: Some(titles_json),
                         danmu_statistics_id: None,
+                        total_size_bytes: 0,
                     };
                     self.session_repo.create_session(&new_session).await?;
                     info!("Created new session {}", new_id);
@@ -411,13 +432,20 @@ impl<
         } else {
             // No previous session, create new
             let new_id = uuid::Uuid::new_v4().to_string();
+            let initial_titles = vec![TitleEntry {
+                ts: chrono::Utc::now().to_rfc3339(),
+                title: title.clone(),
+            }];
+            let titles_json = serde_json::to_string(&initial_titles).unwrap_or("[]".to_string());
+
             let new_session = LiveSessionDbModel {
                 id: new_id.clone(),
                 streamer_id: streamer.id.clone(),
                 start_time: chrono::Utc::now().to_rfc3339(),
                 end_time: None,
-                titles: Some(title.clone()),
+                titles: Some(titles_json),
                 danmu_statistics_id: None,
+                total_size_bytes: 0,
             };
             self.session_repo.create_session(&new_session).await?;
             info!("Created new session {}", new_id);
@@ -601,6 +629,43 @@ impl<
             .collect();
 
         Ok(filters)
+    }
+
+    /// Update session title if it has changed.
+    async fn update_session_title(
+        &self,
+        session: &LiveSessionDbModel,
+        current_title: &str,
+    ) -> Result<()> {
+        let mut titles: Vec<TitleEntry> = match &session.titles {
+            Some(json) => serde_json::from_str(json).unwrap_or_default(),
+            None => Vec::new(),
+        };
+
+        // Check if last title is different
+        let needs_update = titles
+            .last()
+            .map(|t| t.title != current_title)
+            .unwrap_or(true); // If no titles, we definitely need to add one
+
+        if needs_update {
+            titles.push(TitleEntry {
+                ts: chrono::Utc::now().to_rfc3339(),
+                title: current_title.to_string(),
+            });
+
+            let titles_json = serde_json::to_string(&titles).unwrap_or("[]".to_string());
+
+            info!(
+                "Updating title for session {}: {}",
+                session.id, current_title
+            );
+            self.session_repo
+                .update_session_titles(&session.id, &titles_json)
+                .await?;
+        }
+
+        Ok(())
     }
 }
 

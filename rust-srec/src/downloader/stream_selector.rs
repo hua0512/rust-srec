@@ -50,7 +50,7 @@ impl Default for StreamSelectionConfig {
             // Configure platform-specific quality names at platform/template level:
             // - Chinese platforms: ["原画", "蓝光", "超清", "高清"]
             // - Western platforms: ["source", "1080p", "720p", "480p"]
-            preferred_qualities: vec![],
+            preferred_qualities: vec!["原画".to_string(), "source".to_string()],
             preferred_cdns: vec![],
             min_bitrate: 0,
             max_bitrate: 0,

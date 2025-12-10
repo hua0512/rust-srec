@@ -12,8 +12,8 @@ use super::processors::{
 };
 use super::worker_pool::{WorkerPool, WorkerPoolConfig, WorkerType};
 use crate::Result;
-use crate::database::models::{JobFilters, Pagination};
-use crate::database::repositories::JobRepository;
+use crate::database::models::{JobFilters, MediaFileType, MediaOutputDbModel, Pagination};
+use crate::database::repositories::{JobRepository, SessionRepository};
 use crate::downloader::DownloadManagerEvent;
 
 /// Configuration for the Pipeline Manager.
@@ -89,6 +89,8 @@ pub struct PipelineManager {
     processors: Vec<Arc<dyn Processor>>,
     /// Event broadcaster.
     event_tx: broadcast::Sender<PipelineEvent>,
+    /// Session repository for persistence (optional).
+    session_repo: Option<Arc<dyn SessionRepository>>,
     /// Cancellation token.
     cancellation_token: CancellationToken,
 }
@@ -119,6 +121,7 @@ impl PipelineManager {
             job_queue,
             processors,
             event_tx,
+            session_repo: None,
             cancellation_token: CancellationToken::new(),
         }
     }
@@ -128,12 +131,12 @@ impl PipelineManager {
     /// Requirements: 6.1, 6.3
     pub fn with_repository(
         config: PipelineManagerConfig,
-        repository: Arc<dyn JobRepository>,
+        job_repository: Arc<dyn JobRepository>,
     ) -> Self {
         let (event_tx, _) = broadcast::channel(256);
         let job_queue = Arc::new(JobQueue::with_repository(
             config.job_queue.clone(),
-            repository,
+            job_repository,
         ));
 
         // Create default processors
@@ -151,28 +154,18 @@ impl PipelineManager {
             job_queue,
             processors,
             event_tx,
+            session_repo: None,
             cancellation_token: CancellationToken::new(),
         }
     }
 
-    /// Set the job repository for database persistence.
-    /// This enables job recovery on startup and persistent job tracking.
-    /// Requirements: 6.1, 6.3
-    ///
-    /// Note: This method is deprecated. Use `with_repository` constructor instead
-    /// for full functionality. Setting the repository after construction has
-    /// limited effect due to the immutable nature of the internal JobQueue.
-    #[deprecated(note = "Use with_repository constructor instead")]
-    pub fn set_job_repository(&self, _repository: Arc<dyn JobRepository>) {
-        // Note: In a production system, you'd want to either:
-        // 1. Pass the repository at construction time (preferred - use with_repository)
-        // 2. Use Arc<RwLock<JobQueue>> for interior mutability
-        // 3. Use a different pattern for dependency injection
-
-        // For now, we log a warning that this should be done at construction time
-        warn!(
-            "set_job_repository called after construction - use with_repository constructor for full functionality"
-        );
+    /// Set the session repository for persistence.
+    pub fn with_session_repository(
+        mut self,
+        session_repository: Arc<dyn SessionRepository>,
+    ) -> Self {
+        self.session_repo = Some(session_repository);
+        self
     }
 
     /// Recover jobs from database on startup.
@@ -391,11 +384,18 @@ impl PipelineManager {
         match event {
             DownloadManagerEvent::SegmentCompleted {
                 streamer_id,
+                session_id,
                 segment_path,
+                size_bytes,
                 ..
             } => {
-                debug!("Segment completed for {}: {}", streamer_id, segment_path);
-                // Could create jobs for real-time processing here
+                debug!(
+                    "Segment completed for {} (session: {}): {}",
+                    streamer_id, session_id, segment_path
+                );
+                // Persist segment to database
+                self.persist_segment(&session_id, &segment_path, size_bytes)
+                    .await;
             }
             DownloadManagerEvent::DownloadCompleted {
                 streamer_id,
@@ -548,6 +548,28 @@ impl PipelineManager {
             queue_depth: self.queue_depth(),
             queue_status: self.queue_status(),
         })
+    }
+
+    /// Persist a downloaded segment to the database.
+    async fn persist_segment(&self, session_id: &str, path: &str, size_bytes: u64) {
+        if let Some(repo) = &self.session_repo {
+            let output = MediaOutputDbModel::new(
+                session_id,
+                path,
+                MediaFileType::Video, // Assuming video segments for now
+                size_bytes as i64,
+            );
+
+            if let Err(e) = repo.create_media_output(&output).await {
+                tracing::error!(
+                    "Failed to persist segment for session {}: {}",
+                    session_id,
+                    e
+                );
+            } else {
+                debug!("Persisted segment for session {}", session_id);
+            }
+        }
     }
 }
 

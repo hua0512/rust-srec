@@ -7,11 +7,13 @@ use std::collections::HashMap;
 use chrono::{DateTime, Utc};
 use platforms_parser::extractor::error::ExtractorError;
 use platforms_parser::extractor::factory::ExtractorFactory;
+use platforms_parser::extractor::platform_extractor::Extractor;
 use serde::{Deserialize, Serialize};
 use tracing::{debug, info, warn};
 
 use crate::Result;
 use crate::domain::filter::{Filter, FilterType};
+use crate::downloader::{StreamSelectionConfig, StreamSelector};
 use crate::streamer::StreamerMetadata;
 
 /// Re-export StreamInfo from platforms_parser for convenience.
@@ -162,15 +164,21 @@ impl StreamDetector {
     /// Check the live status of a streamer.
     ///
     /// Uses the platforms crate to extract media information from the streamer's URL.
-    pub async fn check_status(&self, streamer: &StreamerMetadata) -> Result<LiveStatus> {
-        self.check_status_with_cookies(streamer, None).await
+    pub async fn check_status(
+        &self,
+        streamer: &StreamerMetadata,
+        selection_config: Option<&StreamSelectionConfig>,
+    ) -> Result<LiveStatus> {
+        self.check_status_with_cookies(streamer, None, selection_config)
+            .await
     }
 
-    /// Check the live status of a streamer with optional cookies.
+    /// Check the live status of a streamer with optional cookies and selection config.
     pub async fn check_status_with_cookies(
         &self,
         streamer: &StreamerMetadata,
         cookies: Option<String>,
+        selection_config: Option<&StreamSelectionConfig>,
     ) -> Result<LiveStatus> {
         debug!(
             "Checking status for streamer: {} ({})",
@@ -196,7 +204,7 @@ impl StreamDetector {
         };
 
         // Extract media information
-        let media_info = match extractor.extract().await {
+        let mut media_info = match extractor.extract().await {
             Ok(info) => info,
             // Fatal errors - these should stop monitoring
             Err(ExtractorError::StreamerNotFound) => {
@@ -268,15 +276,43 @@ impl StreamDetector {
                 );
             }
 
-            // Resolve final URLs for streams that need it
-            // Some platforms (Huya, Douyu, Bilibili) require get_url() to get the real stream URL
-            let mut streams = media_info.streams;
-            for stream in &mut streams {
-                if let Err(e) = extractor.get_url(stream).await {
-                    warn!("Failed to resolve stream URL for {}: {}", streamer.name, e);
-                    // Continue with the original URL if resolution fails
+            // Select the best stream - always emit exactly one stream
+            // Use config-based selection if provided, otherwise use default selector
+            let selector = match selection_config {
+                Some(config) => {
+                    debug!("Applying stream selection with config: {:?}", config);
+                    StreamSelector::with_config(config.clone())
                 }
+                None => StreamSelector::new(),
+            };
+
+            let selected_stream = match selector.select_best(&media_info.streams) {
+                Some(stream) => {
+                    debug!("Selected best stream: {} ({})", stream.quality, stream.url);
+                    stream.clone()
+                }
+                None => {
+                    // Fallback: if no stream matches criteria, take the first one
+                    debug!(
+                        "No streams match selection criteria, using first of {} streams",
+                        media_info.streams.len()
+                    );
+                    media_info.streams[0].clone()
+                }
+            };
+
+            // Resolve final URL for the selected stream
+            // Some platforms (Huya, Douyu, Bilibili) require get_url() to get the real stream URL
+            let mut streams = vec![selected_stream];
+
+            debug!("Resolving true stream URL: {}", streams[0].url);
+
+            if let Err(e) = extractor.get_url(&mut streams[0]).await {
+                warn!("Failed to resolve stream URL for {}: {}", streamer.name, e);
+                // Continue with the original URL if resolution fails
             }
+
+            debug!("Resolved true url: {}", streams[0].url);
 
             debug!(
                 "Streamer {} is LIVE: {} (category: {:?}, viewers: {:?}, streams: {}, media_headers: {})",
@@ -308,8 +344,9 @@ impl StreamDetector {
         &self,
         streamer: &StreamerMetadata,
         filters: &[Filter],
+        selection_config: Option<&StreamSelectionConfig>,
     ) -> Result<LiveStatus> {
-        let status = self.check_status(streamer).await?;
+        let status = self.check_status(streamer, selection_config).await?;
 
         // If offline, no need to filter
         if status.is_offline() {

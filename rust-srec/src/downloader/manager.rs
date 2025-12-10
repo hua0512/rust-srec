@@ -168,6 +168,7 @@ pub enum DownloadManagerEvent {
     SegmentCompleted {
         download_id: String,
         streamer_id: String,
+        session_id: String,
         segment_path: String,
         segment_index: u32,
         duration_secs: f64,
@@ -635,6 +636,7 @@ impl DownloadManager {
                         let _ = event_tx.send(DownloadManagerEvent::SegmentCompleted {
                             download_id: download_id_clone.clone(),
                             streamer_id: streamer_id.clone(),
+                            session_id: session_id.clone(),
                             segment_path: info.path.to_string_lossy().to_string(),
                             segment_index: info.index,
                             duration_secs: info.duration_secs,

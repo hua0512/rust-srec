@@ -42,8 +42,10 @@ use crate::api::jwt::JwtService;
 use crate::config::ConfigService;
 use crate::danmu::DanmuService;
 use crate::database::repositories::{
-    config::SqlxConfigRepository, filter::FilterRepository, session::SessionRepository,
-    streamer::SqlxStreamerRepository,
+    config::SqlxConfigRepository,
+    filter::FilterRepository,
+    session::SessionRepository,
+    streamer::{SqlxStreamerRepository, StreamerRepository},
 };
 use crate::downloader::DownloadManager;
 use crate::metrics::HealthChecker;
@@ -75,6 +77,8 @@ pub struct AppState {
     pub filter_repository: Option<Arc<dyn FilterRepository>>,
     /// Health checker for real health status
     pub health_checker: Option<Arc<HealthChecker>>,
+    /// Streamer repository for querying streamer details
+    pub streamer_repository: Option<Arc<dyn StreamerRepository>>,
 }
 
 impl AppState {
@@ -92,6 +96,7 @@ impl AppState {
             session_repository: None,
             filter_repository: None,
             health_checker: None,
+            streamer_repository: None,
         }
     }
 
@@ -110,6 +115,7 @@ impl AppState {
             session_repository: None,
             filter_repository: None,
             health_checker: None,
+            streamer_repository: None,
         }
     }
 
@@ -153,6 +159,7 @@ impl AppState {
             session_repository: None,
             filter_repository: None,
             health_checker: None,
+            streamer_repository: None,
         }
     }
 
@@ -168,6 +175,15 @@ impl AppState {
     /// Set the filter repository.
     pub fn with_filter_repository(mut self, filter_repository: Arc<dyn FilterRepository>) -> Self {
         self.filter_repository = Some(filter_repository);
+        self
+    }
+
+    /// Set the streamer repository.
+    pub fn with_streamer_repository(
+        mut self,
+        streamer_repository: Arc<dyn StreamerRepository>,
+    ) -> Self {
+        self.streamer_repository = Some(streamer_repository);
         self
     }
 

@@ -32,9 +32,6 @@ pub struct MergedConfig {
     pub download_engine: String,
     pub download_retry_policy: RetryPolicy,
 
-    // Quality settings
-    pub max_bitrate: Option<i32>,
-
     // Event hooks
     pub event_hooks: EventHooks,
 
@@ -72,7 +69,6 @@ pub struct MergedConfigBuilder {
     cookies: Option<String>,
     download_engine: Option<String>,
     download_retry_policy: Option<RetryPolicy>,
-    max_bitrate: Option<i32>,
     event_hooks: Option<EventHooks>,
     fetch_delay_ms: Option<i64>,
     download_delay_ms: Option<i64>,
@@ -115,8 +111,6 @@ impl MergedConfigBuilder {
 
     /// Apply platform config layer.
     #[allow(clippy::too_many_arguments)]
-    /// Apply platform config layer.
-    #[allow(clippy::too_many_arguments)]
     pub fn with_platform(
         mut self,
         fetch_delay_ms: Option<i64>,
@@ -128,7 +122,6 @@ impl MergedConfigBuilder {
         output_folder: Option<String>,
         output_filename_template: Option<String>,
         download_engine: Option<String>,
-        max_bitrate: Option<i32>,
         stream_selection: Option<StreamSelectionConfig>,
         output_file_format: Option<String>,
         min_segment_size_bytes: Option<i64>,
@@ -183,11 +176,6 @@ impl MergedConfigBuilder {
             if let Some(v) = config.get("cookies").and_then(|v| v.as_str()) {
                 if self.cookies.is_none() {
                     self.cookies = Some(v.to_string());
-                }
-            }
-            if let Some(v) = config.get("max_bitrate").and_then(|v| v.as_i64()) {
-                if self.max_bitrate.is_none() {
-                    self.max_bitrate = Some(v as i32);
                 }
             }
             // Stream selection from JSON
@@ -257,9 +245,6 @@ impl MergedConfigBuilder {
         if let Some(v) = download_engine {
             self.download_engine = Some(v);
         }
-        if let Some(v) = max_bitrate {
-            self.max_bitrate = Some(v);
-        }
         if let Some(v) = stream_selection {
             if let Some(existing) = &self.stream_selection {
                 self.stream_selection = Some(existing.merge(&v));
@@ -309,7 +294,6 @@ impl MergedConfigBuilder {
         download_engine: Option<String>,
         download_retry_policy: Option<RetryPolicy>,
         danmu_sampling_config: Option<DanmuSamplingConfig>,
-        max_bitrate: Option<i32>,
         event_hooks: Option<EventHooks>,
         stream_selection: Option<StreamSelectionConfig>,
         engines_override: Option<serde_json::Value>,
@@ -349,9 +333,6 @@ impl MergedConfigBuilder {
         }
         if let Some(v) = danmu_sampling_config {
             self.danmu_sampling_config = Some(v);
-        }
-        if max_bitrate.is_some() {
-            self.max_bitrate = max_bitrate;
         }
         if let Some(v) = event_hooks {
             // Merge event hooks
@@ -409,9 +390,6 @@ impl MergedConfigBuilder {
             if let Some(v) = config.get("cookies").and_then(|v| v.as_str()) {
                 self.cookies = Some(v.to_string());
             }
-            if let Some(v) = config.get("max_bitrate").and_then(|v| v.as_i64()) {
-                self.max_bitrate = Some(v as i32);
-            }
             // Parse stream selection config from streamer-specific config
             if let Some(stream_sel) = config.get("stream_selection") {
                 if let Ok(v) = serde_json::from_value::<StreamSelectionConfig>(stream_sel.clone()) {
@@ -445,7 +423,6 @@ impl MergedConfigBuilder {
             cookies: self.cookies,
             download_engine: self.download_engine.unwrap_or_else(|| "mesio".to_string()),
             download_retry_policy: self.download_retry_policy.unwrap_or_default(),
-            max_bitrate: self.max_bitrate,
             event_hooks: self.event_hooks.unwrap_or_default(),
             fetch_delay_ms: self.fetch_delay_ms.unwrap_or(60000),
             download_delay_ms: self.download_delay_ms.unwrap_or(1000),
@@ -478,7 +455,6 @@ mod tests {
             .with_platform(
                 Some(60000),
                 Some(1000),
-                None,
                 None,
                 None,
                 None,
@@ -533,7 +509,6 @@ mod tests {
                 None,
                 None,
                 None,
-                None,
             )
             .with_template(
                 Some("./custom".to_string()),
@@ -546,7 +521,6 @@ mod tests {
                 None,
                 None,
                 Some("mesio".to_string()),
-                None,
                 None,
                 None,
                 None,

@@ -78,7 +78,6 @@ impl<R: ConfigRepository> ConfigResolver<R> {
             platform_config.output_folder.clone(),
             platform_config.output_filename_template.clone(),
             platform_config.download_engine.clone(),
-            platform_config.max_bitrate,
             platform_config
                 .stream_selection_config
                 .as_ref()
@@ -137,7 +136,6 @@ impl<R: ConfigRepository> ConfigResolver<R> {
                 template_config.download_engine,
                 template_retry,
                 template_danmu,
-                template_config.max_bitrate,
                 template_hooks,
                 template_stream_selection,
                 template_config

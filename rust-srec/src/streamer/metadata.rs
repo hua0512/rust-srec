@@ -36,6 +36,8 @@ pub struct StreamerMetadata {
     pub disabled_until: Option<DateTime<Utc>>,
     /// Last time the streamer was live.
     pub last_live_time: Option<DateTime<Utc>>,
+    /// Last recorded error message.
+    pub last_error: Option<String>,
 }
 
 impl StreamerMetadata {
@@ -51,6 +53,8 @@ impl StreamerMetadata {
             priority: Priority::parse(&model.priority).unwrap_or_default(),
             avatar_url: model.avatar.clone(),
             consecutive_error_count: model.consecutive_error_count.unwrap_or(0),
+            // Map the last_error from the DB model
+            last_error: model.last_error.clone(),
             disabled_until: model.disabled_until.as_ref().and_then(|s| {
                 chrono::DateTime::parse_from_rfc3339(s)
                     .ok()
@@ -113,6 +117,7 @@ mod tests {
             state: StreamerState::NotLive,
             priority: Priority::Normal,
             consecutive_error_count: 0,
+            last_error: None,
             disabled_until: None,
             last_live_time: None,
         }

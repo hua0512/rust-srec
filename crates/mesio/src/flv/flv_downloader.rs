@@ -79,7 +79,7 @@ impl FlvDownloader {
         info!(url = %url, "Starting FLV download request");
         debug!(url = %url, params = ?self.config.base.params, "Sending FLV download request");
 
-        debug!(client = ?self.client, "Client: {:#?}", self.client);
+        debug!(client = ?self.client);
 
         let response = self
             .client

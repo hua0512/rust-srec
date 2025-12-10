@@ -61,7 +61,6 @@ fn map_platform_config_to_response(config: PlatformConfigDbModel) -> PlatformCon
         output_folder: config.output_folder,
         output_filename_template: config.output_filename_template,
         download_engine: config.download_engine,
-        max_bitrate: config.max_bitrate,
         stream_selection_config: config.stream_selection_config,
         output_file_format: config.output_file_format,
         min_segment_size_bytes: config.min_segment_size_bytes.map(|v| v as u64),
@@ -244,9 +243,6 @@ async fn update_platform_config(
     if let Some(download_engine) = request.download_engine {
         config.download_engine = Some(download_engine);
     }
-    if let Some(max_bitrate) = request.max_bitrate {
-        config.max_bitrate = Some(max_bitrate);
-    }
     if let Some(stream_selection_config) = request.stream_selection_config {
         config.stream_selection_config = Some(stream_selection_config);
     }
@@ -393,9 +389,6 @@ mod property_tests {
         }
         if let Some(ref download_engine) = request.download_engine {
             config.download_engine = Some(download_engine.clone());
-        }
-        if let Some(max_bitrate) = request.max_bitrate {
-            config.max_bitrate = Some(max_bitrate);
         }
         if let Some(ref stream_selection_config) = request.stream_selection_config {
             config.stream_selection_config = Some(stream_selection_config.clone());
@@ -615,7 +608,6 @@ mod property_tests {
             output_folder in prop::option::of(output_folder_strategy()),
             output_filename_template in prop::option::of(filename_template_strategy()),
             download_engine in prop::option::of(download_engine_strategy()),
-            max_bitrate in prop::option::of(1000i32..10000i32),
             stream_selection_config in prop::option::of(prop::string::string_regex(r#"\{"mode": "auto"\}"#).unwrap()),
             output_file_format in prop::option::of(file_format_strategy()),
             min_segment_size_bytes in prop::option::of(1024u64..10485760u64),
@@ -637,7 +629,6 @@ mod property_tests {
                 output_folder: None,
                 output_filename_template: None,
                 download_engine: None,
-                max_bitrate: None,
                 stream_selection_config: None,
                 output_file_format: None,
                 min_segment_size_bytes: None,
@@ -659,7 +650,6 @@ mod property_tests {
                 output_folder: output_folder.clone(),
                 output_filename_template: output_filename_template.clone(),
                 download_engine: download_engine.clone(),
-                max_bitrate,
                 stream_selection_config: stream_selection_config.clone(),
                 output_file_format: output_file_format.clone(),
                 min_segment_size_bytes,
@@ -727,11 +717,7 @@ mod property_tests {
                 prop_assert_eq!(config.download_engine, original_config.download_engine, "download_engine should remain unchanged");
             }
 
-            if let Some(max_bitrate_val) = max_bitrate {
-                prop_assert_eq!(config.max_bitrate, Some(max_bitrate_val), "max_bitrate should be updated");
-            } else {
-                prop_assert_eq!(config.max_bitrate, original_config.max_bitrate, "max_bitrate should remain unchanged");
-            }
+
 
             if let Some(ref stream_selection_config_val) = stream_selection_config {
                 prop_assert_eq!(config.stream_selection_config.as_ref(), Some(stream_selection_config_val), "stream_selection_config should be updated");

@@ -186,10 +186,10 @@ impl ConfigRepository for SqlxConfigRepository {
             INSERT INTO platform_config (
                 id, platform_name, fetch_delay_ms, download_delay_ms,
                 cookies, platform_specific_config, proxy_config, record_danmu,
-                output_folder, output_filename_template, download_engine, max_bitrate, stream_selection_config,
+                output_folder, output_filename_template, download_engine, stream_selection_config,
                 output_file_format, min_segment_size_bytes, max_download_duration_secs, max_part_size_bytes,
                 download_retry_policy, event_hooks
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             "#,
         )
         .bind(&config.id)
@@ -203,7 +203,6 @@ impl ConfigRepository for SqlxConfigRepository {
         .bind(&config.output_folder)
         .bind(&config.output_filename_template)
         .bind(&config.download_engine)
-        .bind(config.max_bitrate)
         .bind(&config.stream_selection_config)
         .bind(&config.output_file_format)
         .bind(config.min_segment_size_bytes)
@@ -230,7 +229,7 @@ impl ConfigRepository for SqlxConfigRepository {
                 output_folder = ?,
                 output_filename_template = ?,
                 download_engine = ?,
-                max_bitrate = ?,
+                download_engine = ?,
                 stream_selection_config = ?,
                 output_file_format = ?,
                 min_segment_size_bytes = ?,
@@ -251,7 +250,6 @@ impl ConfigRepository for SqlxConfigRepository {
         .bind(&config.output_folder)
         .bind(&config.output_filename_template)
         .bind(&config.download_engine)
-        .bind(config.max_bitrate)
         .bind(&config.stream_selection_config)
         .bind(&config.output_file_format)
         .bind(config.min_segment_size_bytes)
@@ -302,13 +300,13 @@ impl ConfigRepository for SqlxConfigRepository {
         sqlx::query(
             r#"
             INSERT INTO template_config (
-                id, name, output_folder, output_filename_template, max_bitrate,
+                id, name, output_folder, output_filename_template,
                 cookies, output_file_format, min_segment_size_bytes,
                 max_download_duration_secs, max_part_size_bytes, record_danmu,
                 platform_overrides, download_retry_policy, danmu_sampling_config,
                 download_engine, engines_override, proxy_config, event_hooks, stream_selection_config,
                 created_at, updated_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 
             "#,
         )
@@ -316,7 +314,6 @@ impl ConfigRepository for SqlxConfigRepository {
         .bind(&config.name)
         .bind(&config.output_folder)
         .bind(&config.output_filename_template)
-        .bind(config.max_bitrate)
         .bind(&config.cookies)
         .bind(&config.output_file_format)
         .bind(config.min_segment_size_bytes)
@@ -345,7 +342,7 @@ impl ConfigRepository for SqlxConfigRepository {
                 name = ?,
                 output_folder = ?,
                 output_filename_template = ?,
-                max_bitrate = ?,
+                output_filename_template = ?,
                 cookies = ?,
                 output_file_format = ?,
                 min_segment_size_bytes = ?,
@@ -367,7 +364,6 @@ impl ConfigRepository for SqlxConfigRepository {
         .bind(&config.name)
         .bind(&config.output_folder)
         .bind(&config.output_filename_template)
-        .bind(config.max_bitrate)
         .bind(&config.cookies)
         .bind(&config.output_file_format)
         .bind(config.min_segment_size_bytes)

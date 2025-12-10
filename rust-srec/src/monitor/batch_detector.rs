@@ -286,6 +286,7 @@ mod tests {
             avatar_url: None,
             consecutive_error_count: 0,
             disabled_until: None,
+            last_error: None,
             last_live_time: None,
         }
     }

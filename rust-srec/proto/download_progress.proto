@@ -83,6 +83,7 @@ message SegmentCompleted {
   uint32 segment_index = 4;
   double duration_secs = 5;
   uint64 size_bytes = 6;
+  string session_id = 7;
 }
 
 // Download completed event

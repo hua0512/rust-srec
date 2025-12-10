@@ -38,6 +38,7 @@ pub trait StreamerRepository: Send + Sync {
         id: &str,
         error_count: i32,
         disabled_until: Option<DateTime<Utc>>,
+        error: Option<&str>,
     ) -> Result<()>;
     async fn record_streamer_success(
         &self,
@@ -146,8 +147,8 @@ impl StreamerRepository for SqlxStreamerRepository {
                 id, name, url, platform_config_id, template_config_id,
                 state, priority, avatar, last_live_time, streamer_specific_config,
                 download_retry_policy, danmu_sampling_config,
-                consecutive_error_count, disabled_until
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                consecutive_error_count, disabled_until, last_error
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             "#,
         )
         .bind(&streamer.id)
@@ -164,6 +165,7 @@ impl StreamerRepository for SqlxStreamerRepository {
         .bind(&streamer.danmu_sampling_config)
         .bind(streamer.consecutive_error_count)
         .bind(&streamer.disabled_until)
+        .bind(&streamer.last_error)
         .execute(&self.pool)
         .await;
 
@@ -192,7 +194,8 @@ impl StreamerRepository for SqlxStreamerRepository {
                 download_retry_policy = ?,
                 danmu_sampling_config = ?,
                 consecutive_error_count = ?,
-                disabled_until = ?
+                disabled_until = ?,
+                last_error = ?
             WHERE id = ?
             "#,
         )
@@ -209,6 +212,7 @@ impl StreamerRepository for SqlxStreamerRepository {
         .bind(&streamer.danmu_sampling_config)
         .bind(streamer.consecutive_error_count)
         .bind(&streamer.disabled_until)
+        .bind(&streamer.last_error)
         .bind(&streamer.id)
         .execute(&self.pool)
         .await;
@@ -314,7 +318,7 @@ impl StreamerRepository for SqlxStreamerRepository {
 
     async fn clear_streamer_error_state(&self, id: &str) -> Result<()> {
         sqlx::query(
-            "UPDATE streamers SET consecutive_error_count = 0, disabled_until = NULL, state = 'NOT_LIVE' WHERE id = ?",
+            "UPDATE streamers SET consecutive_error_count = 0, disabled_until = NULL, last_error = NULL, state = 'NOT_LIVE' WHERE id = ?",
         )
         .bind(id)
         .execute(&self.pool)
@@ -327,18 +331,21 @@ impl StreamerRepository for SqlxStreamerRepository {
         id: &str,
         error_count: i32,
         disabled_until: Option<DateTime<Utc>>,
+        error: Option<&str>,
     ) -> Result<()> {
         sqlx::query(
             r#"
             UPDATE streamers SET 
                 consecutive_error_count = ?,
                 disabled_until = ?,
+                last_error = ?,
                 state = CASE WHEN ? IS NOT NULL THEN 'ERROR' ELSE state END
             WHERE id = ?
             "#,
         )
         .bind(error_count)
         .bind(disabled_until)
+        .bind(error)
         .bind(disabled_until)
         .bind(id)
         .execute(&self.pool)
@@ -353,7 +360,7 @@ impl StreamerRepository for SqlxStreamerRepository {
     ) -> Result<()> {
         if let Some(time) = last_live_time {
             sqlx::query(
-                "UPDATE streamers SET consecutive_error_count = 0, disabled_until = NULL, last_live_time = ? WHERE id = ?",
+                "UPDATE streamers SET consecutive_error_count = 0, disabled_until = NULL, last_error = NULL, last_live_time = ? WHERE id = ?",
             )
             .bind(time)
             .bind(id)
@@ -361,7 +368,7 @@ impl StreamerRepository for SqlxStreamerRepository {
             .await?;
         } else {
             sqlx::query(
-                "UPDATE streamers SET consecutive_error_count = 0, disabled_until = NULL WHERE id = ?",
+                "UPDATE streamers SET consecutive_error_count = 0, disabled_until = NULL, last_error = NULL WHERE id = ?",
             )
             .bind(id)
             .execute(&self.pool)

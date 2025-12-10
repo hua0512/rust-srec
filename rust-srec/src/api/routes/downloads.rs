@@ -300,6 +300,7 @@ fn map_event_to_protobuf(
         DownloadManagerEvent::SegmentCompleted {
             download_id,
             streamer_id,
+            session_id,
             segment_path,
             segment_index,
             duration_secs,
@@ -312,6 +313,7 @@ fn map_event_to_protobuf(
                 segment_index: *segment_index,
                 duration_secs: *duration_secs,
                 size_bytes: *size_bytes,
+                session_id: session_id.clone(),
             };
             Some(WsMessage {
                 event_type: EventType::SegmentCompleted as i32,
@@ -449,6 +451,7 @@ mod tests {
         let event = DownloadManagerEvent::SegmentCompleted {
             download_id: "dl-1".to_string(),
             streamer_id: "streamer-123".to_string(),
+            session_id: "session-1".to_string(),
             segment_path: "/path/to/segment.ts".to_string(),
             segment_index: 5,
             duration_secs: 10.5,
@@ -463,6 +466,7 @@ mod tests {
             assert_eq!(payload.segment_index, 5);
             assert_eq!(payload.duration_secs, 10.5);
             assert_eq!(payload.size_bytes, 1024000);
+            assert_eq!(payload.session_id, "session-1");
         } else {
             panic!("Expected SegmentCompleted payload");
         }

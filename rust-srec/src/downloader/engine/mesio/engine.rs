@@ -12,6 +12,7 @@
 //! `WriterState`, eliminating the need for duplicate tracking in the engine.
 
 use async_trait::async_trait;
+use axum::http::HeaderMap;
 use mesio::flv::FlvProtocolConfig;
 use mesio::{FlvProtocolBuilder, HlsProtocolBuilder, MesioDownloaderFactory, ProtocolType};
 use std::sync::Arc;
@@ -58,8 +59,18 @@ impl MesioEngine {
             available: true,
             version: env!("CARGO_PKG_VERSION").to_string(),
             config,
-            hls_config: Some(HlsProtocolBuilder::new().get_config()),
-            flv_config: Some(FlvProtocolBuilder::new().get_config()),
+            hls_config: Some(
+                HlsProtocolBuilder::new()
+                    // override default headers
+                    .headers(HeaderMap::new())
+                    .get_config(),
+            ),
+            flv_config: Some(
+                FlvProtocolBuilder::new()
+                    // override default headers
+                    .headers(HeaderMap::new())
+                    .get_config(),
+            ),
         }
     }
 

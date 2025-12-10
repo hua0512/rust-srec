@@ -8,6 +8,7 @@ pub mod downloads;
 pub mod engines;
 pub mod filters;
 pub mod health;
+pub mod media;
 pub mod pipeline;
 pub mod sessions;
 pub mod streamers;
@@ -51,6 +52,7 @@ pub fn create_router(state: AppState) -> Router {
         // Public routes (no authentication required)
         .nest("/api/health", health::router())
         .nest("/api/auth", auth::public_router())
+        .nest("/api/media", media::router())
         // WebSocket route with JWT auth via query parameter (not middleware)
         .nest("/api/downloads", downloads::router())
         // Merge protected routes

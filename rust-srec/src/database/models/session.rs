@@ -90,6 +90,8 @@ pub struct LiveSessionDbModel {
     /// JSON array of timestamped stream titles
     pub titles: Option<String>,
     pub danmu_statistics_id: Option<String>,
+    #[serde(default)]
+    pub total_size_bytes: i64,
 }
 
 impl LiveSessionDbModel {
@@ -101,6 +103,7 @@ impl LiveSessionDbModel {
             end_time: None,
             titles: Some("[]".to_string()),
             danmu_statistics_id: None,
+            total_size_bytes: 0,
         }
     }
 }

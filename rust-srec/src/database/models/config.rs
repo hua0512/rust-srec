@@ -76,7 +76,6 @@ pub struct PlatformConfigDbModel {
     pub output_folder: Option<String>,
     pub output_filename_template: Option<String>,
     pub download_engine: Option<String>,
-    pub max_bitrate: Option<i32>,
     /// JSON serialized StreamSelectionConfig
     pub stream_selection_config: Option<String>,
     pub output_file_format: Option<String>,
@@ -97,7 +96,6 @@ pub struct TemplateConfigDbModel {
     pub name: String,
     pub output_folder: Option<String>,
     pub output_filename_template: Option<String>,
-    pub max_bitrate: Option<i32>,
     pub cookies: Option<String>,
     pub output_file_format: Option<String>,
     pub min_segment_size_bytes: Option<i64>,
@@ -131,7 +129,6 @@ impl TemplateConfigDbModel {
             name: name.into(),
             output_folder: None,
             output_filename_template: None,
-            max_bitrate: None,
             cookies: None,
             output_file_format: None,
             min_segment_size_bytes: None,

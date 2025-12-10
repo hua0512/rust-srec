@@ -31,11 +31,11 @@ impl FlvWriter {
 
     /// Set a callback to be invoked when a segment is completed.
     ///
-    /// The callback receives the file path, sequence number (0-based), and duration in seconds.
+    /// The callback receives the file path, sequence number (0-based), duration in seconds, and size in bytes.
     /// This callback provides the segment's media duration for tracking purposes.
     pub fn set_on_segment_complete_callback<F>(&mut self, callback: F)
     where
-        F: Fn(&std::path::Path, u32, f64) + Send + Sync + 'static,
+        F: Fn(&std::path::Path, u32, f64, u64) + Send + Sync + 'static,
     {
         self.writer_task.set_on_file_close_callback(callback);
     }
@@ -71,7 +71,7 @@ impl FlvWriter {
 
 impl ProtocolWriter for FlvWriter {
     type Item = FlvData;
-    type Stats = (usize, u32);
+    type Stats = (usize, u32, u64, f64);
     type Error = WriterError<FlvStrategyError>;
 
     fn new(
@@ -123,7 +123,14 @@ impl ProtocolWriter for FlvWriter {
         let final_state = self.get_state();
         let total_tags_written = final_state.items_written_total;
         let files_created = final_state.file_sequence_number;
+        let total_bytes_written = final_state.bytes_written_total;
+        let total_duration_secs = final_state.media_duration_secs_total;
 
-        Ok((total_tags_written, files_created))
+        Ok((
+            total_tags_written,
+            files_created,
+            total_bytes_written,
+            total_duration_secs,
+        ))
     }
 }

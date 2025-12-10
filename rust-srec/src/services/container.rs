@@ -28,7 +28,7 @@ use crate::database::repositories::{
     streamer::SqlxStreamerRepository, user::SqlxUserRepository,
 };
 use crate::downloader::{
-    DownloadConfig, DownloadManager, DownloadManagerConfig, DownloadManagerEvent, StreamSelector,
+    DownloadConfig, DownloadManager, DownloadManagerConfig, DownloadManagerEvent,
 };
 use crate::metrics::{HealthChecker, MetricsCollector, PrometheusExporter};
 use crate::monitor::{MonitorEvent, MonitorEventBroadcaster, StreamMonitor};
@@ -134,7 +134,7 @@ impl ServiceContainer {
         let stream_monitor = Arc::new(StreamMonitor::new(
             streamer_manager.clone(),
             filter_repo,
-            session_repo,
+            session_repo.clone(),
             config_service.clone(),
         ));
 
@@ -144,14 +144,14 @@ impl ServiceContainer {
                 .with_config_repo(config_repo.clone()),
         );
 
-        // Create job repository for pipeline persistence (Requirements 6.1, 6.3)
+        // Create job repository for pipeline persistence
         let job_repo = Arc::new(SqlxJobRepository::new(pool.clone()));
 
         // Create pipeline manager with job repository for database persistence
-        let pipeline_manager = Arc::new(PipelineManager::with_repository(
-            PipelineManagerConfig::default(),
-            job_repo,
-        ));
+        let pipeline_manager = Arc::new(
+            PipelineManager::with_repository(PipelineManagerConfig::default(), job_repo)
+                .with_session_repository(session_repo),
+        );
 
         // Event broadcaster
         let monitor_event_broadcaster = stream_monitor.event_broadcaster().clone();
@@ -253,7 +253,7 @@ impl ServiceContainer {
         let stream_monitor = Arc::new(StreamMonitor::new(
             streamer_manager.clone(),
             filter_repo,
-            session_repo,
+            session_repo.clone(),
             config_service.clone(),
         ));
 
@@ -262,15 +262,16 @@ impl ServiceContainer {
             DownloadManager::with_config(download_config).with_config_repo(config_repo.clone()),
         );
 
-        // Create job repository for pipeline persistence (Requirements 6.1, 6.3)
+        // Create job repository for pipeline persistence
         let job_repo = Arc::new(SqlxJobRepository::new(pool.clone()));
 
         // Create pipeline manager with job repository for database persistence
-        let pipeline_manager =
-            Arc::new(PipelineManager::with_repository(pipeline_config, job_repo));
+        let pipeline_manager = Arc::new(
+            PipelineManager::with_repository(pipeline_config, job_repo)
+                .with_session_repository(session_repo.clone()),
+        );
 
-        // Use StreamMonitor's event broadcaster instead of creating a separate one
-        // This ensures external services receive events when StreamMonitor publishes them
+        // Get monitor event broadcaster
         let monitor_event_broadcaster = stream_monitor.event_broadcaster().clone();
 
         // Create danmu service with custom config
@@ -444,7 +445,8 @@ impl ServiceContainer {
         // Wire SessionRepository and FilterRepository into AppState
         state = state
             .with_session_repository(Arc::new(SqlxSessionRepository::new(self.pool.clone())))
-            .with_filter_repository(Arc::new(SqlxFilterRepository::new(self.pool.clone())));
+            .with_filter_repository(Arc::new(SqlxFilterRepository::new(self.pool.clone())))
+            .with_streamer_repository(Arc::new(SqlxStreamerRepository::new(self.pool.clone()))); // Inject StreamerRepository
 
         let server = ApiServer::with_state(self.api_server_config.clone(), state);
         let cancel_token = self.cancellation_token.clone();
@@ -964,7 +966,7 @@ impl ServiceContainer {
                     .map(|s| s.priority == crate::domain::Priority::High)
                     .unwrap_or(false);
 
-                // Load merged config for this streamer to get stream selection preferences
+                // Load merged config for this streamer
                 let merged_config = match config_service.get_config_for_streamer(&streamer_id).await
                 {
                     Ok(config) => config,
@@ -978,19 +980,8 @@ impl ServiceContainer {
                     }
                 };
 
-                // Select the best stream based on merged config preferences
-                let stream_selector =
-                    StreamSelector::with_config(merged_config.stream_selection.clone());
-                let best_stream = match stream_selector.select_best(&streams) {
-                    Some(stream) => stream,
-                    None => {
-                        warn!(
-                            "No suitable stream found for streamer {} after filtering",
-                            streamer_id
-                        );
-                        return;
-                    }
-                };
+                // The detector emits only the selected stream(s), so we take the first one
+                let best_stream = &streams[0];
                 let stream_url_selected = best_stream.url.clone();
                 let stream_format = best_stream.stream_format.as_str();
                 let media_format = best_stream.media_format.as_str();

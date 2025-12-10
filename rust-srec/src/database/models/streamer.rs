@@ -30,6 +30,8 @@ pub struct StreamerDbModel {
     pub consecutive_error_count: Option<i32>,
     /// If temporarily disabled, the time it will be re-enabled
     pub disabled_until: Option<String>,
+    /// Last recorded error message
+    pub last_error: Option<String>,
 }
 
 impl StreamerDbModel {
@@ -54,6 +56,7 @@ impl StreamerDbModel {
             danmu_sampling_config: None,
             consecutive_error_count: Some(0),
             disabled_until: None,
+            last_error: None,
         }
     }
 }

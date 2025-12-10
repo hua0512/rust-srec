@@ -62,6 +62,7 @@ fn metadata_to_response(metadata: &StreamerMetadata) -> StreamerResponse {
         enabled: metadata.state != StreamerState::Disabled,
         consecutive_error_count: metadata.consecutive_error_count,
         disabled_until: metadata.disabled_until,
+        last_error: metadata.last_error.clone(),
         avatar_url: metadata.avatar_url.clone(),
         last_live_time: metadata.last_live_time,
         created_at: chrono::Utc::now(), // Not stored in metadata
@@ -112,6 +113,7 @@ async fn create_streamer(
         priority: api_to_domain_priority(request.priority),
         consecutive_error_count: 0,
         disabled_until: None,
+        last_error: None,
         avatar_url: None,
         last_live_time: None,
     };
@@ -161,6 +163,14 @@ async fn list_streamers(
     }
     if let Some(enabled) = filters.enabled {
         streamers.retain(|s| (s.state != StreamerState::Disabled) == enabled);
+    }
+    if let Some(search) = &filters.search {
+        if !search.is_empty() {
+            let search = search.to_lowercase();
+            streamers.retain(|s| {
+                s.name.to_lowercase().contains(&search) || s.url.to_lowercase().contains(&search)
+            });
+        }
     }
 
     // Sort if requested
@@ -433,6 +443,7 @@ mod tests {
             priority: DomainPriority::High,
             consecutive_error_count: 2,
             disabled_until: None,
+            last_error: Some("test error".to_string()),
             last_live_time: Some(chrono::Utc::now()),
         };
 
@@ -446,6 +457,7 @@ mod tests {
         assert_eq!(response.state, StreamerState::Live);
         assert!(response.enabled); // Live state means enabled
         assert_eq!(response.consecutive_error_count, 2);
+        assert_eq!(response.last_error, Some("test error".to_string()));
     }
 
     #[test]
@@ -461,6 +473,7 @@ mod tests {
             priority: DomainPriority::Normal,
             consecutive_error_count: 0,
             disabled_until: None,
+            last_error: None,
             last_live_time: None,
         };
 
@@ -673,6 +686,7 @@ mod property_tests {
             id: &str,
             error_count: i32,
             disabled_until: Option<DateTime<Utc>>,
+            _error: Option<&str>,
         ) -> crate::Result<()> {
             if let Some(s) = self
                 .streamers
@@ -805,6 +819,7 @@ mod property_tests {
                     priority,
                     consecutive_error_count: 0,
                     disabled_until: None,
+                    last_error: None,
                     last_live_time: None,
                 };
 
@@ -861,6 +876,7 @@ mod property_tests {
                     priority: initial_priority,
                     consecutive_error_count: 0,
                     disabled_until: None,
+                    last_error: None,
                     last_live_time: None,
                 };
 
@@ -916,6 +932,7 @@ mod property_tests {
                     priority,
                     consecutive_error_count: 0,
                     disabled_until: None,
+                    last_error: None,
                     last_live_time: None,
                 };
 
@@ -991,7 +1008,6 @@ async fn extract_metadata(
             output_folder: c.output_folder,
             output_filename_template: c.output_filename_template,
             download_engine: c.download_engine,
-            max_bitrate: c.max_bitrate,
             stream_selection_config: c.stream_selection_config,
             output_file_format: c.output_file_format,
             min_segment_size_bytes: c.min_segment_size_bytes.map(|v| v as u64),

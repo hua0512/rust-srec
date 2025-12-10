@@ -34,7 +34,6 @@ CREATE TABLE platform_config (
     output_folder TEXT,
     output_filename_template TEXT,
     download_engine TEXT,
-    max_bitrate INTEGER,
     stream_selection_config TEXT,
     output_file_format TEXT,
     min_segment_size_bytes BIGINT,
@@ -50,7 +49,6 @@ CREATE TABLE template_config (
     name TEXT NOT NULL UNIQUE,
     output_folder TEXT,
     output_filename_template TEXT,
-    max_bitrate INTEGER,
     cookies TEXT,
     output_file_format TEXT,
     min_segment_size_bytes INTEGER,
@@ -85,6 +83,8 @@ CREATE TABLE streamers (
     download_retry_policy TEXT,
     danmu_sampling_config TEXT,
     consecutive_error_count INTEGER DEFAULT 0,
+    -- Last recorded error message
+    last_error TEXT,
     disabled_until TEXT,
     avatar TEXT,
     FOREIGN KEY (platform_config_id) REFERENCES platform_config(id),
@@ -108,6 +108,7 @@ CREATE TABLE live_sessions (
     end_time TEXT,
     titles TEXT,
     danmu_statistics_id TEXT,
+    total_size_bytes BIGINT NOT NULL DEFAULT 0,
     FOREIGN KEY (streamer_id) REFERENCES streamers(id) ON DELETE CASCADE,
     FOREIGN KEY (danmu_statistics_id) REFERENCES danmu_statistics(id)
 );
@@ -133,7 +134,7 @@ CREATE TABLE danmu_statistics (
     danmu_rate_timeseries TEXT,
     top_talkers TEXT,
     word_frequency TEXT,
-    FOREIGN KEY (session_id) REFERENCES live_sessions(id)
+    FOREIGN KEY (session_id) REFERENCES live_sessions(id) ON DELETE CASCADE
 );
 
 -- System and Job Management
@@ -185,7 +186,7 @@ CREATE TABLE upload_record (
     metadata TEXT,
     created_at TEXT NOT NULL,
     completed_at TEXT,
-    FOREIGN KEY (media_output_id) REFERENCES media_outputs(id)
+    FOREIGN KEY (media_output_id) REFERENCES media_outputs(id) ON DELETE CASCADE
 );
 
 -- Notification Dead Letter Queue: Stores notifications that failed all retry attempts
@@ -199,7 +200,7 @@ CREATE TABLE notification_dead_letter (
     first_attempt_at TEXT NOT NULL,
     last_attempt_at TEXT NOT NULL,
     created_at TEXT NOT NULL,
-    FOREIGN KEY (channel_id) REFERENCES notification_channel(id)
+    FOREIGN KEY (channel_id) REFERENCES notification_channel(id) ON DELETE CASCADE
 );
 
 -- Security and Notifications
@@ -249,7 +250,7 @@ CREATE TABLE notification_subscription (
     channel_id TEXT NOT NULL,
     event_name TEXT NOT NULL,
     PRIMARY KEY (channel_id, event_name),
-    FOREIGN KEY (channel_id) REFERENCES notification_channel(id)
+    FOREIGN KEY (channel_id) REFERENCES notification_channel(id) ON DELETE CASCADE
 );
 
 -- Streamer indexes

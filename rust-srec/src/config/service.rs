@@ -345,7 +345,6 @@ where
                 platform.output_folder.clone(),
                 platform.output_filename_template.clone(),
                 platform.download_engine.clone(),
-                platform.max_bitrate,
                 platform
                     .stream_selection_config
                     .as_ref()
@@ -388,7 +387,6 @@ where
                     .danmu_sampling_config
                     .as_ref()
                     .and_then(|s| serde_json::from_str(s).ok()),
-                template.max_bitrate,
                 template
                     .event_hooks
                     .as_ref()
