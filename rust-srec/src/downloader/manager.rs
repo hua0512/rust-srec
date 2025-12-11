@@ -667,6 +667,10 @@ impl DownloadManager {
                             download.status = DownloadStatus::Completed;
                         }
 
+                        // remove download from active_downloads
+                        // just before the event to avoid race condition
+                        active_downloads.remove(&download_id_clone);
+
                         let _ = event_tx.send(DownloadManagerEvent::DownloadCompleted {
                             download_id: download_id_clone.clone(),
                             streamer_id: streamer_id.clone(),
@@ -676,7 +680,6 @@ impl DownloadManager {
                             total_segments,
                         });
 
-                        active_downloads.remove(&download_id_clone);
                         break;
                     }
                     SegmentEvent::DownloadFailed { error, recoverable } => {
@@ -686,6 +689,10 @@ impl DownloadManager {
                             download.status = DownloadStatus::Failed;
                         }
 
+                        // remove download from active_downloads
+                        // just before the event to avoid race condition
+                        active_downloads.remove(&download_id_clone);
+
                         let _ = event_tx.send(DownloadManagerEvent::DownloadFailed {
                             download_id: download_id_clone.clone(),
                             streamer_id: streamer_id.clone(),
@@ -693,7 +700,6 @@ impl DownloadManager {
                             recoverable,
                         });
 
-                        active_downloads.remove(&download_id_clone);
                         break;
                     }
                     SegmentEvent::SegmentStarted { path, sequence } => {

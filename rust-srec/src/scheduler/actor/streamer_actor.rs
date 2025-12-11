@@ -26,6 +26,7 @@ use super::messages::{
 use super::metrics::ActorMetrics;
 use super::monitor_adapter::{NoOpStatusChecker, StatusChecker};
 use crate::domain::StreamerState;
+use crate::scheduler::actor::monitor_adapter::CheckContext;
 use crate::streamer::StreamerMetadata;
 
 /// Result type for actor operations.
@@ -504,8 +505,19 @@ impl<S: StatusChecker> StreamerActor<S> {
     async fn perform_check(&mut self) -> Result<(), ActorError> {
         debug!("StreamerActor {} performing status check", self.id);
 
+        // Create check context with current state for hysteresis logic
+        let context = CheckContext {
+            offline_count: self.state.offline_count,
+            offline_limit: self.config.offline_check_count,
+            was_live: self.state.was_live,
+        };
+
         // Perform the actual status check using the status checker
-        match self.status_checker.check_status(&self.metadata).await {
+        match self
+            .status_checker
+            .check_status(&self.metadata, &context)
+            .await
+        {
             Ok(result) => {
                 // Record the check result
                 self.state.record_check(result, &self.config);
@@ -666,29 +678,35 @@ impl<S: StatusChecker> StreamerActor<S> {
         info!("StreamerActor {} download ended: {:?}", self.id, reason);
 
         // Update state based on reason
+        // Update state and schedule check based on reason
         match reason {
             DownloadEndReason::StreamerOffline => {
                 // Streamer went offline normally
                 self.state.streamer_state = StreamerState::NotLive;
                 self.state.offline_count = 0;
+
+                // Schedule next check respecting offline intervals (grace period)
+                self.state.schedule_next_check(&self.config);
             }
             DownloadEndReason::NetworkError(_) | DownloadEndReason::SegmentFailed(_) => {
                 // Network issue - we don't know if streamer is still live
-                // Schedule immediate check to verify
+                // Schedule immediate check to verify status and potentially resume quicky
                 self.state.streamer_state = StreamerState::NotLive;
+                self.state.schedule_immediate_check();
             }
             DownloadEndReason::Cancelled => {
                 // User cancelled - don't change state, just resume checking
                 self.state.streamer_state = StreamerState::NotLive;
+                // Use normal scheduling
+                self.state.schedule_next_check(&self.config);
             }
             DownloadEndReason::Other(_) => {
                 // Unknown reason - assume offline
                 self.state.streamer_state = StreamerState::NotLive;
+                // Use normal scheduling
+                self.state.schedule_next_check(&self.config);
             }
         }
-
-        // Schedule immediate check to verify current status
-        self.state.schedule_immediate_check();
 
         debug!(
             "StreamerActor {} resuming status checks, next check in {:?}",

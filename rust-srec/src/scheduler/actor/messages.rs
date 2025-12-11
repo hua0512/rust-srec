@@ -278,13 +278,16 @@ impl StreamerActorState {
             return;
         }
 
-        // Use shorter interval only when streamer was previously live and just went offline
+        // Use shorter interval only when streamer was previously live and just went offline/error
         // This enables quick re-detection when a stream ends unexpectedly
         // For streamers that were never live, use the longer interval
-        let interval_ms = if self.was_live
-            && self.streamer_state == StreamerState::NotLive
-            && self.offline_count < config.offline_check_count
-        {
+        let use_short_interval = self.was_live
+            && ((self.streamer_state == StreamerState::NotLive
+                && self.offline_count < config.offline_check_count)
+                || (self.streamer_state == StreamerState::Error
+                    && self.error_count < config.offline_check_count));
+
+        let interval_ms = if use_short_interval {
             config.offline_check_interval_ms
         } else {
             config.check_interval_ms

@@ -26,6 +26,17 @@ pub trait StatusCheckerFactory: Send + Sync + 'static {
     fn create_batch_checker(&self) -> Arc<dyn BatchChecker>;
 }
 
+/// Context for status checks.
+#[derive(Debug, Clone, Default)]
+pub struct CheckContext {
+    /// Consecutive offline count.
+    pub offline_count: u32,
+    /// Number of offline checks required to confirm offline state.
+    pub offline_limit: u32,
+    /// Whether the streamer was previously live.
+    pub was_live: bool,
+}
+
 /// Trait for individual streamer status checking.
 ///
 /// This trait abstracts the status checking operation, allowing
@@ -36,7 +47,11 @@ pub trait StatusChecker: Send + Sync + 'static {
     /// Check the status of a streamer.
     ///
     /// Returns a `CheckResult` with the detected state.
-    async fn check_status(&self, streamer: &StreamerMetadata) -> Result<CheckResult, CheckError>;
+    async fn check_status(
+        &self,
+        streamer: &StreamerMetadata,
+        context: &CheckContext,
+    ) -> Result<CheckResult, CheckError>;
 
     /// Process a status result and update the streamer state.
     ///
@@ -117,8 +132,12 @@ impl DynStatusChecker {
 
 #[async_trait]
 impl StatusChecker for DynStatusChecker {
-    async fn check_status(&self, streamer: &StreamerMetadata) -> Result<CheckResult, CheckError> {
-        self.inner.check_status(streamer).await
+    async fn check_status(
+        &self,
+        streamer: &StreamerMetadata,
+        context: &CheckContext,
+    ) -> Result<CheckResult, CheckError> {
+        self.inner.check_status(streamer, context).await
     }
 
     async fn process_status(
@@ -213,14 +232,49 @@ where
     SSR: crate::database::repositories::SessionRepository + Send + Sync + 'static,
     CR: crate::database::repositories::ConfigRepository + Send + Sync + 'static,
 {
-    async fn check_status(&self, streamer: &StreamerMetadata) -> Result<CheckResult, CheckError> {
+    async fn check_status(
+        &self,
+        streamer: &StreamerMetadata,
+        context: &CheckContext,
+    ) -> Result<CheckResult, CheckError> {
         let status = self.monitor.check_streamer(streamer).await?;
 
         // Convert LiveStatus to CheckResult
         let result = convert_live_status_to_check_result(&status);
 
-        // Process the status (update state, emit events, etc.)
-        self.monitor.process_status(streamer, status).await?;
+        // Apply hysteresis for offline detection
+        // If status is offline and we haven't reached the offline limit,
+        // we skip processing (which prevents ending the session).
+        let should_process = if matches!(status, crate::monitor::LiveStatus::Offline) {
+            // Only skip processing if we were previously live (hysteresis applies)
+            // and we haven't reached the limit yet.
+            // Note: context.offline_count is the count BEFORE this check.
+            // So if count=0 and limit=3:
+            // Check 1: detected offline. count=0. process? No. (count becomes 1)
+            // Check 2: detected offline. count=1. process? No. (count becomes 2)
+            // Check 3: detected offline. count=2. process? No. (count becomes 3)
+            // Check 4: detected offline. count=3. process? Yes. (limit reached)
+            if context.was_live && context.offline_count < context.offline_limit {
+                false
+            } else {
+                true
+            }
+        } else {
+            // Always process other statuses (Live, Filtered, Errors)
+            true
+        };
+
+        if should_process {
+            // Process the status (update state, emit events, etc.)
+            self.monitor.process_status(streamer, status).await?;
+        } else {
+            tracing::debug!(
+                "Skipping status processing for {} (offline hysteresis: {}/{})",
+                streamer.id,
+                context.offline_count,
+                context.offline_limit
+            );
+        }
 
         Ok(result)
     }
@@ -436,7 +490,11 @@ pub struct NoOpStatusChecker;
 
 #[async_trait]
 impl StatusChecker for NoOpStatusChecker {
-    async fn check_status(&self, _streamer: &StreamerMetadata) -> Result<CheckResult, CheckError> {
+    async fn check_status(
+        &self,
+        _streamer: &StreamerMetadata,
+        _context: &CheckContext,
+    ) -> Result<CheckResult, CheckError> {
         // Simulate a small delay
         tokio::time::sleep(std::time::Duration::from_millis(10)).await;
         Ok(CheckResult::success(crate::domain::StreamerState::NotLive))

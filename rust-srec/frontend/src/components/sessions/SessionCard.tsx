@@ -59,7 +59,7 @@ export function SessionCard({ session }: SessionCardProps) {
                 <div className="flex-1 min-w-0">
                     <div className="flex items-center justify-between">
                         <p className="text-sm font-medium text-muted-foreground truncate">
-                            {session.streamer_id}
+                            {session.streamer_name || session.streamer_id}
                         </p>
                         {isLive ? (
                             <Badge variant="default" className="bg-red-500/10 text-red-500 hover:bg-red-500/20 border-red-500/20 animate-pulse">
@@ -153,7 +153,7 @@ export function SessionCard({ session }: SessionCardProps) {
                     </DropdownMenuContent>
                 </DropdownMenu>
             </CardFooter>
-        </Card>
+        </Card >
     );
 }
 

@@ -238,6 +238,11 @@ impl<
             status_summary(&status)
         );
 
+        // Fetch fresh metadata to ensure we have the latest state
+        // The StreamerActor might be holding stale metadata
+        let fresh_streamer = self.streamer_manager.get_streamer(&streamer.id);
+        let streamer = fresh_streamer.as_ref().unwrap_or(streamer);
+
         match status {
             LiveStatus::Live {
                 title,
