@@ -1,4 +1,4 @@
-import { useAppSession } from '../utils/session';
+import { useAppSession, SessionData } from '../utils/session';
 
 // Determine the base URL for the backend API.
 // Priority:
@@ -53,6 +53,8 @@ export const fetchBackend = async <T = any>(endpoint: string, init?: RequestInit
     const path = endpoint.startsWith('/') ? endpoint : `/${endpoint}`;
     const url = `${baseUrl}${path}`;
 
+    // console.log(`[API] Fetching ${url} with token: ${token ? 'PRESENT' : 'MISSING'}`);
+
     const response = await fetch(url, {
         ...init,
         headers,
@@ -61,9 +63,11 @@ export const fetchBackend = async <T = any>(endpoint: string, init?: RequestInit
     // Handle errors
     if (!response.ok) {
         if (response.status === 401) {
+            console.log(`[API] 401 Unauthorized for ${url}. Attempting refresh...`);
             try {
                 const newToken = await refreshAuthToken(session);
                 if (newToken) {
+                    console.log(`[API] Token refreshed. Retrying ${url}...`);
                     // Retry original request with new token
                     const headers = new Headers(init?.headers);
                     headers.set('Authorization', `Bearer ${newToken}`);
@@ -83,6 +87,7 @@ export const fetchBackend = async <T = any>(endpoint: string, init?: RequestInit
                         }
                         return retryResponse.text() as unknown as T;
                     }
+                    console.log(`[API] Retry failed with status: ${retryResponse.status}`);
                     // If retry failed, throw error from retry response
                     let errorBody;
                     const errorText = await retryResponse.text();
@@ -92,6 +97,8 @@ export const fetchBackend = async <T = any>(endpoint: string, init?: RequestInit
                         errorBody = errorText;
                     }
                     throw new BackendApiError(retryResponse.status, retryResponse.statusText, errorBody);
+                } else {
+                    console.log(`[API] Refresh failed or returned no token.`);
                 }
             } catch (refreshError) {
                 console.error("Token refresh failed during interceptor:", refreshError);
@@ -128,7 +135,10 @@ let refreshPromise: Promise<string | null> | null = null;
 
 async function refreshAuthToken(session: any): Promise<string | null> {
     const refreshToken = session.data.token?.refresh_token;
-    if (!refreshToken) return null;
+    if (!refreshToken) {
+        console.log(`[API] No refresh token available in session.`);
+        return null;
+    }
 
     if (refreshPromise) {
         return refreshPromise;
@@ -136,6 +146,7 @@ async function refreshAuthToken(session: any): Promise<string | null> {
 
     refreshPromise = (async () => {
         try {
+            console.log(`[API] Calling refresh endpoint...`);
             // We use fetch directly to avoid infinite loops if fetchBackend calls itself
             const baseUrl = BASE_URL.endsWith('/') ? BASE_URL.slice(0, -1) : BASE_URL;
             const response = await fetch(`${baseUrl}/auth/refresh`, {
@@ -149,20 +160,16 @@ async function refreshAuthToken(session: any): Promise<string | null> {
             }
 
             const json = await response.json();
-            // We need to import LoginResponseSchema dynamically or just trust the response shape to avoid circular dependency issues if schemas import API
-            // But schemas usually don't import API. Let's assume it's safe or cast it.
-            // For safety and speed, we will cast it here manually to avoid import issues or just update session.
-
-            const userData = {
+            const userData: SessionData = {
                 username: session.data.username,
                 token: {
                     access_token: json.access_token,
-                    refresh_token: json.refresh_token,
+                    refresh_token: json.refresh_token || refreshToken, // Fallback to existing refresh token if not allowed to rotate
                     expires_in: json.expires_in,
-                    refresh_expires_in: json.refresh_expires_in,
+                    refresh_expires_in: json.refresh_expires_in || session.data.token.refresh_expires_in,
                 },
-                roles: json.roles,
-                mustChangePassword: json.must_change_password
+                roles: json.roles || session.data.roles,
+                mustChangePassword: json.must_change_password !== undefined ? json.must_change_password : session.data.mustChangePassword
             };
 
             await session.update(userData);

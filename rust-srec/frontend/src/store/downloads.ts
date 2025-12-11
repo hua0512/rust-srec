@@ -1,6 +1,8 @@
 import { create } from 'zustand';
 import type { DownloadProgress } from '../api/proto/download_progress';
 
+export type Download = DownloadProgress;
+
 // Connection status type
 export type ConnectionStatus = 'disconnected' | 'connecting' | 'connected' | 'error';
 

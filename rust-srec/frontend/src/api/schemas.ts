@@ -47,7 +47,11 @@ export const StreamerSchema = z.object({
     last_error: z.string().nullable().optional(),
     last_live_time: z.string().nullable().optional(),
     created_at: z.string(),
+
     updated_at: z.string(),
+    streamer_specific_config: z.string().nullable().optional(),
+    download_retry_policy: z.string().nullable().optional(),
+    danmu_sampling_config: z.string().nullable().optional(),
 });
 
 export const CreateStreamerSchema = z.object({
@@ -57,6 +61,9 @@ export const CreateStreamerSchema = z.object({
     template_id: z.string().optional(),
     priority: z.enum(['HIGH', 'NORMAL', 'LOW']).default('NORMAL'),
     enabled: z.boolean().default(true),
+    streamer_specific_config: z.string().optional(),
+    download_retry_policy: z.string().optional(),
+    danmu_sampling_config: z.string().optional(),
 });
 
 export const UpdateStreamerSchema = CreateStreamerSchema.partial();
@@ -216,6 +223,7 @@ export const PlatformConfigSchema = z.object({
     download_retry_policy: z.string().nullable().optional(),
     event_hooks: z.string().nullable().optional(),
 });
+export type PlatformConfig = z.infer<typeof PlatformConfigSchema>;
 
 export const EngineConfigSchema = z.object({
     id: z.string(),
@@ -254,7 +262,10 @@ export const TemplateSchema = z.object({
     usage_count: z.number(),
     created_at: z.string(),
     updated_at: z.string(),
+    streamer_specific_config: z.string().nullable().optional(),
+
 });
+export type Template = z.infer<typeof TemplateSchema>;
 
 export const CreateTemplateRequestSchema = z.object({
     name: z.string().min(1, 'Name is required'),

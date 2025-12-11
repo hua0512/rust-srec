@@ -57,9 +57,9 @@ export function StreamerCard({ streamer, onDelete, onToggle, onCheck }: Streamer
             "group overflow-hidden transition-all duration-300 hover:shadow-lg hover:border-primary/20",
             !streamer.enabled && "opacity-60 grayscale hover:grayscale-0"
         )}>
-            <CardHeader className="p-4">
+            <CardHeader className="px-4 py-3">
                 <div className="flex justify-between items-start">
-                    <div className="space-y-4 w-full">
+                    <div className="space-y-3 w-full">
                         <div className="flex items-center justify-between w-full">
                             <div className="flex items-center gap-2">
                                 <span className={cn(

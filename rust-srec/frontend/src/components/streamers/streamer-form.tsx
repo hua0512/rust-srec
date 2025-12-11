@@ -5,6 +5,7 @@ import { useQuery } from '@tanstack/react-query';
 import { listPlatformConfigs, listTemplates, extractMetadata } from '@/server/functions';
 import { Button } from '../ui/button';
 import { Input } from '../ui/input';
+
 import {
     Form,
     FormControl,
@@ -32,6 +33,7 @@ import { useNavigate } from '@tanstack/react-router';
 import { useState } from 'react';
 import { Badge } from '../ui/badge';
 import { Alert, AlertDescription, AlertTitle } from "../ui/alert"
+import { StreamerConfiguration } from './config/streamer-configuration';
 
 type StreamerFormValues = z.infer<typeof CreateStreamerSchema>;
 type PlatformConfig = z.infer<typeof PlatformConfigSchema>;
@@ -77,6 +79,9 @@ export function StreamerForm({
         enabled: defaultValues?.enabled ?? true,
         platform_config_id: defaultValues?.platform_config_id,
         template_id: defaultValues?.template_id,
+        streamer_specific_config: defaultValues?.streamer_specific_config,
+        download_retry_policy: defaultValues?.download_retry_policy,
+        danmu_sampling_config: defaultValues?.danmu_sampling_config,
     };
 
     const form = useForm<StreamerFormValues>({
@@ -154,7 +159,7 @@ export function StreamerForm({
                 </div>
             </CardHeader>
 
-            <CardContent className="p-5">
+            <CardContent className="p-3 md:p-5">
                 <Form {...form}>
                     <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
 
@@ -343,6 +348,21 @@ export function StreamerForm({
                                     )}
                                 />
                             </div>
+
+                            <Separator className="bg-border/50" />
+
+                            <div className="space-y-4">
+                                <h3 className="text-sm font-medium text-muted-foreground uppercase tracking-wider">
+                                    <Trans>Advanced Configuration</Trans>
+                                </h3>
+                                <Alert className="bg-muted/50 border-muted-foreground/20">
+                                    <AlertDescription className="text-xs text-muted-foreground">
+                                        <Trans>These settings override the global and platform defaults.</Trans>
+                                    </AlertDescription>
+                                </Alert>
+
+                                <StreamerConfiguration form={form} />
+                            </div>
                         </div>
 
                         {/* Footer Actions */}
@@ -386,3 +406,4 @@ export function StreamerForm({
         </Card>
     );
 }
+

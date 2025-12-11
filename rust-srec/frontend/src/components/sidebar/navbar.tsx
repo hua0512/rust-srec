@@ -23,7 +23,7 @@ export function Navbar({ }: NavbarProps) {
             <div className="mx-4 sm:mx-8 flex h-14 items-center">
                 <div className="flex items-center space-x-4 lg:space-x-0">
                     <SheetMenu />
-                    <Breadcrumb>
+                    <Breadcrumb className="hidden sm:block">
                         <BreadcrumbList>
                             <BreadcrumbItem>
                                 <BreadcrumbLink asChild>

@@ -1,12 +1,13 @@
-import { createFileRoute, useNavigate, Link } from '@tanstack/react-router';
-
+import { createFileRoute, useNavigate } from '@tanstack/react-router';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { t } from '@lingui/core/macro';
 import { Trans } from '@lingui/react/macro';
 import { Skeleton } from '../../../../components/ui/skeleton';
+import { motion } from "motion/react";
 
-import { StreamerForm } from '../../../../components/streamers/streamer-form';
+import { StreamerGeneralSettings } from '../../../../components/streamers/config/streamer-general-settings';
+import { StreamerConfiguration } from '../../../../components/streamers/config/streamer-configuration';
 import { CreateStreamerSchema, UpdateStreamerSchema } from '../../../../api/schemas';
 import { z } from 'zod';
 import { useDownloadProgress } from '../../../../hooks/use-download-progress';
@@ -14,20 +15,49 @@ import { useDownloadStore } from '../../../../store/downloads';
 import { useShallow } from 'zustand/react/shallow';
 
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '../../../../components/ui/tabs';
-import { Button } from '../../../../components/ui/button';
-import { Plus, ArrowLeft, Settings, Filter as FilterIcon, Activity, FileVideo, Calendar, Clock, HardDrive } from 'lucide-react';
-import { getStreamer, updateStreamer, listFilters, deleteFilter, listSessions } from '@/server/functions';
-import { FilterList } from '../../../../components/filters/FilterList';
-import { FilterDialog } from '../../../../components/filters/FilterDialog';
-import { FilterSchema } from '../../../../api/schemas';
-import { useState } from 'react';
-import { Badge } from '../../../../components/ui/badge';
-import { cn, getPlatformFromUrl } from '../../../../lib/utils';
+import { Settings, Filter as FilterIcon, Activity } from 'lucide-react';
+import { getStreamer, updateStreamer, listFilters, deleteFilter, listSessions, listPlatformConfigs, listTemplates } from '@/server/functions';
+
+import { getPlatformFromUrl } from '../../../../lib/utils';
+import { useForm } from 'react-hook-form';
+import { zodResolver } from '@hookform/resolvers/zod';
+import { Form } from '../../../../components/ui/form';
+import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '../../../../components/ui/card';
+
+// Modular Components
+import { StreamerHeader } from '../../../../components/streamers/edit/streamer-header';
+import { ActiveDownloadCard } from '../../../../components/streamers/edit/active-download-card';
+import { RecentSessionsList } from '../../../../components/streamers/edit/recent-sessions-list';
+import { StreamerFiltersTab } from '../../../../components/streamers/edit/streamer-filters-tab';
+import { StreamerSaveFab } from '../../../../components/streamers/edit/streamer-save-fab';
 
 export const Route = createFileRoute('/_authed/_dashboard/streamers/$id/edit')({
   component: EditStreamerPage,
 });
 
+const containerVariants: any = {
+  hidden: { opacity: 0 },
+  visible: {
+    opacity: 1,
+    transition: {
+      staggerChildren: 0.1
+    }
+  }
+};
+
+const itemVariants: any = {
+  hidden: { opacity: 0, y: 20 },
+  visible: {
+    opacity: 1,
+    y: 0,
+    transition: { type: "spring", stiffness: 300, damping: 24 }
+  }
+};
+
+const tabContentVariants: any = {
+  hidden: { opacity: 0, x: -10 },
+  visible: { opacity: 1, x: 0, transition: { duration: 0.2 } }
+};
 
 function EditStreamerPage() {
   const { id } = Route.useParams();
@@ -47,8 +77,6 @@ function EditStreamerPage() {
     queryFn: () => listSessions({ data: { streamer_id: id } }),
     enabled: !!id,
   });
-
-  const recentSessions = sessions?.items ? [...sessions.items].sort((a: any, b: any) => new Date(b.start_time).getTime() - new Date(a.start_time).getTime()).slice(0, 5) : [];
 
   const downloads = useDownloadStore(useShallow(state => state.getDownloadsByStreamer(id)));
   const isRecording = downloads.length > 0;
@@ -78,9 +106,6 @@ function EditStreamerPage() {
   };
 
   // Filters state
-  const [filterDialogOpen, setFilterDialogOpen] = useState(false);
-  const [filterToEdit, setFilterToEdit] = useState<z.infer<typeof FilterSchema> | null>(null);
-
   const { data: filters, isLoading: isFiltersLoading } = useQuery({
     queryKey: ['streamers', id, 'filters'],
     queryFn: () => listFilters({ data: id }),
@@ -96,6 +121,30 @@ function EditStreamerPage() {
       toast.error(error.message || t`Failed to delete filter`);
     },
   });
+
+  const form = useForm({
+    resolver: zodResolver(CreateStreamerSchema),
+    defaultValues: {
+      name: '',
+      url: '',
+      enabled: true,
+      platform_config_id: "none",
+      template_id: "none",
+    },
+    values: streamer ? {
+      ...streamer,
+      platform_config_id: streamer.platform_config_id || undefined,
+      template_id: streamer.template_id || undefined,
+      streamer_specific_config: streamer.streamer_specific_config || undefined,
+      download_retry_policy: streamer.download_retry_policy || undefined,
+      danmu_sampling_config: streamer.danmu_sampling_config || undefined,
+    } : undefined,
+  });
+
+  // Queries for selectors
+  const { data: platforms } = useQuery({ queryKey: ['platform-configs'], queryFn: () => listPlatformConfigs() });
+  const { data: templates } = useQuery({ queryKey: ['templates'], queryFn: () => listTemplates() });
+
 
   if (isStreamerLoading) {
     return (
@@ -115,192 +164,118 @@ function EditStreamerPage() {
     )
   }
 
-  const statusColor = isRecording ? "text-red-500" : (isLive ? "text-green-500" : "text-muted-foreground");
-  const statusBg = isRecording ? "bg-red-500/10 border-red-500/20" : (isLive ? "bg-green-500/10 border-green-500/20" : "bg-muted/50 border-transparent");
-
   return (
-    <div className="max-w-5xl mx-auto p-4 md:p-8 space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
-      {/* Header Section */}
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-        <div className="flex items-center gap-4">
-          <Button variant="ghost" size="icon" className="h-10 w-10 rounded-full bg-background border shadow-sm hover:bg-muted" asChild>
-            <Link to="/streamers">
-              <ArrowLeft className="h-5 w-5 text-muted-foreground" />
-            </Link>
-          </Button>
+    <motion.div
+      variants={containerVariants}
+      initial="hidden"
+      animate="visible"
+      className="max-w-7xl mx-auto p-4 md:p-8 space-y-8"
+    >
+      <motion.div variants={itemVariants}>
+        <StreamerHeader
+          streamer={streamer}
+          isRecording={isRecording}
+          isLive={isLive}
+          platform={platform}
+        />
+      </motion.div>
 
-          <div className="space-y-1">
-            <div className="flex items-center gap-3">
-              <h1 className="text-3xl font-bold tracking-tight text-foreground">{streamer?.name}</h1>
-              <Badge variant="outline" className={cn("capitalize px-2.5 py-0.5 text-xs font-semibold rounded-full border transition-colors", statusBg, statusColor)}>
-                {isRecording ? <Trans>Recording</Trans> : (isLive ? <Trans>Live</Trans> : <Trans>Offline</Trans>)}
-              </Badge>
-            </div>
-            <div className="flex items-center text-sm text-muted-foreground gap-2">
-              <span className="capitalize">{platform.toLowerCase()}</span>
-              <span>•</span>
-              <span className="font-mono text-xs opacity-70">ID: {id}</span>
-            </div>
-          </div>
+      <div className="grid grid-cols-1 lg:grid-cols-4 gap-8">
+        <div className="lg:col-span-3 space-y-6">
+
+          <Tabs defaultValue="general" className="w-full">
+            <motion.div variants={itemVariants}>
+              <TabsList className="grid w-full grid-cols-1 sm:grid-cols-3 h-auto p-1 bg-muted/30 border rounded-xl md:rounded-full md:inline-flex md:w-auto backdrop-blur-sm">
+                <TabsTrigger value="general" className="rounded-lg md:rounded-full px-4 md:px-6 py-2.5 data-[state=active]:bg-background data-[state=active]:text-foreground data-[state=active]:shadow-sm transition-all">
+                  <Settings className="w-4 h-4 mr-2" />
+                  <Trans>General</Trans>
+                </TabsTrigger>
+                <TabsTrigger value="advanced" className="rounded-lg md:rounded-full px-4 md:px-6 py-2.5 data-[state=active]:bg-background data-[state=active]:text-foreground data-[state=active]:shadow-sm transition-all">
+                  <Activity className="w-4 h-4 mr-2" />
+                  <Trans>Advanced</Trans>
+                </TabsTrigger>
+                <TabsTrigger value="filters" className="rounded-lg md:rounded-full px-4 md:px-6 py-2.5 data-[state=active]:bg-background data-[state=active]:text-foreground data-[state=active]:shadow-sm transition-all">
+                  <FilterIcon className="w-4 h-4 mr-2" />
+                  <Trans>Recording Filters</Trans>
+                  {filters && filters.length > 0 && (
+                    <span className="ml-2 bg-primary/10 text-primary text-[10px] font-bold px-1.5 py-0.5 rounded-full">
+                      {filters.length}
+                    </span>
+                  )}
+                </TabsTrigger>
+              </TabsList>
+            </motion.div>
+
+            <Form {...form}>
+              <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
+
+                <TabsContent value="general" className="mt-6 border-none ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2">
+                  <motion.div variants={tabContentVariants} initial="hidden" animate="visible" key="general">
+                    <Card>
+                      <CardHeader>
+                        <CardTitle><Trans>General Configuration</Trans></CardTitle>
+                        <CardDescription><Trans>Basic settings for the streamer.</Trans></CardDescription>
+                      </CardHeader>
+                      <CardContent>
+                        <StreamerGeneralSettings
+                          form={form}
+                          platformConfigs={platforms || []}
+                          templates={templates || []}
+                        />
+                      </CardContent>
+                    </Card>
+                  </motion.div>
+                </TabsContent>
+
+                <TabsContent value="advanced" className="mt-6 border-none ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2">
+                  <motion.div variants={tabContentVariants} initial="hidden" animate="visible" key="advanced">
+                    <Card>
+                      <CardHeader>
+                        <CardTitle><Trans>Advanced Configuration</Trans></CardTitle>
+                        <CardDescription><Trans>Override global defaults for this streamer.</Trans></CardDescription>
+                      </CardHeader>
+                      <CardContent>
+                        <StreamerConfiguration form={form} />
+                      </CardContent>
+                    </Card>
+                  </motion.div>
+                </TabsContent>
+              </form>
+            </Form>
+
+            <TabsContent value="filters" className="mt-6 space-y-4 border-none ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2">
+              <motion.div variants={tabContentVariants} initial="hidden" animate="visible" key="filters">
+                <StreamerFiltersTab
+                  streamerId={id}
+                  filters={filters || []}
+                  isLoading={isFiltersLoading}
+                  onDeleteFilter={(filterId) => deleteFilterMutation.mutate(filterId)}
+                />
+              </motion.div>
+            </TabsContent>
+          </Tabs>
         </div>
 
-        <div className="flex gap-2">
-          {/* Potential Action Buttons could go here */}
+
+        <div className="space-y-6">
+          <motion.div variants={itemVariants}>
+            <ActiveDownloadCard downloads={downloads} isRecording={isRecording} />
+          </motion.div>
+
+          <motion.div variants={itemVariants}>
+            <RecentSessionsList
+              sessions={sessions?.items || []}
+              isLoading={isLoadingSessions}
+            />
+          </motion.div>
         </div>
       </div>
 
-      {/* Tabs Section */}
-      <Tabs defaultValue="general" className="w-full">
-        <TabsList className="w-full md:w-auto h-auto p-1 bg-muted/30 border rounded-full backdrop-blur-sm inline-flex">
-          <TabsTrigger value="general" className="rounded-full px-6 py-2.5 data-[state=active]:bg-background data-[state=active]:text-foreground data-[state=active]:shadow-sm transition-all">
-            <Settings className="w-4 h-4 mr-2" />
-            <Trans>Configuration</Trans>
-          </TabsTrigger>
-          <TabsTrigger value="filters" className="rounded-full px-6 py-2.5 data-[state=active]:bg-background data-[state=active]:text-foreground data-[state=active]:shadow-sm transition-all">
-            <FilterIcon className="w-4 h-4 mr-2" />
-            <Trans>Recording Filters</Trans>
-            {filters && filters.length > 0 && (
-              <span className="ml-2 bg-primary/10 text-primary text-[10px] font-bold px-1.5 py-0.5 rounded-full">
-                {filters.length}
-              </span>
-            )}
-          </TabsTrigger>
-        </TabsList>
-
-        <TabsContent value="general" className="mt-8 animate-in fade-in slide-in-from-left-2 duration-300">
-          <div className="md:grid md:grid-cols-3 gap-8">
-            <div className="md:col-span-2">
-              <StreamerForm
-                defaultValues={{
-                  name: streamer?.name,
-                  url: streamer?.url,
-                  priority: streamer?.priority,
-                  enabled: streamer?.enabled,
-                  platform_config_id: streamer?.platform_config_id || undefined,
-                  template_id: streamer?.template_id || undefined,
-                }}
-                onSubmit={onSubmit}
-                isSubmitting={updateMutation.isPending}
-                title={<Trans>General Settings</Trans>}
-                description={<Trans>Manage core configuration for {streamer?.name}</Trans>}
-                submitLabel={<Trans>Save Changes</Trans>}
-              />
-            </div>
-            <div className="space-y-6 mt-6 md:mt-0">
-              <div className="p-6 rounded-xl border bg-card/50 shadow-sm space-y-4">
-                <div className="flex items-center gap-2 text-sm font-semibold text-muted-foreground">
-                  <Activity className="w-4 h-4" /> <Trans>Status Info</Trans>
-                </div>
-                <div className="text-sm space-y-2">
-                  <div className="flex justify-between">
-                    <span className="text-muted-foreground"><Trans>Platform</Trans></span>
-                    <span className="font-medium capitalize">{platform}</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-muted-foreground"><Trans>Priority</Trans></span>
-                    <span className="font-medium">{streamer?.priority}</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-muted-foreground"><Trans>Auto-Record</Trans></span>
-                    <span className={streamer?.enabled ? "text-emerald-500 font-medium" : "text-muted-foreground"}>
-                      {streamer?.enabled ? <Trans>Enabled</Trans> : <Trans>Disabled</Trans>}
-                    </span>
-                  </div>
-                </div>
-              </div>
-
-              {/* Recent Sessions Sidebar */}
-              <div className="p-6 rounded-xl border bg-card/50 shadow-sm space-y-4">
-                <div className="flex items-center justify-between text-sm font-semibold text-muted-foreground">
-                  <div className="flex items-center gap-2">
-                    <FileVideo className="w-4 h-4" /> <Trans>Recent Sessions</Trans>
-                  </div>
-                  <Link to="/sessions" search={{ streamer_id: id }} className="text-xs text-primary hover:underline"><Trans>View All</Trans></Link>
-                </div>
-
-                {isLoadingSessions ? (
-                  <div className="space-y-3">
-                    {[1, 2, 3].map(i => (
-                      <div key={i} className="h-16 bg-muted/20 animate-pulse rounded-lg" />
-                    ))}
-                  </div>
-                ) : recentSessions.length > 0 ? (
-                  <div className="space-y-3">
-                    {recentSessions.map(session => (
-                      <div key={session.id} className="group flex flex-col gap-1 p-3 rounded-lg border bg-background/50 hover:bg-background hover:border-primary/20 transition-all">
-                        <div className="flex items-center justify-between">
-                          <span className="text-xs font-medium truncate max-w-[120px]" title={session.title}>{session.title}</span>
-                          <span className={cn(
-                            "text-[10px] px-1.5 py-0.5 rounded-full border",
-                            session.end_time ? "bg-muted/30 text-muted-foreground border-transparent" : "bg-emerald-500/10 text-emerald-500 border-emerald-500/20"
-                          )}>
-                            {session.end_time ? 'Offline' : 'Live'}
-                          </span>
-                        </div>
-                        <div className="flex items-center gap-3 text-[10px] text-muted-foreground">
-                          <div className="flex items-center gap-1">
-                            <Calendar className="w-3 h-3" />
-                            <span>{new Date(session.start_time).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}</span>
-                          </div>
-                          <div className="flex items-center gap-1">
-                            <Clock className="w-3 h-3" />
-                            <span>{session.duration_secs ? `${Math.floor(session.duration_secs / 60)}m` : '-'}</span>
-                          </div>
-                          <div className="flex items-center gap-1 ml-auto">
-                            <HardDrive className="w-3 h-3" />
-                            <span>{session.total_size_bytes ? (session.total_size_bytes / 1024 / 1024).toFixed(1) + ' MB' : '-'}</span>
-                          </div>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                ) : (
-                  <div className="text-sm text-muted-foreground py-4 text-center">
-                    <Trans>No recent sessions found.</Trans>
-                  </div>
-                )}
-              </div>
-            </div>
-          </div>
-        </TabsContent>
-
-        <TabsContent value="filters" className="mt-8 space-y-6 animate-in fade-in slide-in-from-right-2 duration-300">
-          <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center bg-gradient-to-r from-background to-muted/20 p-6 border rounded-2xl shadow-sm gap-4">
-            <div className="space-y-1">
-              <h3 className="text-xl font-bold tracking-tight"><Trans>Recording Filters</Trans></h3>
-              <p className="text-sm text-muted-foreground max-w-lg">
-                <Trans>Define precise rules for when `{streamer?.name}` should be recorded. Filters are additive (OR logic).</Trans>
-              </p>
-            </div>
-            <Button size="lg" className="rounded-full shadow-lg hover:shadow-xl transition-all hover:scale-105" onClick={() => { setFilterToEdit(null); setFilterDialogOpen(true); }}>
-              <Plus className="mr-2 h-5 w-5" />
-              <Trans>Add New Filter</Trans>
-            </Button>
-          </div>
-
-          {isFiltersLoading ? (
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-              <Skeleton className="h-40 w-full rounded-xl" /><Skeleton className="h-40 w-full rounded-xl" /><Skeleton className="h-40 w-full rounded-xl" />
-            </div>
-          ) : (
-            <div className="min-h-[200px]">
-              <FilterList
-                filters={filters || []}
-                onEdit={(filter) => { setFilterToEdit(filter); setFilterDialogOpen(true); }}
-                onDelete={(filterId) => deleteFilterMutation.mutate(filterId)}
-              />
-            </div>
-          )}
-        </TabsContent>
-      </Tabs>
-
-      <FilterDialog
-        streamerId={id}
-        open={filterDialogOpen}
-        onOpenChange={setFilterDialogOpen}
-        filterToEdit={filterToEdit}
+      <StreamerSaveFab
+        isDirty={form.formState.isDirty}
+        isSaving={updateMutation.isPending}
+        onSubmit={form.handleSubmit(onSubmit)}
       />
-    </div >
+    </motion.div>
   );
 }
-
