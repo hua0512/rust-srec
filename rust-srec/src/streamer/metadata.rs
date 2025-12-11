@@ -38,6 +38,12 @@ pub struct StreamerMetadata {
     pub last_live_time: Option<DateTime<Utc>>,
     /// Last recorded error message.
     pub last_error: Option<String>,
+    /// Streamer specific configuration override (JSON string).
+    pub streamer_specific_config: Option<String>,
+    /// Download retry policy override (JSON string).
+    pub download_retry_policy: Option<String>,
+    /// Danmu sampling config override (JSON string).
+    pub danmu_sampling_config: Option<String>,
 }
 
 impl StreamerMetadata {
@@ -55,6 +61,10 @@ impl StreamerMetadata {
             consecutive_error_count: model.consecutive_error_count.unwrap_or(0),
             // Map the last_error from the DB model
             last_error: model.last_error.clone(),
+            // Map config overrides
+            streamer_specific_config: model.streamer_specific_config.clone(),
+            download_retry_policy: model.download_retry_policy.clone(),
+            danmu_sampling_config: model.danmu_sampling_config.clone(),
             disabled_until: model.disabled_until.as_ref().and_then(|s| {
                 chrono::DateTime::parse_from_rfc3339(s)
                     .ok()
@@ -120,6 +130,9 @@ mod tests {
             last_error: None,
             disabled_until: None,
             last_live_time: None,
+            streamer_specific_config: None,
+            download_retry_policy: None,
+            danmu_sampling_config: None,
         }
     }
 

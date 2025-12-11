@@ -19,7 +19,7 @@ use futures::{SinkExt, StreamExt};
 use prost::Message as ProstMessage;
 use serde::Deserialize;
 use tokio::sync::broadcast;
-use tracing::{debug, warn};
+use tracing::{debug, trace, warn};
 
 /// Heartbeat ping interval in seconds.
 const HEARTBEAT_INTERVAL_SECS: u64 = 30;
@@ -184,7 +184,7 @@ async fn handle_socket(socket: WebSocket, state: AppState) {
                             // Use send for backpressure - if buffer is full, drop message
                             match sender.send(Message::Binary(Bytes::from(bytes))).await {
                                 Ok(_) => {
-                                    debug!("Sent event {:?} to client", event);
+                                    trace!("Sent event {:?} to client", event);
                                 }
                                 Err(e) => {
                                     debug!("Failed to send message, client may be slow: {}", e);

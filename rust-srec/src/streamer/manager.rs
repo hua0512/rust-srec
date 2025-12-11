@@ -230,6 +230,9 @@ where
         template_config_id: Option<Option<String>>,
         priority: Option<Priority>,
         state: Option<StreamerState>,
+        streamer_specific_config: Option<Option<String>>,
+        download_retry_policy: Option<Option<String>>,
+        danmu_sampling_config: Option<Option<String>>,
     ) -> Result<StreamerMetadata> {
         debug!("Partially updating streamer: {}", id);
 
@@ -255,6 +258,15 @@ where
         }
         if let Some(new_state) = state {
             metadata.state = new_state;
+        }
+        if let Some(new_config) = streamer_specific_config {
+            metadata.streamer_specific_config = new_config;
+        }
+        if let Some(new_policy) = download_retry_policy {
+            metadata.download_retry_policy = new_policy;
+        }
+        if let Some(new_sampling) = danmu_sampling_config {
+            metadata.danmu_sampling_config = new_sampling;
         }
 
         // Convert to DB model and persist
@@ -791,6 +803,9 @@ mod tests {
             last_error: None,
             disabled_until: None,
             last_live_time: None,
+            streamer_specific_config: None,
+            download_retry_policy: None,
+            danmu_sampling_config: None,
         };
 
         manager.create_streamer(metadata.clone()).await.unwrap();
@@ -935,6 +950,9 @@ mod tests {
             disabled_until: None,
             last_error: None,
             last_live_time: None,
+            streamer_specific_config: None,
+            download_retry_policy: None,
+            danmu_sampling_config: None,
         };
 
         let result = manager.update_streamer(metadata).await;
@@ -958,6 +976,9 @@ mod tests {
                 None, // Don't change template
                 Some(Priority::High),
                 None, // Don't change state
+                None,
+                None,
+                None,
             )
             .await
             .unwrap();
@@ -989,6 +1010,9 @@ mod tests {
                 None,
                 None,       // Don't change URL
                 Some(None), // Set template to None
+                None,
+                None,
+                None,
                 None,
                 None,
             )

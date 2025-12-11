@@ -7,7 +7,6 @@ use std::collections::HashMap;
 use chrono::{DateTime, Utc};
 use platforms_parser::extractor::error::ExtractorError;
 use platforms_parser::extractor::factory::ExtractorFactory;
-use platforms_parser::extractor::platform_extractor::Extractor;
 use serde::{Deserialize, Serialize};
 use tracing::{debug, info, warn};
 

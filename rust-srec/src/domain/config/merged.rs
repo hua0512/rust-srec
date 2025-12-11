@@ -390,6 +390,25 @@ impl MergedConfigBuilder {
             if let Some(v) = config.get("cookies").and_then(|v| v.as_str()) {
                 self.cookies = Some(v.to_string());
             }
+            if let Some(v) = config.get("max_part_size_bytes").and_then(|v| v.as_i64()) {
+                self.max_part_size_bytes = Some(v);
+            }
+            if let Some(v) = config
+                .get("max_download_duration_secs")
+                .and_then(|v| v.as_i64())
+            {
+                self.max_download_duration_secs = Some(v);
+            }
+            if let Some(v) = config.get("output_file_format").and_then(|v| v.as_str()) {
+                self.output_file_format = Some(v.to_string());
+            }
+            if let Some(v) = config
+                .get("min_segment_size_bytes")
+                .and_then(|v| v.as_i64())
+            {
+                self.min_segment_size_bytes = Some(v);
+            }
+
             // Parse stream selection config from streamer-specific config
             if let Some(stream_sel) = config.get("stream_selection") {
                 if let Ok(v) = serde_json::from_value::<StreamSelectionConfig>(stream_sel.clone()) {

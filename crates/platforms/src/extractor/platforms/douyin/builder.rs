@@ -395,8 +395,8 @@ impl<'a> DouyinRequest<'a> {
         // Check for "直播已结束" prompt
         if let Some(prompts) = &response.data.prompts
             && prompts.contains("直播已结束")
-            && let Some(user) = &response.data.user
         {
+            debug!("Stream ended with response: {:?}", response);
             // If we have user info, we can return offline info
             // Try to get title from room data if available, otherwise use default
             let title = response
@@ -407,7 +407,11 @@ impl<'a> DouyinRequest<'a> {
                 .map(|d| d.title.as_str())
                 .unwrap_or("");
 
-            let artist = &user.nickname;
+            let user = response.data.user.as_ref();
+            let artist = user
+                .map(|u| u.nickname.as_str())
+                .unwrap_or("Douyin Streamer");
+
             let cover_url = response
                 .data
                 .data
@@ -417,9 +421,8 @@ impl<'a> DouyinRequest<'a> {
                 .and_then(|cover| cover.url_list.first())
                 .map(|url| url.to_string());
             let avatar_url = user
-                .avatar_thumb
-                .url_list
-                .first()
+                .as_ref()
+                .and_then(|u| u.avatar_thumb.url_list.first())
                 .map(|url| url.to_string());
 
             return Ok(self.create_offline_media_info(title, artist, cover_url, avatar_url));
@@ -439,16 +442,18 @@ impl<'a> DouyinRequest<'a> {
     fn parse_app_response(&mut self, body: &str) -> Result<MediaInfo, ExtractorError> {
         let response: DouyinAppResponse = serde_json::from_str(body)?;
         if let Some(prompts) = &response.data.prompts {
-            if prompts.contains("直播已结束")
-                && let Some(user) = &response.data.user
-            {
+            if prompts.contains("直播已结束") {
+                debug!("Stream ended with response: {:?}", response);
+                let user = response.data.user.as_ref();
                 let title = response
                     .data
                     .room
                     .as_ref()
                     .map(|r| r.title.as_str())
                     .unwrap_or("");
-                let artist = &user.nickname;
+                let artist = user
+                    .map(|u| u.nickname.as_str())
+                    .unwrap_or("Douyin Streamer");
                 let cover_url = response
                     .data
                     .room
@@ -457,9 +462,8 @@ impl<'a> DouyinRequest<'a> {
                     .and_then(|cover| cover.url_list.first())
                     .map(|url| url.to_string());
                 let avatar_url = user
-                    .avatar_thumb
-                    .url_list
-                    .first()
+                    .as_ref()
+                    .and_then(|u| u.avatar_thumb.url_list.first())
                     .map(|url| url.to_string());
 
                 return Ok(self.create_offline_media_info(title, artist, cover_url, avatar_url));
@@ -1179,5 +1183,30 @@ mod tests {
         assert!(!media_info.is_live, "Should be offline");
         assert_eq!(media_info.title, "Test Room Title");
         assert_eq!(media_info.artist, "Test User");
+    }
+
+    #[tokio::test]
+    async fn test_parse_pc_response_ended_no_user() {
+        let json_response = r#"{
+            "data": {
+                "prompts": "直播已结束",
+                "user": null,
+                "data": [],
+                "partition_road_map": {},
+                "enter_room_id": "123"
+            }
+        }"#;
+
+        let config = Douyin::new(TEST_URL.to_string(), default_client(), None, None);
+        let mut request =
+            DouyinRequest::new(config.extractor.cookies.clone(), &config, "123".to_string());
+
+        let result = request.parse_pc_response(json_response);
+        assert!(
+            result.is_ok(),
+            "Should successfully parse ended stream with no user data as offline"
+        );
+        let media_info = result.unwrap();
+        assert!(!media_info.is_live);
     }
 }

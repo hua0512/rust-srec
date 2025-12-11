@@ -947,6 +947,22 @@ impl ServiceContainer {
                 // Check if already downloading
                 if download_manager.has_active_download(&streamer_id) {
                     debug!("Download already active for {}", streamer_id);
+
+                    // DEBUG: Inspect conflicting downloads
+                    let active = download_manager.get_active_downloads();
+                    let conflicts: Vec<_> = active
+                        .iter()
+                        .filter(|d| d.streamer_id == streamer_id)
+                        .collect();
+
+                    for conflict in conflicts {
+                        tracing::warn!(
+                            "CONFLICTING DOWNLOAD: ID={}, Status={:?}, Started={:?}",
+                            conflict.id,
+                            conflict.status,
+                            conflict.started_at
+                        );
+                    }
                     return;
                 }
 

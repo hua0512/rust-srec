@@ -46,6 +46,7 @@ clap = { version = "4.5.48", features = ["derive"] }
 
 # Logging
 tracing = "0.1"
+tracing-appender = "0.2"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
 
 sysinfo = { version = "0.30" }

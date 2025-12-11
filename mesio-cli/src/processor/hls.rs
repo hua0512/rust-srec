@@ -114,7 +114,7 @@ pub async fn process_hls_stream(
     let stream = stream.map(|r| r.map_err(|e| PipelineError::Processing(e.to_string())));
 
     // Use pipe output strategy when stdout mode is active
-    let (total_items_written, files_created) = if is_pipe_mode {
+    let (total_items_written, files_created, _bytes_written, _elapsed_calc) = if is_pipe_mode {
         // Pipe mode: write directly to stdout using PipeHlsStrategy
         let stats = process_pipe_stream(
             Box::pin(stream),

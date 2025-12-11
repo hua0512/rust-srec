@@ -189,6 +189,10 @@ mod tests {
             consecutive_error_count: 0,
             disabled_until: None,
             last_live_time: None,
+            last_error: None,
+            streamer_specific_config: None,
+            download_retry_policy: None,
+            danmu_sampling_config: None,
         }
     }
 

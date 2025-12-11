@@ -67,6 +67,9 @@ fn metadata_to_response(metadata: &StreamerMetadata) -> StreamerResponse {
         last_live_time: metadata.last_live_time,
         created_at: chrono::Utc::now(), // Not stored in metadata
         updated_at: chrono::Utc::now(), // Not stored in metadata
+        streamer_specific_config: metadata.streamer_specific_config.clone(),
+        download_retry_policy: metadata.download_retry_policy.clone(),
+        danmu_sampling_config: metadata.danmu_sampling_config.clone(),
     }
 }
 
@@ -116,6 +119,9 @@ async fn create_streamer(
         last_error: None,
         avatar_url: None,
         last_live_time: None,
+        streamer_specific_config: request.streamer_specific_config.clone(),
+        download_retry_policy: request.download_retry_policy.clone(),
+        danmu_sampling_config: request.danmu_sampling_config.clone(),
     };
 
     // Create streamer using manager
@@ -299,6 +305,9 @@ async fn update_streamer(
             template_config_id,
             new_priority,
             new_state,
+            request.streamer_specific_config.map(Some),
+            request.download_retry_policy.map(Some),
+            request.danmu_sampling_config.map(Some),
         )
         .await
         .map_err(ApiError::from)?;
@@ -424,6 +433,9 @@ mod tests {
             template_id: None,
             priority: ApiPriority::Normal,
             enabled: true,
+            streamer_specific_config: None,
+            download_retry_policy: None,
+            danmu_sampling_config: None,
         };
 
         // URL is empty, should fail validation
@@ -445,6 +457,9 @@ mod tests {
             disabled_until: None,
             last_error: Some("test error".to_string()),
             last_live_time: Some(chrono::Utc::now()),
+            streamer_specific_config: None,
+            download_retry_policy: None,
+            danmu_sampling_config: None,
         };
 
         let response = metadata_to_response(&metadata);
@@ -475,6 +490,9 @@ mod tests {
             disabled_until: None,
             last_error: None,
             last_live_time: None,
+            streamer_specific_config: None,
+            download_retry_policy: None,
+            danmu_sampling_config: None,
         };
 
         let response = metadata_to_response(&metadata);
@@ -821,6 +839,9 @@ mod property_tests {
                     disabled_until: None,
                     last_error: None,
                     last_live_time: None,
+                    streamer_specific_config: None,
+                    download_retry_policy: None,
+                    danmu_sampling_config: None,
                 };
 
                 // Create the streamer
@@ -878,6 +899,9 @@ mod property_tests {
                     disabled_until: None,
                     last_error: None,
                     last_live_time: None,
+                    streamer_specific_config: None,
+                    download_retry_policy: None,
+                    danmu_sampling_config: None,
                 };
 
                 manager.create_streamer(metadata).await.expect("Create should succeed");
@@ -934,6 +958,9 @@ mod property_tests {
                     disabled_until: None,
                     last_error: None,
                     last_live_time: None,
+                    streamer_specific_config: None,
+                    download_retry_policy: None,
+                    danmu_sampling_config: None,
                 };
 
                 manager.create_streamer(metadata).await.expect("Create should succeed");

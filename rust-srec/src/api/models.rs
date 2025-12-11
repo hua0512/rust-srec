@@ -124,6 +124,12 @@ pub struct CreateStreamerRequest {
     /// Whether to enable recording
     #[serde(default = "default_true")]
     pub enabled: bool,
+    /// Streamer specific configuration override (JSON string)
+    pub streamer_specific_config: Option<String>,
+    /// Download retry policy override (JSON string)
+    pub download_retry_policy: Option<String>,
+    /// Danmu sampling config override (JSON string)
+    pub danmu_sampling_config: Option<String>,
 }
 
 fn default_true() -> bool {
@@ -143,6 +149,12 @@ pub struct UpdateStreamerRequest {
     pub priority: Option<Priority>,
     /// Whether to enable recording
     pub enabled: Option<bool>,
+    /// Streamer specific configuration override (JSON string)
+    pub streamer_specific_config: Option<String>,
+    /// Download retry policy override (JSON string)
+    pub download_retry_policy: Option<String>,
+    /// Danmu sampling config override (JSON string)
+    pub danmu_sampling_config: Option<String>,
 }
 
 /// Request to update streamer priority.
@@ -169,6 +181,9 @@ pub struct StreamerResponse {
     pub last_live_time: Option<DateTime<Utc>>,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
+    pub streamer_specific_config: Option<String>,
+    pub download_retry_policy: Option<String>,
+    pub danmu_sampling_config: Option<String>,
 }
 
 /// Filter parameters for listing streamers.

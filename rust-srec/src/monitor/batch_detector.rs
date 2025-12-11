@@ -288,6 +288,9 @@ mod tests {
             disabled_until: None,
             last_error: None,
             last_live_time: None,
+            streamer_specific_config: None,
+            download_retry_policy: None,
+            danmu_sampling_config: None,
         }
     }
 
