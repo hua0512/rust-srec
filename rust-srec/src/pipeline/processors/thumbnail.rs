@@ -1,12 +1,18 @@
 //! Thumbnail processor for extracting video thumbnails.
 
 use async_trait::async_trait;
+use std::path::Path;
 use std::process::Stdio;
 use tokio::process::Command;
 use tracing::{debug, error, info};
 
 use super::traits::{Processor, ProcessorInput, ProcessorOutput, ProcessorType};
 use crate::Result;
+
+/// Video file extensions that support thumbnail extraction.
+const SUPPORTED_VIDEO_EXTENSIONS: &[&str] = &[
+    "mp4", "mkv", "webm", "mov", "flv", "avi", "wmv", "m4v", "ts", "mts", "m2ts", "3gp", "ogv",
+];
 
 /// Configuration for thumbnail extraction.
 #[derive(Debug, Clone, serde::Deserialize)]
@@ -64,6 +70,16 @@ impl ThumbnailProcessor {
             ffmpeg_path: path.into(),
         }
     }
+
+    /// Check if the input file is a supported video format.
+    fn is_supported_video(&self, input_path: &str) -> bool {
+        let path = Path::new(input_path);
+        if let Some(ext) = path.extension().and_then(|s| s.to_str()) {
+            SUPPORTED_VIDEO_EXTENSIONS.contains(&ext.to_lowercase().as_str())
+        } else {
+            false
+        }
+    }
 }
 
 impl Default for ThumbnailProcessor {
@@ -96,9 +112,68 @@ impl Processor for ThumbnailProcessor {
             ThumbnailConfig::default()
         };
 
+        let input_path = input.inputs.first().map(|s| s.as_str()).unwrap_or("");
+
+        // Check if input file exists
+        if !Path::new(input_path).exists() {
+            return Err(crate::Error::PipelineError(format!(
+                "Input file does not exist: {}",
+                input_path
+            )));
+        }
+
+        // Check if input is a supported video format
+        // If not supported, pass through the input file instead of failing
+        if !self.is_supported_video(input_path) {
+            let duration = start.elapsed().as_secs_f64();
+            info!(
+                "Input file is not a supported video format for thumbnail extraction, passing through: {}",
+                input_path
+            );
+            return Ok(ProcessorOutput {
+                outputs: vec![input_path.to_string()],
+                duration_secs: duration,
+                metadata: Some(
+                    serde_json::json!({
+                        "status": "skipped",
+                        "reason": "unsupported_video_format",
+                        "input": input_path,
+                    })
+                    .to_string(),
+                ),
+                skipped_inputs: vec![(
+                    input_path.to_string(),
+                    "not a supported video format for thumbnail extraction".to_string(),
+                )],
+                ..Default::default()
+            });
+        }
+
+        // Determine output path: use provided output or generate one dynamically
+        let output_string = if let Some(out) = input.outputs.first().filter(|s| !s.is_empty()) {
+            out.clone()
+        } else {
+            // Generate dynamic output path: input_filename.jpg
+            let input_path_obj = std::path::Path::new(input_path);
+            let file_stem = input_path_obj
+                .file_stem()
+                .unwrap_or_default()
+                .to_string_lossy();
+            let parent = input_path_obj
+                .parent()
+                .unwrap_or_else(|| std::path::Path::new("."));
+
+            // Use same directory as input, but with .jpg extension
+            parent
+                .join(format!("{}.jpg", file_stem))
+                .to_string_lossy()
+                .to_string()
+        };
+        let output_path = output_string.as_str();
+
         info!(
             "Extracting thumbnail from {} at {:.2}s",
-            input.input_path, config.timestamp_secs
+            input_path, config.timestamp_secs
         );
 
         // Build ffmpeg command
@@ -109,49 +184,84 @@ impl Processor for ThumbnailProcessor {
             "-ss",
             &format!("{:.2}", config.timestamp_secs),
             "-i",
-            &input.input_path,
+            &input_path,
             "-vframes",
             "1",
             "-vf",
             &format!("scale={}:-1", config.width),
             "-q:v",
             &config.quality.to_string(),
-            &input.output_path,
+            &output_path,
         ])
-        .env("LC_ALL", "C")
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped());
+        .env("LC_ALL", "C");
 
-        let child = cmd
-            .spawn()
-            .map_err(|e| crate::Error::Other(format!("Failed to spawn ffmpeg: {}", e)))?;
+        // Execute command and capture logs
+        let command_output =
+            crate::pipeline::processors::utils::run_command_with_logs(&mut cmd).await?;
 
-        let output = child
-            .wait_with_output()
-            .await
-            .map_err(|e| crate::Error::Other(format!("Failed to wait for ffmpeg: {}", e)))?;
+        if !command_output.status.success() {
+            // Reconstruct stderr for error analysis
+            let stderr = command_output
+                .logs
+                .iter()
+                .filter(|l| l.level != crate::pipeline::job_queue::LogLevel::Info)
+                .map(|l| l.message.as_str())
+                .collect::<Vec<_>>()
+                .join("\n");
 
-        if !output.status.success() {
-            let stderr = String::from_utf8_lossy(&output.stderr);
             error!("ffmpeg failed: {}", stderr);
+
+            // Check for no video stream error - pass through instead of failing
+            if stderr.contains("does not contain any stream")
+                || stderr.contains("Output file is empty")
+                || stderr.contains("Invalid data found")
+                || stderr.contains("no video stream")
+            {
+                info!(
+                    "Input file has no extractable video frames, passing through: {}",
+                    input_path
+                );
+                return Ok(ProcessorOutput {
+                    outputs: vec![input_path.to_string()],
+                    duration_secs: command_output.duration,
+                    metadata: Some(
+                        serde_json::json!({
+                            "status": "skipped",
+                            "reason": "no_video_frames",
+                            "input": input_path,
+                        })
+                        .to_string(),
+                    ),
+                    skipped_inputs: vec![(
+                        input_path.to_string(),
+                        "no extractable video frames".to_string(),
+                    )],
+                    logs: command_output.logs,
+                    ..Default::default()
+                });
+            }
+
             return Err(crate::Error::Other(format!(
                 "ffmpeg failed with exit code: {}",
-                output.status.code().unwrap_or(-1)
+                command_output.status.code().unwrap_or(-1)
             )));
         }
 
-        let duration = start.elapsed().as_secs_f64();
-
-        debug!("ffmpeg output: {}", String::from_utf8_lossy(&output.stderr));
+        debug!("ffmpeg exited successfully");
 
         info!(
             "Thumbnail extracted in {:.2}s: {}",
-            duration, input.output_path
+            command_output.duration, output_path
         );
 
+        // Get file sizes for metrics
+        let input_size_bytes = tokio::fs::metadata(input_path).await.ok().map(|m| m.len());
+        let output_size_bytes = tokio::fs::metadata(output_path).await.ok().map(|m| m.len());
+
+        // Requirements: 11.5 - Track succeeded inputs for partial failure reporting
         Ok(ProcessorOutput {
-            output_path: input.output_path.clone(),
-            duration_secs: duration,
+            outputs: vec![output_path.to_string()],
+            duration_secs: command_output.duration,
             metadata: Some(
                 serde_json::json!({
                     "timestamp_secs": config.timestamp_secs,
@@ -159,6 +269,13 @@ impl Processor for ThumbnailProcessor {
                 })
                 .to_string(),
             ),
+            items_produced: vec![],
+            input_size_bytes,
+            output_size_bytes,
+            failed_inputs: vec![],
+            succeeded_inputs: vec![input_path.to_string()],
+            skipped_inputs: vec![],
+            logs: command_output.logs,
         })
     }
 }

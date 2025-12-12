@@ -9,8 +9,10 @@ use futures::StreamExt;
 use hls::HlsData;
 use hls_fix::{HlsPipeline, HlsWriter};
 use mesio::{DownloadStream, MesioDownloaderFactory, ProtocolType};
+use parking_lot::RwLock;
 use pipeline_common::{PipelineError, PipelineProvider, ProtocolWriter, StreamerContext};
 use std::collections::HashMap;
+use std::sync::Arc;
 use tokio::sync::mpsc;
 use tokio_util::sync::CancellationToken;
 use tracing::{debug, error, info, warn};
@@ -42,7 +44,7 @@ pub struct DownloadStats {
 /// event emission through the provided channel.
 pub struct HlsDownloader {
     /// Download configuration.
-    config: DownloadConfig,
+    config: Arc<RwLock<DownloadConfig>>,
     /// Engine-specific configuration.
     engine_config: MesioEngineConfig,
     /// Event sender for segment events.
@@ -63,7 +65,7 @@ impl HlsDownloader {
     /// * `cancellation_token` - Token for graceful cancellation.
     /// * `hls_config` - Optional base HLS configuration from the engine.
     pub fn new(
-        config: DownloadConfig,
+        config: Arc<RwLock<DownloadConfig>>,
         engine_config: MesioEngineConfig,
         event_tx: mpsc::Sender<SegmentEvent>,
         cancellation_token: CancellationToken,
@@ -78,9 +80,14 @@ impl HlsDownloader {
         }
     }
 
+    fn config_snapshot(&self) -> DownloadConfig {
+        self.config.read().clone()
+    }
+
     /// Create a MesioDownloaderFactory with the configured settings.
     fn create_factory(&self, token: CancellationToken) -> MesioDownloaderFactory {
-        let hls_config = build_hls_config(&self.config, self.hls_config.clone());
+        let config = self.config_snapshot();
+        let hls_config = build_hls_config(&config, self.hls_config.clone());
 
         MesioDownloaderFactory::new()
             .with_hls_config(hls_config)
@@ -106,15 +113,17 @@ impl HlsDownloader {
         // Create factory with configuration
         let factory = self.create_factory(token.clone());
 
+        let url = self.config_snapshot().url;
+
         // Create the HLS downloader instance
         let mut downloader = factory
-            .create_for_url(&self.config.url, ProtocolType::Hls)
+            .create_for_url(&url, ProtocolType::Hls)
             .await
             .map_err(|e| crate::Error::Other(format!("Failed to create HLS downloader: {}", e)))?;
 
         // Get the download stream
         let download_stream = downloader
-            .download_with_sources(&self.config.url)
+            .download_with_sources(&url)
             .await
             .map_err(|e| crate::Error::Other(format!("Failed to start HLS download: {}", e)))?;
 
@@ -167,15 +176,16 @@ impl HlsDownloader {
             }
         };
 
+        let config_snapshot = self.config_snapshot();
         info!(
             "Detected HLS stream type for {}: {}, processing_enabled: {}",
-            self.config.streamer_id,
+            config_snapshot.streamer_id,
             extension.to_uppercase(),
-            self.config.enable_processing
+            config_snapshot.enable_processing
         );
 
         // Route based on enable_processing flag AND engine config
-        if self.config.enable_processing && self.engine_config.fix_hls {
+        if config_snapshot.enable_processing && self.engine_config.fix_hls {
             self.download_with_pipeline(token, hls_stream, first_segment, extension)
                 .await
         } else {
@@ -198,14 +208,16 @@ impl HlsDownloader {
         first_segment: HlsData,
         extension: &str,
     ) -> Result<DownloadStats> {
+        let config = self.config_snapshot();
+        let streamer_id = config.streamer_id.clone();
         info!(
             "Starting HLS download with pipeline processing for {}",
-            self.config.streamer_id
+            streamer_id
         );
 
         // Build pipeline and common configs
-        let pipeline_config = self.config.build_pipeline_config();
-        let hls_pipeline_config = self.config.build_hls_pipeline_config();
+        let pipeline_config = config.build_pipeline_config();
+        let hls_pipeline_config = config.build_hls_pipeline_config();
 
         // Create StreamerContext with cancellation token
         let context = StreamerContext::new(token.clone());
@@ -225,16 +237,16 @@ impl HlsDownloader {
         } = pipeline.spawn();
 
         // Create HlsWriter with callbacks
-        let output_dir = self.config.output_dir.clone();
-        let base_name = self.config.filename_template.clone();
+        let output_dir = config.output_dir.clone();
+        let base_name = config.filename_template.clone();
         let ext = extension.to_string();
 
         // Build extras for max_file_size if configured
-        let extras = if self.config.max_segment_size_bytes > 0 {
+        let extras = if config.max_segment_size_bytes > 0 {
             let mut map = HashMap::new();
             map.insert(
                 "max_file_size".to_string(),
-                self.config.max_segment_size_bytes.to_string(),
+                config.max_segment_size_bytes.to_string(),
             );
             Some(map)
         } else {
@@ -257,8 +269,10 @@ impl HlsDownloader {
 
         writer.set_on_segment_complete_callback(
             move |path, sequence, duration_secs, size_bytes| {
+                // Ensure path is absolute
+                let abs_path = std::fs::canonicalize(path).unwrap_or_else(|_| path.to_path_buf());
                 let event = SegmentEvent::SegmentCompleted(SegmentInfo {
-                    path: path.to_path_buf(),
+                    path: abs_path,
                     duration_secs,
                     size_bytes,
                     index: sequence,
@@ -299,7 +313,7 @@ impl HlsDownloader {
         while let Some(result) = stream.next().await {
             // Check for cancellation
             if self.cancellation_token.is_cancelled() || token.is_cancelled() {
-                debug!("HLS download cancelled for {}", self.config.streamer_id);
+                debug!("HLS download cancelled for {}", streamer_id);
                 break;
             }
 
@@ -312,7 +326,7 @@ impl HlsDownloader {
                     }
                 }
                 Err(e) => {
-                    error!("HLS stream error for {}: {}", self.config.streamer_id, e);
+                    error!("HLS stream error for {}: {}", streamer_id, e);
                     let _ = pipeline_input_tx
                         .send(Err(PipelineError::Processing(e.to_string())))
                         .await;
@@ -371,7 +385,7 @@ impl HlsDownloader {
 
                 info!(
                     "HLS download with pipeline completed for {}: {} items, {} files",
-                    self.config.streamer_id, items_written, stats.files_created
+                    streamer_id, items_written, stats.files_created
                 );
 
                 Ok(stats)
@@ -402,13 +416,15 @@ impl HlsDownloader {
         first_segment: HlsData,
         extension: &str,
     ) -> Result<DownloadStats> {
+        let config = self.config_snapshot();
+        let streamer_id = config.streamer_id.clone();
         info!(
             "Starting HLS download without pipeline processing for {}",
-            self.config.streamer_id
+            streamer_id
         );
 
         // Build pipeline config for channel size
-        let pipeline_config = self.config.build_pipeline_config();
+        let pipeline_config = config.build_pipeline_config();
         let channel_size = pipeline_config.channel_size;
 
         // Create channel for sending data to writer
@@ -416,16 +432,16 @@ impl HlsDownloader {
             tokio::sync::mpsc::channel::<std::result::Result<HlsData, PipelineError>>(channel_size);
 
         // Create HlsWriter with callbacks
-        let output_dir = self.config.output_dir.clone();
-        let base_name = self.config.filename_template.clone();
+        let output_dir = config.output_dir.clone();
+        let base_name = config.filename_template.clone();
         let ext = extension.to_string();
 
         // Build extras for max_file_size if configured
-        let extras = if self.config.max_segment_size_bytes > 0 {
+        let extras = if config.max_segment_size_bytes > 0 {
             let mut map = HashMap::new();
             map.insert(
                 "max_file_size".to_string(),
-                self.config.max_segment_size_bytes.to_string(),
+                config.max_segment_size_bytes.to_string(),
             );
             Some(map)
         } else {
@@ -448,8 +464,10 @@ impl HlsDownloader {
 
         writer.set_on_segment_complete_callback(
             move |path, sequence, duration_secs, size_bytes| {
+                // Ensure path is absolute
+                let abs_path = std::fs::canonicalize(path).unwrap_or_else(|_| path.to_path_buf());
                 let event = SegmentEvent::SegmentCompleted(SegmentInfo {
-                    path: path.to_path_buf(),
+                    path: abs_path,
                     duration_secs,
                     size_bytes,
                     index: sequence,
@@ -490,7 +508,7 @@ impl HlsDownloader {
         while let Some(result) = stream.next().await {
             // Check for cancellation
             if self.cancellation_token.is_cancelled() || token.is_cancelled() {
-                debug!("HLS download cancelled for {}", self.config.streamer_id);
+                debug!("HLS download cancelled for {}", streamer_id);
                 break;
             }
 
@@ -504,7 +522,7 @@ impl HlsDownloader {
                 }
                 Err(e) => {
                     // Stream error - send error to writer and emit failure event
-                    error!("HLS stream error for {}: {}", self.config.streamer_id, e);
+                    error!("HLS stream error for {}: {}", streamer_id, e);
                     let _ = tx.send(Err(PipelineError::Processing(e.to_string()))).await;
                     let _ = self
                         .event_tx
@@ -548,7 +566,7 @@ impl HlsDownloader {
 
                 info!(
                     "HLS download completed for {}: {} items, {} files",
-                    self.config.streamer_id, items_written, stats.files_created
+                    streamer_id, items_written, stats.files_created
                 );
 
                 Ok(stats)

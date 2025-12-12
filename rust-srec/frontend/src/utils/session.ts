@@ -5,6 +5,7 @@ export type SessionData = {
     token: {
         access_token: string,
         refresh_token: string,
+        // Stored as absolute timestamps (ms since epoch)
         expires_in: number,
         refresh_expires_in: number,
     },

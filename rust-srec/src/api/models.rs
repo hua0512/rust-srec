@@ -237,6 +237,9 @@ pub struct UpdateGlobalConfigRequest {
     pub output_folder: Option<String>,
     pub output_filename_template: Option<String>,
     pub output_file_format: Option<String>,
+    pub min_segment_size_bytes: Option<u64>,
+    pub max_download_duration_secs: Option<u64>,
+    pub max_part_size_bytes: Option<u64>,
     pub max_concurrent_downloads: Option<u32>,
     pub max_concurrent_uploads: Option<u32>,
     pub max_concurrent_cpu_jobs: Option<u32>,
@@ -244,6 +247,7 @@ pub struct UpdateGlobalConfigRequest {
     pub streamer_check_delay_ms: Option<u64>,
     pub offline_check_delay_ms: Option<u64>,
     pub offline_check_count: Option<u32>,
+    pub job_history_retention_days: Option<u32>,
     pub default_download_engine: Option<String>,
     pub record_danmu: Option<bool>,
     pub proxy_config: Option<String>,
@@ -367,7 +371,7 @@ pub struct TemplateResponse {
 /// failed -> pending (via retry)
 /// ```
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
+#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
 pub enum JobStatus {
     Pending,
     Processing,
@@ -387,8 +391,8 @@ pub enum JobStatus {
 ///     "streamer_id": "streamer-456",
 ///     "status": "completed",
 ///     "processor_type": "remux",
-///     "input_path": "/recordings/stream.flv",
-///     "output_path": "/recordings/stream.mp4",
+///     "input_path": ["/recordings/stream.flv"],
+///     "output_path": ["/recordings/stream.mp4"],
 ///     "error_message": null,
 ///     "progress": null,
 ///     "created_at": "2025-12-03T10:00:00Z",
@@ -404,27 +408,82 @@ pub enum JobStatus {
 /// - `streamer_id` - Associated streamer ID
 /// - `status` - Current job status (pending, processing, completed, failed, interrupted)
 /// - `processor_type` - Type of processing (remux, upload, thumbnail)
-/// - `input_path` - Path to input file
-/// - `output_path` - Path to output file (set after completion)
+/// - `input_path` - List of input file paths
+/// - `output_path` - List of output file paths (set after completion)
 /// - `error_message` - Error details if job failed
 /// - `progress` - Processing progress (0.0-1.0) if available
 /// - `created_at` - When the job was created
 /// - `started_at` - When processing started
 /// - `completed_at` - When processing finished
+/// - `duration_secs` - Processing duration in seconds
+/// - `queue_wait_secs` - Time spent waiting in queue before processing started
 #[derive(Debug, Clone, Serialize)]
 pub struct JobResponse {
     pub id: String,
     pub session_id: String,
     pub streamer_id: String,
+    pub pipeline_id: Option<String>,
     pub status: JobStatus,
     pub processor_type: String,
-    pub input_path: String,
-    pub output_path: Option<String>,
+    pub input_path: Vec<String>,
+    pub output_path: Option<Vec<String>>,
     pub error_message: Option<String>,
     pub progress: Option<f32>,
     pub created_at: DateTime<Utc>,
     pub started_at: Option<DateTime<Utc>>,
     pub completed_at: Option<DateTime<Utc>>,
+    pub execution_info: Option<JobExecutionInfo>,
+    /// Processing duration in seconds (from processor).
+    pub duration_secs: Option<f64>,
+    /// Time spent waiting in queue before processing started (seconds).
+    pub queue_wait_secs: Option<f64>,
+}
+
+/// Execution details for a job.
+#[derive(Debug, Clone, Serialize)]
+pub struct JobExecutionInfo {
+    /// Current processor name.
+    pub current_processor: Option<String>,
+    /// Current step number (1-indexed).
+    pub current_step: Option<u32>,
+    /// Total steps in pipeline.
+    pub total_steps: Option<u32>,
+    /// Intermediate artifacts produced.
+    pub items_produced: Vec<String>,
+    /// Input file size in bytes.
+    pub input_size_bytes: Option<u64>,
+    /// Output file size in bytes.
+    pub output_size_bytes: Option<u64>,
+    /// Detailed execution logs.
+    pub logs: Vec<JobLogEntry>,
+    /// Per-step duration tracking for pipeline jobs.
+    pub step_durations: Vec<StepDurationInfo>,
+}
+
+/// Per-step duration information for pipeline jobs.
+#[derive(Debug, Clone, Serialize)]
+pub struct StepDurationInfo {
+    /// Step number (1-indexed).
+    pub step: u32,
+    /// Processor/job type name.
+    pub processor: String,
+    /// Duration in seconds.
+    pub duration_secs: f64,
+    /// Start timestamp.
+    pub started_at: DateTime<Utc>,
+    /// End timestamp.
+    pub completed_at: DateTime<Utc>,
+}
+
+/// Log entry for job execution.
+#[derive(Debug, Clone, Serialize)]
+pub struct JobLogEntry {
+    /// Log timestamp.
+    pub timestamp: DateTime<Utc>,
+    /// Log level.
+    pub level: String,
+    /// Log message.
+    pub message: String,
 }
 
 /// Filter parameters for listing jobs.
@@ -450,6 +509,8 @@ pub struct JobFilterParams {
     pub streamer_id: Option<String>,
     /// Filter by session ID
     pub session_id: Option<String>,
+    /// Filter by pipeline ID
+    pub pipeline_id: Option<String>,
     /// Filter by date range start
     pub from_date: Option<DateTime<Utc>>,
     /// Filter by date range end

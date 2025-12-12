@@ -5,20 +5,28 @@
 //! - Running worker pools for CPU and IO-bound tasks
 //! - Processing files through configurable pipelines
 //! - Handling backpressure and queue monitoring
+//! - Automatic purging of old completed/failed jobs
+//! - Download throttling based on queue depth
 
 mod job_queue;
 mod manager;
 mod processors;
+mod purge;
+mod throttle;
 mod worker_pool;
 
 pub use job_queue::{
-    Job, JobQueue, JobQueueConfig, JobResult, JobStats, JobStatus, QueueDepthStatus,
+    Job, JobExecutionInfo, JobLogEntry, JobQueue, JobQueueConfig, JobResult, JobStats, JobStatus,
+    LogLevel, QueueDepthStatus,
 };
 pub use manager::{
     PipelineCreationResult, PipelineEvent, PipelineManager, PipelineManagerConfig, PipelineStats,
 };
 pub use processors::{
-    ExecuteCommandProcessor, Processor, ProcessorInput, ProcessorOutput, ProcessorType,
-    RemuxProcessor, ThumbnailProcessor, UploadProcessor,
+    CopyMoveConfig, CopyMoveOperation, CopyMoveProcessor, ExecuteCommandProcessor, Processor,
+    ProcessorInput, ProcessorOutput, ProcessorType, RcloneProcessor, RemuxProcessor,
+    ThumbnailProcessor,
 };
+pub use purge::{JobPurgeService, PurgeConfig};
+pub use throttle::{DownloadLimitAdjuster, ThrottleConfig, ThrottleController, ThrottleEvent};
 pub use worker_pool::{WorkerPool, WorkerPoolConfig, WorkerType};

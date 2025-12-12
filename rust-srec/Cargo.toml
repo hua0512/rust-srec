@@ -83,6 +83,11 @@ hex = "0.4"
 prost = "0.14"
 prost-types = "0.14"
 
+# Compression
+zip = { version = "2.2", default-features = false, features = ["deflate"] }
+flate2 = "1.0"
+tar = "0.4"
+
 [build-dependencies]
 prost-build = "0.14"
 

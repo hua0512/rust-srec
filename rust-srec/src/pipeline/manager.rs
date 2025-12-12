@@ -8,12 +8,20 @@ use tracing::{debug, info, warn};
 
 use super::job_queue::{Job, JobQueue, JobQueueConfig, QueueDepthStatus};
 use super::processors::{
-    ExecuteCommandProcessor, Processor, RemuxProcessor, ThumbnailProcessor, UploadProcessor,
+    AudioExtractProcessor, CompressionProcessor, CopyMoveProcessor, DeleteProcessor,
+    ExecuteCommandProcessor, MetadataProcessor, Processor, RcloneProcessor, RemuxProcessor,
+    ThumbnailProcessor,
 };
+use super::purge::{JobPurgeService, PurgeConfig};
+use super::throttle::{DownloadLimitAdjuster, ThrottleConfig, ThrottleController, ThrottleEvent};
 use super::worker_pool::{WorkerPool, WorkerPoolConfig, WorkerType};
 use crate::Result;
+use crate::config::ConfigService;
+use crate::database::models::job::PipelineStep;
 use crate::database::models::{JobFilters, MediaFileType, MediaOutputDbModel, Pagination};
-use crate::database::repositories::{JobRepository, SessionRepository};
+use crate::database::repositories::config::{ConfigRepository, SqlxConfigRepository};
+use crate::database::repositories::streamer::{SqlxStreamerRepository, StreamerRepository};
+use crate::database::repositories::{JobPresetRepository, JobRepository, SessionRepository};
 use crate::downloader::DownloadManagerEvent;
 
 /// Configuration for the Pipeline Manager.
@@ -26,7 +34,16 @@ pub struct PipelineManagerConfig {
     /// IO worker pool configuration.
     pub io_pool: WorkerPoolConfig,
     /// Whether to enable download throttling on backpressure.
+    /// Deprecated: Use throttle.enabled instead.
     pub enable_throttling: bool,
+    /// Throttle controller configuration.
+    /// Requirements: 8.1, 8.2, 8.3, 8.4, 8.5
+    #[serde(default)]
+    pub throttle: ThrottleConfig,
+    /// Job purge service configuration.
+    /// Requirements: 7.1, 7.2, 7.3, 7.4, 7.5
+    #[serde(default)]
+    pub purge: PurgeConfig,
 }
 
 impl Default for PipelineManagerConfig {
@@ -42,6 +59,8 @@ impl Default for PipelineManagerConfig {
                 ..Default::default()
             },
             enable_throttling: false,
+            throttle: ThrottleConfig::default(),
+            purge: PurgeConfig::default(),
         }
     }
 }
@@ -76,7 +95,10 @@ pub enum PipelineEvent {
 }
 
 /// The Pipeline Manager service.
-pub struct PipelineManager {
+pub struct PipelineManager<
+    CR: ConfigRepository + Send + Sync + 'static = SqlxConfigRepository,
+    SR: StreamerRepository + Send + Sync + 'static = SqlxStreamerRepository,
+> {
     /// Configuration.
     config: PipelineManagerConfig,
     /// Job queue.
@@ -93,9 +115,25 @@ pub struct PipelineManager {
     session_repo: Option<Arc<dyn SessionRepository>>,
     /// Cancellation token.
     cancellation_token: CancellationToken,
+    /// Throttle controller for download backpressure management.
+    /// Requirements: 8.1, 8.2, 8.3, 8.4, 8.5
+    throttle_controller: Option<Arc<ThrottleController>>,
+    /// Download limit adjuster for throttle controller integration.
+    download_adjuster: Option<Arc<dyn DownloadLimitAdjuster>>,
+    /// Job purge service for automatic cleanup of old jobs.
+    /// Requirements: 7.1, 7.2, 7.3, 7.4, 7.5
+    purge_service: Option<Arc<JobPurgeService>>,
+    /// Job preset repository for resolving named pipeline steps.
+    preset_repo: Option<Arc<dyn JobPresetRepository>>,
+    /// Config service for resolving pipeline rules.
+    config_service: Option<Arc<ConfigService<CR, SR>>>,
 }
 
-impl PipelineManager {
+impl<CR, SR> PipelineManager<CR, SR>
+where
+    CR: ConfigRepository + Send + Sync + 'static,
+    SR: StreamerRepository + Send + Sync + 'static,
+{
     /// Create a new Pipeline Manager.
     pub fn new() -> Self {
         Self::with_config(PipelineManagerConfig::default())
@@ -109,10 +147,28 @@ impl PipelineManager {
         // Create default processors
         let processors: Vec<Arc<dyn Processor>> = vec![
             Arc::new(RemuxProcessor::new()),
-            Arc::new(UploadProcessor::new()),
+            Arc::new(RcloneProcessor::new()),
             Arc::new(ExecuteCommandProcessor::new()),
             Arc::new(ThumbnailProcessor::new()),
+            Arc::new(CopyMoveProcessor::new()),
+            Arc::new(AudioExtractProcessor::new()),
+            Arc::new(CompressionProcessor::new()),
+            Arc::new(MetadataProcessor::new()),
+            Arc::new(DeleteProcessor::new()),
         ];
+
+        // Create throttle controller if enabled
+        // Requirements: 8.1, 8.5
+        let throttle_controller = if config.throttle.enabled || config.enable_throttling {
+            let mut throttle_config = config.throttle.clone();
+            // Support legacy enable_throttling flag
+            if config.enable_throttling && !config.throttle.enabled {
+                throttle_config.enabled = true;
+            }
+            Some(Arc::new(ThrottleController::new(throttle_config)))
+        } else {
+            None
+        };
 
         Self {
             cpu_pool: WorkerPool::with_config(WorkerType::Cpu, config.cpu_pool.clone()),
@@ -123,6 +179,12 @@ impl PipelineManager {
             event_tx,
             session_repo: None,
             cancellation_token: CancellationToken::new(),
+            throttle_controller,
+            download_adjuster: None,
+            // Purge service requires a job repository, so it's None for in-memory queue
+            purge_service: None,
+            preset_repo: None,
+            config_service: None,
         }
     }
 
@@ -136,16 +198,45 @@ impl PipelineManager {
         let (event_tx, _) = broadcast::channel(256);
         let job_queue = Arc::new(JobQueue::with_repository(
             config.job_queue.clone(),
-            job_repository,
+            job_repository.clone(),
         ));
+
+        // Create purge service if retention is enabled
+        // Requirements: 7.1, 7.2, 7.3, 7.4, 7.5
+        let purge_service = if config.purge.retention_days > 0 {
+            Some(Arc::new(JobPurgeService::new(
+                config.purge.clone(),
+                job_repository,
+            )))
+        } else {
+            None
+        };
 
         // Create default processors
         let processors: Vec<Arc<dyn Processor>> = vec![
             Arc::new(RemuxProcessor::new()),
-            Arc::new(UploadProcessor::new()),
+            Arc::new(RcloneProcessor::new()),
             Arc::new(ExecuteCommandProcessor::new()),
             Arc::new(ThumbnailProcessor::new()),
+            Arc::new(CopyMoveProcessor::new()),
+            Arc::new(AudioExtractProcessor::new()),
+            Arc::new(CompressionProcessor::new()),
+            Arc::new(MetadataProcessor::new()),
+            Arc::new(DeleteProcessor::new()),
         ];
+
+        // Create throttle controller if enabled
+        // Requirements: 8.1, 8.5
+        let throttle_controller = if config.throttle.enabled || config.enable_throttling {
+            let mut throttle_config = config.throttle.clone();
+            // Support legacy enable_throttling flag
+            if config.enable_throttling && !config.throttle.enabled {
+                throttle_config.enabled = true;
+            }
+            Some(Arc::new(ThrottleController::new(throttle_config)))
+        } else {
+            None
+        };
 
         Self {
             cpu_pool: WorkerPool::with_config(WorkerType::Cpu, config.cpu_pool.clone()),
@@ -156,6 +247,11 @@ impl PipelineManager {
             event_tx,
             session_repo: None,
             cancellation_token: CancellationToken::new(),
+            throttle_controller,
+            download_adjuster: None,
+            purge_service,
+            preset_repo: None,
+            config_service: None,
         }
     }
 
@@ -166,6 +262,51 @@ impl PipelineManager {
     ) -> Self {
         self.session_repo = Some(session_repository);
         self
+    }
+
+    /// Set the download limit adjuster for throttle controller integration.
+    /// This connects the throttle controller to the download manager.
+    /// Requirements: 8.1, 8.2, 8.3
+    pub fn with_download_adjuster(mut self, adjuster: Arc<dyn DownloadLimitAdjuster>) -> Self {
+        self.download_adjuster = Some(adjuster);
+        self
+    }
+
+    /// Set the job preset repository.
+    pub fn with_preset_repository(mut self, preset_repo: Arc<dyn JobPresetRepository>) -> Self {
+        self.preset_repo = Some(preset_repo);
+        self
+    }
+
+    /// Set the config service.
+    pub fn with_config_service(mut self, config_service: Arc<ConfigService<CR, SR>>) -> Self {
+        self.config_service = Some(config_service);
+        self
+    }
+
+    /// Get a reference to the throttle controller, if enabled.
+    pub fn throttle_controller(&self) -> Option<&Arc<ThrottleController>> {
+        self.throttle_controller.as_ref()
+    }
+
+    /// Subscribe to throttle events.
+    /// Returns None if throttling is not enabled.
+    pub fn subscribe_throttle_events(&self) -> Option<broadcast::Receiver<ThrottleEvent>> {
+        self.throttle_controller.as_ref().map(|tc| tc.subscribe())
+    }
+
+    /// Check if throttling is currently active.
+    pub fn is_throttled(&self) -> bool {
+        self.throttle_controller
+            .as_ref()
+            .map(|tc| tc.is_throttled())
+            .unwrap_or(false)
+    }
+
+    /// Get a reference to the purge service, if enabled.
+    /// Requirements: 7.1
+    pub fn purge_service(&self) -> Option<&Arc<JobPurgeService>> {
+        self.purge_service.as_ref()
     }
 
     /// Recover jobs from database on startup.
@@ -185,6 +326,7 @@ impl PipelineManager {
     }
 
     /// Start the pipeline manager.
+    /// Requirements: 8.1, 8.2, 8.3
     pub fn start(&self) {
         info!("Starting Pipeline Manager");
 
@@ -196,6 +338,11 @@ impl PipelineManager {
             .cloned()
             .collect();
 
+        info!(
+            "Starting CPU pool with processors: {:?}",
+            cpu_processors.iter().map(|p| p.name()).collect::<Vec<_>>()
+        );
+
         let io_processors: Vec<Arc<dyn Processor>> = self
             .processors
             .iter()
@@ -203,9 +350,36 @@ impl PipelineManager {
             .cloned()
             .collect();
 
+        info!(
+            "Starting IO pool with processors: {:?}",
+            io_processors.iter().map(|p| p.name()).collect::<Vec<_>>()
+        );
+
         // Start worker pools
         self.cpu_pool.start(self.job_queue.clone(), cpu_processors);
         self.io_pool.start(self.job_queue.clone(), io_processors);
+
+        // Start throttle controller monitoring if enabled and adjuster is set
+        // Requirements: 8.1, 8.2, 8.3
+        if let (Some(throttle_controller), Some(adjuster)) =
+            (&self.throttle_controller, &self.download_adjuster)
+        {
+            if throttle_controller.is_enabled() {
+                info!("Starting throttle controller monitoring");
+                throttle_controller.clone().start_monitoring(
+                    self.job_queue.clone(),
+                    adjuster.clone(),
+                    self.cancellation_token.clone(),
+                );
+            }
+        }
+
+        // Start purge service background task if enabled
+        // Requirements: 7.1, 7.2, 7.3, 7.4, 7.5
+        if let Some(purge_service) = &self.purge_service {
+            info!("Starting job purge service");
+            purge_service.start_background_task(self.cancellation_token.clone());
+        }
 
         info!("Pipeline Manager started");
     }
@@ -256,19 +430,31 @@ impl PipelineManager {
         streamer_id: &str,
         session_id: &str,
     ) -> Result<String> {
-        let job = Job::new("remux", input_path, output_path, streamer_id, session_id);
+        let job = Job::new(
+            "remux",
+            vec![input_path.to_string()],
+            vec![output_path.to_string()],
+            streamer_id,
+            session_id,
+        );
         self.enqueue(job).await
     }
 
-    /// Create an upload job.
-    pub async fn create_upload_job(
+    /// Create an rclone job.
+    pub async fn create_rclone_job(
         &self,
         input_path: &str,
         destination: &str,
         streamer_id: &str,
         session_id: &str,
     ) -> Result<String> {
-        let job = Job::new("upload", input_path, destination, streamer_id, session_id);
+        let job = Job::new(
+            "rclone",
+            vec![input_path.to_string()],
+            vec![destination.to_string()],
+            streamer_id,
+            session_id,
+        );
         self.enqueue(job).await
     }
 
@@ -283,8 +469,8 @@ impl PipelineManager {
     ) -> Result<String> {
         let mut job = Job::new(
             "thumbnail",
-            input_path,
-            output_path,
+            vec![input_path.to_string()],
+            vec![output_path.to_string()],
             streamer_id,
             session_id,
         );
@@ -301,21 +487,29 @@ impl PipelineManager {
     /// Returns the pipeline_id (which is the first job's ID) for tracking.
     ///
     /// Requirements: 6.1, 7.1, 7.5
+    /// Create a new pipeline with sequential job execution.
+    /// Only the first job is created immediately; subsequent jobs are created
+    /// atomically when each job completes.
+    ///
+    /// Returns the pipeline_id (which is the first job's ID) for tracking.
+    ///
+    /// Requirements: 6.1, 7.1, 7.5
     pub async fn create_pipeline(
         &self,
         session_id: &str,
         streamer_id: &str,
         input_path: &str,
-        steps: Option<Vec<String>>,
+        steps: Option<Vec<PipelineStep>>,
     ) -> Result<PipelineCreationResult> {
-        // Use default steps if not provided
-        let steps = steps.unwrap_or_else(|| {
-            vec![
-                "remux".to_string(),
-                "upload".to_string(),
-                "thumbnail".to_string(),
-            ]
-        });
+        // Require explicit pipeline steps
+        let steps = match steps {
+            Some(steps) => steps,
+            None => {
+                return Err(crate::Error::Validation(
+                    "Pipeline must have at least one step".to_string(),
+                ));
+            }
+        };
 
         if steps.is_empty() {
             return Err(crate::Error::Validation(
@@ -326,33 +520,48 @@ impl PipelineManager {
         // Get the first step
         let first_step = &steps[0];
 
-        // Calculate next_job_type and remaining_steps for the first job
-        let (next_job_type, remaining_steps) = if steps.len() > 1 {
-            let next = steps.get(1).cloned();
-            let remaining: Vec<String> = steps.iter().skip(2).cloned().collect();
-            (
-                next,
-                if remaining.is_empty() {
-                    None
-                } else {
-                    Some(remaining)
-                },
-            )
+        // Resolve the first step config/processor
+        let (first_processor, first_config) = self.resolve_step(first_step).await?;
+
+        // Calculate pipeline chain for this job
+        // We will store the full remaining steps list in the job, so it knows what comes next.
+        let remaining_steps = if steps.len() > 1 {
+            Some(steps.iter().skip(1).cloned().collect::<Vec<PipelineStep>>())
         } else {
-            (None, None)
+            None
+        };
+
+        // Determine next_job_type for observability/legacy fields (it's the processor name of the next step)
+        let next_job_type = if let Some(remaining) = &remaining_steps {
+            if let Some(next) = remaining.first() {
+                Some(self.resolve_step_processor_name(next).await)
+            } else {
+                None
+            }
+        } else {
+            None
         };
 
         // Create the first job with pipeline chain information
         let first_job = Job::new_pipeline_step(
-            first_step.clone(),
-            input_path,
-            input_path, // Output path will be determined by the processor
+            first_processor.clone(),
+            vec![input_path.to_string()],
+            vec![], // Output path will be determined by the processor logic or previous output
             streamer_id,
             session_id,
             None, // pipeline_id will be set to this job's ID
             next_job_type,
             remaining_steps,
         );
+
+        // Apply specific config if present
+        let first_job = if let Some(cfg) = first_config {
+            let mut j = first_job;
+            j.config = Some(cfg.to_string());
+            j
+        } else {
+            first_job
+        };
 
         // The pipeline_id is the first job's ID
         let pipeline_id = first_job.id.clone();
@@ -370,13 +579,115 @@ impl PipelineManager {
             session_id
         );
 
+        // Convert steps to strings for result (legacy compat)
+        let string_steps: Vec<String> = steps
+            .iter()
+            .map(|s| match s {
+                PipelineStep::Preset(n) => n.clone(),
+                PipelineStep::Inline { processor, .. } => processor.clone(),
+            })
+            .collect();
+
         Ok(PipelineCreationResult {
             pipeline_id,
             first_job_id: job_id,
-            first_job_type: first_step.clone(),
+            first_job_type: first_processor,
             total_steps: steps.len(),
-            steps,
+            steps: string_steps,
         })
+    }
+
+    /// Resolve all steps in a pipeline to Inline steps.
+    /// This ensures that all presets are expanded at creation time,
+    /// so that the JobQueue doesn't need to depend on the JobPresetRepository.
+    pub async fn resolve_pipeline(&self, steps: Vec<PipelineStep>) -> Result<Vec<PipelineStep>> {
+        let mut resolved_steps = Vec::new();
+        for step in steps {
+            match step {
+                PipelineStep::Preset(name) => {
+                    if let Some(repo) = &self.preset_repo {
+                        // Fix: use get_preset_by_name
+                        match repo.get_preset_by_name(&name).await {
+                            Ok(Some(preset)) => {
+                                let config = if !preset.config.is_empty() {
+                                    serde_json::from_str(&preset.config)
+                                        .unwrap_or(serde_json::Value::Null)
+                                } else {
+                                    serde_json::Value::Null
+                                };
+                                resolved_steps.push(PipelineStep::Inline {
+                                    processor: preset.processor,
+                                    config,
+                                });
+                            }
+                            Ok(None) => {
+                                // Fallback: assume name is processor
+                                resolved_steps.push(PipelineStep::Inline {
+                                    processor: name,
+                                    config: serde_json::Value::Null,
+                                });
+                            }
+                            Err(e) => return Err(crate::Error::Database(e.to_string())),
+                        }
+                    } else {
+                        // No repo, fallback
+                        resolved_steps.push(PipelineStep::Inline {
+                            processor: name,
+                            config: serde_json::Value::Null,
+                        });
+                    }
+                }
+                PipelineStep::Inline { .. } => {
+                    resolved_steps.push(step);
+                }
+            }
+        }
+        Ok(resolved_steps)
+    }
+
+    /// Resolve a PipelineStep to (processor_name, optional_config).
+    pub async fn resolve_step(
+        &self,
+        step: &PipelineStep,
+    ) -> Result<(String, Option<serde_json::Value>)> {
+        match step {
+            PipelineStep::Preset(name) => {
+                if let Some(repo) = &self.preset_repo {
+                    match repo.get_preset_by_name(name).await {
+                        Ok(Some(preset)) => {
+                            let config = if !preset.config.is_empty() {
+                                serde_json::from_str(&preset.config)
+                                    .unwrap_or(serde_json::Value::Null)
+                            } else {
+                                serde_json::Value::Null
+                            };
+                            Ok((preset.processor, Some(config)))
+                        }
+                        Ok(None) => {
+                            // Preset not found. Fallback to treating name as processor name (legacy behavior or just convenient)
+                            // Or should we error? The requirement says "named presets". If name not found, it might be a raw processor name if we support that shorthand.
+                            // Let's assume it is a processor name with no config if not found in DB.
+                            Ok((name.clone(), None))
+                        }
+                        Err(e) => Err(e.into()),
+                    }
+                } else {
+                    // No repo, assume name is processor
+                    Ok((name.clone(), None))
+                }
+            }
+            PipelineStep::Inline { processor, config } => {
+                Ok((processor.clone(), Some(config.clone())))
+            }
+        }
+    }
+
+    /// Helper to just get processor name (for next_job_type field).
+    async fn resolve_step_processor_name(&self, step: &PipelineStep) -> String {
+        match self.resolve_step(step).await {
+            Ok((proc, _)) => proc,
+            Err(_) => "unknown".to_string(), // Should likely not happen or handled better
+        }
     }
 
     /// Handle download manager events.
@@ -396,6 +707,42 @@ impl PipelineManager {
                 // Persist segment to database
                 self.persist_segment(&session_id, &segment_path, size_bytes)
                     .await;
+
+                // Create pipeline jobs if config service is available
+                if let Some(config_service) = &self.config_service {
+                    debug!("Resolving config for pipeline creation: {}", streamer_id);
+                    match config_service.get_config_for_streamer(&streamer_id).await {
+                        Ok(config) => {
+                            if config.pipeline.is_empty() {
+                                debug!(
+                                    "No pipeline steps configured for {} (session: {}), skipping pipeline creation",
+                                    streamer_id, session_id
+                                );
+                            } else if let Err(e) = self
+                                .create_pipeline(
+                                    &session_id,
+                                    &streamer_id,
+                                    &segment_path,
+                                    Some(config.pipeline),
+                                )
+                                .await
+                            {
+                                tracing::error!(
+                                    "Failed to create pipeline for session {}: {}",
+                                    session_id,
+                                    e
+                                );
+                            }
+                        }
+                        Err(e) => {
+                            tracing::error!(
+                                "Failed to resolve config for pipeline creation (streamer: {}): {}",
+                                streamer_id,
+                                e
+                            );
+                        }
+                    }
+                }
             }
             DownloadManagerEvent::DownloadCompleted {
                 streamer_id,
@@ -531,6 +878,149 @@ impl PipelineManager {
         self.job_queue.cancel_job(id).await
     }
 
+    /// List available job presets.
+    /// Requirements: 6.1
+    pub async fn list_presets(&self) -> Result<Vec<crate::database::models::JobPreset>> {
+        if let Some(repo) = &self.preset_repo {
+            repo.list_presets().await
+        } else {
+            Ok(vec![])
+        }
+    }
+
+    /// List job presets filtered by category.
+    pub async fn list_presets_by_category(
+        &self,
+        category: Option<&str>,
+    ) -> Result<Vec<crate::database::models::JobPreset>> {
+        if let Some(repo) = &self.preset_repo {
+            repo.list_presets_by_category(category).await
+        } else {
+            Ok(vec![])
+        }
+    }
+
+    /// List job presets with filtering, searching, and pagination.
+    pub async fn list_presets_filtered(
+        &self,
+        filters: &crate::database::repositories::JobPresetFilters,
+        pagination: &crate::database::models::Pagination,
+    ) -> Result<(Vec<crate::database::models::JobPreset>, u64)> {
+        if let Some(repo) = &self.preset_repo {
+            repo.list_presets_filtered(filters, pagination).await
+        } else {
+            Ok((vec![], 0))
+        }
+    }
+
+    /// List all unique preset categories.
+    pub async fn list_preset_categories(&self) -> Result<Vec<String>> {
+        if let Some(repo) = &self.preset_repo {
+            repo.list_categories().await
+        } else {
+            Ok(vec![])
+        }
+    }
+
+    /// Get a job preset by ID.
+    pub async fn get_preset(&self, id: &str) -> Result<Option<crate::database::models::JobPreset>> {
+        if let Some(repo) = &self.preset_repo {
+            repo.get_preset(id).await
+        } else {
+            Ok(None)
+        }
+    }
+
+    /// Check if a preset name exists (optionally excluding a specific ID).
+    pub async fn name_exists(&self, name: &str, exclude_id: Option<&str>) -> Result<bool> {
+        if let Some(repo) = &self.preset_repo {
+            repo.name_exists(name, exclude_id).await
+        } else {
+            Ok(false)
+        }
+    }
+
+    /// Create a new job preset.
+    pub async fn create_preset(&self, preset: &crate::database::models::JobPreset) -> Result<()> {
+        if let Some(repo) = &self.preset_repo {
+            repo.create_preset(preset).await
+        } else {
+            Err(crate::Error::Validation(
+                "Presets not supported (no repository)".to_string(),
+            ))
+        }
+    }
+
+    /// Update an existing job preset.
+    pub async fn update_preset(&self, preset: &crate::database::models::JobPreset) -> Result<()> {
+        if let Some(repo) = &self.preset_repo {
+            repo.update_preset(preset).await
+        } else {
+            Err(crate::Error::Validation(
+                "Presets not supported (no repository)".to_string(),
+            ))
+        }
+    }
+
+    /// Delete a job preset.
+    pub async fn delete_preset(&self, id: &str) -> Result<()> {
+        if let Some(repo) = &self.preset_repo {
+            repo.delete_preset(id).await
+        } else {
+            Err(crate::Error::Validation(
+                "Presets not supported (no repository)".to_string(),
+            ))
+        }
+    }
+
+    /// Clone an existing job preset with a new name.
+    ///
+    /// Creates a copy of the preset with a new ID and name.
+    /// The new name must be unique.
+    pub async fn clone_preset(
+        &self,
+        source_id: &str,
+        new_name: String,
+    ) -> Result<crate::database::models::JobPreset> {
+        if let Some(repo) = &self.preset_repo {
+            // Get the source preset
+            let source =
+                repo.get_preset(source_id)
+                    .await?
+                    .ok_or_else(|| crate::Error::NotFound {
+                        entity_type: "Preset".to_string(),
+                        id: source_id.to_string(),
+                    })?;
+
+            // Check if the new name already exists
+            if repo.name_exists(&new_name, None).await? {
+                return Err(crate::Error::Validation(format!(
+                    "A preset with name '{}' already exists",
+                    new_name
+                )));
+            }
+
+            // Create the cloned preset with a new ID
+            let cloned = crate::database::models::JobPreset {
+                id: uuid::Uuid::new_v4().to_string(),
+                name: new_name,
+                description: source.description.map(|d| format!("Copy of: {}", d)),
+                category: source.category,
+                processor: source.processor,
+                config: source.config,
+                created_at: chrono::Utc::now(),
+                updated_at: chrono::Utc::now(),
+            };
+
+            repo.create_preset(&cloned).await?;
+            Ok(cloned)
+        } else {
+            Err(crate::Error::Validation(
+                "Presets not supported (no repository)".to_string(),
+            ))
+        }
+    }
+
     /// Get comprehensive pipeline statistics.
     /// Returns counts by status (pending, processing, completed, failed)
     /// and average processing time.
@@ -620,6 +1110,8 @@ impl Default for PipelineManager {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::database::models::job::PipelineStep;
+    use crate::pipeline::JobStatus;
 
     #[test]
     fn test_pipeline_manager_config_default() {
@@ -627,23 +1119,31 @@ mod tests {
         assert_eq!(config.cpu_pool.max_workers, 2);
         assert_eq!(config.io_pool.max_workers, 4);
         assert!(!config.enable_throttling);
+        // Verify throttle config defaults
+        assert!(!config.throttle.enabled);
+        assert_eq!(config.throttle.critical_threshold, 500);
+        assert_eq!(config.throttle.warning_threshold, 100);
+        // Verify purge config defaults (Requirements: 7.1, 8.1)
+        assert_eq!(config.purge.retention_days, 30);
+        assert_eq!(config.purge.batch_size, 100);
+        assert!(config.purge.time_window.is_some());
     }
 
     #[test]
     fn test_pipeline_manager_creation() {
-        let manager = PipelineManager::new();
+        let manager: PipelineManager = PipelineManager::new();
         assert_eq!(manager.queue_depth(), 0);
         assert_eq!(manager.queue_status(), QueueDepthStatus::Normal);
     }
 
     #[tokio::test]
     async fn test_enqueue_job() {
-        let manager = PipelineManager::new();
+        let manager: PipelineManager = PipelineManager::new();
 
         let job = Job::new(
             "remux",
-            "/input.flv",
-            "/output.mp4",
+            vec!["/input.flv".to_string()],
+            vec!["/output.mp4".to_string()],
             "streamer-1",
             "session-1",
         );
@@ -655,7 +1155,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_create_remux_job() {
-        let manager = PipelineManager::new();
+        let manager: PipelineManager = PipelineManager::new();
 
         let job_id = manager
             .create_remux_job("/input.flv", "/output.mp4", "streamer-1", "session-1")
@@ -669,20 +1169,20 @@ mod tests {
     async fn test_list_jobs() {
         use crate::database::models::{JobFilters, Pagination};
 
-        let manager = PipelineManager::new();
+        let manager: PipelineManager = PipelineManager::new();
 
         // Enqueue some jobs
         let job1 = Job::new(
             "remux",
-            "/input1.flv",
-            "/output1.mp4",
+            vec!["/input1.flv".to_string()],
+            vec!["/output1.mp4".to_string()],
             "streamer-1",
             "session-1",
         );
         let job2 = Job::new(
             "upload",
-            "/input2.flv",
-            "/output2.mp4",
+            vec!["/input2.flv".to_string()],
+            vec!["/output2.mp4".to_string()],
             "streamer-2",
             "session-2",
         );
@@ -702,20 +1202,20 @@ mod tests {
     async fn test_list_jobs_with_filter() {
         use crate::database::models::{JobFilters, Pagination};
 
-        let manager = PipelineManager::new();
+        let manager: PipelineManager = PipelineManager::new();
 
         // Enqueue jobs for different streamers
         let job1 = Job::new(
             "remux",
-            "/input1.flv",
-            "/output1.mp4",
+            vec!["/input1.flv".to_string()],
+            vec!["/output1.mp4".to_string()],
             "streamer-1",
             "session-1",
         );
         let job2 = Job::new(
             "upload",
-            "/input2.flv",
-            "/output2.mp4",
+            vec!["/input2.flv".to_string()],
+            vec!["/output2.mp4".to_string()],
             "streamer-2",
             "session-2",
         );
@@ -734,12 +1234,12 @@ mod tests {
 
     #[tokio::test]
     async fn test_get_job() {
-        let manager = PipelineManager::new();
+        let manager: PipelineManager = PipelineManager::new();
 
         let job = Job::new(
             "remux",
-            "/input.flv",
-            "/output.mp4",
+            vec!["/input.flv".to_string()],
+            vec!["/output.mp4".to_string()],
             "streamer-1",
             "session-1",
         );
@@ -758,20 +1258,20 @@ mod tests {
 
     #[tokio::test]
     async fn test_get_stats() {
-        let manager = PipelineManager::new();
+        let manager: PipelineManager = PipelineManager::new();
 
         // Enqueue some jobs
         let job1 = Job::new(
             "remux",
-            "/input1.flv",
-            "/output1.mp4",
+            vec!["/input1.flv".to_string()],
+            vec!["/output1.mp4".to_string()],
             "streamer-1",
             "session-1",
         );
         let job2 = Job::new(
             "upload",
-            "/input2.flv",
-            "/output2.mp4",
+            vec!["/input2.flv".to_string()],
+            vec!["/output2.mp4".to_string()],
             "streamer-2",
             "session-2",
         );
@@ -792,12 +1292,12 @@ mod tests {
     async fn test_cancel_pending_job() {
         use crate::pipeline::JobStatus;
 
-        let manager = PipelineManager::new();
+        let manager: PipelineManager = PipelineManager::new();
 
         let job = Job::new(
             "remux",
-            "/input.flv",
-            "/output.mp4",
+            vec!["/input.flv".to_string()],
+            vec!["/output.mp4".to_string()],
             "streamer-1",
             "session-1",
         );
@@ -813,44 +1313,34 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_create_pipeline_default_steps() {
-        let manager = PipelineManager::new();
+    async fn test_create_pipeline_requires_steps_when_none() {
+        let manager: PipelineManager = PipelineManager::new();
 
         let result = manager
             .create_pipeline("session-1", "streamer-1", "/input.flv", None)
-            .await
-            .unwrap();
+            .await;
 
-        assert!(!result.pipeline_id.is_empty());
-        assert_eq!(result.first_job_id, result.pipeline_id);
-        assert_eq!(result.first_job_type, "remux");
-        assert_eq!(result.total_steps, 3);
-        assert_eq!(result.steps, vec!["remux", "upload", "thumbnail"]);
-
-        // Verify the first job was created
-        let job = manager
-            .get_job(&result.first_job_id)
-            .await
-            .unwrap()
-            .unwrap();
-        assert_eq!(job.job_type, "remux");
-        assert_eq!(job.next_job_type, Some("upload".to_string()));
-        assert_eq!(job.remaining_steps, Some(vec!["thumbnail".to_string()]));
-        assert_eq!(job.pipeline_id, Some(result.pipeline_id.clone()));
+        assert!(result.is_err());
     }
 
     #[tokio::test]
     async fn test_create_pipeline_custom_steps() {
-        let manager = PipelineManager::new();
+        let manager: PipelineManager = PipelineManager::new();
 
-        let custom_steps = vec!["remux".to_string(), "upload".to_string()];
+        let custom_steps = vec![
+            PipelineStep::Preset("remux".to_string()),
+            PipelineStep::Preset("upload".to_string()),
+        ];
         let result = manager
             .create_pipeline("session-1", "streamer-1", "/input.flv", Some(custom_steps))
             .await
             .unwrap();
 
         assert_eq!(result.total_steps, 2);
-        assert_eq!(result.steps, vec!["remux", "upload"]);
+        assert_eq!(
+            result.steps,
+            vec!["remux".to_string(), "upload".to_string()]
+        );
         assert_eq!(result.first_job_type, "remux");
 
         // Verify the first job has correct chain info
@@ -860,14 +1350,17 @@ mod tests {
             .unwrap()
             .unwrap();
         assert_eq!(job.next_job_type, Some("upload".to_string()));
-        assert_eq!(job.remaining_steps, None); // No steps after upload
+        assert_eq!(
+            job.remaining_steps,
+            Some(vec![PipelineStep::Preset("upload".to_string())])
+        );
     }
 
     #[tokio::test]
     async fn test_create_pipeline_single_step() {
-        let manager = PipelineManager::new();
+        let manager: PipelineManager = PipelineManager::new();
 
-        let single_step = vec!["remux".to_string()];
+        let single_step = vec![PipelineStep::Preset("remux".to_string())];
         let result = manager
             .create_pipeline("session-1", "streamer-1", "/input.flv", Some(single_step))
             .await
@@ -888,13 +1381,254 @@ mod tests {
 
     #[tokio::test]
     async fn test_create_pipeline_empty_steps_error() {
-        let manager = PipelineManager::new();
+        let manager: PipelineManager = PipelineManager::new();
 
-        let empty_steps: Vec<String> = vec![];
+        let empty_steps: Vec<PipelineStep> = vec![];
         let result = manager
             .create_pipeline("session-1", "streamer-1", "/input.flv", Some(empty_steps))
             .await;
 
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_throttle_controller_disabled_by_default() {
+        let manager: PipelineManager = PipelineManager::new();
+
+        // Throttle controller should be None when disabled
+        assert!(manager.throttle_controller().is_none());
+        assert!(!manager.is_throttled());
+        assert!(manager.subscribe_throttle_events().is_none());
+    }
+
+    #[test]
+    fn test_throttle_controller_enabled_with_config() {
+        let config = PipelineManagerConfig {
+            throttle: ThrottleConfig {
+                enabled: true,
+                critical_threshold: 100,
+                warning_threshold: 50,
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+        let manager: PipelineManager = PipelineManager::with_config(config);
+
+        // Throttle controller should be Some when enabled
+        assert!(manager.throttle_controller().is_some());
+        assert!(!manager.is_throttled());
+        assert!(manager.subscribe_throttle_events().is_some());
+    }
+
+    #[test]
+    fn test_throttle_controller_enabled_with_legacy_flag() {
+        // Test backward compatibility with enable_throttling flag
+        let config = PipelineManagerConfig {
+            enable_throttling: true,
+            ..Default::default()
+        };
+        let manager: PipelineManager = PipelineManager::with_config(config);
+
+        // Throttle controller should be Some when legacy flag is set
+        assert!(manager.throttle_controller().is_some());
+    }
+
+    #[test]
+    fn test_config_includes_throttle_defaults() {
+        let config = PipelineManagerConfig::default();
+
+        assert!(!config.throttle.enabled);
+        assert_eq!(config.throttle.critical_threshold, 500);
+        assert_eq!(config.throttle.warning_threshold, 100);
+        assert!((config.throttle.reduction_factor - 0.5).abs() < f32::EPSILON);
+    }
+
+    // ========================================================================
+    // Pipeline Job Chaining Tests
+    // Requirements: 10.1, 10.2, 10.3, 10.5
+    // ========================================================================
+
+    /// Test that create_pipeline creates only the first job immediately.
+    /// Subsequent jobs should only be created when each job completes.
+    /// Requirements: 10.1
+    #[tokio::test]
+    async fn test_create_pipeline_creates_only_first_job() {
+        let manager: PipelineManager = PipelineManager::new();
+
+        // Create a pipeline with 3 steps
+        let steps = vec![
+            PipelineStep::Preset("remux".to_string()),
+            PipelineStep::Preset("upload".to_string()),
+            PipelineStep::Preset("thumbnail".to_string()),
+        ];
+        let result = manager
+            .create_pipeline("session-1", "streamer-1", "/input.flv", Some(steps))
+            .await
+            .unwrap();
+
+        // Verify only one job exists in the queue
+        assert_eq!(manager.queue_depth(), 1);
+
+        // Verify the job is the first step
+        let job = manager
+            .get_job(&result.first_job_id)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(job.job_type, "remux");
+
+        // List all jobs and verify only one exists
+        let filters = JobFilters::default();
+        let pagination = Pagination::new(100, 0);
+        let (jobs, total) = manager.list_jobs(&filters, &pagination).await.unwrap();
+
+        assert_eq!(total, 1);
+        assert_eq!(jobs.len(), 1);
+        assert_eq!(jobs[0].id, result.first_job_id);
+        assert_eq!(jobs[0].job_type, "remux");
+    }
+
+    /// Test that multiple pipelines each create only their first job.
+    /// Requirements: 10.1
+    #[tokio::test]
+    async fn test_multiple_pipelines_create_only_first_jobs() {
+        let manager: PipelineManager = PipelineManager::new();
+
+        // Create first pipeline
+        let result1 = manager
+            .create_pipeline(
+                "session-1",
+                "streamer-1",
+                "/input1.flv",
+                Some(vec![
+                    PipelineStep::Preset("remux".to_string()),
+                    PipelineStep::Preset("upload".to_string()),
+                ]),
+            )
+            .await
+            .unwrap();
+
+        // Create second pipeline
+        let result2 = manager
+            .create_pipeline(
+                "session-2",
+                "streamer-2",
+                "/input2.flv",
+                Some(vec![
+                    PipelineStep::Preset("remux".to_string()),
+                    PipelineStep::Preset("thumbnail".to_string()),
+                ]),
+            )
+            .await
+            .unwrap();
+
+        // Verify exactly 2 jobs exist (one per pipeline)
+        assert_eq!(manager.queue_depth(), 2);
+
+        // Verify both jobs are first steps
+        let job1 = manager
+            .get_job(&result1.first_job_id)
+            .await
+            .unwrap()
+            .unwrap();
+        let job2 = manager
+            .get_job(&result2.first_job_id)
+            .await
+            .unwrap()
+            .unwrap();
+
+        assert_eq!(job1.job_type, "remux");
+        assert_eq!(job2.job_type, "remux");
+
+        // Verify they have different pipeline IDs
+        assert_ne!(result1.pipeline_id, result2.pipeline_id);
+    }
+
+    // ========================================================================
+    // Pipeline Recovery Tests
+    // Requirements: 10.5
+    // ========================================================================
+
+    /// Test that pipeline jobs preserve chain info for recovery.
+    /// When a pipeline job is created, it should have all the info needed
+    /// to continue the pipeline after recovery.
+    /// Requirements: 10.5
+    #[tokio::test]
+    async fn test_pipeline_job_preserves_chain_info_for_recovery() {
+        let manager: PipelineManager = PipelineManager::new();
+
+        // Create a pipeline with 3 steps
+        let steps = vec![
+            PipelineStep::Preset("remux".to_string()),
+            PipelineStep::Preset("upload".to_string()),
+            PipelineStep::Preset("thumbnail".to_string()),
+        ];
+        let result = manager
+            .create_pipeline("session-1", "streamer-1", "/input.flv", Some(steps))
+            .await
+            .unwrap();
+
+        // Get the first job
+        let job = manager
+            .get_job(&result.first_job_id)
+            .await
+            .unwrap()
+            .unwrap();
+
+        // Verify the job has all chain info needed for recovery
+        assert_eq!(job.pipeline_id, Some(result.pipeline_id.clone()));
+        assert_eq!(job.next_job_type, Some("upload".to_string()));
+        assert_eq!(
+            job.remaining_steps,
+            Some(vec![
+                PipelineStep::Preset("upload".to_string()),
+                PipelineStep::Preset("thumbnail".to_string())
+            ])
+        );
+
+        // This info is preserved in the database and will be available after recovery
+        // When the job completes, complete_with_next will use this info to create the next job
+    }
+
+    /// Test that pipeline recovery works with in-memory queue.
+    /// This verifies the basic recovery mechanism without database.
+    /// Requirements: 10.5
+    #[tokio::test]
+    async fn test_pipeline_recovery_without_database() {
+        let manager: PipelineManager = PipelineManager::new();
+
+        // Create a pipeline
+        let result = manager
+            .create_pipeline(
+                "session-1",
+                "streamer-1",
+                "/input.flv",
+                Some(vec![
+                    PipelineStep::Preset("remux".to_string()),
+                    PipelineStep::Preset("upload".to_string()),
+                ]),
+            )
+            .await
+            .unwrap();
+
+        // Verify job exists
+        let job = manager
+            .get_job(&result.first_job_id)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(job.status, JobStatus::Pending);
+
+        // Without a database, recover_jobs returns 0 (no persistence)
+        let recovered = manager.recover_jobs().await.unwrap();
+        assert_eq!(recovered, 0);
+
+        // But the in-memory job is still there
+        let job_after = manager
+            .get_job(&result.first_job_id)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(job_after.status, JobStatus::Pending);
     }
 }

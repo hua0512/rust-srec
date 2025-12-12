@@ -1,4 +1,5 @@
 import { createFileRoute } from '@tanstack/react-router';
+import { motion } from 'motion/react';
 import { useTheme } from '../../../../components/theme-provider';
 import { Check, Monitor, Moon, Sun, Info } from 'lucide-react';
 import { flushSync } from 'react-dom';
@@ -29,51 +30,85 @@ export const Route = createFileRoute('/_authed/_dashboard/config/theme')({
 
 function ConfigTheme() {
   return (
-    <div className="space-y-6">
-      <div>
-        <h3 className="text-lg font-medium">
-          <Trans>Appearance</Trans>
-        </h3>
-        <p className="text-sm text-muted-foreground">
-          <Trans>Customize the look and feel of the application.</Trans>
-        </p>
-      </div>
-
+    <motion.div
+      className="space-y-6"
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      transition={{ duration: 0.3 }}
+    >
       <div className="grid gap-6">
-        <Card>
-          <CardHeader>
-            <CardTitle><Trans>Theme Mode</Trans></CardTitle>
-            <CardDescription><Trans>Select the color mode for the dashboard.</Trans></CardDescription>
-          </CardHeader>
-          <CardContent>
-            <ThemeSelector />
-          </CardContent>
-        </Card>
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.3, delay: 0 }}
+        >
+          <Card className="border-border/40 bg-gradient-to-br from-background/80 to-background/40 backdrop-blur-xl hover:border-primary/20 transition-colors">
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <div className="p-2 rounded-lg bg-primary/10">
+                  <Monitor className="h-5 w-5 text-primary" />
+                </div>
+                <Trans>Theme Mode</Trans>
+              </CardTitle>
+              <CardDescription><Trans>Select the color mode for the dashboard.</Trans></CardDescription>
+            </CardHeader>
+            <CardContent>
+              <ThemeSelector />
+            </CardContent>
+          </Card>
+        </motion.div>
 
-        <Card>
-          <CardHeader>
-            <CardTitle><Trans>Accent Color</Trans></CardTitle>
-            <CardDescription><Trans>Choose the primary color for buttons and active elements.</Trans></CardDescription>
-          </CardHeader>
-          <CardContent>
-            <div className="space-y-4">
-              <ThemeColorSelector />
-              <CustomThemeImport />
-            </div>
-          </CardContent>
-        </Card>
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.3, delay: 0.05 }}
+        >
+          <Card className="border-border/40 bg-gradient-to-br from-background/80 to-background/40 backdrop-blur-xl hover:border-primary/20 transition-colors">
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <div className="p-2 rounded-lg bg-primary/10">
+                  <div className="h-5 w-5 rounded-full bg-primary/40 flex items-center justify-center">
+                    <div className="h-2.5 w-2.5 rounded-full bg-primary animate-pulse" />
+                  </div>
+                </div>
+                <Trans>Accent Color</Trans>
+              </CardTitle>
+              <CardDescription><Trans>Choose the primary color for buttons and active elements.</Trans></CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="space-y-6">
+                <ThemeColorSelector />
+                <div className="h-px bg-border/40" />
+                <CustomThemeImport />
+              </div>
+            </CardContent>
+          </Card>
+        </motion.div>
 
-        <Card>
-          <CardHeader>
-            <CardTitle><Trans>Radius</Trans></CardTitle>
-            <CardDescription><Trans>Adjust the roundness of cards and inputs.</Trans></CardDescription>
-          </CardHeader>
-          <CardContent>
-            <ThemeRadiusSelector />
-          </CardContent>
-        </Card>
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.3, delay: 0.1 }}
+        >
+          <Card className="border-border/40 bg-gradient-to-br from-background/80 to-background/40 backdrop-blur-xl hover:border-primary/20 transition-colors">
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <div className="p-2 rounded-lg bg-primary/10">
+                  <div className="h-5 w-5 rounded-md border border-primary/40 flex items-center justify-center">
+                    <div className="h-3 w-3 rounded-sm bg-primary/80" />
+                  </div>
+                </div>
+                <Trans>Radius</Trans>
+              </CardTitle>
+              <CardDescription><Trans>Adjust the roundness of cards and inputs.</Trans></CardDescription>
+            </CardHeader>
+            <CardContent>
+              <ThemeRadiusSelector />
+            </CardContent>
+          </Card>
+        </motion.div>
       </div>
-    </div>
+    </motion.div>
   );
 }
 
@@ -89,7 +124,7 @@ function CustomThemeImport() {
   };
 
   return (
-    <div className="flex flex-col gap-4 rounded-lg border p-4">
+    <div className="flex flex-col gap-4 rounded-lg border border-border/40 p-4 bg-muted/5">
       <div className="flex items-center justify-between">
         <div className="space-y-0.5">
           <Label className="text-base"><Trans>Custom Theme</Trans></Label>
@@ -318,8 +353,8 @@ function ThemeColorSelector() {
           key={color.name}
           onClick={() => setThemeColor(color.name)}
           className={cn(
-            'group flex w-full items-center justify-start space-x-2 rounded-md border p-2 text-left text-sm hover:bg-accent hover:text-accent-foreground',
-            themeColor === color.name && 'bg-accent text-accent-foreground'
+            'group flex w-full items-center justify-start space-x-2 rounded-md border p-2 text-left text-sm hover:bg-accent hover:text-accent-foreground transition-colors',
+            themeColor === color.name && 'bg-accent text-accent-foreground border-primary'
           )}
         >
           <span className={cn('h-4 w-4 rounded-full', color.class)} />
@@ -341,29 +376,34 @@ interface ThemeCardProps {
 
 function ThemeCard({ active, onClick, icon, label, children }: ThemeCardProps) {
   return (
-    <div onClick={onClick} className="cursor-pointer space-y-2" role="button" tabIndex={0}>
-      <div
-        className={cn(
-          'items-center rounded-md border-2 border-muted p-1 hover:border-accent',
-          active ? 'border-primary hover:border-primary' : ''
-        )}
-      >
-        <div className="space-y-2 rounded-sm bg-[#ecedef] p-2 dark:bg-slate-950">
+    <div
+      onClick={onClick}
+      className={cn(
+        "cursor-pointer group relative overflow-hidden rounded-xl border transition-all duration-300",
+        active
+          ? "border-primary bg-primary/5 ring-1 ring-primary/20"
+          : "border-border/40 bg-background/40 hover:border-primary/40 hover:bg-background/60"
+      )}
+      role="button"
+      tabIndex={0}
+    >
+      <div className="p-3">
+        <div className="space-y-2 rounded-lg bg-background/50 p-2 ring-1 ring-inset ring-foreground/5 dark:ring-white/5">
           {children}
         </div>
       </div>
-      <div className="flex items-center justify-center space-x-2">
-        <div
-          className={cn(
-            'flex items-center justify-center rounded-full p-1',
-            active ? 'bg-primary text-primary-foreground text-primary-content' : 'bg-transparent'
-          )}
-        >
-          {active && <Check className="h-3 w-3" />}
-        </div>
-        <span className="flex items-center gap-2 text-sm font-medium">
+      <div className="px-3 pb-3 flex items-center justify-between">
+        <span className="flex items-center gap-2 text-sm font-medium text-foreground/80 group-hover:text-foreground transition-colors">
           {icon} {label}
         </span>
+        <div
+          className={cn(
+            'flex items-center justify-center rounded-full p-0.5 transition-all duration-300',
+            active ? 'bg-primary text-primary-foreground opacity-100 scale-100' : 'bg-transparent opacity-0 scale-75'
+          )}
+        >
+          <Check className="h-3 w-3" />
+        </div>
       </div>
     </div>
   );

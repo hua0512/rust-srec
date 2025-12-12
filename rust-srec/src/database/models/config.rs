@@ -29,6 +29,8 @@ pub struct GlobalConfigDbModel {
     pub max_concurrent_io_jobs: i32,
     pub job_history_retention_days: i32,
     pub session_gap_time_secs: i64,
+    /// JSON serialized Vec<PipelineStep>
+    pub pipeline: Option<String>,
 }
 
 impl Default for GlobalConfigDbModel {
@@ -53,6 +55,7 @@ impl Default for GlobalConfigDbModel {
             max_concurrent_io_jobs: 8,
             job_history_retention_days: 30,
             session_gap_time_secs: 600,
+            pipeline: None,
         }
     }
 }
@@ -86,6 +89,8 @@ pub struct PlatformConfigDbModel {
     pub download_retry_policy: Option<String>,
     /// JSON serialized EventHooks
     pub event_hooks: Option<String>,
+    /// JSON serialized Vec<PipelineStep>
+    pub pipeline: Option<String>,
 }
 
 /// Template configuration database model.
@@ -118,6 +123,8 @@ pub struct TemplateConfigDbModel {
     pub event_hooks: Option<String>,
     /// JSON serialized StreamSelectionConfig
     pub stream_selection_config: Option<String>,
+    /// JSON serialized Vec<PipelineStep>
+    pub pipeline: Option<String>,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
 }
@@ -143,6 +150,7 @@ impl TemplateConfigDbModel {
             proxy_config: None,
             event_hooks: None,
             stream_selection_config: None,
+            pipeline: None,
             created_at: Utc::now(),
             updated_at: Utc::now(),
         }

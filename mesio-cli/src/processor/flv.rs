@@ -25,7 +25,7 @@ async fn process_raw_stream(
     output_dir: &Path,
     base_name: &str,
     pipeline_common_config: &PipelineConfig,
-) -> Result<(usize, u32), AppError> {
+) -> Result<(usize, u32, u64, f64), AppError> {
     let (tx, rx) = tokio::sync::mpsc::channel(pipeline_common_config.channel_size);
     let mut writer = FlvWriter::new(
         output_dir.to_path_buf(),
@@ -101,7 +101,7 @@ pub async fn process_file(
         .map(|r| r.map_err(|e| PipelineError::Processing(e.to_string())));
 
     // Use pipe output strategy when stdout mode is active
-    let (tags_written, files_created) = if is_pipe_mode {
+    let (tags_written, files_created, _bytes_written, _duration) = if is_pipe_mode {
         // Pipe mode: write to stdout using PipeFlvStrategy
         let stats = if config.enable_processing {
             // Processing enabled: run through FlvPipeline before writing to stdout
@@ -321,7 +321,7 @@ pub async fn process_flv_stream(
             token.clone(),
         )
         .await?;
-        (result.0, result.1, 0u64)
+        (result.0, result.1, result.2)
     } else {
         let result = process_raw_stream(
             Box::pin(stream),
@@ -330,7 +330,7 @@ pub async fn process_flv_stream(
             &config.pipeline_config,
         )
         .await?;
-        (result.0, result.1, 0u64)
+        (result.0, result.1, result.2)
     };
 
     let elapsed = start_time.elapsed();

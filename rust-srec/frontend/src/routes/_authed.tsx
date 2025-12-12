@@ -3,10 +3,16 @@ import { redirect } from '@tanstack/react-router'
 import { WebSocketProvider } from '@/providers/WebSocketProvider'
 
 export const Route = createFileRoute('/_authed')({
-  beforeLoad: ({ context }) => {
-    console.log("context : ", context)
-    if (!context.user) {
-      throw redirect({ to: '/login' })
+  beforeLoad: ({ context, location }) => {
+    if (!context.user && location.pathname !== '/login') {
+      throw redirect({ to: '/login', replace: true })
+    }
+
+    if (
+      context.user?.mustChangePassword &&
+      location.pathname !== '/change-password'
+    ) {
+      throw redirect({ to: '/change-password', replace: true })
     }
   },
   component: () => (

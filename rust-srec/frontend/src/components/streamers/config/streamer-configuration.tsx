@@ -8,12 +8,31 @@ import {
     FormLabel,
 } from '../../ui/form';
 import { Input } from '../../ui/input';
+import { Textarea } from '../../ui/textarea';
+import { Switch } from '../../ui/switch';
 import { Trans } from '@lingui/react/macro';
 import { useEffect, useState } from 'react';
 import { StreamSelectionInput, StreamSelectionConfig } from './stream-selection-input';
 import { RetryPolicyForm } from './retry-policy-form';
 import { DanmuConfigForm } from './danmu-config-form';
-import { Filter, FolderOutput, Network, MessageSquare, Cookie } from 'lucide-react';
+import { Filter, FolderOutput, Network, MessageSquare, Cookie, Shield, Webhook, Workflow } from 'lucide-react';
+
+interface ProxyConfig {
+    enabled?: boolean;
+    url?: string;
+    username?: string;
+    password?: string;
+    use_system_proxy?: boolean;
+}
+
+interface EventHooks {
+    on_online?: string;
+    on_offline?: string;
+    on_download_start?: string;
+    on_download_complete?: string;
+    on_download_error?: string;
+    on_pipeline_complete?: string;
+}
 
 interface StreamerSpecificConfig {
     output_folder?: string;
@@ -26,6 +45,9 @@ interface StreamerSpecificConfig {
     download_engine?: string;
     record_danmu?: boolean;
     stream_selection?: StreamSelectionConfig;
+    proxy_config?: ProxyConfig;
+    event_hooks?: EventHooks;
+    pipeline?: any[];
 }
 
 interface StreamerConfigurationProps {
@@ -33,7 +55,6 @@ interface StreamerConfigurationProps {
 }
 
 export function StreamerConfiguration({ form }: StreamerConfigurationProps) {
-    // We need to manage streamer_specific_config state here to distribute it across tabs
     const specificConfigJson = form.watch("streamer_specific_config");
     const [specificConfig, setSpecificConfig] = useState<StreamerSpecificConfig>({});
 
@@ -43,34 +64,26 @@ export function StreamerConfiguration({ form }: StreamerConfigurationProps) {
                 const parsed = JSON.parse(specificConfigJson);
                 setSpecificConfig(parsed);
             } catch (e) {
-                // ignore invalid json while typing, or warn
+                // ignore invalid json
             }
         } else {
             setSpecificConfig({});
         }
-    }, []); // Only on mount? No, if external change happens? 
-    // Actually, if we use the form as source of truth, we should listen to it.
-    // But we are also the writer.
-    // Let's use internal state for the UI, and sync to form on change.
-
-    // Better: parse on render/watch, and update form immediately on change.
-    // But parsing on every render is fine for small objects.
+    }, []);
 
     const updateSpecificConfig = (newConfig: StreamerSpecificConfig) => {
         setSpecificConfig(newConfig);
-        // Clean and serialize
         const cleanConfig = JSON.parse(JSON.stringify(newConfig));
         if (Object.keys(cleanConfig).length === 0) {
             form.setValue("streamer_specific_config", undefined, { shouldDirty: true, shouldValidate: true });
         } else {
             form.setValue("streamer_specific_config", JSON.stringify(cleanConfig), { shouldDirty: true, shouldValidate: true });
         }
-
     };
 
     const updateSpecificField = (key: keyof StreamerSpecificConfig, value: any) => {
         const newConfig = { ...specificConfig };
-        if (value === '' || value === undefined) {
+        if (value === '' || value === undefined || (typeof value === 'object' && Object.keys(value).length === 0)) {
             delete newConfig[key];
         } else {
             // @ts-ignore
@@ -79,9 +92,29 @@ export function StreamerConfiguration({ form }: StreamerConfigurationProps) {
         updateSpecificConfig(newConfig);
     };
 
+    const updateProxyField = (key: keyof ProxyConfig, value: any) => {
+        const newProxy = { ...(specificConfig.proxy_config || {}) };
+        if (value === '' || value === undefined || value === false) {
+            delete newProxy[key];
+        } else {
+            newProxy[key] = value;
+        }
+        updateSpecificField('proxy_config', Object.keys(newProxy).length > 0 ? newProxy : undefined);
+    };
+
+    const updateEventHook = (key: keyof EventHooks, value: string) => {
+        const newHooks = { ...(specificConfig.event_hooks || {}) };
+        if (value === '') {
+            delete newHooks[key];
+        } else {
+            newHooks[key] = value;
+        }
+        updateSpecificField('event_hooks', Object.keys(newHooks).length > 0 ? newHooks : undefined);
+    };
+
     return (
         <Tabs defaultValue="filters" className="w-full">
-            <TabsList className="grid w-full grid-cols-2 sm:grid-cols-4 h-auto">
+            <TabsList className="grid w-full grid-cols-3 sm:grid-cols-6 h-auto">
                 <TabsTrigger value="filters" className="flex items-center gap-2">
                     <Filter className="w-4 h-4" /> <span className="hidden sm:inline"><Trans>Filters</Trans></span>
                 </TabsTrigger>
@@ -90,6 +123,12 @@ export function StreamerConfiguration({ form }: StreamerConfigurationProps) {
                 </TabsTrigger>
                 <TabsTrigger value="network" className="flex items-center gap-2">
                     <Network className="w-4 h-4" /> <span className="hidden sm:inline"><Trans>Network</Trans></span>
+                </TabsTrigger>
+                <TabsTrigger value="proxy" className="flex items-center gap-2">
+                    <Shield className="w-4 h-4" /> <span className="hidden sm:inline"><Trans>Proxy</Trans></span>
+                </TabsTrigger>
+                <TabsTrigger value="hooks" className="flex items-center gap-2">
+                    <Webhook className="w-4 h-4" /> <span className="hidden sm:inline"><Trans>Hooks</Trans></span>
                 </TabsTrigger>
                 <TabsTrigger value="danmu" className="flex items-center gap-2">
                     <MessageSquare className="w-4 h-4" /> <span className="hidden sm:inline"><Trans>Danmu</Trans></span>
@@ -252,6 +291,181 @@ export function StreamerConfiguration({ form }: StreamerConfigurationProps) {
                                 <h4 className="text-sm font-medium"><Trans>Download Retry Policy</Trans></h4>
                                 <RetryPolicyForm form={form} name="download_retry_policy" />
                             </div>
+                        </CardContent>
+                    </Card>
+                </TabsContent>
+
+                <TabsContent value="proxy">
+                    <Card className="border-dashed shadow-none">
+                        <CardContent className="pt-6 space-y-4">
+                            <FormItem className="flex flex-row items-center justify-between rounded-lg border p-4">
+                                <div className="space-y-0.5">
+                                    <FormLabel><Trans>Enable Proxy</Trans></FormLabel>
+                                    <FormDescription>
+                                        <Trans>Use a proxy server for this streamer.</Trans>
+                                    </FormDescription>
+                                </div>
+                                <FormControl>
+                                    <Switch
+                                        checked={specificConfig.proxy_config?.enabled || false}
+                                        onCheckedChange={(checked) => updateProxyField('enabled', checked)}
+                                    />
+                                </FormControl>
+                            </FormItem>
+
+                            <FormItem className="flex flex-row items-center justify-between rounded-lg border p-4">
+                                <div className="space-y-0.5">
+                                    <FormLabel><Trans>Use System Proxy</Trans></FormLabel>
+                                    <FormDescription>
+                                        <Trans>Use system-configured proxy settings.</Trans>
+                                    </FormDescription>
+                                </div>
+                                <FormControl>
+                                    <Switch
+                                        checked={specificConfig.proxy_config?.use_system_proxy || false}
+                                        onCheckedChange={(checked) => updateProxyField('use_system_proxy', checked)}
+                                    />
+                                </FormControl>
+                            </FormItem>
+
+                            <FormItem>
+                                <FormLabel><Trans>Proxy URL</Trans></FormLabel>
+                                <FormControl>
+                                    <Input
+                                        placeholder="http://proxy.example.com:8080"
+                                        value={specificConfig.proxy_config?.url || ''}
+                                        onChange={(e) => updateProxyField('url', e.target.value)}
+                                        className="font-mono text-sm"
+                                    />
+                                </FormControl>
+                                <FormDescription>
+                                    <Trans>HTTP/HTTPS/SOCKS5 proxy URL.</Trans>
+                                </FormDescription>
+                            </FormItem>
+
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                <FormItem>
+                                    <FormLabel><Trans>Username</Trans></FormLabel>
+                                    <FormControl>
+                                        <Input
+                                            placeholder="proxy_user"
+                                            value={specificConfig.proxy_config?.username || ''}
+                                            onChange={(e) => updateProxyField('username', e.target.value)}
+                                        />
+                                    </FormControl>
+                                </FormItem>
+                                <FormItem>
+                                    <FormLabel><Trans>Password</Trans></FormLabel>
+                                    <FormControl>
+                                        <Input
+                                            type="password"
+                                            placeholder="********"
+                                            value={specificConfig.proxy_config?.password || ''}
+                                            onChange={(e) => updateProxyField('password', e.target.value)}
+                                        />
+                                    </FormControl>
+                                </FormItem>
+                            </div>
+                        </CardContent>
+                    </Card>
+                </TabsContent>
+
+                <TabsContent value="hooks">
+                    <Card className="border-dashed shadow-none">
+                        <CardContent className="pt-6 space-y-4">
+                            <p className="text-sm text-muted-foreground mb-4">
+                                <Trans>Execute shell commands on lifecycle events. Commands run in the system shell.</Trans>
+                            </p>
+
+                            <FormItem>
+                                <FormLabel><Trans>On Online</Trans></FormLabel>
+                                <FormControl>
+                                    <Input
+                                        placeholder="notify-send 'Streamer is online!'"
+                                        value={specificConfig.event_hooks?.on_online || ''}
+                                        onChange={(e) => updateEventHook('on_online', e.target.value)}
+                                        className="font-mono text-sm"
+                                    />
+                                </FormControl>
+                                <FormDescription>
+                                    <Trans>Runs when the streamer goes online.</Trans>
+                                </FormDescription>
+                            </FormItem>
+
+                            <FormItem>
+                                <FormLabel><Trans>On Offline</Trans></FormLabel>
+                                <FormControl>
+                                    <Input
+                                        placeholder="echo 'Streamer went offline'"
+                                        value={specificConfig.event_hooks?.on_offline || ''}
+                                        onChange={(e) => updateEventHook('on_offline', e.target.value)}
+                                        className="font-mono text-sm"
+                                    />
+                                </FormControl>
+                                <FormDescription>
+                                    <Trans>Runs when the streamer goes offline.</Trans>
+                                </FormDescription>
+                            </FormItem>
+
+                            <FormItem>
+                                <FormLabel><Trans>On Download Start</Trans></FormLabel>
+                                <FormControl>
+                                    <Input
+                                        placeholder="echo 'Download started'"
+                                        value={specificConfig.event_hooks?.on_download_start || ''}
+                                        onChange={(e) => updateEventHook('on_download_start', e.target.value)}
+                                        className="font-mono text-sm"
+                                    />
+                                </FormControl>
+                                <FormDescription>
+                                    <Trans>Runs when a download begins.</Trans>
+                                </FormDescription>
+                            </FormItem>
+
+                            <FormItem>
+                                <FormLabel><Trans>On Download Complete</Trans></FormLabel>
+                                <FormControl>
+                                    <Input
+                                        placeholder="echo 'Download finished: $FILE_PATH'"
+                                        value={specificConfig.event_hooks?.on_download_complete || ''}
+                                        onChange={(e) => updateEventHook('on_download_complete', e.target.value)}
+                                        className="font-mono text-sm"
+                                    />
+                                </FormControl>
+                                <FormDescription>
+                                    <Trans>Runs when a download completes successfully.</Trans>
+                                </FormDescription>
+                            </FormItem>
+
+                            <FormItem>
+                                <FormLabel><Trans>On Download Error</Trans></FormLabel>
+                                <FormControl>
+                                    <Input
+                                        placeholder="echo 'Download failed: $ERROR'"
+                                        value={specificConfig.event_hooks?.on_download_error || ''}
+                                        onChange={(e) => updateEventHook('on_download_error', e.target.value)}
+                                        className="font-mono text-sm"
+                                    />
+                                </FormControl>
+                                <FormDescription>
+                                    <Trans>Runs when a download encounters an error.</Trans>
+                                </FormDescription>
+                            </FormItem>
+
+                            <FormItem>
+                                <FormLabel><Trans>On Pipeline Complete</Trans></FormLabel>
+                                <FormControl>
+                                    <Input
+                                        placeholder="echo 'Pipeline finished'"
+                                        value={specificConfig.event_hooks?.on_pipeline_complete || ''}
+                                        onChange={(e) => updateEventHook('on_pipeline_complete', e.target.value)}
+                                        className="font-mono text-sm"
+                                    />
+                                </FormControl>
+                                <FormDescription>
+                                    <Trans>Runs when the post-processing pipeline completes.</Trans>
+                                </FormDescription>
+                            </FormItem>
                         </CardContent>
                     </Card>
                 </TabsContent>

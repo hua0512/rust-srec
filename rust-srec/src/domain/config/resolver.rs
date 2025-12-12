@@ -4,7 +4,10 @@
 //! configuration for a streamer by merging the 4-layer hierarchy:
 //! Global → Platform → Template → Streamer
 
+use tracing::debug;
+
 use crate::Error;
+use crate::database::models::job::PipelineStep;
 use crate::database::repositories::config::ConfigRepository;
 use crate::domain::config::MergedConfig;
 use crate::domain::streamer::Streamer;
@@ -34,12 +37,20 @@ impl<R: ConfigRepository> ConfigResolver<R> {
         streamer: &Streamer,
     ) -> Result<MergedConfig, Error> {
         // Start with builder
+        debug!(
+            "Resolving config for streamer: {} (Platform: {}, Template: {:?})",
+            streamer.id, streamer.platform_config_id, streamer.template_config_id
+        );
         let mut builder = MergedConfig::builder();
 
         // Layer 1: Global config
         let global_config = self.config_repo.get_global_config().await?;
         let global_proxy: ProxyConfig =
             serde_json::from_str(&global_config.proxy_config).unwrap_or_default();
+        let global_pipeline: Option<Vec<PipelineStep>> = global_config
+            .pipeline
+            .as_ref()
+            .and_then(|s| serde_json::from_str(s).ok());
 
         builder = builder.with_global(
             global_config.output_folder,
@@ -52,6 +63,7 @@ impl<R: ConfigRepository> ConfigResolver<R> {
             global_proxy,
             global_config.default_download_engine,
             global_config.session_gap_time_secs,
+            global_pipeline,
         );
 
         // Layer 2: Platform config
@@ -61,6 +73,10 @@ impl<R: ConfigRepository> ConfigResolver<R> {
             .await?;
         let platform_proxy: Option<ProxyConfig> = platform_config
             .proxy_config
+            .as_ref()
+            .and_then(|s| serde_json::from_str(s).ok());
+        let platform_pipeline: Option<Vec<PipelineStep>> = platform_config
+            .pipeline
             .as_ref()
             .and_then(|s| serde_json::from_str(s).ok());
 
@@ -94,6 +110,7 @@ impl<R: ConfigRepository> ConfigResolver<R> {
                 .event_hooks
                 .as_ref()
                 .and_then(|s| serde_json::from_str(s).ok()),
+            platform_pipeline,
         );
 
         // Layer 3: Template config (if assigned)
@@ -123,6 +140,11 @@ impl<R: ConfigRepository> ConfigResolver<R> {
                 .as_ref()
                 .and_then(|s| serde_json::from_str(s).ok());
 
+            let template_pipeline: Option<Vec<PipelineStep>> = template_config
+                .pipeline
+                .as_ref()
+                .and_then(|s| serde_json::from_str(s).ok());
+
             builder = builder.with_template(
                 template_config.output_folder,
                 template_config.output_filename_template,
@@ -142,6 +164,7 @@ impl<R: ConfigRepository> ConfigResolver<R> {
                     .engines_override
                     .as_ref()
                     .and_then(|s| serde_json::from_str(s).ok()),
+                template_pipeline,
             );
         }
 

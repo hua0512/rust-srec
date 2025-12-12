@@ -7,7 +7,7 @@ use chrono::{DateTime, Utc};
 use dashmap::DashMap;
 use parking_lot::RwLock;
 use serde::{Deserialize, Serialize};
-use tokio::sync::{Semaphore, broadcast, mpsc};
+use tokio::sync::{OwnedSemaphorePermit, Semaphore, broadcast, mpsc};
 use tracing::{debug, error, info, warn};
 
 use super::engine::{
@@ -20,6 +20,7 @@ use crate::database::models::engine::{
     FfmpegEngineConfig, MesioEngineConfig, StreamlinkEngineConfig,
 };
 use crate::database::repositories::config::ConfigRepository;
+use crate::downloader::SegmentInfo;
 
 /// Pending configuration update for an active download.
 ///
@@ -103,13 +104,19 @@ impl Default for DownloadManagerConfig {
 }
 
 /// Internal state for an active download.
-#[derive(Clone)]
 struct ActiveDownload {
     handle: Arc<DownloadHandle>,
     status: DownloadStatus,
     progress: DownloadProgress,
     #[allow(dead_code)]
     is_high_priority: bool,
+    /// Last known output path (from segments)
+    pub output_path: Option<String>,
+    /// Semaphore permit guarding concurrency slot (dropped on removal)
+    #[allow(dead_code)]
+    permit: Option<OwnedSemaphorePermit>,
+    /// Retry configuration override applied via config update.
+    retry_config_override: Option<RetryConfig>,
 }
 
 /// The Download Manager service.
@@ -121,9 +128,9 @@ pub struct DownloadManager {
     /// Semaphore for high priority downloads (extra slots).
     high_priority_semaphore: Arc<Semaphore>,
     /// Active downloads.
-    active_downloads: DashMap<String, ActiveDownload>,
+    active_downloads: Arc<DashMap<String, ActiveDownload>>,
     /// Pending configuration updates keyed by download_id.
-    pending_updates: DashMap<String, PendingConfigUpdate>,
+    pending_updates: Arc<DashMap<String, PendingConfigUpdate>>,
     /// Engine registry.
     engines: RwLock<HashMap<EngineType, Arc<dyn DownloadEngine>>>,
     /// Circuit breaker manager.
@@ -182,6 +189,7 @@ pub enum DownloadManagerEvent {
         total_bytes: u64,
         total_duration_secs: f64,
         total_segments: u32,
+        file_path: Option<String>,
     },
     /// Download failed.
     DownloadFailed {
@@ -232,8 +240,8 @@ impl DownloadManager {
             config,
             normal_semaphore,
             high_priority_semaphore,
-            active_downloads: DashMap::new(),
-            pending_updates: DashMap::new(),
+            active_downloads: Arc::new(DashMap::new()),
+            pending_updates: Arc::new(DashMap::new()),
             engines: RwLock::new(HashMap::new()),
             circuit_breakers,
             event_tx,
@@ -551,8 +559,8 @@ impl DownloadManager {
             )));
         }
 
-        // Acquire semaphore permit
-        let _permit = if is_high_priority {
+        // Acquire semaphore permit and hold it until the download finishes
+        let permit = if is_high_priority {
             // Try high priority semaphore first, then fall back to normal
             match self.high_priority_semaphore.clone().try_acquire_owned() {
                 Ok(permit) => permit,
@@ -593,6 +601,9 @@ impl DownloadManager {
                 status: DownloadStatus::Starting,
                 progress: DownloadProgress::default(),
                 is_high_priority,
+                output_path: None,
+                permit: Some(permit),
+                retry_config_override: None,
             },
         );
 
@@ -613,8 +624,15 @@ impl DownloadManager {
         let engine_clone = engine.clone();
         let handle_clone = handle.clone();
         tokio::spawn(async move {
-            if let Err(e) = engine_clone.start(handle_clone).await {
+            if let Err(e) = engine_clone.start(handle_clone.clone()).await {
                 error!("Engine start error: {}", e);
+                let _ = handle_clone
+                    .event_tx
+                    .send(SegmentEvent::DownloadFailed {
+                        error: format!("Engine start error: {}", e),
+                        recoverable: false,
+                    })
+                    .await;
             }
         });
 
@@ -626,22 +644,35 @@ impl DownloadManager {
 
         // Clone references for the spawned task
         let active_downloads = self.active_downloads.clone();
+        let pending_updates = self.pending_updates.clone();
         let circuit_breakers_ref = self.circuit_breakers.get(engine_type);
 
         tokio::spawn(async move {
             while let Some(event) = segment_rx.recv().await {
                 match event {
                     SegmentEvent::SegmentCompleted(info) => {
+                        let SegmentInfo {
+                            path,
+                            duration_secs,
+                            size_bytes,
+                            index,
+                            ..
+                        } = info;
+                        let segment_path = path.to_string_lossy().to_string();
                         // Broadcast send is synchronous, ignore if no receivers
                         let _ = event_tx.send(DownloadManagerEvent::SegmentCompleted {
                             download_id: download_id_clone.clone(),
                             streamer_id: streamer_id.clone(),
                             session_id: session_id.clone(),
-                            segment_path: info.path.to_string_lossy().to_string(),
-                            segment_index: info.index,
-                            duration_secs: info.duration_secs,
-                            size_bytes: info.size_bytes,
+                            segment_path: segment_path.clone(),
+                            segment_index: index,
+                            duration_secs,
+                            size_bytes,
                         });
+
+                        if let Some(mut download) = active_downloads.get_mut(&download_id_clone) {
+                            download.output_path = Some(segment_path);
+                        }
                     }
                     SegmentEvent::Progress(progress) => {
                         if let Some(mut download) = active_downloads.get_mut(&download_id_clone) {
@@ -669,7 +700,17 @@ impl DownloadManager {
 
                         // remove download from active_downloads
                         // just before the event to avoid race condition
-                        active_downloads.remove(&download_id_clone);
+                        // remove download from active_downloads
+                        // just before the event to avoid race condition
+                        let output_path = if let Some((_, download)) =
+                            active_downloads.remove(&download_id_clone)
+                        {
+                            download.output_path
+                        } else {
+                            None
+                        };
+
+                        pending_updates.remove(&download_id_clone);
 
                         let _ = event_tx.send(DownloadManagerEvent::DownloadCompleted {
                             download_id: download_id_clone.clone(),
@@ -678,6 +719,7 @@ impl DownloadManager {
                             total_bytes,
                             total_duration_secs,
                             total_segments,
+                            file_path: output_path,
                         });
 
                         break;
@@ -692,6 +734,7 @@ impl DownloadManager {
                         // remove download from active_downloads
                         // just before the event to avoid race condition
                         active_downloads.remove(&download_id_clone);
+                        pending_updates.remove(&download_id_clone);
 
                         let _ = event_tx.send(DownloadManagerEvent::DownloadFailed {
                             download_id: download_id_clone.clone(),
@@ -703,6 +746,21 @@ impl DownloadManager {
                         break;
                     }
                     SegmentEvent::SegmentStarted { path, sequence } => {
+                        if let Some((_, pending_update)) =
+                            pending_updates.remove(&download_id_clone)
+                        {
+                            if let Some(mut download) = active_downloads.get_mut(&download_id_clone)
+                            {
+                                DownloadManager::apply_pending_update_to_download(
+                                    &mut download,
+                                    pending_update,
+                                    &download_id_clone,
+                                    &streamer_id,
+                                    &event_tx,
+                                );
+                            }
+                        }
+
                         // Segment started event - a new segment file has been opened
                         tracing::debug!(
                             download_id = %download_id_clone,
@@ -727,10 +785,14 @@ impl DownloadManager {
                 engine.stop(&download.handle).await?;
             }
 
+            let streamer_id = download.handle.config_snapshot().streamer_id;
+
+            self.pending_updates.remove(download_id);
+
             // Broadcast send is synchronous, ignore if no receivers
             let _ = self.event_tx.send(DownloadManagerEvent::DownloadCancelled {
                 download_id: download_id.to_string(),
-                streamer_id: download.handle.config.streamer_id.clone(),
+                streamer_id,
             });
 
             info!("Stopped download {}", download_id);
@@ -749,10 +811,11 @@ impl DownloadManager {
             .iter()
             .map(|entry| {
                 let download = entry.value();
+                let config_snapshot = download.handle.config_snapshot();
                 DownloadInfo {
                     id: download.handle.id.clone(),
-                    streamer_id: download.handle.config.streamer_id.clone(),
-                    session_id: download.handle.config.session_id.clone(),
+                    streamer_id: config_snapshot.streamer_id,
+                    session_id: config_snapshot.session_id,
                     engine_type: download.handle.engine_type,
                     status: download.status,
                     progress: download.progress.clone(),
@@ -806,7 +869,7 @@ impl DownloadManager {
                     id: download_id.to_string(),
                 })?;
 
-        let streamer_id = download.handle.config.streamer_id.clone();
+        let streamer_id = download.handle.config_snapshot().streamer_id;
         // Drop the reference to avoid holding the lock while updating pending_updates
         drop(download);
 
@@ -851,13 +914,14 @@ impl DownloadManager {
     pub fn get_download_by_streamer(&self, streamer_id: &str) -> Option<DownloadInfo> {
         self.active_downloads
             .iter()
-            .find(|entry| entry.value().handle.config.streamer_id == streamer_id)
+            .find(|entry| entry.value().handle.config_snapshot().streamer_id == streamer_id)
             .map(|entry| {
                 let download = entry.value();
+                let config_snapshot = download.handle.config_snapshot();
                 DownloadInfo {
                     id: download.handle.id.clone(),
-                    streamer_id: download.handle.config.streamer_id.clone(),
-                    session_id: download.handle.config.session_id.clone(),
+                    streamer_id: config_snapshot.streamer_id,
+                    session_id: config_snapshot.session_id,
                     engine_type: download.handle.engine_type,
                     status: download.status,
                     progress: download.progress.clone(),
@@ -874,7 +938,7 @@ impl DownloadManager {
     pub fn has_active_download(&self, streamer_id: &str) -> bool {
         self.active_downloads.iter().any(|entry| {
             let download = entry.value();
-            download.handle.config.streamer_id == streamer_id
+            download.handle.config_snapshot().streamer_id == streamer_id
                 && matches!(
                     download.status,
                     DownloadStatus::Starting | DownloadStatus::Downloading
@@ -1040,6 +1104,49 @@ impl DownloadManager {
         }
     }
 
+    fn apply_pending_update_to_download(
+        download: &mut ActiveDownload,
+        update: PendingConfigUpdate,
+        download_id: &str,
+        streamer_id: &str,
+        event_tx: &broadcast::Sender<DownloadManagerEvent>,
+    ) {
+        let mut applied = false;
+        let update_clone = update.clone();
+        let PendingConfigUpdate {
+            cookies,
+            headers,
+            retry_config,
+            ..
+        } = update;
+
+        if cookies.is_some() || headers.is_some() {
+            let mut cfg = download.handle.config.write();
+            if let Some(cookie_val) = cookies.clone() {
+                cfg.cookies = Some(cookie_val);
+                applied = true;
+            }
+            if let Some(header_val) = headers.clone() {
+                cfg.headers = header_val;
+                applied = true;
+            }
+        }
+
+        if let Some(retry) = retry_config {
+            download.retry_config_override = Some(retry);
+            applied = true;
+        }
+
+        if applied {
+            let update_type = Self::determine_config_update_type(&update_clone);
+            let _ = event_tx.send(DownloadManagerEvent::ConfigUpdated {
+                download_id: download_id.to_string(),
+                streamer_id: streamer_id.to_string(),
+                update_type,
+            });
+        }
+    }
+
     /// Get downloads by status.
     pub fn get_downloads_by_status(&self, status: DownloadStatus) -> Vec<DownloadInfo> {
         self.active_downloads
@@ -1047,10 +1154,11 @@ impl DownloadManager {
             .filter(|entry| entry.value().status == status)
             .map(|entry| {
                 let download = entry.value();
+                let config_snapshot = download.handle.config_snapshot();
                 DownloadInfo {
                     id: download.handle.id.clone(),
-                    streamer_id: download.handle.config.streamer_id.clone(),
-                    session_id: download.handle.config.session_id.clone(),
+                    streamer_id: config_snapshot.streamer_id,
+                    session_id: config_snapshot.session_id,
                     engine_type: download.handle.engine_type,
                     status: download.status,
                     progress: download.progress.clone(),
@@ -1275,6 +1383,9 @@ mod tests {
             status: DownloadStatus::Downloading,
             progress: DownloadProgress::default(),
             is_high_priority: false,
+            output_path: None,
+            permit: None,
+            retry_config_override: None,
         };
 
         manager

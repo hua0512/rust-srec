@@ -8,12 +8,17 @@
 //! | Method | Path | Description |
 //! |--------|------|-------------|
 //! | GET | `/api/pipeline/jobs` | List jobs with filtering and pagination |
-//! | GET | `/api/pipeline/jobs/:id` | Get a single job by ID |
-//! | POST | `/api/pipeline/jobs/:id/retry` | Retry a failed job |
-//! | DELETE | `/api/pipeline/jobs/:id` | Cancel a pending or processing job |
+//! | GET | `/api/pipeline/jobs/{id}` | Get a single job by ID |
+//! | POST | `/api/pipeline/jobs/{id}/retry` | Retry a failed job |
+//! | DELETE | `/api/pipeline/jobs/{id}` | Cancel a pending or processing job |
 //! | GET | `/api/pipeline/outputs` | List media outputs with filtering |
 //! | GET | `/api/pipeline/stats` | Get pipeline statistics |
 //! | POST | `/api/pipeline/create` | Create a new pipeline |
+//! | GET | `/api/pipeline/presets` | List pipeline presets (workflows) |
+//! | GET | `/api/pipeline/presets/{id}` | Get a pipeline preset by ID |
+//! | POST | `/api/pipeline/presets` | Create a pipeline preset |
+//! | PUT | `/api/pipeline/presets/{id}` | Update a pipeline preset |
+//! | DELETE | `/api/pipeline/presets/{id}` | Delete a pipeline preset |
 
 use axum::{
     Json, Router,
@@ -24,10 +29,12 @@ use serde::{Deserialize, Serialize};
 
 use crate::api::error::{ApiError, ApiResult};
 use crate::api::models::{
-    JobFilterParams, JobResponse, JobStatus as ApiJobStatus, MediaOutputResponse,
-    PaginatedResponse, PaginationParams, PipelineStatsResponse,
+    JobExecutionInfo as ApiJobExecutionInfo, JobFilterParams, JobLogEntry as ApiJobLogEntry,
+    JobResponse, JobStatus as ApiJobStatus, MediaOutputResponse, PaginatedResponse,
+    PaginationParams, PipelineStatsResponse, StepDurationInfo as ApiStepDurationInfo,
 };
 use crate::api::server::AppState;
+use crate::database::models::job::PipelineStep;
 use crate::database::models::{JobFilters, JobStatus as DbJobStatus, OutputFilters, Pagination};
 use crate::pipeline::{Job, JobStatus as QueueJobStatus};
 
@@ -36,12 +43,17 @@ use crate::pipeline::{Job, JobStatus as QueueJobStatus};
 /// # Routes
 ///
 /// - `GET /jobs` - List jobs with filtering and pagination
-/// - `GET /jobs/:id` - Get a single job by ID
-/// - `POST /jobs/:id/retry` - Retry a failed job
-/// - `DELETE /jobs/:id` - Cancel a job
+/// - `GET /jobs/{id}` - Get a single job by ID
+/// - `POST /jobs/{id}/retry` - Retry a failed job
+/// - `DELETE /jobs/{id}` - Cancel a job
 /// - `GET /outputs` - List media outputs
 /// - `GET /stats` - Get pipeline statistics
 /// - `POST /create` - Create a new pipeline
+/// - `GET /presets` - List pipeline presets (workflows)
+/// - `GET /presets/{id}` - Get a pipeline preset by ID
+/// - `POST /presets` - Create a pipeline preset
+/// - `PUT /presets/{id}` - Update a pipeline preset
+/// - `DELETE /presets/{id}` - Delete a pipeline preset
 pub fn router() -> Router<AppState> {
     Router::new()
         .route("/jobs", get(list_jobs))
@@ -51,6 +63,16 @@ pub fn router() -> Router<AppState> {
         .route("/outputs", get(list_outputs))
         .route("/stats", get(get_stats))
         .route("/create", post(create_pipeline))
+        .route(
+            "/presets",
+            get(list_pipeline_presets).post(create_pipeline_preset),
+        )
+        .route(
+            "/presets/{id}",
+            get(get_pipeline_preset_by_id)
+                .put(update_pipeline_preset)
+                .delete(delete_pipeline_preset),
+        )
 }
 
 /// Request body for creating a new pipeline.
@@ -71,7 +93,7 @@ pub fn router() -> Router<AppState> {
 /// - `session_id` - The recording session ID this pipeline belongs to
 /// - `streamer_id` - The streamer ID this pipeline belongs to
 /// - `input_path` - Path to the input file to process
-/// - `steps` - Optional list of processing steps (defaults to ["remux", "upload", "thumbnail"])
+/// - `steps` - Optional list of processing steps. Requests without steps will be rejected.
 #[derive(Debug, Clone, Deserialize)]
 pub struct CreatePipelineRequest {
     /// Session ID for the pipeline.
@@ -80,8 +102,8 @@ pub struct CreatePipelineRequest {
     pub streamer_id: String,
     /// Input file path.
     pub input_path: String,
-    /// Pipeline steps (optional, defaults to ["remux", "upload", "thumbnail"]).
-    pub steps: Option<Vec<String>>,
+    /// Pipeline steps (optional, but at least one step is required).
+    pub steps: Option<Vec<PipelineStep>>,
 }
 
 /// Response body for pipeline creation.
@@ -95,9 +117,10 @@ pub struct CreatePipelineRequest {
 ///         "id": "job-uuid-123",
 ///         "session_id": "session-123",
 ///         "streamer_id": "streamer-456",
+///         "pipeline_id": "job-uuid-123",
 ///         "status": "pending",
 ///         "processor_type": "remux",
-///         "input_path": "/recordings/stream.flv",
+///         "input_path": ["/recordings/stream.flv"],
 ///         "created_at": "2025-12-03T10:00:00Z"
 ///     }
 /// }
@@ -108,6 +131,72 @@ pub struct CreatePipelineResponse {
     pub pipeline_id: String,
     /// First job details.
     pub first_job: JobResponse,
+}
+
+/// Request body for creating a new pipeline preset.
+#[derive(Debug, Clone, Deserialize)]
+pub struct CreatePipelinePresetRequest {
+    /// Human-readable name.
+    pub name: String,
+    /// Optional description.
+    pub description: Option<String>,
+    /// Pipeline steps (list of job preset names).
+    pub steps: Vec<String>,
+}
+
+/// Request body for updating a pipeline preset.
+#[derive(Debug, Clone, Deserialize)]
+pub struct UpdatePipelinePresetRequest {
+    /// Human-readable name.
+    pub name: String,
+    /// Optional description.
+    pub description: Option<String>,
+    /// Pipeline steps (list of job preset names).
+    pub steps: Vec<String>,
+}
+
+/// Query parameters for filtering pipeline presets.
+#[derive(Debug, Clone, Deserialize, Default)]
+pub struct PipelinePresetFilterParams {
+    /// Search query (matches name or description).
+    pub search: Option<String>,
+}
+
+/// Pagination parameters for pipeline preset list.
+#[derive(Debug, Clone, Deserialize)]
+pub struct PipelinePresetPaginationParams {
+    /// Number of items to return (default: 20, max: 100).
+    #[serde(default = "default_preset_limit")]
+    pub limit: u32,
+    /// Number of items to skip.
+    #[serde(default)]
+    pub offset: u32,
+}
+
+fn default_preset_limit() -> u32 {
+    20
+}
+
+impl Default for PipelinePresetPaginationParams {
+    fn default() -> Self {
+        Self {
+            limit: default_preset_limit(),
+            offset: 0,
+        }
+    }
+}
+
+/// Response for pipeline preset list with pagination.
+#[derive(Debug, Clone, Serialize)]
+pub struct PipelinePresetListResponse {
+    /// List of pipeline presets.
+    pub presets: Vec<crate::database::models::PipelinePreset>,
+    /// Total number of presets matching the filter.
+    pub total: u64,
+    /// Number of items returned.
+    pub limit: u32,
+    /// Number of items skipped.
+    pub offset: u32,
 }
 
 /// Query parameters for filtering media outputs.
@@ -135,7 +224,10 @@ pub struct OutputFilterParams {
 ///
 /// - `limit` - Maximum number of results (default: 20, max: 100)
 /// - `offset` - Number of results to skip (default: 0)
-/// - `status` - Filter by job status: pending, processing, completed, failed, interrupted
+/// - `session_id` - Associated recording session ID
+/// - `streamer_id` - Associated streamer ID
+/// - `pipeline_id` - Associated pipeline ID (if part of a pipeline)
+/// - `status` - Current job status (pending, processing, completed, failed, interrupted)
 /// - `streamer_id` - Filter by streamer ID
 /// - `session_id` - Filter by session ID
 /// - `from_date` - Filter jobs created after this date (ISO 8601)
@@ -176,9 +268,11 @@ async fn list_jobs(
         status: filters.status.map(api_status_to_db_status),
         streamer_id: filters.streamer_id,
         session_id: filters.session_id,
+        pipeline_id: filters.pipeline_id,
         from_date: filters.from_date,
         to_date: filters.to_date,
         job_type: None,
+        job_types: None,
     };
 
     let db_pagination = Pagination::new(pagination.limit, pagination.offset);
@@ -201,7 +295,7 @@ async fn list_jobs(
 ///
 /// # Endpoint
 ///
-/// `GET /api/pipeline/jobs/:id`
+/// `GET /api/pipeline/jobs/{id}`
 ///
 /// # Path Parameters
 ///
@@ -216,10 +310,11 @@ async fn list_jobs(
 ///     "id": "job-uuid-123",
 ///     "session_id": "session-123",
 ///     "streamer_id": "streamer-456",
+///     "pipeline_id": "job-uuid-123",
 ///     "status": "completed",
 ///     "processor_type": "remux",
-///     "input_path": "/recordings/stream.flv",
-///     "output_path": "/recordings/stream.mp4",
+///     "input_path": ["/recordings/stream.flv"],
+///     "output_path": ["/recordings/stream.mp4"],
 ///     "created_at": "2025-12-03T10:00:00Z",
 ///     "started_at": "2025-12-03T10:00:01Z",
 ///     "completed_at": "2025-12-03T10:05:00Z"
@@ -257,7 +352,7 @@ async fn get_job(
 ///
 /// # Endpoint
 ///
-/// `POST /api/pipeline/jobs/:id/retry`
+/// `POST /api/pipeline/jobs/{id}/retry`
 ///
 /// # Path Parameters
 ///
@@ -308,7 +403,7 @@ async fn retry_job(
 ///
 /// # Endpoint
 ///
-/// `DELETE /api/pipeline/jobs/:id`
+/// `DELETE /api/pipeline/jobs/{id}`
 ///
 /// # Path Parameters
 ///
@@ -523,7 +618,7 @@ async fn get_stats(State(state): State<AppState>) -> ApiResult<Json<PipelineStat
 /// - `session_id` (required) - The recording session ID
 /// - `streamer_id` (required) - The streamer ID
 /// - `input_path` (required) - Path to the input file
-/// - `steps` (optional) - Processing steps, defaults to ["remux", "upload", "thumbnail"]
+/// - `steps` (optional) - Processing steps. Requests without steps are rejected.
 ///
 /// # Response
 ///
@@ -553,7 +648,7 @@ async fn get_stats(State(state): State<AppState>) -> ApiResult<Json<PipelineStat
 /// - 7.1: Create only first job with metadata for subsequent steps
 /// - 7.5: Accept session_id, streamer_id, input_path, and optional steps
 /// - 8.1: Create pipeline and return pipeline_id
-/// - 8.2: Use default steps if not specified
+/// - 8.2: Validate that at least one step is provided
 async fn create_pipeline(
     State(state): State<AppState>,
     Json(request): Json<CreatePipelineRequest>,
@@ -622,20 +717,220 @@ fn job_to_response(job: &Job) -> JobResponse {
         id: job.id.clone(),
         session_id: job.session_id.clone(),
         streamer_id: job.streamer_id.clone(),
+        pipeline_id: job.pipeline_id.clone(),
         status: queue_status_to_api_status(job.status),
         processor_type: job.job_type.clone(),
-        input_path: job.input.clone(),
-        output_path: if job.output.is_empty() {
+        input_path: job.inputs.clone(),
+        output_path: if job.outputs.is_empty() {
             None
         } else {
-            Some(job.output.clone())
+            Some(job.outputs.clone())
         },
         error_message: job.error.clone(),
-        progress: None, // Progress tracking not implemented yet
+        progress: Some(0.0), // Progress tracking not implemented yet, default to 0.0
         created_at: job.created_at,
         started_at: job.started_at,
         completed_at: job.completed_at,
+        execution_info: job.execution_info.as_ref().map(|info| ApiJobExecutionInfo {
+            current_processor: info.current_processor.clone(),
+            current_step: info.current_step,
+            total_steps: info.total_steps,
+            items_produced: info.items_produced.clone(),
+            input_size_bytes: info.input_size_bytes,
+            output_size_bytes: info.output_size_bytes,
+            logs: info
+                .logs
+                .iter()
+                .map(|log| ApiJobLogEntry {
+                    timestamp: log.timestamp,
+                    level: format!("{:?}", log.level),
+                    message: log.message.clone(),
+                })
+                .collect(),
+            step_durations: info
+                .step_durations
+                .iter()
+                .map(|sd| ApiStepDurationInfo {
+                    step: sd.step,
+                    processor: sd.processor.clone(),
+                    duration_secs: sd.duration_secs,
+                    started_at: sd.started_at,
+                    completed_at: sd.completed_at,
+                })
+                .collect(),
+        }),
+        duration_secs: job.duration_secs,
+        queue_wait_secs: job.queue_wait_secs,
     }
+}
+
+// ============================================================================
+// Pipeline Preset Handlers (Workflow Sequences)
+// ============================================================================
+
+/// List available pipeline presets (workflow sequences).
+///
+/// # Endpoint
+///
+/// `GET /api/pipeline/presets`
+///
+/// # Query Parameters
+///
+/// - `search` - Search query for name or description (optional)
+/// - `limit` - Number of items to return (default: 20, max: 100)
+/// - `offset` - Number of items to skip (default: 0)
+///
+/// # Response
+///
+/// Returns a paginated list of available pipeline presets.
+async fn list_pipeline_presets(
+    State(state): State<AppState>,
+    Query(filters): Query<PipelinePresetFilterParams>,
+    Query(pagination): Query<PipelinePresetPaginationParams>,
+) -> ApiResult<Json<PipelinePresetListResponse>> {
+    let preset_repo = state
+        .pipeline_preset_repository
+        .as_ref()
+        .ok_or_else(|| ApiError::service_unavailable("Pipeline preset service not available"))?;
+
+    let db_filters = crate::database::repositories::PipelinePresetFilters {
+        search: filters.search,
+    };
+
+    let db_pagination = Pagination::new(pagination.limit, pagination.offset);
+
+    let (presets, total) = preset_repo
+        .list_pipeline_presets_filtered(&db_filters, &db_pagination)
+        .await
+        .map_err(ApiError::from)?;
+
+    Ok(Json(PipelinePresetListResponse {
+        presets,
+        total,
+        limit: pagination.limit,
+        offset: pagination.offset,
+    }))
+}
+
+/// Get a pipeline preset by ID.
+///
+/// # Endpoint
+///
+/// `GET /api/pipeline/presets/{id}`
+async fn get_pipeline_preset_by_id(
+    State(state): State<AppState>,
+    Path(id): Path<String>,
+) -> ApiResult<Json<crate::database::models::PipelinePreset>> {
+    let preset_repo = state
+        .pipeline_preset_repository
+        .as_ref()
+        .ok_or_else(|| ApiError::service_unavailable("Pipeline preset service not available"))?;
+
+    let preset = preset_repo
+        .get_pipeline_preset(&id)
+        .await
+        .map_err(ApiError::from)?
+        .ok_or_else(|| ApiError::not_found(format!("Pipeline preset {} not found", id)))?;
+
+    Ok(Json(preset))
+}
+
+/// Create a new pipeline preset.
+///
+/// # Endpoint
+///
+/// `POST /api/pipeline/presets`
+async fn create_pipeline_preset(
+    State(state): State<AppState>,
+    Json(payload): Json<CreatePipelinePresetRequest>,
+) -> ApiResult<Json<crate::database::models::PipelinePreset>> {
+    let preset_repo = state
+        .pipeline_preset_repository
+        .as_ref()
+        .ok_or_else(|| ApiError::service_unavailable("Pipeline preset service not available"))?;
+
+    let steps_json = serde_json::to_string(&payload.steps)
+        .map_err(|e| ApiError::bad_request(format!("Invalid steps: {}", e)))?;
+
+    let preset = crate::database::models::PipelinePreset {
+        id: uuid::Uuid::new_v4().to_string(),
+        name: payload.name,
+        description: payload.description,
+        steps: steps_json,
+        created_at: chrono::Utc::now(),
+        updated_at: chrono::Utc::now(),
+    };
+
+    preset_repo
+        .create_pipeline_preset(&preset)
+        .await
+        .map_err(ApiError::from)?;
+
+    Ok(Json(preset))
+}
+
+/// Update an existing pipeline preset.
+///
+/// # Endpoint
+///
+/// `PUT /api/pipeline/presets/{id}`
+async fn update_pipeline_preset(
+    State(state): State<AppState>,
+    Path(id): Path<String>,
+    Json(payload): Json<UpdatePipelinePresetRequest>,
+) -> ApiResult<Json<crate::database::models::PipelinePreset>> {
+    let preset_repo = state
+        .pipeline_preset_repository
+        .as_ref()
+        .ok_or_else(|| ApiError::service_unavailable("Pipeline preset service not available"))?;
+
+    // Check if preset exists
+    let existing = preset_repo
+        .get_pipeline_preset(&id)
+        .await
+        .map_err(ApiError::from)?
+        .ok_or_else(|| ApiError::not_found(format!("Pipeline preset {} not found", id)))?;
+
+    let steps_json = serde_json::to_string(&payload.steps)
+        .map_err(|e| ApiError::bad_request(format!("Invalid steps: {}", e)))?;
+
+    let preset = crate::database::models::PipelinePreset {
+        id: id.clone(),
+        name: payload.name,
+        description: payload.description,
+        steps: steps_json,
+        created_at: existing.created_at,
+        updated_at: chrono::Utc::now(),
+    };
+
+    preset_repo
+        .update_pipeline_preset(&preset)
+        .await
+        .map_err(ApiError::from)?;
+
+    Ok(Json(preset))
+}
+
+/// Delete a pipeline preset.
+///
+/// # Endpoint
+///
+/// `DELETE /api/pipeline/presets/{id}`
+async fn delete_pipeline_preset(
+    State(state): State<AppState>,
+    Path(id): Path<String>,
+) -> ApiResult<Json<()>> {
+    let preset_repo = state
+        .pipeline_preset_repository
+        .as_ref()
+        .ok_or_else(|| ApiError::service_unavailable("Pipeline preset service not available"))?;
+
+    preset_repo
+        .delete_pipeline_preset(&id)
+        .await
+        .map_err(ApiError::from)?;
+
+    Ok(Json(()))
 }
 
 #[cfg(test)]
@@ -684,7 +979,10 @@ mod tests {
         let request: CreatePipelineRequest = serde_json::from_str(json).unwrap();
         assert_eq!(
             request.steps,
-            Some(vec!["remux".to_string(), "upload".to_string()])
+            Some(vec![
+                crate::database::models::job::PipelineStep::Preset("remux".to_string()),
+                crate::database::models::job::PipelineStep::Preset("upload".to_string())
+            ])
         );
     }
 

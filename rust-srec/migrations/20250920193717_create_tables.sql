@@ -18,7 +18,8 @@ CREATE TABLE global_config (
     max_concurrent_cpu_jobs INTEGER NOT NULL DEFAULT 0,
     max_concurrent_io_jobs INTEGER NOT NULL DEFAULT 8,
     job_history_retention_days INTEGER NOT NULL DEFAULT 30,
-    session_gap_time_secs INTEGER NOT NULL DEFAULT 600
+    session_gap_time_secs INTEGER NOT NULL DEFAULT 600,
+    pipeline TEXT
 );
 
 -- `platform_config` table: Stores settings specific to each supported streaming platform.
@@ -40,7 +41,8 @@ CREATE TABLE platform_config (
     max_download_duration_secs BIGINT,
     max_part_size_bytes BIGINT,
     download_retry_policy TEXT,
-    event_hooks TEXT
+    event_hooks TEXT,
+    pipeline TEXT
 );
 
 -- `template_config` table: Reusable configuration templates for streamers.
@@ -63,6 +65,7 @@ CREATE TABLE template_config (
     proxy_config TEXT,
     event_hooks TEXT,
     stream_selection_config TEXT,
+    pipeline TEXT,
     created_at TEXT NOT NULL DEFAULT (datetime('now')),
     updated_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
@@ -159,7 +162,10 @@ CREATE TABLE job (
     retry_count INTEGER NOT NULL DEFAULT 0,  -- Number of retry attempts
     next_job_type TEXT,                      -- Next job type to create on completion
     remaining_steps TEXT,                    -- Pipeline steps remaining (JSON array)
-    pipeline_id TEXT                         -- Pipeline ID to group related jobs
+    pipeline_id TEXT,                        -- Pipeline ID to group related jobs
+    execution_info TEXT,                     -- JSON blob for detailed execution logs/result
+    duration_secs REAL,                      -- Processing duration in seconds (from processor)
+    queue_wait_secs REAL                     -- Time spent waiting in queue (started_at - created_at)
 );
 
 CREATE TABLE job_execution_logs (
@@ -168,6 +174,31 @@ CREATE TABLE job_execution_logs (
     entry TEXT NOT NULL,
     created_at TEXT NOT NULL,
     FOREIGN KEY (job_id) REFERENCES job(id) ON DELETE CASCADE
+);
+
+-- Job Presets: Reusable named job configurations
+-- Used in pipeline steps referencing a preset name
+-- Categories: remux, compression, thumbnail, audio, archive, upload, cleanup, file_ops, custom, metadata
+CREATE TABLE job_presets (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL UNIQUE,
+    description TEXT, -- Optional description of what this preset does
+    category TEXT,    -- Category for organizing presets
+    processor TEXT NOT NULL,
+    config TEXT NOT NULL, -- JSON
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+-- Pipeline Presets: Reusable pipeline configurations (sequences of job steps)
+-- Users can copy these to configure streamers/templates
+CREATE TABLE pipeline_presets (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL UNIQUE,
+    description TEXT,
+    steps TEXT NOT NULL, -- JSON array of PipelineStep (job preset names or inline definitions)
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
 CREATE TABLE engine_configuration (
@@ -291,6 +322,8 @@ CREATE INDEX idx_job_priority ON job(priority DESC);
 CREATE INDEX idx_job_started_at ON job(started_at);
 CREATE INDEX idx_job_completed_at ON job(completed_at);
 CREATE INDEX idx_job_pipeline_id ON job(pipeline_id);
+-- Index for efficient purge queries
+CREATE INDEX idx_jobs_completed_at_status ON job(completed_at) WHERE status IN ('COMPLETED', 'FAILED');
 
 -- Index for the job_execution_logs table
 CREATE INDEX idx_job_execution_logs_job_id ON job_execution_logs(job_id);
@@ -308,6 +341,15 @@ CREATE INDEX idx_users_is_active ON users(is_active);
 CREATE INDEX idx_refresh_tokens_user_id ON refresh_tokens(user_id);
 CREATE INDEX idx_refresh_tokens_token_hash ON refresh_tokens(token_hash);
 CREATE INDEX idx_refresh_tokens_expires_at ON refresh_tokens(expires_at);
+
+-- Indexes for job_presets
+CREATE INDEX idx_job_presets_name ON job_presets(name);
+CREATE INDEX idx_job_presets_processor ON job_presets(processor);
+CREATE INDEX idx_job_presets_category ON job_presets(category);
+
+-- Indexes for pipeline_presets
+CREATE INDEX idx_pipeline_presets_name ON pipeline_presets(name);
+
 
 -- Default admin user (password: admin123!)
 -- Argon2id hash generated with OWASP recommended parameters: m=19456, t=2, p=1
@@ -386,4 +428,399 @@ INSERT INTO global_config (
     8,
     30,
     600                      -- 10 min
+);
+
+
+-- Seed default job presets
+
+-- ============================================
+-- REMUX PRESETS (Container format conversion)
+-- ============================================
+
+-- Remux to MP4: Copy streams without re-encoding (fast, lossless)
+INSERT INTO job_presets (id, name, description, category, processor, config, created_at, updated_at) VALUES (
+    'preset-default-remux',
+    'remux',
+    'Remux to MP4 without re-encoding. Fast and lossless - just changes the container format.',
+    'remux',
+    'remux',
+    '{"video_codec":"copy","audio_codec":"copy","format":"mp4","faststart":true,"overwrite":true}',
+    datetime('now'),
+    datetime('now')
+);
+
+-- Remux to MKV: Copy streams to Matroska container
+INSERT INTO job_presets (id, name, description, category, processor, config, created_at, updated_at) VALUES (
+    'preset-default-remux-mkv',
+    'remux_mkv',
+    'Remux to MKV without re-encoding. Matroska supports more codecs and features.',
+    'remux',
+    'remux',
+    '{"video_codec":"copy","audio_codec":"copy","format":"mkv","overwrite":true}',
+    datetime('now'),
+    datetime('now')
+);
+
+-- ============================================
+-- COMPRESSION PRESETS (Re-encoding)
+-- ============================================
+
+-- Fast H.264 compression: Good balance of speed and quality
+INSERT INTO job_presets (id, name, description, category, processor, config, created_at, updated_at) VALUES (
+    'preset-default-compress-fast',
+    'compress_fast',
+    'Fast H.264 compression (CRF 23). Good balance of speed, quality, and file size.',
+    'compression',
+    'remux',
+    '{"video_codec":"h264","audio_codec":"aac","audio_bitrate":"128k","preset":"veryfast","crf":23,"format":"mp4","faststart":true,"overwrite":true}',
+    datetime('now'),
+    datetime('now')
+);
+
+-- High quality H.265/HEVC compression: Best compression ratio
+INSERT INTO job_presets (id, name, description, category, processor, config, created_at, updated_at) VALUES (
+    'preset-default-compress-hq',
+    'compress_hq',
+    'High quality H.265/HEVC compression (CRF 22). Smaller files but slower encoding.',
+    'compression',
+    'remux',
+    '{"video_codec":"h265","audio_codec":"aac","audio_bitrate":"192k","preset":"medium","crf":22,"format":"mp4","faststart":true,"overwrite":true}',
+    datetime('now'),
+    datetime('now')
+);
+
+-- ============================================
+-- THUMBNAIL PRESETS
+-- ============================================
+
+-- Standard thumbnail: 320px width at 10 seconds
+INSERT INTO job_presets (id, name, description, category, processor, config, created_at, updated_at) VALUES (
+    'preset-default-thumbnail',
+    'thumbnail',
+    'Generate a thumbnail image from the video at 10 seconds (320px width).',
+    'thumbnail',
+    'thumbnail',
+    '{"timestamp_secs":10,"width":320,"quality":2}',
+    datetime('now'),
+    datetime('now')
+);
+
+-- HD thumbnail: 640px width for higher quality previews
+INSERT INTO job_presets (id, name, description, category, processor, config, created_at, updated_at) VALUES (
+    'preset-default-thumbnail-hd',
+    'thumbnail_hd',
+    'Generate a high-resolution thumbnail (640px width) at 10 seconds.',
+    'thumbnail',
+    'thumbnail',
+    '{"timestamp_secs":10,"width":640,"quality":2}',
+    datetime('now'),
+    datetime('now')
+);
+
+-- ============================================
+-- AUDIO EXTRACTION PRESETS
+-- ============================================
+
+-- Extract audio to MP3 (192kbps)
+INSERT INTO job_presets (id, name, description, category, processor, config, created_at, updated_at) VALUES (
+    'preset-default-audio-mp3',
+    'audio_mp3',
+    'Extract audio track to MP3 format (192kbps). Good for podcasts and music.',
+    'audio',
+    'audio_extract',
+    '{"format":"mp3","bitrate":"192k","overwrite":true}',
+    datetime('now'),
+    datetime('now')
+);
+
+-- Extract audio to AAC (high quality)
+INSERT INTO job_presets (id, name, description, category, processor, config, created_at, updated_at) VALUES (
+    'preset-default-audio-aac',
+    'audio_aac',
+    'Extract audio track to AAC format (256kbps). High quality, widely compatible.',
+    'audio',
+    'audio_extract',
+    '{"format":"aac","bitrate":"256k","overwrite":true}',
+    datetime('now'),
+    datetime('now')
+);
+
+-- ============================================
+-- ARCHIVE PRESETS
+-- ============================================
+
+-- Create ZIP archive
+INSERT INTO job_presets (id, name, description, category, processor, config, created_at, updated_at) VALUES (
+    'preset-default-archive-zip',
+    'archive_zip',
+    'Create a ZIP archive of the file. Good for bundling with metadata.',
+    'archive',
+    'compression',
+    '{"format":"zip","compression_level":6,"overwrite":true}',
+    datetime('now'),
+    datetime('now')
+);
+
+-- ============================================
+-- CLEANUP PRESETS
+-- ============================================
+
+-- Delete source file
+INSERT INTO job_presets (id, name, description, category, processor, config, created_at, updated_at) VALUES (
+    'preset-default-delete',
+    'delete_source',
+    'Delete the source file. Use as the last step in a pipeline to clean up.',
+    'cleanup',
+    'delete',
+    '{"max_retries":3,"retry_delay_ms":100}',
+    datetime('now'),
+    datetime('now')
+);
+
+-- ============================================
+-- FILE OPERATION PRESETS
+-- ============================================
+
+-- Copy file to another location
+INSERT INTO job_presets (id, name, description, category, processor, config, created_at, updated_at) VALUES (
+    'preset-default-copy',
+    'copy',
+    'Copy the file to another location. Keeps the original file.',
+    'file_ops',
+    'copy_move',
+    '{"operation":"copy","create_dirs":true,"verify_integrity":true,"overwrite":false}',
+    datetime('now'),
+    datetime('now')
+);
+
+-- Move file to another location
+INSERT INTO job_presets (id, name, description, category, processor, config, created_at, updated_at) VALUES (
+    'preset-default-move',
+    'move',
+    'Move the file to another location. Removes the original file.',
+    'file_ops',
+    'copy_move',
+    '{"operation":"move","create_dirs":true,"verify_integrity":true,"overwrite":false}',
+    datetime('now'),
+    datetime('now')
+);
+
+-- ============================================
+-- UPLOAD PRESETS (Cloud storage)
+-- ============================================
+
+-- Upload to cloud storage via rclone (generic)
+INSERT INTO job_presets (id, name, description, category, processor, config, created_at, updated_at) VALUES (
+    'preset-default-upload',
+    'upload',
+    'Upload file to cloud storage using rclone. Configure remote in rclone config.',
+    'upload',
+    'rclone',
+    '{"operation":"copy","remote":"remote:","remote_path":"/uploads/{streamer}/{date}","delete_after":false,"bandwidth_limit":null}',
+    datetime('now'),
+    datetime('now')
+);
+
+-- Upload and delete source
+INSERT INTO job_presets (id, name, description, category, processor, config, created_at, updated_at) VALUES (
+    'preset-default-upload-delete',
+    'upload_and_delete',
+    'Upload file to cloud storage and delete local copy after successful upload.',
+    'upload',
+    'rclone',
+    '{"operation":"move","remote":"remote:","remote_path":"/uploads/{streamer}/{date}","delete_after":true,"bandwidth_limit":null}',
+    datetime('now'),
+    datetime('now')
+);
+
+-- ============================================
+-- METADATA PRESETS
+-- ============================================
+
+-- Add metadata tags
+INSERT INTO job_presets (id, name, description, category, processor, config, created_at, updated_at) VALUES (
+    'preset-default-metadata',
+    'add_metadata',
+    'Add metadata tags (title, artist, date) to the video file.',
+    'metadata',
+    'metadata',
+    '{"title":"{title}","artist":"{streamer}","date":"{date}","comment":"Recorded by rust-srec"}',
+    datetime('now'),
+    datetime('now')
+);
+
+-- ============================================
+-- CUSTOM EXECUTE PRESETS
+-- ============================================
+
+-- Custom FFmpeg command template
+INSERT INTO job_presets (id, name, description, category, processor, config, created_at, updated_at) VALUES (
+    'preset-default-custom-ffmpeg',
+    'custom_ffmpeg',
+    'Run a custom FFmpeg command. Edit the args to customize.',
+    'custom',
+    'execute',
+    '{"command":"ffmpeg","args":["-i","{input}","-c","copy","{output}"],"timeout_secs":3600,"working_dir":null}',
+    datetime('now'),
+    datetime('now')
+);
+
+-- ============================================
+-- ADDITIONAL PRESETS (Specialized configurations)
+-- ============================================
+
+-- Remux MP4 with faststart (optimized for streaming)
+INSERT INTO job_presets (id, name, description, category, processor, config, created_at, updated_at) VALUES (
+    'preset-remux-faststart',
+    'remux_faststart',
+    'Remux to MP4 with faststart flag for web streaming optimization.',
+    'remux',
+    'remux',
+    '{"video_codec":"copy","audio_codec":"copy","format":"mp4","faststart":true,"overwrite":true}',
+    datetime('now'),
+    datetime('now')
+);
+
+-- H.264 medium compression for archival
+INSERT INTO job_presets (id, name, description, category, processor, config, created_at, updated_at) VALUES (
+    'preset-compress-archive',
+    'compress_archive',
+    'H.264 medium compression (CRF 23) optimized for long-term storage.',
+    'compression',
+    'remux',
+    '{"video_codec":"h264","audio_codec":"aac","audio_bitrate":"128k","preset":"medium","crf":23,"format":"mp4","faststart":true,"overwrite":true}',
+    datetime('now'),
+    datetime('now')
+);
+
+-- High-quality MP3 audio extraction
+INSERT INTO job_presets (id, name, description, category, processor, config, created_at, updated_at) VALUES (
+    'preset-audio-mp3-hq',
+    'audio_mp3_hq',
+    'Extract audio to high-quality MP3 (320kbps) for podcast distribution.',
+    'audio',
+    'audio_extract',
+    '{"format":"mp3","bitrate":"320k","overwrite":true}',
+    datetime('now'),
+    datetime('now')
+);
+
+-- Thumbnail at 30 seconds (preview)
+INSERT INTO job_presets (id, name, description, category, processor, config, created_at, updated_at) VALUES (
+    'preset-thumbnail-preview',
+    'thumbnail_preview',
+    'Generate a thumbnail at 30 seconds with 480px width for previews.',
+    'thumbnail',
+    'thumbnail',
+    '{"timestamp_secs":30,"width":480,"quality":2}',
+    datetime('now'),
+    datetime('now')
+);
+
+-- HEVC maximum compression (space saver)
+INSERT INTO job_presets (id, name, description, category, processor, config, created_at, updated_at) VALUES (
+    'preset-compress-hevc-max',
+    'compress_hevc_max',
+    'Maximum HEVC/H.265 compression (CRF 28) for minimal file size.',
+    'compression',
+    'remux',
+    '{"video_codec":"h265","audio_codec":"aac","audio_bitrate":"96k","preset":"slow","crf":28,"format":"mp4","faststart":true,"overwrite":true}',
+    datetime('now'),
+    datetime('now')
+);
+
+-- Ultrafast H.264 encoding (quick share)
+INSERT INTO job_presets (id, name, description, category, processor, config, created_at, updated_at) VALUES (
+    'preset-compress-ultrafast',
+    'compress_ultrafast',
+    'Ultrafast H.264 encoding (CRF 26) for quick sharing.',
+    'compression',
+    'remux',
+    '{"video_codec":"h264","audio_codec":"aac","audio_bitrate":"128k","preset":"ultrafast","crf":26,"format":"mp4","faststart":true,"overwrite":true}',
+    datetime('now'),
+    datetime('now')
+);
+
+-- ============================================
+-- PIPELINE PRESETS (Sequences of job steps)
+-- ============================================
+
+-- Standard: Remux to MP4 + Generate thumbnail
+INSERT INTO pipeline_presets (id, name, description, steps, created_at, updated_at) VALUES (
+    'pipeline-standard',
+    'Standard',
+    'Basic post-processing: Remux FLV to MP4 and generate a thumbnail preview.',
+    '["remux", "thumbnail"]',
+    datetime('now'),
+    datetime('now')
+);
+
+-- Archive: Compress + Upload to cloud + Delete local
+INSERT INTO pipeline_presets (id, name, description, steps, created_at, updated_at) VALUES (
+    'pipeline-archive',
+    'Archive to Cloud',
+    'Compress video for storage, upload to cloud, then delete local file to save space.',
+    '["compress_fast", "upload", "delete_source"]',
+    datetime('now'),
+    datetime('now')
+);
+
+-- High Quality Archive: Best compression + Upload
+INSERT INTO pipeline_presets (id, name, description, steps, created_at, updated_at) VALUES (
+    'pipeline-hq-archive',
+    'High Quality Archive',
+    'Maximum quality compression with HEVC, then upload to cloud storage.',
+    '["compress_hq", "thumbnail_hd", "upload"]',
+    datetime('now'),
+    datetime('now')
+);
+
+-- Podcast: Extract audio + Upload
+INSERT INTO pipeline_presets (id, name, description, steps, created_at, updated_at) VALUES (
+    'pipeline-podcast',
+    'Podcast Extraction',
+    'Extract high-quality audio for podcast distribution and upload.',
+    '["audio_mp3", "upload"]',
+    datetime('now'),
+    datetime('now')
+);
+
+-- Quick Share: Fast encode + Thumbnail
+INSERT INTO pipeline_presets (id, name, description, steps, created_at, updated_at) VALUES (
+    'pipeline-quick-share',
+    'Quick Share',
+    'Fast encoding for quick sharing on social media or messaging.',
+    '["compress_ultrafast", "thumbnail"]',
+    datetime('now'),
+    datetime('now')
+);
+
+-- Space Saver: Maximum compression + Delete source
+INSERT INTO pipeline_presets (id, name, description, steps, created_at, updated_at) VALUES (
+    'pipeline-space-saver',
+    'Space Saver',
+    'Maximum compression to minimize storage usage, then delete original.',
+    '["compress_hevc_max", "delete_source"]',
+    datetime('now'),
+    datetime('now')
+);
+
+-- Full Processing: Remux + Thumbnail + Metadata + Upload
+INSERT INTO pipeline_presets (id, name, description, steps, created_at, updated_at) VALUES (
+    'pipeline-full',
+    'Full Processing',
+    'Complete workflow: Remux, generate thumbnail, add metadata, and upload.',
+    '["remux", "thumbnail", "add_metadata", "upload"]',
+    datetime('now'),
+    datetime('now')
+);
+
+-- Local Only: Remux + Thumbnail + Move to archive folder
+INSERT INTO pipeline_presets (id, name, description, steps, created_at, updated_at) VALUES (
+    'pipeline-local-archive',
+    'Local Archive',
+    'Process locally: Remux to MP4, generate thumbnail, move to archive folder.',
+    '["remux", "thumbnail", "move"]',
+    datetime('now'),
+    datetime('now')
 );

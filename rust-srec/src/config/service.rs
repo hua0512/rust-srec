@@ -2,16 +2,23 @@
 //!
 //! The ConfigService provides centralized access to all configuration data
 //! with in-memory caching and event broadcasting for updates.
+//!
+//! Architecture:
+//! - MergedConfigBuilder: Handles the merging logic for 4-layer config hierarchy
+//! - ConfigResolver: Uses builder to resolve config, fetches from repositories
+//! - ConfigService: Uses resolver + adds caching and event broadcasting
 
 use std::sync::Arc;
 use tokio::sync::broadcast;
+use tracing::trace;
 
 use crate::Result;
 use crate::database::models::{
     EngineConfigurationDbModel, GlobalConfigDbModel, PlatformConfigDbModel, TemplateConfigDbModel,
 };
 use crate::database::repositories::{config::ConfigRepository, streamer::StreamerRepository};
-use crate::domain::config::MergedConfig;
+use crate::domain::config::{ConfigResolver, MergedConfig};
+use crate::domain::streamer::Streamer;
 
 use super::cache::ConfigCache;
 use super::events::{ConfigEventBroadcaster, ConfigUpdateEvent};
@@ -251,7 +258,7 @@ where
     pub async fn get_config_for_streamer(&self, streamer_id: &str) -> Result<MergedConfig> {
         // Check cache first
         if let Some(config) = self.cache.get(streamer_id) {
-            tracing::trace!("Cache hit for streamer {}", streamer_id);
+            trace!("Cache hit for streamer {}", streamer_id);
             return Ok(config);
         }
 
@@ -260,7 +267,7 @@ where
 
         if !is_new {
             // Another request is already resolving this config, wait for it
-            tracing::trace!("Waiting for in-flight request for streamer {}", streamer_id);
+            trace!("Waiting for in-flight request for streamer {}", streamer_id);
 
             // Wait for the OnceCell to be populated
             loop {
@@ -276,7 +283,7 @@ where
             }
         }
 
-        tracing::trace!("Cache miss for streamer {}, resolving config", streamer_id);
+        trace!("Cache miss for streamer {}, resolving config", streamer_id);
 
         // Resolve the config
         match self.resolve_config_for_streamer(streamer_id).await {
@@ -294,133 +301,51 @@ where
     }
 
     /// Resolve the merged configuration for a streamer without caching.
+    ///
+    /// Delegates to ConfigResolver which handles the 4-layer merging logic.
     async fn resolve_config_for_streamer(&self, streamer_id: &str) -> Result<MergedConfig> {
-        // Get the streamer
-        let streamer = self.streamer_repo.get_streamer(streamer_id).await?;
+        // Get the streamer and convert to domain entity
+        let streamer_db = self.streamer_repo.get_streamer(streamer_id).await?;
+        let streamer = self.convert_to_domain_streamer(&streamer_db)?;
 
-        // Get global config
-        let global = self.config_repo.get_global_config().await?;
+        // Use ConfigResolver to handle the merging logic
+        let resolver = ConfigResolver::new(Arc::clone(&self.config_repo));
+        resolver
+            .resolve_config_for_streamer(&streamer)
+            .await
+            .map_err(Into::into)
+    }
 
-        // Get platform config
-        let platform = self
-            .config_repo
-            .get_platform_config(&streamer.platform_config_id)
-            .await?;
+    /// Convert database streamer model to domain entity.
+    fn convert_to_domain_streamer(
+        &self,
+        db_model: &crate::database::models::StreamerDbModel,
+    ) -> Result<Streamer> {
+        use crate::domain::StreamerUrl;
 
-        // Get template config if specified
-        let template = if let Some(ref template_id) = streamer.template_config_id {
-            Some(self.config_repo.get_template_config(template_id).await?)
-        } else {
-            None
-        };
+        let url = StreamerUrl::new(&db_model.url)?;
 
-        // Build merged config
-        let mut builder = MergedConfig::builder()
-            .with_global(
-                global.output_folder,
-                global.output_filename_template,
-                global.output_file_format,
-                global.min_segment_size_bytes,
-                global.max_download_duration_secs,
-                global.max_part_size_bytes,
-                global.record_danmu,
-                parse_proxy_config(&global.proxy_config),
-                global.default_download_engine,
-                global.session_gap_time_secs,
-            )
-            .with_platform(
-                platform.fetch_delay_ms,
-                platform.download_delay_ms,
-                platform.cookies.clone(),
-                platform
-                    .proxy_config
-                    .as_ref()
-                    .map(|s| parse_proxy_config(s)),
-                platform.record_danmu,
-                platform
-                    .platform_specific_config
-                    .as_ref()
-                    .and_then(|s| serde_json::from_str(s).ok())
-                    .as_ref(), // Pass as Option<&Value>
-                platform.output_folder.clone(),
-                platform.output_filename_template.clone(),
-                platform.download_engine.clone(),
-                platform
-                    .stream_selection_config
-                    .as_ref()
-                    .and_then(|s| serde_json::from_str(s).ok()),
-                platform.output_file_format.clone(),
-                platform.min_segment_size_bytes,
-                platform.max_download_duration_secs,
-                platform.max_part_size_bytes,
-                platform
-                    .download_retry_policy
-                    .as_ref()
-                    .and_then(|s| serde_json::from_str(s).ok()),
-                platform
-                    .event_hooks
-                    .as_ref()
-                    .and_then(|s| serde_json::from_str(s).ok()),
-            );
+        let mut streamer = Streamer::new(&db_model.name, url, &db_model.platform_config_id);
+        streamer.id = db_model.id.clone();
+        streamer.template_config_id = db_model.template_config_id.clone();
 
-        // Apply template if present
-        if let Some(template) = template {
-            builder = builder.with_template(
-                template.output_folder,
-                template.output_filename_template,
-                template.output_file_format,
-                template.min_segment_size_bytes,
-                template.max_download_duration_secs,
-                template.max_part_size_bytes,
-                template.record_danmu,
-                template
-                    .proxy_config
-                    .as_ref()
-                    .map(|s| parse_proxy_config(s)),
-                template.cookies,
-                template.download_engine,
-                template
-                    .download_retry_policy
-                    .as_ref()
-                    .and_then(|s| serde_json::from_str(s).ok()),
-                template
-                    .danmu_sampling_config
-                    .as_ref()
-                    .and_then(|s| serde_json::from_str(s).ok()),
-                template
-                    .event_hooks
-                    .as_ref()
-                    .and_then(|s| serde_json::from_str(s).ok()),
-                template
-                    .stream_selection_config
-                    .as_ref()
-                    .and_then(|s| serde_json::from_str(s).ok()),
-                template
-                    .engines_override
-                    .as_ref()
-                    .and_then(|s| serde_json::from_str(s).ok()),
-            );
-        }
-
-        // Apply streamer-specific config
-        let streamer_config = streamer
+        // Parse JSON fields
+        streamer.streamer_specific_config = db_model
             .streamer_specific_config
             .as_ref()
             .and_then(|s| serde_json::from_str(s).ok());
 
-        builder = builder.with_streamer(
-            streamer
-                .download_retry_policy
-                .as_ref()
-                .and_then(|s| serde_json::from_str(s).ok()),
-            streamer
-                .danmu_sampling_config
-                .as_ref()
-                .and_then(|s| serde_json::from_str(s).ok()),
-            streamer_config.as_ref(),
-        );
+        streamer.download_retry_policy = db_model
+            .download_retry_policy
+            .as_ref()
+            .and_then(|s| serde_json::from_str(s).ok());
 
-        Ok(builder.build())
+        streamer.danmu_sampling_config = db_model
+            .danmu_sampling_config
+            .as_ref()
+            .and_then(|s| serde_json::from_str(s).ok());
+
+        Ok(streamer)
     }
 
     /// Invalidate the cached config for a specific streamer.
@@ -484,11 +409,6 @@ where
 
         Ok(())
     }
-}
-
-/// Parse a JSON string into a ProxyConfig.
-fn parse_proxy_config(json: &str) -> crate::domain::ProxyConfig {
-    serde_json::from_str(json).unwrap_or_default()
 }
 
 #[cfg(test)]

@@ -2,6 +2,7 @@
 
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
+use std::path::Path;
 use std::process::Stdio;
 use tokio::io::{AsyncBufReadExt, BufReader};
 use tokio::process::Command;
@@ -9,6 +10,34 @@ use tracing::{debug, error, info, warn};
 
 use super::traits::{Processor, ProcessorInput, ProcessorOutput, ProcessorType};
 use crate::Result;
+
+/// Helper to ensure path is absolute.
+/// If file exists, uses canonicalize.
+/// If not (e.g. new output), uses current_dir + path.
+fn make_absolute(path: &str) -> String {
+    let path_obj = Path::new(path);
+    if path_obj.is_absolute() {
+        return path.to_string();
+    }
+
+    if path_obj.exists() {
+        if let Ok(abs) = std::fs::canonicalize(path_obj) {
+            return abs.to_string_lossy().to_string();
+        }
+    }
+
+    if let Ok(cwd) = std::env::current_dir() {
+        return cwd.join(path_obj).to_string_lossy().to_string();
+    }
+
+    path.to_string()
+}
+
+/// Media file extensions that support remuxing/transcoding.
+const SUPPORTED_MEDIA_EXTENSIONS: &[&str] = &[
+    "mp4", "mkv", "webm", "mov", "flv", "avi", "wmv", "m4v", "ts", "mts", "m2ts", "3gp", "ogv",
+    "mp3", "aac", "m4a", "ogg", "opus", "flac", "wav",
+];
 
 /// Video codec options.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -270,8 +299,23 @@ impl RemuxProcessor {
         }
     }
 
+    /// Check if the input file is a supported media format.
+    fn is_supported_media(&self, input_path: &str) -> bool {
+        let path = Path::new(input_path);
+        if let Some(ext) = path.extension().and_then(|s| s.to_str()) {
+            SUPPORTED_MEDIA_EXTENSIONS.contains(&ext.to_lowercase().as_str())
+        } else {
+            false
+        }
+    }
+
     /// Build FFmpeg command arguments from config.
-    fn build_args(&self, input: &ProcessorInput, config: &RemuxConfig) -> Vec<String> {
+    fn build_args(
+        &self,
+        input: &ProcessorInput,
+        config: &RemuxConfig,
+        output_path: &str,
+    ) -> Vec<String> {
         let mut args = Vec::new();
 
         // Overwrite flag
@@ -297,7 +341,9 @@ impl RemuxProcessor {
         }
 
         // Input file
-        args.extend(["-i".to_string(), input.input_path.clone()]);
+        if let Some(input_path) = input.inputs.first() {
+            args.extend(["-i".to_string(), input_path.clone()]);
+        }
 
         // Duration or end time
         if let Some(duration) = config.duration {
@@ -382,7 +428,7 @@ impl RemuxProcessor {
         }
 
         // Output file
-        args.push(input.output_path.clone());
+        args.push(output_path.to_string());
 
         args
     }
@@ -421,58 +467,119 @@ impl Processor for RemuxProcessor {
             RemuxConfig::default()
         };
 
+        let raw_input_path = input.inputs.first().map(|s| s.as_str()).unwrap_or("");
+        let input_path_string = make_absolute(raw_input_path);
+        let input_path = input_path_string.as_str();
+
+        // Check if input file exists
+        if !Path::new(input_path).exists() {
+            return Err(crate::Error::PipelineError(format!(
+                "Input file does not exist: {}",
+                input_path
+            )));
+        }
+
+        // Check if input is a supported media format
+        // If not supported, pass through the input file instead of failing
+        if !self.is_supported_media(input_path) {
+            let duration = start.elapsed().as_secs_f64();
+            info!(
+                "Input file is not a supported media format for remuxing, passing through: {}",
+                input_path
+            );
+            return Ok(ProcessorOutput {
+                outputs: vec![input_path.to_string()],
+                duration_secs: duration,
+                metadata: Some(
+                    serde_json::json!({
+                        "status": "skipped",
+                        "reason": "unsupported_media_format",
+                        "input": input_path,
+                    })
+                    .to_string(),
+                ),
+                skipped_inputs: vec![(
+                    input_path.to_string(),
+                    "not a supported media format for remuxing".to_string(),
+                )],
+                ..Default::default()
+            });
+        }
+
+        // Determine output path: use provided output or generate one dynamically
+        let output_string = if let Some(out) = input.outputs.first() {
+            out.clone()
+        } else {
+            // Generate dynamic output path: input_filename.{extension}
+            let input_path_obj = std::path::Path::new(input_path);
+            let file_stem = input_path_obj
+                .file_stem()
+                .unwrap_or_default()
+                .to_string_lossy();
+            let parent = input_path_obj
+                .parent()
+                .unwrap_or_else(|| std::path::Path::new("."));
+
+            // Determine extension based on config format or default to "mp4"
+            let ext = config.format.as_deref().unwrap_or("mp4");
+
+            // Use same directory as input, but with new extension
+            parent
+                .join(format!("{}.{}", file_stem, ext))
+                .to_string_lossy()
+                .to_string()
+        };
+        let output_path_string = make_absolute(&output_string);
+        let output_path = output_path_string.as_str();
+
         info!(
             "Processing {} -> {} (video: {:?}, audio: {:?})",
-            input.input_path, input.output_path, config.video_codec, config.audio_codec
+            input_path, output_path, config.video_codec, config.audio_codec
         );
 
-        let args = self.build_args(input, &config);
+        let args = self.build_args(input, &config, output_path);
         debug!("FFmpeg args: {:?}", args);
 
         // Build ffmpeg command
         let mut cmd = Command::new(&self.ffmpeg_path);
-        cmd.args(&args)
-            .env("LC_ALL", "C")
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped());
+        cmd.args(&args).env("LC_ALL", "C");
 
-        let mut child = cmd
-            .spawn()
-            .map_err(|e| crate::Error::Other(format!("Failed to spawn ffmpeg: {}", e)))?;
+        // Execute command and capture logs
+        let command_output =
+            crate::pipeline::processors::utils::run_command_with_logs(&mut cmd).await?;
 
-        // Read stderr for progress
-        if let Some(stderr) = child.stderr.take() {
-            let reader = BufReader::new(stderr);
-            let mut lines = reader.lines();
+        if !command_output.status.success() {
+            // Find the last error log
+            let error_msg = command_output
+                .logs
+                .iter()
+                .filter(|l| l.level == crate::pipeline::job_queue::LogLevel::Error)
+                .last()
+                .map(|l| l.message.clone())
+                .unwrap_or_else(|| "Unknown ffmpeg error".to_string());
 
-            while let Ok(Some(line)) = lines.next_line().await {
-                debug!("ffmpeg: {}", line);
-            }
-        }
+            error!("ffmpeg failed: {}", error_msg);
 
-        let status = child
-            .wait()
-            .await
-            .map_err(|e| crate::Error::Other(format!("Failed to wait for ffmpeg: {}", e)))?;
-
-        if !status.success() {
-            error!("ffmpeg exited with status: {}", status);
             return Err(crate::Error::Other(format!(
-                "ffmpeg failed with exit code: {}",
-                status.code().unwrap_or(-1)
+                "ffmpeg failed with exit code {}: {}",
+                command_output.status.code().unwrap_or(-1),
+                error_msg
             )));
         }
 
-        let duration = start.elapsed().as_secs_f64();
-
         info!(
             "Processing completed in {:.2}s: {}",
-            duration, input.output_path
+            command_output.duration, output_path
         );
 
+        // Get file sizes for metrics
+        let input_size_bytes = tokio::fs::metadata(input_path).await.ok().map(|m| m.len());
+        let output_size_bytes = tokio::fs::metadata(output_path).await.ok().map(|m| m.len());
+
+        // Requirements: 11.5 - Track succeeded inputs for partial failure reporting
         Ok(ProcessorOutput {
-            output_path: input.output_path.clone(),
-            duration_secs: duration,
+            outputs: vec![output_path.to_string()],
+            duration_secs: command_output.duration,
             metadata: Some(
                 serde_json::json!({
                     "video_codec": format!("{:?}", config.video_codec),
@@ -480,6 +587,13 @@ impl Processor for RemuxProcessor {
                 })
                 .to_string(),
             ),
+            items_produced: vec![],
+            input_size_bytes,
+            output_size_bytes,
+            failed_inputs: vec![],
+            succeeded_inputs: vec![input_path.to_string()],
+            skipped_inputs: vec![],
+            logs: command_output.logs,
         })
     }
 }
@@ -557,15 +671,15 @@ mod tests {
     fn test_build_args_simple() {
         let processor = RemuxProcessor::new();
         let input = ProcessorInput {
-            input_path: "/input.flv".to_string(),
-            output_path: "/output.mp4".to_string(),
+            inputs: vec!["/input.flv".to_string()],
+            outputs: vec!["/output.mp4".to_string()],
             config: None,
             streamer_id: "test".to_string(),
             session_id: "test".to_string(),
         };
         let config = RemuxConfig::default();
 
-        let args = processor.build_args(&input, &config);
+        let args = processor.build_args(&input, &config, "/output.mp4");
 
         assert!(args.contains(&"-y".to_string()));
         assert!(args.contains(&"-i".to_string()));
@@ -579,8 +693,8 @@ mod tests {
     fn test_build_args_with_transcode() {
         let processor = RemuxProcessor::new();
         let input = ProcessorInput {
-            input_path: "/input.flv".to_string(),
-            output_path: "/output.mp4".to_string(),
+            inputs: vec!["/input.flv".to_string()],
+            outputs: vec!["/output.mp4".to_string()],
             config: None,
             streamer_id: "test".to_string(),
             session_id: "test".to_string(),
@@ -594,7 +708,7 @@ mod tests {
             ..Default::default()
         };
 
-        let args = processor.build_args(&input, &config);
+        let args = processor.build_args(&input, &config, "/output.mp4");
 
         assert!(args.contains(&"libx264".to_string()));
         assert!(args.contains(&"aac".to_string()));
@@ -603,5 +717,22 @@ mod tests {
         assert!(args.contains(&"-preset".to_string()));
         assert!(args.contains(&"fast".to_string()));
         assert!(args.contains(&"-vf".to_string()));
+    }
+    #[test]
+    fn test_make_absolute_path() {
+        let cwd = std::env::current_dir().unwrap();
+
+        // Test absolute path
+        let abs = if cfg!(windows) {
+            "C:\\test\\file.txt"
+        } else {
+            "/test/file.txt"
+        };
+        assert_eq!(make_absolute(abs), abs);
+
+        // Test relative path (non-existent) - should join with CWD
+        let rel = "test_file.txt";
+        let expected = cwd.join(rel).to_string_lossy().to_string();
+        assert_eq!(make_absolute(rel), expected);
     }
 }

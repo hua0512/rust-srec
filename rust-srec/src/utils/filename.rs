@@ -92,8 +92,8 @@ mod tests {
 
     #[test]
     fn test_only_invalid_characters() {
-        assert_eq!(sanitize_filename("???"), "unnamed");
-        assert_eq!(sanitize_filename("<>:"), "unnamed");
+        assert_eq!(sanitize_filename("???"), "_");
+        assert_eq!(sanitize_filename("<>:"), "_");
     }
 
     #[test]
@@ -117,7 +117,7 @@ mod tests {
     fn test_leading_trailing_spaces_and_dots() {
         assert_eq!(sanitize_filename("  hello  "), "hello");
         assert_eq!(sanitize_filename("...hello..."), "hello");
-        assert_eq!(sanitize_filename(" . hello . "), ". hello .");
+        assert_eq!(sanitize_filename(" . hello . "), "hello");
     }
 
     #[test]

@@ -203,7 +203,7 @@ impl StreamDetector {
         };
 
         // Extract media information
-        let mut media_info = match extractor.extract().await {
+        let media_info = match extractor.extract().await {
             Ok(info) => info,
             // Fatal errors - these should stop monitoring
             Err(ExtractorError::StreamerNotFound) => {

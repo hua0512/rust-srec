@@ -1,8 +1,10 @@
 //! Merged configuration.
 
+use crate::database::models::job::PipelineStep;
 use crate::domain::{DanmuSamplingConfig, EventHooks, ProxyConfig, RetryPolicy};
 use crate::downloader::StreamSelectionConfig;
 use serde::{Deserialize, Serialize};
+use tracing::debug;
 
 /// Fully resolved configuration for a streamer.
 ///
@@ -45,6 +47,9 @@ pub struct MergedConfig {
 
     // Engine overrides from template
     pub engines_override: Option<serde_json::Value>,
+
+    // Pipeline configuration
+    pub pipeline: Vec<PipelineStep>,
 }
 
 impl MergedConfig {
@@ -75,6 +80,7 @@ pub struct MergedConfigBuilder {
     session_gap_time_secs: Option<i64>,
     stream_selection: Option<StreamSelectionConfig>,
     engines_override: Option<serde_json::Value>,
+    pipeline: Option<Vec<PipelineStep>>,
 }
 
 impl MergedConfigBuilder {
@@ -92,6 +98,7 @@ impl MergedConfigBuilder {
         proxy_config: ProxyConfig,
         download_engine: String,
         session_gap_time_secs: i64,
+        pipeline: Option<Vec<PipelineStep>>,
     ) -> Self {
         self.output_folder = Some(output_folder);
         self.output_filename_template = Some(output_filename_template);
@@ -106,6 +113,7 @@ impl MergedConfigBuilder {
         self.download_retry_policy = Some(RetryPolicy::default());
         self.event_hooks = Some(EventHooks::default());
         self.session_gap_time_secs = Some(session_gap_time_secs);
+        self.pipeline = pipeline;
         self
     }
 
@@ -129,6 +137,7 @@ impl MergedConfigBuilder {
         max_part_size_bytes: Option<i64>,
         download_retry_policy: Option<RetryPolicy>,
         event_hooks: Option<EventHooks>,
+        pipeline: Option<Vec<PipelineStep>>,
     ) -> Self {
         if let Some(v) = fetch_delay_ms {
             self.fetch_delay_ms = Some(v);
@@ -147,11 +156,18 @@ impl MergedConfigBuilder {
             self.record_danmu = Some(danmu);
         }
 
+        if let Some(pipe) = pipeline {
+            debug!("Platform config override: pipeline");
+            self.pipeline = Some(pipe);
+        }
+
         // Apply platform-specific config overrides (Legacy, but still respected if explicit fields are None)
         // JSON parsing happens implicitly if matching keys are found, but explicit args override below.
         if let Some(config) = platform_specific_config {
+            debug!("Applying platform-specific config overrides");
             if let Some(v) = config.get("output_folder").and_then(|v| v.as_str()) {
                 if self.output_folder.is_none() {
+                    debug!("Platform config override: output_folder = {}", v);
                     self.output_folder = Some(v.to_string());
                 }
             }
@@ -160,21 +176,25 @@ impl MergedConfigBuilder {
                 .and_then(|v| v.as_str())
             {
                 if self.output_filename_template.is_none() {
+                    debug!("Platform config override: output_filename_template = {}", v);
                     self.output_filename_template = Some(v.to_string());
                 }
             }
             if let Some(v) = config.get("download_engine").and_then(|v| v.as_str()) {
                 if self.download_engine.is_none() {
+                    debug!("Platform config override: download_engine = {}", v);
                     self.download_engine = Some(v.to_string());
                 }
             }
             if let Some(v) = config.get("record_danmu").and_then(|v| v.as_bool()) {
                 if self.record_danmu.is_none() {
+                    debug!("Platform config override: record_danmu = {}", v);
                     self.record_danmu = Some(v);
                 }
             }
             if let Some(v) = config.get("cookies").and_then(|v| v.as_str()) {
                 if self.cookies.is_none() {
+                    debug!("Platform config override: cookies");
                     self.cookies = Some(v.to_string());
                 }
             }
@@ -183,8 +203,10 @@ impl MergedConfigBuilder {
                 if let Ok(v) = serde_json::from_value::<StreamSelectionConfig>(stream_sel.clone()) {
                     if self.stream_selection.is_none() {
                         if let Some(existing) = &self.stream_selection {
+                            debug!("Platform config override: merging stream_selection");
                             self.stream_selection = Some(existing.merge(&v));
                         } else {
+                            debug!("Platform config override: stream_selection");
                             self.stream_selection = Some(v);
                         }
                     }
@@ -193,6 +215,7 @@ impl MergedConfigBuilder {
             // Parse new fields from JSON (Legacy support)
             if let Some(v) = config.get("output_file_format").and_then(|v| v.as_str()) {
                 if self.output_file_format.is_none() {
+                    debug!("Platform config override: output_file_format = {}", v);
                     self.output_file_format = Some(v.to_string());
                 }
             }
@@ -201,6 +224,7 @@ impl MergedConfigBuilder {
                 .and_then(|v| v.as_i64())
             {
                 if self.min_segment_size_bytes.is_none() {
+                    debug!("Platform config override: min_segment_size_bytes = {}", v);
                     self.min_segment_size_bytes = Some(v);
                 }
             }
@@ -209,11 +233,16 @@ impl MergedConfigBuilder {
                 .and_then(|v| v.as_i64())
             {
                 if self.max_download_duration_secs.is_none() {
+                    debug!(
+                        "Platform config override: max_download_duration_secs = {}",
+                        v
+                    );
                     self.max_download_duration_secs = Some(v);
                 }
             }
             if let Some(v) = config.get("max_part_size_bytes").and_then(|v| v.as_i64()) {
                 if self.max_part_size_bytes.is_none() {
+                    debug!("Platform config override: max_part_size_bytes = {}", v);
                     self.max_part_size_bytes = Some(v);
                 }
             }
@@ -222,6 +251,7 @@ impl MergedConfigBuilder {
             if let Some(retry) = config.get("download_retry_policy") {
                 if let Ok(v) = serde_json::from_value::<RetryPolicy>(retry.clone()) {
                     if self.download_retry_policy.is_none() {
+                        debug!("Platform config override: download_retry_policy");
                         self.download_retry_policy = Some(v);
                     }
                 }
@@ -229,6 +259,7 @@ impl MergedConfigBuilder {
             if let Some(hooks) = config.get("event_hooks") {
                 if let Ok(v) = serde_json::from_value::<EventHooks>(hooks.clone()) {
                     if self.event_hooks.is_none() {
+                        debug!("Platform config override: event_hooks");
                         self.event_hooks = Some(v);
                     }
                 }
@@ -237,40 +268,52 @@ impl MergedConfigBuilder {
 
         // Apply explicit overrides - MOVED executed after JSON parsing below
         if let Some(v) = output_folder {
+            debug!("Platform override: output_folder = {}", v);
             self.output_folder = Some(v);
         }
         if let Some(v) = output_filename_template {
+            debug!("Platform override: output_filename_template = {}", v);
             self.output_filename_template = Some(v);
         }
         if let Some(v) = download_engine {
+            debug!("Platform override: download_engine = {}", v);
             self.download_engine = Some(v);
         }
         if let Some(v) = stream_selection {
             if let Some(existing) = &self.stream_selection {
+                debug!("Platform override: merging stream_selection");
                 self.stream_selection = Some(existing.merge(&v));
             } else {
+                debug!("Platform override: stream_selection");
                 self.stream_selection = Some(v);
             }
         }
         if let Some(v) = output_file_format {
+            debug!("Platform override: output_file_format = {}", v);
             self.output_file_format = Some(v);
         }
         if let Some(v) = min_segment_size_bytes {
+            debug!("Platform override: min_segment_size_bytes = {}", v);
             self.min_segment_size_bytes = Some(v);
         }
         if let Some(v) = max_download_duration_secs {
+            debug!("Platform override: max_download_duration_secs = {}", v);
             self.max_download_duration_secs = Some(v);
         }
         if let Some(v) = max_part_size_bytes {
+            debug!("Platform override: max_part_size_bytes = {}", v);
             self.max_part_size_bytes = Some(v);
         }
         if let Some(v) = download_retry_policy {
+            debug!("Platform override: download_retry_policy");
             self.download_retry_policy = Some(v);
         }
         if let Some(v) = event_hooks {
             if let Some(existing) = &self.event_hooks {
+                debug!("Platform override: merging event_hooks");
                 self.event_hooks = Some(existing.merge(&v));
             } else {
+                debug!("Platform override: event_hooks");
                 self.event_hooks = Some(v);
             }
         }
@@ -297,61 +340,83 @@ impl MergedConfigBuilder {
         event_hooks: Option<EventHooks>,
         stream_selection: Option<StreamSelectionConfig>,
         engines_override: Option<serde_json::Value>,
+        pipeline: Option<Vec<PipelineStep>>,
     ) -> Self {
         if let Some(v) = output_folder {
+            debug!("Template override: output_folder = {}", v);
             self.output_folder = Some(v);
         }
         if let Some(v) = output_filename_template {
+            debug!("Template override: output_filename_template = {}", v);
             self.output_filename_template = Some(v);
         }
         if let Some(v) = output_file_format {
+            debug!("Template override: output_file_format = {}", v);
             self.output_file_format = Some(v);
         }
         if let Some(v) = min_segment_size_bytes {
+            debug!("Template override: min_segment_size_bytes = {}", v);
             self.min_segment_size_bytes = Some(v);
         }
         if let Some(v) = max_download_duration_secs {
+            debug!("Template override: max_download_duration_secs = {}", v);
             self.max_download_duration_secs = Some(v);
         }
         if let Some(v) = max_part_size_bytes {
+            debug!("Template override: max_part_size_bytes = {}", v);
             self.max_part_size_bytes = Some(v);
         }
         if let Some(v) = record_danmu {
+            debug!("Template override: record_danmu = {}", v);
             self.record_danmu = Some(v);
         }
         if let Some(v) = proxy_config {
+            debug!("Template override: proxy_config");
             self.proxy_config = Some(v);
         }
         if cookies.is_some() {
+            debug!("Template override: cookies");
             self.cookies = cookies;
         }
         if let Some(v) = download_engine {
+            debug!("Template override: download_engine = {}", v);
             self.download_engine = Some(v);
         }
         if let Some(v) = download_retry_policy {
+            debug!("Template override: download_retry_policy");
             self.download_retry_policy = Some(v);
         }
         if let Some(v) = danmu_sampling_config {
+            debug!("Template override: danmu_sampling_config");
             self.danmu_sampling_config = Some(v);
         }
         if let Some(v) = event_hooks {
             // Merge event hooks
             if let Some(existing) = &self.event_hooks {
+                debug!("Template override: merging event_hooks");
                 self.event_hooks = Some(existing.merge(&v));
             } else {
+                debug!("Template override: event_hooks");
                 self.event_hooks = Some(v);
             }
         }
         if let Some(v) = stream_selection {
             // Merge stream selection config
             if let Some(existing) = &self.stream_selection {
+                debug!("Template override: merging stream_selection");
                 self.stream_selection = Some(existing.merge(&v));
             } else {
+                debug!("Template override: stream_selection");
                 self.stream_selection = Some(v);
             }
         }
         if let Some(v) = engines_override {
+            debug!("Template override: engines_override");
             self.engines_override = Some(v);
+        }
+        if let Some(pipe) = pipeline {
+            debug!("Template override: pipeline");
+            self.pipeline = Some(pipe);
         }
         self
     }
@@ -364,59 +429,105 @@ impl MergedConfigBuilder {
         streamer_config: Option<&serde_json::Value>,
     ) -> Self {
         if let Some(v) = download_retry_policy {
+            debug!("Streamer override: download_retry_policy");
             self.download_retry_policy = Some(v);
         }
         if let Some(v) = danmu_sampling_config {
+            debug!("Streamer override: danmu_sampling_config");
             self.danmu_sampling_config = Some(v);
         }
 
         // Parse streamer-specific config JSON
         if let Some(config) = streamer_config {
+            debug!("Applying streamer-specific config overrides");
             if let Some(v) = config.get("output_folder").and_then(|v| v.as_str()) {
+                debug!("Streamer config override: output_folder = {}", v);
                 self.output_folder = Some(v.to_string());
             }
             if let Some(v) = config
                 .get("output_filename_template")
                 .and_then(|v| v.as_str())
             {
+                debug!("Streamer config override: output_filename_template = {}", v);
                 self.output_filename_template = Some(v.to_string());
             }
             if let Some(v) = config.get("download_engine").and_then(|v| v.as_str()) {
+                debug!("Streamer config override: download_engine = {}", v);
                 self.download_engine = Some(v.to_string());
             }
             if let Some(v) = config.get("record_danmu").and_then(|v| v.as_bool()) {
+                debug!("Streamer config override: record_danmu = {}", v);
                 self.record_danmu = Some(v);
             }
             if let Some(v) = config.get("cookies").and_then(|v| v.as_str()) {
+                debug!("Streamer config override: cookies");
                 self.cookies = Some(v.to_string());
             }
             if let Some(v) = config.get("max_part_size_bytes").and_then(|v| v.as_i64()) {
+                debug!("Streamer config override: max_part_size_bytes = {}", v);
                 self.max_part_size_bytes = Some(v);
             }
             if let Some(v) = config
                 .get("max_download_duration_secs")
                 .and_then(|v| v.as_i64())
             {
+                debug!(
+                    "Streamer config override: max_download_duration_secs = {}",
+                    v
+                );
                 self.max_download_duration_secs = Some(v);
             }
             if let Some(v) = config.get("output_file_format").and_then(|v| v.as_str()) {
+                debug!("Streamer config override: output_file_format = {}", v);
                 self.output_file_format = Some(v.to_string());
             }
             if let Some(v) = config
                 .get("min_segment_size_bytes")
                 .and_then(|v| v.as_i64())
             {
+                debug!("Streamer config override: min_segment_size_bytes = {}", v);
                 self.min_segment_size_bytes = Some(v);
+            }
+
+            // Parse proxy config from streamer-specific config
+            if let Some(proxy_val) = config.get("proxy_config") {
+                if let Ok(v) = serde_json::from_value::<ProxyConfig>(proxy_val.clone()) {
+                    debug!("Streamer config override: proxy_config");
+                    self.proxy_config = Some(v);
+                }
             }
 
             // Parse stream selection config from streamer-specific config
             if let Some(stream_sel) = config.get("stream_selection") {
                 if let Ok(v) = serde_json::from_value::<StreamSelectionConfig>(stream_sel.clone()) {
                     if let Some(existing) = &self.stream_selection {
+                        debug!("Streamer config override: merging stream_selection");
                         self.stream_selection = Some(existing.merge(&v));
                     } else {
+                        debug!("Streamer config override: stream_selection");
                         self.stream_selection = Some(v);
                     }
+                }
+            }
+
+            // Parse event hooks from streamer-specific config
+            if let Some(hooks_val) = config.get("event_hooks") {
+                if let Ok(v) = serde_json::from_value::<EventHooks>(hooks_val.clone()) {
+                    if let Some(existing) = &self.event_hooks {
+                        debug!("Streamer config override: merging event_hooks");
+                        self.event_hooks = Some(existing.merge(&v));
+                    } else {
+                        debug!("Streamer config override: event_hooks");
+                        self.event_hooks = Some(v);
+                    }
+                }
+            }
+
+            // Parse pipeline config from streamer-specific config
+            if let Some(pipeline_val) = config.get("pipeline") {
+                if let Ok(v) = serde_json::from_value::<Vec<PipelineStep>>(pipeline_val.clone()) {
+                    debug!("Streamer config override: pipeline ({} steps)", v.len());
+                    self.pipeline = Some(v);
                 }
             }
         }
@@ -447,7 +558,9 @@ impl MergedConfigBuilder {
             download_delay_ms: self.download_delay_ms.unwrap_or(1000),
             session_gap_time_secs: self.session_gap_time_secs.unwrap_or(600),
             stream_selection: self.stream_selection.unwrap_or_default(),
+
             engines_override: self.engines_override,
+            pipeline: self.pipeline.unwrap_or_else(Vec::new),
         }
     }
 }
@@ -470,10 +583,12 @@ mod tests {
                 ProxyConfig::disabled(),
                 "mesio".to_string(),
                 600,
+                None, // pipeline
             )
             .with_platform(
                 Some(60000),
                 Some(1000),
+                None,
                 None,
                 None,
                 None,
@@ -510,6 +625,7 @@ mod tests {
                 ProxyConfig::disabled(),
                 "ffmpeg".to_string(),
                 600,
+                None,
             )
             .with_platform(
                 Some(60000),
@@ -517,6 +633,7 @@ mod tests {
                 None,
                 None,
                 Some(true),
+                None,
                 None,
                 None,
                 None,
@@ -545,6 +662,7 @@ mod tests {
                 None,
                 None, // stream_selection
                 None, // engines_override
+                None, // pipeline
             )
             .build();
 
@@ -553,5 +671,123 @@ mod tests {
         assert_eq!(config.download_engine, "mesio");
         // Platform overrides global
         assert!(config.record_danmu);
+    }
+
+    #[test]
+    fn test_streamer_pipeline_override() {
+        // Create a streamer-specific config with custom pipeline
+        // PipelineStep uses #[serde(untagged)], so Preset is just a string
+        let streamer_config = serde_json::json!({
+            "pipeline": [
+                "fast_remux",
+                "s3_upload"
+            ]
+        });
+
+        let config = MergedConfig::builder()
+            .with_global(
+                "./downloads".to_string(),
+                "{streamer}".to_string(),
+                "flv".to_string(),
+                1024,
+                0,
+                8589934592,
+                false,
+                ProxyConfig::disabled(),
+                "mesio".to_string(),
+                600,
+                Some(vec![
+                    PipelineStep::Preset("remux".to_string()),
+                    PipelineStep::Preset("upload".to_string()),
+                ]),
+            )
+            .with_platform(
+                Some(60000),
+                Some(1000),
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+            )
+            .with_streamer(None, None, Some(&streamer_config))
+            .build();
+
+        // Streamer pipeline should override global
+        assert_eq!(config.pipeline.len(), 2);
+        assert!(matches!(&config.pipeline[0], PipelineStep::Preset(s) if s == "fast_remux"));
+        assert!(matches!(&config.pipeline[1], PipelineStep::Preset(s) if s == "s3_upload"));
+    }
+
+    #[test]
+    fn test_streamer_inline_pipeline() {
+        // Create a streamer-specific config with inline pipeline step
+        // PipelineStep uses #[serde(untagged)]:
+        // - Preset is just a string: "remux"
+        // - Inline is an object with processor and config fields
+        let streamer_config = serde_json::json!({
+            "pipeline": [
+                "remux",
+                {
+                    "processor": "execute",
+                    "config": {
+                        "command": "echo {input}"
+                    }
+                }
+            ]
+        });
+
+        let config = MergedConfig::builder()
+            .with_global(
+                "./downloads".to_string(),
+                "{streamer}".to_string(),
+                "flv".to_string(),
+                1024,
+                0,
+                8589934592,
+                false,
+                ProxyConfig::disabled(),
+                "mesio".to_string(),
+                600,
+                None,
+            )
+            .with_platform(
+                Some(60000),
+                Some(1000),
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+            )
+            .with_streamer(None, None, Some(&streamer_config))
+            .build();
+
+        // Should have 2 steps: preset + inline
+        assert_eq!(config.pipeline.len(), 2);
+        assert!(matches!(&config.pipeline[0], PipelineStep::Preset(s) if s == "remux"));
+        assert!(
+            matches!(&config.pipeline[1], PipelineStep::Inline { processor, .. } if processor == "execute")
+        );
     }
 }

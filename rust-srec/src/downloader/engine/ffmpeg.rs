@@ -7,7 +7,7 @@ use tokio::io::{AsyncBufReadExt, BufReader};
 use tokio::process::Command;
 use tracing::{debug, error, info, warn};
 
-use super::traits::{DownloadEngine, DownloadHandle, EngineType, SegmentEvent};
+use super::traits::{DownloadConfig, DownloadEngine, DownloadHandle, EngineType, SegmentEvent};
 use super::utils::{ensure_output_dir, is_segment_start, parse_progress, spawn_process_waiter};
 use crate::Result;
 use crate::database::models::engine::FfmpegEngineConfig;
@@ -47,8 +47,7 @@ impl FfmpegEngine {
     }
 
     /// Build ffmpeg command arguments.
-    fn build_args(&self, handle: &DownloadHandle) -> Vec<String> {
-        let config = &handle.config;
+    fn build_args(&self, config: &DownloadConfig) -> Vec<String> {
         let mut args = Vec::new();
 
         // 1. Force consistent output format
@@ -72,6 +71,11 @@ impl FfmpegEngine {
         // Add headers
         for (key, value) in &config.headers {
             args.extend(["-headers".to_string(), format!("{}: {}", key, value)]);
+        }
+
+        // Add cookies as Cookie header if provided
+        if let Some(ref cookies) = config.cookies {
+            args.extend(["-headers".to_string(), format!("Cookie: {}", cookies)]);
         }
 
         // 5. Input URL
@@ -129,8 +133,9 @@ impl DownloadEngine for FfmpegEngine {
     }
 
     async fn start(&self, handle: Arc<DownloadHandle>) -> Result<()> {
+        let config = handle.config_snapshot();
         // 1. Ensure output directory exists before spawning process (Requirements 2.1, 2.2)
-        if let Err(e) = ensure_output_dir(&handle.config.output_dir).await {
+        if let Err(e) = ensure_output_dir(&config.output_dir).await {
             let _ = handle.event_tx.try_send(SegmentEvent::DownloadFailed {
                 error: e.clone(),
                 recoverable: false,
@@ -138,11 +143,11 @@ impl DownloadEngine for FfmpegEngine {
             return Err(crate::Error::Other(e));
         }
 
-        let args = self.build_args(&handle);
+        let args = self.build_args(&config);
 
         info!(
             "Starting ffmpeg download for streamer {} with args: {:?}",
-            handle.config.streamer_id, args
+            config.streamer_id, args
         );
 
         // Spawn ffmpeg process
@@ -164,7 +169,7 @@ impl DownloadEngine for FfmpegEngine {
 
         let event_tx = handle.event_tx.clone();
         let cancellation_token = handle.cancellation_token.clone();
-        let streamer_id = handle.config.streamer_id.clone();
+        let streamer_id = config.streamer_id.clone();
 
         // 3. Spawn stderr reader task - waits for exit status before emitting event (Requirements 1.1, 1.3, 1.4)
         tokio::spawn(async move {
@@ -264,10 +269,8 @@ impl DownloadEngine for FfmpegEngine {
     }
 
     async fn stop(&self, handle: &DownloadHandle) -> Result<()> {
-        info!(
-            "Stopping ffmpeg download for streamer {}",
-            handle.config.streamer_id
-        );
+        let streamer_id = handle.config_snapshot().streamer_id;
+        info!("Stopping ffmpeg download for streamer {}", streamer_id);
         handle.cancel();
         Ok(())
     }

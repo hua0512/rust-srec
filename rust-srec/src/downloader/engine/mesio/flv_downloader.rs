@@ -11,8 +11,10 @@ use futures::StreamExt;
 use mesio::flv::FlvProtocolConfig;
 use mesio::flv::error::FlvDownloadError;
 use mesio::{DownloadStream, MesioDownloaderFactory, ProtocolType};
+use parking_lot::RwLock;
 use pipeline_common::{PipelineError, PipelineProvider, ProtocolWriter, StreamerContext};
 use std::collections::HashMap;
+use std::sync::Arc;
 use tokio::sync::mpsc;
 use tokio_util::sync::CancellationToken;
 use tracing::{debug, error, info, warn};
@@ -32,7 +34,7 @@ use crate::downloader::engine::traits::{
 /// event emission through the provided channel.
 pub struct FlvDownloader {
     /// Download configuration.
-    config: DownloadConfig,
+    config: Arc<RwLock<DownloadConfig>>,
     /// Engine-specific configuration.
     engine_config: MesioEngineConfig,
     /// Event sender for segment events.
@@ -53,7 +55,7 @@ impl FlvDownloader {
     /// * `cancellation_token` - Token for graceful cancellation.
     /// * `flv_config` - Optional base FLV configuration from the engine.
     pub fn new(
-        config: DownloadConfig,
+        config: Arc<RwLock<DownloadConfig>>,
         engine_config: MesioEngineConfig,
         event_tx: mpsc::Sender<SegmentEvent>,
         cancellation_token: CancellationToken,
@@ -68,9 +70,14 @@ impl FlvDownloader {
         }
     }
 
+    fn config_snapshot(&self) -> DownloadConfig {
+        self.config.read().clone()
+    }
+
     /// Create a MesioDownloaderFactory with the configured settings.
     fn create_factory(&self, token: CancellationToken) -> MesioDownloaderFactory {
-        let flv_config = build_flv_config(&self.config, self.flv_config.clone());
+        let config = self.config_snapshot();
+        let flv_config = build_flv_config(&config, self.flv_config.clone());
 
         MesioDownloaderFactory::new()
             .with_flv_config(flv_config)
@@ -95,18 +102,20 @@ impl FlvDownloader {
         // Create factory with configuration
         let factory = self.create_factory(token.clone());
 
+        let url = self.config_snapshot().url;
+
         // Create the FLV downloader instance
         let mut downloader = factory
-            .create_for_url(&self.config.url, ProtocolType::Flv)
+            .create_for_url(&url, ProtocolType::Flv)
             .await
             .map_err(|e| crate::Error::Other(format!("Failed to create FLV downloader: {}", e)))?;
 
         // Add the source URL
-        downloader.add_source(&self.config.url, 0);
+        downloader.add_source(&url, 0);
 
         // Get the download stream
         let download_stream = downloader
-            .download_with_sources(&self.config.url)
+            .download_with_sources(&url)
             .await
             .map_err(|e| crate::Error::Other(format!("Failed to start FLV download: {}", e)))?;
 
@@ -120,13 +129,14 @@ impl FlvDownloader {
             }
         };
 
+        let config_snapshot = self.config_snapshot();
         info!(
             "Starting FLV download for {}, processing_enabled: {}",
-            self.config.streamer_id, self.config.enable_processing
+            config_snapshot.streamer_id, config_snapshot.enable_processing
         );
 
         // Route based on enable_processing flag AND engine config
-        if self.config.enable_processing && self.engine_config.fix_flv {
+        if config_snapshot.enable_processing && self.engine_config.fix_flv {
             self.download_with_pipeline(token, flv_stream).await
         } else {
             self.download_raw(token, flv_stream).await
@@ -144,14 +154,16 @@ impl FlvDownloader {
         + Send
         + Unpin,
     ) -> Result<DownloadStats> {
+        let config = self.config_snapshot();
+        let streamer_id = config.streamer_id.clone();
         info!(
             "Starting FLV download with pipeline processing for {}",
-            self.config.streamer_id
+            streamer_id
         );
 
         // Build pipeline and common configs
-        let pipeline_config = self.config.build_pipeline_config();
-        let flv_pipeline_config = self.config.build_flv_pipeline_config();
+        let pipeline_config = config.build_pipeline_config();
+        let flv_pipeline_config = config.build_flv_pipeline_config();
 
         // Create StreamerContext with cancellation token
         let context = StreamerContext::new(token.clone());
@@ -171,8 +183,8 @@ impl FlvDownloader {
         } = pipeline.spawn();
 
         // Create FlvWriter with callbacks
-        let output_dir = self.config.output_dir.clone();
-        let base_name = self.config.filename_template.clone();
+        let output_dir = config.output_dir.clone();
+        let base_name = config.filename_template.clone();
 
         // Build extras for enable_low_latency
         let extras = {
@@ -197,8 +209,10 @@ impl FlvDownloader {
 
         writer.set_on_segment_complete_callback(
             move |path, sequence, duration_secs, size_bytes| {
+                // Ensure path is absolute
+                let abs_path = std::fs::canonicalize(path).unwrap_or_else(|_| path.to_path_buf());
                 let event = SegmentEvent::SegmentCompleted(SegmentInfo {
-                    path: path.to_path_buf(),
+                    path: abs_path,
                     duration_secs,
                     size_bytes,
                     index: sequence,
@@ -232,7 +246,7 @@ impl FlvDownloader {
         while let Some(result) = stream.next().await {
             // Check for cancellation
             if self.cancellation_token.is_cancelled() || token.is_cancelled() {
-                debug!("FLV download cancelled for {}", self.config.streamer_id);
+                debug!("FLV download cancelled for {}", streamer_id);
                 break;
             }
 
@@ -245,7 +259,7 @@ impl FlvDownloader {
                     }
                 }
                 Err(e) => {
-                    error!("FLV stream error for {}: {}", self.config.streamer_id, e);
+                    error!("FLV stream error for {}: {}", streamer_id, e);
                     let _ = pipeline_input_tx
                         .send(Err(PipelineError::Processing(e.to_string())))
                         .await;
@@ -304,7 +318,7 @@ impl FlvDownloader {
 
                 info!(
                     "FLV download with pipeline completed for {}: {} items, {} files",
-                    self.config.streamer_id, items_written, stats.files_created
+                    streamer_id, items_written, stats.files_created
                 );
 
                 Ok(stats)
@@ -332,13 +346,15 @@ impl FlvDownloader {
         + Send
         + Unpin,
     ) -> Result<DownloadStats> {
+        let config = self.config_snapshot();
+        let streamer_id = config.streamer_id.clone();
         info!(
             "Starting FLV download without pipeline processing for {}",
-            self.config.streamer_id
+            streamer_id
         );
 
         // Build pipeline config for channel size
-        let pipeline_config = self.config.build_pipeline_config();
+        let pipeline_config = config.build_pipeline_config();
         let channel_size = pipeline_config.channel_size;
 
         // Create channel for sending data to writer
@@ -346,8 +362,8 @@ impl FlvDownloader {
             tokio::sync::mpsc::channel::<std::result::Result<FlvData, PipelineError>>(channel_size);
 
         // Create FlvWriter with callbacks
-        let output_dir = self.config.output_dir.clone();
-        let base_name = self.config.filename_template.clone();
+        let output_dir = config.output_dir.clone();
+        let base_name = config.filename_template.clone();
 
         // Build extras for enable_low_latency
         let extras = {
@@ -372,8 +388,10 @@ impl FlvDownloader {
 
         writer.set_on_segment_complete_callback(
             move |path, sequence, duration_secs, size_bytes| {
+                // Ensure path is absolute
+                let abs_path = std::fs::canonicalize(path).unwrap_or_else(|_| path.to_path_buf());
                 let event = SegmentEvent::SegmentCompleted(SegmentInfo {
-                    path: path.to_path_buf(),
+                    path: abs_path,
                     duration_secs,
                     size_bytes,
                     index: sequence,
@@ -407,7 +425,7 @@ impl FlvDownloader {
         while let Some(result) = stream.next().await {
             // Check for cancellation
             if self.cancellation_token.is_cancelled() || token.is_cancelled() {
-                debug!("FLV download cancelled for {}", self.config.streamer_id);
+                debug!("FLV download cancelled for {}", streamer_id);
                 break;
             }
 
@@ -421,7 +439,7 @@ impl FlvDownloader {
                 }
                 Err(e) => {
                     // Stream error - send error to writer and emit failure event
-                    error!("FLV stream error for {}: {}", self.config.streamer_id, e);
+                    error!("FLV stream error for {}: {}", streamer_id, e);
                     let _ = tx.send(Err(PipelineError::Processing(e.to_string()))).await;
                     let _ = self
                         .event_tx
@@ -465,7 +483,7 @@ impl FlvDownloader {
 
                 info!(
                     "FLV download completed for {}: {} items, {} files",
-                    self.config.streamer_id, items_written, stats.files_created
+                    streamer_id, items_written, stats.files_created
                 );
 
                 Ok(stats)

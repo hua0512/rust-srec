@@ -3,13 +3,19 @@ import {
     Settings,
     LayoutGrid,
     LucideIcon,
-    Film
+    Film,
+    Workflow,
+    ListTodo,
+    FileVideo,
+    GitBranch,
+    Settings2
 } from "lucide-react";
 
 type Submenu = {
     href: string;
     label: string;
     active?: boolean;
+    icon?: LucideIcon;
 };
 
 type Menu = {
@@ -25,7 +31,7 @@ type Group = {
     menus: Menu[];
 };
 
-export function getMenuList(pathname: string): Group[] {
+export function getMenuList(_pathname: string): Group[] {
     return [
         {
             groupLabel: "",
@@ -56,11 +62,32 @@ export function getMenuList(pathname: string): Group[] {
                     submenus: []
                 },
                 {
-                    href: "/pipeline/jobs",
+                    href: "/pipeline",
                     label: "Pipeline",
-                    icon: Film,
-                    submenus: []
-                }
+                    icon: Workflow,
+                    submenus: [
+                        {
+                            href: "/pipeline/presets",
+                            label: "Presets",
+                            icon: Settings2
+                        },
+                        {
+                            href: "/pipeline/workflows",
+                            label: "Workflows",
+                            icon: GitBranch
+                        },
+                        {
+                            href: "/pipeline/jobs",
+                            label: "Jobs",
+                            icon: ListTodo
+                        },
+                        {
+                            href: "/pipeline/outputs",
+                            label: "Outputs",
+                            icon: FileVideo
+                        }
+                    ]
+                },
             ]
         },
 

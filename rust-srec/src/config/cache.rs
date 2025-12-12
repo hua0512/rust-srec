@@ -232,6 +232,8 @@ mod tests {
                 false,
                 ProxyConfig::disabled(),
                 "ffmpeg".to_string(),
+                300,  // session_gap_time_secs
+                None, // pipeline
             )
             .with_platform(
                 Some(60000),
@@ -250,7 +252,7 @@ mod tests {
                 None,
                 None,
                 None,
-                None,
+                None, // pipeline
             )
             .build()
     }

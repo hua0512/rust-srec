@@ -1,6 +1,7 @@
 import { createFileRoute } from '@tanstack/react-router';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
+import { motion } from 'motion/react';
 import { GlobalConfigSchema } from '../../../../api/schemas';
 import { getGlobalConfig, updateGlobalConfig, listEngines } from '@/server/functions';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
@@ -16,6 +17,7 @@ import { FileConfigCard } from '../../../../components/config/global/file-config
 import { ResourceLimitsCard } from '../../../../components/config/global/resource-limits-card';
 import { ConcurrencyCard } from '../../../../components/config/global/concurrency-card';
 import { NetworkSystemCard } from '../../../../components/config/global/network-system-card';
+import { PipelineConfigCard } from '../../../../components/config/global/pipeline-config-card';
 
 export const Route = createFileRoute('/_authed/_dashboard/config/global')({
   component: GlobalConfigPage,
@@ -39,6 +41,7 @@ function GlobalConfigPage() {
     defaultValues: config ? {
       ...config,
       proxy_config: config.proxy_config ?? '',
+      pipeline: config.pipeline ?? '',
     } : {
       output_folder: '',
       output_filename_template: '',
@@ -57,21 +60,24 @@ function GlobalConfigPage() {
       offline_check_count: 0,
       default_download_engine: 'default-mesio',
       job_history_retention_days: 30,
+      pipeline: '',
     },
     values: config ? {
       ...config,
       proxy_config: config.proxy_config ?? '',
+      pipeline: config.pipeline ?? '',
     } : undefined,
   });
 
   useEffect(() => {
-    if (config) {
+    if (config && engines) {
       form.reset({
         ...config,
         proxy_config: config.proxy_config ?? '',
+        pipeline: config.pipeline ?? '',
       });
     }
-  }, [config, form]);
+  }, [config, engines, form]);
 
   const updateMutation = useMutation({
     mutationFn: (data: z.infer<typeof GlobalConfigSchema>) => updateGlobalConfig({ data }),
@@ -88,18 +94,19 @@ function GlobalConfigPage() {
     updateMutation.mutate(data);
   };
 
-  if (isLoading) {
+  if (isLoading || enginesLoading) {
     return (
       <div className="space-y-6 form-container">
         <div className="flex items-center justify-between">
           <Skeleton className="h-8 w-48" />
           <Skeleton className="h-10 w-32" />
         </div>
-        <div className="grid gap-6 md:grid-cols-2">
-          <Skeleton className="h-[300px]" />
-          <Skeleton className="h-[300px]" />
-          <Skeleton className="h-[300px]" />
-          <Skeleton className="h-[300px]" />
+        <div className="grid gap-8 md:grid-cols-2">
+          <Skeleton className="h-[400px] rounded-xl border-border/40 bg-muted/60" />
+          <Skeleton className="h-[400px] rounded-xl border-border/40 bg-muted/60" />
+          <Skeleton className="h-[400px] rounded-xl border-border/40 bg-muted/60" />
+          <Skeleton className="h-[400px] rounded-xl border-border/40 bg-muted/60" />
+          <Skeleton className="h-[500px] md:col-span-2 rounded-xl border-border/40 bg-muted/60" />
         </div>
       </div>
     )
@@ -108,23 +115,62 @@ function GlobalConfigPage() {
   return (
     <Form {...form}>
       <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-8 pb-32">
-        <div className="grid gap-8 md:grid-cols-2">
+        <motion.div
+          className="grid gap-8 md:grid-cols-2"
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          transition={{ duration: 0.3 }}
+        >
           {/* File Configuration */}
-          <FileConfigCard control={form.control} />
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.3, delay: 0 }}
+          >
+            <FileConfigCard control={form.control} />
+          </motion.div>
 
           {/* Resource Limits */}
-          <ResourceLimitsCard control={form.control} />
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.3, delay: 0.05 }}
+          >
+            <ResourceLimitsCard control={form.control} />
+          </motion.div>
 
           {/* Concurrency & Performance */}
-          <ConcurrencyCard
-            control={form.control}
-            engines={engines}
-            enginesLoading={enginesLoading}
-          />
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.3, delay: 0.1 }}
+          >
+            <ConcurrencyCard
+              control={form.control}
+              engines={engines}
+              enginesLoading={enginesLoading}
+            />
+          </motion.div>
 
           {/* Network & System */}
-          <NetworkSystemCard control={form.control} />
-        </div>
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.3, delay: 0.15 }}
+          >
+            <NetworkSystemCard control={form.control} />
+          </motion.div>
+
+          {/* Pipeline Configuration */}
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.3, delay: 0.2 }}
+            className="md:col-span-2"
+          >
+            <PipelineConfigCard control={form.control} />
+          </motion.div>
+        </motion.div>
 
         {form.formState.isDirty && (
           <div className="fixed bottom-8 right-8 z-50 animate-in fade-in slide-in-from-bottom-4 duration-300">

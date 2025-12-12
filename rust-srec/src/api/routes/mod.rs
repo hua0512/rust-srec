@@ -8,6 +8,7 @@ pub mod downloads;
 pub mod engines;
 pub mod filters;
 pub mod health;
+pub mod job;
 pub mod media;
 pub mod pipeline;
 pub mod sessions;
@@ -35,6 +36,7 @@ pub fn create_router(state: AppState) -> Router {
         .nest("/api/config", config::router())
         .nest("/api/templates", templates::router())
         .nest("/api/engines", engines::router())
+        .nest("/api/job", job::router())
         .nest("/api/pipeline", pipeline::router())
         .nest("/api/sessions", sessions::router())
         .nest("/api/auth", auth::protected_router());

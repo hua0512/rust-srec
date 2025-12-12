@@ -19,7 +19,7 @@ use futures::{SinkExt, StreamExt};
 use prost::Message as ProstMessage;
 use serde::Deserialize;
 use tokio::sync::broadcast;
-use tracing::{debug, trace, warn};
+use tracing::{debug, warn};
 
 /// Heartbeat ping interval in seconds.
 const HEARTBEAT_INTERVAL_SECS: u64 = 30;
@@ -83,7 +83,7 @@ async fn download_progress_ws(
 
 /// Handle an established WebSocket connection.
 async fn handle_socket(socket: WebSocket, state: AppState) {
-    debug!("New WebSocket connection established");
+    // debug!("New WebSocket connection established");
     let download_manager = match &state.download_manager {
         Some(dm) => dm.clone(),
         None => {
@@ -113,7 +113,7 @@ async fn handle_socket(socket: WebSocket, state: AppState) {
         debug!("Failed to send initial snapshot, client disconnected");
         return;
     }
-    debug!("Sent initial snapshot with {} downloads", downloads.len());
+    // debug!("Sent initial snapshot with {} downloads", downloads.len());
 
     // 2. Subscribe to broadcast
     let mut event_rx = download_manager.subscribe();
@@ -135,15 +135,15 @@ async fn handle_socket(socket: WebSocket, state: AppState) {
                             Ok(client_msg) => {
                                 match client_msg.action {
                                     Some(Action::Subscribe(req)) => {
-                                        debug!("Client subscribed to streamer: {}", req.streamer_id);
+                                        // debug!("Client subscribed to streamer: {}", req.streamer_id);
                                         filter = Some(req.streamer_id);
                                     }
                                     Some(Action::Unsubscribe(_)) => {
-                                        debug!("Client unsubscribed from filter");
+                                        // debug!("Client unsubscribed from filter");
                                         filter = None;
                                     }
                                     None => {
-                                        debug!("Client message has no action");
+                                        // debug!("Client message has no action");
                                     }
                                 }
                             }
@@ -153,7 +153,7 @@ async fn handle_socket(socket: WebSocket, state: AppState) {
                         }
                     }
                     Some(Ok(Message::Close(_))) | None => {
-                        debug!("Client disconnected");
+                        // debug!("Client disconnected");
                         break;
                     }
                     Some(Ok(Message::Ping(data))) => {
@@ -164,7 +164,7 @@ async fn handle_socket(socket: WebSocket, state: AppState) {
                     }
                     Some(Ok(Message::Pong(_))) => {
                         // Client responded to our Ping - reset awaiting_pong state
-                        debug!("Received Pong from client");
+                        // debug!("Received Pong from client");
                         awaiting_pong = false;
                     }
                     Some(Err(e)) => {
@@ -184,7 +184,7 @@ async fn handle_socket(socket: WebSocket, state: AppState) {
                             // Use send for backpressure - if buffer is full, drop message
                             match sender.send(Message::Binary(Bytes::from(bytes))).await {
                                 Ok(_) => {
-                                    trace!("Sent event {:?} to client", event);
+                                    // trace!("Sent event {:?} to client", event);
                                 }
                                 Err(e) => {
                                     debug!("Failed to send message, client may be slow: {}", e);
@@ -214,7 +214,7 @@ async fn handle_socket(socket: WebSocket, state: AppState) {
                 // Send Ping message
                 if sender.send(Message::Ping(Bytes::new())).await.is_ok() {
                     awaiting_pong = true;
-                    debug!("Sent heartbeat Ping to client");
+                    // debug!("Sent heartbeat Ping to client");
                 } else {
                     debug!("Failed to send Ping, closing connection");
                     break;
@@ -223,7 +223,7 @@ async fn handle_socket(socket: WebSocket, state: AppState) {
         }
     }
 
-    debug!("WebSocket connection closed, cleaning up");
+    // debug!("WebSocket connection closed, cleaning up");
 }
 
 /// Map a DownloadManagerEvent to a protobuf WsMessage, applying filter if set.
@@ -327,6 +327,7 @@ fn map_event_to_protobuf(
             total_bytes,
             total_duration_secs,
             total_segments,
+            file_path: _file_path,
         } => {
             let payload = DownloadCompleted {
                 download_id: download_id.clone(),
@@ -481,6 +482,7 @@ mod tests {
             total_bytes: 10240000,
             total_duration_secs: 3600.0,
             total_segments: 360,
+            file_path: Some("/path/to/video.mp4".to_string()),
         };
 
         let msg = map_event_to_protobuf(&event, &None).unwrap();

@@ -14,6 +14,37 @@ use crate::api::models::{
 use crate::api::server::AppState;
 use crate::database::models::{GlobalConfigDbModel, PlatformConfigDbModel};
 
+/// Helper macro to apply optional updates from requests.
+macro_rules! apply_updates {
+    // Form 1: With tracker (for Global Config)
+    ($target:ident, $source:ident, $tracker:ident; [
+        $( $field:ident $(: $transform:expr)? ),* $(,)?
+    ]) => {
+        $(
+            if let Some(val) = $source.$field {
+                // Apply transformation if provided, otherwise direct assignment
+                $target.$field = apply_updates!(@val val, $($transform)?);
+                $tracker.push(stringify!($field));
+            }
+        )*
+    };
+
+    // Form 2: Without tracker (for Platform Config)
+    ($target:ident, $source:ident; [
+        $( $field:ident $(: $transform:expr)? ),* $(,)?
+    ]) => {
+        $(
+            if let Some(val) = $source.$field {
+                $target.$field = apply_updates!(@val val, $($transform)?);
+            }
+        )*
+    };
+
+    // Helper to handle optional transform
+    (@val $val:ident, $transform:expr) => { ($transform)($val) };
+    (@val $val:ident,) => { $val };
+}
+
 /// Create the config router.
 pub fn router() -> Router<AppState> {
     Router::new()
@@ -96,58 +127,62 @@ async fn update_global_config(
         .as_ref()
         .ok_or_else(|| ApiError::internal("ConfigService not available"))?;
 
+    tracing::info!(
+        ?request,
+        "Received request to update global configuration via API"
+    );
+
     // Get current config to apply partial updates
     let mut config = config_service
         .get_global_config()
         .await
         .map_err(|e| ApiError::internal(format!("Failed to get global config: {}", e)))?;
 
-    // Apply partial updates
-    if let Some(output_folder) = request.output_folder {
-        config.output_folder = output_folder;
-    }
-    if let Some(output_filename_template) = request.output_filename_template {
-        config.output_filename_template = output_filename_template;
-    }
-    if let Some(output_file_format) = request.output_file_format {
-        config.output_file_format = output_file_format;
-    }
-    if let Some(max_concurrent_downloads) = request.max_concurrent_downloads {
-        config.max_concurrent_downloads = max_concurrent_downloads as i32;
-    }
-    if let Some(max_concurrent_uploads) = request.max_concurrent_uploads {
-        config.max_concurrent_uploads = max_concurrent_uploads as i32;
-    }
-    if let Some(max_concurrent_cpu_jobs) = request.max_concurrent_cpu_jobs {
-        config.max_concurrent_cpu_jobs = max_concurrent_cpu_jobs as i32;
-    }
-    if let Some(max_concurrent_io_jobs) = request.max_concurrent_io_jobs {
-        config.max_concurrent_io_jobs = max_concurrent_io_jobs as i32;
-    }
-    if let Some(streamer_check_delay_ms) = request.streamer_check_delay_ms {
-        config.streamer_check_delay_ms = streamer_check_delay_ms as i64;
-    }
-    if let Some(offline_check_delay_ms) = request.offline_check_delay_ms {
-        config.offline_check_delay_ms = offline_check_delay_ms as i64;
-    }
-    if let Some(offline_check_count) = request.offline_check_count {
-        config.offline_check_count = offline_check_count as i32;
-    }
-    if let Some(default_download_engine) = request.default_download_engine {
-        config.default_download_engine = default_download_engine;
-    }
-    if let Some(record_danmu) = request.record_danmu {
-        config.record_danmu = record_danmu;
-    }
-    if let Some(ref proxy_config) = request.proxy_config {
-        config.proxy_config = proxy_config.clone();
-    }
+    let mut updated_fields: Vec<&'static str> = Vec::new();
+
+    apply_updates!(config, request, updated_fields; [
+        output_folder,
+        output_filename_template,
+        output_file_format,
+        min_segment_size_bytes: |v| v as i64,
+        max_download_duration_secs: |v| v as i64,
+        max_part_size_bytes: |v| v as i64,
+        max_concurrent_downloads: |v| v as i32,
+        max_concurrent_uploads: |v| v as i32,
+        max_concurrent_cpu_jobs: |v| v as i32,
+        max_concurrent_io_jobs: |v| v as i32,
+        streamer_check_delay_ms: |v| v as i64,
+        offline_check_delay_ms: |v| v as i64,
+        offline_check_count: |v| v as i32,
+        job_history_retention_days: |v| v as i32,
+        default_download_engine,
+        record_danmu,
+        proxy_config
+    ]);
+
+    let updated_fields_summary = if updated_fields.is_empty() {
+        "none".to_string()
+    } else {
+        updated_fields.join(", ")
+    };
 
     // Update config (cache invalidation is handled automatically by ConfigService)
-    config_service
-        .update_global_config(&config)
-        .await
-        .map_err(|e| ApiError::internal(format!("Failed to update global config: {}", e)))?;
+    if let Err(e) = config_service.update_global_config(&config).await {
+        tracing::error!(
+            error = %e,
+            updated_fields = %updated_fields_summary,
+            "Failed to update global config via API"
+        );
+        return Err(ApiError::internal(format!(
+            "Failed to update global config: {}",
+            e
+        )));
+    }
+
+    tracing::info!(
+        updated_fields = %updated_fields_summary,
+        "Global configuration updated successfully via API"
+    );
 
     Ok(Json(map_global_config_to_response(config)))
 }
@@ -215,55 +250,24 @@ async fn update_platform_config(
         }
     })?;
 
-    // Apply partial updates
-    if let Some(fetch_delay_ms) = request.fetch_delay_ms {
-        config.fetch_delay_ms = Some(fetch_delay_ms as i64);
-    }
-    if let Some(download_delay_ms) = request.download_delay_ms {
-        config.download_delay_ms = Some(download_delay_ms as i64);
-    }
-    if let Some(record_danmu) = request.record_danmu {
-        config.record_danmu = Some(record_danmu);
-    }
-    if let Some(cookies) = request.cookies {
-        config.cookies = Some(cookies);
-    }
-    if let Some(platform_specific_config) = request.platform_specific_config {
-        config.platform_specific_config = Some(platform_specific_config);
-    }
-    if let Some(proxy_config) = request.proxy_config {
-        config.proxy_config = Some(proxy_config);
-    }
-    if let Some(output_folder) = request.output_folder {
-        config.output_folder = Some(output_folder);
-    }
-    if let Some(output_filename_template) = request.output_filename_template {
-        config.output_filename_template = Some(output_filename_template);
-    }
-    if let Some(download_engine) = request.download_engine {
-        config.download_engine = Some(download_engine);
-    }
-    if let Some(stream_selection_config) = request.stream_selection_config {
-        config.stream_selection_config = Some(stream_selection_config);
-    }
-    if let Some(output_file_format) = request.output_file_format {
-        config.output_file_format = Some(output_file_format);
-    }
-    if let Some(min_segment_size_bytes) = request.min_segment_size_bytes {
-        config.min_segment_size_bytes = Some(min_segment_size_bytes as i64);
-    }
-    if let Some(max_download_duration_secs) = request.max_download_duration_secs {
-        config.max_download_duration_secs = Some(max_download_duration_secs as i64);
-    }
-    if let Some(max_part_size_bytes) = request.max_part_size_bytes {
-        config.max_part_size_bytes = Some(max_part_size_bytes as i64);
-    }
-    if let Some(download_retry_policy) = request.download_retry_policy {
-        config.download_retry_policy = Some(download_retry_policy);
-    }
-    if let Some(event_hooks) = request.event_hooks {
-        config.event_hooks = Some(event_hooks);
-    }
+    apply_updates!(config, request; [
+        fetch_delay_ms: |v| Some(v as i64),
+        download_delay_ms: |v| Some(v as i64),
+        record_danmu: |v| Some(v),
+        cookies: |v| Some(v),
+        platform_specific_config: |v| Some(v),
+        proxy_config: |v| Some(v),
+        output_folder: |v| Some(v),
+        output_filename_template: |v| Some(v),
+        download_engine: |v| Some(v),
+        stream_selection_config: |v| Some(v),
+        output_file_format: |v| Some(v),
+        min_segment_size_bytes: |v| Some(v as i64),
+        max_download_duration_secs: |v| Some(v as i64),
+        max_part_size_bytes: |v| Some(v as i64),
+        download_retry_policy: |v| Some(v),
+        event_hooks: |v| Some(v)
+    ]);
 
     // Update config (cache invalidation is handled automatically by ConfigService)
     config_service
@@ -317,45 +321,31 @@ mod property_tests {
         config: &mut GlobalConfigDbModel,
         request: &UpdateGlobalConfigRequest,
     ) {
-        if let Some(ref output_folder) = request.output_folder {
-            config.output_folder = output_folder.clone();
-        }
-        if let Some(ref output_filename_template) = request.output_filename_template {
-            config.output_filename_template = output_filename_template.clone();
-        }
-        if let Some(ref output_file_format) = request.output_file_format {
-            config.output_file_format = output_file_format.clone();
-        }
-        if let Some(max_concurrent_downloads) = request.max_concurrent_downloads {
-            config.max_concurrent_downloads = max_concurrent_downloads as i32;
-        }
-        if let Some(max_concurrent_uploads) = request.max_concurrent_uploads {
-            config.max_concurrent_uploads = max_concurrent_uploads as i32;
-        }
-        if let Some(max_concurrent_cpu_jobs) = request.max_concurrent_cpu_jobs {
-            config.max_concurrent_cpu_jobs = max_concurrent_cpu_jobs as i32;
-        }
-        if let Some(max_concurrent_io_jobs) = request.max_concurrent_io_jobs {
-            config.max_concurrent_io_jobs = max_concurrent_io_jobs as i32;
-        }
-        if let Some(streamer_check_delay_ms) = request.streamer_check_delay_ms {
-            config.streamer_check_delay_ms = streamer_check_delay_ms as i64;
-        }
-        if let Some(offline_check_delay_ms) = request.offline_check_delay_ms {
-            config.offline_check_delay_ms = offline_check_delay_ms as i64;
-        }
-        if let Some(offline_check_count) = request.offline_check_count {
-            config.offline_check_count = offline_check_count as i32;
-        }
-        if let Some(ref default_download_engine) = request.default_download_engine {
-            config.default_download_engine = default_download_engine.clone();
-        }
-        if let Some(record_danmu) = request.record_danmu {
-            config.record_danmu = record_danmu;
-        }
-        if let Some(ref proxy_config) = request.proxy_config {
-            config.proxy_config = proxy_config.clone();
-        }
+        // Clone request to use with macro (which expects owned fields)
+        let request = request.clone();
+        let mut updated_fields: Vec<&'static str> = Vec::new();
+
+        apply_updates!(
+            config, request, updated_fields; [
+                output_folder,
+                output_filename_template,
+                output_file_format,
+                min_segment_size_bytes: |v| v as i64,
+                max_download_duration_secs: |v| v as i64,
+                max_part_size_bytes: |v| v as i64,
+                max_concurrent_downloads: |v| v as i32,
+                max_concurrent_uploads: |v| v as i32,
+                max_concurrent_cpu_jobs: |v| v as i32,
+                max_concurrent_io_jobs: |v| v as i32,
+                streamer_check_delay_ms: |v| v as i64,
+                offline_check_delay_ms: |v| v as i64,
+                offline_check_count: |v| v as i32,
+                job_history_retention_days: |v| v as i32,
+                default_download_engine,
+                record_danmu,
+                proxy_config
+            ]
+        );
     }
 
     /// Apply partial updates from UpdatePlatformConfigRequest to PlatformConfigDbModel
@@ -363,54 +353,27 @@ mod property_tests {
         config: &mut PlatformConfigDbModel,
         request: &UpdatePlatformConfigRequest,
     ) {
-        if let Some(fetch_delay_ms) = request.fetch_delay_ms {
-            config.fetch_delay_ms = Some(fetch_delay_ms as i64);
-        }
-        if let Some(download_delay_ms) = request.download_delay_ms {
-            config.download_delay_ms = Some(download_delay_ms as i64);
-        }
-        if let Some(record_danmu) = request.record_danmu {
-            config.record_danmu = Some(record_danmu);
-        }
-        if let Some(ref cookies) = request.cookies {
-            config.cookies = Some(cookies.clone());
-        }
-        if let Some(ref platform_specific_config) = request.platform_specific_config {
-            config.platform_specific_config = Some(platform_specific_config.clone());
-        }
-        if let Some(ref proxy_config) = request.proxy_config {
-            config.proxy_config = Some(proxy_config.clone());
-        }
-        if let Some(ref output_folder) = request.output_folder {
-            config.output_folder = Some(output_folder.clone());
-        }
-        if let Some(ref output_filename_template) = request.output_filename_template {
-            config.output_filename_template = Some(output_filename_template.clone());
-        }
-        if let Some(ref download_engine) = request.download_engine {
-            config.download_engine = Some(download_engine.clone());
-        }
-        if let Some(ref stream_selection_config) = request.stream_selection_config {
-            config.stream_selection_config = Some(stream_selection_config.clone());
-        }
-        if let Some(ref output_file_format) = request.output_file_format {
-            config.output_file_format = Some(output_file_format.clone());
-        }
-        if let Some(min_segment_size_bytes) = request.min_segment_size_bytes {
-            config.min_segment_size_bytes = Some(min_segment_size_bytes as i64);
-        }
-        if let Some(max_download_duration_secs) = request.max_download_duration_secs {
-            config.max_download_duration_secs = Some(max_download_duration_secs as i64);
-        }
-        if let Some(max_part_size_bytes) = request.max_part_size_bytes {
-            config.max_part_size_bytes = Some(max_part_size_bytes as i64);
-        }
-        if let Some(ref download_retry_policy) = request.download_retry_policy {
-            config.download_retry_policy = Some(download_retry_policy.clone());
-        }
-        if let Some(ref event_hooks) = request.event_hooks {
-            config.event_hooks = Some(event_hooks.clone());
-        }
+        // Clone request to use with macro
+        let request = request.clone();
+
+        apply_updates!(config, request; [
+            fetch_delay_ms: |v| Some(v as i64),
+            download_delay_ms: |v| Some(v as i64),
+            record_danmu: |v| Some(v),
+            cookies: |v| Some(v),
+            platform_specific_config: |v| Some(v),
+            proxy_config: |v| Some(v),
+            output_folder: |v| Some(v),
+            output_filename_template: |v| Some(v),
+            download_engine: |v| Some(v),
+            stream_selection_config: |v| Some(v),
+            output_file_format: |v| Some(v),
+            min_segment_size_bytes: |v| Some(v as i64),
+            max_download_duration_secs: |v| Some(v as i64),
+            max_part_size_bytes: |v| Some(v as i64),
+            download_retry_policy: |v| Some(v),
+            event_hooks: |v| Some(v)
+        ]);
     }
 
     /// Strategy for generating valid output folder paths
@@ -474,6 +437,9 @@ mod property_tests {
             output_folder in prop::option::of(output_folder_strategy()),
             output_filename_template in prop::option::of(filename_template_strategy()),
             output_file_format in prop::option::of(file_format_strategy()),
+            min_segment_size_bytes in prop::option::of(1024u64..16777216u64),
+            max_download_duration_secs in prop::option::of(0u64..86400u64),
+            max_part_size_bytes in prop::option::of(1048576u64..17179869184u64),
             max_concurrent_downloads in prop::option::of(1u32..100u32),
             max_concurrent_uploads in prop::option::of(1u32..50u32),
             max_concurrent_cpu_jobs in prop::option::of(0u32..32u32),
@@ -481,6 +447,7 @@ mod property_tests {
             streamer_check_delay_ms in prop::option::of(1000u64..300000u64),
             offline_check_delay_ms in prop::option::of(1000u64..120000u64),
             offline_check_count in prop::option::of(1u32..10u32),
+            job_history_retention_days in prop::option::of(1u32..365u32),
             default_download_engine in prop::option::of(download_engine_strategy()),
             record_danmu in prop::option::of(prop::bool::ANY),
             proxy_config in prop::option::of(proxy_config_strategy()),
@@ -494,6 +461,9 @@ mod property_tests {
                 output_folder: output_folder.clone(),
                 output_filename_template: output_filename_template.clone(),
                 output_file_format: output_file_format.clone(),
+                min_segment_size_bytes,
+                max_download_duration_secs,
+                max_part_size_bytes,
                 max_concurrent_downloads,
                 max_concurrent_uploads,
                 max_concurrent_cpu_jobs,
@@ -501,6 +471,7 @@ mod property_tests {
                 streamer_check_delay_ms,
                 offline_check_delay_ms,
                 offline_check_count,
+                job_history_retention_days,
                 default_download_engine: default_download_engine.clone(),
                 record_danmu,
                 proxy_config: proxy_config.clone(),
@@ -526,6 +497,24 @@ mod property_tests {
                 prop_assert_eq!(&config.output_file_format, format, "output_file_format should be updated");
             } else {
                 prop_assert_eq!(&config.output_file_format, &original_config.output_file_format, "output_file_format should remain unchanged");
+            }
+
+            if let Some(min_segment_size_bytes_value) = min_segment_size_bytes {
+                prop_assert_eq!(config.min_segment_size_bytes, min_segment_size_bytes_value as i64, "min_segment_size_bytes should be updated");
+            } else {
+                prop_assert_eq!(config.min_segment_size_bytes, original_config.min_segment_size_bytes, "min_segment_size_bytes should remain unchanged");
+            }
+
+            if let Some(max_download_duration_secs_value) = max_download_duration_secs {
+                prop_assert_eq!(config.max_download_duration_secs, max_download_duration_secs_value as i64, "max_download_duration_secs should be updated");
+            } else {
+                prop_assert_eq!(config.max_download_duration_secs, original_config.max_download_duration_secs, "max_download_duration_secs should remain unchanged");
+            }
+
+            if let Some(max_part_size_bytes_value) = max_part_size_bytes {
+                prop_assert_eq!(config.max_part_size_bytes, max_part_size_bytes_value as i64, "max_part_size_bytes should be updated");
+            } else {
+                prop_assert_eq!(config.max_part_size_bytes, original_config.max_part_size_bytes, "max_part_size_bytes should remain unchanged");
             }
 
             if let Some(downloads) = max_concurrent_downloads {
@@ -568,6 +557,12 @@ mod property_tests {
                 prop_assert_eq!(config.offline_check_count, offline_count as i32, "offline_check_count should be updated");
             } else {
                 prop_assert_eq!(config.offline_check_count, original_config.offline_check_count, "offline_check_count should remain unchanged");
+            }
+
+            if let Some(job_history) = job_history_retention_days {
+                prop_assert_eq!(config.job_history_retention_days, job_history as i32, "job_history_retention_days should be updated");
+            } else {
+                prop_assert_eq!(config.job_history_retention_days, original_config.job_history_retention_days, "job_history_retention_days should remain unchanged");
             }
 
             if let Some(ref engine) = default_download_engine {
@@ -614,7 +609,7 @@ mod property_tests {
             max_download_duration_secs in prop::option::of(60u64..3600u64),
             max_part_size_bytes in prop::option::of(1048576u64..1073741824u64),
             download_retry_policy in prop::option::of(prop::string::string_regex(r#"\{"max_retries": 5\}"#).unwrap()),
-            event_hooks in prop::option::of(prop::string::string_regex(r#"\{"on_download_start": []\}"#).unwrap()),
+            event_hooks in prop::option::of(prop::string::string_regex(r#"\{"on_download_start": \[\]\}"#).unwrap()),
         ) {
             // Create initial platform config
             let mut config = PlatformConfigDbModel {
@@ -636,6 +631,7 @@ mod property_tests {
                 max_part_size_bytes: None,
                 download_retry_policy: None,
                 event_hooks: None,
+                pipeline: None,
             };
             let original_config = config.clone();
 

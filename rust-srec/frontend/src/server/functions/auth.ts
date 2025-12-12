@@ -16,6 +16,13 @@ const authClient = ky.create({
     timeout: 10000,
 });
 
+function computeExpiryTimestamp(seconds?: number, fallback?: number): number {
+    if (typeof seconds === 'number' && Number.isFinite(seconds)) {
+        return Date.now() + seconds * 1000;
+    }
+    return fallback ?? Date.now();
+}
+
 export const loginFn = createServerFn({ method: "POST" })
     .inputValidator((data: z.infer<typeof LoginRequestSchema>) => data)
     .handler(async ({ data }) => {
@@ -30,11 +37,11 @@ export const loginFn = createServerFn({ method: "POST" })
                 token: {
                     access_token: parsed.access_token,
                     refresh_token: parsed.refresh_token,
-                    expires_in: parsed.expires_in,
-                    refresh_expires_in: parsed.refresh_expires_in,
+                    expires_in: computeExpiryTimestamp(parsed.expires_in),
+                    refresh_expires_in: computeExpiryTimestamp(parsed.refresh_expires_in),
                 },
                 roles: parsed.roles,
-                mustChangePassword: parsed.must_change_password
+                mustChangePassword: parsed.must_change_password,
             };
             await session.update(userData);
 
@@ -86,21 +93,12 @@ export const checkAuthFn = createServerFn({ method: "POST" })
             return null;
         }
 
-        // check if the refresh token is expired
-        // In a real app we might check local time vs expires_in, 
-        // but here we just try to refresh if present? 
-        // Logic from original auth.ts:
-
-        // refresh_expires_in is likely seconds from issue, or absolute timestamp?
-        // In rust code it's usually relative seconds? 
-        // Original code: `const expiresAt = session.data.token?.refresh_expires_in || 0`
-        // If it was stored as expiration timestamp it's fine. If relative, needs calculation.
-        // Assuming original logic was correct or we should verify. 
-        // Let's assume it works as is if we persisted it correctly.
-        // But in `loginFn` above: `expires_in: parsed.expires_in`. 
-        // If the backend returns relative seconds, we should theoretically convert to absolute time for storage if we want to check `now > expiresAt`.
-        // However, `utils/session.ts` defines `expires_in: number`.
-        // For now, let's keep the logic close to original but maybe trust the backend refresh call more.
+        const now = Date.now();
+        const refreshExpiry = session.data.token?.refresh_expires_in ?? 0;
+        if (now >= refreshExpiry) {
+            await session.clear();
+            return null;
+        }
 
         try {
             const json = await authClient.post('auth/refresh', {
@@ -114,11 +112,17 @@ export const checkAuthFn = createServerFn({ method: "POST" })
                 token: {
                     access_token: parsed.access_token,
                     refresh_token: parsed.refresh_token,
-                    expires_in: parsed.expires_in,
-                    refresh_expires_in: parsed.refresh_expires_in,
+                    expires_in: computeExpiryTimestamp(
+                        parsed.expires_in,
+                        session.data.token?.expires_in
+                    ),
+                    refresh_expires_in: computeExpiryTimestamp(
+                        parsed.refresh_expires_in,
+                        session.data.token?.refresh_expires_in
+                    ),
                 },
                 roles: parsed.roles,
-                mustChangePassword: parsed.must_change_password
+                mustChangePassword: parsed.must_change_password,
             };
 
             await session.update(userData);
@@ -130,4 +134,3 @@ export const checkAuthFn = createServerFn({ method: "POST" })
             return null;
         }
     });
-

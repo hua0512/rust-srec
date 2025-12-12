@@ -7,7 +7,7 @@ use tokio::io::{AsyncBufReadExt, BufReader};
 use tokio::process::Command;
 use tracing::{debug, error, info, warn};
 
-use super::traits::{DownloadEngine, DownloadHandle, EngineType, SegmentEvent};
+use super::traits::{DownloadConfig, DownloadEngine, DownloadHandle, EngineType, SegmentEvent};
 use super::utils::{
     ensure_output_dir, is_segment_start, parse_progress, spawn_piped_process_waiter,
 };
@@ -59,15 +59,11 @@ impl StreamlinkEngine {
     }
 
     /// Build streamlink command arguments.
-    fn build_streamlink_args(&self, handle: &DownloadHandle) -> Vec<String> {
-        let config = &handle.config;
+    fn build_streamlink_args(&self, config: &DownloadConfig) -> Vec<String> {
         let mut args = Vec::new();
 
         // Output to stdout for piping
         args.extend(["--stdout".to_string()]);
-
-        // Quality selection (from config)
-        args.push(self.config.quality.clone());
 
         // Add proxy if configured
         if let Some(ref proxy) = config.proxy_url {
@@ -87,15 +83,17 @@ impl StreamlinkEngine {
         // Add extra arguments from config
         args.extend(self.config.extra_args.clone());
 
-        // Stream URL
+        // Stream URL must be the first positional argument followed by quality
         args.push(config.url.clone());
+
+        // Quality selection (from config)
+        args.push(self.config.quality.clone());
 
         args
     }
 
     /// Build ffmpeg command arguments for remuxing.
-    fn build_ffmpeg_args(&self, handle: &DownloadHandle) -> Vec<String> {
-        let config = &handle.config;
+    fn build_ffmpeg_args(&self, config: &DownloadConfig) -> Vec<String> {
         let mut args = Vec::new();
 
         // Input from stdin
@@ -177,8 +175,9 @@ impl DownloadEngine for StreamlinkEngine {
     }
 
     async fn start(&self, handle: Arc<DownloadHandle>) -> Result<()> {
+        let config = handle.config_snapshot();
         // 1. Ensure output directory exists before spawning processes (Requirements 2.1, 2.2)
-        if let Err(e) = ensure_output_dir(&handle.config.output_dir).await {
+        if let Err(e) = ensure_output_dir(&config.output_dir).await {
             let _ = handle.event_tx.try_send(SegmentEvent::DownloadFailed {
                 error: e.clone(),
                 recoverable: false,
@@ -186,12 +185,12 @@ impl DownloadEngine for StreamlinkEngine {
             return Err(crate::Error::Other(e));
         }
 
-        let streamlink_args = self.build_streamlink_args(&handle);
-        let ffmpeg_args = self.build_ffmpeg_args(&handle);
+        let streamlink_args = self.build_streamlink_args(&config);
+        let ffmpeg_args = self.build_ffmpeg_args(&config);
 
         info!(
             "Starting streamlink download for streamer {} with args: {:?}",
-            handle.config.streamer_id, streamlink_args
+            config.streamer_id, streamlink_args
         );
 
         // Spawn streamlink process
@@ -234,7 +233,7 @@ impl DownloadEngine for StreamlinkEngine {
 
         let event_tx = handle.event_tx.clone();
         let cancellation_token = handle.cancellation_token.clone();
-        let streamer_id = handle.config.streamer_id.clone();
+        let streamer_id = config.streamer_id.clone();
 
         // Spawn task to pipe streamlink stdout to ffmpeg stdin
         let cancellation_token_pipe = cancellation_token.clone();
@@ -397,10 +396,8 @@ impl DownloadEngine for StreamlinkEngine {
     }
 
     async fn stop(&self, handle: &DownloadHandle) -> Result<()> {
-        info!(
-            "Stopping streamlink download for streamer {}",
-            handle.config.streamer_id
-        );
+        let streamer_id = handle.config_snapshot().streamer_id;
+        info!("Stopping streamlink download for streamer {}", streamer_id);
         handle.cancel();
         Ok(())
     }

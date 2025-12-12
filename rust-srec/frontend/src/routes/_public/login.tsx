@@ -19,7 +19,7 @@ import { Trans } from '@lingui/react/macro';
 import { t } from '@lingui/core/macro';
 import { useState } from 'react';
 import { Eye, EyeOff } from 'lucide-react';
-import { loginFn } from '@/server/auth';
+import { loginFn } from '@/server/functions';
 import { redirect } from '@tanstack/react-router';
 
 export const Route = createFileRoute('/_public/login')({

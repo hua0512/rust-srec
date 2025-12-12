@@ -1128,7 +1128,8 @@ mod streamer_manager_tests {
 mod end_to_end_tests {
     use super::*;
     use chrono::Utc;
-    use rust_srec::config::ConfigEventBroadcaster;
+    use rust_srec::config::{ConfigCache, ConfigEventBroadcaster, ConfigService};
+    use rust_srec::database::repositories::config::SqlxConfigRepository;
     use rust_srec::database::repositories::filter::SqlxFilterRepository;
     use rust_srec::database::repositories::session::SqlxSessionRepository;
     use rust_srec::database::repositories::streamer::SqlxStreamerRepository;
@@ -1168,6 +1169,11 @@ mod end_to_end_tests {
             consecutive_error_count: 0,
             disabled_until: None,
             last_live_time: None,
+            avatar_url: None,
+            danmu_sampling_config: None,
+            download_retry_policy: None,
+            streamer_specific_config: None,
+            last_error: None,
         }
     }
 
@@ -1195,11 +1201,25 @@ mod end_to_end_tests {
         let session_repo = Arc::new(SqlxSessionRepository::new(pool.clone()));
         let broadcaster = ConfigEventBroadcaster::new();
 
-        let streamer_manager = Arc::new(StreamerManager::new(streamer_repo, broadcaster));
+        let streamer_manager = Arc::new(StreamerManager::new(streamer_repo.clone(), broadcaster));
         streamer_manager.hydrate().await.expect("Failed to hydrate");
 
+        // Create config service
+        let config_repo = Arc::new(SqlxConfigRepository::new(pool.clone()));
+        let cache = ConfigCache::new();
+        let config_service = Arc::new(ConfigService::with_cache(
+            config_repo,
+            streamer_repo.clone(),
+            cache,
+        ));
+
         // Create monitor
-        let monitor = StreamMonitor::new(streamer_manager.clone(), filter_repo, session_repo);
+        let monitor = StreamMonitor::new(
+            streamer_manager.clone(),
+            filter_repo,
+            session_repo,
+            config_service,
+        );
 
         // Subscribe to events
         let mut event_rx = monitor.subscribe_events();
@@ -1217,6 +1237,7 @@ mod end_to_end_tests {
         let live_status = LiveStatus::Live {
             title: "Playing Rust!".to_string(),
             category: Some("Gaming".to_string()),
+            avatar: None,
             started_at: Some(Utc::now()),
             viewer_count: Some(1000),
             streams: vec![],
@@ -1274,11 +1295,25 @@ mod end_to_end_tests {
         let session_repo = Arc::new(SqlxSessionRepository::new(pool.clone()));
         let broadcaster = ConfigEventBroadcaster::new();
 
-        let streamer_manager = Arc::new(StreamerManager::new(streamer_repo, broadcaster));
+        let streamer_manager = Arc::new(StreamerManager::new(streamer_repo.clone(), broadcaster));
         streamer_manager.hydrate().await.expect("Failed to hydrate");
 
+        // Create config service
+        let config_repo = Arc::new(SqlxConfigRepository::new(pool.clone()));
+        let cache = ConfigCache::new();
+        let config_service = Arc::new(ConfigService::with_cache(
+            config_repo,
+            streamer_repo.clone(),
+            cache,
+        ));
+
         // Create monitor
-        let monitor = StreamMonitor::new(streamer_manager.clone(), filter_repo, session_repo);
+        let monitor = StreamMonitor::new(
+            streamer_manager.clone(),
+            filter_repo,
+            session_repo,
+            config_service,
+        );
 
         // Subscribe to events
         let mut event_rx = monitor.subscribe_events();
@@ -1338,11 +1373,25 @@ mod end_to_end_tests {
         let session_repo = Arc::new(SqlxSessionRepository::new(pool.clone()));
         let broadcaster = ConfigEventBroadcaster::new();
 
-        let streamer_manager = Arc::new(StreamerManager::new(streamer_repo, broadcaster));
+        let streamer_manager = Arc::new(StreamerManager::new(streamer_repo.clone(), broadcaster));
         streamer_manager.hydrate().await.expect("Failed to hydrate");
 
+        // Create config service
+        let config_repo = Arc::new(SqlxConfigRepository::new(pool.clone()));
+        let cache = ConfigCache::new();
+        let config_service = Arc::new(ConfigService::with_cache(
+            config_repo,
+            streamer_repo.clone(),
+            cache,
+        ));
+
         // Create monitor
-        let monitor = StreamMonitor::new(streamer_manager.clone(), filter_repo, session_repo);
+        let monitor = StreamMonitor::new(
+            streamer_manager.clone(),
+            filter_repo,
+            session_repo,
+            config_service,
+        );
 
         // Subscribe to events
         let mut event_rx = monitor.subscribe_events();
@@ -1409,11 +1458,25 @@ mod end_to_end_tests {
         let session_repo = Arc::new(SqlxSessionRepository::new(pool.clone()));
         let broadcaster = ConfigEventBroadcaster::new();
 
-        let streamer_manager = Arc::new(StreamerManager::new(streamer_repo, broadcaster));
+        let streamer_manager = Arc::new(StreamerManager::new(streamer_repo.clone(), broadcaster));
         streamer_manager.hydrate().await.expect("Failed to hydrate");
 
+        // Create config service
+        let config_repo = Arc::new(SqlxConfigRepository::new(pool.clone()));
+        let cache = ConfigCache::new();
+        let config_service = Arc::new(ConfigService::with_cache(
+            config_repo,
+            streamer_repo.clone(),
+            cache,
+        ));
+
         // Create monitor
-        let monitor = StreamMonitor::new(streamer_manager.clone(), filter_repo, session_repo);
+        let monitor = StreamMonitor::new(
+            streamer_manager.clone(),
+            filter_repo,
+            session_repo,
+            config_service,
+        );
 
         // Create test metadata
         let metadata = create_test_metadata(
@@ -1467,11 +1530,25 @@ mod end_to_end_tests {
         let session_repo = Arc::new(SqlxSessionRepository::new(pool.clone()));
         let broadcaster = ConfigEventBroadcaster::new();
 
-        let streamer_manager = Arc::new(StreamerManager::new(streamer_repo, broadcaster));
+        let streamer_manager = Arc::new(StreamerManager::new(streamer_repo.clone(), broadcaster));
         streamer_manager.hydrate().await.expect("Failed to hydrate");
 
+        // Create config service
+        let config_repo = Arc::new(SqlxConfigRepository::new(pool.clone()));
+        let cache = ConfigCache::new();
+        let config_service = Arc::new(ConfigService::with_cache(
+            config_repo,
+            streamer_repo.clone(),
+            cache.clone(),
+        ));
+
         // Create monitor
-        let monitor = StreamMonitor::new(streamer_manager.clone(), filter_repo, session_repo);
+        let monitor = StreamMonitor::new(
+            streamer_manager.clone(),
+            filter_repo,
+            session_repo,
+            config_service,
+        );
 
         // Subscribe to events
         let mut event_rx = monitor.subscribe_events();

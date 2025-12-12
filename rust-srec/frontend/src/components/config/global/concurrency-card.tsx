@@ -41,7 +41,7 @@ export function ConcurrencyCard({
     enginesLoading,
 }: ConcurrencyCardProps) {
     return (
-        <Card className="hover:shadow-md transition-all duration-300 border-muted/60">
+        <Card className="h-full hover:shadow-md transition-all duration-300 border-muted/60">
             <CardHeader>
                 <CardTitle className="flex items-center gap-3 text-xl">
                     <div className="p-2.5 bg-green-500/10 text-green-500 rounded-lg">

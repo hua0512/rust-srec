@@ -25,7 +25,7 @@ interface FileConfigCardProps {
 
 export function FileConfigCard({ control }: FileConfigCardProps) {
     return (
-        <Card className="hover:shadow-md transition-all duration-300 border-muted/60">
+        <Card className="h-full hover:shadow-md transition-all duration-300 border-muted/60">
             <CardHeader>
                 <CardTitle className="flex items-center gap-3 text-xl">
                     <div className="p-2.5 bg-blue-500/10 text-blue-500 rounded-lg">
@@ -49,7 +49,7 @@ export function FileConfigCard({ control }: FileConfigCardProps) {
                     }
                 />
 
-                <div className="space-y-6 pl-2 border-l-2 border-muted/40 ml-1">
+                <div className="space-y-6">
                     <FormField
                         control={control}
                         name="output_folder"

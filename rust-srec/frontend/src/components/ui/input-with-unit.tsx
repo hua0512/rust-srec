@@ -41,6 +41,9 @@ interface InputWithUnitProps extends Omit<React.ComponentProps<"div">, "onChange
     unitType: UnitType;
     inputClassName?: string;
     placeholder?: string;
+    min?: number;
+    max?: number;
+    step?: number;
 }
 
 export function InputWithUnit({
@@ -50,6 +53,9 @@ export function InputWithUnit({
     className,
     inputClassName,
     placeholder,
+    min,
+    max,
+    step,
     ...props
 }: InputWithUnitProps) {
     const units = getUnits(unitType);
@@ -149,6 +155,9 @@ export function InputWithUnit({
                 value={displayValue}
                 onChange={handleInputChange}
                 placeholder={placeholder}
+                min={min}
+                max={max}
+                step={step}
             />
             <div className="h-4 w-[1px] bg-border shrink-0" />
             <Select

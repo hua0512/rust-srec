@@ -23,9 +23,14 @@ use crate::danmu::{
 };
 use crate::database::maintenance::{MaintenanceConfig, MaintenanceScheduler};
 use crate::database::repositories::{
-    config::SqlxConfigRepository, filter::SqlxFilterRepository, job::SqlxJobRepository,
-    refresh_token::SqlxRefreshTokenRepository, session::SqlxSessionRepository,
-    streamer::SqlxStreamerRepository, user::SqlxUserRepository,
+    config::SqlxConfigRepository,
+    filter::SqlxFilterRepository,
+    job::SqlxJobRepository,
+    preset::{SqliteJobPresetRepository, SqlitePipelinePresetRepository},
+    refresh_token::SqlxRefreshTokenRepository,
+    session::SqlxSessionRepository,
+    streamer::SqlxStreamerRepository,
+    user::SqlxUserRepository,
 };
 use crate::downloader::{
     DownloadConfig, DownloadManager, DownloadManagerConfig, DownloadManagerEvent,
@@ -74,7 +79,7 @@ pub struct ServiceContainer {
     pub health_checker: Arc<HealthChecker>,
     /// Database maintenance scheduler.
     pub maintenance_scheduler: Arc<MaintenanceScheduler>,
-    /// Scheduler service (with real status checking via StreamMonitor)
+    /// Scheduler service
     pub scheduler: Arc<tokio::sync::RwLock<Scheduler<SqlxStreamerRepository>>>,
     /// Stream monitor for real status detection
     pub stream_monitor: Arc<
@@ -147,10 +152,15 @@ impl ServiceContainer {
         // Create job repository for pipeline persistence
         let job_repo = Arc::new(SqlxJobRepository::new(pool.clone()));
 
+        // Create job preset repository
+        let preset_repo = Arc::new(SqliteJobPresetRepository::new(pool.clone().into()));
+
         // Create pipeline manager with job repository for database persistence
         let pipeline_manager = Arc::new(
             PipelineManager::with_repository(PipelineManagerConfig::default(), job_repo)
-                .with_session_repository(session_repo),
+                .with_session_repository(session_repo)
+                .with_preset_repository(preset_repo)
+                .with_config_service(config_service.clone()),
         );
 
         // Event broadcaster
@@ -265,10 +275,14 @@ impl ServiceContainer {
         // Create job repository for pipeline persistence
         let job_repo = Arc::new(SqlxJobRepository::new(pool.clone()));
 
+        // Create job preset repository
+        let preset_repo = Arc::new(SqliteJobPresetRepository::new(pool.clone().into()));
+
         // Create pipeline manager with job repository for database persistence
         let pipeline_manager = Arc::new(
             PipelineManager::with_repository(pipeline_config, job_repo)
-                .with_session_repository(session_repo.clone()),
+                .with_session_repository(session_repo.clone())
+                .with_preset_repository(preset_repo),
         );
 
         // Get monitor event broadcaster
@@ -442,11 +456,14 @@ impl ServiceContainer {
         // Wire HealthChecker into AppState for health endpoints
         state = state.with_health_checker(self.health_checker.clone());
 
-        // Wire SessionRepository and FilterRepository into AppState
+        // Wire SessionRepository, FilterRepository, and PipelinePresetRepository into AppState
         state = state
             .with_session_repository(Arc::new(SqlxSessionRepository::new(self.pool.clone())))
             .with_filter_repository(Arc::new(SqlxFilterRepository::new(self.pool.clone())))
-            .with_streamer_repository(Arc::new(SqlxStreamerRepository::new(self.pool.clone()))); // Inject StreamerRepository
+            .with_streamer_repository(Arc::new(SqlxStreamerRepository::new(self.pool.clone())))
+            .with_pipeline_preset_repository(Arc::new(SqlitePipelinePresetRepository::new(
+                Arc::new(self.pool.clone()),
+            )));
 
         let server = ApiServer::with_state(self.api_server_config.clone(), state);
         let cancel_token = self.cancellation_token.clone();
@@ -592,7 +609,7 @@ impl ServiceContainer {
                                 }
 
                                 // Forward to pipeline manager
-                                pipeline_manager.handle_download_event(download_event).await;
+                                pipeline_manager.handle_download_event(download_event.clone()).await;
                             }
                             Err(tokio::sync::broadcast::error::RecvError::Lagged(n)) => {
                                 warn!("Download event handler lagged {} events", n);

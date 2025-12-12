@@ -13,12 +13,16 @@ pub struct JobFilters {
     pub streamer_id: Option<String>,
     /// Filter by session ID.
     pub session_id: Option<String>,
+    /// Filter by pipeline ID.
+    pub pipeline_id: Option<String>,
     /// Filter jobs created after this date.
     pub from_date: Option<DateTime<Utc>>,
     /// Filter jobs created before this date.
     pub to_date: Option<DateTime<Utc>>,
     /// Filter by job type.
     pub job_type: Option<String>,
+    /// Filter by multiple job types.
+    pub job_types: Option<Vec<String>>,
 }
 
 impl JobFilters {
@@ -45,6 +49,12 @@ impl JobFilters {
         self
     }
 
+    /// Filter by pipeline ID.
+    pub fn with_pipeline_id(mut self, pipeline_id: impl Into<String>) -> Self {
+        self.pipeline_id = Some(pipeline_id.into());
+        self
+    }
+
     /// Filter by date range.
     pub fn with_date_range(
         mut self,
@@ -59,6 +69,12 @@ impl JobFilters {
     /// Filter by job type.
     pub fn with_job_type(mut self, job_type: impl Into<String>) -> Self {
         self.job_type = Some(job_type.into());
+        self
+    }
+
+    /// Filter by multiple job types.
+    pub fn with_job_types(mut self, job_types: Vec<String>) -> Self {
+        self.job_types = Some(job_types);
         self
     }
 }
@@ -153,6 +169,13 @@ pub struct JobDbModel {
     pub remaining_steps: Option<String>,
     /// Pipeline ID to group related jobs (first job's ID)
     pub pipeline_id: Option<String>,
+    /// Execution information for observability (JSON)
+    /// Requirements: 6.1, 6.2, 6.3, 6.4
+    pub execution_info: Option<String>,
+    /// Processing duration in seconds (from processor output)
+    pub duration_secs: Option<f64>,
+    /// Time spent waiting in queue before processing started (seconds)
+    pub queue_wait_secs: Option<f64>,
 }
 
 impl JobDbModel {
@@ -178,6 +201,9 @@ impl JobDbModel {
             next_job_type: None,
             remaining_steps: None,
             pipeline_id: None,
+            execution_info: None,
+            duration_secs: None,
+            queue_wait_secs: None,
         }
     }
 
@@ -210,11 +236,19 @@ impl JobDbModel {
             next_job_type: None,
             remaining_steps: None,
             pipeline_id: None,
+            execution_info: None,
+            duration_secs: None,
+            queue_wait_secs: None,
         }
     }
 
     /// Create a new pipeline step job with chain information.
     /// This is used for sequential pipeline job creation.
+    ///
+    /// # Arguments
+    ///
+    /// * `input` - Input paths as JSON array string
+    /// * `output` - Output paths as JSON array string (e.g., "[]" for empty)
     pub fn new_pipeline_step(
         job_type: impl Into<String>,
         input: impl Into<String>,
@@ -224,7 +258,7 @@ impl JobDbModel {
         session_id: Option<String>,
         pipeline_id: Option<String>,
         next_job_type: Option<String>,
-        remaining_steps: Option<Vec<String>>,
+        remaining_steps: Option<Vec<PipelineStep>>,
     ) -> Self {
         let now = chrono::Utc::now().to_rfc3339();
         let id = uuid::Uuid::new_v4().to_string();
@@ -238,7 +272,7 @@ impl JobDbModel {
             created_at: now.clone(),
             updated_at: now,
             input: Some(input.into()),
-            outputs: Some(format!("[\"{}\"]", output_str)),
+            outputs: Some(output_str),
             priority,
             streamer_id,
             session_id,
@@ -250,11 +284,14 @@ impl JobDbModel {
             remaining_steps: remaining_steps
                 .map(|steps| serde_json::to_string(&steps).unwrap_or_else(|_| "[]".to_string())),
             pipeline_id,
+            execution_info: None,
+            duration_secs: None,
+            queue_wait_secs: None,
         }
     }
 
     /// Get the remaining pipeline steps.
-    pub fn get_remaining_steps(&self) -> Vec<String> {
+    pub fn get_remaining_steps(&self) -> Vec<PipelineStep> {
         self.remaining_steps
             .as_ref()
             .and_then(|s| serde_json::from_str(s).ok())
@@ -262,7 +299,7 @@ impl JobDbModel {
     }
 
     /// Set the remaining pipeline steps.
-    pub fn set_remaining_steps(&mut self, steps: &[String]) {
+    pub fn set_remaining_steps(&mut self, steps: &[PipelineStep]) {
         self.remaining_steps =
             Some(serde_json::to_string(steps).unwrap_or_else(|_| "[]".to_string()));
         self.updated_at = chrono::Utc::now().to_rfc3339();
@@ -472,10 +509,29 @@ pub struct PipelineJobConfig {
 }
 
 /// Pipeline step configuration.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct PipelineStep {
-    pub processor: String,
-    pub config: serde_json::Value,
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(untagged)]
+pub enum PipelineStep {
+    /// Reference to a named job preset (e.g., "fast_remux").
+    Preset(String),
+    /// Inline definition of a job step.
+    Inline {
+        processor: String,
+        #[serde(default)]
+        config: serde_json::Value,
+    },
+}
+
+impl PipelineStep {
+    /// Get the processor name regardless of variant.
+    /// For Presets, this requires lookup (so it returns None or we need a repository).
+    /// Actually, for immediate use, we might just need to know if it is a preset or inline.
+    pub fn as_preset(&self) -> Option<&str> {
+        match self {
+            Self::Preset(name) => Some(name),
+            _ => None,
+        }
+    }
 }
 
 /// Pipeline definition with ordered steps.
@@ -483,13 +539,13 @@ pub struct PipelineStep {
 /// Requirements: 6.1, 6.2, 7.1
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PipelineDefinition {
-    /// Ordered list of job types to execute (e.g., ["remux", "upload", "thumbnail"])
-    pub steps: Vec<String>,
+    /// Ordered list of job types to execute.
+    pub steps: Vec<PipelineStep>,
 }
 
 impl PipelineDefinition {
     /// Create a new pipeline definition with the given steps.
-    pub fn new(steps: Vec<String>) -> Self {
+    pub fn new(steps: Vec<PipelineStep>) -> Self {
         Self { steps }
     }
 
@@ -500,23 +556,8 @@ impl PipelineDefinition {
     }
 
     /// Get the first step in the pipeline.
-    pub fn first_step(&self) -> Option<&str> {
-        self.steps.first().map(|s| s.as_str())
-    }
-
-    /// Get the next step after the given step.
-    pub fn next_step(&self, current: &str) -> Option<&str> {
-        let pos = self.steps.iter().position(|s| s == current)?;
-        self.steps.get(pos + 1).map(|s| s.as_str())
-    }
-
-    /// Get the remaining steps after the given step (excluding the current step).
-    pub fn remaining_steps(&self, current: &str) -> Vec<String> {
-        if let Some(pos) = self.steps.iter().position(|s| s == current) {
-            self.steps.iter().skip(pos + 1).cloned().collect()
-        } else {
-            vec![]
-        }
+    pub fn first_step(&self) -> Option<&PipelineStep> {
+        self.steps.first()
     }
 
     /// Check if the pipeline is empty.

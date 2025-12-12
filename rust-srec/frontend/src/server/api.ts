@@ -9,14 +9,18 @@ const getBaseUrl = () => {
     if (typeof process !== 'undefined' && process.env.API_BASE_URL) {
         return process.env.API_BASE_URL;
     }
-    return import.meta.env.VITE_API_BASE_URL || 'http://127.0.0.1:12555';
+    return import.meta.env.VITE_API_BASE_URL || 'http://127.0.0.1:12555/api';
 };
 
 export const BASE_URL = getBaseUrl();
 
 export class BackendApiError extends Error {
     constructor(public status: number, public statusText: string, public body: any) {
-        super(`Backend API Error: ${status} ${statusText}`);
+        // Extract detailed message from body if available
+        const detail = typeof body === 'object' && body !== null
+            ? (body.message || body.detail || body.error || JSON.stringify(body))
+            : (typeof body === 'string' && body.length > 0 ? body : `${status} ${statusText}`);
+        super(detail);
         this.name = 'BackendApiError';
     }
 }
@@ -160,16 +164,30 @@ async function refreshAuthToken(session: any): Promise<string | null> {
             }
 
             const json = await response.json();
+            const now = Date.now();
+            const computedAccessExpiry =
+                typeof json.expires_in === 'number' && Number.isFinite(json.expires_in)
+                    ? now + json.expires_in * 1000
+                    : session.data.token?.expires_in;
+            const computedRefreshExpiry =
+                typeof json.refresh_expires_in === 'number' && Number.isFinite(json.refresh_expires_in)
+                    ? now + json.refresh_expires_in * 1000
+                    : session.data.token?.refresh_expires_in;
+
             const userData: SessionData = {
                 username: session.data.username,
                 token: {
                     access_token: json.access_token,
                     refresh_token: json.refresh_token || refreshToken, // Fallback to existing refresh token if not allowed to rotate
-                    expires_in: json.expires_in,
-                    refresh_expires_in: json.refresh_expires_in || session.data.token.refresh_expires_in,
+                    expires_in: computedAccessExpiry ?? session.data.token?.expires_in ?? now,
+                    refresh_expires_in:
+                        computedRefreshExpiry ?? session.data.token?.refresh_expires_in ?? now,
                 },
                 roles: json.roles || session.data.roles,
-                mustChangePassword: json.must_change_password !== undefined ? json.must_change_password : session.data.mustChangePassword
+                mustChangePassword:
+                    json.must_change_password !== undefined
+                        ? json.must_change_password
+                        : session.data.mustChangePassword,
             };
 
             await session.update(userData);

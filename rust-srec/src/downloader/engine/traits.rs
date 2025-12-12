@@ -4,6 +4,7 @@ use async_trait::async_trait;
 use chrono::{DateTime, Utc};
 use flv_fix::FlvPipelineConfig;
 use hls_fix::HlsPipelineConfig;
+use parking_lot::RwLock;
 use pipeline_common::config::PipelineConfig;
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
@@ -340,8 +341,8 @@ pub struct DownloadHandle {
     pub id: String,
     /// Engine type used.
     pub engine_type: EngineType,
-    /// Download configuration.
-    pub config: DownloadConfig,
+    /// Download configuration shared with engines.
+    pub config: Arc<RwLock<DownloadConfig>>,
     /// Cancellation token.
     pub cancellation_token: CancellationToken,
     /// Event sender for segment events.
@@ -361,7 +362,7 @@ impl DownloadHandle {
         Self {
             id: id.into(),
             engine_type,
-            config,
+            config: Arc::new(RwLock::new(config)),
             cancellation_token: CancellationToken::new(),
             event_tx,
             started_at: Utc::now(),
@@ -376,6 +377,20 @@ impl DownloadHandle {
     /// Check if the download is cancelled.
     pub fn is_cancelled(&self) -> bool {
         self.cancellation_token.is_cancelled()
+    }
+
+    /// Snapshot the current download configuration.
+    pub fn config_snapshot(&self) -> DownloadConfig {
+        self.config.read().clone()
+    }
+
+    /// Apply in-place configuration updates.
+    pub fn update_config<F>(&self, updater: F)
+    where
+        F: FnOnce(&mut DownloadConfig),
+    {
+        let mut cfg = self.config.write();
+        updater(&mut cfg);
     }
 }
 

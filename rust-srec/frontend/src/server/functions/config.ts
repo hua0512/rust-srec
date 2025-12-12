@@ -32,6 +32,13 @@ export const listPlatformConfigs = createServerFn({ method: "GET" })
         return z.array(PlatformConfigSchema).parse(json);
     });
 
+export const getPlatformConfig = createServerFn({ method: "GET" })
+    .inputValidator((id: string) => id)
+    .handler(async ({ data: id }) => {
+        const json = await fetchBackend(`/config/platforms/${id}`);
+        return PlatformConfigSchema.parse(json);
+    });
+
 export const updatePlatformConfig = createServerFn({ method: "POST" })
     .inputValidator((d: { id: string; data: Partial<z.infer<typeof PlatformConfigSchema>> }) => d)
     .handler(async ({ data: { id, data } }) => {
@@ -55,6 +62,13 @@ export const listTemplates = createServerFn({ method: "GET" })
         // Endpoints logic extracted .items, duplicating that here
         const response = PaginatedTemplatesSchema.parse(json);
         return response.items;
+    });
+
+export const getTemplate = createServerFn({ method: "GET" })
+    .inputValidator((id: string) => id)
+    .handler(async ({ data: id }) => {
+        const json = await fetchBackend(`/templates/${id}`);
+        return TemplateSchema.parse(json);
     });
 
 export const createTemplate = createServerFn({ method: "POST" })

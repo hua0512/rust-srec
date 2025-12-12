@@ -25,6 +25,18 @@ pub trait JobRepository: Send + Sync {
     async fn cleanup_old_jobs(&self, retention_days: i32) -> Result<i32>;
     async fn delete_job(&self, id: &str) -> Result<()>;
 
+    // Purge methods (Requirements 7.1, 7.3)
+    /// Purge completed/failed jobs older than the specified number of days.
+    /// Deletes jobs in batches to avoid long-running transactions.
+    /// Returns the number of jobs deleted.
+    /// Requirements: 7.1, 7.3
+    async fn purge_jobs_older_than(&self, days: u32, batch_size: u32) -> Result<u64>;
+
+    /// Get IDs of jobs that are eligible for purging.
+    /// Returns job IDs for completed/failed jobs older than the specified days.
+    /// Requirements: 7.1, 7.3
+    async fn get_purgeable_jobs(&self, days: u32, limit: u32) -> Result<Vec<String>>;
+
     // Execution logs
     async fn add_execution_log(&self, log: &JobExecutionLogDbModel) -> Result<()>;
     async fn get_execution_logs(&self, job_id: &str) -> Result<Vec<JobExecutionLogDbModel>>;
@@ -54,6 +66,8 @@ pub trait JobRepository: Send + Sync {
         &self,
         job_id: &str,
         output: &str,
+        duration_secs: f64,
+        queue_wait_secs: f64,
         next_job: Option<&JobDbModel>,
     ) -> Result<Option<String>>;
 }
@@ -115,9 +129,10 @@ impl JobRepository for SqlxJobRepository {
                 id, job_type, status, config, state, created_at, updated_at,
                 input, outputs, priority, streamer_id, session_id,
                 started_at, completed_at, error, retry_count,
-                next_job_type, remaining_steps, pipeline_id
+                next_job_type, remaining_steps, pipeline_id, execution_info,
+                duration_secs, queue_wait_secs
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             "#,
         )
         .bind(&job.id)
@@ -139,6 +154,9 @@ impl JobRepository for SqlxJobRepository {
         .bind(&job.next_job_type)
         .bind(&job.remaining_steps)
         .bind(&job.pipeline_id)
+        .bind(&job.execution_info)
+        .bind(job.duration_secs)
+        .bind(job.queue_wait_secs)
         .execute(&self.pool)
         .await?;
         Ok(())
@@ -187,7 +205,10 @@ impl JobRepository for SqlxJobRepository {
                 retry_count = ?,
                 next_job_type = ?,
                 remaining_steps = ?,
-                pipeline_id = ?
+                pipeline_id = ?,
+                execution_info = ?,
+                duration_secs = ?,
+                queue_wait_secs = ?
             WHERE id = ?
             "#,
         )
@@ -208,6 +229,9 @@ impl JobRepository for SqlxJobRepository {
         .bind(&job.next_job_type)
         .bind(&job.remaining_steps)
         .bind(&job.pipeline_id)
+        .bind(&job.execution_info)
+        .bind(job.duration_secs)
+        .bind(job.queue_wait_secs)
         .bind(&job.id)
         .execute(&self.pool)
         .await?;
@@ -328,6 +352,9 @@ impl JobRepository for SqlxJobRepository {
             // session_id is now a direct column
             conditions.push("session_id = ?".to_string());
         }
+        if filters.pipeline_id.is_some() {
+            conditions.push("pipeline_id = ?".to_string());
+        }
         if filters.from_date.is_some() {
             conditions.push("created_at >= ?".to_string());
         }
@@ -336,6 +363,12 @@ impl JobRepository for SqlxJobRepository {
         }
         if filters.job_type.is_some() {
             conditions.push("job_type = ?".to_string());
+        }
+        if let Some(job_types) = &filters.job_types {
+            if !job_types.is_empty() {
+                let placeholders = job_types.iter().map(|_| "?").collect::<Vec<_>>().join(", ");
+                conditions.push(format!("job_type IN ({})", placeholders));
+            }
         }
 
         let where_clause = if conditions.is_empty() {
@@ -366,6 +399,9 @@ impl JobRepository for SqlxJobRepository {
         if let Some(session_id) = &filters.session_id {
             count_query = count_query.bind(session_id);
         }
+        if let Some(pipeline_id) = &filters.pipeline_id {
+            count_query = count_query.bind(pipeline_id);
+        }
         if let Some(from_date) = &filters.from_date {
             count_query = count_query.bind(from_date.to_rfc3339());
         }
@@ -374,6 +410,11 @@ impl JobRepository for SqlxJobRepository {
         }
         if let Some(job_type) = &filters.job_type {
             count_query = count_query.bind(job_type);
+        }
+        if let Some(job_types) = &filters.job_types {
+            for jt in job_types {
+                count_query = count_query.bind(jt);
+            }
         }
 
         let total_count = count_query.fetch_one(&self.pool).await? as u64;
@@ -391,6 +432,9 @@ impl JobRepository for SqlxJobRepository {
         if let Some(session_id) = &filters.session_id {
             data_query = data_query.bind(session_id);
         }
+        if let Some(pipeline_id) = &filters.pipeline_id {
+            data_query = data_query.bind(pipeline_id);
+        }
         if let Some(from_date) = &filters.from_date {
             data_query = data_query.bind(from_date.to_rfc3339());
         }
@@ -399,6 +443,11 @@ impl JobRepository for SqlxJobRepository {
         }
         if let Some(job_type) = &filters.job_type {
             data_query = data_query.bind(job_type);
+        }
+        if let Some(job_types) = &filters.job_types {
+            for jt in job_types {
+                data_query = data_query.bind(jt);
+            }
         }
 
         // Bind pagination parameters
@@ -463,6 +512,8 @@ impl JobRepository for SqlxJobRepository {
         &self,
         job_id: &str,
         output: &str,
+        duration_secs: f64,
+        queue_wait_secs: f64,
         next_job: Option<&JobDbModel>,
     ) -> Result<Option<String>> {
         let now = chrono::Utc::now().to_rfc3339();
@@ -477,13 +528,17 @@ impl JobRepository for SqlxJobRepository {
                 status = 'COMPLETED',
                 completed_at = ?,
                 updated_at = ?,
-                outputs = ?
+                outputs = ?,
+                duration_secs = ?,
+                queue_wait_secs = ?
             WHERE id = ?
             "#,
         )
         .bind(&now)
         .bind(&now)
         .bind(format!("[\"{}\"]", output))
+        .bind(duration_secs)
+        .bind(queue_wait_secs)
         .bind(job_id)
         .execute(&mut *tx)
         .await?;
@@ -496,9 +551,10 @@ impl JobRepository for SqlxJobRepository {
                     id, job_type, status, config, state, created_at, updated_at,
                     input, outputs, priority, streamer_id, session_id,
                     started_at, completed_at, error, retry_count,
-                    next_job_type, remaining_steps, pipeline_id
+                    next_job_type, remaining_steps, pipeline_id, execution_info,
+                    duration_secs, queue_wait_secs
                 )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 "#,
             )
             .bind(&job.id)
@@ -520,6 +576,9 @@ impl JobRepository for SqlxJobRepository {
             .bind(&job.next_job_type)
             .bind(&job.remaining_steps)
             .bind(&job.pipeline_id)
+            .bind(&job.execution_info)
+            .bind(job.duration_secs)
+            .bind(job.queue_wait_secs)
             .execute(&mut *tx)
             .await?;
 
@@ -532,5 +591,89 @@ impl JobRepository for SqlxJobRepository {
         tx.commit().await?;
 
         Ok(next_job_id)
+    }
+
+    /// Purge completed/failed jobs older than the specified number of days.
+    /// Deletes jobs in batches to avoid long-running transactions.
+    /// Returns the number of jobs deleted.
+    /// Requirements: 7.1, 7.3
+    async fn purge_jobs_older_than(&self, days: u32, batch_size: u32) -> Result<u64> {
+        let cutoff = chrono::Utc::now() - chrono::Duration::days(days as i64);
+        let cutoff_str = cutoff.to_rfc3339();
+
+        let mut total_deleted: u64 = 0;
+
+        loop {
+            // Get a batch of job IDs to delete
+            let job_ids: Vec<String> = sqlx::query_scalar(
+                r#"
+                SELECT id FROM job 
+                WHERE status IN ('COMPLETED', 'FAILED') 
+                AND (completed_at < ? OR (completed_at IS NULL AND updated_at < ?))
+                LIMIT ?
+                "#,
+            )
+            .bind(&cutoff_str)
+            .bind(&cutoff_str)
+            .bind(batch_size as i64)
+            .fetch_all(&self.pool)
+            .await?;
+
+            if job_ids.is_empty() {
+                break;
+            }
+
+            let batch_count = job_ids.len() as u64;
+
+            // Delete execution logs for these jobs first
+            for job_id in &job_ids {
+                sqlx::query("DELETE FROM job_execution_logs WHERE job_id = ?")
+                    .bind(job_id)
+                    .execute(&self.pool)
+                    .await?;
+            }
+
+            // Delete the jobs
+            for job_id in &job_ids {
+                sqlx::query("DELETE FROM job WHERE id = ?")
+                    .bind(job_id)
+                    .execute(&self.pool)
+                    .await?;
+            }
+
+            total_deleted += batch_count;
+
+            // If we deleted less than batch_size, we're done
+            if batch_count < batch_size as u64 {
+                break;
+            }
+        }
+
+        Ok(total_deleted)
+    }
+
+    /// Get IDs of jobs that are eligible for purging.
+    /// Returns job IDs for completed/failed jobs older than the specified days.
+    /// Requirements: 7.1, 7.3
+    async fn get_purgeable_jobs(&self, days: u32, limit: u32) -> Result<Vec<String>> {
+        let cutoff = chrono::Utc::now() - chrono::Duration::days(days as i64);
+        let cutoff_str = cutoff.to_rfc3339();
+
+        let job_ids: Vec<String> = sqlx::query_scalar(
+            r#"
+            SELECT id FROM job 
+            WHERE status IN ('COMPLETED', 'FAILED') 
+            AND (completed_at < ? OR (completed_at IS NULL AND updated_at < ?))
+            ORDER BY completed_at ASC, updated_at ASC
+            LIMIT ?
+            "#,
+        )
+        .bind(&cutoff_str)
+        .bind(&cutoff_str)
+        .bind(limit as i64)
+        .fetch_all(&self.pool)
+        .await?;
+
+        Ok(job_ids)
     }
 }

@@ -108,17 +108,17 @@ impl DownloadEngine for MesioEngine {
     }
 
     async fn start(&self, handle: Arc<DownloadHandle>) -> Result<()> {
-        info!(
-            "Starting mesio download for streamer {}",
-            handle.config.streamer_id
-        );
+        let config_snapshot = handle.config_snapshot();
+        let streamer_id = config_snapshot.streamer_id.clone();
+
+        info!("Starting mesio download for streamer {}", streamer_id);
 
         // Detect protocol type using MesioDownloaderFactory
-        let protocol_type = Self::detect_protocol(&handle.config.url)?;
+        let protocol_type = Self::detect_protocol(&config_snapshot.url)?;
 
         debug!(
             "Detected protocol {:?} for URL: {}",
-            protocol_type, handle.config.url
+            protocol_type, config_snapshot.url
         );
 
         // Delegate to appropriate downloader based on protocol type
@@ -159,20 +159,15 @@ impl DownloadEngine for MesioEngine {
 
         // Log any errors (downloaders emit their own events internally)
         if let Err(e) = &download_result {
-            error!(
-                "Mesio download failed for {}: {}",
-                handle.config.streamer_id, e
-            );
+            error!("Mesio download failed for {}: {}", streamer_id, e);
         }
 
         download_result
     }
 
     async fn stop(&self, handle: &DownloadHandle) -> Result<()> {
-        info!(
-            "Stopping mesio download for streamer {}",
-            handle.config.streamer_id
-        );
+        let streamer_id = handle.config_snapshot().streamer_id;
+        info!("Stopping mesio download for streamer {}", streamer_id);
         handle.cancel();
         Ok(())
     }

@@ -152,18 +152,97 @@ export const SessionSchema = z.object({
 });
 
 // --- Pipeline Schemas ---
+export const JobLogEntrySchema = z.object({
+    timestamp: z.string(),
+    level: z.string(),
+    message: z.string(),
+});
+
+export const StepDurationInfoSchema = z.object({
+    step: z.number(),
+    processor: z.string(),
+    duration_secs: z.number(),
+    started_at: z.string(),
+    completed_at: z.string(),
+});
+export type StepDurationInfo = z.infer<typeof StepDurationInfoSchema>;
+
+export const JobExecutionInfoSchema = z.object({
+    current_processor: z.string().nullable().optional(),
+    current_step: z.number().nullable().optional(),
+    total_steps: z.number().nullable().optional(),
+    items_produced: z.array(z.string()),
+    input_size_bytes: z.number().nullable().optional(),
+    output_size_bytes: z.number().nullable().optional(),
+    logs: z.array(JobLogEntrySchema),
+    step_durations: z.array(StepDurationInfoSchema).default([]),
+});
+export type JobExecutionInfo = z.infer<typeof JobExecutionInfoSchema>;
+
+export const JobStatusSchema = z.enum(['PENDING', 'PROCESSING', 'COMPLETED', 'FAILED', 'CANCELLED', 'INTERRUPTED']);
+export type JobStatus = z.infer<typeof JobStatusSchema>;
+
 export const JobSchema = z.object({
     id: z.string(),
     streamer_id: z.string(),
     session_id: z.string().nullable().optional(),
-    status: z.enum(['Pending', 'Processing', 'Completed', 'Failed', 'Cancelled']),
-    step: z.string(),
+    pipeline_id: z.string().nullable().optional(),
+    status: JobStatusSchema,
+    processor_type: z.string(),
+    input_path: z.array(z.string()),
+    output_path: z.array(z.string()).nullish(),
     progress: z.number().min(0).max(100).optional(),
     error_message: z.string().nullable().optional(),
     created_at: z.string(),
     started_at: z.string().nullable().optional(),
     completed_at: z.string().nullable().optional(),
+    execution_info: JobExecutionInfoSchema.nullable().optional(),
+    duration_secs: z.number().nullable().optional(),
+    queue_wait_secs: z.number().nullable().optional(),
 });
+export type Job = z.infer<typeof JobSchema>;
+
+
+export const JobPresetSchema = z.object({
+    id: z.string(),
+    name: z.string(),
+    description: z.string().nullable().optional(),
+    category: z.string().nullable().optional(),
+    processor: z.string(),
+    config: z.string(),
+    created_at: z.string(),
+    updated_at: z.string(),
+});
+export type JobPreset = z.infer<typeof JobPresetSchema>;
+
+// Valid processor types for presets
+export const VALID_PROCESSORS = [
+    "remux",
+    "rclone",
+    "thumbnail",
+    "execute",
+    "audio_extract",
+    "compression",
+    "copy_move",
+    "delete",
+    "metadata",
+] as const;
+export type ProcessorType = typeof VALID_PROCESSORS[number];
+
+// Valid preset categories
+export const VALID_CATEGORIES = [
+    "remux",       // Container format conversion (no re-encoding)
+    "compression", // Re-encoding/transcoding
+    "thumbnail",   // Image/preview generation
+    "audio",       // Audio extraction
+    "archive",     // Archiving/compression
+    "upload",      // Cloud upload (rclone)
+    "cleanup",     // File deletion
+    "file_ops",    // Copy/move operations
+    "custom",      // Custom execute commands
+    "metadata",    // Metadata operations
+] as const;
+export type PresetCategory = typeof VALID_CATEGORIES[number];
 
 // --- Config Schemas ---
 export const StreamSelectionConfigObjectSchema = z.object({
@@ -193,6 +272,8 @@ export const GlobalConfigSchema = z.object({
     offline_check_count: z.number(),
     default_download_engine: z.string(),
     job_history_retention_days: z.number(),
+    session_gap_time_secs: z.number().optional(),
+    pipeline: z.string().nullable().optional(),
 });
 
 export const ProxyConfigObjectSchema = z.object({
@@ -202,6 +283,18 @@ export const ProxyConfigObjectSchema = z.object({
     password: z.string().optional(),
     use_system_proxy: z.boolean().default(false),
 });
+
+// Event hooks for streamer lifecycle events
+// Each hook is a single command string to execute
+export const EventHooksSchema = z.object({
+    on_online: z.string().optional(),
+    on_offline: z.string().optional(),
+    on_download_start: z.string().optional(),
+    on_download_complete: z.string().optional(),
+    on_download_error: z.string().optional(),
+    on_pipeline_complete: z.string().optional(),
+});
+export type EventHooks = z.infer<typeof EventHooksSchema>;
 
 export const PlatformConfigSchema = z.object({
     id: z.string(),
@@ -222,6 +315,7 @@ export const PlatformConfigSchema = z.object({
     max_part_size_bytes: z.number().nullable().optional(),
     download_retry_policy: z.string().nullable().optional(),
     event_hooks: z.string().nullable().optional(),
+    pipeline: z.string().nullable().optional(),
 });
 export type PlatformConfig = z.infer<typeof PlatformConfigSchema>;
 
@@ -231,6 +325,7 @@ export const EngineConfigSchema = z.object({
     engine_type: z.enum(['FFMPEG', 'STREAMLINK', 'MESIO']),
     config: z.string(),
 });
+
 
 export const CreateEngineRequestSchema = z.object({
     name: z.string().min(1, 'Name is required'),
@@ -263,7 +358,7 @@ export const TemplateSchema = z.object({
     created_at: z.string(),
     updated_at: z.string(),
     streamer_specific_config: z.string().nullable().optional(),
-
+    pipeline: z.string().nullable().optional(),
 });
 export type Template = z.infer<typeof TemplateSchema>;
 
@@ -285,6 +380,7 @@ export const CreateTemplateRequestSchema = z.object({
     proxy_config: z.string().nullable().optional(),
     event_hooks: z.string().nullable().optional(),
     stream_selection_config: z.string().nullable().optional(),
+    pipeline: z.string().nullable().optional(),
 });
 
 export const UpdateTemplateRequestSchema = CreateTemplateRequestSchema.partial();
@@ -321,3 +417,52 @@ export const ExtractMetadataResponseSchema = z.object({
     valid_platform_configs: z.array(PlatformConfigSchema),
     channel_id: z.string().nullable(),
 });
+
+// --- Pipeline Step Schemas ---
+// Inline pipeline step with processor and config
+export const InlinePipelineStepSchema = z.object({
+    processor: z.string(),
+    config: z.any().default({}),
+});
+
+// Pipeline step can be either a preset name (string) or inline definition
+// Uses untagged serialization in Rust, so:
+// - Preset: just a string like "remux"
+// - Inline: object with processor and config
+export const PipelineStepSchema = z.union([
+    z.string(), // Preset name
+    InlinePipelineStepSchema, // Inline definition
+]);
+export type PipelineStep = z.infer<typeof PipelineStepSchema>;
+
+// --- Streamer Specific Config Schema ---
+// This is the JSON object stored in streamer_specific_config field
+export const StreamerSpecificConfigSchema = z.object({
+    // Output settings
+    output_folder: z.string().optional(),
+    output_filename_template: z.string().optional(),
+    output_file_format: z.string().optional(),
+
+    // Size and duration limits
+    min_segment_size_bytes: z.number().optional(),
+    max_download_duration_secs: z.number().optional(),
+    max_part_size_bytes: z.number().optional(),
+
+    // Recording settings
+    record_danmu: z.boolean().optional(),
+    download_engine: z.string().optional(),
+    cookies: z.string().optional(),
+
+    // Proxy configuration
+    proxy_config: ProxyConfigObjectSchema.optional(),
+
+    // Stream selection
+    stream_selection: StreamSelectionConfigObjectSchema.optional(),
+
+    // Event hooks - each hook is a single command string
+    event_hooks: EventHooksSchema.optional(),
+
+    // Pipeline configuration - array of steps
+    pipeline: z.array(PipelineStepSchema).optional(),
+});
+export type StreamerSpecificConfig = z.infer<typeof StreamerSpecificConfigSchema>;

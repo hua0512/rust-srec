@@ -44,6 +44,7 @@ use crate::danmu::DanmuService;
 use crate::database::repositories::{
     config::SqlxConfigRepository,
     filter::FilterRepository,
+    preset::PipelinePresetRepository,
     session::SessionRepository,
     streamer::{SqlxStreamerRepository, StreamerRepository},
 };
@@ -66,7 +67,8 @@ pub struct AppState {
     /// Streamer manager
     pub streamer_manager: Option<Arc<StreamerManager<SqlxStreamerRepository>>>,
     /// Pipeline manager
-    pub pipeline_manager: Option<Arc<PipelineManager>>,
+    pub pipeline_manager:
+        Option<Arc<PipelineManager<SqlxConfigRepository, SqlxStreamerRepository>>>,
     /// Danmu service
     pub danmu_service: Option<Arc<DanmuService>>,
     /// Download manager
@@ -79,6 +81,8 @@ pub struct AppState {
     pub health_checker: Option<Arc<HealthChecker>>,
     /// Streamer repository for querying streamer details
     pub streamer_repository: Option<Arc<dyn StreamerRepository>>,
+    /// Pipeline preset repository for pipeline presets (workflow sequences)
+    pub pipeline_preset_repository: Option<Arc<dyn PipelinePresetRepository>>,
 }
 
 impl AppState {
@@ -97,6 +101,7 @@ impl AppState {
             filter_repository: None,
             health_checker: None,
             streamer_repository: None,
+            pipeline_preset_repository: None,
         }
     }
 
@@ -116,6 +121,7 @@ impl AppState {
             filter_repository: None,
             health_checker: None,
             streamer_repository: None,
+            pipeline_preset_repository: None,
         }
     }
 
@@ -143,7 +149,7 @@ impl AppState {
         jwt_service: Option<Arc<JwtService>>,
         config_service: Arc<ConfigService<SqlxConfigRepository, SqlxStreamerRepository>>,
         streamer_manager: Arc<StreamerManager<SqlxStreamerRepository>>,
-        pipeline_manager: Arc<PipelineManager>,
+        pipeline_manager: Arc<PipelineManager<SqlxConfigRepository, SqlxStreamerRepository>>,
         danmu_service: Arc<DanmuService>,
         download_manager: Arc<DownloadManager>,
     ) -> Self {
@@ -160,6 +166,7 @@ impl AppState {
             filter_repository: None,
             health_checker: None,
             streamer_repository: None,
+            pipeline_preset_repository: None,
         }
     }
 
@@ -202,6 +209,15 @@ impl AppState {
     /// Set the health checker.
     pub fn with_health_checker(mut self, health_checker: Arc<HealthChecker>) -> Self {
         self.health_checker = Some(health_checker);
+        self
+    }
+
+    /// Set the pipeline preset repository.
+    pub fn with_pipeline_preset_repository(
+        mut self,
+        repo: Arc<dyn PipelinePresetRepository>,
+    ) -> Self {
+        self.pipeline_preset_repository = Some(repo);
         self
     }
 }

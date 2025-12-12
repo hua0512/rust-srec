@@ -3,16 +3,27 @@ import { fetchBackend } from '../api';
 import {
     JobSchema,
     PipelineStatsSchema,
-    MediaOutputSchema
+    MediaOutputSchema,
+    PipelineStepSchema,
 } from '../../api/schemas';
 import { z } from 'zod';
 
+const CreatePipelineJobRequestSchema = z.object({
+    session_id: z.string().min(1),
+    streamer_id: z.string().min(1),
+    input_path: z.string().min(1),
+    steps: z.array(PipelineStepSchema).min(1, 'Pipeline requires at least one step'),
+});
+
+export type CreatePipelineJobRequest = z.infer<typeof CreatePipelineJobRequestSchema>;
+
 export const listPipelineJobs = createServerFn({ method: "GET" })
-    .inputValidator((d: { status?: string; session_id?: string } = {}) => d)
+    .inputValidator((d: { status?: string; session_id?: string; pipeline_id?: string } = {}) => d)
     .handler(async ({ data }) => {
         const params = new URLSearchParams();
         if (data.status) params.set('status', data.status);
         if (data.session_id) params.set('session_id', data.session_id);
+        if (data.pipeline_id) params.set('pipeline_id', data.pipeline_id);
 
         const json = await fetchBackend(`/pipeline/jobs?${params.toString()}`);
         return z.object({
@@ -42,12 +53,19 @@ export const cancelPipelineJob = createServerFn({ method: "POST" })
     });
 
 export const createPipelineJob = createServerFn({ method: "POST" })
-    .inputValidator((d: { session_id: string }) => d)
+    .inputValidator((data: CreatePipelineJobRequest) => CreatePipelineJobRequestSchema.parse(data))
     .handler(async ({ data }) => {
         await fetchBackend('/pipeline/create', {
             method: 'POST',
             body: JSON.stringify(data)
         });
+    });
+
+export const getPipelineJob = createServerFn({ method: "GET" })
+    .inputValidator((id: string) => id)
+    .handler(async ({ data: id }) => {
+        const json = await fetchBackend(`/pipeline/jobs/${id}`);
+        return JobSchema.parse(json);
     });
 
 export const listPipelineOutputs = createServerFn({ method: "GET" })
@@ -63,4 +81,78 @@ export const listPipelineOutputs = createServerFn({ method: "GET" })
             limit: z.number(),
             offset: z.number(),
         }).parse(json);
+    });
+
+// Pipeline Preset schema (workflow sequences)
+const PipelinePresetSchema = z.object({
+    id: z.string(),
+    name: z.string(),
+    description: z.string().nullable().optional(),
+    steps: z.string(), // JSON array of job preset names
+    created_at: z.string(),
+    updated_at: z.string(),
+});
+export type PipelinePreset = z.infer<typeof PipelinePresetSchema>;
+
+// Response schema for pipeline preset list with pagination
+const PipelinePresetListResponseSchema = z.object({
+    presets: z.array(PipelinePresetSchema),
+    total: z.number(),
+    limit: z.number(),
+    offset: z.number(),
+});
+
+export type PipelinePresetListResponse = z.infer<typeof PipelinePresetListResponseSchema>;
+
+// Filter parameters for pipeline presets
+export interface PipelinePresetFilters {
+    search?: string;
+    limit?: number;
+    offset?: number;
+}
+
+export const listPipelinePresets = createServerFn({ method: "GET" })
+    .inputValidator((d: PipelinePresetFilters = {}) => d)
+    .handler(async ({ data }) => {
+        const params = new URLSearchParams();
+        if (data.search) params.set('search', data.search);
+        if (data.limit !== undefined) params.set('limit', data.limit.toString());
+        if (data.offset !== undefined) params.set('offset', data.offset.toString());
+
+        const json = await fetchBackend(`/pipeline/presets?${params.toString()}`);
+        return PipelinePresetListResponseSchema.parse(json);
+    });
+
+export const getPipelinePreset = createServerFn({ method: "GET" })
+    .inputValidator((id: string) => id)
+    .handler(async ({ data: id }) => {
+        const json = await fetchBackend(`/pipeline/presets/${id}`);
+        return PipelinePresetSchema.parse(json);
+    });
+
+export const createPipelinePreset = createServerFn({ method: "POST" })
+    .inputValidator((d: { name: string; description?: string; steps: string[] }) => d)
+    .handler(async ({ data }) => {
+        const json = await fetchBackend('/pipeline/presets', {
+            method: 'POST',
+            body: JSON.stringify(data)
+        });
+        return PipelinePresetSchema.parse(json);
+    });
+
+export const updatePipelinePreset = createServerFn({ method: "POST" })
+    .inputValidator((d: { id: string; name: string; description?: string; steps: string[] }) => d)
+    .handler(async ({ data }) => {
+        const { id, ...body } = data;
+        const json = await fetchBackend(`/pipeline/presets/${id}`, {
+            method: 'PUT',
+            body: JSON.stringify(body)
+        });
+        return PipelinePresetSchema.parse(json);
+    });
+
+export const deletePipelinePreset = createServerFn({ method: "POST" })
+    .inputValidator((id: string) => id)
+    .handler(async ({ data: id }) => {
+        await fetchBackend(`/pipeline/presets/${id}`, { method: 'DELETE' });
     });
