@@ -10,6 +10,7 @@ pub mod filters;
 pub mod health;
 pub mod job;
 pub mod media;
+pub mod parse;
 pub mod pipeline;
 pub mod sessions;
 pub mod streamers;
@@ -39,6 +40,7 @@ pub fn create_router(state: AppState) -> Router {
         .nest("/api/job", job::router())
         .nest("/api/pipeline", pipeline::router())
         .nest("/api/sessions", sessions::router())
+        .nest("/api/parse", parse::router())
         .nest("/api/auth", auth::protected_router());
 
     // Apply JWT auth layer to protected routes if JWT service is configured

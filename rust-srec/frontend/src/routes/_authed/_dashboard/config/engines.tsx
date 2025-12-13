@@ -5,7 +5,7 @@ import { listEngines } from '@/server/functions';
 import { EngineCard, CreateEngineCard } from '@/components/config/engines/engine-card';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Skeleton } from '@/components/ui/skeleton';
-import { AlertCircle, Cpu } from 'lucide-react';
+import { AlertCircle } from 'lucide-react';
 import { Trans } from "@lingui/react/macro";
 
 export const Route = createFileRoute('/_authed/_dashboard/config/engines')({

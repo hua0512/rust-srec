@@ -3,8 +3,6 @@
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 use std::path::Path;
-use std::process::Stdio;
-use tokio::io::{AsyncBufReadExt, BufReader};
 use tokio::process::Command;
 use tracing::{debug, error, info, warn};
 
@@ -240,6 +238,10 @@ pub struct RemuxConfig {
     /// Metadata to add (key-value pairs).
     #[serde(default)]
     pub metadata: Vec<(String, String)>,
+
+    /// Whether to remove input file after successful remux.
+    #[serde(default)]
+    pub remove_input_on_success: bool,
 }
 
 fn default_faststart() -> bool {
@@ -274,6 +276,7 @@ impl Default for RemuxConfig {
             overwrite: true,
             map_streams: Vec::new(),
             metadata: Vec::new(),
+            remove_input_on_success: false,
         }
     }
 }
@@ -572,6 +575,29 @@ impl Processor for RemuxProcessor {
             command_output.duration, output_path
         );
 
+        // Remove input file if requested and successful
+        let mut logs = command_output.logs;
+        if config.remove_input_on_success {
+            match tokio::fs::remove_file(input_path).await {
+                Ok(_) => {
+                    info!("Removed input file after successful remux: {}", input_path);
+                    logs.push(crate::pipeline::job_queue::JobLogEntry {
+                        timestamp: chrono::Utc::now(),
+                        level: crate::pipeline::job_queue::LogLevel::Info,
+                        message: format!("Removed input file: {}", input_path),
+                    });
+                }
+                Err(e) => {
+                    warn!("Failed to remove input file {}: {}", input_path, e);
+                    logs.push(crate::pipeline::job_queue::JobLogEntry {
+                        timestamp: chrono::Utc::now(),
+                        level: crate::pipeline::job_queue::LogLevel::Warn,
+                        message: format!("Failed to remove input file {}: {}", input_path, e),
+                    });
+                }
+            }
+        }
+
         // Get file sizes for metrics
         let input_size_bytes = tokio::fs::metadata(input_path).await.ok().map(|m| m.len());
         let output_size_bytes = tokio::fs::metadata(output_path).await.ok().map(|m| m.len());
@@ -593,7 +619,7 @@ impl Processor for RemuxProcessor {
             failed_inputs: vec![],
             succeeded_inputs: vec![input_path.to_string()],
             skipped_inputs: vec![],
-            logs: command_output.logs,
+            logs,
         })
     }
 }

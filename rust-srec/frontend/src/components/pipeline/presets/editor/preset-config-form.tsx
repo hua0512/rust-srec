@@ -3,7 +3,7 @@ import { Wand2 } from "lucide-react";
 import { Trans } from "@lingui/react/macro";
 import { PRESET_TEMPLATES } from "../preset-templates";
 import { ProcessorConfigManager } from "../processors/processor-config-manager";
-import { motion } from "framer-motion";
+import { motion } from "motion/react";
 import { UseFormReturn } from "react-hook-form";
 import { toast } from "sonner";
 import { t } from "@lingui/core/macro";

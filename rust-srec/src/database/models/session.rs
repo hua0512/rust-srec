@@ -12,6 +12,8 @@ pub struct OutputFilters {
     pub session_id: Option<String>,
     /// Filter by streamer ID (requires join with live_sessions).
     pub streamer_id: Option<String>,
+    /// Search query.
+    pub search: Option<String>,
 }
 
 impl OutputFilters {
@@ -29,6 +31,12 @@ impl OutputFilters {
     /// Filter by streamer ID.
     pub fn with_streamer_id(mut self, streamer_id: impl Into<String>) -> Self {
         self.streamer_id = Some(streamer_id.into());
+        self
+    }
+
+    /// Filter by search query.
+    pub fn with_search(mut self, search: impl Into<String>) -> Self {
+        self.search = Some(search.into());
         self
     }
 }

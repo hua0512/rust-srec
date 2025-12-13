@@ -42,7 +42,7 @@ use crate::pipeline::{PipelineEvent, PipelineManager, PipelineManagerConfig};
 use crate::scheduler::Scheduler;
 use crate::streamer::StreamerManager;
 use crate::utils::filename::sanitize_filename;
-use pipeline_common::expand_filename_template;
+use pipeline_common::expand_path_template;
 
 /// Default cache TTL (1 hour).
 const DEFAULT_CACHE_TTL: Duration = Duration::from_secs(3600);
@@ -1039,7 +1039,7 @@ impl ServiceContainer {
                     .replace("{title}", &sanitized_title)
                     .replace("{session_id}", &session_id);
 
-                let output_dir = expand_filename_template(&dir, None);
+                let output_dir = expand_path_template(&dir);
 
                 let mut config = DownloadConfig::new(
                     stream_url_selected.clone(),

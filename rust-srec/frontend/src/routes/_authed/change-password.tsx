@@ -63,11 +63,7 @@ function ChangePasswordPage() {
     try {
       await changePassword({ data: values });
 
-      // Update session cache to clear mustChangePassword flag
-      queryClient.setQueryData(sessionQueryOptions.queryKey, (prev: any) => {
-        if (!prev) return prev;
-        return { ...prev, mustChangePassword: false };
-      });
+      // Invalidate session query to refresh UI with updated session data
       queryClient.invalidateQueries({ queryKey: sessionQueryOptions.queryKey });
       toast.success('Password changed successfully');
 

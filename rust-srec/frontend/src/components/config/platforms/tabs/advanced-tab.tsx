@@ -124,6 +124,28 @@ export function AdvancedTab({ form, basePath }: AdvancedTabProps) {
                     </FormItem>
                 )}
             />
+            <FormField
+                control={form.control}
+                name={basePath ? `${basePath}.pipeline` : "pipeline"}
+                render={({ field }) => (
+                    <FormItem>
+                        <FormLabel><Trans>Pipeline Configuration (JSON)</Trans></FormLabel>
+                        <FormControl>
+                            <Textarea
+                                {...field}
+                                value={field.value ?? ''}
+                                onChange={(e) => field.onChange(e.target.value || null)}
+                                className="font-mono text-xs min-h-[100px]"
+                                placeholder='[{"type":"remux",...}]'
+                            />
+                        </FormControl>
+                        <FormDescription>
+                            <Trans>Platform-specific pipeline steps.</Trans>
+                        </FormDescription>
+                        <FormMessage />
+                    </FormItem>
+                )}
+            />
         </div>
     );
 }

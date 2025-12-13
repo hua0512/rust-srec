@@ -5,7 +5,7 @@ import { Input } from "@/components/ui/input";
 import { ProcessorConfigFormProps } from "./common-props";
 import { ThumbnailConfigSchema } from "../processor-schemas";
 import { z } from "zod";
-import { motion } from "framer-motion"; // Changed to framer-motion standard
+import { motion } from "motion/react";
 import { Camera, FileImage, Image as ImageIcon } from "lucide-react";
 
 type ThumbnailConfig = z.infer<typeof ThumbnailConfigSchema>;

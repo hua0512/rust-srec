@@ -272,7 +272,7 @@ export const GlobalConfigSchema = z.object({
     offline_check_count: z.number(),
     default_download_engine: z.string(),
     job_history_retention_days: z.number(),
-    session_gap_time_secs: z.number().optional(),
+    session_gap_time_secs: z.number(),
     pipeline: z.string().nullable().optional(),
 });
 

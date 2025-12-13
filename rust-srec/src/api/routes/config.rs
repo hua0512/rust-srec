@@ -75,6 +75,8 @@ fn map_global_config_to_response(config: GlobalConfigDbModel) -> GlobalConfigRes
         default_download_engine: config.default_download_engine,
         record_danmu: config.record_danmu,
         job_history_retention_days: config.job_history_retention_days as u32,
+        session_gap_time_secs: config.session_gap_time_secs as u64,
+        pipeline: config.pipeline,
     }
 }
 
@@ -99,6 +101,7 @@ fn map_platform_config_to_response(config: PlatformConfigDbModel) -> PlatformCon
         max_part_size_bytes: config.max_part_size_bytes.map(|v| v as u64),
         download_retry_policy: config.download_retry_policy,
         event_hooks: config.event_hooks,
+        pipeline: config.pipeline,
     }
 }
 
@@ -155,9 +158,11 @@ async fn update_global_config(
         offline_check_delay_ms: |v| v as i64,
         offline_check_count: |v| v as i32,
         job_history_retention_days: |v| v as i32,
+        session_gap_time_secs: |v| v as i64,
         default_download_engine,
         record_danmu,
-        proxy_config
+        proxy_config,
+        pipeline: |v| Some(v)
     ]);
 
     let updated_fields_summary = if updated_fields.is_empty() {
@@ -266,7 +271,8 @@ async fn update_platform_config(
         max_download_duration_secs: |v| Some(v as i64),
         max_part_size_bytes: |v| Some(v as i64),
         download_retry_policy: |v| Some(v),
-        event_hooks: |v| Some(v)
+        event_hooks: |v| Some(v),
+        pipeline: |v| Some(v)
     ]);
 
     // Update config (cache invalidation is handled automatically by ConfigService)
@@ -302,6 +308,8 @@ mod tests {
             max_concurrent_cpu_jobs: 0,
             max_concurrent_io_jobs: 8,
             job_history_retention_days: 30,
+            session_gap_time_secs: 3600,
+            pipeline: None,
         };
 
         let json = serde_json::to_string(&response).unwrap();
@@ -341,9 +349,11 @@ mod property_tests {
                 offline_check_delay_ms: |v| v as i64,
                 offline_check_count: |v| v as i32,
                 job_history_retention_days: |v| v as i32,
+                session_gap_time_secs: |v| v as i64,
                 default_download_engine,
                 record_danmu,
-                proxy_config
+                proxy_config,
+                pipeline: |v| Some(v)
             ]
         );
     }
@@ -372,7 +382,8 @@ mod property_tests {
             max_download_duration_secs: |v| Some(v as i64),
             max_part_size_bytes: |v| Some(v as i64),
             download_retry_policy: |v| Some(v),
-            event_hooks: |v| Some(v)
+            event_hooks: |v| Some(v),
+            pipeline: |v| Some(v)
         ]);
     }
 
@@ -475,6 +486,8 @@ mod property_tests {
                 default_download_engine: default_download_engine.clone(),
                 record_danmu,
                 proxy_config: proxy_config.clone(),
+                session_gap_time_secs: None,
+                pipeline: None,
             };
 
             // Apply the update
@@ -653,6 +666,7 @@ mod property_tests {
                 max_part_size_bytes,
                 download_retry_policy: download_retry_policy.clone(),
                 event_hooks: event_hooks.clone(),
+                pipeline: None,
             };
 
             // Apply the update

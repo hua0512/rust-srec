@@ -27,6 +27,7 @@ export const RemuxConfigSchema = z.object({
     overwrite: z.boolean().default(true),
     map_streams: z.array(z.string()).default([]),
     metadata: z.array(z.tuple([z.string(), z.string()])).default([]),
+    remove_input_on_success: z.boolean().default(false).optional(),
 });
 
 // --- Rclone Processor ---

@@ -18,12 +18,15 @@ const CreatePipelineJobRequestSchema = z.object({
 export type CreatePipelineJobRequest = z.infer<typeof CreatePipelineJobRequestSchema>;
 
 export const listPipelineJobs = createServerFn({ method: "GET" })
-    .inputValidator((d: { status?: string; session_id?: string; pipeline_id?: string } = {}) => d)
+    .inputValidator((d: { status?: string; session_id?: string; pipeline_id?: string; search?: string; limit?: number; offset?: number } = {}) => d)
     .handler(async ({ data }) => {
         const params = new URLSearchParams();
         if (data.status) params.set('status', data.status);
         if (data.session_id) params.set('session_id', data.session_id);
         if (data.pipeline_id) params.set('pipeline_id', data.pipeline_id);
+        if (data.search) params.set('search', data.search);
+        if (data.limit !== undefined) params.set('limit', data.limit.toString());
+        if (data.offset !== undefined) params.set('offset', data.offset.toString());
 
         const json = await fetchBackend(`/pipeline/jobs?${params.toString()}`);
         return z.object({
@@ -69,10 +72,13 @@ export const getPipelineJob = createServerFn({ method: "GET" })
     });
 
 export const listPipelineOutputs = createServerFn({ method: "GET" })
-    .inputValidator((d: { session_id?: string } = {}) => d)
+    .inputValidator((d: { session_id?: string; search?: string; limit?: number; offset?: number } = {}) => d)
     .handler(async ({ data }) => {
         const params = new URLSearchParams();
         if (data.session_id) params.set('session_id', data.session_id);
+        if (data.search) params.set('search', data.search);
+        if (data.limit !== undefined) params.set('limit', data.limit.toString());
+        if (data.offset !== undefined) params.set('offset', data.offset.toString());
 
         const json = await fetchBackend(`/pipeline/outputs?${params.toString()}`);
         return z.object({

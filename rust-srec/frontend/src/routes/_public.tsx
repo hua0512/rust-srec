@@ -1,4 +1,4 @@
-import { createFileRoute, Outlet, Navigate } from '@tanstack/react-router'
+import { createFileRoute, Outlet } from '@tanstack/react-router'
 import { queryClient } from './__root'
 import { sessionQueryOptions } from '../api/session'
 

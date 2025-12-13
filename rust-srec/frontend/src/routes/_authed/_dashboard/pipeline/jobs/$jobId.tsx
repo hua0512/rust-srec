@@ -16,7 +16,6 @@ import { motion } from 'motion/react';
 import { cn } from '@/lib/utils';
 import {
     ArrowLeft,
-    Timer,
     AlertCircle,
     Terminal,
     RotateCcw,
@@ -175,7 +174,6 @@ function JobDetailsPage() {
                 <div className="absolute top-0 left-0 -mt-20 -ml-20 w-[500px] h-[500px] bg-primary/5 rounded-full blur-[120px]" />
                 <div className="absolute bottom-0 right-0 -mb-40 -mr-20 w-[600px] h-[600px] bg-blue-500/5 rounded-full blur-[120px]" />
             </div>
-
             <div className="relative z-10 max-w-7xl mx-auto px-6 py-8 pb-32">
 
                 {/* Header */}
@@ -456,7 +454,7 @@ function JobDetailsPage() {
                 </div>
             </div>
         </div>
-    );
+    )
 }
 
 function InfoGroup({ label, value, icon, mono }: { label: string, value: React.ReactNode, icon: React.ReactNode, mono?: boolean }) {

@@ -83,58 +83,38 @@ function PipelineOutputsPage() {
 
     const { data: outputsData, isLoading, isError, error } = useQuery({
         queryKey: ['pipeline', 'outputs', selectedFormat, debouncedSearch, pageSize, currentPage],
-        queryFn: () => listPipelineOutputs(),
+        queryFn: () => listPipelineOutputs({
+            data: {
+                search: debouncedSearch || undefined,
+                limit: pageSize,
+                offset: currentPage * pageSize
+            }
+        }),
         refetchInterval: 10000,
         placeholderData: keepPreviousData,
     });
 
     const outputs = outputsData?.items || [];
+    const totalOutputs = outputsData?.total || 0;
+    const totalSize = outputs.reduce((acc, output) => acc + output.file_size_bytes, 0); // Note: Server doesn't return total size of all filtered items yet, this is just page total
+    const totalPages = Math.ceil(totalOutputs / pageSize);
 
-    // Filter and search outputs
-    const filteredOutputs = useMemo(() => {
+    // Client-side format filtering since API doesn't support it yet
+    const displayedOutputs = useMemo(() => {
         let result = outputs;
-
-        // Apply format filter
         if (selectedFormat) {
             result = result.filter(output =>
                 output.format.toLowerCase() === selectedFormat.toLowerCase()
             );
         }
-
-        // Apply search filter
-        if (debouncedSearch) {
-            const search = debouncedSearch.toLowerCase();
-            result = result.filter(output =>
-                output.file_path.toLowerCase().includes(search) ||
-                output.session_id.toLowerCase().includes(search) ||
-                output.format.toLowerCase().includes(search)
-            );
-        }
-
-        // Sort by created_at descending
-        result = [...result].sort((a, b) =>
-            new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
-        );
-
         return result;
-    }, [outputs, selectedFormat, debouncedSearch]);
+    }, [outputs, selectedFormat]);
 
-    // Calculate totals
-    const totalOutputs = filteredOutputs.length;
-    const totalSize = filteredOutputs.reduce((acc, output) => acc + output.file_size_bytes, 0);
-    const totalPages = Math.ceil(totalOutputs / pageSize);
-
-    // Get unique formats for the filter
+    // Get unique formats for the filter (from current page only - limitation)
     const availableFormats = useMemo(() => {
         const formats = new Set(outputs.map(o => o.format.toLowerCase()));
         return Array.from(formats).sort();
     }, [outputs]);
-
-    // Paginate outputs
-    const paginatedOutputs = useMemo(() => {
-        const start = currentPage * pageSize;
-        return filteredOutputs.slice(start, start + pageSize);
-    }, [filteredOutputs, currentPage, pageSize]);
 
     // Memoize pagination pages calculation
     const paginationPages = useMemo(() => {
@@ -266,7 +246,7 @@ function PipelineOutputsPage() {
                                 </div>
                             ))}
                         </motion.div>
-                    ) : paginatedOutputs.length > 0 ? (
+                    ) : displayedOutputs.length > 0 ? (
                         <motion.div
                             key="list"
                             className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6"
@@ -274,7 +254,7 @@ function PipelineOutputsPage() {
                             animate={{ opacity: 1 }}
                             transition={{ duration: 0.3 }}
                         >
-                            {paginatedOutputs.map((output, index) => (
+                            {displayedOutputs.map((output, index) => (
                                 <motion.div
                                     key={output.id}
                                     initial={{ opacity: 0, y: 20 }}

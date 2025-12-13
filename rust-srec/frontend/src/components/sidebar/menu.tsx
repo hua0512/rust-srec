@@ -66,7 +66,7 @@ export function MenuComponent({ isOpen, className }: MenuProps) {
                                                                 (active === undefined &&
                                                                     pathname.startsWith(href)) ||
                                                                     active
-                                                                    ? "secondary"
+                                                                    ? "default"
                                                                     : "ghost"
                                                             }
                                                             className="w-full justify-start h-10 mb-1"
@@ -122,21 +122,23 @@ export function MenuComponent({ isOpen, className }: MenuProps) {
                             <Tooltip delayDuration={100}>
                                 <TooltipTrigger asChild>
                                     <Button
-                                        onClick={() => { }}
                                         variant="outline"
                                         className="w-full justify-center h-10 mt-5"
+                                        asChild
                                     >
-                                        <span className={cn(isOpen === false ? "" : "mr-4")}>
-                                            <LogOut size={18} />
-                                        </span>
-                                        <p
-                                            className={cn(
-                                                "whitespace-nowrap",
-                                                isOpen === false ? "opacity-0 hidden" : "opacity-100"
-                                            )}
-                                        >
-                                            Sign out
-                                        </p>
+                                        <Link to="/logout">
+                                            <span className={cn(isOpen === false ? "" : "mr-4")}>
+                                                <LogOut size={18} />
+                                            </span>
+                                            <p
+                                                className={cn(
+                                                    "whitespace-nowrap",
+                                                    isOpen === false ? "opacity-0 hidden" : "opacity-100"
+                                                )}
+                                            >
+                                                Sign out
+                                            </p>
+                                        </Link>
                                     </Button>
                                 </TooltipTrigger>
                                 {isOpen === false && (

@@ -11,7 +11,6 @@ import { toast } from 'sonner';
 import { z } from 'zod';
 import { t } from '@lingui/core/macro';
 import { Skeleton } from '../../../../components/ui/skeleton';
-import { useEffect } from 'react';
 import { Save } from 'lucide-react';
 import { FileConfigCard } from '../../../../components/config/global/file-config-card';
 import { ResourceLimitsCard } from '../../../../components/config/global/resource-limits-card';
@@ -60,6 +59,7 @@ function GlobalConfigPage() {
       offline_check_count: 0,
       default_download_engine: 'default-mesio',
       job_history_retention_days: 30,
+      session_gap_time_secs: 3600,
       pipeline: '',
     },
     values: config ? {
@@ -68,16 +68,6 @@ function GlobalConfigPage() {
       pipeline: config.pipeline ?? '',
     } : undefined,
   });
-
-  useEffect(() => {
-    if (config && engines) {
-      form.reset({
-        ...config,
-        proxy_config: config.proxy_config ?? '',
-        pipeline: config.pipeline ?? '',
-      });
-    }
-  }, [config, engines, form]);
 
   const updateMutation = useMutation({
     mutationFn: (data: z.infer<typeof GlobalConfigSchema>) => updateGlobalConfig({ data }),

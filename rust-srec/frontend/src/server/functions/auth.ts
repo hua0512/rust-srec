@@ -1,6 +1,7 @@
 import { createServerFn } from '@tanstack/react-start';
 import { useAppSession } from '../../utils/session';
 import { fetchBackend, BASE_URL } from '../api';
+import { ensureValidToken } from '../tokenRefresh';
 import {
     LoginRequestSchema,
     LoginResponseSchema,
@@ -82,55 +83,23 @@ export const changePassword = createServerFn({ method: "POST" })
             method: 'POST',
             body: JSON.stringify(data)
         });
+
+        // Update the server session to clear mustChangePassword flag
+        // This ensures the _authed layout check uses the updated value
+        const session = await useAppSession();
+        if (session.data) {
+            await session.update({
+                ...session.data,
+                mustChangePassword: false,
+            });
+        }
     });
 
 export const checkAuthFn = createServerFn({ method: "POST" })
     .handler(async () => {
-        const session = await useAppSession();
-        const refreshToken = session.data.token?.refresh_token;
-
-        if (!refreshToken) {
-            return null;
-        }
-
-        const now = Date.now();
-        const refreshExpiry = session.data.token?.refresh_expires_in ?? 0;
-        if (now >= refreshExpiry) {
-            await session.clear();
-            return null;
-        }
-
-        try {
-            const json = await authClient.post('auth/refresh', {
-                json: { refresh_token: refreshToken }
-            }).json();
-
-            const parsed = LoginResponseSchema.parse(json);
-
-            const userData = {
-                username: session.data.username,
-                token: {
-                    access_token: parsed.access_token,
-                    refresh_token: parsed.refresh_token,
-                    expires_in: computeExpiryTimestamp(
-                        parsed.expires_in,
-                        session.data.token?.expires_in
-                    ),
-                    refresh_expires_in: computeExpiryTimestamp(
-                        parsed.refresh_expires_in,
-                        session.data.token?.refresh_expires_in
-                    ),
-                },
-                roles: parsed.roles,
-                mustChangePassword: parsed.must_change_password,
-            };
-
-            await session.update(userData);
-
-            return userData;
-        } catch (error) {
-            console.warn('Token refresh failed, clearing session:', error);
-            await session.clear();
-            return null;
-        }
+        // Use the global token refresh mechanism to ensure proper coordination
+        // with other concurrent refresh attempts (e.g., from API 401 handling)
+        const sessionData = await ensureValidToken();
+        return sessionData;
     });
+

@@ -405,6 +405,12 @@ impl SessionRepository for SqlxSessionRepository {
             conditions.push("s.streamer_id = ?".to_string());
         }
 
+        if filters.search.is_some() {
+            conditions.push(
+                "(m.file_path LIKE ? OR m.session_id LIKE ? OR m.file_type LIKE ?)".to_string(),
+            );
+        }
+
         let where_clause = if conditions.is_empty() {
             String::new()
         } else {
@@ -439,6 +445,13 @@ impl SessionRepository for SqlxSessionRepository {
         if let Some(streamer_id) = &filters.streamer_id {
             count_query = count_query.bind(streamer_id);
         }
+        if let Some(search) = &filters.search {
+            let pattern = format!("%{}%", search);
+            count_query = count_query
+                .bind(pattern.clone())
+                .bind(pattern.clone())
+                .bind(pattern);
+        }
 
         let total_count = count_query.fetch_one(&self.pool).await? as u64;
 
@@ -451,6 +464,13 @@ impl SessionRepository for SqlxSessionRepository {
         }
         if let Some(streamer_id) = &filters.streamer_id {
             data_query = data_query.bind(streamer_id);
+        }
+        if let Some(search) = &filters.search {
+            let pattern = format!("%{}%", search);
+            data_query = data_query
+                .bind(pattern.clone())
+                .bind(pattern.clone())
+                .bind(pattern);
         }
 
         // Bind pagination parameters

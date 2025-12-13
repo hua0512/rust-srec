@@ -4,7 +4,7 @@ use crate::pipeline::job_queue::{JobLogEntry, LogLevel};
 use std::process::Stdio;
 use tokio::io::{AsyncBufReadExt, BufReader};
 use tokio::process::Command;
-use tracing::{debug, error, info, warn};
+use tracing::{debug, warn};
 
 /// Output from a command execution including captured logs.
 pub struct CommandOutput {

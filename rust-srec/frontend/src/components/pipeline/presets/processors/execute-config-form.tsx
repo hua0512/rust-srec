@@ -6,7 +6,7 @@ import { Input } from "@/components/ui/input";
 import { ProcessorConfigFormProps } from "./common-props";
 import { ExecuteConfigSchema } from "../processor-schemas";
 import { z } from "zod";
-import { motion } from "framer-motion";
+import { motion } from "motion/react";
 import { Badge } from "@/components/ui/badge";
 import { Terminal, FolderSearch } from "lucide-react";
 

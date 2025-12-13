@@ -1,7 +1,7 @@
 import { Button } from "@/components/ui/button";
 import { Save } from "lucide-react";
 import { Trans } from "@lingui/react/macro";
-import { motion, AnimatePresence } from "framer-motion";
+import { motion, AnimatePresence } from "motion/react";
 
 interface PresetSaveFabProps {
     isDirty: boolean;

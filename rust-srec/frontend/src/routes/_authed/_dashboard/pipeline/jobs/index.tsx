@@ -159,7 +159,14 @@ function PipelineJobsPage() {
 
     const { data: jobsData, isLoading: isJobsLoading, isError, error } = useQuery({
         queryKey: ['pipeline', 'jobs', selectedStatus, debouncedSearch, pageSize, currentPage],
-        queryFn: () => listPipelineJobs(),
+        queryFn: () => listPipelineJobs({
+            data: {
+                status: selectedStatus || undefined,
+                search: debouncedSearch || undefined,
+                limit: pageSize,
+                offset: currentPage * pageSize
+            }
+        }),
         refetchInterval: 5000,
         placeholderData: keepPreviousData,
     });
@@ -172,26 +179,12 @@ function PipelineJobsPage() {
     const presets = presetsData?.presets ?? [];
 
     const jobs = jobsData?.items || [];
+    const totalJobs = jobsData?.total || 0;
 
     // Group jobs by pipeline_id (or create synthetic groups for legacy jobs)
     const pipelines = useMemo(() => {
-        let filteredJobs = jobs;
-
-        // Apply status filter
-        if (selectedStatus) {
-            filteredJobs = filteredJobs.filter(job => job.status === selectedStatus);
-        }
-
-        // Apply search filter (by streamer_id or session_id)
-        if (debouncedSearch) {
-            const search = debouncedSearch.toLowerCase();
-            filteredJobs = filteredJobs.filter(job =>
-                job.streamer_id.toLowerCase().includes(search) ||
-                (job.session_id && job.session_id.toLowerCase().includes(search)) ||
-                job.processor_type.toLowerCase().includes(search) ||
-                job.id.toLowerCase().includes(search)
-            );
-        }
+        // No client-side filtering needed anymore as it's done on server
+        const filteredJobs = jobs;
 
         const groups: Record<string, Job[]> = {};
         filteredJobs.forEach(job => {
@@ -208,16 +201,26 @@ function PipelineJobsPage() {
             const dateB = new Date(b[0].created_at).getTime();
             return dateB - dateA;
         });
-    }, [jobs, selectedStatus, debouncedSearch]);
+    }, [jobs]);
 
-    const totalPipelines = pipelines.length;
+    const totalPipelines = totalJobs; // This is an approximation since we group by pipeline, but server returns total jobs
+    // In a perfect world, server would return total pipelines. 
+    // For now, using total jobs as proxy for pagination calculation, but realistically
+    // we should be paginating pipeliens not jobs if we view them as pipelines.
+    // However, existing backend paginates jobs.
+    // Since we are showing simple list of jobs grouped by pipeline, passing page size directly to backend is correct.
+
+    // NOTE: The previous logic assumed we have ALL jobs and sliced them.
+    // Now we get a PAGE of jobs.
+    // The previous grouping logic grouped the PAGE of jobs. 
+    // This implies that if a pipeline has jobs split across pages, they might split.
+    // This is a known limitation of listing jobs vs listing pipelines. 
+    // But given the task is to enable server side pagination for *jobs*, this is the correct step.
+
     const totalPages = Math.ceil(totalPipelines / pageSize);
 
-    // Paginate pipelines
-    const paginatedPipelines = useMemo(() => {
-        const start = currentPage * pageSize;
-        return pipelines.slice(start, start + pageSize);
-    }, [pipelines, currentPage, pageSize]);
+    // Paginate pipelines - NO need to slice anymore, the server returns the page
+    const paginatedPipelines = pipelines;
 
     // Memoize pagination pages calculation
     const paginationPages = useMemo(() => {

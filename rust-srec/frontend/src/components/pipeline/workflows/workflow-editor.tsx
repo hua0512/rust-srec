@@ -1,10 +1,9 @@
-import { useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { useQuery } from '@tanstack/react-query';
 import { motion, Reorder, AnimatePresence } from 'motion/react';
-import { ArrowLeft, Plus, GripVertical, X, Workflow, Save, Settings2, Sparkles, Layout } from 'lucide-react';
+import { ArrowLeft, GripVertical, X, Workflow, Save, Settings2, Layout } from 'lucide-react';
 import { useNavigate } from '@tanstack/react-router';
 import { Trans } from "@lingui/react/macro";
 import { t } from "@lingui/core/macro";
@@ -15,22 +14,14 @@ import { Textarea } from "@/components/ui/textarea";
 import {
     Form,
     FormControl,
-    FormDescription,
     FormField,
     FormItem,
     FormLabel,
     FormMessage,
 } from "@/components/ui/form";
-import {
-    Select,
-    SelectContent,
-    SelectItem,
-    SelectTrigger,
-    SelectValue,
-} from "@/components/ui/select";
-import { Badge } from "@/components/ui/badge";
+
 import { listJobPresets } from '@/server/functions/job';
-import type { PipelinePreset } from '@/server/functions/pipeline';
+import { StepLibrary } from './step-library';
 
 const workflowSchema = z.object({
     name: z.string().min(1, 'Name is required'),
@@ -48,15 +39,17 @@ interface WorkflowEditorProps {
 }
 
 import { getStepColor, getStepIcon } from '@/components/pipeline/constants';
+import { PipelinePreset } from '@/server/functions';
+import { Badge } from '@/components/ui/badge';
 
 export function WorkflowEditor({ initialData, title, onSubmit, isUpdating }: WorkflowEditorProps) {
     const navigate = useNavigate();
-    const [selectedPreset, setSelectedPreset] = useState<string>('');
+
 
     // Fetch available job presets
     const { data: presetsData } = useQuery({
-        queryKey: ['job', 'presets'],
-        queryFn: () => listJobPresets({ data: {} }),
+        queryKey: ['job', 'presets', 'all'],
+        queryFn: () => listJobPresets({ data: { limit: 100 } }),
     });
 
     const presets = presetsData?.presets || [];
@@ -82,12 +75,9 @@ export function WorkflowEditor({ initialData, title, onSubmit, isUpdating }: Wor
 
     const steps = form.watch('steps');
 
-    const handleAddStep = () => {
-        if (selectedPreset) {
-            const currentSteps = form.getValues('steps');
-            form.setValue('steps', [...currentSteps, selectedPreset], { shouldDirty: true });
-            setSelectedPreset('');
-        }
+    const handleAddStep = (presetName: string) => {
+        const currentSteps = form.getValues('steps');
+        form.setValue('steps', [...currentSteps, presetName], { shouldDirty: true });
     };
 
     const handleRemoveStep = (index: number) => {
@@ -197,61 +187,10 @@ export function WorkflowEditor({ initialData, title, onSubmit, isUpdating }: Wor
                                 </div>
                             </motion.div>
 
-                            <motion.div
-                                initial={{ opacity: 0, x: -20 }}
-                                animate={{ opacity: 1, x: 0 }}
-                                transition={{ delay: 0.1 }}
-                                className="group relative overflow-hidden rounded-2xl border border-border/40 bg-gradient-to-br from-background/50 to-background/20 backdrop-blur-xl transition-all hover:border-primary/20"
-                            >
-                                <div className="absolute inset-x-0 top-0 h-0.5 bg-gradient-to-r from-transparent via-primary/40 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-700" />
-                                <div className="p-6 space-y-6">
-                                    <div className="flex items-center gap-2 pb-2 border-b border-border/40">
-                                        <Sparkles className="h-4 w-4 text-primary" />
-                                        <h3 className="font-medium tracking-tight"><Trans>Add Steps</Trans></h3>
-                                    </div>
-
-                                    <div className="space-y-4">
-                                        <div className="bg-muted/30 rounded-lg p-4 border border-border/40 text-sm text-muted-foreground">
-                                            <Trans>Select a preset from the list below to add it to your workflow content pipeline.</Trans>
-                                        </div>
-
-                                        <div className="flex gap-2">
-                                            <Select value={selectedPreset} onValueChange={setSelectedPreset}>
-                                                <SelectTrigger className="flex-1 bg-muted/30 border-border/40 focus:ring-primary/20">
-                                                    <SelectValue placeholder={t`Select a preset...`} />
-                                                </SelectTrigger>
-                                                <SelectContent>
-                                                    {presets.map((preset) => {
-                                                        const Icon = getStepIcon(preset.processor);
-                                                        return (
-                                                            <SelectItem key={preset.id} value={preset.name}>
-                                                                <div className="flex items-center gap-2">
-                                                                    <Icon className="h-4 w-4 text-muted-foreground" />
-                                                                    <span>{preset.name}</span>
-                                                                    {preset.category && (
-                                                                        <Badge variant="secondary" className="text-[10px] ml-auto h-5">
-                                                                            {preset.category}
-                                                                        </Badge>
-                                                                    )}
-                                                                </div>
-                                                            </SelectItem>
-                                                        );
-                                                    })}
-                                                </SelectContent>
-                                            </Select>
-                                            <Button
-                                                type="button"
-                                                onClick={handleAddStep}
-                                                disabled={!selectedPreset}
-                                                size="icon"
-                                                className="shrink-0"
-                                            >
-                                                <Plus className="h-4 w-4" />
-                                            </Button>
-                                        </div>
-                                    </div>
-                                </div>
-                            </motion.div>
+                            <StepLibrary
+                                onAddStep={handleAddStep}
+                                currentSteps={steps}
+                            />
                         </div>
 
                         {/* Right Column: Steps Visualizer */}

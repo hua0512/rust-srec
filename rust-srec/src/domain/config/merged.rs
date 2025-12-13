@@ -556,7 +556,7 @@ impl MergedConfigBuilder {
             event_hooks: self.event_hooks.unwrap_or_default(),
             fetch_delay_ms: self.fetch_delay_ms.unwrap_or(60000),
             download_delay_ms: self.download_delay_ms.unwrap_or(1000),
-            session_gap_time_secs: self.session_gap_time_secs.unwrap_or(600),
+            session_gap_time_secs: self.session_gap_time_secs.unwrap_or(3600),
             stream_selection: self.stream_selection.unwrap_or_default(),
 
             engines_override: self.engines_override,

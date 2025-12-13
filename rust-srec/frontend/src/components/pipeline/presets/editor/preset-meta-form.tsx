@@ -13,7 +13,7 @@ import { Button } from "@/components/ui/button";
 import { Link } from "@tanstack/react-router";
 import { ArrowLeft, Film, Image as ImageIcon, Music, FileArchive, Copy, Trash, Tags, Upload, Terminal, Settings2 } from "lucide-react";
 import { Trans } from "@lingui/react/macro";
-import { motion } from "framer-motion";
+import { motion } from "motion/react";
 
 interface PresetMetaFormProps {
     form: UseFormReturn<any>;

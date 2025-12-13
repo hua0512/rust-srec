@@ -397,13 +397,21 @@ impl<
                     .map(|dt| dt.with_timezone(&chrono::Utc))
                     .unwrap_or_else(|_| chrono::Utc::now());
                 let now = chrono::Utc::now();
+                let offline_duration_secs = (now - end_time).num_seconds();
 
-                if (now - end_time).num_seconds() < gap_secs {
+                debug!(
+                    "Session gap check for {}: offline_duration={}s, gap_threshold={}s, will_resume={}",
+                    streamer.name,
+                    offline_duration_secs,
+                    gap_secs,
+                    offline_duration_secs < gap_secs
+                );
+
+                if offline_duration_secs < gap_secs {
                     // Resume session
                     info!(
-                        "Resuming session {} (ended {:?} ago)",
-                        session.id,
-                        now - end_time
+                        "Resuming session {} (offline for {}s, threshold: {}s)",
+                        session.id, offline_duration_secs, gap_secs
                     );
                     self.session_repo.resume_session(&session.id).await?;
                     // Check if title changed and update if needed
@@ -412,6 +420,10 @@ impl<
                     }
                     session.id.clone()
                 } else {
+                    info!(
+                        "Creating new session for {} (offline for {}s exceeded threshold of {}s)",
+                        streamer.name, offline_duration_secs, gap_secs
+                    );
                     let new_id = uuid::Uuid::new_v4().to_string();
                     let initial_titles = vec![TitleEntry {
                         ts: chrono::Utc::now().to_rfc3339(),

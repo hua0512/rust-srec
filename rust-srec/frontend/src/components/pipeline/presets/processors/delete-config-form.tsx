@@ -4,7 +4,7 @@ import { Input } from "@/components/ui/input";
 import { ProcessorConfigFormProps } from "./common-props";
 import { DeleteConfigSchema } from "../processor-schemas";
 import { z } from "zod";
-import { motion } from "framer-motion";
+import { motion } from "motion/react";
 import { RefreshCw } from "lucide-react";
 
 type DeleteConfig = z.infer<typeof DeleteConfigSchema>;

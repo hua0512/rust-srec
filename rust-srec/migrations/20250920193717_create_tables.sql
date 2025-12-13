@@ -18,7 +18,7 @@ CREATE TABLE global_config (
     max_concurrent_cpu_jobs INTEGER NOT NULL DEFAULT 0,
     max_concurrent_io_jobs INTEGER NOT NULL DEFAULT 8,
     job_history_retention_days INTEGER NOT NULL DEFAULT 30,
-    session_gap_time_secs INTEGER NOT NULL DEFAULT 600,
+    session_gap_time_secs INTEGER NOT NULL DEFAULT 3600,
     pipeline TEXT
 );
 
@@ -423,11 +423,11 @@ INSERT INTO global_config (
     '',                      -- No proxy
     10000,                   -- 10s
     3,
-    'default-ffmpeg',
+    'default-mesio',
     0,                       -- Auto
     8,
     30,
-    600                      -- 10 min
+    3600                      -- 1 hour
 );
 
 

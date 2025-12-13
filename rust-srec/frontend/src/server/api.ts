@@ -1,4 +1,5 @@
-import { useAppSession, SessionData } from '../utils/session';
+import { useAppSession } from '../utils/session';
+import { refreshAuthTokenGlobal } from './tokenRefresh';
 
 // Determine the base URL for the backend API.
 // Priority:
@@ -28,6 +29,7 @@ export class BackendApiError extends Error {
 /**
  * Generic fetch wrapper for server-side calls to the backend.
  * Automatically injects the access token from the session.
+ * On 401, attempts to refresh the token using the global refresh mechanism.
  */
 export const fetchBackend = async <T = any>(endpoint: string, init?: RequestInit): Promise<T> => {
     const session = await useAppSession();
@@ -48,16 +50,10 @@ export const fetchBackend = async <T = any>(endpoint: string, init?: RequestInit
         }
     }
 
-
     // Construct URL
-    // We ensure BASE_URL has a trailing slash for the URL constructor if we treat endpoint as relative
-    // But a safer way is string concatenation if we are sure about the format.
-    // Let's rely on string ops to be explicit.
     const baseUrl = BASE_URL.endsWith('/') ? BASE_URL.slice(0, -1) : BASE_URL;
     const path = endpoint.startsWith('/') ? endpoint : `/${endpoint}`;
     const url = `${baseUrl}${path}`;
-
-    // console.log(`[API] Fetching ${url} with token: ${token ? 'PRESENT' : 'MISSING'}`);
 
     const response = await fetch(url, {
         ...init,
@@ -69,15 +65,16 @@ export const fetchBackend = async <T = any>(endpoint: string, init?: RequestInit
         if (response.status === 401) {
             console.log(`[API] 401 Unauthorized for ${url}. Attempting refresh...`);
             try {
-                const newToken = await refreshAuthToken(session);
+                // Use the global refresh mechanism to prevent race conditions
+                const newToken = await refreshAuthTokenGlobal();
                 if (newToken) {
                     console.log(`[API] Token refreshed. Retrying ${url}...`);
                     // Retry original request with new token
-                    const headers = new Headers(init?.headers);
-                    headers.set('Authorization', `Bearer ${newToken}`);
+                    const retryHeaders = new Headers(init?.headers);
+                    retryHeaders.set('Authorization', `Bearer ${newToken}`);
                     const retryResponse = await fetch(url, {
                         ...init,
-                        headers,
+                        headers: retryHeaders,
                     });
 
                     if (retryResponse.ok) {
@@ -105,7 +102,7 @@ export const fetchBackend = async <T = any>(endpoint: string, init?: RequestInit
                     console.log(`[API] Refresh failed or returned no token.`);
                 }
             } catch (refreshError) {
-                console.error("Token refresh failed during interceptor:", refreshError);
+                console.error("[API] Token refresh failed during interceptor:", refreshError);
                 // Fall through to throw original 401
             }
         }
@@ -133,74 +130,3 @@ export const fetchBackend = async <T = any>(endpoint: string, init?: RequestInit
 
     return response.text() as unknown as T;
 };
-
-// Singleton promise to handle concurrent refreshes
-let refreshPromise: Promise<string | null> | null = null;
-
-async function refreshAuthToken(session: any): Promise<string | null> {
-    const refreshToken = session.data.token?.refresh_token;
-    if (!refreshToken) {
-        console.log(`[API] No refresh token available in session.`);
-        return null;
-    }
-
-    if (refreshPromise) {
-        return refreshPromise;
-    }
-
-    refreshPromise = (async () => {
-        try {
-            console.log(`[API] Calling refresh endpoint...`);
-            // We use fetch directly to avoid infinite loops if fetchBackend calls itself
-            const baseUrl = BASE_URL.endsWith('/') ? BASE_URL.slice(0, -1) : BASE_URL;
-            const response = await fetch(`${baseUrl}/auth/refresh`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ refresh_token: refreshToken }),
-            });
-
-            if (!response.ok) {
-                throw new Error('Refresh failed');
-            }
-
-            const json = await response.json();
-            const now = Date.now();
-            const computedAccessExpiry =
-                typeof json.expires_in === 'number' && Number.isFinite(json.expires_in)
-                    ? now + json.expires_in * 1000
-                    : session.data.token?.expires_in;
-            const computedRefreshExpiry =
-                typeof json.refresh_expires_in === 'number' && Number.isFinite(json.refresh_expires_in)
-                    ? now + json.refresh_expires_in * 1000
-                    : session.data.token?.refresh_expires_in;
-
-            const userData: SessionData = {
-                username: session.data.username,
-                token: {
-                    access_token: json.access_token,
-                    refresh_token: json.refresh_token || refreshToken, // Fallback to existing refresh token if not allowed to rotate
-                    expires_in: computedAccessExpiry ?? session.data.token?.expires_in ?? now,
-                    refresh_expires_in:
-                        computedRefreshExpiry ?? session.data.token?.refresh_expires_in ?? now,
-                },
-                roles: json.roles || session.data.roles,
-                mustChangePassword:
-                    json.must_change_password !== undefined
-                        ? json.must_change_password
-                        : session.data.mustChangePassword,
-            };
-
-            await session.update(userData);
-            return json.access_token;
-        } catch (error) {
-            console.error('Failed to refresh token:', error);
-            // Clear session on fatal refresh error
-            await session.clear();
-            return null;
-        } finally {
-            refreshPromise = null;
-        }
-    })();
-
-    return refreshPromise;
-}

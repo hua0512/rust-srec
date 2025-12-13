@@ -7,7 +7,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ProcessorConfigFormProps } from "./common-props";
 import { AudioExtractConfigSchema } from "../processor-schemas";
 import { z } from "zod";
-import { motion } from "framer-motion";
+import { motion } from "motion/react";
 import { Music, AudioWaveform, Settings2 } from "lucide-react";
 
 type AudioExtractConfig = z.infer<typeof AudioExtractConfigSchema>;

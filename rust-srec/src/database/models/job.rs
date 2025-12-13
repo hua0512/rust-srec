@@ -23,6 +23,8 @@ pub struct JobFilters {
     pub job_type: Option<String>,
     /// Filter by multiple job types.
     pub job_types: Option<Vec<String>>,
+    /// Search query.
+    pub search: Option<String>,
 }
 
 impl JobFilters {
@@ -75,6 +77,12 @@ impl JobFilters {
     /// Filter by multiple job types.
     pub fn with_job_types(mut self, job_types: Vec<String>) -> Self {
         self.job_types = Some(job_types);
+        self
+    }
+
+    /// Filter by search query.
+    pub fn with_search(mut self, search: impl Into<String>) -> Self {
+        self.search = Some(search.into());
         self
     }
 }

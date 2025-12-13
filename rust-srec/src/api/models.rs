@@ -229,6 +229,8 @@ pub struct GlobalConfigResponse {
     pub max_concurrent_cpu_jobs: u32,
     pub max_concurrent_io_jobs: u32,
     pub job_history_retention_days: u32,
+    pub session_gap_time_secs: u64,
+    pub pipeline: Option<String>,
 }
 
 /// Request to update global configuration.
@@ -251,6 +253,10 @@ pub struct UpdateGlobalConfigRequest {
     pub default_download_engine: Option<String>,
     pub record_danmu: Option<bool>,
     pub proxy_config: Option<String>,
+    /// Session gap time in seconds
+    pub session_gap_time_secs: Option<u64>,
+    /// Global pipeline configuration (JSON serialized Vec<PipelineStep>)
+    pub pipeline: Option<String>,
 }
 
 /// Platform configuration response.
@@ -274,6 +280,8 @@ pub struct PlatformConfigResponse {
     pub max_part_size_bytes: Option<u64>,
     pub download_retry_policy: Option<String>,
     pub event_hooks: Option<String>,
+    /// Platform-specific pipeline configuration (JSON serialized Vec<PipelineStep>)
+    pub pipeline: Option<String>,
 }
 
 /// Request to update platform configuration.
@@ -295,6 +303,8 @@ pub struct UpdatePlatformConfigRequest {
     pub max_part_size_bytes: Option<u64>,
     pub download_retry_policy: Option<String>,
     pub event_hooks: Option<String>,
+    /// Platform-specific pipeline configuration (JSON serialized Vec<PipelineStep>)
+    pub pipeline: Option<String>,
 }
 
 // ============================================================================
@@ -515,6 +525,8 @@ pub struct JobFilterParams {
     pub from_date: Option<DateTime<Utc>>,
     /// Filter by date range end
     pub to_date: Option<DateTime<Utc>>,
+    /// Search query (matches ID, streamer ID, or session ID)
+    pub search: Option<String>,
 }
 
 /// Pipeline statistics response.
@@ -728,6 +740,30 @@ pub struct ExtractMetadataResponse {
     pub valid_platform_configs: Vec<PlatformConfigResponse>,
     /// Detected channel ID (if available)
     pub channel_id: Option<String>,
+}
+
+/// Request to parse a URL and extract media info.
+#[derive(Debug, Clone, Deserialize)]
+pub struct ParseUrlRequest {
+    /// URL to parse
+    pub url: String,
+    /// Optional cookies for authentication
+    pub cookies: Option<String>,
+}
+
+/// Response from URL parsing with full media info.
+///
+/// This returns the complete MediaInfo from platforms_parser crate as JSON.
+#[derive(Debug, Clone, Serialize)]
+pub struct ParseUrlResponse {
+    /// Whether extraction was successful
+    pub success: bool,
+    /// Whether the stream is currently live
+    pub is_live: bool,
+    /// The full media info from platforms_parser (serialized)
+    pub media_info: Option<serde_json::Value>,
+    /// Error message if extraction failed
+    pub error: Option<String>,
 }
 
 // ============================================================================

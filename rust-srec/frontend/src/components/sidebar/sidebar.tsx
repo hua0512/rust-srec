@@ -44,7 +44,7 @@ export function Sidebar() {
                     asChild
                 >
                     <Link to="/dashboard" className="flex items-center gap-2">
-                        <img src="/stream-rec-white.svg" alt="Rust-Srec" className="w-8 h-8 mr-1 dark:invert-0 invert" />
+                        <div className="w-8 h-8 mr-1 bg-primary dark:bg-primary transition-colors [mask-image:url(/stream-rec-white.svg)] [mask-size:contain] [mask-repeat:no-repeat] [mask-position:center]" />
                         <h1
                             className={cn(
                                 "font-bold text-lg whitespace-nowrap transition-[transform,opacity,display] ease-in-out duration-300",

@@ -8,7 +8,7 @@ import { MetadataConfigSchema } from "../processor-schemas";
 import { z } from "zod";
 import { useFormContext } from "react-hook-form";
 import { PlusCircle, Trash2, Tags, Mic2, Settings2 } from "lucide-react";
-import { motion } from "framer-motion";
+import { motion } from "motion/react";
 
 type MetadataConfig = z.infer<typeof MetadataConfigSchema>;
 

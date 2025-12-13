@@ -345,11 +345,9 @@ impl JobRepository for SqlxJobRepository {
             conditions.push("status = ?".to_string());
         }
         if filters.streamer_id.is_some() {
-            // streamer_id is now a direct column
             conditions.push("streamer_id = ?".to_string());
         }
         if filters.session_id.is_some() {
-            // session_id is now a direct column
             conditions.push("session_id = ?".to_string());
         }
         if filters.pipeline_id.is_some() {
@@ -369,6 +367,12 @@ impl JobRepository for SqlxJobRepository {
                 let placeholders = job_types.iter().map(|_| "?").collect::<Vec<_>>().join(", ");
                 conditions.push(format!("job_type IN ({})", placeholders));
             }
+        }
+        if filters.search.is_some() {
+            conditions.push(
+                "(id LIKE ? OR session_id LIKE ? OR streamer_id LIKE ? OR job_type LIKE ?)"
+                    .to_string(),
+            );
         }
 
         let where_clause = if conditions.is_empty() {
@@ -416,6 +420,14 @@ impl JobRepository for SqlxJobRepository {
                 count_query = count_query.bind(jt);
             }
         }
+        if let Some(search) = &filters.search {
+            let pattern = format!("%{}%", search);
+            count_query = count_query
+                .bind(pattern.clone())
+                .bind(pattern.clone())
+                .bind(pattern.clone())
+                .bind(pattern);
+        }
 
         let total_count = count_query.fetch_one(&self.pool).await? as u64;
 
@@ -448,6 +460,14 @@ impl JobRepository for SqlxJobRepository {
             for jt in job_types {
                 data_query = data_query.bind(jt);
             }
+        }
+        if let Some(search) = &filters.search {
+            let pattern = format!("%{}%", search);
+            data_query = data_query
+                .bind(pattern.clone())
+                .bind(pattern.clone())
+                .bind(pattern.clone())
+                .bind(pattern);
         }
 
         // Bind pagination parameters

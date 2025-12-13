@@ -27,7 +27,7 @@ export function SheetMenu() {
                         asChild
                     >
                         <Link to="/dashboard" className="flex items-center gap-2">
-                            <img src="/stream-rec-white.svg" alt="Rust-Srec" className="w-6 h-6 mr-1 dark:invert-0 invert" />
+                            <div className="w-6 h-6 mr-1 bg-primary/80 dark:bg-primary transition-colors [mask-image:url(/stream-rec-white.svg)] [mask-size:contain] [mask-repeat:no-repeat] [mask-position:center]" />
                             <SheetTitle className="font-bold text-lg">Rust-Srec</SheetTitle>
                         </Link>
                     </Button>

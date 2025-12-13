@@ -6,7 +6,7 @@ import { Switch } from "@/components/ui/switch";
 import { ProcessorConfigFormProps } from "./common-props";
 import { CompressionConfigSchema } from "../processor-schemas";
 import { z } from "zod";
-import { motion } from "framer-motion";
+import { motion } from "motion/react";
 import { Archive, Settings2 } from "lucide-react";
 
 type CompressionConfig = z.infer<typeof CompressionConfigSchema>;

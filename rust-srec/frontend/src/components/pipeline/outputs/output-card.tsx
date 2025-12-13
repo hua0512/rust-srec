@@ -22,7 +22,6 @@ import {
     Copy,
     CheckCircle2,
     FolderOpen,
-    ExternalLink,
 } from "lucide-react";
 import { Trans } from "@lingui/react/macro";
 import { toast } from 'sonner';

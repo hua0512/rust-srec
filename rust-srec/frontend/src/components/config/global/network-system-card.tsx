@@ -77,6 +77,25 @@ export function NetworkSystemCard({ control }: NetworkSystemCardProps) {
                             </FormItem>
                         )}
                     />
+                    <FormField
+                        control={control}
+                        name="session_gap_time_secs"
+                        render={({ field }) => (
+                            <FormItem>
+                                <FormLabel>
+                                    <Trans>Session Gap (seconds)</Trans>
+                                </FormLabel>
+                                <FormControl>
+                                    <Input
+                                        type="number"
+                                        {...field}
+                                        onChange={(e) => field.onChange(Number(e.target.value))}
+                                    />
+                                </FormControl>
+                                <FormMessage />
+                            </FormItem>
+                        )}
+                    />
                 </div>
                 <div className="grid grid-cols-2 gap-6">
                     <FormField

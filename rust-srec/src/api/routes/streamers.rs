@@ -1042,6 +1042,7 @@ async fn extract_metadata(
             max_part_size_bytes: c.max_part_size_bytes.map(|v| v as u64),
             download_retry_policy: c.download_retry_policy,
             event_hooks: c.event_hooks,
+            pipeline: c.pipeline,
         })
         .collect();
 

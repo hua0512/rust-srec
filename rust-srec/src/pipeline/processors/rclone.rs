@@ -2,10 +2,8 @@
 
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
-use std::process::Stdio;
-use tokio::io::{AsyncBufReadExt, BufReader};
 use tokio::process::Command;
-use tracing::{debug, error, info};
+use tracing::{error, info};
 
 use super::traits::{Processor, ProcessorInput, ProcessorOutput, ProcessorType};
 use crate::Result;

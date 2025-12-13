@@ -3,7 +3,6 @@ import { Button } from "@/components/ui/button";
 import {
     Card,
     CardContent,
-    CardDescription,
     CardFooter,
     CardHeader,
     CardTitle,
@@ -25,7 +24,6 @@ import {
     AlertDialogTitle,
     AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
-import { Badge } from "@/components/ui/badge";
 import { Edit, MoreHorizontal, Trash, FileVideo, Upload, Terminal, Copy, Scissors, Archive, Tag, Image as ImageIcon, CopyPlus, Cloud } from "lucide-react";
 import { z } from "zod";
 import { Trans } from "@lingui/react/macro";

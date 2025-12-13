@@ -212,6 +212,8 @@ pub struct OutputFilterParams {
     pub session_id: Option<String>,
     /// Filter by streamer ID.
     pub streamer_id: Option<String>,
+    /// Search query (matches file path, session ID, or format).
+    pub search: Option<String>,
 }
 
 /// List pipeline jobs with pagination and filtering.
@@ -273,6 +275,7 @@ async fn list_jobs(
         to_date: filters.to_date,
         job_type: None,
         job_types: None,
+        search: filters.search,
     };
 
     let db_pagination = Pagination::new(pagination.limit, pagination.offset);
@@ -514,6 +517,7 @@ async fn list_outputs(
     let db_filters = OutputFilters {
         session_id: filters.session_id,
         streamer_id: filters.streamer_id,
+        search: filters.search,
     };
 
     let db_pagination = Pagination::new(pagination.limit, pagination.offset);

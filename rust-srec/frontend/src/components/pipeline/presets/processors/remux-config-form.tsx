@@ -518,6 +518,26 @@ export function RemuxConfigForm({ control, pathPrefix }: ProcessorConfigFormProp
                                             </FormItem>
                                         )}
                                     />
+                                    <FormField
+                                        control={control}
+                                        name={`${prefix}remove_input_on_success` as any}
+                                        render={({ field }) => (
+                                            <FormItem className="flex flex-row items-center justify-between rounded-xl border border-border/40 p-4 shadow-sm bg-muted/10 transition-colors hover:bg-muted/20">
+                                                <div className="space-y-1">
+                                                    <FormLabel className="text-sm font-medium"><Trans>Remove Input on Success</Trans></FormLabel>
+                                                    <FormDescription className="text-xs">
+                                                        <Trans>Delete original file after successful remux</Trans>
+                                                    </FormDescription>
+                                                </div>
+                                                <FormControl>
+                                                    <Switch
+                                                        checked={field.value}
+                                                        onCheckedChange={field.onChange}
+                                                    />
+                                                </FormControl>
+                                            </FormItem>
+                                        )}
+                                    />
                                 </div>
                             </div>
 
