@@ -4,7 +4,7 @@ import { useQuery, useMutation, useQueryClient, keepPreviousData } from '@tansta
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { motion, AnimatePresence } from 'motion/react';
-import { getPipelineStats, listPipelineJobs, retryPipelineJob, cancelPipelineJob, createPipelineJob } from '@/server/functions';
+import { getPipelineStats, listPipelines, cancelPipeline, createPipelineJob } from '@/server/functions';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Trans } from '@lingui/react/macro';
@@ -54,11 +54,8 @@ import {
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { z } from 'zod';
-import { JobSchema } from '@/api/schemas';
-import { JobCard } from '@/components/pipeline/jobs/job-card';
+import { PipelineSummaryCard } from '@/components/pipeline/jobs/pipeline-summary-card';
 import { listJobPresets } from '@/server/functions/job';
-
-type Job = z.infer<typeof JobSchema>;
 
 const createPipelineSchema = z.object({
     session_id: z.string().min(1, 'Session ID is required'),
@@ -94,10 +91,10 @@ export const Route = createFileRoute('/_authed/_dashboard/pipeline/jobs/')({
 
 const STATUS_FILTERS = [
     { value: null, label: 'All', icon: ListTodo },
-    { value: 'Pending', label: 'Pending', icon: Clock },
-    { value: 'Processing', label: 'Processing', icon: RefreshCw },
-    { value: 'Completed', label: 'Completed', icon: CheckCircle2 },
-    { value: 'Failed', label: 'Failed', icon: XCircle },
+    { value: 'PENDING', label: 'Pending', icon: Clock },
+    { value: 'PROCESSING', label: 'Processing', icon: RefreshCw },
+    { value: 'COMPLETED', label: 'Completed', icon: CheckCircle2 },
+    { value: 'FAILED', label: 'Failed', icon: XCircle },
 ] as const;
 
 const PAGE_SIZES = [12, 24, 48, 96];
@@ -157,9 +154,9 @@ function PipelineJobsPage() {
         refetchInterval: 5000,
     });
 
-    const { data: jobsData, isLoading: isJobsLoading, isError, error } = useQuery({
-        queryKey: ['pipeline', 'jobs', selectedStatus, debouncedSearch, pageSize, currentPage],
-        queryFn: () => listPipelineJobs({
+    const { data: pipelinesData, isLoading: isPipelinesLoading, isError, error } = useQuery({
+        queryKey: ['pipeline', 'pipelines', selectedStatus, debouncedSearch, pageSize, currentPage],
+        queryFn: () => listPipelines({
             data: {
                 status: selectedStatus || undefined,
                 search: debouncedSearch || undefined,
@@ -178,49 +175,10 @@ function PipelineJobsPage() {
     });
     const presets = presetsData?.presets ?? [];
 
-    const jobs = jobsData?.items || [];
-    const totalJobs = jobsData?.total || 0;
-
-    // Group jobs by pipeline_id (or create synthetic groups for legacy jobs)
-    const pipelines = useMemo(() => {
-        // No client-side filtering needed anymore as it's done on server
-        const filteredJobs = jobs;
-
-        const groups: Record<string, Job[]> = {};
-        filteredJobs.forEach(job => {
-            const groupId = job.pipeline_id || job.id;
-            if (!groups[groupId]) {
-                groups[groupId] = [];
-            }
-            groups[groupId].push(job);
-        });
-
-        // Sort pipelines by most recent job creation
-        return Object.values(groups).sort((a, b) => {
-            const dateA = new Date(a[0].created_at).getTime();
-            const dateB = new Date(b[0].created_at).getTime();
-            return dateB - dateA;
-        });
-    }, [jobs]);
-
-    const totalPipelines = totalJobs; // This is an approximation since we group by pipeline, but server returns total jobs
-    // In a perfect world, server would return total pipelines. 
-    // For now, using total jobs as proxy for pagination calculation, but realistically
-    // we should be paginating pipeliens not jobs if we view them as pipelines.
-    // However, existing backend paginates jobs.
-    // Since we are showing simple list of jobs grouped by pipeline, passing page size directly to backend is correct.
-
-    // NOTE: The previous logic assumed we have ALL jobs and sliced them.
-    // Now we get a PAGE of jobs.
-    // The previous grouping logic grouped the PAGE of jobs. 
-    // This implies that if a pipeline has jobs split across pages, they might split.
-    // This is a known limitation of listing jobs vs listing pipelines. 
-    // But given the task is to enable server side pagination for *jobs*, this is the correct step.
+    const pipelines = pipelinesData?.items || [];
+    const totalPipelines = pipelinesData?.total || 0;
 
     const totalPages = Math.ceil(totalPipelines / pageSize);
-
-    // Paginate pipelines - NO need to slice anymore, the server returns the page
-    const paginatedPipelines = pipelines;
 
     // Memoize pagination pages calculation
     const paginationPages = useMemo(() => {
@@ -239,29 +197,21 @@ function PipelineJobsPage() {
         return pages;
     }, [totalPages, currentPage]);
 
-    const retryMutation = useMutation({
-        mutationFn: (id: string) => retryPipelineJob({ data: id }),
-        onSuccess: () => {
-            toast.success(t`Job retry initiated`);
-            queryClient.invalidateQueries({ queryKey: ['pipeline', 'jobs'] });
+    const cancelPipelineMutation = useMutation({
+        mutationFn: (pipelineId: string) => cancelPipeline({ data: pipelineId }),
+        onSuccess: (result) => {
+            toast.success(t`Cancelled ${result.cancelled_count} jobs in pipeline`);
+            queryClient.invalidateQueries({ queryKey: ['pipeline', 'pipelines'] });
+            queryClient.invalidateQueries({ queryKey: ['pipeline', 'stats'] });
         },
-        onError: () => toast.error(t`Failed to retry job`),
-    });
-
-    const cancelMutation = useMutation({
-        mutationFn: (id: string) => cancelPipelineJob({ data: id }),
-        onSuccess: () => {
-            toast.success(t`Job cancelled`);
-            queryClient.invalidateQueries({ queryKey: ['pipeline', 'jobs'] });
-        },
-        onError: () => toast.error(t`Failed to cancel job`),
+        onError: () => toast.error(t`Failed to cancel pipeline`),
     });
 
     const createPipelineMutation = useMutation({
         mutationFn: (payload: CreatePipelineForm) => createPipelineJob({ data: payload }),
         onSuccess: () => {
             toast.success(t`Pipeline created`);
-            queryClient.invalidateQueries({ queryKey: ['pipeline', 'jobs'] });
+            queryClient.invalidateQueries({ queryKey: ['pipeline', 'pipelines'] });
             setCreateDialogOpen(false);
             createPipelineForm.reset({
                 session_id: '',
@@ -292,16 +242,8 @@ function PipelineJobsPage() {
         );
     };
 
-    const handleViewDetails = (job: Job) => {
-        if (job.pipeline_id) {
-            navigate({ to: '/pipeline/executions/$pipelineId', params: { pipelineId: job.pipeline_id } });
-        } else {
-            navigate({ to: '/pipeline/jobs/$jobId', params: { jobId: job.id } });
-        }
-    };
-
-    const handleViewJob = (job: Job) => {
-        navigate({ to: '/pipeline/jobs/$jobId', params: { jobId: job.id } });
+    const handleViewDetails = (pipelineId: string) => {
+        navigate({ to: '/pipeline/executions/$pipelineId', params: { pipelineId } });
     };
 
     if (isError) {
@@ -569,7 +511,7 @@ function PipelineJobsPage() {
 
             <div className="p-4 md:px-8 pb-20 max-w-[1600px] mx-auto">
                 <AnimatePresence mode="wait">
-                    {isJobsLoading ? (
+                    {isPipelinesLoading ? (
                         <motion.div
                             key="loading"
                             initial={{ opacity: 0 }}
@@ -593,7 +535,7 @@ function PipelineJobsPage() {
                                 </div>
                             ))}
                         </motion.div>
-                    ) : paginatedPipelines.length > 0 ? (
+                    ) : pipelines.length > 0 ? (
                         <motion.div
                             key="list"
                             className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6"
@@ -601,9 +543,9 @@ function PipelineJobsPage() {
                             animate={{ opacity: 1 }}
                             transition={{ duration: 0.3 }}
                         >
-                            {paginatedPipelines.map((group, index) => (
+                            {pipelines.map((pipeline, index) => (
                                 <motion.div
-                                    key={group[0].pipeline_id || group[0].id}
+                                    key={pipeline.pipeline_id}
                                     initial={{ opacity: 0, y: 20 }}
                                     animate={{ opacity: 1, y: 0 }}
                                     transition={{
@@ -611,12 +553,10 @@ function PipelineJobsPage() {
                                         delay: Math.min(index * 0.05, 0.3)
                                     }}
                                 >
-                                    <JobCard
-                                        jobs={group}
-                                        onRetry={(id) => retryMutation.mutate(id)}
-                                        onCancel={(id) => cancelMutation.mutate(id)}
+                                    <PipelineSummaryCard
+                                        pipeline={pipeline}
+                                        onCancelPipeline={(pipelineId) => cancelPipelineMutation.mutate(pipelineId)}
                                         onViewDetails={handleViewDetails}
-                                        onViewJob={handleViewJob}
                                     />
                                 </motion.div>
                             ))}

@@ -984,6 +984,20 @@ impl JobQueue {
         Ok((jobs, total))
     }
 
+    /// List pipelines (grouped by pipeline_id) with pagination.
+    pub async fn list_pipelines(
+        &self,
+        filters: &JobFilters,
+        pagination: &Pagination,
+    ) -> Result<(Vec<crate::database::repositories::PipelineSummary>, u64)> {
+        if let Some(repo) = &self.job_repository {
+            return repo.list_pipelines(filters, pagination).await;
+        }
+
+        // Fallback: return empty if no repository
+        Ok((vec![], 0))
+    }
+
     /// Retry a failed job.
     /// Returns error if job is not in Failed status.
     pub async fn retry_job(&self, id: &str) -> Result<Job> {
@@ -1041,8 +1055,8 @@ impl JobQueue {
     /// Cancel a job.
     /// For Pending jobs: removes from queue and marks as Interrupted.
     /// For Processing jobs: signals cancellation and marks as Interrupted.
-    /// Returns error for Completed/Failed jobs.
-    pub async fn cancel_job(&self, id: &str) -> Result<()> {
+    /// Returns the cancelled job, or error for Completed/Failed jobs.
+    pub async fn cancel_job(&self, id: &str) -> Result<Job> {
         // Get the job
         let job = self
             .get_job(id)
@@ -1071,14 +1085,21 @@ impl JobQueue {
                 .await?;
         }
 
-        // Update cache
-        {
+        // Update cache and get the updated job
+        let cancelled_job = {
             let mut cache = self.jobs_cache.write().await;
-            if let Some(job) = cache.get_mut(id) {
-                job.status = JobStatus::Interrupted;
-                job.completed_at = Some(Utc::now());
+            if let Some(cached_job) = cache.get_mut(id) {
+                cached_job.status = JobStatus::Interrupted;
+                cached_job.completed_at = Some(Utc::now());
+                cached_job.clone()
+            } else {
+                // Job not in cache, return original with updated status
+                let mut updated = job.clone();
+                updated.status = JobStatus::Interrupted;
+                updated.completed_at = Some(Utc::now());
+                updated
             }
-        }
+        };
 
         // Remove cancellation token
         {
@@ -1092,7 +1113,92 @@ impl JobQueue {
         }
 
         info!("Job {} cancelled", id);
-        Ok(())
+        Ok(cancelled_job)
+    }
+
+    /// Cancel all jobs in a pipeline.
+    /// Returns the list of cancelled jobs.
+    pub async fn cancel_pipeline(&self, pipeline_id: &str) -> Result<Vec<Job>> {
+        let mut cancelled_jobs = Vec::new();
+
+        // If we have a repository, cancel in database first
+        if let Some(repo) = &self.job_repository {
+            // Get all jobs in the pipeline before cancelling
+            let db_jobs = repo.get_jobs_by_pipeline(pipeline_id).await?;
+
+            // Cancel in database
+            let count = repo.cancel_jobs_by_pipeline(pipeline_id).await?;
+            info!(
+                "Cancelled {} jobs in pipeline {} (database)",
+                count, pipeline_id
+            );
+
+            // Convert to Job and collect cancelled ones
+            for db_job in db_jobs {
+                if db_job.status == "PENDING" || db_job.status == "PROCESSING" {
+                    let mut job = db_model_to_job(&db_job);
+                    job.status = JobStatus::Interrupted;
+                    job.completed_at = Some(Utc::now());
+                    cancelled_jobs.push(job);
+                }
+            }
+        }
+
+        // Update cache for all jobs in pipeline
+        {
+            let mut cache = self.jobs_cache.write().await;
+            let mut depth_reduction = 0;
+
+            for job in cache.values_mut() {
+                if job.pipeline_id.as_deref() == Some(pipeline_id) {
+                    if job.status == JobStatus::Pending {
+                        depth_reduction += 1;
+                    }
+                    if job.status == JobStatus::Pending || job.status == JobStatus::Processing {
+                        // Signal cancellation for processing jobs
+                        if job.status == JobStatus::Processing {
+                            let tokens = self.cancellation_tokens.read().await;
+                            if let Some(token) = tokens.get(&job.id) {
+                                token.cancel();
+                            }
+                        }
+
+                        job.status = JobStatus::Interrupted;
+                        job.completed_at = Some(Utc::now());
+
+                        // Only add to cancelled_jobs if not from database (avoid duplicates)
+                        if self.job_repository.is_none() {
+                            cancelled_jobs.push(job.clone());
+                        }
+                    }
+                }
+            }
+
+            // Adjust depth
+            if depth_reduction > 0 {
+                self.depth.fetch_sub(depth_reduction, Ordering::SeqCst);
+            }
+        }
+
+        // Clean up cancellation tokens for pipeline jobs
+        {
+            let mut tokens = self.cancellation_tokens.write().await;
+            tokens.retain(|job_id, _| {
+                if let Ok(cache) = self.jobs_cache.try_read() {
+                    if let Some(job) = cache.get(job_id) {
+                        return job.pipeline_id.as_deref() != Some(pipeline_id);
+                    }
+                }
+                true
+            });
+        }
+
+        info!(
+            "Cancelled {} jobs in pipeline {}",
+            cancelled_jobs.len(),
+            pipeline_id
+        );
+        Ok(cancelled_jobs)
     }
 
     /// Get the cancellation token for a job.

@@ -8,12 +8,18 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use dashmap::DashMap;
+use sqlx::SqlitePool;
+use tokio::sync::Notify;
 use tokio::sync::OnceCell;
+use tokio_util::sync::CancellationToken;
 use tracing::{debug, info, warn};
 
 use crate::Result;
 use crate::database::models::{LiveSessionDbModel, TitleEntry};
-use crate::database::repositories::{FilterRepository, SessionRepository, StreamerRepository};
+use crate::database::repositories::{
+    FilterRepository, MonitorOutboxOps, MonitorOutboxTxOps, SessionRepository, SessionTxOps,
+    StreamerRepository, StreamerTxOps,
+};
 use crate::domain::StreamerState;
 use crate::domain::filter::Filter;
 use crate::streamer::{StreamerManager, StreamerMetadata};
@@ -73,6 +79,12 @@ pub struct StreamMonitor<
     in_flight: Arc<DashMap<String, Arc<OnceCell<LiveStatus>>>>,
     /// Event broadcaster for notifications.
     event_broadcaster: MonitorEventBroadcaster,
+    /// Database pool for transactional updates + outbox.
+    pool: SqlitePool,
+    /// Notifies the outbox publisher that new events are available.
+    outbox_notify: Arc<Notify>,
+    /// Cancellation token for the outbox publisher task.
+    outbox_cancellation: CancellationToken,
     /// Configuration.
     #[allow(dead_code)]
     config: StreamMonitorConfig,
@@ -91,12 +103,14 @@ impl<
         filter_repo: Arc<FR>,
         session_repo: Arc<SSR>,
         config_service: Arc<crate::config::ConfigService<CR, SR>>,
+        pool: SqlitePool,
     ) -> Self {
         Self::with_config(
             streamer_manager,
             filter_repo,
             session_repo,
             config_service,
+            pool,
             StreamMonitorConfig::default(),
         )
     }
@@ -107,6 +121,7 @@ impl<
         filter_repo: Arc<FR>,
         session_repo: Arc<SSR>,
         config_service: Arc<crate::config::ConfigService<CR, SR>>,
+        pool: SqlitePool,
         config: StreamMonitorConfig,
     ) -> Self {
         // Create rate limiter with platform-specific configs
@@ -135,7 +150,10 @@ impl<
         let detector = Arc::new(StreamDetector::with_client(client.clone()));
         let batch_detector = BatchDetector::with_client(client, rate_limiter.clone());
 
-        Self {
+        let outbox_notify = Arc::new(Notify::new());
+        let outbox_cancellation = CancellationToken::new();
+
+        let monitor = Self {
             streamer_manager,
             filter_repo,
             session_repo,
@@ -145,8 +163,15 @@ impl<
             rate_limiter,
             in_flight: Arc::new(DashMap::new()),
             event_broadcaster: MonitorEventBroadcaster::new(),
+            pool,
+            outbox_notify: outbox_notify.clone(),
+            outbox_cancellation: outbox_cancellation.clone(),
             config,
-        }
+        };
+
+        monitor.spawn_outbox_publisher(outbox_notify, outbox_cancellation);
+
+        monitor
     }
 
     /// Subscribe to monitor events.
@@ -157,6 +182,50 @@ impl<
     /// Get the event broadcaster for external use.
     pub fn event_broadcaster(&self) -> &MonitorEventBroadcaster {
         &self.event_broadcaster
+    }
+
+    /// Stop the stream monitor's background tasks.
+    ///
+    /// This cancels the outbox publisher task. Should be called during
+    /// graceful shutdown to ensure clean task termination.
+    pub fn stop(&self) {
+        info!("Stopping StreamMonitor outbox publisher");
+        self.outbox_cancellation.cancel();
+    }
+
+    fn spawn_outbox_publisher(
+        &self,
+        outbox_notify: Arc<Notify>,
+        cancellation_token: CancellationToken,
+    ) {
+        let pool = self.pool.clone();
+        let broadcaster = self.event_broadcaster.clone();
+
+        tokio::spawn(async move {
+            loop {
+                tokio::select! {
+                    biased;
+
+                    // Check for cancellation first
+                    _ = cancellation_token.cancelled() => {
+                        info!("Outbox publisher shutting down");
+                        break;
+                    }
+                    _ = outbox_notify.notified() => {}
+                    _ = tokio::time::sleep(Duration::from_secs(1)) => {}
+                }
+
+                // Check cancellation again before processing
+                if cancellation_token.is_cancelled() {
+                    break;
+                }
+
+                if let Err(e) = flush_outbox_once(&pool, &broadcaster).await {
+                    warn!("Monitor outbox flush failed: {}", e);
+                }
+            }
+            debug!("Outbox publisher stopped");
+        });
     }
 
     /// Check the status of a single streamer.
@@ -202,9 +271,7 @@ impl<
                     .collect();
 
                 // Get merged configuration to access stream selection preference
-                let config = config_service
-                    .get_config_for_streamer(&streamer_id)
-                    .await?;
+                let config = config_service.get_config_for_streamer(&streamer_id).await?;
 
                 // Check status with filters and selection config
                 detector
@@ -217,17 +284,18 @@ impl<
             })
             .await;
 
-        // Clone the result (get_or_try_init returns a reference)
-        let status = result?.clone();
-
-        // Schedule delayed cleanup to allow other concurrent requests to benefit
-        // from the cached result before removing the entry
+        // Schedule delayed cleanup BEFORE checking result to ensure cleanup
+        // happens regardless of success or error. This prevents in_flight map
+        // from leaking entries when errors occur.
         let in_flight = self.in_flight.clone();
         let id = streamer.id.clone();
         tokio::spawn(async move {
             tokio::time::sleep(Duration::from_millis(100)).await;
             in_flight.remove(&id);
         });
+
+        // Now check result - cleanup is already scheduled
+        let status = result?.clone();
 
         Ok(status)
     }
@@ -367,28 +435,11 @@ impl<
             media_headers.as_ref().map(|h| h.len()).unwrap_or(0)
         );
 
-        // Update state to Live
-        self.streamer_manager
-            .update_state(&streamer.id, StreamerState::Live)
-            .await?;
+        let now = chrono::Utc::now();
 
-        // Update metadata if changed (e.g. avatar)
-        if let Some(ref new_avatar_url) = avatar {
-            if !new_avatar_url.is_empty() && avatar != streamer.avatar_url {
-                info!("Updating avatar for streamer {}", streamer.name);
-                if let Err(e) = self
-                    .streamer_manager
-                    .update_avatar(&streamer.id, avatar)
-                    .await
-                {
-                    warn!("Failed to update streamer avatar: {}", e);
-                }
-            }
-        }
-        // Record success (resets error count, mark as going live)
-        self.streamer_manager
-            .record_success(&streamer.id, true)
-            .await?;
+        // Transaction: (session create/resume + streamer state update + outbox event).
+        // If anything fails, the database remains consistent and no event is emitted.
+        let mut tx = self.pool.begin().await?;
 
         // Logic for session management (creation or resumption)
         let merged_config = self
@@ -398,21 +449,21 @@ impl<
         let gap_secs = merged_config.session_gap_time_secs;
 
         // Check for last session
-        let last_sessions = self
-            .session_repo
-            .list_sessions_for_streamer(&streamer.id, 1)
-            .await?;
-        let last_session = last_sessions.first();
+        let last_session = SessionTxOps::get_last_session(&mut tx, &streamer.id).await?;
 
         let session_id = if let Some(session) = last_session {
             // Check if active or recently ended
             if session.end_time.is_none() {
                 // Already active, reuse
                 debug!("Reusing active session {}", session.id);
-                // Check if title changed and update if needed
-                if let Err(e) = self.update_session_title(&session, &title).await {
-                    warn!("Failed to update session title: {}", e);
-                }
+                SessionTxOps::update_titles(
+                    &mut tx,
+                    &session.id,
+                    session.titles.as_deref(),
+                    &title,
+                    now,
+                )
+                .await?;
                 session.id.clone()
             } else {
                 let end_time_str = session.end_time.as_ref().unwrap();
@@ -420,105 +471,71 @@ impl<
                     .map(|dt| dt.with_timezone(&chrono::Utc))
                     .unwrap_or_else(|_| chrono::Utc::now());
 
-                // Check if the stream actually started before the session ended.
-                // This handles the case where there was a monitoring gap (crash, network issue)
-                // but the stream was actually continuous. If started_at <= end_time,
-                // the stream was already live when we marked it offline, so resume.
-                let stream_is_continuation = started_at
-                    .map(|start| start <= end_time)
-                    .unwrap_or(false);
-
-                if stream_is_continuation {
-                    // Stream started before/when we ended the session - it was a monitoring gap
+                // Check if the stream is a continuation (monitoring gap)
+                if SessionTxOps::should_resume_by_continuation(end_time, started_at) {
                     info!(
                         "Resuming session {} (stream started at {:?}, before session end at {})",
-                        session.id,
-                        started_at,
-                        end_time_str
+                        session.id, started_at, end_time_str
                     );
-                    self.session_repo.resume_session(&session.id).await?;
-                    if let Err(e) = self.update_session_title(&session, &title).await {
-                        warn!("Failed to update session title: {}", e);
-                    }
+                    SessionTxOps::resume_session(&mut tx, &session.id).await?;
+                    SessionTxOps::update_titles(
+                        &mut tx,
+                        &session.id,
+                        session.titles.as_deref(),
+                        &title,
+                        now,
+                    )
+                    .await?;
+                    session.id.clone()
+                } else if SessionTxOps::should_resume_by_gap(end_time, now, gap_secs) {
+                    // Resume within gap threshold
+                    let offline_duration_secs = (now - end_time).num_seconds();
+                    info!(
+                        "Resuming session {} (offline for {}s, threshold: {}s)",
+                        session.id, offline_duration_secs, gap_secs
+                    );
+                    SessionTxOps::resume_session(&mut tx, &session.id).await?;
+                    SessionTxOps::update_titles(
+                        &mut tx,
+                        &session.id,
+                        session.titles.as_deref(),
+                        &title,
+                        now,
+                    )
+                    .await?;
                     session.id.clone()
                 } else {
-                    // Stream started after session ended - use normal gap logic
-                    let now = chrono::Utc::now();
+                    // Create new session
                     let offline_duration_secs = (now - end_time).num_seconds();
-
-                    debug!(
-                        "Session gap check for {}: offline_duration={}s, gap_threshold={}s, started_at={:?}, will_resume={}",
-                        streamer.name,
-                        offline_duration_secs,
-                        gap_secs,
-                        started_at,
-                        offline_duration_secs < gap_secs
+                    info!(
+                        "Creating new session for {} (offline for {}s exceeded threshold of {}s)",
+                        streamer.name, offline_duration_secs, gap_secs
                     );
-
-                    if offline_duration_secs < gap_secs {
-                        // Resume session
-                        info!(
-                            "Resuming session {} (offline for {}s, threshold: {}s)",
-                            session.id, offline_duration_secs, gap_secs
-                        );
-                        self.session_repo.resume_session(&session.id).await?;
-                        // Check if title changed and update if needed
-                        if let Err(e) = self.update_session_title(&session, &title).await {
-                            warn!("Failed to update session title: {}", e);
-                        }
-                        session.id.clone()
-                    } else {
-                        info!(
-                            "Creating new session for {} (offline for {}s exceeded threshold of {}s)",
-                            streamer.name, offline_duration_secs, gap_secs
-                        );
-                        let new_id = uuid::Uuid::new_v4().to_string();
-                        let initial_titles = vec![TitleEntry {
-                            ts: chrono::Utc::now().to_rfc3339(),
-                            title: title.clone(),
-                        }];
-                        let titles_json =
-                            serde_json::to_string(&initial_titles).unwrap_or("[]".to_string());
-
-                        let new_session = LiveSessionDbModel {
-                            id: new_id.clone(),
-                            streamer_id: streamer.id.clone(),
-                            start_time: chrono::Utc::now().to_rfc3339(),
-                            end_time: None,
-                            titles: Some(titles_json),
-                            danmu_statistics_id: None,
-                            total_size_bytes: 0,
-                        };
-                        self.session_repo.create_session(&new_session).await?;
-                        info!("Created new session {}", new_id);
-                        new_id
-                    }
+                    let new_id = uuid::Uuid::new_v4().to_string();
+                    SessionTxOps::create_session(&mut tx, &new_id, &streamer.id, now, &title)
+                        .await?;
+                    info!("Created new session {}", new_id);
+                    new_id
                 }
             }
         } else {
             // No previous session, create new
             let new_id = uuid::Uuid::new_v4().to_string();
-            let initial_titles = vec![TitleEntry {
-                ts: chrono::Utc::now().to_rfc3339(),
-                title: title.clone(),
-            }];
-            let titles_json = serde_json::to_string(&initial_titles).unwrap_or("[]".to_string());
-
-            let new_session = LiveSessionDbModel {
-                id: new_id.clone(),
-                streamer_id: streamer.id.clone(),
-                start_time: chrono::Utc::now().to_rfc3339(),
-                end_time: None,
-                titles: Some(titles_json),
-                danmu_statistics_id: None,
-                total_size_bytes: 0,
-            };
-            self.session_repo.create_session(&new_session).await?;
+            SessionTxOps::create_session(&mut tx, &new_id, &streamer.id, now, &title).await?;
             info!("Created new session {}", new_id);
             new_id
         };
 
-        // Emit live event for notifications and download triggering
+        // Update streamer state and clear error backoff as part of the same transaction.
+        StreamerTxOps::set_live(&mut tx, &streamer.id, now).await?;
+
+        if let Some(ref new_avatar_url) = avatar {
+            if !new_avatar_url.is_empty() && avatar != streamer.avatar_url {
+                StreamerTxOps::update_avatar(&mut tx, &streamer.id, new_avatar_url).await?;
+            }
+        }
+
+        // Enqueue live event for notifications and download triggering.
         let event = MonitorEvent::StreamerLive {
             streamer_id: streamer.id.clone(),
             session_id: session_id.clone(),
@@ -528,9 +545,21 @@ impl<
             category: category.clone(),
             streams,
             media_headers,
-            timestamp: chrono::Utc::now(),
+            timestamp: now,
         };
-        let _ = self.event_broadcaster.publish(event);
+        MonitorOutboxTxOps::enqueue_event(&mut tx, &streamer.id, &event).await?;
+
+        tx.commit().await?;
+
+        // Reload metadata from DB to sync in-memory cache.
+        // Errors here are logged but not propagated since the DB transaction succeeded.
+        if let Err(e) = self.streamer_manager.reload_from_repo(&streamer.id).await {
+            warn!(
+                "Failed to reload streamer {} after state update: {}. Cache may be stale.",
+                streamer.id, e
+            );
+        }
+        self.outbox_notify.notify_one();
 
         Ok(())
     }
@@ -552,38 +581,39 @@ impl<
         if streamer.state == StreamerState::Live {
             info!("Streamer {} went offline", streamer.name);
 
-            // Update state to NotLive
-            self.streamer_manager
-                .update_state(&streamer.id, StreamerState::NotLive)
-                .await?;
+            let now = chrono::Utc::now();
 
-            // Resolve session_id if not provided
+            let mut tx = self.pool.begin().await?;
+
+            // Resolve session_id if not provided.
             let resolved_session_id = if let Some(id) = session_id {
+                SessionTxOps::end_session(&mut tx, &id, now).await?;
                 Some(id)
             } else {
-                // Find active session
-                self.session_repo
-                    .get_active_session_for_streamer(&streamer.id)
-                    .await?
-                    .map(|s| s.id)
+                SessionTxOps::end_active_session(&mut tx, &streamer.id, now).await?
             };
 
-            // End live session if found
-            if let Some(ref sid) = resolved_session_id {
-                debug!("Ending live session {}", sid);
-                self.session_repo
-                    .end_session(sid, &chrono::Utc::now().to_rfc3339())
-                    .await?;
-            }
+            StreamerTxOps::set_offline(&mut tx, &streamer.id).await?;
 
-            // Emit offline event for notifications
             let event = MonitorEvent::StreamerOffline {
                 streamer_id: streamer.id.clone(),
                 streamer_name: streamer.name.clone(),
-                session_id: resolved_session_id,
-                timestamp: chrono::Utc::now(),
+                session_id: resolved_session_id.clone(),
+                timestamp: now,
             };
-            let _ = self.event_broadcaster.publish(event);
+            MonitorOutboxTxOps::enqueue_event(&mut tx, &streamer.id, &event).await?;
+
+            tx.commit().await?;
+
+            // Reload metadata from DB to sync in-memory cache.
+            // Errors here are logged but not propagated since the DB transaction succeeded.
+            if let Err(e) = self.streamer_manager.reload_from_repo(&streamer.id).await {
+                warn!(
+                    "Failed to reload streamer {} after offline update: {}. Cache may be stale.",
+                    streamer.id, e
+                );
+            }
+            self.outbox_notify.notify_one();
         }
 
         Ok(())
@@ -605,14 +635,43 @@ impl<
             }
         };
 
+        if streamer.state == new_state {
+            return Ok(());
+        }
+
         debug!(
             "Streamer {} filtered ({:?}), setting state to {:?}",
             streamer.name, reason, new_state
         );
 
-        self.streamer_manager
-            .update_state(&streamer.id, new_state)
-            .await?;
+        let now = chrono::Utc::now();
+
+        let mut tx = self.pool.begin().await?;
+
+        StreamerTxOps::update_state(&mut tx, &streamer.id, &new_state.to_string()).await?;
+
+        // Enqueue a state change event (non-notifying) so consumers see the same ordering/guarantees
+        // as live/offline/fatal transitions.
+        let event = MonitorEvent::StateChanged {
+            streamer_id: streamer.id.clone(),
+            streamer_name: streamer.name.clone(),
+            old_state: streamer.state,
+            new_state,
+            timestamp: now,
+        };
+        MonitorOutboxTxOps::enqueue_event(&mut tx, &streamer.id, &event).await?;
+
+        tx.commit().await?;
+
+        // Reload metadata from DB to sync in-memory cache.
+        // Errors here are logged but not propagated since the DB transaction succeeded.
+        if let Err(e) = self.streamer_manager.reload_from_repo(&streamer.id).await {
+            warn!(
+                "Failed to reload streamer {} after state update: {}. Cache may be stale.",
+                streamer.id, e
+            );
+        }
+        self.outbox_notify.notify_one();
 
         Ok(())
     }
@@ -629,10 +688,14 @@ impl<
             streamer.name, reason, new_state
         );
 
+        let now = chrono::Utc::now();
+
+        let mut tx = self.pool.begin().await?;
+
+        let _ = SessionTxOps::end_active_session(&mut tx, &streamer.id, now).await?;
+
         // Update state to the fatal error state
-        self.streamer_manager
-            .update_state(&streamer.id, new_state)
-            .await?;
+        StreamerTxOps::set_fatal_error(&mut tx, &streamer.id, &new_state.to_string()).await?;
 
         // Determine the fatal error type from the state
         let error_type = match new_state {
@@ -640,16 +703,28 @@ impl<
             _ => FatalErrorType::Banned, // Default to Banned for other fatal errors
         };
 
-        // Emit fatal error event for notifications
+        // Emit fatal error event via outbox.
         let event = MonitorEvent::FatalError {
             streamer_id: streamer.id.clone(),
             streamer_name: streamer.name.clone(),
             error_type,
             message: reason.to_string(),
             new_state,
-            timestamp: chrono::Utc::now(),
+            timestamp: now,
         };
-        let _ = self.event_broadcaster.publish(event);
+        MonitorOutboxTxOps::enqueue_event(&mut tx, &streamer.id, &event).await?;
+
+        tx.commit().await?;
+
+        // Reload metadata from DB to sync in-memory cache.
+        // Errors here are logged but not propagated since the DB transaction succeeded.
+        if let Err(e) = self.streamer_manager.reload_from_repo(&streamer.id).await {
+            warn!(
+                "Failed to reload streamer {} after state update: {}. Cache may be stale.",
+                streamer.id, e
+            );
+        }
+        self.outbox_notify.notify_one();
 
         Ok(())
     }
@@ -658,81 +733,88 @@ impl<
     pub async fn handle_error(&self, streamer: &StreamerMetadata, error: &str) -> Result<()> {
         warn!("Error checking streamer {}: {}", streamer.name, error);
 
-        // Record error (may trigger backoff)
-        self.streamer_manager
-            .record_error(&streamer.id, error)
-            .await?;
+        let now = chrono::Utc::now();
 
-        // Get updated error count
-        let consecutive_errors = self
+        let mut tx = self.pool.begin().await?;
+
+        let new_error_count = StreamerTxOps::increment_error(&mut tx, &streamer.id, error).await?;
+
+        let disabled_until = self
             .streamer_manager
-            .get_streamer(&streamer.id)
-            .map(|s| s.consecutive_error_count)
-            .unwrap_or(1);
+            .disabled_until_for_error_count(new_error_count);
 
-        // Emit transient error event for notifications
+        StreamerTxOps::set_disabled_until(&mut tx, &streamer.id, disabled_until).await?;
+
+        if let Some(until) = disabled_until {
+            info!(
+                "Streamer {} disabled until {} due to {} consecutive errors",
+                streamer.id, until, new_error_count
+            );
+        }
+
+        // Emit transient error event via outbox so DB + event are consistent.
         let event = MonitorEvent::TransientError {
             streamer_id: streamer.id.clone(),
             streamer_name: streamer.name.clone(),
             error_message: error.to_string(),
-            consecutive_errors,
-            timestamp: chrono::Utc::now(),
+            consecutive_errors: new_error_count,
+            timestamp: now,
         };
-        let _ = self.event_broadcaster.publish(event);
+        MonitorOutboxTxOps::enqueue_event(&mut tx, &streamer.id, &event).await?;
 
-        Ok(())
-    }
+        tx.commit().await?;
 
-    /// Load filters for a streamer.
-    async fn load_filters(&self, streamer_id: &str) -> Result<Vec<Filter>> {
-        // Load filters from repository
-        let filter_models = self.filter_repo.get_by_streamer(streamer_id).await?;
-
-        // Convert to domain filters
-        let filters: Vec<Filter> = filter_models
-            .into_iter()
-            .filter_map(|model| Filter::from_db_model(&model).ok())
-            .collect();
-
-        Ok(filters)
-    }
-
-    /// Update session title if it has changed.
-    async fn update_session_title(
-        &self,
-        session: &LiveSessionDbModel,
-        current_title: &str,
-    ) -> Result<()> {
-        let mut titles: Vec<TitleEntry> = match &session.titles {
-            Some(json) => serde_json::from_str(json).unwrap_or_default(),
-            None => Vec::new(),
-        };
-
-        // Check if last title is different
-        let needs_update = titles
-            .last()
-            .map(|t| t.title != current_title)
-            .unwrap_or(true); // If no titles, we definitely need to add one
-
-        if needs_update {
-            titles.push(TitleEntry {
-                ts: chrono::Utc::now().to_rfc3339(),
-                title: current_title.to_string(),
-            });
-
-            let titles_json = serde_json::to_string(&titles).unwrap_or("[]".to_string());
-
-            info!(
-                "Updating title for session {}: {}",
-                session.id, current_title
+        // Reload metadata from DB to sync in-memory cache.
+        // Errors here are logged but not propagated since the DB transaction succeeded.
+        if let Err(e) = self.streamer_manager.reload_from_repo(&streamer.id).await {
+            warn!(
+                "Failed to reload streamer {} after state update: {}. Cache may be stale.",
+                streamer.id, e
             );
-            self.session_repo
-                .update_session_titles(&session.id, &titles_json)
-                .await?;
         }
+        self.outbox_notify.notify_one();
 
         Ok(())
     }
+}
+
+async fn flush_outbox_once(pool: &SqlitePool, broadcaster: &MonitorEventBroadcaster) -> Result<()> {
+    let entries = MonitorOutboxOps::fetch_undelivered(pool, 100).await?;
+
+    if entries.is_empty() {
+        return Ok(());
+    }
+
+    for entry in entries {
+        match serde_json::from_str::<MonitorEvent>(&entry.payload) {
+            Ok(event) => {
+                // Attempt to broadcast the event
+                match broadcaster.publish(event) {
+                    Ok(receiver_count) => {
+                        // Event was successfully sent to `receiver_count` receivers
+                        debug!("Published event to {} receivers", receiver_count);
+                        MonitorOutboxOps::mark_delivered(pool, entry.id).await?;
+                    }
+                    Err(e) => {
+                        // No receivers available - this is not a permanent failure
+                        // Log the condition but still mark as delivered to avoid infinite retry
+                        // The event will be lost if no receivers exist (expected during shutdown)
+                        warn!(
+                            "Monitor outbox event id={} has no receivers, discarding: {:?}",
+                            entry.id, e.0
+                        );
+                        MonitorOutboxOps::mark_delivered(pool, entry.id).await?;
+                    }
+                }
+            }
+            Err(e) => {
+                warn!("Invalid monitor outbox payload id={}: {}", entry.id, e);
+                MonitorOutboxOps::record_failure(pool, entry.id, &e.to_string()).await?;
+            }
+        }
+    }
+
+    Ok(())
 }
 
 /// Get a summary of a live status for logging.

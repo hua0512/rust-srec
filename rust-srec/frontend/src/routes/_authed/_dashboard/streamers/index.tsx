@@ -1,73 +1,149 @@
-import { createFileRoute } from '@tanstack/react-router';
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { listStreamers, deleteStreamer, checkStreamer, updateStreamer, listPlatformConfigs } from '@/server/functions';
-import { Button } from '../../../../components/ui/button';
-import { useState } from 'react';
-import { toast } from 'sonner';
-import { t } from '@lingui/core/macro';
-import { Trans } from '@lingui/react/macro';
-import { StreamerSchema } from '../../../../api/schemas';
+import { createFileRoute, useNavigate, Link } from '@tanstack/react-router';
+import { useQuery, useMutation, useQueryClient, keepPreviousData } from '@tanstack/react-query';
+import { motion, AnimatePresence } from 'motion/react';
 import { z } from 'zod';
-import { StreamersToolbar } from '../../../../components/streamers/streamers-toolbar';
-import { StreamerCard } from '../../../../components/streamers/streamer-card';
-import { Loader2, ChevronLeft, ChevronRight } from 'lucide-react';
+import { useState, useMemo, useEffect, useCallback } from 'react';
+import { listStreamers, deleteStreamer, checkStreamer, updateStreamer, listPlatformConfigs } from '@/server/functions';
+import { StreamerSchema } from '@/api/schemas';
+
+import { Button } from "@/components/ui/button";
+import { Plus, Search, Users, Video, Wifi, WifiOff, AlertTriangle, Ban, Radio } from "lucide-react";
+import { toast } from "sonner";
+import { Trans } from "@lingui/react/macro";
+import { t } from "@lingui/core/macro";
+import { StreamerCard } from '@/components/streamers/streamer-card';
+import { Skeleton } from "@/components/ui/skeleton";
+import { Input } from "@/components/ui/input";
+import { Badge } from "@/components/ui/badge";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
+  Pagination,
+  PaginationContent,
+  PaginationEllipsis,
+  PaginationItem,
+  PaginationLink,
+  PaginationNext,
+  PaginationPrevious,
+} from "@/components/ui/pagination";
 
 export const Route = createFileRoute('/_authed/_dashboard/streamers/')({
   component: StreamersPage,
 });
 
+const PAGE_SIZES = [12, 24, 48, 96];
+
+const STATE_FILTERS = [
+  { value: 'all', label: t`All`, icon: Users },
+  { value: 'LIVE', label: t`Live`, icon: Wifi },
+  { value: 'NOT_LIVE', label: t`Offline`, icon: WifiOff },
+  { value: 'ERROR', label: t`Error`, icon: AlertTriangle },
+  { value: 'DISABLED', label: t`Disabled`, icon: Ban },
+];
+
 function StreamersPage() {
+  const navigate = useNavigate();
+  const queryClient = useQueryClient();
+
+  // State
   const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(24);
   const [search, setSearch] = useState('');
+  const [debouncedSearch, setDebouncedSearch] = useState('');
   const [platformFilter, setPlatformFilter] = useState('all');
   const [stateFilter, setStateFilter] = useState('all');
 
-  const queryClient = useQueryClient();
-  const limit = 20; // Items per page
+  // Debounce search
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setDebouncedSearch(search);
+      setPage(1);
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [search]);
 
-  // Fetch Platforms for filter
+  // Handlers
+  const handleStateChange = useCallback((value: string) => {
+    setStateFilter(value);
+    setPage(1);
+  }, []);
+
+  const handlePlatformChange = useCallback((value: string) => {
+    setPlatformFilter(value);
+    setPage(1);
+  }, []);
+
+  // Fetch Platforms
   const { data: platforms = [] } = useQuery({
     queryKey: ['platforms'],
     queryFn: () => listPlatformConfigs(),
+    staleTime: 60000,
   });
 
   // Fetch Streamers
-  const { data: streamersData, isLoading, isFetching } = useQuery({
-    queryKey: ['streamers', page, search, platformFilter, stateFilter],
+  const { data: streamersData, isLoading, isError, error } = useQuery({
+    queryKey: ['streamers', page, pageSize, debouncedSearch, platformFilter, stateFilter],
     queryFn: async () => {
-      // Backend expects 'platform' and 'state' params.
       const platform = platformFilter === 'all' ? undefined : platformFilter;
       const state = stateFilter === 'all' ? undefined : stateFilter;
-      // API returns { items: [], total: number, ... }
-      return listStreamers({ data: { page, limit, search, platform, state } });
+      return listStreamers({
+        data: {
+          page,
+          limit: pageSize,
+          search: debouncedSearch,
+          platform,
+          state
+        }
+      });
     },
-    placeholderData: (previousData) => previousData,
+    placeholderData: keepPreviousData,
     refetchInterval: 5000,
   });
 
   const streamers = streamersData?.items || [];
-  const totalStreamers = streamersData?.total || 0;
-  const totalPages = Math.ceil(totalStreamers / limit);
+  const totalCount = streamersData?.total || 0;
+  const totalPages = Math.ceil(totalCount / pageSize);
 
+  // Pagination logic
+  const paginationPages = useMemo(() => {
+    const pages: (number | 'ellipsis')[] = [];
+    // Current interface uses 1-based page, but internal calc might be easier with 0-based conceptual
+    const current = page;
+    const total = totalPages;
+
+    if (total <= 7) {
+      for (let i = 1; i <= total; i++) pages.push(i);
+    } else {
+      pages.push(1);
+      if (current > 3) pages.push('ellipsis');
+      for (let i = Math.max(2, current - 1); i <= Math.min(total - 1, current + 1); i++) {
+        pages.push(i);
+      }
+      if (current < total - 2) pages.push('ellipsis');
+      pages.push(total);
+    }
+    return pages;
+  }, [totalPages, page]);
+
+  // Mutations
   const deleteMutation = useMutation({
     mutationFn: (id: string) => deleteStreamer({ data: id }),
     onSuccess: () => {
       toast.success(t`Streamer deleted`);
       queryClient.invalidateQueries({ queryKey: ['streamers'] });
     },
-    onError: (error: any) => {
-      toast.error(error.message || t`Failed to delete streamer`);
-    },
+    onError: (error: any) => toast.error(error.message || t`Failed to delete streamer`),
   });
 
   const checkMutation = useMutation({
     mutationFn: (id: string) => checkStreamer({ data: id }),
-    onSuccess: () => {
-      toast.success(t`Check triggered`);
-    },
-    onError: (error: any) => {
-      toast.error(error.message || t`Failed to trigger check`);
-    },
+    onSuccess: () => toast.success(t`Check triggered`),
+    onError: (error: any) => toast.error(error.message || t`Failed to trigger check`),
   });
 
   const toggleMutation = useMutation({
@@ -77,9 +153,7 @@ function StreamersPage() {
       toast.success(t`Streamer updated`);
       queryClient.invalidateQueries({ queryKey: ['streamers'] });
     },
-    onError: (error: any) => {
-      toast.error(error.message || t`Failed to update streamer`);
-    },
+    onError: (error: any) => toast.error(error.message || t`Failed to update streamer`),
   });
 
   const handleDelete = (id: string) => {
@@ -88,78 +162,242 @@ function StreamersPage() {
     }
   };
 
-  const handleResetFilters = () => {
-    setSearch('');
-    setPlatformFilter('all');
-    setStateFilter('all');
-    setPage(1);
-  };
+  if (isError) {
+    return (
+      <div className="p-8 text-center text-destructive">
+        <p><Trans>Error loading streamers: {(error as any).message}</Trans></p>
+      </div>
+    );
+  }
 
   return (
-    <div className="space-y-6">
-      <StreamersToolbar
-        search={search}
-        onSearchChange={(v) => { setSearch(v); setPage(1); }}
-        platformFilter={platformFilter}
-        onPlatformFilterChange={(v) => { setPlatformFilter(v); setPage(1); }}
-        stateFilter={stateFilter}
-        onStateFilterChange={(v) => { setStateFilter(v); setPage(1); }}
-        platforms={platforms}
-        onResetFilters={handleResetFilters}
-      />
+    <div className="min-h-screen space-y-6">
+      {/* Header */}
+      <div className="border-b border-border/40">
+        <div className="w-full">
+          {/* Title Row */}
+          <div className="flex flex-col md:flex-row gap-4 items-start md:items-center justify-between p-4 md:px-8">
+            <div className="flex items-center gap-4">
+              <div className="p-2.5 rounded-xl bg-gradient-to-br from-primary/20 to-primary/5 ring-1 ring-primary/10">
+                <Video className="h-6 w-6 text-primary" />
+              </div>
+              <div>
+                <h1 className="text-xl font-semibold tracking-tight"><Trans>Streamers</Trans></h1>
+                <p className="text-sm text-muted-foreground">
+                  <Trans>Manage your monitored channels and downloads</Trans>
+                </p>
+              </div>
+            </div>
 
-      {isLoading ? (
-        <div className="flex justify-center items-center h-64">
-          <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+            <div className="flex items-center gap-2 w-full md:w-auto overflow-x-auto">
+              {/* Search */}
+              <div className="relative flex-1 md:w-56 min-w-[200px]">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                <Input
+                  placeholder={t`Search streamers...`}
+                  value={search}
+                  onChange={(e) => setSearch(e.target.value)}
+                  className="pl-9 h-9"
+                />
+              </div>
+
+              {/* Platform Select */}
+              <Select value={platformFilter} onValueChange={handlePlatformChange}>
+                <SelectTrigger className="w-[200px] h-9 bg-background/50 border-input/60 hover:bg-accent/50 transition-colors">
+                  <div className="flex items-center gap-2 truncate">
+                    <Radio className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+                    <span className="truncate">
+                      <SelectValue placeholder={t`Platform`} />
+                    </span>
+                  </div>
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all"><Trans>All Platforms</Trans></SelectItem>
+                  {platforms.map((p) => (
+                    <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+
+              <Badge variant="secondary" className="h-9 px-3 text-sm whitespace-nowrap">
+                {totalCount} <Trans>total</Trans>
+              </Badge>
+            </div>
+          </div>
+
+          {/* State Filters (Pills) */}
+          <div className="px-4 md:px-8 pb-3 overflow-x-auto no-scrollbar">
+            <nav className="flex items-center gap-1">
+              {STATE_FILTERS.map((filter) => {
+                const Icon = filter.icon;
+                const isActive = stateFilter === filter.value;
+                return (
+                  <button
+                    key={filter.value}
+                    onClick={() => handleStateChange(filter.value)}
+                    className={`relative px-3 py-1.5 text-sm font-medium rounded-full transition-all duration-200 flex items-center gap-2 ${isActive
+                      ? "bg-primary text-primary-foreground shadow-sm"
+                      : "text-muted-foreground hover:text-foreground hover:bg-muted"
+                      }`}
+                  >
+                    <Icon className="h-3.5 w-3.5" />
+                    <span className="relative z-10">{filter.label}</span>
+                  </button>
+                );
+              })}
+            </nav>
+          </div>
         </div>
-      ) : (
-        <>
-          {/* Cards Grid */}
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-            {streamers.map((streamer: z.infer<typeof StreamerSchema>) => (
-              <StreamerCard
-                key={streamer.id}
-                streamer={streamer}
-                onDelete={handleDelete}
-                onToggle={(id, enabled) => toggleMutation.mutate({ id, enabled })}
-                onCheck={(id) => checkMutation.mutate(id)}
-              />
-            ))}
-          </div>
+      </div>
 
-          {/* Empty State */}
-          {streamers.length === 0 && (
-            <div className="text-center py-12 text-muted-foreground bg-muted/20 rounded-lg border border-dashed">
-              <p><Trans>No streamers found.</Trans></p>
-            </div>
+      {/* Content Content */}
+      <div className="p-4 md:px-8 pb-20">
+        <AnimatePresence mode="wait">
+          {isLoading ? (
+            <motion.div
+              key="loading"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6"
+            >
+              {[1, 2, 3, 4, 5, 6, 7, 8].map((i) => (
+                <div key={i} className="h-[200px] border rounded-xl bg-muted/10 animate-pulse flex flex-col p-6 space-y-4">
+                  <div className="flex items-center gap-3">
+                    <Skeleton className="h-10 w-10 rounded-full" />
+                    <div className="space-y-1 flex-1">
+                      <Skeleton className="h-4 w-3/4" />
+                      <Skeleton className="h-3 w-1/2" />
+                    </div>
+                  </div>
+                  <Skeleton className="h-24 w-full rounded-md" />
+                </div>
+              ))}
+            </motion.div>
+          ) : streamers.length > 0 ? (
+            <motion.div
+              key="list"
+              className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              transition={{ duration: 0.2 }}
+            >
+              {streamers.map((streamer, index) => (
+                <motion.div
+                  key={streamer.id}
+                  initial={{ opacity: 0, y: 10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ duration: 0.2, delay: Math.min(index * 0.03, 0.3) }}
+                >
+                  <StreamerCard
+                    streamer={streamer}
+                    onDelete={handleDelete}
+                    onToggle={(id, enabled) => toggleMutation.mutate({ id, enabled })}
+                    onCheck={(id) => checkMutation.mutate(id)}
+                  />
+                </motion.div>
+              ))}
+            </motion.div>
+          ) : (
+            <motion.div
+              key="empty"
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              className="flex flex-col items-center justify-center py-24 text-center space-y-6 border-2 border-dashed border-muted-foreground/20 rounded-2xl bg-muted/5"
+            >
+              <div className="p-6 bg-muted/10 rounded-full ring-1 ring-border/50">
+                <Users className="h-12 w-12 text-muted-foreground/50" />
+              </div>
+              <div className="space-y-2">
+                <h3 className="font-semibold text-xl"><Trans>No streamers found</Trans></h3>
+                <p className="text-muted-foreground max-w-sm mx-auto">
+                  <Trans>Try adjusting your search or filters, or add a new streamer to start monitoring.</Trans>
+                </p>
+              </div>
+              <Button onClick={() => navigate({ to: '/streamers/new' })} size="lg">
+                <Plus className="mr-2 h-5 w-5" />
+                <Trans>Add Streamer</Trans>
+              </Button>
+            </motion.div>
           )}
+        </AnimatePresence>
 
-          {/* Pagination Controls */}
-          <div className="flex items-center justify-end space-x-2 py-4">
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => setPage((p) => Math.max(1, p - 1))}
-              disabled={page === 1 || isFetching}
-            >
-              <ChevronLeft className="h-4 w-4 mr-1" />
-              <Trans>Previous</Trans>
-            </Button>
-            <div className="text-sm font-medium">
-              <Trans>Page {page} of {Math.max(1, totalPages)}</Trans>
+        {/* Pagination */}
+        {totalPages > 1 && (
+          <div className="flex items-center justify-between mt-8 pt-6 border-t font-medium text-sm">
+            <div className="flex items-center gap-3 text-muted-foreground">
+              <span><Trans>Rows per page</Trans></span>
+              <Select
+                value={pageSize.toString()}
+                onValueChange={(v) => {
+                  setPageSize(Number(v));
+                  setPage(1);
+                }}
+              >
+                <SelectTrigger className="w-16 h-8">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {PAGE_SIZES.map(size => (
+                    <SelectItem key={size} value={size.toString()}>{size}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => setPage((p) => p + 1)}
-              disabled={page >= totalPages || isFetching}
-            >
-              <Trans>Next</Trans>
-              <ChevronRight className="h-4 w-4 ml-1" />
-            </Button>
+
+            <Pagination className="w-auto mx-0">
+              <PaginationContent>
+                <PaginationItem>
+                  <PaginationPrevious
+                    onClick={() => setPage(p => Math.max(1, p - 1))}
+                    className={page === 1 ? "pointer-events-none opacity-50" : "cursor-pointer"}
+                  />
+                </PaginationItem>
+                {paginationPages.map((p, i) => (
+                  p === 'ellipsis' ? (
+                    <PaginationItem key={`ellipsis-${i}`}>
+                      <PaginationEllipsis />
+                    </PaginationItem>
+                  ) : (
+                    <PaginationItem key={p}>
+                      <PaginationLink
+                        isActive={page === p}
+                        onClick={() => setPage(p)}
+                        className="cursor-pointer"
+                      >
+                        {p}
+                      </PaginationLink>
+                    </PaginationItem>
+                  )
+                ))}
+                <PaginationItem>
+                  <PaginationNext
+                    onClick={() => setPage(p => Math.min(totalPages, p + 1))}
+                    className={page === totalPages ? "pointer-events-none opacity-50" : "cursor-pointer"}
+                  />
+                </PaginationItem>
+              </PaginationContent>
+            </Pagination>
           </div>
-        </>
-      )}
+        )}
+
+        {/* FAB */}
+        <motion.div
+          className="fixed bottom-8 right-8 z-50"
+          initial={{ scale: 0 }}
+          animate={{ scale: 1 }}
+          whileHover={{ scale: 1.1 }}
+          whileTap={{ scale: 0.9 }}
+        >
+          <Button
+            onClick={() => navigate({ to: '/streamers/new' })}
+            size="icon"
+            className="h-14 w-14 rounded-full shadow-2xl bg-primary hover:bg-primary/90 text-primary-foreground flex items-center justify-center p-0"
+          >
+            <Plus className="h-6 w-6" />
+          </Button>
+        </motion.div>
+      </div>
     </div>
   );
 }

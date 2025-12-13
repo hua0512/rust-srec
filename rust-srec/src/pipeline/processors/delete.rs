@@ -12,6 +12,7 @@ use tokio::time::{Duration, sleep};
 use tracing::{debug, error, info, warn};
 
 use super::traits::{Processor, ProcessorInput, ProcessorOutput, ProcessorType};
+use super::utils::create_log_entry;
 use crate::Result;
 
 /// Default maximum retry attempts for locked files.
@@ -93,7 +94,7 @@ impl DeleteProcessor {
                             attempt, path
                         );
                         debug!("{}", msg);
-                        logs.push(crate::pipeline::job_queue::JobLogEntry::new(
+                        logs.push(create_log_entry(
                             crate::pipeline::job_queue::LogLevel::Debug,
                             msg,
                         ));
@@ -112,7 +113,7 @@ impl DeleteProcessor {
                             path
                         );
                         warn!("{}", msg);
-                        logs.push(crate::pipeline::job_queue::JobLogEntry::new(
+                        logs.push(create_log_entry(
                             crate::pipeline::job_queue::LogLevel::Warn,
                             msg,
                         ));
@@ -164,7 +165,7 @@ impl Processor for DeleteProcessor {
             serde_json::from_str(config_str).unwrap_or_else(|e| {
                 let msg = format!("Failed to parse delete config, using defaults: {}", e);
                 warn!("{}", msg);
-                logs.push(crate::pipeline::job_queue::JobLogEntry::new(
+                logs.push(create_log_entry(
                     crate::pipeline::job_queue::LogLevel::Warn,
                     msg,
                 ));
@@ -183,7 +184,7 @@ impl Processor for DeleteProcessor {
 
         let start_msg = format!("Deleting file: {}", file_path);
         info!("{}", start_msg);
-        logs.push(crate::pipeline::job_queue::JobLogEntry::new(
+        logs.push(create_log_entry(
             crate::pipeline::job_queue::LogLevel::Info,
             start_msg,
         ));
@@ -195,7 +196,7 @@ impl Processor for DeleteProcessor {
                 file_path
             );
             warn!("{}", msg);
-            logs.push(crate::pipeline::job_queue::JobLogEntry::new(
+            logs.push(create_log_entry(
                 crate::pipeline::job_queue::LogLevel::Warn,
                 msg,
             ));
@@ -235,7 +236,7 @@ impl Processor for DeleteProcessor {
                     duration, file_path
                 );
                 info!("{}", msg);
-                logs.push(crate::pipeline::job_queue::JobLogEntry::new(
+                logs.push(create_log_entry(
                     crate::pipeline::job_queue::LogLevel::Info,
                     msg,
                 ));
@@ -267,7 +268,7 @@ impl Processor for DeleteProcessor {
                     config.max_retries, file_path, error_msg
                 );
                 error!("{}", err_detail); // Log error for backend
-                logs.push(crate::pipeline::job_queue::JobLogEntry::new(
+                logs.push(create_log_entry(
                     crate::pipeline::job_queue::LogLevel::Error,
                     err_detail.clone(),
                 ));

@@ -14,7 +14,6 @@ use tracing::{debug, info, warn};
 
 use super::handle::ActorHandle;
 use super::messages::{PlatformMessage, StreamerMessage};
-use super::monitor_adapter::{BatchChecker, StatusChecker};
 use super::platform_actor::PlatformActor;
 use super::streamer_actor::{ActorOutcome, ActorResult, StreamerActor};
 
@@ -163,12 +162,9 @@ impl ActorRegistry {
     ///
     /// Returns the actor handle if successful, or an error if an actor
     /// with the same ID already exists.
-    ///
-    /// This method is generic over the status checker type, allowing
-    /// both `NoOpStatusChecker` (for testing) and real checkers (for production).
-    pub fn spawn_streamer<S: StatusChecker>(
+    pub fn spawn_streamer(
         &mut self,
-        actor: StreamerActor<S>,
+        actor: StreamerActor,
         handle: ActorHandle<StreamerMessage>,
     ) -> Result<ActorHandle<StreamerMessage>, RegistryError> {
         let id = actor.id().to_string();
@@ -198,12 +194,9 @@ impl ActorRegistry {
     ///
     /// Returns the actor handle if successful, or an error if an actor
     /// with the same platform ID already exists.
-    ///
-    /// This method is generic over the batch checker type, allowing
-    /// both `NoOpBatchChecker` (for testing) and real checkers (for production).
-    pub fn spawn_platform<B: BatchChecker>(
+    pub fn spawn_platform(
         &mut self,
-        actor: PlatformActor<B>,
+        actor: PlatformActor,
         handle: ActorHandle<PlatformMessage>,
     ) -> Result<ActorHandle<PlatformMessage>, RegistryError> {
         let platform_id = actor.platform_id().to_string();
@@ -353,7 +346,10 @@ mod tests {
     use super::*;
     use crate::domain::{Priority, StreamerState};
     use crate::scheduler::actor::messages::StreamerConfig;
+    use crate::scheduler::actor::monitor_adapter::NoOpStatusChecker;
     use crate::streamer::StreamerMetadata;
+    use dashmap::DashMap;
+    use std::sync::Arc;
 
     fn create_test_metadata(id: &str) -> StreamerMetadata {
         StreamerMetadata {
@@ -375,6 +371,13 @@ mod tests {
         }
     }
 
+    fn create_test_metadata_store(id: &str) -> Arc<DashMap<String, StreamerMetadata>> {
+        let store = Arc::new(DashMap::new());
+        let metadata = create_test_metadata(id);
+        store.insert(id.to_string(), metadata);
+        store
+    }
+
     fn create_test_config() -> StreamerConfig {
         StreamerConfig {
             check_interval_ms: 1000,
@@ -383,6 +386,10 @@ mod tests {
             priority: Priority::Normal,
             batch_capable: false,
         }
+    }
+
+    fn create_noop_checker() -> Arc<dyn super::super::monitor_adapter::StatusChecker> {
+        Arc::new(NoOpStatusChecker)
     }
 
     #[test]
@@ -400,9 +407,15 @@ mod tests {
         let token = CancellationToken::new();
         let mut registry = ActorRegistry::new(token.clone());
 
-        let metadata = create_test_metadata("test-1");
+        let metadata_store = create_test_metadata_store("test-1");
         let config = create_test_config();
-        let (actor, handle) = StreamerActor::new(metadata, config, token.child_token());
+        let (actor, handle) = StreamerActor::new(
+            "test-1".to_string(),
+            metadata_store,
+            config,
+            token.child_token(),
+            create_noop_checker(),
+        );
 
         let result = registry.spawn_streamer(actor, handle);
         assert!(result.is_ok());
@@ -418,16 +431,27 @@ mod tests {
         let token = CancellationToken::new();
         let mut registry = ActorRegistry::new(token.clone());
 
-        let metadata = create_test_metadata("test-1");
+        let metadata_store = create_test_metadata_store("test-1");
         let config = create_test_config();
 
         // Spawn first actor
-        let (actor1, handle1) =
-            StreamerActor::new(metadata.clone(), config.clone(), token.child_token());
+        let (actor1, handle1) = StreamerActor::new(
+            "test-1".to_string(),
+            metadata_store.clone(),
+            config.clone(),
+            token.child_token(),
+            create_noop_checker(),
+        );
         registry.spawn_streamer(actor1, handle1).unwrap();
 
         // Try to spawn duplicate
-        let (actor2, handle2) = StreamerActor::new(metadata, config, token.child_token());
+        let (actor2, handle2) = StreamerActor::new(
+            "test-1".to_string(),
+            metadata_store,
+            config,
+            token.child_token(),
+            create_noop_checker(),
+        );
         let result = registry.spawn_streamer(actor2, handle2);
 
         assert!(matches!(result, Err(RegistryError::ActorExists(_))));
@@ -442,9 +466,15 @@ mod tests {
         let token = CancellationToken::new();
         let mut registry = ActorRegistry::new(token.clone());
 
-        let metadata = create_test_metadata("test-1");
+        let metadata_store = create_test_metadata_store("test-1");
         let config = create_test_config();
-        let (actor, handle) = StreamerActor::new(metadata, config, token.child_token());
+        let (actor, handle) = StreamerActor::new(
+            "test-1".to_string(),
+            metadata_store,
+            config,
+            token.child_token(),
+            create_noop_checker(),
+        );
 
         registry.spawn_streamer(actor, handle).unwrap();
         assert_eq!(registry.streamer_count(), 1);
@@ -463,11 +493,23 @@ mod tests {
         let token = CancellationToken::new();
         let mut registry = ActorRegistry::new(token.clone());
 
+        // Create a shared metadata store for all actors
+        let metadata_store = Arc::new(DashMap::new());
+
         // Spawn multiple actors
         for i in 0..3 {
-            let metadata = create_test_metadata(&format!("test-{}", i));
+            let id = format!("test-{}", i);
+            let metadata = create_test_metadata(&id);
+            metadata_store.insert(id.clone(), metadata);
+
             let config = create_test_config();
-            let (actor, handle) = StreamerActor::new(metadata, config, token.child_token());
+            let (actor, handle) = StreamerActor::new(
+                id,
+                metadata_store.clone(),
+                config,
+                token.child_token(),
+                create_noop_checker(),
+            );
             registry.spawn_streamer(actor, handle).unwrap();
         }
 

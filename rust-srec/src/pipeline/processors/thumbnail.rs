@@ -2,17 +2,12 @@
 
 use async_trait::async_trait;
 use std::path::Path;
-use std::process::Stdio;
 use tokio::process::Command;
 use tracing::{debug, error, info};
 
 use super::traits::{Processor, ProcessorInput, ProcessorOutput, ProcessorType};
+use super::utils::{get_extension, is_image, is_video};
 use crate::Result;
-
-/// Video file extensions that support thumbnail extraction.
-const SUPPORTED_VIDEO_EXTENSIONS: &[&str] = &[
-    "mp4", "mkv", "webm", "mov", "flv", "avi", "wmv", "m4v", "ts", "mts", "m2ts", "3gp", "ogv",
-];
 
 /// Configuration for thumbnail extraction.
 #[derive(Debug, Clone, serde::Deserialize)]
@@ -21,11 +16,15 @@ pub struct ThumbnailConfig {
     #[serde(default = "default_timestamp")]
     pub timestamp_secs: f64,
     /// Output width (height auto-calculated to maintain aspect ratio).
+    /// Ignored if `preserve_resolution` is true.
     #[serde(default = "default_width")]
     pub width: u32,
     /// Output quality (1-31, lower is better).
     #[serde(default = "default_quality")]
     pub quality: u32,
+    /// If true, preserve the original video resolution (no scaling).
+    #[serde(default)]
+    pub preserve_resolution: bool,
 }
 
 fn default_timestamp() -> f64 {
@@ -46,6 +45,7 @@ impl Default for ThumbnailConfig {
             timestamp_secs: default_timestamp(),
             width: default_width(),
             quality: default_quality(),
+            preserve_resolution: false,
         }
     }
 }
@@ -68,16 +68,6 @@ impl ThumbnailProcessor {
     pub fn with_ffmpeg_path(path: impl Into<String>) -> Self {
         Self {
             ffmpeg_path: path.into(),
-        }
-    }
-
-    /// Check if the input file is a supported video format.
-    fn is_supported_video(&self, input_path: &str) -> bool {
-        let path = Path::new(input_path);
-        if let Some(ext) = path.extension().and_then(|s| s.to_str()) {
-            SUPPORTED_VIDEO_EXTENSIONS.contains(&ext.to_lowercase().as_str())
-        } else {
-            false
         }
     }
 }
@@ -122,9 +112,35 @@ impl Processor for ThumbnailProcessor {
             )));
         }
 
+        // Get extension once for reuse
+        let ext = get_extension(input_path).unwrap_or_default();
+
+        // Check if input is already an image - pass through as-is
+        if is_image(&ext) {
+            let duration = start.elapsed().as_secs_f64();
+            info!("Input is already an image, passing through: {}", input_path);
+            return Ok(ProcessorOutput {
+                outputs: vec![input_path.to_string()],
+                duration_secs: duration,
+                metadata: Some(
+                    serde_json::json!({
+                        "status": "skipped",
+                        "reason": "already_image",
+                        "input": input_path,
+                    })
+                    .to_string(),
+                ),
+                skipped_inputs: vec![(
+                    input_path.to_string(),
+                    "input is already an image".to_string(),
+                )],
+                ..Default::default()
+            });
+        }
+
         // Check if input is a supported video format
         // If not supported, pass through the input file instead of failing
-        if !self.is_supported_video(input_path) {
+        if !is_video(&ext) {
             let duration = start.elapsed().as_secs_f64();
             info!(
                 "Input file is not a supported video format for thumbnail extraction, passing through: {}",
@@ -172,8 +188,14 @@ impl Processor for ThumbnailProcessor {
         let output_path = output_string.as_str();
 
         info!(
-            "Extracting thumbnail from {} at {:.2}s",
-            input_path, config.timestamp_secs
+            "Extracting thumbnail from {} at {:.2}s{}",
+            input_path,
+            config.timestamp_secs,
+            if config.preserve_resolution {
+                " (native resolution)"
+            } else {
+                ""
+            }
         );
 
         // Build ffmpeg command
@@ -187,10 +209,18 @@ impl Processor for ThumbnailProcessor {
             &input_path,
             "-vframes",
             "1",
-            "-vf",
-            &format!("scale={}:-1", config.width),
+        ]);
+
+        // Only apply scale filter if not preserving original resolution
+        if !config.preserve_resolution {
+            cmd.args(["-vf", &format!("scale={}:-1", config.width)]);
+        }
+
+        cmd.args([
             "-q:v",
             &config.quality.to_string(),
+            "-update",
+            "1",
             &output_path,
         ])
         .env("LC_ALL", "C");
@@ -259,13 +289,20 @@ impl Processor for ThumbnailProcessor {
         let output_size_bytes = tokio::fs::metadata(output_path).await.ok().map(|m| m.len());
 
         // Requirements: 11.5 - Track succeeded inputs for partial failure reporting
+        let width_str = if config.preserve_resolution {
+            "native".to_string()
+        } else {
+            config.width.to_string()
+        };
+
         Ok(ProcessorOutput {
             outputs: vec![output_path.to_string()],
             duration_secs: command_output.duration,
             metadata: Some(
                 serde_json::json!({
                     "timestamp_secs": config.timestamp_secs,
-                    "width": config.width,
+                    "width": width_str,
+                    "preserve_resolution": config.preserve_resolution,
                 })
                 .to_string(),
             ),
@@ -303,6 +340,7 @@ mod tests {
         assert_eq!(config.timestamp_secs, 10.0);
         assert_eq!(config.width, 320);
         assert_eq!(config.quality, 2);
+        assert!(!config.preserve_resolution);
     }
 
     #[test]
@@ -313,6 +351,16 @@ mod tests {
         assert_eq!(config.timestamp_secs, 30.0);
         assert_eq!(config.width, 640);
         assert_eq!(config.quality, 2); // default
+        assert!(!config.preserve_resolution); // default
+    }
+
+    #[test]
+    fn test_thumbnail_config_native_resolution() {
+        let json = r#"{"timestamp_secs": 10.0, "preserve_resolution": true}"#;
+        let config: ThumbnailConfig = serde_json::from_str(json).unwrap();
+
+        assert_eq!(config.timestamp_secs, 10.0);
+        assert!(config.preserve_resolution);
     }
 
     #[test]

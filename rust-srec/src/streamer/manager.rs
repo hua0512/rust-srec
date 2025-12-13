@@ -175,6 +175,92 @@ where
         Ok(())
     }
 
+    /// Reload streamer metadata from the repository into the in-memory cache.
+    ///
+    /// This is useful when another component performs transactional DB updates
+    /// (e.g., StreamMonitor session/state transactions) and we need to bring
+    /// the in-memory cache back in sync.
+    ///
+    /// # Transactional Update Pattern
+    ///
+    /// When performing transactional updates that modify streamer state:
+    /// 1. Use `StreamerTxOps` methods within a transaction
+    /// 2. Commit the transaction
+    /// 3. Call `reload_from_repo()` to sync the in-memory cache
+    ///
+    /// This ensures the in-memory cache reflects the committed DB state.
+    ///
+    /// # Event Emission
+    ///
+    /// This method emits a `ConfigUpdateEvent::StreamerStateChanged` event
+    /// ONLY if the streamer's active status or state actually changed.
+    /// This prevents unnecessary event spam when no real change occurred.
+    pub async fn reload_from_repo(&self, id: &str) -> Result<Option<StreamerMetadata>> {
+        // Capture old state before reload
+        let old_state = self.metadata.get(id).map(|e| (e.state, e.is_active()));
+
+        match self.repo.get_streamer(id).await {
+            Ok(model) => {
+                let metadata = StreamerMetadata::from_db_model(&model);
+                let new_is_active = metadata.is_active();
+                let new_state = metadata.state;
+                self.metadata.insert(id.to_string(), metadata.clone());
+
+                // Only emit event if state or active status actually changed
+                let should_emit = match old_state {
+                    Some((old_s, old_active)) => old_s != new_state || old_active != new_is_active,
+                    None => true, // New entry, always emit
+                };
+
+                if should_emit {
+                    debug!(
+                        "Streamer {} state changed: {:?} -> {:?} (active: {})",
+                        id,
+                        old_state.map(|(s, _)| s),
+                        new_state,
+                        new_is_active
+                    );
+                    self.broadcaster
+                        .publish(ConfigUpdateEvent::StreamerStateChanged {
+                            streamer_id: id.to_string(),
+                            is_active: new_is_active,
+                        });
+                }
+
+                Ok(Some(metadata))
+            }
+            Err(crate::Error::NotFound { .. }) => {
+                let was_present = self.metadata.remove(id).is_some();
+
+                // Only emit if we actually removed something
+                if was_present {
+                    self.broadcaster
+                        .publish(ConfigUpdateEvent::StreamerStateChanged {
+                            streamer_id: id.to_string(),
+                            is_active: false,
+                        });
+                }
+
+                Ok(None)
+            }
+            Err(e) => Err(e),
+        }
+    }
+
+    /// Reload multiple streamers from the repository into the in-memory cache.
+    ///
+    /// This is more efficient than calling `reload_from_repo` multiple times
+    /// when multiple streamers need to be synced after a batch transaction.
+    pub async fn reload_multiple_from_repo(&self, ids: &[&str]) -> Result<usize> {
+        let mut reloaded = 0;
+        for id in ids {
+            if self.reload_from_repo(id).await?.is_some() {
+                reloaded += 1;
+            }
+        }
+        Ok(reloaded)
+    }
+
     /// Update a streamer's avatar.
     pub async fn update_avatar(&self, id: &str, avatar_url: Option<String>) -> Result<()> {
         debug!("Updating avatar for streamer {}", id);
@@ -413,9 +499,6 @@ where
             entry.consecutive_error_count = new_count;
             entry.disabled_until = disabled_until;
             entry.last_error = Some(error.to_string());
-            if disabled_until.is_some() {
-                entry.state = StreamerState::Error;
-            }
         }
 
         if let Some(until) = disabled_until {
@@ -426,6 +509,18 @@ where
         }
 
         Ok(())
+    }
+
+    /// Compute the disabled-until timestamp for a given consecutive error count.
+    ///
+    /// Returns `Some(timestamp)` when the error threshold is reached and the streamer
+    /// should enter exponential backoff, otherwise `None`.
+    pub fn disabled_until_for_error_count(&self, error_count: i32) -> Option<DateTime<Utc>> {
+        if error_count >= self.error_threshold {
+            Some(self.calculate_backoff(error_count))
+        } else {
+            None
+        }
     }
 
     /// Record a successful operation for a streamer.
@@ -490,6 +585,15 @@ where
             .iter()
             .filter(|e| e.state == StreamerState::Live)
             .count()
+    }
+
+    /// Get a reference to the underlying metadata store.
+    ///
+    /// This is useful for actors that need direct read access to streamer metadata
+    /// without going through the manager's methods. The returned Arc can be cloned
+    /// and shared with actors for efficient metadata lookups.
+    pub fn metadata_store(&self) -> Arc<DashMap<String, StreamerMetadata>> {
+        self.metadata.clone()
     }
 
     // ========== URL Uniqueness Checks ==========

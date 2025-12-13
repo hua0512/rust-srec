@@ -104,6 +104,13 @@ pub enum NotificationEvent {
         error_message: String,
         timestamp: DateTime<Utc>,
     },
+    /// Pipeline job cancelled.
+    PipelineCancelled {
+        job_id: String,
+        job_type: String,
+        pipeline_id: Option<String>,
+        timestamp: DateTime<Utc>,
+    },
 
     // ========== System Events ==========
     /// Fatal error occurred for a streamer.
@@ -168,6 +175,7 @@ impl NotificationEvent {
             Self::PipelineStarted { .. } => NotificationPriority::Low,
             Self::PipelineCompleted { .. } => NotificationPriority::Low,
             Self::PipelineFailed { .. } => NotificationPriority::High,
+            Self::PipelineCancelled { .. } => NotificationPriority::Normal,
 
             // System events
             Self::FatalError { .. } => NotificationPriority::Critical,
@@ -190,6 +198,7 @@ impl NotificationEvent {
             Self::PipelineStarted { .. } => "pipeline_started",
             Self::PipelineCompleted { .. } => "pipeline_completed",
             Self::PipelineFailed { .. } => "pipeline_failed",
+            Self::PipelineCancelled { .. } => "pipeline_cancelled",
             Self::FatalError { .. } => "fatal_error",
             Self::OutOfSpace { .. } => "out_of_space",
             Self::PipelineQueueWarning { .. } => "pipeline_queue_warning",
@@ -225,6 +234,9 @@ impl NotificationEvent {
             }
             Self::PipelineFailed { job_type, .. } => {
                 format!("❌ Failed {} job", job_type)
+            }
+            Self::PipelineCancelled { job_type, .. } => {
+                format!("⚪ Cancelled {} job", job_type)
             }
             Self::FatalError {
                 streamer_name,
@@ -301,6 +313,14 @@ impl NotificationEvent {
                 None => format!("Completed in {}", format_duration(*duration_secs)),
             },
             Self::PipelineFailed { error_message, .. } => error_message.clone(),
+            Self::PipelineCancelled {
+                job_id,
+                pipeline_id,
+                ..
+            } => match pipeline_id {
+                Some(pid) => format!("Job {} cancelled (pipeline: {})", job_id, pid),
+                None => format!("Job {} cancelled", job_id),
+            },
             Self::FatalError { message, .. } => message.clone(),
             Self::OutOfSpace {
                 available_bytes,
@@ -349,6 +369,7 @@ impl NotificationEvent {
             | Self::PipelineStarted { timestamp, .. }
             | Self::PipelineCompleted { timestamp, .. }
             | Self::PipelineFailed { timestamp, .. }
+            | Self::PipelineCancelled { timestamp, .. }
             | Self::FatalError { timestamp, .. }
             | Self::OutOfSpace { timestamp, .. }
             | Self::PipelineQueueWarning { timestamp, .. }

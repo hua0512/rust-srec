@@ -11,6 +11,8 @@
 //! | GET | `/api/pipeline/jobs/{id}` | Get a single job by ID |
 //! | POST | `/api/pipeline/jobs/{id}/retry` | Retry a failed job |
 //! | DELETE | `/api/pipeline/jobs/{id}` | Cancel a pending or processing job |
+//! | DELETE | `/api/pipeline/{pipeline_id}` | Cancel all jobs in a pipeline |
+//! | GET | `/api/pipeline/pipelines` | List pipelines with filtering and pagination |
 //! | GET | `/api/pipeline/outputs` | List media outputs with filtering |
 //! | GET | `/api/pipeline/stats` | Get pipeline statistics |
 //! | POST | `/api/pipeline/create` | Create a new pipeline |
@@ -46,6 +48,8 @@ use crate::pipeline::{Job, JobStatus as QueueJobStatus};
 /// - `GET /jobs/{id}` - Get a single job by ID
 /// - `POST /jobs/{id}/retry` - Retry a failed job
 /// - `DELETE /jobs/{id}` - Cancel a job
+/// - `DELETE /{pipeline_id}` - Cancel all jobs in a pipeline
+/// - `GET /pipelines` - List pipelines with filtering and pagination
 /// - `GET /outputs` - List media outputs
 /// - `GET /stats` - Get pipeline statistics
 /// - `POST /create` - Create a new pipeline
@@ -60,6 +64,8 @@ pub fn router() -> Router<AppState> {
         .route("/jobs/{id}", get(get_job))
         .route("/jobs/{id}/retry", post(retry_job))
         .route("/jobs/{id}", delete(cancel_job))
+        .route("/{pipeline_id}", delete(cancel_pipeline))
+        .route("/pipelines", get(list_pipelines))
         .route("/outputs", get(list_outputs))
         .route("/stats", get(get_stats))
         .route("/create", post(create_pipeline))
@@ -216,6 +222,21 @@ pub struct OutputFilterParams {
     pub search: Option<String>,
 }
 
+/// Response for a single pipeline summary.
+#[derive(Debug, Clone, Serialize)]
+pub struct PipelineSummaryResponse {
+    pub pipeline_id: String,
+    pub streamer_id: String,
+    pub session_id: Option<String>,
+    pub status: String,
+    pub job_count: i64,
+    pub completed_count: i64,
+    pub failed_count: i64,
+    pub total_duration_secs: f64,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
 /// List pipeline jobs with pagination and filtering.
 ///
 /// # Endpoint
@@ -291,6 +312,73 @@ async fn list_jobs(
 
     let response =
         PaginatedResponse::new(job_responses, total, pagination.limit, pagination.offset);
+    Ok(Json(response))
+}
+
+/// List pipelines with pagination and filtering.
+///
+/// # Endpoint
+///
+/// `GET /api/pipeline/pipelines`
+///
+/// # Query Parameters
+///
+/// - `limit` - Maximum number of results (default: 20, max: 100)
+/// - `offset` - Number of results to skip (default: 0)
+/// - `status` - Filter by overall pipeline status
+/// - `streamer_id` - Filter by streamer ID
+/// - `session_id` - Filter by session ID
+/// - `search` - Search query
+///
+/// # Response
+///
+/// Returns a paginated list of pipeline summaries.
+async fn list_pipelines(
+    State(state): State<AppState>,
+    Query(pagination): Query<PaginationParams>,
+    Query(filters): Query<JobFilterParams>,
+) -> ApiResult<Json<PaginatedResponse<PipelineSummaryResponse>>> {
+    let pipeline_manager = state
+        .pipeline_manager
+        .as_ref()
+        .ok_or_else(|| ApiError::service_unavailable("Pipeline service not available"))?;
+
+    let db_filters = JobFilters {
+        status: filters.status.map(api_status_to_db_status),
+        streamer_id: filters.streamer_id,
+        session_id: filters.session_id,
+        pipeline_id: filters.pipeline_id,
+        from_date: filters.from_date,
+        to_date: filters.to_date,
+        job_type: None,
+        job_types: None,
+        search: filters.search,
+    };
+
+    let db_pagination = Pagination::new(pagination.limit, pagination.offset);
+
+    let (pipelines, total) = pipeline_manager
+        .list_pipelines(&db_filters, &db_pagination)
+        .await
+        .map_err(ApiError::from)?;
+
+    let responses: Vec<PipelineSummaryResponse> = pipelines
+        .into_iter()
+        .map(|p| PipelineSummaryResponse {
+            pipeline_id: p.pipeline_id,
+            streamer_id: p.streamer_id,
+            session_id: p.session_id,
+            status: p.status,
+            job_count: p.job_count,
+            completed_count: p.completed_count,
+            failed_count: p.failed_count,
+            total_duration_secs: p.total_duration_secs,
+            created_at: p.created_at,
+            updated_at: p.updated_at,
+        })
+        .collect();
+
+    let response = PaginatedResponse::new(responses, total, pagination.limit, pagination.offset);
     Ok(Json(response))
 }
 
@@ -458,6 +546,57 @@ async fn cancel_job(
     Ok(Json(serde_json::json!({
         "success": true,
         "message": format!("Job '{}' cancelled successfully", id)
+    })))
+}
+
+/// Cancel all jobs in a pipeline.
+///
+/// # Endpoint
+///
+/// `DELETE /api/pipeline/{pipeline_id}`
+///
+/// # Path Parameters
+///
+/// - `pipeline_id` - The pipeline ID (UUID of the first job in the pipeline)
+///
+/// # Response
+///
+/// Returns a success message with the number of jobs cancelled.
+///
+/// ```json
+/// {
+///     "success": true,
+///     "message": "Cancelled 3 jobs in pipeline 'pipeline-uuid-123'",
+///     "cancelled_count": 3
+/// }
+/// ```
+///
+/// # Behavior
+///
+/// - Cancels all pending and processing jobs that belong to the pipeline
+/// - Already completed or failed jobs are not affected
+/// - Each cancelled job is marked as "interrupted"
+/// - Processing jobs receive a cancellation signal
+async fn cancel_pipeline(
+    State(state): State<AppState>,
+    Path(pipeline_id): Path<String>,
+) -> ApiResult<Json<serde_json::Value>> {
+    // Get pipeline manager from state
+    let pipeline_manager = state
+        .pipeline_manager
+        .as_ref()
+        .ok_or_else(|| ApiError::service_unavailable("Pipeline service not available"))?;
+
+    // Call PipelineManager.cancel_pipeline
+    let cancelled_count = pipeline_manager
+        .cancel_pipeline(&pipeline_id)
+        .await
+        .map_err(ApiError::from)?;
+
+    Ok(Json(serde_json::json!({
+        "success": true,
+        "message": format!("Cancelled {} jobs in pipeline '{}'", cancelled_count, pipeline_id),
+        "cancelled_count": cancelled_count
     })))
 }
 

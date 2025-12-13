@@ -7,6 +7,7 @@ use tokio::process::Command;
 use tracing::{debug, error, info, warn};
 
 use super::traits::{Processor, ProcessorInput, ProcessorOutput, ProcessorType};
+use super::utils::{create_log_entry, get_extension, is_media};
 use crate::Result;
 
 /// Helper to ensure path is absolute.
@@ -30,12 +31,6 @@ fn make_absolute(path: &str) -> String {
 
     path.to_string()
 }
-
-/// Media file extensions that support remuxing/transcoding.
-const SUPPORTED_MEDIA_EXTENSIONS: &[&str] = &[
-    "mp4", "mkv", "webm", "mov", "flv", "avi", "wmv", "m4v", "ts", "mts", "m2ts", "3gp", "ogv",
-    "mp3", "aac", "m4a", "ogg", "opus", "flac", "wav",
-];
 
 /// Video codec options.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -302,16 +297,6 @@ impl RemuxProcessor {
         }
     }
 
-    /// Check if the input file is a supported media format.
-    fn is_supported_media(&self, input_path: &str) -> bool {
-        let path = Path::new(input_path);
-        if let Some(ext) = path.extension().and_then(|s| s.to_str()) {
-            SUPPORTED_MEDIA_EXTENSIONS.contains(&ext.to_lowercase().as_str())
-        } else {
-            false
-        }
-    }
-
     /// Build FFmpeg command arguments from config.
     fn build_args(
         &self,
@@ -482,9 +467,12 @@ impl Processor for RemuxProcessor {
             )));
         }
 
+        // Get extension once for reuse
+        let ext = get_extension(input_path).unwrap_or_default();
+
         // Check if input is a supported media format
         // If not supported, pass through the input file instead of failing
-        if !self.is_supported_media(input_path) {
+        if !is_media(&ext) {
             let duration = start.elapsed().as_secs_f64();
             info!(
                 "Input file is not a supported media format for remuxing, passing through: {}",
@@ -581,19 +569,17 @@ impl Processor for RemuxProcessor {
             match tokio::fs::remove_file(input_path).await {
                 Ok(_) => {
                     info!("Removed input file after successful remux: {}", input_path);
-                    logs.push(crate::pipeline::job_queue::JobLogEntry {
-                        timestamp: chrono::Utc::now(),
-                        level: crate::pipeline::job_queue::LogLevel::Info,
-                        message: format!("Removed input file: {}", input_path),
-                    });
+                    logs.push(create_log_entry(
+                        crate::pipeline::job_queue::LogLevel::Info,
+                        format!("Removed input file: {}", input_path),
+                    ));
                 }
                 Err(e) => {
                     warn!("Failed to remove input file {}: {}", input_path, e);
-                    logs.push(crate::pipeline::job_queue::JobLogEntry {
-                        timestamp: chrono::Utc::now(),
-                        level: crate::pipeline::job_queue::LogLevel::Warn,
-                        message: format!("Failed to remove input file {}: {}", input_path, e),
-                    });
+                    logs.push(create_log_entry(
+                        crate::pipeline::job_queue::LogLevel::Warn,
+                        format!("Failed to remove input file {}: {}", input_path, e),
+                    ));
                 }
             }
         }

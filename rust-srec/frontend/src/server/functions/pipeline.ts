@@ -37,6 +37,41 @@ export const listPipelineJobs = createServerFn({ method: "GET" })
         }).parse(json);
     });
 
+// Pipeline summary schema for list_pipelines endpoint
+const PipelineSummarySchema = z.object({
+    pipeline_id: z.string(),
+    streamer_id: z.string(),
+    session_id: z.string().nullable().optional(),
+    status: z.string(),
+    job_count: z.number(),
+    completed_count: z.number(),
+    failed_count: z.number(),
+    total_duration_secs: z.number(),
+    created_at: z.string(),
+    updated_at: z.string(),
+});
+export type PipelineSummary = z.infer<typeof PipelineSummarySchema>;
+
+export const listPipelines = createServerFn({ method: "GET" })
+    .inputValidator((d: { status?: string; streamer_id?: string; session_id?: string; search?: string; limit?: number; offset?: number } = {}) => d)
+    .handler(async ({ data }) => {
+        const params = new URLSearchParams();
+        if (data.status) params.set('status', data.status);
+        if (data.streamer_id) params.set('streamer_id', data.streamer_id);
+        if (data.session_id) params.set('session_id', data.session_id);
+        if (data.search) params.set('search', data.search);
+        if (data.limit !== undefined) params.set('limit', data.limit.toString());
+        if (data.offset !== undefined) params.set('offset', data.offset.toString());
+
+        const json = await fetchBackend(`/pipeline/pipelines?${params.toString()}`);
+        return z.object({
+            items: z.array(PipelineSummarySchema),
+            total: z.number(),
+            limit: z.number(),
+            offset: z.number(),
+        }).parse(json);
+    });
+
 export const getPipelineStats = createServerFn({ method: "GET" })
     .handler(async () => {
         const json = await fetchBackend('/pipeline/stats');
@@ -53,6 +88,17 @@ export const cancelPipelineJob = createServerFn({ method: "POST" })
     .inputValidator((id: string) => id)
     .handler(async ({ data: id }) => {
         await fetchBackend(`/pipeline/jobs/${id}`, { method: 'DELETE' });
+    });
+
+export const cancelPipeline = createServerFn({ method: "POST" })
+    .inputValidator((pipelineId: string) => pipelineId)
+    .handler(async ({ data: pipelineId }) => {
+        const json = await fetchBackend(`/pipeline/${pipelineId}`, { method: 'DELETE' });
+        return z.object({
+            success: z.boolean(),
+            message: z.string(),
+            cancelled_count: z.number(),
+        }).parse(json);
     });
 
 export const createPipelineJob = createServerFn({ method: "POST" })

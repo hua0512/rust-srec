@@ -10,23 +10,30 @@
 //! - Message handling: Processes CheckStatus, ConfigUpdate, BatchResult, Stop, GetState
 //! - State persistence: Saves state on shutdown for recovery
 //! - Fault isolation: Failures don't affect other actors
+//!
+//! # State Management
+//!
+//! The actor fetches streamer metadata on-demand from the shared metadata store
+//! rather than holding a local copy. This eliminates state drift between the
+//! actor and the canonical source of truth (StreamerManager).
 
 use std::path::PathBuf;
+use std::sync::Arc;
 use std::time::{Duration, Instant};
 
+use dashmap::DashMap;
 use tokio::sync::mpsc;
 use tokio_util::sync::CancellationToken;
 use tracing::{debug, info, warn};
 
 use super::handle::{ActorHandle, ActorMetadata, DEFAULT_MAILBOX_CAPACITY};
 use super::messages::{
-    BatchDetectionResult, CheckResult, PlatformMessage, StreamerActorState, StreamerConfig,
-    StreamerMessage,
+    BatchDetectionResult, CheckResult, HysteresisState, PlatformMessage, StreamerActorState,
+    StreamerConfig, StreamerMessage,
 };
 use super::metrics::ActorMetrics;
-use super::monitor_adapter::{NoOpStatusChecker, StatusChecker};
+use super::monitor_adapter::StatusChecker;
 use crate::domain::StreamerState;
-use crate::scheduler::actor::monitor_adapter::CheckContext;
 use crate::streamer::StreamerMetadata;
 
 /// Result type for actor operations.
@@ -82,7 +89,10 @@ impl std::error::Error for ActorError {}
 ///
 /// The StreamerActor handles its own timing and state management,
 /// eliminating the need for external coordination or periodic re-scheduling.
-pub struct StreamerActor<S: StatusChecker = NoOpStatusChecker> {
+///
+/// Instead of storing metadata locally (which can drift), the actor fetches
+/// fresh metadata from the shared metadata store on each check.
+pub struct StreamerActor {
     /// Actor identifier (streamer ID).
     id: String,
     /// Mailbox for receiving normal-priority messages.
@@ -94,10 +104,10 @@ pub struct StreamerActor<S: StatusChecker = NoOpStatusChecker> {
     self_handle: mpsc::Sender<StreamerMessage>,
     /// Platform actor handle (if on batch-capable platform).
     platform_actor: Option<mpsc::Sender<PlatformMessage>>,
-    /// Current actor state.
+    /// Current actor state (runtime scheduling state only).
     state: StreamerActorState,
-    /// Streamer metadata.
-    metadata: StreamerMetadata,
+    /// Shared metadata store for fetching fresh streamer data.
+    metadata_store: Arc<DashMap<String, StreamerMetadata>>,
     /// Configuration.
     config: StreamerConfig,
     /// Cancellation token.
@@ -107,31 +117,58 @@ pub struct StreamerActor<S: StatusChecker = NoOpStatusChecker> {
     /// State persistence path (optional).
     state_path: Option<PathBuf>,
     /// Status checker for performing actual status checks.
-    status_checker: std::sync::Arc<S>,
+    status_checker: Arc<dyn StatusChecker>,
 }
 
 /// Default priority mailbox capacity (smaller than normal mailbox).
 pub const DEFAULT_PRIORITY_MAILBOX_CAPACITY: usize = DEFAULT_MAILBOX_CAPACITY / 4;
 
-impl StreamerActor<NoOpStatusChecker> {
-    /// Create a new StreamerActor with no-op status checker (for testing/backwards compatibility).
+impl StreamerActor {
+    /// Create a new StreamerActor with a status checker.
     ///
     /// # Arguments
     ///
-    /// * `metadata` - Streamer metadata
+    /// * `streamer_id` - The streamer ID
+    /// * `metadata_store` - Shared metadata store for fetching fresh streamer data
     /// * `config` - Actor configuration
     /// * `cancellation_token` - Token for graceful shutdown
+    /// * `status_checker` - Status checker for performing actual status checks
     pub fn new(
-        metadata: StreamerMetadata,
+        streamer_id: String,
+        metadata_store: Arc<DashMap<String, StreamerMetadata>>,
         config: StreamerConfig,
         cancellation_token: CancellationToken,
+        status_checker: Arc<dyn StatusChecker>,
     ) -> (Self, ActorHandle<StreamerMessage>) {
-        Self::with_status_checker(
-            metadata,
+        let (tx, rx) = mpsc::channel(DEFAULT_MAILBOX_CAPACITY);
+        let is_high_priority = config.priority == crate::domain::Priority::High;
+
+        let actor_metadata = ActorMetadata::streamer(&streamer_id, is_high_priority);
+        let handle = ActorHandle::new(tx.clone(), cancellation_token.clone(), actor_metadata);
+
+        // Get initial state from metadata store
+        let state = metadata_store
+            .get(&streamer_id)
+            .map(|m| StreamerActorState::from_metadata(&m))
+            .unwrap_or_default();
+        let metrics = ActorMetrics::new(&streamer_id, DEFAULT_MAILBOX_CAPACITY);
+
+        let actor = Self {
+            id: streamer_id,
+            mailbox: rx,
+            priority_mailbox: None,
+            self_handle: tx,
+            platform_actor: None,
+            state,
+            metadata_store,
             config,
             cancellation_token,
-            std::sync::Arc::new(NoOpStatusChecker),
-        )
+            metrics,
+            state_path: None,
+            status_checker,
+        };
+
+        (actor, handle)
     }
 
     /// Create a new StreamerActor with priority channel support.
@@ -139,110 +176,18 @@ impl StreamerActor<NoOpStatusChecker> {
     /// High-priority messages are processed before normal messages,
     /// ensuring critical operations (like Stop) are handled promptly
     /// even under backpressure.
-    ///
-    /// # Arguments
-    ///
-    /// * `metadata` - Streamer metadata
-    /// * `config` - Actor configuration
-    /// * `cancellation_token` - Token for graceful shutdown
     pub fn with_priority_channel(
-        metadata: StreamerMetadata,
+        streamer_id: String,
+        metadata_store: Arc<DashMap<String, StreamerMetadata>>,
         config: StreamerConfig,
         cancellation_token: CancellationToken,
-    ) -> (Self, ActorHandle<StreamerMessage>) {
-        Self::with_priority_channel_and_checker(
-            metadata,
-            config,
-            cancellation_token,
-            std::sync::Arc::new(NoOpStatusChecker),
-        )
-    }
-
-    /// Create a new StreamerActor with a platform actor for batch coordination.
-    pub fn with_platform_actor(
-        metadata: StreamerMetadata,
-        config: StreamerConfig,
-        cancellation_token: CancellationToken,
-        platform_actor: mpsc::Sender<PlatformMessage>,
-    ) -> (Self, ActorHandle<StreamerMessage>) {
-        let (mut actor, handle) = Self::new(metadata, config, cancellation_token);
-        actor.platform_actor = Some(platform_actor);
-        (actor, handle)
-    }
-
-    /// Create a new StreamerActor with both priority channel and platform actor.
-    pub fn with_priority_and_platform(
-        metadata: StreamerMetadata,
-        config: StreamerConfig,
-        cancellation_token: CancellationToken,
-        platform_actor: mpsc::Sender<PlatformMessage>,
-    ) -> (Self, ActorHandle<StreamerMessage>) {
-        let (mut actor, handle) = Self::with_priority_channel(metadata, config, cancellation_token);
-        actor.platform_actor = Some(platform_actor);
-        (actor, handle)
-    }
-}
-
-impl<S: StatusChecker> StreamerActor<S> {
-    /// Create a new StreamerActor with a custom status checker.
-    ///
-    /// # Arguments
-    ///
-    /// * `metadata` - Streamer metadata
-    /// * `config` - Actor configuration
-    /// * `cancellation_token` - Token for graceful shutdown
-    /// * `status_checker` - Status checker for performing actual status checks
-    pub fn with_status_checker(
-        metadata: StreamerMetadata,
-        config: StreamerConfig,
-        cancellation_token: CancellationToken,
-        status_checker: std::sync::Arc<S>,
-    ) -> (Self, ActorHandle<StreamerMessage>) {
-        let (tx, rx) = mpsc::channel(DEFAULT_MAILBOX_CAPACITY);
-        let id = metadata.id.clone();
-        let is_high_priority = config.priority == crate::domain::Priority::High;
-
-        let actor_metadata = ActorMetadata::streamer(&id, is_high_priority);
-        let handle = ActorHandle::new(tx.clone(), cancellation_token.clone(), actor_metadata);
-
-        let state = StreamerActorState::from_metadata(&metadata);
-        let metrics = ActorMetrics::new(&id, DEFAULT_MAILBOX_CAPACITY);
-
-        let actor = Self {
-            id,
-            mailbox: rx,
-            priority_mailbox: None,
-            self_handle: tx,
-            platform_actor: None,
-            state,
-            metadata,
-            config,
-            cancellation_token,
-            metrics,
-            state_path: None,
-            status_checker,
-        };
-
-        (actor, handle)
-    }
-
-    /// Create a new StreamerActor with priority channel and custom status checker.
-    ///
-    /// High-priority messages are processed before normal messages,
-    /// ensuring critical operations (like Stop) are handled promptly
-    /// even under backpressure.
-    pub fn with_priority_channel_and_checker(
-        metadata: StreamerMetadata,
-        config: StreamerConfig,
-        cancellation_token: CancellationToken,
-        status_checker: std::sync::Arc<S>,
+        status_checker: Arc<dyn StatusChecker>,
     ) -> (Self, ActorHandle<StreamerMessage>) {
         let (tx, rx) = mpsc::channel(DEFAULT_MAILBOX_CAPACITY);
         let (priority_tx, priority_rx) = mpsc::channel(DEFAULT_PRIORITY_MAILBOX_CAPACITY);
-        let id = metadata.id.clone();
         let is_high_priority = config.priority == crate::domain::Priority::High;
 
-        let actor_metadata = ActorMetadata::streamer(&id, is_high_priority);
+        let actor_metadata = ActorMetadata::streamer(&streamer_id, is_high_priority);
         let handle = ActorHandle::with_priority(
             tx.clone(),
             priority_tx,
@@ -250,17 +195,21 @@ impl<S: StatusChecker> StreamerActor<S> {
             actor_metadata,
         );
 
-        let state = StreamerActorState::from_metadata(&metadata);
-        let metrics = ActorMetrics::new(&id, DEFAULT_MAILBOX_CAPACITY);
+        // Get initial state from metadata store
+        let state = metadata_store
+            .get(&streamer_id)
+            .map(|m| StreamerActorState::from_metadata(&m))
+            .unwrap_or_default();
+        let metrics = ActorMetrics::new(&streamer_id, DEFAULT_MAILBOX_CAPACITY);
 
         let actor = Self {
-            id,
+            id: streamer_id,
             mailbox: rx,
             priority_mailbox: Some(priority_rx),
             self_handle: tx,
             platform_actor: None,
             state,
-            metadata,
+            metadata_store,
             config,
             cancellation_token,
             metrics,
@@ -271,16 +220,18 @@ impl<S: StatusChecker> StreamerActor<S> {
         (actor, handle)
     }
 
-    /// Create a new StreamerActor with priority channel, platform actor, and custom status checker.
-    pub fn with_priority_platform_and_checker(
-        metadata: StreamerMetadata,
+    /// Create a new StreamerActor with priority channel and platform actor.
+    pub fn with_priority_and_platform(
+        streamer_id: String,
+        metadata_store: Arc<DashMap<String, StreamerMetadata>>,
         config: StreamerConfig,
         cancellation_token: CancellationToken,
         platform_actor: mpsc::Sender<PlatformMessage>,
-        status_checker: std::sync::Arc<S>,
+        status_checker: Arc<dyn StatusChecker>,
     ) -> (Self, ActorHandle<StreamerMessage>) {
-        let (mut actor, handle) = Self::with_priority_channel_and_checker(
-            metadata,
+        let (mut actor, handle) = Self::with_priority_channel(
+            streamer_id,
+            metadata_store,
             config,
             cancellation_token,
             status_checker,
@@ -315,6 +266,21 @@ impl<S: StatusChecker> StreamerActor<S> {
         self.platform_actor.is_some() && self.config.batch_capable
     }
 
+    /// Get the current streamer metadata from the shared store.
+    ///
+    /// Returns None if the streamer has been removed from the store.
+    fn get_metadata(&self) -> Option<StreamerMetadata> {
+        self.metadata_store.get(&self.id).map(|r| r.clone())
+    }
+
+    /// Get the current error count from metadata, defaulting to 0 if not found.
+    fn get_error_count(&self) -> u32 {
+        self.metadata_store
+            .get(&self.id)
+            .map(|m| m.consecutive_error_count as u32)
+            .unwrap_or(0)
+    }
+
     /// Run the actor's event loop.
     ///
     /// This method runs until the actor receives a Stop message or the
@@ -329,7 +295,8 @@ impl<S: StatusChecker> StreamerActor<S> {
 
         // Schedule initial check if not already scheduled
         if self.state.next_check.is_none() {
-            self.state.schedule_next_check(&self.config);
+            self.state
+                .schedule_next_check(&self.config, self.get_error_count());
         }
 
         loop {
@@ -351,9 +318,16 @@ impl<S: StatusChecker> StreamerActor<S> {
                 continue;
             }
 
-            // Calculate sleep duration before entering select to avoid borrow issues
-            // Returns None if no check is scheduled (e.g., when streamer is live)
-            let sleep_duration = self.state.time_until_next_check();
+            // Calculate sleep duration before entering select to avoid borrow issues.
+            // Returns None if no check is scheduled (e.g., when streamer is live).
+            //
+            // To avoid getting stuck indefinitely in Live state when external download
+            // orchestration fails to send DownloadEnded, perform an occasional watchdog
+            // check while Live.
+            let mut sleep_duration = self.state.time_until_next_check();
+            if sleep_duration.is_none() && self.state.streamer_state == StreamerState::Live {
+                sleep_duration = Some(self.live_watchdog_interval());
+            }
             let check_timer = Self::create_check_timer(sleep_duration);
 
             tokio::select! {
@@ -390,6 +364,16 @@ impl<S: StatusChecker> StreamerActor<S> {
                     if let Err(e) = self.initiate_check().await {
                         warn!("StreamerActor {} check failed: {}", self.id, e);
                         self.metrics.record_error();
+
+                        // Fatal (non-recoverable) errors should stop the actor - the scheduler
+                        // will receive a StreamerStateChanged event and clean up.
+                        if !e.recoverable {
+                            info!(
+                                "StreamerActor {} stopping due to fatal error: {}",
+                                self.id, e.message
+                            );
+                            break;
+                        }
                     }
                 }
 
@@ -451,12 +435,39 @@ impl<S: StatusChecker> StreamerActor<S> {
         }
     }
 
+    fn live_watchdog_interval(&self) -> Duration {
+        std::cmp::max(
+            Duration::from_secs(30 * 60),
+            Duration::from_millis(self.config.check_interval_ms),
+        )
+    }
+
     /// Initiate a status check.
     ///
     /// If on a batch-capable platform, delegates to the PlatformActor.
     /// Otherwise, performs the check directly.
     async fn initiate_check(&mut self) -> Result<(), ActorError> {
         debug!("StreamerActor {} initiating check", self.id);
+
+        // Respect temporary backoff (disabled_until) without removing the actor.
+        // This prevents "dead stop" monitoring where the scheduler removes actors
+        // for temporary errors and never respawns them.
+        let metadata = self
+            .get_metadata()
+            .ok_or_else(|| ActorError::fatal("Streamer removed from metadata store"))?;
+        if metadata.is_disabled() {
+            let remaining = metadata
+                .remaining_backoff()
+                .and_then(|d| d.to_std().ok())
+                .unwrap_or(Duration::from_secs(0));
+
+            self.state.next_check = Some(Instant::now() + remaining);
+            debug!(
+                "StreamerActor {} skipping check due to backoff; next check in {:?}",
+                self.id, remaining
+            );
+            return Ok(());
+        }
 
         if self.uses_batch_detection() {
             // Delegate to platform actor for batch detection
@@ -505,22 +516,46 @@ impl<S: StatusChecker> StreamerActor<S> {
     async fn perform_check(&mut self) -> Result<(), ActorError> {
         debug!("StreamerActor {} performing status check", self.id);
 
-        // Create check context with current state for hysteresis logic
-        let context = CheckContext {
-            offline_count: self.state.offline_count,
-            offline_limit: self.config.offline_check_count,
-            was_live: self.state.was_live,
-        };
+        // Fetch fresh metadata from the store
+        let metadata = self
+            .get_metadata()
+            .ok_or_else(|| ActorError::fatal("Streamer removed from metadata store"))?;
 
         // Perform the actual status check using the status checker
-        match self
-            .status_checker
-            .check_status(&self.metadata, &context)
-            .await
-        {
-            Ok(result) => {
-                // Record the check result
-                self.state.record_check(result, &self.config);
+        match self.status_checker.check_status(&metadata).await {
+            Ok((result, status)) => {
+                let prev_state = self.state.streamer_state;
+                let next_state = result.state;
+                let error_count = self.get_error_count();
+
+                // Record the check result and get hysteresis decision
+                let should_emit = self.state.record_check(result, &self.config, error_count);
+
+                // Call process_status only if hysteresis allows it
+                if should_emit {
+                    // Avoid spamming downstream systems when we're already Live.
+                    // This commonly occurs during Live watchdog checks.
+                    if prev_state == StreamerState::Live && next_state == StreamerState::Live {
+                        return Ok(());
+                    }
+                    if let Err(e) = self.status_checker.process_status(&metadata, status).await {
+                        warn!("StreamerActor {} failed to process status: {}", self.id, e);
+                    }
+                }
+
+                // Check for fatal states - actor should stop monitoring
+                // Fatal states indicate permanent issues that require manual intervention
+                if next_state == StreamerState::NotFound || next_state == StreamerState::FatalError
+                {
+                    info!(
+                        "StreamerActor {} detected fatal state {:?}, stopping",
+                        self.id, next_state
+                    );
+                    return Err(ActorError::fatal(format!(
+                        "Streamer entered fatal state: {:?}",
+                        next_state
+                    )));
+                }
 
                 debug!(
                     "StreamerActor {} check complete, state: {:?}, next check in {:?}",
@@ -535,7 +570,7 @@ impl<S: StatusChecker> StreamerActor<S> {
                 // Handle the error through the status checker
                 if let Err(handle_err) = self
                     .status_checker
-                    .handle_error(&self.metadata, &e.message)
+                    .handle_error(&metadata, &e.message)
                     .await
                 {
                     warn!(
@@ -546,7 +581,9 @@ impl<S: StatusChecker> StreamerActor<S> {
 
                 // Record the error in state
                 let error_result = CheckResult::failure(&e.message);
-                self.state.record_check(error_result, &self.config);
+                let _ = self
+                    .state
+                    .record_check(error_result, &self.config, self.get_error_count());
 
                 if e.transient {
                     // Transient errors are recoverable
@@ -574,6 +611,14 @@ impl<S: StatusChecker> StreamerActor<S> {
             }
             StreamerMessage::BatchResult(result) => {
                 self.handle_batch_result(result).await?;
+                Ok(false)
+            }
+            StreamerMessage::DownloadStarted {
+                download_id,
+                session_id,
+            } => {
+                self.handle_download_started(download_id, session_id)
+                    .await?;
                 Ok(false)
             }
             StreamerMessage::DownloadEnded(reason) => {
@@ -628,7 +673,8 @@ impl<S: StatusChecker> StreamerActor<S> {
         // Only reschedule if a check isn't already due or imminent
         // This preserves immediate checks scheduled at actor startup
         if !self.state.is_check_due() {
-            self.state.schedule_next_check(&self.config);
+            self.state
+                .schedule_next_check(&self.config, self.get_error_count());
         }
 
         Ok(())
@@ -653,14 +699,80 @@ impl<S: StatusChecker> StreamerActor<S> {
             return Ok(());
         }
 
-        // Record the check result
-        self.state.record_check(result.result, &self.config);
+        let prev_state = self.state.streamer_state;
+        let next_state = result.result.state;
+        let error_count = self.get_error_count();
+        let is_error = result.result.is_error();
+        let error_message = result.result.error.clone();
+
+        // Record the check result and get hysteresis decision
+        let should_emit = self
+            .state
+            .record_check(result.result, &self.config, error_count);
+
+        // Batch failures are handled as errors, not as offline transitions.
+        // This matches perform_check() behavior and avoids incorrectly ending sessions.
+        if is_error {
+            if let Some(metadata) = self.get_metadata() {
+                let msg = error_message.as_deref().unwrap_or("Batch check failed");
+                if let Err(e) = self.status_checker.handle_error(&metadata, msg).await {
+                    warn!(
+                        "StreamerActor {} failed to handle batch error: {}",
+                        self.id, e
+                    );
+                }
+            }
+            return Ok(());
+        }
+
+        // Call process_status only if hysteresis allows it
+        if should_emit {
+            // Avoid spamming downstream systems when we're already Live.
+            if prev_state == StreamerState::Live && next_state == StreamerState::Live {
+                return Ok(());
+            }
+            // Fetch fresh metadata for process_status
+            if let Some(metadata) = self.get_metadata() {
+                if let Err(e) = self
+                    .status_checker
+                    .process_status(&metadata, result.status)
+                    .await
+                {
+                    warn!(
+                        "StreamerActor {} failed to process batch status: {}",
+                        self.id, e
+                    );
+                }
+            }
+        }
 
         debug!(
             "StreamerActor {} batch result processed, next check in {:?}",
             self.id,
             self.state.time_until_next_check()
         );
+
+        Ok(())
+    }
+
+    /// Handle DownloadStarted message - pause status checking while a download is active.
+    async fn handle_download_started(
+        &mut self,
+        download_id: String,
+        session_id: String,
+    ) -> Result<(), ActorError> {
+        info!(
+            "StreamerActor {} download started: download_id={}, session_id={}",
+            self.id, download_id, session_id
+        );
+
+        // Pause checks by switching to Live scheduling behavior.
+        // This is primarily for externally orchestrated downloads where the actor
+        // might not have just observed a Live check result.
+        self.state.streamer_state = StreamerState::Live;
+        self.state.hysteresis.mark_live();
+        self.state
+            .schedule_next_check(&self.config, self.get_error_count());
 
         Ok(())
     }
@@ -677,20 +789,23 @@ impl<S: StatusChecker> StreamerActor<S> {
 
         info!("StreamerActor {} download ended: {:?}", self.id, reason);
 
-        // Update state based on reason
+        let error_count = self.get_error_count();
+
         // Update state and schedule check based on reason
         match reason {
             DownloadEndReason::StreamerOffline => {
-                // Streamer went offline normally
+                // Streamer went offline normally - reset hysteresis since download
+                // confirmed offline (bypasses grace period)
                 self.state.streamer_state = StreamerState::NotLive;
-                self.state.offline_count = 0;
+                self.state.hysteresis.reset();
 
-                // Schedule next check respecting offline intervals (grace period)
-                self.state.schedule_next_check(&self.config);
+                // Schedule next check respecting offline intervals
+                self.state.schedule_next_check(&self.config, error_count);
             }
             DownloadEndReason::NetworkError(_) | DownloadEndReason::SegmentFailed(_) => {
                 // Network issue - we don't know if streamer is still live
-                // Schedule immediate check to verify status and potentially resume quicky
+                // Schedule immediate check to verify status and potentially resume quickly
+                // Don't reset hysteresis - let the check result determine it
                 self.state.streamer_state = StreamerState::NotLive;
                 self.state.schedule_immediate_check();
             }
@@ -698,13 +813,13 @@ impl<S: StatusChecker> StreamerActor<S> {
                 // User cancelled - don't change state, just resume checking
                 self.state.streamer_state = StreamerState::NotLive;
                 // Use normal scheduling
-                self.state.schedule_next_check(&self.config);
+                self.state.schedule_next_check(&self.config, error_count);
             }
             DownloadEndReason::Other(_) => {
                 // Unknown reason - assume offline
                 self.state.streamer_state = StreamerState::NotLive;
                 // Use normal scheduling
-                self.state.schedule_next_check(&self.config);
+                self.state.schedule_next_check(&self.config, error_count);
             }
         }
 
@@ -720,9 +835,6 @@ impl<S: StatusChecker> StreamerActor<S> {
     /// Handle Stop message - prepare for graceful shutdown.
     async fn handle_stop(&mut self) -> Result<(), ActorError> {
         info!("StreamerActor {} received Stop", self.id);
-
-        // Persist state before stopping
-        self.persist_state().await?;
 
         Ok(())
     }
@@ -808,15 +920,17 @@ impl<S: StatusChecker> StreamerActor<S> {
     }
 
     /// Create a StreamerActor with restored state if available.
-    pub async fn with_restored_state_and_checker(
-        metadata: StreamerMetadata,
+    pub async fn with_restored_state(
+        streamer_id: String,
+        metadata_store: Arc<DashMap<String, StreamerMetadata>>,
         default_config: StreamerConfig,
         cancellation_token: CancellationToken,
         state_dir: Option<&PathBuf>,
-        status_checker: std::sync::Arc<S>,
+        status_checker: std::sync::Arc<dyn StatusChecker>,
     ) -> (Self, ActorHandle<StreamerMessage>) {
-        let (mut actor, handle) = Self::with_status_checker(
-            metadata.clone(),
+        let (mut actor, handle) = Self::new(
+            streamer_id.clone(),
+            metadata_store,
             default_config.clone(),
             cancellation_token,
             status_checker,
@@ -825,94 +939,64 @@ impl<S: StatusChecker> StreamerActor<S> {
         // Try to restore state
         if let Some(state_dir) = state_dir {
             if let Some((restored_state, restored_config)) =
-                Self::restore_state(&metadata.id, state_dir).await
+                Self::restore_state(&streamer_id, state_dir).await
             {
                 actor.state = restored_state;
                 actor.config = restored_config;
-                actor.state_path = Some(state_dir.join(format!("{}.json", metadata.id)));
+                actor.state_path = Some(state_dir.join(format!("{}.json", streamer_id)));
 
                 // Reschedule next check based on restored state
                 if actor.state.next_check.is_none() {
-                    actor.state.schedule_next_check(&actor.config);
+                    actor
+                        .state
+                        .schedule_next_check(&actor.config, actor.get_error_count());
                 }
             } else {
-                actor.state_path = Some(state_dir.join(format!("{}.json", metadata.id)));
+                actor.state_path = Some(state_dir.join(format!("{}.json", streamer_id)));
             }
         }
 
         (actor, handle)
     }
 
-    /// Create a StreamerActor with priority channel, restored state, and custom status checker.
-    pub async fn with_priority_restored_state_and_checker(
-        metadata: StreamerMetadata,
-        default_config: StreamerConfig,
-        cancellation_token: CancellationToken,
-        state_dir: Option<&PathBuf>,
-        status_checker: std::sync::Arc<S>,
-    ) -> (Self, ActorHandle<StreamerMessage>) {
-        let (mut actor, handle) = Self::with_priority_channel_and_checker(
-            metadata.clone(),
-            default_config.clone(),
-            cancellation_token,
-            status_checker,
-        );
-
-        // Try to restore state
-        if let Some(state_dir) = state_dir {
-            if let Some((restored_state, restored_config)) =
-                Self::restore_state(&metadata.id, state_dir).await
-            {
-                actor.state = restored_state;
-                actor.config = restored_config;
-                actor.state_path = Some(state_dir.join(format!("{}.json", metadata.id)));
-
-                // Reschedule next check based on restored state
-                if actor.state.next_check.is_none() {
-                    actor.state.schedule_next_check(&actor.config);
-                }
-            } else {
-                actor.state_path = Some(state_dir.join(format!("{}.json", metadata.id)));
-            }
-        }
-
-        (actor, handle)
-    }
-}
-
-impl StreamerActor<NoOpStatusChecker> {
-    /// Create a StreamerActor with restored state if available (no-op checker).
-    pub async fn new_with_restored_state(
-        metadata: StreamerMetadata,
-        default_config: StreamerConfig,
-        cancellation_token: CancellationToken,
-        state_dir: Option<&PathBuf>,
-    ) -> (Self, ActorHandle<StreamerMessage>) {
-        Self::with_restored_state_and_checker(
-            metadata,
-            default_config,
-            cancellation_token,
-            state_dir,
-            std::sync::Arc::new(NoOpStatusChecker),
-        )
-        .await
-    }
-
-    /// Create a StreamerActor with priority channel and restored state if available (no-op checker).
+    /// Create a StreamerActor with priority channel and restored state if available.
     pub async fn with_priority_and_restored_state(
-        metadata: StreamerMetadata,
+        streamer_id: String,
+        metadata_store: Arc<DashMap<String, StreamerMetadata>>,
         default_config: StreamerConfig,
         cancellation_token: CancellationToken,
         state_dir: Option<&PathBuf>,
+        status_checker: std::sync::Arc<dyn StatusChecker>,
     ) -> (Self, ActorHandle<StreamerMessage>) {
-        Self::with_priority_restored_state_and_checker(
-            metadata,
-            default_config,
+        let (mut actor, handle) = Self::with_priority_channel(
+            streamer_id.clone(),
+            metadata_store,
+            default_config.clone(),
             cancellation_token,
-            state_dir,
-            std::sync::Arc::new(NoOpStatusChecker),
-        )
-        .await
+            status_checker,
+        );
+
+        // Try to restore state
+        if let Some(state_dir) = state_dir {
+            if let Some((restored_state, restored_config)) =
+                Self::restore_state(&streamer_id, state_dir).await
+            {
+                actor.state = restored_state;
+                actor.config = restored_config;
+                actor.state_path = Some(state_dir.join(format!("{}.json", streamer_id)));
+
+                // Reschedule next check based on restored state
+                if actor.state.next_check.is_none() {
+                    actor
+                        .state
+                        .schedule_next_check(&actor.config, actor.get_error_count());
+                }
+            } else {
+                actor.state_path = Some(state_dir.join(format!("{}.json", streamer_id)));
+            }
+        }
+
+        (actor, handle)
     }
 }
 
@@ -920,16 +1004,16 @@ impl StreamerActor<NoOpStatusChecker> {
 ///
 /// This struct contains only the serializable parts of the actor state.
 /// `Instant` values are converted to durations for persistence.
+/// Note: error_count is not persisted here as it's stored in the database
+/// and fetched on-demand from the metadata store.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct PersistedActorState {
     /// Actor ID.
     pub actor_id: String,
     /// Streamer state.
     pub streamer_state: String,
-    /// Consecutive offline count.
-    pub offline_count: u32,
-    /// Error count.
-    pub error_count: u32,
+    /// Hysteresis state (offline grace period tracking).
+    pub hysteresis: HysteresisState,
     /// Last check timestamp (RFC3339).
     pub last_check_time: Option<String>,
     /// Last check state.
@@ -961,8 +1045,7 @@ impl PersistedActorState {
         Self {
             actor_id: id.to_string(),
             streamer_state: state.streamer_state.as_str().to_string(),
-            offline_count: state.offline_count,
-            error_count: state.error_count,
+            hysteresis: state.hysteresis.clone(),
             last_check_time: state.last_check.as_ref().map(|c| c.checked_at.to_rfc3339()),
             last_check_state: state
                 .last_check
@@ -1009,10 +1092,8 @@ impl PersistedActorState {
         let state = StreamerActorState {
             streamer_state,
             next_check: None, // Will be recalculated
-            offline_count: self.offline_count,
-            was_live: streamer_state == StreamerState::Live,
+            hysteresis: self.hysteresis,
             last_check,
-            error_count: self.error_count,
         };
 
         let config = StreamerConfig {
@@ -1031,6 +1112,8 @@ impl PersistedActorState {
 mod tests {
     use super::*;
     use crate::domain::Priority;
+    use crate::scheduler::actor::monitor_adapter::NoOpStatusChecker;
+    use std::sync::Arc;
 
     fn create_test_metadata() -> StreamerMetadata {
         StreamerMetadata {
@@ -1052,6 +1135,13 @@ mod tests {
         }
     }
 
+    fn create_test_metadata_store() -> Arc<DashMap<String, StreamerMetadata>> {
+        let store = Arc::new(DashMap::new());
+        let metadata = create_test_metadata();
+        store.insert(metadata.id.clone(), metadata);
+        store
+    }
+
     fn create_test_config() -> StreamerConfig {
         StreamerConfig {
             check_interval_ms: 1000, // 1 second for tests
@@ -1062,13 +1152,23 @@ mod tests {
         }
     }
 
+    fn create_noop_checker() -> Arc<dyn StatusChecker> {
+        Arc::new(NoOpStatusChecker)
+    }
+
     #[test]
     fn test_streamer_actor_new() {
-        let metadata = create_test_metadata();
+        let metadata_store = create_test_metadata_store();
         let config = create_test_config();
         let token = CancellationToken::new();
 
-        let (actor, handle) = StreamerActor::new(metadata.clone(), config, token);
+        let (actor, handle) = StreamerActor::new(
+            "test-streamer".to_string(),
+            metadata_store,
+            config,
+            token,
+            create_noop_checker(),
+        );
 
         assert_eq!(actor.id(), "test-streamer");
         assert_eq!(handle.id(), "test-streamer");
@@ -1077,25 +1177,37 @@ mod tests {
 
     #[test]
     fn test_streamer_actor_with_platform() {
-        let metadata = create_test_metadata();
+        let metadata_store = create_test_metadata_store();
         let mut config = create_test_config();
         config.batch_capable = true;
         let token = CancellationToken::new();
         let (platform_tx, _platform_rx) = mpsc::channel::<PlatformMessage>(10);
 
-        let (actor, _handle) =
-            StreamerActor::with_platform_actor(metadata, config, token, platform_tx);
+        let (actor, _handle) = StreamerActor::with_priority_and_platform(
+            "test-streamer".to_string(),
+            metadata_store,
+            config,
+            token,
+            platform_tx,
+            create_noop_checker(),
+        );
 
         assert!(actor.uses_batch_detection());
     }
 
     #[tokio::test]
     async fn test_streamer_actor_get_state() {
-        let metadata = create_test_metadata();
+        let metadata_store = create_test_metadata_store();
         let config = create_test_config();
         let token = CancellationToken::new();
 
-        let (actor, handle) = StreamerActor::new(metadata, config, token.clone());
+        let (actor, handle) = StreamerActor::new(
+            "test-streamer".to_string(),
+            metadata_store,
+            config,
+            token.clone(),
+            create_noop_checker(),
+        );
 
         // Spawn actor
         let actor_task = tokio::spawn(async move { actor.run().await });
@@ -1109,7 +1221,7 @@ mod tests {
 
         let state = reply_rx.await.unwrap();
         assert_eq!(state.streamer_state, StreamerState::NotLive);
-        assert_eq!(state.offline_count, 0);
+        assert_eq!(state.hysteresis.offline_count(), 0);
 
         // Stop actor
         handle.send(StreamerMessage::Stop).await.unwrap();
@@ -1119,11 +1231,17 @@ mod tests {
 
     #[tokio::test]
     async fn test_streamer_actor_config_update() {
-        let metadata = create_test_metadata();
+        let metadata_store = create_test_metadata_store();
         let config = create_test_config();
         let token = CancellationToken::new();
 
-        let (actor, handle) = StreamerActor::new(metadata, config, token.clone());
+        let (actor, handle) = StreamerActor::new(
+            "test-streamer".to_string(),
+            metadata_store,
+            config,
+            token.clone(),
+            create_noop_checker(),
+        );
 
         // Spawn actor
         let actor_task = tokio::spawn(async move { actor.run().await });
@@ -1160,11 +1278,17 @@ mod tests {
 
     #[tokio::test]
     async fn test_streamer_actor_cancellation() {
-        let metadata = create_test_metadata();
+        let metadata_store = create_test_metadata_store();
         let config = create_test_config();
         let token = CancellationToken::new();
 
-        let (actor, _handle) = StreamerActor::new(metadata, config, token.clone());
+        let (actor, _handle) = StreamerActor::new(
+            "test-streamer".to_string(),
+            metadata_store,
+            config,
+            token.clone(),
+            create_noop_checker(),
+        );
 
         // Spawn actor
         let actor_task = tokio::spawn(async move { actor.run().await });
@@ -1178,11 +1302,17 @@ mod tests {
 
     #[tokio::test]
     async fn test_streamer_actor_batch_result() {
-        let metadata = create_test_metadata();
+        let metadata_store = create_test_metadata_store();
         let config = create_test_config();
         let token = CancellationToken::new();
 
-        let (actor, handle) = StreamerActor::new(metadata, config, token.clone());
+        let (actor, handle) = StreamerActor::new(
+            "test-streamer".to_string(),
+            metadata_store,
+            config,
+            token.clone(),
+            create_noop_checker(),
+        );
 
         // Spawn actor
         let actor_task = tokio::spawn(async move { actor.run().await });
@@ -1191,6 +1321,15 @@ mod tests {
         let batch_result = BatchDetectionResult {
             streamer_id: "test-streamer".to_string(),
             result: CheckResult::success(StreamerState::Live),
+            status: crate::monitor::LiveStatus::Live {
+                title: "Test Stream".to_string(),
+                category: None,
+                started_at: None,
+                viewer_count: None,
+                avatar: None,
+                streams: vec![],
+                media_headers: None,
+            },
         };
         handle
             .send(StreamerMessage::BatchResult(batch_result))
@@ -1219,13 +1358,19 @@ mod tests {
 
     #[test]
     fn test_persisted_state_roundtrip() {
+        // Create hysteresis state with was_live=true and offline_count=5
+        let mut hysteresis = HysteresisState::new();
+        hysteresis.mark_live();
+        // Simulate some offline checks
+        for _ in 0..5 {
+            hysteresis.should_emit(StreamerState::Live, StreamerState::NotLive, 10);
+        }
+
         let state = StreamerActorState {
             streamer_state: StreamerState::Live,
             next_check: Some(Instant::now()),
-            offline_count: 5,
-            was_live: true,
+            hysteresis,
             last_check: Some(CheckResult::success(StreamerState::Live)),
-            error_count: 2,
         };
 
         let config = StreamerConfig {
@@ -1240,8 +1385,8 @@ mod tests {
         let (restored_state, restored_config) = persisted.into_state_and_config();
 
         assert_eq!(restored_state.streamer_state, StreamerState::Live);
-        assert_eq!(restored_state.offline_count, 5);
-        assert_eq!(restored_state.error_count, 2);
+        assert_eq!(restored_state.hysteresis.offline_count(), 5);
+        assert!(restored_state.hysteresis.was_live());
         assert_eq!(restored_config.check_interval_ms, 30000);
         assert_eq!(restored_config.priority, Priority::High);
         assert!(restored_config.batch_capable);
@@ -1266,11 +1411,17 @@ mod tests {
 
     #[test]
     fn test_streamer_actor_with_priority_channel() {
-        let metadata = create_test_metadata();
+        let metadata_store = create_test_metadata_store();
         let config = create_test_config();
         let token = CancellationToken::new();
 
-        let (actor, handle) = StreamerActor::with_priority_channel(metadata, config, token);
+        let (actor, handle) = StreamerActor::with_priority_channel(
+            "test-streamer".to_string(),
+            metadata_store,
+            config,
+            token,
+            create_noop_checker(),
+        );
 
         assert_eq!(actor.id(), "test-streamer");
         assert_eq!(handle.id(), "test-streamer");
@@ -1280,14 +1431,20 @@ mod tests {
 
     #[test]
     fn test_streamer_actor_with_priority_and_platform() {
-        let metadata = create_test_metadata();
+        let metadata_store = create_test_metadata_store();
         let mut config = create_test_config();
         config.batch_capable = true;
         let token = CancellationToken::new();
         let (platform_tx, _platform_rx) = mpsc::channel::<PlatformMessage>(10);
 
-        let (actor, _handle) =
-            StreamerActor::with_priority_and_platform(metadata, config, token, platform_tx);
+        let (actor, _handle) = StreamerActor::with_priority_and_platform(
+            "test-streamer".to_string(),
+            metadata_store,
+            config,
+            token,
+            platform_tx,
+            create_noop_checker(),
+        );
 
         assert!(actor.uses_batch_detection());
         assert!(actor.priority_mailbox.is_some());
@@ -1295,11 +1452,17 @@ mod tests {
 
     #[tokio::test]
     async fn test_priority_channel_stop_message() {
-        let metadata = create_test_metadata();
+        let metadata_store = create_test_metadata_store();
         let config = create_test_config();
         let token = CancellationToken::new();
 
-        let (actor, handle) = StreamerActor::with_priority_channel(metadata, config, token.clone());
+        let (actor, handle) = StreamerActor::with_priority_channel(
+            "test-streamer".to_string(),
+            metadata_store,
+            config,
+            token.clone(),
+            create_noop_checker(),
+        );
 
         // Spawn actor
         let actor_task = tokio::spawn(async move { actor.run().await });
@@ -1313,11 +1476,17 @@ mod tests {
 
     #[tokio::test]
     async fn test_priority_channel_processes_before_normal() {
-        let metadata = create_test_metadata();
+        let metadata_store = create_test_metadata_store();
         let config = create_test_config();
         let token = CancellationToken::new();
 
-        let (actor, handle) = StreamerActor::with_priority_channel(metadata, config, token.clone());
+        let (actor, handle) = StreamerActor::with_priority_channel(
+            "test-streamer".to_string(),
+            metadata_store,
+            config,
+            token.clone(),
+            create_noop_checker(),
+        );
 
         // Spawn actor
         let actor_task = tokio::spawn(async move { actor.run().await });
@@ -1327,6 +1496,7 @@ mod tests {
             let batch_result = BatchDetectionResult {
                 streamer_id: "test-streamer".to_string(),
                 result: CheckResult::success(StreamerState::NotLive),
+                status: crate::monitor::LiveStatus::Offline,
             };
             handle
                 .send(StreamerMessage::BatchResult(batch_result))
@@ -1348,11 +1518,17 @@ mod tests {
 
     #[tokio::test]
     async fn test_priority_channel_get_state() {
-        let metadata = create_test_metadata();
+        let metadata_store = create_test_metadata_store();
         let config = create_test_config();
         let token = CancellationToken::new();
 
-        let (actor, handle) = StreamerActor::with_priority_channel(metadata, config, token.clone());
+        let (actor, handle) = StreamerActor::with_priority_channel(
+            "test-streamer".to_string(),
+            metadata_store,
+            config,
+            token.clone(),
+            create_noop_checker(),
+        );
 
         // Spawn actor
         let actor_task = tokio::spawn(async move { actor.run().await });
@@ -1375,13 +1551,20 @@ mod tests {
 
     #[tokio::test]
     async fn test_streamer_actor_resume_on_download_end() {
-        let metadata = create_test_metadata();
+        let metadata_store = create_test_metadata_store();
         let config = StreamerConfig::default();
         let token = CancellationToken::new();
 
         // Create actor with live state (checks paused)
-        let (mut actor, _handle) = StreamerActor::new(metadata.clone(), config.clone(), token);
+        let (mut actor, _handle) = StreamerActor::new(
+            "test-streamer".to_string(),
+            metadata_store,
+            config.clone(),
+            token,
+            create_noop_checker(),
+        );
         actor.state.streamer_state = StreamerState::Live;
+        actor.state.hysteresis.mark_live(); // Set was_live since we were live
         actor.state.next_check = None;
 
         // Verify initially paused
@@ -1396,10 +1579,12 @@ mod tests {
         // Verify state changed and check scheduled
         assert_eq!(actor.state.streamer_state, StreamerState::NotLive);
         assert!(actor.state.next_check.is_some());
-        assert!(actor.state.is_check_due()); // Should be immediate
+        // Hysteresis should be reset since download confirmed offline
+        assert!(!actor.state.hysteresis.was_live());
 
         // Reset and test error case
         actor.state.streamer_state = StreamerState::Live;
+        actor.state.hysteresis.mark_live();
         actor.state.next_check = None;
 
         // Simulate download failed (network error)
@@ -1410,9 +1595,9 @@ mod tests {
             .await;
         assert!(result.is_ok());
 
-        // Verify state changed (assumed not live for safety) and check scheduled
+        // Verify state changed (assumed not live for safety) and check scheduled immediately
         assert_eq!(actor.state.streamer_state, StreamerState::NotLive);
         assert!(actor.state.next_check.is_some());
-        assert!(actor.state.is_check_due());
+        assert!(actor.state.is_check_due()); // Network errors trigger immediate check
     }
 }

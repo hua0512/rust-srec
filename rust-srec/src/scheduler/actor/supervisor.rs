@@ -11,15 +11,14 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
 
+use dashmap::DashMap;
 use tokio::sync::mpsc;
 use tokio_util::sync::CancellationToken;
 use tracing::{debug, error, info, warn};
 
 use super::handle::ActorHandle;
 use super::messages::{PlatformConfig, PlatformMessage, StreamerConfig, StreamerMessage};
-use super::monitor_adapter::{
-    DynBatchChecker, DynStatusChecker, NoOpCheckerFactory, StatusCheckerFactory,
-};
+use super::monitor_adapter::{BatchChecker, NoOpBatchChecker, NoOpStatusChecker, StatusChecker};
 use super::platform_actor::PlatformActor;
 use super::registry::{ActorRegistry, ActorTaskResult};
 use super::restart_tracker::{RestartTracker, RestartTrackerConfig};
@@ -61,10 +60,12 @@ struct PendingRestart {
 }
 
 /// Metadata needed to restart an actor.
+///
+/// Note: For streamers, we only store config here. The actual StreamerMetadata
+/// is fetched from the shared metadata_store when restarting.
 #[derive(Debug, Clone)]
 enum RestartMetadata {
     Streamer {
-        metadata: StreamerMetadata,
         config: StreamerConfig,
         platform_actor: Option<mpsc::Sender<PlatformMessage>>,
     },
@@ -91,43 +92,63 @@ pub struct Supervisor {
     cancellation_token: CancellationToken,
     /// Pending restarts (actors waiting for backoff).
     pending_restarts: Vec<PendingRestart>,
-    /// Streamer metadata cache for restarts.
-    streamer_metadata: HashMap<String, (StreamerMetadata, StreamerConfig)>,
+    /// Shared metadata store (reference to StreamerManager's DashMap).
+    metadata_store: Arc<DashMap<String, StreamerMetadata>>,
+    /// Streamer config cache for restarts.
+    streamer_configs: HashMap<String, StreamerConfig>,
     /// Platform config cache for restarts.
     platform_configs: HashMap<String, PlatformConfig>,
     /// Platform actor senders for streamer-platform association.
     platform_senders: HashMap<String, mpsc::Sender<PlatformMessage>>,
-    /// Factory for creating status checkers.
-    checker_factory: Arc<dyn StatusCheckerFactory>,
+    /// Status checker for streamer actors.
+    status_checker: Arc<dyn StatusChecker>,
+    /// Batch checker for platform actors.
+    batch_checker: Arc<dyn BatchChecker>,
 }
 
 impl Supervisor {
-    /// Create a new supervisor.
+    /// Create a new supervisor with a metadata store.
     ///
-    /// Uses `NoOpCheckerFactory` for backwards compatibility.
-    pub fn new(cancellation_token: CancellationToken) -> Self {
-        Self::with_config(cancellation_token, SupervisorConfig::default())
-    }
-
-    /// Create a new supervisor with custom configuration.
-    ///
-    /// Uses `NoOpCheckerFactory` for backwards compatibility.
-    pub fn with_config(cancellation_token: CancellationToken, config: SupervisorConfig) -> Self {
-        Self::with_checker_factory(
+    /// Uses `NoOpStatusChecker` and `NoOpBatchChecker` for backwards compatibility.
+    /// The metadata_store should be obtained from `StreamerManager::metadata_store()`.
+    pub fn new(
+        cancellation_token: CancellationToken,
+        metadata_store: Arc<DashMap<String, StreamerMetadata>>,
+    ) -> Self {
+        Self::with_config(
             cancellation_token,
-            config,
-            Arc::new(NoOpCheckerFactory::new()),
+            SupervisorConfig::default(),
+            metadata_store,
         )
     }
 
-    /// Create a new supervisor with a custom checker factory.
+    /// Create a new supervisor with custom configuration and metadata store.
     ///
-    /// This allows injecting real `MonitorCheckerFactory` for production use
-    /// or `NoOpCheckerFactory` for testing.
-    pub fn with_checker_factory(
+    /// Uses `NoOpStatusChecker` and `NoOpBatchChecker` for backwards compatibility.
+    pub fn with_config(
         cancellation_token: CancellationToken,
         config: SupervisorConfig,
-        checker_factory: Arc<dyn StatusCheckerFactory>,
+        metadata_store: Arc<DashMap<String, StreamerMetadata>>,
+    ) -> Self {
+        Self::with_checkers(
+            cancellation_token,
+            config,
+            metadata_store,
+            Arc::new(NoOpStatusChecker),
+            Arc::new(NoOpBatchChecker),
+        )
+    }
+
+    /// Create a new supervisor with custom checkers and metadata store.
+    ///
+    /// This allows injecting real `MonitorStatusChecker` and `MonitorBatchChecker`
+    /// for production use or no-op checkers for testing.
+    pub fn with_checkers(
+        cancellation_token: CancellationToken,
+        config: SupervisorConfig,
+        metadata_store: Arc<DashMap<String, StreamerMetadata>>,
+        status_checker: Arc<dyn StatusChecker>,
+        batch_checker: Arc<dyn BatchChecker>,
     ) -> Self {
         Self {
             registry: ActorRegistry::new(cancellation_token.clone()),
@@ -135,10 +156,12 @@ impl Supervisor {
             config,
             cancellation_token,
             pending_restarts: Vec::new(),
-            streamer_metadata: HashMap::new(),
+            metadata_store,
+            streamer_configs: HashMap::new(),
             platform_configs: HashMap::new(),
             platform_senders: HashMap::new(),
-            checker_factory,
+            status_checker,
+            batch_checker,
         }
     }
 
@@ -161,45 +184,45 @@ impl Supervisor {
     ///
     /// Actors are spawned with priority channel support, ensuring that
     /// high-priority messages (like Stop) are processed before normal messages.
-    /// The status checker is created using the configured `StatusCheckerFactory`.
+    /// The status checker is shared across all streamer actors.
+    ///
+    /// The actor receives a reference to the shared metadata store and fetches
+    /// fresh metadata on-demand, eliminating state drift.
     pub fn spawn_streamer(
         &mut self,
-        metadata: StreamerMetadata,
+        streamer_id: impl Into<String>,
         config: StreamerConfig,
         platform_actor: Option<mpsc::Sender<PlatformMessage>>,
     ) -> Result<ActorHandle<StreamerMessage>, SpawnError> {
-        let id = metadata.id.clone();
+        let id = streamer_id.into();
 
         if self.registry.has_streamer(&id) {
             return Err(SpawnError::ActorExists(id));
         }
 
-        // Create status checker from factory and wrap in DynStatusChecker
-        let status_checker = Arc::new(DynStatusChecker::new(
-            self.checker_factory.create_status_checker(),
-        ));
-
         // Create actor with priority channel support and injected status checker
+        // Actor receives a reference to the shared metadata store
         let (actor, handle) = if let Some(ref platform_sender) = platform_actor {
-            StreamerActor::with_priority_platform_and_checker(
-                metadata.clone(),
+            StreamerActor::with_priority_and_platform(
+                id.clone(),
+                self.metadata_store.clone(),
                 config.clone(),
                 self.registry.child_token(),
                 platform_sender.clone(),
-                status_checker,
+                self.status_checker.clone(),
             )
         } else {
-            StreamerActor::with_priority_channel_and_checker(
-                metadata.clone(),
+            StreamerActor::with_priority_channel(
+                id.clone(),
+                self.metadata_store.clone(),
                 config.clone(),
                 self.registry.child_token(),
-                status_checker,
+                self.status_checker.clone(),
             )
         };
 
-        // Cache metadata for potential restart
-        self.streamer_metadata
-            .insert(id.clone(), (metadata, config));
+        // Cache config for potential restart (metadata is in shared store)
+        self.streamer_configs.insert(id.clone(), config);
         if let Some(sender) = platform_actor {
             self.platform_senders.insert(id.clone(), sender);
         }
@@ -217,7 +240,7 @@ impl Supervisor {
     ///
     /// Actors are spawned with priority channel support, ensuring that
     /// high-priority messages (like Stop) are processed before normal messages.
-    /// The batch checker is created using the configured `StatusCheckerFactory`.
+    /// The batch checker is shared across all platform actors.
     pub fn spawn_platform(
         &mut self,
         platform_id: impl Into<String>,
@@ -229,17 +252,12 @@ impl Supervisor {
             return Err(SpawnError::ActorExists(platform_id));
         }
 
-        // Create batch checker from factory and wrap in DynBatchChecker
-        let batch_checker = Arc::new(DynBatchChecker::new(
-            self.checker_factory.create_batch_checker(),
-        ));
-
         // Create actor with priority channel support and injected batch checker
         let (actor, handle) = PlatformActor::with_priority_channel_and_checker(
             platform_id.clone(),
             config.clone(),
             self.registry.child_token(),
-            batch_checker,
+            self.batch_checker.clone(),
         );
 
         // Cache config for potential restart
@@ -256,7 +274,7 @@ impl Supervisor {
 
     /// Remove a streamer actor.
     pub fn remove_streamer(&mut self, id: &str) -> bool {
-        self.streamer_metadata.remove(id);
+        self.streamer_configs.remove(id);
         self.platform_senders.remove(id);
         self.restart_tracker.remove(id);
         self.registry.remove_streamer(id).is_some()
@@ -340,13 +358,14 @@ impl Supervisor {
     }
 
     /// Get metadata needed to restart an actor.
+    ///
+    /// For streamers, returns just the config since metadata is in the shared store.
     fn get_restart_metadata(&self, actor_id: &str, actor_type: &str) -> Option<RestartMetadata> {
         match actor_type {
             "streamer" => {
-                let (metadata, config) = self.streamer_metadata.get(actor_id)?;
+                let config = self.streamer_configs.get(actor_id)?;
                 let platform_actor = self.platform_senders.get(actor_id).cloned();
                 Some(RestartMetadata::Streamer {
-                    metadata: metadata.clone(),
                     config: config.clone(),
                     platform_actor,
                 })
@@ -390,6 +409,8 @@ impl Supervisor {
     }
 
     /// Execute a pending restart.
+    ///
+    /// For streamers, metadata is fetched from the shared store; we only need the config.
     fn execute_restart(&mut self, restart: PendingRestart) -> Result<(), SpawnError> {
         info!(
             "Restarting actor {} ({})",
@@ -398,15 +419,15 @@ impl Supervisor {
 
         match restart.metadata {
             RestartMetadata::Streamer {
-                metadata,
                 config,
                 platform_actor,
             } => {
-                // Remove old metadata (will be re-added by spawn_streamer)
-                self.streamer_metadata.remove(&restart.actor_id);
+                // Remove old config (will be re-added by spawn_streamer)
+                self.streamer_configs.remove(&restart.actor_id);
                 self.platform_senders.remove(&restart.actor_id);
 
-                self.spawn_streamer(metadata, config, platform_actor)?;
+                // Metadata is in the shared store - just pass the streamer_id
+                self.spawn_streamer(&restart.actor_id, config, platform_actor)?;
             }
             RestartMetadata::Platform {
                 platform_id,
@@ -586,6 +607,21 @@ impl Supervisor {
             restart_stats: self.restart_tracker.stats(),
         }
     }
+
+    /// Update cached restart configuration for a streamer actor.
+    ///
+    /// Since metadata is stored in the shared metadata_store, we only need
+    /// to update the config cache here for restart purposes.
+    pub fn update_streamer_restart_config(&mut self, streamer_id: &str, config: StreamerConfig) {
+        self.streamer_configs
+            .insert(streamer_id.to_string(), config);
+    }
+
+    /// Update cached restart configuration for a platform actor.
+    pub fn update_platform_restart_config(&mut self, platform_id: &str, config: PlatformConfig) {
+        self.platform_configs
+            .insert(platform_id.to_string(), config);
+    }
 }
 
 /// Action to take after a task completion.
@@ -676,6 +712,7 @@ mod tests {
     use crate::scheduler::actor::messages::StreamerConfig;
     use crate::scheduler::actor::registry::ActorTaskResult;
     use crate::scheduler::actor::streamer_actor::ActorOutcome;
+    use std::sync::Arc;
 
     fn create_test_metadata(id: &str) -> StreamerMetadata {
         StreamerMetadata {
@@ -695,6 +732,10 @@ mod tests {
             download_retry_policy: None,
             danmu_sampling_config: None,
         }
+    }
+
+    fn create_test_metadata_store() -> Arc<DashMap<String, StreamerMetadata>> {
+        Arc::new(DashMap::new())
     }
 
     fn create_test_config() -> StreamerConfig {
@@ -719,7 +760,8 @@ mod tests {
     #[test]
     fn test_supervisor_new() {
         let token = CancellationToken::new();
-        let supervisor = Supervisor::new(token);
+        let metadata_store = create_test_metadata_store();
+        let supervisor = Supervisor::new(token, metadata_store);
 
         assert_eq!(supervisor.registry().streamer_count(), 0);
         assert_eq!(supervisor.registry().platform_count(), 0);
@@ -729,12 +771,16 @@ mod tests {
     #[tokio::test]
     async fn test_supervisor_spawn_streamer() {
         let token = CancellationToken::new();
-        let mut supervisor = Supervisor::new(token.clone());
+        let metadata_store = create_test_metadata_store();
 
+        // Add metadata to the shared store first
         let metadata = create_test_metadata("test-1");
+        metadata_store.insert("test-1".to_string(), metadata);
+
+        let mut supervisor = Supervisor::new(token.clone(), metadata_store);
         let config = create_test_config();
 
-        let result = supervisor.spawn_streamer(metadata, config, None);
+        let result = supervisor.spawn_streamer("test-1", config, None);
         assert!(result.is_ok());
         assert_eq!(supervisor.registry().streamer_count(), 1);
         assert!(supervisor.registry().has_streamer("test-1"));
@@ -746,17 +792,21 @@ mod tests {
     #[tokio::test]
     async fn test_supervisor_spawn_duplicate_streamer() {
         let token = CancellationToken::new();
-        let mut supervisor = Supervisor::new(token.clone());
+        let metadata_store = create_test_metadata_store();
 
+        // Add metadata to the shared store
         let metadata = create_test_metadata("test-1");
+        metadata_store.insert("test-1".to_string(), metadata);
+
+        let mut supervisor = Supervisor::new(token.clone(), metadata_store);
         let config = create_test_config();
 
         supervisor
-            .spawn_streamer(metadata.clone(), config.clone(), None)
+            .spawn_streamer("test-1", config.clone(), None)
             .unwrap();
 
         // Try to spawn duplicate
-        let result = supervisor.spawn_streamer(metadata, config, None);
+        let result = supervisor.spawn_streamer("test-1", config, None);
         assert!(matches!(result, Err(SpawnError::ActorExists(_))));
 
         token.cancel();
@@ -765,7 +815,8 @@ mod tests {
     #[tokio::test]
     async fn test_supervisor_spawn_platform() {
         let token = CancellationToken::new();
-        let mut supervisor = Supervisor::new(token.clone());
+        let metadata_store = create_test_metadata_store();
+        let mut supervisor = Supervisor::new(token.clone(), metadata_store);
 
         let config = create_test_platform_config("twitch");
 
@@ -780,12 +831,16 @@ mod tests {
     #[tokio::test]
     async fn test_supervisor_remove_streamer() {
         let token = CancellationToken::new();
-        let mut supervisor = Supervisor::new(token.clone());
+        let metadata_store = create_test_metadata_store();
 
+        // Add metadata to the shared store
         let metadata = create_test_metadata("test-1");
+        metadata_store.insert("test-1".to_string(), metadata);
+
+        let mut supervisor = Supervisor::new(token.clone(), metadata_store);
         let config = create_test_config();
 
-        supervisor.spawn_streamer(metadata, config, None).unwrap();
+        supervisor.spawn_streamer("test-1", config, None).unwrap();
         assert!(supervisor.registry().has_streamer("test-1"));
 
         let removed = supervisor.remove_streamer("test-1");
@@ -798,7 +853,8 @@ mod tests {
     #[test]
     fn test_supervisor_handle_graceful_stop() {
         let token = CancellationToken::new();
-        let mut supervisor = Supervisor::new(token);
+        let metadata_store = create_test_metadata_store();
+        let mut supervisor = Supervisor::new(token, metadata_store);
 
         let result = ActorTaskResult::streamer("test-1", Ok(ActorOutcome::Stopped));
         let action = supervisor.handle_task_completion(result);
@@ -809,7 +865,8 @@ mod tests {
     #[test]
     fn test_supervisor_handle_cancellation() {
         let token = CancellationToken::new();
-        let mut supervisor = Supervisor::new(token);
+        let metadata_store = create_test_metadata_store();
+        let mut supervisor = Supervisor::new(token, metadata_store);
 
         let result = ActorTaskResult::streamer("test-1", Ok(ActorOutcome::Cancelled));
         let action = supervisor.handle_task_completion(result);
@@ -820,12 +877,17 @@ mod tests {
     #[tokio::test]
     async fn test_supervisor_handle_crash_schedules_restart() {
         let token = CancellationToken::new();
-        let mut supervisor = Supervisor::new(token.clone());
+        let metadata_store = create_test_metadata_store();
 
-        // Spawn an actor first so we have metadata for restart
+        // Add metadata to the shared store
         let metadata = create_test_metadata("test-1");
+        metadata_store.insert("test-1".to_string(), metadata);
+
+        let mut supervisor = Supervisor::new(token.clone(), metadata_store);
+
+        // Spawn an actor first so we have config for restart
         let config = create_test_config();
-        supervisor.spawn_streamer(metadata, config, None).unwrap();
+        supervisor.spawn_streamer("test-1", config, None).unwrap();
 
         // Simulate crash
         let result = ActorTaskResult::streamer(
@@ -849,19 +911,25 @@ mod tests {
     #[tokio::test]
     async fn test_supervisor_process_pending_restarts() {
         let token = CancellationToken::new();
-        let config = SupervisorConfig {
+        let metadata_store = create_test_metadata_store();
+
+        // Add metadata to the shared store
+        let metadata = create_test_metadata("test-1");
+        metadata_store.insert("test-1".to_string(), metadata);
+
+        let supervisor_config = SupervisorConfig {
             restart_config: RestartTrackerConfig {
                 base_backoff: Duration::from_millis(1), // Very short for testing
                 ..Default::default()
             },
             ..Default::default()
         };
-        let mut supervisor = Supervisor::with_config(token.clone(), config);
+        let mut supervisor =
+            Supervisor::with_config(token.clone(), supervisor_config, metadata_store);
 
         // Spawn an actor
-        let metadata = create_test_metadata("test-1");
         let config = create_test_config();
-        supervisor.spawn_streamer(metadata, config, None).unwrap();
+        supervisor.spawn_streamer("test-1", config, None).unwrap();
 
         // Simulate crash
         let result = ActorTaskResult::streamer(
@@ -889,17 +957,27 @@ mod tests {
     #[tokio::test]
     async fn test_supervisor_shutdown() {
         let token = CancellationToken::new();
+        let metadata_store = create_test_metadata_store();
+
+        // Add metadata for multiple streamers
+        for i in 0..3 {
+            let id = format!("test-{}", i);
+            let metadata = create_test_metadata(&id);
+            metadata_store.insert(id, metadata);
+        }
+
         let config = SupervisorConfig {
             shutdown_timeout: Duration::from_millis(100),
             ..Default::default()
         };
-        let mut supervisor = Supervisor::with_config(token.clone(), config);
+        let mut supervisor = Supervisor::with_config(token.clone(), config, metadata_store);
 
         // Spawn some actors
         for i in 0..3 {
-            let metadata = create_test_metadata(&format!("test-{}", i));
             let config = create_test_config();
-            supervisor.spawn_streamer(metadata, config, None).unwrap();
+            supervisor
+                .spawn_streamer(format!("test-{}", i), config, None)
+                .unwrap();
         }
 
         assert_eq!(supervisor.registry().streamer_count(), 3);
@@ -914,7 +992,8 @@ mod tests {
     #[test]
     fn test_supervisor_stats() {
         let token = CancellationToken::new();
-        let supervisor = Supervisor::new(token);
+        let metadata_store = create_test_metadata_store();
+        let supervisor = Supervisor::new(token, metadata_store);
 
         let stats = supervisor.stats();
         assert_eq!(stats.streamer_count, 0);
@@ -934,17 +1013,27 @@ mod tests {
     #[tokio::test]
     async fn test_supervisor_shutdown_graceful_with_stop_messages() {
         let token = CancellationToken::new();
+        let metadata_store = create_test_metadata_store();
+
+        // Add metadata for streamers
+        for i in 0..2 {
+            let id = format!("streamer-{}", i);
+            let metadata = create_test_metadata(&id);
+            metadata_store.insert(id, metadata);
+        }
+
         let config = SupervisorConfig {
             shutdown_timeout: Duration::from_secs(2),
             ..Default::default()
         };
-        let mut supervisor = Supervisor::with_config(token.clone(), config);
+        let mut supervisor = Supervisor::with_config(token.clone(), config, metadata_store);
 
         // Spawn streamer and platform actors
         for i in 0..2 {
-            let metadata = create_test_metadata(&format!("streamer-{}", i));
             let config = create_test_config();
-            supervisor.spawn_streamer(metadata, config, None).unwrap();
+            supervisor
+                .spawn_streamer(format!("streamer-{}", i), config, None)
+                .unwrap();
         }
 
         let platform_config = create_test_platform_config("twitch");
@@ -969,7 +1058,8 @@ mod tests {
     #[tokio::test]
     async fn test_supervisor_shutdown_empty() {
         let token = CancellationToken::new();
-        let mut supervisor = Supervisor::new(token);
+        let metadata_store = create_test_metadata_store();
+        let mut supervisor = Supervisor::new(token, metadata_store);
 
         // Shutdown with no actors
         let report = supervisor.shutdown().await;
@@ -1021,12 +1111,19 @@ mod tests {
     #[tokio::test]
     async fn test_supervisor_spawns_actors_with_priority_channel() {
         let token = CancellationToken::new();
-        let mut supervisor = Supervisor::new(token.clone());
+        let metadata_store = create_test_metadata_store();
+
+        // Add metadata to the shared store
+        let metadata = create_test_metadata("test-priority");
+        metadata_store.insert("test-priority".to_string(), metadata);
+
+        let mut supervisor = Supervisor::new(token.clone(), metadata_store);
 
         // Spawn a streamer actor
-        let metadata = create_test_metadata("test-priority");
         let config = create_test_config();
-        let handle = supervisor.spawn_streamer(metadata, config, None).unwrap();
+        let handle = supervisor
+            .spawn_streamer("test-priority", config, None)
+            .unwrap();
 
         // Verify the handle supports priority sending by sending a priority message
         // If priority channel wasn't configured, send_priority would fall back to normal send
@@ -1053,7 +1150,8 @@ mod tests {
     #[tokio::test]
     async fn test_supervisor_spawns_platform_with_priority_channel() {
         let token = CancellationToken::new();
-        let mut supervisor = Supervisor::new(token.clone());
+        let metadata_store = create_test_metadata_store();
+        let mut supervisor = Supervisor::new(token.clone(), metadata_store);
 
         // Spawn a platform actor
         let config = create_test_platform_config("test-platform");

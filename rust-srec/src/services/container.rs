@@ -141,6 +141,7 @@ impl ServiceContainer {
             filter_repo,
             session_repo.clone(),
             config_service.clone(),
+            pool.clone(),
         ));
 
         // Create download manager with default config
@@ -265,6 +266,7 @@ impl ServiceContainer {
             filter_repo,
             session_repo.clone(),
             config_service.clone(),
+            pool.clone(),
         ));
 
         // Create download manager with custom config
@@ -503,7 +505,6 @@ impl ServiceContainer {
         // Spawn a task to handle config update events
         tokio::spawn(async move {
             use crate::config::ConfigUpdateEvent;
-            use crate::domain::streamer::StreamerState;
 
             loop {
                 tokio::select! {
@@ -516,23 +517,13 @@ impl ServiceContainer {
                             Ok(event) => {
                                 match event {
                                     ConfigUpdateEvent::StreamerUpdated { streamer_id } => {
+                                        // Config update event - handles name, URL, priority, template changes.
+                                        // State-driven cleanup is handled by StreamerStateChanged event
+                                        // to prevent double processing.
                                         debug!(
                                             "Received streamer config update event: {}",
                                             streamer_id
                                         );
-
-                                        // Check if streamer is now disabled (Requirements 4.1)
-                                        if let Some(metadata) = streamer_manager.get_streamer(&streamer_id) {
-                                            if metadata.state == StreamerState::Disabled {
-                                                info!("Streamer {} disabled, initiating cleanup", streamer_id);
-                                                Self::handle_streamer_disabled(
-                                                    &scheduler,
-                                                    &download_manager,
-                                                    &danmu_service,
-                                                    &streamer_id,
-                                                ).await;
-                                            }
-                                        }
                                     }
                                     ConfigUpdateEvent::PlatformUpdated { platform_id } => {
                                         debug!(
@@ -567,6 +558,22 @@ impl ServiceContainer {
                                             "Received engine config update event: {}",
                                             engine_id
                                         );
+                                    }
+                                    ConfigUpdateEvent::StreamerStateChanged { streamer_id, is_active } => {
+                                        debug!(
+                                            "Received streamer state change event: {} (active={})",
+                                            streamer_id, is_active
+                                        );
+                                        // If streamer became inactive (error, disabled, etc.), clean up
+                                        if !is_active {
+                                            info!("Streamer {} became inactive, initiating cleanup", streamer_id);
+                                            Self::handle_streamer_disabled(
+                                                &scheduler,
+                                                &download_manager,
+                                                &danmu_service,
+                                                &streamer_id,
+                                            ).await;
+                                        }
                                     }
                                 }
                             }
@@ -1192,6 +1199,11 @@ impl ServiceContainer {
         info!("Stopping notification service...");
         self.notification_service.stop().await;
         info!("Notification service stopped");
+
+        // Stop stream monitor outbox publisher
+        info!("Stopping stream monitor...");
+        self.stream_monitor.stop();
+        info!("Stream monitor stopped");
 
         // Stop danmu service (finalize XML files)
         info!("Stopping danmu service...");

@@ -12,6 +12,7 @@ use tokio::fs;
 use tracing::{debug, error, info, warn};
 
 use super::traits::{Processor, ProcessorInput, ProcessorOutput, ProcessorType};
+use super::utils::create_log_entry;
 use crate::Result;
 
 /// Default value for create_dirs option.
@@ -188,7 +189,7 @@ impl Processor for CopyMoveProcessor {
             dest_path
         );
         info!("{}", log_msg);
-        logs.push(crate::pipeline::job_queue::JobLogEntry::new(
+        logs.push(create_log_entry(
             crate::pipeline::job_queue::LogLevel::Info,
             log_msg,
         ));
@@ -197,7 +198,7 @@ impl Processor for CopyMoveProcessor {
         if !source.exists() {
             let error_msg = format!("Source file does not exist: {}", source_path);
             error!("{}", error_msg);
-            logs.push(crate::pipeline::job_queue::JobLogEntry::new(
+            logs.push(create_log_entry(
                 crate::pipeline::job_queue::LogLevel::Error,
                 error_msg.clone(),
             ));
@@ -217,7 +218,7 @@ impl Processor for CopyMoveProcessor {
                 dest_path
             );
             error!("{}", error_msg);
-            logs.push(crate::pipeline::job_queue::JobLogEntry::new(
+            logs.push(create_log_entry(
                 crate::pipeline::job_queue::LogLevel::Error,
                 error_msg.clone(),
             ));
@@ -230,7 +231,7 @@ impl Processor for CopyMoveProcessor {
                 if !parent.exists() {
                     let log_msg = format!("Creating destination directory: {:?}", parent);
                     debug!("{}", log_msg);
-                    logs.push(crate::pipeline::job_queue::JobLogEntry::new(
+                    logs.push(create_log_entry(
                         crate::pipeline::job_queue::LogLevel::Debug,
                         log_msg,
                     ));
@@ -277,7 +278,7 @@ impl Processor for CopyMoveProcessor {
             };
 
             error!("{}", error_msg);
-            logs.push(crate::pipeline::job_queue::JobLogEntry::new(
+            logs.push(create_log_entry(
                 crate::pipeline::job_queue::LogLevel::Error,
                 error_msg.clone(),
             ));
@@ -303,7 +304,7 @@ impl Processor for CopyMoveProcessor {
                     source_size, dest_size
                 );
                 error!("{}", error_msg);
-                logs.push(crate::pipeline::job_queue::JobLogEntry::new(
+                logs.push(create_log_entry(
                     crate::pipeline::job_queue::LogLevel::Error,
                     error_msg.clone(),
                 ));
@@ -315,7 +316,7 @@ impl Processor for CopyMoveProcessor {
                 dest_size
             );
             debug!("{}", log_msg);
-            logs.push(crate::pipeline::job_queue::JobLogEntry::new(
+            logs.push(create_log_entry(
                 crate::pipeline::job_queue::LogLevel::Debug,
                 log_msg,
             ));
@@ -333,7 +334,7 @@ impl Processor for CopyMoveProcessor {
             if let Err(e) = fs::remove_file(source).await {
                 let error_msg = format!("Failed to remove source file after move: {}", e);
                 error!("{}", error_msg);
-                logs.push(crate::pipeline::job_queue::JobLogEntry::new(
+                logs.push(create_log_entry(
                     crate::pipeline::job_queue::LogLevel::Error,
                     error_msg.clone(),
                 ));
@@ -341,7 +342,7 @@ impl Processor for CopyMoveProcessor {
             }
             let log_msg = format!("Source file removed after move: {}", source_path);
             debug!("{}", log_msg);
-            logs.push(crate::pipeline::job_queue::JobLogEntry::new(
+            logs.push(create_log_entry(
                 crate::pipeline::job_queue::LogLevel::Debug,
                 log_msg,
             ));
@@ -361,7 +362,7 @@ impl Processor for CopyMoveProcessor {
             dest_path
         );
         info!("{}", success_msg);
-        logs.push(crate::pipeline::job_queue::JobLogEntry::new(
+        logs.push(create_log_entry(
             crate::pipeline::job_queue::LogLevel::Info,
             success_msg,
         ));

@@ -1219,6 +1219,7 @@ mod end_to_end_tests {
             filter_repo,
             session_repo,
             config_service,
+            pool.clone(),
         );
 
         // Subscribe to events
@@ -1257,7 +1258,10 @@ mod end_to_end_tests {
         assert_eq!(updated.state, StreamerState::Live);
 
         // Verify event was emitted
-        let event = event_rx.try_recv().expect("No event received");
+        let event = tokio::time::timeout(std::time::Duration::from_secs(2), event_rx.recv())
+            .await
+            .expect("Timed out waiting for event")
+            .expect("No event received");
         match event {
             MonitorEvent::StreamerLive {
                 streamer_name,
@@ -1313,6 +1317,7 @@ mod end_to_end_tests {
             filter_repo,
             session_repo,
             config_service,
+            pool.clone(),
         );
 
         // Subscribe to events
@@ -1340,7 +1345,10 @@ mod end_to_end_tests {
         assert_eq!(updated.state, StreamerState::NotLive);
 
         // Verify event was emitted
-        let event = event_rx.try_recv().expect("No event received");
+        let event = tokio::time::timeout(std::time::Duration::from_secs(2), event_rx.recv())
+            .await
+            .expect("Timed out waiting for event")
+            .expect("No event received");
         match event {
             MonitorEvent::StreamerOffline { streamer_name, .. } => {
                 assert_eq!(streamer_name, "LiveStreamer");
@@ -1391,6 +1399,7 @@ mod end_to_end_tests {
             filter_repo,
             session_repo,
             config_service,
+            pool.clone(),
         );
 
         // Subscribe to events
@@ -1418,7 +1427,10 @@ mod end_to_end_tests {
         assert_eq!(updated.state, StreamerState::NotFound);
 
         // Verify fatal error event was emitted
-        let event = event_rx.try_recv().expect("No event received");
+        let event = tokio::time::timeout(std::time::Duration::from_secs(2), event_rx.recv())
+            .await
+            .expect("Timed out waiting for event")
+            .expect("No event received");
         match event {
             MonitorEvent::FatalError {
                 streamer_name,
@@ -1476,6 +1488,7 @@ mod end_to_end_tests {
             filter_repo,
             session_repo,
             config_service,
+            pool.clone(),
         );
 
         // Create test metadata
@@ -1548,6 +1561,7 @@ mod end_to_end_tests {
             filter_repo,
             session_repo,
             config_service,
+            pool.clone(),
         );
 
         // Subscribe to events
@@ -1575,7 +1589,10 @@ mod end_to_end_tests {
         assert_eq!(updated.consecutive_error_count, 1);
 
         // Verify transient error event was emitted
-        let event = event_rx.try_recv().expect("No event received");
+        let event = tokio::time::timeout(std::time::Duration::from_secs(2), event_rx.recv())
+            .await
+            .expect("Timed out waiting for event")
+            .expect("No event received");
         match event {
             MonitorEvent::TransientError {
                 streamer_name,

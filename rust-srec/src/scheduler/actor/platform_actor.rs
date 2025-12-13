@@ -51,7 +51,7 @@ pub const DEFAULT_PRIORITY_MAILBOX_CAPACITY: usize = DEFAULT_MAILBOX_CAPACITY / 
 /// The PlatformActor collects check requests from StreamerActors and
 /// executes them as batch API calls to optimize network usage and
 /// respect rate limits.
-pub struct PlatformActor<B: BatchChecker = NoOpBatchChecker> {
+pub struct PlatformActor {
     /// Platform identifier.
     platform_id: String,
     /// Mailbox for receiving normal-priority messages.
@@ -77,12 +77,12 @@ pub struct PlatformActor<B: BatchChecker = NoOpBatchChecker> {
     /// Metrics handle.
     metrics: ActorMetrics,
     /// Batch checker for performing actual batch checks.
-    batch_checker: std::sync::Arc<B>,
+    batch_checker: std::sync::Arc<dyn BatchChecker>,
     /// Flag to indicate batch timer needs to be reset after config change.
     timer_needs_reset: bool,
 }
 
-impl PlatformActor<NoOpBatchChecker> {
+impl PlatformActor {
     /// Create a new PlatformActor with no-op batch checker (for testing/backwards compatibility).
     ///
     /// # Arguments
@@ -120,9 +120,7 @@ impl PlatformActor<NoOpBatchChecker> {
             std::sync::Arc::new(NoOpBatchChecker),
         )
     }
-}
 
-impl<B: BatchChecker> PlatformActor<B> {
     /// Create a new PlatformActor with a custom batch checker.
     ///
     /// # Arguments
@@ -135,7 +133,7 @@ impl<B: BatchChecker> PlatformActor<B> {
         platform_id: impl Into<String>,
         config: PlatformConfig,
         cancellation_token: CancellationToken,
-        batch_checker: std::sync::Arc<B>,
+        batch_checker: std::sync::Arc<dyn BatchChecker>,
     ) -> (Self, ActorHandle<PlatformMessage>) {
         let platform_id = platform_id.into();
         let (tx, rx) = mpsc::channel(DEFAULT_MAILBOX_CAPACITY);
@@ -186,7 +184,7 @@ impl<B: BatchChecker> PlatformActor<B> {
         platform_id: impl Into<String>,
         config: PlatformConfig,
         cancellation_token: CancellationToken,
-        batch_checker: std::sync::Arc<B>,
+        batch_checker: std::sync::Arc<dyn BatchChecker>,
     ) -> (Self, ActorHandle<PlatformMessage>) {
         let platform_id = platform_id.into();
         let (tx, rx) = mpsc::channel(DEFAULT_MAILBOX_CAPACITY);
@@ -599,6 +597,7 @@ impl<B: BatchChecker> PlatformActor<B> {
                 .map(|id| BatchDetectionResult {
                     streamer_id: id.clone(),
                     result: CheckResult::success(StreamerState::NotLive),
+                    status: crate::monitor::LiveStatus::Offline,
                 })
                 .collect();
             return Ok(results);
@@ -620,6 +619,7 @@ impl<B: BatchChecker> PlatformActor<B> {
                         results.push(BatchDetectionResult {
                             streamer_id: id.clone(),
                             result: CheckResult::success(StreamerState::NotLive),
+                            status: crate::monitor::LiveStatus::Offline,
                         });
                     }
                 }

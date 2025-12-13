@@ -22,6 +22,16 @@ pub enum StreamerMessage {
     ConfigUpdate(StreamerConfig),
     /// Receive batch detection result from PlatformActor.
     BatchResult(BatchDetectionResult),
+    /// Notify that a download has started for this streamer.
+    ///
+    /// This allows external download orchestration to pause status checks
+    /// even if the actor hasn't just observed a `Live` check result.
+    DownloadStarted {
+        /// Download identifier.
+        download_id: String,
+        /// Download session identifier.
+        session_id: String,
+    },
     /// Notify that the download has ended (streamer went offline or error).
     /// This triggers the actor to resume status checking.
     DownloadEnded(DownloadEndReason),
@@ -184,23 +194,179 @@ pub struct BatchDetectionResult {
     pub streamer_id: String,
     /// The check result.
     pub result: CheckResult,
+    /// The raw LiveStatus for process_status() calls.
+    /// This allows StreamerActor to apply hysteresis before calling process_status().
+    pub status: crate::monitor::LiveStatus,
+}
+
+/// Encapsulates offline grace period (hysteresis) logic.
+///
+/// Hysteresis prevents false offline events from transient network issues.
+/// After a streamer goes from Live → NotLive, we wait for N consecutive
+/// offline checks before emitting the offline event.
+///
+/// # State Machine
+///
+/// ```text
+/// ┌─────────────────────────────────────────────────────────────┐
+/// │                    Initial State                            │
+/// │              was_live=false, offline_count=0                │
+/// └────────────────────────┬────────────────────────────────────┘
+///                          │ Live detected
+///                          ▼
+/// ┌─────────────────────────────────────────────────────────────┐
+/// │                   Live State                                │
+/// │              was_live=true, offline_count=0                 │
+/// └────────────────────────┬────────────────────────────────────┘
+///                          │ NotLive detected
+///                          ▼
+/// ┌─────────────────────────────────────────────────────────────┐
+/// │                 Grace Period                                │
+/// │  was_live=true, offline_count increments each check         │
+/// │  Events SUPPRESSED until offline_count >= threshold         │
+/// └────────────────────────┬────────────────────────────────────┘
+///                          │ offline_count >= threshold
+///                          ▼
+/// ┌─────────────────────────────────────────────────────────────┐
+/// │               Confirmed Offline                             │
+/// │              was_live=false, offline_count=0                │
+/// │              Event EMITTED, back to initial state           │
+/// └─────────────────────────────────────────────────────────────┘
+/// ```
+#[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize, PartialEq, Eq)]
+pub struct HysteresisState {
+    /// Whether the streamer was live before going offline.
+    /// This determines if we should apply the grace period.
+    was_live: bool,
+    /// Consecutive offline check count during grace period.
+    /// Only increments when `was_live` is true and we see NotLive.
+    offline_count: u32,
+}
+
+impl HysteresisState {
+    /// Create a new hysteresis state.
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Create hysteresis state from initial streamer state.
+    pub fn from_state(state: StreamerState) -> Self {
+        Self {
+            was_live: state == StreamerState::Live,
+            offline_count: 0,
+        }
+    }
+
+    /// Record a state transition and determine if event should be emitted.
+    ///
+    /// Returns `true` if the state change should be propagated downstream
+    /// (i.e., `process_status()` should be called).
+    ///
+    /// # Arguments
+    ///
+    /// * `prev_state` - The previous streamer state
+    /// * `new_state` - The newly detected streamer state
+    /// * `threshold` - Number of offline checks before confirming offline (from config)
+    pub fn should_emit(
+        &mut self,
+        prev_state: StreamerState,
+        new_state: StreamerState,
+        threshold: u32,
+    ) -> bool {
+        match (prev_state, new_state) {
+            // Live → Live: No state change, suppress redundant event
+            (StreamerState::Live, StreamerState::Live) => false,
+
+            // Any → Live: Going live, always emit
+            (_, StreamerState::Live) => {
+                self.was_live = true;
+                self.offline_count = 0;
+                true
+            }
+
+            // Was live, now NotLive: Apply grace period
+            (_, StreamerState::NotLive) if self.was_live => {
+                self.offline_count += 1;
+
+                if self.offline_count >= threshold {
+                    // Grace period over - emit and reset
+                    tracing::debug!(
+                        "Hysteresis: threshold reached ({}/{}), emitting offline event",
+                        self.offline_count,
+                        threshold
+                    );
+                    self.reset();
+                    true
+                } else {
+                    // Still in grace period - suppress event
+                    tracing::debug!(
+                        "Hysteresis: suppressing offline event ({}/{})",
+                        self.offline_count,
+                        threshold
+                    );
+                    false
+                }
+            }
+
+            // Never was live, now NotLive: No hysteresis needed, emit
+            (_, StreamerState::NotLive) => true,
+
+            // All other transitions (Error, OutOfSchedule, etc.): emit
+            _ => true,
+        }
+    }
+
+    /// Reset hysteresis state to initial.
+    ///
+    /// Call this when:
+    /// - Offline is confirmed (threshold reached)
+    /// - Download ends and we want to start fresh
+    pub fn reset(&mut self) {
+        self.was_live = false;
+        self.offline_count = 0;
+    }
+
+    /// Mark as having been live.
+    ///
+    /// Call this when:
+    /// - Download starts (we know they're live)
+    /// - External confirmation of live status
+    pub fn mark_live(&mut self) {
+        self.was_live = true;
+        self.offline_count = 0;
+    }
+
+    /// Check if currently in grace period (suppressing offline events).
+    pub fn in_grace_period(&self) -> bool {
+        self.was_live && self.offline_count > 0
+    }
+
+    /// Check if streamer was previously live.
+    pub fn was_live(&self) -> bool {
+        self.was_live
+    }
+
+    /// Get current offline count (for debugging/logging).
+    pub fn offline_count(&self) -> u32 {
+        self.offline_count
+    }
 }
 
 /// State of a StreamerActor for monitoring and persistence.
+///
+/// This struct contains only runtime-specific state needed for scheduling
+/// and hysteresis. Persistent state like error counts is fetched from
+/// the metadata store on-demand to avoid drift.
 #[derive(Debug, Clone)]
 pub struct StreamerActorState {
-    /// Current streamer state (Live, NotLive, etc.).
+    /// Current streamer state (Live, NotLive, etc.) - actor's local view for scheduling.
     pub streamer_state: StreamerState,
     /// Next scheduled check time.
     pub next_check: Option<Instant>,
-    /// Consecutive offline count (after going offline from live).
-    pub offline_count: u32,
-    /// Whether the streamer was previously live (used for quick re-detection).
-    pub was_live: bool,
+    /// Hysteresis state for offline grace period logic.
+    pub hysteresis: HysteresisState,
     /// Last check result.
     pub last_check: Option<CheckResult>,
-    /// Error count for circuit breaker.
-    pub error_count: u32,
 }
 
 impl Default for StreamerActorState {
@@ -208,10 +374,8 @@ impl Default for StreamerActorState {
         Self {
             streamer_state: StreamerState::NotLive,
             next_check: None,
-            offline_count: 0,
-            was_live: false,
+            hysteresis: HysteresisState::default(),
             last_check: None,
-            error_count: 0,
         }
     }
 }
@@ -222,70 +386,74 @@ impl StreamerActorState {
         Self {
             streamer_state: metadata.state,
             next_check: Some(Instant::now()), // Due immediately
-            offline_count: 0,
-            was_live: metadata.state == StreamerState::Live,
+            hysteresis: HysteresisState::from_state(metadata.state),
             last_check: None,
-            error_count: metadata.consecutive_error_count as u32,
         }
     }
 
     /// Record a check result and update state.
-    pub fn record_check(&mut self, result: CheckResult, config: &StreamerConfig) {
+    ///
+    /// Returns `true` if events should be emitted (e.g., `process_status()` should be called).
+    /// Returns `false` if hysteresis is suppressing the event (during offline grace period).
+    ///
+    /// # Arguments
+    ///
+    /// * `result` - The check result
+    /// * `config` - Actor configuration
+    /// * `error_count` - Current consecutive error count from metadata (for scheduling)
+    pub fn record_check(
+        &mut self,
+        result: CheckResult,
+        config: &StreamerConfig,
+        error_count: u32,
+    ) -> bool {
+        let prev_state = self.streamer_state;
         self.streamer_state = result.state;
 
-        if result.is_error() {
-            self.error_count += 1;
-        } else {
-            self.error_count = 0;
-        }
-
-        // Track if streamer was live for quick re-detection logic
-        if result.state == StreamerState::Live {
-            self.was_live = true;
-            self.offline_count = 0;
-        } else if result.state == StreamerState::NotLive {
-            // Only count offline checks if streamer was previously live
-            if self.was_live {
-                self.offline_count += 1;
-                // Reset was_live after enough offline checks
-                if self.offline_count >= config.offline_check_count {
-                    self.was_live = false;
-                    self.offline_count = 0;
-                }
-            }
-        }
+        // Delegate hysteresis logic to HysteresisState
+        let should_emit =
+            self.hysteresis
+                .should_emit(prev_state, result.state, config.offline_check_count);
 
         self.last_check = Some(result);
-        self.schedule_next_check(config);
+        self.schedule_next_check(config, error_count);
+
+        should_emit
     }
 
     /// Schedule the next check based on current state and config.
     ///
-    /// When the streamer is live, we don't schedule checks because we're actively
-    /// downloading and know they're online. Checks will resume when:
+    /// When the streamer is live, we normally don't schedule checks because we're actively
+    /// downloading and know they're online. Checks typically resume when:
     /// - The download fails/ends (streamer goes offline or network issues)
     /// - The state changes to NotLive
     ///
+    /// Note: the `StreamerActor` run loop may still perform an occasional watchdog check
+    /// while live to avoid getting stuck if external download components fail to notify.
+    ///
     /// The check interval strategy:
     /// - Normal case (streamer was never live): Use `check_interval_ms` (longer)
-    /// - Streamer just went offline (was_live && offline_count < offline_check_count):
-    ///   Use `offline_check_interval_ms` (shorter) for quick re-detection
-    /// - After several offline checks: Use `check_interval_ms` (longer)
-    pub fn schedule_next_check(&mut self, config: &StreamerConfig) {
+    /// - Streamer in grace period (was_live): Use `offline_check_interval_ms` (shorter)
+    ///   for quick re-detection
+    ///
+    /// # Arguments
+    ///
+    /// * `config` - Actor configuration
+    /// * `error_count` - Current consecutive error count from metadata
+    pub fn schedule_next_check(&mut self, config: &StreamerConfig, error_count: u32) {
         // Don't schedule checks when streamer is live - we're downloading and know they're online
         if self.streamer_state == StreamerState::Live {
             self.next_check = None;
             return;
         }
 
-        // Use shorter interval only when streamer was previously live and just went offline/error
+        // Use shorter interval when streamer was previously live and is in grace period
         // This enables quick re-detection when a stream ends unexpectedly
         // For streamers that were never live, use the longer interval
-        let use_short_interval = self.was_live
-            && ((self.streamer_state == StreamerState::NotLive
-                && self.offline_count < config.offline_check_count)
+        let use_short_interval = self.hysteresis.was_live()
+            && (self.streamer_state == StreamerState::NotLive
                 || (self.streamer_state == StreamerState::Error
-                    && self.error_count < config.offline_check_count));
+                    && error_count < config.offline_check_count));
 
         let interval_ms = if use_short_interval {
             config.offline_check_interval_ms
@@ -401,8 +569,8 @@ mod tests {
     fn test_streamer_actor_state_default() {
         let state = StreamerActorState::default();
         assert_eq!(state.streamer_state, StreamerState::NotLive);
-        assert_eq!(state.offline_count, 0);
-        assert_eq!(state.error_count, 0);
+        assert_eq!(state.hysteresis.offline_count(), 0);
+        assert!(!state.hysteresis.was_live());
         assert!(state.last_check.is_none());
     }
 
@@ -411,27 +579,25 @@ mod tests {
         let mut state = StreamerActorState::default();
         let config = StreamerConfig::default();
 
-        // Record a live check - this sets was_live to true
-        state.record_check(CheckResult::success(StreamerState::Live), &config);
+        // Record a live check - this sets was_live to true via hysteresis
+        state.record_check(CheckResult::success(StreamerState::Live), &config, 0);
         assert_eq!(state.streamer_state, StreamerState::Live);
-        assert_eq!(state.offline_count, 0);
-        assert_eq!(state.error_count, 0);
-        assert!(state.was_live);
+        assert_eq!(state.hysteresis.offline_count(), 0);
+        assert!(state.hysteresis.was_live());
 
         // Record offline checks - offline_count increments because was_live is true
-        state.record_check(CheckResult::success(StreamerState::NotLive), &config);
-        assert_eq!(state.offline_count, 1);
-        assert!(state.was_live);
+        state.record_check(CheckResult::success(StreamerState::NotLive), &config, 0);
+        assert_eq!(state.hysteresis.offline_count(), 1);
+        assert!(state.hysteresis.was_live());
 
-        state.record_check(CheckResult::success(StreamerState::NotLive), &config);
-        assert_eq!(state.offline_count, 2);
-        assert!(state.was_live);
+        state.record_check(CheckResult::success(StreamerState::NotLive), &config, 0);
+        assert_eq!(state.hysteresis.offline_count(), 2);
+        assert!(state.hysteresis.was_live());
 
-        // After 3 offline checks (>= offline_check_count), was_live resets to false
-        // and offline_count resets to 0
-        state.record_check(CheckResult::success(StreamerState::NotLive), &config);
-        assert_eq!(state.offline_count, 0);
-        assert!(!state.was_live);
+        // After 3 offline checks (>= offline_check_count), hysteresis resets
+        state.record_check(CheckResult::success(StreamerState::NotLive), &config, 0);
+        assert_eq!(state.hysteresis.offline_count(), 0);
+        assert!(!state.hysteresis.was_live());
     }
 
     #[test]
@@ -440,13 +606,12 @@ mod tests {
         let config = StreamerConfig::default();
 
         // Normal interval for offline streamer
-        state.schedule_next_check(&config);
+        state.schedule_next_check(&config, 0);
         assert!(state.next_check.is_some());
 
-        // After enough offline checks, should use offline interval
+        // When hysteresis indicates not in grace period, should use normal interval
         state.streamer_state = StreamerState::NotLive;
-        state.offline_count = 3;
-        state.schedule_next_check(&config);
+        state.schedule_next_check(&config, 0);
         // The next check should be scheduled
         assert!(state.next_check.is_some());
     }
@@ -459,7 +624,7 @@ mod tests {
         // When streamer is live, no check should be scheduled
         // (we're downloading and know they're online)
         state.streamer_state = StreamerState::Live;
-        state.schedule_next_check(&config);
+        state.schedule_next_check(&config, 0);
         assert!(state.next_check.is_none());
     }
 

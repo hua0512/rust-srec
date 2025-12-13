@@ -8,6 +8,21 @@ use crate::database::models::{
 };
 use crate::{Error, Result};
 
+/// Summary of a pipeline (group of jobs with same pipeline_id).
+#[derive(Debug, Clone)]
+pub struct PipelineSummary {
+    pub pipeline_id: String,
+    pub streamer_id: String,
+    pub session_id: Option<String>,
+    pub status: String,
+    pub job_count: i64,
+    pub completed_count: i64,
+    pub failed_count: i64,
+    pub total_duration_secs: f64,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
 /// Job repository trait.
 #[async_trait]
 pub trait JobRepository: Send + Sync {
@@ -65,11 +80,26 @@ pub trait JobRepository: Send + Sync {
     async fn complete_job_and_create_next(
         &self,
         job_id: &str,
-        output: &str,
+        outputs_json: &str,
         duration_secs: f64,
         queue_wait_secs: f64,
         next_job: Option<&JobDbModel>,
     ) -> Result<Option<String>>;
+
+    /// Cancel all pending/processing jobs in a pipeline.
+    /// Returns the number of jobs cancelled.
+    async fn cancel_jobs_by_pipeline(&self, pipeline_id: &str) -> Result<u64>;
+
+    /// Get all jobs in a pipeline.
+    async fn get_jobs_by_pipeline(&self, pipeline_id: &str) -> Result<Vec<JobDbModel>>;
+
+    /// List pipelines (grouped by pipeline_id) with pagination.
+    /// Returns summaries of pipelines and total count.
+    async fn list_pipelines(
+        &self,
+        filters: &JobFilters,
+        pagination: &Pagination,
+    ) -> Result<(Vec<PipelineSummary>, u64)>;
 }
 
 /// SQLx implementation of JobRepository.
@@ -531,7 +561,7 @@ impl JobRepository for SqlxJobRepository {
     async fn complete_job_and_create_next(
         &self,
         job_id: &str,
-        output: &str,
+        outputs_json: &str,
         duration_secs: f64,
         queue_wait_secs: f64,
         next_job: Option<&JobDbModel>,
@@ -556,7 +586,7 @@ impl JobRepository for SqlxJobRepository {
         )
         .bind(&now)
         .bind(&now)
-        .bind(format!("[\"{}\"]", output))
+        .bind(outputs_json)
         .bind(duration_secs)
         .bind(queue_wait_secs)
         .bind(job_id)
@@ -611,6 +641,200 @@ impl JobRepository for SqlxJobRepository {
         tx.commit().await?;
 
         Ok(next_job_id)
+    }
+
+    async fn cancel_jobs_by_pipeline(&self, pipeline_id: &str) -> Result<u64> {
+        let now = chrono::Utc::now().to_rfc3339();
+
+        let result = sqlx::query(
+            r#"
+            UPDATE job SET
+                status = 'INTERRUPTED',
+                completed_at = ?,
+                updated_at = ?
+            WHERE pipeline_id = ?
+              AND status IN ('PENDING', 'PROCESSING')
+            "#,
+        )
+        .bind(&now)
+        .bind(&now)
+        .bind(pipeline_id)
+        .execute(&self.pool)
+        .await?;
+
+        Ok(result.rows_affected())
+    }
+
+    async fn get_jobs_by_pipeline(&self, pipeline_id: &str) -> Result<Vec<JobDbModel>> {
+        let jobs = sqlx::query_as::<_, JobDbModel>(
+            "SELECT * FROM job WHERE pipeline_id = ? ORDER BY created_at",
+        )
+        .bind(pipeline_id)
+        .fetch_all(&self.pool)
+        .await?;
+
+        Ok(jobs)
+    }
+
+    async fn list_pipelines(
+        &self,
+        filters: &JobFilters,
+        pagination: &Pagination,
+    ) -> Result<(Vec<PipelineSummary>, u64)> {
+        // Build WHERE clause for filters (applied before aggregation)
+        let mut where_conditions = vec!["pipeline_id IS NOT NULL".to_string()];
+
+        if filters.streamer_id.is_some() {
+            where_conditions.push("streamer_id = ?".to_string());
+        }
+        if filters.session_id.is_some() {
+            where_conditions.push("session_id = ?".to_string());
+        }
+        if filters.search.is_some() {
+            where_conditions.push(
+                "(pipeline_id LIKE ? OR streamer_id LIKE ? OR session_id LIKE ?)".to_string(),
+            );
+        }
+
+        let where_clause = where_conditions.join(" AND ");
+
+        // Build HAVING clause for status filtering (applied after aggregation)
+        let having_clause = if filters.status.is_some() {
+            "HAVING computed_status = ?"
+        } else {
+            ""
+        };
+
+        // Query to get pipeline summaries with aggregation
+        // Status logic: FAILED if any failed, PROCESSING if any processing, COMPLETED if all completed, else PENDING
+        let query = format!(
+            r#"
+            SELECT
+                pipeline_id,
+                MAX(streamer_id) as streamer_id,
+                MAX(session_id) as session_id,
+                CASE
+                    WHEN SUM(CASE WHEN status = 'FAILED' THEN 1 ELSE 0 END) > 0 THEN 'FAILED'
+                    WHEN SUM(CASE WHEN status = 'PROCESSING' THEN 1 ELSE 0 END) > 0 THEN 'PROCESSING'
+                    WHEN SUM(CASE WHEN status = 'INTERRUPTED' THEN 1 ELSE 0 END) > 0 THEN 'INTERRUPTED'
+                    WHEN COUNT(*) = SUM(CASE WHEN status = 'COMPLETED' THEN 1 ELSE 0 END) THEN 'COMPLETED'
+                    ELSE 'PENDING'
+                END as computed_status,
+                COUNT(*) as job_count,
+                SUM(CASE WHEN status = 'COMPLETED' THEN 1 ELSE 0 END) as completed_count,
+                SUM(CASE WHEN status = 'FAILED' THEN 1 ELSE 0 END) as failed_count,
+                COALESCE(SUM(duration_secs), 0) as total_duration_secs,
+                MIN(created_at) as created_at,
+                MAX(updated_at) as updated_at
+            FROM job
+            WHERE {}
+            GROUP BY pipeline_id
+            {}
+            ORDER BY MAX(created_at) DESC
+            LIMIT ? OFFSET ?
+            "#,
+            where_clause, having_clause
+        );
+
+        // Count query needs to count pipelines with matching aggregated status
+        let count_query = format!(
+            r#"
+            SELECT COUNT(*) FROM (
+                SELECT
+                    pipeline_id,
+                    CASE
+                        WHEN SUM(CASE WHEN status = 'FAILED' THEN 1 ELSE 0 END) > 0 THEN 'FAILED'
+                        WHEN SUM(CASE WHEN status = 'PROCESSING' THEN 1 ELSE 0 END) > 0 THEN 'PROCESSING'
+                        WHEN SUM(CASE WHEN status = 'INTERRUPTED' THEN 1 ELSE 0 END) > 0 THEN 'INTERRUPTED'
+                        WHEN COUNT(*) = SUM(CASE WHEN status = 'COMPLETED' THEN 1 ELSE 0 END) THEN 'COMPLETED'
+                        ELSE 'PENDING'
+                    END as computed_status
+                FROM job
+                WHERE {}
+                GROUP BY pipeline_id
+                {}
+            )
+            "#,
+            where_clause, having_clause
+        );
+
+        // Execute count query
+        let count_builder = sqlx::query_scalar::<_, i64>(&count_query);
+        let count_builder = {
+            let mut q = count_builder;
+            if let Some(ref streamer_id) = filters.streamer_id {
+                q = q.bind(streamer_id);
+            }
+            if let Some(ref session_id) = filters.session_id {
+                q = q.bind(session_id);
+            }
+            if let Some(ref search) = filters.search {
+                let pattern = format!("%{}%", search);
+                q = q.bind(pattern.clone()).bind(pattern.clone()).bind(pattern);
+            }
+            if let Some(ref status) = filters.status {
+                q = q.bind(status.as_str());
+            }
+            q
+        };
+        let total: i64 = count_builder.fetch_one(&self.pool).await.unwrap_or(0);
+
+        // Execute main query
+        let mut query_builder = sqlx::query_as::<
+            _,
+            (
+                String,
+                String,
+                Option<String>,
+                String,
+                i64,
+                i64,
+                i64,
+                f64,
+                String,
+                String,
+            ),
+        >(&query);
+
+        if let Some(ref streamer_id) = filters.streamer_id {
+            query_builder = query_builder.bind(streamer_id);
+        }
+        if let Some(ref session_id) = filters.session_id {
+            query_builder = query_builder.bind(session_id);
+        }
+        if let Some(ref search) = filters.search {
+            let pattern = format!("%{}%", search);
+            query_builder = query_builder
+                .bind(pattern.clone())
+                .bind(pattern.clone())
+                .bind(pattern);
+        }
+        if let Some(ref status) = filters.status {
+            query_builder = query_builder.bind(status.as_str());
+        }
+        query_builder = query_builder
+            .bind(pagination.limit as i64)
+            .bind(pagination.offset as i64);
+
+        let rows = query_builder.fetch_all(&self.pool).await?;
+
+        let summaries: Vec<PipelineSummary> = rows
+            .into_iter()
+            .map(|row| PipelineSummary {
+                pipeline_id: row.0,
+                streamer_id: row.1,
+                session_id: row.2,
+                status: row.3,
+                job_count: row.4,
+                completed_count: row.5,
+                failed_count: row.6,
+                total_duration_secs: row.7,
+                created_at: row.8,
+                updated_at: row.9,
+            })
+            .collect();
+
+        Ok((summaries, total as u64))
     }
 
     /// Purge completed/failed jobs older than the specified number of days.

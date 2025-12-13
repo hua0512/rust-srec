@@ -36,9 +36,8 @@ pub use metrics::{
     create_scheduler_metrics,
 };
 pub use monitor_adapter::{
-    BatchChecker, CheckError, DynBatchChecker, DynStatusChecker, MonitorBatchChecker,
-    MonitorCheckerFactory, MonitorStatusChecker, NoOpBatchChecker, NoOpCheckerFactory,
-    NoOpStatusChecker, StatusChecker, StatusCheckerFactory,
+    BatchChecker, CheckError, MonitorBatchChecker, MonitorStatusChecker, NoOpBatchChecker,
+    NoOpStatusChecker, StatusChecker,
 };
 pub use platform_actor::PlatformActor;
 pub use registry::{ActorRegistry, ActorTaskResult, RegistryError};

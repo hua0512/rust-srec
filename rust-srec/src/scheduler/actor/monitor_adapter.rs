@@ -13,30 +13,6 @@ use crate::streamer::StreamerMetadata;
 
 use super::messages::{BatchDetectionResult, CheckResult};
 
-/// Factory trait for creating status checkers.
-///
-/// This allows the Supervisor to create appropriate checker instances
-/// without being coupled to specific implementations. The factory pattern
-/// enables dependency injection of real or mock checkers.
-pub trait StatusCheckerFactory: Send + Sync + 'static {
-    /// Create a StatusChecker for individual streamer checks.
-    fn create_status_checker(&self) -> Arc<dyn StatusChecker>;
-
-    /// Create a BatchChecker for platform batch checks.
-    fn create_batch_checker(&self) -> Arc<dyn BatchChecker>;
-}
-
-/// Context for status checks.
-#[derive(Debug, Clone, Default)]
-pub struct CheckContext {
-    /// Consecutive offline count.
-    pub offline_count: u32,
-    /// Number of offline checks required to confirm offline state.
-    pub offline_limit: u32,
-    /// Whether the streamer was previously live.
-    pub was_live: bool,
-}
-
 /// Trait for individual streamer status checking.
 ///
 /// This trait abstracts the status checking operation, allowing
@@ -46,12 +22,12 @@ pub struct CheckContext {
 pub trait StatusChecker: Send + Sync + 'static {
     /// Check the status of a streamer.
     ///
-    /// Returns a `CheckResult` with the detected state.
+    /// Returns a tuple of `(CheckResult, LiveStatus)` with the detected state.
+    /// The `LiveStatus` can be used for `process_status()` if the caller decides to emit events.
     async fn check_status(
         &self,
         streamer: &StreamerMetadata,
-        context: &CheckContext,
-    ) -> Result<CheckResult, CheckError>;
+    ) -> Result<(CheckResult, LiveStatus), CheckError>;
 
     /// Process a status result and update the streamer state.
     ///
@@ -114,76 +90,6 @@ impl CheckError {
     }
 }
 
-/// A wrapper type that implements `StatusChecker` by delegating to `Arc<dyn StatusChecker>`.
-///
-/// This allows using dynamic dispatch with the generic `StreamerActor<S>` type,
-/// enabling the Supervisor to inject different checker implementations at runtime.
-#[derive(Clone)]
-pub struct DynStatusChecker {
-    inner: Arc<dyn StatusChecker>,
-}
-
-impl DynStatusChecker {
-    /// Create a new DynStatusChecker wrapping the given checker.
-    pub fn new(checker: Arc<dyn StatusChecker>) -> Self {
-        Self { inner: checker }
-    }
-}
-
-#[async_trait]
-impl StatusChecker for DynStatusChecker {
-    async fn check_status(
-        &self,
-        streamer: &StreamerMetadata,
-        context: &CheckContext,
-    ) -> Result<CheckResult, CheckError> {
-        self.inner.check_status(streamer, context).await
-    }
-
-    async fn process_status(
-        &self,
-        streamer: &StreamerMetadata,
-        status: LiveStatus,
-    ) -> Result<(), CheckError> {
-        self.inner.process_status(streamer, status).await
-    }
-
-    async fn handle_error(
-        &self,
-        streamer: &StreamerMetadata,
-        error: &str,
-    ) -> Result<(), CheckError> {
-        self.inner.handle_error(streamer, error).await
-    }
-}
-
-/// A wrapper type that implements `BatchChecker` by delegating to `Arc<dyn BatchChecker>`.
-///
-/// This allows using dynamic dispatch with the generic `PlatformActor<B>` type,
-/// enabling the Supervisor to inject different checker implementations at runtime.
-#[derive(Clone)]
-pub struct DynBatchChecker {
-    inner: Arc<dyn BatchChecker>,
-}
-
-impl DynBatchChecker {
-    /// Create a new DynBatchChecker wrapping the given checker.
-    pub fn new(checker: Arc<dyn BatchChecker>) -> Self {
-        Self { inner: checker }
-    }
-}
-
-#[async_trait]
-impl BatchChecker for DynBatchChecker {
-    async fn batch_check(
-        &self,
-        platform_id: &str,
-        streamers: Vec<StreamerMetadata>,
-    ) -> Result<Vec<BatchDetectionResult>, CheckError> {
-        self.inner.batch_check(platform_id, streamers).await
-    }
-}
-
 impl std::fmt::Display for CheckError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}", self.message)
@@ -235,48 +141,16 @@ where
     async fn check_status(
         &self,
         streamer: &StreamerMetadata,
-        context: &CheckContext,
-    ) -> Result<CheckResult, CheckError> {
+    ) -> Result<(CheckResult, LiveStatus), CheckError> {
         let status = self.monitor.check_streamer(streamer).await?;
 
         // Convert LiveStatus to CheckResult
         let result = convert_live_status_to_check_result(&status);
 
-        // Apply hysteresis for offline detection
-        // If status is offline and we haven't reached the offline limit,
-        // we skip processing (which prevents ending the session).
-        let should_process = if matches!(status, crate::monitor::LiveStatus::Offline) {
-            // Only skip processing if we were previously live (hysteresis applies)
-            // and we haven't reached the limit yet.
-            // Note: context.offline_count is the count BEFORE this check.
-            // We use (count + 1) to include the current check in the count.
-            // So if count=0 and limit=3:
-            // Check 1: detected offline. count=0. (0+1)<3=true. Skip. (count becomes 1)
-            // Check 2: detected offline. count=1. (1+1)<3=true. Skip. (count becomes 2)
-            // Check 3: detected offline. count=2. (2+1)<3=false. Process!
-            if context.was_live && context.offline_count + 1 < context.offline_limit {
-                false
-            } else {
-                true
-            }
-        } else {
-            // Always process other statuses (Live, Filtered, Errors)
-            true
-        };
-
-        if should_process {
-            // Process the status (update state, emit events, etc.)
-            self.monitor.process_status(streamer, status).await?;
-        } else {
-            tracing::debug!(
-                "Skipping status processing for {} (offline hysteresis: {}/{})",
-                streamer.id,
-                context.offline_count,
-                context.offline_limit
-            );
-        }
-
-        Ok(result)
+        // Return both the result and the status.
+        // The caller (StreamerActor) will decide whether to call process_status()
+        // based on the hysteresis logic in record_check().
+        Ok((result, status))
     }
 
     async fn process_status(
@@ -348,78 +222,29 @@ where
         for (streamer_id, status) in batch_result.results {
             let check_result = convert_live_status_to_check_result(&status);
 
-            // Find the streamer metadata to process status
-            if let Some(streamer) = streamers.iter().find(|s| s.id == streamer_id) {
-                // Process the status for this streamer
-                if let Err(e) = self.monitor.process_status(streamer, status).await {
-                    tracing::warn!("Failed to process status for {}: {}", streamer_id, e);
-                }
-            }
+            // NOTE: We no longer call process_status() here.
+            // The StreamerActor will apply hysteresis via record_check() and
+            // call process_status() only if needed.
 
             results.push(BatchDetectionResult {
                 streamer_id,
                 result: check_result,
+                status,
             });
         }
 
         // Handle failures
         for failure in batch_result.failures {
-            if let Some(streamer) = streamers.iter().find(|s| s.id == failure.streamer_id) {
-                if let Err(e) = self.monitor.handle_error(streamer, &failure.error).await {
-                    tracing::warn!("Failed to handle error for {}: {}", failure.streamer_id, e);
-                }
-            }
-
             results.push(BatchDetectionResult {
                 streamer_id: failure.streamer_id,
                 result: CheckResult::failure(failure.error),
+                // NOTE: This status is ignored by StreamerActor for error results; it will call
+                // StatusChecker::handle_error() instead of process_status().
+                status: crate::monitor::LiveStatus::Offline,
             });
         }
 
         Ok(results)
-    }
-}
-
-/// Factory that creates real checkers connected to StreamMonitor.
-///
-/// This factory creates `MonitorStatusChecker` and `MonitorBatchChecker` instances
-/// that connect to the actual monitoring infrastructure for real status detection.
-pub struct MonitorCheckerFactory<SR, FR, SSR, CR>
-where
-    SR: crate::database::repositories::StreamerRepository + Send + Sync + 'static,
-    FR: crate::database::repositories::FilterRepository + Send + Sync + 'static,
-    SSR: crate::database::repositories::SessionRepository + Send + Sync + 'static,
-    CR: crate::database::repositories::ConfigRepository + Send + Sync + 'static,
-{
-    monitor: Arc<crate::monitor::StreamMonitor<SR, FR, SSR, CR>>,
-}
-
-impl<SR, FR, SSR, CR> MonitorCheckerFactory<SR, FR, SSR, CR>
-where
-    SR: crate::database::repositories::StreamerRepository + Send + Sync + 'static,
-    FR: crate::database::repositories::FilterRepository + Send + Sync + 'static,
-    SSR: crate::database::repositories::SessionRepository + Send + Sync + 'static,
-    CR: crate::database::repositories::ConfigRepository + Send + Sync + 'static,
-{
-    /// Create a new MonitorCheckerFactory with the given StreamMonitor.
-    pub fn new(monitor: Arc<crate::monitor::StreamMonitor<SR, FR, SSR, CR>>) -> Self {
-        Self { monitor }
-    }
-}
-
-impl<SR, FR, SSR, CR> StatusCheckerFactory for MonitorCheckerFactory<SR, FR, SSR, CR>
-where
-    SR: crate::database::repositories::StreamerRepository + Send + Sync + 'static,
-    FR: crate::database::repositories::FilterRepository + Send + Sync + 'static,
-    SSR: crate::database::repositories::SessionRepository + Send + Sync + 'static,
-    CR: crate::database::repositories::ConfigRepository + Send + Sync + 'static,
-{
-    fn create_status_checker(&self) -> Arc<dyn StatusChecker> {
-        Arc::new(MonitorStatusChecker::new(self.monitor.clone()))
-    }
-
-    fn create_batch_checker(&self) -> Arc<dyn BatchChecker> {
-        Arc::new(MonitorBatchChecker::new(self.monitor.clone()))
     }
 }
 
@@ -493,11 +318,13 @@ impl StatusChecker for NoOpStatusChecker {
     async fn check_status(
         &self,
         _streamer: &StreamerMetadata,
-        _context: &CheckContext,
-    ) -> Result<CheckResult, CheckError> {
+    ) -> Result<(CheckResult, LiveStatus), CheckError> {
         // Simulate a small delay
         tokio::time::sleep(std::time::Duration::from_millis(10)).await;
-        Ok(CheckResult::success(crate::domain::StreamerState::NotLive))
+        Ok((
+            CheckResult::success(crate::domain::StreamerState::NotLive),
+            LiveStatus::Offline,
+        ))
     }
 
     async fn process_status(
@@ -539,34 +366,10 @@ impl BatchChecker for NoOpBatchChecker {
             .map(|s| BatchDetectionResult {
                 streamer_id: s.id,
                 result: CheckResult::success(crate::domain::StreamerState::NotLive),
+                status: LiveStatus::Offline,
             })
             .collect();
 
         Ok(results)
-    }
-}
-
-/// Factory that creates NoOp checkers for testing.
-///
-/// This factory creates `NoOpStatusChecker` and `NoOpBatchChecker` instances,
-/// which simulate checks without actually performing them. Useful for unit tests
-/// and development scenarios where real monitoring is not needed.
-#[derive(Clone, Default)]
-pub struct NoOpCheckerFactory;
-
-impl NoOpCheckerFactory {
-    /// Create a new NoOpCheckerFactory.
-    pub fn new() -> Self {
-        Self
-    }
-}
-
-impl StatusCheckerFactory for NoOpCheckerFactory {
-    fn create_status_checker(&self) -> Arc<dyn StatusChecker> {
-        Arc::new(NoOpStatusChecker)
-    }
-
-    fn create_batch_checker(&self) -> Arc<dyn BatchChecker> {
-        Arc::new(NoOpBatchChecker)
     }
 }

@@ -8,7 +8,7 @@ use chrono::{DateTime, Utc};
 use platforms_parser::extractor::error::ExtractorError;
 use platforms_parser::extractor::factory::ExtractorFactory;
 use serde::{Deserialize, Serialize};
-use tracing::{debug, info, warn};
+use tracing::{debug, warn};
 
 use crate::Result;
 use crate::domain::filter::{Filter, FilterType};
@@ -240,7 +240,7 @@ impl StreamDetector {
             }
         };
 
-        info!(
+        debug!(
             "Detailed media info for {}: {:?}",
             streamer.name, media_info
         );

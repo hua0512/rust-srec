@@ -28,9 +28,9 @@ use crate::monitor::StreamMonitor;
 use crate::streamer::{StreamerManager, StreamerMetadata};
 
 use super::actor::{
-    ActorHandle, ConfigRouter, ConfigScope, DownloadEndReason, MonitorCheckerFactory,
-    PlatformConfig, PlatformMapping, PlatformMessage, ShutdownReport, StreamerConfig,
-    StreamerMessage, Supervisor, SupervisorConfig, TaskCompletionAction,
+    ActorHandle, ConfigRouter, ConfigScope, DownloadEndReason, MonitorBatchChecker,
+    MonitorStatusChecker, PlatformConfig, PlatformMapping, PlatformMessage, ShutdownReport,
+    StreamerConfig, StreamerMessage, Supervisor, SupervisorConfig, TaskCompletionAction,
 };
 
 /// Default check interval (60 seconds).
@@ -174,8 +174,13 @@ impl<R: StreamerRepository + Send + Sync + 'static> Scheduler<R> {
         config: SchedulerConfig,
         cancellation_token: CancellationToken,
     ) -> Self {
-        let supervisor =
-            Supervisor::with_config(cancellation_token.clone(), config.supervisor_config.clone());
+        // Pass the shared metadata store to the supervisor
+        let metadata_store = streamer_manager.metadata_store();
+        let supervisor = Supervisor::with_config(
+            cancellation_token.clone(),
+            config.supervisor_config.clone(),
+            metadata_store,
+        );
 
         Self {
             streamer_manager,
@@ -255,14 +260,20 @@ impl<R: StreamerRepository + Send + Sync + 'static> Scheduler<R> {
         SSR: SessionRepository + Send + Sync + 'static,
         CR: ConfigRepository + Send + Sync + 'static,
     {
-        // Create MonitorCheckerFactory from the StreamMonitor
-        let checker_factory = Arc::new(MonitorCheckerFactory::new(monitor.clone()));
+        // Create status and batch checkers directly from the StreamMonitor
+        let status_checker = Arc::new(MonitorStatusChecker::new(monitor.clone()));
+        let batch_checker = Arc::new(MonitorBatchChecker::new(monitor.clone()));
 
-        // Create supervisor with the real checker factory
-        let supervisor = Supervisor::with_checker_factory(
+        // Pass the shared metadata store to the supervisor
+        let metadata_store = streamer_manager.metadata_store();
+
+        // Create supervisor with the real checkers
+        let supervisor = Supervisor::with_checkers(
             cancellation_token.clone(),
             config.supervisor_config.clone(),
-            checker_factory,
+            metadata_store,
+            status_checker,
+            batch_checker,
         );
 
         Self {
@@ -328,7 +339,7 @@ impl<R: StreamerRepository + Send + Sync + 'static> Scheduler<R> {
     /// Check if a platform supports batch detection.
     fn is_batch_capable_platform(&self, platform_id: &str) -> bool {
         // Platforms that support batch API detection
-        matches!(platform_id, "twitch" | "youtube")
+        matches!(platform_id, "youtube")
     }
 
     /// Start the scheduler event loop.
@@ -541,9 +552,10 @@ impl<R: StreamerRepository + Send + Sync + 'static> Scheduler<R> {
         // Register platform mapping
         self.platform_mapping.register(&streamer_id, &platform_id);
 
+        // Spawn with streamer_id - actor fetches metadata from shared store
         match self
             .supervisor
-            .spawn_streamer(metadata, config, platform_sender)
+            .spawn_streamer(&streamer_id, config, platform_sender)
         {
             Ok(_handle) => {
                 debug!("Spawned streamer actor: {}", streamer_id);
@@ -572,11 +584,61 @@ impl<R: StreamerRepository + Send + Sync + 'static> Scheduler<R> {
             return; // No need to route config to a deleted streamer
         }
 
+        // Handle streamer state changes - spawn/remove actor based on is_active
+        // Actors fetch fresh metadata from the shared store, so no MetadataUpdate needed
+        if let ConfigUpdateEvent::StreamerStateChanged {
+            ref streamer_id,
+            is_active,
+        } = event
+        {
+            if is_active {
+                // Streamer became active - spawn actor if missing
+                // Actors fetch metadata from shared store, so existing actors will see updates automatically
+                if let Some(metadata) = self.streamer_manager.get_streamer(streamer_id) {
+                    if !self.supervisor.registry().has_streamer(streamer_id) {
+                        // Actor doesn't exist - spawn it
+                        // Ensure platform actor exists for batch-capable platforms
+                        if self.is_batch_capable_platform(&metadata.platform_config_id) {
+                            let _ = self.spawn_platform_actor(&metadata.platform_config_id);
+                        }
+                        info!(
+                            "Spawning actor for newly active streamer: {} (state: {})",
+                            streamer_id, metadata.state
+                        );
+                        if let Err(e) = self.spawn_streamer_actor(metadata) {
+                            warn!("Failed to spawn actor for {}: {}", streamer_id, e);
+                        }
+                    }
+                    // Note: Existing actors will fetch fresh metadata from shared store on next check
+                }
+            } else {
+                // Streamer became inactive - remove actor if exists
+                if self.remove_streamer(streamer_id) {
+                    info!("Removed actor for inactive streamer: {}", streamer_id);
+                }
+            }
+            return; // State changes don't require config routing
+        }
+
         let scope = ConfigScope::from_event(&event);
 
         // Check if we need to spawn or remove a streamer actor for Streamer-scoped updates
         if let ConfigScope::Streamer(ref streamer_id) = scope {
             if let Some(metadata) = self.streamer_manager.get_streamer(streamer_id) {
+                // Keep platform mapping consistent with the latest metadata.
+                self.platform_mapping
+                    .register(streamer_id, &metadata.platform_config_id);
+
+                // Ensure platform actor exists if the streamer is on a batch-capable platform.
+                if self.is_batch_capable_platform(&metadata.platform_config_id) {
+                    if let Err(e) = self.spawn_platform_actor(&metadata.platform_config_id) {
+                        warn!(
+                            "Failed to ensure platform actor for {}: {}",
+                            metadata.platform_config_id, e
+                        );
+                    }
+                }
+
                 if metadata.is_active() {
                     // Streamer is active - spawn actor if missing
                     if !self.supervisor.registry().has_streamer(streamer_id) {
@@ -635,28 +697,95 @@ impl<R: StreamerRepository + Send + Sync + 'static> Scheduler<R> {
         let router =
             ConfigRouter::new(&streamer_handles, &platform_handles, &self.platform_mapping);
 
+        let targets = router.get_target_actors(&scope);
+
         let config = self.config.clone();
+        let streamer_manager = self.streamer_manager.clone();
+
+        let mut streamer_configs: HashMap<String, StreamerConfig> = HashMap::new();
+        let mut platform_configs: HashMap<String, PlatformConfig> = HashMap::new();
+
+        for target in &targets {
+            if let Some(platform_id) = target.strip_prefix("platform:") {
+                platform_configs.insert(
+                    platform_id.to_string(),
+                    PlatformConfig {
+                        platform_id: platform_id.to_string(),
+                        batch_window_ms: 500,
+                        max_batch_size: 100,
+                        rate_limit: None,
+                    },
+                );
+                continue;
+            }
+
+            let streamer_id = target.as_str();
+            let metadata = streamer_manager.get_streamer(streamer_id);
+            let priority = metadata
+                .as_ref()
+                .map(|m| m.priority)
+                .unwrap_or(crate::domain::Priority::Normal);
+            let batch_capable = metadata
+                .as_ref()
+                .map(|m| self.is_batch_capable_platform(&m.platform_config_id))
+                .unwrap_or(false);
+
+            streamer_configs.insert(
+                streamer_id.to_string(),
+                StreamerConfig {
+                    check_interval_ms: config.check_interval_ms,
+                    offline_check_interval_ms: config.offline_check_interval_ms,
+                    offline_check_count: config.offline_check_count,
+                    priority,
+                    batch_capable,
+                },
+            );
+        }
+
         let result = router
             .route_with_scope(
                 &scope,
-                |_streamer_id| {
-                    // Create config for streamer
-                    StreamerConfig {
-                        check_interval_ms: config.check_interval_ms,
-                        offline_check_interval_ms: config.offline_check_interval_ms,
-                        offline_check_count: config.offline_check_count,
-                        priority: crate::domain::Priority::Normal, // Would need to look up actual priority
-                        batch_capable: false, // Would need to look up actual capability
-                    }
+                |streamer_id| {
+                    streamer_configs
+                        .get(streamer_id)
+                        .cloned()
+                        .unwrap_or(StreamerConfig {
+                            check_interval_ms: config.check_interval_ms,
+                            offline_check_interval_ms: config.offline_check_interval_ms,
+                            offline_check_count: config.offline_check_count,
+                            priority: crate::domain::Priority::Normal,
+                            batch_capable: false,
+                        })
                 },
-                |platform_id| PlatformConfig {
-                    platform_id: platform_id.to_string(),
-                    batch_window_ms: 500,
-                    max_batch_size: 100,
-                    rate_limit: None,
+                |platform_id| {
+                    platform_configs
+                        .get(platform_id)
+                        .cloned()
+                        .unwrap_or(PlatformConfig {
+                            platform_id: platform_id.to_string(),
+                            batch_window_ms: 500,
+                            max_batch_size: 100,
+                            rate_limit: None,
+                        })
                 },
             )
             .await;
+
+        // Keep supervisor restart caches in sync with the configs we just routed.
+        // This avoids crash-restarts reverting to stale configs.
+        // Note: Metadata is in the shared store, so we only need to update config.
+        for (streamer_id, cfg) in streamer_configs {
+            if streamer_handles.contains_key(&streamer_id) {
+                self.supervisor
+                    .update_streamer_restart_config(&streamer_id, cfg);
+            }
+        }
+        for (platform_id, cfg) in platform_configs {
+            if platform_handles.contains_key(&platform_id) {
+                self.supervisor
+                    .update_platform_restart_config(&platform_id, cfg);
+            }
+        }
 
         if !result.all_succeeded() {
             warn!(
@@ -670,29 +799,46 @@ impl<R: StreamerRepository + Send + Sync + 'static> Scheduler<R> {
 
     /// Process a download event (internal).
     async fn process_download_event(&self, event: DownloadManagerEvent) {
-        let (streamer_id, reason) = match event {
-            DownloadManagerEvent::DownloadCompleted { streamer_id, .. } => {
-                (streamer_id, DownloadEndReason::StreamerOffline)
-            }
+        let (streamer_id, msg) = match event {
+            DownloadManagerEvent::DownloadStarted {
+                streamer_id,
+                download_id,
+                session_id,
+                ..
+            } => (
+                streamer_id,
+                StreamerMessage::DownloadStarted {
+                    download_id,
+                    session_id,
+                },
+            ),
+            DownloadManagerEvent::DownloadCompleted { streamer_id, .. } => (
+                streamer_id,
+                StreamerMessage::DownloadEnded(DownloadEndReason::StreamerOffline),
+            ),
             DownloadManagerEvent::DownloadFailed {
                 streamer_id, error, ..
-            } => (streamer_id, DownloadEndReason::SegmentFailed(error)),
-            DownloadManagerEvent::DownloadCancelled { streamer_id, .. } => {
-                (streamer_id, DownloadEndReason::Cancelled)
-            }
+            } => (
+                streamer_id,
+                StreamerMessage::DownloadEnded(DownloadEndReason::SegmentFailed(error)),
+            ),
+            DownloadManagerEvent::DownloadCancelled { streamer_id, .. } => (
+                streamer_id,
+                StreamerMessage::DownloadEnded(DownloadEndReason::Cancelled),
+            ),
             _ => return, // Ignore other events
         };
 
         debug!(
             "Handling download event for streamer {}: {:?}",
-            streamer_id, reason
+            streamer_id, msg
         );
 
         // Get actor handle
         if let Some(handle) = self.supervisor.registry().get_streamer(&streamer_id) {
-            if let Err(e) = handle.send(StreamerMessage::DownloadEnded(reason)).await {
+            if let Err(e) = handle.send(msg).await {
                 warn!(
-                    "Failed to send DownloadEnded message to actor {}: {}",
+                    "Failed to send download message to actor {}: {}",
                     streamer_id, e
                 );
             }

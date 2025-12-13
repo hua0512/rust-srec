@@ -1,10 +1,52 @@
 //! Utility functions for processors.
 
 use crate::pipeline::job_queue::{JobLogEntry, LogLevel};
+use std::path::Path;
 use std::process::Stdio;
 use tokio::io::{AsyncBufReadExt, BufReader};
 use tokio::process::Command;
 use tracing::{debug, warn};
+
+/// Video file extensions that support processing.
+pub const VIDEO_EXTENSIONS: &[&str] = &[
+    "mp4", "mkv", "webm", "mov", "flv", "avi", "wmv", "m4v", "ts", "mts", "m2ts", "3gp", "ogv",
+];
+
+/// Audio file extensions.
+pub const AUDIO_EXTENSIONS: &[&str] = &["mp3", "aac", "m4a", "ogg", "opus", "flac", "wav"];
+
+/// Image file extensions that should be passed through.
+pub const IMAGE_EXTENSIONS: &[&str] = &[
+    "jpg", "jpeg", "png", "gif", "bmp", "webp", "tiff", "tif", "ico", "avif",
+];
+
+/// Get the lowercase extension from a path.
+pub fn get_extension(path: &str) -> Option<String> {
+    Path::new(path)
+        .extension()
+        .and_then(|s| s.to_str())
+        .map(|s| s.to_lowercase())
+}
+
+/// Check if the extension is a video format.
+pub fn is_video(ext: &str) -> bool {
+    VIDEO_EXTENSIONS.contains(&ext)
+}
+
+/// Check if the extension is an audio format.
+pub fn is_audio(ext: &str) -> bool {
+    AUDIO_EXTENSIONS.contains(&ext)
+}
+
+/// Check if the extension is an image format.
+pub fn is_image(ext: &str) -> bool {
+    IMAGE_EXTENSIONS.contains(&ext)
+}
+
+/// Check if the extension is a media format (video or audio).
+pub fn is_media(ext: &str) -> bool {
+    is_video(ext) || is_audio(ext)
+}
 
 /// Output from a command execution including captured logs.
 pub struct CommandOutput {
@@ -32,39 +74,38 @@ pub async fn run_command_with_logs(command: &mut Command) -> crate::Result<Comma
         .spawn()
         .map_err(|e| crate::Error::Other(format!("Failed to spawn command: {}", e)))?;
 
-    // We will collect logs here. We need a way to share this across tasks.
-    // Using a channel is a good way to stream logs from async readers.
     let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
 
     // Handle stdout
-    if let Some(stdout) = child.stdout.take() {
+    let stdout_handle = if let Some(stdout) = child.stdout.take() {
         let tx = tx.clone();
-        tokio::spawn(async move {
+        Some(tokio::spawn(async move {
             let reader = BufReader::new(stdout);
             let mut lines = reader.lines();
             while let Ok(Some(line)) = lines.next_line().await {
-                // Log to tracing for backend visibility
                 debug!("stdout: {}", line);
-                // Send to channel for persistence
-                let _ = tx.send(JobLogEntry::new(LogLevel::Info, line));
+                let _ = tx.send(create_log_entry(LogLevel::Info, line));
             }
-        });
-    }
+        }))
+    } else {
+        None
+    };
 
     // Handle stderr
-    if let Some(stderr) = child.stderr.take() {
+    let stderr_handle = if let Some(stderr) = child.stderr.take() {
         let tx = tx.clone();
-        tokio::spawn(async move {
+        Some(tokio::spawn(async move {
             let reader = BufReader::new(stderr);
             let mut lines = reader.lines();
             while let Ok(Some(line)) = lines.next_line().await {
-                // FFmpeg and others often print progress/info to stderr, so we need to be careful
-                // not to treat everything as an error. For now, we'll treat it as info/debug
-                // unless it explicitly looks like an error, or just log at 'Info' level generally
-                // as many tools output normal log data to stderr.
-                // However, to match previous behavior, we might check for "error" keywords.
-
-                let level = if line.to_lowercase().contains("error") {
+                // FFmpeg outputs progress to stderr, so we check for error indicators
+                // Use more specific patterns to avoid false positives
+                let level = if line.starts_with("[error]")
+                    || line.contains("Error ")
+                    || line.contains("error:")
+                    || line.contains("failed")
+                    || line.contains("Invalid ")
+                {
                     warn!("stderr: {}", line);
                     LogLevel::Error
                 } else {
@@ -72,24 +113,28 @@ pub async fn run_command_with_logs(command: &mut Command) -> crate::Result<Comma
                     LogLevel::Info
                 };
 
-                let _ = tx.send(JobLogEntry::new(level, line));
+                let _ = tx.send(create_log_entry(level, line));
             }
-        });
-    }
+        }))
+    } else {
+        None
+    };
 
-    // Drop the original transmitter so the receiver knows when all senders are done.
-    // However, the channel will actually stay open until the child process finishes
-    // AND the stream readers finish.
-    // We can't easily "wait" for the stream readers unless we keep join handles.
-    // But since the stream readers run until EOF (which happens when child closes pipes),
-    // waiting for the child usually implies waiting for streams soon after.
-    // A better approach specifically for `wait`:
+    // Drop original sender so channel closes when tasks complete
     drop(tx);
 
     let status = child
         .wait()
         .await
         .map_err(|e| crate::Error::Other(format!("Failed to wait for command: {}", e)))?;
+
+    // Wait for reader tasks to complete to ensure all output is captured
+    if let Some(handle) = stdout_handle {
+        let _ = handle.await;
+    }
+    if let Some(handle) = stderr_handle {
+        let _ = handle.await;
+    }
 
     let duration = start.elapsed().as_secs_f64();
 
@@ -98,10 +143,6 @@ pub async fn run_command_with_logs(command: &mut Command) -> crate::Result<Comma
     while let Some(entry) = rx.recv().await {
         logs.push(entry);
     }
-
-    // Sort logs by timestamp slightly? The channel order should be roughly correct,
-    // but due to async scheduling it's not guaranteed perfectly strict.
-    // Given the timestamp resolution, strict sorting might not change much.
 
     Ok(CommandOutput {
         status,

@@ -11,6 +11,25 @@ use std::time::{Duration, Instant};
 use tokio::sync::{Mutex, broadcast};
 
 /// Events broadcast when configuration changes occur.
+///
+/// # Event Types and Their Usage
+///
+/// ## `StreamerUpdated` vs `StreamerStateChanged`
+///
+/// These two events serve different purposes and are emitted from different code paths:
+///
+/// - **`StreamerUpdated`**: Emitted when streamer configuration is changed via API operations
+///   (create, update, partial_update). This is for user-initiated changes. Handlers should
+///   check `metadata.is_active()` to determine if cleanup is needed.
+///
+/// - **`StreamerStateChanged`**: Emitted by `StreamerManager::reload_from_repo()` after
+///   transactional database updates (e.g., monitor detecting errors, session state changes).
+///   This is for system-initiated state synchronization. The scheduler uses this to spawn/remove
+///   actors without routing config updates.
+///
+/// They should NOT overlap in normal operation:
+/// - API update → `StreamerUpdated` only
+/// - Transaction sync → `StreamerStateChanged` only
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ConfigUpdateEvent {
     /// Global configuration was updated.
@@ -19,12 +38,29 @@ pub enum ConfigUpdateEvent {
     PlatformUpdated { platform_id: String },
     /// A template configuration was updated.
     TemplateUpdated { template_id: String },
-    /// A streamer configuration was updated.
+    /// A streamer configuration was updated via API.
+    ///
+    /// Emitted by: `create_streamer()`, `update_streamer()`, `partial_update_streamer()`
+    ///
+    /// Handlers should check `metadata.is_active()` to determine if the streamer
+    /// became inactive and needs cleanup.
     StreamerUpdated { streamer_id: String },
     /// A streamer was deleted.
     StreamerDeleted { streamer_id: String },
     /// An engine configuration was updated.
     EngineUpdated { engine_id: String },
+    /// A streamer's state was synchronized from the database.
+    ///
+    /// Emitted by: `StreamerManager::reload_from_repo()` after transactional DB updates.
+    ///
+    /// This event is used by the scheduler to spawn/remove actors based on state changes
+    /// that occurred via transactional operations (e.g., monitor error handling).
+    /// Unlike `StreamerUpdated`, this does NOT trigger config routing to actors.
+    StreamerStateChanged {
+        streamer_id: String,
+        /// Whether the streamer is now active (can be monitored).
+        is_active: bool,
+    },
 }
 
 impl ConfigUpdateEvent {
@@ -46,6 +82,15 @@ impl ConfigUpdateEvent {
             }
             Self::EngineUpdated { engine_id } => {
                 format!("Engine config updated: {}", engine_id)
+            }
+            Self::StreamerStateChanged {
+                streamer_id,
+                is_active,
+            } => {
+                format!(
+                    "Streamer state changed: {} (active={})",
+                    streamer_id, is_active
+                )
             }
         }
     }
@@ -190,6 +235,13 @@ impl std::hash::Hash for ConfigUpdateEvent {
             ConfigUpdateEvent::StreamerUpdated { streamer_id } => streamer_id.hash(state),
             ConfigUpdateEvent::StreamerDeleted { streamer_id } => streamer_id.hash(state),
             ConfigUpdateEvent::EngineUpdated { engine_id } => engine_id.hash(state),
+            ConfigUpdateEvent::StreamerStateChanged {
+                streamer_id,
+                is_active,
+            } => {
+                streamer_id.hash(state);
+                is_active.hash(state);
+            }
         }
     }
 }

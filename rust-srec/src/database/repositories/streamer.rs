@@ -338,15 +338,13 @@ impl StreamerRepository for SqlxStreamerRepository {
             UPDATE streamers SET 
                 consecutive_error_count = ?,
                 disabled_until = ?,
-                last_error = ?,
-                state = CASE WHEN ? IS NOT NULL THEN 'ERROR' ELSE state END
+                last_error = ?
             WHERE id = ?
             "#,
         )
         .bind(error_count)
         .bind(disabled_until)
         .bind(error)
-        .bind(disabled_until)
         .bind(id)
         .execute(&self.pool)
         .await?;

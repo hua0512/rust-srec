@@ -18,6 +18,7 @@ use zip::ZipWriter;
 use zip::write::SimpleFileOptions;
 
 use super::traits::{Processor, ProcessorInput, ProcessorOutput, ProcessorType};
+use super::utils::create_log_entry;
 use crate::Result;
 
 /// Default compression level (6 is a good balance between speed and compression).
@@ -354,7 +355,7 @@ impl Processor for CompressionProcessor {
             serde_json::from_str(config_str).unwrap_or_else(|e| {
                 let msg = format!("Failed to parse compression config, using defaults: {}", e);
                 warn!("{}", msg);
-                logs.push(crate::pipeline::job_queue::JobLogEntry::new(
+                logs.push(create_log_entry(
                     crate::pipeline::job_queue::LogLevel::Warn,
                     msg,
                 ));
@@ -368,7 +369,7 @@ impl Processor for CompressionProcessor {
         if input.inputs.is_empty() {
             let msg = "No input files specified for compression".to_string();
             error!("{}", msg);
-            logs.push(crate::pipeline::job_queue::JobLogEntry::new(
+            logs.push(create_log_entry(
                 crate::pipeline::job_queue::LogLevel::Error,
                 msg.clone(),
             ));
@@ -385,7 +386,7 @@ impl Processor for CompressionProcessor {
                 output_path
             );
             error!("{}", msg);
-            logs.push(crate::pipeline::job_queue::JobLogEntry::new(
+            logs.push(create_log_entry(
                 crate::pipeline::job_queue::LogLevel::Error,
                 msg.clone(),
             ));
@@ -399,7 +400,7 @@ impl Processor for CompressionProcessor {
             output_path
         );
         info!("{}", start_msg);
-        logs.push(crate::pipeline::job_queue::JobLogEntry::new(
+        logs.push(create_log_entry(
             crate::pipeline::job_queue::LogLevel::Info,
             start_msg,
         ));
@@ -415,7 +416,7 @@ impl Processor for CompressionProcessor {
 
         // Add detailed logs for inputs
         for input in &input.inputs {
-            logs.push(crate::pipeline::job_queue::JobLogEntry::new(
+            logs.push(create_log_entry(
                 crate::pipeline::job_queue::LogLevel::Debug,
                 format!("Added file to archive: {}", input),
             ));
@@ -426,7 +427,7 @@ impl Processor for CompressionProcessor {
             Err(e) => {
                 let msg = format!("Compression failed: {}", e);
                 error!("{}", msg);
-                logs.push(crate::pipeline::job_queue::JobLogEntry::new(
+                logs.push(create_log_entry(
                     crate::pipeline::job_queue::LogLevel::Error,
                     msg,
                 ));
@@ -445,7 +446,7 @@ impl Processor for CompressionProcessor {
             compression_ratio
         );
         info!("{}", complete_msg);
-        logs.push(crate::pipeline::job_queue::JobLogEntry::new(
+        logs.push(create_log_entry(
             crate::pipeline::job_queue::LogLevel::Info,
             complete_msg,
         ));

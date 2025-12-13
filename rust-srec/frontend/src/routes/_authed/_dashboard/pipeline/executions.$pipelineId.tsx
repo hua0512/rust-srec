@@ -1,6 +1,6 @@
 import { Link, createFileRoute } from '@tanstack/react-router';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { listPipelineJobs, retryPipelineJob, cancelPipelineJob } from '@/server/functions';
+import { listPipelineJobs, retryPipelineJob, cancelPipeline } from '@/server/functions';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -103,12 +103,13 @@ function PipelineExecutionPage() {
     });
 
     const cancelMutation = useMutation({
-        mutationFn: (id: string) => cancelPipelineJob({ data: id }),
-        onSuccess: () => {
-            toast.success(t`Job cancelled`);
+        mutationFn: (pipelineId: string) => cancelPipeline({ data: pipelineId }),
+        onSuccess: (result) => {
+            toast.success(t`Cancelled ${result.cancelled_count} jobs in pipeline`);
             queryClient.invalidateQueries({ queryKey: ['pipeline', 'executions', pipelineId] });
+            queryClient.invalidateQueries({ queryKey: ['pipeline', 'stats'] });
         },
-        onError: () => toast.error(t`Failed to cancel job`),
+        onError: () => toast.error(t`Failed to cancel pipeline`),
     });
 
     if (isLoading) {
@@ -165,7 +166,7 @@ function PipelineExecutionPage() {
     const firstJob = sortedJobs[0];
     const isFailed = sortedJobs.some(j => j.status === 'FAILED');
     const isProcessing = sortedJobs.some(j => j.status === 'PROCESSING');
-    const isPending = sortedJobs.every(j => j.status === 'PENDING');
+    const isPending = sortedJobs.some(j => j.status === 'PENDING');
     const isCompleted = sortedJobs.every(j => j.status === 'COMPLETED');
 
     const overallStatus = isFailed ? 'FAILED' : isProcessing ? 'PROCESSING' : isCompleted ? 'COMPLETED' : isPending ? 'PENDING' : 'PROCESSING';
@@ -243,9 +244,7 @@ function PipelineExecutionPage() {
                                 <Button
                                     variant="destructive"
                                     className="shadow-lg shadow-destructive/20 hover:shadow-destructive/40 transition-shadow"
-                                    onClick={() => sortedJobs.forEach(j => {
-                                        if (['PENDING', 'PROCESSING'].includes(j.status)) cancelMutation.mutate(j.id);
-                                    })}
+                                    onClick={() => cancelMutation.mutate(pipelineId)}
                                     disabled={cancelMutation.isPending}
                                 >
                                     <StopCircle className="mr-2 h-4 w-4" /> <Trans>Cancel Pipeline</Trans>

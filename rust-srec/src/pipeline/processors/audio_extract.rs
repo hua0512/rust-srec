@@ -13,6 +13,7 @@ use tokio::process::Command;
 use tracing::{debug, error, info, warn};
 
 use super::traits::{Processor, ProcessorInput, ProcessorOutput, ProcessorType};
+use super::utils::{get_extension, is_image, is_media};
 use crate::Result;
 
 /// Audio output format options.
@@ -289,6 +290,58 @@ impl Processor for AudioExtractProcessor {
                 "Input file does not exist: {}",
                 input_path
             )));
+        }
+
+        // Get extension once for reuse
+        let ext = get_extension(input_path).unwrap_or_default();
+
+        // Check if input is an image - pass through as-is
+        if is_image(&ext) {
+            let duration = start.elapsed().as_secs_f64();
+            info!("Input is an image, passing through: {}", input_path);
+            return Ok(ProcessorOutput {
+                outputs: vec![input_path.clone()],
+                duration_secs: duration,
+                metadata: Some(
+                    serde_json::json!({
+                        "status": "skipped",
+                        "reason": "already_image",
+                        "input": input_path,
+                    })
+                    .to_string(),
+                ),
+                skipped_inputs: vec![(
+                    input_path.clone(),
+                    "input is an image, no audio to extract".to_string(),
+                )],
+                ..Default::default()
+            });
+        }
+
+        // Check if input is a supported media format
+        if !is_media(&ext) {
+            let duration = start.elapsed().as_secs_f64();
+            info!(
+                "Input file is not a supported media format for audio extraction, passing through: {}",
+                input_path
+            );
+            return Ok(ProcessorOutput {
+                outputs: vec![input_path.clone()],
+                duration_secs: duration,
+                metadata: Some(
+                    serde_json::json!({
+                        "status": "skipped",
+                        "reason": "unsupported_media_format",
+                        "input": input_path,
+                    })
+                    .to_string(),
+                ),
+                skipped_inputs: vec![(
+                    input_path.clone(),
+                    "not a supported media format for audio extraction".to_string(),
+                )],
+                ..Default::default()
+            });
         }
 
         // Check if input has audio stream (Requirements: 2.4)

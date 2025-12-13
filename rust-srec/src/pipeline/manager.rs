@@ -842,6 +842,16 @@ where
         self.job_queue.list_jobs(filters, pagination).await
     }
 
+    /// List pipelines (grouped by pipeline_id) with pagination.
+    /// Returns pipeline summaries and total count.
+    pub async fn list_pipelines(
+        &self,
+        filters: &JobFilters,
+        pagination: &Pagination,
+    ) -> Result<(Vec<crate::database::repositories::PipelineSummary>, u64)> {
+        self.job_queue.list_pipelines(filters, pagination).await
+    }
+
     /// Get a job by ID.
     /// Retrieves job from repository.
     /// Requirements: 1.2
@@ -875,7 +885,34 @@ where
     /// Delegates to JobQueue.
     /// Requirements: 2.3, 2.4, 2.5
     pub async fn cancel_job(&self, id: &str) -> Result<()> {
-        self.job_queue.cancel_job(id).await
+        let cancelled_job = self.job_queue.cancel_job(id).await?;
+
+        // Emit JobFailed event for cancelled jobs (pipeline interrupted)
+        let _ = self.event_tx.send(PipelineEvent::JobFailed {
+            job_id: cancelled_job.id.clone(),
+            job_type: cancelled_job.job_type.clone(),
+            error: "Job cancelled".to_string(),
+        });
+
+        Ok(())
+    }
+
+    /// Cancel all jobs in a pipeline.
+    /// Cancels all pending and processing jobs that belong to the specified pipeline.
+    /// Returns the number of jobs cancelled.
+    pub async fn cancel_pipeline(&self, pipeline_id: &str) -> Result<usize> {
+        let cancelled_jobs = self.job_queue.cancel_pipeline(pipeline_id).await?;
+
+        // Emit events for each cancelled job
+        for job in &cancelled_jobs {
+            let _ = self.event_tx.send(PipelineEvent::JobFailed {
+                job_id: job.id.clone(),
+                job_type: job.job_type.clone(),
+                error: "Pipeline cancelled".to_string(),
+            });
+        }
+
+        Ok(cancelled_jobs.len())
     }
 
     /// List available job presets.
