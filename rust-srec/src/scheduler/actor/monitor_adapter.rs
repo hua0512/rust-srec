@@ -249,12 +249,12 @@ where
             // Only skip processing if we were previously live (hysteresis applies)
             // and we haven't reached the limit yet.
             // Note: context.offline_count is the count BEFORE this check.
+            // We use (count + 1) to include the current check in the count.
             // So if count=0 and limit=3:
-            // Check 1: detected offline. count=0. process? No. (count becomes 1)
-            // Check 2: detected offline. count=1. process? No. (count becomes 2)
-            // Check 3: detected offline. count=2. process? No. (count becomes 3)
-            // Check 4: detected offline. count=3. process? Yes. (limit reached)
-            if context.was_live && context.offline_count < context.offline_limit {
+            // Check 1: detected offline. count=0. (0+1)<3=true. Skip. (count becomes 1)
+            // Check 2: detected offline. count=1. (1+1)<3=true. Skip. (count becomes 2)
+            // Check 3: detected offline. count=2. (2+1)<3=false. Process!
+            if context.was_live && context.offline_count + 1 < context.offline_limit {
                 false
             } else {
                 true

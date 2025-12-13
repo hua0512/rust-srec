@@ -64,13 +64,13 @@ pub struct StreamMonitor<
     /// Config service for resolving streamer configuration.
     config_service: Arc<crate::config::ConfigService<CR, SR>>,
     /// Individual stream detector.
-    detector: StreamDetector,
+    detector: Arc<StreamDetector>,
     /// Batch detector.
     batch_detector: BatchDetector,
     /// Rate limiter manager.
     rate_limiter: RateLimiterManager,
     /// In-flight request deduplication.
-    in_flight: DashMap<String, Arc<OnceCell<LiveStatus>>>,
+    in_flight: Arc<DashMap<String, Arc<OnceCell<LiveStatus>>>>,
     /// Event broadcaster for notifications.
     event_broadcaster: MonitorEventBroadcaster,
     /// Configuration.
@@ -132,7 +132,7 @@ impl<
             .build()
             .expect("Failed to create HTTP client");
 
-        let detector = StreamDetector::with_client(client.clone());
+        let detector = Arc::new(StreamDetector::with_client(client.clone()));
         let batch_detector = BatchDetector::with_client(client, rate_limiter.clone());
 
         Self {
@@ -143,7 +143,7 @@ impl<
             detector,
             batch_detector,
             rate_limiter,
-            in_flight: DashMap::new(),
+            in_flight: Arc::new(DashMap::new()),
             event_broadcaster: MonitorEventBroadcaster::new(),
             config,
         }
@@ -160,51 +160,74 @@ impl<
     }
 
     /// Check the status of a single streamer.
+    ///
+    /// This method deduplicates concurrent requests for the same streamer.
+    /// If multiple requests come in for the same streamer simultaneously,
+    /// only one will perform the actual HTTP check and others will wait
+    /// for and share the result.
     pub async fn check_streamer(&self, streamer: &StreamerMetadata) -> Result<LiveStatus> {
         debug!("Checking status for streamer: {}", streamer.id);
 
-        // Request deduplication
+        // Get or create the deduplication cell for this streamer
         let cell = self
             .in_flight
             .entry(streamer.id.clone())
             .or_insert_with(|| Arc::new(OnceCell::new()))
             .clone();
 
-        // If already in flight, wait for result
-        if let Some(status) = cell.get() {
-            debug!("Using cached in-flight result for {}", streamer.id);
-            return Ok(status.clone());
-        }
+        // Clone what we need for the async closure
+        let rate_limiter = self.rate_limiter.clone();
+        let filter_repo = self.filter_repo.clone();
+        let config_service = self.config_service.clone();
+        let detector = self.detector.clone();
+        let streamer_id = streamer.id.clone();
+        let platform_config_id = streamer.platform_config_id.clone();
+        let streamer_clone = streamer.clone();
 
-        // Acquire rate limit token
-        let wait_time = self
-            .rate_limiter
-            .acquire(&streamer.platform_config_id)
+        // get_or_try_init ensures only ONE caller executes the closure,
+        // all other concurrent callers wait for the result
+        let result = cell
+            .get_or_try_init(|| async move {
+                // Acquire rate limit token
+                let wait_time = rate_limiter.acquire(&platform_config_id).await;
+                if !wait_time.is_zero() {
+                    debug!("Rate limited for {:?}", wait_time);
+                }
+
+                // Load filters for this streamer
+                let filter_models = filter_repo.get_by_streamer(&streamer_id).await?;
+                let filters: Vec<Filter> = filter_models
+                    .into_iter()
+                    .filter_map(|model| Filter::from_db_model(&model).ok())
+                    .collect();
+
+                // Get merged configuration to access stream selection preference
+                let config = config_service
+                    .get_config_for_streamer(&streamer_id)
+                    .await?;
+
+                // Check status with filters and selection config
+                detector
+                    .check_status_with_filters(
+                        &streamer_clone,
+                        &filters,
+                        Some(&config.stream_selection),
+                    )
+                    .await
+            })
             .await;
-        if !wait_time.is_zero() {
-            debug!("Rate limited for {:?}", wait_time);
-        }
 
-        // Load filters for this streamer
-        let filters = self.load_filters(&streamer.id).await?;
+        // Clone the result (get_or_try_init returns a reference)
+        let status = result?.clone();
 
-        // Get merged configuration to access stream selection preference
-        let config = self
-            .config_service
-            .get_config_for_streamer(&streamer.id)
-            .await?;
-
-        // Check status with filters and selection config
-        let status = self
-            .detector
-            .check_status_with_filters(streamer, &filters, Some(&config.stream_selection))
-            .await?;
-
-        // Store result for deduplication
-        let _ = cell.set(status.clone());
-
-        // Clean up in-flight entry
-        self.in_flight.remove(&streamer.id);
+        // Schedule delayed cleanup to allow other concurrent requests to benefit
+        // from the cached result before removing the entry
+        let in_flight = self.in_flight.clone();
+        let id = streamer.id.clone();
+        tokio::spawn(async move {
+            tokio::time::sleep(Duration::from_millis(100)).await;
+            in_flight.remove(&id);
+        });
 
         Ok(status)
     }
@@ -332,7 +355,7 @@ impl<
         title: String,
         category: Option<String>,
         avatar: Option<String>,
-        _started_at: Option<chrono::DateTime<chrono::Utc>>,
+        started_at: Option<chrono::DateTime<chrono::Utc>>,
         streams: Vec<platforms_parser::media::StreamInfo>,
         media_headers: Option<HashMap<String, String>>,
     ) -> Result<()> {
@@ -396,54 +419,80 @@ impl<
                 let end_time = chrono::DateTime::parse_from_rfc3339(end_time_str)
                     .map(|dt| dt.with_timezone(&chrono::Utc))
                     .unwrap_or_else(|_| chrono::Utc::now());
-                let now = chrono::Utc::now();
-                let offline_duration_secs = (now - end_time).num_seconds();
 
-                debug!(
-                    "Session gap check for {}: offline_duration={}s, gap_threshold={}s, will_resume={}",
-                    streamer.name,
-                    offline_duration_secs,
-                    gap_secs,
-                    offline_duration_secs < gap_secs
-                );
+                // Check if the stream actually started before the session ended.
+                // This handles the case where there was a monitoring gap (crash, network issue)
+                // but the stream was actually continuous. If started_at <= end_time,
+                // the stream was already live when we marked it offline, so resume.
+                let stream_is_continuation = started_at
+                    .map(|start| start <= end_time)
+                    .unwrap_or(false);
 
-                if offline_duration_secs < gap_secs {
-                    // Resume session
+                if stream_is_continuation {
+                    // Stream started before/when we ended the session - it was a monitoring gap
                     info!(
-                        "Resuming session {} (offline for {}s, threshold: {}s)",
-                        session.id, offline_duration_secs, gap_secs
+                        "Resuming session {} (stream started at {:?}, before session end at {})",
+                        session.id,
+                        started_at,
+                        end_time_str
                     );
                     self.session_repo.resume_session(&session.id).await?;
-                    // Check if title changed and update if needed
                     if let Err(e) = self.update_session_title(&session, &title).await {
                         warn!("Failed to update session title: {}", e);
                     }
                     session.id.clone()
                 } else {
-                    info!(
-                        "Creating new session for {} (offline for {}s exceeded threshold of {}s)",
-                        streamer.name, offline_duration_secs, gap_secs
-                    );
-                    let new_id = uuid::Uuid::new_v4().to_string();
-                    let initial_titles = vec![TitleEntry {
-                        ts: chrono::Utc::now().to_rfc3339(),
-                        title: title.clone(),
-                    }];
-                    let titles_json =
-                        serde_json::to_string(&initial_titles).unwrap_or("[]".to_string());
+                    // Stream started after session ended - use normal gap logic
+                    let now = chrono::Utc::now();
+                    let offline_duration_secs = (now - end_time).num_seconds();
 
-                    let new_session = LiveSessionDbModel {
-                        id: new_id.clone(),
-                        streamer_id: streamer.id.clone(),
-                        start_time: chrono::Utc::now().to_rfc3339(),
-                        end_time: None,
-                        titles: Some(titles_json),
-                        danmu_statistics_id: None,
-                        total_size_bytes: 0,
-                    };
-                    self.session_repo.create_session(&new_session).await?;
-                    info!("Created new session {}", new_id);
-                    new_id
+                    debug!(
+                        "Session gap check for {}: offline_duration={}s, gap_threshold={}s, started_at={:?}, will_resume={}",
+                        streamer.name,
+                        offline_duration_secs,
+                        gap_secs,
+                        started_at,
+                        offline_duration_secs < gap_secs
+                    );
+
+                    if offline_duration_secs < gap_secs {
+                        // Resume session
+                        info!(
+                            "Resuming session {} (offline for {}s, threshold: {}s)",
+                            session.id, offline_duration_secs, gap_secs
+                        );
+                        self.session_repo.resume_session(&session.id).await?;
+                        // Check if title changed and update if needed
+                        if let Err(e) = self.update_session_title(&session, &title).await {
+                            warn!("Failed to update session title: {}", e);
+                        }
+                        session.id.clone()
+                    } else {
+                        info!(
+                            "Creating new session for {} (offline for {}s exceeded threshold of {}s)",
+                            streamer.name, offline_duration_secs, gap_secs
+                        );
+                        let new_id = uuid::Uuid::new_v4().to_string();
+                        let initial_titles = vec![TitleEntry {
+                            ts: chrono::Utc::now().to_rfc3339(),
+                            title: title.clone(),
+                        }];
+                        let titles_json =
+                            serde_json::to_string(&initial_titles).unwrap_or("[]".to_string());
+
+                        let new_session = LiveSessionDbModel {
+                            id: new_id.clone(),
+                            streamer_id: streamer.id.clone(),
+                            start_time: chrono::Utc::now().to_rfc3339(),
+                            end_time: None,
+                            titles: Some(titles_json),
+                            danmu_statistics_id: None,
+                            total_size_bytes: 0,
+                        };
+                        self.session_repo.create_session(&new_session).await?;
+                        info!("Created new session {}", new_id);
+                        new_id
+                    }
                 }
             }
         } else {

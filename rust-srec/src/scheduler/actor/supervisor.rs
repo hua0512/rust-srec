@@ -369,19 +369,12 @@ impl Supervisor {
         let now = tokio::time::Instant::now();
         let mut restarted = 0;
 
-        // Collect restarts that are due
-        let due_restarts: Vec<_> = self
-            .pending_restarts
-            .drain(..)
-            .filter(|r| r.restart_at <= now)
-            .collect();
+        // Partition pending restarts into due and not-due
+        let (due_restarts, not_due): (Vec<_>, Vec<_>) = std::mem::take(&mut self.pending_restarts)
+            .into_iter()
+            .partition(|r| r.restart_at <= now);
 
-        // Re-add restarts that aren't due yet
-        let not_due: Vec<_> = self
-            .pending_restarts
-            .drain(..)
-            .filter(|r| r.restart_at > now)
-            .collect();
+        // Keep the not-due restarts for later
         self.pending_restarts = not_due;
 
         // Process due restarts

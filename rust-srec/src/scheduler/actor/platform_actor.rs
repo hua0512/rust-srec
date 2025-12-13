@@ -78,6 +78,8 @@ pub struct PlatformActor<B: BatchChecker = NoOpBatchChecker> {
     metrics: ActorMetrics,
     /// Batch checker for performing actual batch checks.
     batch_checker: std::sync::Arc<B>,
+    /// Flag to indicate batch timer needs to be reset after config change.
+    timer_needs_reset: bool,
 }
 
 impl PlatformActor<NoOpBatchChecker> {
@@ -169,6 +171,7 @@ impl<B: BatchChecker> PlatformActor<B> {
             cancellation_token,
             metrics,
             batch_checker,
+            timer_needs_reset: false,
         };
 
         (actor, handle)
@@ -221,6 +224,7 @@ impl<B: BatchChecker> PlatformActor<B> {
             cancellation_token,
             metrics,
             batch_checker,
+            timer_needs_reset: false,
         };
 
         (actor, handle)
@@ -287,6 +291,17 @@ impl<B: BatchChecker> PlatformActor<B> {
         batch_timer.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
 
         loop {
+            // Check if timer needs to be reset due to config change
+            if self.timer_needs_reset {
+                debug!(
+                    "PlatformActor {} resetting batch timer to {:?}",
+                    self.platform_id, self.batch_window
+                );
+                batch_timer = tokio::time::interval(self.batch_window);
+                batch_timer.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+                self.timer_needs_reset = false;
+            }
+
             // First, drain all priority messages before processing normal messages
             // This ensures high-priority operations (like Stop) are handled promptly
             if let Some(msg) = self.try_recv_priority() {
@@ -454,6 +469,8 @@ impl<B: BatchChecker> PlatformActor<B> {
                 self.platform_id, old_config.batch_window_ms, self.config.batch_window_ms
             );
             self.batch_window = Duration::from_millis(self.config.batch_window_ms);
+            // Signal that the timer needs to be reset with new interval
+            self.timer_needs_reset = true;
         }
 
         if old_config.max_batch_size != self.config.max_batch_size {
