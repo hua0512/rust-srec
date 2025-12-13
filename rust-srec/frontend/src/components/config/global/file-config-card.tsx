@@ -1,11 +1,5 @@
 import { Control } from "react-hook-form";
-import {
-    Card,
-    CardContent,
-    CardDescription,
-    CardHeader,
-    CardTitle,
-} from "@/components/ui/card";
+import { SettingsCard } from "../settings-card";
 import {
     FormControl,
     FormDescription,
@@ -25,19 +19,14 @@ interface FileConfigCardProps {
 
 export function FileConfigCard({ control }: FileConfigCardProps) {
     return (
-        <Card className="h-full hover:shadow-md transition-all duration-300 border-muted/60">
-            <CardHeader>
-                <CardTitle className="flex items-center gap-3 text-xl">
-                    <div className="p-2.5 bg-blue-500/10 text-blue-500 rounded-lg">
-                        <FolderOutput className="w-5 h-5" />
-                    </div>
-                    <Trans>File Configuration</Trans>
-                </CardTitle>
-                <CardDescription className="pl-[3.25rem]">
-                    <Trans>Output paths, templates, and formats.</Trans>
-                </CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-6">
+        <SettingsCard
+            title={<Trans>File Configuration</Trans>}
+            description={<Trans>Output paths, templates, and formats.</Trans>}
+            icon={FolderOutput}
+            iconColor="text-blue-500"
+            iconBgColor="bg-blue-500/10"
+        >
+            <div className="space-y-6">
                 <FlagFormField
                     control={control}
                     fieldName="record_danmu"
@@ -107,7 +96,7 @@ export function FileConfigCard({ control }: FileConfigCardProps) {
                         )}
                     />
                 </div>
-            </CardContent>
-        </Card>
+            </div>
+        </SettingsCard>
     );
 }

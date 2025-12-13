@@ -3,13 +3,7 @@ import { useState } from "react";
 import { Control } from "react-hook-form";
 import { useQuery } from "@tanstack/react-query";
 import { motion, Reorder, AnimatePresence } from "motion/react";
-import {
-    Card,
-    CardContent,
-    CardDescription,
-    CardHeader,
-    CardTitle,
-} from "@/components/ui/card";
+import { SettingsCard } from "../settings-card";
 import {
     FormDescription,
     FormField,
@@ -48,19 +42,14 @@ export function PipelineConfigCard({ control }: PipelineConfigCardProps) {
     const getPresetInfo = (name: string) => presets.find(p => p.name === name);
 
     return (
-        <Card className="h-full hover:shadow-md transition-all duration-300 border-muted/60">
-            <CardHeader>
-                <CardTitle className="flex items-center gap-3 text-xl">
-                    <div className="p-2.5 bg-orange-500/10 text-orange-500 rounded-lg">
-                        <Workflow className="w-5 h-5" />
-                    </div>
-                    <Trans>Pipeline Configuration</Trans>
-                </CardTitle>
-                <CardDescription className="pl-[3.25rem]">
-                    <Trans>Default pipeline flow. Configure the sequence of processors for new jobs.</Trans>
-                </CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-6">
+        <SettingsCard
+            title={<Trans>Pipeline Configuration</Trans>}
+            description={<Trans>Default pipeline flow. Configure the sequence of processors for new jobs.</Trans>}
+            icon={Workflow}
+            iconColor="text-orange-500"
+            iconBgColor="bg-orange-500/10"
+        >
+            <div className="space-y-6">
                 <FormField
                     control={control}
                     name="pipeline"
@@ -211,7 +200,7 @@ export function PipelineConfigCard({ control }: PipelineConfigCardProps) {
                         );
                     }}
                 />
-            </CardContent>
-        </Card>
+            </div>
+        </SettingsCard>
     );
 }

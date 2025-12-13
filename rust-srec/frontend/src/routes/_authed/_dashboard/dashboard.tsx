@@ -2,7 +2,7 @@ import { getSystemHealth, getPipelineStats, listStreamers, deleteStreamer, check
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
 import { StreamerCard } from '@/components/streamers/streamer-card';
-import { Activity, Cpu, HardDrive, Clock, CheckCircle, XCircle, AlertCircle, Circle, PlayCircle } from 'lucide-react';
+import { Activity, Cpu, HardDrive, Clock, CheckCircle, XCircle, Circle, PlayCircle } from 'lucide-react';
 import { Trans } from '@lingui/react/macro';
 import { t } from '@lingui/core/macro';
 import { createFileRoute, Link } from '@tanstack/react-router';
@@ -199,17 +199,27 @@ function Dashboard() {
             )}
           </motion.div>
 
-          <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+          <motion.div
+            className="grid gap-6 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4"
+            variants={{
+              hidden: { opacity: 0 },
+              show: {
+                opacity: 1,
+                transition: {
+                  staggerChildren: 0.05
+                }
+              }
+            }}
+          >
             {isStreamersLoading ? (
               Array.from({ length: 4 }).map((_, i) => (
                 <Skeleton key={i} className="h-[200px] w-full rounded-xl bg-muted/10" />
               ))
             ) : activeStreamers.length > 0 ? (
-              activeStreamers.map((streamer, index) => (
+              activeStreamers.map((streamer) => (
                 <motion.div
                   key={streamer.id}
                   variants={item}
-                  transition={{ delay: index * 0.05 }}
                 >
                   <StreamerCard
                     streamer={streamer}
@@ -233,7 +243,7 @@ function Dashboard() {
                 </div>
               </motion.div>
             )}
-          </div>
+          </motion.div>
         </section>
       </motion.div>
     </div>

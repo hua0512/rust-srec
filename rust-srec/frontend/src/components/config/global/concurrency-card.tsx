@@ -1,11 +1,5 @@
 import { Control } from "react-hook-form";
-import {
-    Card,
-    CardContent,
-    CardDescription,
-    CardHeader,
-    CardTitle,
-} from "@/components/ui/card";
+import { SettingsCard } from "../settings-card";
 import {
     FormControl,
     FormDescription,
@@ -41,19 +35,14 @@ export function ConcurrencyCard({
     enginesLoading,
 }: ConcurrencyCardProps) {
     return (
-        <Card className="h-full hover:shadow-md transition-all duration-300 border-muted/60">
-            <CardHeader>
-                <CardTitle className="flex items-center gap-3 text-xl">
-                    <div className="p-2.5 bg-green-500/10 text-green-500 rounded-lg">
-                        <Cpu className="w-5 h-5" />
-                    </div>
-                    <Trans>Concurrency & Performance</Trans>
-                </CardTitle>
-                <CardDescription className="pl-[3.25rem]">
-                    <Trans>Job limits and engine settings.</Trans>
-                </CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-6">
+        <SettingsCard
+            title={<Trans>Concurrency & Performance</Trans>}
+            description={<Trans>Job limits and engine settings.</Trans>}
+            icon={Cpu}
+            iconColor="text-green-500"
+            iconBgColor="bg-green-500/10"
+        >
+            <div className="space-y-6">
                 <div className="grid grid-cols-2 gap-6">
                     <FormField
                         control={control}
@@ -169,7 +158,7 @@ export function ConcurrencyCard({
                         </FormItem>
                     )}
                 />
-            </CardContent>
-        </Card>
+            </div>
+        </SettingsCard>
     );
 }

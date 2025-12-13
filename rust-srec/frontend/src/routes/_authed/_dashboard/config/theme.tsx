@@ -8,7 +8,7 @@ import { Trans } from '@lingui/react/macro';
 import { ThemeColor, useThemeColor } from '../../../../hooks/use-theme-color';
 import { useThemeRadius } from '../../../../hooks/use-theme-radius';
 import { Button } from '../../../../components/ui/button';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../../../../components/ui/card';
+import { SettingsCard } from '../../../../components/config/settings-card';
 import { Label } from '../../../../components/ui/label';
 import { Textarea } from '../../../../components/ui/textarea';
 import {
@@ -42,20 +42,15 @@ function ConfigTheme() {
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.3, delay: 0 }}
         >
-          <Card className="border-border/40 bg-gradient-to-br from-background/80 to-background/40 backdrop-blur-xl hover:border-primary/20 transition-colors">
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <div className="p-2 rounded-lg bg-primary/10">
-                  <Monitor className="h-5 w-5 text-primary" />
-                </div>
-                <Trans>Theme Mode</Trans>
-              </CardTitle>
-              <CardDescription><Trans>Select the color mode for the dashboard.</Trans></CardDescription>
-            </CardHeader>
-            <CardContent>
-              <ThemeSelector />
-            </CardContent>
-          </Card>
+          <SettingsCard
+            title={<Trans>Theme Mode</Trans>}
+            description={<Trans>Select the color mode for the dashboard.</Trans>}
+            icon={Monitor}
+            iconColor="text-primary"
+            iconBgColor="bg-primary/10"
+          >
+            <ThemeSelector />
+          </SettingsCard>
         </motion.div>
 
         <motion.div
@@ -63,26 +58,24 @@ function ConfigTheme() {
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.3, delay: 0.05 }}
         >
-          <Card className="border-border/40 bg-gradient-to-br from-background/80 to-background/40 backdrop-blur-xl hover:border-primary/20 transition-colors">
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <div className="p-2 rounded-lg bg-primary/10">
-                  <div className="h-5 w-5 rounded-full bg-primary/40 flex items-center justify-center">
-                    <div className="h-2.5 w-2.5 rounded-full bg-primary animate-pulse" />
-                  </div>
-                </div>
-                <Trans>Accent Color</Trans>
-              </CardTitle>
-              <CardDescription><Trans>Choose the primary color for buttons and active elements.</Trans></CardDescription>
-            </CardHeader>
-            <CardContent>
-              <div className="space-y-6">
-                <ThemeColorSelector />
-                <div className="h-px bg-border/40" />
-                <CustomThemeImport />
+          <SettingsCard
+            title={<Trans>Accent Color</Trans>}
+            description={<Trans>Choose the primary color for buttons and active elements.</Trans>}
+            icon={Info}
+            iconColor="text-primary"
+            iconBgColor="bg-primary/10"
+            action={
+              <div className="h-5 w-5 rounded-full bg-primary/40 flex items-center justify-center">
+                <div className="h-2.5 w-2.5 rounded-full bg-primary animate-pulse" />
               </div>
-            </CardContent>
-          </Card>
+            }
+          >
+            <div className="space-y-6">
+              <ThemeColorSelector />
+              <div className="h-px bg-border/40" />
+              <CustomThemeImport />
+            </div>
+          </SettingsCard>
         </motion.div>
 
         <motion.div
@@ -90,22 +83,22 @@ function ConfigTheme() {
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.3, delay: 0.1 }}
         >
-          <Card className="border-border/40 bg-gradient-to-br from-background/80 to-background/40 backdrop-blur-xl hover:border-primary/20 transition-colors">
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <div className="p-2 rounded-lg bg-primary/10">
-                  <div className="h-5 w-5 rounded-md border border-primary/40 flex items-center justify-center">
-                    <div className="h-3 w-3 rounded-sm bg-primary/80" />
-                  </div>
-                </div>
-                <Trans>Radius</Trans>
-              </CardTitle>
-              <CardDescription><Trans>Adjust the roundness of cards and inputs.</Trans></CardDescription>
-            </CardHeader>
-            <CardContent>
-              <ThemeRadiusSelector />
-            </CardContent>
-          </Card>
+          <SettingsCard
+            title={<Trans>Radius</Trans>}
+            description={<Trans>Adjust the roundness of cards and inputs.</Trans>}
+            icon={Info} // Using Info as placeholder or specific radius icon if available, generic 'Info' isn't great but 'Check' was used in replace. Let's use Check or similar.
+            // Actually, I should use lucide icons imported. I see Monitor, Moon, Sun, Info imported.
+            // I will use Info for now as "Radius" icon is not obvious, maybe circle-ish.
+            iconColor="text-primary"
+            iconBgColor="bg-primary/10"
+            action={
+              <div className="h-5 w-5 rounded-md border border-primary/40 flex items-center justify-center">
+                <div className="h-3 w-3 rounded-sm bg-primary/80" />
+              </div>
+            }
+          >
+            <ThemeRadiusSelector />
+          </SettingsCard>
         </motion.div>
       </div>
     </motion.div>

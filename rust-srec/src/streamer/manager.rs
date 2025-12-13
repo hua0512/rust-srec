@@ -109,7 +109,7 @@ where
 
         // Broadcast event
         self.broadcaster
-            .publish(ConfigUpdateEvent::StreamerUpdated {
+            .publish(ConfigUpdateEvent::StreamerMetadataUpdated {
                 streamer_id: metadata.id,
             });
 
@@ -192,7 +192,7 @@ where
     ///
     /// # Event Emission
     ///
-    /// This method emits a `ConfigUpdateEvent::StreamerStateChanged` event
+    /// This method emits a `ConfigUpdateEvent::StreamerStateSyncedFromDb` event
     /// ONLY if the streamer's active status or state actually changed.
     /// This prevents unnecessary event spam when no real change occurred.
     pub async fn reload_from_repo(&self, id: &str) -> Result<Option<StreamerMetadata>> {
@@ -221,7 +221,7 @@ where
                         new_is_active
                     );
                     self.broadcaster
-                        .publish(ConfigUpdateEvent::StreamerStateChanged {
+                        .publish(ConfigUpdateEvent::StreamerStateSyncedFromDb {
                             streamer_id: id.to_string(),
                             is_active: new_is_active,
                         });
@@ -235,7 +235,7 @@ where
                 // Only emit if we actually removed something
                 if was_present {
                     self.broadcaster
-                        .publish(ConfigUpdateEvent::StreamerStateChanged {
+                        .publish(ConfigUpdateEvent::StreamerStateSyncedFromDb {
                             streamer_id: id.to_string(),
                             is_active: false,
                         });
@@ -297,7 +297,7 @@ where
 
         // Broadcast event
         self.broadcaster
-            .publish(ConfigUpdateEvent::StreamerUpdated {
+            .publish(ConfigUpdateEvent::StreamerMetadataUpdated {
                 streamer_id: metadata.id,
             });
 
@@ -308,6 +308,11 @@ where
     ///
     /// Only updates the fields that are provided (Some values).
     /// Persists to database first, then updates in-memory cache.
+    ///
+    /// # Events
+    /// Always emits `ConfigUpdateEvent::StreamerMetadataUpdated`, including when the update changes
+    /// the streamer's state (e.g., user disables a streamer). `StreamerStateSyncedFromDb` is reserved
+    /// for transactional DB sync via `reload_from_repo()`.
     pub async fn partial_update_streamer(
         &self,
         id: &str,
@@ -364,7 +369,7 @@ where
 
         // Broadcast event
         self.broadcaster
-            .publish(ConfigUpdateEvent::StreamerUpdated {
+            .publish(ConfigUpdateEvent::StreamerMetadataUpdated {
                 streamer_id: id.to_string(),
             });
 

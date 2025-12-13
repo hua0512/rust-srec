@@ -54,11 +54,18 @@ const StatusBadge = ({ status }: { status: any }) => (
                     "flex items-center gap-1.5 h-6 px-2 pr-2.5 rounded-full border text-[10px] font-medium transition-all cursor-help select-none",
                     status.color
                 )}>
-                    <span className={cn(
-                        "h-1.5 w-1.5 rounded-full",
-                        status.iconColor,
-                        status.pulsing && "animate-pulse shadow-[0_0_8px_rgba(239,68,68,0.6)]"
-                    )} />
+                    {status.variant === 'live' ? (
+                        <span className="relative flex h-2 w-2 mr-1.5">
+                            <span className={cn("animate-ping absolute inline-flex h-full w-full rounded-full opacity-75", status.pingColor)}></span>
+                            <span className={cn("relative inline-flex rounded-full h-2 w-2", status.iconColor)}></span>
+                        </span>
+                    ) : (
+                        <span className={cn(
+                            "h-1.5 w-1.5 rounded-full min-w-[6px]",
+                            status.iconColor,
+                            status.pulsing && "animate-pulse shadow-[0_0_8px_rgba(239,68,68,0.6)]"
+                        )} />
+                    )}
                     {status.label}
                 </div>
             </TooltipTrigger>
@@ -170,14 +177,12 @@ export function StreamerCard({ streamer, onDelete, onToggle, onCheck }: Streamer
         if (streamer.state === 'LIVE') {
             return {
                 label: <Trans>Live</Trans>,
-                color: "bg-red-500 text-white border-red-600 shadow-sm shadow-red-500/20 hover:shadow-red-500/30 dark:bg-red-600 dark:border-red-500",
-                iconColor: "bg-white",
+                color: "bg-red-500/10 text-red-500 hover:bg-red-500/20 border-red-500/20 animate-pulse",
+                iconColor: "bg-red-500",
+                pingColor: "bg-red-400",
                 pulsing: true,
-                tooltip: (
-                    <div className="p-2 text-xs font-medium">
-                        <Trans>Currently recording and monitoring</Trans>
-                    </div>
-                )
+                variant: 'live',
+                tooltip: null
             };
         }
 
@@ -197,7 +202,7 @@ export function StreamerCard({ streamer, onDelete, onToggle, onCheck }: Streamer
 
         if (streamer.state === 'NOT_LIVE') {
             const lastLiveDate = streamer.last_live_time ? new Date(streamer.last_live_time) : null;
-            const hasValidLastLive = lastLiveDate && !isNaN(lastLiveDate.getTime());
+            const hasValidLastLive = lastLiveDate && !isNaN(lastLiveDate.getTime()) && lastLiveDate.getFullYear() > 1970;
 
             return {
                 label: <Trans>Offline</Trans>,

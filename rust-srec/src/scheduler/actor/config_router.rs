@@ -79,13 +79,13 @@ impl ConfigScope {
     /// Create a scope from a ConfigUpdateEvent.
     pub fn from_event(event: &ConfigUpdateEvent) -> Self {
         match event {
-            ConfigUpdateEvent::StreamerUpdated { streamer_id } => {
+            ConfigUpdateEvent::StreamerMetadataUpdated { streamer_id } => {
                 ConfigScope::Streamer(streamer_id.clone())
             }
             ConfigUpdateEvent::StreamerDeleted { streamer_id } => {
                 ConfigScope::Streamer(streamer_id.clone())
             }
-            ConfigUpdateEvent::StreamerStateChanged { streamer_id, .. } => {
+            ConfigUpdateEvent::StreamerStateSyncedFromDb { streamer_id, .. } => {
                 ConfigScope::Streamer(streamer_id.clone())
             }
             ConfigUpdateEvent::PlatformUpdated { platform_id } => {
@@ -482,7 +482,7 @@ mod tests {
 
     #[test]
     fn test_config_scope_from_event() {
-        let streamer_event = ConfigUpdateEvent::StreamerUpdated {
+        let streamer_event = ConfigUpdateEvent::StreamerMetadataUpdated {
             streamer_id: "streamer-1".to_string(),
         };
         assert_eq!(
@@ -747,7 +747,7 @@ mod tests {
 
         let router = ConfigRouter::new(&streamer_handles, &platform_handles, &platform_mapping);
 
-        let event = ConfigUpdateEvent::StreamerUpdated {
+        let event = ConfigUpdateEvent::StreamerMetadataUpdated {
             streamer_id: "streamer-1".to_string(),
         };
 

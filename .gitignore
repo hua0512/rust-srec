@@ -31,3 +31,20 @@ desktop.ini
 *~
 *.swp
 *.swo
+
+# AI
+.kiro/
+.roo/
+.claude/
+.roomodes
+.cursorrules
+.rules
+
+
+# Logs (runtime)
+rust-srec/logs/
+
+# Local SQLite databases
+*.db
+*.db-wal
+*.db-shm

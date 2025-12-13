@@ -1,11 +1,5 @@
 import { Control } from "react-hook-form";
-import {
-    Card,
-    CardContent,
-    CardDescription,
-    CardHeader,
-    CardTitle,
-} from "@/components/ui/card";
+import { SettingsCard } from "../settings-card";
 import {
     FormControl,
     FormField,
@@ -25,19 +19,14 @@ interface NetworkSystemCardProps {
 
 export function NetworkSystemCard({ control }: NetworkSystemCardProps) {
     return (
-        <Card className="h-full hover:shadow-md transition-all duration-300 border-muted/60">
-            <CardHeader>
-                <CardTitle className="flex items-center gap-3 text-xl">
-                    <div className="p-2.5 bg-purple-500/10 text-purple-500 rounded-lg">
-                        <Network className="w-5 h-5" />
-                    </div>
-                    <Trans>Network & System</Trans>
-                </CardTitle>
-                <CardDescription>
-                    <Trans>Delays, proxy, and retention policies.</Trans>
-                </CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-6">
+        <SettingsCard
+            title={<Trans>Network & System</Trans>}
+            description={<Trans>Delays, proxy, and retention policies.</Trans>}
+            icon={Network}
+            iconColor="text-purple-500"
+            iconBgColor="bg-purple-500/10"
+        >
+            <div className="space-y-6">
                 <div className="grid grid-cols-2 gap-6">
                     <FormField
                         control={control}
@@ -156,7 +145,7 @@ export function NetworkSystemCard({ control }: NetworkSystemCardProps) {
                         </FormItem>
                     )}
                 />
-            </CardContent>
-        </Card>
+            </div>
+        </SettingsCard>
     );
 }

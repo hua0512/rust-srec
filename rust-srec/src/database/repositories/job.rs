@@ -723,7 +723,7 @@ impl JobRepository for SqlxJobRepository {
                 COUNT(*) as job_count,
                 SUM(CASE WHEN status = 'COMPLETED' THEN 1 ELSE 0 END) as completed_count,
                 SUM(CASE WHEN status = 'FAILED' THEN 1 ELSE 0 END) as failed_count,
-                COALESCE(SUM(duration_secs), 0) as total_duration_secs,
+                COALESCE(SUM(duration_secs), 0.0) as total_duration_secs,
                 MIN(created_at) as created_at,
                 MAX(updated_at) as updated_at
             FROM job

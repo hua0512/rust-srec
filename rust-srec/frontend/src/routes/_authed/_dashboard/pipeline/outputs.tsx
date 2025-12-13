@@ -151,7 +151,7 @@ function PipelineOutputsPage() {
         <div className="min-h-screen space-y-6">
             {/* Header */}
             <div className="border-b border-border/40">
-                <div className="max-w-[1600px] mx-auto">
+                <div className="w-full">
                     {/* Title Row */}
                     <div className="flex flex-col md:flex-row gap-4 items-start md:items-center justify-between p-4 md:px-8">
                         <div className="flex items-center gap-4">
@@ -219,7 +219,7 @@ function PipelineOutputsPage() {
                 </div>
             </div>
 
-            <div className="p-4 md:px-8 pb-20 max-w-[1600px] mx-auto">
+            <div className="p-4 md:px-8 pb-20 w-full">
                 <AnimatePresence mode="wait">
                     {isLoading ? (
                         <motion.div

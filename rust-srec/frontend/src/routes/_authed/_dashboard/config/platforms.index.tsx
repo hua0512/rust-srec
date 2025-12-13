@@ -61,17 +61,17 @@ function PlatformsConfigPage() {
     return (
         <div className="space-y-6">
             {/* Search Bar */}
-            <div className="flex items-center gap-4">
+            <div className="flex items-center gap-4 px-1">
                 <div className="relative flex-1 max-w-sm">
                     <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
                     <Input
                         placeholder={t`Search platforms...`}
                         value={searchQuery}
                         onChange={(e) => setSearchQuery(e.target.value)}
-                        className="pl-9 h-9"
+                        className="pl-9 h-9 bg-muted/50 border-muted-foreground/20 focus:bg-background transition-colors"
                     />
                 </div>
-                <Badge variant="secondary" className="h-9 px-3 text-sm whitespace-nowrap">
+                <Badge variant="secondary" className="h-7 px-3 text-sm whitespace-nowrap bg-muted/50 text-muted-foreground border-border/50">
                     {filteredPlatforms.length} <Trans>platforms</Trans>
                 </Badge>
             </div>

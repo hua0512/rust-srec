@@ -106,7 +106,8 @@ async fn list_sessions(
         active_only: filters.active_only,
     };
 
-    let db_pagination = Pagination::new(pagination.limit, pagination.offset);
+    let effective_limit = pagination.limit.min(100);
+    let db_pagination = Pagination::new(effective_limit, pagination.offset);
 
     // Call SessionRepository.list_sessions_filtered
     let (sessions, total) = session_repository
@@ -176,12 +177,8 @@ async fn list_sessions(
         });
     }
 
-    let response = PaginatedResponse::new(
-        session_responses,
-        total,
-        pagination.limit,
-        pagination.offset,
-    );
+    let response =
+        PaginatedResponse::new(session_responses, total, effective_limit, pagination.offset);
     Ok(Json(response))
 }
 

@@ -117,7 +117,8 @@ async fn list_templates(
 
     // Apply pagination
     let offset = pagination.offset as usize;
-    let limit = pagination.limit.min(100) as usize;
+    let effective_limit = pagination.limit.min(100);
+    let limit = effective_limit as usize;
 
     let templates: Vec<TemplateResponse> = templates
         .into_iter()
@@ -132,7 +133,7 @@ async fn list_templates(
         })
         .collect();
 
-    let response = PaginatedResponse::new(templates, total, pagination.limit, pagination.offset);
+    let response = PaginatedResponse::new(templates, total, effective_limit, pagination.offset);
     Ok(Json(response))
 }
 

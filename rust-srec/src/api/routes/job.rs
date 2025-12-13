@@ -166,8 +166,9 @@ async fn list_presets(
         search: filters.search,
     };
 
+    let effective_limit = pagination.limit.min(100);
     let db_pagination =
-        crate::database::models::Pagination::new(pagination.limit, pagination.offset);
+        crate::database::models::Pagination::new(effective_limit, pagination.offset);
 
     let (presets, total) = pipeline_manager
         .list_presets_filtered(&db_filters, &db_pagination)
@@ -183,7 +184,7 @@ async fn list_presets(
         presets,
         categories,
         total,
-        limit: pagination.limit,
+        limit: effective_limit,
         offset: pagination.offset,
     }))
 }

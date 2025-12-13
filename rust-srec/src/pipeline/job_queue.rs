@@ -671,8 +671,9 @@ impl JobQueue {
             let (next_next_type, next_remaining) = if remaining.is_empty() {
                 (None, None)
             } else {
-                let next_next = remaining.first().cloned();
                 let rest: Vec<PipelineStep> = remaining.into_iter().skip(1).collect();
+                let next_next = rest.first().cloned();
+
                 (next_next, if rest.is_empty() { None } else { Some(rest) })
             };
 

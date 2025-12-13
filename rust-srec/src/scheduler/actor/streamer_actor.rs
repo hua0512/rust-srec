@@ -366,7 +366,7 @@ impl StreamerActor {
                         self.metrics.record_error();
 
                         // Fatal (non-recoverable) errors should stop the actor - the scheduler
-                        // will receive a StreamerStateChanged event and clean up.
+                        // will receive a StreamerStateSyncedFromDb event and clean up.
                         if !e.recoverable {
                             info!(
                                 "StreamerActor {} stopping due to fatal error: {}",

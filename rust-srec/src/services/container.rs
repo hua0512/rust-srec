@@ -516,14 +516,49 @@ impl ServiceContainer {
                         match result {
                             Ok(event) => {
                                 match event {
-                                    ConfigUpdateEvent::StreamerUpdated { streamer_id } => {
+                                    ConfigUpdateEvent::StreamerMetadataUpdated { streamer_id } => {
                                         // Config update event - handles name, URL, priority, template changes.
-                                        // State-driven cleanup is handled by StreamerStateChanged event
-                                        // to prevent double processing.
+                                        // If the update includes a state transition to an inactive state
+                                        // (e.g., user disables a streamer via API), we must still perform
+                                        // best-effort cleanup to stop active downloads and danmu collection.
                                         debug!(
                                             "Received streamer config update event: {}",
                                             streamer_id
                                         );
+
+                                        // Align with ConfigUpdateEvent docs: handlers should check
+                                        // `metadata.is_active()` to determine if cleanup is needed.
+                                        match streamer_manager.get_streamer(&streamer_id) {
+                                            Some(metadata) if !metadata.is_active() => {
+                                                info!(
+                                                    "Streamer {} is inactive after update (state: {}), initiating cleanup",
+                                                    streamer_id, metadata.state
+                                                );
+                                                Self::handle_streamer_disabled(
+                                                    &scheduler,
+                                                    &download_manager,
+                                                    &danmu_service,
+                                                    &streamer_id,
+                                                )
+                                                .await;
+                                            }
+                                            Some(_) => {}
+                                            None => {
+                                                // Streamer not in memory (race with delete/hydration issues).
+                                                // Best-effort cleanup anyway.
+                                                warn!(
+                                                    "Streamer {} not found after update, initiating best-effort cleanup",
+                                                    streamer_id
+                                                );
+                                                Self::handle_streamer_disabled(
+                                                    &scheduler,
+                                                    &download_manager,
+                                                    &danmu_service,
+                                                    &streamer_id,
+                                                )
+                                                .await;
+                                            }
+                                        }
                                     }
                                     ConfigUpdateEvent::PlatformUpdated { platform_id } => {
                                         debug!(
@@ -559,7 +594,7 @@ impl ServiceContainer {
                                             engine_id
                                         );
                                     }
-                                    ConfigUpdateEvent::StreamerStateChanged { streamer_id, is_active } => {
+                                    ConfigUpdateEvent::StreamerStateSyncedFromDb { streamer_id, is_active } => {
                                         debug!(
                                             "Received streamer state change event: {} (active={})",
                                             streamer_id, is_active

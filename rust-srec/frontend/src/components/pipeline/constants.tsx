@@ -9,7 +9,17 @@ import {
     Archive,
     Trash,
     Tag,
-    Workflow
+    Workflow,
+    Globe,
+    Twitch,
+    Youtube,
+    Video,
+    Tv,
+    Radio,
+    MessageCircle,
+    Music,
+    Film,
+    Camera
 } from 'lucide-react';
 import React from 'react';
 
@@ -56,4 +66,47 @@ export function getStepIcon(processor: string): React.ElementType {
         if (processor.startsWith(key)) return Icon;
     }
     return Workflow;
+}
+
+// Platform Constants
+export const PLATFORM_ICONS: Record<string, React.ElementType> = {
+    bilibili: Tv,
+    douyin: Music, // TikTok/Douyin note
+    tiktok: Music,
+    douyu: Radio,
+    huya: Video,
+    twitch: Twitch,
+    youtube: Youtube,
+    acfun: Film,
+    pandatv: Camera,
+    picarto: ImageIcon,
+    redbook: MessageCircle, // Xiaohongshu
+    twitcasting: Radio,
+    weibo: Globe,
+};
+
+export const PLATFORM_COLORS: Record<string, string> = {
+    bilibili: "bg-pink-500/10 text-pink-500 border-pink-500/20",
+    douyin: "bg-cyan-500/10 text-cyan-500 border-cyan-500/20",
+    douyu: "bg-orange-500/10 text-orange-500 border-orange-500/20",
+    huya: "bg-yellow-500/10 text-yellow-500 border-yellow-500/20",
+    twitch: "bg-purple-500/10 text-purple-500 border-purple-500/20",
+    youtube: "bg-red-500/10 text-red-500 border-red-500/20",
+    tiktok: "bg-slate-500/10 text-slate-500 border-slate-500/20",
+    acfun: "bg-red-500/10 text-red-500 border-red-500/20",
+    pandatv: "bg-blue-500/10 text-blue-500 border-blue-500/20",
+    picarto: "bg-green-500/10 text-green-500 border-green-500/20",
+    redbook: "bg-rose-500/10 text-rose-500 border-rose-500/20",
+    twitcasting: "bg-indigo-500/10 text-indigo-500 border-indigo-500/20",
+    weibo: "bg-amber-500/10 text-amber-500 border-amber-500/20",
+};
+
+export function getPlatformIcon(platform: string): React.ElementType {
+    const key = platform.toLowerCase();
+    return PLATFORM_ICONS[key] || Globe;
+}
+
+export function getPlatformColor(platform: string): string {
+    const key = platform.toLowerCase();
+    return PLATFORM_COLORS[key] || "bg-primary/10 text-primary border-primary/20";
 }

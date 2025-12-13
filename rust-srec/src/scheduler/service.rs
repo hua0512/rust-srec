@@ -586,7 +586,7 @@ impl<R: StreamerRepository + Send + Sync + 'static> Scheduler<R> {
 
         // Handle streamer state changes - spawn/remove actor based on is_active
         // Actors fetch fresh metadata from the shared store, so no MetadataUpdate needed
-        if let ConfigUpdateEvent::StreamerStateChanged {
+        if let ConfigUpdateEvent::StreamerStateSyncedFromDb {
             ref streamer_id,
             is_active,
         } = event

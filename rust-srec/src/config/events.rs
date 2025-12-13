@@ -14,22 +14,25 @@ use tokio::sync::{Mutex, broadcast};
 ///
 /// # Event Types and Their Usage
 ///
-/// ## `StreamerUpdated` vs `StreamerStateChanged`
+/// ## `StreamerMetadataUpdated` vs `StreamerStateSyncedFromDb`
 ///
 /// These two events serve different purposes and are emitted from different code paths:
 ///
-/// - **`StreamerUpdated`**: Emitted when streamer configuration is changed via API operations
-///   (create, update, partial_update). This is for user-initiated changes. Handlers should
-///   check `metadata.is_active()` to determine if cleanup is needed.
+/// - **`StreamerMetadataUpdated`**: Emitted when streamer metadata is changed via API operations
+///   (create, update, partial_update). This is for user-initiated changes and may include a
+///   **state transition** (e.g., the user disables a streamer). Handlers that manage runtime
+///   resources (actors, downloads, danmu, etc.) must treat this as "something about the streamer
+///   changed" and consult the latest metadata (e.g., `metadata.is_active()`) to decide whether
+///   cleanup is required.
 ///
-/// - **`StreamerStateChanged`**: Emitted by `StreamerManager::reload_from_repo()` after
+/// - **`StreamerStateSyncedFromDb`**: Emitted by `StreamerManager::reload_from_repo()` after
 ///   transactional database updates (e.g., monitor detecting errors, session state changes).
 ///   This is for system-initiated state synchronization. The scheduler uses this to spawn/remove
 ///   actors without routing config updates.
 ///
 /// They should NOT overlap in normal operation:
-/// - API update → `StreamerUpdated` only
-/// - Transaction sync → `StreamerStateChanged` only
+/// - API update -> `StreamerMetadataUpdated` only
+/// - Transaction sync -> `StreamerStateSyncedFromDb` only
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ConfigUpdateEvent {
     /// Global configuration was updated.
@@ -38,13 +41,17 @@ pub enum ConfigUpdateEvent {
     PlatformUpdated { platform_id: String },
     /// A template configuration was updated.
     TemplateUpdated { template_id: String },
-    /// A streamer configuration was updated via API.
+    /// A streamer was updated via API.
     ///
     /// Emitted by: `create_streamer()`, `update_streamer()`, `partial_update_streamer()`
     ///
-    /// Handlers should check `metadata.is_active()` to determine if the streamer
-    /// became inactive and needs cleanup.
-    StreamerUpdated { streamer_id: String },
+    /// This event is intentionally coarse-grained:
+    /// - It may represent a config change (name/url/template/priority/etc.)
+    /// - It may also represent a user-initiated state change (e.g. DISABLED)
+    ///
+    /// Handlers should consult the latest `StreamerMetadata` (e.g., `metadata.is_active()`)
+    /// to determine whether the streamer became inactive and needs cleanup.
+    StreamerMetadataUpdated { streamer_id: String },
     /// A streamer was deleted.
     StreamerDeleted { streamer_id: String },
     /// An engine configuration was updated.
@@ -55,8 +62,11 @@ pub enum ConfigUpdateEvent {
     ///
     /// This event is used by the scheduler to spawn/remove actors based on state changes
     /// that occurred via transactional operations (e.g., monitor error handling).
-    /// Unlike `StreamerUpdated`, this does NOT trigger config routing to actors.
-    StreamerStateChanged {
+    /// Unlike `StreamerMetadataUpdated`, this does NOT trigger config routing to actors.
+    ///
+    /// Note: user-initiated state changes made through the API use `StreamerMetadataUpdated`,
+    /// not this event.
+    StreamerStateSyncedFromDb {
         streamer_id: String,
         /// Whether the streamer is now active (can be monitored).
         is_active: bool,
@@ -74,8 +84,8 @@ impl ConfigUpdateEvent {
             Self::TemplateUpdated { template_id } => {
                 format!("Template config updated: {}", template_id)
             }
-            Self::StreamerUpdated { streamer_id } => {
-                format!("Streamer config updated: {}", streamer_id)
+            Self::StreamerMetadataUpdated { streamer_id } => {
+                format!("Streamer metadata updated: {}", streamer_id)
             }
             Self::StreamerDeleted { streamer_id } => {
                 format!("Streamer deleted: {}", streamer_id)
@@ -83,12 +93,12 @@ impl ConfigUpdateEvent {
             Self::EngineUpdated { engine_id } => {
                 format!("Engine config updated: {}", engine_id)
             }
-            Self::StreamerStateChanged {
+            Self::StreamerStateSyncedFromDb {
                 streamer_id,
                 is_active,
             } => {
                 format!(
-                    "Streamer state changed: {} (active={})",
+                    "Streamer state synced from DB: {} (active={})",
                     streamer_id, is_active
                 )
             }
@@ -232,10 +242,10 @@ impl std::hash::Hash for ConfigUpdateEvent {
             ConfigUpdateEvent::GlobalUpdated => {}
             ConfigUpdateEvent::PlatformUpdated { platform_id } => platform_id.hash(state),
             ConfigUpdateEvent::TemplateUpdated { template_id } => template_id.hash(state),
-            ConfigUpdateEvent::StreamerUpdated { streamer_id } => streamer_id.hash(state),
+            ConfigUpdateEvent::StreamerMetadataUpdated { streamer_id } => streamer_id.hash(state),
             ConfigUpdateEvent::StreamerDeleted { streamer_id } => streamer_id.hash(state),
             ConfigUpdateEvent::EngineUpdated { engine_id } => engine_id.hash(state),
-            ConfigUpdateEvent::StreamerStateChanged {
+            ConfigUpdateEvent::StreamerStateSyncedFromDb {
                 streamer_id,
                 is_active,
             } => {
@@ -353,7 +363,7 @@ mod tests {
 
         assert_eq!(broadcaster.subscriber_count(), 2);
 
-        let event = ConfigUpdateEvent::StreamerUpdated {
+        let event = ConfigUpdateEvent::StreamerMetadataUpdated {
             streamer_id: "streamer-1".to_string(),
         };
         let count = broadcaster.publish(event.clone());
@@ -378,7 +388,7 @@ mod tests {
         let coalescer = UpdateCoalescer::with_window(broadcaster, Duration::from_millis(50));
 
         // Queue duplicate events
-        let event = ConfigUpdateEvent::StreamerUpdated {
+        let event = ConfigUpdateEvent::StreamerMetadataUpdated {
             streamer_id: "streamer-1".to_string(),
         };
         coalescer.queue(event.clone()).await;
@@ -403,7 +413,7 @@ mod tests {
 
         // Queue various events
         coalescer
-            .queue(ConfigUpdateEvent::StreamerUpdated {
+            .queue(ConfigUpdateEvent::StreamerMetadataUpdated {
                 streamer_id: "streamer-1".to_string(),
             })
             .await;
@@ -438,7 +448,7 @@ mod tests {
 
         // Queue another event - should trigger flush of first
         coalescer
-            .queue(ConfigUpdateEvent::StreamerUpdated {
+            .queue(ConfigUpdateEvent::StreamerMetadataUpdated {
                 streamer_id: "test".to_string(),
             })
             .await;

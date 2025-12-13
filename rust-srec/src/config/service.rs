@@ -353,7 +353,7 @@ where
         self.cache.invalidate(streamer_id);
 
         self.broadcaster
-            .publish(ConfigUpdateEvent::StreamerUpdated {
+            .publish(ConfigUpdateEvent::StreamerMetadataUpdated {
                 streamer_id: streamer_id.to_string(),
             });
     }

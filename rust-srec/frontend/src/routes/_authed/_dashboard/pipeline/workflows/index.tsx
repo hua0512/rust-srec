@@ -132,7 +132,7 @@ function WorkflowsPage() {
         <div className="min-h-screen space-y-6">
             {/* Header */}
             <div className="border-b border-border/40">
-                <div className="max-w-[1600px] mx-auto">
+                <div className="w-full">
                     <div className="flex flex-col md:flex-row gap-4 items-start md:items-center justify-between p-4 md:px-8">
                         <div className="flex items-center gap-4">
                             <div className="p-2.5 rounded-xl bg-gradient-to-br from-primary/20 to-primary/5 ring-1 ring-primary/10">
@@ -164,7 +164,7 @@ function WorkflowsPage() {
                 </div>
             </div>
 
-            <div className="p-4 md:px-8 pb-20 max-w-[1600px] mx-auto">
+            <div className="p-4 md:px-8 pb-20 w-full">
                 <AnimatePresence mode="wait">
                     {isLoading ? (
                         <motion.div

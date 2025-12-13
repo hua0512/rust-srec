@@ -27,7 +27,9 @@ use axum::{
     extract::{Path, Query, State},
     routing::{delete, get, post},
 };
+use futures::future::join_all;
 use serde::{Deserialize, Serialize};
+use std::collections::{HashMap, HashSet};
 
 use crate::api::error::{ApiError, ApiResult};
 use crate::api::models::{
@@ -299,7 +301,8 @@ async fn list_jobs(
         search: filters.search,
     };
 
-    let db_pagination = Pagination::new(pagination.limit, pagination.offset);
+    let effective_limit = pagination.limit.min(100);
+    let db_pagination = Pagination::new(effective_limit, pagination.offset);
 
     // Call PipelineManager.list_jobs
     let (jobs, total) = pipeline_manager
@@ -310,8 +313,7 @@ async fn list_jobs(
     // Convert jobs to API response format
     let job_responses: Vec<JobResponse> = jobs.iter().map(job_to_response).collect();
 
-    let response =
-        PaginatedResponse::new(job_responses, total, pagination.limit, pagination.offset);
+    let response = PaginatedResponse::new(job_responses, total, effective_limit, pagination.offset);
     Ok(Json(response))
 }
 
@@ -355,7 +357,8 @@ async fn list_pipelines(
         search: filters.search,
     };
 
-    let db_pagination = Pagination::new(pagination.limit, pagination.offset);
+    let effective_limit = pagination.limit.min(100);
+    let db_pagination = Pagination::new(effective_limit, pagination.offset);
 
     let (pipelines, total) = pipeline_manager
         .list_pipelines(&db_filters, &db_pagination)
@@ -378,7 +381,7 @@ async fn list_pipelines(
         })
         .collect();
 
-    let response = PaginatedResponse::new(responses, total, pagination.limit, pagination.offset);
+    let response = PaginatedResponse::new(responses, total, effective_limit, pagination.offset);
     Ok(Json(response))
 }
 
@@ -650,7 +653,10 @@ async fn list_outputs(
     let session_repository = state
         .session_repository
         .as_ref()
-        .ok_or_else(|| ApiError::service_unavailable("Session service not available"))?;
+        .ok_or_else(|| ApiError::service_unavailable("Session service not available"))?
+        .clone();
+
+    let requested_streamer_id = filters.streamer_id.clone();
 
     // Convert API filter params to database filter types
     let db_filters = OutputFilters {
@@ -659,13 +665,43 @@ async fn list_outputs(
         search: filters.search,
     };
 
-    let db_pagination = Pagination::new(pagination.limit, pagination.offset);
+    let effective_limit = pagination.limit.min(100);
+    let db_pagination = Pagination::new(effective_limit, pagination.offset);
 
     // Call SessionRepository.list_outputs_filtered
     let (outputs, total) = session_repository
         .list_outputs_filtered(&db_filters, &db_pagination)
         .await
         .map_err(ApiError::from)?;
+
+    let streamer_id_by_session: HashMap<String, String> = if requested_streamer_id.is_none() {
+        let mut session_ids: HashSet<String> = HashSet::new();
+        for output in &outputs {
+            session_ids.insert(output.session_id.clone());
+        }
+
+        let fetches = session_ids.into_iter().map(|session_id| {
+            let session_repository = session_repository.clone();
+            async move {
+                let streamer_id = session_repository
+                    .get_session(&session_id)
+                    .await
+                    .ok()
+                    .map(|session| session.streamer_id);
+                (session_id, streamer_id)
+            }
+        });
+
+        join_all(fetches)
+            .await
+            .into_iter()
+            .filter_map(|(session_id, streamer_id)| {
+                streamer_id.map(|streamer_id| (session_id, streamer_id))
+            })
+            .collect()
+    } else {
+        HashMap::new()
+    };
 
     // Convert outputs to API response format
     let output_responses: Vec<MediaOutputResponse> = outputs
@@ -675,10 +711,18 @@ async fn list_outputs(
                 .map(|dt| dt.with_timezone(&chrono::Utc))
                 .unwrap_or_else(|_| chrono::Utc::now());
 
+            let streamer_id = match requested_streamer_id.as_deref() {
+                Some(streamer_id) => streamer_id.to_string(),
+                None => streamer_id_by_session
+                    .get(&output.session_id)
+                    .cloned()
+                    .unwrap_or_default(),
+            };
+
             MediaOutputResponse {
                 id: output.id.clone(),
                 session_id: output.session_id.clone(),
-                streamer_id: String::new(), // Would need join to get this
+                streamer_id,
                 file_path: output.file_path.clone(),
                 file_size_bytes: output.size_bytes as u64,
                 duration_secs: None, // Not stored in current model
@@ -689,7 +733,7 @@ async fn list_outputs(
         .collect();
 
     let response =
-        PaginatedResponse::new(output_responses, total, pagination.limit, pagination.offset);
+        PaginatedResponse::new(output_responses, total, effective_limit, pagination.offset);
     Ok(Json(response))
 }
 
@@ -940,7 +984,8 @@ async fn list_pipeline_presets(
         search: filters.search,
     };
 
-    let db_pagination = Pagination::new(pagination.limit, pagination.offset);
+    let effective_limit = pagination.limit.min(100);
+    let db_pagination = Pagination::new(effective_limit, pagination.offset);
 
     let (presets, total) = preset_repo
         .list_pipeline_presets_filtered(&db_filters, &db_pagination)
@@ -950,7 +995,7 @@ async fn list_pipeline_presets(
     Ok(Json(PipelinePresetListResponse {
         presets,
         total,
-        limit: pagination.limit,
+        limit: effective_limit,
         offset: pagination.offset,
     }))
 }

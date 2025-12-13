@@ -1,8 +1,17 @@
 import { createFileRoute, Outlet, Link, useLocation, redirect } from '@tanstack/react-router';
-import { Tabs, TabsList, TabsTrigger } from '../../../../components/ui/tabs';
 import { Trans } from '@lingui/react/macro';
-
-import { Settings } from 'lucide-react';
+import {
+  Settings,
+  Globe,
+  LayoutTemplate,
+  Cpu,
+  Palette,
+  MonitorPlay,
+  Share2
+} from 'lucide-react';
+import { cn } from '@/lib/utils';
+import { motion } from 'motion/react';
+import { Separator } from '@/components/ui/separator';
 
 export const Route = createFileRoute('/_authed/_dashboard/config')({
   component: ConfigLayout,
@@ -15,89 +24,108 @@ export const Route = createFileRoute('/_authed/_dashboard/config')({
   },
 });
 
+interface SidebarItem {
+  title: string;
+  href: string;
+  icon: React.ElementType;
+  description: string;
+}
+
+const sidebarItems: SidebarItem[] = [
+  {
+    title: "Global",
+    href: "/config/global",
+    icon: Globe,
+    description: "System-wide preferences"
+  },
+  {
+    title: "Platforms",
+    href: "/config/platforms",
+    icon: Share2,
+    description: "Streaming services"
+  },
+  {
+    title: "Templates",
+    href: "/config/templates",
+    icon: LayoutTemplate,
+    description: "Job configurations"
+  },
+  {
+    title: "Engines",
+    href: "/config/engines",
+    icon: Cpu,
+    description: "Processing nodes"
+  },
+  {
+    title: "Theme",
+    href: "/config/theme",
+    icon: Palette,
+    description: "Appearance & style"
+  }
+];
+
 function ConfigLayout() {
   const { pathname } = useLocation();
 
-  // Determine which tab is active based on the URL
-  const currentTab = pathname.includes('/platforms') ? 'platforms' :
-    pathname.includes('/templates') ? 'templates' :
-      pathname.includes('/engines') ? 'engines' :
-        pathname.includes('/theme') ? 'theme' :
-          'global';
-
   return (
-    <div className="min-h-screen space-y-6">
-      <Tabs value={currentTab} className="space-y-0">
-        {/* Header */}
-        <div className="border-b border-border/40">
-          <div className="w-full">
-            {/* Title Row */}
-            <div className="flex flex-col md:flex-row gap-4 items-start md:items-center justify-between p-4 md:px-8 pt-6">
-              <div className="flex items-center gap-4">
-                <div className="p-2.5 rounded-xl bg-gradient-to-br from-primary/20 to-primary/5 ring-1 ring-primary/10 shadow-sm">
-                  <Settings className="h-6 w-6 text-primary" />
-                </div>
-                <div>
-                  <h1 className="text-xl font-semibold tracking-tight"><Trans>Settings</Trans></h1>
-                  <p className="text-sm text-muted-foreground">
-                    <Trans>Manage your application preferences and system configuration</Trans>
-                  </p>
-                </div>
-              </div>
+    <div className="flex h-full flex-col space-y-8 lg:flex-row lg:space-x-8 lg:space-y-0 p-4 max-w-[1600px] mx-auto min-h-[calc(100vh-4rem)]">
+      <aside className="lg:w-1/5 xl:w-1/6 self-start sticky top-24">
+        <div className="flex flex-col gap-6">
+          <div className="flex items-center gap-3 px-2">
+            <div className="p-2.5 rounded-xl bg-gradient-to-br from-primary/20 to-primary/5 ring-1 ring-primary/10 shadow-sm">
+              <Settings className="h-6 w-6 text-primary" />
             </div>
-
-            {/* Navigation Tabs */}
-            <div className="px-4 md:px-8 pb-3 overflow-x-auto no-scrollbar">
-              <TabsList className="h-auto p-0 bg-transparent gap-2 border-0 rounded-none w-auto justify-start inline-flex">
-                <Link to="/config/global">
-                  <TabsTrigger
-                    value="global"
-                    className="relative px-3 py-1.5 text-sm font-medium rounded-full transition-all duration-200 data-[state=active]:bg-primary data-[state=active]:text-primary-foreground data-[state=active]:shadow-sm text-muted-foreground hover:text-foreground hover:bg-muted"
-                  >
-                    <Trans>Global</Trans>
-                  </TabsTrigger>
-                </Link>
-                <Link to="/config/platforms">
-                  <TabsTrigger
-                    value="platforms"
-                    className="relative px-3 py-1.5 text-sm font-medium rounded-full transition-all duration-200 data-[state=active]:bg-primary data-[state=active]:text-primary-foreground data-[state=active]:shadow-sm text-muted-foreground hover:text-foreground hover:bg-muted"
-                  >
-                    <Trans>Platforms</Trans>
-                  </TabsTrigger>
-                </Link>
-                <Link to="/config/templates">
-                  <TabsTrigger
-                    value="templates"
-                    className="relative px-3 py-1.5 text-sm font-medium rounded-full transition-all duration-200 data-[state=active]:bg-primary data-[state=active]:text-primary-foreground data-[state=active]:shadow-sm text-muted-foreground hover:text-foreground hover:bg-muted"
-                  >
-                    <Trans>Templates</Trans>
-                  </TabsTrigger>
-                </Link>
-                <Link to="/config/engines">
-                  <TabsTrigger
-                    value="engines"
-                    className="relative px-3 py-1.5 text-sm font-medium rounded-full transition-all duration-200 data-[state=active]:bg-primary data-[state=active]:text-primary-foreground data-[state=active]:shadow-sm text-muted-foreground hover:text-foreground hover:bg-muted"
-                  >
-                    <Trans>Engines</Trans>
-                  </TabsTrigger>
-                </Link>
-                <Link to="/config/theme">
-                  <TabsTrigger
-                    value="theme"
-                    className="relative px-3 py-1.5 text-sm font-medium rounded-full transition-all duration-200 data-[state=active]:bg-primary data-[state=active]:text-primary-foreground data-[state=active]:shadow-sm text-muted-foreground hover:text-foreground hover:bg-muted"
-                  >
-                    <Trans>Theme</Trans>
-                  </TabsTrigger>
-                </Link>
-              </TabsList>
+            <div>
+              <h1 className="text-xl font-semibold tracking-tight"><Trans>Settings</Trans></h1>
             </div>
           </div>
-        </div>
 
-        <div className="w-full px-4 md:px-8 py-8">
-          <Outlet />
+          <Separator className="opacity-50" />
+
+          <nav className="flex space-x-2 lg:flex-col lg:space-x-0 lg:space-y-2 overflow-x-auto lg:overflow-visible pb-2 lg:pb-0 no-scrollbar">
+            {sidebarItems.map((item) => {
+              const isActive = pathname.includes(item.href);
+              return (
+                <Link
+                  key={item.href}
+                  to={item.href}
+                  className={cn(
+                    "group flex min-w-[180px] lg:min-w-0 flex-col gap-1 rounded-xl px-4 py-3 text-sm font-medium transition-all hover:bg-accent",
+                    isActive ? "bg-accent/80 text-accent-foreground" : "text-muted-foreground"
+                  )}
+                >
+                  <div className="flex items-center gap-3">
+                    <item.icon className={cn(
+                      "h-4 w-4 transition-colors",
+                      isActive ? "text-primary" : "text-muted-foreground group-hover:text-foreground"
+                    )} />
+                    <span className={cn(
+                      "font-semibold",
+                      isActive ? "text-foreground" : "text-muted-foreground group-hover:text-foreground"
+                    )}>
+                      <Trans>{item.title}</Trans>
+                    </span>
+                  </div>
+                  {/* <p className="text-xs text-muted-foreground/60 pl-7 hidden lg:block line-clamp-1">
+                    <Trans>{item.description}</Trans>
+                  </p> */}
+                </Link>
+              );
+            })}
+          </nav>
         </div>
-      </Tabs>
+      </aside>
+
+      <div className="flex-1">
+        <motion.div
+          initial={{ opacity: 0, x: 20 }}
+          animate={{ opacity: 1, x: 0 }}
+          transition={{ duration: 0.4, ease: "easeOut" }}
+          className="pb-20"
+        >
+          <Outlet />
+        </motion.div>
+      </div>
     </div>
   );
 }

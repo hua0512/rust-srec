@@ -179,40 +179,58 @@ async fn list_streamers(
         }
     }
 
-    // Sort if requested
-    if let Some(sort_by) = &filters.sort_by {
-        let desc = filters.sort_dir.as_deref() == Some("desc");
-        match sort_by.as_str() {
-            "name" => {
-                streamers.sort_by(|a, b| {
-                    if desc {
-                        b.name.cmp(&a.name)
-                    } else {
-                        a.name.cmp(&b.name)
-                    }
-                });
-            }
-            "priority" => {
-                streamers.sort_by(|a, b| {
-                    if desc {
-                        b.priority.cmp(&a.priority)
-                    } else {
-                        a.priority.cmp(&b.priority)
-                    }
-                });
-            }
-            "state" => {
-                streamers.sort_by(|a, b| {
-                    let a_str = a.state.as_str();
-                    let b_str = b.state.as_str();
-                    if desc {
-                        b_str.cmp(a_str)
-                    } else {
-                        a_str.cmp(b_str)
-                    }
-                });
-            }
-            _ => {}
+    // Sort for stable pagination
+    let sort_by = filters.sort_by.as_deref();
+    let desc = filters
+        .sort_dir
+        .as_deref()
+        .map_or(false, |dir| dir.eq_ignore_ascii_case("desc"));
+
+    match sort_by {
+        Some("name") => {
+            streamers.sort_by(|a, b| {
+                let ordering = if desc {
+                    b.name.cmp(&a.name)
+                } else {
+                    a.name.cmp(&b.name)
+                };
+                ordering.then_with(|| a.id.cmp(&b.id))
+            });
+        }
+        Some("priority") => {
+            streamers.sort_by(|a, b| {
+                let ordering = if desc {
+                    b.priority.cmp(&a.priority)
+                } else {
+                    a.priority.cmp(&b.priority)
+                };
+                ordering
+                    .then_with(|| a.name.cmp(&b.name))
+                    .then_with(|| a.id.cmp(&b.id))
+            });
+        }
+        Some("state") => {
+            streamers.sort_by(|a, b| {
+                let a_state = a.state.as_str();
+                let b_state = b.state.as_str();
+                let ordering = if desc {
+                    b_state.cmp(a_state)
+                } else {
+                    a_state.cmp(b_state)
+                };
+                ordering
+                    .then_with(|| a.name.cmp(&b.name))
+                    .then_with(|| a.id.cmp(&b.id))
+            });
+        }
+        _ => {
+            // Default: match DB ordering and keep pages stable.
+            streamers.sort_by(|a, b| {
+                b.priority
+                    .cmp(&a.priority)
+                    .then_with(|| a.name.cmp(&b.name))
+                    .then_with(|| a.id.cmp(&b.id))
+            });
         }
     }
 
@@ -221,7 +239,8 @@ async fn list_streamers(
 
     // Apply pagination
     let offset = pagination.offset as usize;
-    let limit = pagination.limit.min(100) as usize;
+    let effective_limit = pagination.limit.min(100);
+    let limit = effective_limit as usize;
     let streamers: Vec<_> = streamers
         .into_iter()
         .skip(offset)
@@ -232,7 +251,7 @@ async fn list_streamers(
         })
         .collect();
 
-    let response = PaginatedResponse::new(streamers, total, pagination.limit, pagination.offset);
+    let response = PaginatedResponse::new(streamers, total, effective_limit, pagination.offset);
     Ok(Json(response))
 }
 

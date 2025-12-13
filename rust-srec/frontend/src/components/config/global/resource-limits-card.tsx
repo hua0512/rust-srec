@@ -1,11 +1,5 @@
 import { Control } from "react-hook-form";
-import {
-    Card,
-    CardContent,
-    CardDescription,
-    CardHeader,
-    CardTitle,
-} from "@/components/ui/card";
+import { SettingsCard } from "../settings-card";
 import {
     FormControl,
     FormDescription,
@@ -24,19 +18,14 @@ interface ResourceLimitsCardProps {
 
 export function ResourceLimitsCard({ control }: ResourceLimitsCardProps) {
     return (
-        <Card className="h-full hover:shadow-md transition-all duration-300 border-muted/60">
-            <CardHeader>
-                <CardTitle className="flex items-center gap-3 text-xl">
-                    <div className="p-2.5 bg-orange-500/10 text-orange-500 rounded-lg">
-                        <HardDrive className="w-5 h-5" />
-                    </div>
-                    <Trans>Resource Limits</Trans>
-                </CardTitle>
-                <CardDescription className="pl-[3.25rem]">
-                    <Trans>Size and duration constraints for recordings.</Trans>
-                </CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-6">
+        <SettingsCard
+            title={<Trans>Resource Limits</Trans>}
+            description={<Trans>Size and duration constraints for recordings.</Trans>}
+            icon={HardDrive}
+            iconColor="text-orange-500"
+            iconBgColor="bg-orange-500/10"
+        >
+            <div className="space-y-6">
                 <FormField
                     control={control}
                     name="min_segment_size_bytes"
@@ -100,7 +89,7 @@ export function ResourceLimitsCard({ control }: ResourceLimitsCardProps) {
                         </FormItem>
                     )}
                 />
-            </CardContent>
-        </Card>
+            </div>
+        </SettingsCard>
     );
 }
