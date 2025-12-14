@@ -1,18 +1,18 @@
-import { createFileRoute, Outlet } from '@tanstack/react-router'
-import { redirect } from '@tanstack/react-router'
-import { WebSocketProvider } from '@/providers/WebSocketProvider'
+import { createFileRoute, Outlet } from '@tanstack/react-router';
+import { redirect } from '@tanstack/react-router';
+import { WebSocketProvider } from '@/providers/WebSocketProvider';
 
 export const Route = createFileRoute('/_authed')({
   beforeLoad: ({ context, location }) => {
     if (!context.user && location.pathname !== '/login') {
-      throw redirect({ to: '/login', replace: true })
+      throw redirect({ to: '/login', replace: true });
     }
 
     if (
       context.user?.mustChangePassword &&
       location.pathname !== '/change-password'
     ) {
-      throw redirect({ to: '/change-password', replace: true })
+      throw redirect({ to: '/change-password', replace: true });
     }
   },
   component: () => (
@@ -20,4 +20,4 @@ export const Route = createFileRoute('/_authed')({
       <Outlet />
     </WebSocketProvider>
   ),
-})
+});

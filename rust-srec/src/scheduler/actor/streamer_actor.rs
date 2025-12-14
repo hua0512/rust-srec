@@ -34,6 +34,7 @@ use super::messages::{
 use super::metrics::ActorMetrics;
 use super::monitor_adapter::StatusChecker;
 use crate::domain::StreamerState;
+use crate::monitor::LiveStatus;
 use crate::streamer::StreamerMetadata;
 
 /// Result type for actor operations.
@@ -436,8 +437,9 @@ impl StreamerActor {
     }
 
     fn live_watchdog_interval(&self) -> Duration {
+        // watch dog interval each 2 hours
         std::cmp::max(
-            Duration::from_secs(30 * 60),
+            Duration::from_secs(2 * 60 * 60),
             Duration::from_millis(self.config.check_interval_ms),
         )
     }
@@ -533,11 +535,6 @@ impl StreamerActor {
 
                 // Call process_status only if hysteresis allows it
                 if should_emit {
-                    // Avoid spamming downstream systems when we're already Live.
-                    // This commonly occurs during Live watchdog checks.
-                    if prev_state == StreamerState::Live && next_state == StreamerState::Live {
-                        return Ok(());
-                    }
                     if let Err(e) = self.status_checker.process_status(&metadata, status).await {
                         warn!("StreamerActor {} failed to process status: {}", self.id, e);
                     }
@@ -727,10 +724,6 @@ impl StreamerActor {
 
         // Call process_status only if hysteresis allows it
         if should_emit {
-            // Avoid spamming downstream systems when we're already Live.
-            if prev_state == StreamerState::Live && next_state == StreamerState::Live {
-                return Ok(());
-            }
             // Fetch fresh metadata for process_status
             if let Some(metadata) = self.get_metadata() {
                 if let Err(e) = self
@@ -777,10 +770,47 @@ impl StreamerActor {
         Ok(())
     }
 
-    /// Handle DownloadEnded message - resume status checking after download ends.
+    /// Handle DownloadEnded message - resume status checking or stop monitoring.
     ///
-    /// When a download ends (streamer went offline, network error, etc.), we need
-    /// to resume status checking to detect when the streamer comes back online.
+    /// # Download End Reason Behaviors
+    ///
+    /// This method handles different download end scenarios with distinct behaviors:
+    ///
+    /// | Reason | Actor Behavior | Hysteresis | Next Check | Rationale |
+    /// |--------|---------------|------------|------------|-----------|
+    /// | `StreamerOffline` | Continue monitoring | Preserve (start post-live short polling) | Offline interval | Stream ended naturally, keep watching for next stream (and catch quick restarts) |
+    /// | `NetworkError` | Continue monitoring | Preserve | Immediate | Technical issue, verify status quickly to resume if still live |
+    /// | `SegmentFailed` | Continue monitoring | Preserve | Immediate | Technical issue, verify status quickly to resume if still live |
+    /// | `Cancelled` | **STOP ACTOR** | N/A | N/A | User explicitly wants to stop monitoring this streamer |
+    /// | `Other` | Continue monitoring | Preserve | Normal interval | Unknown reason, verify actual state through checks |
+    ///
+    /// ## StreamerOffline
+    /// The download orchestration reported the streamer went offline. We immediately publish
+    /// an Offline status to the monitor (to end the session + update DB), then keep the
+    /// hysteresis "recently live" flag so the actor uses the shorter offline polling interval
+    /// for a few checks to catch quick restarts.
+    ///
+    /// ## NetworkError / SegmentFailed
+    /// Technical failures that don't confirm the streamer is offline. We preserve hysteresis
+    /// state and check immediately to quickly resume if the streamer is still live. If they're
+    /// truly offline, the grace period will confirm it through multiple checks.
+    ///
+    /// ## Cancelled (User-Initiated Stop)
+    /// **Returns fatal error to stop the actor entirely.** When a user cancels a download,
+    /// their intent is "I don't want to monitor this streamer anymore." The actor stops
+    /// permanently rather than continuing to monitor.
+    ///
+    /// **IMPORTANT**: The download orchestration layer must:
+    /// 1. Update the streamer state to `CANCELLED` in the database
+    /// 2. Send the `DownloadEnded(Cancelled)` message
+    /// 3. The actor will stop gracefully with a fatal error
+    ///
+    /// This prevents the scheduler from respawning the actor since the streamer state
+    /// is marked as `CANCELLED`.
+    ///
+    /// ## Other
+    /// Unknown/unexpected reasons. We preserve hysteresis and use normal scheduling,
+    /// allowing the grace period to confirm the actual state through status checks.
     async fn handle_download_ended(
         &mut self,
         reason: super::messages::DownloadEndReason,
@@ -794,12 +824,31 @@ impl StreamerActor {
         // Update state and schedule check based on reason
         match reason {
             DownloadEndReason::StreamerOffline => {
-                // Streamer went offline normally - reset hysteresis since download
-                // confirmed offline (bypasses grace period)
-                self.state.streamer_state = StreamerState::NotLive;
-                self.state.hysteresis.reset();
+                // Streamer went offline normally. Push an Offline status to the monitor
+                // immediately so DB/session state is updated without waiting for the next check.
+                let metadata = self
+                    .get_metadata()
+                    .ok_or_else(|| ActorError::fatal("Streamer removed from metadata store"))?;
+                if let Err(e) = self
+                    .status_checker
+                    .process_status(&metadata, LiveStatus::Offline)
+                    .await
+                {
+                    warn!(
+                        "StreamerActor {} failed to process offline status on download end: {}",
+                        self.id, e
+                    );
+                }
 
-                // Schedule next check respecting offline intervals
+                // Resume checks using the post-live short polling window.
+                self.state.streamer_state = StreamerState::NotLive;
+                if !self.state.hysteresis.was_live() {
+                    // Be robust to externally orchestrated downloads where we never observed Live.
+                    self.state.hysteresis.mark_live();
+                }
+                self.state.hysteresis.mark_offline_observed();
+
+                // Schedule next check using offline interval while "recently live".
                 self.state.schedule_next_check(&self.config, error_count);
             }
             DownloadEndReason::NetworkError(_) | DownloadEndReason::SegmentFailed(_) => {
@@ -810,15 +859,22 @@ impl StreamerActor {
                 self.state.schedule_immediate_check();
             }
             DownloadEndReason::Cancelled => {
-                // User cancelled - don't change state, just resume checking
-                self.state.streamer_state = StreamerState::NotLive;
-                // Use normal scheduling
-                self.state.schedule_next_check(&self.config, error_count);
+                // User cancelled - stop monitoring this streamer entirely
+                // User intent: "I don't want to monitor this streamer anymore"
+                // The download orchestration layer should update the streamer state
+                // to CANCELLED in the database before sending this message
+                info!(
+                    "StreamerActor {} stopping due to user cancellation",
+                    self.id
+                );
+                return Err(ActorError::fatal(
+                    "User cancelled download - stopping monitoring",
+                ));
             }
             DownloadEndReason::Other(_) => {
-                // Unknown reason - assume offline
+                // Unknown reason - don't reset hysteresis, let status checks verify state
+                // If streamer is truly offline, grace period will confirm it through multiple checks
                 self.state.streamer_state = StreamerState::NotLive;
-                // Use normal scheduling
                 self.state.schedule_next_check(&self.config, error_count);
             }
         }
@@ -1579,8 +1635,11 @@ mod tests {
         // Verify state changed and check scheduled
         assert_eq!(actor.state.streamer_state, StreamerState::NotLive);
         assert!(actor.state.next_check.is_some());
-        // Hysteresis should be reset since download confirmed offline
-        assert!(!actor.state.hysteresis.was_live());
+        // Hysteresis stays "recently live" so short offline polling is used
+        assert!(actor.state.hysteresis.was_live());
+        assert_eq!(actor.state.hysteresis.offline_count(), 1);
+        let until = actor.state.time_until_next_check().unwrap();
+        assert!(until < Duration::from_millis(config.check_interval_ms / 2));
 
         // Reset and test error case
         actor.state.streamer_state = StreamerState::Live;
@@ -1599,5 +1658,40 @@ mod tests {
         assert_eq!(actor.state.streamer_state, StreamerState::NotLive);
         assert!(actor.state.next_check.is_some());
         assert!(actor.state.is_check_due()); // Network errors trigger immediate check
+
+        // Reset and test user cancellation
+        actor.state.streamer_state = StreamerState::Live;
+        actor.state.hysteresis.mark_live();
+        actor.state.next_check = None;
+
+        // Simulate user cancelled download
+        let result = actor
+            .handle_download_ended(super::super::messages::DownloadEndReason::Cancelled)
+            .await;
+
+        // Should return fatal error since user wants to stop monitoring
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        assert!(!err.recoverable); // Fatal error stops the actor
+        assert!(err.message.contains("User cancelled"));
+
+        // Reset and test unknown reason
+        actor.state.streamer_state = StreamerState::Live;
+        actor.state.hysteresis.mark_live();
+        actor.state.next_check = None;
+
+        // Simulate download ended with unknown reason
+        let result = actor
+            .handle_download_ended(super::super::messages::DownloadEndReason::Other(
+                "unknown".into(),
+            ))
+            .await;
+        assert!(result.is_ok());
+
+        // Verify state changed but hysteresis preserved (let checks verify)
+        assert_eq!(actor.state.streamer_state, StreamerState::NotLive);
+        assert!(actor.state.next_check.is_some());
+        // Hysteresis should be preserved - let checks determine actual state
+        assert!(actor.state.hysteresis.was_live());
     }
 }

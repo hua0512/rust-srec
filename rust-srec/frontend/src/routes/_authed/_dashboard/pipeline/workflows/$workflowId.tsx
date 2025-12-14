@@ -1,69 +1,89 @@
 import { createFileRoute, useNavigate } from '@tanstack/react-router';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { getPipelinePreset, updatePipelinePreset } from '@/server/functions/pipeline';
-import { toast } from "sonner";
-import { t } from "@lingui/core/macro";
-import { Trans } from "@lingui/react/macro";
+import {
+  getPipelinePreset,
+  updatePipelinePreset,
+} from '@/server/functions/pipeline';
+import { toast } from 'sonner';
+import { t } from '@lingui/core/macro';
+import { Trans } from '@lingui/react/macro';
 import { WorkflowEditor } from '@/components/pipeline/workflows/workflow-editor';
-import { Skeleton } from "@/components/ui/skeleton";
+import { Skeleton } from '@/components/ui/skeleton';
 
-export const Route = createFileRoute('/_authed/_dashboard/pipeline/workflows/$workflowId')({
-    component: EditWorkflowPage,
+export const Route = createFileRoute(
+  '/_authed/_dashboard/pipeline/workflows/$workflowId',
+)({
+  component: EditWorkflowPage,
 });
 
 function EditWorkflowPage() {
-    const { workflowId } = Route.useParams();
-    const navigate = useNavigate();
-    const queryClient = useQueryClient();
+  const { workflowId } = Route.useParams();
+  const navigate = useNavigate();
+  const queryClient = useQueryClient();
 
-    const { data: workflow, isLoading, error } = useQuery({
+  const {
+    data: workflow,
+    isLoading,
+    error,
+  } = useQuery({
+    queryKey: ['pipeline', 'workflow', workflowId],
+    queryFn: () => getPipelinePreset({ data: workflowId }),
+  });
+
+  const updateMutation = useMutation({
+    mutationFn: updatePipelinePreset,
+    onSuccess: () => {
+      toast.success(t`Workflow updated successfully`);
+      queryClient.invalidateQueries({ queryKey: ['pipeline', 'workflows'] });
+      queryClient.invalidateQueries({
         queryKey: ['pipeline', 'workflow', workflowId],
-        queryFn: () => getPipelinePreset({ data: workflowId }),
-    });
+      });
+      navigate({ to: '/pipeline/workflows' });
+    },
+    onError: (error) =>
+      toast.error(t`Failed to update workflow: ${error.message}`),
+  });
 
-    const updateMutation = useMutation({
-        mutationFn: updatePipelinePreset,
-        onSuccess: () => {
-            toast.success(t`Workflow updated successfully`);
-            queryClient.invalidateQueries({ queryKey: ['pipeline', 'workflows'] });
-            queryClient.invalidateQueries({ queryKey: ['pipeline', 'workflow', workflowId] });
-            navigate({ to: '/pipeline/workflows' });
-        },
-        onError: (error) => toast.error(t`Failed to update workflow: ${error.message}`),
-    });
+  const onSubmit = (data: {
+    name: string;
+    description?: string;
+    steps: string[];
+  }) => {
+    updateMutation.mutate({ data: { id: workflowId, ...data } });
+  };
 
-    const onSubmit = (data: { name: string; description?: string; steps: string[] }) => {
-        updateMutation.mutate({ data: { id: workflowId, ...data } });
-    };
-
-    if (isLoading) {
-        return (
-            <div className="space-y-6 max-w-5xl mx-auto p-6 md:p-10">
-                <div className="flex flex-col gap-4">
-                    <Skeleton className="h-10 w-1/3" />
-                    <Skeleton className="h-6 w-1/2" />
-                </div>
-                <Skeleton className="h-[200px] w-full rounded-xl" />
-                <Skeleton className="h-[300px] w-full rounded-xl" />
-            </div>
-        );
-    }
-
-    if (error || !workflow) {
-        return (
-            <div className="flex flex-col items-center justify-center p-20 text-center">
-                <h3 className="text-xl font-bold text-destructive"><Trans>Error loading workflow</Trans></h3>
-                <p className="text-muted-foreground mt-2">{error?.message || t`Workflow not found`}</p>
-            </div>
-        );
-    }
-
+  if (isLoading) {
     return (
-        <WorkflowEditor
-            initialData={workflow}
-            title={<Trans>Edit Workflow: {workflow.name}</Trans>}
-            onSubmit={onSubmit}
-            isUpdating={updateMutation.isPending}
-        />
+      <div className="space-y-6 max-w-5xl mx-auto p-6 md:p-10">
+        <div className="flex flex-col gap-4">
+          <Skeleton className="h-10 w-1/3" />
+          <Skeleton className="h-6 w-1/2" />
+        </div>
+        <Skeleton className="h-[200px] w-full rounded-xl" />
+        <Skeleton className="h-[300px] w-full rounded-xl" />
+      </div>
     );
+  }
+
+  if (error || !workflow) {
+    return (
+      <div className="flex flex-col items-center justify-center p-20 text-center">
+        <h3 className="text-xl font-bold text-destructive">
+          <Trans>Error loading workflow</Trans>
+        </h3>
+        <p className="text-muted-foreground mt-2">
+          {error?.message || t`Workflow not found`}
+        </p>
+      </div>
+    );
+  }
+
+  return (
+    <WorkflowEditor
+      initialData={workflow}
+      title={<Trans>Edit Workflow: {workflow.name}</Trans>}
+      onSubmit={onSubmit}
+      isUpdating={updateMutation.isPending}
+    />
+  );
 }

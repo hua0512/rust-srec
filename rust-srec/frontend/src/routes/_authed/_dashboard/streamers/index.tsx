@@ -1,27 +1,46 @@
-import { createFileRoute, useNavigate, Link } from '@tanstack/react-router';
-import { useQuery, useMutation, useQueryClient, keepPreviousData } from '@tanstack/react-query';
+import { createFileRoute, useNavigate } from '@tanstack/react-router';
+import {
+  useQuery,
+  useMutation,
+  useQueryClient,
+  keepPreviousData,
+} from '@tanstack/react-query';
 import { motion, AnimatePresence } from 'motion/react';
-import { z } from 'zod';
 import { useState, useMemo, useEffect, useCallback } from 'react';
-import { listStreamers, deleteStreamer, checkStreamer, updateStreamer, listPlatformConfigs } from '@/server/functions';
-import { StreamerSchema } from '@/api/schemas';
+import {
+  listStreamers,
+  deleteStreamer,
+  checkStreamer,
+  updateStreamer,
+  listPlatformConfigs,
+} from '@/server/functions';
 
-import { Button } from "@/components/ui/button";
-import { Plus, Search, Users, Video, Wifi, WifiOff, AlertTriangle, Ban, Radio } from "lucide-react";
-import { toast } from "sonner";
-import { Trans } from "@lingui/react/macro";
-import { t } from "@lingui/core/macro";
+import { Button } from '@/components/ui/button';
+import {
+  Plus,
+  Search,
+  Users,
+  Video,
+  Wifi,
+  WifiOff,
+  AlertTriangle,
+  Ban,
+  Radio,
+} from 'lucide-react';
+import { toast } from 'sonner';
+import { Trans } from '@lingui/react/macro';
+import { t } from '@lingui/core/macro';
 import { StreamerCard } from '@/components/streamers/streamer-card';
-import { Skeleton } from "@/components/ui/skeleton";
-import { Input } from "@/components/ui/input";
-import { Badge } from "@/components/ui/badge";
+import { Skeleton } from '@/components/ui/skeleton';
+import { Input } from '@/components/ui/input';
+import { Badge } from '@/components/ui/badge';
 import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from "@/components/ui/select";
+} from '@/components/ui/select';
 import {
   Pagination,
   PaginationContent,
@@ -30,7 +49,7 @@ import {
   PaginationLink,
   PaginationNext,
   PaginationPrevious,
-} from "@/components/ui/pagination";
+} from '@/components/ui/pagination';
 
 export const Route = createFileRoute('/_authed/_dashboard/streamers/')({
   component: StreamersPage,
@@ -86,8 +105,20 @@ function StreamersPage() {
   });
 
   // Fetch Streamers
-  const { data: streamersData, isLoading, isError, error } = useQuery({
-    queryKey: ['streamers', page, pageSize, debouncedSearch, platformFilter, stateFilter],
+  const {
+    data: streamersData,
+    isLoading,
+    isError,
+    error,
+  } = useQuery({
+    queryKey: [
+      'streamers',
+      page,
+      pageSize,
+      debouncedSearch,
+      platformFilter,
+      stateFilter,
+    ],
     queryFn: async () => {
       const platform = platformFilter === 'all' ? undefined : platformFilter;
       const state = stateFilter === 'all' ? undefined : stateFilter;
@@ -97,8 +128,8 @@ function StreamersPage() {
           limit: pageSize,
           search: debouncedSearch,
           platform,
-          state
-        }
+          state,
+        },
       });
     },
     placeholderData: keepPreviousData,
@@ -121,7 +152,11 @@ function StreamersPage() {
     } else {
       pages.push(1);
       if (current > 3) pages.push('ellipsis');
-      for (let i = Math.max(2, current - 1); i <= Math.min(total - 1, current + 1); i++) {
+      for (
+        let i = Math.max(2, current - 1);
+        i <= Math.min(total - 1, current + 1);
+        i++
+      ) {
         pages.push(i);
       }
       if (current < total - 2) pages.push('ellipsis');
@@ -137,13 +172,15 @@ function StreamersPage() {
       toast.success(t`Streamer deleted`);
       queryClient.invalidateQueries({ queryKey: ['streamers'] });
     },
-    onError: (error: any) => toast.error(error.message || t`Failed to delete streamer`),
+    onError: (error: any) =>
+      toast.error(error.message || t`Failed to delete streamer`),
   });
 
   const checkMutation = useMutation({
     mutationFn: (id: string) => checkStreamer({ data: id }),
     onSuccess: () => toast.success(t`Check triggered`),
-    onError: (error: any) => toast.error(error.message || t`Failed to trigger check`),
+    onError: (error: any) =>
+      toast.error(error.message || t`Failed to trigger check`),
   });
 
   const toggleMutation = useMutation({
@@ -153,7 +190,8 @@ function StreamersPage() {
       toast.success(t`Streamer updated`);
       queryClient.invalidateQueries({ queryKey: ['streamers'] });
     },
-    onError: (error: any) => toast.error(error.message || t`Failed to update streamer`),
+    onError: (error: any) =>
+      toast.error(error.message || t`Failed to update streamer`),
   });
 
   const handleDelete = (id: string) => {
@@ -165,7 +203,9 @@ function StreamersPage() {
   if (isError) {
     return (
       <div className="p-8 text-center text-destructive">
-        <p><Trans>Error loading streamers: {(error as any).message}</Trans></p>
+        <p>
+          <Trans>Error loading streamers: {(error as any).message}</Trans>
+        </p>
       </div>
     );
   }
@@ -182,7 +222,9 @@ function StreamersPage() {
                 <Video className="h-6 w-6 text-primary" />
               </div>
               <div>
-                <h1 className="text-xl font-semibold tracking-tight"><Trans>Streamers</Trans></h1>
+                <h1 className="text-xl font-semibold tracking-tight">
+                  <Trans>Streamers</Trans>
+                </h1>
                 <p className="text-sm text-muted-foreground">
                   <Trans>Manage your monitored channels and downloads</Trans>
                 </p>
@@ -202,7 +244,10 @@ function StreamersPage() {
               </div>
 
               {/* Platform Select */}
-              <Select value={platformFilter} onValueChange={handlePlatformChange}>
+              <Select
+                value={platformFilter}
+                onValueChange={handlePlatformChange}
+              >
                 <SelectTrigger className="w-[200px] h-9 bg-background/50 border-input/60 hover:bg-accent/50 transition-colors">
                   <div className="flex items-center gap-2 truncate">
                     <Radio className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
@@ -212,14 +257,21 @@ function StreamersPage() {
                   </div>
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="all"><Trans>All Platforms</Trans></SelectItem>
+                  <SelectItem value="all">
+                    <Trans>All Platforms</Trans>
+                  </SelectItem>
                   {platforms.map((p) => (
-                    <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>
+                    <SelectItem key={p.id} value={p.id}>
+                      {p.name}
+                    </SelectItem>
                   ))}
                 </SelectContent>
               </Select>
 
-              <Badge variant="secondary" className="h-9 px-3 text-sm whitespace-nowrap">
+              <Badge
+                variant="secondary"
+                className="h-9 px-3 text-sm whitespace-nowrap"
+              >
                 {totalCount} <Trans>total</Trans>
               </Badge>
             </div>
@@ -235,10 +287,11 @@ function StreamersPage() {
                   <button
                     key={filter.value}
                     onClick={() => handleStateChange(filter.value)}
-                    className={`relative px-3 py-1.5 text-sm font-medium rounded-full transition-all duration-200 flex items-center gap-2 ${isActive
-                      ? "bg-primary text-primary-foreground shadow-sm"
-                      : "text-muted-foreground hover:text-foreground hover:bg-muted"
-                      }`}
+                    className={`relative px-3 py-1.5 text-sm font-medium rounded-full transition-all duration-200 flex items-center gap-2 ${
+                      isActive
+                        ? 'bg-primary text-primary-foreground shadow-sm'
+                        : 'text-muted-foreground hover:text-foreground hover:bg-muted'
+                    }`}
                   >
                     <Icon className="h-3.5 w-3.5" />
                     <span className="relative z-10">{filter.label}</span>
@@ -262,7 +315,10 @@ function StreamersPage() {
               className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6"
             >
               {[1, 2, 3, 4, 5, 6, 7, 8].map((i) => (
-                <div key={i} className="h-[200px] border rounded-xl bg-muted/10 animate-pulse flex flex-col p-6 space-y-4">
+                <div
+                  key={i}
+                  className="h-[200px] border rounded-xl bg-muted/10 animate-pulse flex flex-col p-6 space-y-4"
+                >
                   <div className="flex items-center gap-3">
                     <Skeleton className="h-10 w-10 rounded-full" />
                     <div className="space-y-1 flex-1">
@@ -287,12 +343,17 @@ function StreamersPage() {
                   key={streamer.id}
                   initial={{ opacity: 0, y: 10 }}
                   animate={{ opacity: 1, y: 0 }}
-                  transition={{ duration: 0.2, delay: Math.min(index * 0.03, 0.3) }}
+                  transition={{
+                    duration: 0.2,
+                    delay: Math.min(index * 0.03, 0.3),
+                  }}
                 >
                   <StreamerCard
                     streamer={streamer}
                     onDelete={handleDelete}
-                    onToggle={(id, enabled) => toggleMutation.mutate({ id, enabled })}
+                    onToggle={(id, enabled) =>
+                      toggleMutation.mutate({ id, enabled })
+                    }
                     onCheck={(id) => checkMutation.mutate(id)}
                   />
                 </motion.div>
@@ -309,12 +370,20 @@ function StreamersPage() {
                 <Users className="h-12 w-12 text-muted-foreground/50" />
               </div>
               <div className="space-y-2">
-                <h3 className="font-semibold text-xl"><Trans>No streamers found</Trans></h3>
+                <h3 className="font-semibold text-xl">
+                  <Trans>No streamers found</Trans>
+                </h3>
                 <p className="text-muted-foreground max-w-sm mx-auto">
-                  <Trans>Try adjusting your search or filters, or add a new streamer to start monitoring.</Trans>
+                  <Trans>
+                    Try adjusting your search or filters, or add a new streamer
+                    to start monitoring.
+                  </Trans>
                 </p>
               </div>
-              <Button onClick={() => navigate({ to: '/streamers/new' })} size="lg">
+              <Button
+                onClick={() => navigate({ to: '/streamers/new' })}
+                size="lg"
+              >
                 <Plus className="mr-2 h-5 w-5" />
                 <Trans>Add Streamer</Trans>
               </Button>
@@ -326,7 +395,9 @@ function StreamersPage() {
         {totalPages > 1 && (
           <div className="flex items-center justify-between mt-8 pt-6 border-t font-medium text-sm">
             <div className="flex items-center gap-3 text-muted-foreground">
-              <span><Trans>Rows per page</Trans></span>
+              <span>
+                <Trans>Rows per page</Trans>
+              </span>
               <Select
                 value={pageSize.toString()}
                 onValueChange={(v) => {
@@ -338,8 +409,10 @@ function StreamersPage() {
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  {PAGE_SIZES.map(size => (
-                    <SelectItem key={size} value={size.toString()}>{size}</SelectItem>
+                  {PAGE_SIZES.map((size) => (
+                    <SelectItem key={size} value={size.toString()}>
+                      {size}
+                    </SelectItem>
                   ))}
                 </SelectContent>
               </Select>
@@ -349,11 +422,15 @@ function StreamersPage() {
               <PaginationContent>
                 <PaginationItem>
                   <PaginationPrevious
-                    onClick={() => setPage(p => Math.max(1, p - 1))}
-                    className={page === 1 ? "pointer-events-none opacity-50" : "cursor-pointer"}
+                    onClick={() => setPage((p) => Math.max(1, p - 1))}
+                    className={
+                      page === 1
+                        ? 'pointer-events-none opacity-50'
+                        : 'cursor-pointer'
+                    }
                   />
                 </PaginationItem>
-                {paginationPages.map((p, i) => (
+                {paginationPages.map((p, i) =>
                   p === 'ellipsis' ? (
                     <PaginationItem key={`ellipsis-${i}`}>
                       <PaginationEllipsis />
@@ -368,12 +445,16 @@ function StreamersPage() {
                         {p}
                       </PaginationLink>
                     </PaginationItem>
-                  )
-                ))}
+                  ),
+                )}
                 <PaginationItem>
                   <PaginationNext
-                    onClick={() => setPage(p => Math.min(totalPages, p + 1))}
-                    className={page === totalPages ? "pointer-events-none opacity-50" : "cursor-pointer"}
+                    onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+                    className={
+                      page === totalPages
+                        ? 'pointer-events-none opacity-50'
+                        : 'cursor-pointer'
+                    }
                   />
                 </PaginationItem>
               </PaginationContent>

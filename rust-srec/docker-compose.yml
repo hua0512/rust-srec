@@ -8,7 +8,7 @@ services:
     container_name: rust-srec
     restart: unless-stopped
     ports:
-      - "12555:12555"
+      - "8080:8080"
     volumes:
       - ./data:/app/data
       - ./config:/app/config
@@ -20,7 +20,7 @@ services:
       - API_PORT=8080
       - API_BIND_ADDRESS=0.0.0.0
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      test: ["CMD", "curl", "-f", "http://localhost:8080/api/health/ready"]
       interval: 30s
       timeout: 10s
       retries: 3

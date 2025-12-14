@@ -3,7 +3,11 @@ import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { motion } from 'motion/react';
 import { GlobalConfigSchema } from '../../../../api/schemas';
-import { getGlobalConfig, updateGlobalConfig, listEngines } from '@/server/functions';
+import {
+  getGlobalConfig,
+  updateGlobalConfig,
+  listEngines,
+} from '@/server/functions';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Button } from '../../../../components/ui/button';
 import { Form } from '../../../../components/ui/form';
@@ -37,40 +41,45 @@ function GlobalConfigPage() {
 
   const form = useForm<z.infer<typeof GlobalConfigSchema>>({
     resolver: zodResolver(GlobalConfigSchema),
-    defaultValues: config ? {
-      ...config,
-      proxy_config: config.proxy_config ?? '',
-      pipeline: config.pipeline ?? '',
-    } : {
-      output_folder: '',
-      output_filename_template: '',
-      output_file_format: 'flv',
-      min_segment_size_bytes: 0,
-      max_download_duration_secs: 0,
-      max_part_size_bytes: 0,
-      record_danmu: false,
-      max_concurrent_downloads: 0,
-      max_concurrent_uploads: 0,
-      max_concurrent_cpu_jobs: 0,
-      max_concurrent_io_jobs: 0,
-      streamer_check_delay_ms: 0,
-      proxy_config: '',
-      offline_check_delay_ms: 0,
-      offline_check_count: 0,
-      default_download_engine: 'default-mesio',
-      job_history_retention_days: 30,
-      session_gap_time_secs: 3600,
-      pipeline: '',
-    },
-    values: config ? {
-      ...config,
-      proxy_config: config.proxy_config ?? '',
-      pipeline: config.pipeline ?? '',
-    } : undefined,
+    defaultValues: config
+      ? {
+          ...config,
+          proxy_config: config.proxy_config ?? '',
+          pipeline: config.pipeline ?? '',
+        }
+      : {
+          output_folder: '',
+          output_filename_template: '',
+          output_file_format: 'flv',
+          min_segment_size_bytes: 0,
+          max_download_duration_secs: 0,
+          max_part_size_bytes: 0,
+          record_danmu: false,
+          max_concurrent_downloads: 0,
+          max_concurrent_uploads: 0,
+          max_concurrent_cpu_jobs: 0,
+          max_concurrent_io_jobs: 0,
+          streamer_check_delay_ms: 0,
+          proxy_config: '',
+          offline_check_delay_ms: 0,
+          offline_check_count: 0,
+          default_download_engine: 'default-mesio',
+          job_history_retention_days: 30,
+          session_gap_time_secs: 3600,
+          pipeline: '',
+        },
+    values: config
+      ? {
+          ...config,
+          proxy_config: config.proxy_config ?? '',
+          pipeline: config.pipeline ?? '',
+        }
+      : undefined,
   });
 
   const updateMutation = useMutation({
-    mutationFn: (data: z.infer<typeof GlobalConfigSchema>) => updateGlobalConfig({ data }),
+    mutationFn: (data: z.infer<typeof GlobalConfigSchema>) =>
+      updateGlobalConfig({ data }),
     onSuccess: () => {
       toast.success(t`Settings updated successfully`);
       queryClient.invalidateQueries({ queryKey: ['config', 'global'] });
@@ -99,7 +108,7 @@ function GlobalConfigPage() {
           <Skeleton className="h-[500px] md:col-span-2 rounded-xl border-border/40 bg-muted/60" />
         </div>
       </div>
-    )
+    );
   }
 
   return (

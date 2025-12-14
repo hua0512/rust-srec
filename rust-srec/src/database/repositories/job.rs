@@ -1,12 +1,84 @@
 //! Job repository.
 
 use async_trait::async_trait;
+use rand::random;
 use sqlx::SqlitePool;
+use std::borrow::Cow;
+use std::future::Future;
+use std::time::Duration;
+use tokio::time::sleep;
+use tracing::debug;
 
 use crate::database::models::{
-    JobCounts, JobDbModel, JobExecutionLogDbModel, JobFilters, Pagination,
+    JobCounts, JobDbModel, JobExecutionLogDbModel, JobExecutionProgressDbModel, JobFilters,
+    Pagination,
 };
 use crate::{Error, Result};
+
+const SQLITE_BUSY_MAX_RETRIES: usize = 8;
+const SQLITE_BUSY_BASE_DELAY_MS: u64 = 10;
+const SQLITE_BUSY_MAX_DELAY_MS: u64 = 250;
+
+fn is_sqlite_busy_error(err: &Error) -> bool {
+    let Error::DatabaseSqlx(sqlx_err) = err else {
+        return false;
+    };
+
+    let sqlx::Error::Database(db_err) = sqlx_err else {
+        let msg = sqlx_err.to_string().to_ascii_lowercase();
+        return msg.contains("database is locked") || msg.contains("database is busy");
+    };
+
+    let code = db_err.code().map(Cow::into_owned);
+    if matches!(code.as_deref(), Some("5") | Some("6")) {
+        return true;
+    }
+
+    let msg = db_err.message().to_ascii_lowercase();
+    msg.contains("database is locked") || msg.contains("database is busy")
+}
+
+fn is_missing_execution_log_columns_error(err: &Error) -> bool {
+    let msg = err.to_string().to_ascii_lowercase();
+    msg.contains("no such column")
+        && (msg.contains("level") || msg.contains("message"))
+        || msg.contains("has no column named level")
+        || msg.contains("has no column named message")
+}
+
+async fn retry_on_sqlite_busy<T, F, Fut>(op_name: &'static str, mut op: F) -> Result<T>
+where
+    F: FnMut() -> Fut,
+    Fut: Future<Output = Result<T>>,
+{
+    let mut attempt = 0usize;
+    loop {
+        match op().await {
+            Ok(value) => return Ok(value),
+            Err(err) => {
+                if !is_sqlite_busy_error(&err) || attempt >= SQLITE_BUSY_MAX_RETRIES {
+                    return Err(err);
+                }
+
+                let exp_backoff_ms = SQLITE_BUSY_BASE_DELAY_MS.saturating_mul(1u64 << attempt);
+                let capped_ms = exp_backoff_ms.min(SQLITE_BUSY_MAX_DELAY_MS);
+                let jitter_ms = (random::<u64>() % (capped_ms / 4 + 1)).min(SQLITE_BUSY_MAX_DELAY_MS);
+                let delay = Duration::from_millis((capped_ms + jitter_ms).min(SQLITE_BUSY_MAX_DELAY_MS));
+
+                debug!(
+                    "SQLite busy during {}, retrying in {:?} (attempt {}/{})",
+                    op_name,
+                    delay,
+                    attempt + 1,
+                    SQLITE_BUSY_MAX_RETRIES
+                );
+
+                sleep(delay).await;
+                attempt += 1;
+            }
+        }
+    }
+}
 
 /// Summary of a pipeline (group of jobs with same pipeline_id).
 #[derive(Debug, Clone)]
@@ -32,6 +104,32 @@ pub trait JobRepository: Send + Sync {
     async fn list_recent_jobs(&self, limit: i32) -> Result<Vec<JobDbModel>>;
     async fn create_job(&self, job: &JobDbModel) -> Result<()>;
     async fn update_job_status(&self, id: &str, status: &str) -> Result<()>;
+    /// Mark a job as FAILED and set error/completed_at.
+    async fn mark_job_failed(&self, id: &str, error: &str) -> Result<()>;
+    /// Mark a job as INTERRUPTED and set completed_at.
+    async fn mark_job_interrupted(&self, id: &str) -> Result<()>;
+    /// Reset a job for retry (PENDING, clear started/completed/error, increment retry_count).
+    async fn reset_job_for_retry(&self, id: &str) -> Result<()>;
+    /// Count pending jobs, optionally filtered by job types.
+    async fn count_pending_jobs(&self, job_types: Option<&[String]>) -> Result<u64>;
+    /// Upsert (replace) the latest execution progress snapshot for a job.
+    async fn upsert_job_execution_progress(&self, progress: &JobExecutionProgressDbModel)
+        -> Result<()>;
+    /// Get the latest execution progress snapshot for a job.
+    async fn get_job_execution_progress(
+        &self,
+        job_id: &str,
+    ) -> Result<Option<JobExecutionProgressDbModel>>;
+    /// Atomically claim (transition) the next pending job to PROCESSING.
+    /// Returns the claimed job, if any.
+    ///
+    /// This is intended for the hot dequeue path to avoid a list+update race and
+    /// to reduce DB round-trips.
+    async fn claim_next_pending_job(&self, job_types: Option<&[String]>) -> Result<Option<JobDbModel>>;
+    /// Fetch only the `execution_info` field for a job.
+    async fn get_job_execution_info(&self, id: &str) -> Result<Option<String>>;
+    /// Update only the `execution_info` field for a job.
+    async fn update_job_execution_info(&self, id: &str, execution_info: &str) -> Result<()>;
     async fn update_job_state(&self, id: &str, state: &str) -> Result<()>;
     async fn update_job(&self, job: &JobDbModel) -> Result<()>;
     async fn reset_interrupted_jobs(&self) -> Result<i32>;
@@ -54,7 +152,15 @@ pub trait JobRepository: Send + Sync {
 
     // Execution logs
     async fn add_execution_log(&self, log: &JobExecutionLogDbModel) -> Result<()>;
+    /// Add multiple execution logs in one transaction.
+    async fn add_execution_logs(&self, logs: &[JobExecutionLogDbModel]) -> Result<()>;
     async fn get_execution_logs(&self, job_id: &str) -> Result<Vec<JobExecutionLogDbModel>>;
+    /// List execution logs with pagination, returning (logs, total_count).
+    async fn list_execution_logs(
+        &self,
+        job_id: &str,
+        pagination: &Pagination,
+    ) -> Result<(Vec<JobExecutionLogDbModel>, u64)>;
     async fn delete_execution_logs_for_job(&self, job_id: &str) -> Result<()>;
 
     // Filtering and pagination (Requirements 1.1, 1.3, 1.4, 1.5)
@@ -65,6 +171,12 @@ pub trait JobRepository: Send + Sync {
         filters: &JobFilters,
         pagination: &Pagination,
     ) -> Result<(Vec<JobDbModel>, u64)>;
+    /// List jobs with optional filters and pagination, without running a `COUNT(*)`.
+    async fn list_jobs_page_filtered(
+        &self,
+        filters: &JobFilters,
+        pagination: &Pagination,
+    ) -> Result<Vec<JobDbModel>>;
 
     // Statistics (Requirements 3.1, 3.2, 3.3)
     /// Get job counts by status.
@@ -203,6 +315,215 @@ impl JobRepository for SqlxJobRepository {
         Ok(())
     }
 
+    async fn mark_job_failed(&self, id: &str, error: &str) -> Result<()> {
+        retry_on_sqlite_busy("mark_job_failed", || async {
+            let now = chrono::Utc::now().to_rfc3339();
+            sqlx::query(
+                "UPDATE job SET status = 'FAILED', completed_at = ?, updated_at = ?, error = ? WHERE id = ?",
+            )
+            .bind(&now)
+            .bind(&now)
+            .bind(error)
+            .bind(id)
+            .execute(&self.pool)
+            .await?;
+            Ok(())
+        })
+        .await
+    }
+
+    async fn mark_job_interrupted(&self, id: &str) -> Result<()> {
+        retry_on_sqlite_busy("mark_job_interrupted", || async {
+            let now = chrono::Utc::now().to_rfc3339();
+            sqlx::query(
+                "UPDATE job SET status = 'INTERRUPTED', completed_at = ?, updated_at = ? WHERE id = ?",
+            )
+            .bind(&now)
+            .bind(&now)
+            .bind(id)
+            .execute(&self.pool)
+            .await?;
+            Ok(())
+        })
+        .await
+    }
+
+    async fn reset_job_for_retry(&self, id: &str) -> Result<()> {
+        retry_on_sqlite_busy("reset_job_for_retry", || async {
+            let now = chrono::Utc::now().to_rfc3339();
+            sqlx::query(
+                "UPDATE job SET status = 'PENDING', started_at = NULL, completed_at = NULL, error = NULL, retry_count = retry_count + 1, updated_at = ? WHERE id = ?",
+            )
+            .bind(&now)
+            .bind(id)
+            .execute(&self.pool)
+            .await?;
+            Ok(())
+        })
+        .await
+    }
+
+    async fn count_pending_jobs(&self, job_types: Option<&[String]>) -> Result<u64> {
+        let (sql, bind_job_types) = match job_types {
+            Some(types) if !types.is_empty() => {
+                let placeholders = std::iter::repeat("?")
+                    .take(types.len())
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                (
+                    format!(
+                        "SELECT COUNT(*) FROM job WHERE status = 'PENDING' AND job_type IN ({})",
+                        placeholders
+                    ),
+                    true,
+                )
+            }
+            _ => ("SELECT COUNT(*) FROM job WHERE status = 'PENDING'".to_string(), false),
+        };
+
+        let mut query = sqlx::query_scalar::<_, i64>(&sql);
+        if bind_job_types {
+            if let Some(types) = job_types {
+                for jt in types {
+                    query = query.bind(jt);
+                }
+            }
+        }
+
+        let count = query.fetch_one(&self.pool).await?;
+        Ok(count.max(0) as u64)
+    }
+
+    async fn upsert_job_execution_progress(
+        &self,
+        progress: &JobExecutionProgressDbModel,
+    ) -> Result<()> {
+        retry_on_sqlite_busy("upsert_job_execution_progress", || async {
+            sqlx::query(
+                r#"
+                INSERT INTO job_execution_progress (job_id, kind, progress, updated_at)
+                VALUES (?, ?, ?, ?)
+                ON CONFLICT(job_id) DO UPDATE SET
+                    kind = excluded.kind,
+                    progress = excluded.progress,
+                    updated_at = excluded.updated_at
+                "#,
+            )
+            .bind(&progress.job_id)
+            .bind(&progress.kind)
+            .bind(&progress.progress)
+            .bind(&progress.updated_at)
+            .execute(&self.pool)
+            .await?;
+            Ok(())
+        })
+        .await
+    }
+
+    async fn get_job_execution_progress(
+        &self,
+        job_id: &str,
+    ) -> Result<Option<JobExecutionProgressDbModel>> {
+        let row = sqlx::query_as::<_, JobExecutionProgressDbModel>(
+            "SELECT * FROM job_execution_progress WHERE job_id = ?",
+        )
+        .bind(job_id)
+        .fetch_optional(&self.pool)
+        .await?;
+        Ok(row)
+    }
+
+    async fn claim_next_pending_job(&self, job_types: Option<&[String]>) -> Result<Option<JobDbModel>> {
+        retry_on_sqlite_busy("claim_next_pending_job", || async {
+            let now = chrono::Utc::now().to_rfc3339();
+
+            // SQLite supports `RETURNING` in modern versions; this keeps the claim
+            // atomic and avoids a list+update race between workers.
+            //
+            // We keep ordering consistent with list_jobs_filtered: priority DESC, created_at DESC.
+            let (sql, bind_job_types): (String, bool) = match job_types {
+                Some(types) if !types.is_empty() => {
+                    let placeholders = types.iter().map(|_| "?").collect::<Vec<_>>().join(", ");
+                    (
+                        format!(
+                            r#"
+                            UPDATE job
+                            SET status = 'PROCESSING',
+                                started_at = ?,
+                                updated_at = ?
+                            WHERE id = (
+                                SELECT id
+                                FROM job
+                                WHERE status = 'PENDING' AND job_type IN ({})
+                                ORDER BY priority DESC, created_at DESC
+                                LIMIT 1
+                            )
+                              AND status = 'PENDING'
+                            RETURNING *
+                            "#,
+                            placeholders
+                        ),
+                        true,
+                    )
+                }
+                _ => (
+                    r#"
+                    UPDATE job
+                    SET status = 'PROCESSING',
+                        started_at = ?,
+                        updated_at = ?
+                    WHERE id = (
+                        SELECT id
+                        FROM job
+                        WHERE status = 'PENDING'
+                        ORDER BY priority DESC, created_at DESC
+                        LIMIT 1
+                    )
+                      AND status = 'PENDING'
+                    RETURNING *
+                    "#
+                    .to_string(),
+                    false,
+                ),
+            };
+
+            let mut query = sqlx::query_as::<_, JobDbModel>(&sql).bind(&now).bind(&now);
+            if bind_job_types {
+                if let Some(types) = job_types {
+                    for jt in types {
+                        query = query.bind(jt);
+                    }
+                }
+            }
+
+            let claimed = query.fetch_optional(&self.pool).await?;
+            Ok(claimed)
+        })
+        .await
+    }
+
+    async fn get_job_execution_info(&self, id: &str) -> Result<Option<String>> {
+        sqlx::query_scalar::<_, String>("SELECT execution_info FROM job WHERE id = ?")
+            .bind(id)
+            .fetch_optional(&self.pool)
+            .await
+            .map_err(Error::from)
+    }
+
+    async fn update_job_execution_info(&self, id: &str, execution_info: &str) -> Result<()> {
+        retry_on_sqlite_busy("update_job_execution_info", || async {
+            let now = chrono::Utc::now().to_rfc3339();
+            sqlx::query("UPDATE job SET execution_info = ?, updated_at = ? WHERE id = ?")
+                .bind(execution_info)
+                .bind(&now)
+                .bind(id)
+                .execute(&self.pool)
+                .await?;
+            Ok(())
+        })
+        .await
+    }
+
     async fn update_job_state(&self, id: &str, state: &str) -> Result<()> {
         let now = chrono::Utc::now().to_rfc3339();
         sqlx::query("UPDATE job SET state = ?, updated_at = ? WHERE id = ?")
@@ -330,29 +651,170 @@ impl JobRepository for SqlxJobRepository {
     }
 
     async fn add_execution_log(&self, log: &JobExecutionLogDbModel) -> Result<()> {
-        sqlx::query(
-            r#"
-            INSERT INTO job_execution_logs (id, job_id, entry, created_at)
-            VALUES (?, ?, ?, ?)
-            "#,
-        )
-        .bind(&log.id)
-        .bind(&log.job_id)
-        .bind(&log.entry)
-        .bind(&log.created_at)
-        .execute(&self.pool)
-        .await?;
-        Ok(())
+        retry_on_sqlite_busy("add_execution_log", || async {
+            let attempt = sqlx::query(
+                r#"
+                INSERT INTO job_execution_logs (id, job_id, entry, created_at, level, message)
+                VALUES (?, ?, ?, ?, ?, ?)
+                "#,
+            )
+            .bind(&log.id)
+            .bind(&log.job_id)
+            .bind(&log.entry)
+            .bind(&log.created_at)
+            .bind(&log.level)
+            .bind(&log.message)
+            .execute(&self.pool)
+            .await;
+
+            match attempt {
+                Ok(_) => Ok(()),
+                Err(e) => {
+                    let err = Error::from(e);
+                    if !is_missing_execution_log_columns_error(&err) {
+                        return Err(err);
+                    }
+
+                    sqlx::query(
+                        r#"
+                        INSERT INTO job_execution_logs (id, job_id, entry, created_at)
+                        VALUES (?, ?, ?, ?)
+                        "#,
+                    )
+                    .bind(&log.id)
+                    .bind(&log.job_id)
+                    .bind(&log.entry)
+                    .bind(&log.created_at)
+                    .execute(&self.pool)
+                    .await?;
+                    Ok(())
+                }
+            }
+        })
+        .await
+    }
+
+    async fn add_execution_logs(&self, logs: &[JobExecutionLogDbModel]) -> Result<()> {
+        if logs.is_empty() {
+            return Ok(());
+        }
+
+        retry_on_sqlite_busy("add_execution_logs", || async {
+            let mut tx = self.pool.begin().await?;
+            for log in logs {
+                let res = sqlx::query(
+                    r#"
+                    INSERT INTO job_execution_logs (id, job_id, entry, created_at, level, message)
+                    VALUES (?, ?, ?, ?, ?, ?)
+                    "#,
+                )
+                .bind(&log.id)
+                .bind(&log.job_id)
+                .bind(&log.entry)
+                .bind(&log.created_at)
+                .bind(&log.level)
+                .bind(&log.message)
+                .execute(&mut *tx)
+                .await;
+
+                if let Err(e) = res {
+                    let err = Error::from(e);
+                    if !is_missing_execution_log_columns_error(&err) {
+                        return Err(err);
+                    }
+
+                    // Fallback to legacy schema (no structured columns).
+                    tx.rollback().await?;
+                    let mut tx = self.pool.begin().await?;
+                    for log in logs {
+                        sqlx::query(
+                            r#"
+                            INSERT INTO job_execution_logs (id, job_id, entry, created_at)
+                            VALUES (?, ?, ?, ?)
+                            "#,
+                        )
+                        .bind(&log.id)
+                        .bind(&log.job_id)
+                        .bind(&log.entry)
+                        .bind(&log.created_at)
+                        .execute(&mut *tx)
+                        .await?;
+                    }
+                    tx.commit().await?;
+                    return Ok(());
+                }
+            }
+            tx.commit().await?;
+            Ok(())
+        })
+        .await
     }
 
     async fn get_execution_logs(&self, job_id: &str) -> Result<Vec<JobExecutionLogDbModel>> {
-        let logs = sqlx::query_as::<_, JobExecutionLogDbModel>(
-            "SELECT * FROM job_execution_logs WHERE job_id = ? ORDER BY created_at",
+        let full = sqlx::query_as::<_, JobExecutionLogDbModel>(
+            "SELECT id, job_id, entry, created_at, level, message FROM job_execution_logs WHERE job_id = ? ORDER BY created_at",
         )
         .bind(job_id)
         .fetch_all(&self.pool)
-        .await?;
-        Ok(logs)
+        .await;
+
+        match full {
+            Ok(logs) => Ok(logs),
+            Err(e) => {
+                let err = Error::from(e);
+                if !is_missing_execution_log_columns_error(&err) {
+                    return Err(err);
+                }
+
+                let logs = sqlx::query_as::<_, JobExecutionLogDbModel>(
+                    "SELECT id, job_id, entry, created_at, NULL as level, NULL as message FROM job_execution_logs WHERE job_id = ? ORDER BY created_at",
+                )
+                .bind(job_id)
+                .fetch_all(&self.pool)
+                .await?;
+                Ok(logs)
+            }
+        }
+    }
+
+    async fn list_execution_logs(
+        &self,
+        job_id: &str,
+        pagination: &Pagination,
+    ) -> Result<(Vec<JobExecutionLogDbModel>, u64)> {
+        let total: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM job_execution_logs WHERE job_id = ?")
+            .bind(job_id)
+            .fetch_one(&self.pool)
+            .await?;
+
+        let full = sqlx::query_as::<_, JobExecutionLogDbModel>(
+            "SELECT id, job_id, entry, created_at, level, message FROM job_execution_logs WHERE job_id = ? ORDER BY created_at LIMIT ? OFFSET ?",
+        )
+        .bind(job_id)
+        .bind(pagination.limit as i64)
+        .bind(pagination.offset as i64)
+        .fetch_all(&self.pool)
+        .await;
+
+        match full {
+            Ok(logs) => Ok((logs, total as u64)),
+            Err(e) => {
+                let err = Error::from(e);
+                if !is_missing_execution_log_columns_error(&err) {
+                    return Err(err);
+                }
+
+                let logs = sqlx::query_as::<_, JobExecutionLogDbModel>(
+                    "SELECT id, job_id, entry, created_at, NULL as level, NULL as message FROM job_execution_logs WHERE job_id = ? ORDER BY created_at LIMIT ? OFFSET ?",
+                )
+                .bind(job_id)
+                .bind(pagination.limit as i64)
+                .bind(pagination.offset as i64)
+                .fetch_all(&self.pool)
+                .await?;
+                Ok((logs, total as u64))
+            }
+        }
     }
 
     async fn delete_execution_logs_for_job(&self, job_id: &str) -> Result<()> {
@@ -509,6 +971,103 @@ impl JobRepository for SqlxJobRepository {
         Ok((jobs, total_count))
     }
 
+    async fn list_jobs_page_filtered(
+        &self,
+        filters: &JobFilters,
+        pagination: &Pagination,
+    ) -> Result<Vec<JobDbModel>> {
+        // Build dynamic WHERE clause (matches list_jobs_filtered).
+        let mut conditions: Vec<String> = Vec::new();
+
+        if filters.status.is_some() {
+            conditions.push("status = ?".to_string());
+        }
+        if filters.streamer_id.is_some() {
+            conditions.push("streamer_id = ?".to_string());
+        }
+        if filters.session_id.is_some() {
+            conditions.push("session_id = ?".to_string());
+        }
+        if filters.pipeline_id.is_some() {
+            conditions.push("pipeline_id = ?".to_string());
+        }
+        if filters.from_date.is_some() {
+            conditions.push("created_at >= ?".to_string());
+        }
+        if filters.to_date.is_some() {
+            conditions.push("created_at <= ?".to_string());
+        }
+        if filters.job_type.is_some() {
+            conditions.push("job_type = ?".to_string());
+        }
+        if let Some(job_types) = &filters.job_types {
+            if !job_types.is_empty() {
+                let placeholders = job_types.iter().map(|_| "?").collect::<Vec<_>>().join(", ");
+                conditions.push(format!("job_type IN ({})", placeholders));
+            }
+        }
+        if filters.search.is_some() {
+            conditions.push(
+                "(id LIKE ? OR session_id LIKE ? OR streamer_id LIKE ? OR job_type LIKE ?)"
+                    .to_string(),
+            );
+        }
+
+        let where_clause = if conditions.is_empty() {
+            String::new()
+        } else {
+            format!("WHERE {}", conditions.join(" AND "))
+        };
+
+        let data_sql = format!(
+            "SELECT * FROM job {} ORDER BY priority DESC, created_at DESC LIMIT ? OFFSET ?",
+            where_clause
+        );
+
+        let mut data_query = sqlx::query_as::<_, JobDbModel>(&data_sql);
+
+        if let Some(status) = &filters.status {
+            data_query = data_query.bind(status.as_str());
+        }
+        if let Some(streamer_id) = &filters.streamer_id {
+            data_query = data_query.bind(streamer_id);
+        }
+        if let Some(session_id) = &filters.session_id {
+            data_query = data_query.bind(session_id);
+        }
+        if let Some(pipeline_id) = &filters.pipeline_id {
+            data_query = data_query.bind(pipeline_id);
+        }
+        if let Some(from_date) = &filters.from_date {
+            data_query = data_query.bind(from_date.to_rfc3339());
+        }
+        if let Some(to_date) = &filters.to_date {
+            data_query = data_query.bind(to_date.to_rfc3339());
+        }
+        if let Some(job_type) = &filters.job_type {
+            data_query = data_query.bind(job_type);
+        }
+        if let Some(job_types) = &filters.job_types {
+            for jt in job_types {
+                data_query = data_query.bind(jt);
+            }
+        }
+        if let Some(search) = &filters.search {
+            let pattern = format!("%{}%", search);
+            data_query = data_query
+                .bind(pattern.clone())
+                .bind(pattern.clone())
+                .bind(pattern.clone())
+                .bind(pattern);
+        }
+
+        data_query = data_query.bind(pagination.limit as i64);
+        data_query = data_query.bind(pagination.offset as i64);
+
+        let jobs = data_query.fetch_all(&self.pool).await?;
+        Ok(jobs)
+    }
+
     async fn get_job_counts_by_status(&self) -> Result<JobCounts> {
         // Use a single query with CASE statements for efficiency
         let row: (i64, i64, i64, i64, i64) = sqlx::query_as(
@@ -566,81 +1125,84 @@ impl JobRepository for SqlxJobRepository {
         queue_wait_secs: f64,
         next_job: Option<&JobDbModel>,
     ) -> Result<Option<String>> {
-        let now = chrono::Utc::now().to_rfc3339();
+        retry_on_sqlite_busy("complete_job_and_create_next", || async {
+            let now = chrono::Utc::now().to_rfc3339();
 
-        // Start a transaction for atomic operation
-        let mut tx = self.pool.begin().await?;
+            // Start a transaction for atomic operation
+            let mut tx = self.pool.begin().await?;
 
-        // 1. Mark current job as COMPLETED
-        sqlx::query(
-            r#"
-            UPDATE job SET
-                status = 'COMPLETED',
-                completed_at = ?,
-                updated_at = ?,
-                outputs = ?,
-                duration_secs = ?,
-                queue_wait_secs = ?
-            WHERE id = ?
-            "#,
-        )
-        .bind(&now)
-        .bind(&now)
-        .bind(outputs_json)
-        .bind(duration_secs)
-        .bind(queue_wait_secs)
-        .bind(job_id)
-        .execute(&mut *tx)
-        .await?;
-
-        // 2. Create next job if defined
-        let next_job_id = if let Some(job) = next_job {
+            // 1. Mark current job as COMPLETED
             sqlx::query(
                 r#"
-                INSERT INTO job (
-                    id, job_type, status, config, state, created_at, updated_at,
-                    input, outputs, priority, streamer_id, session_id,
-                    started_at, completed_at, error, retry_count,
-                    next_job_type, remaining_steps, pipeline_id, execution_info,
-                    duration_secs, queue_wait_secs
-                )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                UPDATE job SET
+                    status = 'COMPLETED',
+                    completed_at = ?,
+                    updated_at = ?,
+                    outputs = ?,
+                    duration_secs = ?,
+                    queue_wait_secs = ?
+                WHERE id = ?
                 "#,
             )
-            .bind(&job.id)
-            .bind(&job.job_type)
-            .bind(&job.status)
-            .bind(&job.config)
-            .bind(&job.state)
-            .bind(&job.created_at)
-            .bind(&job.updated_at)
-            .bind(&job.input)
-            .bind(&job.outputs)
-            .bind(job.priority)
-            .bind(&job.streamer_id)
-            .bind(&job.session_id)
-            .bind(&job.started_at)
-            .bind(&job.completed_at)
-            .bind(&job.error)
-            .bind(job.retry_count)
-            .bind(&job.next_job_type)
-            .bind(&job.remaining_steps)
-            .bind(&job.pipeline_id)
-            .bind(&job.execution_info)
-            .bind(job.duration_secs)
-            .bind(job.queue_wait_secs)
+            .bind(&now)
+            .bind(&now)
+            .bind(outputs_json)
+            .bind(duration_secs)
+            .bind(queue_wait_secs)
+            .bind(job_id)
             .execute(&mut *tx)
             .await?;
 
-            Some(job.id.clone())
-        } else {
-            None
-        };
+            // 2. Create next job if defined
+            let next_job_id = if let Some(job) = next_job {
+                sqlx::query(
+                    r#"
+                    INSERT INTO job (
+                        id, job_type, status, config, state, created_at, updated_at,
+                        input, outputs, priority, streamer_id, session_id,
+                        started_at, completed_at, error, retry_count,
+                        next_job_type, remaining_steps, pipeline_id, execution_info,
+                        duration_secs, queue_wait_secs
+                    )
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    "#,
+                )
+                .bind(&job.id)
+                .bind(&job.job_type)
+                .bind(&job.status)
+                .bind(&job.config)
+                .bind(&job.state)
+                .bind(&job.created_at)
+                .bind(&job.updated_at)
+                .bind(&job.input)
+                .bind(&job.outputs)
+                .bind(job.priority)
+                .bind(&job.streamer_id)
+                .bind(&job.session_id)
+                .bind(&job.started_at)
+                .bind(&job.completed_at)
+                .bind(&job.error)
+                .bind(job.retry_count)
+                .bind(&job.next_job_type)
+                .bind(&job.remaining_steps)
+                .bind(&job.pipeline_id)
+                .bind(&job.execution_info)
+                .bind(job.duration_secs)
+                .bind(job.queue_wait_secs)
+                .execute(&mut *tx)
+                .await?;
 
-        // 3. Commit transaction - atomic!
-        tx.commit().await?;
+                Some(job.id.clone())
+            } else {
+                None
+            };
 
-        Ok(next_job_id)
+            // 3. Commit transaction - atomic!
+            tx.commit().await?;
+
+            Ok(next_job_id)
+        })
+        .await
     }
 
     async fn cancel_jobs_by_pipeline(&self, pipeline_id: &str) -> Result<u64> {
@@ -919,5 +1481,78 @@ impl JobRepository for SqlxJobRepository {
         .await?;
 
         Ok(job_ids)
+    }
+}
+
+#[cfg(test)]
+mod stress_tests {
+    use super::*;
+    use dashmap::DashSet;
+    use std::sync::Arc;
+    use std::time::Duration;
+    use tempfile::TempDir;
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+    async fn sqlite_claim_concurrent_no_double_claims() {
+        const JOBS: usize = 50;
+        const WORKERS: usize = 8;
+
+        let dir = TempDir::new().unwrap();
+        let db_path = dir.path().join("claim_smoke.db");
+        let db_url = format!(
+            "sqlite:{}?mode=rwc",
+            db_path.to_string_lossy().replace('\\', "/")
+        );
+
+        let pool = crate::database::init_pool(&db_url).await.unwrap();
+        crate::database::run_migrations(&pool).await.unwrap();
+
+        let repo = Arc::new(SqlxJobRepository::new(pool));
+
+        for i in 0..JOBS {
+            let mut job = JobDbModel::new_pipeline(
+                format!("input-{i}"),
+                0,
+                Some("streamer".to_string()),
+                Some("session".to_string()),
+                "{}",
+            );
+            job.job_type = "remux".to_string();
+            job.priority = (i % 3) as i32;
+            repo.create_job(&job).await.unwrap();
+        }
+
+        let claimed_ids = Arc::new(DashSet::<String>::new());
+
+        let mut join_set = tokio::task::JoinSet::new();
+        for _ in 0..WORKERS {
+            let repo = repo.clone();
+            let claimed_ids = claimed_ids.clone();
+            join_set.spawn(async move {
+                loop {
+                    match repo.claim_next_pending_job(None).await.unwrap() {
+                        Some(mut job) => {
+                            assert!(claimed_ids.insert(job.id.clone()), "double-claim {}", job.id);
+                            job.mark_completed();
+                            repo.update_job(&job).await.unwrap();
+                        }
+                        None => break,
+                    }
+                }
+            });
+        }
+
+        let joined = tokio::time::timeout(Duration::from_secs(10), async {
+            while join_set.join_next().await.is_some() {}
+        })
+        .await;
+        assert!(joined.is_ok(), "workers timed out");
+
+        assert_eq!(claimed_ids.len(), JOBS, "not all jobs were claimed");
+
+        let counts = repo.get_job_counts_by_status().await.unwrap();
+        assert_eq!(counts.pending, 0);
+        assert_eq!(counts.processing, 0);
+        assert_eq!(counts.completed, JOBS as u64);
     }
 }

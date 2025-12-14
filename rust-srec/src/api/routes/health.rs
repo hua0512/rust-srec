@@ -1,6 +1,12 @@
 //! Health check routes.
 
-use axum::{Json, Router, extract::State, http::StatusCode, response::IntoResponse, routing::get};
+use axum::{
+    Json, Router,
+    extract::State,
+    http::{HeaderMap, StatusCode, header::AUTHORIZATION},
+    response::IntoResponse,
+    routing::get,
+};
 
 use crate::api::error::ApiResult;
 use crate::api::models::{ComponentHealth, HealthResponse};
@@ -14,8 +20,35 @@ pub fn router() -> Router<AppState> {
         .route("/live", get(liveness_check))
 }
 
+fn validate_health_auth(
+    headers: &HeaderMap,
+    state: &AppState,
+) -> Result<(), crate::api::error::ApiError> {
+    let jwt_service = state.jwt_service.as_ref().ok_or_else(|| {
+        crate::api::error::ApiError::unauthorized("Authentication not configured")
+    })?;
+
+    let token = headers
+        .get(AUTHORIZATION)
+        .and_then(|h| h.to_str().ok())
+        .and_then(|s| s.strip_prefix("Bearer "))
+        .ok_or_else(|| {
+            crate::api::error::ApiError::unauthorized("Missing or invalid Authorization header")
+        })?;
+
+    jwt_service
+        .validate_token(token)
+        .map_err(|_| crate::api::error::ApiError::unauthorized("Invalid or expired token"))?;
+
+    Ok(())
+}
+
 /// Health check endpoint.
-async fn health_check(State(state): State<AppState>) -> ApiResult<Json<HealthResponse>> {
+async fn health_check(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+) -> ApiResult<Json<HealthResponse>> {
+    validate_health_auth(&headers, &state)?;
     let uptime = state.start_time.elapsed().as_secs();
 
     // Use HealthChecker if available, otherwise return fallback response
@@ -29,6 +62,8 @@ async fn health_check(State(state): State<AppState>) -> ApiResult<Json<HealthRes
                 name,
                 status: health.status.to_string(),
                 message: health.message,
+                last_check: health.last_check,
+                check_duration_ms: health.check_duration_ms,
             })
             .collect();
 
@@ -57,17 +92,20 @@ async fn health_check(State(state): State<AppState>) -> ApiResult<Json<HealthRes
 
 /// Readiness check - is the service ready to accept traffic?
 /// Returns HTTP 200 if healthy/degraded, HTTP 503 if unhealthy/unknown.
-async fn readiness_check(State(state): State<AppState>) -> impl IntoResponse {
+async fn readiness_check(State(state): State<AppState>, headers: HeaderMap) -> impl IntoResponse {
+    if let Err(err) = validate_health_auth(&headers, &state) {
+        return err.into_response();
+    }
+
     if let Some(health_checker) = &state.health_checker {
         let is_ready = health_checker.check_ready().await;
         if is_ready {
-            (StatusCode::OK, "ready")
+            (StatusCode::OK, "ready").into_response()
         } else {
-            (StatusCode::SERVICE_UNAVAILABLE, "not ready")
+            (StatusCode::SERVICE_UNAVAILABLE, "not ready").into_response()
         }
     } else {
-        // Fallback for testing without full service setup
-        (StatusCode::OK, "ready")
+        (StatusCode::SERVICE_UNAVAILABLE, "not ready").into_response()
     }
 }
 
@@ -98,6 +136,8 @@ mod tests {
                 name: "database".to_string(),
                 status: "healthy".to_string(),
                 message: None,
+                last_check: None,
+                check_duration_ms: None,
             }],
             cpu_usage: 10.5,
             memory_usage: 45.2,

@@ -1,13 +1,13 @@
-import { defineConfig } from 'vite'
-import { devtools } from '@tanstack/devtools-vite'
-import { tanstackStart } from '@tanstack/react-start/plugin/vite'
-import viteReact from '@vitejs/plugin-react'
-import viteTsConfigPaths from 'vite-tsconfig-paths'
-import tailwindcss from '@tailwindcss/vite'
-import { nitro } from 'nitro/vite'
+import { defineConfig } from 'vite';
+import { devtools } from '@tanstack/devtools-vite';
+import { tanstackStart } from '@tanstack/react-start/plugin/vite';
+import viteReact from '@vitejs/plugin-react';
+import viteTsConfigPaths from 'vite-tsconfig-paths';
+import tailwindcss from '@tailwindcss/vite';
+import { nitro } from 'nitro/vite';
 
-import { lingui } from "@lingui/vite-plugin";
-import oxlintPlugin from "vite-plugin-oxlint";
+import { lingui } from '@lingui/vite-plugin';
+import oxlintPlugin from 'vite-plugin-oxlint';
 
 const config = defineConfig({
   plugins: [
@@ -21,7 +21,7 @@ const config = defineConfig({
     tanstackStart(),
     viteReact({
       babel: {
-        plugins: ["macros"],
+        plugins: ['macros'],
       },
     }),
     lingui(),
@@ -29,12 +29,12 @@ const config = defineConfig({
   ],
   server: {
     proxy: {
-      "/api": {
-        target: "http://127.0.0.1:12555",
+      '/api': {
+        target: 'http://127.0.0.1:12555',
         changeOrigin: true,
       },
     },
   },
-})
+});
 
-export default config
+export default config;

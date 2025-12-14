@@ -5,7 +5,7 @@ use std::path::Path;
 use tokio::process::Command;
 use tracing::{debug, error, info};
 
-use super::traits::{Processor, ProcessorInput, ProcessorOutput, ProcessorType};
+use super::traits::{Processor, ProcessorContext, ProcessorInput, ProcessorOutput, ProcessorType};
 use super::utils::{get_extension, is_image, is_video};
 use crate::Result;
 
@@ -92,12 +92,25 @@ impl Processor for ThumbnailProcessor {
         "ThumbnailProcessor"
     }
 
-    async fn process(&self, input: &ProcessorInput) -> Result<ProcessorOutput> {
+    async fn process(
+        &self,
+        input: &ProcessorInput,
+        ctx: &ProcessorContext,
+    ) -> Result<ProcessorOutput> {
         let start = std::time::Instant::now();
 
         // Parse config or use defaults
         let config: ThumbnailConfig = if let Some(ref config_str) = input.config {
-            serde_json::from_str(config_str).unwrap_or_default()
+            match serde_json::from_str(config_str) {
+                Ok(c) => c,
+                Err(e) => {
+                    let _ = ctx.error(&format!(
+                        "Failed to parse thumbnail config: {} (config: '{}'). Using defaults.",
+                        e, config_str
+                    ));
+                    ThumbnailConfig::default()
+                }
+            }
         } else {
             ThumbnailConfig::default()
         };
@@ -118,7 +131,10 @@ impl Processor for ThumbnailProcessor {
         // Check if input is already an image - pass through as-is
         if is_image(&ext) {
             let duration = start.elapsed().as_secs_f64();
-            info!("Input is already an image, passing through: {}", input_path);
+            let _ = ctx.info(&format!(
+                "Input is already an image, passing through: {}",
+                input_path
+            ));
             return Ok(ProcessorOutput {
                 outputs: vec![input_path.to_string()],
                 duration_secs: duration,
@@ -142,10 +158,10 @@ impl Processor for ThumbnailProcessor {
         // If not supported, pass through the input file instead of failing
         if !is_video(&ext) {
             let duration = start.elapsed().as_secs_f64();
-            info!(
+            let _ = ctx.info(&format!(
                 "Input file is not a supported video format for thumbnail extraction, passing through: {}",
                 input_path
-            );
+            ));
             return Ok(ProcessorOutput {
                 outputs: vec![input_path.to_string()],
                 duration_secs: duration,
@@ -187,7 +203,7 @@ impl Processor for ThumbnailProcessor {
         };
         let output_path = output_string.as_str();
 
-        info!(
+        let _ = ctx.info(&format!(
             "Extracting thumbnail from {} at {:.2}s{}",
             input_path,
             config.timestamp_secs,
@@ -196,13 +212,18 @@ impl Processor for ThumbnailProcessor {
             } else {
                 ""
             }
-        );
+        ));
 
         // Build ffmpeg command
         let mut cmd = Command::new(&self.ffmpeg_path);
         cmd.args([
             "-y",
             "-hide_banner",
+            "-nostats",
+            "-loglevel",
+            "warning",
+            "-progress",
+            "pipe:1",
             "-ss",
             &format!("{:.2}", config.timestamp_secs),
             "-i",
@@ -226,8 +247,12 @@ impl Processor for ThumbnailProcessor {
         .env("LC_ALL", "C");
 
         // Execute command and capture logs
-        let command_output =
-            crate::pipeline::processors::utils::run_command_with_logs(&mut cmd).await?;
+        let command_output = crate::pipeline::processors::utils::run_ffmpeg_with_progress(
+            &mut cmd,
+            &ctx.progress,
+            Some(ctx.log_tx.clone()),
+        )
+        .await?;
 
         if !command_output.status.success() {
             // Reconstruct stderr for error analysis
@@ -239,7 +264,7 @@ impl Processor for ThumbnailProcessor {
                 .collect::<Vec<_>>()
                 .join("\n");
 
-            error!("ffmpeg failed: {}", stderr);
+            let _ = ctx.error(&format!("ffmpeg failed: {}", stderr));
 
             // Check for no video stream error - pass through instead of failing
             if stderr.contains("does not contain any stream")
@@ -247,10 +272,10 @@ impl Processor for ThumbnailProcessor {
                 || stderr.contains("Invalid data found")
                 || stderr.contains("no video stream")
             {
-                info!(
+                let _ = ctx.info(&format!(
                     "Input file has no extractable video frames, passing through: {}",
                     input_path
-                );
+                ));
                 return Ok(ProcessorOutput {
                     outputs: vec![input_path.to_string()],
                     duration_secs: command_output.duration,
@@ -279,10 +304,10 @@ impl Processor for ThumbnailProcessor {
 
         debug!("ffmpeg exited successfully");
 
-        info!(
+        let _ = ctx.info(&format!(
             "Thumbnail extracted in {:.2}s: {}",
             command_output.duration, output_path
-        );
+        ));
 
         // Get file sizes for metrics
         let input_size_bytes = tokio::fs::metadata(input_path).await.ok().map(|m| m.len());
@@ -367,5 +392,22 @@ mod tests {
     fn test_thumbnail_processor_name() {
         let processor = ThumbnailProcessor::new();
         assert_eq!(processor.name(), "ThumbnailProcessor");
+    }
+
+    #[test]
+    fn test_thumbnail_config_invalid_type() {
+        // This test confirms that providing a string for a numeric field causes deserialization to fail.
+        // This validates our hypothesis that a type mismatch (which causes the fallback to default)
+        // is caught by the error handling logic we added (which catches serde errors).
+        let json = r#"{"width": "1280"}"#; // "1280" string instead of number
+        let result: serde_json::Result<ThumbnailConfig> = serde_json::from_str(json);
+        assert!(
+            result.is_err(),
+            "Deserialization should fail for string width"
+        );
+
+        // Confirm fallback behavior (simulated)
+        let config = result.unwrap_or_default();
+        assert_eq!(config.width, 320);
     }
 }

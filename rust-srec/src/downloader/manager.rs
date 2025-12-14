@@ -830,6 +830,23 @@ impl DownloadManager {
         self.active_downloads.len()
     }
 
+    /// Maximum normal-priority concurrent downloads.
+    pub fn max_concurrent_downloads(&self) -> usize {
+        self.config.max_concurrent_downloads
+    }
+
+    /// Extra slots reserved for high-priority downloads.
+    pub fn high_priority_extra_slots(&self) -> usize {
+        self.config.high_priority_extra_slots
+    }
+
+    /// Total concurrent download slots (normal + high priority extra).
+    pub fn total_concurrent_slots(&self) -> usize {
+        self.config
+            .max_concurrent_downloads
+            .saturating_add(self.config.high_priority_extra_slots)
+    }
+
     /// Subscribe to download events.
     ///
     /// Returns a broadcast receiver that will receive all download events.

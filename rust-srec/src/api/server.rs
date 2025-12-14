@@ -1,12 +1,15 @@
 //! API server setup and configuration.
 
 use axum::Router;
+use axum::extract::Request;
 use std::net::SocketAddr;
+use std::time::Duration;
 use std::time::Instant;
 use tokio::net::TcpListener;
 use tokio_util::sync::CancellationToken;
 use tower_http::cors::{Any, CorsLayer};
 use tower_http::trace::TraceLayer;
+use tracing::Span;
 
 use crate::api::routes;
 use crate::error::Result;
@@ -32,6 +35,31 @@ impl Default for ApiServerConfig {
             enable_cors: true,
             body_limit: 10 * 1024 * 1024, // 10MB
         }
+    }
+}
+
+impl ApiServerConfig {
+    /// Load API server config from environment variables, falling back to defaults.
+    ///
+    /// Supported env vars:
+    /// - `API_BIND_ADDRESS` (e.g. "0.0.0.0")
+    /// - `API_PORT` (e.g. "8080")
+    pub fn from_env_or_default() -> Self {
+        let mut config = Self::default();
+
+        if let Ok(bind_address) = std::env::var("API_BIND_ADDRESS") {
+            if !bind_address.trim().is_empty() {
+                config.bind_address = bind_address;
+            }
+        }
+
+        if let Ok(port) = std::env::var("API_PORT") {
+            if let Ok(parsed) = port.parse::<u16>() {
+                config.port = parsed;
+            }
+        }
+
+        config
     }
 }
 
@@ -273,7 +301,52 @@ impl ApiServer {
         }
 
         // Add tracing
-        router = router.layer(TraceLayer::new_for_http());
+        router = router.layer(
+            TraceLayer::new_for_http()
+                .make_span_with(|req: &Request| {
+                    if req.uri().path().starts_with("/api/health") {
+                        Span::none()
+                    } else {
+                        let mut make_span =
+                            tower_http::trace::DefaultMakeSpan::new().level(tracing::Level::INFO);
+                        use tower_http::trace::MakeSpan;
+                        make_span.make_span(req)
+                    }
+                })
+                .on_request(|req: &Request, span: &Span| {
+                    if span.is_disabled() || req.uri().path().starts_with("/api/health") {
+                        return;
+                    }
+                    let mut on_request =
+                        tower_http::trace::DefaultOnRequest::new().level(tracing::Level::INFO);
+                    use tower_http::trace::OnRequest;
+                    on_request.on_request(req, span);
+                })
+                .on_response(
+                    |res: &axum::http::Response<_>, latency: Duration, span: &Span| {
+                        if span.is_disabled() {
+                            return;
+                        }
+                        let mut on_response =
+                            tower_http::trace::DefaultOnResponse::new().level(tracing::Level::INFO);
+                        use tower_http::trace::OnResponse;
+                        on_response.on_response(res, latency, span);
+                    },
+                )
+                .on_failure(
+                    |class: tower_http::classify::ServerErrorsFailureClass,
+                     latency: Duration,
+                     span: &Span| {
+                        if span.is_disabled() {
+                            return;
+                        }
+                        let mut on_failure =
+                            tower_http::trace::DefaultOnFailure::new().level(tracing::Level::ERROR);
+                        use tower_http::trace::OnFailure;
+                        on_failure.on_failure(class, latency, span);
+                    },
+                ),
+        );
         router
     }
 
@@ -315,7 +388,7 @@ mod tests {
     fn test_config_defaults() {
         let config = ApiServerConfig::default();
         assert_eq!(config.bind_address, "0.0.0.0");
-        assert_eq!(config.port, 8080);
+        assert_eq!(config.port, 12555);
         assert!(config.enable_cors);
     }
 

@@ -246,7 +246,7 @@ async fn list_streamers(
         .skip(offset)
         .take(limit)
         .map(|s| {
-            tracing::debug!("Streamer {} state: {:?}", s.name, s.state);
+            // tracing::debug!("Streamer {} state: {:?}", s.name, s.state);
             metadata_to_response(&s)
         })
         .collect();

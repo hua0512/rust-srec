@@ -29,6 +29,10 @@ pub struct MaintenanceConfig {
     pub job_retention_days: i32,
     /// Dead letter retention period in days (default: 7).
     pub dead_letter_retention_days: i32,
+    /// Interval between `PRAGMA optimize` runs (default: 7 days).
+    pub optimize_interval: Duration,
+    /// Interval between WAL checkpoints (default: 1 hour).
+    pub wal_checkpoint_interval: Duration,
 }
 
 impl Default for MaintenanceConfig {
@@ -41,6 +45,8 @@ impl Default for MaintenanceConfig {
             max_active_downloads_for_vacuum: 0,
             job_retention_days: 30,
             dead_letter_retention_days: 7,
+            optimize_interval: Duration::from_secs(7 * 24 * 60 * 60), // weekly
+            wal_checkpoint_interval: Duration::from_secs(60 * 60),     // hourly
         }
     }
 }
@@ -51,6 +57,8 @@ pub struct MaintenanceScheduler {
     config: MaintenanceConfig,
     running: Arc<AtomicBool>,
     last_vacuum: Arc<Mutex<Option<DateTime<Utc>>>>,
+    last_optimize: Arc<Mutex<Option<DateTime<Utc>>>>,
+    last_wal_checkpoint: Arc<Mutex<Option<DateTime<Utc>>>>,
 }
 
 impl MaintenanceScheduler {
@@ -61,6 +69,8 @@ impl MaintenanceScheduler {
             config,
             running: Arc::new(AtomicBool::new(false)),
             last_vacuum: Arc::new(Mutex::new(None)),
+            last_optimize: Arc::new(Mutex::new(None)),
+            last_wal_checkpoint: Arc::new(Mutex::new(None)),
         }
     }
 
@@ -110,6 +120,16 @@ impl MaintenanceScheduler {
     pub async fn run_maintenance(&self) -> Result<(), crate::Error> {
         tracing::info!("Starting database maintenance");
 
+        // WAL checkpoint to keep the WAL from growing too large under write-heavy load.
+        if self.should_wal_checkpoint().await? {
+            self.run_wal_checkpoint().await?;
+        }
+
+        // Run PRAGMA optimize periodically to keep query planner statistics up to date.
+        if self.should_optimize().await? {
+            self.run_optimize().await?;
+        }
+
         // Check if vacuum is needed
         if self.should_vacuum().await? {
             self.run_vacuum().await?;
@@ -128,6 +148,55 @@ impl MaintenanceScheduler {
         }
 
         tracing::info!("Database maintenance completed");
+        Ok(())
+    }
+
+    async fn should_optimize(&self) -> Result<bool, crate::Error> {
+        let last = self.last_optimize.lock().await;
+        if let Some(last_time) = *last {
+            let elapsed = Utc::now().signed_duration_since(last_time);
+            if elapsed < chrono::Duration::from_std(self.config.optimize_interval).unwrap_or_default()
+            {
+                return Ok(false);
+            }
+        }
+        Ok(true)
+    }
+
+    async fn run_optimize(&self) -> Result<(), crate::Error> {
+        tracing::info!("Running PRAGMA optimize");
+        sqlx::query("PRAGMA optimize")
+            .execute(&self.pool)
+            .await
+            .map_err(|e| crate::Error::Database(e.to_string()))?;
+
+        *self.last_optimize.lock().await = Some(Utc::now());
+        Ok(())
+    }
+
+    async fn should_wal_checkpoint(&self) -> Result<bool, crate::Error> {
+        let last = self.last_wal_checkpoint.lock().await;
+        if let Some(last_time) = *last {
+            let elapsed = Utc::now().signed_duration_since(last_time);
+            if elapsed
+                < chrono::Duration::from_std(self.config.wal_checkpoint_interval)
+                    .unwrap_or_default()
+            {
+                return Ok(false);
+            }
+        }
+        Ok(true)
+    }
+
+    async fn run_wal_checkpoint(&self) -> Result<(), crate::Error> {
+        tracing::info!("Running WAL checkpoint (TRUNCATE)");
+        // WAL checkpoint returns (checkpointed_frames, remaining_frames, busy)
+        let _res: (i64, i64, i64) = sqlx::query_as("PRAGMA wal_checkpoint(TRUNCATE)")
+            .fetch_one(&self.pool)
+            .await
+            .map_err(|e| crate::Error::Database(e.to_string()))?;
+
+        *self.last_wal_checkpoint.lock().await = Some(Utc::now());
         Ok(())
     }
 
@@ -230,7 +299,7 @@ impl MaintenanceScheduler {
 
         // First delete execution logs for old jobs
         sqlx::query(
-            "DELETE FROM job_execution_log WHERE job_id IN (
+            "DELETE FROM job_execution_logs WHERE job_id IN (
                 SELECT id FROM job 
                 WHERE status IN ('COMPLETED', 'FAILED') 
                 AND updated_at < ?

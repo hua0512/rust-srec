@@ -7,7 +7,7 @@ use std::path::Path;
 use tokio::process::Command;
 use tracing::{debug, error, info, warn};
 
-use super::traits::{Processor, ProcessorInput, ProcessorOutput, ProcessorType};
+use super::traits::{Processor, ProcessorContext, ProcessorInput, ProcessorOutput, ProcessorType};
 use crate::Result;
 
 /// Configuration for execute command processor.
@@ -126,9 +126,11 @@ impl Processor for ExecuteCommandProcessor {
         "ExecuteCommandProcessor"
     }
 
-    async fn process(&self, input: &ProcessorInput) -> Result<ProcessorOutput> {
-        let start = std::time::Instant::now();
-
+    async fn process(
+        &self,
+        input: &ProcessorInput,
+        ctx: &ProcessorContext,
+    ) -> Result<ProcessorOutput> {
         // Parse config - support both JSON config and raw command string
         // JSON config: {"command": "...", "scan_output_dir": "...", ...}
         // Raw string: "echo hello" (for dynamic job creation)
@@ -149,7 +151,7 @@ impl Processor for ExecuteCommandProcessor {
 
         let command = Self::substitute_variables(&config.command, input);
 
-        info!("Executing command: {}", command);
+        let _ = ctx.info(&format!("Executing command: {}", command));
 
         // Take snapshot of output directory before execution (if scanning enabled)
         let before_snapshot: Option<HashSet<String>> = if let Some(ref dir) = config.scan_output_dir
@@ -165,7 +167,7 @@ impl Processor for ExecuteCommandProcessor {
             } else {
                 // Create directory if it doesn't exist
                 if let Err(e) = tokio::fs::create_dir_all(dir_path).await {
-                    warn!("Failed to create output directory {}: {}", dir, e);
+                    let _ = ctx.warn(&format!("Failed to create output directory {}: {}", dir, e));
                 }
                 Some(HashSet::new())
             }
@@ -191,7 +193,10 @@ impl Processor for ExecuteCommandProcessor {
         // Execute command and capture logs (with timeout)
         let command_output_result = tokio::time::timeout(
             std::time::Duration::from_secs(self.timeout_secs),
-            crate::pipeline::processors::utils::run_command_with_logs(&mut cmd),
+            crate::pipeline::processors::utils::run_command_with_logs(
+                &mut cmd,
+                Some(ctx.log_tx.clone()),
+            ),
         )
         .await;
 
@@ -199,7 +204,7 @@ impl Processor for ExecuteCommandProcessor {
             Ok(Ok(output)) => output,
             Ok(Err(e)) => return Err(e),
             Err(_) => {
-                error!("Command timed out after {}s", self.timeout_secs);
+                let _ = ctx.error(&format!("Command timed out after {}s", self.timeout_secs));
                 // Child process cleanup depends on implementation details of utils::run_command_with_logs
                 // ideally that helper should handle cancellation/timeout cleanups if possible.
                 // For now, we return timeout error.
@@ -217,7 +222,10 @@ impl Processor for ExecuteCommandProcessor {
                 .map(|l| l.message.clone())
                 .unwrap_or_else(|| "Command failed".to_string());
 
-            error!("Command failed with status: {}", command_output.status);
+            let _ = ctx.error(&format!(
+                "Command failed with status: {}",
+                command_output.status
+            ));
             return Err(crate::Error::Other(format!(
                 "Command failed with exit code: {} - {}",
                 command_output.status.code().unwrap_or(-1),
@@ -227,7 +235,7 @@ impl Processor for ExecuteCommandProcessor {
 
         let duration = command_output.duration;
 
-        info!("Command completed in {:.2}s", duration);
+        let _ = ctx.info(&format!("Command completed in {:.2}s", duration));
 
         // Get file sizes for metrics if paths exist
         let input_path = input.inputs.first().map(|s| s.as_str()).unwrap_or("");
@@ -263,7 +271,10 @@ impl Processor for ExecuteCommandProcessor {
                 // Fall back to inputs if no new files detected
                 input.inputs.clone()
             } else {
-                info!("Detected {} new files in output directory", new_files.len());
+                let _ = ctx.info(&format!(
+                    "Detected {} new files in output directory",
+                    new_files.len()
+                ));
                 for file in &new_files {
                     debug!("  - {}", file);
                 }
@@ -350,6 +361,7 @@ mod tests {
     #[tokio::test]
     async fn test_output_passthrough_for_chaining() {
         let processor = ExecuteCommandProcessor::new();
+        let ctx = ProcessorContext::noop("test");
 
         let config = serde_json::json!({
             "command": "echo test"
@@ -364,7 +376,7 @@ mod tests {
             session_id: "session-1".to_string(),
         };
 
-        let result = processor.process(&input).await.unwrap();
+        let result = processor.process(&input, &ctx).await.unwrap();
 
         // Outputs should contain the inputs for proper chaining
         assert_eq!(result.outputs, vec!["/path/to/video.mp4".to_string()]);
@@ -374,6 +386,7 @@ mod tests {
     #[tokio::test]
     async fn test_explicit_outputs_preserved() {
         let processor = ExecuteCommandProcessor::new();
+        let ctx = ProcessorContext::noop("test");
 
         let config = serde_json::json!({
             "command": "echo test"
@@ -387,7 +400,7 @@ mod tests {
             session_id: "session-1".to_string(),
         };
 
-        let result = processor.process(&input).await.unwrap();
+        let result = processor.process(&input, &ctx).await.unwrap();
 
         // Explicit outputs should be preserved
         assert_eq!(result.outputs, vec!["/output.mp4".to_string()]);
@@ -489,6 +502,7 @@ mod tests {
         fs::create_dir_all(&output_dir).await.unwrap();
 
         let processor = ExecuteCommandProcessor::new();
+        let ctx = ProcessorContext::noop("test");
 
         // Use echo which always succeeds
         let config = serde_json::json!({
@@ -507,7 +521,7 @@ mod tests {
         // Simulate: create a file after taking snapshot but before checking
         // (In real usage, the command would create the file)
         // Since no files are created, it should fall back to input passthrough
-        let result = processor.process(&input).await.unwrap();
+        let result = processor.process(&input, &ctx).await.unwrap();
 
         // Should fall back to inputs when no new files detected
         assert_eq!(result.outputs, vec!["/input.mp4".to_string()]);
@@ -517,6 +531,7 @@ mod tests {
     #[tokio::test]
     async fn test_raw_command_string() {
         let processor = ExecuteCommandProcessor::new();
+        let ctx = ProcessorContext::noop("test");
 
         // Raw command string (not JSON) - for dynamic job creation
         let input = ProcessorInput {
@@ -527,7 +542,7 @@ mod tests {
             session_id: "test".to_string(),
         };
 
-        let result = processor.process(&input).await.unwrap();
+        let result = processor.process(&input, &ctx).await.unwrap();
 
         // Should work and pass through inputs
         assert_eq!(result.outputs, vec!["/input.mp4".to_string()]);
@@ -537,6 +552,7 @@ mod tests {
     #[tokio::test]
     async fn test_missing_config_error() {
         let processor = ExecuteCommandProcessor::new();
+        let ctx = ProcessorContext::noop("test");
 
         let input = ProcessorInput {
             inputs: vec!["/input.mp4".to_string()],
@@ -546,7 +562,7 @@ mod tests {
             session_id: "test".to_string(),
         };
 
-        let result = processor.process(&input).await;
+        let result = processor.process(&input, &ctx).await;
         assert!(result.is_err());
         assert!(
             result

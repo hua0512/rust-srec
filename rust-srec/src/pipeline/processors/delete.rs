@@ -11,7 +11,7 @@ use tokio::fs;
 use tokio::time::{Duration, sleep};
 use tracing::{debug, error, info, warn};
 
-use super::traits::{Processor, ProcessorInput, ProcessorOutput, ProcessorType};
+use super::traits::{Processor, ProcessorContext, ProcessorInput, ProcessorOutput, ProcessorType};
 use super::utils::create_log_entry;
 use crate::Result;
 
@@ -156,7 +156,7 @@ impl Processor for DeleteProcessor {
         "DeleteProcessor"
     }
 
-    async fn process(&self, input: &ProcessorInput) -> Result<ProcessorOutput> {
+    async fn process(&self, input: &ProcessorInput, _ctx: &ProcessorContext) -> Result<ProcessorOutput> {
         let start = std::time::Instant::now();
         let mut logs = Vec::new();
 
@@ -344,6 +344,7 @@ mod tests {
         assert!(file_path.exists());
 
         let processor = DeleteProcessor::new();
+        let ctx = ProcessorContext::noop("test");
         let input = ProcessorInput {
             inputs: vec![file_path.to_string_lossy().to_string()],
             outputs: vec![],
@@ -352,7 +353,7 @@ mod tests {
             session_id: "test".to_string(),
         };
 
-        let output = processor.process(&input).await.unwrap();
+        let output = processor.process(&input, &ctx).await.unwrap();
 
         // Verify file was deleted
         assert!(!file_path.exists());
@@ -372,6 +373,7 @@ mod tests {
         let file_path = temp_dir.path().join("nonexistent.txt");
 
         let processor = DeleteProcessor::new();
+        let ctx = ProcessorContext::noop("test");
         let input = ProcessorInput {
             inputs: vec![file_path.to_string_lossy().to_string()],
             outputs: vec![],
@@ -381,7 +383,7 @@ mod tests {
         };
 
         // Should complete successfully with warning (Requirements: 5.2)
-        let output = processor.process(&input).await.unwrap();
+        let output = processor.process(&input, &ctx).await.unwrap();
 
         assert!(output.outputs.is_empty());
 
@@ -395,6 +397,7 @@ mod tests {
     #[tokio::test]
     async fn test_delete_no_input_file() {
         let processor = DeleteProcessor::new();
+        let ctx = ProcessorContext::noop("test");
         let input = ProcessorInput {
             inputs: vec![],
             outputs: vec![],
@@ -403,7 +406,7 @@ mod tests {
             session_id: "test".to_string(),
         };
 
-        let result = processor.process(&input).await;
+        let result = processor.process(&input, &ctx).await;
 
         // Should fail because no file path specified
         assert!(result.is_err());
@@ -420,6 +423,7 @@ mod tests {
         fs::write(&file_path, "test content").await.unwrap();
 
         let processor = DeleteProcessor::new();
+        let ctx = ProcessorContext::noop("test");
         let input = ProcessorInput {
             inputs: vec![file_path.to_string_lossy().to_string()],
             outputs: vec![],
@@ -434,7 +438,7 @@ mod tests {
             session_id: "test".to_string(),
         };
 
-        let output = processor.process(&input).await.unwrap();
+        let output = processor.process(&input, &ctx).await.unwrap();
 
         // Verify file was deleted
         assert!(!file_path.exists());

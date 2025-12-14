@@ -1,30 +1,28 @@
-import { HeadContent, Scripts, createRootRoute } from '@tanstack/react-router'
-import { TanStackRouterDevtools } from '@tanstack/react-router-devtools'
+import { HeadContent, Scripts, createRootRoute } from '@tanstack/react-router';
+import { TanStackRouterDevtools } from '@tanstack/react-router-devtools';
 
-import appCss from '../styles.css?url'
-import { NotFound } from '@/components/not-found'
-import { createServerFn } from '@tanstack/react-start'
-import { useAppSession } from '@/utils/session'
-
+import appCss from '../styles.css?url';
+import { NotFound } from '@/components/not-found';
+import { createServerFn } from '@tanstack/react-start';
 
 const fetchUser = createServerFn({ method: 'GET' }).handler(async () => {
   // We need to auth on the server so we have access to secure cookies
-  const session = await useAppSession()
+  const { useAppSession } = await import('@/utils/session');
+  const session = await useAppSession();
 
   if (!session.data.username || !session.data.roles) {
-    return null
+    return null;
   }
 
-  return session.data
-})
-
+  return session.data;
+});
 
 export const Route = createRootRoute({
   beforeLoad: async () => {
-    const user = await fetchUser()
+    const user = await fetchUser();
     return {
       user,
-    }
+    };
   },
   head: () => ({
     meta: [
@@ -36,7 +34,7 @@ export const Route = createRootRoute({
         content: 'width=device-width, initial-scale=1',
       },
       {
-        title: 'Stream-rec',
+        title: 'Rust-Srec',
       },
     ],
     links: [
@@ -61,18 +59,17 @@ export const Route = createRootRoute({
   }),
   shellComponent: RootDocument,
   notFoundComponent: () => <NotFound />,
-})
+});
 
-import { I18nProvider } from "@lingui/react"
-import { i18n } from "../i18n"
-import { ThemeProvider } from "../components/theme-provider"
-import { Toaster } from "../components/ui/sonner"
+import { I18nProvider } from '@lingui/react';
+import { i18n } from '../i18n';
+import { ThemeProvider } from '../components/theme-provider';
+import { Toaster } from '../components/ui/sonner';
 
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 
 // Export a shared QueryClient so beforeLoad hooks can use ensureQueryData
-export const queryClient = new QueryClient()
-
+export const queryClient = new QueryClient();
 
 function RootDocument({ children }: { children: React.ReactNode }) {
   return (
@@ -94,5 +91,5 @@ function RootDocument({ children }: { children: React.ReactNode }) {
         </QueryClientProvider>
       </body>
     </html>
-  )
+  );
 }

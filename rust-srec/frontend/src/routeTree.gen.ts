@@ -21,17 +21,18 @@ import { Route as AuthedDashboardConfigRouteRouteImport } from './routes/_authed
 import { Route as AuthedDashboardStreamersIndexRouteImport } from './routes/_authed/_dashboard/streamers/index'
 import { Route as AuthedDashboardSessionsIndexRouteImport } from './routes/_authed/_dashboard/sessions/index'
 import { Route as AuthedDashboardPipelineIndexRouteImport } from './routes/_authed/_dashboard/pipeline/index'
+import { Route as AuthedDashboardSystemHealthRouteImport } from './routes/_authed/_dashboard/system/health'
 import { Route as AuthedDashboardStreamersNewRouteImport } from './routes/_authed/_dashboard/streamers/new'
 import { Route as AuthedDashboardSessionsSessionIdRouteImport } from './routes/_authed/_dashboard/sessions/$sessionId'
 import { Route as AuthedDashboardPipelineOutputsRouteImport } from './routes/_authed/_dashboard/pipeline/outputs'
 import { Route as AuthedDashboardConfigThemeRouteImport } from './routes/_authed/_dashboard/config/theme'
 import { Route as AuthedDashboardConfigGlobalRouteImport } from './routes/_authed/_dashboard/config/global'
-import { Route as AuthedDashboardConfigEnginesRouteImport } from './routes/_authed/_dashboard/config/engines'
 import { Route as AuthedDashboardPipelineWorkflowsIndexRouteImport } from './routes/_authed/_dashboard/pipeline/workflows/index'
 import { Route as AuthedDashboardPipelinePresetsIndexRouteImport } from './routes/_authed/_dashboard/pipeline/presets/index'
 import { Route as AuthedDashboardPipelineJobsIndexRouteImport } from './routes/_authed/_dashboard/pipeline/jobs/index'
 import { Route as AuthedDashboardConfigTemplatesIndexRouteImport } from './routes/_authed/_dashboard/config/templates.index'
 import { Route as AuthedDashboardConfigPlatformsIndexRouteImport } from './routes/_authed/_dashboard/config/platforms.index'
+import { Route as AuthedDashboardConfigEnginesIndexRouteImport } from './routes/_authed/_dashboard/config/engines.index'
 import { Route as AuthedDashboardStreamersIdEditRouteImport } from './routes/_authed/_dashboard/streamers/$id.edit'
 import { Route as AuthedDashboardPipelineWorkflowsCreateRouteImport } from './routes/_authed/_dashboard/pipeline/workflows/create'
 import { Route as AuthedDashboardPipelineWorkflowsWorkflowIdRouteImport } from './routes/_authed/_dashboard/pipeline/workflows/$workflowId'
@@ -42,6 +43,8 @@ import { Route as AuthedDashboardPipelineExecutionsPipelineIdRouteImport } from 
 import { Route as AuthedDashboardConfigTemplatesCreateRouteImport } from './routes/_authed/_dashboard/config/templates.create'
 import { Route as AuthedDashboardConfigTemplatesTemplateIdRouteImport } from './routes/_authed/_dashboard/config/templates.$templateId'
 import { Route as AuthedDashboardConfigPlatformsPlatformIdRouteImport } from './routes/_authed/_dashboard/config/platforms.$platformId'
+import { Route as AuthedDashboardConfigEnginesCreateRouteImport } from './routes/_authed/_dashboard/config/engines.create'
+import { Route as AuthedDashboardConfigEnginesEngineIdRouteImport } from './routes/_authed/_dashboard/config/engines.$engineId'
 
 const LogoutRoute = LogoutRouteImport.update({
   id: '/logout',
@@ -105,6 +108,12 @@ const AuthedDashboardPipelineIndexRoute =
     path: '/pipeline/',
     getParentRoute: () => AuthedDashboardRoute,
   } as any)
+const AuthedDashboardSystemHealthRoute =
+  AuthedDashboardSystemHealthRouteImport.update({
+    id: '/system/health',
+    path: '/system/health',
+    getParentRoute: () => AuthedDashboardRoute,
+  } as any)
 const AuthedDashboardStreamersNewRoute =
   AuthedDashboardStreamersNewRouteImport.update({
     id: '/streamers/new',
@@ -135,12 +144,6 @@ const AuthedDashboardConfigGlobalRoute =
     path: '/global',
     getParentRoute: () => AuthedDashboardConfigRouteRoute,
   } as any)
-const AuthedDashboardConfigEnginesRoute =
-  AuthedDashboardConfigEnginesRouteImport.update({
-    id: '/engines',
-    path: '/engines',
-    getParentRoute: () => AuthedDashboardConfigRouteRoute,
-  } as any)
 const AuthedDashboardPipelineWorkflowsIndexRoute =
   AuthedDashboardPipelineWorkflowsIndexRouteImport.update({
     id: '/pipeline/workflows/',
@@ -169,6 +172,12 @@ const AuthedDashboardConfigPlatformsIndexRoute =
   AuthedDashboardConfigPlatformsIndexRouteImport.update({
     id: '/platforms/',
     path: '/platforms/',
+    getParentRoute: () => AuthedDashboardConfigRouteRoute,
+  } as any)
+const AuthedDashboardConfigEnginesIndexRoute =
+  AuthedDashboardConfigEnginesIndexRouteImport.update({
+    id: '/engines/',
+    path: '/engines/',
     getParentRoute: () => AuthedDashboardConfigRouteRoute,
   } as any)
 const AuthedDashboardStreamersIdEditRoute =
@@ -231,6 +240,18 @@ const AuthedDashboardConfigPlatformsPlatformIdRoute =
     path: '/platforms/$platformId',
     getParentRoute: () => AuthedDashboardConfigRouteRoute,
   } as any)
+const AuthedDashboardConfigEnginesCreateRoute =
+  AuthedDashboardConfigEnginesCreateRouteImport.update({
+    id: '/engines/create',
+    path: '/engines/create',
+    getParentRoute: () => AuthedDashboardConfigRouteRoute,
+  } as any)
+const AuthedDashboardConfigEnginesEngineIdRoute =
+  AuthedDashboardConfigEnginesEngineIdRouteImport.update({
+    id: '/engines/$engineId',
+    path: '/engines/$engineId',
+    getParentRoute: () => AuthedDashboardConfigRouteRoute,
+  } as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
@@ -239,15 +260,17 @@ export interface FileRoutesByFullPath {
   '/login': typeof PublicLoginRoute
   '/config': typeof AuthedDashboardConfigRouteRouteWithChildren
   '/dashboard': typeof AuthedDashboardDashboardRoute
-  '/config/engines': typeof AuthedDashboardConfigEnginesRoute
   '/config/global': typeof AuthedDashboardConfigGlobalRoute
   '/config/theme': typeof AuthedDashboardConfigThemeRoute
   '/pipeline/outputs': typeof AuthedDashboardPipelineOutputsRoute
   '/sessions/$sessionId': typeof AuthedDashboardSessionsSessionIdRoute
   '/streamers/new': typeof AuthedDashboardStreamersNewRoute
+  '/system/health': typeof AuthedDashboardSystemHealthRoute
   '/pipeline': typeof AuthedDashboardPipelineIndexRoute
   '/sessions': typeof AuthedDashboardSessionsIndexRoute
   '/streamers': typeof AuthedDashboardStreamersIndexRoute
+  '/config/engines/$engineId': typeof AuthedDashboardConfigEnginesEngineIdRoute
+  '/config/engines/create': typeof AuthedDashboardConfigEnginesCreateRoute
   '/config/platforms/$platformId': typeof AuthedDashboardConfigPlatformsPlatformIdRoute
   '/config/templates/$templateId': typeof AuthedDashboardConfigTemplatesTemplateIdRoute
   '/config/templates/create': typeof AuthedDashboardConfigTemplatesCreateRoute
@@ -258,6 +281,7 @@ export interface FileRoutesByFullPath {
   '/pipeline/workflows/$workflowId': typeof AuthedDashboardPipelineWorkflowsWorkflowIdRoute
   '/pipeline/workflows/create': typeof AuthedDashboardPipelineWorkflowsCreateRoute
   '/streamers/$id/edit': typeof AuthedDashboardStreamersIdEditRoute
+  '/config/engines': typeof AuthedDashboardConfigEnginesIndexRoute
   '/config/platforms': typeof AuthedDashboardConfigPlatformsIndexRoute
   '/config/templates': typeof AuthedDashboardConfigTemplatesIndexRoute
   '/pipeline/jobs': typeof AuthedDashboardPipelineJobsIndexRoute
@@ -271,15 +295,17 @@ export interface FileRoutesByTo {
   '/login': typeof PublicLoginRoute
   '/config': typeof AuthedDashboardConfigRouteRouteWithChildren
   '/dashboard': typeof AuthedDashboardDashboardRoute
-  '/config/engines': typeof AuthedDashboardConfigEnginesRoute
   '/config/global': typeof AuthedDashboardConfigGlobalRoute
   '/config/theme': typeof AuthedDashboardConfigThemeRoute
   '/pipeline/outputs': typeof AuthedDashboardPipelineOutputsRoute
   '/sessions/$sessionId': typeof AuthedDashboardSessionsSessionIdRoute
   '/streamers/new': typeof AuthedDashboardStreamersNewRoute
+  '/system/health': typeof AuthedDashboardSystemHealthRoute
   '/pipeline': typeof AuthedDashboardPipelineIndexRoute
   '/sessions': typeof AuthedDashboardSessionsIndexRoute
   '/streamers': typeof AuthedDashboardStreamersIndexRoute
+  '/config/engines/$engineId': typeof AuthedDashboardConfigEnginesEngineIdRoute
+  '/config/engines/create': typeof AuthedDashboardConfigEnginesCreateRoute
   '/config/platforms/$platformId': typeof AuthedDashboardConfigPlatformsPlatformIdRoute
   '/config/templates/$templateId': typeof AuthedDashboardConfigTemplatesTemplateIdRoute
   '/config/templates/create': typeof AuthedDashboardConfigTemplatesCreateRoute
@@ -290,6 +316,7 @@ export interface FileRoutesByTo {
   '/pipeline/workflows/$workflowId': typeof AuthedDashboardPipelineWorkflowsWorkflowIdRoute
   '/pipeline/workflows/create': typeof AuthedDashboardPipelineWorkflowsCreateRoute
   '/streamers/$id/edit': typeof AuthedDashboardStreamersIdEditRoute
+  '/config/engines': typeof AuthedDashboardConfigEnginesIndexRoute
   '/config/platforms': typeof AuthedDashboardConfigPlatformsIndexRoute
   '/config/templates': typeof AuthedDashboardConfigTemplatesIndexRoute
   '/pipeline/jobs': typeof AuthedDashboardPipelineJobsIndexRoute
@@ -307,15 +334,17 @@ export interface FileRoutesById {
   '/_public/login': typeof PublicLoginRoute
   '/_authed/_dashboard/config': typeof AuthedDashboardConfigRouteRouteWithChildren
   '/_authed/_dashboard/dashboard': typeof AuthedDashboardDashboardRoute
-  '/_authed/_dashboard/config/engines': typeof AuthedDashboardConfigEnginesRoute
   '/_authed/_dashboard/config/global': typeof AuthedDashboardConfigGlobalRoute
   '/_authed/_dashboard/config/theme': typeof AuthedDashboardConfigThemeRoute
   '/_authed/_dashboard/pipeline/outputs': typeof AuthedDashboardPipelineOutputsRoute
   '/_authed/_dashboard/sessions/$sessionId': typeof AuthedDashboardSessionsSessionIdRoute
   '/_authed/_dashboard/streamers/new': typeof AuthedDashboardStreamersNewRoute
+  '/_authed/_dashboard/system/health': typeof AuthedDashboardSystemHealthRoute
   '/_authed/_dashboard/pipeline/': typeof AuthedDashboardPipelineIndexRoute
   '/_authed/_dashboard/sessions/': typeof AuthedDashboardSessionsIndexRoute
   '/_authed/_dashboard/streamers/': typeof AuthedDashboardStreamersIndexRoute
+  '/_authed/_dashboard/config/engines/$engineId': typeof AuthedDashboardConfigEnginesEngineIdRoute
+  '/_authed/_dashboard/config/engines/create': typeof AuthedDashboardConfigEnginesCreateRoute
   '/_authed/_dashboard/config/platforms/$platformId': typeof AuthedDashboardConfigPlatformsPlatformIdRoute
   '/_authed/_dashboard/config/templates/$templateId': typeof AuthedDashboardConfigTemplatesTemplateIdRoute
   '/_authed/_dashboard/config/templates/create': typeof AuthedDashboardConfigTemplatesCreateRoute
@@ -326,6 +355,7 @@ export interface FileRoutesById {
   '/_authed/_dashboard/pipeline/workflows/$workflowId': typeof AuthedDashboardPipelineWorkflowsWorkflowIdRoute
   '/_authed/_dashboard/pipeline/workflows/create': typeof AuthedDashboardPipelineWorkflowsCreateRoute
   '/_authed/_dashboard/streamers/$id/edit': typeof AuthedDashboardStreamersIdEditRoute
+  '/_authed/_dashboard/config/engines/': typeof AuthedDashboardConfigEnginesIndexRoute
   '/_authed/_dashboard/config/platforms/': typeof AuthedDashboardConfigPlatformsIndexRoute
   '/_authed/_dashboard/config/templates/': typeof AuthedDashboardConfigTemplatesIndexRoute
   '/_authed/_dashboard/pipeline/jobs/': typeof AuthedDashboardPipelineJobsIndexRoute
@@ -341,15 +371,17 @@ export interface FileRouteTypes {
     | '/login'
     | '/config'
     | '/dashboard'
-    | '/config/engines'
     | '/config/global'
     | '/config/theme'
     | '/pipeline/outputs'
     | '/sessions/$sessionId'
     | '/streamers/new'
+    | '/system/health'
     | '/pipeline'
     | '/sessions'
     | '/streamers'
+    | '/config/engines/$engineId'
+    | '/config/engines/create'
     | '/config/platforms/$platformId'
     | '/config/templates/$templateId'
     | '/config/templates/create'
@@ -360,6 +392,7 @@ export interface FileRouteTypes {
     | '/pipeline/workflows/$workflowId'
     | '/pipeline/workflows/create'
     | '/streamers/$id/edit'
+    | '/config/engines'
     | '/config/platforms'
     | '/config/templates'
     | '/pipeline/jobs'
@@ -373,15 +406,17 @@ export interface FileRouteTypes {
     | '/login'
     | '/config'
     | '/dashboard'
-    | '/config/engines'
     | '/config/global'
     | '/config/theme'
     | '/pipeline/outputs'
     | '/sessions/$sessionId'
     | '/streamers/new'
+    | '/system/health'
     | '/pipeline'
     | '/sessions'
     | '/streamers'
+    | '/config/engines/$engineId'
+    | '/config/engines/create'
     | '/config/platforms/$platformId'
     | '/config/templates/$templateId'
     | '/config/templates/create'
@@ -392,6 +427,7 @@ export interface FileRouteTypes {
     | '/pipeline/workflows/$workflowId'
     | '/pipeline/workflows/create'
     | '/streamers/$id/edit'
+    | '/config/engines'
     | '/config/platforms'
     | '/config/templates'
     | '/pipeline/jobs'
@@ -408,15 +444,17 @@ export interface FileRouteTypes {
     | '/_public/login'
     | '/_authed/_dashboard/config'
     | '/_authed/_dashboard/dashboard'
-    | '/_authed/_dashboard/config/engines'
     | '/_authed/_dashboard/config/global'
     | '/_authed/_dashboard/config/theme'
     | '/_authed/_dashboard/pipeline/outputs'
     | '/_authed/_dashboard/sessions/$sessionId'
     | '/_authed/_dashboard/streamers/new'
+    | '/_authed/_dashboard/system/health'
     | '/_authed/_dashboard/pipeline/'
     | '/_authed/_dashboard/sessions/'
     | '/_authed/_dashboard/streamers/'
+    | '/_authed/_dashboard/config/engines/$engineId'
+    | '/_authed/_dashboard/config/engines/create'
     | '/_authed/_dashboard/config/platforms/$platformId'
     | '/_authed/_dashboard/config/templates/$templateId'
     | '/_authed/_dashboard/config/templates/create'
@@ -427,6 +465,7 @@ export interface FileRouteTypes {
     | '/_authed/_dashboard/pipeline/workflows/$workflowId'
     | '/_authed/_dashboard/pipeline/workflows/create'
     | '/_authed/_dashboard/streamers/$id/edit'
+    | '/_authed/_dashboard/config/engines/'
     | '/_authed/_dashboard/config/platforms/'
     | '/_authed/_dashboard/config/templates/'
     | '/_authed/_dashboard/pipeline/jobs/'
@@ -527,6 +566,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthedDashboardPipelineIndexRouteImport
       parentRoute: typeof AuthedDashboardRoute
     }
+    '/_authed/_dashboard/system/health': {
+      id: '/_authed/_dashboard/system/health'
+      path: '/system/health'
+      fullPath: '/system/health'
+      preLoaderRoute: typeof AuthedDashboardSystemHealthRouteImport
+      parentRoute: typeof AuthedDashboardRoute
+    }
     '/_authed/_dashboard/streamers/new': {
       id: '/_authed/_dashboard/streamers/new'
       path: '/streamers/new'
@@ -562,13 +608,6 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthedDashboardConfigGlobalRouteImport
       parentRoute: typeof AuthedDashboardConfigRouteRoute
     }
-    '/_authed/_dashboard/config/engines': {
-      id: '/_authed/_dashboard/config/engines'
-      path: '/engines'
-      fullPath: '/config/engines'
-      preLoaderRoute: typeof AuthedDashboardConfigEnginesRouteImport
-      parentRoute: typeof AuthedDashboardConfigRouteRoute
-    }
     '/_authed/_dashboard/pipeline/workflows/': {
       id: '/_authed/_dashboard/pipeline/workflows/'
       path: '/pipeline/workflows'
@@ -602,6 +641,13 @@ declare module '@tanstack/react-router' {
       path: '/platforms'
       fullPath: '/config/platforms'
       preLoaderRoute: typeof AuthedDashboardConfigPlatformsIndexRouteImport
+      parentRoute: typeof AuthedDashboardConfigRouteRoute
+    }
+    '/_authed/_dashboard/config/engines/': {
+      id: '/_authed/_dashboard/config/engines/'
+      path: '/engines'
+      fullPath: '/config/engines'
+      preLoaderRoute: typeof AuthedDashboardConfigEnginesIndexRouteImport
       parentRoute: typeof AuthedDashboardConfigRouteRoute
     }
     '/_authed/_dashboard/streamers/$id/edit': {
@@ -674,31 +720,52 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthedDashboardConfigPlatformsPlatformIdRouteImport
       parentRoute: typeof AuthedDashboardConfigRouteRoute
     }
+    '/_authed/_dashboard/config/engines/create': {
+      id: '/_authed/_dashboard/config/engines/create'
+      path: '/engines/create'
+      fullPath: '/config/engines/create'
+      preLoaderRoute: typeof AuthedDashboardConfigEnginesCreateRouteImport
+      parentRoute: typeof AuthedDashboardConfigRouteRoute
+    }
+    '/_authed/_dashboard/config/engines/$engineId': {
+      id: '/_authed/_dashboard/config/engines/$engineId'
+      path: '/engines/$engineId'
+      fullPath: '/config/engines/$engineId'
+      preLoaderRoute: typeof AuthedDashboardConfigEnginesEngineIdRouteImport
+      parentRoute: typeof AuthedDashboardConfigRouteRoute
+    }
   }
 }
 
 interface AuthedDashboardConfigRouteRouteChildren {
-  AuthedDashboardConfigEnginesRoute: typeof AuthedDashboardConfigEnginesRoute
   AuthedDashboardConfigGlobalRoute: typeof AuthedDashboardConfigGlobalRoute
   AuthedDashboardConfigThemeRoute: typeof AuthedDashboardConfigThemeRoute
+  AuthedDashboardConfigEnginesEngineIdRoute: typeof AuthedDashboardConfigEnginesEngineIdRoute
+  AuthedDashboardConfigEnginesCreateRoute: typeof AuthedDashboardConfigEnginesCreateRoute
   AuthedDashboardConfigPlatformsPlatformIdRoute: typeof AuthedDashboardConfigPlatformsPlatformIdRoute
   AuthedDashboardConfigTemplatesTemplateIdRoute: typeof AuthedDashboardConfigTemplatesTemplateIdRoute
   AuthedDashboardConfigTemplatesCreateRoute: typeof AuthedDashboardConfigTemplatesCreateRoute
+  AuthedDashboardConfigEnginesIndexRoute: typeof AuthedDashboardConfigEnginesIndexRoute
   AuthedDashboardConfigPlatformsIndexRoute: typeof AuthedDashboardConfigPlatformsIndexRoute
   AuthedDashboardConfigTemplatesIndexRoute: typeof AuthedDashboardConfigTemplatesIndexRoute
 }
 
 const AuthedDashboardConfigRouteRouteChildren: AuthedDashboardConfigRouteRouteChildren =
   {
-    AuthedDashboardConfigEnginesRoute: AuthedDashboardConfigEnginesRoute,
     AuthedDashboardConfigGlobalRoute: AuthedDashboardConfigGlobalRoute,
     AuthedDashboardConfigThemeRoute: AuthedDashboardConfigThemeRoute,
+    AuthedDashboardConfigEnginesEngineIdRoute:
+      AuthedDashboardConfigEnginesEngineIdRoute,
+    AuthedDashboardConfigEnginesCreateRoute:
+      AuthedDashboardConfigEnginesCreateRoute,
     AuthedDashboardConfigPlatformsPlatformIdRoute:
       AuthedDashboardConfigPlatformsPlatformIdRoute,
     AuthedDashboardConfigTemplatesTemplateIdRoute:
       AuthedDashboardConfigTemplatesTemplateIdRoute,
     AuthedDashboardConfigTemplatesCreateRoute:
       AuthedDashboardConfigTemplatesCreateRoute,
+    AuthedDashboardConfigEnginesIndexRoute:
+      AuthedDashboardConfigEnginesIndexRoute,
     AuthedDashboardConfigPlatformsIndexRoute:
       AuthedDashboardConfigPlatformsIndexRoute,
     AuthedDashboardConfigTemplatesIndexRoute:
@@ -716,6 +783,7 @@ interface AuthedDashboardRouteChildren {
   AuthedDashboardPipelineOutputsRoute: typeof AuthedDashboardPipelineOutputsRoute
   AuthedDashboardSessionsSessionIdRoute: typeof AuthedDashboardSessionsSessionIdRoute
   AuthedDashboardStreamersNewRoute: typeof AuthedDashboardStreamersNewRoute
+  AuthedDashboardSystemHealthRoute: typeof AuthedDashboardSystemHealthRoute
   AuthedDashboardPipelineIndexRoute: typeof AuthedDashboardPipelineIndexRoute
   AuthedDashboardSessionsIndexRoute: typeof AuthedDashboardSessionsIndexRoute
   AuthedDashboardStreamersIndexRoute: typeof AuthedDashboardStreamersIndexRoute
@@ -737,6 +805,7 @@ const AuthedDashboardRouteChildren: AuthedDashboardRouteChildren = {
   AuthedDashboardPipelineOutputsRoute: AuthedDashboardPipelineOutputsRoute,
   AuthedDashboardSessionsSessionIdRoute: AuthedDashboardSessionsSessionIdRoute,
   AuthedDashboardStreamersNewRoute: AuthedDashboardStreamersNewRoute,
+  AuthedDashboardSystemHealthRoute: AuthedDashboardSystemHealthRoute,
   AuthedDashboardPipelineIndexRoute: AuthedDashboardPipelineIndexRoute,
   AuthedDashboardSessionsIndexRoute: AuthedDashboardSessionsIndexRoute,
   AuthedDashboardStreamersIndexRoute: AuthedDashboardStreamersIndexRoute,

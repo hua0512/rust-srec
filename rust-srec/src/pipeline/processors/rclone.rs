@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 use tokio::process::Command;
 use tracing::{error, info};
 
-use super::traits::{Processor, ProcessorInput, ProcessorOutput, ProcessorType};
+use super::traits::{Processor, ProcessorContext, ProcessorInput, ProcessorOutput, ProcessorType};
 use crate::Result;
 
 /// Rclone operation type.
@@ -73,7 +73,11 @@ impl Processor for RcloneProcessor {
         "RcloneProcessor"
     }
 
-    async fn process(&self, input: &ProcessorInput) -> Result<ProcessorOutput> {
+    async fn process(
+        &self,
+        input: &ProcessorInput,
+        ctx: &ProcessorContext,
+    ) -> Result<ProcessorOutput> {
         let start = std::time::Instant::now();
 
         let input_path = input.inputs.first().map(|s| s.as_str()).unwrap_or("");
@@ -146,7 +150,18 @@ impl Processor for RcloneProcessor {
                 cmd.arg("--config").arg(cfg);
             }
 
-            cmd.args([cmd_op, "--progress", input_path, &remote_destination]);
+            // Use machine-friendly stats output; this is parsed into structured progress snapshots.
+            cmd.args([
+                "--log-level",
+                "ERROR",
+                "--stats",
+                "1s",
+                "--stats-one-line",
+                "--stats-one-line-date",
+                cmd_op,
+                input_path,
+                &remote_destination,
+            ]);
 
             // Add extra args if present
             if let Some(args) = config_json
@@ -161,15 +176,20 @@ impl Processor for RcloneProcessor {
                 }
             }
 
-            // Execute command and capture logs
-            let command_output =
-                match crate::pipeline::processors::utils::run_command_with_logs(&mut cmd).await {
-                    Ok(output) => output,
-                    Err(e) => {
-                        last_error = Some(format!("Failed to execute rclone: {}", e));
-                        continue;
-                    }
-                };
+            // Execute command, parse progress, and capture only non-progress stderr logs
+            let command_output = match crate::pipeline::processors::utils::run_rclone_with_progress(
+                &mut cmd,
+                &ctx.progress,
+                Some(ctx.log_tx.clone()),
+            )
+            .await
+            {
+                Ok(output) => output,
+                Err(e) => {
+                    last_error = Some(format!("Failed to execute rclone: {}", e));
+                    continue;
+                }
+            };
 
             if command_output.status.success() {
                 info!(

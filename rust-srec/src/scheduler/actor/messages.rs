@@ -42,17 +42,63 @@ pub enum StreamerMessage {
 }
 
 /// Reason why a download ended.
+///
+/// Each variant indicates a different end condition and triggers specific
+/// behavior in the StreamerActor. See `StreamerActor::handle_download_ended()`
+/// for detailed behavior documentation.
+///
+/// # Behavior Summary
+///
+/// - **`StreamerOffline`**: Download ended and indicates offline. Actor continues monitoring,
+///   immediately publishes an Offline status to the monitor, and keeps a short post-live
+///   polling window to catch quick restarts.
+///
+/// - **`NetworkError`**: Technical failure (timeout, connection lost). Actor continues
+///   monitoring with immediate check to verify status and potentially resume quickly.
+///
+/// - **`SegmentFailed`**: Segment download failed. Actor continues monitoring with
+///   immediate check to verify status.
+///
+/// - **`Cancelled`**: User cancelled the download. **Actor stops monitoring entirely**
+///   by returning a fatal error. The download orchestration layer must update the
+///   streamer state to `CANCELLED` in the database before sending this message.
+///
+/// - **`Other`**: Unknown/unexpected error. Actor continues monitoring with normal
+///   scheduling, letting the grace period confirm actual state.
 #[derive(Debug, Clone)]
 pub enum DownloadEndReason {
     /// Streamer went offline normally.
+    ///
+    /// The download orchestration confirmed the stream ended. The actor will
+    /// publish an Offline status to the monitor immediately and then continue
+    /// monitoring using the shorter offline polling interval for a few checks
+    /// to detect quick restarts.
     StreamerOffline,
-    /// Network error during download.
+
+    /// Network error during download (e.g., timeout, connection lost).
+    ///
+    /// Technical failure that doesn't confirm the streamer is offline. The actor
+    /// preserves hysteresis state and checks immediately to quickly resume if
+    /// the streamer is still live.
     NetworkError(String),
+
     /// Download was cancelled by user.
+    ///
+    /// **This stops the actor entirely.** User intent is "I don't want to monitor
+    /// this streamer anymore." The download orchestration layer must update the
+    /// streamer state to `CANCELLED` in the database before sending this message.
     Cancelled,
+
     /// Segment download failed (may indicate offline or network issue).
+    ///
+    /// Similar to `NetworkError` - the actor preserves hysteresis and checks
+    /// immediately to verify status and potentially resume quickly.
     SegmentFailed(String),
-    /// Other error.
+
+    /// Other error (unexpected/unknown reason).
+    ///
+    /// The actor preserves hysteresis and uses normal scheduling, allowing the
+    /// grace period to confirm the actual state through status checks.
     Other(String),
 }
 
@@ -273,12 +319,28 @@ impl HysteresisState {
         new_state: StreamerState,
         threshold: u32,
     ) -> bool {
+        tracing::debug!(
+            "HysteresisState::should_emit: prev={:?}, new={:?}, was_live={}, offline_count={}, threshold={}",
+            prev_state,
+            new_state,
+            self.was_live,
+            self.offline_count,
+            threshold
+        );
+
         match (prev_state, new_state) {
             // Live → Live: No state change, suppress redundant event
-            (StreamerState::Live, StreamerState::Live) => false,
+            (StreamerState::Live, StreamerState::Live) => {
+                tracing::debug!("HysteresisState: Live → Live, suppressing redundant event");
+                false
+            }
 
             // Any → Live: Going live, always emit
             (_, StreamerState::Live) => {
+                tracing::debug!(
+                    "HysteresisState: {:?} → Live, setting was_live=true, resetting offline_count, emitting",
+                    prev_state
+                );
                 self.was_live = true;
                 self.offline_count = 0;
                 true
@@ -291,7 +353,7 @@ impl HysteresisState {
                 if self.offline_count >= threshold {
                     // Grace period over - emit and reset
                     tracing::debug!(
-                        "Hysteresis: threshold reached ({}/{}), emitting offline event",
+                        "HysteresisState: grace period threshold reached ({}/{}), emitting offline event and resetting",
                         self.offline_count,
                         threshold
                     );
@@ -300,7 +362,7 @@ impl HysteresisState {
                 } else {
                     // Still in grace period - suppress event
                     tracing::debug!(
-                        "Hysteresis: suppressing offline event ({}/{})",
+                        "HysteresisState: in grace period, suppressing offline event ({}/{})",
                         self.offline_count,
                         threshold
                     );
@@ -309,10 +371,23 @@ impl HysteresisState {
             }
 
             // Never was live, now NotLive: No hysteresis needed, emit
-            (_, StreamerState::NotLive) => true,
+            (_, StreamerState::NotLive) => {
+                tracing::debug!(
+                    "HysteresisState: {:?} → NotLive (never was live), emitting immediately",
+                    prev_state
+                );
+                true
+            }
 
             // All other transitions (Error, OutOfSchedule, etc.): emit
-            _ => true,
+            _ => {
+                tracing::debug!(
+                    "HysteresisState: {:?} → {:?}, emitting (non-standard transition)",
+                    prev_state,
+                    new_state
+                );
+                true
+            }
         }
     }
 
@@ -320,10 +395,37 @@ impl HysteresisState {
     ///
     /// Call this when:
     /// - Offline is confirmed (threshold reached)
-    /// - Download ends and we want to start fresh
+    /// - You intentionally want to forget recent live state
     pub fn reset(&mut self) {
+        tracing::debug!(
+            "HysteresisState::reset: was_live={} → false, offline_count={} → 0",
+            self.was_live,
+            self.offline_count
+        );
         self.was_live = false;
         self.offline_count = 0;
+    }
+
+    /// Record an offline observation while the streamer is considered "recently live".
+    ///
+    /// This is useful when an external component (e.g., downloader) provides a strong offline
+    /// signal and we want to start the post-live short polling window immediately.
+    pub fn mark_offline_observed(&mut self) {
+        if !self.was_live {
+            tracing::debug!(
+                "HysteresisState::mark_offline_observed: was_live=false, offline_count stays {}",
+                self.offline_count
+            );
+            return;
+        }
+
+        let prev = self.offline_count;
+        self.offline_count = self.offline_count.saturating_add(1);
+        tracing::debug!(
+            "HysteresisState::mark_offline_observed: was_live=true, offline_count={} → {}",
+            prev,
+            self.offline_count
+        );
     }
 
     /// Mark as having been live.
@@ -332,6 +434,11 @@ impl HysteresisState {
     /// - Download starts (we know they're live)
     /// - External confirmation of live status
     pub fn mark_live(&mut self) {
+        tracing::debug!(
+            "HysteresisState::mark_live: was_live={} → true, offline_count={} → 0",
+            self.was_live,
+            self.offline_count
+        );
         self.was_live = true;
         self.offline_count = 0;
     }

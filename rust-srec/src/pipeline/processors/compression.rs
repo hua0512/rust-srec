@@ -17,7 +17,7 @@ use tracing::{debug, error, info, warn};
 use zip::ZipWriter;
 use zip::write::SimpleFileOptions;
 
-use super::traits::{Processor, ProcessorInput, ProcessorOutput, ProcessorType};
+use super::traits::{Processor, ProcessorContext, ProcessorInput, ProcessorOutput, ProcessorType};
 use super::utils::create_log_entry;
 use crate::Result;
 
@@ -344,7 +344,7 @@ impl Processor for CompressionProcessor {
         true
     }
 
-    async fn process(&self, input: &ProcessorInput) -> Result<ProcessorOutput> {
+    async fn process(&self, input: &ProcessorInput, ctx: &ProcessorContext) -> Result<ProcessorOutput> {
         let start = std::time::Instant::now();
 
         // Initialize logs
@@ -591,6 +591,7 @@ mod tests {
         std::fs::write(&input_path, "test content for compression").unwrap();
 
         let processor = CompressionProcessor::new();
+        let ctx = ProcessorContext::noop("test");
         let input = ProcessorInput {
             inputs: vec![input_path.to_string_lossy().to_string()],
             outputs: vec![output_path.to_string_lossy().to_string()],
@@ -599,7 +600,7 @@ mod tests {
             session_id: "test".to_string(),
         };
 
-        let output = processor.process(&input).await.unwrap();
+        let output = processor.process(&input, &ctx).await.unwrap();
 
         // Verify archive was created
         assert!(output_path.exists());
@@ -621,6 +622,7 @@ mod tests {
         std::fs::write(&input_path, "test content for compression").unwrap();
 
         let processor = CompressionProcessor::new();
+        let ctx = ProcessorContext::noop("test");
         let input = ProcessorInput {
             inputs: vec![input_path.to_string_lossy().to_string()],
             outputs: vec![output_path.to_string_lossy().to_string()],
@@ -629,7 +631,7 @@ mod tests {
             session_id: "test".to_string(),
         };
 
-        let output = processor.process(&input).await.unwrap();
+        let output = processor.process(&input, &ctx).await.unwrap();
 
         // Verify archive was created
         assert!(output_path.exists());
@@ -652,6 +654,7 @@ mod tests {
         std::fs::write(&input2, "content of file 2").unwrap();
 
         let processor = CompressionProcessor::new();
+        let ctx = ProcessorContext::noop("test");
         let input = ProcessorInput {
             inputs: vec![
                 input1.to_string_lossy().to_string(),
@@ -663,7 +666,7 @@ mod tests {
             session_id: "test".to_string(),
         };
 
-        let output = processor.process(&input).await.unwrap();
+        let output = processor.process(&input, &ctx).await.unwrap();
 
         // Verify archive was created
         assert!(output_path.exists());
@@ -687,6 +690,7 @@ mod tests {
         std::fs::write(&input2, "content of file 2").unwrap();
 
         let processor = CompressionProcessor::new();
+        let ctx = ProcessorContext::noop("test");
         let input = ProcessorInput {
             inputs: vec![
                 input1.to_string_lossy().to_string(),
@@ -698,7 +702,7 @@ mod tests {
             session_id: "test".to_string(),
         };
 
-        let output = processor.process(&input).await.unwrap();
+        let output = processor.process(&input, &ctx).await.unwrap();
 
         // Verify archive was created
         assert!(output_path.exists());
@@ -721,6 +725,7 @@ mod tests {
         std::fs::write(&input_path, &content).unwrap();
 
         let processor = CompressionProcessor::new();
+        let ctx = ProcessorContext::noop("test");
         let input = ProcessorInput {
             inputs: vec![input_path.to_string_lossy().to_string()],
             outputs: vec![output_path.to_string_lossy().to_string()],
@@ -729,7 +734,7 @@ mod tests {
             session_id: "test".to_string(),
         };
 
-        let output = processor.process(&input).await.unwrap();
+        let output = processor.process(&input, &ctx).await.unwrap();
 
         // Verify compression ratio is recorded
         let metadata: serde_json::Value =
@@ -742,6 +747,7 @@ mod tests {
     #[tokio::test]
     async fn test_no_input_files() {
         let processor = CompressionProcessor::new();
+        let ctx = ProcessorContext::noop("test");
         let input = ProcessorInput {
             inputs: vec![],
             outputs: vec!["/output.zip".to_string()],
@@ -750,7 +756,7 @@ mod tests {
             session_id: "test".to_string(),
         };
 
-        let result = processor.process(&input).await;
+        let result = processor.process(&input, &ctx).await;
         assert!(result.is_err());
         let err = result.unwrap_err();
         assert!(err.to_string().contains("No input files"));
@@ -762,6 +768,7 @@ mod tests {
         let output_path = temp_dir.path().join("output.zip");
 
         let processor = CompressionProcessor::new();
+        let ctx = ProcessorContext::noop("test");
         let input = ProcessorInput {
             inputs: vec!["/nonexistent/file.txt".to_string()],
             outputs: vec![output_path.to_string_lossy().to_string()],
@@ -770,7 +777,7 @@ mod tests {
             session_id: "test".to_string(),
         };
 
-        let result = processor.process(&input).await;
+        let result = processor.process(&input, &ctx).await;
         assert!(result.is_err());
         let err = result.unwrap_err();
         assert!(err.to_string().contains("does not exist"));
@@ -787,6 +794,7 @@ mod tests {
         std::fs::write(&output_path, "existing archive").unwrap();
 
         let processor = CompressionProcessor::new();
+        let ctx = ProcessorContext::noop("test");
         let input = ProcessorInput {
             inputs: vec![input_path.to_string_lossy().to_string()],
             outputs: vec![output_path.to_string_lossy().to_string()],
@@ -795,7 +803,7 @@ mod tests {
             session_id: "test".to_string(),
         };
 
-        let result = processor.process(&input).await;
+        let result = processor.process(&input, &ctx).await;
         assert!(result.is_err());
         let err = result.unwrap_err();
         assert!(err.to_string().contains("already exists"));
@@ -811,6 +819,7 @@ mod tests {
         std::fs::write(&input_path, "test content").unwrap();
 
         let processor = CompressionProcessor::new();
+        let ctx = ProcessorContext::noop("test");
         let input = ProcessorInput {
             inputs: vec![input_path.to_string_lossy().to_string()],
             outputs: vec![output_path.to_string_lossy().to_string()],
@@ -819,7 +828,7 @@ mod tests {
             session_id: "test".to_string(),
         };
 
-        let _output = processor.process(&input).await.unwrap();
+        let _output = processor.process(&input, &ctx).await.unwrap();
         assert!(output_path.exists());
     }
 

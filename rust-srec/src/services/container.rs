@@ -218,7 +218,7 @@ impl ServiceContainer {
             maintenance_scheduler,
             scheduler,
             stream_monitor,
-            api_server_config: ApiServerConfig::default(),
+            api_server_config: ApiServerConfig::from_env_or_default(),
             cancellation_token,
         })
     }
@@ -784,6 +784,7 @@ impl ServiceContainer {
     /// Register health checks for all components.
     async fn register_health_checks(&self) {
         use crate::metrics::ComponentHealth;
+        use std::path::{Path, PathBuf};
 
         let pool = self.pool.clone();
         let download_manager = self.download_manager.clone();
@@ -804,6 +805,102 @@ impl ServiceContainer {
             )
             .await;
 
+        fn best_disk_for_path<'a>(
+            disks: &'a sysinfo::Disks,
+            path: &Path,
+        ) -> Option<&'a sysinfo::Disk> {
+            disks
+                .iter()
+                .filter(|d| path.starts_with(d.mount_point()))
+                .max_by_key(|d| d.mount_point().as_os_str().to_string_lossy().len())
+        }
+
+        fn sqlite_file_path_from_url(url: &str) -> Option<PathBuf> {
+            let url = url.strip_prefix("sqlite:")?;
+            let path_part = url.split('?').next().unwrap_or(url);
+
+            if path_part.is_empty() || path_part == ":memory:" || path_part.starts_with(":memory:")
+            {
+                return None;
+            }
+
+            let normalized = path_part.strip_prefix("///").unwrap_or(path_part);
+            Some(PathBuf::from(normalized))
+        }
+
+        // Disk space health checks (output dir and DB directory).
+        let output_dir = std::env::var("OUTPUT_DIR").unwrap_or_else(|_| "./output".to_string());
+        // Ensure path is absolute for disk lookup
+        let output_dir_path = if let Ok(cwd) = std::env::current_dir() {
+            cwd.join(&output_dir)
+        } else {
+            PathBuf::from(output_dir.clone())
+        };
+
+        let disk_checker = self.health_checker.clone();
+        self.health_checker
+            .register(
+                format!("disk:{}", output_dir),
+                Arc::new(move || {
+                    let disks = sysinfo::Disks::new_with_refreshed_list();
+                    let disk = best_disk_for_path(&disks, &output_dir_path);
+                    match disk {
+                        Some(d) => disk_checker.check_disk_space(
+                            &output_dir,
+                            d.available_space(),
+                            d.total_space(),
+                        ),
+                        None => ComponentHealth {
+                            name: format!("disk:{}", output_dir),
+                            status: crate::metrics::HealthStatus::Unknown,
+                            message: Some("Unable to resolve disk for path".to_string()),
+                            last_check: Some(chrono::Utc::now().to_rfc3339()),
+                            check_duration_ms: None,
+                        },
+                    }
+                }),
+            )
+            .await;
+
+        if let Ok(database_url) = std::env::var("DATABASE_URL") {
+            if let Some(db_file) = sqlite_file_path_from_url(&database_url) {
+                let db_dir = db_file.parent().unwrap_or(db_file.as_path()).to_path_buf();
+                let db_dir_str = db_dir.to_string_lossy().to_string();
+                // Ensure path is absolute for disk lookup
+                let db_dir_path = if db_dir.is_absolute() {
+                    db_dir.clone()
+                } else if let Ok(cwd) = std::env::current_dir() {
+                    cwd.join(&db_dir)
+                } else {
+                    db_dir.clone()
+                };
+                let disk_checker = self.health_checker.clone();
+                self.health_checker
+                    .register(
+                        format!("disk:{}", db_dir_str),
+                        Arc::new(move || {
+                            let disks = sysinfo::Disks::new_with_refreshed_list();
+                            let disk = best_disk_for_path(&disks, &db_dir_path);
+                            match disk {
+                                Some(d) => disk_checker.check_disk_space(
+                                    &db_dir_str,
+                                    d.available_space(),
+                                    d.total_space(),
+                                ),
+                                None => ComponentHealth {
+                                    name: format!("disk:{}", db_dir_str),
+                                    status: crate::metrics::HealthStatus::Unknown,
+                                    message: Some("Unable to resolve disk for path".to_string()),
+                                    last_check: Some(chrono::Utc::now().to_rfc3339()),
+                                    check_duration_ms: None,
+                                },
+                            }
+                        }),
+                    )
+                    .await;
+            }
+        }
+
         // Download manager health check
         let dm = download_manager.clone();
         self.health_checker
@@ -811,10 +908,57 @@ impl ServiceContainer {
                 "download_manager",
                 Arc::new(move || {
                     let active = dm.active_count();
-                    if active > 50 {
+                    let total_slots = dm.total_concurrent_slots();
+
+                    if total_slots == 0 {
+                        return ComponentHealth::degraded(
+                            "download_manager",
+                            "No download slots configured (total_concurrent_slots=0)",
+                        );
+                    }
+
+                    if active > total_slots {
+                        return ComponentHealth::unhealthy(
+                            "download_manager",
+                            format!(
+                                "Active downloads exceed capacity: {}/{}",
+                                active, total_slots
+                            ),
+                        );
+                    }
+
+                    let cpu_threshold = 85.0_f32;
+                    let mem_threshold = 90.0_f32;
+
+                    let (cpu_usage, mem_usage) = {
+                        let mut system = sysinfo::System::new_with_specifics(
+                            sysinfo::RefreshKind::new()
+                                .with_cpu(sysinfo::CpuRefreshKind::everything())
+                                .with_memory(sysinfo::MemoryRefreshKind::everything()),
+                        );
+                        system.refresh_cpu();
+                        system.refresh_memory();
+
+                        let cpu = system.global_cpu_info().cpu_usage();
+                        let total_mem = system.total_memory();
+                        let used_mem = system.used_memory();
+                        let mem = if total_mem > 0 {
+                            (used_mem as f64 / total_mem as f64 * 100.0) as f32
+                        } else {
+                            0.0
+                        };
+                        (cpu, mem)
+                    };
+
+                    let utilization = active as f32 / total_slots as f32;
+
+                    if utilization >= 0.95 && (cpu_usage >= cpu_threshold || mem_usage >= mem_threshold) {
                         ComponentHealth::degraded(
                             "download_manager",
-                            format!("High number of active downloads: {}", active),
+                            format!(
+                                "Near capacity under resource pressure: active {}/{}, cpu {:.1}%, mem {:.1}%",
+                                active, total_slots, cpu_usage, mem_usage
+                            ),
                         )
                     } else {
                         ComponentHealth::healthy("download_manager")

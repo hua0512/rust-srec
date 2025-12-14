@@ -1,26 +1,26 @@
-import { Languages } from "lucide-react"
-import { Button } from "./ui/button"
+import { Languages } from 'lucide-react';
+import { Button } from './ui/button';
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
-} from "./ui/dropdown-menu"
+} from './ui/dropdown-menu';
 import {
   Tooltip,
   TooltipContent,
   TooltipTrigger,
-  TooltipProvider
-} from "@/components/ui/tooltip"
-import { useLingui } from "@lingui/react"
+  TooltipProvider,
+} from '@/components/ui/tooltip';
+import { useLingui } from '@lingui/react';
 
 export function LanguageSwitcher() {
-  const { i18n } = useLingui()
+  const { i18n } = useLingui();
 
   const changeLocale = (locale: string) => {
-    i18n.activate(locale)
-    localStorage.setItem("locale", locale)
-  }
+    i18n.activate(locale);
+    localStorage.setItem('locale', locale);
+  };
 
   return (
     <DropdownMenu>
@@ -42,13 +42,13 @@ export function LanguageSwitcher() {
         </Tooltip>
       </TooltipProvider>
       <DropdownMenuContent align="end">
-        <DropdownMenuItem onClick={() => changeLocale("en")}>
+        <DropdownMenuItem onClick={() => changeLocale('en')}>
           English
         </DropdownMenuItem>
-        <DropdownMenuItem onClick={() => changeLocale("zh-CN")}>
+        <DropdownMenuItem onClick={() => changeLocale('zh-CN')}>
           中文 (简体)
         </DropdownMenuItem>
       </DropdownMenuContent>
     </DropdownMenu>
-  )
+  );
 }

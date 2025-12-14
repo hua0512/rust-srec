@@ -465,6 +465,12 @@ pub struct JobExecutionLogDbModel {
     pub entry: String,
     /// ISO 8601 timestamp
     pub created_at: String,
+    /// Optional structured level (e.g. "INFO", "WARN", "ERROR").
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub level: Option<String>,
+    /// Optional structured message.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub message: Option<String>,
 }
 
 impl JobExecutionLogDbModel {
@@ -474,8 +480,22 @@ impl JobExecutionLogDbModel {
             job_id: job_id.into(),
             entry: entry.into(),
             created_at: chrono::Utc::now().to_rfc3339(),
+            level: None,
+            message: None,
         }
     }
+}
+
+/// Job execution progress snapshot (latest only) database model.
+#[derive(Debug, Clone, FromRow, Serialize, Deserialize)]
+pub struct JobExecutionProgressDbModel {
+    pub job_id: String,
+    /// Progress kind (e.g. "ffmpeg", "rclone").
+    pub kind: String,
+    /// JSON blob for the progress snapshot.
+    pub progress: String,
+    /// ISO 8601 timestamp.
+    pub updated_at: String,
 }
 
 /// Log entry structure for job execution logs.

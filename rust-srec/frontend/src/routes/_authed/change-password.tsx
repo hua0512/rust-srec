@@ -35,9 +35,11 @@ import { changePassword } from '../../server/functions';
 function ChangePasswordPage() {
   const { data: session } = useQuery(sessionQueryOptions);
   // Map session to user interface expected by UI if needed, or update checks
-  const user = session ? {
-    must_change_password: session.mustChangePassword
-  } : null;
+  const user = session
+    ? {
+        must_change_password: session.mustChangePassword,
+      }
+    : null;
   const router = useRouter();
   const [showCurrentPassword, setShowCurrentPassword] = useState(false);
   const [showNewPassword, setShowNewPassword] = useState(false);
@@ -46,7 +48,10 @@ function ChangePasswordPage() {
   // Client-side redirect check after hydration
   useEffect(() => {
     if (!session?.token) {
-      router.navigate({ to: '/login', search: { redirect: '/change-password' } });
+      router.navigate({
+        to: '/login',
+        search: { redirect: '/change-password' },
+      });
     }
   }, [session, router]);
 
@@ -59,7 +64,9 @@ function ChangePasswordPage() {
     },
   });
 
-  const onSubmit = async (values: z.infer<typeof ChangePasswordRequestSchema>) => {
+  const onSubmit = async (
+    values: z.infer<typeof ChangePasswordRequestSchema>,
+  ) => {
     try {
       await changePassword({ data: values });
 
@@ -96,13 +103,18 @@ function ChangePasswordPage() {
           <div className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 w-96 h-96 bg-fuchsia-300 rounded-full mix-blend-multiply filter blur-xl opacity-70 animate-blob animation-delay-4000"></div>
         </div>
         <div className="relative z-20 flex items-center text-lg font-medium">
-          <img src="/stream-rec.svg" alt="Stream-rec Logo" className="mr-2 h-8 w-8 brightness-0 invert" />
+          <img
+            src="/stream-rec.svg"
+            alt="Stream-rec Logo"
+            className="mr-2 h-8 w-8 brightness-0 invert"
+          />
           Stream-rec
         </div>
         <div className="relative z-20 mt-auto">
           <blockquote className="space-y-2">
             <p className="text-lg">
-              &ldquo;Automate your stream recordings with ease and reliability.&rdquo;
+              &ldquo;Automate your stream recordings with ease and
+              reliability.&rdquo;
             </p>
           </blockquote>
         </div>
@@ -111,7 +123,11 @@ function ChangePasswordPage() {
         <div className="mx-auto flex w-full flex-col justify-center space-y-6 sm:w-[350px] bg-background/60 backdrop-blur-md lg:bg-transparent lg:backdrop-blur-none p-8 rounded-xl border border-white/20 shadow-xl lg:border-none lg:shadow-none lg:p-0">
           <div className="flex flex-col space-y-2 text-center">
             <h1 className="text-2xl font-semibold tracking-tight">
-              {user?.must_change_password ? <Trans>Change Password Required</Trans> : <Trans>Change Password</Trans>}
+              {user?.must_change_password ? (
+                <Trans>Change Password Required</Trans>
+              ) : (
+                <Trans>Change Password</Trans>
+              )}
             </h1>
             <p className="text-sm text-muted-foreground">
               <Trans>Please enter your new password details</Trans>
@@ -124,11 +140,13 @@ function ChangePasswordPage() {
                 name="current_password"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel><Trans>Current Password</Trans></FormLabel>
+                    <FormLabel>
+                      <Trans>Current Password</Trans>
+                    </FormLabel>
                     <FormControl>
                       <div className="relative">
                         <Input
-                          type={showCurrentPassword ? "text" : "password"}
+                          type={showCurrentPassword ? 'text' : 'password'}
                           placeholder="Current password"
                           {...field}
                           className="bg-background/50 lg:bg-background pr-10"
@@ -138,7 +156,9 @@ function ChangePasswordPage() {
                           variant="ghost"
                           size="sm"
                           className="absolute right-0 top-0 h-full px-3 py-2 hover:bg-transparent"
-                          onClick={() => setShowCurrentPassword(!showCurrentPassword)}
+                          onClick={() =>
+                            setShowCurrentPassword(!showCurrentPassword)
+                          }
                         >
                           {showCurrentPassword ? (
                             <EyeOff className="h-4 w-4 text-muted-foreground" />
@@ -146,7 +166,11 @@ function ChangePasswordPage() {
                             <Eye className="h-4 w-4 text-muted-foreground" />
                           )}
                           <span className="sr-only">
-                            {showCurrentPassword ? <Trans>Hide password</Trans> : <Trans>Show password</Trans>}
+                            {showCurrentPassword ? (
+                              <Trans>Hide password</Trans>
+                            ) : (
+                              <Trans>Show password</Trans>
+                            )}
                           </span>
                         </Button>
                       </div>
@@ -160,11 +184,13 @@ function ChangePasswordPage() {
                 name="new_password"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel><Trans>New Password</Trans></FormLabel>
+                    <FormLabel>
+                      <Trans>New Password</Trans>
+                    </FormLabel>
                     <FormControl>
                       <div className="relative">
                         <Input
-                          type={showNewPassword ? "text" : "password"}
+                          type={showNewPassword ? 'text' : 'password'}
                           placeholder="New password (min 8 chars)"
                           {...field}
                           className="bg-background/50 lg:bg-background pr-10"
@@ -182,7 +208,11 @@ function ChangePasswordPage() {
                             <Eye className="h-4 w-4 text-muted-foreground" />
                           )}
                           <span className="sr-only">
-                            {showNewPassword ? <Trans>Hide password</Trans> : <Trans>Show password</Trans>}
+                            {showNewPassword ? (
+                              <Trans>Hide password</Trans>
+                            ) : (
+                              <Trans>Show password</Trans>
+                            )}
                           </span>
                         </Button>
                       </div>
@@ -196,11 +226,13 @@ function ChangePasswordPage() {
                 name="confirm_password"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel><Trans>Confirm Password</Trans></FormLabel>
+                    <FormLabel>
+                      <Trans>Confirm Password</Trans>
+                    </FormLabel>
                     <FormControl>
                       <div className="relative">
                         <Input
-                          type={showConfirmPassword ? "text" : "password"}
+                          type={showConfirmPassword ? 'text' : 'password'}
                           placeholder="Confirm new password"
                           {...field}
                           className="bg-background/50 lg:bg-background pr-10"
@@ -210,7 +242,9 @@ function ChangePasswordPage() {
                           variant="ghost"
                           size="sm"
                           className="absolute right-0 top-0 h-full px-3 py-2 hover:bg-transparent"
-                          onClick={() => setShowConfirmPassword(!showConfirmPassword)}
+                          onClick={() =>
+                            setShowConfirmPassword(!showConfirmPassword)
+                          }
                         >
                           {showConfirmPassword ? (
                             <EyeOff className="h-4 w-4 text-muted-foreground" />
@@ -218,7 +252,11 @@ function ChangePasswordPage() {
                             <Eye className="h-4 w-4 text-muted-foreground" />
                           )}
                           <span className="sr-only">
-                            {showConfirmPassword ? <Trans>Hide password</Trans> : <Trans>Show password</Trans>}
+                            {showConfirmPassword ? (
+                              <Trans>Hide password</Trans>
+                            ) : (
+                              <Trans>Show password</Trans>
+                            )}
                           </span>
                         </Button>
                       </div>
@@ -227,8 +265,16 @@ function ChangePasswordPage() {
                   </FormItem>
                 )}
               />
-              <Button type="submit" className="w-full" disabled={form.formState.isSubmitting}>
-                {form.formState.isSubmitting ? <Trans>Changing Password...</Trans> : <Trans>Change Password</Trans>}
+              <Button
+                type="submit"
+                className="w-full"
+                disabled={form.formState.isSubmitting}
+              >
+                {form.formState.isSubmitting ? (
+                  <Trans>Changing Password...</Trans>
+                ) : (
+                  <Trans>Change Password</Trans>
+                )}
               </Button>
             </form>
           </Form>

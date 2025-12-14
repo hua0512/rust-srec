@@ -1,13 +1,15 @@
 import { createFileRoute, useNavigate } from '@tanstack/react-router';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { getJobPreset, updateJobPreset } from '@/server/functions/job';
-import { toast } from "sonner";
-import { t } from "@lingui/core/macro";
-import { Trans } from "@lingui/react/macro";
+import { toast } from 'sonner';
+import { t } from '@lingui/core/macro';
+import { Trans } from '@lingui/react/macro';
 import { PresetEditor } from '@/components/pipeline/presets/preset-editor';
-import { Skeleton } from "@/components/ui/skeleton";
+import { Skeleton } from '@/components/ui/skeleton';
 
-export const Route = createFileRoute('/_authed/_dashboard/pipeline/presets/$presetId')({
+export const Route = createFileRoute(
+  '/_authed/_dashboard/pipeline/presets/$presetId',
+)({
   component: EditPresetPage,
 });
 
@@ -16,7 +18,11 @@ function EditPresetPage() {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
 
-  const { data: preset, isLoading, error } = useQuery({
+  const {
+    data: preset,
+    isLoading,
+    error,
+  } = useQuery({
     queryKey: ['job', 'preset', presetId],
     queryFn: () => getJobPreset({ data: presetId }),
   });
@@ -29,13 +35,14 @@ function EditPresetPage() {
       queryClient.invalidateQueries({ queryKey: ['job', 'preset', presetId] });
       navigate({ to: '/pipeline/presets' });
     },
-    onError: (error) => toast.error(t`Failed to update preset: ${error.message}`),
+    onError: (error) =>
+      toast.error(t`Failed to update preset: ${error.message}`),
   });
 
   const onSubmit = (data: any) => {
     const formattedData = {
       ...data,
-      config: JSON.stringify(data.config)
+      config: JSON.stringify(data.config),
     };
     updateMutation.mutate({ data: formattedData });
   };
@@ -62,8 +69,12 @@ function EditPresetPage() {
   if (error || !preset) {
     return (
       <div className="flex flex-col items-center justify-center p-20 text-center">
-        <h3 className="text-xl font-bold text-destructive"><Trans>Error loading preset</Trans></h3>
-        <p className="text-muted-foreground mt-2">{error?.message || t`Preset not found`}</p>
+        <h3 className="text-xl font-bold text-destructive">
+          <Trans>Error loading preset</Trans>
+        </h3>
+        <p className="text-muted-foreground mt-2">
+          {error?.message || t`Preset not found`}
+        </p>
       </div>
     );
   }

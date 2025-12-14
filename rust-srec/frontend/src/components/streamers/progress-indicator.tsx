@@ -8,7 +8,10 @@ interface ProgressIndicatorProps {
   compact?: boolean;
 }
 
-export function ProgressIndicator({ progress, compact = false }: ProgressIndicatorProps) {
+export function ProgressIndicator({
+  progress,
+  compact = false,
+}: ProgressIndicatorProps) {
   const isHealthy = progress.playbackRatio >= 1.0;
 
   if (compact) {
@@ -17,13 +20,17 @@ export function ProgressIndicator({ progress, compact = false }: ProgressIndicat
         <span
           className={cn(
             'flex items-center gap-1',
-            isHealthy ? 'text-green-600 dark:text-green-400' : 'text-orange-600 dark:text-orange-400'
+            isHealthy
+              ? 'text-green-600 dark:text-green-400'
+              : 'text-orange-600 dark:text-orange-400',
           )}
         >
           <Download className="h-3 w-3" />
           {formatSpeed(Number(progress.speedBytesPerSec))}
         </span>
-        <span className="text-muted-foreground">{formatBytes(Number(progress.bytesDownloaded))}</span>
+        <span className="text-muted-foreground">
+          {formatBytes(Number(progress.bytesDownloaded))}
+        </span>
         <span className="flex items-center gap-1 text-muted-foreground">
           <Clock className="h-3 w-3" />
           {formatDuration(progress.durationSecs)}
@@ -42,7 +49,9 @@ export function ProgressIndicator({ progress, compact = false }: ProgressIndicat
         <span
           className={cn(
             'flex items-center gap-1 font-medium',
-            isHealthy ? 'text-green-600 dark:text-green-400' : 'text-orange-600 dark:text-orange-400'
+            isHealthy
+              ? 'text-green-600 dark:text-green-400'
+              : 'text-orange-600 dark:text-orange-400',
           )}
         >
           <Zap className="h-3 w-3" />
@@ -58,7 +67,9 @@ export function ProgressIndicator({ progress, compact = false }: ProgressIndicat
           <span
             className={cn(
               'flex items-center gap-1',
-              isHealthy ? 'text-green-600 dark:text-green-400' : 'text-orange-600 dark:text-orange-400'
+              isHealthy
+                ? 'text-green-600 dark:text-green-400'
+                : 'text-orange-600 dark:text-orange-400',
             )}
           >
             <TrendingUp className="h-3 w-3" />

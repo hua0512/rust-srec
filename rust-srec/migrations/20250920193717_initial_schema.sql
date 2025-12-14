@@ -1,3 +1,10 @@
+-- Initial database schema for rust-srec
+-- This migration creates all tables, indexes, constraints, and seeds default data
+
+-- ============================================
+-- CONFIGURATION TABLES
+-- ============================================
+
 -- `global_config` table: A singleton table for application-wide default settings.
 CREATE TABLE global_config (
     id TEXT PRIMARY KEY NOT NULL,
@@ -70,6 +77,10 @@ CREATE TABLE template_config (
     updated_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
+-- ============================================
+-- STREAMER AND MONITORING TABLES
+-- ============================================
+
 -- `streamers` table: The central entity representing a content creator to be monitored.
 -- States: NOT_LIVE, LIVE, OUT_OF_SCHEDULE, OUT_OF_SPACE, FATAL_ERROR, CANCELLED, NOT_FOUND, INSPECTING_LIVE, TEMPORAL_DISABLED
 -- Priority: HIGH (VIP, never miss), NORMAL (standard), LOW (background/archive)
@@ -103,6 +114,10 @@ CREATE TABLE filters (
     FOREIGN KEY (streamer_id) REFERENCES streamers(id) ON DELETE CASCADE
 );
 
+-- ============================================
+-- SESSION AND MEDIA TABLES
+-- ============================================
+
 -- `live_sessions` table: Represents a single, continuous live stream event.
 CREATE TABLE live_sessions (
     id TEXT PRIMARY KEY NOT NULL,
@@ -115,6 +130,11 @@ CREATE TABLE live_sessions (
     FOREIGN KEY (streamer_id) REFERENCES streamers(id) ON DELETE CASCADE,
     FOREIGN KEY (danmu_statistics_id) REFERENCES danmu_statistics(id)
 );
+
+-- Enforce at most one active (end_time IS NULL) session per streamer.
+CREATE UNIQUE INDEX live_sessions_one_active_per_streamer
+    ON live_sessions (streamer_id)
+    WHERE end_time IS NULL;
 
 -- `media_outputs` table: Represents a single file generated during a live session.
 CREATE TABLE media_outputs (
@@ -140,7 +160,29 @@ CREATE TABLE danmu_statistics (
     FOREIGN KEY (session_id) REFERENCES live_sessions(id) ON DELETE CASCADE
 );
 
--- System and Job Management
+-- ============================================
+-- MONITORING EVENT OUTBOX
+-- ============================================
+
+-- Transactional outbox for monitor events.
+-- Events are inserted in the same transaction as state/session updates and
+-- published asynchronously after commit.
+CREATE TABLE monitor_event_outbox (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    streamer_id TEXT NOT NULL,
+    event_type TEXT NOT NULL,
+    payload TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    delivered_at TEXT,
+    attempts INTEGER NOT NULL DEFAULT 0,
+    last_error TEXT,
+    FOREIGN KEY (streamer_id) REFERENCES streamers(id) ON DELETE CASCADE
+);
+
+-- ============================================
+-- JOB SYSTEM TABLES
+-- ============================================
+
 -- Job status: PENDING, PROCESSING, COMPLETED, FAILED, INTERRUPTED
 -- INTERRUPTED jobs are reset to PENDING on restart for crash recovery
 CREATE TABLE job (
@@ -173,8 +215,23 @@ CREATE TABLE job_execution_logs (
     job_id TEXT NOT NULL,
     entry TEXT NOT NULL,
     created_at TEXT NOT NULL,
+    level TEXT,
+    message TEXT,
     FOREIGN KEY (job_id) REFERENCES job(id) ON DELETE CASCADE
 );
+
+-- This is updated frequently by workers; keep it separate from `job.execution_info` to avoid
+-- large JSON rewrites and reduce contention.
+
+CREATE TABLE job_execution_progress (
+    job_id TEXT PRIMARY KEY NOT NULL,
+    kind TEXT NOT NULL,
+    progress TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    FOREIGN KEY (job_id) REFERENCES job(id) ON DELETE CASCADE
+);
+
+CREATE INDEX idx_job_execution_progress_updated_at ON job_execution_progress(updated_at);
 
 -- Job Presets: Reusable named job configurations
 -- Used in pipeline steps referencing a preset name
@@ -201,12 +258,20 @@ CREATE TABLE pipeline_presets (
     updated_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
+-- ============================================
+-- DOWNLOAD ENGINE TABLES
+-- ============================================
+
 CREATE TABLE engine_configuration (
     id TEXT PRIMARY KEY,
     name TEXT NOT NULL UNIQUE,
     engine_type TEXT NOT NULL,
     config TEXT NOT NULL
 );
+
+-- ============================================
+-- UPLOAD AND CLOUD TABLES
+-- ============================================
 
 CREATE TABLE upload_record (
     id TEXT PRIMARY KEY,
@@ -220,21 +285,9 @@ CREATE TABLE upload_record (
     FOREIGN KEY (media_output_id) REFERENCES media_outputs(id) ON DELETE CASCADE
 );
 
--- Notification Dead Letter Queue: Stores notifications that failed all retry attempts
-CREATE TABLE notification_dead_letter (
-    id TEXT PRIMARY KEY,
-    channel_id TEXT NOT NULL,
-    event_name TEXT NOT NULL,
-    event_payload TEXT NOT NULL,
-    error_message TEXT NOT NULL,
-    retry_count INTEGER NOT NULL DEFAULT 0,
-    first_attempt_at TEXT NOT NULL,
-    last_attempt_at TEXT NOT NULL,
-    created_at TEXT NOT NULL,
-    FOREIGN KEY (channel_id) REFERENCES notification_channel(id) ON DELETE CASCADE
-);
-
--- Security and Notifications
+-- ============================================
+-- SECURITY AND AUTHENTICATION TABLES
+-- ============================================
 
 -- Users table: Stores user accounts for authentication
 CREATE TABLE users (
@@ -270,6 +323,10 @@ CREATE TABLE api_key (
     created_at TEXT NOT NULL
 );
 
+-- ============================================
+-- NOTIFICATION TABLES
+-- ============================================
+
 CREATE TABLE notification_channel (
     id TEXT PRIMARY KEY,
     name TEXT NOT NULL,
@@ -283,6 +340,24 @@ CREATE TABLE notification_subscription (
     PRIMARY KEY (channel_id, event_name),
     FOREIGN KEY (channel_id) REFERENCES notification_channel(id) ON DELETE CASCADE
 );
+
+-- Notification Dead Letter Queue: Stores notifications that failed all retry attempts
+CREATE TABLE notification_dead_letter (
+    id TEXT PRIMARY KEY,
+    channel_id TEXT NOT NULL,
+    event_name TEXT NOT NULL,
+    event_payload TEXT NOT NULL,
+    error_message TEXT NOT NULL,
+    retry_count INTEGER NOT NULL DEFAULT 0,
+    first_attempt_at TEXT NOT NULL,
+    last_attempt_at TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    FOREIGN KEY (channel_id) REFERENCES notification_channel(id) ON DELETE CASCADE
+);
+
+-- ============================================
+-- INDEXES
+-- ============================================
 
 -- Streamer indexes
 CREATE INDEX idx_streamer_platform_config_id ON streamers(platform_config_id);
@@ -314,6 +389,8 @@ CREATE INDEX idx_notification_subscription_channel_id ON notification_subscripti
 
 -- Indexes for the job table
 CREATE INDEX idx_job_status_type ON job(status, job_type);
+-- Hot path index for atomic "claim next pending job" dequeue (ORDER BY priority DESC, created_at DESC)
+CREATE INDEX idx_job_pending_claim_order ON job(status, job_type, priority DESC, created_at DESC);
 CREATE INDEX idx_job_updated_at ON job(updated_at);
 CREATE INDEX idx_job_created_at ON job(created_at);
 CREATE INDEX idx_job_streamer_id ON job(streamer_id);
@@ -327,6 +404,10 @@ CREATE INDEX idx_jobs_completed_at_status ON job(completed_at) WHERE status IN (
 
 -- Index for the job_execution_logs table
 CREATE INDEX idx_job_execution_logs_job_id ON job_execution_logs(job_id);
+
+-- Speed up paged reads ordered by created_at.
+CREATE INDEX IF NOT EXISTS idx_job_execution_logs_job_id_created_at
+    ON job_execution_logs(job_id, created_at);
 
 -- Indexes for the notification_dead_letter table
 CREATE INDEX idx_dead_letter_channel ON notification_dead_letter(channel_id);
@@ -350,6 +431,13 @@ CREATE INDEX idx_job_presets_category ON job_presets(category);
 -- Indexes for pipeline_presets
 CREATE INDEX idx_pipeline_presets_name ON pipeline_presets(name);
 
+-- Index for monitor_event_outbox
+CREATE INDEX monitor_event_outbox_undelivered
+    ON monitor_event_outbox (delivered_at, id);
+
+-- ============================================
+-- DEFAULT DATA SEEDING
+-- ============================================
 
 -- Default admin user (password: admin123!)
 -- Argon2id hash generated with OWASP recommended parameters: m=19456, t=2, p=1
@@ -430,8 +518,9 @@ INSERT INTO global_config (
     3600                      -- 1 hour
 );
 
-
--- Seed default job presets
+-- ============================================
+-- SEED DEFAULT JOB PRESETS
+-- ============================================
 
 -- ============================================
 -- REMUX PRESETS (Container format conversion)
@@ -513,6 +602,42 @@ INSERT INTO job_presets (id, name, description, category, processor, config, cre
     'thumbnail',
     'thumbnail',
     '{"timestamp_secs":10,"width":640,"quality":2}',
+    datetime('now'),
+    datetime('now')
+);
+
+-- Full HD thumbnail: 1280px width for modern displays and video players
+INSERT INTO job_presets (id, name, description, category, processor, config, created_at, updated_at) VALUES (
+    'preset-default-thumbnail-fullhd',
+    'thumbnail_fullhd',
+    'Generate a Full HD thumbnail (1280px width) for modern displays and video players.',
+    'thumbnail',
+    'thumbnail',
+    '{"timestamp_secs":10,"width":1280,"quality":2}',
+    datetime('now'),
+    datetime('now')
+);
+
+-- Max quality thumbnail: 1920px width for full 1080p preservation
+INSERT INTO job_presets (id, name, description, category, processor, config, created_at, updated_at) VALUES (
+    'preset-default-thumbnail-max',
+    'thumbnail_max',
+    'Generate a maximum quality thumbnail (1920px width) preserving full 1080p detail.',
+    'thumbnail',
+    'thumbnail',
+    '{"timestamp_secs":10,"width":1920,"quality":1}',
+    datetime('now'),
+    datetime('now')
+);
+
+-- Native resolution thumbnail: preserves original stream resolution
+INSERT INTO job_presets (id, name, description, category, processor, config, created_at, updated_at) VALUES (
+    'preset-default-thumbnail-native',
+    'thumbnail_native',
+    'Generate a thumbnail at native stream resolution (no scaling). Best quality, largest file size.',
+    'thumbnail',
+    'thumbnail',
+    '{"timestamp_secs":10,"preserve_resolution":true,"quality":1}',
     datetime('now'),
     datetime('now')
 );

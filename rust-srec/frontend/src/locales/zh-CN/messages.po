@@ -13,387 +13,1169 @@ msgstr ""
 "Language-Team: \n"
 "Plural-Forms: \n"
 
-#: src/components/config/engines/forms/streamlink-form.tsx:69
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:560
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:578
+msgid "--flag value"
+msgstr ""
+
+#: src/components/config/engines/forms/streamlink-form.tsx:76
 msgid "--hls-live-edge 3"
 msgstr ""
 
-#: src/components/config/engines/forms/ffmpeg-form.tsx:114
+#: src/components/config/engines/forms/ffmpeg-form.tsx:127
 msgid "-c copy"
 msgstr ""
 
-#: src/components/config/engines/forms/ffmpeg-form.tsx:91
+#: src/components/config/engines/forms/ffmpeg-form.tsx:98
 msgid "-reconnect 1"
 msgstr ""
 
 #: src/components/config/templates/tabs/proxy-tab.tsx:85
-msgid "(Override for this template)"
-msgstr ""
+#~ msgid "(Override for this template)"
+#~ msgstr ""
 
 #: src/components/config/templates/tabs/proxy-tab.tsx:81
-msgid "(Use global settings)"
-msgstr ""
+#~ msgid "(Use global settings)"
+#~ msgstr ""
 
 #. placeholder {0}: isEditing ? 'Save Changes' : 'Create Template'
-#: src/components/config/templates/edit-template-dialog.tsx:180
+#. placeholder {0}: item.title
+#: src/components/config/templates/edit-template-dialog.tsx:197
+#: src/routes/_authed/_dashboard/config/route.tsx:105
 msgid "{0}"
 msgstr ""
 
-#: src/components/config/engines/forms/ffmpeg-form.tsx:29
-msgid "/usr/bin/ffmpeg or ffmpeg"
+#: src/routes/_authed/_dashboard/pipeline/jobs/index.tsx:503
+msgid "{label}"
 msgstr ""
 
-#: src/components/config/global/resource-limits-card.tsx:77
-msgid "0 = Unlimited"
-msgstr ""
-
-#: src/components/config/templates/tabs/general-tab.tsx:41
-msgid "A unique name for this configuration template."
+#: src/components/pipeline/workflows/steps-list.tsx:137
+msgid "{stepName} (Custom)"
 msgstr ""
 
 #: src/components/config/engines/forms/ffmpeg-form.tsx:31
+msgid "/usr/bin/ffmpeg or ffmpeg"
+msgstr ""
+
+#: src/components/pipeline/presets/processors/compression-config-form.tsx:76
+msgid "0 (None) - 9 (Best)"
+msgstr ""
+
+#: src/components/config/global/resource-limits-card.tsx:66
+msgid "0 = Unlimited"
+msgstr ""
+
+#: src/components/pipeline/presets/processors/thumbnail-config-form.tsx:103
+msgid "1 (best) - 31 (worst)"
+msgstr ""
+
+#: src/components/config/engines/engine-editor.tsx:191
+msgid "A unique and descriptive name for this configuration."
+msgstr ""
+
+#: src/components/config/templates/tabs/general-tab.tsx:54
+msgid "A unique name for this configuration template."
+msgstr ""
+
+#: src/components/filters/FilterCard.tsx:76
+msgid "Aa"
+msgstr ""
+
+#: src/components/config/engines/forms/ffmpeg-form.tsx:33
 msgid "Absolute path or 'ffmpeg' if in PATH"
 msgstr ""
 
-#: src/components/config/engines/forms/streamlink-form.tsx:30
+#: src/components/config/engines/forms/streamlink-form.tsx:33
 msgid "Absolute path or 'streamlink' in PATH"
 msgstr ""
 
-#: src/routes/_auth/pipeline/jobs.tsx:145
-#: src/routes/_auth/streamers/index.tsx:117
-#: src/routes/_auth/streamers/index.tsx:168
+#: src/routes/_authed/_dashboard/config/theme.tsx:51
+msgid "Accent Color"
+msgstr ""
+
+#: src/components/streamers/streamer-card.tsx:263
 msgid "Actions"
 msgstr ""
 
-#: src/routes/_auth/pipeline/jobs.tsx:85
-msgid "Active Jobs"
+#: src/components/filters/forms/TimeBasedFilterForm.tsx:28
+msgid "Active Days"
 msgstr ""
 
-#: src/routes/_auth/dashboard.tsx:100
+#: src/components/streamers/edit/active-download-card.tsx:28
+msgid "Active Download"
+msgstr ""
+
+#: src/routes/_auth/pipeline/jobs.tsx:85
+#~ msgid "Active Jobs"
+#~ msgstr ""
+
+#: src/routes/_authed/_dashboard/dashboard.tsx:216
 msgid "Active Recordings"
 msgstr ""
 
-#: src/components/ui/list-input.tsx:41
+#: src/components/config/templates/tabs/platform-overrides-tab.tsx:107
+msgid "Add an override to customize behavior for specific platforms."
+msgstr ""
+
+#: src/components/config/templates/tabs/engine-overrides-tab.tsx:111
+msgid "Add an override to customize engine behavior for this template."
+msgstr ""
+
+#: src/components/pipeline/presets/processors/metadata-config-form.tsx:89
+msgid "Add Custom Tag"
+msgstr ""
+
+#: src/components/streamers/edit/streamer-filters-tab.tsx:30
+msgid "Add Filter"
+msgstr ""
+
+#: src/components/ui/list-input.tsx:42
 msgid "Add item..."
 msgstr ""
 
-#: src/routes/_auth/streamers/index.tsx:91
-#: src/routes/_auth/streamers/new.tsx:77
+#: src/components/config/engines/engine-card.tsx:194
+msgid "Add New Engine"
+msgstr ""
+
+#: src/components/filters/FilterDialog.tsx:181
+msgid "Add New Filter"
+msgstr ""
+
+#: src/routes/_authed/_dashboard/streamers/new.tsx:46
+msgid "Add New Streamer"
+msgstr ""
+
+#: src/components/config/templates/tabs/engine-overrides-tab.tsx:77
+#: src/components/config/templates/tabs/platform-overrides-tab.tsx:77
+msgid "Add Override"
+msgstr ""
+
+#: src/components/pipeline/workflows/step-library.tsx:144
+msgid "Add Pipeline Step"
+msgstr ""
+
+#: src/components/streamers/config/retry-policy-form.tsx:133
+msgid "Add randomness to retry delays to prevent thundering herd."
+msgstr ""
+
+#: src/components/config/global/pipeline-config-card.tsx:65
+#: src/components/config/platforms/tabs/pipeline-tab.tsx:67
+#: src/components/pipeline/editor/pipeline-editor.tsx:50
+msgid "Add Step"
+msgstr ""
+
+#: src/routes/_authed/_dashboard/streamers/index.tsx:319
 msgid "Add Streamer"
 msgstr ""
 
-#: src/components/config/platforms/edit-platform-dialog.tsx:126
-#: src/components/config/templates/edit-template-dialog.tsx:143
+#: src/components/streamers/config/danmu-config-form.tsx:118
+msgid "Adjust sampling rate based on danmu traffic volume."
+msgstr ""
+
+#: src/routes/_authed/_dashboard/config/theme.tsx:56
+msgid "Adjust the roundness of UI elements."
+msgstr ""
+
+#: src/components/config/platforms/edit-platform-dialog.tsx:125
+#: src/components/config/platforms/platform-editor.tsx:180
+#: src/components/config/templates/edit-template-dialog.tsx:152
+#: src/components/config/templates/tabs/platform-override-card.tsx:116
+#: src/components/config/templates/template-editor.tsx:176
+#: src/components/pipeline/presets/processors/audio-extract-config-form.tsx:45
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:71
+#: src/routes/_authed/_dashboard/streamers/$id.edit.tsx:195
 msgid "Advanced"
 msgstr ""
 
-#: src/components/config/platforms/tabs/advanced-tab.tsx:32
+#: src/components/config/platforms/tabs/advanced-tab.tsx:29
+#: src/components/streamers/streamer-form.tsx:356
+#: src/routes/_authed/_dashboard/streamers/$id.edit.tsx:234
 msgid "Advanced Configuration"
 msgstr ""
 
 #: src/components/config/platforms/tabs/advanced-tab.tsx:100
-msgid "Advanced retry policy."
+#~ msgid "Advanced retry policy."
+#~ msgstr ""
+
+#: src/components/filters/forms/FilterTypeSelector.tsx:12
+msgid "Advanced scheduling"
 msgstr ""
 
-#: src/components/config/engines/forms/streamlink-form.tsx:72
+#: src/routes/_authed/_dashboard/config/theme.tsx:61
+msgid "Advanced theming options."
+msgstr ""
+
+#: src/components/pipeline/presets/processors/metadata-config-form.tsx:151
+msgid "Album"
+msgstr ""
+
+#: src/components/pipeline/workflows/step-library.tsx:174
+#: src/routes/_authed/_dashboard/pipeline/outputs.tsx:199
+#: src/routes/_authed/_dashboard/pipeline/presets/index.tsx:249
+#: src/routes/_authed/_dashboard/streamers/index.tsx:42
+msgid "All"
+msgstr ""
+
+#: src/routes/_authed/_dashboard/streamers/index.tsx:215
+msgid "All Platforms"
+msgstr ""
+
+#: src/components/config/engines/forms/streamlink-form.tsx:80
 msgid "Any additional command line arguments to pass to Streamlink"
 msgstr ""
 
+#: src/routes/_authed/_dashboard/config/theme.tsx:40
+msgid "Appearance"
+msgstr ""
+
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:582
+msgid "Appended before output filename"
+msgstr ""
+
+#: src/routes/_authed/_dashboard/config/theme.tsx:320
+msgid "Apply Changes"
+msgstr ""
+
+#: src/components/streamers/config/streamer-general-settings.tsx:142
+#: src/components/streamers/streamer-form.tsx:294
+msgid "Apply template settings."
+msgstr ""
+
+#: src/components/pipeline/presets/processors/compression-config-form.tsx:42
+msgid "Archive Format"
+msgstr ""
+
+#: src/components/pipeline/presets/processors/compression-config-form.tsx:33
+msgid "Archive Settings"
+msgstr ""
+
 #. placeholder {0}: template.name
-#: src/components/config/templates/template-card.tsx:107
+#: src/components/config/templates/template-card.tsx:156
 msgid "Are you sure you want to delete the template \"{0}\"? This action cannot be undone."
 msgstr ""
 
-#: src/routes/_auth/streamers/index.tsx:80
+#: src/routes/_authed/_dashboard/dashboard.tsx:71
+#: src/routes/_authed/_dashboard/streamers/index.tsx:160
 msgid "Are you sure you want to delete this streamer?"
 msgstr ""
 
-#: src/components/config/engines/forms/ffmpeg-form.tsx:94
+#: src/components/config/engines/forms/ffmpeg-form.tsx:102
 msgid "Args inserted before -i input_url"
 msgstr ""
 
-#: src/components/config/engines/forms/ffmpeg-form.tsx:117
+#: src/components/config/engines/forms/ffmpeg-form.tsx:131
 msgid "Args used for processing/encoding"
 msgstr ""
 
-#: src/components/config/engines/forms/mesio-form.tsx:57
+#: src/components/pipeline/presets/processors/metadata-config-form.tsx:125
+msgid "Artist"
+msgstr ""
+
+#: src/components/config/engines/forms/mesio-form.tsx:58
 msgid "Attempt to repair timestamps in FLV streams"
 msgstr ""
 
-#: src/components/config/platforms/edit-platform-dialog.tsx:118
-#: src/components/config/templates/edit-template-dialog.tsx:135
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:64
+msgid "Audio"
+msgstr ""
+
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:267
+msgid "Audio Bitrate"
+msgstr ""
+
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:155
+msgid "Audio Codec"
+msgstr ""
+
+#: src/components/pipeline/presets/editor/preset-meta-form.tsx:27
+msgid "Audio Extract"
+msgstr ""
+
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:428
+msgid "Audio Processing"
+msgstr ""
+
+#: src/components/pipeline/presets/processors/audio-extract-config-form.tsx:109
+msgid "Audio Properties"
+msgstr ""
+
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:148
+msgid "Audio Settings"
+msgstr ""
+
+#: src/components/config/platforms/platform-editor.tsx:159
+#: src/components/config/templates/tabs/platform-override-card.tsx:95
+#: src/components/config/templates/template-editor.tsx:141
+msgid "Auth"
+msgstr ""
+
+#: src/components/config/platforms/edit-platform-dialog.tsx:117
+#: src/components/config/templates/edit-template-dialog.tsx:136
 msgid "Authentication"
 msgstr ""
 
-#: src/components/config/platforms/tabs/auth-tab.tsx:31
+#: src/components/config/platforms/tabs/auth-tab.tsx:28
 msgid "Authentication Cookies"
 msgstr ""
 
-#: src/components/config/engines/forms/streamlink-form.tsx:45
+#: src/components/pipeline/presets/processors/execute-config-form.tsx:55
+msgid "Available Variables"
+msgstr ""
+
+#: src/routes/_authed/_dashboard/pipeline/jobs/index.tsx:479
+msgid "Avg. Duration"
+msgstr ""
+
+#: src/components/config/platforms/platform-editor.tsx:115
+#: src/components/config/templates/template-editor.tsx:98
+#: src/components/streamers/streamer-form.tsx:391
+msgid "Back"
+msgstr ""
+
+#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.tsx:235
+msgid "Back to Jobs"
+msgstr ""
+
+#: src/routes/_authed/_dashboard/pipeline/executions.$pipelineId.tsx:202
+msgid "Back to Pipeline Jobs"
+msgstr ""
+
+#: src/routes/_authed/_dashboard/sessions/$sessionId.tsx:54
+#: src/routes/_authed/_dashboard/sessions/$sessionId.tsx:120
+msgid "Back to Sessions"
+msgstr ""
+
+#: src/components/streamers/config/retry-policy-form.tsx:86
+msgid "Backoff Multiplier"
+msgstr ""
+
+#: src/components/pipeline/presets/processors/delete-config-form.tsx:76
+msgid "Base delay between retries"
+msgstr ""
+
+#: src/components/config/templates/tabs/general-tab.tsx:39
+msgid "Basic details for this configuration template."
+msgstr ""
+
+#: src/components/config/engines/engine-editor.tsx:175
+msgid "Basic Information"
+msgstr ""
+
+#: src/routes/_authed/_dashboard/streamers/$id.edit.tsx:217
+msgid "Basic settings for the streamer."
+msgstr ""
+
+#: src/components/config/engines/forms/streamlink-form.tsx:48
 msgid "best"
 msgstr ""
 
-#: src/components/config/engines/forms/ffmpeg-form.tsx:26
-#: src/components/config/engines/forms/streamlink-form.tsx:25
+#: src/components/config/engines/forms/ffmpeg-form.tsx:28
+#: src/components/config/engines/forms/streamlink-form.tsx:28
 msgid "Binary Path"
 msgstr ""
 
-#: src/components/config/engines/forms/mesio-form.tsx:20
+#: src/components/pipeline/presets/processors/audio-extract-config-form.tsx:90
+msgid "Bitrate"
+msgstr ""
+
+#: src/routes/_authed/_dashboard/config/theme.tsx:56
+msgid "Border Radius"
+msgstr ""
+
+#: src/routes/_authed/_dashboard/pipeline/outputs.tsx:164
+msgid "Browse generated media artifacts from pipeline jobs"
+msgstr ""
+
+#: src/components/config/engines/forms/mesio-form.tsx:22
 msgid "Buffer Settings"
 msgstr ""
 
-#: src/components/config/engines/forms/mesio-form.tsx:30
+#: src/components/config/engines/forms/mesio-form.tsx:31
 msgid "Buffer Size"
 msgstr ""
 
-#: src/components/config/engines/forms/mesio-form.tsx:34
+#: src/components/config/engines/forms/mesio-form.tsx:35
 msgid "bytes"
 msgstr ""
 
-#: src/components/config/platforms/edit-platform-dialog.tsx:156
-#: src/components/config/templates/edit-template-dialog.tsx:176
-#: src/components/config/templates/template-card.tsx:113
-#: src/routes/_auth/pipeline/jobs.tsx:165
-#: src/routes/_auth/streamers/$id.edit.tsx:249
-#: src/routes/_auth/streamers/new.tsx:216
+#: src/components/config/engines/engine-card.tsx:171
+#: src/components/config/platforms/edit-platform-dialog.tsx:155
+#: src/components/config/templates/edit-template-dialog.tsx:193
+#: src/components/config/templates/template-card.tsx:162
+#: src/components/filters/FilterDialog.tsx:202
+#: src/components/pipeline/jobs/job-card.tsx:224
+#: src/components/pipeline/jobs/job-card.tsx:256
+#: src/components/pipeline/jobs/pipeline-summary-card.tsx:180
+#: src/components/pipeline/jobs/pipeline-summary-card.tsx:198
+#: src/components/pipeline/presets/preset-card.tsx:145
+#: src/components/pipeline/workflows/step-config-dialog.tsx:256
+#: src/components/pipeline/workflows/workflow-card.tsx:156
+#: src/components/streamers/streamer-form.tsx:373
+#: src/routes/_authed/_dashboard/pipeline/jobs/index.tsx:425
+#: src/routes/_authed/_dashboard/pipeline/presets/index.tsx:441
 msgid "Cancel"
 msgstr ""
 
-#: src/components/config/platforms/tabs/general-tab.tsx:42
-#: src/components/config/templates/tabs/general-tab.tsx:61
+#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.tsx:294
+msgid "Cancel Execution"
+msgstr ""
+
+#: src/routes/_authed/_dashboard/pipeline/executions.$pipelineId.tsx:250
+msgid "Cancel Pipeline"
+msgstr ""
+
+#: src/components/pipeline/jobs/job-card.tsx:229
+#: src/components/pipeline/jobs/pipeline-summary-card.tsx:185
+msgid "Cancel Pipeline?"
+msgstr ""
+
+#. placeholder {0}: result.cancelled_count
+#: src/routes/_authed/_dashboard/pipeline/executions.$pipelineId.tsx:108
+#: src/routes/_authed/_dashboard/pipeline/jobs/index.tsx:203
+msgid "Cancelled {0} jobs in pipeline"
+msgstr ""
+
+#: src/components/config/shared/record-danmu-card.tsx:40
+msgid "Capture Mode"
+msgstr ""
+
+#: src/components/config/shared/record-danmu-card.tsx:29
 msgid "Capture real-time comments and chat messages if available."
 msgstr ""
 
-#: src/routes/change-password.tsx:92
-#: src/routes/change-password.tsx:209
+#: src/components/pipeline/presets/processors/thumbnail-config-form.tsx:32
+msgid "Capture Settings"
+msgstr ""
+
+#: src/components/filters/forms/RegexFilterForm.tsx:55
+msgid "Case Insensitive"
+msgstr ""
+
+#: src/components/filters/forms/KeywordFilterForm.tsx:61
+msgid "Case Sensitive"
+msgstr ""
+
+#: src/components/filters/forms/CategoryFilterForm.tsx:17
+msgid "Categories"
+msgstr ""
+
+#: src/components/filters/forms/FilterTypeSelector.tsx:11
+msgid "Category"
+msgstr ""
+
+#: src/routes/_authed/change-password.tsx:114
+#: src/routes/_authed/change-password.tsx:231
 msgid "Change Password"
 msgstr ""
 
-#: src/routes/change-password.tsx:92
+#: src/routes/_authed/change-password.tsx:114
 msgid "Change Password Required"
 msgstr ""
 
-#: src/routes/change-password.tsx:209
+#: src/routes/_authed/change-password.tsx:231
 msgid "Changing Password..."
 msgstr ""
 
-#: src/routes/_auth/streamers/index.tsx:170
+#: src/components/pipeline/presets/processors/audio-extract-config-form.tsx:138
+msgid "Channels"
+msgstr ""
+
+#: src/components/streamers/streamer-card.tsx:266
 msgid "Check Now"
 msgstr ""
 
-#: src/routes/_auth/streamers/index.tsx:60
+#: src/components/pipeline/presets/processors/copy-move-config-form.tsx:118
+msgid "Check size after copy"
+msgstr ""
+
+#: src/routes/_authed/_dashboard/dashboard.tsx:56
+#: src/routes/_authed/_dashboard/streamers/index.tsx:145
 msgid "Check triggered"
 msgstr ""
 
-#: src/components/config/platforms/tabs/proxy-tab.tsx:39
+#: src/routes/_authed/_dashboard/dashboard.tsx:312
+msgid "Checked"
+msgstr ""
+
+#: src/components/config/engines/engine-card.tsx:111
+msgid "Checking"
+msgstr ""
+
+#: src/components/streamers/streamer-card.tsx:197
+msgid "Checking stream status..."
+msgstr ""
+
+#: src/components/streamers/streamer-form.tsx:382
+msgid "Checking..."
+msgstr ""
+
+#: src/components/config/platforms/tabs/proxy-tab.tsx:50
 msgid "Choose how this platform handles proxy connections."
 msgstr ""
 
 #: src/components/config/templates/tabs/proxy-tab.tsx:90
-msgid "Choose whether to use the global proxy configuration or define a specific one for this template."
+#~ msgid "Choose whether to use the global proxy configuration or define a specific one for this template."
+#~ msgstr ""
+
+#: src/components/pipeline/workflows/step-library.tsx:315
+msgid "Click to add. You can reorder steps in the editor."
 msgstr ""
 
-#: src/routes/_auth/dashboard.tsx:84
-#: src/routes/_auth/pipeline/jobs.tsx:76
+#: src/components/pipeline/presets/preset-card.tsx:126
+#: src/routes/_authed/_dashboard/pipeline/presets/index.tsx:444
+msgid "Clone"
+msgstr ""
+
+#: src/routes/_authed/_dashboard/pipeline/presets/index.tsx:423
+msgid "Clone Preset"
+msgstr ""
+
+#: src/routes/_authed/_dashboard/pipeline/presets/index.tsx:444
+msgid "Cloning..."
+msgstr ""
+
+#: src/components/pipeline/workflows/step-config-dialog.tsx:256
+msgid "Close"
+msgstr ""
+
+#: src/components/pipeline/presets/processors/execute-config-form.tsx:44
+msgid "Command"
+msgstr ""
+
+#: src/components/pipeline/presets/processors/metadata-config-form.tsx:178
+msgid "Comment"
+msgstr ""
+
+#: src/routes/_authed/_dashboard/dashboard.tsx:193
+#: src/routes/_authed/_dashboard/pipeline/executions.$pipelineId.tsx:288
+#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.tsx:432
+#: src/routes/_authed/_dashboard/pipeline/jobs/index.tsx:465
 msgid "Completed"
 msgstr ""
 
-#: src/components/config/global/concurrency-card.tsx:50
+#: src/components/filters/forms/FilterTypeSelector.tsx:13
+msgid "Complex patterns"
+msgstr ""
+
+#: src/routes/_authed/_dashboard/system/health.tsx:143
+msgid "Component"
+msgstr ""
+
+#: src/routes/_authed/_dashboard/system/health.tsx:134
+msgid "Component Status"
+msgstr ""
+
+#: src/components/pipeline/presets/editor/preset-meta-form.tsx:28
+msgid "Compression"
+msgstr ""
+
+#: src/components/pipeline/presets/processors/compression-config-form.tsx:64
+msgid "Compression Level"
+msgstr ""
+
+#: src/components/config/global/concurrency-card.tsx:39
 msgid "Concurrency & Performance"
 msgstr ""
 
-#: src/routes/_auth/config/route.tsx:21
+#: src/components/pipeline/workflows/steps-list.tsx:147
+msgid "Config"
+msgstr ""
+
+#: src/components/pipeline/presets/editor/preset-config-form.tsx:34
+#: src/components/pipeline/workflows/step-config-dialog.tsx:202
+#: src/components/pipeline/workflows/workflow-editor.tsx:141
 msgid "Configuration"
 msgstr ""
 
-#: src/components/config/platforms/platform-card.tsx:58
-#: src/components/config/templates/template-card.tsx:93
+#: src/components/config/engines/engine-card.tsx:153
+#: src/components/pipeline/workflows/step-config-dialog.tsx:166
 msgid "Configure"
 msgstr ""
 
-#: src/routes/_auth/streamers/new.tsx:79
+#: src/components/config/platforms/tabs/pipeline-tab.tsx:52
+msgid "Configure a custom processing pipeline."
+msgstr ""
+
+#: src/components/config/engines/engine-card.tsx:196
+msgid "Configure a new download tool."
+msgstr ""
+
+#: src/routes/_authed/_dashboard/streamers/new.tsx:47
 msgid "Configure a new streamer to monitor and record."
 msgstr ""
 
-#: src/components/config/platforms/edit-platform-dialog.tsx:99
+#: src/components/config/engines/engine-editor.tsx:151
+msgid "Configure download engine parameters"
+msgstr ""
+
+#: src/components/config/engines/engine-editor.tsx:264
+msgid "Configure granular options for the selected engine."
+msgstr ""
+
+#: src/components/config/platforms/edit-platform-dialog.tsx:98
 msgid "Configure platform behavior, authentication, and advanced settings."
 msgstr ""
 
-#: src/components/config/templates/edit-template-dialog.tsx:113
+#: src/components/filters/FilterDialog.tsx:183
+msgid "Configure recording rules for this streamer."
+msgstr ""
+
+#: src/components/config/templates/edit-template-dialog.tsx:114
 msgid "Configure reusable settings for downloads."
 msgstr ""
 
 #: src/components/config/engines/edit-engine-dialog.tsx:169
-msgid "Configure the downloader engine properties."
-msgstr ""
+#~ msgid "Configure the downloader engine properties."
+#~ msgstr ""
 
 #: src/components/config/engines/forms/mesio-form.tsx:22
-msgid "Configure the internal download buffer."
-msgstr ""
+#~ msgid "Configure the internal download buffer."
+#~ msgstr ""
 
-#: src/routes/change-password.tsx:177
+#: src/routes/_authed/change-password.tsx:199
 msgid "Confirm Password"
 msgstr ""
 
-#: src/components/config/engines/forms/ffmpeg-form.tsx:51
+#: src/components/config/engines/forms/ffmpeg-form.tsx:53
 msgid "Connection/activity timeout"
 msgstr ""
 
-#: src/components/config/templates/tabs/auth-tab.tsx:32
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:179
+msgid "Container"
+msgstr ""
+
+#: src/routes/_authed/_dashboard/sessions/$sessionId.tsx:189
+msgid "Content"
+msgstr ""
+
+#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.tsx:315
+msgid "Context"
+msgstr ""
+
+#: src/components/streamers/config/streamer-configuration.tsx:279
 msgid "Cookies"
 msgstr ""
 
 #: src/components/config/templates/tabs/auth-tab.tsx:44
-msgid "Cookies to use regardless of the platform."
+#~ msgid "Cookies to use regardless of the platform."
+#~ msgstr ""
+
+#: src/components/pipeline/outputs/output-card.tsx:114
+msgid "Copied!"
 msgstr ""
 
-#: src/routes/_auth/dashboard.tsx:41
+#: src/components/pipeline/presets/editor/preset-config-form.tsx:41
+msgid "Copy"
+msgstr ""
+
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:98
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:163
+msgid "Copy (Passthrough)"
+msgstr ""
+
+#: src/components/pipeline/presets/editor/preset-meta-form.tsx:29
+msgid "Copy / Move"
+msgstr ""
+
+#: src/components/pipeline/outputs/output-card.tsx:121
+msgid "Copy Directory"
+msgstr ""
+
+#: src/components/pipeline/presets/processors/copy-move-config-form.tsx:50
+msgid "Copy Files"
+msgstr ""
+
+#: src/components/pipeline/outputs/output-card.tsx:114
+msgid "Copy Path"
+msgstr ""
+
+#: src/routes/_authed/_dashboard/system/health.tsx:63
+msgid "Could not connect to the server. Please check your connection."
+msgstr ""
+
+#: src/routes/_authed/_dashboard/system/health.tsx:115
 msgid "CPU Usage"
 msgstr ""
 
-#: src/components/config/engines/edit-engine-dialog.tsx:244
+#: src/components/config/templates/template-editor.tsx:113
+#: src/routes/_authed/_dashboard/config/templates.index.tsx:80
+#: src/routes/_authed/_dashboard/pipeline/jobs/index.tsx:437
+msgid "Create"
+msgstr ""
+
+#. placeholder {0}: presetToClone?.name
+#: src/routes/_authed/_dashboard/pipeline/presets/index.tsx:425
+msgid "Create a copy of \"{0}\" with a new name."
+msgstr ""
+
+#: src/components/filters/FilterList.tsx:24
+msgid "Create a filter to control when this streamer is recorded. You can filter by time, keywords, categories, and more."
+msgstr ""
+
+#: src/routes/_authed/_dashboard/config/templates.index.tsx:152
+msgid "Create a template to define reusable download configurations."
+msgstr ""
+
+#: src/components/pipeline/presets/processors/copy-move-config-form.tsx:95
+msgid "Create Directories"
+msgstr ""
+
+#: src/components/config/engines/engine-editor.tsx:148
+#: src/components/config/engines/engine-editor.tsx:289
 msgid "Create Engine"
 msgstr ""
 
-#: src/routes/_auth/streamers/new.tsx:219
+#: src/components/filters/FilterDialog.tsx:207
+msgid "Create Filter"
+msgstr ""
+
+#: src/components/pipeline/presets/processors/copy-move-config-form.tsx:97
+msgid "Create missing folders"
+msgstr ""
+
+#: src/routes/_authed/_dashboard/pipeline/presets/create.tsx:37
+msgid "Create New Preset"
+msgstr ""
+
+#: src/routes/_authed/_dashboard/pipeline/workflows/create.tsx:33
+msgid "Create New Workflow"
+msgstr ""
+
+#: src/routes/_authed/_dashboard/pipeline/jobs/index.tsx:299
+msgid "Create Pipeline"
+msgstr ""
+
+#: src/routes/_authed/_dashboard/pipeline/jobs/index.tsx:304
+msgid "Create Pipeline Job"
+msgstr ""
+
+#: src/routes/_authed/_dashboard/pipeline/presets/index.tsx:349
+msgid "Create Preset"
+msgstr ""
+
+#: src/routes/_authed/_dashboard/streamers/new.tsx:48
 msgid "Create Streamer"
 msgstr ""
 
-#: src/components/config/templates/edit-template-dialog.tsx:100
-#: src/components/config/templates/edit-template-dialog.tsx:110
-#: src/routes/_auth/config/templates.tsx:50
+#: src/components/config/templates/edit-template-dialog.tsx:101
+#: src/components/config/templates/edit-template-dialog.tsx:111
+#: src/components/config/templates/template-editor.tsx:78
+#: src/routes/_authed/_dashboard/config/templates.index.tsx:160
 msgid "Create Template"
 msgstr ""
 
-#: src/routes/_auth/streamers/new.tsx:219
+#: src/routes/_authed/_dashboard/pipeline/workflows/index.tsx:243
+msgid "Create Workflow"
+msgstr ""
+
+#: src/routes/_authed/_dashboard/pipeline/presets/index.tsx:342
+msgid "Create your first job preset to define reusable processor configurations for your pipelines."
+msgstr ""
+
+#: src/routes/_authed/_dashboard/pipeline/workflows/index.tsx:236
+msgid "Create your first workflow to define a sequence of processing steps for your recordings."
+msgstr ""
+
+#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.tsx:430
+msgid "Created"
+msgstr ""
+
+#: src/routes/_authed/_dashboard/pipeline/jobs/index.tsx:434
 msgid "Creating..."
 msgstr ""
 
-#: src/routes/change-password.tsx:105
+#: src/components/config/engines/engine-editor.tsx:159
+msgid "Creation Mode"
+msgstr ""
+
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:213
+msgid "CRF (Constant Rate Factor)"
+msgstr ""
+
+#: src/components/filters/forms/FilterTypeSelector.tsx:12
+msgid "Cron"
+msgstr ""
+
+#: src/components/filters/forms/CronFilterForm.tsx:16
+msgid "Cron Expression"
+msgstr ""
+
+#: src/routes/_authed/change-password.tsx:127
 msgid "Current Password"
 msgstr ""
 
-#: src/components/config/platforms/tabs/proxy-tab.tsx:60
+#: src/components/pipeline/workflows/steps-list.tsx:128
+msgid "Custom Config"
+msgstr ""
+
+#: src/components/config/platforms/tabs/proxy-tab.tsx:71
 msgid "Custom Configuration"
 msgstr ""
 
-#: src/components/config/templates/tabs/proxy-tab.tsx:84
-msgid "Custom Proxy"
+#: src/routes/_authed/_dashboard/config/theme.tsx:61
+msgid "Custom CSS"
 msgstr ""
+
+#: src/components/streamers/config/streamer-configuration.tsx:183
+msgid "Custom filename pattern."
+msgstr ""
+
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:548
+msgid "Custom Flags"
+msgstr ""
+
+#: src/components/config/templates/tabs/proxy-tab.tsx:84
+#~ msgid "Custom Proxy"
+#~ msgstr ""
 
 #: src/components/config/templates/tabs/proxy-tab.tsx:98
-msgid "Custom Proxy Configuration"
+#~ msgid "Custom Proxy Configuration"
+#~ msgstr ""
+
+#: src/components/pipeline/presets/processors/metadata-config-form.tsx:193
+msgid "Custom Tags"
 msgstr ""
 
-#: src/components/config/engines/forms/ffmpeg-form.tsx:70
+#: src/routes/_authed/_dashboard/config/theme.tsx:285
+msgid "Custom theme applied"
+msgstr ""
+
+#: src/components/config/engines/forms/ffmpeg-form.tsx:72
 msgid "Custom User-Agent string (Optional)"
 msgstr ""
 
-#: src/routes/_auth/dashboard.tsx:36
-msgid "Dashboard"
+#: src/components/config/templates/tabs/engine-overrides-tab.tsx:69
+msgid "Customize specific engine settings for this template."
 msgstr ""
 
-#: src/components/config/global/concurrency-card.tsx:142
+#: src/components/pipeline/workflows/steps-list.tsx:166
+msgid "Customize Step"
+msgstr ""
+
+#: src/routes/_authed/_dashboard/config/theme.tsx:41
+msgid "Customize the look and feel of your dashboard."
+msgstr ""
+
+#: src/components/streamers/config/streamer-configuration.tsx:135
+msgid "Danmu"
+msgstr ""
+
+#: src/components/streamers/config/streamer-configuration.tsx:481
+msgid "Danmu Configuration Override"
+msgstr ""
+
+#: src/routes/_authed/_dashboard/config/theme.tsx:172
+msgid "Dark"
+msgstr ""
+
+#: src/routes/_auth/dashboard.tsx:36
+#~ msgid "Dashboard"
+#~ msgstr ""
+
+#: src/components/pipeline/presets/processors/metadata-config-form.tsx:164
+msgid "Date"
+msgstr ""
+
+#: src/components/pipeline/presets/editor/preset-config-form.tsx:50
+#: src/components/pipeline/presets/editor/preset-config-form.tsx:55
+msgid "Default"
+msgstr ""
+
+#: src/components/config/global/concurrency-card.tsx:131
 msgid "Default Engine"
 msgstr ""
 
-#: src/components/config/engines/forms/mesio-form.tsx:37
+#: src/components/config/global/pipeline-config-card.tsx:49
+msgid "Default pipeline flow. Configure the sequence of processors for new jobs."
+msgstr ""
+
+#: src/components/config/engines/forms/mesio-form.tsx:38
 msgid "Default: 8388608 (8 MiB)"
 msgstr ""
 
+#: src/components/streamers/edit/streamer-filters-tab.tsx:26
+msgid "Define rules to automatically record or skip streams based on title, time, or language."
+msgstr ""
+
+#: src/routes/_authed/_dashboard/pipeline/workflows/index.tsx:144
+msgid "Define sequences of processing steps for your recordings"
+msgstr ""
+
 #: src/components/config/templates/tabs/advanced-tab.tsx:190
-msgid "Define webhooks for events."
+#~ msgid "Define webhooks for events."
+#~ msgstr ""
+
+#: src/components/health/health-status-badge.tsx:28
+msgid "Degraded"
 msgstr ""
 
 #: src/components/config/platforms/tabs/general-tab.tsx:112
-msgid "Delay before download."
-msgstr ""
+#~ msgid "Delay before download."
+#~ msgstr ""
 
 #: src/components/config/platforms/tabs/general-tab.tsx:91
-msgid "Delay between checks."
-msgstr ""
+#~ msgid "Delay between checks."
+#~ msgstr ""
 
-#: src/components/config/global/network-system-card.tsx:37
+#: src/components/config/global/network-system-card.tsx:24
 msgid "Delays, proxy, and retention policies."
 msgstr ""
 
-#: src/components/config/templates/template-card.tsx:115
-#: src/routes/_auth/streamers/index.tsx:186
+#: src/components/config/engines/engine-card.tsx:172
+#: src/components/config/templates/template-card.tsx:104
+#: src/components/config/templates/template-card.tsx:167
+#: src/components/filters/FilterCard.tsx:190
+#: src/components/pipeline/presets/editor/preset-meta-form.tsx:30
+#: src/components/pipeline/presets/preset-card.tsx:132
+#: src/components/pipeline/presets/preset-card.tsx:147
+#: src/components/pipeline/workflows/workflow-card.tsx:143
+#: src/components/pipeline/workflows/workflow-card.tsx:158
+#: src/components/streamers/streamer-card.tsx:293
 msgid "Delete"
 msgstr ""
 
-#: src/components/config/templates/template-card.tsx:105
+#: src/components/config/engines/engine-card.tsx:165
+msgid "Delete Engine?"
+msgstr ""
+
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:529
+msgid "Delete original file after successful remux"
+msgstr ""
+
+#: src/components/pipeline/presets/preset-card.tsx:137
+msgid "Delete Preset?"
+msgstr ""
+
+#: src/components/config/templates/template-card.tsx:154
 msgid "Delete Template"
 msgstr ""
 
-#: src/routes/_auth/streamers/index.tsx:174
+#: src/components/pipeline/workflows/workflow-card.tsx:148
+msgid "Delete Workflow?"
+msgstr ""
+
+#: src/components/pipeline/workflows/workflow-editor.tsx:170
+msgid "Describe what this workflow does..."
+msgstr ""
+
+#: src/components/pipeline/workflows/workflow-editor.tsx:167
+msgid "Description"
+msgstr ""
+
+#: src/components/pipeline/workflows/workflow-editor.tsx:109
+msgid "Design your automation pipeline step by step"
+msgstr ""
+
+#: src/components/pipeline/presets/processors/copy-move-config-form.tsx:64
+msgid "Destination Path (Optional)"
+msgstr ""
+
+#: src/components/pipeline/workflows/step-config-dialog.tsx:268
+msgid "Detach & Edit"
+msgstr ""
+
+#: src/routes/_authed/_dashboard/system/health.tsx:136
+msgid "Detailed health checks for internal services and resources."
+msgstr ""
+
+#: src/components/pipeline/presets/editor/preset-config-form.tsx:35
+msgid "Detailed processor settings"
+msgstr ""
+
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:284
+msgid "Dimensions & Filters"
+msgstr ""
+
+#: src/components/pipeline/presets/processors/execute-config-form.tsx:102
+msgid "Directory to scan for new files after command execution"
+msgstr ""
+
+#: src/components/streamers/streamer-card.tsx:275
 msgid "Disable"
 msgstr ""
 
-#: src/components/config/platforms/platform-card.tsx:45
+#: src/routes/_authed/_dashboard/streamers/index.tsx:46
+msgid "Disabled"
+msgstr ""
+
+#: src/components/streamers/config/streamer-configuration.tsx:230
+msgid "Discard small segments."
+msgstr ""
+
+#: src/components/pipeline/jobs/pipeline-summary-card.tsx:227
+msgid "done"
+msgstr ""
+
+#: src/components/config/engines/engine-card.tsx:113
+msgid "Down"
+msgstr ""
+
+#: src/routes/_authed/_dashboard/sessions/$sessionId.tsx:288
 msgid "Download"
 msgstr ""
 
-#: src/components/config/platforms/tabs/general-tab.tsx:102
+#: src/components/config/platforms/tabs/general-tab.tsx:68
 msgid "Download Delay"
 msgstr ""
 
-#: src/components/config/platforms/tabs/general-tab.tsx:208
-#: src/components/config/templates/tabs/general-tab.tsx:176
+#: src/components/config/shared/output-settings-card.tsx:121
+#: src/components/streamers/config/streamer-configuration.tsx:204
 msgid "Download Engine"
 msgstr ""
 
-#: src/components/config/engines/forms/streamlink-form.tsx:47
+#: src/routes/_authed/_dashboard/sessions/$sessionId.tsx:253
+msgid "Download or view recorded content"
+msgstr ""
+
+#: src/components/streamers/config/streamer-configuration.tsx:295
+msgid "Download Retry Policy"
+msgstr ""
+
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:379
+#: src/components/streamers/edit/active-download-card.tsx:54
+#: src/routes/_authed/_dashboard/pipeline/executions.$pipelineId.tsx:364
+#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.tsx:400
+msgid "Duration"
+msgstr ""
+
+#: src/components/config/engines/forms/streamlink-form.tsx:50
 msgid "e.g. 'best', 'worst', '720p', 'audio_only'"
 msgstr ""
 
-#: src/routes/_auth/streamers/$id.edit.tsx:125
-#: src/routes/_auth/streamers/new.tsx:92
+#: src/components/pipeline/presets/processors/execute-config-form.tsx:95
+msgid "e.g. /output/processed/"
+msgstr ""
+
+#: src/components/pipeline/presets/processors/audio-extract-config-form.tsx:95
+msgid "e.g. 128k, 320k"
+msgstr ""
+
+#: src/components/pipeline/presets/processors/execute-config-form.tsx:47
+msgid "e.g. echo {input} > {output}"
+msgstr ""
+
+#: src/components/config/engines/engine-editor.tsx:188
+msgid "e.g. High Quality Streamlink"
+msgstr ""
+
+#: src/components/pipeline/presets/processors/execute-config-form.tsx:117
+msgid "e.g. mp4"
+msgstr ""
+
+#: src/components/streamers/config/streamer-general-settings.tsx:72
+#: src/components/streamers/streamer-form.tsx:207
 msgid "e.g. My Favorite Streamer"
 msgstr ""
 
 #: src/components/config/engines/edit-engine-dialog.tsx:186
-msgid "e.g. Production FFmpeg"
+#~ msgid "e.g. Production FFmpeg"
+#~ msgstr ""
+
+#: src/components/pipeline/workflows/workflow-editor.tsx:152
+msgid "e.g., Standard Processing"
 msgstr ""
 
-#: src/routes/_auth/streamers/index.tsx:182
+#: src/components/config/platforms/platform-card.tsx:71
+#: src/components/config/templates/template-card.tsx:97
+#: src/components/filters/FilterCard.tsx:186
+#: src/components/pipeline/presets/preset-card.tsx:122
+#: src/components/pipeline/workflows/workflow-card.tsx:138
+#: src/components/streamers/streamer-card.tsx:288
 msgid "Edit"
 msgstr ""
 
 #. placeholder {0}: platform.name
 #. placeholder {0}: template.name
-#: src/components/config/platforms/edit-platform-dialog.tsx:96
-#: src/components/config/templates/edit-template-dialog.tsx:110
+#: src/components/config/platforms/edit-platform-dialog.tsx:95
+#: src/components/config/templates/edit-template-dialog.tsx:111
 msgid "Edit {0}"
 msgstr ""
 
-#: src/components/config/engines/edit-engine-dialog.tsx:167
+#: src/components/pipeline/workflows/steps-list.tsx:166
+msgid "Edit Configuration"
+msgstr ""
+
+#: src/routes/_authed/_dashboard/config/theme.tsx:303
+msgid "Edit CSS"
+msgstr ""
+
+#: src/routes/_authed/_dashboard/config/theme.tsx:308
+msgid "Edit Custom Theme"
+msgstr ""
+
+#: src/components/config/engines/engine-editor.tsx:148
 msgid "Edit Engine"
 msgstr ""
 
-#: src/routes/_auth/streamers/$id.edit.tsx:110
-msgid "Edit Streamer"
+#: src/components/filters/FilterDialog.tsx:181
+msgid "Edit Filter"
 msgstr ""
 
-#: src/routes/_auth/streamers/index.tsx:176
+#. placeholder {0}: preset.name
+#: src/routes/_authed/_dashboard/pipeline/presets/$presetId.tsx:74
+msgid "Edit Preset: {0}"
+msgstr ""
+
+#: src/routes/_auth/streamers/$id.edit.tsx:110
+#~ msgid "Edit Streamer"
+#~ msgstr ""
+
+#. placeholder {0}: workflow.name
+#: src/routes/_authed/_dashboard/pipeline/workflows/$workflowId.tsx:64
+msgid "Edit Workflow: {0}"
+msgstr ""
+
+#: src/components/config/engines/engine-editor.tsx:159
+msgid "Editing Mode"
+msgstr ""
+
+#: src/components/streamers/streamer-card.tsx:280
 msgid "Enable"
 msgstr ""
 
+#: src/routes/_authed/_dashboard/config/theme.tsx:294
+msgid "Enable Custom CSS"
+msgstr ""
+
+#: src/components/streamers/config/streamer-general-settings.tsx:187
+#: src/components/streamers/streamer-form.tsx:341
+msgid "Enable Monitoring"
+msgstr ""
+
+#: src/components/streamers/config/streamer-configuration.tsx:506
+msgid "Enable or disable danmu recording explicitly."
+msgstr ""
+
 #: src/components/config/proxy-config-settings.tsx:66
-#: src/components/config/templates/tabs/proxy-tab.tsx:105
+#: src/components/streamers/config/streamer-configuration.tsx:307
 msgid "Enable Proxy"
 msgstr ""
 
-#: src/components/config/global/file-config-card.tsx:46
+#: src/components/config/global/file-config-card.tsx:35
 msgid "Enable recording of danmu/chat messages along with the video."
 msgstr ""
 
 #: src/routes/_auth/streamers/$id.edit.tsx:237
 #: src/routes/_auth/streamers/new.tsx:204
-msgid "Enabled"
+#~ msgid "Enabled"
+#~ msgstr ""
+
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:116
+msgid "Encoding Preset"
 msgstr ""
 
-#: src/components/config/templates/template-card.tsx:74
+#: src/components/filters/forms/TimeBasedFilterForm.tsx:85
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:405
+msgid "End Time"
+msgstr ""
+
+#: src/components/config/platforms/platform-card.tsx:110
+#: src/components/config/templates/template-card.tsx:115
 msgid "Engine"
+msgstr ""
+
+#: src/components/streamers/config/streamer-configuration.tsx:214
+msgid "Engine backend."
 msgstr ""
 
 #: src/routes/_auth/config/engines.tsx:43
@@ -401,793 +1183,2565 @@ msgstr ""
 #~ msgstr ""
 
 #: src/components/config/engines/edit-engine-dialog.tsx:123
-msgid "Engine configuration created"
-msgstr ""
+#~ msgid "Engine configuration created"
+#~ msgstr ""
 
 #: src/components/config/engines/edit-engine-dialog.tsx:137
-msgid "Engine configuration updated"
+#~ msgid "Engine configuration updated"
+#~ msgstr ""
+
+#: src/routes/_authed/_dashboard/config/engines.create.tsx:17
+msgid "Engine created successfully"
 msgstr ""
 
-#: src/components/config/engines/edit-engine-dialog.tsx:203
+#: src/components/config/engines/engine-editor.tsx:186
+msgid "Engine Name"
+msgstr ""
+
+#: src/components/config/templates/edit-template-dialog.tsx:140
+#: src/components/config/templates/tabs/engine-overrides-tab.tsx:68
+msgid "Engine Overrides"
+msgstr ""
+
+#: src/components/config/engines/engine-editor.tsx:203
 msgid "Engine Type"
 msgstr ""
 
-#: src/components/config/global/concurrency-card.tsx:163
+#: src/routes/_authed/_dashboard/config/engines.$engineId.tsx:54
+msgid "Engine updated successfully"
+msgstr ""
+
+#: src/components/config/global/concurrency-card.tsx:152
 msgid "Engine used for downloads when not specified by platform/streamer."
 msgstr ""
 
-#: src/routes/_auth/config/route.tsx:39
+#: src/components/config/templates/template-editor.tsx:148
 msgid "Engines"
 msgstr ""
 
 #: src/components/config/templates/tabs/advanced-tab.tsx:146
-msgid "Engines Override (JSON)"
+#~ msgid "Engines Override (JSON)"
+#~ msgstr ""
+
+#: src/routes/_authed/_dashboard/pipeline/presets/index.tsx:435
+msgid "Enter a unique name"
 msgstr ""
 
-#: src/routes/login.tsx:91
+#: src/components/filters/forms/CategoryFilterForm.tsx:27
+msgid "Enter categories to match against (e.g. Just Chatting, Gaming)."
+msgstr ""
+
+#: src/components/filters/forms/KeywordFilterForm.tsx:27
+msgid "Enter keywords to match against the stream title."
+msgstr ""
+
+#: src/routes/_public/login.tsx:131
 msgid "Enter your credentials to access your account"
 msgstr ""
 
-#: src/routes/_auth/config/engines.tsx:31
+#: src/components/config/engines/engine-card.tsx:114
+#: src/routes/_authed/_dashboard/config/engines.$engineId.tsx:40
+#: src/routes/_authed/_dashboard/config/engines.index.tsx:26
+#: src/routes/_authed/_dashboard/config/platforms.index.tsx:53
+#: src/routes/_authed/_dashboard/config/templates.index.tsx:53
+#: src/routes/_authed/_dashboard/pipeline/jobs/index.tsx:254
+#: src/routes/_authed/_dashboard/pipeline/outputs.tsx:141
+#: src/routes/_authed/_dashboard/pipeline/presets/index.tsx:194
+#: src/routes/_authed/_dashboard/pipeline/workflows/index.tsx:122
+#: src/routes/_authed/_dashboard/streamers/index.tsx:45
 msgid "Error"
+msgstr ""
+
+#: src/components/streamers/streamer-card.tsx:164
+#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.tsx:446
+msgid "Error Details"
+msgstr ""
+
+#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.tsx:196
+msgid "Error Loading Job"
+msgstr ""
+
+#: src/routes/_authed/_dashboard/pipeline/executions.$pipelineId.tsx:136
+msgid "Error Loading Pipeline"
+msgstr ""
+
+#: src/routes/_authed/_dashboard/config/platforms.$platformId.tsx:60
+msgid "Error loading platform"
+msgstr ""
+
+#: src/routes/_authed/_dashboard/pipeline/presets/$presetId.tsx:65
+msgid "Error loading preset"
+msgstr ""
+
+#. placeholder {0}: (error as any).message
+#: src/routes/_authed/_dashboard/streamers/index.tsx:168
+msgid "Error loading streamers: {0}"
+msgstr ""
+
+#: src/routes/_authed/_dashboard/config/templates.$templateId.tsx:60
+msgid "Error loading template"
+msgstr ""
+
+#: src/routes/_authed/_dashboard/pipeline/workflows/$workflowId.tsx:55
+msgid "Error loading workflow"
+msgstr ""
+
+#: src/routes/_authed/_dashboard/pipeline/executions.$pipelineId.tsx:379
+msgid "Error Output"
+msgstr ""
+
+#: src/components/pipeline/workflows/step-config-dialog.tsx:227
+msgid "Error: Could not load preset details."
+msgstr ""
+
+#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.tsx:418
+msgid "ETA"
+msgstr ""
+
+#: src/components/config/platforms/tabs/advanced-tab.tsx:93
+msgid "Event Hooks"
 msgstr ""
 
 #: src/components/config/platforms/tabs/advanced-tab.tsx:112
 #: src/components/config/templates/tabs/advanced-tab.tsx:178
-msgid "Event Hooks (JSON)"
+#~ msgid "Event Hooks (JSON)"
+#~ msgstr ""
+
+#: src/components/filters/FilterCard.tsx:73
+#: src/components/filters/FilterCard.tsx:105
+#: src/components/filters/FilterCard.tsx:148
+#: src/components/filters/forms/CategoryFilterForm.tsx:40
+#: src/components/filters/forms/KeywordFilterForm.tsx:40
+#: src/components/filters/forms/RegexFilterForm.tsx:35
+msgid "Exclude"
+msgstr ""
+
+#: src/components/pipeline/presets/editor/preset-meta-form.tsx:33
+msgid "Execute Command"
+msgstr ""
+
+#: src/components/streamers/config/streamer-configuration.tsx:381
+msgid "Execute shell commands on lifecycle events. Commands run in the system shell."
+msgstr ""
+
+#: src/components/pipeline/workflows/step-library.tsx:131
+msgid "Explore matching automation steps to enhance your pipeline workflow."
 msgstr ""
 
 #: src/components/config/platforms/tabs/advanced-tab.tsx:123
-msgid "External commands hook."
-msgstr ""
+#~ msgid "External commands hook."
+#~ msgstr ""
 
 #: src/components/config/engines/forms/streamlink-form.tsx:63
 msgid "Extra Arguments"
 msgstr ""
 
-#: src/routes/_auth/dashboard.tsx:91
-#: src/routes/_auth/pipeline/jobs.tsx:77
+#: src/components/pipeline/jobs/pipeline-summary-card.tsx:235
+msgid "failed"
+msgstr ""
+
+#: src/routes/_authed/_dashboard/dashboard.tsx:201
+#: src/routes/_authed/_dashboard/pipeline/jobs/index.tsx:472
 msgid "Failed"
 msgstr ""
 
-#: src/routes/_auth/pipeline/jobs.tsx:56
+#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.tsx:166
 msgid "Failed to cancel job"
 msgstr ""
 
-#. placeholder {0}: error.message
-#: src/components/config/engines/edit-engine-dialog.tsx:128
-msgid "Failed to create engine: {0}"
+#: src/routes/_authed/_dashboard/pipeline/executions.$pipelineId.tsx:112
+#: src/routes/_authed/_dashboard/pipeline/jobs/index.tsx:207
+msgid "Failed to cancel pipeline"
 msgstr ""
 
-#: src/routes/_auth/streamers/new.tsx:66
+#. placeholder {0}: error.message
+#: src/routes/_authed/_dashboard/pipeline/presets/index.tsx:161
+msgid "Failed to clone preset: {0}"
+msgstr ""
+
+#: src/components/config/engines/edit-engine-dialog.tsx:128
+#~ msgid "Failed to create engine: {0}"
+#~ msgstr ""
+
+#: src/components/filters/FilterDialog.tsx:116
+msgid "Failed to create filter"
+msgstr ""
+
+#: src/routes/_authed/_dashboard/pipeline/jobs/index.tsx:225
+msgid "Failed to create pipeline"
+msgstr ""
+
+#. placeholder {0}: error.message
+#: src/routes/_authed/_dashboard/pipeline/presets/create.tsx:24
+msgid "Failed to create preset: {0}"
+msgstr ""
+
+#: src/routes/_authed/_dashboard/streamers/new.tsx:25
 msgid "Failed to create streamer"
 msgstr ""
 
-#: src/routes/_auth/streamers/index.tsx:53
+#. placeholder {0}: error.message
+#: src/routes/_authed/_dashboard/config/templates.create.tsx:26
+msgid "Failed to create template: {0}"
+msgstr ""
+
+#. placeholder {0}: error.message
+#: src/routes/_authed/_dashboard/pipeline/workflows/create.tsx:24
+msgid "Failed to create workflow: {0}"
+msgstr ""
+
+#: src/routes/_authed/_dashboard/streamers/$id.edit.tsx:121
+msgid "Failed to delete filter"
+msgstr ""
+
+#. placeholder {0}: error.message
+#: src/routes/_authed/_dashboard/pipeline/presets/index.tsx:147
+msgid "Failed to delete preset: {0}"
+msgstr ""
+
+#: src/routes/_authed/_dashboard/dashboard.tsx:50
+#: src/routes/_authed/_dashboard/streamers/index.tsx:140
 msgid "Failed to delete streamer"
 msgstr ""
 
 #. placeholder {0}: error.message
-#: src/routes/_auth/config/engines.tsx:33
-msgid "Failed to load engines: {0}"
+#: src/routes/_authed/_dashboard/pipeline/workflows/index.tsx:102
+msgid "Failed to delete workflow: {0}"
 msgstr ""
 
-#: src/routes/_auth/pipeline/jobs.tsx:47
-msgid "Failed to retry job"
-msgstr ""
-
-#: src/routes/_auth/streamers/index.tsx:63
-msgid "Failed to trigger check"
+#. placeholder {0}: error?.message || "Engine not found"
+#: src/routes/_authed/_dashboard/config/engines.$engineId.tsx:42
+msgid "Failed to load engine: {0}"
 msgstr ""
 
 #. placeholder {0}: error.message
-#: src/components/config/engines/edit-engine-dialog.tsx:142
-msgid "Failed to update engine: {0}"
+#: src/routes/_authed/_dashboard/config/engines.index.tsx:28
+msgid "Failed to load engines: {0}"
 msgstr ""
 
-#: src/routes/_auth/config/global.tsx:83
+#. placeholder {0}: error.message
+#: src/routes/_authed/_dashboard/pipeline/jobs/index.tsx:256
+msgid "Failed to load jobs: {0}"
+msgstr ""
+
+#. placeholder {0}: error.message
+#: src/routes/_authed/_dashboard/pipeline/outputs.tsx:143
+msgid "Failed to load outputs: {0}"
+msgstr ""
+
+#. placeholder {0}: (error as Error).message
+#: src/routes/_authed/_dashboard/config/platforms.index.tsx:55
+msgid "Failed to load platforms: {0}"
+msgstr ""
+
+#. placeholder {0}: error.message
+#: src/routes/_authed/_dashboard/pipeline/presets/index.tsx:196
+msgid "Failed to load presets: {0}"
+msgstr ""
+
+#: src/routes/_authed/_dashboard/system/health.tsx:62
+msgid "Failed to load system health"
+msgstr ""
+
+#. placeholder {0}: (error as Error).message
+#: src/routes/_authed/_dashboard/config/templates.index.tsx:55
+msgid "Failed to load templates: {0}"
+msgstr ""
+
+#. placeholder {0}: error.message
+#: src/routes/_authed/_dashboard/pipeline/workflows/index.tsx:124
+msgid "Failed to load workflows: {0}"
+msgstr ""
+
+#: src/routes/_authed/_dashboard/pipeline/executions.$pipelineId.tsx:102
+#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.tsx:157
+msgid "Failed to retry job"
+msgstr ""
+
+#: src/routes/_authed/_dashboard/dashboard.tsx:57
+#: src/routes/_authed/_dashboard/streamers/index.tsx:146
+msgid "Failed to trigger check"
+msgstr ""
+
+#: src/components/config/engines/edit-engine-dialog.tsx:142
+#~ msgid "Failed to update engine: {0}"
+#~ msgstr ""
+
+#: src/components/filters/FilterDialog.tsx:128
+msgid "Failed to update filter"
+msgstr ""
+
+#. placeholder {0}: error.message
+#: src/routes/_authed/_dashboard/config/platforms.$platformId.tsx:33
+msgid "Failed to update platform: {0}"
+msgstr ""
+
+#. placeholder {0}: error.message
+#: src/routes/_authed/_dashboard/pipeline/presets/$presetId.tsx:32
+msgid "Failed to update preset: {0}"
+msgstr ""
+
+#: src/routes/_authed/_dashboard/config/global.tsx:79
 msgid "Failed to update settings"
 msgstr ""
 
-#: src/routes/_auth/streamers/$id.edit.tsx:90
-#: src/routes/_auth/streamers/index.tsx:75
+#: src/routes/_authed/_dashboard/dashboard.tsx:67
+#: src/routes/_authed/_dashboard/streamers/$id.edit.tsx:95
+#: src/routes/_authed/_dashboard/streamers/index.tsx:156
 msgid "Failed to update streamer"
 msgstr ""
 
-#: src/components/config/platforms/platform-card.tsx:39
+#. placeholder {0}: error.message
+#: src/routes/_authed/_dashboard/config/templates.$templateId.tsx:33
+msgid "Failed to update template: {0}"
+msgstr ""
+
+#. placeholder {0}: error.message
+#: src/routes/_authed/_dashboard/pipeline/workflows/$workflowId.tsx:32
+msgid "Failed to update workflow: {0}"
+msgstr ""
+
+#: src/components/config/platforms/platform-card.tsx:82
 msgid "Fetch"
 msgstr ""
 
-#: src/components/config/platforms/tabs/general-tab.tsx:81
+#: src/components/config/platforms/tabs/general-tab.tsx:46
 msgid "Fetch Delay"
 msgstr ""
 
-#: src/components/config/global/file-config-card.tsx:34
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:435
+msgid "FFmpeg Audio Filter (-af)"
+msgstr ""
+
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:326
+msgid "FFmpeg Video Filter"
+msgstr ""
+
+#: src/components/config/global/file-config-card.tsx:23
 msgid "File Configuration"
 msgstr ""
 
-#: src/components/config/global/file-config-card.tsx:75
-#: src/components/config/platforms/tabs/general-tab.tsx:154
-#: src/components/config/templates/tabs/general-tab.tsx:122
+#: src/components/pipeline/presets/processors/execute-config-form.tsx:114
+msgid "File Extension Filter"
+msgstr ""
+
+#: src/components/streamers/config/streamer-configuration.tsx:198
+msgid "File format extension."
+msgstr ""
+
+#: src/components/pipeline/presets/processors/metadata-config-form.tsx:202
+msgid "File Operations"
+msgstr ""
+
+#: src/routes/_authed/_dashboard/sessions/$sessionId.tsx:300
+msgid "File Summary"
+msgstr ""
+
+#: src/components/pipeline/presets/processors/thumbnail-config-form.tsx:133
+msgid "Filename pattern (e.g., thumb.jpg)"
+msgstr ""
+
+#: src/components/config/global/file-config-card.tsx:64
+#: src/components/config/shared/output-settings-card.tsx:65
+#: src/components/streamers/config/streamer-configuration.tsx:173
 msgid "Filename Template"
 msgstr ""
 
-#: src/components/config/engines/forms/mesio-form.tsx:54
+#: src/routes/_authed/_dashboard/pipeline/outputs.tsx:180
+msgid "files"
+msgstr ""
+
+#: src/components/filters/forms/TimeBasedFilterForm.tsx:95
+msgid "Filter applies if current time is between Start and End time."
+msgstr ""
+
+#: src/components/filters/forms/FilterTypeSelector.tsx:11
+msgid "Filter by game/category"
+msgstr ""
+
+#: src/components/filters/forms/FilterTypeSelector.tsx:9
+msgid "Filter by title keywords"
+msgstr ""
+
+#: src/components/filters/FilterDialog.tsx:111
+msgid "Filter created successfully"
+msgstr ""
+
+#: src/routes/_authed/_dashboard/streamers/$id.edit.tsx:117
+msgid "Filter deleted successfully"
+msgstr ""
+
+#: src/components/filters/forms/FilterTypeSelector.tsx:25
+msgid "Filter Type"
+msgstr ""
+
+#: src/components/filters/FilterDialog.tsx:123
+msgid "Filter updated successfully"
+msgstr ""
+
+#: src/components/streamers/config/streamer-configuration.tsx:120
+msgid "Filters"
+msgstr ""
+
+#: src/routes/_authed/_dashboard/pipeline/executions.$pipelineId.tsx:368
+msgid "Finished"
+msgstr ""
+
+#: src/components/config/engines/forms/mesio-form.tsx:55
 msgid "Fix FLV"
 msgstr ""
 
-#: src/components/config/engines/forms/mesio-form.tsx:77
+#: src/components/config/engines/forms/mesio-form.tsx:78
 msgid "Fix HLS"
 msgstr ""
 
-#: src/components/config/platforms/tabs/general-tab.tsx:195
-#: src/components/config/templates/tabs/general-tab.tsx:163
+#: src/components/streamers/config/danmu-config-form.tsx:111
+msgid "Fixed Interval"
+msgstr ""
+
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:509
+msgid "Force overwrite if output exists"
+msgstr ""
+
+#: src/components/config/shared/output-settings-card.tsx:109
 msgid "Force specific output format."
 msgstr ""
 
-#: src/components/config/global/file-config-card.tsx:100
-#: src/components/config/templates/template-card.tsx:80
+#: src/components/config/global/file-config-card.tsx:89
+#: src/components/config/templates/template-card.tsx:124
+#: src/components/pipeline/presets/processors/audio-extract-config-form.tsx:63
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:50
 msgid "Format"
 msgstr ""
 
-#: src/components/config/platforms/edit-platform-dialog.tsx:110
-#: src/components/config/templates/edit-template-dialog.tsx:127
+#: src/routes/_authed/_dashboard/sessions/$sessionId.tsx:312
+msgid "Formats"
+msgstr ""
+
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:306
+msgid "Framerate (FPS)"
+msgstr ""
+
+#: src/components/config/platforms/edit-platform-dialog.tsx:109
+#: src/components/config/platforms/platform-editor.tsx:145
+#: src/components/config/templates/edit-template-dialog.tsx:128
+#: src/components/config/templates/tabs/platform-override-card.tsx:88
+#: src/components/config/templates/template-editor.tsx:127
+#: src/components/pipeline/presets/processors/audio-extract-config-form.tsx:38
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:43
+#: src/routes/_authed/_dashboard/streamers/$id.edit.tsx:191
 msgid "General"
 msgstr ""
 
-#: src/routes/_auth/config/route.tsx:30
-msgid "Global"
+#: src/routes/_authed/_dashboard/streamers/$id.edit.tsx:216
+msgid "General Configuration"
 msgstr ""
 
-#: src/components/config/platforms/tabs/general-tab.tsx:87
-#: src/components/config/platforms/tabs/general-tab.tsx:108
-#: src/components/config/platforms/tabs/general-tab.tsx:187
-#: src/components/config/platforms/tabs/general-tab.tsx:266
-#: src/components/config/platforms/tabs/general-tab.tsx:287
-#: src/components/config/platforms/tabs/general-tab.tsx:308
-#: src/components/config/platforms/tabs/proxy-tab.tsx:59
-#: src/components/config/templates/tabs/advanced-tab.tsx:46
-#: src/components/config/templates/tabs/advanced-tab.tsx:67
-#: src/components/config/templates/tabs/advanced-tab.tsx:88
-#: src/components/config/templates/tabs/general-tab.tsx:155
-#: src/components/config/templates/tabs/proxy-tab.tsx:80
+#: src/components/config/engines/engine-card.tsx:202
+msgid "Get Started"
+msgstr ""
+
+#: src/routes/_auth/config/route.tsx:30
+#~ msgid "Global"
+#~ msgstr ""
+
+#: src/components/config/platforms/tabs/general-tab.tsx:52
+#: src/components/config/platforms/tabs/general-tab.tsx:74
+#: src/components/config/platforms/tabs/proxy-tab.tsx:70
+#: src/components/config/shared/limits-card.tsx:47
+#: src/components/config/shared/limits-card.tsx:69
+#: src/components/config/shared/limits-card.tsx:91
+#: src/components/config/shared/output-settings-card.tsx:101
 msgid "Global Default"
 msgstr ""
 
-#: src/components/config/engines/forms/mesio-form.tsx:80
+#: src/routes/_authed/_dashboard/pipeline/executions.$pipelineId.tsx:160
+#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.tsx:201
+msgid "Go Back"
+msgstr ""
+
+#: src/components/pipeline/presets/editor/preset-config-form.tsx:44
+msgid "H.264"
+msgstr ""
+
+#: src/components/config/engines/forms/mesio-form.tsx:81
 msgid "Handle discontinuities in HLS streams"
 msgstr ""
 
-#: src/routes/change-password.tsx:127
-#: src/routes/change-password.tsx:163
-#: src/routes/change-password.tsx:199
-#: src/routes/login.tsx:136
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:460
+msgid "Hardware Acceleration"
+msgstr ""
+
+#: src/components/health/health-status-badge.tsx:21
+msgid "Healthy"
+msgstr ""
+
+#: src/routes/_authed/change-password.tsx:149
+#: src/routes/_authed/change-password.tsx:185
+#: src/routes/_authed/change-password.tsx:221
+#: src/routes/_public/login.tsx:176
 msgid "Hide password"
 msgstr ""
 
-#: src/routes/_auth/streamers/$id.edit.tsx:214
-#: src/routes/_auth/streamers/new.tsx:181
+#: src/components/streamers/config/streamer-general-settings.tsx:164
+#: src/components/streamers/streamer-form.tsx:318
 msgid "High"
 msgstr ""
 
-#: src/components/config/global/network-system-card.tsx:67
+#: src/routes/_authed/_dashboard/sessions/$sessionId.tsx:199
+msgid "History"
+msgstr ""
+
+#: src/components/config/global/network-system-card.tsx:56
 msgid "History Retention (Days)"
 msgstr ""
 
-#: src/components/config/platforms/tabs/stream-selection-tab.tsx:145
-#: src/components/config/templates/tabs/stream-selection-tab.tsx:138
+#: src/components/streamers/config/streamer-configuration.tsx:132
+msgid "Hooks"
+msgstr ""
+
+#: src/components/streamers/config/streamer-configuration.tsx:290
+msgid "HTTP cookies for authentication (if required)."
+msgstr ""
+
+#: src/components/streamers/config/streamer-configuration.tsx:346
+msgid "HTTP/HTTPS/SOCKS5 proxy URL."
+msgstr ""
+
+#: src/components/filters/FilterCard.tsx:150
+msgid "i"
+msgstr ""
+
+#: src/components/filters/forms/CronFilterForm.tsx:37
+msgid "IANA Timezone (e.g. Asia/Shanghai, UTC)."
+msgstr ""
+
+#: src/components/pipeline/presets/editor/preset-meta-form.tsx:114
+msgid "ID"
+msgstr ""
+
+#: src/components/pipeline/presets/preset-editor.tsx:13
+msgid "ID is required"
+msgstr ""
+
+#: src/components/config/engines/engine-editor.tsx:176
+msgid "Identity and type of the engine."
+msgstr ""
+
+#: src/components/pipeline/presets/processors/copy-move-config-form.tsx:73
+msgid "If empty, uses next output path in pipeline"
+msgstr ""
+
+#: src/components/filters/forms/CategoryFilterForm.tsx:42
+msgid "If enabled, streams in these categories will be ignored."
+msgstr ""
+
+#: src/components/filters/forms/KeywordFilterForm.tsx:42
+msgid "If enabled, streams matching these keywords will be ignored."
+msgstr ""
+
+#: src/components/filters/forms/RegexFilterForm.tsx:37
+msgid "If enabled, streams matching this pattern will be ignored."
+msgstr ""
+
+#: src/components/config/platforms/tabs/stream-selection-tab.tsx:156
+#: src/components/streamers/config/stream-selection-input.tsx:138
 msgid "Ignore streams above this bitrate."
 msgstr ""
 
-#: src/components/config/platforms/tabs/stream-selection-tab.tsx:130
-#: src/components/config/templates/tabs/stream-selection-tab.tsx:123
+#: src/components/config/platforms/tabs/stream-selection-tab.tsx:140
+#: src/components/streamers/config/stream-selection-input.tsx:121
 msgid "Ignore streams below this bitrate."
 msgstr ""
 
-#: src/components/config/engines/forms/ffmpeg-form.tsx:86
+#: src/components/filters/FilterCard.tsx:73
+#: src/components/filters/FilterCard.tsx:105
+#: src/components/filters/FilterCard.tsx:148
+msgid "Include"
+msgstr ""
+
+#: src/components/streamers/config/retry-policy-form.tsx:103
+msgid "Initial Delay (ms)"
+msgstr ""
+
+#: src/components/config/engines/forms/ffmpeg-form.tsx:85
 msgid "Input Arguments"
 msgstr ""
 
-#: src/routes/_auth/pipeline/jobs.tsx:53
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:555
+msgid "Input Options (-i flags)"
+msgstr ""
+
+#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.tsx:355
+#: src/routes/_authed/_dashboard/pipeline/jobs/index.tsx:345
+msgid "Input Path"
+msgstr ""
+
+#: src/components/streamers/streamer-card.tsx:86
+#: src/components/streamers/streamer-card.tsx:191
+msgid "Inspecting"
+msgstr ""
+
+#: src/components/streamers/config/danmu-config-form.tsx:125
+msgid "Interval (seconds)"
+msgstr ""
+
+#: src/components/config/platforms/tabs/general-tab.tsx:57
+msgid "Interval between checks."
+msgstr ""
+
+#: src/components/streamers/config/retry-policy-form.tsx:131
+msgid "Jitter"
+msgstr ""
+
+#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.tsx:163
 msgid "Job cancelled"
 msgstr ""
 
-#: src/routes/_auth/pipeline/jobs.tsx:106
-msgid "Job History"
+#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.tsx:255
+msgid "Job Details"
 msgstr ""
+
+#: src/routes/_auth/pipeline/jobs.tsx:106
+#~ msgid "Job History"
+#~ msgstr ""
 
 #: src/routes/_auth/pipeline/jobs.tsx:140
-msgid "Job ID"
-msgstr ""
+#~ msgid "Job ID"
+#~ msgstr ""
 
-#: src/components/config/global/concurrency-card.tsx:53
+#: src/components/config/global/concurrency-card.tsx:40
 msgid "Job limits and engine settings."
 msgstr ""
 
-#: src/routes/_auth/pipeline/jobs.tsx:44
+#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.tsx:197
+msgid "Job not found"
+msgstr ""
+
+#: src/routes/_authed/_dashboard/sessions/$sessionId.tsx:328
+msgid "Job Pipeline"
+msgstr ""
+
+#: src/routes/_authed/_dashboard/pipeline/executions.$pipelineId.tsx:99
+#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.tsx:154
 msgid "Job retry initiated"
 msgstr ""
 
-#: src/components/config/platforms/tabs/advanced-tab.tsx:54
-msgid "JSON configuration for selecting streams."
+#: src/components/pipeline/jobs/pipeline-summary-card.tsx:220
+msgid "jobs"
 msgstr ""
 
+#: src/routes/_authed/_dashboard/pipeline/jobs/index.tsx:583
+msgid "Jobs will appear here when recordings are processed."
+msgstr ""
+
+#: src/components/config/platforms/tabs/advanced-tab.tsx:54
+#~ msgid "JSON configuration for selecting streams."
+#~ msgstr ""
+
 #: src/components/config/platforms/tabs/advanced-tab.tsx:33
-msgid "JSON configurations."
+#~ msgid "JSON configurations."
+#~ msgstr ""
+
+#: src/components/pipeline/presets/processors/compression-config-form.tsx:100
+msgid "Keep directory structure"
+msgstr ""
+
+#: src/components/pipeline/jobs/job-card.tsx:237
+#: src/components/pipeline/jobs/pipeline-summary-card.tsx:193
+msgid "Keep Running"
+msgstr ""
+
+#: src/components/filters/forms/FilterTypeSelector.tsx:9
+msgid "Keyword"
+msgstr ""
+
+#: src/components/filters/forms/KeywordFilterForm.tsx:17
+msgid "Keywords"
+msgstr ""
+
+#: src/components/streamers/streamer-card.tsx:216
+msgid "Last Activity"
+msgstr ""
+
+#: src/routes/_authed/_dashboard/system/health.tsx:147
+msgid "Last Check"
+msgstr ""
+
+#: src/components/streamers/streamer-card.tsx:131
+msgid "Last Error"
+msgstr ""
+
+#: src/routes/_authed/_dashboard/system/health.tsx:146
+msgid "Latency"
+msgstr ""
+
+#: src/components/pipeline/presets/processors/audio-extract-config-form.tsx:78
+msgid "Leave empty for stream copy"
+msgstr ""
+
+#: src/components/config/platforms/tabs/advanced-tab.tsx:56
+msgid "Legacy JSON blob."
 msgstr ""
 
 #: src/components/config/platforms/tabs/advanced-tab.tsx:77
-msgid "Legacy JSON blob. Use explicit fields in General tab preferred."
-msgstr ""
+#~ msgid "Legacy JSON blob. Use explicit fields in General tab preferred."
+#~ msgstr ""
 
 #: src/components/config/platforms/tabs/advanced-tab.tsx:66
-msgid "Legacy Platform Specific Config (JSON)"
+#~ msgid "Legacy Platform Specific Config (JSON)"
+#~ msgstr ""
+
+#: src/routes/_authed/_dashboard/config/theme.tsx:171
+msgid "Light"
 msgstr ""
 
-#: src/components/config/platforms/tabs/stream-selection-tab.tsx:114
-#: src/components/config/templates/tabs/stream-selection-tab.tsx:107
+#: src/components/config/platforms/tabs/stream-selection-tab.tsx:124
+#: src/components/streamers/config/stream-selection-input.tsx:103
 msgid "Limits"
 msgstr ""
 
-#: src/components/config/platforms/tabs/general-tab.tsx:251
-#: src/components/config/templates/tabs/advanced-tab.tsx:31
+#: src/components/config/shared/limits-card.tsx:30
 msgid "Limits & Validation"
 msgstr ""
 
-#: src/routes/_auth/streamers/index.tsx:124
-msgid "Loading..."
+#: src/components/streamers/edit/streamer-header.tsx:32
+#: src/components/streamers/streamer-card.tsx:85
+#: src/components/streamers/streamer-card.tsx:179
+#: src/routes/_authed/_dashboard/streamers/index.tsx:43
+msgid "Live"
 msgstr ""
 
-#: src/routes/_auth/streamers/$id.edit.tsx:216
-#: src/routes/_auth/streamers/new.tsx:183
+#: src/routes/_authed/_dashboard/config/theme.tsx:76
+msgid "Live Preview"
+msgstr ""
+
+#. placeholder {0}: template.label
+#: src/components/pipeline/presets/editor/preset-config-form.tsx:21
+msgid "Loaded template: {0}"
+msgstr ""
+
+#: src/components/pipeline/workflows/step-library.tsx:305
+msgid "Loading more..."
+msgstr ""
+
+#: src/components/pipeline/workflows/step-library.tsx:202
+msgid "Loading presets..."
+msgstr ""
+
+#: src/routes/_auth/streamers/index.tsx:124
+#~ msgid "Loading..."
+#~ msgstr ""
+
+#: src/components/streamers/config/streamer-general-settings.tsx:166
+#: src/components/streamers/streamer-form.tsx:320
 msgid "Low"
+msgstr ""
+
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:233
+msgid "Lower value = Higher Quality"
 msgstr ""
 
 #: src/routes/_auth/config/engines.tsx:45
 #~ msgid "Manage download engines and their specific settings."
 #~ msgstr ""
 
-#: src/routes/_auth/config/route.tsx:23
-msgid "Manage system settings, platform configurations, and templates."
+#: src/components/config/templates/template-editor.tsx:86
+msgid "Manage global configuration templates."
 msgstr ""
 
-#: src/components/config/platforms/tabs/stream-selection-tab.tsx:135
-#: src/components/config/templates/tabs/stream-selection-tab.tsx:128
+#: src/components/config/platforms/tabs/proxy-tab.tsx:31
+msgid "Manage network proxy settings for this platform."
+msgstr ""
+
+#: src/components/config/shared/output-settings-card.tsx:31
+msgid "Manage storage paths and file formats."
+msgstr ""
+
+#: src/routes/_auth/config/route.tsx:23
+#~ msgid "Manage system settings, platform configurations, and templates."
+#~ msgstr ""
+
+#: src/routes/_authed/_dashboard/streamers/index.tsx:187
+msgid "Manage your monitored channels and downloads"
+msgstr ""
+
+#: src/components/config/platforms/tabs/stream-selection-tab.tsx:145
+#: src/components/streamers/config/stream-selection-input.tsx:126
 msgid "Max Bitrate (bps)"
 msgstr ""
 
 #: src/components/config/platforms/tabs/general-tab.tsx:230
 #: src/components/config/templates/tabs/general-tab.tsx:198
-msgid "Max Bitrate (Kbps)"
-msgstr ""
+#~ msgid "Max Bitrate (Kbps)"
+#~ msgstr ""
 
 #: src/components/config/platforms/tabs/general-tab.tsx:240
 #: src/components/config/templates/tabs/general-tab.tsx:208
-msgid "Max bitrate limit."
-msgstr ""
+#~ msgid "Max bitrate limit."
+#~ msgstr ""
 
-#: src/components/config/global/concurrency-card.tsx:102
+#: src/components/config/global/concurrency-card.tsx:91
 msgid "Max CPU Jobs"
 msgstr ""
 
-#: src/components/config/global/concurrency-card.tsx:64
+#: src/components/streamers/config/retry-policy-form.tsx:116
+msgid "Max Delay (ms)"
+msgstr ""
+
+#: src/components/config/global/concurrency-card.tsx:53
 msgid "Max Downloads"
 msgstr ""
 
-#: src/components/config/global/resource-limits-card.tsx:66
-#: src/components/config/platforms/tabs/general-tab.tsx:260
-#: src/components/config/templates/tabs/advanced-tab.tsx:40
+#: src/components/config/global/resource-limits-card.tsx:55
+#: src/components/config/shared/limits-card.tsx:41
 msgid "Max Duration"
 msgstr ""
 
-#: src/components/config/global/concurrency-card.tsx:121
+#: src/components/streamers/config/streamer-configuration.tsx:254
+msgid "Max Duration (s)"
+msgstr ""
+
+#: src/components/streamers/config/danmu-config-form.tsx:157
+msgid "Max Interval (s)"
+msgstr ""
+
+#: src/components/config/global/concurrency-card.tsx:110
 msgid "Max IO Jobs"
 msgstr ""
 
-#: src/components/config/global/resource-limits-card.tsx:89
-#: src/components/config/platforms/tabs/general-tab.tsx:302
-#: src/components/config/templates/tabs/advanced-tab.tsx:82
+#: src/components/config/global/resource-limits-card.tsx:78
+#: src/components/config/shared/limits-card.tsx:85
 msgid "Max Part Size"
 msgstr ""
 
-#: src/components/config/global/concurrency-card.tsx:83
+#: src/components/streamers/config/streamer-configuration.tsx:237
+msgid "Max Part Size (Bytes)"
+msgstr ""
+
+#: src/components/pipeline/presets/processors/delete-config-form.tsx:41
+#: src/components/streamers/config/retry-policy-form.tsx:70
+msgid "Max Retries"
+msgstr ""
+
+#: src/components/config/global/concurrency-card.tsx:72
 msgid "Max Uploads"
 msgstr ""
 
-#: src/routes/_auth/dashboard.tsx:47
+#: src/components/streamers/config/retry-policy-form.tsx:81
+msgid "Maximum number of retry attempts."
+msgstr ""
+
+#: src/routes/_authed/_dashboard/sessions/$sessionId.tsx:252
+msgid "Media Files"
+msgstr ""
+
+#: src/routes/_authed/_dashboard/pipeline/outputs.tsx:162
+msgid "Media Outputs"
+msgstr ""
+
+#: src/routes/_authed/_dashboard/pipeline/outputs.tsx:290
+msgid "Media outputs will appear here when pipeline jobs complete."
+msgstr ""
+
+#: src/routes/_authed/_dashboard/system/health.tsx:122
 msgid "Memory Usage"
 msgstr ""
 
-#: src/components/config/platforms/tabs/stream-selection-tab.tsx:120
-#: src/components/config/templates/tabs/stream-selection-tab.tsx:113
+#: src/routes/_authed/_dashboard/system/health.tsx:145
+msgid "Message"
+msgstr ""
+
+#: src/components/pipeline/presets/editor/preset-meta-form.tsx:31
+msgid "Metadata"
+msgstr ""
+
+#: src/components/config/platforms/tabs/stream-selection-tab.tsx:129
+#: src/components/streamers/config/stream-selection-input.tsx:109
 msgid "Min Bitrate (bps)"
 msgstr ""
 
-#: src/components/config/global/resource-limits-card.tsx:46
-#: src/components/config/platforms/tabs/general-tab.tsx:281
-#: src/components/config/templates/tabs/advanced-tab.tsx:61
+#: src/components/streamers/config/danmu-config-form.tsx:144
+msgid "Min Interval (s)"
+msgstr ""
+
+#: src/components/config/global/resource-limits-card.tsx:35
+#: src/components/config/shared/limits-card.tsx:63
 msgid "Min Segment Size"
 msgstr ""
 
-#: src/components/config/platforms/tabs/general-tab.tsx:291
-#: src/components/config/templates/tabs/advanced-tab.tsx:71
+#: src/components/streamers/config/streamer-configuration.tsx:218
+msgid "Min Segment Size (Bytes)"
+msgstr ""
+
+#: src/components/config/shared/limits-card.tsx:74
 msgid "Min size to keep."
 msgstr ""
 
-#: src/components/config/engines/forms/ffmpeg-form.tsx:68
+#: src/components/pipeline/workflows/step-config-dialog.tsx:175
+msgid "Modify the parameters for this processing step."
+msgstr ""
+
+#: src/routes/_authed/_dashboard/pipeline/jobs/index.tsx:277
+msgid "Monitor and manage processing jobs"
+msgstr ""
+
+#: src/components/streamers/streamer-card.tsx:145
+msgid "Monitoring Stopped"
+msgstr ""
+
+#: src/components/pipeline/presets/processors/copy-move-config-form.tsx:51
+msgid "Move Files"
+msgstr ""
+
+#: src/components/config/engines/forms/ffmpeg-form.tsx:70
 msgid "Mozilla/5.0..."
 msgstr ""
 
-#: src/components/config/engines/edit-engine-dialog.tsx:183
-#: src/routes/_auth/streamers/$id.edit.tsx:123
-#: src/routes/_auth/streamers/index.tsx:113
-#: src/routes/_auth/streamers/new.tsx:90
+#: src/components/streamers/config/retry-policy-form.tsx:98
+msgid "Multiplier for exponential backoff."
+msgstr ""
+
+#: src/components/pipeline/presets/editor/preset-meta-form.tsx:136
+#: src/components/pipeline/workflows/workflow-editor.tsx:149
+#: src/components/streamers/config/streamer-general-settings.tsx:67
+#: src/components/streamers/streamer-form.tsx:202
 msgid "Name"
 msgstr ""
 
-#: src/routes/login.tsx:103
+#: src/components/pipeline/presets/preset-editor.tsx:14
+msgid "Name is required"
+msgstr ""
+
+#: src/routes/_public/login.tsx:143
 msgid "name@example.com"
 msgstr ""
 
-#: src/components/config/global/network-system-card.tsx:34
+#: src/components/streamers/config/streamer-configuration.tsx:126
+msgid "Network"
+msgstr ""
+
+#: src/components/config/global/network-system-card.tsx:23
 msgid "Network & System"
 msgstr ""
 
 #: src/components/config/engines/edit-engine-dialog.tsx:167
-msgid "New Engine"
-msgstr ""
+#~ msgid "New Engine"
+#~ msgstr ""
 
-#: src/routes/change-password.tsx:141
+#: src/routes/_authed/change-password.tsx:163
 msgid "New Password"
 msgstr ""
 
-#: src/routes/_auth/pipeline/jobs.tsx:98
-msgid "No active jobs"
+#: src/routes/_authed/_dashboard/pipeline/presets/index.tsx:430
+msgid "New Preset Name"
 msgstr ""
 
-#: src/routes/_auth/dashboard.tsx:129
+#: src/components/streamers/streamer-form.tsx:384
+msgid "Next"
+msgstr ""
+
+#: src/routes/_auth/pipeline/jobs.tsx:98
+#~ msgid "No active jobs"
+#~ msgstr ""
+
+#: src/routes/_authed/_dashboard/dashboard.tsx:259
 msgid "No active recordings"
 msgstr ""
 
-#: src/routes/_auth/streamers/index.tsx:130
-msgid "No streamers found."
+#: src/components/filters/FilterCard.tsx:118
+msgid "No categories set"
 msgstr ""
 
-#: src/routes/_auth/streamers/$id.edit.tsx:215
-#: src/routes/_auth/streamers/new.tsx:182
+#: src/components/pipeline/workflows/step-config-dialog.tsx:246
+msgid "No configuration form available for this processor."
+msgstr ""
+
+#: src/components/pipeline/presets/preset-card.tsx:172
+msgid "No configuration."
+msgstr ""
+
+#: src/components/pipeline/presets/processors/metadata-config-form.tsx:78
+msgid "No custom tags added"
+msgstr ""
+
+#: src/components/config/templates/tabs/engine-overrides-tab.tsx:84
+msgid "No engines found."
+msgstr ""
+
+#: src/components/filters/FilterList.tsx:22
+msgid "No filters yet"
+msgstr ""
+
+#: src/routes/_authed/_dashboard/system/health.tsx:166
+msgid "No issues detected"
+msgstr ""
+
+#: src/routes/_authed/_dashboard/pipeline/jobs/index.tsx:577
+msgid "No jobs found"
+msgstr ""
+
+#: src/routes/_authed/_dashboard/pipeline/executions.$pipelineId.tsx:157
+msgid "No Jobs Found"
+msgstr ""
+
+#: src/components/filters/FilterCard.tsx:90
+msgid "No keywords set"
+msgstr ""
+
+#: src/routes/_authed/_dashboard/pipeline/outputs.tsx:285
+msgid "No media outputs yet"
+msgstr ""
+
+#: src/routes/_authed/_dashboard/pipeline/outputs.tsx:284
+msgid "No outputs found"
+msgstr ""
+
+#: src/components/config/templates/tabs/engine-overrides-tab.tsx:110
+msgid "No overrides configured"
+msgstr ""
+
+#: src/routes/_authed/_dashboard/pipeline/jobs/index.tsx:578
+msgid "No pipeline jobs yet"
+msgstr ""
+
+#: src/components/config/templates/tabs/platform-overrides-tab.tsx:84
+msgid "No platform found."
+msgstr ""
+
+#: src/components/config/templates/tabs/platform-overrides-tab.tsx:106
+msgid "No platform overrides configured"
+msgstr ""
+
+#: src/routes/_authed/_dashboard/config/platforms.index.tsx:141
+msgid "No platforms configured"
+msgstr ""
+
+#: src/routes/_authed/_dashboard/config/platforms.index.tsx:141
+msgid "No platforms found"
+msgstr ""
+
+#: src/components/pipeline/workflows/step-library.tsx:294
+#: src/routes/_authed/_dashboard/pipeline/presets/index.tsx:337
+msgid "No presets found"
+msgstr ""
+
+#: src/routes/_authed/_dashboard/pipeline/presets/index.tsx:337
+msgid "No presets yet"
+msgstr ""
+
+#: src/components/streamers/edit/recent-sessions-list.tsx:58
+msgid "No recent sessions found."
+msgstr ""
+
+#: src/components/pipeline/workflows/steps-list.tsx:201
+msgid "No Steps Added"
+msgstr ""
+
+#: src/components/pipeline/workflows/workflow-card.tsx:194
+msgid "No steps defined"
+msgstr ""
+
+#: src/routes/_authed/_dashboard/pipeline/jobs/index.tsx:411
+msgid "No steps selected yet"
+msgstr ""
+
+#: src/routes/_authed/_dashboard/streamers/index.tsx:312
+msgid "No streamers found"
+msgstr ""
+
+#: src/routes/_auth/streamers/index.tsx:130
+#~ msgid "No streamers found."
+#~ msgstr ""
+
+#: src/routes/_authed/_dashboard/config/templates.index.tsx:147
+msgid "No templates found"
+msgstr ""
+
+#: src/routes/_authed/_dashboard/config/templates.index.tsx:147
+msgid "No templates yet"
+msgstr ""
+
+#: src/routes/_authed/_dashboard/sessions/$sessionId.tsx:420
+msgid "No title changes recorded."
+msgstr ""
+
+#: src/routes/_authed/_dashboard/pipeline/workflows/index.tsx:231
+msgid "No workflows found"
+msgstr ""
+
+#: src/routes/_authed/_dashboard/pipeline/workflows/index.tsx:231
+msgid "No workflows yet"
+msgstr ""
+
+#: src/components/streamers/config/streamer-general-settings.tsx:101
+#: src/components/streamers/config/streamer-general-settings.tsx:133
+#: src/components/streamers/streamer-form.tsx:253
+#: src/components/streamers/streamer-form.tsx:285
+msgid "None (Default)"
+msgstr ""
+
+#: src/components/streamers/config/streamer-general-settings.tsx:165
+#: src/components/streamers/streamer-form.tsx:319
 msgid "Normal"
 msgstr ""
 
-#: src/components/config/global/network-system-card.tsx:88
+#: src/routes/_authed/_dashboard/dashboard.tsx:279
+msgid "Not available"
+msgstr ""
+
+#: src/components/streamers/edit/streamer-header.tsx:32
+#: src/components/streamers/streamer-card.tsx:84
+#: src/components/streamers/streamer-card.tsx:208
+#: src/routes/_authed/_dashboard/streamers/index.tsx:44
+msgid "Offline"
+msgstr ""
+
+#: src/components/config/global/network-system-card.tsx:96
 msgid "Offline Check (ms)"
 msgstr ""
 
-#: src/components/config/global/network-system-card.tsx:107
+#: src/components/config/global/network-system-card.tsx:115
 msgid "Offline Check Count"
 msgstr ""
 
-#: src/components/config/engines/forms/ffmpeg-form.tsx:109
+#: src/components/streamers/config/streamer-configuration.tsx:430
+msgid "On Download Complete"
+msgstr ""
+
+#: src/components/streamers/config/streamer-configuration.tsx:445
+msgid "On Download Error"
+msgstr ""
+
+#: src/components/streamers/config/streamer-configuration.tsx:415
+msgid "On Download Start"
+msgstr ""
+
+#: src/components/streamers/config/streamer-configuration.tsx:400
+msgid "On Offline"
+msgstr ""
+
+#: src/components/streamers/config/streamer-configuration.tsx:385
+msgid "On Online"
+msgstr ""
+
+#: src/components/streamers/config/streamer-configuration.tsx:460
+msgid "On Pipeline Complete"
+msgstr ""
+
+#: src/components/pipeline/presets/processors/execute-config-form.tsx:124
+msgid "Only include files with this extension (without dot)"
+msgstr ""
+
+#: src/components/config/platforms/platform-card.tsx:66
+#: src/components/config/templates/template-card.tsx:92
+#: src/components/pipeline/jobs/job-card.tsx:196
+#: src/components/pipeline/jobs/pipeline-summary-card.tsx:164
+#: src/components/pipeline/outputs/output-card.tsx:108
+#: src/components/pipeline/presets/preset-card.tsx:117
+#: src/components/pipeline/workflows/workflow-card.tsx:133
+msgid "Open menu"
+msgstr ""
+
+#: src/components/pipeline/presets/processors/copy-move-config-form.tsx:33
+msgid "Operation"
+msgstr ""
+
+#: src/components/pipeline/presets/processors/copy-move-config-form.tsx:42
+msgid "Operation Type"
+msgstr ""
+
+#: src/components/pipeline/presets/processors/execute-config-form.tsx:77
+msgid "Optional"
+msgstr ""
+
+#: src/components/pipeline/presets/processors/compression-config-form.tsx:88
+#: src/components/pipeline/presets/processors/copy-move-config-form.tsx:85
+msgid "Options"
+msgstr ""
+
+#: src/components/config/platforms/platform-card.tsx:100
+#: src/components/config/templates/template-card.tsx:133
+#: src/components/pipeline/presets/processors/thumbnail-config-form.tsx:115
+#: src/components/streamers/config/streamer-configuration.tsx:123
+msgid "Output"
+msgstr ""
+
+#: src/components/config/engines/forms/ffmpeg-form.tsx:114
 msgid "Output Arguments"
 msgstr ""
 
-#: src/components/config/global/file-config-card.tsx:59
-#: src/components/config/platforms/tabs/general-tab.tsx:132
-#: src/components/config/templates/tabs/general-tab.tsx:100
+#: src/components/config/shared/output-settings-card.tsx:30
+msgid "Output Configuration"
+msgstr ""
+
+#: src/components/pipeline/presets/processors/execute-config-form.tsx:76
+msgid "Output Detection"
+msgstr ""
+
+#: src/components/config/global/file-config-card.tsx:48
+#: src/components/config/shared/output-settings-card.tsx:42
+#: src/components/streamers/config/streamer-configuration.tsx:158
 msgid "Output Folder"
 msgstr ""
 
-#: src/components/config/platforms/tabs/general-tab.tsx:176
-#: src/components/config/templates/tabs/general-tab.tsx:144
+#: src/components/config/shared/output-settings-card.tsx:90
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:186
+#: src/components/streamers/config/streamer-configuration.tsx:188
 msgid "Output Format"
 msgstr ""
 
-#: src/components/config/global/file-config-card.tsx:37
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:573
+msgid "Output Options"
+msgstr ""
+
+#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.tsx:369
+msgid "Output Path"
+msgstr ""
+
+#: src/components/config/global/file-config-card.tsx:24
 msgid "Output paths, templates, and formats."
 msgstr ""
 
-#: src/components/config/platforms/tabs/general-tab.tsx:123
-#: src/components/config/templates/tabs/general-tab.tsx:91
+#: src/components/pipeline/presets/processors/thumbnail-config-form.tsx:124
+msgid "Output Pattern (Optional)"
+msgstr ""
+
+#: src/components/pipeline/presets/processors/audio-extract-config-form.tsx:54
 msgid "Output Settings"
 msgstr ""
 
-#: src/components/config/platforms/tabs/general-tab.tsx:218
-#: src/components/config/templates/tabs/general-tab.tsx:186
+#: src/routes/_authed/_dashboard/dashboard.tsx:129
+msgid "Overall Health"
+msgstr ""
+
+#: src/components/config/templates/tabs/platform-overrides-tab.tsx:68
+msgid "Override configuration (paths, delays, etc.) for specific platforms."
+msgstr ""
+
+#: src/components/config/shared/output-settings-card.tsx:132
 msgid "Override download engine."
 msgstr ""
 
 #: src/components/config/templates/tabs/advanced-tab.tsx:164
-msgid "Override engine configs."
-msgstr ""
+#~ msgid "Override engine configs."
+#~ msgstr ""
 
-#: src/components/config/platforms/tabs/general-tab.tsx:164
-#: src/components/config/templates/tabs/general-tab.tsx:132
+#: src/components/config/shared/output-settings-card.tsx:76
 msgid "Override filename template."
 msgstr ""
 
-#: src/components/config/platforms/tabs/general-tab.tsx:142
-msgid "Override output folder for this platform."
+#: src/components/config/shared/record-danmu-card.tsx:42
+msgid "Override global default."
 msgstr ""
 
-#: src/components/config/templates/tabs/general-tab.tsx:110
+#: src/routes/_authed/_dashboard/streamers/$id.edit.tsx:235
+msgid "Override global defaults for this streamer."
+msgstr ""
+
+#: src/components/config/platforms/tabs/general-tab.tsx:142
+#~ msgid "Override output folder for this platform."
+#~ msgstr ""
+
+#: src/components/config/shared/output-settings-card.tsx:53
 msgid "Override output folder."
 msgstr ""
 
 #: src/components/config/templates/tabs/advanced-tab.tsx:132
-msgid "Override settings for specific platforms."
+#~ msgid "Override settings for specific platforms."
+#~ msgstr ""
+
+#: src/routes/_authed/_dashboard/config/theme.tsx:297
+msgid "Override system colors with your own CSS variables."
+msgstr ""
+
+#: src/components/streamers/config/streamer-configuration.tsx:168
+msgid "Override the default download directory."
+msgstr ""
+
+#: src/routes/_authed/_dashboard/sessions/$sessionId.tsx:185
+msgid "Overview"
+msgstr ""
+
+#: src/components/pipeline/presets/processors/compression-config-form.tsx:119
+#: src/components/pipeline/presets/processors/metadata-config-form.tsx:211
+msgid "Overwrite"
+msgstr ""
+
+#: src/components/pipeline/presets/processors/metadata-config-form.tsx:213
+msgid "Overwrite existing files"
+msgstr ""
+
+#: src/components/pipeline/presets/processors/audio-extract-config-form.tsx:164
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:507
+msgid "Overwrite Files"
 msgstr ""
 
 #: src/components/config/proxy-config-settings.tsx:128
-#: src/components/config/templates/tabs/proxy-tab.tsx:148
-#: src/routes/login.tsx:114
+#: src/components/streamers/config/streamer-configuration.tsx:362
+#: src/routes/_public/login.tsx:154
 msgid "Password"
 msgstr ""
 
-#: src/components/config/platforms/tabs/auth-tab.tsx:50
+#: src/routes/_authed/_dashboard/config/theme.tsx:310
+msgid "Paste your exported CSS variables here."
+msgstr ""
+
+#: src/components/config/platforms/tabs/auth-tab.tsx:49
 msgid "Paste your Netscape formatted cookies or raw key=value string here."
 msgstr ""
 
-#: src/routes/_auth/pipeline/jobs.tsx:74
+#: src/routes/_authed/_dashboard/pipeline/jobs/index.tsx:452
 msgid "Pending"
 msgstr ""
 
-#: src/routes/_auth/dashboard.tsx:70
+#: src/routes/_authed/_dashboard/dashboard.tsx:177
 msgid "Pending Jobs"
 msgstr ""
 
-#: src/routes/_auth/pipeline/jobs.tsx:66
+#: src/routes/_authed/_dashboard/pipeline/jobs/index.tsx:595
+#: src/routes/_authed/_dashboard/pipeline/outputs.tsx:302
+#: src/routes/_authed/_dashboard/pipeline/presets/index.tsx:360
+#: src/routes/_authed/_dashboard/pipeline/workflows/index.tsx:254
+msgid "Per page:"
+msgstr ""
+
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:453
+#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.tsx:394
+msgid "Performance"
+msgstr ""
+
+#: src/components/config/platforms/platform-editor.tsx:166
+#: src/components/config/templates/template-editor.tsx:169
+#: src/components/streamers/config/streamer-configuration.tsx:138
+#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.tsx:323
+msgid "Pipeline"
+msgstr ""
+
+#: src/components/config/global/pipeline-config-card.tsx:48
+#: src/components/config/platforms/tabs/pipeline-tab.tsx:50
+msgid "Pipeline Configuration"
+msgstr ""
+
+#: src/routes/_authed/_dashboard/pipeline/jobs/index.tsx:213
+msgid "Pipeline created"
+msgstr ""
+
+#: src/routes/_authed/_dashboard/pipeline/executions.$pipelineId.tsx:224
+msgid "Pipeline Execution"
+msgstr ""
+
+#: src/components/pipeline/jobs/pipeline-summary-card.tsx:253
+msgid "Pipeline has failed jobs. Click to view details."
+msgstr ""
+
+#: src/components/pipeline/workflows/steps-list.tsx:203
+msgid "Pipeline is empty."
+msgstr ""
+
+#: src/routes/_authed/_dashboard/pipeline/jobs/index.tsx:275
 msgid "Pipeline Jobs"
 msgstr ""
 
-#: src/routes/_auth/dashboard.tsx:67
+#: src/components/pipeline/workflows/workflow-editor.tsx:195
+msgid "Pipeline Sequence"
+msgstr ""
+
+#: src/routes/_authed/_dashboard/dashboard.tsx:172
 msgid "Pipeline Statistics"
 msgstr ""
 
-#: src/routes/_auth/streamers/index.tsx:114
+#: src/routes/_authed/_dashboard/pipeline/jobs/index.tsx:358
+msgid "Pipeline Steps"
+msgstr ""
+
+#: src/routes/_authed/_dashboard/pipeline/jobs/index.tsx:293
+msgid "pipelines"
+msgstr ""
+
+#: src/routes/_authed/_dashboard/streamers/index.tsx:210
 msgid "Platform"
 msgstr ""
 
 #: src/routes/_auth/streamers/$id.edit.tsx:155
 #: src/routes/_auth/streamers/new.tsx:122
-msgid "Platform Config (Optional)"
+#~ msgid "Platform Config (Optional)"
+#~ msgstr ""
+
+#: src/components/streamers/config/streamer-general-settings.tsx:90
+#: src/components/streamers/streamer-form.tsx:242
+msgid "Platform Configuration"
+msgstr ""
+
+#: src/routes/_authed/_dashboard/config/platforms.$platformId.tsx:28
+msgid "Platform configuration updated successfully"
+msgstr ""
+
+#: src/routes/_authed/_dashboard/config/platforms.index.tsx:146
+msgid "Platform configurations will appear here when available."
+msgstr ""
+
+#: src/components/streamers/streamer-form.tsx:228
+msgid "Platform Detected: {detectedPlatform}"
+msgstr ""
+
+#: src/routes/_authed/_dashboard/config/platforms.$platformId.tsx:61
+msgid "Platform not found"
+msgstr ""
+
+#: src/components/config/templates/tabs/platform-override-card.tsx:59
+msgid "Platform Override Settings"
+msgstr ""
+
+#: src/components/config/templates/edit-template-dialog.tsx:144
+#: src/components/config/templates/tabs/platform-overrides-tab.tsx:66
+msgid "Platform Overrides"
 msgstr ""
 
 #: src/components/config/templates/tabs/advanced-tab.tsx:114
-msgid "Platform Overrides (JSON)"
+#~ msgid "Platform Overrides (JSON)"
+#~ msgstr ""
+
+#: src/components/config/platforms/tabs/advanced-tab.tsx:38
+msgid "Platform Specific Config"
 msgstr ""
 
-#: src/routes/_auth/config/route.tsx:33
+#: src/routes/_authed/_dashboard/config/platforms.index.tsx:75
+msgid "platforms"
+msgstr ""
+
+#: src/components/config/templates/template-editor.tsx:155
 msgid "Platforms"
 msgstr ""
 
-#: src/routes/change-password.tsx:95
+#: src/routes/_authed/change-password.tsx:117
 msgid "Please enter your new password details"
 msgstr ""
 
-#: src/components/config/platforms/tabs/stream-selection-tab.tsx:63
-#: src/components/config/templates/tabs/stream-selection-tab.tsx:56
+#: src/components/config/platforms/tabs/stream-selection-tab.tsx:65
+#: src/components/streamers/config/stream-selection-input.tsx:52
 msgid "Preferences"
 msgstr ""
 
-#: src/components/config/platforms/tabs/stream-selection-tab.tsx:97
-#: src/components/config/templates/tabs/stream-selection-tab.tsx:90
+#: src/components/config/platforms/tabs/stream-selection-tab.tsx:101
+#: src/components/streamers/config/stream-selection-input.tsx:86
 msgid "Preferred CDNs"
 msgstr ""
 
-#: src/components/config/platforms/tabs/stream-selection-tab.tsx:83
-#: src/components/config/templates/tabs/stream-selection-tab.tsx:76
+#: src/components/config/platforms/tabs/stream-selection-tab.tsx:86
+#: src/components/streamers/config/stream-selection-input.tsx:72
 msgid "Preferred Formats"
 msgstr ""
 
-#: src/components/config/platforms/tabs/stream-selection-tab.tsx:69
-#: src/components/config/templates/tabs/stream-selection-tab.tsx:62
+#: src/components/config/platforms/tabs/stream-selection-tab.tsx:71
+#: src/components/streamers/config/stream-selection-input.tsx:58
 msgid "Preferred Qualities"
 msgstr ""
 
-#: src/components/config/platforms/tabs/stream-selection-tab.tsx:106
-#: src/components/config/templates/tabs/stream-selection-tab.tsx:99
+#: src/components/pipeline/presets/processors/compression-config-form.tsx:98
+msgid "Preserve Paths"
+msgstr ""
+
+#: src/routes/_authed/_dashboard/pipeline/presets/index.tsx:153
+msgid "Preset cloned successfully"
+msgstr ""
+
+#: src/routes/_authed/_dashboard/pipeline/presets/create.tsx:20
+msgid "Preset created successfully"
+msgstr ""
+
+#: src/routes/_authed/_dashboard/pipeline/presets/index.tsx:144
+msgid "Preset deleted successfully"
+msgstr ""
+
+#: src/components/pipeline/presets/editor/preset-meta-form.tsx:61
+msgid "Preset Details"
+msgstr ""
+
+#: src/routes/_authed/_dashboard/pipeline/presets/$presetId.tsx:66
+msgid "Preset not found"
+msgstr ""
+
+#: src/components/pipeline/workflows/step-config-dialog.tsx:164
+msgid "Preset Step"
+msgstr ""
+
+#: src/routes/_authed/_dashboard/pipeline/presets/$presetId.tsx:27
+msgid "Preset updated successfully"
+msgstr ""
+
+#: src/routes/_authed/_dashboard/pipeline/presets/index.tsx:233
+msgid "presets"
+msgstr ""
+
+#: src/routes/_authed/_dashboard/pipeline/presets/index.tsx:215
+msgid "Presets"
+msgstr ""
+
+#: src/components/pipeline/workflows/step-library.tsx:135
+msgid "Presets Available"
+msgstr ""
+
+#: src/routes/_authed/_dashboard/sessions/$sessionId.tsx:240
+msgid "Preview not available"
+msgstr ""
+
+#: src/routes/_authed/_dashboard/sessions/$sessionId.tsx:234
+msgid "Preview Only"
+msgstr ""
+
+#: src/routes/_authed/_dashboard/config/theme.tsx:51
+msgid "Primary color for buttons and interactions."
+msgstr ""
+
+#: src/components/config/platforms/tabs/stream-selection-tab.tsx:111
+#: src/components/streamers/config/stream-selection-input.tsx:95
 msgid "Prioritize specific CDN providers."
 msgstr ""
 
-#: src/components/config/platforms/tabs/stream-selection-tab.tsx:78
-#: src/components/config/templates/tabs/stream-selection-tab.tsx:71
+#: src/components/config/platforms/tabs/stream-selection-tab.tsx:81
+#: src/components/streamers/config/stream-selection-input.tsx:67
 msgid "Prioritize specific qualities (case-insensitive)."
 msgstr ""
 
-#: src/components/config/platforms/tabs/stream-selection-tab.tsx:92
-#: src/components/config/templates/tabs/stream-selection-tab.tsx:85
+#: src/components/config/platforms/tabs/stream-selection-tab.tsx:96
+#: src/components/streamers/config/stream-selection-input.tsx:81
 msgid "Prioritize specific streaming protocols."
 msgstr ""
 
-#: src/routes/_auth/streamers/$id.edit.tsx:206
-#: src/routes/_auth/streamers/index.tsx:116
-#: src/routes/_auth/streamers/new.tsx:173
+#: src/components/streamers/config/streamer-general-settings.tsx:156
+#: src/components/streamers/streamer-form.tsx:310
 msgid "Priority"
 msgstr ""
 
-#: src/routes/_auth/dashboard.tsx:77
-#: src/routes/_auth/pipeline/jobs.tsx:75
+#: src/routes/_authed/_dashboard/dashboard.tsx:185
+#: src/routes/_authed/_dashboard/pipeline/jobs/index.tsx:458
+#: src/routes/_authed/_dashboard/sessions/$sessionId.tsx:194
 msgid "Processing"
 msgstr ""
 
-#: src/routes/_auth/pipeline/jobs.tsx:143
-msgid "Progress"
+#: src/components/pipeline/jobs/job-card.tsx:324
+msgid "Processing failed"
 msgstr ""
+
+#: src/components/pipeline/presets/editor/preset-meta-form.tsx:76
+msgid "Processor"
+msgstr ""
+
+#: src/components/pipeline/presets/preset-editor.tsx:15
+msgid "Processor is required"
+msgstr ""
+
+#: src/routes/_auth/pipeline/jobs.tsx:143
+#~ msgid "Progress"
+#~ msgstr ""
 
 #: src/components/config/engines/edit-engine-dialog.tsx:227
-msgid "Protocol handler implementation."
+#~ msgid "Protocol handler implementation."
+#~ msgstr ""
+
+#: src/routes/_authed/_dashboard/pipeline/jobs/index.tsx:306
+msgid "Provide session details and choose the processing steps to launch a manual pipeline."
 msgstr ""
 
-#: src/components/config/platforms/edit-platform-dialog.tsx:122
-#: src/components/config/templates/edit-template-dialog.tsx:139
+#: src/components/config/platforms/edit-platform-dialog.tsx:121
+#: src/components/config/platforms/platform-editor.tsx:173
+#: src/components/config/templates/edit-template-dialog.tsx:148
+#: src/components/config/templates/tabs/platform-override-card.tsx:109
+#: src/components/config/templates/template-editor.tsx:162
+#: src/components/streamers/config/streamer-configuration.tsx:129
 msgid "Proxy"
 msgstr ""
 
-#: src/components/config/global/network-system-card.tsx:128
+#: src/components/config/global/network-system-card.tsx:136
+#: src/components/config/platforms/tabs/proxy-tab.tsx:30
 msgid "Proxy Configuration"
 msgstr ""
 
-#: src/components/config/platforms/tabs/proxy-tab.tsx:36
-#: src/components/config/templates/tabs/proxy-tab.tsx:68
+#: src/components/config/platforms/tabs/proxy-tab.tsx:47
 msgid "Proxy Strategy"
 msgstr ""
 
 #: src/components/config/proxy-config-settings.tsx:101
+#: src/components/streamers/config/streamer-configuration.tsx:336
 msgid "Proxy URL"
 msgstr ""
 
-#: src/components/config/engines/forms/streamlink-form.tsx:42
+#: src/components/config/engines/forms/streamlink-form.tsx:45
 msgid "Quality"
 msgstr ""
 
-#: src/components/config/templates/tabs/advanced-tab.tsx:103
-msgid "Raw Configuration"
+#: src/components/pipeline/presets/processors/thumbnail-config-form.tsx:90
+msgid "Quality (qscale)"
 msgstr ""
 
-#: src/components/config/global/file-config-card.tsx:44
-#: src/components/config/platforms/tabs/general-tab.tsx:39
-#: src/components/config/templates/tabs/general-tab.tsx:58
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:204
+msgid "Quality Control"
+msgstr ""
+
+#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.tsx:404
+msgid "Queue"
+msgstr ""
+
+#: src/components/streamers/edit/active-download-card.tsx:70
+msgid "Ratio"
+msgstr ""
+
+#: src/components/config/templates/tabs/advanced-tab.tsx:103
+#~ msgid "Raw Configuration"
+#~ msgstr ""
+
+#: src/components/config/platforms/tabs/advanced-tab.tsx:30
+msgid "Raw JSON configurations for advanced users."
+msgstr ""
+
+#: src/components/pipeline/presets/editor/preset-meta-form.tsx:32
+msgid "Rclone (Upload / Move / Sync)"
+msgstr ""
+
+#: src/components/config/engines/engine-card.tsx:112
+msgid "Ready"
+msgstr ""
+
+#: src/routes/_authed/_dashboard/system/health.tsx:83
+msgid "Real-time status of all system components and resources."
+msgstr ""
+
+#: src/components/streamers/streamer-card.tsx:157
+msgid "Reason"
+msgstr ""
+
+#: src/components/streamers/edit/recent-sessions-list.tsx:17
+msgid "Recent Sessions"
+msgstr ""
+
+#: src/components/config/global/file-config-card.tsx:33
+#: src/components/config/shared/record-danmu-card.tsx:28
 msgid "Record Danmu"
 msgstr ""
 
-#: src/routes/login.tsx:159
-msgid "Remember me"
+#: src/components/streamers/edit/streamer-header.tsx:32
+msgid "Recording"
 msgstr ""
 
-#: src/components/config/platforms/tabs/auth-tab.tsx:32
+#: src/components/streamers/edit/streamer-filters-tab.tsx:24
+#: src/routes/_authed/_dashboard/streamers/$id.edit.tsx:199
+msgid "Recording Filters"
+msgstr ""
+
+#: src/components/streamers/config/streamer-configuration.tsx:484
+msgid "Recording Status"
+msgstr ""
+
+#: src/routes/_authed/_dashboard/system/health.tsx:94
+msgid "Refresh"
+msgstr ""
+
+#: src/components/filters/forms/FilterTypeSelector.tsx:13
+msgid "Regex"
+msgstr ""
+
+#: src/components/filters/forms/RegexFilterForm.tsx:17
+msgid "Regex Pattern"
+msgstr ""
+
+#: src/routes/login.tsx:159
+#~ msgid "Remember me"
+#~ msgstr ""
+
+#: src/components/config/templates/tabs/engine-overrides-tab.tsx:121
+msgid "Remove"
+msgstr ""
+
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:527
+msgid "Remove Input on Success"
+msgstr ""
+
+#: src/components/pipeline/presets/editor/preset-meta-form.tsx:25
+msgid "Remux / Transcode"
+msgstr ""
+
+#: src/routes/_authed/_dashboard/sessions/$sessionId.tsx:409
+msgid "Renamed to:"
+msgstr ""
+
+#: src/components/pipeline/presets/processors/compression-config-form.tsx:121
+msgid "Replace output files"
+msgstr ""
+
+#: src/components/pipeline/presets/processors/audio-extract-config-form.tsx:166
+msgid "Replace output files if they already exist"
+msgstr ""
+
+#: src/components/config/platforms/tabs/auth-tab.tsx:29
 msgid "Required for premium/login-only content."
 msgstr ""
 
-#: src/components/config/global/resource-limits-card.tsx:33
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:292
+msgid "Resolution (Scale)"
+msgstr ""
+
+#: src/components/config/global/resource-limits-card.tsx:22
 msgid "Resource Limits"
 msgstr ""
 
-#: src/routes/login.tsx:169
+#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.tsx:333
+msgid "Resources"
+msgstr ""
+
+#: src/routes/_public/login.tsx:190
 msgid "Restore password"
 msgstr ""
 
+#: src/components/streamers/streamer-card.tsx:116
+msgid "Resuming in"
+msgstr ""
+
+#: src/components/pipeline/presets/processors/delete-config-form.tsx:52
+msgid "Retries for locked files"
+msgstr ""
+
 #: src/routes/_auth/pipeline/jobs.tsx:160
-msgid "Retry"
+#~ msgid "Retry"
+#~ msgstr ""
+
+#: src/components/pipeline/presets/processors/delete-config-form.tsx:64
+msgid "Retry Delay (ms)"
+msgstr ""
+
+#: src/components/pipeline/jobs/job-card.tsx:214
+msgid "Retry Failed"
+msgstr ""
+
+#: src/routes/_authed/_dashboard/pipeline/executions.$pipelineId.tsx:260
+msgid "Retry Failed Steps"
+msgstr ""
+
+#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.tsx:284
+msgid "Retry Job"
+msgstr ""
+
+#: src/components/config/platforms/tabs/advanced-tab.tsx:67
+#: src/components/pipeline/presets/processors/delete-config-form.tsx:32
+msgid "Retry Policy"
 msgstr ""
 
 #: src/components/config/platforms/tabs/advanced-tab.tsx:89
-msgid "Retry Policy (JSON)"
+#~ msgid "Retry Policy (JSON)"
+#~ msgstr ""
+
+#: src/routes/_authed/_dashboard/pipeline/executions.$pipelineId.tsx:139
+msgid "Return Previous Page"
+msgstr ""
+
+#: src/routes/_authed/_dashboard/pipeline/presets/index.tsx:217
+msgid "Reusable processor configurations for pipeline steps"
+msgstr ""
+
+#: src/routes/_authed/_dashboard/sessions/index.tsx:175
+msgid "Review recorded streams and manage archives"
 msgstr ""
 
 #: src/components/config/proxy-config-settings.tsx:69
 msgid "Route traffic through an intermediate server"
 msgstr ""
 
-#: src/components/config/engines/edit-engine-dialog.tsx:244
-#: src/components/config/platforms/edit-platform-dialog.tsx:160
-#: src/routes/_auth/config/global.tsx:138
+#: src/routes/_authed/_dashboard/streamers/index.tsx:329
+msgid "Rows per page"
+msgstr ""
+
+#: src/components/streamers/config/streamer-configuration.tsx:425
+msgid "Runs when a download begins."
+msgstr ""
+
+#: src/components/streamers/config/streamer-configuration.tsx:440
+msgid "Runs when a download completes successfully."
+msgstr ""
+
+#: src/components/streamers/config/streamer-configuration.tsx:455
+msgid "Runs when a download encounters an error."
+msgstr ""
+
+#: src/components/streamers/config/streamer-configuration.tsx:470
+msgid "Runs when the post-processing pipeline completes."
+msgstr ""
+
+#: src/components/streamers/config/streamer-configuration.tsx:410
+msgid "Runs when the streamer goes offline."
+msgstr ""
+
+#: src/components/streamers/config/streamer-configuration.tsx:395
+msgid "Runs when the streamer goes online."
+msgstr ""
+
+#: src/components/filters/forms/RegexFilterForm.tsx:22
+msgid "Rust regex syntax supported."
+msgstr ""
+
+#: src/components/streamers/config/danmu-config-form.tsx:117
+msgid "Sample danmu at a constant time interval."
+msgstr ""
+
+#: src/components/pipeline/presets/processors/audio-extract-config-form.tsx:118
+msgid "Sample Rate (Hz)"
+msgstr ""
+
+#: src/components/streamers/config/danmu-config-form.tsx:100
+msgid "Sampling Strategy"
+msgstr ""
+
+#: src/components/config/engines/engine-editor.tsx:289
+#: src/components/config/platforms/edit-platform-dialog.tsx:159
+#: src/components/config/platforms/platform-editor.tsx:130
+#: src/components/config/templates/template-editor.tsx:113
+#: src/components/filters/FilterDialog.tsx:207
+#: src/components/pipeline/presets/editor/preset-save-fab.tsx:33
+#: src/components/pipeline/workflows/step-config-dialog.tsx:272
+#: src/components/streamers/edit/streamer-save-fab.tsx:41
+#: src/routes/_authed/_dashboard/config/global.tsx:174
 msgid "Save Changes"
 msgstr ""
 
-#: src/routes/_auth/config/global.tsx:138
+#: src/components/streamers/streamer-form.tsx:397
+msgid "Save Streamer"
+msgstr ""
+
+#: src/components/pipeline/workflows/workflow-editor.tsx:121
+msgid "Save Workflow"
+msgstr ""
+
+#: src/components/config/platforms/platform-editor.tsx:130
+#: src/components/config/templates/template-editor.tsx:113
+#: src/components/filters/FilterDialog.tsx:205
+#: src/components/pipeline/workflows/workflow-editor.tsx:121
+#: src/components/streamers/edit/streamer-save-fab.tsx:36
+#: src/components/streamers/streamer-form.tsx:395
+#: src/routes/_authed/_dashboard/config/global.tsx:174
 msgid "Saving..."
 msgstr ""
 
-#: src/routes/_auth/streamers/index.tsx:101
+#: src/components/pipeline/presets/processors/execute-config-form.tsx:81
+msgid "Scan a directory for new files created by the command. Detected files will be passed to the next pipeline step."
+msgstr ""
+
+#: src/components/pipeline/presets/processors/execute-config-form.tsx:92
+msgid "Scan Directory"
+msgstr ""
+
+#: src/components/filters/forms/FilterTypeSelector.tsx:10
+msgid "Schedule recording times"
+msgstr ""
+
+#: src/components/streamers/streamer-card.tsx:87
+msgid "Scheduled"
+msgstr ""
+
+#: src/components/pipeline/presets/processors/execute-config-form.tsx:35
+msgid "Script"
+msgstr ""
+
+#: src/components/pipeline/workflows/step-library.tsx:153
+msgid "Search by name or description..."
+msgstr ""
+
+#: src/components/config/templates/tabs/engine-overrides-tab.tsx:82
+msgid "Search engines..."
+msgstr ""
+
+#: src/routes/_authed/_dashboard/pipeline/jobs/index.tsx:286
+msgid "Search jobs..."
+msgstr ""
+
+#: src/routes/_authed/_dashboard/pipeline/outputs.tsx:173
+msgid "Search outputs..."
+msgstr ""
+
+#: src/routes/_authed/_dashboard/config/platforms.index.tsx:68
+msgid "Search platforms..."
+msgstr ""
+
+#: src/routes/_authed/_dashboard/pipeline/presets/index.tsx:226
+msgid "Search presets..."
+msgstr ""
+
+#: src/routes/_authed/_dashboard/sessions/index.tsx:185
+msgid "Search sessions..."
+msgstr ""
+
+#: src/routes/_authed/_dashboard/streamers/index.tsx:197
 msgid "Search streamers..."
 msgstr ""
 
-#: src/components/config/engines/forms/ffmpeg-form.tsx:48
+#: src/routes/_authed/_dashboard/config/templates.index.tsx:68
+msgid "Search templates..."
+msgstr ""
+
+#: src/routes/_authed/_dashboard/pipeline/workflows/index.tsx:153
+msgid "Search workflows..."
+msgstr ""
+
+#: src/components/config/engines/forms/ffmpeg-form.tsx:50
 msgid "secs"
 msgstr ""
 
-#: src/components/config/global/concurrency-card.tsx:151
+#: src/components/streamers/edit/active-download-card.tsx:62
+msgid "Segments"
+msgstr ""
+
+#: src/components/config/global/concurrency-card.tsx:140
 msgid "Select a default engine"
 msgstr ""
 
 #: src/routes/_auth/streamers/$id.edit.tsx:159
 #: src/routes/_auth/streamers/new.tsx:126
-msgid "Select a platform config"
+#~ msgid "Select a platform config"
+#~ msgstr ""
+
+#: src/components/pipeline/workflows/step-library.tsx:146
+msgid "Select a processing job to step into your workflow sequence."
 msgstr ""
 
 #: src/routes/_auth/streamers/$id.edit.tsx:184
 #: src/routes/_auth/streamers/new.tsx:151
-msgid "Select a template"
+#~ msgid "Select a template"
+#~ msgstr ""
+
+#: src/components/streamers/config/streamer-general-settings.tsx:97
+#: src/components/streamers/streamer-form.tsx:249
+msgid "Select config"
 msgstr ""
 
-#: src/routes/_auth/streamers/$id.edit.tsx:210
-#: src/routes/_auth/streamers/new.tsx:177
+#: src/routes/_authed/_dashboard/pipeline/jobs/index.tsx:367
+msgid "Select preset"
+msgstr ""
+
+#: src/components/streamers/config/streamer-general-settings.tsx:160
+#: src/components/streamers/streamer-form.tsx:314
 msgid "Select priority"
 msgstr ""
 
-#: src/components/config/engines/edit-engine-dialog.tsx:217
+#: src/components/streamers/config/streamer-general-settings.tsx:129
+#: src/components/streamers/streamer-form.tsx:281
+msgid "Select template"
+msgstr ""
+
+#: src/components/filters/forms/TimeBasedFilterForm.tsx:30
+msgid "Select the days required for this filter to apply."
+msgstr ""
+
+#: src/components/config/engines/engine-editor.tsx:216
 msgid "Select type"
 msgstr ""
 
-#: src/routes/_auth/config/global.tsx:79
+#: src/routes/_authed/_dashboard/config/theme.tsx:46
+msgid "Select your preferred color scheme."
+msgstr ""
+
+#: src/components/config/platforms/platform-editor.tsx:152
+#: src/components/config/templates/template-editor.tsx:134
+msgid "Selection"
+msgstr ""
+
+#: src/routes/_authed/_dashboard/sessions/$sessionId.tsx:399
+msgid "Session events and title changes"
+msgstr ""
+
+#: src/components/config/global/network-system-card.tsx:75
+msgid "Session Gap (seconds)"
+msgstr ""
+
+#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.tsx:319
+#: src/routes/_authed/_dashboard/pipeline/jobs/index.tsx:319
+msgid "Session ID"
+msgstr ""
+
+#: src/routes/_authed/_dashboard/sessions/$sessionId.tsx:52
+msgid "Session Not Found"
+msgstr ""
+
+#: src/routes/_authed/_dashboard/sessions/$sessionId.tsx:218
+msgid "Session Preview"
+msgstr ""
+
+#: src/routes/_authed/_dashboard/sessions/$sessionId.tsx:427
+msgid "Session Started"
+msgstr ""
+
+#: src/routes/_authed/_dashboard/sessions/index.tsx:173
+msgid "Sessions"
+msgstr ""
+
+#: src/components/config/shared/limits-card.tsx:31
+msgid "Set constraints on downloads."
+msgstr ""
+
+#: src/components/config/engines/engine-editor.tsx:151
+msgid "Set up a new download tool configuration"
+msgstr ""
+
+#: src/components/config/engines/engine-editor.tsx:262
+#: src/routes/_authed/_dashboard/config/route.tsx:78
+msgid "Settings"
+msgstr ""
+
+#: src/components/streamers/streamer-form.tsx:231
+msgid "Settings have been optimized for this platform."
+msgstr ""
+
+#: src/routes/_authed/_dashboard/config/global.tsx:75
 msgid "Settings updated successfully"
 msgstr ""
 
-#: src/routes/change-password.tsx:127
-#: src/routes/change-password.tsx:163
-#: src/routes/change-password.tsx:199
-#: src/routes/login.tsx:136
+#: src/routes/_authed/change-password.tsx:149
+#: src/routes/_authed/change-password.tsx:185
+#: src/routes/_authed/change-password.tsx:221
+#: src/routes/_public/login.tsx:176
 msgid "Show password"
 msgstr ""
 
-#: src/routes/login.tsx:176
+#: src/routes/_public/login.tsx:197
 msgid "Sign In"
 msgstr ""
 
-#: src/routes/login.tsx:174
+#: src/routes/_public/login.tsx:195
 msgid "Signing in..."
 msgstr ""
 
-#: src/components/config/global/resource-limits-card.tsx:36
+#: src/components/streamers/edit/active-download-card.tsx:46
+msgid "Size"
+msgstr ""
+
+#: src/components/config/global/resource-limits-card.tsx:23
 msgid "Size and duration constraints for recordings."
 msgstr ""
 
-#: src/components/config/platforms/tabs/general-tab.tsx:270
-#: src/components/config/templates/tabs/advanced-tab.tsx:50
+#. placeholder {0}: detectedPlatform || "the platform"
+#: src/components/streamers/streamer-form.tsx:262
+msgid "Specific settings for {0}."
+msgstr ""
+
+#: src/components/streamers/config/streamer-general-settings.tsx:110
+msgid "Specific settings for the platform."
+msgstr ""
+
+#: src/components/streamers/edit/active-download-card.tsx:38
+#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.tsx:410
+msgid "Speed"
+msgstr ""
+
+#: src/components/config/shared/limits-card.tsx:52
 msgid "Split after duration."
 msgstr ""
 
-#: src/components/config/platforms/tabs/general-tab.tsx:312
-#: src/components/config/templates/tabs/advanced-tab.tsx:92
+#: src/components/config/shared/limits-card.tsx:96
 msgid "Split after size."
+msgstr ""
+
+#: src/components/streamers/config/streamer-configuration.tsx:266
+msgid "Split file when duration exceeded."
+msgstr ""
+
+#: src/components/streamers/config/streamer-configuration.tsx:249
+msgid "Split file when size exceeded."
+msgstr ""
+
+#: src/components/filters/forms/CronFilterForm.tsx:21
+msgid "Standard cron expression (sec min hour day mon year)."
+msgstr ""
+
+#: src/components/streamers/config/streamer-general-settings.tsx:190
+#: src/components/streamers/streamer-form.tsx:344
+msgid "Start checking this streamer immediately."
 msgstr ""
 
 #: src/routes/_auth/streamers/$id.edit.tsx:240
 #: src/routes/_auth/streamers/new.tsx:207
-msgid "Start monitoring this streamer immediately."
+#~ msgid "Start monitoring this streamer immediately."
+#~ msgstr ""
+
+#: src/components/filters/forms/TimeBasedFilterForm.tsx:69
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:353
+msgid "Start Time"
+msgstr ""
+
+#: src/components/pipeline/jobs/job-card.tsx:269
+#: src/components/pipeline/jobs/pipeline-summary-card.tsx:211
+#: src/routes/_authed/_dashboard/pipeline/executions.$pipelineId.tsx:294
+#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.tsx:431
+msgid "Started"
 msgstr ""
 
 #: src/routes/_auth/streamers/index.tsx:115
-msgid "State"
-msgstr ""
+#~ msgid "State"
+#~ msgstr ""
 
-#: src/routes/_auth/pipeline/jobs.tsx:142
+#: src/routes/_authed/_dashboard/system/health.tsx:101
+#: src/routes/_authed/_dashboard/system/health.tsx:144
 msgid "Status"
 msgstr ""
 
-#: src/routes/_auth/pipeline/jobs.tsx:141
-msgid "Step"
+#: src/components/pipeline/workflows/workflow-card.tsx:125
+msgid "step"
 msgstr ""
 
-#: src/components/config/platforms/edit-platform-dialog.tsx:114
-#: src/components/config/templates/edit-template-dialog.tsx:131
+#: src/routes/_auth/pipeline/jobs.tsx:141
+#~ msgid "Step"
+#~ msgstr ""
+
+#: src/components/streamers/streamer-form.tsx:157
+msgid "Step {stage} of 2"
+msgstr ""
+
+#: src/components/pipeline/workflows/step-library.tsx:124
+msgid "Step Library"
+msgstr ""
+
+#: src/components/pipeline/workflows/workflow-card.tsx:125
+msgid "steps"
+msgstr ""
+
+#: src/components/pipeline/workflows/workflow-editor.tsx:198
+msgid "Steps"
+msgstr ""
+
+#: src/components/streamers/config/streamer-general-settings.tsx:36
+#: src/components/streamers/streamer-form.tsx:170
+msgid "Stream Details"
+msgstr ""
+
+#: src/components/config/platforms/edit-platform-dialog.tsx:113
+#: src/components/config/templates/edit-template-dialog.tsx:132
 msgid "Stream Selection"
 msgstr ""
 
 #: src/components/config/platforms/tabs/advanced-tab.tsx:43
-msgid "Stream Selection Config (JSON)"
-msgstr ""
+#~ msgid "Stream Selection Config (JSON)"
+#~ msgstr ""
 
-#: src/components/config/global/network-system-card.tsx:48
+#: src/components/config/global/network-system-card.tsx:37
 msgid "Streamer Check (ms)"
 msgstr ""
 
-#: src/routes/_auth/streamers/new.tsx:62
+#: src/routes/_authed/_dashboard/streamers/new.tsx:21
 msgid "Streamer created successfully"
 msgstr ""
 
-#: src/routes/_auth/streamers/index.tsx:49
+#: src/routes/_authed/_dashboard/dashboard.tsx:46
+#: src/routes/_authed/_dashboard/streamers/index.tsx:137
 msgid "Streamer deleted"
 msgstr ""
 
-#: src/routes/_auth/streamers/index.tsx:71
+#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.tsx:320
+#: src/routes/_authed/_dashboard/pipeline/jobs/index.tsx:332
+msgid "Streamer ID"
+msgstr ""
+
+#: src/routes/_authed/_dashboard/dashboard.tsx:64
+#: src/routes/_authed/_dashboard/streamers/index.tsx:153
 msgid "Streamer updated"
 msgstr ""
 
-#: src/routes/_auth/streamers/$id.edit.tsx:84
+#: src/routes/_authed/_dashboard/streamers/$id.edit.tsx:89
 msgid "Streamer updated successfully"
 msgstr ""
 
-#: src/routes/_auth/streamers/index.tsx:88
+#: src/routes/_authed/_dashboard/streamers/index.tsx:185
 msgid "Streamers"
 msgstr ""
 
-#: src/components/config/engines/forms/streamlink-form.tsx:28
+#: src/routes/_authed/_dashboard/dashboard.tsx:260
+msgid "Streamers currently live will appear here."
+msgstr ""
+
+#: src/components/config/engines/forms/streamlink-form.tsx:31
 msgid "streamlink"
+msgstr ""
+
+#: src/components/config/templates/tabs/platform-override-card.tsx:102
+msgid "Streams"
 msgstr ""
 
 #: src/components/config/platforms/supported-platforms.tsx:27
 msgid "Supported Platforms"
 msgstr ""
 
-#: src/routes/_auth/streamers/$id.edit.tsx:180
-#: src/routes/_auth/streamers/new.tsx:147
-msgid "Template (Optional)"
+#: src/routes/_authed/_dashboard/config/theme.tsx:173
+msgid "System"
 msgstr ""
 
-#: src/components/config/templates/tabs/general-tab.tsx:35
+#: src/routes/_authed/_dashboard/system/health.tsx:81
+msgid "System Health"
+msgstr ""
+
+#: src/components/config/engines/engine-card.tsx:125
+#: src/routes/_authed/_dashboard/dashboard.tsx:104
+msgid "System Status"
+msgstr ""
+
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:245
+msgid "Target Bitrate"
+msgstr ""
+
+#: src/components/streamers/config/danmu-config-form.tsx:170
+msgid "Target Danmus per Sample"
+msgstr ""
+
+#: src/components/streamers/config/danmu-config-form.tsx:181
+msgid "Target number of messages to capture per sample period."
+msgstr ""
+
+#: src/components/streamers/config/streamer-general-settings.tsx:122
+#: src/components/streamers/streamer-form.tsx:274
+msgid "Template"
+msgstr ""
+
+#: src/routes/_auth/streamers/$id.edit.tsx:180
+#: src/routes/_auth/streamers/new.tsx:147
+#~ msgid "Template (Optional)"
+#~ msgstr ""
+
+#: src/routes/_authed/_dashboard/config/templates.create.tsx:22
+msgid "Template created successfully"
+msgstr ""
+
+#: src/components/config/templates/tabs/general-tab.tsx:38
+msgid "Template Information"
+msgstr ""
+
+#: src/components/config/templates/tabs/general-tab.tsx:49
 msgid "Template Name"
 msgstr ""
 
+#: src/routes/_authed/_dashboard/config/templates.$templateId.tsx:61
+msgid "Template not found"
+msgstr ""
+
+#: src/routes/_authed/_dashboard/config/templates.$templateId.tsx:28
+msgid "Template updated successfully"
+msgstr ""
+
+#: src/routes/_authed/_dashboard/config/templates.index.tsx:75
+msgid "templates"
+msgstr ""
+
 #: src/routes/_auth/config/route.tsx:36
-msgid "Templates"
+#~ msgid "Templates"
+#~ msgstr ""
+
+#: src/components/streamers/streamer-card.tsx:102
+msgid "Temporarily Paused"
+msgstr ""
+
+#: src/components/streamers/config/streamer-general-settings.tsx:55
+#: src/components/streamers/streamer-form.tsx:190
+msgid "The direct link to the channel or stream."
 msgstr ""
 
 #: src/routes/_auth/streamers/$id.edit.tsx:142
 #: src/routes/_auth/streamers/new.tsx:109
-msgid "The direct URL to the streamer's channel or profile."
+#~ msgid "The direct URL to the streamer's channel or profile."
+#~ msgstr ""
+
+#: src/components/config/engines/engine-editor.tsx:241
+msgid "The underlying tool used for downloading."
 msgstr ""
 
-#: src/components/config/engines/forms/ffmpeg-form.tsx:43
+#: src/routes/_authed/_dashboard/config/theme.tsx:46
+msgid "Theme Mode"
+msgstr ""
+
+#: src/components/streamers/streamer-form.tsx:360
+msgid "These settings override the global and platform defaults."
+msgstr ""
+
+#: src/routes/_authed/_dashboard/pipeline/executions.$pipelineId.tsx:158
+msgid "This pipeline sequence appears to be empty."
+msgstr ""
+
+#: src/components/pipeline/workflows/step-config-dialog.tsx:173
+msgid "This step is linked to the preset <0>{presetName}</0>."
+msgstr ""
+
+#: src/components/pipeline/jobs/job-card.tsx:231
+#: src/components/pipeline/jobs/pipeline-summary-card.tsx:187
+msgid "This will cancel all pending and processing jobs in this pipeline."
+msgstr ""
+
+#. placeholder {0}: preset.name
+#: src/components/pipeline/presets/preset-card.tsx:139
+msgid "This will permanently delete the preset \"{0}\". Pipelines using this preset may fail if not updated."
+msgstr ""
+
+#. placeholder {0}: workflow.name
+#: src/components/pipeline/workflows/workflow-card.tsx:150
+msgid "This will permanently delete the workflow \"{0}\". Streamers using this workflow will need to be updated."
+msgstr ""
+
+#. placeholder {0}: engine.name
+#: src/components/config/engines/engine-card.tsx:167
+msgid "This will permanently remove the \"{0}\" configuration. This action cannot be undone."
+msgstr ""
+
+#: src/components/pipeline/presets/editor/preset-meta-form.tsx:26
+msgid "Thumbnail"
+msgstr ""
+
+#: src/components/filters/forms/FilterTypeSelector.tsx:10
+msgid "Time Based"
+msgstr ""
+
+#: src/components/streamers/config/danmu-config-form.tsx:136
+msgid "Time between sampling attempts."
+msgstr ""
+
+#: src/components/pipeline/presets/processors/thumbnail-config-form.tsx:53
+msgid "Time offset to take screenshot from"
+msgstr ""
+
+#: src/routes/_authed/_dashboard/sessions/$sessionId.tsx:398
+msgid "Timeline"
+msgstr ""
+
+#: src/components/config/engines/forms/ffmpeg-form.tsx:45
 msgid "Timeout"
 msgstr ""
 
-#: src/components/config/platforms/tabs/general-tab.tsx:72
+#: src/components/pipeline/presets/processors/thumbnail-config-form.tsx:41
+msgid "Timestamp"
+msgstr ""
+
+#: src/components/filters/forms/CronFilterForm.tsx:32
+msgid "Timezone"
+msgstr ""
+
+#: src/components/config/platforms/tabs/general-tab.tsx:37
 msgid "Timing & Delays"
 msgstr ""
 
-#: src/components/config/engines/edit-engine-dialog.tsx:189
-msgid "Unique identifier for this config."
+#: src/components/pipeline/presets/processors/metadata-config-form.tsx:138
+msgid "Title"
 msgstr ""
 
-#. placeholder {0}: streamer?.name
-#: src/routes/_auth/streamers/$id.edit.tsx:112
-msgid "Update configuration for {0}."
+#: src/routes/_authed/_dashboard/streamers/index.tsx:223
+msgid "total"
 msgstr ""
+
+#: src/routes/_authed/_dashboard/pipeline/executions.$pipelineId.tsx:276
+msgid "Total Duration"
+msgstr ""
+
+#: src/routes/_authed/_dashboard/sessions/$sessionId.tsx:304
+msgid "Total Files"
+msgstr ""
+
+#: src/routes/_authed/_dashboard/sessions/$sessionId.tsx:308
+msgid "Total Size"
+msgstr ""
+
+#: src/routes/_authed/_dashboard/pipeline/executions.$pipelineId.tsx:282
+msgid "Total Steps"
+msgstr ""
+
+#: src/components/pipeline/jobs/job-card.tsx:316
+#: src/components/pipeline/jobs/pipeline-summary-card.tsx:245
+msgid "Total time:"
+msgstr ""
+
+#: src/components/pipeline/presets/processors/metadata-config-form.tsx:116
+msgid "Track Information"
+msgstr ""
+
+#: src/routes/_authed/_dashboard/sessions/$sessionId.tsx:329
+msgid "Track processing status and history"
+msgstr ""
+
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:341
+msgid "Trimming & Time"
+msgstr ""
+
+#: src/components/pipeline/workflows/step-library.tsx:295
+msgid "Try adjusting your search or filters"
+msgstr ""
+
+#: src/routes/_authed/_dashboard/streamers/index.tsx:314
+msgid "Try adjusting your search or filters, or add a new streamer to start monitoring."
+msgstr ""
+
+#: src/routes/_authed/_dashboard/pipeline/jobs/index.tsx:582
+#: src/routes/_authed/_dashboard/pipeline/outputs.tsx:289
+#: src/routes/_authed/_dashboard/pipeline/presets/index.tsx:341
+msgid "Try adjusting your search or filters."
+msgstr ""
+
+#: src/routes/_authed/_dashboard/config/platforms.index.tsx:145
+#: src/routes/_authed/_dashboard/config/templates.index.tsx:151
+#: src/routes/_authed/_dashboard/pipeline/workflows/index.tsx:235
+msgid "Try adjusting your search."
+msgstr ""
+
+#: src/routes/_authed/_dashboard/system/health.tsx:64
+msgid "Try Again"
+msgstr ""
+
+#: src/components/health/health-status-badge.tsx:35
+msgid "Unhealthy"
+msgstr ""
+
+#: src/components/config/engines/edit-engine-dialog.tsx:189
+#~ msgid "Unique identifier for this config."
+#~ msgstr ""
+
+#: src/components/config/templates/tabs/engine-overrides-tab.tsx:119
+msgid "Unknown Engine ID: {engineId}"
+msgstr ""
+
+#: src/components/streamers/streamer-card.tsx:125
+msgid "Until"
+msgstr ""
+
+#: src/routes/_auth/streamers/$id.edit.tsx:112
+#~ msgid "Update configuration for {0}."
+#~ msgstr ""
 
 #: src/routes/_auth/streamers/$id.edit.tsx:252
-msgid "Update Streamer"
-msgstr ""
+#~ msgid "Update Streamer"
+#~ msgstr ""
 
 #: src/routes/_auth/pipeline/jobs.tsx:144
-msgid "Updated"
-msgstr ""
+#~ msgid "Updated"
+#~ msgstr ""
 
 #: src/routes/_auth/streamers/$id.edit.tsx:252
-msgid "Updating..."
-msgstr ""
+#~ msgid "Updating..."
+#~ msgstr ""
 
-#: src/routes/_auth/dashboard.tsx:53
+#: src/routes/_authed/_dashboard/dashboard.tsx:140
+#: src/routes/_authed/_dashboard/system/health.tsx:108
 msgid "Uptime"
 msgstr ""
 
-#: src/components/config/templates/tabs/proxy-tab.tsx:125
-#: src/routes/_auth/streamers/$id.edit.tsx:137
-#: src/routes/_auth/streamers/new.tsx:104
+#: src/components/streamers/config/streamer-general-settings.tsx:43
+#: src/components/streamers/streamer-form.tsx:177
 msgid "URL"
 msgstr ""
 
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:489
+msgid "Use <0>-movflags +faststart</0>"
+msgstr ""
+
+#: src/components/streamers/config/streamer-configuration.tsx:309
+msgid "Use a proxy server for this streamer."
+msgstr ""
+
 #: src/components/config/proxy-config-settings.tsx:86
+#: src/components/streamers/config/streamer-configuration.tsx:322
 msgid "Use System Proxy"
 msgstr ""
 
-#: src/components/config/engines/forms/ffmpeg-form.tsx:65
+#: src/components/streamers/config/streamer-configuration.tsx:324
+msgid "Use system-configured proxy settings."
+msgstr ""
+
+#: src/components/config/engines/forms/ffmpeg-form.tsx:67
 msgid "User Agent"
 msgstr ""
 
 #: src/components/config/proxy-config-settings.tsx:115
-#: src/components/config/templates/tabs/proxy-tab.tsx:138
-#: src/routes/login.tsx:101
+#: src/components/streamers/config/streamer-configuration.tsx:352
+#: src/routes/_public/login.tsx:141
 msgid "Username"
 msgstr ""
 
-#: src/components/config/global/file-config-card.tsx:84
+#: src/components/config/global/file-config-card.tsx:73
 msgid "Vars: '{streamer}', '{title}' | Time: %Y, %m, %d, %H, %M, %S"
 msgstr ""
 
-#: src/routes/_auth/dashboard.tsx:59
+#: src/components/streamers/config/danmu-config-form.tsx:112
+msgid "Velocity Based (Dynamic)"
+msgstr ""
+
+#: src/components/pipeline/presets/processors/copy-move-config-form.tsx:116
+msgid "Verify Integrity"
+msgstr ""
+
+#: src/components/config/engines/engine-card.tsx:138
 msgid "Version"
 msgstr ""
 
-#: src/routes/login.tsx:88
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:57
+msgid "Video"
+msgstr ""
+
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:253
+msgid "Video Bitrate"
+msgstr ""
+
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:90
+msgid "Video Codec"
+msgstr ""
+
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:82
+msgid "Video Settings"
+msgstr ""
+
+#: src/routes/_authed/_dashboard/dashboard.tsx:221
+msgid "View All"
+msgstr ""
+
+#: src/components/pipeline/jobs/job-card.tsx:204
+#: src/components/pipeline/jobs/pipeline-summary-card.tsx:172
+#: src/routes/_authed/_dashboard/dashboard.tsx:108
+msgid "View Details"
+msgstr ""
+
+#: src/routes/_authed/_dashboard/pipeline/executions.$pipelineId.tsx:386
+msgid "View Output & Logs"
+msgstr ""
+
+#: src/components/config/platforms/platform-card.tsx:91
+msgid "Wait"
+msgstr ""
+
+#: src/components/config/platforms/tabs/general-tab.tsx:79
+msgid "Wait time before starting."
+msgstr ""
+
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:487
+msgid "Web Optimize"
+msgstr ""
+
+#: src/routes/_public/login.tsx:128
 msgid "Welcome back"
+msgstr ""
+
+#: src/components/pipeline/presets/processors/thumbnail-config-form.tsx:65
+msgid "Width"
+msgstr ""
+
+#: src/components/pipeline/presets/processors/thumbnail-config-form.tsx:78
+msgid "Width in pixels (keeps aspect ratio)"
+msgstr ""
+
+#: src/routes/_authed/_dashboard/pipeline/workflows/create.tsx:20
+msgid "Workflow created successfully"
+msgstr ""
+
+#: src/routes/_authed/_dashboard/pipeline/workflows/index.tsx:99
+msgid "Workflow deleted successfully"
+msgstr ""
+
+#: src/routes/_authed/_dashboard/pipeline/workflows/$workflowId.tsx:56
+msgid "Workflow not found"
+msgstr ""
+
+#: src/routes/_authed/_dashboard/pipeline/workflows/$workflowId.tsx:27
+msgid "Workflow updated successfully"
+msgstr ""
+
+#: src/routes/_authed/_dashboard/pipeline/workflows/index.tsx:160
+msgid "workflows"
+msgstr ""
+
+#: src/routes/_authed/_dashboard/pipeline/workflows/index.tsx:142
+msgid "Workflows"
 msgstr ""

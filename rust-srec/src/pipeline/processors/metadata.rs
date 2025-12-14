@@ -12,7 +12,7 @@ use std::path::Path;
 use tokio::process::Command;
 use tracing::{debug, info, warn};
 
-use super::traits::{Processor, ProcessorInput, ProcessorOutput, ProcessorType};
+use super::traits::{Processor, ProcessorContext, ProcessorInput, ProcessorOutput, ProcessorType};
 use crate::Result;
 
 /// Configuration for metadata embedding operations.
@@ -118,6 +118,9 @@ impl MetadataProcessor {
         }
 
         args.push("-hide_banner".to_string());
+        args.push("-nostats".to_string());
+        args.extend(["-loglevel".to_string(), "warning".to_string()]);
+        args.extend(["-progress".to_string(), "pipe:1".to_string()]);
 
         // Input file
         args.extend(["-i".to_string(), input_path.to_string()]);
@@ -225,13 +228,20 @@ impl Processor for MetadataProcessor {
         "MetadataProcessor"
     }
 
-    async fn process(&self, input: &ProcessorInput) -> Result<ProcessorOutput> {
+    async fn process(
+        &self,
+        input: &ProcessorInput,
+        ctx: &ProcessorContext,
+    ) -> Result<ProcessorOutput> {
         let start = std::time::Instant::now();
 
         // Parse config or use defaults
         let config: MetadataConfig = if let Some(ref config_str) = input.config {
             serde_json::from_str(config_str).unwrap_or_else(|e| {
-                warn!("Failed to parse metadata config, using defaults: {}", e);
+                let _ = ctx.warn(&format!(
+                    "Failed to parse metadata config, using defaults: {}",
+                    e
+                ));
                 MetadataConfig::default()
             })
         } else {
@@ -257,10 +267,10 @@ impl Processor for MetadataProcessor {
         // If not supported, pass through the input file instead of failing
         if !self.supports_metadata(input_path) {
             let duration = start.elapsed().as_secs_f64();
-            info!(
+            let _ = ctx.info(&format!(
                 "Input file format does not support metadata embedding, passing through: {}",
                 input_path
-            );
+            ));
             return Ok(ProcessorOutput {
                 outputs: vec![input_path.clone()],
                 duration_secs: duration,
@@ -283,10 +293,10 @@ impl Processor for MetadataProcessor {
         // Determine output path
         let output_path = self.determine_output_path(input_path, &config, input);
 
-        info!(
+        let _ = ctx.info(&format!(
             "Embedding metadata into {} -> {} (artist: {:?}, title: {:?}, date: {:?})",
             input_path, output_path, config.artist, config.title, config.date
-        );
+        ));
 
         // Build ffmpeg arguments
         let args = self.build_args(input_path, &output_path, &config);
@@ -300,8 +310,12 @@ impl Processor for MetadataProcessor {
         cmd.args(&args).env("LC_ALL", "C");
 
         // Execute command and capture logs
-        let command_output =
-            crate::pipeline::processors::utils::run_command_with_logs(&mut cmd).await?;
+        let command_output = crate::pipeline::processors::utils::run_ffmpeg_with_progress(
+            &mut cmd,
+            &ctx.progress,
+            Some(ctx.log_tx.clone()),
+        )
+        .await?;
 
         if !command_output.status.success() {
             // Reconstruct stderr for error analysis
@@ -344,10 +358,10 @@ impl Processor for MetadataProcessor {
             .ok()
             .map(|m| m.len());
 
-        info!(
+        let _ = ctx.info(&format!(
             "Metadata embedding completed in {:.2}s: {}",
             command_output.duration, output_path
-        );
+        ));
 
         // Build metadata summary for output
         let metadata_summary = serde_json::json!({
@@ -687,6 +701,7 @@ mod tests {
     #[tokio::test]
     async fn test_process_no_input_file() {
         let processor = MetadataProcessor::new();
+        let ctx = ProcessorContext::noop("test");
         let input = ProcessorInput {
             inputs: vec![],
             outputs: vec!["/output.mp4".to_string()],
@@ -695,7 +710,7 @@ mod tests {
             session_id: "test".to_string(),
         };
 
-        let result = processor.process(&input).await;
+        let result = processor.process(&input, &ctx).await;
         assert!(result.is_err());
         let err = result.unwrap_err();
         assert!(err.to_string().contains("No input file"));
@@ -704,6 +719,7 @@ mod tests {
     #[tokio::test]
     async fn test_process_input_not_found() {
         let processor = MetadataProcessor::new();
+        let ctx = ProcessorContext::noop("test");
         let input = ProcessorInput {
             inputs: vec!["/nonexistent/file.mp4".to_string()],
             outputs: vec!["/output.mp4".to_string()],
@@ -712,7 +728,7 @@ mod tests {
             session_id: "test".to_string(),
         };
 
-        let result = processor.process(&input).await;
+        let result = processor.process(&input, &ctx).await;
         assert!(result.is_err());
         let err = result.unwrap_err();
         assert!(err.to_string().contains("does not exist"));
@@ -722,6 +738,7 @@ mod tests {
     async fn test_process_unsupported_format() {
         // Requirements: 4.5 - Unsupported format should pass through
         let processor = MetadataProcessor::new();
+        let ctx = ProcessorContext::noop("test");
 
         // Create a temporary text file
         let temp_dir = std::env::temp_dir();
@@ -736,7 +753,7 @@ mod tests {
             session_id: "test".to_string(),
         };
 
-        let result = processor.process(&input).await;
+        let result = processor.process(&input, &ctx).await;
         assert!(result.is_ok());
 
         let output = result.unwrap();

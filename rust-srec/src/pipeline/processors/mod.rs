@@ -21,4 +21,4 @@ pub use metadata::{MetadataConfig, MetadataProcessor};
 pub use rclone::{RcloneOperation, RcloneProcessor};
 pub use remux::RemuxProcessor;
 pub use thumbnail::ThumbnailProcessor;
-pub use traits::{Processor, ProcessorInput, ProcessorOutput, ProcessorType};
+pub use traits::{Processor, ProcessorContext, ProcessorInput, ProcessorOutput, ProcessorType};

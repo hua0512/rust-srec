@@ -8,7 +8,10 @@
 //! | Method | Path | Description |
 //! |--------|------|-------------|
 //! | GET | `/api/pipeline/jobs` | List jobs with filtering and pagination |
+//! | GET | `/api/pipeline/jobs/page` | List jobs (no total count) |
 //! | GET | `/api/pipeline/jobs/{id}` | Get a single job by ID |
+//! | GET | `/api/pipeline/jobs/{id}/logs` | List job execution logs (paged) |
+//! | GET | `/api/pipeline/jobs/{id}/progress` | Get latest job progress snapshot |
 //! | POST | `/api/pipeline/jobs/{id}/retry` | Retry a failed job |
 //! | DELETE | `/api/pipeline/jobs/{id}` | Cancel a pending or processing job |
 //! | DELETE | `/api/pipeline/{pipeline_id}` | Cancel all jobs in a pipeline |
@@ -34,13 +37,14 @@ use std::collections::{HashMap, HashSet};
 use crate::api::error::{ApiError, ApiResult};
 use crate::api::models::{
     JobExecutionInfo as ApiJobExecutionInfo, JobFilterParams, JobLogEntry as ApiJobLogEntry,
-    JobResponse, JobStatus as ApiJobStatus, MediaOutputResponse, PaginatedResponse,
+    JobResponse, JobStatus as ApiJobStatus, MediaOutputResponse, PageResponse, PaginatedResponse,
     PaginationParams, PipelineStatsResponse, StepDurationInfo as ApiStepDurationInfo,
 };
 use crate::api::server::AppState;
 use crate::database::models::job::PipelineStep;
 use crate::database::models::{JobFilters, JobStatus as DbJobStatus, OutputFilters, Pagination};
 use crate::pipeline::{Job, JobStatus as QueueJobStatus};
+use crate::pipeline::JobProgressSnapshot;
 
 /// Create the pipeline router.
 ///
@@ -63,7 +67,10 @@ use crate::pipeline::{Job, JobStatus as QueueJobStatus};
 pub fn router() -> Router<AppState> {
     Router::new()
         .route("/jobs", get(list_jobs))
+        .route("/jobs/page", get(list_jobs_page))
         .route("/jobs/{id}", get(get_job))
+        .route("/jobs/{id}/logs", get(list_job_logs))
+        .route("/jobs/{id}/progress", get(get_job_progress))
         .route("/jobs/{id}/retry", post(retry_job))
         .route("/jobs/{id}", delete(cancel_job))
         .route("/{pipeline_id}", delete(cancel_pipeline))
@@ -315,6 +322,112 @@ async fn list_jobs(
 
     let response = PaginatedResponse::new(job_responses, total, effective_limit, pagination.offset);
     Ok(Json(response))
+}
+
+/// List pipeline jobs without computing a total count.
+///
+/// # Endpoint
+///
+/// `GET /api/pipeline/jobs/page`
+async fn list_jobs_page(
+    State(state): State<AppState>,
+    Query(pagination): Query<PaginationParams>,
+    Query(filters): Query<JobFilterParams>,
+) -> ApiResult<Json<PageResponse<JobResponse>>> {
+    let pipeline_manager = state
+        .pipeline_manager
+        .as_ref()
+        .ok_or_else(|| ApiError::service_unavailable("Pipeline service not available"))?;
+
+    let db_filters = JobFilters {
+        status: filters.status.map(api_status_to_db_status),
+        streamer_id: filters.streamer_id,
+        session_id: filters.session_id,
+        pipeline_id: filters.pipeline_id,
+        from_date: filters.from_date,
+        to_date: filters.to_date,
+        job_type: None,
+        job_types: None,
+        search: filters.search,
+    };
+
+    let effective_limit = pagination.limit.min(100);
+    let db_pagination = Pagination::new(effective_limit, pagination.offset);
+
+    let jobs = pipeline_manager
+        .list_jobs_page(&db_filters, &db_pagination)
+        .await
+        .map_err(ApiError::from)?;
+
+    let job_responses: Vec<JobResponse> = jobs.iter().map(job_to_response).collect();
+    Ok(Json(PageResponse::new(
+        job_responses,
+        effective_limit,
+        pagination.offset,
+    )))
+}
+
+/// List job execution logs (paged).
+///
+/// # Endpoint
+///
+/// `GET /api/pipeline/jobs/{id}/logs`
+async fn list_job_logs(
+    State(state): State<AppState>,
+    Path(id): Path<String>,
+    Query(pagination): Query<PaginationParams>,
+) -> ApiResult<Json<PaginatedResponse<ApiJobLogEntry>>> {
+    let pipeline_manager = state
+        .pipeline_manager
+        .as_ref()
+        .ok_or_else(|| ApiError::service_unavailable("Pipeline service not available"))?;
+
+    let effective_limit = pagination.limit.min(100);
+    let db_pagination = Pagination::new(effective_limit, pagination.offset);
+
+    let (logs, total) = pipeline_manager
+        .list_job_logs(&id, &db_pagination)
+        .await
+        .map_err(ApiError::from)?;
+
+    let response_logs: Vec<ApiJobLogEntry> = logs
+        .into_iter()
+        .map(|log| ApiJobLogEntry {
+            timestamp: log.timestamp,
+            level: format!("{:?}", log.level),
+            message: log.message,
+        })
+        .collect();
+
+    Ok(Json(PaginatedResponse::new(
+        response_logs,
+        total,
+        effective_limit,
+        pagination.offset,
+    )))
+}
+
+/// Get latest job progress snapshot.
+///
+/// # Endpoint
+///
+/// `GET /api/pipeline/jobs/{id}/progress`
+async fn get_job_progress(
+    State(state): State<AppState>,
+    Path(id): Path<String>,
+) -> ApiResult<Json<JobProgressSnapshot>> {
+    let pipeline_manager = state
+        .pipeline_manager
+        .as_ref()
+        .ok_or_else(|| ApiError::service_unavailable("Pipeline service not available"))?;
+
+    let snapshot = pipeline_manager
+        .get_job_progress(&id)
+        .await
+        .map_err(ApiError::from)?
+        .ok_or_else(|| ApiError::not_found(format!("No progress available for job {}", id)))?;
+
+    Ok(Json(snapshot))
 }
 
 /// List pipelines with pagination and filtering.
@@ -934,6 +1047,9 @@ fn job_to_response(job: &Job) -> JobResponse {
                     message: log.message.clone(),
                 })
                 .collect(),
+            log_lines_total: info.log_lines_total,
+            log_warn_count: info.log_warn_count,
+            log_error_count: info.log_error_count,
             step_durations: info
                 .step_durations
                 .iter()

@@ -58,7 +58,6 @@ export interface SegmentCompleted {
   sizeBytes: bigint;
 }
 
-
 // Download completed event
 export interface DownloadCompleted {
   downloadId: string;
@@ -112,15 +111,12 @@ export interface SubscribeRequest {
 }
 
 // Unsubscribe request
-export interface UnsubscribeRequest { }
+export interface UnsubscribeRequest {}
 
 // Client-to-server message
 export interface ClientMessage {
-  action:
-  | { subscribe: SubscribeRequest }
-  | { unsubscribe: UnsubscribeRequest };
+  action: { subscribe: SubscribeRequest } | { unsubscribe: UnsubscribeRequest };
 }
-
 
 // Protobuf schema definition
 const protoSchema = `
@@ -235,7 +231,6 @@ const root = parse(protoSchema).root;
 const WsMessageType = root.lookupType('download_progress.WsMessage');
 const ClientMessageType = root.lookupType('download_progress.ClientMessage');
 
-
 /**
  * Convert protobuf Long to bigint
  */
@@ -256,7 +251,9 @@ function toBigInt(value: unknown): bigint {
 /**
  * Convert a raw protobuf DownloadProgress to our interface
  */
-function convertDownloadProgress(raw: Record<string, unknown>): DownloadProgress {
+function convertDownloadProgress(
+  raw: Record<string, unknown>,
+): DownloadProgress {
   return {
     downloadId: (raw.downloadId as string) || '',
     streamerId: (raw.streamerId as string) || '',
@@ -277,14 +274,19 @@ function convertDownloadProgress(raw: Record<string, unknown>): DownloadProgress
  * Decode a binary WebSocket message to WsMessage
  */
 export function decodeWsMessage(data: Uint8Array): WsMessage {
-  const decoded = WsMessageType.decode(data) as unknown as Record<string, unknown>;
-  const eventType = (decoded.eventType as number) || EventType.EVENT_TYPE_UNSPECIFIED;
+  const decoded = WsMessageType.decode(data) as unknown as Record<
+    string,
+    unknown
+  >;
+  const eventType =
+    (decoded.eventType as number) || EventType.EVENT_TYPE_UNSPECIFIED;
 
   let payload: WsMessagePayload;
 
   if (decoded.snapshot) {
     const rawSnapshot = decoded.snapshot as Record<string, unknown>;
-    const rawDownloads = (rawSnapshot.downloads as Record<string, unknown>[]) || [];
+    const rawDownloads =
+      (rawSnapshot.downloads as Record<string, unknown>[]) || [];
     payload = {
       snapshot: {
         downloads: rawDownloads.map(convertDownloadProgress),
@@ -303,7 +305,9 @@ export function decodeWsMessage(data: Uint8Array): WsMessage {
     };
   } else if (decoded.progress) {
     payload = {
-      progress: convertDownloadProgress(decoded.progress as Record<string, unknown>),
+      progress: convertDownloadProgress(
+        decoded.progress as Record<string, unknown>,
+      ),
     };
   } else if (decoded.segmentCompleted) {
     const raw = decoded.segmentCompleted as Record<string, unknown>;
@@ -362,7 +366,6 @@ export function decodeWsMessage(data: Uint8Array): WsMessage {
 
   return { eventType, payload };
 }
-
 
 /**
  * Encode a ClientMessage to binary for sending to the server

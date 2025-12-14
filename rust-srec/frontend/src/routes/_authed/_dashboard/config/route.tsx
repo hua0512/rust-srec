@@ -1,4 +1,10 @@
-import { createFileRoute, Outlet, Link, useLocation, redirect } from '@tanstack/react-router';
+import {
+  createFileRoute,
+  Outlet,
+  Link,
+  useLocation,
+  redirect,
+} from '@tanstack/react-router';
 import { Trans } from '@lingui/react/macro';
 import {
   Settings,
@@ -6,8 +12,7 @@ import {
   LayoutTemplate,
   Cpu,
   Palette,
-  MonitorPlay,
-  Share2
+  Share2,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { motion } from 'motion/react';
@@ -33,42 +38,42 @@ interface SidebarItem {
 
 const sidebarItems: SidebarItem[] = [
   {
-    title: "Global",
-    href: "/config/global",
+    title: 'Global',
+    href: '/config/global',
     icon: Globe,
-    description: "System-wide preferences"
+    description: 'System-wide preferences',
   },
   {
-    title: "Platforms",
-    href: "/config/platforms",
+    title: 'Platforms',
+    href: '/config/platforms',
     icon: Share2,
-    description: "Streaming services"
+    description: 'Streaming services',
   },
   {
-    title: "Templates",
-    href: "/config/templates",
+    title: 'Templates',
+    href: '/config/templates',
     icon: LayoutTemplate,
-    description: "Job configurations"
+    description: 'Job configurations',
   },
   {
-    title: "Engines",
-    href: "/config/engines",
+    title: 'Engines',
+    href: '/config/engines',
     icon: Cpu,
-    description: "Processing nodes"
+    description: 'Processing nodes',
   },
   {
-    title: "Theme",
-    href: "/config/theme",
+    title: 'Theme',
+    href: '/config/theme',
     icon: Palette,
-    description: "Appearance & style"
-  }
+    description: 'Appearance & style',
+  },
 ];
 
 function ConfigLayout() {
   const { pathname } = useLocation();
 
   return (
-    <div className="flex h-full flex-col space-y-8 lg:flex-row lg:space-x-8 lg:space-y-0 p-4 max-w-[1600px] mx-auto min-h-[calc(100vh-4rem)]">
+    <div className="flex h-full flex-col space-y-8 lg:flex-row lg:space-x-8 lg:space-y-0 w-full min-h-[calc(100vh-4rem)]">
       <aside className="lg:w-1/5 xl:w-1/6 self-start sticky top-24">
         <div className="flex flex-col gap-6">
           <div className="flex items-center gap-3 px-2">
@@ -76,7 +81,9 @@ function ConfigLayout() {
               <Settings className="h-6 w-6 text-primary" />
             </div>
             <div>
-              <h1 className="text-xl font-semibold tracking-tight"><Trans>Settings</Trans></h1>
+              <h1 className="text-xl font-semibold tracking-tight">
+                <Trans>Settings</Trans>
+              </h1>
             </div>
           </div>
 
@@ -90,19 +97,29 @@ function ConfigLayout() {
                   key={item.href}
                   to={item.href}
                   className={cn(
-                    "group flex min-w-[180px] lg:min-w-0 flex-col gap-1 rounded-xl px-4 py-3 text-sm font-medium transition-all hover:bg-accent",
-                    isActive ? "bg-accent/80 text-accent-foreground" : "text-muted-foreground"
+                    'group flex min-w-[180px] lg:min-w-0 flex-col gap-1 rounded-xl px-4 py-3 text-sm font-medium transition-all hover:bg-accent',
+                    isActive
+                      ? 'bg-accent/80 text-accent-foreground'
+                      : 'text-muted-foreground',
                   )}
                 >
                   <div className="flex items-center gap-3">
-                    <item.icon className={cn(
-                      "h-4 w-4 transition-colors",
-                      isActive ? "text-primary" : "text-muted-foreground group-hover:text-foreground"
-                    )} />
-                    <span className={cn(
-                      "font-semibold",
-                      isActive ? "text-foreground" : "text-muted-foreground group-hover:text-foreground"
-                    )}>
+                    <item.icon
+                      className={cn(
+                        'h-4 w-4 transition-colors',
+                        isActive
+                          ? 'text-primary'
+                          : 'text-muted-foreground group-hover:text-foreground',
+                      )}
+                    />
+                    <span
+                      className={cn(
+                        'font-semibold',
+                        isActive
+                          ? 'text-foreground'
+                          : 'text-muted-foreground group-hover:text-foreground',
+                      )}
+                    >
                       <Trans>{item.title}</Trans>
                     </span>
                   </div>
@@ -120,7 +137,7 @@ function ConfigLayout() {
         <motion.div
           initial={{ opacity: 0, x: 20 }}
           animate={{ opacity: 1, x: 0 }}
-          transition={{ duration: 0.4, ease: "easeOut" }}
+          transition={{ duration: 0.4, ease: 'easeOut' }}
           className="pb-20"
         >
           <Outlet />

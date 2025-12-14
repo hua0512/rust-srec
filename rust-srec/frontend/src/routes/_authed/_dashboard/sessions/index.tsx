@@ -5,7 +5,15 @@ import { listSessions } from '@/server/functions/sessions';
 import { SessionList } from '@/components/sessions/SessionList';
 import { startOfDay, subDays, format } from 'date-fns';
 import { useMemo, useState } from 'react';
-import { Film, Search, Filter, Activity, CheckCircle2, CalendarDays, X } from 'lucide-react';
+import {
+  Film,
+  Search,
+  Filter,
+  Activity,
+  CheckCircle2,
+  CalendarDays,
+  X,
+} from 'lucide-react';
 import { Trans } from '@lingui/react/macro';
 import { t } from '@lingui/core/macro';
 import {
@@ -16,23 +24,26 @@ import {
   PaginationLink,
   PaginationNext,
   PaginationPrevious,
-} from "@/components/ui/pagination";
-import { Input } from "@/components/ui/input";
-import { cn } from "@/lib/utils";
+} from '@/components/ui/pagination';
+import { Input } from '@/components/ui/input';
+import { cn } from '@/lib/utils';
 import {
   Popover,
   PopoverContent,
   PopoverTrigger,
-} from "@/components/ui/popover";
-import { Calendar } from "@/components/ui/calendar";
-import { Button } from "@/components/ui/button";
+} from '@/components/ui/popover';
+import { Calendar } from '@/components/ui/calendar';
+import { Button } from '@/components/ui/button';
 
 const searchSchema = z.object({
   page: z.number().optional().catch(1),
   limit: z.number().optional().catch(50),
   streamer_id: z.string().optional(),
   status: z.enum(['all', 'active', 'completed']).optional().catch('all'),
-  timeRange: z.enum(['all', 'today', 'yesterday', 'week', 'month', 'custom']).optional().catch('all'),
+  timeRange: z
+    .enum(['all', 'today', 'yesterday', 'week', 'month', 'custom'])
+    .optional()
+    .catch('all'),
   from: z.string().optional(),
   to: z.string().optional(),
 });
@@ -52,7 +63,7 @@ function SessionsPage() {
     if (search.timeRange === 'custom' && search.from) {
       return {
         from_date: search.from,
-        to_date: search.to
+        to_date: search.to,
       };
     }
 
@@ -83,10 +94,22 @@ function SessionsPage() {
   }, [search.timeRange, search.from, search.to]);
 
   const activeOnly =
-    search.status === 'active' ? true : search.status === 'completed' ? false : undefined;
+    search.status === 'active'
+      ? true
+      : search.status === 'completed'
+        ? false
+        : undefined;
 
   const query = useQuery({
-    queryKey: ['sessions', search.page, search.limit, search.streamer_id, activeOnly, from_date, to_date],
+    queryKey: [
+      'sessions',
+      search.page,
+      search.limit,
+      search.streamer_id,
+      activeOnly,
+      from_date,
+      to_date,
+    ],
     queryFn: () =>
       listSessions({
         data: {
@@ -152,12 +175,18 @@ function SessionsPage() {
     { value: 'month', label: 'Month' },
   ];
 
-  const hasActiveFilters = search.streamer_id || (search.status && search.status !== 'all') || (search.timeRange && search.timeRange !== 'all') || search.from;
+  const hasActiveFilters =
+    search.streamer_id ||
+    (search.status && search.status !== 'all') ||
+    (search.timeRange && search.timeRange !== 'all') ||
+    search.from;
 
   const currentStatus = search.status || 'all';
   const currentTimeRange = search.timeRange || 'all';
-  const dateRange = { from: search.from ? new Date(search.from) : undefined, to: search.to ? new Date(search.to) : undefined };
-
+  const dateRange = {
+    from: search.from ? new Date(search.from) : undefined,
+    to: search.to ? new Date(search.to) : undefined,
+  };
 
   return (
     <div className="min-h-screen space-y-6">
@@ -170,7 +199,9 @@ function SessionsPage() {
                 <Film className="h-6 w-6 text-primary" />
               </div>
               <div>
-                <h1 className="text-xl font-semibold tracking-tight"><Trans>Sessions</Trans></h1>
+                <h1 className="text-xl font-semibold tracking-tight">
+                  <Trans>Sessions</Trans>
+                </h1>
                 <p className="text-sm text-muted-foreground">
                   <Trans>Review recorded streams and manage archives</Trans>
                 </p>
@@ -184,7 +215,12 @@ function SessionsPage() {
                 <Input
                   placeholder={t`Search sessions...`}
                   value={search.streamer_id || ''}
-                  onChange={(e) => updateSearch({ streamer_id: e.target.value || undefined, page: 1 })}
+                  onChange={(e) =>
+                    updateSearch({
+                      streamer_id: e.target.value || undefined,
+                      page: 1,
+                    })
+                  }
                   className="pl-9 h-9 bg-muted/40 border-border/50 focus:bg-background transition-colors"
                 />
               </div>
@@ -199,15 +235,22 @@ function SessionsPage() {
                   return (
                     <button
                       key={filter.value}
-                      onClick={() => updateSearch({ status: filter.value as any, page: 1 })}
+                      onClick={() =>
+                        updateSearch({ status: filter.value as any, page: 1 })
+                      }
                       className={cn(
-                        "flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium transition-all duration-200",
+                        'flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium transition-all duration-200',
                         isActive
-                          ? "bg-background text-foreground shadow-sm ring-1 ring-border/50"
-                          : "text-muted-foreground hover:text-foreground hover:bg-muted/50"
+                          ? 'bg-background text-foreground shadow-sm ring-1 ring-border/50'
+                          : 'text-muted-foreground hover:text-foreground hover:bg-muted/50',
                       )}
                     >
-                      <Icon className={cn("h-3 w-3", isActive ? "text-primary" : "text-muted-foreground")} />
+                      <Icon
+                        className={cn(
+                          'h-3 w-3',
+                          isActive ? 'text-primary' : 'text-muted-foreground',
+                        )}
+                      />
                       <span>{filter.label}</span>
                     </button>
                   );
@@ -220,21 +263,26 @@ function SessionsPage() {
                   <PopoverTrigger asChild>
                     <button
                       className={cn(
-                        "flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium transition-all duration-200",
+                        'flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium transition-all duration-200',
                         currentTimeRange === 'custom' || dateRange?.from
-                          ? "bg-background text-foreground shadow-sm ring-1 ring-border/50"
-                          : "text-muted-foreground hover:text-foreground hover:bg-muted/50"
+                          ? 'bg-background text-foreground shadow-sm ring-1 ring-border/50'
+                          : 'text-muted-foreground hover:text-foreground hover:bg-muted/50',
                       )}
                     >
-                      <CalendarDays className={cn("h-3 w-3", (currentTimeRange === 'custom' || dateRange?.from) ? "text-primary" : "text-muted-foreground")} />
+                      <CalendarDays
+                        className={cn(
+                          'h-3 w-3',
+                          currentTimeRange === 'custom' || dateRange?.from
+                            ? 'text-primary'
+                            : 'text-muted-foreground',
+                        )}
+                      />
                       <span>
-                        {dateRange?.from ? (
-                          dateRange.to ? (
-                            `${format(dateRange.from, "MMM dd")} - ${format(dateRange.to, "MMM dd")} `
-                          ) : (
-                            format(dateRange.from, "MMM dd")
-                          )
-                        ) : "Custom"}
+                        {dateRange?.from
+                          ? dateRange.to
+                            ? `${format(dateRange.from, 'MMM dd')} - ${format(dateRange.to, 'MMM dd')} `
+                            : format(dateRange.from, 'MMM dd')
+                          : 'Custom'}
                       </span>
                     </button>
                   </PopoverTrigger>
@@ -248,14 +296,19 @@ function SessionsPage() {
                             timeRange: 'custom',
                             from: range.from.toISOString(),
                             to: range.to?.toISOString(),
-                            page: 1
+                            page: 1,
                           });
                         } else {
-                          updateSearch({ timeRange: 'all', from: undefined, to: undefined, page: 1 });
+                          updateSearch({
+                            timeRange: 'all',
+                            from: undefined,
+                            to: undefined,
+                            page: 1,
+                          });
                         }
                       }}
                       disabled={(date) =>
-                        date > new Date() || date < new Date("1900-01-01")
+                        date > new Date() || date < new Date('1900-01-01')
                       }
                       numberOfMonths={2}
                       initialFocus
@@ -271,16 +324,24 @@ function SessionsPage() {
                       key={filter.value}
                       onClick={() => {
                         if (filter.value !== 'custom') {
-                          updateSearch({ timeRange: filter.value as any, from: undefined, to: undefined, page: 1 });
+                          updateSearch({
+                            timeRange: filter.value as any,
+                            from: undefined,
+                            to: undefined,
+                            page: 1,
+                          });
                         } else {
-                          updateSearch({ timeRange: filter.value as any, page: 1 });
+                          updateSearch({
+                            timeRange: filter.value as any,
+                            page: 1,
+                          });
                         }
                       }}
                       className={cn(
-                        "flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium transition-all duration-200 whitespace-nowrap",
+                        'flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium transition-all duration-200 whitespace-nowrap',
                         isActive
-                          ? "bg-background text-foreground shadow-sm ring-1 ring-border/50"
-                          : "text-muted-foreground hover:text-foreground hover:bg-muted/50"
+                          ? 'bg-background text-foreground shadow-sm ring-1 ring-border/50'
+                          : 'text-muted-foreground hover:text-foreground hover:bg-muted/50',
                       )}
                     >
                       <span>{filter.label}</span>
@@ -318,8 +379,14 @@ function SessionsPage() {
               <PaginationContent>
                 <PaginationItem>
                   <PaginationPrevious
-                    onClick={() => currentPage > 1 && updateSearch({ page: currentPage - 1 })}
-                    className={currentPage === 1 ? "pointer-events-none opacity-50" : "cursor-pointer"}
+                    onClick={() =>
+                      currentPage > 1 && updateSearch({ page: currentPage - 1 })
+                    }
+                    className={
+                      currentPage === 1
+                        ? 'pointer-events-none opacity-50'
+                        : 'cursor-pointer'
+                    }
                   />
                 </PaginationItem>
 
@@ -341,8 +408,15 @@ function SessionsPage() {
 
                 <PaginationItem>
                   <PaginationNext
-                    onClick={() => currentPage < totalPages && updateSearch({ page: currentPage + 1 })}
-                    className={currentPage === totalPages ? "pointer-events-none opacity-50" : "cursor-pointer"}
+                    onClick={() =>
+                      currentPage < totalPages &&
+                      updateSearch({ page: currentPage + 1 })
+                    }
+                    className={
+                      currentPage === totalPages
+                        ? 'pointer-events-none opacity-50'
+                        : 'cursor-pointer'
+                    }
                   />
                 </PaginationItem>
               </PaginationContent>

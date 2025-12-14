@@ -4,7 +4,11 @@ import type { DownloadProgress } from '../api/proto/download_progress';
 export type Download = DownloadProgress;
 
 // Connection status type
-export type ConnectionStatus = 'disconnected' | 'connecting' | 'connected' | 'error';
+export type ConnectionStatus =
+  | 'disconnected'
+  | 'connecting'
+  | 'connected'
+  | 'error';
 
 interface DownloadState {
   downloads: Map<string, DownloadProgress>;
@@ -13,7 +17,10 @@ interface DownloadState {
   // Actions
   setSnapshot: (downloads: DownloadProgress[]) => void;
   addDownload: (download: DownloadProgress) => void;
-  updateProgress: (downloadId: string, progress: Partial<DownloadProgress>) => void;
+  updateProgress: (
+    downloadId: string,
+    progress: Partial<DownloadProgress>,
+  ) => void;
   removeDownload: (downloadId: string) => void;
   setConnectionStatus: (status: ConnectionStatus) => void;
   clearAll: () => void;
@@ -57,10 +64,13 @@ export const useDownloadStore = create<DownloadState>((set, get) => ({
 
   setConnectionStatus: (status) => set({ connectionStatus: status }),
 
-  clearAll: () => set({ downloads: new Map(), connectionStatus: 'disconnected' }),
+  clearAll: () =>
+    set({ downloads: new Map(), connectionStatus: 'disconnected' }),
 
   getDownloadsByStreamer: (streamerId) => {
-    return Array.from(get().downloads.values()).filter((d) => d.streamerId === streamerId);
+    return Array.from(get().downloads.values()).filter(
+      (d) => d.streamerId === streamerId,
+    );
   },
 
   hasActiveDownload: (streamerId) => {

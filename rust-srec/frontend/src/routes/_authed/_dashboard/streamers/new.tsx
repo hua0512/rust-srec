@@ -32,8 +32,11 @@ function CreateStreamerPage() {
     // Let's normalize data before sending
     const payload = {
       ...data,
-      platform_config_id: data.platform_config_id === "none" ? undefined : data.platform_config_id,
-      template_id: data.template_id === "none" ? undefined : data.template_id,
+      platform_config_id:
+        data.platform_config_id === 'none'
+          ? undefined
+          : data.platform_config_id,
+      template_id: data.template_id === 'none' ? undefined : data.template_id,
     };
     createMutation.mutate(payload);
   };
@@ -44,7 +47,9 @@ function CreateStreamerPage() {
         onSubmit={onSubmit}
         isSubmitting={createMutation.isPending}
         title={<Trans>Add New Streamer</Trans>}
-        description={<Trans>Configure a new streamer to monitor and record.</Trans>}
+        description={
+          <Trans>Configure a new streamer to monitor and record.</Trans>
+        }
         submitLabel={<Trans>Create Streamer</Trans>}
       />
     </div>

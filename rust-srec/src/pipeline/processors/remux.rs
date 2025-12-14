@@ -6,7 +6,7 @@ use std::path::Path;
 use tokio::process::Command;
 use tracing::{debug, error, info, warn};
 
-use super::traits::{Processor, ProcessorInput, ProcessorOutput, ProcessorType};
+use super::traits::{Processor, ProcessorContext, ProcessorInput, ProcessorOutput, ProcessorType};
 use super::utils::{create_log_entry, get_extension, is_media};
 use crate::Result;
 
@@ -312,6 +312,9 @@ impl RemuxProcessor {
         }
 
         args.push("-hide_banner".to_string());
+        args.push("-nostats".to_string());
+        args.extend(["-loglevel".to_string(), "info".to_string()]);
+        args.extend(["-progress".to_string(), "pipe:1".to_string()]);
 
         // Hardware acceleration
         if let Some(ref hwaccel) = config.hwaccel {
@@ -442,13 +445,20 @@ impl Processor for RemuxProcessor {
         "RemuxProcessor"
     }
 
-    async fn process(&self, input: &ProcessorInput) -> Result<ProcessorOutput> {
+    async fn process(
+        &self,
+        input: &ProcessorInput,
+        ctx: &ProcessorContext,
+    ) -> Result<ProcessorOutput> {
         let start = std::time::Instant::now();
 
         // Parse config or use defaults
         let config: RemuxConfig = if let Some(ref config_str) = input.config {
             serde_json::from_str(config_str).unwrap_or_else(|e| {
-                warn!("Failed to parse remux config, using defaults: {}", e);
+                let _ = ctx.warn(&format!(
+                    "Failed to parse remux config, using defaults: {}",
+                    e
+                ));
                 RemuxConfig::default()
             })
         } else {
@@ -474,10 +484,10 @@ impl Processor for RemuxProcessor {
         // If not supported, pass through the input file instead of failing
         if !is_media(&ext) {
             let duration = start.elapsed().as_secs_f64();
-            info!(
+            let _ = ctx.info(&format!(
                 "Input file is not a supported media format for remuxing, passing through: {}",
                 input_path
-            );
+            ));
             return Ok(ProcessorOutput {
                 outputs: vec![input_path.to_string()],
                 duration_secs: duration,
@@ -523,10 +533,10 @@ impl Processor for RemuxProcessor {
         let output_path_string = make_absolute(&output_string);
         let output_path = output_path_string.as_str();
 
-        info!(
+        let _ = ctx.info(&format!(
             "Processing {} -> {} (video: {:?}, audio: {:?})",
             input_path, output_path, config.video_codec, config.audio_codec
-        );
+        ));
 
         let args = self.build_args(input, &config, output_path);
         debug!("FFmpeg args: {:?}", args);
@@ -536,8 +546,12 @@ impl Processor for RemuxProcessor {
         cmd.args(&args).env("LC_ALL", "C");
 
         // Execute command and capture logs
-        let command_output =
-            crate::pipeline::processors::utils::run_command_with_logs(&mut cmd).await?;
+        let command_output = crate::pipeline::processors::utils::run_ffmpeg_with_progress(
+            &mut cmd,
+            &ctx.progress,
+            Some(ctx.log_tx.clone()),
+        )
+        .await?;
 
         if !command_output.status.success() {
             // Find the last error log
@@ -549,7 +563,7 @@ impl Processor for RemuxProcessor {
                 .map(|l| l.message.clone())
                 .unwrap_or_else(|| "Unknown ffmpeg error".to_string());
 
-            error!("ffmpeg failed: {}", error_msg);
+            let _ = ctx.error(&format!("ffmpeg failed: {}", error_msg));
 
             return Err(crate::Error::Other(format!(
                 "ffmpeg failed with exit code {}: {}",
@@ -558,10 +572,10 @@ impl Processor for RemuxProcessor {
             )));
         }
 
-        info!(
+        let _ = ctx.info(&format!(
             "Processing completed in {:.2}s: {}",
             command_output.duration, output_path
-        );
+        ));
 
         // Remove input file if requested and successful
         let mut logs = command_output.logs;
@@ -575,7 +589,10 @@ impl Processor for RemuxProcessor {
                     ));
                 }
                 Err(e) => {
-                    warn!("Failed to remove input file {}: {}", input_path, e);
+                    let _ = ctx.warn(&format!(
+                        "Failed to remove input file {}: {}",
+                        input_path, e
+                    ));
                     logs.push(create_log_entry(
                         crate::pipeline::job_queue::LogLevel::Warn,
                         format!("Failed to remove input file {}: {}", input_path, e),

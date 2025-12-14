@@ -2,14 +2,14 @@
 
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
-use std::sync::atomic::{AtomicUsize, Ordering};
-use tokio::sync::Semaphore;
+use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
+use tokio::sync::{OwnedSemaphorePermit, Semaphore};
 use tokio::task::JoinSet;
 use tokio_util::sync::CancellationToken;
 use tracing::{debug, error, info, warn};
 
-use super::job_queue::{JobExecutionInfo, JobQueue, JobResult};
-use super::processors::{Processor, ProcessorInput};
+use super::job_queue::{JobExecutionInfo, JobLogEntry, JobQueue, JobResult};
+use super::processors::{Processor, ProcessorContext, ProcessorInput};
 
 /// Type of worker.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -29,6 +29,45 @@ impl std::fmt::Display for WorkerType {
     }
 }
 
+/// Adaptive worker scaling configuration.
+///
+/// When enabled, the pool dynamically adjusts its effective concurrency between
+/// `min_workers` and `max_workers` based on backlog and observed runtimes.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AdaptiveWorkerPoolConfig {
+    /// Enable adaptive scaling.
+    pub enabled: bool,
+    /// Minimum workers to keep available.
+    pub min_workers: usize,
+    /// Controller interval in milliseconds.
+    pub interval_ms: u64,
+    /// Target time to drain backlog (seconds).
+    pub target_drain_secs: u64,
+    /// Maximum workers to add per interval.
+    pub max_step_up: usize,
+    /// Maximum workers to remove per interval.
+    pub max_step_down: usize,
+    /// Only scale down after this many consecutive idle intervals.
+    pub scale_down_idle_ticks: u32,
+    /// Fallback runtime (milliseconds) until we have observations.
+    pub default_avg_runtime_ms: u64,
+}
+
+impl Default for AdaptiveWorkerPoolConfig {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            min_workers: 1,
+            interval_ms: 1000,
+            target_drain_secs: 30,
+            max_step_up: 2,
+            max_step_down: 1,
+            scale_down_idle_ticks: 5,
+            default_avg_runtime_ms: 1000,
+        }
+    }
+}
+
 /// Configuration for a worker pool.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct WorkerPoolConfig {
@@ -41,6 +80,9 @@ pub struct WorkerPoolConfig {
     pub job_timeout_secs: u64,
     /// Poll interval in milliseconds.
     pub poll_interval_ms: u64,
+    /// Adaptive worker scaling configuration.
+    #[serde(default)]
+    pub adaptive: AdaptiveWorkerPoolConfig,
 }
 
 impl Default for WorkerPoolConfig {
@@ -49,6 +91,7 @@ impl Default for WorkerPoolConfig {
             max_workers: 4,
             job_timeout_secs: 3600, // 1 hour
             poll_interval_ms: 100,
+            adaptive: AdaptiveWorkerPoolConfig::default(),
         }
     }
 }
@@ -62,11 +105,57 @@ pub struct WorkerPool {
     /// Semaphore for concurrency control.
     semaphore: Arc<Semaphore>,
     /// Active worker count.
-    active_workers: AtomicUsize,
+    active_workers: Arc<AtomicUsize>,
+    /// Desired max concurrency for this pool (<= config.max_workers).
+    desired_workers: Arc<AtomicUsize>,
+    /// Reserved permits to reduce effective concurrency.
+    reserved_permits: Arc<parking_lot::Mutex<Vec<OwnedSemaphorePermit>>>,
+    /// EWMA of observed runtime (milliseconds) for this pool.
+    avg_runtime_ms: Arc<AtomicU64>,
     /// Cancellation token.
     cancellation_token: CancellationToken,
     /// Task set for workers.
     tasks: parking_lot::Mutex<Option<JoinSet<()>>>,
+}
+
+fn set_desired_with_handles(
+    semaphore: &Arc<Semaphore>,
+    reserved_permits: &parking_lot::Mutex<Vec<OwnedSemaphorePermit>>,
+    desired_workers: &AtomicUsize,
+    max_workers: usize,
+    desired: usize,
+) -> usize {
+    let desired = desired.min(max_workers);
+    desired_workers.store(desired, Ordering::SeqCst);
+
+    let target_reserved = max_workers.saturating_sub(desired);
+    let mut reserved = reserved_permits.lock();
+
+    while reserved.len() > target_reserved {
+        reserved.pop();
+    }
+
+    while reserved.len() < target_reserved {
+        match semaphore.clone().try_acquire_owned() {
+            Ok(p) => reserved.push(p),
+            Err(_) => break,
+        }
+    }
+
+    desired
+}
+
+fn update_avg_runtime_ms(avg_runtime_ms: &AtomicU64, sample_ms: u64) {
+    // EWMA with alpha=0.2 in integer space: new = old + (sample-old)/5
+    let sample_ms = sample_ms.max(1);
+    let old = avg_runtime_ms.load(Ordering::Relaxed);
+    let next = if old == 0 {
+        sample_ms
+    } else {
+        let delta = sample_ms as i64 - old as i64;
+        (old as i64 + delta / 5).max(1) as u64
+    };
+    avg_runtime_ms.store(next, Ordering::Relaxed);
 }
 
 impl WorkerPool {
@@ -77,14 +166,34 @@ impl WorkerPool {
 
     /// Create a new worker pool with custom configuration.
     pub fn with_config(worker_type: WorkerType, config: WorkerPoolConfig) -> Self {
+        let max_workers = config.max_workers;
         Self {
             worker_type,
-            semaphore: Arc::new(Semaphore::new(config.max_workers)),
+            semaphore: Arc::new(Semaphore::new(max_workers)),
             config,
-            active_workers: AtomicUsize::new(0),
+            active_workers: Arc::new(AtomicUsize::new(0)),
+            desired_workers: Arc::new(AtomicUsize::new(max_workers)),
+            reserved_permits: Arc::new(parking_lot::Mutex::new(Vec::new())),
+            avg_runtime_ms: Arc::new(AtomicU64::new(0)),
             cancellation_token: CancellationToken::new(),
             tasks: parking_lot::Mutex::new(Some(JoinSet::new())),
         }
+    }
+
+    /// Get the desired effective concurrency for this pool.
+    pub fn desired_max_workers(&self) -> usize {
+        self.desired_workers.load(Ordering::SeqCst)
+    }
+
+    /// Set the desired effective concurrency for this pool (clamped to `config.max_workers`).
+    pub fn set_desired_max_workers(&self, desired: usize) -> usize {
+        set_desired_with_handles(
+            &self.semaphore,
+            &self.reserved_permits,
+            &self.desired_workers,
+            self.config.max_workers,
+            desired,
+        )
     }
 
     /// Start the worker pool.
@@ -92,9 +201,17 @@ impl WorkerPool {
         let worker_type = self.worker_type;
         let semaphore = self.semaphore.clone();
         let cancellation_token = self.cancellation_token.clone();
-        let poll_interval = std::time::Duration::from_millis(self.config.poll_interval_ms);
+        let poll_interval = std::time::Duration::from_millis(self.config.poll_interval_ms.max(1));
+        let max_poll_interval = std::time::Duration::from_millis(
+            self.config
+                .poll_interval_ms
+                .max(1)
+                .saturating_mul(50)
+                .max(1000),
+        );
         let job_timeout = std::time::Duration::from_secs(self.config.job_timeout_secs);
-        let _active_workers = &self.active_workers;
+        let active_workers = self.active_workers.clone();
+        let avg_runtime_ms = self.avg_runtime_ms.clone();
 
         info!(
             "Starting {} worker pool with {} max workers",
@@ -109,6 +226,21 @@ impl WorkerPool {
             .collect();
         let supported_job_types = Arc::new(supported_job_types);
 
+        if self.config.adaptive.enabled {
+            let initial = self
+                .config
+                .adaptive
+                .min_workers
+                .min(self.config.max_workers);
+            self.set_desired_max_workers(initial);
+            info!(
+                "Adaptive scaling enabled for {} pool: desired_workers={}/{}",
+                worker_type,
+                self.desired_max_workers(),
+                self.config.max_workers
+            );
+        }
+
         // Spawn worker tasks
         let mut tasks = self.tasks.lock();
         if let Some(ref mut join_set) = *tasks {
@@ -119,9 +251,12 @@ impl WorkerPool {
                 let processors = processors.clone();
                 let notifier = job_queue.notifier();
                 let supported_job_types = supported_job_types.clone();
+                let active_workers = active_workers.clone();
+                let avg_runtime_ms = avg_runtime_ms.clone();
 
                 join_set.spawn(async move {
                     debug!("{} worker {} started", worker_type, i);
+                    let mut current_poll_interval = poll_interval;
 
                     loop {
                         // Check for cancellation
@@ -138,8 +273,8 @@ impl WorkerPool {
                             _ = notifier.notified() => {
                                 // New job available
                             }
-                            _ = tokio::time::sleep(poll_interval) => {
-                                // Poll timeout
+                            _ = tokio::time::sleep(current_poll_interval) => {
+                                // Poll timeout (fallback / missed notify)
                             }
                         }
 
@@ -159,15 +294,26 @@ impl WorkerPool {
                         let job = match job_queue.dequeue(filter_types).await {
                             Ok(Some(job)) => job,
                             Ok(None) => {
+                                let next_ms = (current_poll_interval.as_millis() as u64)
+                                    .saturating_mul(2)
+                                    .min(max_poll_interval.as_millis() as u64);
+                                current_poll_interval =
+                                    std::time::Duration::from_millis(next_ms.max(1));
                                 drop(permit);
                                 continue;
                             }
                             Err(e) => {
                                 error!("Error dequeuing job: {}", e);
+                                let next_ms = (current_poll_interval.as_millis() as u64)
+                                    .saturating_mul(2)
+                                    .min(max_poll_interval.as_millis() as u64);
+                                current_poll_interval =
+                                    std::time::Duration::from_millis(next_ms.max(1));
                                 drop(permit);
                                 continue;
                             }
                         };
+                        current_poll_interval = poll_interval;
 
                         // Find a processor for this job
                         let processor = processors.iter().find(|p| p.can_process(&job.job_type));
@@ -210,6 +356,9 @@ impl WorkerPool {
                                 continue;
                             }
 
+                            active_workers.fetch_add(1, Ordering::SeqCst);
+                            let started = std::time::Instant::now();
+
                             // Record execution start info
                             // Requirements: 6.1
                             let exec_info =
@@ -229,8 +378,40 @@ impl WorkerPool {
                                 session_id: job.session_id.clone(),
                             };
 
+                            let (log_tx, mut log_rx) = tokio::sync::mpsc::channel(100);
+                            let job_queue_clone = job_queue.clone();
+                            let job_id_clone = job_id.clone();
+
+                            // Spawn log collector task
+                            let log_collector = tokio::spawn(async move {
+                                while let Some(entry) = log_rx.recv().await {
+                                    if let Err(e) = job_queue_clone
+                                        .append_log_entry(&job_id_clone, &[entry])
+                                        .await
+                                    {
+                                        warn!(
+                                            "Failed to append streaming log for job {}: {}",
+                                            job_id_clone, e
+                                        );
+                                    }
+                                }
+                            });
+
+                            let ctx = ProcessorContext::new(
+                                job_id.clone(),
+                                job_queue.progress_reporter(&job_id),
+                                log_tx,
+                            );
+
                             let result =
-                                tokio::time::timeout(job_timeout, processor.process(&input)).await;
+                                tokio::time::timeout(job_timeout, processor.process(&input, &ctx))
+                                    .await;
+
+                            // Drop ctx to close the log channel
+                            drop(ctx);
+
+                            // Wait for log collector to finish draining
+                            let _ = log_collector.await;
 
                             match result {
                                 Ok(Ok(output)) => {
@@ -305,6 +486,12 @@ impl WorkerPool {
                                     }
                                 }
                             }
+
+                            active_workers.fetch_sub(1, Ordering::SeqCst);
+                            update_avg_runtime_ms(
+                                &avg_runtime_ms,
+                                started.elapsed().as_millis() as u64,
+                            );
                         } else {
                             warn!(
                                 "No processor found for job type: '{}'. Available processors: {:?}",
@@ -315,6 +502,96 @@ impl WorkerPool {
                         }
 
                         drop(permit);
+                    }
+                });
+            }
+
+            if self.config.adaptive.enabled {
+                let adaptive = self.config.adaptive.clone();
+                let max_workers = self.config.max_workers;
+                let desired_workers = self.desired_workers.clone();
+                let reserved_permits = self.reserved_permits.clone();
+                let semaphore = self.semaphore.clone();
+                let job_queue = job_queue.clone();
+                let supported_job_types = supported_job_types.clone();
+                let cancellation_token = self.cancellation_token.clone();
+                let active_workers = self.active_workers.clone();
+                let avg_runtime_ms = self.avg_runtime_ms.clone();
+
+                join_set.spawn(async move {
+                    let interval =
+                        std::time::Duration::from_millis(adaptive.interval_ms.max(100));
+                    let mut idle_ticks: u32 = 0;
+
+                    loop {
+                        tokio::select! {
+                            _ = cancellation_token.cancelled() => break,
+                            _ = tokio::time::sleep(interval) => {}
+                        }
+
+                        let filter_types = if supported_job_types.is_empty() {
+                            None
+                        } else {
+                            Some(supported_job_types.as_slice())
+                        };
+
+                        let pending = match job_queue.count_pending_jobs(filter_types).await {
+                            Ok(v) => v,
+                            Err(e) => {
+                                warn!("Adaptive {} scaler failed to count pending jobs: {}", worker_type, e);
+                                continue;
+                            }
+                        };
+
+                        let active = active_workers.load(Ordering::SeqCst) as u64;
+                        let backlog = pending.saturating_add(active);
+
+                        if pending == 0 && active == 0 {
+                            idle_ticks = idle_ticks.saturating_add(1);
+                        } else {
+                            idle_ticks = 0;
+                        }
+
+                        let avg_ms = avg_runtime_ms
+                            .load(Ordering::Relaxed)
+                            .max(adaptive.default_avg_runtime_ms.max(1));
+                        let target_drain_secs = adaptive.target_drain_secs.max(1) as f64;
+
+                        let mut target = if backlog == 0 {
+                            0usize
+                        } else {
+                            (((backlog as f64) * (avg_ms as f64) / 1000.0) / target_drain_secs)
+                                .ceil()
+                                .max(0.0) as usize
+                        };
+                        target = target.clamp(adaptive.min_workers.min(max_workers), max_workers);
+
+                        let current = desired_workers.load(Ordering::SeqCst);
+                        let mut next = current;
+
+                        if target > current {
+                            let step = adaptive.max_step_up.max(1);
+                            next = (current + step).min(target);
+                        } else if target < current {
+                            if idle_ticks >= adaptive.scale_down_idle_ticks.max(1) {
+                                let step = adaptive.max_step_down.max(1);
+                                next = current.saturating_sub(step).max(target);
+                            }
+                        }
+
+                        if next != current {
+                            let applied = set_desired_with_handles(
+                                &semaphore,
+                                &reserved_permits,
+                                &desired_workers,
+                                max_workers,
+                                next,
+                            );
+                            debug!(
+                                "Adaptive {} pool concurrency: pending={}, active={}, avg_ms={}, desired={}/{} (target={})",
+                                worker_type, pending, active, avg_ms, applied, max_workers, target
+                            );
+                        }
                     }
                 });
             }

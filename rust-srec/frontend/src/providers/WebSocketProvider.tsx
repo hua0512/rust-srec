@@ -1,12 +1,19 @@
-import { createContext, useContext, useEffect, useRef, useCallback, ReactNode } from 'react';
+import {
+  createContext,
+  useContext,
+  useEffect,
+  useRef,
+  useCallback,
+  ReactNode,
+} from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { sessionQueryOptions } from '../api/session';
 import { useDownloadStore } from '../store/downloads';
 import {
-    decodeWsMessage,
-    encodeClientMessage,
-    EventType,
-    type DownloadProgress,
+  decodeWsMessage,
+  encodeClientMessage,
+  EventType,
+  type DownloadProgress,
 } from '../api/proto/download_progress';
 
 // Reconnection constants
@@ -14,9 +21,9 @@ const WS_RECONNECT_BASE_DELAY = 1000;
 const WS_RECONNECT_MAX_DELAY = 30000;
 
 interface WebSocketContextType {
-    isConnected: boolean;
-    subscribe: (streamerId: string) => void;
-    unsubscribe: (streamerId: string) => void;
+  isConnected: boolean;
+  subscribe: (streamerId: string) => void;
+  unsubscribe: (streamerId: string) => void;
 }
 
 const WebSocketContext = createContext<WebSocketContextType | null>(null);
@@ -25,221 +32,235 @@ const WebSocketContext = createContext<WebSocketContextType | null>(null);
  * Build the WebSocket URL with JWT token as query parameter.
  */
 export function buildWebSocketUrl(accessToken: string): string {
-    const apiBaseUrl = import.meta.env.VITE_API_BASE_URL || '/api';
+  const apiBaseUrl = import.meta.env.VITE_API_BASE_URL || '/api';
 
-    let wsUrl: string;
+  let wsUrl: string;
 
-    if (apiBaseUrl.startsWith('http://') || apiBaseUrl.startsWith('https://')) {
-        const url = new URL(apiBaseUrl);
-        const wsProtocol = url.protocol === 'https:' ? 'wss:' : 'ws:';
-        wsUrl = `${wsProtocol}//${url.host}${url.pathname}`;
-    } else {
-        const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-        wsUrl = `${protocol}//${window.location.host}${apiBaseUrl}`;
-    }
+  if (apiBaseUrl.startsWith('http://') || apiBaseUrl.startsWith('https://')) {
+    const url = new URL(apiBaseUrl);
+    const wsProtocol = url.protocol === 'https:' ? 'wss:' : 'ws:';
+    wsUrl = `${wsProtocol}//${url.host}${url.pathname}`;
+  } else {
+    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+    wsUrl = `${protocol}//${window.location.host}${apiBaseUrl}`;
+  }
 
-    const basePath = wsUrl.replace(/\/$/, '');
-    return `${basePath}/downloads/ws?token=${accessToken}`;
+  const basePath = wsUrl.replace(/\/$/, '');
+  return `${basePath}/downloads/ws?token=${accessToken}`;
 }
 
 export function WebSocketProvider({ children }: { children: ReactNode }) {
-    const wsRef = useRef<WebSocket | null>(null);
-    const reconnectAttemptRef = useRef<number>(0);
-    const reconnectTimeoutRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
-    const isConnectingRef = useRef<boolean>(false);
+  const wsRef = useRef<WebSocket | null>(null);
+  const reconnectAttemptRef = useRef<number>(0);
+  const reconnectTimeoutRef = useRef<ReturnType<typeof setTimeout> | undefined>(
+    undefined,
+  );
+  const isConnectingRef = useRef<boolean>(false);
 
-    // Auth state
-    const { data: sessionData } = useQuery(sessionQueryOptions);
-    const accessToken = sessionData?.token?.access_token;
-    const isAuthenticated = !!accessToken;
+  // Auth state
+  const { data: sessionData } = useQuery(sessionQueryOptions);
+  const accessToken = sessionData?.token?.access_token;
+  const isAuthenticated = !!accessToken;
 
-    // Download store actions
-    const setSnapshot = useDownloadStore((state) => state.setSnapshot);
-    const addDownload = useDownloadStore((state) => state.addDownload);
-    const updateProgress = useDownloadStore((state) => state.updateProgress);
-    const removeDownload = useDownloadStore((state) => state.removeDownload);
-    const setConnectionStatus = useDownloadStore((state) => state.setConnectionStatus);
-    const clearAll = useDownloadStore((state) => state.clearAll);
+  // Download store actions
+  const setSnapshot = useDownloadStore((state) => state.setSnapshot);
+  const addDownload = useDownloadStore((state) => state.addDownload);
+  const updateProgress = useDownloadStore((state) => state.updateProgress);
+  const removeDownload = useDownloadStore((state) => state.removeDownload);
+  const setConnectionStatus = useDownloadStore(
+    (state) => state.setConnectionStatus,
+  );
+  const clearAll = useDownloadStore((state) => state.clearAll);
 
-    const handleMessage = useCallback(
-        (event: MessageEvent) => {
-            try {
-                const data = new Uint8Array(event.data as ArrayBuffer);
-                const message = decodeWsMessage(data);
-                // console.debug('[WS] Received message:', message.eventType);
+  const handleMessage = useCallback(
+    (event: MessageEvent) => {
+      try {
+        const data = new Uint8Array(event.data as ArrayBuffer);
+        const message = decodeWsMessage(data);
+        // console.debug('[WS] Received message:', message.eventType);
 
-                switch (message.eventType) {
-                    case EventType.EVENT_TYPE_SNAPSHOT:
-                        if ('snapshot' in message.payload) {
-                            setSnapshot(message.payload.snapshot.downloads);
-                        }
-                        break;
-
-                    case EventType.EVENT_TYPE_DOWNLOAD_STARTED:
-                        if ('downloadStarted' in message.payload) {
-                            const started = message.payload.downloadStarted;
-                            const initialProgress: DownloadProgress = {
-                                downloadId: started.downloadId,
-                                streamerId: started.streamerId,
-                                sessionId: started.sessionId,
-                                engineType: started.engineType,
-                                status: 'Starting',
-                                bytesDownloaded: 0n,
-                                durationSecs: 0,
-                                speedBytesPerSec: 0n,
-                                segmentsCompleted: 0,
-                                mediaDurationSecs: 0,
-                                playbackRatio: 0,
-                                startedAtMs: started.startedAtMs,
-                            };
-                            addDownload(initialProgress);
-                        }
-                        break;
-
-                    case EventType.EVENT_TYPE_PROGRESS:
-                        if ('progress' in message.payload) {
-                            const progress = message.payload.progress;
-                            updateProgress(progress.downloadId, progress);
-                        }
-                        break;
-
-                    case EventType.EVENT_TYPE_DOWNLOAD_COMPLETED:
-                        if ('downloadCompleted' in message.payload) {
-                            removeDownload(message.payload.downloadCompleted.downloadId);
-                        }
-                        break;
-
-                    case EventType.EVENT_TYPE_DOWNLOAD_FAILED:
-                        if ('downloadFailed' in message.payload) {
-                            removeDownload(message.payload.downloadFailed.downloadId);
-                        }
-                        break;
-
-                    case EventType.EVENT_TYPE_DOWNLOAD_CANCELLED:
-                        if ('downloadCancelled' in message.payload) {
-                            removeDownload(message.payload.downloadCancelled.downloadId);
-                        }
-                        break;
-
-                    case EventType.EVENT_TYPE_SEGMENT_COMPLETED:
-                        break;
-
-                    case EventType.EVENT_TYPE_ERROR:
-                        if ('error' in message.payload) {
-                            console.error('WebSocket error from server:', message.payload.error);
-                        }
-                        break;
-                }
-            } catch (error) {
-                console.error('Failed to decode WebSocket message:', error);
+        switch (message.eventType) {
+          case EventType.EVENT_TYPE_SNAPSHOT:
+            if ('snapshot' in message.payload) {
+              setSnapshot(message.payload.snapshot.downloads);
             }
-        },
-        [setSnapshot, addDownload, updateProgress, removeDownload]
-    );
+            break;
 
-    const connect = useCallback(() => {
-        if (!accessToken || !isAuthenticated) return;
-        if (isConnectingRef.current) return;
-        if (wsRef.current?.readyState === WebSocket.OPEN) return;
-
-        isConnectingRef.current = true;
-        setConnectionStatus('connecting');
-
-        const wsUrl = buildWebSocketUrl(accessToken);
-        const ws = new WebSocket(wsUrl);
-        ws.binaryType = 'arraybuffer';
-
-        ws.onopen = () => {
-            console.debug('[WS] Connected');
-            isConnectingRef.current = false;
-            setConnectionStatus('connected');
-            reconnectAttemptRef.current = 0;
-
-            // Explicitly Clear any filters to ensure we receive everything
-            const msg = encodeClientMessage({
-                action: { unsubscribe: {} },
-            });
-            ws.send(msg);
-        };
-
-        ws.onmessage = handleMessage;
-
-        ws.onclose = () => {
-            console.debug('[WS] Disconnected');
-            isConnectingRef.current = false;
-            setConnectionStatus('disconnected');
-            wsRef.current = null;
-
-            if (sessionData?.token?.access_token) {
-                scheduleReconnect();
+          case EventType.EVENT_TYPE_DOWNLOAD_STARTED:
+            if ('downloadStarted' in message.payload) {
+              const started = message.payload.downloadStarted;
+              const initialProgress: DownloadProgress = {
+                downloadId: started.downloadId,
+                streamerId: started.streamerId,
+                sessionId: started.sessionId,
+                engineType: started.engineType,
+                status: 'Starting',
+                bytesDownloaded: 0n,
+                durationSecs: 0,
+                speedBytesPerSec: 0n,
+                segmentsCompleted: 0,
+                mediaDurationSecs: 0,
+                playbackRatio: 0,
+                startedAtMs: started.startedAtMs,
+              };
+              addDownload(initialProgress);
             }
-        };
+            break;
 
-        ws.onerror = () => {
-            console.error('[WS] Connection error');
-            isConnectingRef.current = false;
-            setConnectionStatus('error');
-        };
+          case EventType.EVENT_TYPE_PROGRESS:
+            if ('progress' in message.payload) {
+              const progress = message.payload.progress;
+              updateProgress(progress.downloadId, progress);
+            }
+            break;
 
-        wsRef.current = ws;
-    }, [accessToken, isAuthenticated, handleMessage, setConnectionStatus, sessionData?.token?.access_token]);
+          case EventType.EVENT_TYPE_DOWNLOAD_COMPLETED:
+            if ('downloadCompleted' in message.payload) {
+              removeDownload(message.payload.downloadCompleted.downloadId);
+            }
+            break;
 
-    const scheduleReconnect = useCallback(() => {
-        const delay = Math.min(
-            WS_RECONNECT_BASE_DELAY * Math.pow(2, reconnectAttemptRef.current),
-            WS_RECONNECT_MAX_DELAY
-        );
-        reconnectAttemptRef.current++;
+          case EventType.EVENT_TYPE_DOWNLOAD_FAILED:
+            if ('downloadFailed' in message.payload) {
+              removeDownload(message.payload.downloadFailed.downloadId);
+            }
+            break;
 
-        reconnectTimeoutRef.current = setTimeout(() => {
-            connect();
-        }, delay);
-    }, [connect]);
+          case EventType.EVENT_TYPE_DOWNLOAD_CANCELLED:
+            if ('downloadCancelled' in message.payload) {
+              removeDownload(message.payload.downloadCancelled.downloadId);
+            }
+            break;
 
+          case EventType.EVENT_TYPE_SEGMENT_COMPLETED:
+            break;
 
-    const disconnect = useCallback(() => {
-        if (reconnectTimeoutRef.current) {
-            clearTimeout(reconnectTimeoutRef.current);
-            reconnectTimeoutRef.current = undefined;
+          case EventType.EVENT_TYPE_ERROR:
+            if ('error' in message.payload) {
+              console.error(
+                'WebSocket error from server:',
+                message.payload.error,
+              );
+            }
+            break;
         }
+      } catch (error) {
+        console.error('Failed to decode WebSocket message:', error);
+      }
+    },
+    [setSnapshot, addDownload, updateProgress, removeDownload],
+  );
 
-        if (wsRef.current) {
-            wsRef.current.close();
-            wsRef.current = null;
-        }
+  const connect = useCallback(() => {
+    if (!accessToken || !isAuthenticated) return;
+    if (isConnectingRef.current) return;
+    if (wsRef.current?.readyState === WebSocket.OPEN) return;
 
-        isConnectingRef.current = false;
-        clearAll();
-    }, [clearAll]);
+    isConnectingRef.current = true;
+    setConnectionStatus('connecting');
 
-    // Connection lifecycle
-    useEffect(() => {
-        if (isAuthenticated && accessToken) {
-            connect();
-        } else {
-            disconnect();
-        }
+    const wsUrl = buildWebSocketUrl(accessToken);
+    const ws = new WebSocket(wsUrl);
+    ws.binaryType = 'arraybuffer';
 
-        return () => {
-            disconnect();
-        };
-    }, [isAuthenticated, accessToken, connect, disconnect]);
+    ws.onopen = () => {
+      console.debug('[WS] Connected');
+      isConnectingRef.current = false;
+      setConnectionStatus('connected');
+      reconnectAttemptRef.current = 0;
 
-    // No-op for now as we use global subscription
-    const subscribe = useCallback((_streamerId: string) => { }, []);
-    const unsubscribe = useCallback((_streamerId: string) => { }, []);
+      // Explicitly Clear any filters to ensure we receive everything
+      const msg = encodeClientMessage({
+        action: { unsubscribe: {} },
+      });
+      ws.send(msg);
+    };
 
-    return (
-        <WebSocketContext.Provider value={{ isConnected: !!wsRef.current, subscribe, unsubscribe }}>
-            {children}
-        </WebSocketContext.Provider>
+    ws.onmessage = handleMessage;
+
+    ws.onclose = () => {
+      console.debug('[WS] Disconnected');
+      isConnectingRef.current = false;
+      setConnectionStatus('disconnected');
+      wsRef.current = null;
+
+      if (sessionData?.token?.access_token) {
+        scheduleReconnect();
+      }
+    };
+
+    ws.onerror = () => {
+      console.error('[WS] Connection error');
+      isConnectingRef.current = false;
+      setConnectionStatus('error');
+    };
+
+    wsRef.current = ws;
+  }, [
+    accessToken,
+    isAuthenticated,
+    handleMessage,
+    setConnectionStatus,
+    sessionData?.token?.access_token,
+  ]);
+
+  const scheduleReconnect = useCallback(() => {
+    const delay = Math.min(
+      WS_RECONNECT_BASE_DELAY * Math.pow(2, reconnectAttemptRef.current),
+      WS_RECONNECT_MAX_DELAY,
     );
+    reconnectAttemptRef.current++;
+
+    reconnectTimeoutRef.current = setTimeout(() => {
+      connect();
+    }, delay);
+  }, [connect]);
+
+  const disconnect = useCallback(() => {
+    if (reconnectTimeoutRef.current) {
+      clearTimeout(reconnectTimeoutRef.current);
+      reconnectTimeoutRef.current = undefined;
+    }
+
+    if (wsRef.current) {
+      wsRef.current.close();
+      wsRef.current = null;
+    }
+
+    isConnectingRef.current = false;
+    clearAll();
+  }, [clearAll]);
+
+  // Connection lifecycle
+  useEffect(() => {
+    if (isAuthenticated && accessToken) {
+      connect();
+    } else {
+      disconnect();
+    }
+
+    return () => {
+      disconnect();
+    };
+  }, [isAuthenticated, accessToken, connect, disconnect]);
+
+  // No-op for now as we use global subscription
+  const subscribe = useCallback((_streamerId: string) => {}, []);
+  const unsubscribe = useCallback((_streamerId: string) => {}, []);
+
+  return (
+    <WebSocketContext.Provider
+      value={{ isConnected: !!wsRef.current, subscribe, unsubscribe }}
+    >
+      {children}
+    </WebSocketContext.Provider>
+  );
 }
 
 export function useWebSocket() {
-    const context = useContext(WebSocketContext);
-    if (!context) {
-        throw new Error('useWebSocket must be used within a WebSocketProvider');
-    }
-    return context;
+  const context = useContext(WebSocketContext);
+  if (!context) {
+    throw new Error('useWebSocket must be used within a WebSocketProvider');
+  }
+  return context;
 }

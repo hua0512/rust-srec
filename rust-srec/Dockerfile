@@ -32,6 +32,7 @@ FROM debian:bookworm-slim
 # Install runtime dependencies
 RUN apt-get update && apt-get install -y \
     ca-certificates \
+    curl \
     ffmpeg \
     && rm -rf /var/lib/apt/lists/*
 
@@ -55,13 +56,15 @@ ENV RUST_LOG=info
 ENV DATABASE_URL=sqlite:///app/data/rust-srec.db
 ENV OUTPUT_DIR=/app/output
 ENV CONFIG_DIR=/app/config
+ENV API_PORT=8080
+ENV API_BIND_ADDRESS=0.0.0.0
 
 # Expose API port
 EXPOSE 8080
 
 # Health check
 HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
-    CMD curl -f http://localhost:8080/health || exit 1
+    CMD curl -f http://localhost:8080/api/health/ready || exit 1
 
 # Run the application
 ENTRYPOINT ["/app/rust-srec"]

@@ -2,16 +2,18 @@
 
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicU8, Ordering};
 use tokio::sync::{broadcast, mpsc};
 use tokio_util::sync::CancellationToken;
 use tracing::{debug, info, warn};
 
-use super::job_queue::{Job, JobQueue, JobQueueConfig, QueueDepthStatus};
+use super::job_queue::{Job, JobLogEntry, JobQueue, JobQueueConfig, QueueDepthStatus};
 use super::processors::{
     AudioExtractProcessor, CompressionProcessor, CopyMoveProcessor, DeleteProcessor,
     ExecuteCommandProcessor, MetadataProcessor, Processor, RcloneProcessor, RemuxProcessor,
     ThumbnailProcessor,
 };
+use super::progress::JobProgressSnapshot;
 use super::purge::{JobPurgeService, PurgeConfig};
 use super::throttle::{DownloadLimitAdjuster, ThrottleConfig, ThrottleController, ThrottleEvent};
 use super::worker_pool::{WorkerPool, WorkerPoolConfig, WorkerType};
@@ -127,6 +129,8 @@ pub struct PipelineManager<
     preset_repo: Option<Arc<dyn JobPresetRepository>>,
     /// Config service for resolving pipeline rules.
     config_service: Option<Arc<ConfigService<CR, SR>>>,
+    /// Last observed queue depth status (edge-trigger warnings).
+    last_queue_status: AtomicU8,
 }
 
 impl<CR, SR> PipelineManager<CR, SR>
@@ -185,6 +189,7 @@ where
             purge_service: None,
             preset_repo: None,
             config_service: None,
+            last_queue_status: AtomicU8::new(0),
         }
     }
 
@@ -252,6 +257,7 @@ where
             purge_service,
             preset_repo: None,
             config_service: None,
+            last_queue_status: AtomicU8::new(0),
         }
     }
 
@@ -517,16 +523,34 @@ where
             ));
         }
 
-        // Get the first step
-        let first_step = &steps[0];
+        // Resolve all steps config/processor upfront
+        let mut resolved_steps_config: Vec<PipelineStep> = Vec::with_capacity(steps.len());
 
-        // Resolve the first step config/processor
-        let (first_processor, first_config) = self.resolve_step(first_step).await?;
+        for step in &steps {
+            let (processor, config) = self.resolve_step(step).await?;
+            resolved_steps_config.push(PipelineStep::Inline {
+                processor,
+                config: config.unwrap_or(serde_json::Value::Null),
+            });
+        }
+
+        // Get the first step from resolved list
+        let first_resolved_step = &resolved_steps_config[0];
+        let (first_processor, first_config) = match first_resolved_step {
+            PipelineStep::Inline { processor, config } => (processor.clone(), Some(config.clone())),
+            _ => unreachable!("We just converted everything to Inline"),
+        };
 
         // Calculate pipeline chain for this job
-        // We will store the full remaining steps list in the job, so it knows what comes next.
-        let remaining_steps = if steps.len() > 1 {
-            Some(steps.iter().skip(1).cloned().collect::<Vec<PipelineStep>>())
+        // We will store the full remaining steps list (fully resolved) in the job
+        let remaining_steps = if resolved_steps_config.len() > 1 {
+            Some(
+                resolved_steps_config
+                    .iter()
+                    .skip(1)
+                    .cloned()
+                    .collect::<Vec<PipelineStep>>(),
+            )
         } else {
             None
         };
@@ -534,7 +558,11 @@ where
         // Determine next_job_type for observability/legacy fields (it's the processor name of the next step)
         let next_job_type = if let Some(remaining) = &remaining_steps {
             if let Some(next) = remaining.first() {
-                Some(self.resolve_step_processor_name(next).await)
+                // It's already Inline, so we can just grab the processor
+                match next {
+                    PipelineStep::Inline { processor, .. } => Some(processor.clone()),
+                    PipelineStep::Preset(name) => Some(name.clone()), // Should not happen
+                }
             } else {
                 None
             }
@@ -652,9 +680,11 @@ where
     ) -> Result<(String, Option<serde_json::Value>)> {
         match step {
             PipelineStep::Preset(name) => {
+                debug!("Resolving pipeline step preset: {}", name);
                 if let Some(repo) = &self.preset_repo {
                     match repo.get_preset_by_name(name).await {
                         Ok(Some(preset)) => {
+                            debug!("Found preset '{}', config: {}", name, preset.config);
                             let config = if !preset.config.is_empty() {
                                 serde_json::from_str(&preset.config)
                                     .unwrap_or(serde_json::Value::Null)
@@ -664,19 +694,24 @@ where
                             Ok((preset.processor, Some(config)))
                         }
                         Ok(None) => {
-                            // Preset not found. Fallback to treating name as processor name (legacy behavior or just convenient)
-                            // Or should we error? The requirement says "named presets". If name not found, it might be a raw processor name if we support that shorthand.
-                            // Let's assume it is a processor name with no config if not found in DB.
+                            debug!(
+                                "Preset '{}' not found, falling back to processor name",
+                                name
+                            );
                             Ok((name.clone(), None))
                         }
                         Err(e) => Err(e.into()),
                     }
                 } else {
-                    // No repo, assume name is processor
+                    debug!(
+                        "No preset repo available, falling back to processor name: {}",
+                        name
+                    );
                     Ok((name.clone(), None))
                 }
             }
             PipelineStep::Inline { processor, config } => {
+                debug!("Resolving inline pipeline step: {}", processor);
                 Ok((processor.clone(), Some(config.clone())))
             }
         }
@@ -686,7 +721,7 @@ where
     async fn resolve_step_processor_name(&self, step: &PipelineStep) -> String {
         match self.resolve_step(step).await {
             Ok((proc, _)) => proc,
-            Err(_) => "unknown".to_string(), // Should likely not happen or handled better
+            Err(_) => "unknown".to_string(),
         }
     }
 
@@ -799,6 +834,18 @@ where
         let depth = self.job_queue.depth();
         let status = self.job_queue.depth_status();
 
+        let status_code = match status {
+            QueueDepthStatus::Normal => 0,
+            QueueDepthStatus::Warning => 1,
+            QueueDepthStatus::Critical => 2,
+        };
+
+        let prev = self.last_queue_status.load(Ordering::Relaxed);
+        if prev == status_code {
+            return;
+        }
+        self.last_queue_status.store(status_code, Ordering::Relaxed);
+
         match status {
             QueueDepthStatus::Critical => {
                 warn!("Queue depth critical: {} jobs", depth);
@@ -840,6 +887,29 @@ where
         pagination: &Pagination,
     ) -> Result<(Vec<Job>, u64)> {
         self.job_queue.list_jobs(filters, pagination).await
+    }
+
+    /// List jobs with filters and pagination, without running a total `COUNT(*)`.
+    pub async fn list_jobs_page(
+        &self,
+        filters: &JobFilters,
+        pagination: &Pagination,
+    ) -> Result<Vec<Job>> {
+        self.job_queue.list_jobs_page(filters, pagination).await
+    }
+
+    /// List job execution logs (paged).
+    pub async fn list_job_logs(
+        &self,
+        job_id: &str,
+        pagination: &Pagination,
+    ) -> Result<(Vec<JobLogEntry>, u64)> {
+        self.job_queue.list_job_logs(job_id, pagination).await
+    }
+
+    /// Get latest execution progress snapshot for a job (if available).
+    pub async fn get_job_progress(&self, job_id: &str) -> Result<Option<JobProgressSnapshot>> {
+        self.job_queue.get_job_progress(job_id).await
     }
 
     /// List pipelines (grouped by pipeline_id) with pagination.

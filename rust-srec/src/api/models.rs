@@ -103,6 +103,25 @@ impl<T> PaginatedResponse<T> {
     }
 }
 
+/// Page response wrapper for list endpoints where computing a total count is expensive.
+///
+/// This omits `total` and returns only the current page.
+#[derive(Debug, Clone, Serialize)]
+pub struct PageResponse<T> {
+    /// Items in this page
+    pub items: Vec<T>,
+    /// Number of items requested per page
+    pub limit: u32,
+    /// Number of items skipped
+    pub offset: u32,
+}
+
+impl<T> PageResponse<T> {
+    pub fn new(items: Vec<T>, limit: u32, offset: u32) -> Self {
+        Self { items, limit, offset }
+    }
+}
+
 // ============================================================================
 // Streamer DTOs
 // ============================================================================
@@ -466,6 +485,12 @@ pub struct JobExecutionInfo {
     pub output_size_bytes: Option<u64>,
     /// Detailed execution logs.
     pub logs: Vec<JobLogEntry>,
+    /// Total number of log lines captured for this job (across all steps).
+    pub log_lines_total: u64,
+    /// Number of WARN lines captured.
+    pub log_warn_count: u64,
+    /// Number of ERROR lines captured.
+    pub log_error_count: u64,
     /// Per-step duration tracking for pipeline jobs.
     pub step_durations: Vec<StepDurationInfo>,
 }
@@ -719,6 +744,10 @@ pub struct ComponentHealth {
     pub name: String,
     pub status: String,
     pub message: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub last_check: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub check_duration_ms: Option<u64>,
 }
 
 // ============================================================================

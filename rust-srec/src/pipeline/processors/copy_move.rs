@@ -11,7 +11,7 @@ use std::path::Path;
 use tokio::fs;
 use tracing::{debug, error, info, warn};
 
-use super::traits::{Processor, ProcessorInput, ProcessorOutput, ProcessorType};
+use super::traits::{Processor, ProcessorContext, ProcessorInput, ProcessorOutput, ProcessorType};
 use super::utils::create_log_entry;
 use crate::Result;
 
@@ -143,7 +143,7 @@ impl Processor for CopyMoveProcessor {
         "CopyMoveProcessor"
     }
 
-    async fn process(&self, input: &ProcessorInput) -> Result<ProcessorOutput> {
+    async fn process(&self, input: &ProcessorInput, _ctx: &ProcessorContext) -> Result<ProcessorOutput> {
         let start = std::time::Instant::now();
 
         // Parse config or use defaults
@@ -464,6 +464,7 @@ mod tests {
         fs::write(&source_path, "test content").await.unwrap();
 
         let processor = CopyMoveProcessor::new();
+        let ctx = ProcessorContext::noop("test");
         let input = ProcessorInput {
             inputs: vec![source_path.to_string_lossy().to_string()],
             outputs: vec![dest_path.to_string_lossy().to_string()],
@@ -477,7 +478,7 @@ mod tests {
             session_id: "test".to_string(),
         };
 
-        let output = processor.process(&input).await.unwrap();
+        let output = processor.process(&input, &ctx).await.unwrap();
 
         // Verify copy succeeded
         assert!(dest_path.exists());
@@ -501,6 +502,7 @@ mod tests {
         fs::write(&source_path, "test content").await.unwrap();
 
         let processor = CopyMoveProcessor::new();
+        let ctx = ProcessorContext::noop("test");
         let input = ProcessorInput {
             inputs: vec![source_path.to_string_lossy().to_string()],
             outputs: vec![dest_path.to_string_lossy().to_string()],
@@ -514,7 +516,7 @@ mod tests {
             session_id: "test".to_string(),
         };
 
-        let output = processor.process(&input).await.unwrap();
+        let output = processor.process(&input, &ctx).await.unwrap();
 
         // Verify move succeeded
         assert!(dest_path.exists());
@@ -535,6 +537,7 @@ mod tests {
         fs::write(&source_path, "test content").await.unwrap();
 
         let processor = CopyMoveProcessor::new();
+        let ctx = ProcessorContext::noop("test");
         let input = ProcessorInput {
             inputs: vec![source_path.to_string_lossy().to_string()],
             outputs: vec![dest_path.to_string_lossy().to_string()],
@@ -549,7 +552,7 @@ mod tests {
             session_id: "test".to_string(),
         };
 
-        let output = processor.process(&input).await.unwrap();
+        let output = processor.process(&input, &ctx).await.unwrap();
 
         // Verify directories were created and copy succeeded
         assert!(dest_path.exists());
@@ -571,6 +574,7 @@ mod tests {
         fs::write(&dest_path, "existing content").await.unwrap();
 
         let processor = CopyMoveProcessor::new();
+        let ctx = ProcessorContext::noop("test");
         let input = ProcessorInput {
             inputs: vec![source_path.to_string_lossy().to_string()],
             outputs: vec![dest_path.to_string_lossy().to_string()],
@@ -585,7 +589,7 @@ mod tests {
             session_id: "test".to_string(),
         };
 
-        let result = processor.process(&input).await;
+        let result = processor.process(&input, &ctx).await;
 
         // Should fail because destination exists and overwrite is disabled
         assert!(result.is_err());
@@ -604,6 +608,7 @@ mod tests {
         fs::write(&dest_path, "old content").await.unwrap();
 
         let processor = CopyMoveProcessor::new();
+        let ctx = ProcessorContext::noop("test");
         let input = ProcessorInput {
             inputs: vec![source_path.to_string_lossy().to_string()],
             outputs: vec![dest_path.to_string_lossy().to_string()],
@@ -618,7 +623,7 @@ mod tests {
             session_id: "test".to_string(),
         };
 
-        let output = processor.process(&input).await.unwrap();
+        let output = processor.process(&input, &ctx).await.unwrap();
 
         // Verify overwrite succeeded
         assert!(dest_path.exists());
@@ -637,6 +642,7 @@ mod tests {
         let dest_path = temp_dir.path().join("dest.txt");
 
         let processor = CopyMoveProcessor::new();
+        let ctx = ProcessorContext::noop("test");
         let input = ProcessorInput {
             inputs: vec![source_path.to_string_lossy().to_string()],
             outputs: vec![dest_path.to_string_lossy().to_string()],
@@ -645,7 +651,7 @@ mod tests {
             session_id: "test".to_string(),
         };
 
-        let result = processor.process(&input).await;
+        let result = processor.process(&input, &ctx).await;
 
         // Should fail because source doesn't exist
         assert!(result.is_err());
@@ -656,6 +662,7 @@ mod tests {
     #[tokio::test]
     async fn test_no_input_file() {
         let processor = CopyMoveProcessor::new();
+        let ctx = ProcessorContext::noop("test");
         let input = ProcessorInput {
             inputs: vec![],
             outputs: vec!["/dest/file.txt".to_string()],
@@ -664,7 +671,7 @@ mod tests {
             session_id: "test".to_string(),
         };
 
-        let result = processor.process(&input).await;
+        let result = processor.process(&input, &ctx).await;
 
         // Should fail because no input file specified
         assert!(result.is_err());
@@ -679,6 +686,7 @@ mod tests {
         fs::write(&source_path, "test").await.unwrap();
 
         let processor = CopyMoveProcessor::new();
+        let ctx = ProcessorContext::noop("test");
         let input = ProcessorInput {
             inputs: vec![source_path.to_string_lossy().to_string()],
             outputs: vec![],
@@ -687,7 +695,7 @@ mod tests {
             session_id: "test".to_string(),
         };
 
-        let result = processor.process(&input).await;
+        let result = processor.process(&input, &ctx).await;
 
         // Should fail because no destination specified
         assert!(result.is_err());

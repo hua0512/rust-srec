@@ -27,7 +27,7 @@ pub use auth::{LoginRequest, LoginResponse};
 /// Create the main API router with all routes.
 ///
 /// Routes are organized as:
-/// - Public routes: `/api/auth/*` (login), `/health/*`
+/// - Public routes: `/api/auth/*` (login), `/api/health/live`
 /// - Protected routes: All other `/api/*` routes (require JWT authentication)
 pub fn create_router(state: AppState) -> Router {
     // Build protected routes with state first
@@ -41,6 +41,7 @@ pub fn create_router(state: AppState) -> Router {
         .nest("/api/pipeline", pipeline::router())
         .nest("/api/sessions", sessions::router())
         .nest("/api/parse", parse::router())
+        .nest("/api/media", media::router())
         .nest("/api/auth", auth::protected_router());
 
     // Apply JWT auth layer to protected routes if JWT service is configured
@@ -56,7 +57,6 @@ pub fn create_router(state: AppState) -> Router {
         // Public routes (no authentication required)
         .nest("/api/health", health::router())
         .nest("/api/auth", auth::public_router())
-        .nest("/api/media", media::router())
         // WebSocket route with JWT auth via query parameter (not middleware)
         .nest("/api/downloads", downloads::router())
         // Merge protected routes

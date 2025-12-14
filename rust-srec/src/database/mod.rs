@@ -29,6 +29,13 @@ const DEFAULT_BUSY_TIMEOUT_MS: u64 = 5000;
 /// Default cache size in KB (64MB = 65536 KB, but SQLite uses pages, so we use -64000 for 64MB).
 const DEFAULT_CACHE_SIZE_KB: i32 = -64000;
 
+/// Default WAL auto-checkpoint threshold in pages.
+/// With a typical 4KB page size, 1000 pages is ~4MB.
+const DEFAULT_WAL_AUTOCHECKPOINT_PAGES: i32 = 1000;
+
+/// Limit WAL size growth (bytes).
+const DEFAULT_JOURNAL_SIZE_LIMIT_BYTES: i64 = 64 * 1024 * 1024; // 64MB
+
 /// Initialize the database connection pool with WAL mode and performance optimizations.
 ///
 /// # Configuration
@@ -61,6 +68,22 @@ pub async fn init_pool(database_url: &str) -> Result<DbPool, sqlx::Error> {
         .acquire_timeout(Duration::from_secs(30))
         .after_connect(|conn, _meta| {
             Box::pin(async move {
+                // Ensure WAL auto-checkpoint is enabled to avoid unbounded WAL growth.
+                sqlx::query(&format!(
+                    "PRAGMA wal_autocheckpoint = {}",
+                    DEFAULT_WAL_AUTOCHECKPOINT_PAGES
+                ))
+                .execute(&mut *conn)
+                .await?;
+
+                // Cap WAL/journal size growth to reduce disk usage under write-heavy workloads.
+                sqlx::query(&format!(
+                    "PRAGMA journal_size_limit = {}",
+                    DEFAULT_JOURNAL_SIZE_LIMIT_BYTES
+                ))
+                .execute(&mut *conn)
+                .await?;
+
                 // Set cache size (64MB)
                 sqlx::query(&format!("PRAGMA cache_size = {}", DEFAULT_CACHE_SIZE_KB))
                     .execute(&mut *conn)

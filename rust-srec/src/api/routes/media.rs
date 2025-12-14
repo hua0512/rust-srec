@@ -4,6 +4,7 @@ use std::path::PathBuf;
 
 use axum::Router;
 use axum::extract::{Path, State};
+use axum::http::{HeaderMap, header::AUTHORIZATION};
 use axum::response::{IntoResponse, Response};
 use axum::routing::get;
 use tower_http::services::ServeFile;
@@ -22,7 +23,23 @@ pub fn router() -> Router<AppState> {
 async fn get_media_content(
     State(state): State<AppState>,
     Path(id): Path<String>,
+    headers: HeaderMap,
 ) -> ApiResult<Response> {
+    let jwt_service = state
+        .jwt_service
+        .as_ref()
+        .ok_or_else(|| ApiError::unauthorized("Authentication not configured"))?;
+
+    let token = headers
+        .get(AUTHORIZATION)
+        .and_then(|h| h.to_str().ok())
+        .and_then(|s| s.strip_prefix("Bearer "))
+        .ok_or_else(|| ApiError::unauthorized("Missing or invalid Authorization header"))?;
+
+    jwt_service
+        .validate_token(token)
+        .map_err(|_| ApiError::unauthorized("Invalid or expired token"))?;
+
     let session_repo = state
         .session_repository
         .ok_or_else(|| ApiError::service_unavailable("Session repository not available"))?;

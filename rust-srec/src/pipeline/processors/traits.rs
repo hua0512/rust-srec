@@ -5,6 +5,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::Result;
 use crate::pipeline::job_queue::JobLogEntry;
+use crate::pipeline::progress::ProgressReporter;
 
 /// Type of processor (determines which worker pool handles it).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -28,6 +29,58 @@ pub struct ProcessorInput {
     pub streamer_id: String,
     /// Session ID.
     pub session_id: String,
+}
+
+/// Processor context for emitting progress and other side-channel data.
+#[derive(Clone)]
+pub struct ProcessorContext {
+    pub job_id: String,
+    pub progress: ProgressReporter,
+    pub log_tx: tokio::sync::mpsc::Sender<JobLogEntry>,
+}
+
+impl ProcessorContext {
+    pub fn noop(job_id: impl Into<String>) -> Self {
+        let job_id = job_id.into();
+        let (log_tx, _) = tokio::sync::mpsc::channel(100);
+        Self {
+            job_id: job_id.clone(),
+            progress: ProgressReporter::noop(job_id),
+            log_tx,
+        }
+    }
+
+    pub fn new(
+        job_id: impl Into<String>,
+        progress: ProgressReporter,
+        log_tx: tokio::sync::mpsc::Sender<JobLogEntry>,
+    ) -> Self {
+        Self {
+            job_id: job_id.into(),
+            progress,
+            log_tx,
+        }
+    }
+
+    /// Emit a log entry.
+    pub fn log(&self, entry: JobLogEntry) {
+        let _ = self.log_tx.try_send(entry);
+    }
+
+    /// Emit an info log.
+    pub fn info(&self, message: impl Into<String>) {
+        self.log(JobLogEntry::info(message));
+    }
+
+    /// Emit a warning log.
+    pub fn warn(&self, message: impl Into<String>) {
+        self.log(JobLogEntry::warn(message));
+    }
+
+    /// Emit an error log.
+    pub fn error(&self, message: impl Into<String>) {
+        self.log(JobLogEntry::error(message));
+    }
 }
 
 /// Output from a processor.
@@ -87,7 +140,11 @@ pub trait Processor: Send + Sync {
     /// This method MUST be cancel-safe. The worker pool may cancel the future if the job times out
     /// or if the application is shutting down. Implementations should ensure that cancellation
     /// does not leave the system in an inconsistent state (e.g., partial files should be cleaned up).
-    async fn process(&self, input: &ProcessorInput) -> Result<ProcessorOutput>;
+    async fn process(
+        &self,
+        input: &ProcessorInput,
+        ctx: &ProcessorContext,
+    ) -> Result<ProcessorOutput>;
 
     /// Get the processor name.
     fn name(&self) -> &'static str;
