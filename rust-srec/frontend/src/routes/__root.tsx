@@ -75,7 +75,7 @@ function RootDocument({ children }: { children: React.ReactNode }) {
   return (
     <html lang="en">
       <head>
-        <link rel="icon" type="image/svg+xml" href="stream-rec.svg"></link>
+        <link rel="icon" type="image/svg+xml" href="/stream-rec.svg"></link>
         <HeadContent />
       </head>
       <body>

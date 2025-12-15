@@ -1,62 +1,59 @@
 import { fetchBackend } from '../api';
 import { createServerFn } from '@tanstack/react-start';
+import {
+    ParseUrlRequestSchema,
+    ParseUrlResponseSchema,
+    ResolveUrlRequestSchema,
+    ResolveUrlResponseSchema,
+} from '../../api/schemas';
+import { z } from 'zod';
 
-export interface ParseUrlRequest {
-    url: string;
-    cookies?: string;
-}
-
-export interface ParseUrlResponse {
-    success: boolean;
-    is_live: boolean;
-    media_info?: any;
-    error?: string;
-}
+// Re-export types from schemas for convenience
+export type ParseUrlRequest = z.infer<typeof ParseUrlRequestSchema>;
+export type ParseUrlResponse = z.infer<typeof ParseUrlResponseSchema>;
+export type ResolveUrlRequest = z.infer<typeof ResolveUrlRequestSchema>;
+export type ResolveUrlResponse = z.infer<typeof ResolveUrlResponseSchema>;
 
 /**
  * Parse a single URL to extract media info
  */
 export const parseUrl = createServerFn({ method: 'POST' })
-    .inputValidator((data: ParseUrlRequest) => data)
+    .inputValidator((data: ParseUrlRequest) => ParseUrlRequestSchema.parse(data))
     .handler(async ({ data }: { data: ParseUrlRequest }) => {
-        return fetchBackend<ParseUrlResponse>('/parse', {
+        const json = await fetchBackend('/parse', {
             method: 'POST',
             body: JSON.stringify(data),
         });
+        return ParseUrlResponseSchema.parse(json);
     });
 
 /**
  * Parse multiple URLs in batch
  */
 export const parseUrlBatch = createServerFn({ method: 'POST' })
-    .inputValidator((data: ParseUrlRequest[]) => data)
+    .inputValidator((data: ParseUrlRequest[]) =>
+        z.array(ParseUrlRequestSchema).parse(data),
+    )
     .handler(async ({ data }: { data: ParseUrlRequest[] }) => {
-        return fetchBackend<ParseUrlResponse[]>('/parse/batch', {
+        const json = await fetchBackend('/parse/batch', {
             method: 'POST',
             body: JSON.stringify(data),
         });
+        return z.array(ParseUrlResponseSchema).parse(json);
     });
-
-export interface ResolveUrlRequest {
-    url: string;
-    stream_info: any;
-    cookies?: string;
-}
-
-export interface ResolveUrlResponse {
-    success: boolean;
-    stream_info?: any;
-    error?: string;
-}
 
 /**
  * Resolve the true URL for a stream
  */
 export const resolveUrl = createServerFn({ method: 'POST' })
-    .inputValidator((data: ResolveUrlRequest) => data)
+    .inputValidator((data: ResolveUrlRequest) =>
+        ResolveUrlRequestSchema.parse(data),
+    )
     .handler(async ({ data }: { data: ResolveUrlRequest }) => {
-        return fetchBackend<ResolveUrlResponse>('/parse/resolve', {
+        const json = await fetchBackend('/parse/resolve', {
             method: 'POST',
             body: JSON.stringify(data),
         });
+        return ResolveUrlResponseSchema.parse(json);
     });
+

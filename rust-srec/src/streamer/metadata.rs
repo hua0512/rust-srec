@@ -40,10 +40,10 @@ pub struct StreamerMetadata {
     pub last_error: Option<String>,
     /// Streamer specific configuration override (JSON string).
     pub streamer_specific_config: Option<String>,
-    /// Download retry policy override (JSON string).
-    pub download_retry_policy: Option<String>,
-    /// Danmu sampling config override (JSON string).
-    pub danmu_sampling_config: Option<String>,
+    #[serde(default = "Utc::now")]
+    pub created_at: DateTime<Utc>,
+    #[serde(default = "Utc::now")]
+    pub updated_at: DateTime<Utc>,
 }
 
 impl StreamerMetadata {
@@ -63,8 +63,6 @@ impl StreamerMetadata {
             last_error: model.last_error.clone(),
             // Map config overrides
             streamer_specific_config: model.streamer_specific_config.clone(),
-            download_retry_policy: model.download_retry_policy.clone(),
-            danmu_sampling_config: model.danmu_sampling_config.clone(),
             disabled_until: model.disabled_until.as_ref().and_then(|s| {
                 chrono::DateTime::parse_from_rfc3339(s)
                     .ok()
@@ -75,6 +73,12 @@ impl StreamerMetadata {
                     .ok()
                     .map(|dt| dt.with_timezone(&Utc))
             }),
+            created_at: chrono::DateTime::parse_from_rfc3339(&model.created_at)
+                .map(|dt| dt.with_timezone(&Utc))
+                .unwrap_or_else(|_| Utc::now()),
+            updated_at: chrono::DateTime::parse_from_rfc3339(&model.updated_at)
+                .map(|dt| dt.with_timezone(&Utc))
+                .unwrap_or_else(|_| Utc::now()),
         }
     }
 
@@ -131,8 +135,8 @@ mod tests {
             disabled_until: None,
             last_live_time: None,
             streamer_specific_config: None,
-            download_retry_policy: None,
-            danmu_sampling_config: None,
+            created_at: Utc::now(),
+            updated_at: Utc::now(),
         }
     }
 

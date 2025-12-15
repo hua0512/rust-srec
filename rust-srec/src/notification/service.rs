@@ -28,6 +28,7 @@ use super::channels::{
     ChannelConfig, DiscordChannel, EmailChannel, NotificationChannel, WebhookChannel,
 };
 use super::events::{NotificationEvent, NotificationPriority};
+use super::events::canonicalize_subscription_event_name;
 use crate::Result;
 use crate::database::models::{
     ChannelType, DiscordChannelSettings, EmailChannelSettings, NotificationChannelDbModel,
@@ -184,6 +185,11 @@ pub struct DeadLetterEntry {
     pub notification_id: u64,
     /// The event that failed.
     pub event: NotificationEvent,
+    /// Channel instance key (config/dynamic/db).
+    ///
+    /// This is the first-class identifier used internally for delivery tracking, retries,
+    /// and circuit breakers.
+    pub channel_key: Option<String>,
     /// Channel ID (DB-backed channels only).
     pub channel_id: Option<String>,
     /// Channel that failed.
@@ -211,6 +217,29 @@ pub struct NotificationService {
     next_dead_letter_id: Arc<AtomicU64>,
     event_tx: broadcast::Sender<NotificationEvent>,
     cancellation_token: CancellationToken,
+}
+
+/// Public view of a configured notification channel instance.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct NotificationChannelInstance {
+    /// Unique channel instance key.
+    pub key: String,
+    /// DB channel id, when backed by `notification_channel`.
+    pub channel_id: Option<String>,
+    /// Human-friendly display name.
+    pub display_name: String,
+    /// Channel type (Discord/Email/Webhook).
+    pub channel_type: String,
+    /// Channel configuration source.
+    pub source: NotificationChannelSource,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum NotificationChannelSource {
+    Config,
+    Dynamic,
+    Database,
 }
 
 impl NotificationService {
@@ -256,6 +285,7 @@ impl NotificationService {
     fn init_channels(&self) {
         let mut channels = self.channels.write();
         channels.clear();
+        let mut used_keys: HashSet<String> = HashSet::new();
 
         for (idx, channel_config) in self.config.channels.iter().enumerate() {
             let channel: Arc<dyn NotificationChannel> = match channel_config {
@@ -265,7 +295,29 @@ impl NotificationService {
             };
 
             if channel.is_enabled() {
-                let key = format!("config:{}:{}", channel_config.channel_type(), idx);
+                let base_key = match channel_config.instance_id() {
+                    Some(id) => format!(
+                        "config:{}:{}",
+                        channel_config.channel_type(),
+                        normalize_channel_key_part(id)
+                    ),
+                    None => format!("config:{}:{}", channel_config.channel_type(), idx),
+                };
+                let key = if used_keys.insert(base_key.clone()) {
+                    base_key
+                } else {
+                    let disambiguated = format!("{}:{}", base_key, idx);
+                    warn!(
+                        "Duplicate notification channel key detected (base_key={}), using {}",
+                        base_key, disambiguated
+                    );
+                    used_keys.insert(disambiguated.clone());
+                    disambiguated
+                };
+                let display_name = channel_config
+                    .display_name()
+                    .unwrap_or(channel_config.channel_type())
+                    .to_string();
 
                 self.circuit_breakers.insert(
                     key.clone(),
@@ -275,7 +327,7 @@ impl NotificationService {
                 channels.push(RuntimeChannel {
                     key,
                     db_channel_id: None,
-                    display_name: channel_config.channel_type().to_string(),
+                    display_name,
                     channel_type: channel.channel_type().to_string(),
                     channel,
                 });
@@ -302,6 +354,10 @@ impl NotificationService {
 
         if channel.is_enabled() {
             let key = format!("dynamic:{}", Uuid::new_v4());
+            let display_name = config
+                .display_name()
+                .unwrap_or(config.channel_type())
+                .to_string();
             self.circuit_breakers.insert(
                 key.clone(),
                 CircuitBreakerState::new(self.config.circuit_breaker_cooldown_secs),
@@ -309,7 +365,7 @@ impl NotificationService {
             self.channels.write().push(RuntimeChannel {
                 key,
                 db_channel_id: None,
-                display_name: config.channel_type().to_string(),
+                display_name,
                 channel_type: channel.channel_type().to_string(),
                 channel,
             });
@@ -354,11 +410,35 @@ impl NotificationService {
             );
 
             let subscriptions = repo.get_subscriptions_for_channel(&db_channel.id).await?;
-            for event_name in subscriptions {
+            for raw_event_name in subscriptions {
+                let Some(canonical) = canonicalize_subscription_event_name(&raw_event_name) else {
+                    warn!(
+                        "Skipping unknown notification subscription for channel {}: {}",
+                        db_channel.id, raw_event_name
+                    );
+                    continue;
+                };
+
                 subscriptions_by_event
-                    .entry(event_name)
+                    .entry(canonical.to_string())
                     .or_default()
                     .push(db_channel.id.clone());
+
+                // Best-effort migration toward canonical event names.
+                if raw_event_name.trim() != canonical {
+                    if let Err(e) = repo.subscribe(&db_channel.id, canonical).await {
+                        warn!(
+                            "Failed to migrate notification subscription (channel={}, from={}, to={}): {}",
+                            db_channel.id, raw_event_name, canonical, e
+                        );
+                    }
+                    if let Err(e) = repo.unsubscribe(&db_channel.id, &raw_event_name).await {
+                        warn!(
+                            "Failed to remove legacy notification subscription (channel={}, event={}): {}",
+                            db_channel.id, raw_event_name, e
+                        );
+                    }
+                }
             }
 
             new_db_channels.push(runtime_channel);
@@ -372,6 +452,19 @@ impl NotificationService {
 
         *self.subscriptions_by_event.write() = subscriptions_by_event;
         *self.channels.write() = combined_channels;
+
+        // Prevent stuck pending notifications if channels were removed/renamed.
+        // Any pending delivery state keyed to a non-existent channel is dropped.
+        let pending_ids: Vec<u64> = self.pending_queue.iter().map(|e| *e.key()).collect();
+        for id in pending_ids {
+            if let Some(mut pending) = self.pending_queue.get_mut(&id) {
+                pending.channel_state.retain(|k, _| live_keys.contains(k));
+                if pending.channel_state.is_empty() {
+                    drop(pending);
+                    self.pending_queue.remove(&id);
+                }
+            }
+        }
 
         info!(
             "Notification DB config loaded: channels={}, subscribed_events={}",
@@ -413,6 +506,8 @@ impl NotificationService {
                 let settings: DiscordChannelSettings =
                     serde_json::from_value(settings_json.clone())?;
                 Arc::new(DiscordChannel::new(super::channels::DiscordConfig {
+                    id: None,
+                    name: None,
                     enabled: true,
                     webhook_url: settings.webhook_url,
                     username: settings.username,
@@ -423,6 +518,8 @@ impl NotificationService {
             ChannelType::Email => {
                 let settings: EmailChannelSettings = serde_json::from_value(settings_json.clone())?;
                 Arc::new(EmailChannel::new(super::channels::EmailConfig {
+                    id: None,
+                    name: None,
                     enabled: true,
                     smtp_host: settings.smtp_host,
                     smtp_port: settings.smtp_port,
@@ -462,6 +559,8 @@ impl NotificationService {
                 }
 
                 Arc::new(WebhookChannel::new(super::channels::WebhookConfig {
+                    id: None,
+                    name: None,
                     enabled: true,
                     url: settings.url,
                     method: settings.method,
@@ -494,6 +593,122 @@ impl NotificationService {
         self.event_tx.subscribe()
     }
 
+    /// List currently loaded channel instances (config + dynamic + DB).
+    pub fn list_channel_instances(&self) -> Vec<NotificationChannelInstance> {
+        self.channels
+            .read()
+            .iter()
+            .map(|c| NotificationChannelInstance {
+                key: c.key.clone(),
+                channel_id: c.db_channel_id.clone(),
+                display_name: c.display_name.clone(),
+                channel_type: c.channel_type.clone(),
+                source: if c.db_channel_id.is_some() {
+                    NotificationChannelSource::Database
+                } else if c.key.starts_with("dynamic:") {
+                    NotificationChannelSource::Dynamic
+                } else {
+                    NotificationChannelSource::Config
+                },
+            })
+            .collect()
+    }
+
+    /// Run a connectivity/config test for a specific channel instance.
+    pub async fn test_channel_instance(&self, key: &str) -> Result<()> {
+        let channel = self
+            .channels
+            .read()
+            .iter()
+            .find(|c| c.key == key)
+            .cloned()
+            .ok_or_else(|| crate::Error::NotFound {
+                entity_type: "NotificationChannelInstance".to_string(),
+                id: key.to_string(),
+            })?;
+        channel.channel.test().await
+    }
+
+    /// Send a notification to a specific channel instance (bypasses DB subscriptions).
+    pub async fn notify_channel_instance(&self, key: &str, event: NotificationEvent) -> Result<()> {
+        self.notify_channel_instances(std::iter::once(key.to_string()).collect(), event)
+            .await
+    }
+
+    async fn notify_channel_instances(
+        &self,
+        keys: HashSet<String>,
+        event: NotificationEvent,
+    ) -> Result<()> {
+        if !self.config.enabled {
+            return Ok(());
+        }
+
+        let _ = self.event_tx.send(event.clone());
+
+        let id = self.next_id.fetch_add(1, Ordering::SeqCst);
+        let channels = self.channels.read().clone();
+
+        let channels_by_key: HashMap<String, RuntimeChannel> =
+            channels.into_iter().map(|c| (c.key.clone(), c)).collect();
+
+        let mut missing_keys = Vec::new();
+        for key in &keys {
+            if !channels_by_key.contains_key(key) {
+                missing_keys.push(key.clone());
+            }
+        }
+        if let Some(missing_key) = missing_keys.first() {
+            return Err(crate::Error::NotFound {
+                entity_type: "NotificationChannelInstance".to_string(),
+                id: missing_key.clone(),
+            });
+        }
+
+        let target_channels: Vec<RuntimeChannel> = keys
+            .iter()
+            .filter_map(|k| channels_by_key.get(k).cloned())
+            .collect();
+
+        if target_channels.is_empty() {
+            return Ok(());
+        }
+
+        let mut channel_state = HashMap::new();
+        for channel in &target_channels {
+            channel_state
+                .entry(channel.key.clone())
+                .or_insert(ChannelDeliveryState {
+                    status: DeliveryStatus::Pending,
+                    attempts: 0,
+                    last_attempt: None,
+                    last_error: None,
+                });
+        }
+
+        let pending = PendingNotification {
+            id,
+            event,
+            created_at: Utc::now(),
+            channel_state,
+            retry_generation: 0,
+            next_retry_at: None,
+        };
+
+        if self.pending_queue.len() >= self.config.max_queue_size {
+            warn!("Notification queue full, dropping oldest notification");
+            if let Some(oldest) = self.pending_queue.iter().min_by_key(|e| e.created_at) {
+                let oldest_id = *oldest.key();
+                drop(oldest);
+                self.pending_queue.remove(&oldest_id);
+            }
+        }
+
+        self.pending_queue.insert(id, pending);
+        self.process_notification(id).await;
+        Ok(())
+    }
+
     /// Send a notification to all enabled channels.
     pub async fn notify(&self, event: NotificationEvent) -> Result<()> {
         if !self.config.enabled {
@@ -513,10 +728,8 @@ impl NotificationService {
         let subscribed_db_channel_ids = {
             let subscriptions = self.subscriptions_by_event.read();
             let mut ids: HashSet<String> = HashSet::new();
-            for key in notification_event_subscription_keys(&event) {
-                if let Some(channels) = subscriptions.get(*key) {
-                    ids.extend(channels.iter().cloned());
-                }
+            if let Some(channels) = subscriptions.get(event.event_type()) {
+                ids.extend(channels.iter().cloned());
             }
             ids
         };
@@ -781,6 +994,7 @@ impl NotificationService {
                                 id: dead_letter_id,
                                 notification_id: id,
                                 event: pending_snapshot.event.clone(),
+                                channel_key: Some(channel_key.clone()),
                                 channel_id: channel.db_channel_id.clone(),
                                 channel_type: channel.channel_type.clone(),
                                 attempts,
@@ -867,7 +1081,12 @@ impl NotificationService {
     /// Retry a dead letter notification.
     pub async fn retry_dead_letter(&self, id: u64) -> Result<()> {
         if let Some((_, dead_letter)) = self.dead_letters.remove(&id) {
-            self.notify(dead_letter.event).await
+            if let Some(channel_key) = dead_letter.channel_key.clone() {
+                self.notify_channel_instance(&channel_key, dead_letter.event)
+                    .await
+            } else {
+                self.notify(dead_letter.event).await
+            }
         } else {
             Err(crate::Error::NotFound {
                 entity_type: "DeadLetter".to_string(),
@@ -1216,64 +1435,22 @@ fn parse_notification_priority(value: &str) -> Option<NotificationPriority> {
     }
 }
 
-fn notification_event_subscription_keys(event: &NotificationEvent) -> &'static [&'static str] {
-    match event {
-        NotificationEvent::StreamOnline { .. } => {
-            &["stream_online", "streamer.online", "StreamOnline"]
-        }
-        NotificationEvent::StreamOffline { .. } => {
-            &["stream_offline", "streamer.offline", "StreamOffline"]
-        }
-        NotificationEvent::DownloadStarted { .. } => {
-            &["download_started", "download.started", "DownloadStarted"]
-        }
-        NotificationEvent::DownloadCompleted { .. } => &[
-            "download_completed",
-            "download.complete",
-            "download.completed",
-            "DownloadCompleted",
-        ],
-        NotificationEvent::DownloadError { .. } => {
-            &["download_error", "download.error", "DownloadError"]
-        }
-        NotificationEvent::PipelineStarted { .. } => {
-            &["pipeline_started", "pipeline.started", "PipelineStarted"]
-        }
-        NotificationEvent::PipelineCompleted { .. } => &[
-            "pipeline_completed",
-            "pipeline.complete",
-            "pipeline.completed",
-            "PipelineCompleted",
-        ],
-        NotificationEvent::PipelineFailed { .. } => {
-            &["pipeline_failed", "pipeline.failed", "PipelineFailed"]
-        }
-        NotificationEvent::PipelineCancelled { .. } => &[
-            "pipeline_cancelled",
-            "pipeline.cancelled",
-            "PipelineCancelled",
-        ],
-        NotificationEvent::FatalError { .. } => &["fatal_error", "fatal.error", "FatalError"],
-        NotificationEvent::OutOfSpace { .. } => {
-            &["out_of_space", "disk.out_of_space", "OutOfSpace"]
-        }
-        NotificationEvent::PipelineQueueWarning { .. } => &[
-            "pipeline_queue_warning",
-            "pipeline.queue.warning",
-            "PipelineQueueWarning",
-        ],
-        NotificationEvent::PipelineQueueCritical { .. } => &[
-            "pipeline_queue_critical",
-            "pipeline.queue.critical",
-            "PipelineQueueCritical",
-        ],
-        NotificationEvent::SystemStartup { .. } => {
-            &["system_startup", "system.startup", "SystemStartup"]
-        }
-        NotificationEvent::SystemShutdown { .. } => {
-            &["system_shutdown", "system.shutdown", "SystemShutdown"]
-        }
+fn normalize_channel_key_part(input: &str) -> String {
+    let trimmed = input.trim();
+    if trimmed.is_empty() {
+        return "_".to_string();
     }
+
+    trimmed
+        .chars()
+        .map(|c| {
+            if c.is_ascii_alphanumeric() || matches!(c, '-' | '_' | '.') {
+                c
+            } else {
+                '_'
+            }
+        })
+        .collect()
 }
 
 impl Default for NotificationService {
@@ -1475,12 +1652,20 @@ mod tests {
     }
 
     struct MockNotificationRepo {
+        channels: tokio::sync::Mutex<Vec<NotificationChannelDbModel>>,
+        subscriptions: tokio::sync::Mutex<HashMap<String, Vec<String>>>,
+        subscribe_calls: tokio::sync::Mutex<Vec<(String, String)>>,
+        unsubscribe_calls: tokio::sync::Mutex<Vec<(String, String)>>,
         dead_letters: tokio::sync::Mutex<Vec<NotificationDeadLetterDbModel>>,
     }
 
     impl MockNotificationRepo {
         fn new() -> Self {
             Self {
+                channels: tokio::sync::Mutex::new(Vec::new()),
+                subscriptions: tokio::sync::Mutex::new(HashMap::new()),
+                subscribe_calls: tokio::sync::Mutex::new(Vec::new()),
+                unsubscribe_calls: tokio::sync::Mutex::new(Vec::new()),
                 dead_letters: tokio::sync::Mutex::new(Vec::new()),
             }
         }
@@ -1493,7 +1678,7 @@ mod tests {
         }
 
         async fn list_channels(&self) -> Result<Vec<NotificationChannelDbModel>> {
-            unimplemented!()
+            Ok(self.channels.lock().await.clone())
         }
 
         async fn create_channel(&self, _channel: &NotificationChannelDbModel) -> Result<()> {
@@ -1509,7 +1694,13 @@ mod tests {
         }
 
         async fn get_subscriptions_for_channel(&self, _channel_id: &str) -> Result<Vec<String>> {
-            unimplemented!()
+            Ok(self
+                .subscriptions
+                .lock()
+                .await
+                .get(_channel_id)
+                .cloned()
+                .unwrap_or_default())
         }
 
         async fn get_channels_for_event(
@@ -1520,11 +1711,30 @@ mod tests {
         }
 
         async fn subscribe(&self, _channel_id: &str, _event_name: &str) -> Result<()> {
-            unimplemented!()
+            self.subscribe_calls
+                .lock()
+                .await
+                .push((_channel_id.to_string(), _event_name.to_string()));
+
+            let mut subs = self.subscriptions.lock().await;
+            let entry = subs.entry(_channel_id.to_string()).or_default();
+            if !entry.iter().any(|e| e == _event_name) {
+                entry.push(_event_name.to_string());
+            }
+            Ok(())
         }
 
         async fn unsubscribe(&self, _channel_id: &str, _event_name: &str) -> Result<()> {
-            unimplemented!()
+            self.unsubscribe_calls
+                .lock()
+                .await
+                .push((_channel_id.to_string(), _event_name.to_string()));
+
+            let mut subs = self.subscriptions.lock().await;
+            if let Some(list) = subs.get_mut(_channel_id) {
+                list.retain(|e| e != _event_name);
+            }
+            Ok(())
         }
 
         async fn unsubscribe_all(&self, _channel_id: &str) -> Result<()> {
@@ -1661,5 +1871,64 @@ mod tests {
         assert_eq!(persisted[0].channel_id, "channel-1");
         assert_eq!(persisted[0].event_name, "system_startup");
         assert_eq!(persisted[0].retry_count, 1);
+    }
+
+    #[tokio::test]
+    async fn reload_from_db_normalizes_and_migrates_subscription_names() {
+        let repo = Arc::new(MockNotificationRepo::new());
+        let service = NotificationService::with_repository(
+            NotificationServiceConfig::default(),
+            repo.clone(),
+        );
+
+        let db_channel = NotificationChannelDbModel {
+            id: "channel-1".to_string(),
+            name: "Channel 1".to_string(),
+            channel_type: "Webhook".to_string(),
+            settings: r#"{"enabled":true,"url":"http://example.invalid","method":"POST"}"#
+                .to_string(),
+        };
+
+        repo.channels.lock().await.push(db_channel);
+        repo.subscriptions.lock().await.insert(
+            "channel-1".to_string(),
+            vec!["SystemStartup".to_string(), "download.complete".to_string()],
+        );
+
+        service.reload_from_db().await.unwrap();
+
+        let subs = service.subscriptions_by_event.read();
+        assert_eq!(
+            subs.get("system_startup").cloned(),
+            Some(vec!["channel-1".to_string()])
+        );
+        assert_eq!(
+            subs.get("download_completed").cloned(),
+            Some(vec!["channel-1".to_string()])
+        );
+
+        let subscribe_calls = repo.subscribe_calls.lock().await.clone();
+        assert!(
+            subscribe_calls
+                .iter()
+                .any(|(c, e)| c == "channel-1" && e == "system_startup")
+        );
+        assert!(
+            subscribe_calls
+                .iter()
+                .any(|(c, e)| c == "channel-1" && e == "download_completed")
+        );
+
+        let unsubscribe_calls = repo.unsubscribe_calls.lock().await.clone();
+        assert!(
+            unsubscribe_calls
+                .iter()
+                .any(|(c, e)| c == "channel-1" && e == "SystemStartup")
+        );
+        assert!(
+            unsubscribe_calls
+                .iter()
+                .any(|(c, e)| c == "channel-1" && e == "download.complete")
+        );
     }
 }

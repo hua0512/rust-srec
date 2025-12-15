@@ -1,4 +1,5 @@
 import { createFileRoute, useNavigate } from '@tanstack/react-router';
+import { useMemo } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { t } from '@lingui/core/macro';
@@ -9,8 +10,9 @@ import { motion } from 'motion/react';
 import { StreamerGeneralSettings } from '../../../../components/streamers/config/streamer-general-settings';
 import { StreamerConfiguration } from '../../../../components/streamers/config/streamer-configuration';
 import {
-  CreateStreamerSchema,
   UpdateStreamerSchema,
+  StreamerFormSchema,
+  StreamerFormValues,
 } from '../../../../api/schemas';
 import { z } from 'zod';
 import { useDownloadProgress } from '../../../../hooks/use-download-progress';
@@ -32,6 +34,7 @@ import {
   listSessions,
   listPlatformConfigs,
   listTemplates,
+  listEngines,
 } from '@/server/functions';
 
 import { getPlatformFromUrl } from '../../../../lib/utils';
@@ -121,16 +124,25 @@ function EditStreamerPage() {
     },
   });
 
-  const onSubmit = (data: z.infer<typeof CreateStreamerSchema>) => {
-    const payload = {
+  const onSubmit = (data: StreamerFormValues) => {
+    console.log(data);
+
+    const payload: z.infer<typeof UpdateStreamerSchema> = {
       ...data,
       platform_config_id:
-        data.platform_config_id === 'none'
+        data.platform_config_id === 'none' || data.platform_config_id === ''
           ? undefined
           : data.platform_config_id,
       template_id: data.template_id === 'none' ? undefined : data.template_id,
+      streamer_specific_config: data.streamer_specific_config ?? undefined,
     };
     updateMutation.mutate(payload);
+  };
+
+
+  const onInvalid = (errors: any) => {
+    console.error('Form validation errors:', errors);
+    toast.error(t`Please fix validation errors`);
   };
 
   // Filters state
@@ -151,26 +163,40 @@ function EditStreamerPage() {
     },
   });
 
-  const form = useForm({
-    resolver: zodResolver(CreateStreamerSchema),
+  const defaultValues = useMemo(() => {
+    if (!streamer) return undefined;
+    // Parse the specific config if it's a string
+    const specificConfig = typeof streamer.streamer_specific_config === 'string'
+      ? JSON.parse(streamer.streamer_specific_config)
+      : streamer.streamer_specific_config ?? {};
+
+    return {
+      ...streamer,
+      platform_config_id: streamer.platform_config_id || '',
+      template_id: streamer.template_id || undefined,
+      streamer_specific_config: specificConfig,
+      // Extract these from the nested config for the form
+      download_retry_policy: specificConfig?.download_retry_policy ?? undefined,
+      danmu_sampling_config: specificConfig?.danmu_sampling_config ?? undefined,
+    };
+  }, [streamer]);
+
+
+  const form = useForm<StreamerFormValues>({
+    resolver: zodResolver(StreamerFormSchema) as any,
     defaultValues: {
       name: '',
       url: '',
       enabled: true,
+      priority: 'NORMAL',
       platform_config_id: 'none',
       template_id: 'none',
+      streamer_specific_config: {},
     },
-    values: streamer
-      ? {
-          ...streamer,
-          platform_config_id: streamer.platform_config_id || undefined,
-          template_id: streamer.template_id || undefined,
-          streamer_specific_config:
-            streamer.streamer_specific_config || undefined,
-          download_retry_policy: streamer.download_retry_policy || undefined,
-          danmu_sampling_config: streamer.danmu_sampling_config || undefined,
-        }
-      : undefined,
+    values: defaultValues,
+    resetOptions: {
+      keepDirtyValues: true,
+    },
   });
 
   // Queries for selectors
@@ -181,6 +207,10 @@ function EditStreamerPage() {
   const { data: templates } = useQuery({
     queryKey: ['templates'],
     queryFn: () => listTemplates(),
+  });
+  const { data: engines } = useQuery({
+    queryKey: ['engines'],
+    queryFn: () => listEngines(),
   });
 
   if (isStreamerLoading) {
@@ -253,7 +283,8 @@ function EditStreamerPage() {
 
             <Form {...form}>
               <form
-                onSubmit={form.handleSubmit(onSubmit)}
+                id="streamer-edit-form"
+                onSubmit={form.handleSubmit(onSubmit, onInvalid)}
                 className="space-y-6"
               >
                 <TabsContent
@@ -308,7 +339,7 @@ function EditStreamerPage() {
                         </CardDescription>
                       </CardHeader>
                       <CardContent>
-                        <StreamerConfiguration form={form} />
+                        <StreamerConfiguration form={form} engines={engines} />
                       </CardContent>
                     </Card>
                   </motion.div>
@@ -359,7 +390,7 @@ function EditStreamerPage() {
       <StreamerSaveFab
         isDirty={form.formState.isDirty}
         isSaving={updateMutation.isPending}
-        onSubmit={form.handleSubmit(onSubmit)}
+        formId="streamer-edit-form"
       />
     </motion.div>
   );

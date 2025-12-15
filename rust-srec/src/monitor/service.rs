@@ -277,14 +277,15 @@ impl<
                     .filter_map(|model| Filter::from_db_model(&model).ok())
                     .collect();
 
-                // Get merged configuration to access stream selection preference
+                // Get merged configuration to access stream selection preference and cookies
                 let config = config_service.get_config_for_streamer(&streamer_id).await?;
 
-                // Check status with filters and selection config
+                // Check status with filters, cookies, and selection config
                 detector
                     .check_status_with_filters(
                         &streamer_clone,
                         &filters,
+                        config.cookies.clone(),
                         Some(&config.stream_selection),
                     )
                     .await

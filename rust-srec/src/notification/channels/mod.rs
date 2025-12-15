@@ -65,4 +65,22 @@ impl ChannelConfig {
             Self::Webhook(c) => c.enabled,
         }
     }
+
+    /// Optional stable channel instance identifier.
+    pub fn instance_id(&self) -> Option<&str> {
+        match self {
+            Self::Discord(c) => c.id.as_deref(),
+            Self::Email(c) => c.id.as_deref(),
+            Self::Webhook(c) => c.id.as_deref(),
+        }
+    }
+
+    /// Optional human-friendly display name.
+    pub fn display_name(&self) -> Option<&str> {
+        match self {
+            Self::Discord(c) => c.name.as_deref(),
+            Self::Email(c) => c.name.as_deref(),
+            Self::Webhook(c) => c.name.as_deref(),
+        }
+    }
 }

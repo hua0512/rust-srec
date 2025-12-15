@@ -68,6 +68,14 @@ export function TagInput({
         value={inputValue}
         onChange={(e) => setInputValue(e.target.value)}
         onKeyDown={handleKeyDown}
+        onBlur={(e) => {
+          const newTag = inputValue.trim();
+          if (newTag && !value.includes(newTag)) {
+            onChange([...value, newTag]);
+            setInputValue('');
+          }
+          props.onBlur?.(e);
+        }}
         className="flex-1 bg-transparent border-0 p-0 h-6 focus-visible:ring-0 focus-visible:ring-offset-0 min-w-[120px]"
         placeholder={value.length === 0 ? placeholder : ''}
       />

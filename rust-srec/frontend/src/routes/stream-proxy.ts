@@ -11,7 +11,7 @@ export const Route = createFileRoute('/stream-proxy')({
                 const targetUrl = url.searchParams.get('url');
                 const headersParam = url.searchParams.get('headers');
 
-                // console.log("Proxying to: ", targetUrl);
+                console.log("Proxying to: ", targetUrl);
 
                 if (!targetUrl) {
                     return new Response('Missing url parameter', { status: 400 });
@@ -57,7 +57,7 @@ export const Route = createFileRoute('/stream-proxy')({
                         mergedHeaders.set('Range', rangeHeader);
                     }
 
-                    // console.log('Upstream Headers:', Object.fromEntries(mergedHeaders.entries()));
+                    console.log('Upstream Headers:', Object.fromEntries(mergedHeaders.entries()));
 
                     // Forward request to target URL
                     const response = await fetch(targetUrl, {
@@ -65,7 +65,7 @@ export const Route = createFileRoute('/stream-proxy')({
                         redirect: 'follow', // Ensure we follow redirects
                     });
 
-                    // console.log('Upstream Response Status:', response.status);
+                    console.log('Upstream Response Status:', response.status);
 
                     // Build response headers (copy from upstream)
                     const responseHeaders = new Headers();

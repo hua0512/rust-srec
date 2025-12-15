@@ -59,7 +59,7 @@ export function EngineCard({ engine }: EngineCardProps) {
         const result = await testEngine({ data: engine.id });
         if (mounted) {
           setStatus(result.available ? 'available' : 'unavailable');
-          setVersion(result.version);
+          setVersion(result.version ?? 'unknown');
         }
       } catch (error) {
         if (mounted) {

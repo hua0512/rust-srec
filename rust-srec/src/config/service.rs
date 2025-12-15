@@ -335,16 +335,6 @@ where
             .as_ref()
             .and_then(|s| serde_json::from_str(s).ok());
 
-        streamer.download_retry_policy = db_model
-            .download_retry_policy
-            .as_ref()
-            .and_then(|s| serde_json::from_str(s).ok());
-
-        streamer.danmu_sampling_config = db_model
-            .danmu_sampling_config
-            .as_ref()
-            .and_then(|s| serde_json::from_str(s).ok());
-
         Ok(streamer)
     }
 

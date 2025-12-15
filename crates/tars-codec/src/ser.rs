@@ -146,40 +146,27 @@ impl TarsSerializer {
     }
 
     /// Internal helper that encodes to whatever buffer is currently set as self.buffer
+    /// Uses the same encoding as TarsCodec::encode_by_ref for consistency
     fn encode_message_to_internal_buffer(
         &mut self,
         message: &crate::TarsMessage,
     ) -> Result<(), TarsError> {
-        // Write the header fields
+        // First encode the body as a map wrapped in SimpleList
+        let mut body_serializer = TarsSerializer::new();
+        body_serializer.write_map(0, &message.body)?;
+        let body_bytes = body_serializer.into_bytes();
+
+        // Write the header fields in the correct order per TARS TUP protocol
         self.write_i16(1, message.header.version)?;
         self.write_u8(2, message.header.packet_type)?;
         self.write_i32(3, message.header.message_type)?;
         self.write_i32(4, message.header.request_id)?;
         self.write_string(5, &message.header.servant_name)?;
         self.write_string(6, &message.header.func_name)?;
-        self.write_i32(7, message.header.timeout)?;
-
-        // Write context and status as maps if not empty
-        if !message.header.context.is_empty() {
-            self.write_map(8, &message.header.context)?;
-        }
-        if !message.header.status.is_empty() {
-            self.write_map(9, &message.header.status)?;
-        }
-
-        // Write body data
-        for (key, data) in &message.body {
-            // For simplicity, write as binary data with string key as tag
-            let tag = key.bytes().next().unwrap_or(10);
-            self.buffer.put_u8(tag);
-            self.buffer.put_u8(TarsType::SimpleList as u8);
-            if data.len() <= 255 {
-                self.buffer.put_u8(data.len() as u8);
-            } else {
-                self.buffer.put_u32(data.len() as u32);
-            }
-            self.buffer.extend_from_slice(data);
-        }
+        self.write_simple_list(7, &body_bytes)?;
+        self.write_i32(8, message.header.timeout)?;
+        self.write_map(9, &message.header.context)?;
+        self.write_map(10, &message.header.status)?;
 
         Ok(())
     }
@@ -204,8 +191,14 @@ impl TarsSerializer {
     }
 
     pub fn write_bool(&mut self, tag: u8, value: bool) -> Result<(), TarsError> {
-        self.write_head(tag, TarsType::Zero);
-        self.buffer.put_u8(if value { 1 } else { 0 });
+        // TARS spec: true is encoded as Int1 with value 1, false as Zero (no payload)
+        if value {
+            self.write_head(tag, TarsType::Int1);
+            self.buffer.put_u8(1);
+        } else {
+            self.write_head(tag, TarsType::Zero);
+            // Zero type has no payload - the type itself represents value 0
+        }
         Ok(())
     }
 
@@ -286,9 +279,15 @@ impl TarsSerializer {
         value: &rustc_hash::FxHashMap<u8, TarsValue>,
     ) -> Result<(), TarsError> {
         self.write_head(tag, TarsType::StructBegin);
-        for (tag, value) in value {
-            self.write_value(*tag, value)?;
+
+        // TARS protocol requires struct fields to be written in ascending tag order!!!
+        let mut pairs: smallvec::SmallVec<[(&u8, &TarsValue); 16]> = value.iter().collect();
+        pairs.sort_unstable_by_key(|(field_tag, _)| **field_tag);
+
+        for (&field_tag, field_value) in pairs {
+            self.write_value(field_tag, field_value)?;
         }
+
         self.write_head(0, TarsType::StructEnd);
         Ok(())
     }

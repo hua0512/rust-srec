@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 
 use super::StreamerState;
 use crate::Error;
-use crate::domain::{DanmuSamplingConfig, Priority, RetryPolicy, StreamerUrl};
+use crate::domain::{Priority, StreamerUrl};
 
 /// Error threshold before applying exponential backoff.
 const ERROR_THRESHOLD: i32 = 3;
@@ -28,10 +28,10 @@ pub struct Streamer {
     pub priority: Priority,
     pub last_live_time: Option<DateTime<Utc>>,
     pub streamer_specific_config: Option<serde_json::Value>,
-    pub download_retry_policy: Option<RetryPolicy>,
-    pub danmu_sampling_config: Option<DanmuSamplingConfig>,
     pub consecutive_error_count: i32,
     pub disabled_until: Option<DateTime<Utc>>,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
 }
 
 impl Streamer {
@@ -41,6 +41,7 @@ impl Streamer {
         url: StreamerUrl,
         platform_config_id: impl Into<String>,
     ) -> Self {
+        let now = Utc::now();
         Self {
             id: uuid::Uuid::new_v4().to_string(),
             name: name.into(),
@@ -51,10 +52,10 @@ impl Streamer {
             priority: Priority::Normal,
             last_live_time: None,
             streamer_specific_config: None,
-            download_retry_policy: None,
-            danmu_sampling_config: None,
             consecutive_error_count: 0,
             disabled_until: None,
+            created_at: now,
+            updated_at: now,
         }
     }
 

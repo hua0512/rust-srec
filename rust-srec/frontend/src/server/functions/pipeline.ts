@@ -254,7 +254,7 @@ const PipelinePresetSchema = z.object({
   id: z.string(),
   name: z.string(),
   description: z.string().nullable().optional(),
-  steps: z.string(), // JSON array of job preset names
+  steps: z.array(PipelineStepSchema),
   created_at: z.string(),
   updated_at: z.string(),
 });
@@ -300,7 +300,11 @@ export const getPipelinePreset = createServerFn({ method: 'GET' })
 
 export const createPipelinePreset = createServerFn({ method: 'POST' })
   .inputValidator(
-    (d: { name: string; description?: string; steps: string[] }) => d,
+    (d: {
+      name: string;
+      description?: string;
+      steps: z.infer<typeof PipelineStepSchema>[];
+    }) => d,
   )
   .handler(async ({ data }) => {
     const json = await fetchBackend('/pipeline/presets', {
@@ -312,8 +316,12 @@ export const createPipelinePreset = createServerFn({ method: 'POST' })
 
 export const updatePipelinePreset = createServerFn({ method: 'POST' })
   .inputValidator(
-    (d: { id: string; name: string; description?: string; steps: string[] }) =>
-      d,
+    (d: {
+      id: string;
+      name: string;
+      description?: string;
+      steps: z.infer<typeof PipelineStepSchema>[];
+    }) => d,
   )
   .handler(async ({ data }) => {
     const { id, ...body } = data;

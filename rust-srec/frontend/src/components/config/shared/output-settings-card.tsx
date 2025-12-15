@@ -18,15 +18,18 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Trans } from '@lingui/react/macro';
 import { FolderOpen } from 'lucide-react';
 import { UseFormReturn } from 'react-hook-form';
+import { EngineConfig } from '@/api/schemas';
 
 interface OutputSettingsCardProps {
   form: UseFormReturn<any>;
   basePath?: string;
+  engines?: EngineConfig[];
 }
 
 export function OutputSettingsCard({
   form,
   basePath,
+  engines,
 }: OutputSettingsCardProps) {
   return (
     <Card className="border-border/50 shadow-sm hover:shadow-md transition-all">
@@ -59,7 +62,7 @@ export function OutputSettingsCard({
                   <Input
                     {...field}
                     value={field.value ?? ''}
-                    onChange={(e) => field.onChange(e.target.value || null)}
+                    onChange={field.onChange}
                     placeholder="./downloads"
                     className="bg-background"
                   />
@@ -88,7 +91,7 @@ export function OutputSettingsCard({
                   <Input
                     {...field}
                     value={field.value ?? ''}
-                    onChange={(e) => field.onChange(e.target.value || null)}
+                    onChange={field.onChange}
                     placeholder="{streamer}-{title}-%Y%m%d-%H%M%S"
                     className="bg-background"
                   />
@@ -115,7 +118,7 @@ export function OutputSettingsCard({
                 </FormLabel>
                 <Select
                   onValueChange={(val) =>
-                    field.onChange(val === 'default' ? null : val)
+                    field.onChange(val === 'default' ? undefined : val)
                   }
                   defaultValue={field.value || 'default'}
                 >
@@ -150,15 +153,28 @@ export function OutputSettingsCard({
                 <FormLabel>
                   <Trans>Download Engine</Trans>
                 </FormLabel>
-                <FormControl>
-                  <Input
-                    {...field}
-                    value={field.value ?? ''}
-                    onChange={(e) => field.onChange(e.target.value || null)}
-                    placeholder="mesio"
-                    className="bg-background"
-                  />
-                </FormControl>
+                <Select
+                  onValueChange={(val) =>
+                    field.onChange(val === 'default' ? undefined : val)
+                  }
+                  defaultValue={field.value || 'default'}
+                >
+                  <FormControl>
+                    <SelectTrigger className="bg-background">
+                      <SelectValue placeholder="Select an engine" />
+                    </SelectTrigger>
+                  </FormControl>
+                  <SelectContent>
+                    <SelectItem value="default">
+                      <Trans>Inherited / Default</Trans>
+                    </SelectItem>
+                    {engines?.map((engine) => (
+                      <SelectItem key={engine.id} value={engine.id}>
+                        {engine.name} ({engine.engine_type})
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
                 <FormDescription>
                   <Trans>Override download engine.</Trans>
                 </FormDescription>
@@ -168,6 +184,6 @@ export function OutputSettingsCard({
           />
         </div>
       </CardContent>
-    </Card>
+    </Card >
   );
 }

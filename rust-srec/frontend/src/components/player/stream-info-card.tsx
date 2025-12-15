@@ -39,19 +39,22 @@ export function StreamInfoCard({
 }: StreamInfoCardProps) {
     const streams = extractStreams(mediaInfo);
 
-    // Group streams by quality
-    const qualityGroups = streams.reduce((acc, stream) => {
-        const quality = stream.quality || 'unknown';
-        if (!acc[quality]) {
-            acc[quality] = [];
+    // Group streams by source/CDN first
+    const sourceGroups = streams.reduce((acc, stream) => {
+        const source = stream.cdn || stream.format || 'default';
+        if (!acc[source]) {
+            acc[source] = [];
         }
-        acc[quality].push(stream);
+        acc[source].push(stream);
         return acc;
     }, {} as Record<string, StreamOption[]>);
 
-    const qualities = Object.keys(qualityGroups);
-    const selectedQuality = selectedStream?.quality || qualities[0];
-    const streamsForQuality = qualityGroups[selectedQuality] || [];
+    const sources = Object.keys(sourceGroups);
+    const selectedSource = selectedStream?.cdn || selectedStream?.format || sources[0];
+    const streamsForSource = sourceGroups[selectedSource] || [];
+
+    // Get unique qualities for the selected source
+    const qualitiesForSource = [...new Set(streamsForSource.map(s => s.quality || 'unknown'))];
 
     const content = (
         <>
@@ -93,17 +96,56 @@ export function StreamInfoCard({
             )}
 
             <CardContent className={cn("space-y-6 relative z-10", variant === 'minimal' ? "p-1" : "")}>
-                {/* Quality Selection */}
-                {qualities.length > 1 && (
+                {/* Source/CDN Selection - Primary selector */}
+                {sources.length >= 1 && (
+                    <div className="space-y-3">
+                        <label className="text-[10px] font-bold text-muted-foreground/70 uppercase tracking-wider flex items-center gap-1.5">
+                            <div className="h-1 w-1 rounded-full bg-primary/50" />
+                            <Trans>Source</Trans>
+                        </label>
+                        <Select
+                            value={selectedSource}
+                            onValueChange={(source) => {
+                                const streamsForNewSource = sourceGroups[source] || [];
+                                if (streamsForNewSource.length > 0) {
+                                    onStreamSelect(streamsForNewSource[0]);
+                                }
+                            }}
+                        >
+                            <SelectTrigger className="w-full bg-background/50 backdrop-blur-sm border-border/60 hover:border-primary/30 transition-colors focus:ring-primary/20 h-9">
+                                <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent className="z-[300]">
+                                {sources.map((source) => (
+                                    <SelectItem key={source} value={source}>
+                                        <div className="flex items-center gap-2">
+                                            <Badge variant="outline" className="text-[10px] h-5 px-1.5 bg-background/50">
+                                                {source.toUpperCase()}
+                                            </Badge>
+                                            <span className="text-xs text-muted-foreground">
+                                                ({sourceGroups[source]?.length || 0} streams)
+                                            </span>
+                                        </div>
+                                    </SelectItem>
+                                ))}
+                            </SelectContent>
+                        </Select>
+                    </div>
+                )}
+
+                {qualitiesForSource.length > 0 && <Separator className="bg-border/40" />}
+
+                {/* Quality Selection - Based on selected source */}
+                {qualitiesForSource.length > 1 && (
                     <div className="space-y-3">
                         <label className="text-[10px] font-bold text-muted-foreground/70 uppercase tracking-wider flex items-center gap-1.5">
                             <div className="h-1 w-1 rounded-full bg-primary/50" />
                             <Trans>Quality</Trans>
                         </label>
                         <div className="grid grid-cols-2 gap-2">
-                            {qualities.map((quality) => {
-                                const isSelected = quality === selectedQuality;
-                                const qualityStreams = qualityGroups[quality] || [];
+                            {qualitiesForSource.map((quality: string) => {
+                                const isSelected = quality === selectedStream?.quality;
+                                const streamForQuality = streamsForSource.find(s => s.quality === quality);
                                 return (
                                     <Button
                                         key={quality}
@@ -114,7 +156,7 @@ export function StreamInfoCard({
                                             isSelected && 'shadow-md shadow-primary/20 ring-1 ring-primary/20',
                                             !isSelected && 'hover:bg-primary/5 hover:text-primary hover:border-primary/20'
                                         )}
-                                        onClick={() => onStreamSelect(qualityStreams[0])}
+                                        onClick={() => streamForQuality && onStreamSelect(streamForQuality)}
                                     >
                                         {isSelected && (
                                             <CheckCircle2 className="mr-2 h-3.5 w-3.5" />
@@ -124,53 +166,6 @@ export function StreamInfoCard({
                                 );
                             })}
                         </div>
-                    </div>
-                )}
-
-                <Separator className="bg-border/40" />
-
-                {/* CDN/Format Selection for selected quality */}
-                {streamsForQuality.length > 1 && (
-                    <div className="space-y-3">
-                        <label className="text-[10px] font-bold text-muted-foreground/70 uppercase tracking-wider flex items-center gap-1.5">
-                            <div className="h-1 w-1 rounded-full bg-primary/50" />
-                            <Trans>Source</Trans>
-                        </label>
-                        <Select
-                            value={selectedStream?.url || streamsForQuality[0]?.url}
-                            onValueChange={(url) => {
-                                const stream = streamsForQuality.find((s) => s.url === url);
-                                if (stream) onStreamSelect(stream);
-                            }}
-                        >
-                            <SelectTrigger className="w-full bg-background/50 backdrop-blur-sm border-border/60 hover:border-primary/30 transition-colors focus:ring-primary/20 h-9">
-                                <SelectValue />
-                            </SelectTrigger>
-                            <SelectContent>
-                                {streamsForQuality.map((stream, index) => (
-                                    <SelectItem key={index} value={stream.url}>
-                                        <div className="flex items-center gap-2">
-                                            {stream.cdn && (
-                                                <Badge variant="outline" className="text-[10px] h-5 px-1.5 bg-background/50">
-                                                    <Server className="mr-1 h-2.5 w-2.5" />
-                                                    {stream.cdn}
-                                                </Badge>
-                                            )}
-                                            {stream.format && (
-                                                <Badge variant="secondary" className="text-[10px] h-5 px-1.5">
-                                                    {stream.format.toUpperCase()}
-                                                </Badge>
-                                            )}
-                                            {stream.bitrate && (
-                                                <span className="text-xs text-muted-foreground font-mono">
-                                                    {(stream.bitrate / 1000).toFixed(0)}k
-                                                </span>
-                                            )}
-                                        </div>
-                                    </SelectItem>
-                                ))}
-                            </SelectContent>
-                        </Select>
                     </div>
                 )}
 

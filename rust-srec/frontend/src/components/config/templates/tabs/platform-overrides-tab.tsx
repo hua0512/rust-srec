@@ -1,9 +1,9 @@
 import { UseFormReturn } from 'react-hook-form';
 import { useQuery } from '@tanstack/react-query';
-import { listPlatformConfigs } from '@/server/functions';
-import { Button } from '../../../ui/button';
+import { listPlatformConfigs, listEngines } from '@/server/functions';
+import { Button } from '@/components/ui/button';
 import { Plus, LayoutGrid } from 'lucide-react';
-import { Popover, PopoverContent, PopoverTrigger } from '../../../ui/popover';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import {
   Command,
   CommandEmpty,
@@ -11,7 +11,7 @@ import {
   CommandInput,
   CommandItem,
   CommandList,
-} from '../../../ui/command';
+} from '@/components/ui/command';
 import { useState } from 'react';
 import { Trans } from '@lingui/react/macro';
 
@@ -35,6 +35,11 @@ export function PlatformOverridesTab({ form }: PlatformOverridesTabProps) {
   const { data: platforms = [] } = useQuery({
     queryKey: ['config', 'platforms'],
     queryFn: () => listPlatformConfigs(),
+  });
+
+  const { data: engines = [] } = useQuery({
+    queryKey: ['engines'],
+    queryFn: () => listEngines(),
   });
 
   const currentOverrides = form.watch('platform_overrides') || {};
@@ -129,6 +134,7 @@ export function PlatformOverridesTab({ form }: PlatformOverridesTabProps) {
             platformName={platformName}
             form={form}
             onRemove={() => handleRemoveOverride(platformName)}
+            engines={engines}
           />
         ))}
       </CardContent>

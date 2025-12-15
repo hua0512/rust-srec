@@ -1,5 +1,6 @@
 //! Streamer database model.
 
+use chrono::Utc;
 use serde::{Deserialize, Serialize};
 use sqlx::FromRow;
 
@@ -22,16 +23,16 @@ pub struct StreamerDbModel {
     pub last_live_time: Option<String>,
     /// JSON blob for streamer-specific overrides
     pub streamer_specific_config: Option<String>,
-    /// JSON serialized RetryPolicy
-    pub download_retry_policy: Option<String>,
-    /// JSON serialized DanmuSamplingConfig
-    pub danmu_sampling_config: Option<String>,
     /// Number of consecutive errors encountered
     pub consecutive_error_count: Option<i32>,
     /// If temporarily disabled, the time it will be re-enabled
     pub disabled_until: Option<String>,
     /// Last recorded error message
     pub last_error: Option<String>,
+    /// Creation timestamp
+    pub created_at: String,
+    /// Last update timestamp
+    pub updated_at: String,
 }
 
 impl StreamerDbModel {
@@ -41,6 +42,7 @@ impl StreamerDbModel {
         url: impl Into<String>,
         platform_config_id: impl Into<String>,
     ) -> Self {
+        let now = Utc::now().to_rfc3339();
         Self {
             id: uuid::Uuid::new_v4().to_string(),
             name: name.into(),
@@ -52,11 +54,11 @@ impl StreamerDbModel {
             avatar: None,
             last_live_time: None,
             streamer_specific_config: None,
-            download_retry_policy: None,
-            danmu_sampling_config: None,
             consecutive_error_count: Some(0),
             disabled_until: None,
             last_error: None,
+            created_at: now.clone(),
+            updated_at: now,
         }
     }
 }

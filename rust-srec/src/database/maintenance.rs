@@ -327,7 +327,7 @@ impl MaintenanceScheduler {
     pub async fn cleanup_dead_letters(&self) -> Result<i32, crate::Error> {
         let cutoff =
             Utc::now() - chrono::Duration::days(self.config.dead_letter_retention_days as i64);
-        let cutoff_str = cutoff.format("%Y-%m-%d %H:%M:%S").to_string();
+        let cutoff_str = cutoff.to_rfc3339();
 
         let result = sqlx::query("DELETE FROM notification_dead_letter WHERE created_at < ?")
             .bind(&cutoff_str)

@@ -1193,7 +1193,7 @@ impl Douyu {
                     extras: Some(extras),
                     codec: codec.to_string(),
                     fps: 0.0,
-                    is_headers_needed: hs_host.is_some(),
+                    is_headers_needed: true,
                 };
                 stream_infos.push(stream);
             }
@@ -1462,7 +1462,7 @@ impl Douyu {
                     extras: Some(extras),
                     codec: codec.to_string(),
                     fps: 0.0,
-                    is_headers_needed: hs_host.is_some(),
+                    is_headers_needed: true,
                 };
                 stream_infos.push(stream);
             }

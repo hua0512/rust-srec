@@ -119,13 +119,7 @@ export function WorkflowCard({
   onEdit,
   onDelete,
 }: WorkflowCardProps) {
-  let steps: string[] = [];
-  try {
-    steps =
-      typeof workflow.steps === 'string'
-        ? JSON.parse(workflow.steps)
-        : workflow.steps;
-  } catch {}
+  const steps = workflow.steps;
 
   return (
     <Card className="relative h-full flex flex-col transition-all duration-500 hover:-translate-y-1 hover:shadow-2xl hover:shadow-primary/10 group overflow-hidden bg-gradient-to-br from-background/80 to-background/40 backdrop-blur-xl border-border/40 hover:border-primary/20">
@@ -213,19 +207,22 @@ export function WorkflowCard({
         {/* Pipeline Steps Visualization */}
         <div className="flex items-center gap-1 flex-wrap">
           {steps.map((step, index) => {
-            const StepIcon = getStepIcon(step);
-            const color = getStepColor(step);
+            const stepName = typeof step === 'string' ? step : step.processor;
+            const StepIcon = getStepIcon(stepName);
+            const color = getStepColor(stepName);
+            const isInline = typeof step !== 'string';
+
             return (
               <div key={index} className="flex items-center">
                 <div
                   className={`flex items-center gap-1.5 px-2 py-1 rounded-md ${color}/10 border border-${color.replace('bg-', '')}/20 transition-all group-hover:scale-105`}
-                  title={step}
+                  title={stepName + (isInline ? ' (Inline)' : '')}
                 >
                   <StepIcon
                     className={`h-3 w-3 ${color.replace('bg-', 'text-')}`}
                   />
                   <span className="text-[10px] font-medium truncate max-w-[60px]">
-                    {step}
+                    {stepName}
                   </span>
                 </div>
                 {index < steps.length - 1 && (

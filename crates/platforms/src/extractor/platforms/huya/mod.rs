@@ -1,7 +1,7 @@
 mod builder;
-mod huya_tars;
 mod models;
+pub mod tars;
 
 pub use builder::Huya;
 pub use builder::URL_REGEX;
-pub use huya_tars::GetCdnTokenInfoReq;
+pub use tars::*;

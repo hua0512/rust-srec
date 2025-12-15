@@ -432,8 +432,12 @@ impl ServiceContainer {
     /// Initialize and start the API server.
     /// This should be called after initialize() and runs the server in the background.
     pub async fn start_api_server(&self) -> Result<()> {
-        // Create JWT service from environment if configured
-        let jwt_service = Self::create_jwt_service_from_env();
+        // Create AuthConfig from environment first (single source of truth for token expiration)
+        let auth_config = AuthConfig::from_env();
+
+        // Create JWT service
+        let jwt_service =
+            Self::create_jwt_service_from_env(auth_config.access_token_expiration_secs);
 
         // Create AuthService if JWT is configured
         let auth_service = if let Some(ref jwt) = jwt_service {
@@ -441,8 +445,6 @@ impl ServiceContainer {
             let user_repo = Arc::new(SqlxUserRepository::new(self.pool.clone()));
             let token_repo = Arc::new(SqlxRefreshTokenRepository::new(self.pool.clone()));
 
-            // Create AuthService with default config
-            let auth_config = AuthConfig::default();
             let auth_svc = AuthService::new(user_repo, token_repo, jwt.clone(), auth_config);
             info!("AuthService initialized with user database authentication");
             Some(Arc::new(auth_svc))
@@ -509,6 +511,7 @@ impl ServiceContainer {
         let scheduler = self.scheduler.clone();
         let download_manager = self.download_manager.clone();
         let danmu_service = self.danmu_service.clone();
+        let stream_monitor = self.stream_monitor.clone();
         let mut receiver = self.event_broadcaster.subscribe();
         let cancellation_token = self.cancellation_token.clone();
 
@@ -548,6 +551,8 @@ impl ServiceContainer {
                                                     &scheduler,
                                                     &download_manager,
                                                     &danmu_service,
+                                                    &stream_monitor,
+                                                    &streamer_manager,
                                                     &streamer_id,
                                                 )
                                                 .await;
@@ -564,6 +569,8 @@ impl ServiceContainer {
                                                     &scheduler,
                                                     &download_manager,
                                                     &danmu_service,
+                                                    &stream_monitor,
+                                                    &streamer_manager,
                                                     &streamer_id,
                                                 )
                                                 .await;
@@ -595,6 +602,8 @@ impl ServiceContainer {
                                             &scheduler,
                                             &download_manager,
                                             &danmu_service,
+                                            &stream_monitor,
+                                            &streamer_manager,
                                             &streamer_id,
                                         ).await;
                                     }
@@ -616,6 +625,8 @@ impl ServiceContainer {
                                                 &scheduler,
                                                 &download_manager,
                                                 &danmu_service,
+                                                &stream_monitor,
+                                                &streamer_manager,
                                                 &streamer_id,
                                             ).await;
                                         }
@@ -1053,10 +1064,37 @@ impl ServiceContainer {
 
     /// Handle streamer disabled state transition.
     ///
-    /// This method coordinates cleanup when a streamer is disabled:
-    /// 1. Removes the streamer actor from the scheduler
-    /// 2. Cancels any active downloads
-    /// 3. Stops any active danmu collection
+    /// This method coordinates cleanup when a streamer is **disabled via UI/API**.
+    /// The key challenge is that the actor is removed before it can process the
+    /// DownloadCancelled event, so we must explicitly end the session here.
+    ///
+    /// ## Cleanup Steps
+    ///
+    /// 1. **End active streaming session** - Close the session in the database
+    ///    BEFORE removing the actor. This ensures the session is properly closed
+    ///    even though the actor won't be around to process the DownloadCancelled event.
+    /// 2. **Remove the streamer actor** - Stop monitoring this streamer
+    /// 3. **Cancel active downloads** - Stop any ongoing download tasks
+    /// 4. **Stop danmu collection** - Stop any active comment collection
+    ///
+    /// ## Session Cleanup: Two Scenarios
+    ///
+    /// This function handles **Scenario 1: Streamer Disable/Delete**:
+    /// - User disables/deletes a streamer via UI/API
+    /// - Actor is being removed from the scheduler
+    /// - We explicitly end the session HERE before actor removal
+    /// - DownloadCancelled event sent, but actor is already gone
+    ///
+    /// **Scenario 2: Manual Download Cancellation** is handled separately by
+    /// `StreamerActor::handle_download_ended(Cancelled)`:
+    /// - User cancels download without disabling the streamer
+    /// - Actor is still active and processes the DownloadCancelled event
+    /// - Actor calls `process_status(Offline)` to end the session
+    /// - Actor then stops itself
+    ///
+    /// Both paths are necessary for complete session cleanup coverage.
+    ///
+    /// ## Error Handling
     ///
     /// All errors are logged but do not propagate - cleanup is best-effort
     /// and should not block other operations.
@@ -1065,14 +1103,46 @@ impl ServiceContainer {
     /// * `scheduler` - The scheduler service to remove the actor from
     /// * `download_manager` - The download manager to cancel downloads
     /// * `danmu_service` - The danmu service to stop collection
+    /// * `stream_monitor` - The stream monitor to end active sessions
+    /// * `streamer_manager` - The streamer manager to get streamer metadata
     /// * `streamer_id` - The ID of the streamer being disabled
     pub async fn handle_streamer_disabled(
         scheduler: &Arc<tokio::sync::RwLock<Scheduler<SqlxStreamerRepository>>>,
         download_manager: &Arc<DownloadManager>,
         danmu_service: &Arc<DanmuService>,
+        stream_monitor: &Arc<
+            StreamMonitor<
+                SqlxStreamerRepository,
+                SqlxFilterRepository,
+                SqlxSessionRepository,
+                SqlxConfigRepository,
+            >,
+        >,
+        streamer_manager: &Arc<StreamerManager<SqlxStreamerRepository>>,
         streamer_id: &str,
     ) {
-        // 1. Remove actor from scheduler
+        // 1. End active streaming session first (before removing actor)
+        // This ensures the session is properly closed in the database even if the actor
+        // is removed before it can process the DownloadCancelled event.
+        if let Some(metadata) = streamer_manager.get_streamer(streamer_id) {
+            if metadata.state == crate::domain::StreamerState::Live {
+                info!(
+                    "Ending active streaming session for disabled streamer: {}",
+                    streamer_id
+                );
+                if let Err(e) = stream_monitor
+                    .handle_offline_with_session(&metadata, None)
+                    .await
+                {
+                    warn!(
+                        "Failed to end session for disabled streamer {}: {}",
+                        streamer_id, e
+                    );
+                }
+            }
+        }
+
+        // 2. Remove actor from scheduler
         {
             let mut scheduler_guard = scheduler.write().await;
             if scheduler_guard.remove_streamer(streamer_id) {
@@ -1082,7 +1152,7 @@ impl ServiceContainer {
             }
         }
 
-        // 2. Cancel active download if exists
+        // 3. Cancel active download if exists
         if let Some(download_info) = download_manager.get_download_by_streamer(streamer_id) {
             match download_manager.stop_download(&download_info.id).await {
                 Ok(()) => {
@@ -1105,7 +1175,7 @@ impl ServiceContainer {
             );
         }
 
-        // 3. Stop danmu collection if active
+        // 4. Stop danmu collection if active
         if let Some(session_id) = danmu_service.get_session_by_streamer(streamer_id) {
             match danmu_service.stop_collection(&session_id).await {
                 Ok(stats) => {
@@ -1253,6 +1323,15 @@ impl ServiceContainer {
                 .with_max_segment_duration(merged_config.max_download_duration_secs as u64)
                 .with_max_segment_size(merged_config.max_part_size_bytes as u64)
                 .with_engines_override(merged_config.engines_override.clone());
+
+                // Add cookies from merged config if present
+                if let Some(ref cookies) = merged_config.cookies {
+                    debug!(
+                        "Applying cookies from merged config to download (length: {} chars)",
+                        cookies.len()
+                    );
+                    config = config.with_cookies(cookies);
+                }
 
                 // Add headers if needed
                 for (key, value) in headers {
@@ -1515,20 +1594,18 @@ impl ServiceContainer {
     /// Optional environment variables:
     /// - `JWT_ISSUER`: Token issuer (default: "rust-srec")
     /// - `JWT_AUDIENCE`: Token audience (default: "rust-srec-api")
-    /// - `JWT_EXPIRATION_SECS`: Token expiration in seconds (default: 3600)
-    fn create_jwt_service_from_env() -> Option<Arc<JwtService>> {
+    ///
+    /// # Arguments
+    /// * `expiration_secs` - Token expiration in seconds (from AuthConfig)
+    fn create_jwt_service_from_env(expiration_secs: u64) -> Option<Arc<JwtService>> {
         let secret = std::env::var("JWT_SECRET").ok()?;
         let issuer = std::env::var("JWT_ISSUER").unwrap_or_else(|_| "rust-srec".to_string());
         let audience =
             std::env::var("JWT_AUDIENCE").unwrap_or_else(|_| "rust-srec-api".to_string());
-        let expiration_secs = std::env::var("JWT_EXPIRATION_SECS")
-            .ok()
-            .and_then(|s| s.parse().ok())
-            .unwrap_or(3600);
 
         info!(
-            "JWT authentication enabled (issuer: {}, audience: {})",
-            issuer, audience
+            "JWT authentication enabled (issuer: {}, audience: {}, expiration: {}s)",
+            issuer, audience, expiration_secs
         );
 
         Some(Arc::new(JwtService::new(

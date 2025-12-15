@@ -155,8 +155,8 @@ pub struct CreatePipelinePresetRequest {
     pub name: String,
     /// Optional description.
     pub description: Option<String>,
-    /// Pipeline steps (list of job preset names).
-    pub steps: Vec<String>,
+    /// Pipeline steps (list of job preset names or inline definitions).
+    pub steps: Vec<PipelineStep>,
 }
 
 /// Request body for updating a pipeline preset.
@@ -166,8 +166,8 @@ pub struct UpdatePipelinePresetRequest {
     pub name: String,
     /// Optional description.
     pub description: Option<String>,
-    /// Pipeline steps (list of job preset names).
-    pub steps: Vec<String>,
+    /// Pipeline steps (list of job preset names or inline definitions).
+    pub steps: Vec<PipelineStep>,
 }
 
 /// Query parameters for filtering pipeline presets.
@@ -205,13 +205,38 @@ impl Default for PipelinePresetPaginationParams {
 #[derive(Debug, Clone, Serialize)]
 pub struct PipelinePresetListResponse {
     /// List of pipeline presets.
-    pub presets: Vec<crate::database::models::PipelinePreset>,
+    pub presets: Vec<PipelinePresetResponse>,
     /// Total number of presets matching the filter.
     pub total: u64,
     /// Number of items returned.
     pub limit: u32,
     /// Number of items skipped.
     pub offset: u32,
+}
+
+/// Response for a single pipeline preset with parsed steps.
+#[derive(Debug, Clone, Serialize)]
+pub struct PipelinePresetResponse {
+    pub id: String,
+    pub name: String,
+    pub description: Option<String>,
+    pub steps: Vec<PipelineStep>,
+    pub created_at: chrono::DateTime<chrono::Utc>,
+    pub updated_at: chrono::DateTime<chrono::Utc>,
+}
+
+impl From<crate::database::models::PipelinePreset> for PipelinePresetResponse {
+    fn from(preset: crate::database::models::PipelinePreset) -> Self {
+        let steps = preset.get_steps();
+        Self {
+            id: preset.id,
+            name: preset.name,
+            description: preset.description,
+            steps,
+            created_at: preset.created_at,
+            updated_at: preset.updated_at,
+        }
+    }
 }
 
 /// Query parameters for filtering media outputs.
@@ -1108,8 +1133,13 @@ async fn list_pipeline_presets(
         .await
         .map_err(ApiError::from)?;
 
+    let response_presets: Vec<PipelinePresetResponse> = presets
+        .into_iter()
+        .map(PipelinePresetResponse::from)
+        .collect();
+
     Ok(Json(PipelinePresetListResponse {
-        presets,
+        presets: response_presets,
         total,
         limit: effective_limit,
         offset: pagination.offset,
@@ -1124,7 +1154,7 @@ async fn list_pipeline_presets(
 async fn get_pipeline_preset_by_id(
     State(state): State<AppState>,
     Path(id): Path<String>,
-) -> ApiResult<Json<crate::database::models::PipelinePreset>> {
+) -> ApiResult<Json<PipelinePresetResponse>> {
     let preset_repo = state
         .pipeline_preset_repository
         .as_ref()
@@ -1136,7 +1166,7 @@ async fn get_pipeline_preset_by_id(
         .map_err(ApiError::from)?
         .ok_or_else(|| ApiError::not_found(format!("Pipeline preset {} not found", id)))?;
 
-    Ok(Json(preset))
+    Ok(Json(PipelinePresetResponse::from(preset)))
 }
 
 /// Create a new pipeline preset.
@@ -1147,30 +1177,24 @@ async fn get_pipeline_preset_by_id(
 async fn create_pipeline_preset(
     State(state): State<AppState>,
     Json(payload): Json<CreatePipelinePresetRequest>,
-) -> ApiResult<Json<crate::database::models::PipelinePreset>> {
+) -> ApiResult<Json<PipelinePresetResponse>> {
     let preset_repo = state
         .pipeline_preset_repository
         .as_ref()
         .ok_or_else(|| ApiError::service_unavailable("Pipeline preset service not available"))?;
 
-    let steps_json = serde_json::to_string(&payload.steps)
-        .map_err(|e| ApiError::bad_request(format!("Invalid steps: {}", e)))?;
-
-    let preset = crate::database::models::PipelinePreset {
-        id: uuid::Uuid::new_v4().to_string(),
-        name: payload.name,
-        description: payload.description,
-        steps: steps_json,
-        created_at: chrono::Utc::now(),
-        updated_at: chrono::Utc::now(),
-    };
+    // Create via PipelinePreset::new which now accepts Vec<PipelineStep>
+    let mut preset = crate::database::models::PipelinePreset::new(payload.name, payload.steps);
+    if let Some(desc) = payload.description {
+        preset = preset.with_description(desc);
+    }
 
     preset_repo
         .create_pipeline_preset(&preset)
         .await
         .map_err(ApiError::from)?;
 
-    Ok(Json(preset))
+    Ok(Json(PipelinePresetResponse::from(preset)))
 }
 
 /// Update an existing pipeline preset.
@@ -1182,7 +1206,7 @@ async fn update_pipeline_preset(
     State(state): State<AppState>,
     Path(id): Path<String>,
     Json(payload): Json<UpdatePipelinePresetRequest>,
-) -> ApiResult<Json<crate::database::models::PipelinePreset>> {
+) -> ApiResult<Json<PipelinePresetResponse>> {
     let preset_repo = state
         .pipeline_preset_repository
         .as_ref()
@@ -1195,6 +1219,10 @@ async fn update_pipeline_preset(
         .map_err(ApiError::from)?
         .ok_or_else(|| ApiError::not_found(format!("Pipeline preset {} not found", id)))?;
 
+    // Use PipelinePreset::new to handle serialization of steps
+    // But we want to preserve ID and created_at
+    // So we can use the same logic as new but manually construct or assume a helper?
+    // Let's just standard serialize since we have steps in payload
     let steps_json = serde_json::to_string(&payload.steps)
         .map_err(|e| ApiError::bad_request(format!("Invalid steps: {}", e)))?;
 
@@ -1212,7 +1240,7 @@ async fn update_pipeline_preset(
         .await
         .map_err(ApiError::from)?;
 
-    Ok(Json(preset))
+    Ok(Json(PipelinePresetResponse::from(preset)))
 }
 
 /// Delete a pipeline preset.

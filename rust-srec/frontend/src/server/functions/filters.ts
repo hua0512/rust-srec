@@ -24,7 +24,7 @@ export const createFilter = createServerFn({ method: 'POST' })
   .handler(async ({ data: { streamerId, data } }) => {
     const json = await fetchBackend(`/streamers/${streamerId}/filters`, {
       method: 'POST',
-      body: JSON.stringify(data),
+      body: JSON.stringify({ ...data, streamer_id: streamerId }),
     });
     return FilterSchema.parse(json);
   });

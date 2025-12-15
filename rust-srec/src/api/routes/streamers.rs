@@ -3,7 +3,7 @@
 use axum::{
     Json, Router,
     extract::{Path, Query, State},
-    routing::{delete, get, patch, post},
+    routing::{delete, get, patch, post, put},
 };
 
 use crate::api::error::{ApiError, ApiResult};
@@ -42,7 +42,7 @@ pub fn router() -> Router<AppState> {
         .route("/", post(create_streamer))
         .route("/", get(list_streamers))
         .route("/{id}", get(get_streamer))
-        .route("/{id}", patch(update_streamer))
+        .route("/{id}", put(update_streamer))
         .route("/{id}", delete(delete_streamer))
         .route("/{id}/clear-error", post(clear_error))
         .route("/{id}/priority", patch(update_priority))
@@ -65,11 +65,12 @@ fn metadata_to_response(metadata: &StreamerMetadata) -> StreamerResponse {
         last_error: metadata.last_error.clone(),
         avatar_url: metadata.avatar_url.clone(),
         last_live_time: metadata.last_live_time,
-        created_at: chrono::Utc::now(), // Not stored in metadata
-        updated_at: chrono::Utc::now(), // Not stored in metadata
-        streamer_specific_config: metadata.streamer_specific_config.clone(),
-        download_retry_policy: metadata.download_retry_policy.clone(),
-        danmu_sampling_config: metadata.danmu_sampling_config.clone(),
+        created_at: metadata.created_at,
+        updated_at: metadata.updated_at,
+        streamer_specific_config: metadata
+            .streamer_specific_config
+            .as_ref()
+            .and_then(|s| serde_json::from_str(s).ok()),
     }
 }
 
@@ -119,9 +120,15 @@ async fn create_streamer(
         last_error: None,
         avatar_url: None,
         last_live_time: None,
-        streamer_specific_config: request.streamer_specific_config.clone(),
-        download_retry_policy: request.download_retry_policy.clone(),
-        danmu_sampling_config: request.danmu_sampling_config.clone(),
+        streamer_specific_config: request.streamer_specific_config.as_ref().and_then(|v| {
+            if v.is_null() {
+                None
+            } else {
+                Some(v.to_string())
+            }
+        }),
+        created_at: chrono::Utc::now(),
+        updated_at: chrono::Utc::now(),
     };
 
     // Create streamer using manager
@@ -278,7 +285,7 @@ async fn get_streamer(
 
 /// Update a streamer.
 ///
-/// PATCH /api/streamers/:id
+/// PUT /api/streamers/:id
 async fn update_streamer(
     State(state): State<AppState>,
     Path(id): Path<String>,
@@ -324,9 +331,13 @@ async fn update_streamer(
             template_config_id,
             new_priority,
             new_state,
-            request.streamer_specific_config.map(Some),
-            request.download_retry_policy.map(Some),
-            request.danmu_sampling_config.map(Some),
+            request.streamer_specific_config.map(|v| {
+                if v.is_null() {
+                    None
+                } else {
+                    Some(v.to_string())
+                }
+            }),
         )
         .await
         .map_err(ApiError::from)?;
@@ -453,8 +464,6 @@ mod tests {
             priority: ApiPriority::Normal,
             enabled: true,
             streamer_specific_config: None,
-            download_retry_policy: None,
-            danmu_sampling_config: None,
         };
 
         // URL is empty, should fail validation
@@ -477,8 +486,8 @@ mod tests {
             last_error: Some("test error".to_string()),
             last_live_time: Some(chrono::Utc::now()),
             streamer_specific_config: None,
-            download_retry_policy: None,
-            danmu_sampling_config: None,
+            created_at: chrono::Utc::now(),
+            updated_at: chrono::Utc::now(),
         };
 
         let response = metadata_to_response(&metadata);
@@ -510,8 +519,8 @@ mod tests {
             last_error: None,
             last_live_time: None,
             streamer_specific_config: None,
-            download_retry_policy: None,
-            danmu_sampling_config: None,
+            created_at: chrono::Utc::now(),
+            updated_at: chrono::Utc::now(),
         };
 
         let response = metadata_to_response(&metadata);
@@ -859,8 +868,8 @@ mod property_tests {
                     last_error: None,
                     last_live_time: None,
                     streamer_specific_config: None,
-                    download_retry_policy: None,
-                    danmu_sampling_config: None,
+                    created_at: Utc::now(),
+                    updated_at: Utc::now(),
                 };
 
                 // Create the streamer
@@ -919,8 +928,8 @@ mod property_tests {
                     last_error: None,
                     last_live_time: None,
                     streamer_specific_config: None,
-                    download_retry_policy: None,
-                    danmu_sampling_config: None,
+                    created_at: Utc::now(),
+                    updated_at: Utc::now(),
                 };
 
                 manager.create_streamer(metadata).await.expect("Create should succeed");
@@ -978,8 +987,8 @@ mod property_tests {
                     last_error: None,
                     last_live_time: None,
                     streamer_specific_config: None,
-                    download_retry_policy: None,
-                    danmu_sampling_config: None,
+                    created_at: Utc::now(),
+                    updated_at: Utc::now(),
                 };
 
                 manager.create_streamer(metadata).await.expect("Create should succeed");

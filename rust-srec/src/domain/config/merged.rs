@@ -100,6 +100,15 @@ impl MergedConfigBuilder {
         session_gap_time_secs: i64,
         pipeline: Option<Vec<PipelineStep>>,
     ) -> Self {
+        debug!(
+            "[Layer 1: Global] Setting base config: output_folder={}, output_format={}, engine={}, record_danmu={}, session_gap={}s, pipeline_steps={}",
+            output_folder,
+            output_file_format,
+            download_engine,
+            record_danmu,
+            session_gap_time_secs,
+            pipeline.as_ref().map(|p| p.len()).unwrap_or(0)
+        );
         self.output_folder = Some(output_folder);
         self.output_filename_template = Some(output_filename_template);
         self.output_file_format = Some(output_file_format);
@@ -139,6 +148,15 @@ impl MergedConfigBuilder {
         event_hooks: Option<EventHooks>,
         pipeline: Option<Vec<PipelineStep>>,
     ) -> Self {
+        debug!(
+            "[Layer 2: Platform] Applying overrides: output_folder={:?}, engine={:?}, record_danmu={:?}, cookies={}, stream_selection={}, pipeline_steps={}",
+            output_folder,
+            download_engine,
+            record_danmu,
+            cookies.is_some(),
+            stream_selection.is_some(),
+            pipeline.as_ref().map(|p| p.len()).unwrap_or(0)
+        );
         if let Some(v) = fetch_delay_ms {
             self.fetch_delay_ms = Some(v);
         }
@@ -199,7 +217,7 @@ impl MergedConfigBuilder {
                 }
             }
             // Stream selection from JSON
-            if let Some(stream_sel) = config.get("stream_selection") {
+            if let Some(stream_sel) = config.get("stream_selection_config") {
                 if let Ok(v) = serde_json::from_value::<StreamSelectionConfig>(stream_sel.clone()) {
                     if self.stream_selection.is_none() {
                         if let Some(existing) = &self.stream_selection {
@@ -342,6 +360,16 @@ impl MergedConfigBuilder {
         engines_override: Option<serde_json::Value>,
         pipeline: Option<Vec<PipelineStep>>,
     ) -> Self {
+        debug!(
+            "[Layer 3: Template] Applying overrides: output_folder={:?}, engine={:?}, record_danmu={:?}, cookies={}, stream_selection={}, engines_override={}, pipeline_steps={}",
+            output_folder,
+            download_engine,
+            record_danmu,
+            cookies.is_some(),
+            stream_selection.is_some(),
+            engines_override.is_some(),
+            pipeline.as_ref().map(|p| p.len()).unwrap_or(0)
+        );
         if let Some(v) = output_folder {
             debug!("Template override: output_folder = {}", v);
             self.output_folder = Some(v);
@@ -422,24 +450,15 @@ impl MergedConfigBuilder {
     }
 
     /// Apply streamer-specific config layer.
-    pub fn with_streamer(
-        mut self,
-        download_retry_policy: Option<RetryPolicy>,
-        danmu_sampling_config: Option<DanmuSamplingConfig>,
-        streamer_config: Option<&serde_json::Value>,
-    ) -> Self {
-        if let Some(v) = download_retry_policy {
-            debug!("Streamer override: download_retry_policy");
-            self.download_retry_policy = Some(v);
-        }
-        if let Some(v) = danmu_sampling_config {
-            debug!("Streamer override: danmu_sampling_config");
-            self.danmu_sampling_config = Some(v);
-        }
+    pub fn with_streamer(mut self, streamer_config: Option<&serde_json::Value>) -> Self {
+        debug!(
+            "[Layer 4: Streamer] Applying overrides: streamer_config={}",
+            streamer_config.is_some()
+        );
 
         // Parse streamer-specific config JSON
         if let Some(config) = streamer_config {
-            debug!("Applying streamer-specific config overrides");
+            debug!("Applying streamer-specific config overrides: {}", config);
             if let Some(v) = config.get("output_folder").and_then(|v| v.as_str()) {
                 debug!("Streamer config override: output_folder = {}", v);
                 self.output_folder = Some(v.to_string());
@@ -498,7 +517,7 @@ impl MergedConfigBuilder {
             }
 
             // Parse stream selection config from streamer-specific config
-            if let Some(stream_sel) = config.get("stream_selection") {
+            if let Some(stream_sel) = config.get("stream_selection_config") {
                 if let Ok(v) = serde_json::from_value::<StreamSelectionConfig>(stream_sel.clone()) {
                     if let Some(existing) = &self.stream_selection {
                         debug!("Streamer config override: merging stream_selection");
@@ -530,37 +549,68 @@ impl MergedConfigBuilder {
                     self.pipeline = Some(v);
                 }
             }
+
+            if let Some(v) = config.get("download_retry_policy") {
+                if let Ok(v) = serde_json::from_value::<RetryPolicy>(v.clone()) {
+                    debug!("Streamer config override: download_retry_policy");
+                    self.download_retry_policy = Some(v);
+                }
+            }
+
+            if let Some(v) = config.get("danmu_sampling_config") {
+                if let Ok(v) = serde_json::from_value::<DanmuSamplingConfig>(v.clone()) {
+                    debug!("Streamer config override: danmu_sampling_config");
+                    self.danmu_sampling_config = Some(v);
+                }
+            }
         }
         self
     }
 
     /// Build the final MergedConfig.
     pub fn build(self) -> MergedConfig {
+        let output_folder = self
+            .output_folder
+            .unwrap_or_else(|| "./downloads".to_string());
+        let output_filename_template = self
+            .output_filename_template
+            .unwrap_or_else(|| "{streamer}-{title}-%Y%m%d-%H%M%S".to_string());
+        let output_file_format = self.output_file_format.unwrap_or_else(|| "flv".to_string());
+        let download_engine = self.download_engine.unwrap_or_else(|| "mesio".to_string());
+        let record_danmu = self.record_danmu.unwrap_or(false);
+        let stream_selection = self.stream_selection.unwrap_or_default();
+        let pipeline = self.pipeline.unwrap_or_else(Vec::new);
+
+        debug!(
+            "[Config Merge Complete] Final config: output_folder={}, format={}, engine={}, record_danmu={}, stream_selection={:?}, pipeline_steps={}",
+            output_folder,
+            output_file_format,
+            download_engine,
+            record_danmu,
+            stream_selection,
+            pipeline.len()
+        );
+
         MergedConfig {
-            output_folder: self
-                .output_folder
-                .unwrap_or_else(|| "./downloads".to_string()),
-            output_filename_template: self
-                .output_filename_template
-                .unwrap_or_else(|| "{streamer}-{title}-%Y%m%d-%H%M%S".to_string()),
-            output_file_format: self.output_file_format.unwrap_or_else(|| "flv".to_string()),
+            output_folder,
+            output_filename_template,
+            output_file_format,
             min_segment_size_bytes: self.min_segment_size_bytes.unwrap_or(1048576),
             max_download_duration_secs: self.max_download_duration_secs.unwrap_or(0),
             max_part_size_bytes: self.max_part_size_bytes.unwrap_or(8589934592),
-            record_danmu: self.record_danmu.unwrap_or(false),
+            record_danmu,
             danmu_sampling_config: self.danmu_sampling_config.unwrap_or_default(),
             proxy_config: self.proxy_config.unwrap_or_default(),
             cookies: self.cookies,
-            download_engine: self.download_engine.unwrap_or_else(|| "mesio".to_string()),
+            download_engine,
             download_retry_policy: self.download_retry_policy.unwrap_or_default(),
             event_hooks: self.event_hooks.unwrap_or_default(),
             fetch_delay_ms: self.fetch_delay_ms.unwrap_or(60000),
             download_delay_ms: self.download_delay_ms.unwrap_or(1000),
             session_gap_time_secs: self.session_gap_time_secs.unwrap_or(3600),
-            stream_selection: self.stream_selection.unwrap_or_default(),
-
+            stream_selection,
             engines_override: self.engines_override,
-            pipeline: self.pipeline.unwrap_or_else(Vec::new),
+            pipeline,
         }
     }
 }
@@ -720,7 +770,7 @@ mod tests {
                 None,
                 None,
             )
-            .with_streamer(None, None, Some(&streamer_config))
+            .with_streamer(Some(&streamer_config))
             .build();
 
         // Streamer pipeline should override global
@@ -780,7 +830,7 @@ mod tests {
                 None,
                 None,
             )
-            .with_streamer(None, None, Some(&streamer_config))
+            .with_streamer(Some(&streamer_config))
             .build();
 
         // Should have 2 steps: preset + inline

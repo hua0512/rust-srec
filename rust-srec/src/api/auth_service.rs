@@ -23,7 +23,7 @@ use super::jwt::JwtService;
 /// Authentication configuration.
 #[derive(Debug, Clone)]
 pub struct AuthConfig {
-    /// Access token expiration in seconds (default: 900 = 15 minutes)
+    /// Access token expiration in seconds (default: 3600 = 1 hour)
     pub access_token_expiration_secs: u64,
     /// Refresh token expiration in seconds (default: 604800 = 7 days)
     pub refresh_token_expiration_secs: u64,
@@ -34,9 +34,40 @@ pub struct AuthConfig {
 impl Default for AuthConfig {
     fn default() -> Self {
         Self {
-            access_token_expiration_secs: 900,     // 15 minutes
+            access_token_expiration_secs: 3600,    // 1 hour
             refresh_token_expiration_secs: 604800, // 7 days
             min_password_length: 8,
+        }
+    }
+}
+
+impl AuthConfig {
+    /// Create AuthConfig from environment variables.
+    ///
+    /// Environment variables:
+    /// - `ACCESS_TOKEN_EXPIRATION_SECS`: Access token expiration in seconds (default: 3600 = 1 hour)
+    /// - `REFRESH_TOKEN_EXPIRATION_SECS`: Refresh token expiration in seconds (default: 604800 = 7 days)
+    /// - `MIN_PASSWORD_LENGTH`: Minimum password length (default: 8)
+    pub fn from_env() -> Self {
+        let access_token_expiration_secs = std::env::var("ACCESS_TOKEN_EXPIRATION_SECS")
+            .ok()
+            .and_then(|s| s.parse().ok())
+            .unwrap_or(3600);
+
+        let refresh_token_expiration_secs = std::env::var("REFRESH_TOKEN_EXPIRATION_SECS")
+            .ok()
+            .and_then(|s| s.parse().ok())
+            .unwrap_or(604800);
+
+        let min_password_length = std::env::var("MIN_PASSWORD_LENGTH")
+            .ok()
+            .and_then(|s| s.parse().ok())
+            .unwrap_or(8);
+
+        Self {
+            access_token_expiration_secs,
+            refresh_token_expiration_secs,
+            min_password_length,
         }
     }
 }
@@ -452,7 +483,7 @@ mod tests {
     #[test]
     fn test_auth_config_default() {
         let config = AuthConfig::default();
-        assert_eq!(config.access_token_expiration_secs, 900);
+        assert_eq!(config.access_token_expiration_secs, 3600);
         assert_eq!(config.refresh_token_expiration_secs, 604800);
         assert_eq!(config.min_password_length, 8);
     }

@@ -3,7 +3,7 @@
 use axum::{
     Json, Router,
     extract::{Path, Query, State},
-    routing::{delete, get, patch, post},
+    routing::{delete, get, post, put},
 };
 
 use crate::api::error::{ApiError, ApiResult};
@@ -13,6 +13,7 @@ use crate::api::models::{
 };
 use crate::api::server::AppState;
 use crate::database::models::TemplateConfigDbModel;
+use tracing::info;
 
 /// Create the templates router.
 pub fn router() -> Router<AppState> {
@@ -20,7 +21,7 @@ pub fn router() -> Router<AppState> {
         .route("/", post(create_template))
         .route("/", get(list_templates))
         .route("/{id}", get(get_template))
-        .route("/{id}", patch(update_template))
+        .route("/{id}", put(update_template))
         .route("/{id}", delete(delete_template))
 }
 
@@ -43,6 +44,15 @@ fn db_model_to_response(model: &TemplateConfigDbModel, usage_count: u32) -> Temp
             .as_ref()
             .and_then(|s| serde_json::from_str(s).ok()),
         stream_selection_config: model.stream_selection_config.clone(),
+        cookies: model.cookies.clone(),
+        min_segment_size_bytes: model.min_segment_size_bytes,
+        max_download_duration_secs: model.max_download_duration_secs,
+        max_part_size_bytes: model.max_part_size_bytes,
+        download_retry_policy: model.download_retry_policy.clone(),
+        danmu_sampling_config: model.danmu_sampling_config.clone(),
+        proxy_config: model.proxy_config.clone(),
+        event_hooks: model.event_hooks.clone(),
+        pipeline: model.pipeline.clone(),
         usage_count,
         created_at: model.created_at,
         updated_at: model.updated_at,
@@ -81,6 +91,15 @@ async fn create_template(
         .engines_override
         .map(|v| serde_json::to_string(&v).unwrap_or_default());
     template.stream_selection_config = request.stream_selection_config;
+    template.cookies = request.cookies;
+    template.min_segment_size_bytes = request.min_segment_size_bytes;
+    template.max_download_duration_secs = request.max_download_duration_secs;
+    template.max_part_size_bytes = request.max_part_size_bytes;
+    template.download_retry_policy = request.download_retry_policy;
+    template.danmu_sampling_config = request.danmu_sampling_config;
+    template.proxy_config = request.proxy_config;
+    template.event_hooks = request.event_hooks;
+    template.pipeline = request.pipeline;
 
     // Create the template
     config_service
@@ -172,7 +191,7 @@ async fn get_template(
 
 /// Update a template.
 ///
-/// PATCH /api/templates/:id
+/// PUT /api/templates/:id
 async fn update_template(
     State(state): State<AppState>,
     Path(id): Path<String>,
@@ -196,45 +215,44 @@ async fn update_template(
         }
     })?;
 
-    // Apply partial updates
+    // Replace all fields (PUT semantics)
     if let Some(name) = request.name {
         if name.is_empty() {
             return Err(ApiError::validation("Template name cannot be empty"));
         }
         template.name = name;
     }
-    if let Some(output_folder) = request.output_folder {
-        template.output_folder = Some(output_folder);
-    }
-    if let Some(output_filename_template) = request.output_filename_template {
-        template.output_filename_template = Some(output_filename_template);
-    }
-    if let Some(output_file_format) = request.output_file_format {
-        template.output_file_format = Some(output_file_format);
-    }
-    if let Some(download_engine) = request.download_engine {
-        template.download_engine = Some(download_engine);
-    }
-    if let Some(record_danmu) = request.record_danmu {
-        template.record_danmu = Some(record_danmu);
-    }
-    if let Some(platform_overrides) = request.platform_overrides {
-        template.platform_overrides =
-            Some(serde_json::to_string(&platform_overrides).unwrap_or_default());
-    }
-    if let Some(engines_override) = request.engines_override {
-        template.engines_override =
-            Some(serde_json::to_string(&engines_override).unwrap_or_default());
-    }
-    if let Some(stream_selection_config) = request.stream_selection_config {
-        template.stream_selection_config = Some(stream_selection_config);
-    }
+
+    // For optional fields, direct assignment handles both Some(v) and None (clearing)
+    template.output_folder = request.output_folder;
+    template.output_filename_template = request.output_filename_template;
+    template.output_file_format = request.output_file_format;
+    template.download_engine = request.download_engine;
+    template.record_danmu = request.record_danmu;
+    template.platform_overrides = request
+        .platform_overrides
+        .map(|v| serde_json::to_string(&v).unwrap_or_default());
+    template.engines_override = request
+        .engines_override
+        .map(|v| serde_json::to_string(&v).unwrap_or_default());
+    template.stream_selection_config = request.stream_selection_config;
+    template.cookies = request.cookies;
+    template.min_segment_size_bytes = request.min_segment_size_bytes;
+    template.max_download_duration_secs = request.max_download_duration_secs;
+    template.max_part_size_bytes = request.max_part_size_bytes;
+    template.download_retry_policy = request.download_retry_policy;
+    template.danmu_sampling_config = request.danmu_sampling_config;
+    template.proxy_config = request.proxy_config;
+    template.event_hooks = request.event_hooks;
+    template.pipeline = request.pipeline;
 
     // Update the template
     config_service
         .update_template_config(&template)
         .await
         .map_err(|e| ApiError::internal(format!("Failed to update template: {}", e)))?;
+
+    info!("Updated template '{}' (id: {})", template.name, id);
 
     // Count streamers using this template
     let usage_count = streamer_manager
@@ -310,6 +328,15 @@ mod tests {
             platform_overrides: None,
             engines_override: None,
             stream_selection_config: None,
+            cookies: None,
+            min_segment_size_bytes: None,
+            max_download_duration_secs: None,
+            max_part_size_bytes: None,
+            download_retry_policy: None,
+            danmu_sampling_config: None,
+            proxy_config: None,
+            event_hooks: None,
+            pipeline: None,
             usage_count: 5,
             created_at: chrono::Utc::now(),
             updated_at: chrono::Utc::now(),

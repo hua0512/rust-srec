@@ -230,7 +230,7 @@ impl Bilibili {
                                 })),
                                 codec: c.codec_name.to_string(),
                                 fps: 0.0,
-                                is_headers_needed: false,
+                                is_headers_needed: true,
                             });
                         }
                     }

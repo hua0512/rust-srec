@@ -1,6 +1,6 @@
 //! URL parsing routes for extracting media info.
 
-use axum::{Json, Router, routing::post};
+use axum::{Json, Router, extract::State, routing::post};
 use platforms_parser::extractor::factory::ExtractorFactory;
 use tracing::{debug, warn};
 
@@ -22,8 +22,14 @@ pub fn router() -> Router<AppState> {
 ///
 /// Uses the platforms_parser crate to extract media information from the given URL.
 /// Returns the full MediaInfo structure as JSON.
-async fn parse_url(Json(request): Json<ParseUrlRequest>) -> ApiResult<Json<ParseUrlResponse>> {
-    let response = process_parse_request(request).await;
+/// If cookies are not provided in the request, looks up cookies from the streamer's
+/// configuration if a matching streamer exists.
+async fn parse_url(
+    State(state): State<AppState>,
+    Json(request): Json<ParseUrlRequest>,
+) -> ApiResult<Json<ParseUrlResponse>> {
+    let cookies = resolve_cookies_for_url(&state, &request.url, request.cookies.clone()).await;
+    let response = process_parse_request(request.url, cookies).await;
     Ok(Json(response))
 }
 
@@ -31,13 +37,86 @@ async fn parse_url(Json(request): Json<ParseUrlRequest>) -> ApiResult<Json<Parse
 ///
 /// POST /api/parse/batch
 async fn parse_url_batch(
+    State(state): State<AppState>,
     Json(requests): Json<Vec<ParseUrlRequest>>,
 ) -> ApiResult<Json<Vec<ParseUrlResponse>>> {
     let mut responses = Vec::new();
     for request in requests {
-        responses.push(process_parse_request(request).await);
+        let cookies = resolve_cookies_for_url(&state, &request.url, request.cookies.clone()).await;
+        responses.push(process_parse_request(request.url, cookies).await);
     }
     Ok(Json(responses))
+}
+
+/// Resolve cookies for a URL.
+///
+/// Priority order:
+/// 1. Explicitly provided cookies in the request
+/// 2. Streamer config cookies (if a matching streamer exists for this URL)
+/// 3. Platform config cookies (detected from the URL)
+async fn resolve_cookies_for_url(
+    state: &AppState,
+    url: &str,
+    explicit_cookies: Option<String>,
+) -> Option<String> {
+    // If cookies are explicitly provided, use them
+    if explicit_cookies.is_some() {
+        return explicit_cookies;
+    }
+
+    let config_service = state.config_service.as_ref()?;
+
+    // Try to find a matching streamer by URL
+    if let Some(streamer_manager) = state.streamer_manager.as_ref() {
+        // Look up streamer by URL (case-insensitive match)
+        let url_lower = url.to_lowercase();
+        if let Some(streamer) = streamer_manager
+            .get_all()
+            .into_iter()
+            .find(|s| s.url.to_lowercase() == url_lower)
+        {
+            // Get the merged config for this streamer to get cookies
+            match config_service.get_config_for_streamer(&streamer.id).await {
+                Ok(config) => {
+                    if config.cookies.is_some() {
+                        debug!(
+                            "Using cookies from streamer config for URL: {} (streamer: {})",
+                            url, streamer.name
+                        );
+                        return config.cookies;
+                    }
+                }
+                Err(e) => {
+                    warn!("Failed to get config for streamer {}: {}", streamer.id, e);
+                }
+            }
+        }
+    }
+
+    // Fallback: Try to detect platform from URL and use platform config cookies
+    use crate::domain::value_objects::StreamerUrl;
+
+    if let Ok(streamer_url) = StreamerUrl::new(url) {
+        if let Some(platform_name) = streamer_url.platform() {
+            // Find a matching platform config
+            if let Ok(platform_configs) = config_service.list_platform_configs().await {
+                if let Some(platform_config) = platform_configs
+                    .into_iter()
+                    .find(|c| c.platform_name.eq_ignore_ascii_case(platform_name))
+                {
+                    if platform_config.cookies.is_some() {
+                        debug!(
+                            "Using cookies from platform config for URL: {} (platform: {})",
+                            url, platform_name
+                        );
+                        return platform_config.cookies;
+                    }
+                }
+            }
+        }
+    }
+
+    None
 }
 
 /// Resolve the true URL for a stream.
@@ -107,9 +186,9 @@ async fn resolve_url(
 }
 
 /// Helper to process a single parse request
-async fn process_parse_request(request: ParseUrlRequest) -> ParseUrlResponse {
+async fn process_parse_request(url: String, cookies: Option<String>) -> ParseUrlResponse {
     // Validate URL
-    if request.url.is_empty() {
+    if url.is_empty() {
         return ParseUrlResponse {
             success: false,
             is_live: false,
@@ -118,7 +197,7 @@ async fn process_parse_request(request: ParseUrlRequest) -> ParseUrlResponse {
         };
     }
 
-    debug!("Parsing URL: {}", request.url);
+    debug!("Parsing URL: {}", url);
 
     // Create HTTP client and extractor factory
     let client = platforms_parser::extractor::create_client_builder(None)
@@ -127,35 +206,34 @@ async fn process_parse_request(request: ParseUrlRequest) -> ParseUrlResponse {
     let extractor_factory = ExtractorFactory::new(client);
 
     // Create extractor for the URL
-    let extractor =
-        match extractor_factory.create_extractor(&request.url, request.cookies.clone(), None) {
-            Ok(ext) => ext,
-            Err(platforms_parser::extractor::error::ExtractorError::UnsupportedExtractor) => {
-                warn!("Unsupported platform for URL: {}", request.url);
-                return ParseUrlResponse {
-                    success: false,
-                    is_live: false,
-                    media_info: None,
-                    error: Some("Unsupported platform".to_string()),
-                };
-            }
-            Err(e) => {
-                warn!("Failed to create extractor for URL {}: {}", request.url, e);
-                return ParseUrlResponse {
-                    success: false,
-                    is_live: false,
-                    media_info: None,
-                    error: Some(format!("Failed to create extractor: {}", e)),
-                };
-            }
-        };
+    let extractor = match extractor_factory.create_extractor(&url, cookies.clone(), None) {
+        Ok(ext) => ext,
+        Err(platforms_parser::extractor::error::ExtractorError::UnsupportedExtractor) => {
+            warn!("Unsupported platform for URL: {}", url);
+            return ParseUrlResponse {
+                success: false,
+                is_live: false,
+                media_info: None,
+                error: Some("Unsupported platform".to_string()),
+            };
+        }
+        Err(e) => {
+            warn!("Failed to create extractor for URL {}: {}", url, e);
+            return ParseUrlResponse {
+                success: false,
+                is_live: false,
+                media_info: None,
+                error: Some(format!("Failed to create extractor: {}", e)),
+            };
+        }
+    };
 
     // Extract media info
     match extractor.extract().await {
         Ok(media_info) => {
             debug!(
                 "Successfully extracted media info for {}: is_live={}, streams={}",
-                request.url,
+                url,
                 media_info.is_live,
                 media_info.streams.len()
             );
@@ -182,7 +260,7 @@ async fn process_parse_request(request: ParseUrlRequest) -> ParseUrlResponse {
             }
         }
         Err(e) => {
-            debug!("Failed to extract media info for {}: {}", request.url, e);
+            debug!("Failed to extract media info for {}: {}", url, e);
 
             // Check for specific error types
             let error_message = match &e {

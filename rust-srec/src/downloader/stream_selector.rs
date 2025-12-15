@@ -17,6 +17,7 @@ use tracing::debug;
 /// Configure platform-specific quality preferences at the platform or template level.
 /// The matching uses substring matching, so "1080" will match "1080p", "1080p60", etc.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
 pub struct StreamSelectionConfig {
     /// Preferred stream formats in order of preference.
     /// Empty means accept any format.
@@ -46,11 +47,12 @@ impl Default for StreamSelectionConfig {
             // Prefer FLV for live streams (lower latency), then HLS
             preferred_formats: vec![StreamFormat::Flv, StreamFormat::Hls],
             preferred_media_formats: vec![],
-            // Empty by default - falls back to bitrate/priority sorting
+            // Empty by default - falls back to bitrate/priority sorting (highest bitrate wins)
+            // This means "best" = maximum bitrate when no specific config is provided
             // Configure platform-specific quality names at platform/template level:
             // - Chinese platforms: ["原画", "蓝光", "超清", "高清"]
             // - Western platforms: ["source", "1080p", "720p", "480p"]
-            preferred_qualities: vec!["原画".to_string(), "source".to_string()],
+            preferred_qualities: vec![],
             preferred_cdns: vec![],
             min_bitrate: 0,
             max_bitrate: 0,
@@ -121,8 +123,13 @@ impl StreamSelector {
     ///
     /// Returns the best matching stream, or None if no streams match the criteria.
     pub fn select_best<'a>(&self, streams: &'a [StreamInfo]) -> Option<&'a StreamInfo> {
+        self.sort_candidates(streams).first().copied()
+    }
+
+    /// Sort candidates by preference.
+    pub fn sort_candidates<'a>(&self, streams: &'a [StreamInfo]) -> Vec<&'a StreamInfo> {
         if streams.is_empty() {
-            return None;
+            return Vec::new();
         }
 
         // Filter streams based on criteria
@@ -143,7 +150,7 @@ impl StreamSelector {
         let mut sorted = candidates;
         sorted.sort_by(|a, b| self.compare_streams(a, b));
 
-        sorted.first().copied()
+        sorted
     }
 
     /// Check if a stream matches the selection criteria.

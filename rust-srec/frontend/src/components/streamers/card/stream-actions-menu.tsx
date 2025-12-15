@@ -14,6 +14,7 @@ import {
     Edit,
     Play,
     Pause,
+    Video,
 } from 'lucide-react';
 import { Link } from '@tanstack/react-router';
 import { Trans } from '@lingui/react/macro';
@@ -76,6 +77,18 @@ export const StreamActionsMenu = ({
                             </span>
                         </>
                     )}
+                </DropdownMenuItem>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem asChild className="cursor-pointer group">
+                    <Link
+                        to="/player"
+                        search={{ url: streamer.url }}
+                    >
+                        <Video className="mr-2 h-4 w-4 text-purple-500 group-hover:text-purple-600 dark:text-purple-400 dark:group-hover:text-purple-300" />
+                        <span className="text-purple-600 group-hover:text-purple-700 dark:text-purple-400 dark:group-hover:text-purple-300 transition-colors">
+                            <Trans>Watch</Trans>
+                        </span>
+                    </Link>
                 </DropdownMenuItem>
                 <DropdownMenuSeparator />
                 <DropdownMenuItem asChild className="cursor-pointer group">

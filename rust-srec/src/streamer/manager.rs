@@ -77,15 +77,55 @@ where
     ///
     /// This loads only the metadata fields needed for scheduling,
     /// avoiding full entity hydration for performance.
+    ///
+    /// **Restart Recovery**: Any streamers that were `Live` in the database are reset
+    /// to `NotLive`. This ensures that after an app restart, the normal detection flow
+    /// (`NotLive → Live`) will correctly trigger download starts. Without this reset,
+    /// hysteresis would suppress `Live → Live` transitions and no download would start.
     pub async fn hydrate(&self) -> Result<usize> {
         info!("Hydrating streamer metadata from database");
 
         let streamers = self.repo.list_all_streamers().await?;
         let count = streamers.len();
 
+        let mut live_reset_count = 0;
+
         for streamer in streamers {
-            let metadata = StreamerMetadata::from_db_model(&streamer);
+            let mut metadata = StreamerMetadata::from_db_model(&streamer);
+
+            // Restart recovery: reset Live to NotLive
+            // After restart, no downloads are active, so we need the normal NotLive→Live
+            // detection flow to work. If we keep Live state, hysteresis will suppress
+            // the "redundant" Live→Live transition and no download will start.
+            if metadata.state == StreamerState::Live {
+                info!(
+                    "Restart recovery: resetting streamer {} from Live to NotLive",
+                    metadata.id
+                );
+                metadata.state = StreamerState::NotLive;
+                live_reset_count += 1;
+
+                // Persist the state change to keep DB consistent
+                if let Err(e) = self
+                    .repo
+                    .update_streamer_state(&metadata.id, &StreamerState::NotLive.to_string())
+                    .await
+                {
+                    warn!(
+                        "Failed to persist NotLive state for streamer {} during restart recovery: {}",
+                        metadata.id, e
+                    );
+                }
+            }
+
             self.metadata.insert(metadata.id.clone(), metadata);
+        }
+
+        if live_reset_count > 0 {
+            info!(
+                "Restart recovery: reset {} streamers from Live to NotLive",
+                live_reset_count
+            );
         }
 
         info!("Hydrated {} streamers into memory", count);
@@ -322,8 +362,6 @@ where
         priority: Option<Priority>,
         state: Option<StreamerState>,
         streamer_specific_config: Option<Option<String>>,
-        download_retry_policy: Option<Option<String>>,
-        danmu_sampling_config: Option<Option<String>>,
     ) -> Result<StreamerMetadata> {
         debug!("Partially updating streamer: {}", id);
 
@@ -352,12 +390,6 @@ where
         }
         if let Some(new_config) = streamer_specific_config {
             metadata.streamer_specific_config = new_config;
-        }
-        if let Some(new_policy) = download_retry_policy {
-            metadata.download_retry_policy = new_policy;
-        }
-        if let Some(new_sampling) = danmu_sampling_config {
-            metadata.danmu_sampling_config = new_sampling;
         }
 
         // Convert to DB model and persist
@@ -651,10 +683,9 @@ where
             last_error: metadata.last_error.clone(),
             disabled_until: metadata.disabled_until.map(|dt| dt.to_rfc3339()),
             last_live_time: metadata.last_live_time.map(|dt| dt.to_rfc3339()),
-            // These fields are not in metadata, use defaults
-            download_retry_policy: None,
-            danmu_sampling_config: None,
-            streamer_specific_config: None,
+            streamer_specific_config: metadata.streamer_specific_config.clone(),
+            created_at: metadata.created_at.to_rfc3339(),
+            updated_at: metadata.updated_at.to_rfc3339(),
         }
     }
 }
@@ -873,9 +904,9 @@ mod tests {
             last_error: None,
             disabled_until: None,
             last_live_time: None,
-            download_retry_policy: None,
-            danmu_sampling_config: None,
             streamer_specific_config: None,
+            created_at: Utc::now().to_rfc3339(),
+            updated_at: Utc::now().to_rfc3339(),
         }
     }
 
@@ -913,8 +944,8 @@ mod tests {
             disabled_until: None,
             last_live_time: None,
             streamer_specific_config: None,
-            download_retry_policy: None,
-            danmu_sampling_config: None,
+            created_at: Utc::now(),
+            updated_at: Utc::now(),
         };
 
         manager.create_streamer(metadata.clone()).await.unwrap();
@@ -1060,8 +1091,8 @@ mod tests {
             last_error: None,
             last_live_time: None,
             streamer_specific_config: None,
-            download_retry_policy: None,
-            danmu_sampling_config: None,
+            created_at: Utc::now(),
+            updated_at: Utc::now(),
         };
 
         let result = manager.update_streamer(metadata).await;
@@ -1085,8 +1116,6 @@ mod tests {
                 None, // Don't change template
                 Some(Priority::High),
                 None, // Don't change state
-                None,
-                None,
                 None,
             )
             .await
@@ -1119,8 +1148,6 @@ mod tests {
                 None,
                 None,       // Don't change URL
                 Some(None), // Set template to None
-                None,
-                None,
                 None,
                 None,
                 None,

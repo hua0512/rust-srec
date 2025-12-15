@@ -34,6 +34,7 @@ import {
 } from '@/components/ui/popover';
 import { Calendar } from '@/components/ui/calendar';
 import { Button } from '@/components/ui/button';
+import { motion } from 'motion/react';
 
 const searchSchema = z.object({
   page: z.number().optional().catch(1),
@@ -188,10 +189,34 @@ function SessionsPage() {
     to: search.to ? new Date(search.to) : undefined,
   };
 
+  // Animation variants matching dashboard
+  const container = {
+    hidden: { opacity: 0 },
+    show: {
+      opacity: 1,
+      transition: {
+        staggerChildren: 0.1,
+      },
+    },
+  };
+
+  const item = {
+    hidden: { opacity: 0, y: 20 },
+    show: { opacity: 1, y: 0 },
+  };
+
   return (
-    <div className="min-h-screen space-y-6">
+    <motion.div
+      className="min-h-screen space-y-6"
+      variants={container}
+      initial="hidden"
+      animate="show"
+    >
       {/* Header */}
-      <div className="border-b border-border/40">
+      <motion.div
+        className="border-b border-border/40"
+        variants={item}
+      >
         <div className="w-full">
           <div className="flex flex-col md:flex-row gap-4 items-start md:items-center justify-between p-4 md:px-8">
             <div className="flex items-center gap-4">
@@ -363,7 +388,7 @@ function SessionsPage() {
             </div>
           </div>
         </div>
-      </div>
+      </motion.div>
 
       <div className="p-4 md:px-8 space-y-6 pb-20">
         <SessionList
@@ -424,6 +449,6 @@ function SessionsPage() {
           </div>
         )}
       </div>
-    </div>
+    </motion.div>
   );
 }

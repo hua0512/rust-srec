@@ -3,16 +3,34 @@
 use axum::{
     Json, Router,
     extract::{Path, State},
-    routing::{get, patch},
+    routing::{get, patch, put},
 };
 
 use crate::api::error::{ApiError, ApiResult};
-use crate::api::models::{
-    GlobalConfigResponse, PlatformConfigResponse, UpdateGlobalConfigRequest,
-    UpdatePlatformConfigRequest,
-};
+use crate::api::models::{GlobalConfigResponse, PlatformConfigResponse, UpdateGlobalConfigRequest};
 use crate::api::server::AppState;
 use crate::database::models::{GlobalConfigDbModel, PlatformConfigDbModel};
+
+/// Helper trait for apply_updates macro to handle Option wrapping/unwrapping
+trait ApplyUpdate<Source> {
+    fn apply_update(&mut self, source: Source);
+}
+
+// For required fields (T), we update only if the source (Option<T>) is Some.
+impl<T> ApplyUpdate<Option<T>> for T {
+    fn apply_update(&mut self, source: Option<T>) {
+        if let Some(v) = source {
+            *self = v;
+        }
+    }
+}
+
+// For optional fields (Option<T>), we always update (overwriting with Some or None).
+impl<T> ApplyUpdate<Option<T>> for Option<T> {
+    fn apply_update(&mut self, source: Option<T>) {
+        *self = source;
+    }
+}
 
 /// Helper macro to apply optional updates from requests.
 macro_rules! apply_updates {
@@ -22,20 +40,21 @@ macro_rules! apply_updates {
     ]) => {
         $(
             if let Some(val) = $source.$field {
-                // Apply transformation if provided, otherwise direct assignment
-                $target.$field = apply_updates!(@val val, $($transform)?);
+                let result = apply_updates!(@val val, $($transform)?);
+                $target.$field.apply_update(result);
                 $tracker.push(stringify!($field));
             }
         )*
     };
 
-    // Form 2: Without tracker (for Platform Config)
+    // Form 2: Without tracker (Unused but kept for completeness)
     ($target:ident, $source:ident; [
         $( $field:ident $(: $transform:expr)? ),* $(,)?
     ]) => {
         $(
             if let Some(val) = $source.$field {
-                $target.$field = apply_updates!(@val val, $($transform)?);
+                let result = apply_updates!(@val val, $($transform)?);
+                $target.$field.apply_update(result);
             }
         )*
     };
@@ -52,7 +71,7 @@ pub fn router() -> Router<AppState> {
         .route("/global", patch(update_global_config))
         .route("/platforms", get(list_platform_configs))
         .route("/platforms/{id}", get(get_platform_config))
-        .route("/platforms/{id}", patch(update_platform_config))
+        .route("/platforms/{id}", put(replace_platform_config))
 }
 
 /// Map GlobalConfigDbModel to GlobalConfigResponse.
@@ -144,25 +163,25 @@ async fn update_global_config(
     let mut updated_fields: Vec<&'static str> = Vec::new();
 
     apply_updates!(config, request, updated_fields; [
-        output_folder,
-        output_filename_template,
-        output_file_format,
-        min_segment_size_bytes: |v| v as i64,
-        max_download_duration_secs: |v| v as i64,
-        max_part_size_bytes: |v| v as i64,
-        max_concurrent_downloads: |v| v as i32,
-        max_concurrent_uploads: |v| v as i32,
-        max_concurrent_cpu_jobs: |v| v as i32,
-        max_concurrent_io_jobs: |v| v as i32,
-        streamer_check_delay_ms: |v| v as i64,
-        offline_check_delay_ms: |v| v as i64,
-        offline_check_count: |v| v as i32,
-        job_history_retention_days: |v| v as i32,
-        session_gap_time_secs: |v| v as i64,
-        default_download_engine,
-        record_danmu,
-        proxy_config,
-        pipeline: |v| Some(v)
+        output_folder: |v: serde_json::Value| v.as_str().map(String::from),
+        output_filename_template: |v: serde_json::Value| v.as_str().map(String::from),
+        output_file_format: |v: serde_json::Value| v.as_str().map(String::from),
+        min_segment_size_bytes: |v: serde_json::Value| v.as_i64(),
+        max_download_duration_secs: |v: serde_json::Value| v.as_i64(),
+        max_part_size_bytes: |v: serde_json::Value| v.as_i64(),
+        max_concurrent_downloads: |v: serde_json::Value| v.as_i64().map(|n| n as i32),
+        max_concurrent_uploads: |v: serde_json::Value| v.as_i64().map(|n| n as i32),
+        max_concurrent_cpu_jobs: |v: serde_json::Value| v.as_i64().map(|n| n as i32),
+        max_concurrent_io_jobs: |v: serde_json::Value| v.as_i64().map(|n| n as i32),
+        streamer_check_delay_ms: |v: serde_json::Value| v.as_i64(),
+        offline_check_delay_ms: |v: serde_json::Value| v.as_i64(),
+        offline_check_count: |v: serde_json::Value| v.as_i64().map(|n| n as i32),
+        job_history_retention_days: |v: serde_json::Value| v.as_i64().map(|n| n as i32),
+        session_gap_time_secs: |v: serde_json::Value| v.as_i64(),
+        default_download_engine: |v: serde_json::Value| v.as_str().map(String::from),
+        record_danmu: |v: serde_json::Value| v.as_bool(),
+        proxy_config: |v: serde_json::Value| v.as_str().map(String::from),
+        pipeline: |v: serde_json::Value| v.as_str().map(String::from)
     ]);
 
     let updated_fields_summary = if updated_fields.is_empty() {
@@ -235,70 +254,66 @@ async fn get_platform_config(
     Ok(Json(map_platform_config_to_response(config)))
 }
 
-/// Update a platform configuration.
-async fn update_platform_config(
+/// Replace a platform configuration (PUT).
+async fn replace_platform_config(
     State(state): State<AppState>,
     Path(id): Path<String>,
-    Json(request): Json<UpdatePlatformConfigRequest>,
+    Json(request): Json<PlatformConfigResponse>,
 ) -> ApiResult<Json<PlatformConfigResponse>> {
     tracing::info!(
         platform_id = %id,
         ?request,
-        "Received request to update platform configuration"
+        "Received request to replace platform configuration"
     );
+
+    if request.id != id {
+        return Err(ApiError::bad_request("Path ID does not match body ID"));
+    }
 
     let config_service = state
         .config_service
         .as_ref()
         .ok_or_else(|| ApiError::internal("ConfigService not available"))?;
 
-    // Get current config to apply partial updates
-    let mut config = config_service.get_platform_config(&id).await.map_err(|e| {
-        if e.to_string().contains("not found") {
-            tracing::warn!(platform_id = %id, "Platform config not found");
-            ApiError::not_found(format!("Platform config with id '{}' not found", id))
-        } else {
-            tracing::error!(platform_id = %id, error = %e, "Failed to get platform config");
-            ApiError::internal(format!("Failed to get platform config: {}", e))
-        }
-    })?;
+    // Build the full config model from request
+    let config = PlatformConfigDbModel {
+        id: request.id,
+        platform_name: request.name,
+        fetch_delay_ms: request.fetch_delay_ms.map(|v| v as i64),
+        download_delay_ms: request.download_delay_ms.map(|v| v as i64),
+        record_danmu: request.record_danmu,
+        cookies: request.cookies,
+        platform_specific_config: request.platform_specific_config,
+        proxy_config: request.proxy_config,
+        output_folder: request.output_folder,
+        output_filename_template: request.output_filename_template,
+        download_engine: request.download_engine,
+        stream_selection_config: request.stream_selection_config,
+        output_file_format: request.output_file_format,
+        min_segment_size_bytes: request.min_segment_size_bytes.map(|v| v as i64),
+        max_download_duration_secs: request.max_download_duration_secs.map(|v| v as i64),
+        max_part_size_bytes: request.max_part_size_bytes.map(|v| v as i64),
+        download_retry_policy: request.download_retry_policy,
+        event_hooks: request.event_hooks,
+        pipeline: request.pipeline,
+    };
 
-    apply_updates!(config, request; [
-        fetch_delay_ms: |v| Some(v as i64),
-        download_delay_ms: |v| Some(v as i64),
-        record_danmu: |v| Some(v),
-        cookies: |v| Some(v),
-        platform_specific_config: |v| Some(v),
-        proxy_config: |v| Some(v),
-        output_folder: |v| Some(v),
-        output_filename_template: |v| Some(v),
-        download_engine: |v| Some(v),
-        stream_selection_config: |v| Some(v),
-        output_file_format: |v| Some(v),
-        min_segment_size_bytes: |v| Some(v as i64),
-        max_download_duration_secs: |v| Some(v as i64),
-        max_part_size_bytes: |v| Some(v as i64),
-        download_retry_policy: |v| Some(v),
-        event_hooks: |v| Some(v),
-        pipeline: |v| Some(v)
-    ]);
-
-    // Update config (cache invalidation is handled automatically by ConfigService)
+    // Replace config
     if let Err(e) = config_service.update_platform_config(&config).await {
         tracing::error!(
             platform_id = %id,
             error = %e,
-            "Failed to update platform config"
+            "Failed to replace platform config"
         );
         return Err(ApiError::internal(format!(
-            "Failed to update platform config: {}",
+            "Failed to replace platform config: {}",
             e
         )));
     }
 
     tracing::info!(
         platform_id = %id,
-        "Platform configuration updated successfully"
+        "Platform configuration replaced successfully"
     );
 
     Ok(Json(map_platform_config_to_response(config)))
@@ -340,7 +355,8 @@ mod tests {
 
 #[cfg(test)]
 mod property_tests {
-    use crate::api::models::{UpdateGlobalConfigRequest, UpdatePlatformConfigRequest};
+    use super::ApplyUpdate;
+    use crate::api::models::UpdateGlobalConfigRequest;
     use crate::database::models::{GlobalConfigDbModel, PlatformConfigDbModel};
     use proptest::prelude::*;
 
@@ -355,56 +371,27 @@ mod property_tests {
 
         apply_updates!(
             config, request, updated_fields; [
-                output_folder,
-                output_filename_template,
-                output_file_format,
-                min_segment_size_bytes: |v| v as i64,
-                max_download_duration_secs: |v| v as i64,
-                max_part_size_bytes: |v| v as i64,
-                max_concurrent_downloads: |v| v as i32,
-                max_concurrent_uploads: |v| v as i32,
-                max_concurrent_cpu_jobs: |v| v as i32,
-                max_concurrent_io_jobs: |v| v as i32,
-                streamer_check_delay_ms: |v| v as i64,
-                offline_check_delay_ms: |v| v as i64,
-                offline_check_count: |v| v as i32,
-                job_history_retention_days: |v| v as i32,
-                session_gap_time_secs: |v| v as i64,
-                default_download_engine,
-                record_danmu,
-                proxy_config,
-                pipeline: |v| Some(v)
+                output_folder: |v: serde_json::Value| v.as_str().map(String::from),
+                output_filename_template: |v: serde_json::Value| v.as_str().map(String::from),
+                output_file_format: |v: serde_json::Value| v.as_str().map(String::from),
+                min_segment_size_bytes: |v: serde_json::Value| v.as_i64(),
+                max_download_duration_secs: |v: serde_json::Value| v.as_i64(),
+                max_part_size_bytes: |v: serde_json::Value| v.as_i64(),
+                max_concurrent_downloads: |v: serde_json::Value| v.as_i64().map(|n| n as i32),
+                max_concurrent_uploads: |v: serde_json::Value| v.as_i64().map(|n| n as i32),
+                max_concurrent_cpu_jobs: |v: serde_json::Value| v.as_i64().map(|n| n as i32),
+                max_concurrent_io_jobs: |v: serde_json::Value| v.as_i64().map(|n| n as i32),
+                streamer_check_delay_ms: |v: serde_json::Value| v.as_i64(),
+                offline_check_delay_ms: |v: serde_json::Value| v.as_i64(),
+                offline_check_count: |v: serde_json::Value| v.as_i64().map(|n| n as i32),
+                job_history_retention_days: |v: serde_json::Value| v.as_i64().map(|n| n as i32),
+                session_gap_time_secs: |v: serde_json::Value| v.as_i64(),
+                default_download_engine: |v: serde_json::Value| v.as_str().map(String::from),
+                record_danmu: |v: serde_json::Value| v.as_bool(),
+                proxy_config: |v: serde_json::Value| v.as_str().map(String::from),
+                pipeline: |v: serde_json::Value| v.as_str().map(String::from)
             ]
         );
-    }
-
-    /// Apply partial updates from UpdatePlatformConfigRequest to PlatformConfigDbModel
-    fn apply_platform_config_update(
-        config: &mut PlatformConfigDbModel,
-        request: &UpdatePlatformConfigRequest,
-    ) {
-        // Clone request to use with macro
-        let request = request.clone();
-
-        apply_updates!(config, request; [
-            fetch_delay_ms: |v| Some(v as i64),
-            download_delay_ms: |v| Some(v as i64),
-            record_danmu: |v| Some(v),
-            cookies: |v| Some(v),
-            platform_specific_config: |v| Some(v),
-            proxy_config: |v| Some(v),
-            output_folder: |v| Some(v),
-            output_filename_template: |v| Some(v),
-            download_engine: |v| Some(v),
-            stream_selection_config: |v| Some(v),
-            output_file_format: |v| Some(v),
-            min_segment_size_bytes: |v| Some(v as i64),
-            max_download_duration_secs: |v| Some(v as i64),
-            max_part_size_bytes: |v| Some(v as i64),
-            download_retry_policy: |v| Some(v),
-            event_hooks: |v| Some(v),
-            pipeline: |v| Some(v)
-        ]);
     }
 
     /// Strategy for generating valid output folder paths
@@ -489,23 +476,23 @@ mod property_tests {
 
             // Create update request with generated values
             let update_request = UpdateGlobalConfigRequest {
-                output_folder: output_folder.clone(),
-                output_filename_template: output_filename_template.clone(),
-                output_file_format: output_file_format.clone(),
-                min_segment_size_bytes,
-                max_download_duration_secs,
-                max_part_size_bytes,
-                max_concurrent_downloads,
-                max_concurrent_uploads,
-                max_concurrent_cpu_jobs,
-                max_concurrent_io_jobs,
-                streamer_check_delay_ms,
-                offline_check_delay_ms,
-                offline_check_count,
-                job_history_retention_days,
-                default_download_engine: default_download_engine.clone(),
-                record_danmu,
-                proxy_config: proxy_config.clone(),
+                output_folder: output_folder.clone().map(|v| serde_json::json!(v)),
+                output_filename_template: output_filename_template.clone().map(|v| serde_json::json!(v)),
+                output_file_format: output_file_format.clone().map(|v| serde_json::json!(v)),
+                min_segment_size_bytes: min_segment_size_bytes.map(|v| serde_json::json!(v)),
+                max_download_duration_secs: max_download_duration_secs.map(|v| serde_json::json!(v)),
+                max_part_size_bytes: max_part_size_bytes.map(|v| serde_json::json!(v)),
+                max_concurrent_downloads: max_concurrent_downloads.map(|v| serde_json::json!(v)),
+                max_concurrent_uploads: max_concurrent_uploads.map(|v| serde_json::json!(v)),
+                max_concurrent_cpu_jobs: max_concurrent_cpu_jobs.map(|v| serde_json::json!(v)),
+                max_concurrent_io_jobs: max_concurrent_io_jobs.map(|v| serde_json::json!(v)),
+                streamer_check_delay_ms: streamer_check_delay_ms.map(|v| serde_json::json!(v)),
+                offline_check_delay_ms: offline_check_delay_ms.map(|v| serde_json::json!(v)),
+                offline_check_count: offline_check_count.map(|v| serde_json::json!(v)),
+                job_history_retention_days: job_history_retention_days.map(|v| serde_json::json!(v)),
+                default_download_engine: default_download_engine.clone().map(|v| serde_json::json!(v)),
+                record_danmu: record_danmu.map(|v| serde_json::json!(v)),
+                proxy_config: proxy_config.clone().map(|v| serde_json::json!(v)),
                 session_gap_time_secs: None,
                 pipeline: None,
             };
@@ -617,179 +604,6 @@ mod property_tests {
             }
         }
 
-        /// Property: For any valid platform config update, applying the update then reading
-        /// the config should reflect the updated values.
-        #[test]
-        fn prop_platform_config_update_persistence(
-            // Generate platform config base
-            platform_id in "[a-zA-Z0-9_-]{1,20}",
-            platform_name in "[a-zA-Z0-9_]{1,20}",
-            initial_fetch_delay in 1000i64..60000i64,
-            initial_download_delay in 1000i64..60000i64,
-            // Generate optional update fields
-            fetch_delay_ms in prop::option::of(1000u64..120000u64),
-            download_delay_ms in prop::option::of(1000u64..120000u64),
-            record_danmu in prop::option::of(prop::bool::ANY),
-            cookies in prop::option::of(cookies_strategy()),
-            platform_specific_config in prop::option::of(prop::string::string_regex(r#"\{"key": "value"\}"#).unwrap()),
-            proxy_config in prop::option::of(proxy_config_strategy()),
-            output_folder in prop::option::of(output_folder_strategy()),
-            output_filename_template in prop::option::of(filename_template_strategy()),
-            download_engine in prop::option::of(download_engine_strategy()),
-            stream_selection_config in prop::option::of(prop::string::string_regex(r#"\{"mode": "auto"\}"#).unwrap()),
-            output_file_format in prop::option::of(file_format_strategy()),
-            min_segment_size_bytes in prop::option::of(1024u64..10485760u64),
-            max_download_duration_secs in prop::option::of(60u64..3600u64),
-            max_part_size_bytes in prop::option::of(1048576u64..1073741824u64),
-            download_retry_policy in prop::option::of(prop::string::string_regex(r#"\{"max_retries": 5\}"#).unwrap()),
-            event_hooks in prop::option::of(prop::string::string_regex(r#"\{"on_download_start": \[\]\}"#).unwrap()),
-        ) {
-            // Create initial platform config
-            let mut config = PlatformConfigDbModel {
-                id: platform_id,
-                platform_name,
-                fetch_delay_ms: Some(initial_fetch_delay),
-                download_delay_ms: Some(initial_download_delay),
-                cookies: None,
-                platform_specific_config: None,
-                proxy_config: None,
-                record_danmu: None,
-                output_folder: None,
-                output_filename_template: None,
-                download_engine: None,
-                stream_selection_config: None,
-                output_file_format: None,
-                min_segment_size_bytes: None,
-                max_download_duration_secs: None,
-                max_part_size_bytes: None,
-                download_retry_policy: None,
-                event_hooks: None,
-                pipeline: None,
-            };
-            let original_config = config.clone();
 
-            // Create update request with generated values
-            let update_request = UpdatePlatformConfigRequest {
-                fetch_delay_ms,
-                download_delay_ms,
-                record_danmu,
-                cookies: cookies.clone(),
-                platform_specific_config: platform_specific_config.clone(),
-                proxy_config: proxy_config.clone(),
-                output_folder: output_folder.clone(),
-                output_filename_template: output_filename_template.clone(),
-                download_engine: download_engine.clone(),
-                stream_selection_config: stream_selection_config.clone(),
-                output_file_format: output_file_format.clone(),
-                min_segment_size_bytes,
-                max_download_duration_secs,
-                max_part_size_bytes,
-                download_retry_policy: download_retry_policy.clone(),
-                event_hooks: event_hooks.clone(),
-                pipeline: None,
-            };
-
-            // Apply the update
-            apply_platform_config_update(&mut config, &update_request);
-
-            // Property: Each updated field should reflect the new value
-            if let Some(fetch_delay) = fetch_delay_ms {
-                prop_assert_eq!(config.fetch_delay_ms, Some(fetch_delay as i64), "fetch_delay_ms should be updated");
-            } else {
-                prop_assert_eq!(config.fetch_delay_ms, original_config.fetch_delay_ms, "fetch_delay_ms should remain unchanged");
-            }
-
-            if let Some(download_delay) = download_delay_ms {
-                prop_assert_eq!(config.download_delay_ms, Some(download_delay as i64), "download_delay_ms should be updated");
-            } else {
-                prop_assert_eq!(config.download_delay_ms, original_config.download_delay_ms, "download_delay_ms should remain unchanged");
-            }
-
-            if let Some(danmu) = record_danmu {
-                prop_assert_eq!(config.record_danmu, Some(danmu), "record_danmu should be updated");
-            } else {
-                prop_assert_eq!(config.record_danmu, original_config.record_danmu, "record_danmu should remain unchanged");
-            }
-
-            if let Some(ref cookie_val) = cookies {
-                prop_assert_eq!(config.cookies.as_ref(), Some(cookie_val), "cookies should be updated");
-            } else {
-                prop_assert_eq!(config.cookies, original_config.cookies, "cookies should remain unchanged");
-            }
-
-            if let Some(ref psc_val) = platform_specific_config {
-                prop_assert_eq!(config.platform_specific_config.as_ref(), Some(psc_val), "platform_specific_config should be updated");
-            } else {
-                prop_assert_eq!(config.platform_specific_config, original_config.platform_specific_config, "platform_specific_config should remain unchanged");
-            }
-
-            if let Some(ref proxy_val) = proxy_config {
-                prop_assert_eq!(config.proxy_config.as_ref(), Some(proxy_val), "proxy_config should be updated");
-            } else {
-                prop_assert_eq!(config.proxy_config, original_config.proxy_config, "proxy_config should remain unchanged");
-            }
-
-            if let Some(ref output_folder_val) = output_folder {
-                prop_assert_eq!(config.output_folder.as_ref(), Some(output_folder_val), "output_folder should be updated");
-            } else {
-                prop_assert_eq!(config.output_folder, original_config.output_folder, "output_folder should remain unchanged");
-            }
-
-            if let Some(ref output_filename_template_val) = output_filename_template {
-                prop_assert_eq!(config.output_filename_template.as_ref(), Some(output_filename_template_val), "output_filename_template should be updated");
-            } else {
-                prop_assert_eq!(config.output_filename_template, original_config.output_filename_template, "output_filename_template should remain unchanged");
-            }
-
-            if let Some(ref download_engine_val) = download_engine {
-                prop_assert_eq!(config.download_engine.as_ref(), Some(download_engine_val), "download_engine should be updated");
-            } else {
-                prop_assert_eq!(config.download_engine, original_config.download_engine, "download_engine should remain unchanged");
-            }
-
-
-
-            if let Some(ref stream_selection_config_val) = stream_selection_config {
-                prop_assert_eq!(config.stream_selection_config.as_ref(), Some(stream_selection_config_val), "stream_selection_config should be updated");
-            } else {
-                prop_assert_eq!(config.stream_selection_config, original_config.stream_selection_config, "stream_selection_config should remain unchanged");
-            }
-
-            if let Some(ref output_file_format_val) = output_file_format {
-                prop_assert_eq!(config.output_file_format.as_ref(), Some(output_file_format_val), "output_file_format should be updated");
-            } else {
-                prop_assert_eq!(config.output_file_format, original_config.output_file_format, "output_file_format should remain unchanged");
-            }
-
-            if let Some(min_segment_size_bytes_val) = min_segment_size_bytes {
-                prop_assert_eq!(config.min_segment_size_bytes, Some(min_segment_size_bytes_val as i64), "min_segment_size_bytes should be updated");
-            } else {
-                prop_assert_eq!(config.min_segment_size_bytes, original_config.min_segment_size_bytes, "min_segment_size_bytes should remain unchanged");
-            }
-
-            if let Some(max_download_duration_secs_val) = max_download_duration_secs {
-                prop_assert_eq!(config.max_download_duration_secs, Some(max_download_duration_secs_val as i64), "max_download_duration_secs should be updated");
-            } else {
-                prop_assert_eq!(config.max_download_duration_secs, original_config.max_download_duration_secs, "max_download_duration_secs should remain unchanged");
-            }
-
-            if let Some(max_part_size_bytes_val) = max_part_size_bytes {
-                prop_assert_eq!(config.max_part_size_bytes, Some(max_part_size_bytes_val as i64), "max_part_size_bytes should be updated");
-            } else {
-                prop_assert_eq!(config.max_part_size_bytes, original_config.max_part_size_bytes, "max_part_size_bytes should remain unchanged");
-            }
-
-            if let Some(ref download_retry_policy_val) = download_retry_policy {
-                prop_assert_eq!(config.download_retry_policy.as_ref(), Some(download_retry_policy_val), "download_retry_policy should be updated");
-            } else {
-                prop_assert_eq!(config.download_retry_policy, original_config.download_retry_policy, "download_retry_policy should remain unchanged");
-            }
-
-            if let Some(ref event_hooks_val) = event_hooks {
-                prop_assert_eq!(config.event_hooks.as_ref(), Some(event_hooks_val), "event_hooks should be updated");
-            } else {
-                prop_assert_eq!(config.event_hooks, original_config.event_hooks, "event_hooks should remain unchanged");
-            }
-        }
     }
 }

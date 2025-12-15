@@ -51,12 +51,7 @@ export function WorkflowEditor({
   // Parse initial steps
   let initialSteps: PipelineStep[] = [];
   if (initialData?.steps) {
-    try {
-      initialSteps =
-        typeof initialData.steps === 'string'
-          ? JSON.parse(initialData.steps)
-          : initialData.steps;
-    } catch {}
+    initialSteps = initialData.steps;
   }
 
   const form = useForm<WorkflowFormData>({

@@ -6,6 +6,7 @@ import { t } from '@lingui/core/macro';
 import { Plus, Server } from 'lucide-react';
 import { listEngines } from '@/server/functions';
 import { EngineOverrideCard } from './engine-override-card';
+import { AnimatePresence, motion } from 'motion/react';
 import {
   Command,
   CommandEmpty,
@@ -133,39 +134,57 @@ export function EngineOverridesTab({ form }: EngineOverridesTabProps) {
             </p>
           </div>
         ) : (
-          overriddenIds.map((engineId) => {
-            const engine = engines.find((e) => e.id === engineId);
-            if (!engine) {
-              return (
-                <div
-                  key={engineId}
-                  className="flex items-center justify-between p-4 border rounded bg-destructive/10 text-destructive"
-                >
-                  <span>
-                    <Trans>Unknown Engine ID: {engineId}</Trans>
-                  </span>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={() => handleRemoveOverride(engineId)}
-                  >
-                    <Trans>Remove</Trans>
-                  </Button>
-                </div>
-              );
-            }
+          <div className="space-y-4">
+            <AnimatePresence mode="popLayout">
+              {overriddenIds.map((engineId) => {
+                const engine = engines.find((e) => e.id === engineId);
+                if (!engine) {
+                  return (
+                    <motion.div
+                      key={engineId}
+                      layout
+                      initial={{ opacity: 0, scale: 0.95 }}
+                      animate={{ opacity: 1, scale: 1 }}
+                      exit={{ opacity: 0, scale: 0.95 }}
+                      transition={{ duration: 0.2 }}
+                    >
+                      <div className="flex items-center justify-between p-4 border rounded bg-destructive/10 text-destructive">
+                        <span>
+                          <Trans>Unknown Engine ID: {engineId}</Trans>
+                        </span>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => handleRemoveOverride(engineId)}
+                        >
+                          <Trans>Remove</Trans>
+                        </Button>
+                      </div>
+                    </motion.div>
+                  );
+                }
 
-            return (
-              <EngineOverrideCard
-                key={engineId}
-                engineId={engineId}
-                engineName={engine.name}
-                engineType={engine.engine_type}
-                form={form}
-                onRemove={() => handleRemoveOverride(engineId)}
-              />
-            );
-          })
+                return (
+                  <motion.div
+                    key={engineId}
+                    layout
+                    initial={{ opacity: 0, scale: 0.95 }}
+                    animate={{ opacity: 1, scale: 1 }}
+                    exit={{ opacity: 0, scale: 0.95 }}
+                    transition={{ duration: 0.2 }}
+                  >
+                    <EngineOverrideCard
+                      engineId={engineId}
+                      engineName={engine.name}
+                      engineType={engine.engine_type}
+                      form={form}
+                      onRemove={() => handleRemoveOverride(engineId)}
+                    />
+                  </motion.div>
+                );
+              })}
+            </AnimatePresence>
+          </div>
         )}
       </CardContent>
     </Card>

@@ -49,3 +49,21 @@ export function formatSpeed(bytesPerSec: number, decimals = 2): string {
     sizes[unitIndex]
   );
 }
+
+
+
+export function removeEmpty(obj: any): any {
+  if (Array.isArray(obj)) {
+    return obj
+      .map((v) => removeEmpty(v))
+      .filter((v) => v !== null && v !== undefined);
+  }
+  if (obj !== null && typeof obj === 'object') {
+    return Object.fromEntries(
+      Object.entries(obj)
+        .map(([k, v]) => [k, removeEmpty(v)])
+        .filter(([_, v]) => v !== null && v !== undefined),
+    );
+  }
+  return obj;
+}

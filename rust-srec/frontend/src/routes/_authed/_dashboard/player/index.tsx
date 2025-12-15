@@ -1,5 +1,5 @@
 import { createFileRoute } from '@tanstack/react-router';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { useMutation } from '@tanstack/react-query';
 import { parseUrl, parseUrlBatch, type ParseUrlResponse } from '@/server/functions';
@@ -14,13 +14,20 @@ import {
     DialogHeader,
     DialogTitle,
 } from "@/components/ui/dialog";
-import { Maximize2, Minimize2, Video, Plus } from 'lucide-react';
+import { Maximize2, Minimize2, Video, Plus, Loader2 } from 'lucide-react';
 import { Trans } from '@lingui/react/macro';
 import { toast } from 'sonner';
 import { motion, AnimatePresence } from 'motion/react';
 import { cn } from '@/lib/utils';
 
+import { z } from 'zod';
+
+const playerSearchSchema = z.object({
+    url: z.string().optional(),
+});
+
 export const Route = createFileRoute('/_authed/_dashboard/player/')({
+    validateSearch: (search) => playerSearchSchema.parse(search),
     component: PlayerPage,
 });
 
@@ -36,6 +43,18 @@ function PlayerPage() {
     const [players, setPlayers] = useState<PlayerInstance[]>([]);
     const [isImmersive, setIsImmersive] = useState(false);
     const [isAddStreamOpen, setIsAddStreamOpen] = useState(false);
+
+    const { url } = Route.useSearch();
+    const autoPlayProcessed = useRef<string | null>(null);
+
+    // Auto-play from URL parameter
+    useEffect(() => {
+        if (url && !players.some(p => p.title === url) && autoPlayProcessed.current !== url) {
+            autoPlayProcessed.current = url;
+            parseSingleMutation.mutate({ url });
+        }
+        // If url is cleared or changed empty, reset? No, keep logic simple.
+    }, [url]); // Trigger when url changes
 
     useEffect(() => {
         const handleKeyDown = (e: KeyboardEvent) => {
@@ -263,6 +282,30 @@ function PlayerPage() {
                 {/* Players Grid */}
                 {players.length > 0 ? (
                     isImmersive ? createPortal(playerGrid, document.body) : playerGrid
+                ) : isLoading ? (
+                    <motion.div
+                        key="loading"
+                        initial={{ opacity: 0 }}
+                        animate={{ opacity: 1 }}
+                        className="flex flex-col items-center justify-center min-h-[60vh] text-center space-y-6"
+                    >
+                        <div className="relative">
+                            <div className="absolute inset-0 bg-primary/20 blur-3xl rounded-full" />
+                            <div className="relative p-8 rounded-full bg-gradient-to-br from-background/80 to-background/40 backdrop-blur-xl border border-white/10 shadow-2xl ring-1 ring-white/5">
+                                <Loader2 className="h-20 w-20 text-primary/80 animate-spin" />
+                            </div>
+                        </div>
+                        <div className="space-y-2">
+                            <h3 className="text-3xl font-bold tracking-tight text-foreground/90">
+                                <Trans>Parsing Stream...</Trans>
+                            </h3>
+                            <p className="text-muted-foreground text-lg max-w-md mx-auto leading-relaxed">
+                                <Trans>
+                                    Please wait while we resolve the stream URL.
+                                </Trans>
+                            </p>
+                        </div>
+                    </motion.div>
                 ) : (
                     <motion.div
                         initial={{ opacity: 0 }}

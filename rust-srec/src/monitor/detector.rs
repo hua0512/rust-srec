@@ -241,8 +241,12 @@ impl StreamDetector {
         };
 
         debug!(
-            "Detailed media info for {}: {:?}",
-            streamer.name, media_info
+            "Media info for {}: title='{}', is_live={}, streams={}, has_headers={}",
+            streamer.name,
+            media_info.title,
+            media_info.is_live,
+            media_info.streams.len(),
+            media_info.headers.is_some()
         );
 
         if media_info.is_live {
@@ -285,33 +289,60 @@ impl StreamDetector {
                 None => StreamSelector::new(),
             };
 
-            let selected_stream = match selector.select_best(&media_info.streams) {
-                Some(stream) => {
-                    debug!("Selected best stream: {} ({})", stream.quality, stream.url);
-                    stream.clone()
-                }
-                None => {
-                    // Fallback: if no stream matches criteria, take the first one
-                    debug!(
-                        "No streams match selection criteria, using first of {} streams",
-                        media_info.streams.len()
-                    );
-                    media_info.streams[0].clone()
-                }
+            let candidates = selector.sort_candidates(&media_info.streams);
+            let mut selected_stream = if let Some(stream) = candidates.first() {
+                debug!(
+                    "Selected best stream candidate: {} ({})",
+                    stream.quality, stream.url
+                );
+                (*stream).clone()
+            } else {
+                // Fallback: if no candidates (shouldn't happen if streams is not empty), take the first one
+                debug!(
+                    "No streams match selection criteria, using first of {} streams",
+                    media_info.streams.len()
+                );
+                media_info.streams[0].clone()
             };
 
             // Resolve final URL for the selected stream
             // Some platforms (Huya, Douyu, Bilibili) require get_url() to get the real stream URL
-            let mut streams = vec![selected_stream];
+            // We iterate through candidates until we successfully resolve one
+            let mut resolve_success = false;
 
-            debug!("Resolving true stream URL: {}", streams[0].url);
+            for candidate in candidates {
+                let mut stream = candidate.clone();
+                debug!(
+                    "Resolving true stream URL for candidate: {} ({})",
+                    stream.quality, stream.url
+                );
 
-            if let Err(e) = extractor.get_url(&mut streams[0]).await {
-                warn!("Failed to resolve stream URL for {}: {}", streamer.name, e);
-                // Continue with the original URL if resolution fails
+                match extractor.get_url(&mut stream).await {
+                    Ok(_) => {
+                        selected_stream = stream;
+                        resolve_success = true;
+                        debug!("Successfully resolved stream URL: {}", selected_stream.url);
+                        break;
+                    }
+                    Err(e) => {
+                        warn!(
+                            "Failed to resolve stream URL for candidate {} ({}): {}",
+                            stream.quality, streamer.name, e
+                        );
+                        // Continue to next candidate
+                    }
+                }
             }
 
-            debug!("Resolved true url: {}", streams[0].url);
+            if !resolve_success {
+                warn!(
+                    "All stream candidates failed resolution for {}. Treating as OFFLINE.",
+                    streamer.name
+                );
+                return Ok(LiveStatus::Offline);
+            }
+
+            let streams = vec![selected_stream];
 
             debug!(
                 "Streamer {} is LIVE: {} (category: {:?}, viewers: {:?}, streams: {}, media_headers: {})",
@@ -343,9 +374,12 @@ impl StreamDetector {
         &self,
         streamer: &StreamerMetadata,
         filters: &[Filter],
+        cookies: Option<String>,
         selection_config: Option<&StreamSelectionConfig>,
     ) -> Result<LiveStatus> {
-        let status = self.check_status(streamer, selection_config).await?;
+        let status = self
+            .check_status_with_cookies(streamer, cookies, selection_config)
+            .await?;
 
         // If offline, no need to filter
         if status.is_offline() {

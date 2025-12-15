@@ -796,9 +796,22 @@ impl StreamerActor {
     /// truly offline, the grace period will confirm it through multiple checks.
     ///
     /// ## Cancelled (User-Initiated Stop)
-    /// **Returns fatal error to stop the actor entirely.** When a user cancels a download,
-    /// their intent is "I don't want to monitor this streamer anymore." The actor stops
-    /// permanently rather than continuing to monitor.
+    ///
+    /// **Returns fatal error to stop the actor entirely.** This handles **Scenario 2: Manual Download Cancellation**:
+    /// - User cancels a download via UI/API (without disabling the streamer)
+    /// - Download manager sends DownloadCancelled event
+    /// - Actor is still active and receives this message
+    /// - Actor ends the session by calling `process_status(Offline)`
+    /// - Actor then stops itself with a fatal error
+    ///
+    /// **Scenario 1: Streamer Disable/Delete** is handled separately by
+    /// `ServiceContainer::handle_streamer_disabled`:
+    /// - User disables/deletes a streamer
+    /// - Container explicitly ends the session BEFORE removing the actor
+    /// - Actor is removed and won't receive this DownloadCancelled event
+    ///
+    /// Both paths are necessary: this path handles cancellation when the actor is still
+    /// active, while the container path handles cleanup when the actor is being removed.
     ///
     /// **IMPORTANT**: The download orchestration layer must:
     /// 1. Update the streamer state to `CANCELLED` in the database
@@ -863,6 +876,23 @@ impl StreamerActor {
                 // User intent: "I don't want to monitor this streamer anymore"
                 // The download orchestration layer should update the streamer state
                 // to CANCELLED in the database before sending this message
+
+                // END SESSION BEFORE STOPPING - ensure session is properly closed
+                // This mirrors the StreamerOffline case to maintain consistency
+                let metadata = self
+                    .get_metadata()
+                    .ok_or_else(|| ActorError::fatal("Streamer removed from metadata store"))?;
+                if let Err(e) = self
+                    .status_checker
+                    .process_status(&metadata, LiveStatus::Offline)
+                    .await
+                {
+                    warn!(
+                        "StreamerActor {} failed to process offline status on cancellation: {}",
+                        self.id, e
+                    );
+                }
+
                 info!(
                     "StreamerActor {} stopping due to user cancellation",
                     self.id

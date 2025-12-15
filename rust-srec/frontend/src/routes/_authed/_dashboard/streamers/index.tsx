@@ -200,6 +200,22 @@ function StreamersPage() {
     }
   };
 
+  // Animation variants matching dashboard
+  const container = {
+    hidden: { opacity: 0 },
+    show: {
+      opacity: 1,
+      transition: {
+        staggerChildren: 0.1,
+      },
+    },
+  };
+
+  const item = {
+    hidden: { opacity: 0, y: 20 },
+    show: { opacity: 1, y: 0 },
+  };
+
   if (isError) {
     return (
       <div className="p-8 text-center text-destructive">
@@ -211,13 +227,16 @@ function StreamersPage() {
   }
 
   return (
-    <div className="min-h-screen space-y-6">
+    <motion.div
+      className="min-h-screen space-y-6"
+      variants={container}
+      initial="hidden"
+      animate="show"
+    >
       {/* Header */}
       <motion.div
         className="border-b border-border/40"
-        initial={{ y: -20, opacity: 0 }}
-        animate={{ y: 0, opacity: 1 }}
-        transition={{ duration: 0.2 }}
+        variants={item}
       >
         <div className="w-full">
           {/* Title Row */}
@@ -345,11 +364,10 @@ function StreamersPage() {
               {streamers.map((streamer, index) => (
                 <motion.div
                   key={streamer.id}
-                  initial={{ opacity: 0, y: 10 }}
+                  initial={{ opacity: 0, y: 20 }}
                   animate={{ opacity: 1, y: 0 }}
                   transition={{
-                    duration: 0.2,
-                    delay: Math.min(index * 0.03, 0.3),
+                    delay: index * 0.05,
                   }}
                 >
                   <StreamerCard
@@ -366,8 +384,8 @@ function StreamersPage() {
           ) : (
             <motion.div
               key="empty"
-              initial={{ opacity: 0, scale: 0.95 }}
-              animate={{ opacity: 1, scale: 1 }}
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
               className="flex flex-col items-center justify-center py-24 text-center space-y-6 border-2 border-dashed border-muted-foreground/20 rounded-2xl bg-muted/5"
             >
               <div className="p-6 bg-muted/10 rounded-full ring-1 ring-border/50">
@@ -483,6 +501,6 @@ function StreamersPage() {
           </Button>
         </motion.div>
       </div>
-    </div >
+    </motion.div >
   );
 }

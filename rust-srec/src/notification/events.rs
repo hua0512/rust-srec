@@ -5,6 +5,153 @@
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
+/// Static metadata about a supported notification event type.
+#[derive(Debug, Clone, Copy, Serialize)]
+pub struct NotificationEventTypeInfo {
+    /// Canonical subscription key (snake_case).
+    pub event_type: &'static str,
+    /// Human-friendly label.
+    pub label: &'static str,
+    /// Additional accepted subscription keys (legacy / aliases).
+    pub aliases: &'static [&'static str],
+}
+
+const NOTIFICATION_EVENT_TYPES: &[NotificationEventTypeInfo] = &[
+    NotificationEventTypeInfo {
+        event_type: "stream_online",
+        label: "Stream Online",
+        aliases: &["stream_online", "streamer.online", "StreamOnline"],
+    },
+    NotificationEventTypeInfo {
+        event_type: "stream_offline",
+        label: "Stream Offline",
+        aliases: &["stream_offline", "streamer.offline", "StreamOffline"],
+    },
+    NotificationEventTypeInfo {
+        event_type: "download_started",
+        label: "Download Started",
+        aliases: &["download_started", "download.started", "DownloadStarted"],
+    },
+    NotificationEventTypeInfo {
+        event_type: "download_completed",
+        label: "Download Completed",
+        aliases: &[
+            "download_completed",
+            "download.complete",
+            "download.completed",
+            "DownloadCompleted",
+        ],
+    },
+    NotificationEventTypeInfo {
+        event_type: "download_error",
+        label: "Download Error",
+        aliases: &["download_error", "download.error", "DownloadError"],
+    },
+    NotificationEventTypeInfo {
+        event_type: "pipeline_started",
+        label: "Pipeline Started",
+        aliases: &["pipeline_started", "pipeline.started", "PipelineStarted"],
+    },
+    NotificationEventTypeInfo {
+        event_type: "pipeline_completed",
+        label: "Pipeline Completed",
+        aliases: &[
+            "pipeline_completed",
+            "pipeline.complete",
+            "pipeline.completed",
+            "PipelineCompleted",
+        ],
+    },
+    NotificationEventTypeInfo {
+        event_type: "pipeline_failed",
+        label: "Pipeline Failed",
+        aliases: &["pipeline_failed", "pipeline.failed", "PipelineFailed"],
+    },
+    NotificationEventTypeInfo {
+        event_type: "pipeline_cancelled",
+        label: "Pipeline Cancelled",
+        aliases: &[
+            "pipeline_cancelled",
+            "pipeline.cancelled",
+            "PipelineCancelled",
+        ],
+    },
+    NotificationEventTypeInfo {
+        event_type: "fatal_error",
+        label: "Fatal Error",
+        aliases: &["fatal_error", "fatal.error", "FatalError"],
+    },
+    NotificationEventTypeInfo {
+        event_type: "out_of_space",
+        label: "Out Of Space",
+        aliases: &["out_of_space", "disk.out_of_space", "OutOfSpace"],
+    },
+    NotificationEventTypeInfo {
+        event_type: "pipeline_queue_warning",
+        label: "Pipeline Queue Warning",
+        aliases: &[
+            "pipeline_queue_warning",
+            "pipeline.queue.warning",
+            "PipelineQueueWarning",
+        ],
+    },
+    NotificationEventTypeInfo {
+        event_type: "pipeline_queue_critical",
+        label: "Pipeline Queue Critical",
+        aliases: &[
+            "pipeline_queue_critical",
+            "pipeline.queue.critical",
+            "PipelineQueueCritical",
+        ],
+    },
+    NotificationEventTypeInfo {
+        event_type: "system_startup",
+        label: "System Startup",
+        aliases: &["system_startup", "system.startup", "SystemStartup"],
+    },
+    NotificationEventTypeInfo {
+        event_type: "system_shutdown",
+        label: "System Shutdown",
+        aliases: &["system_shutdown", "system.shutdown", "SystemShutdown"],
+    },
+];
+
+pub fn notification_event_types() -> &'static [NotificationEventTypeInfo] {
+    NOTIFICATION_EVENT_TYPES
+}
+
+pub fn canonicalize_subscription_event_name(input: &str) -> Option<&'static str> {
+    let trimmed = input.trim();
+    if trimmed.is_empty() {
+        return None;
+    }
+
+    let normalized_input = normalize_subscription_key(trimmed);
+    for info in NOTIFICATION_EVENT_TYPES {
+        for alias in info.aliases {
+            if normalize_subscription_key(alias) == normalized_input {
+                return Some(info.event_type);
+            }
+        }
+
+        if normalize_subscription_key(info.event_type) == normalized_input {
+            return Some(info.event_type);
+        }
+    }
+
+    None
+}
+
+fn normalize_subscription_key(input: &str) -> String {
+    let lower = input.trim().to_ascii_lowercase();
+    let snakeish = lower
+        .replace('.', "_")
+        .replace('-', "_")
+        .replace(' ', "_");
+    let compact: String = snakeish.chars().filter(|c| *c != '_').collect();
+    compact
+}
+
 /// Priority level for notifications.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 pub enum NotificationPriority {
@@ -391,6 +538,14 @@ impl NotificationEvent {
             | Self::FatalError { streamer_id, .. } => Some(streamer_id),
             _ => None,
         }
+    }
+
+    pub fn event_type_info(event_type: &str) -> Option<NotificationEventTypeInfo> {
+        let canonical = canonicalize_subscription_event_name(event_type)?;
+        notification_event_types()
+            .iter()
+            .copied()
+            .find(|e| e.event_type == canonical)
     }
 }
 

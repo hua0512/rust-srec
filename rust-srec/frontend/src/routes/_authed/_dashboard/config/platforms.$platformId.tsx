@@ -32,20 +32,26 @@ function EditPlatformPage() {
 
   const updateMutation = useMutation({
     mutationFn: (data: EditPlatformFormValues) =>
-      updatePlatformConfig({ data: { id: platformId, data } }),
+      updatePlatformConfig({
+        data: {
+          id: platformId,
+          data: { ...data, id: platformId, name: platform!.name },
+        },
+      }),
     onSuccess: () => {
       toast.success(t`Platform configuration updated successfully`);
       queryClient.invalidateQueries({ queryKey: ['config', 'platforms'] });
       queryClient.invalidateQueries({
         queryKey: ['config', 'platform', platformId],
       });
-      navigate({ to: '/config/platforms' });
+      // navigate({ to: '/config/platforms' });
     },
     onError: (error) =>
       toast.error(t`Failed to update platform: ${error.message}`),
   });
 
   const onSubmit = (data: EditPlatformFormValues) => {
+    console.log('updatePlatformConfig input:', data);
     updateMutation.mutate(data);
   };
 

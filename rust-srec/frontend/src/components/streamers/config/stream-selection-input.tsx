@@ -8,7 +8,7 @@ import { Input } from '../../ui/input';
 import { TagInput } from '../../ui/tag-input';
 import { Trans } from '@lingui/react/macro';
 import { Filter, Zap } from 'lucide-react';
-import { Separator } from '../../ui/separator';
+import { Card, CardContent, CardHeader, CardTitle } from '../../ui/card';
 
 export interface StreamSelectionConfig {
   preferred_qualities?: string[];
@@ -18,7 +18,7 @@ export interface StreamSelectionConfig {
   max_bitrate?: number;
 }
 
-interface StreamSelectionInputProps {
+export interface StreamSelectionInputProps {
   value?: StreamSelectionConfig;
   onChange: (value: StreamSelectionConfig) => void;
 }
@@ -41,79 +41,91 @@ export function StreamSelectionInput({
       // @ts-ignore
       delete newConfig[field];
     }
-    // Bitrates that are NaN should be removed?
-    // Logic handled by parent regarding cleaning empty objects,
-    // but here we ensure the *fields* are clean.
 
     onChange(newConfig);
   };
 
   return (
     <div className="grid gap-6">
-      <div className="space-y-4">
-        <h3 className="text-sm font-medium text-muted-foreground flex items-center gap-2">
-          <Filter className="w-4 h-4" /> <Trans>Preferences</Trans>
-        </h3>
-        <Separator />
+      <Card className="border-border/50 shadow-sm hover:shadow-md transition-all">
+        <CardHeader className="pb-3">
+          <div className="flex items-center gap-3">
+            <div className="p-2 rounded-lg bg-purple-500/10 text-purple-600 dark:text-purple-400">
+              <Filter className="w-5 h-5" />
+            </div>
+            <CardTitle className="text-lg">
+              <Trans>Preferences</Trans>
+            </CardTitle>
+          </div>
+        </CardHeader>
+        <CardContent className="space-y-6">
+          <div className="grid grid-cols-1 gap-6">
+            <FormItem>
+              <FormLabel>
+                <Trans>Preferred Qualities</Trans>
+              </FormLabel>
+              <FormControl>
+                <TagInput
+                  value={value.preferred_qualities || []}
+                  onChange={(tags) => updateField('preferred_qualities', tags)}
+                  placeholder="e.g. 1080p, source, 原画"
+                  className="bg-background"
+                />
+              </FormControl>
+              <FormDescription>
+                <Trans>Prioritize specific qualities (case-insensitive). Press Enter to add.</Trans>
+              </FormDescription>
+            </FormItem>
 
-        <div className="grid grid-cols-1 gap-4">
-          <FormItem>
-            <FormLabel>
-              <Trans>Preferred Qualities</Trans>
-            </FormLabel>
-            <FormControl>
-              <TagInput
-                value={value.preferred_qualities || []}
-                onChange={(tags) => updateField('preferred_qualities', tags)}
-                placeholder="e.g. 1080p, source, 原画"
-              />
-            </FormControl>
-            <FormDescription>
-              <Trans>Prioritize specific qualities (case-insensitive).</Trans>
-            </FormDescription>
-          </FormItem>
+            <FormItem>
+              <FormLabel>
+                <Trans>Preferred Formats</Trans>
+              </FormLabel>
+              <FormControl>
+                <TagInput
+                  value={value.preferred_formats || []}
+                  onChange={(tags) => updateField('preferred_formats', tags)}
+                  placeholder="e.g. flv, hls"
+                  className="bg-background"
+                />
+              </FormControl>
+              <FormDescription>
+                <Trans>Prioritize specific streaming protocols. Press Enter to add.</Trans>
+              </FormDescription>
+            </FormItem>
 
-          <FormItem>
-            <FormLabel>
-              <Trans>Preferred Formats</Trans>
-            </FormLabel>
-            <FormControl>
-              <TagInput
-                value={value.preferred_formats || []}
-                onChange={(tags) => updateField('preferred_formats', tags)}
-                placeholder="e.g. flv, hls"
-              />
-            </FormControl>
-            <FormDescription>
-              <Trans>Prioritize specific streaming protocols.</Trans>
-            </FormDescription>
-          </FormItem>
+            <FormItem>
+              <FormLabel>
+                <Trans>Preferred CDNs</Trans>
+              </FormLabel>
+              <FormControl>
+                <TagInput
+                  value={value.preferred_cdns || []}
+                  onChange={(tags) => updateField('preferred_cdns', tags)}
+                  placeholder="e.g. aliyun, akamaized"
+                  className="bg-background"
+                />
+              </FormControl>
+              <FormDescription>
+                <Trans>Prioritize specific CDN providers. Press Enter to add.</Trans>
+              </FormDescription>
+            </FormItem>
+          </div>
+        </CardContent>
+      </Card>
 
-          <FormItem>
-            <FormLabel>
-              <Trans>Preferred CDNs</Trans>
-            </FormLabel>
-            <FormControl>
-              <TagInput
-                value={value.preferred_cdns || []}
-                onChange={(tags) => updateField('preferred_cdns', tags)}
-                placeholder="e.g. aliyun, akamaized"
-              />
-            </FormControl>
-            <FormDescription>
-              <Trans>Prioritize specific CDN providers.</Trans>
-            </FormDescription>
-          </FormItem>
-        </div>
-      </div>
-
-      <div className="space-y-4">
-        <h3 className="text-sm font-medium text-muted-foreground flex items-center gap-2">
-          <Zap className="w-4 h-4" /> <Trans>Limits</Trans>
-        </h3>
-        <Separator />
-
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+      <Card className="border-border/50 shadow-sm hover:shadow-md transition-all">
+        <CardHeader className="pb-3">
+          <div className="flex items-center gap-3">
+            <div className="p-2 rounded-lg bg-yellow-500/10 text-yellow-600 dark:text-yellow-400">
+              <Zap className="w-5 h-5" />
+            </div>
+            <CardTitle className="text-lg">
+              <Trans>Limits</Trans>
+            </CardTitle>
+          </div>
+        </CardHeader>
+        <CardContent className="grid grid-cols-1 sm:grid-cols-2 gap-6">
           <FormItem>
             <FormLabel>
               <Trans>Min Bitrate (bps)</Trans>
@@ -130,7 +142,7 @@ export function StreamSelectionInput({
                   )
                 }
                 placeholder="No limit"
-                className="bg-background/80"
+                className="bg-background"
               />
             </FormControl>
             <FormDescription>
@@ -154,15 +166,15 @@ export function StreamSelectionInput({
                   )
                 }
                 placeholder="No limit"
-                className="bg-background/80"
+                className="bg-background"
               />
             </FormControl>
             <FormDescription>
               <Trans>Ignore streams above this bitrate.</Trans>
             </FormDescription>
           </FormItem>
-        </div>
-      </div>
+        </CardContent>
+      </Card>
     </div>
   );
 }

@@ -146,8 +146,8 @@ impl StreamerRepository for SqlxStreamerRepository {
             INSERT INTO streamers (
                 id, name, url, platform_config_id, template_config_id,
                 state, priority, avatar, last_live_time, streamer_specific_config,
-                download_retry_policy, danmu_sampling_config,
-                consecutive_error_count, disabled_until, last_error
+                consecutive_error_count, disabled_until, last_error,
+                created_at, updated_at
             ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             "#,
         )
@@ -161,11 +161,11 @@ impl StreamerRepository for SqlxStreamerRepository {
         .bind(&streamer.avatar)
         .bind(&streamer.last_live_time)
         .bind(&streamer.streamer_specific_config)
-        .bind(&streamer.download_retry_policy)
-        .bind(&streamer.danmu_sampling_config)
         .bind(streamer.consecutive_error_count)
         .bind(&streamer.disabled_until)
         .bind(&streamer.last_error)
+        .bind(&streamer.created_at)
+        .bind(&streamer.updated_at)
         .execute(&self.pool)
         .await;
 
@@ -191,11 +191,10 @@ impl StreamerRepository for SqlxStreamerRepository {
                 avatar = ?,
                 last_live_time = ?,
                 streamer_specific_config = ?,
-                download_retry_policy = ?,
-                danmu_sampling_config = ?,
                 consecutive_error_count = ?,
                 disabled_until = ?,
-                last_error = ?
+                last_error = ?,
+                updated_at = ?
             WHERE id = ?
             "#,
         )
@@ -208,11 +207,10 @@ impl StreamerRepository for SqlxStreamerRepository {
         .bind(&streamer.avatar)
         .bind(&streamer.last_live_time)
         .bind(&streamer.streamer_specific_config)
-        .bind(&streamer.download_retry_policy)
-        .bind(&streamer.danmu_sampling_config)
         .bind(streamer.consecutive_error_count)
         .bind(&streamer.disabled_until)
         .bind(&streamer.last_error)
+        .bind(&streamer.updated_at)
         .bind(&streamer.id)
         .execute(&self.pool)
         .await;

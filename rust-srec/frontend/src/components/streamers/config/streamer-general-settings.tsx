@@ -101,7 +101,7 @@ export function StreamerGeneralSettings({
               </FormLabel>
               <Select
                 onValueChange={(val) =>
-                  field.onChange(val === 'none' ? null : Number(val))
+                  field.onChange(val === 'none' ? undefined : val)
                 }
                 value={field.value ? String(field.value) : 'none'}
               >
@@ -139,7 +139,7 @@ export function StreamerGeneralSettings({
               </FormLabel>
               <Select
                 onValueChange={(val) =>
-                  field.onChange(val === 'none' ? null : Number(val))
+                  field.onChange(val === 'none' ? undefined : val)
                 }
                 value={field.value ? String(field.value) : 'none'}
               >

@@ -53,22 +53,14 @@ pub mod utf8_simd {
                 continue;
             }
 
-            // Fall back to standard validation for non-ASCII chunks
-            // This ensures correctness for complex UTF-8 sequences
-            match std::str::from_utf8(&bytes[pos..pos + 16]) {
-                Ok(_) => pos += 16,
-                Err(e) => {
-                    // Create error with correct position
-                    let error_pos = pos + e.valid_up_to();
-                    return Err(std::str::Utf8Error::new_at(error_pos));
-                }
-            }
+            // Non-ASCII found: validate remaining bytes from this position using std
+            // This correctly reports error position since we validate from `pos` forward
+            return std::str::from_utf8(&bytes[pos..]).map(|_| ());
         }
 
         // Validate remaining bytes with standard library
         if pos < len {
-            std::str::from_utf8(&bytes[pos..])
-                .map_err(|e| std::str::Utf8Error::new_at(pos + e.valid_up_to()))?;
+            std::str::from_utf8(&bytes[pos..]).map(|_| ())?;
         }
 
         Ok(())
@@ -195,22 +187,5 @@ impl crate::ValidatedBytes {
     #[inline]
     pub fn equals_fast(&self, other: &Self) -> bool {
         utf8_simd::bytes_equal_simd(&self.0, &other.0)
-    }
-}
-
-// Add trait for std::str::Utf8Error to include position
-trait Utf8ErrorExt {
-    fn new_at(pos: usize) -> std::str::Utf8Error;
-}
-
-impl Utf8ErrorExt for std::str::Utf8Error {
-    fn new_at(_pos: usize) -> std::str::Utf8Error {
-        // Note: This is a simplified implementation
-        // In practice, you'd need to construct the error properly
-        // For now, fall back to standard validation
-        #[allow(invalid_from_utf8)]
-        {
-            std::str::from_utf8(&[0xFF]).unwrap_err() // Intentionally invalid UTF-8 for error creation
-        }
     }
 }

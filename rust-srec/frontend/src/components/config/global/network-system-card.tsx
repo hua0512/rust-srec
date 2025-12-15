@@ -9,9 +9,9 @@ import {
 } from '@/components/ui/form';
 import { Input } from '@/components/ui/input';
 import { Separator } from '@/components/ui/separator';
-import { ProxyConfigSettings } from '@/components/config/proxy-config-settings';
 import { Network } from 'lucide-react';
 import { Trans } from '@lingui/react/macro';
+import { ProxyConfigSettings } from '../shared/proxy-settings-card';
 
 interface NetworkSystemCardProps {
   control: Control<any>;
@@ -139,6 +139,7 @@ export function NetworkSystemCard({ control }: NetworkSystemCardProps) {
                 <ProxyConfigSettings
                   value={field.value}
                   onChange={field.onChange}
+                  outputFormat="object"
                 />
               </FormControl>
               <FormMessage />

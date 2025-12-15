@@ -6,13 +6,15 @@ import { Trans } from '@lingui/react/macro';
 interface StreamerSaveFabProps {
   isDirty: boolean;
   isSaving: boolean;
-  onSubmit: () => void;
+  onSubmit?: () => void;
+  formId?: string;
 }
 
 export function StreamerSaveFab({
   isDirty,
   isSaving,
   onSubmit,
+  formId,
 }: StreamerSaveFabProps) {
   return (
     <AnimatePresence>
@@ -26,7 +28,9 @@ export function StreamerSaveFab({
         >
           <Button
             size="lg"
-            onClick={onSubmit}
+            type={formId ? 'submit' : 'button'}
+            form={formId}
+            onClick={formId ? undefined : onSubmit}
             disabled={isSaving}
             className="rounded-full shadow-lg px-6 py-6 text-base font-semibold"
           >

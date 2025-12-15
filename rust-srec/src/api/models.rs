@@ -147,12 +147,8 @@ pub struct CreateStreamerRequest {
     /// Whether to enable recording
     #[serde(default = "default_true")]
     pub enabled: bool,
-    /// Streamer specific configuration override (JSON string)
-    pub streamer_specific_config: Option<String>,
-    /// Download retry policy override (JSON string)
-    pub download_retry_policy: Option<String>,
-    /// Danmu sampling config override (JSON string)
-    pub danmu_sampling_config: Option<String>,
+    /// Streamer specific configuration override (JSON object)
+    pub streamer_specific_config: Option<serde_json::Value>,
 }
 
 fn default_true() -> bool {
@@ -172,12 +168,8 @@ pub struct UpdateStreamerRequest {
     pub priority: Option<Priority>,
     /// Whether to enable recording
     pub enabled: Option<bool>,
-    /// Streamer specific configuration override (JSON string)
-    pub streamer_specific_config: Option<String>,
-    /// Download retry policy override (JSON string)
-    pub download_retry_policy: Option<String>,
-    /// Danmu sampling config override (JSON string)
-    pub danmu_sampling_config: Option<String>,
+    /// Streamer specific configuration override (JSON object)
+    pub streamer_specific_config: Option<serde_json::Value>,
 }
 
 /// Request to update streamer priority.
@@ -204,9 +196,7 @@ pub struct StreamerResponse {
     pub last_live_time: Option<DateTime<Utc>>,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
-    pub streamer_specific_config: Option<String>,
-    pub download_retry_policy: Option<String>,
-    pub danmu_sampling_config: Option<String>,
+    pub streamer_specific_config: Option<serde_json::Value>,
 }
 
 /// Filter parameters for listing streamers.
@@ -259,57 +249,34 @@ pub struct GlobalConfigResponse {
 /// Request to update global configuration.
 #[derive(Debug, Clone, Deserialize)]
 pub struct UpdateGlobalConfigRequest {
-    pub output_folder: Option<String>,
-    pub output_filename_template: Option<String>,
-    pub output_file_format: Option<String>,
-    pub min_segment_size_bytes: Option<u64>,
-    pub max_download_duration_secs: Option<u64>,
-    pub max_part_size_bytes: Option<u64>,
-    pub max_concurrent_downloads: Option<u32>,
-    pub max_concurrent_uploads: Option<u32>,
-    pub max_concurrent_cpu_jobs: Option<u32>,
-    pub max_concurrent_io_jobs: Option<u32>,
-    pub streamer_check_delay_ms: Option<u64>,
-    pub offline_check_delay_ms: Option<u64>,
-    pub offline_check_count: Option<u32>,
-    pub job_history_retention_days: Option<u32>,
-    pub default_download_engine: Option<String>,
-    pub record_danmu: Option<bool>,
-    pub proxy_config: Option<String>,
+    pub output_folder: Option<serde_json::Value>,
+    pub output_filename_template: Option<serde_json::Value>,
+    pub output_file_format: Option<serde_json::Value>,
+    pub min_segment_size_bytes: Option<serde_json::Value>,
+    pub max_download_duration_secs: Option<serde_json::Value>,
+    pub max_part_size_bytes: Option<serde_json::Value>,
+    pub max_concurrent_downloads: Option<serde_json::Value>,
+    pub max_concurrent_uploads: Option<serde_json::Value>,
+    pub max_concurrent_cpu_jobs: Option<serde_json::Value>,
+    pub max_concurrent_io_jobs: Option<serde_json::Value>,
+    pub streamer_check_delay_ms: Option<serde_json::Value>,
+    pub offline_check_delay_ms: Option<serde_json::Value>,
+    pub offline_check_count: Option<serde_json::Value>,
+    pub job_history_retention_days: Option<serde_json::Value>,
+    pub default_download_engine: Option<serde_json::Value>,
+    pub record_danmu: Option<serde_json::Value>,
+    pub proxy_config: Option<serde_json::Value>,
     /// Session gap time in seconds
-    pub session_gap_time_secs: Option<u64>,
+    pub session_gap_time_secs: Option<serde_json::Value>,
     /// Global pipeline configuration (JSON serialized Vec<PipelineStep>)
-    pub pipeline: Option<String>,
+    pub pipeline: Option<serde_json::Value>,
 }
 
 /// Platform configuration response.
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PlatformConfigResponse {
     pub id: String,
     pub name: String,
-    pub fetch_delay_ms: Option<u64>,
-    pub download_delay_ms: Option<u64>,
-    pub record_danmu: Option<bool>,
-    pub cookies: Option<String>,
-    pub platform_specific_config: Option<String>,
-    pub proxy_config: Option<String>,
-    pub output_folder: Option<String>,
-    pub output_filename_template: Option<String>,
-    pub download_engine: Option<String>,
-    pub stream_selection_config: Option<String>,
-    pub output_file_format: Option<String>,
-    pub min_segment_size_bytes: Option<u64>,
-    pub max_download_duration_secs: Option<u64>,
-    pub max_part_size_bytes: Option<u64>,
-    pub download_retry_policy: Option<String>,
-    pub event_hooks: Option<String>,
-    /// Platform-specific pipeline configuration (JSON serialized Vec<PipelineStep>)
-    pub pipeline: Option<String>,
-}
-
-/// Request to update platform configuration.
-#[derive(Debug, Clone, Deserialize)]
-pub struct UpdatePlatformConfigRequest {
     pub fetch_delay_ms: Option<u64>,
     pub download_delay_ms: Option<u64>,
     pub record_danmu: Option<bool>,
@@ -346,6 +313,15 @@ pub struct CreateTemplateRequest {
     pub platform_overrides: Option<serde_json::Value>,
     pub engines_override: Option<serde_json::Value>,
     pub stream_selection_config: Option<String>,
+    pub cookies: Option<String>,
+    pub min_segment_size_bytes: Option<i64>,
+    pub max_download_duration_secs: Option<i64>,
+    pub max_part_size_bytes: Option<i64>,
+    pub download_retry_policy: Option<String>,
+    pub danmu_sampling_config: Option<String>,
+    pub proxy_config: Option<String>,
+    pub event_hooks: Option<String>,
+    pub pipeline: Option<String>,
 }
 
 /// Request to update a template.
@@ -360,6 +336,15 @@ pub struct UpdateTemplateRequest {
     pub platform_overrides: Option<serde_json::Value>,
     pub engines_override: Option<serde_json::Value>,
     pub stream_selection_config: Option<String>,
+    pub cookies: Option<String>,
+    pub min_segment_size_bytes: Option<i64>,
+    pub max_download_duration_secs: Option<i64>,
+    pub max_part_size_bytes: Option<i64>,
+    pub download_retry_policy: Option<String>,
+    pub danmu_sampling_config: Option<String>,
+    pub proxy_config: Option<String>,
+    pub event_hooks: Option<String>,
+    pub pipeline: Option<String>,
 }
 
 /// Template response.
@@ -375,6 +360,15 @@ pub struct TemplateResponse {
     pub platform_overrides: Option<serde_json::Value>,
     pub engines_override: Option<serde_json::Value>,
     pub stream_selection_config: Option<String>,
+    pub cookies: Option<String>,
+    pub min_segment_size_bytes: Option<i64>,
+    pub max_download_duration_secs: Option<i64>,
+    pub max_part_size_bytes: Option<i64>,
+    pub download_retry_policy: Option<String>,
+    pub danmu_sampling_config: Option<String>,
+    pub proxy_config: Option<String>,
+    pub event_hooks: Option<String>,
+    pub pipeline: Option<String>,
     pub usage_count: u32,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,

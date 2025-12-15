@@ -13,9 +13,6 @@ import { Clock } from 'lucide-react';
 import { InputWithUnit } from '../../../ui/input-with-unit';
 import { UseFormReturn } from 'react-hook-form';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { RecordDanmuCard } from '../../shared/record-danmu-card';
-import { OutputSettingsCard } from '../../shared/output-settings-card';
-import { LimitsCard } from '../../shared/limits-card';
 
 interface GeneralTabProps {
   form: UseFormReturn<any>;
@@ -25,8 +22,6 @@ interface GeneralTabProps {
 export function GeneralTab({ form, basePath }: GeneralTabProps) {
   return (
     <div className="grid gap-6">
-      <RecordDanmuCard form={form} basePath={basePath} />
-
       {/* Timing & Delays Card */}
       <Card className="border-border/50 shadow-sm hover:shadow-md transition-all">
         <CardHeader className="pb-3">
@@ -104,9 +99,6 @@ export function GeneralTab({ form, basePath }: GeneralTabProps) {
           />
         </CardContent>
       </Card>
-
-      <OutputSettingsCard form={form} basePath={basePath} />
-      <LimitsCard form={form} basePath={basePath} />
     </div>
   );
 }

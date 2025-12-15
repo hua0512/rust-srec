@@ -32,6 +32,8 @@ export function PlayerCard({
 }: PlayerCardProps) {
     const artRef = useRef<HTMLDivElement>(null);
     const playerRef = useRef<Artplayer | null>(null);
+    const hlsRef = useRef<Hls | null>(null);
+    const flvRef = useRef<mpegts.Player | null>(null);
     const [error, setError] = useState<string | null>(null);
     const [loading, setLoading] = useState(true);
     const [resolving, setResolving] = useState(false);
@@ -127,6 +129,7 @@ export function PlayerCard({
                         enableWorker: true,
                         lowLatencyMode: true,
                     });
+                    hlsRef.current = hls;
                     hls.loadSource(url);
                     hls.attachMedia(video);
                     hls.on(Hls.Events.ERROR, (_event, data) => {
@@ -150,6 +153,7 @@ export function PlayerCard({
                         isLive: true,
                         cors: true
                     });
+                    flvRef.current = player;
                     player.attachMediaElement(video);
                     player.load();
                     player.on(mpegts.Events.ERROR, (type, details, data) => {
@@ -181,6 +185,14 @@ export function PlayerCard({
         }
 
         return () => {
+            if (hlsRef.current) {
+                hlsRef.current.destroy();
+                hlsRef.current = null;
+            }
+            if (flvRef.current) {
+                flvRef.current.destroy();
+                flvRef.current = null;
+            }
             if (playerRef.current) {
                 playerRef.current.destroy(false);
                 playerRef.current = null;

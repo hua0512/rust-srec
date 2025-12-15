@@ -14,9 +14,6 @@ import { UseFormReturn } from 'react-hook-form';
 import { z } from 'zod';
 import { UpdateTemplateRequestSchema } from '../../../../api/schemas';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { RecordDanmuCard } from '../../shared/record-danmu-card';
-import { OutputSettingsCard } from '../../shared/output-settings-card';
-import { LimitsCard } from '../../shared/limits-card';
 
 type EditTemplateFormValues = z.infer<typeof UpdateTemplateRequestSchema>;
 
@@ -70,10 +67,6 @@ export function GeneralTab({ form }: GeneralTabProps) {
           />
         </CardContent>
       </Card>
-
-      <RecordDanmuCard form={form} />
-      <OutputSettingsCard form={form} />
-      <LimitsCard form={form} />
     </div>
   );
 }

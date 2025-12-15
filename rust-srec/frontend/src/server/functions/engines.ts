@@ -4,6 +4,7 @@ import {
   EngineConfigSchema,
   CreateEngineRequestSchema,
   UpdateEngineRequestSchema,
+  EngineTestResponseSchema,
 } from '../../api/schemas';
 import { z } from 'zod';
 
@@ -53,10 +54,5 @@ export const testEngine = createServerFn({ method: 'POST' })
   .inputValidator((id: string) => id)
   .handler(async ({ data: id }) => {
     const json = await fetchBackend(`/engines/${id}/test`);
-    return z
-      .object({
-        available: z.boolean(),
-        version: z.string().nullable(),
-      })
-      .parse(json);
+    return EngineTestResponseSchema.parse(json);
   });

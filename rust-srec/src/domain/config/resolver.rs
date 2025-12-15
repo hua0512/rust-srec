@@ -169,11 +169,7 @@ impl<R: ConfigRepository> ConfigResolver<R> {
         }
 
         // Layer 4: Streamer-specific config
-        builder = builder.with_streamer(
-            streamer.download_retry_policy.clone(),
-            streamer.danmu_sampling_config.clone(),
-            streamer.streamer_specific_config.as_ref(),
-        );
+        builder = builder.with_streamer(streamer.streamer_specific_config.as_ref());
 
         Ok(builder.build())
     }

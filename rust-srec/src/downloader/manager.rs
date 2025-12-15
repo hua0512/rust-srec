@@ -673,6 +673,11 @@ impl DownloadManager {
                         if let Some(mut download) = active_downloads.get_mut(&download_id_clone) {
                             download.output_path = Some(segment_path);
                         }
+                        debug!(
+                            download_id = %download_id_clone,
+                            path = %path.display(),
+                            "Segment completed"
+                        );
                     }
                     SegmentEvent::Progress(progress) => {
                         if let Some(mut download) = active_downloads.get_mut(&download_id_clone) {
@@ -700,8 +705,6 @@ impl DownloadManager {
 
                         // remove download from active_downloads
                         // just before the event to avoid race condition
-                        // remove download from active_downloads
-                        // just before the event to avoid race condition
                         let output_path = if let Some((_, download)) =
                             active_downloads.remove(&download_id_clone)
                         {
@@ -722,6 +725,10 @@ impl DownloadManager {
                             file_path: output_path,
                         });
 
+                        debug!(
+                            download_id = %download_id_clone,
+                            "Download completed"
+                        );
                         break;
                     }
                     SegmentEvent::DownloadFailed { error, recoverable } => {
@@ -762,7 +769,7 @@ impl DownloadManager {
                         }
 
                         // Segment started event - a new segment file has been opened
-                        tracing::debug!(
+                        debug!(
                             download_id = %download_id_clone,
                             path = %path.display(),
                             sequence = sequence,

@@ -1,6 +1,7 @@
 //! FFmpeg download engine implementation.
 
 use async_trait::async_trait;
+use pipeline_common::expand_filename_template;
 use std::process::Stdio;
 use std::sync::Arc;
 use tokio::io::{AsyncBufReadExt, BufReader};
@@ -69,13 +70,21 @@ impl FfmpegEngine {
         }
 
         // Add headers
+        // Build all headers into a single string
+        let mut header_lines = Vec::new();
+
         for (key, value) in &config.headers {
-            args.extend(["-headers".to_string(), format!("{}: {}", key, value)]);
+            header_lines.push(format!("{}: {}", key, value));
         }
 
         // Add cookies as Cookie header if provided
         if let Some(ref cookies) = config.cookies {
-            args.extend(["-headers".to_string(), format!("Cookie: {}", cookies)]);
+            header_lines.push(format!("Cookie: {}", cookies));
+        }
+
+        // Only add -headers argument if there are headers to send
+        if !header_lines.is_empty() {
+            args.extend(["-headers".to_string(), header_lines.join("\r\n")]);
         }
 
         // 5. Input URL
@@ -96,6 +105,8 @@ impl FfmpegEngine {
                 config.max_segment_duration_secs.to_string(),
                 "-reset_timestamps".to_string(),
                 "1".to_string(),
+                "-strftime".to_string(),
+                "1".to_string(), // Enable strftime expansion for %Y, %m, %d, etc. in filename
             ]);
         }
 
@@ -106,14 +117,24 @@ impl FfmpegEngine {
         ));
 
         if config.max_segment_duration_secs > 0 {
-            // Use segment pattern
-            let pattern = config.output_dir.join(format!(
-                "{}_%03d.{}",
-                config.filename_template, config.output_format
-            ));
-            args.push(pattern.to_string_lossy().to_string());
+            // Use segment pattern with strftime enabled by -strftime 1 flag
+            // In strftime mode, %d is the segment counter (not day-of-month)
+            // TODO : ENSURE USER PATH IS VALID
+
+            // Convert backslashes to forward slashes for FFmpeg compatibility on Windows
+            // FFmpeg's segment muxer interprets backslashes as escape sequences
+            let pattern_str = output_path.to_string_lossy().replace('\\', "/");
+            args.push(pattern_str);
         } else {
-            args.push(output_path.to_string_lossy().to_string());
+            // Non-segment mode: manually expand strftime patterns
+            // FFmpeg doesn't support -strftime flag in non-segment mode
+            let expanded_template = expand_filename_template(&config.filename_template, None);
+            let final_path = config
+                .output_dir
+                .join(format!("{}.{}", expanded_template, config.output_format));
+            // Convert backslashes to forward slashes for FFmpeg compatibility on Windows
+            let path_str = final_path.to_string_lossy().replace('\\', "/");
+            args.push(path_str);
         }
 
         args
@@ -203,6 +224,9 @@ impl DownloadEngine for FfmpegEngine {
 
                                     let _ = event_tx.send(SegmentEvent::Progress(progress)).await;
                                 }
+
+                                // Log all stderr output at debug level for troubleshooting
+                                debug!("FFmpeg stderr for {}: {}", streamer_id, line);
 
                                 // Check for errors
                                 if line.contains("Error") || line.contains("error") {

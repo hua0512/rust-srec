@@ -6,10 +6,7 @@ import {
   ChevronRight,
   LayoutGrid,
   Settings,
-  Cookie,
-  Filter,
-  Shield,
-  Code,
+  Boxes,
 } from 'lucide-react';
 import {
   Collapsible,
@@ -18,30 +15,61 @@ import {
 } from '../../../ui/collapsible';
 import { useState } from 'react';
 import { Trans } from '@lingui/react/macro';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '../../../ui/tabs';
-import { GeneralTab } from '../../platforms/tabs/general-tab';
-import { AuthTab } from '../../platforms/tabs/auth-tab';
-import { ProxyTab } from '../../platforms/tabs/proxy-tab';
-import { StreamSelectionTab } from '../../platforms/tabs/stream-selection-tab';
-import { AdvancedTab } from '../../platforms/tabs/advanced-tab';
 import { Card, CardHeader, CardContent } from '../../../ui/card';
 import { cn } from '@/lib/utils';
+import { EngineConfig } from '@/api/schemas';
+import { PlatformSpecificTab } from '../../platforms/tabs/platform-specific-tab';
+import { GeneralTab } from '../../platforms/tabs/general-tab';
+import {
+  SharedConfigEditor,
+  SharedConfigPaths,
+  ExtraTab,
+} from '../../shared-config-editor';
 
 interface PlatformOverrideCardProps {
   platformName: string;
   form: UseFormReturn<any>;
   onRemove: () => void;
+  engines?: EngineConfig[];
 }
 
 export function PlatformOverrideCard({
   platformName,
   form,
   onRemove,
+  engines,
 }: PlatformOverrideCardProps) {
   const [isOpen, setIsOpen] = useState(false);
 
   // Dynamic base path for this override
   const basePath = `platform_overrides.${platformName}`;
+
+  const paths: SharedConfigPaths = {
+    streamSelection: `${basePath}.stream_selection_config`,
+    cookies: `${basePath}.cookies`,
+    proxy: `${basePath}.proxy_config`,
+    retryPolicy: `${basePath}.download_retry_policy`,
+    output: basePath, // Output settings are flat on the config object (output_folder, etc.)
+    limits: basePath, // Limits are flat
+    danmu: basePath, // record_danmu is flat
+    hooks: `${basePath}.event_hooks`,
+    pipeline: `${basePath}.pipeline`,
+  };
+
+  const extraTabs: ExtraTab[] = [
+    {
+      value: 'general',
+      label: <Trans>General</Trans>,
+      icon: Settings,
+      content: <GeneralTab form={form} basePath={basePath} />,
+    },
+    {
+      value: 'specific',
+      label: <Trans>Specific</Trans>,
+      icon: Boxes,
+      content: <PlatformSpecificTab form={form} basePath={basePath} />,
+    },
+  ];
 
   return (
     <Card
@@ -103,78 +131,16 @@ export function PlatformOverrideCard({
 
         <CollapsibleContent className="animate-in slide-in-from-top-2 fade-in duration-200">
           <CardContent className="pt-0 pb-6 px-4 sm:px-6 border-t border-border/40 bg-muted/5 mt-4">
-            <Tabs defaultValue="general" className="w-full pt-4">
-              <TabsList className="h-auto bg-background/50 p-1 gap-1 flex-wrap justify-start w-full border mb-6 rounded-lg">
-                <TabsTrigger
-                  value="general"
-                  className="gap-2 px-3 py-1.5 h-8 text-xs data-[state=active]:bg-primary/10 data-[state=active]:text-primary rounded-md transition-all"
-                >
-                  <Settings className="w-3.5 h-3.5" />
-                  <Trans>General</Trans>
-                </TabsTrigger>
-                <TabsTrigger
-                  value="auth"
-                  className="gap-2 px-3 py-1.5 h-8 text-xs data-[state=active]:bg-orange-500/10 data-[state=active]:text-orange-600 rounded-md transition-all"
-                >
-                  <Cookie className="w-3.5 h-3.5" />
-                  <Trans>Auth</Trans>
-                </TabsTrigger>
-                <TabsTrigger
-                  value="stream-selection"
-                  className="gap-2 px-3 py-1.5 h-8 text-xs data-[state=active]:bg-blue-500/10 data-[state=active]:text-blue-600 rounded-md transition-all"
-                >
-                  <Filter className="w-3.5 h-3.5" />
-                  <Trans>Streams</Trans>
-                </TabsTrigger>
-                <TabsTrigger
-                  value="proxy"
-                  className="gap-2 px-3 py-1.5 h-8 text-xs data-[state=active]:bg-green-500/10 data-[state=active]:text-green-600 rounded-md transition-all"
-                >
-                  <Shield className="w-3.5 h-3.5" />
-                  <Trans>Proxy</Trans>
-                </TabsTrigger>
-                <TabsTrigger
-                  value="advanced"
-                  className="gap-2 px-3 py-1.5 h-8 text-xs data-[state=active]:bg-purple-500/10 data-[state=active]:text-purple-600 rounded-md transition-all"
-                >
-                  <Code className="w-3.5 h-3.5" />
-                  <Trans>Advanced</Trans>
-                </TabsTrigger>
-              </TabsList>
-
-              <div className="mt-2">
-                <TabsContent
-                  value="general"
-                  className="mt-0 focus-visible:outline-none animate-in fade-in-50 slide-in-from-bottom-1 duration-300"
-                >
-                  <GeneralTab form={form} basePath={basePath} />
-                </TabsContent>
-                <TabsContent
-                  value="auth"
-                  className="mt-0 focus-visible:outline-none animate-in fade-in-50 slide-in-from-bottom-1 duration-300"
-                >
-                  <AuthTab form={form} basePath={basePath} />
-                </TabsContent>
-                <TabsContent
-                  value="stream-selection"
-                  className="mt-0 focus-visible:outline-none animate-in fade-in-50 slide-in-from-bottom-1 duration-300"
-                >
-                  <StreamSelectionTab form={form} basePath={basePath} />
-                </TabsContent>
-                <TabsContent
-                  value="proxy"
-                  className="mt-0 focus-visible:outline-none animate-in fade-in-50 slide-in-from-bottom-1 duration-300"
-                >
-                  <ProxyTab form={form} basePath={basePath} />
-                </TabsContent>
-                <TabsContent
-                  value="advanced"
-                  className="mt-0 focus-visible:outline-none animate-in fade-in-50 slide-in-from-bottom-1 duration-300"
-                >
-                  <AdvancedTab form={form} basePath={basePath} />
-                </TabsContent>
-              </div>
-            </Tabs>
+            <SharedConfigEditor
+              form={form}
+              paths={paths}
+              engines={engines}
+              extraTabs={extraTabs}
+              defaultTab="general"
+              // Platform override uses objects for complex fields
+              proxyMode="object"
+              configMode="object"
+            />
           </CardContent>
         </CollapsibleContent>
       </Collapsible>

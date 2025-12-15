@@ -13,6 +13,15 @@ use crate::notification::events::{NotificationEvent, NotificationPriority};
 /// Webhook channel configuration.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct WebhookConfig {
+    /// Stable channel instance identifier (recommended).
+    ///
+    /// When provided, this is used to derive the runtime channel key so reordering the config
+    /// does not reset circuit breaker history.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub id: Option<String>,
+    /// Optional display name for this channel instance.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub name: Option<String>,
     /// Whether the channel is enabled.
     pub enabled: bool,
     /// Webhook URL.
@@ -56,6 +65,8 @@ pub enum WebhookAuth {
 impl Default for WebhookConfig {
     fn default() -> Self {
         Self {
+            id: None,
+            name: None,
             enabled: false,
             url: String::new(),
             method: "POST".to_string(),

@@ -194,8 +194,8 @@ impl ConfigRepository for SqlxConfigRepository {
                 cookies, platform_specific_config, proxy_config, record_danmu,
                 output_folder, output_filename_template, download_engine, stream_selection_config,
                 output_file_format, min_segment_size_bytes, max_download_duration_secs, max_part_size_bytes,
-                download_retry_policy, event_hooks
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                download_retry_policy, event_hooks, pipeline
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             "#,
         )
         .bind(&config.id)
@@ -216,6 +216,7 @@ impl ConfigRepository for SqlxConfigRepository {
         .bind(config.max_part_size_bytes)
         .bind(&config.download_retry_policy)
         .bind(&config.event_hooks)
+        .bind(&config.pipeline)
         .execute(&self.pool)
         .await?;
         Ok(())
@@ -241,7 +242,8 @@ impl ConfigRepository for SqlxConfigRepository {
                 max_download_duration_secs = ?,
                 max_part_size_bytes = ?,
                 download_retry_policy = ?,
-                event_hooks = ?
+                event_hooks = ?,
+                pipeline = ?
             WHERE id = ?
             "#,
         )
@@ -262,6 +264,7 @@ impl ConfigRepository for SqlxConfigRepository {
         .bind(config.max_part_size_bytes)
         .bind(&config.download_retry_policy)
         .bind(&config.event_hooks)
+        .bind(&config.pipeline)
         .bind(&config.id)
         .execute(&self.pool)
         .await?;
@@ -310,8 +313,8 @@ impl ConfigRepository for SqlxConfigRepository {
                 max_download_duration_secs, max_part_size_bytes, record_danmu,
                 platform_overrides, download_retry_policy, danmu_sampling_config,
                 download_engine, engines_override, proxy_config, event_hooks, stream_selection_config,
-                created_at, updated_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                pipeline, created_at, updated_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 
             "#,
         )
@@ -333,6 +336,7 @@ impl ConfigRepository for SqlxConfigRepository {
         .bind(&config.proxy_config)
         .bind(&config.event_hooks)
         .bind(&config.stream_selection_config)
+        .bind(&config.pipeline)
         .bind(config.created_at)
         .bind(config.updated_at)
         .execute(&self.pool)
@@ -346,7 +350,6 @@ impl ConfigRepository for SqlxConfigRepository {
             UPDATE template_config SET
                 name = ?,
                 output_folder = ?,
-                output_filename_template = ?,
                 output_filename_template = ?,
                 cookies = ?,
                 output_file_format = ?,
@@ -362,6 +365,7 @@ impl ConfigRepository for SqlxConfigRepository {
                 proxy_config = ?,
                 event_hooks = ?,
                 stream_selection_config = ?,
+                pipeline = ?,
                 updated_at = ?
             WHERE id = ?
             "#,
@@ -383,6 +387,7 @@ impl ConfigRepository for SqlxConfigRepository {
         .bind(&config.proxy_config)
         .bind(&config.event_hooks)
         .bind(&config.stream_selection_config)
+        .bind(&config.pipeline)
         .bind(Utc::now())
         .bind(&config.id)
         .execute(&self.pool)

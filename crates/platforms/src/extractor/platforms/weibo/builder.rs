@@ -225,7 +225,7 @@ impl Weibo {
                 extras: None,
                 codec: "hvc1".to_string(),
                 fps: 0.0,
-                is_headers_needed: false,
+                is_headers_needed: true,
             });
         }
 
@@ -240,7 +240,7 @@ impl Weibo {
                 extras: None,
                 codec: "hvc1".to_string(),
                 fps: 0.0,
-                is_headers_needed: false,
+                is_headers_needed: true,
             });
         }
 

@@ -146,9 +146,11 @@ pub struct PipelinePreset {
     pub updated_at: DateTime<Utc>,
 }
 
+use crate::database::models::job::PipelineStep;
+
 impl PipelinePreset {
     /// Create a new Pipeline Preset.
-    pub fn new(name: impl Into<String>, steps: Vec<String>) -> Self {
+    pub fn new(name: impl Into<String>, steps: Vec<PipelineStep>) -> Self {
         Self {
             id: uuid::Uuid::new_v4().to_string(),
             name: name.into(),
@@ -166,7 +168,7 @@ impl PipelinePreset {
     }
 
     /// Get the steps as a parsed vector.
-    pub fn get_steps(&self) -> Vec<serde_json::Value> {
+    pub fn get_steps(&self) -> Vec<PipelineStep> {
         serde_json::from_str(&self.steps).unwrap_or_default()
     }
 

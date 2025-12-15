@@ -5,8 +5,9 @@ import { toast } from 'sonner';
 import { t } from '@lingui/core/macro';
 import { Trans } from '@lingui/react/macro';
 import { StreamerForm } from '../../../../components/streamers/streamer-form';
-import { CreateStreamerSchema } from '../../../../api/schemas';
-import { z } from 'zod';
+import {
+  StreamerFormValues,
+} from '../../../../api/schemas';
 
 export const Route = createFileRoute('/_authed/_dashboard/streamers/new')({
   component: CreateStreamerPage,
@@ -26,23 +27,22 @@ function CreateStreamerPage() {
     },
   });
 
-  const onSubmit = (data: z.infer<typeof CreateStreamerSchema>) => {
-    // If "none" is selected, we should send undefined or null, but react-hook-form might keep "none" string.
-    // The Schema expects optional string.
-    // Let's normalize data before sending
+  const onSubmit = (data: StreamerFormValues) => {
     const payload = {
       ...data,
       platform_config_id:
-        data.platform_config_id === 'none'
+        data.platform_config_id === 'none' || data.platform_config_id === ''
           ? undefined
           : data.platform_config_id,
       template_id: data.template_id === 'none' ? undefined : data.template_id,
+      streamer_specific_config: data.streamer_specific_config ?? undefined,
     };
     createMutation.mutate(payload);
   };
 
+
   return (
-    <div className="max-w-3xl mx-auto p-4 md:p-8 space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
+    <div className="max-w-6xl mx-auto p-4 md:p-8 space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
       <StreamerForm
         onSubmit={onSubmit}
         isSubmitting={createMutation.isPending}

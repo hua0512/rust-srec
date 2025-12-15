@@ -10,7 +10,7 @@ import { MesioForm } from '../../engines/forms/mesio-form';
 interface EngineOverrideCardProps {
   engineId: string;
   engineName: string;
-  engineType: string;
+  engineType?: string;
   form: UseFormReturn<any>;
   onRemove: () => void;
 }

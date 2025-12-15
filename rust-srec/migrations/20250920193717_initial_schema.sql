@@ -94,13 +94,13 @@ CREATE TABLE streamers (
     priority TEXT NOT NULL DEFAULT 'NORMAL',
     last_live_time TEXT,
     streamer_specific_config TEXT,
-    download_retry_policy TEXT,
-    danmu_sampling_config TEXT,
     consecutive_error_count INTEGER DEFAULT 0,
     -- Last recorded error message
     last_error TEXT,
     disabled_until TEXT,
     avatar TEXT,
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at TEXT NOT NULL DEFAULT (datetime('now')),
     FOREIGN KEY (platform_config_id) REFERENCES platform_config(id),
     FOREIGN KEY (template_config_id) REFERENCES template_config(id)
 );
