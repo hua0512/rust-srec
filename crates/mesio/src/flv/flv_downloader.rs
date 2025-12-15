@@ -93,6 +93,35 @@ impl FlvDownloader {
             return Err(DownloadError::StatusCode(response.status()));
         }
 
+        // Fast path: Check Content-Type header if present
+        // Reject obviously wrong content types early without reading body
+        if let Some(content_type) = response.headers().get("content-type") {
+            if let Ok(ct_str) = content_type.to_str() {
+                let ct_lower = ct_str.to_lowercase();
+
+                // Accept: video/x-flv, video/flv, application/octet-stream, or no/unknown content type
+                // Reject: text/html, text/plain, application/json (likely error responses)
+                let is_text_response = ct_lower.starts_with("text/")
+                    || ct_lower.contains("html")
+                    || ct_lower.contains("json")
+                    || ct_lower.contains("xml");
+
+                if is_text_response {
+                    warn!(
+                        url = %url,
+                        content_type = %ct_str,
+                        "Response has text Content-Type, likely not FLV data"
+                    );
+                    return Err(DownloadError::FlvError(format!(
+                        "Invalid Content-Type: {}. Expected video/x-flv or binary content",
+                        ct_str
+                    )));
+                }
+
+                debug!(url = %url, content_type = %ct_str, "Content-Type check passed");
+            }
+        }
+
         // Log file size and update progress bar if available
         if let Some(content_length) = response.content_length() {
             info!(
@@ -151,10 +180,83 @@ impl FlvDownloader {
                 let response = response?;
                 let mut byte_stream = response.bytes_stream();
 
+                // Read the first chunk to validate it's FLV binary data
+                let first_chunk = match byte_stream.next().await {
+                    Some(Ok(chunk)) => chunk,
+                    Some(Err(e)) => return Err(DownloadError::HttpError(e)),
+                    None => return Err(DownloadError::FlvError("Empty response received".to_string())),
+                };
+
+                // Validate FLV signature (first 3 bytes should be "FLV" = 0x46 0x4C 0x56)
+                // OR first byte is a valid FLV tag type (for mid-stream CDN joins)
+                if first_chunk.is_empty() {
+                    warn!(url = %url, "Empty first chunk received");
+                    return Err(DownloadError::FlvError(
+                       format!("Empty response received")
+                    ));
+                }
+
+                // Check for FLV magic bytes OR valid FLV tag types
+                const FLV_SIGNATURE: [u8; 3] = [0x46, 0x4C, 0x56]; // "FLV"
+                const TAG_TYPE_AUDIO: u8 = 8;
+                const TAG_TYPE_VIDEO: u8 = 9;
+                const TAG_TYPE_SCRIPT: u8 = 18;
+
+                let first_byte = first_chunk[0];
+                let is_valid_flv = if first_chunk.len() >= 3 && first_chunk[0..3] == FLV_SIGNATURE {
+                    // Standard FLV header
+                    debug!(url = %url, "FLV header signature detected");
+                    true
+                } else {
+                    // Check if first byte is a valid FLV tag type (for mid-stream CDN joins)
+                    // The lower 5 bits contain the tag type (ignore filter bit)
+                    let tag_type = first_byte & 0x1F;
+                    let is_valid_tag = tag_type == TAG_TYPE_AUDIO || tag_type == TAG_TYPE_VIDEO || tag_type == TAG_TYPE_SCRIPT;
+                    if is_valid_tag {
+                        debug!(url = %url, tag_type = tag_type, "FLV tag type detected (mid-stream join)");
+                    }
+                    is_valid_tag
+                };
+
+                if !is_valid_flv {
+                    // Check if it looks like text/HTML content
+                    let is_text = first_chunk.iter().take(64).all(|&b| {
+                        b.is_ascii_alphanumeric() || b.is_ascii_whitespace() || b.is_ascii_punctuation()
+                    });
+
+                    let preview = if is_text {
+                        // Convert to string for readable error message
+                        String::from_utf8_lossy(&first_chunk[..first_chunk.len().min(128)]).to_string()
+                    } else {
+                        format!("{:02X?}", &first_chunk[..first_chunk.len().min(32)])
+                    };
+
+                    warn!(
+                        url = %url,
+                        preview = %preview,
+                        first_byte = format!("0x{:02X}", first_byte),
+                        is_text = is_text,
+                        "Invalid FLV content: expected FLV signature or valid tag type but got different data"
+                    );
+                    return Err(DownloadError::FlvError(
+                        format!("Invalid FLV content: expected FLV signature or valid tag type but got different data")
+                    ));
+                }
+
+                debug!(url = %url, "FLV content validated, starting stream");
+
                 let (tx, rx) = mpsc::channel(2);
 
+                // Send the first chunk we already read
+                let first_chunk_for_send = first_chunk.clone();
                 let stream_token = token.clone();
                 tokio::spawn(async move {
+                    // First, send the chunk we already validated
+                    if tx.send(Ok(first_chunk_for_send)).await.is_err() {
+                        return;
+                    }
+
+                    // Then continue with the rest of the stream
                     loop {
                         tokio::select! {
                             _ = stream_token.cancelled() => {

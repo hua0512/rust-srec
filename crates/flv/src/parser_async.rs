@@ -100,32 +100,64 @@ impl Decoder for FlvDecoder {
 
         // --- 1. Parse Header (if needed) ---
         if !self.header_parsed {
-            let expected_size = FLV_HEADER_SIZE + PREV_TAG_SIZE_FIELD_SIZE;
-            if src.len() < expected_size {
-                trace!("Awaiting FLV header ({} bytes needed)", FLV_HEADER_SIZE);
-                src.reserve(FLV_HEADER_SIZE - src.len());
+            // Check if we have at least 1 byte to determine content type
+            if src.is_empty() {
+                trace!("Awaiting data to determine content type");
+                src.reserve(1);
                 return Ok(None);
             }
 
-            let header_bytes = src.split_to(FLV_HEADER_SIZE);
-            self.position += header_bytes.len() as u64;
-            let mut cursor = Cursor::new(&header_bytes[..]); // Borrow slice temporarily
+            // Peek at the first byte to determine if this is a header or a tag
+            let first_byte = src[0];
+            let first_tag_type = first_byte & 0x1F; // Lower 5 bits for tag type
 
-            match FlvHeader::parse(&mut cursor) {
-                Ok(header) => {
-                    debug!("Successfully parsed FLV header: {:?}", header);
-                    // Skip PrevTagSize field (4 bytes) after header
-                    src.advance(PREV_TAG_SIZE_FIELD_SIZE);
-                    self.position += PREV_TAG_SIZE_FIELD_SIZE as u64;
-                    self.header_parsed = true;
-                    self.expecting_tag_header = true; // After header, expect first tag
-                    self.last_tag_size = 0; // Header is preceded by 0 size
-                    return Ok(Some(FlvData::Header(header)));
+            // Check if stream starts with a valid FLV tag type instead of FLV header
+            // This can happen with CDN mid-stream joins
+            if first_tag_type == 8 || first_tag_type == 9 || first_tag_type == 18 {
+                // First byte is a valid tag type (audio=8, video=9, script=18)
+                // This is a mid-stream join, skip header parsing
+                debug!(
+                    "Detected mid-stream join: first byte 0x{:02X} is tag type {}. Skipping header parsing.",
+                    first_byte, first_tag_type
+                );
+                self.header_parsed = true;
+                self.expecting_tag_header = true;
+                self.last_tag_size = 0;
+                // Don't consume any bytes, let the tag parsing handle it
+                // No header to return, continue to tag parsing
+            } else {
+                // Expect a standard FLV header
+                let expected_size = FLV_HEADER_SIZE + PREV_TAG_SIZE_FIELD_SIZE;
+                if src.len() < expected_size {
+                    trace!("Awaiting FLV header ({} bytes needed)", FLV_HEADER_SIZE);
+                    src.reserve(FLV_HEADER_SIZE - src.len());
+                    return Ok(None);
                 }
-                Err(e) => {
-                    error!("Failed to parse FLV header: {:?}", e);
-                    // Header is fundamental, failure here is critical.
-                    return Err(FlvError::InvalidHeader);
+
+                let header_bytes = src.split_to(FLV_HEADER_SIZE);
+                self.position += header_bytes.len() as u64;
+                let mut cursor = Cursor::new(&header_bytes[..]); // Borrow slice temporarily
+
+                match FlvHeader::parse(&mut cursor) {
+                    Ok(header) => {
+                        debug!("Successfully parsed FLV header: {:?}", header);
+                        // Skip PrevTagSize field (4 bytes) after header
+                        src.advance(PREV_TAG_SIZE_FIELD_SIZE);
+                        self.position += PREV_TAG_SIZE_FIELD_SIZE as u64;
+                        self.header_parsed = true;
+                        self.expecting_tag_header = true; // After header, expect first tag
+                        self.last_tag_size = 0; // Header is preceded by 0 size
+                        return Ok(Some(FlvData::Header(header)));
+                    }
+                    Err(e) => {
+                        error!(
+                            "Failed to parse FLV header: {:?}. First bytes: {:02X?}",
+                            e,
+                            &header_bytes[..header_bytes.len().min(16)]
+                        );
+                        // Header is fundamental, failure here is critical.
+                        return Err(FlvError::InvalidHeader);
+                    }
                 }
             }
         }
