@@ -235,7 +235,6 @@ impl ConfigRepository for SqlxConfigRepository {
                 output_folder = ?,
                 output_filename_template = ?,
                 download_engine = ?,
-                download_engine = ?,
                 stream_selection_config = ?,
                 output_file_format = ?,
                 min_segment_size_bytes = ?,

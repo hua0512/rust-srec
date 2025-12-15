@@ -21,7 +21,7 @@ import {
 
 import { StepLibrary } from './step-library';
 import { StepsList } from './steps-list';
-import { PipelinePreset } from '@/server/functions/pipeline';
+import type { PipelinePreset } from '@/server/functions/pipeline';
 import { Badge } from '@/components/ui/badge';
 import { PipelineStep, PipelineStepSchema } from '@/api/schemas';
 

@@ -56,7 +56,10 @@ async fn update_execution_info_persists_logs_to_job_execution_logs() {
     assert_eq!(total, 1, "should dedupe identical updates");
 
     exec_info.add_log(JobLogEntry::new(LogLevel::Warn, "second"));
-    queue.update_execution_info(&job_id, exec_info).await.unwrap();
+    queue
+        .update_execution_info(&job_id, exec_info)
+        .await
+        .unwrap();
 
     let (_rows, total) = repo
         .list_execution_logs(&job_id, &Pagination::new(100, 0))

@@ -43,8 +43,8 @@ use crate::api::models::{
 use crate::api::server::AppState;
 use crate::database::models::job::PipelineStep;
 use crate::database::models::{JobFilters, JobStatus as DbJobStatus, OutputFilters, Pagination};
-use crate::pipeline::{Job, JobStatus as QueueJobStatus};
 use crate::pipeline::JobProgressSnapshot;
+use crate::pipeline::{Job, JobStatus as QueueJobStatus};
 
 /// Create the pipeline router.
 ///

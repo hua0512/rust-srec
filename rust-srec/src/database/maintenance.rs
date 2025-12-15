@@ -46,7 +46,7 @@ impl Default for MaintenanceConfig {
             job_retention_days: 30,
             dead_letter_retention_days: 7,
             optimize_interval: Duration::from_secs(7 * 24 * 60 * 60), // weekly
-            wal_checkpoint_interval: Duration::from_secs(60 * 60),     // hourly
+            wal_checkpoint_interval: Duration::from_secs(60 * 60),    // hourly
         }
     }
 }
@@ -155,7 +155,8 @@ impl MaintenanceScheduler {
         let last = self.last_optimize.lock().await;
         if let Some(last_time) = *last {
             let elapsed = Utc::now().signed_duration_since(last_time);
-            if elapsed < chrono::Duration::from_std(self.config.optimize_interval).unwrap_or_default()
+            if elapsed
+                < chrono::Duration::from_std(self.config.optimize_interval).unwrap_or_default()
             {
                 return Ok(false);
             }

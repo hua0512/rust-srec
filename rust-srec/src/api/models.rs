@@ -118,7 +118,11 @@ pub struct PageResponse<T> {
 
 impl<T> PageResponse<T> {
     pub fn new(items: Vec<T>, limit: u32, offset: u32) -> Self {
-        Self { items, limit, offset }
+        Self {
+            items,
+            limit,
+            offset,
+        }
     }
 }
 
@@ -795,6 +799,28 @@ pub struct ParseUrlResponse {
     pub error: Option<String>,
 }
 
+/// Request to resolve the true URL for a stream.
+#[derive(Debug, Clone, Deserialize)]
+pub struct ResolveUrlRequest {
+    /// The page URL (needed to create the extractor)
+    pub url: String,
+    /// The stream info object (as JSON) containing the stream to resolve
+    pub stream_info: serde_json::Value,
+    /// Optional cookies
+    pub cookies: Option<String>,
+}
+
+/// Response with the resolved stream info.
+#[derive(Debug, Clone, Serialize)]
+pub struct ResolveUrlResponse {
+    /// Whether resolution was successful
+    pub success: bool,
+    /// The updated stream info object (as JSON)
+    pub stream_info: Option<serde_json::Value>,
+    /// Error message if resolution failed
+    pub error: Option<String>,
+}
+
 // ============================================================================
 // Filter DTOs
 // ============================================================================
@@ -811,6 +837,7 @@ pub struct FilterResponse {
 /// Request to create a new filter.
 #[derive(Debug, Clone, Deserialize)]
 pub struct CreateFilterRequest {
+    pub streamer_id: String,
     pub filter_type: String,
     pub config: serde_json::Value,
 }

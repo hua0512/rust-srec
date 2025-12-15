@@ -1,17 +1,15 @@
 use dashmap::DashSet;
 use rand::random;
-use sqlx::sqlite::{
-    SqliteConnectOptions, SqliteJournalMode, SqlitePoolOptions, SqliteSynchronous,
-};
+use sqlx::sqlite::{SqliteConnectOptions, SqliteJournalMode, SqlitePoolOptions, SqliteSynchronous};
 use std::str::FromStr;
 use std::sync::Arc;
 use std::time::Duration;
 use tempfile::TempDir;
 use tokio::task::JoinSet;
 
-use rust_srec::database::{run_migrations, DbPool};
 use rust_srec::database::models::JobDbModel;
 use rust_srec::database::repositories::{JobRepository, SqlxJobRepository};
+use rust_srec::database::{DbPool, run_migrations};
 
 fn is_sqlite_busy(err: &sqlx::Error) -> bool {
     let msg = err.to_string().to_ascii_lowercase();

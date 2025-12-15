@@ -30,14 +30,7 @@ import {
 } from '@/components/pipeline/constants';
 import { cn } from '@/lib/utils';
 import { Link } from '@tanstack/react-router';
-import {
-  Breadcrumb,
-  BreadcrumbItem,
-  BreadcrumbLink,
-  BreadcrumbList,
-  BreadcrumbPage,
-  BreadcrumbSeparator,
-} from '@/components/ui/breadcrumb';
+
 
 const EditPlatformSchema = PlatformConfigSchema.partial();
 export type EditPlatformFormValues = z.infer<typeof EditPlatformSchema>;
@@ -89,23 +82,10 @@ export function PlatformEditor({
           initial={{ opacity: 0, y: 10 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.3 }}
-          className="max-w-5xl mx-auto space-y-8 px-4 sm:px-6 lg:px-8 py-8"
+          className="max-w-8xl space-y-8 px-4 sm:px-6 lg:px-8 py-8"
         >
           {/* Header Section */}
           <div className="flex flex-col gap-6">
-            <Breadcrumb>
-              <BreadcrumbList>
-                <BreadcrumbItem>
-                  <BreadcrumbLink asChild>
-                    <Link to="/config/platforms">Platforms</Link>
-                  </BreadcrumbLink>
-                </BreadcrumbItem>
-                <BreadcrumbSeparator />
-                <BreadcrumbItem>
-                  <BreadcrumbPage>{platform.name}</BreadcrumbPage>
-                </BreadcrumbItem>
-              </BreadcrumbList>
-            </Breadcrumb>
 
             <div className="flex items-start justify-between">
               <div className="flex items-center gap-4">

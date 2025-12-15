@@ -11,11 +11,73 @@
 import type { SessionData } from '../utils/session';
 import { BASE_URL } from '../utils/env';
 
-// Global singleton promise to coordinate ALL refresh attempts across the application
-let globalRefreshPromise: Promise<string | null> | null = null;
+type RefreshOutcome = {
+  accessToken: string;
+  refreshToken: string;
+  accessExpiry: number;
+  refreshExpiry: number;
+  roles?: string[];
+  mustChangePassword?: boolean;
+};
 
-// Track the last refresh token we successfully used, to detect if session was updated by another refresh
-let lastKnownRefreshToken: string | null = null;
+const RECENT_ROTATION_TTL_MS = 60_000;
+const inFlightRefreshByRefreshToken = new Map<
+  string,
+  Promise<RefreshOutcome | null>
+>();
+const recentRotationByOldRefreshToken = new Map<
+  string,
+  { outcome: RefreshOutcome; expiresAt: number }
+>();
+
+function getRecentRotation(refreshToken: string): RefreshOutcome | null {
+  const entry = recentRotationByOldRefreshToken.get(refreshToken);
+  if (!entry) return null;
+  if (Date.now() > entry.expiresAt) {
+    recentRotationByOldRefreshToken.delete(refreshToken);
+    return null;
+  }
+  return entry.outcome;
+}
+
+async function applyOutcomeToSession({
+  session,
+  currentSessionData,
+  oldRefreshToken,
+  outcome,
+}: {
+  session: any;
+  currentSessionData: Partial<SessionData>;
+  oldRefreshToken: string;
+  outcome: RefreshOutcome;
+}) {
+  const userData: Partial<SessionData> = {
+    ...currentSessionData,
+    token: {
+      access_token: outcome.accessToken,
+      refresh_token: outcome.refreshToken,
+      expires_in: outcome.accessExpiry,
+      refresh_expires_in: outcome.refreshExpiry,
+    },
+  };
+
+  if (outcome.roles !== undefined) {
+    userData.roles = outcome.roles;
+  }
+
+  if (outcome.mustChangePassword !== undefined) {
+    userData.mustChangePassword = outcome.mustChangePassword;
+  }
+
+  await session.update(userData);
+
+  if (outcome.refreshToken !== oldRefreshToken) {
+    recentRotationByOldRefreshToken.set(oldRefreshToken, {
+      outcome,
+      expiresAt: Date.now() + RECENT_ROTATION_TTL_MS,
+    });
+  }
+}
 
 /**
  * Attempt to refresh the authentication token.
@@ -30,67 +92,73 @@ let lastKnownRefreshToken: string | null = null;
 export async function refreshAuthTokenGlobal(): Promise<string | null> {
   const { useAppSession } = await import('../utils/session');
   const session = await useAppSession();
-  const currentRefreshToken = session.data.token?.refresh_token;
+  const currentData = session.data;
+  const currentRefreshToken = currentData.token?.refresh_token;
 
   if (!currentRefreshToken) {
     console.log('[TokenRefresh] No refresh token available in session.');
     return null;
   }
 
-  // If a refresh is already in progress, wait for it
-  if (globalRefreshPromise) {
+  const recent = getRecentRotation(currentRefreshToken);
+  if (recent) {
+    console.log(
+      '[TokenRefresh] Refresh token was recently rotated, updating session.',
+    );
+    await applyOutcomeToSession({
+      session,
+      currentSessionData: currentData,
+      oldRefreshToken: currentRefreshToken,
+      outcome: recent,
+    });
+    return recent.accessToken;
+  }
+
+  // If a refresh is already in progress for this refresh token, wait for it
+  let refreshPromise = inFlightRefreshByRefreshToken.get(currentRefreshToken);
+  if (refreshPromise) {
     console.log('[TokenRefresh] Refresh already in progress, waiting...');
-    const result = await globalRefreshPromise;
-
-    // After waiting, check if the session was updated with a new token
-    const { useAppSession } = await import('../utils/session');
-    const updatedSession = await useAppSession();
-    const newAccessToken = updatedSession.data.token?.access_token;
-
-    if (
-      newAccessToken &&
-      updatedSession.data.token?.refresh_token !== currentRefreshToken
-    ) {
-      console.log(
-        '[TokenRefresh] Session was updated by concurrent refresh, using new token.',
-      );
-      return newAccessToken;
-    }
-
-    return result;
+  } else {
+    refreshPromise = performRefresh({
+      refreshToken: currentRefreshToken,
+      fallbackAccessExpiry: currentData.token?.expires_in,
+      fallbackRefreshExpiry: currentData.token?.refresh_expires_in,
+    });
+    inFlightRefreshByRefreshToken.set(currentRefreshToken, refreshPromise);
+    refreshPromise.finally(() => {
+      inFlightRefreshByRefreshToken.delete(currentRefreshToken);
+    });
   }
 
-  // Check if we're trying to refresh with a token we already know was replaced
-  if (lastKnownRefreshToken && currentRefreshToken === lastKnownRefreshToken) {
-    // The session might not have been updated yet, re-read it
-    const { useAppSession } = await import('../utils/session');
-    const freshSession = await useAppSession();
-    if (freshSession.data.token?.refresh_token !== currentRefreshToken) {
-      console.log(
-        '[TokenRefresh] Token was already rotated, using new access token.',
-      );
-      return freshSession.data.token?.access_token ?? null;
-    }
+  const outcome = await refreshPromise;
+
+  if (!outcome) {
+    await session.clear();
+    return null;
   }
 
-  // Start a new refresh
-  globalRefreshPromise = performRefresh(session, currentRefreshToken);
+  await applyOutcomeToSession({
+    session,
+    currentSessionData: currentData,
+    oldRefreshToken: currentRefreshToken,
+    outcome,
+  });
 
-  try {
-    const result = await globalRefreshPromise;
-    return result;
-  } finally {
-    globalRefreshPromise = null;
-  }
+  return outcome.accessToken;
 }
 
 /**
  * Perform the actual token refresh.
  */
-async function performRefresh(
-  session: any,
-  refreshToken: string,
-): Promise<string | null> {
+async function performRefresh({
+  refreshToken,
+  fallbackAccessExpiry,
+  fallbackRefreshExpiry,
+}: {
+  refreshToken: string;
+  fallbackAccessExpiry?: number;
+  fallbackRefreshExpiry?: number;
+}): Promise<RefreshOutcome | null> {
   try {
     console.log('[TokenRefresh] Calling refresh endpoint...');
 
@@ -102,14 +170,12 @@ async function performRefresh(
     });
 
     if (!response.ok) {
-      // Check if this might be because another refresh already happened
-      const { useAppSession } = await import('../utils/session');
-      const freshSession = await useAppSession();
-      if (freshSession.data.token?.refresh_token !== refreshToken) {
+      const rotated = getRecentRotation(refreshToken);
+      if (rotated) {
         console.log(
           '[TokenRefresh] Token was rotated by another request, using new token.',
         );
-        return freshSession.data.token?.access_token ?? null;
+        return rotated;
       }
 
       console.error(
@@ -124,51 +190,33 @@ async function performRefresh(
     const computedAccessExpiry =
       typeof json.expires_in === 'number' && Number.isFinite(json.expires_in)
         ? now + json.expires_in * 1000
-        : session.data.token?.expires_in;
+        : fallbackAccessExpiry ?? now;
 
     const computedRefreshExpiry =
       typeof json.refresh_expires_in === 'number' &&
       Number.isFinite(json.refresh_expires_in)
         ? now + json.refresh_expires_in * 1000
-        : session.data.token?.refresh_expires_in;
-
-    const userData: SessionData = {
-      username: session.data.username,
-      token: {
-        access_token: json.access_token,
-        refresh_token: json.refresh_token || refreshToken,
-        expires_in: computedAccessExpiry ?? now,
-        refresh_expires_in: computedRefreshExpiry ?? now,
-      },
-      roles: json.roles || session.data.roles,
-      mustChangePassword:
-        json.must_change_password !== undefined
-          ? json.must_change_password
-          : session.data.mustChangePassword,
-    };
-
-    await session.update(userData);
-
-    // Track the old refresh token so we can detect if it was used again
-    lastKnownRefreshToken = refreshToken;
+        : fallbackRefreshExpiry ?? now;
 
     console.log('[TokenRefresh] Token refreshed successfully.');
-    return json.access_token;
+    return {
+      accessToken: json.access_token,
+      refreshToken: json.refresh_token || refreshToken,
+      accessExpiry: computedAccessExpiry ?? now,
+      refreshExpiry: computedRefreshExpiry ?? now,
+      roles: json.roles,
+      mustChangePassword: json.must_change_password,
+    };
   } catch (error) {
     console.error('[TokenRefresh] Failed to refresh token:', error);
 
-    // Before clearing session, check if another refresh succeeded
-    const { useAppSession } = await import('../utils/session');
-    const freshSession = await useAppSession();
-    if (freshSession.data.token?.refresh_token !== refreshToken) {
+    const rotated = getRecentRotation(refreshToken);
+    if (rotated) {
       console.log(
         '[TokenRefresh] Token was rotated by another request during error, using new token.',
       );
-      return freshSession.data.token?.access_token ?? null;
+      return rotated;
     }
-
-    // Clear session on fatal refresh error
-    await session.clear();
     return null;
   }
 }

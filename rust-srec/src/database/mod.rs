@@ -121,6 +121,35 @@ pub async fn run_migrations(pool: &DbPool) -> Result<(), sqlx::Error> {
     Ok(())
 }
 
+/// Wrapper for a manual immediate transaction.
+///
+/// This wrapper ensures that the transaction determines the write lock immediately (BEGIN IMMEDIATE),
+/// preventing deadlocks that occur with deferred transactions (default) when multiple readers
+/// try to upgrade to writers simultaneously.
+pub struct ImmediateTransaction(pub sqlx::pool::PoolConnection<Sqlite>);
+
+impl ImmediateTransaction {
+    /// Commit the transaction.
+    pub async fn commit(mut self) -> Result<(), sqlx::Error> {
+        sqlx::query("COMMIT").execute(&mut *self.0).await?;
+        Ok(())
+    }
+}
+
+impl std::ops::Deref for ImmediateTransaction {
+    type Target = sqlx::SqliteConnection;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl std::ops::DerefMut for ImmediateTransaction {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.0
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -52,10 +52,10 @@ impl ChannelType {
     }
 
     pub fn parse(s: &str) -> Option<Self> {
-        match s {
-            "Discord" => Some(Self::Discord),
-            "Email" => Some(Self::Email),
-            "Webhook" => Some(Self::Webhook),
+        match s.trim().to_ascii_lowercase().as_str() {
+            "discord" => Some(Self::Discord),
+            "email" => Some(Self::Email),
+            "webhook" => Some(Self::Webhook),
             _ => None,
         }
     }

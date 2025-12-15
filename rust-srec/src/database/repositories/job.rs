@@ -40,8 +40,7 @@ fn is_sqlite_busy_error(err: &Error) -> bool {
 
 fn is_missing_execution_log_columns_error(err: &Error) -> bool {
     let msg = err.to_string().to_ascii_lowercase();
-    msg.contains("no such column")
-        && (msg.contains("level") || msg.contains("message"))
+    msg.contains("no such column") && (msg.contains("level") || msg.contains("message"))
         || msg.contains("has no column named level")
         || msg.contains("has no column named message")
 }
@@ -62,8 +61,10 @@ where
 
                 let exp_backoff_ms = SQLITE_BUSY_BASE_DELAY_MS.saturating_mul(1u64 << attempt);
                 let capped_ms = exp_backoff_ms.min(SQLITE_BUSY_MAX_DELAY_MS);
-                let jitter_ms = (random::<u64>() % (capped_ms / 4 + 1)).min(SQLITE_BUSY_MAX_DELAY_MS);
-                let delay = Duration::from_millis((capped_ms + jitter_ms).min(SQLITE_BUSY_MAX_DELAY_MS));
+                let jitter_ms =
+                    (random::<u64>() % (capped_ms / 4 + 1)).min(SQLITE_BUSY_MAX_DELAY_MS);
+                let delay =
+                    Duration::from_millis((capped_ms + jitter_ms).min(SQLITE_BUSY_MAX_DELAY_MS));
 
                 debug!(
                     "SQLite busy during {}, retrying in {:?} (attempt {}/{})",
@@ -113,8 +114,10 @@ pub trait JobRepository: Send + Sync {
     /// Count pending jobs, optionally filtered by job types.
     async fn count_pending_jobs(&self, job_types: Option<&[String]>) -> Result<u64>;
     /// Upsert (replace) the latest execution progress snapshot for a job.
-    async fn upsert_job_execution_progress(&self, progress: &JobExecutionProgressDbModel)
-        -> Result<()>;
+    async fn upsert_job_execution_progress(
+        &self,
+        progress: &JobExecutionProgressDbModel,
+    ) -> Result<()>;
     /// Get the latest execution progress snapshot for a job.
     async fn get_job_execution_progress(
         &self,
@@ -125,7 +128,10 @@ pub trait JobRepository: Send + Sync {
     ///
     /// This is intended for the hot dequeue path to avoid a list+update race and
     /// to reduce DB round-trips.
-    async fn claim_next_pending_job(&self, job_types: Option<&[String]>) -> Result<Option<JobDbModel>>;
+    async fn claim_next_pending_job(
+        &self,
+        job_types: Option<&[String]>,
+    ) -> Result<Option<JobDbModel>>;
     /// Fetch only the `execution_info` field for a job.
     async fn get_job_execution_info(&self, id: &str) -> Result<Option<String>>;
     /// Update only the `execution_info` field for a job.
@@ -378,7 +384,10 @@ impl JobRepository for SqlxJobRepository {
                     true,
                 )
             }
-            _ => ("SELECT COUNT(*) FROM job WHERE status = 'PENDING'".to_string(), false),
+            _ => (
+                "SELECT COUNT(*) FROM job WHERE status = 'PENDING'".to_string(),
+                false,
+            ),
         };
 
         let mut query = sqlx::query_scalar::<_, i64>(&sql);
@@ -433,7 +442,10 @@ impl JobRepository for SqlxJobRepository {
         Ok(row)
     }
 
-    async fn claim_next_pending_job(&self, job_types: Option<&[String]>) -> Result<Option<JobDbModel>> {
+    async fn claim_next_pending_job(
+        &self,
+        job_types: Option<&[String]>,
+    ) -> Result<Option<JobDbModel>> {
         retry_on_sqlite_busy("claim_next_pending_job", || async {
             let now = chrono::Utc::now().to_rfc3339();
 
@@ -782,10 +794,11 @@ impl JobRepository for SqlxJobRepository {
         job_id: &str,
         pagination: &Pagination,
     ) -> Result<(Vec<JobExecutionLogDbModel>, u64)> {
-        let total: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM job_execution_logs WHERE job_id = ?")
-            .bind(job_id)
-            .fetch_one(&self.pool)
-            .await?;
+        let total: i64 =
+            sqlx::query_scalar("SELECT COUNT(*) FROM job_execution_logs WHERE job_id = ?")
+                .bind(job_id)
+                .fetch_one(&self.pool)
+                .await?;
 
         let full = sqlx::query_as::<_, JobExecutionLogDbModel>(
             "SELECT id, job_id, entry, created_at, level, message FROM job_execution_logs WHERE job_id = ? ORDER BY created_at LIMIT ? OFFSET ?",
@@ -1532,7 +1545,11 @@ mod stress_tests {
                 loop {
                     match repo.claim_next_pending_job(None).await.unwrap() {
                         Some(mut job) => {
-                            assert!(claimed_ids.insert(job.id.clone()), "double-claim {}", job.id);
+                            assert!(
+                                claimed_ids.insert(job.id.clone()),
+                                "double-claim {}",
+                                job.id
+                            );
                             job.mark_completed();
                             repo.update_job(&job).await.unwrap();
                         }

@@ -15,7 +15,7 @@ use tokio_util::sync::CancellationToken;
 use tracing::{debug, info, warn};
 
 use crate::Result;
-use crate::database::models::{LiveSessionDbModel, TitleEntry};
+use crate::database::ImmediateTransaction;
 use crate::database::repositories::{
     FilterRepository, MonitorOutboxOps, MonitorOutboxTxOps, SessionRepository, SessionTxOps,
     StreamerRepository, StreamerTxOps,
@@ -226,6 +226,13 @@ impl<
             }
             debug!("Outbox publisher stopped");
         });
+    }
+
+    /// Start an immediate transaction to prevent locking issues.
+    async fn begin_immediate(&self) -> Result<ImmediateTransaction> {
+        let mut conn = self.pool.acquire().await?;
+        sqlx::query("BEGIN IMMEDIATE").execute(&mut *conn).await?;
+        Ok(ImmediateTransaction(conn))
     }
 
     /// Check the status of a single streamer.
@@ -439,7 +446,8 @@ impl<
 
         // Transaction: (session create/resume + streamer state update + outbox event).
         // If anything fails, the database remains consistent and no event is emitted.
-        let mut tx = self.pool.begin().await?;
+        // Use BEGIN IMMEDIATE to prevent deadlocks during concurrent checks.
+        let mut tx = self.begin_immediate().await?;
 
         // Logic for session management (creation or resumption)
         let merged_config = self
@@ -583,9 +591,8 @@ impl<
 
             let now = chrono::Utc::now();
 
-            let mut tx = self.pool.begin().await?;
+            let mut tx = self.begin_immediate().await?;
 
-            // Resolve session_id if not provided.
             let resolved_session_id = if let Some(id) = session_id {
                 SessionTxOps::end_session(&mut tx, &id, now).await?;
                 Some(id)
@@ -646,7 +653,7 @@ impl<
 
         let now = chrono::Utc::now();
 
-        let mut tx = self.pool.begin().await?;
+        let mut tx = self.begin_immediate().await?;
 
         StreamerTxOps::update_state(&mut tx, &streamer.id, &new_state.to_string()).await?;
 
@@ -690,7 +697,7 @@ impl<
 
         let now = chrono::Utc::now();
 
-        let mut tx = self.pool.begin().await?;
+        let mut tx = self.begin_immediate().await?;
 
         let _ = SessionTxOps::end_active_session(&mut tx, &streamer.id, now).await?;
 
@@ -735,7 +742,7 @@ impl<
 
         let now = chrono::Utc::now();
 
-        let mut tx = self.pool.begin().await?;
+        let mut tx = self.begin_immediate().await?;
 
         let new_error_count = StreamerTxOps::increment_error(&mut tx, &streamer.id, error).await?;
 

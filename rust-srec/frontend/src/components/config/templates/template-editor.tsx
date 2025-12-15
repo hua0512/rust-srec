@@ -49,31 +49,31 @@ export function TemplateEditor({
     resolver: zodResolver(UpdateTemplateRequestSchema),
     defaultValues: template
       ? {
-          name: template.name,
-          output_folder: template.output_folder,
-          output_filename_template: template.output_filename_template,
-          output_file_format: template.output_file_format,
-          min_segment_size_bytes: template.min_segment_size_bytes,
-          max_download_duration_secs: template.max_download_duration_secs,
-          max_part_size_bytes: template.max_part_size_bytes,
-          record_danmu: template.record_danmu,
-          cookies: template.cookies,
-          platform_overrides: template.platform_overrides,
-          download_retry_policy: template.download_retry_policy,
-          danmu_sampling_config: template.danmu_sampling_config,
-          download_engine: template.download_engine,
-          engines_override: template.engines_override,
-          proxy_config: template.proxy_config,
-          event_hooks: template.event_hooks,
-          stream_selection_config: template.stream_selection_config,
-          pipeline: template.pipeline,
-        }
+        name: template.name,
+        output_folder: template.output_folder,
+        output_filename_template: template.output_filename_template,
+        output_file_format: template.output_file_format,
+        min_segment_size_bytes: template.min_segment_size_bytes,
+        max_download_duration_secs: template.max_download_duration_secs,
+        max_part_size_bytes: template.max_part_size_bytes,
+        record_danmu: template.record_danmu,
+        cookies: template.cookies,
+        platform_overrides: template.platform_overrides,
+        download_retry_policy: template.download_retry_policy,
+        danmu_sampling_config: template.danmu_sampling_config,
+        download_engine: template.download_engine,
+        engines_override: template.engines_override,
+        proxy_config: template.proxy_config,
+        event_hooks: template.event_hooks,
+        stream_selection_config: template.stream_selection_config,
+        pipeline: template.pipeline,
+      }
       : {
-          name: '',
-          output_folder: null,
-          record_danmu: null,
-          pipeline: null,
-        },
+        name: '',
+        output_folder: null,
+        record_danmu: null,
+        pipeline: null,
+      },
   });
 
   return (
@@ -86,7 +86,7 @@ export function TemplateEditor({
           initial={{ opacity: 0, y: 10 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.3 }}
-          className="max-w-5xl mx-auto space-y-8 px-4 sm:px-6 lg:px-8 py-8"
+          className="max-w-8xl space-y-8 px-4 sm:px-6 lg:px-8 py-8"
         >
           {/* Header Section */}
           <div className="flex flex-col gap-6">
@@ -109,9 +109,6 @@ export function TemplateEditor({
                         ID: <span className="font-mono">{template?.id}</span>
                       </span>
                     )}
-                    <span className="text-muted-foreground">
-                      <Trans>Manage global configuration templates.</Trans>
-                    </span>
                   </p>
                 </div>
               </div>

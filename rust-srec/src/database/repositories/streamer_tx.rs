@@ -5,7 +5,7 @@
 //! (e.g., session management, outbox events).
 
 use chrono::{DateTime, Utc};
-use sqlx::{Sqlite, Transaction};
+use sqlx::{Sqlite, SqliteConnection};
 
 use crate::Result;
 
@@ -18,14 +18,14 @@ pub struct StreamerTxOps;
 impl StreamerTxOps {
     /// Update streamer state within a transaction.
     pub async fn update_state(
-        tx: &mut Transaction<'_, Sqlite>,
+        tx: &mut SqliteConnection,
         streamer_id: &str,
         state: &str,
     ) -> Result<u64> {
         let result = sqlx::query("UPDATE streamers SET state = ? WHERE id = ?")
             .bind(state)
             .bind(streamer_id)
-            .execute(&mut **tx)
+            .execute(tx)
             .await?;
 
         Ok(result.rows_affected())
@@ -33,7 +33,7 @@ impl StreamerTxOps {
 
     /// Set streamer to LIVE state and record success (clear errors, update last_live_time).
     pub async fn set_live(
-        tx: &mut Transaction<'_, Sqlite>,
+        tx: &mut SqliteConnection,
         streamer_id: &str,
         last_live_time: DateTime<Utc>,
     ) -> Result<u64> {
@@ -50,17 +50,17 @@ impl StreamerTxOps {
         )
         .bind(last_live_time.to_rfc3339())
         .bind(streamer_id)
-        .execute(&mut **tx)
+        .execute(tx)
         .await?;
 
         Ok(result.rows_affected())
     }
 
     /// Set streamer to NOT_LIVE state.
-    pub async fn set_offline(tx: &mut Transaction<'_, Sqlite>, streamer_id: &str) -> Result<u64> {
+    pub async fn set_offline(tx: &mut SqliteConnection, streamer_id: &str) -> Result<u64> {
         let result = sqlx::query("UPDATE streamers SET state = 'NOT_LIVE' WHERE id = ?")
             .bind(streamer_id)
-            .execute(&mut **tx)
+            .execute(tx)
             .await?;
 
         Ok(result.rows_affected())
@@ -68,14 +68,14 @@ impl StreamerTxOps {
 
     /// Update streamer avatar within a transaction.
     pub async fn update_avatar(
-        tx: &mut Transaction<'_, Sqlite>,
+        tx: &mut SqliteConnection,
         streamer_id: &str,
         avatar_url: &str,
     ) -> Result<u64> {
         let result = sqlx::query("UPDATE streamers SET avatar = ? WHERE id = ?")
             .bind(avatar_url)
             .bind(streamer_id)
-            .execute(&mut **tx)
+            .execute(tx)
             .await?;
 
         Ok(result.rows_affected())
@@ -85,7 +85,7 @@ impl StreamerTxOps {
     ///
     /// Returns the new error count.
     pub async fn increment_error(
-        tx: &mut Transaction<'_, Sqlite>,
+        tx: &mut SqliteConnection,
         streamer_id: &str,
         error_message: &str,
     ) -> Result<i32> {
@@ -100,7 +100,7 @@ impl StreamerTxOps {
         )
         .bind(error_message)
         .bind(streamer_id)
-        .execute(&mut **tx)
+        .execute(&mut *tx)
         .await?;
 
         if affected.rows_affected() == 0 {
@@ -112,7 +112,7 @@ impl StreamerTxOps {
             "SELECT COALESCE(consecutive_error_count, 0) AS cnt FROM streamers WHERE id = ?",
         )
         .bind(streamer_id)
-        .fetch_one(&mut **tx)
+        .fetch_one(tx)
         .await?;
 
         let new_count: i32 = sqlx::Row::get(&row, "cnt");
@@ -122,7 +122,7 @@ impl StreamerTxOps {
 
     /// Set disabled_until for temporary backoff.
     pub async fn set_disabled_until(
-        tx: &mut Transaction<'_, Sqlite>,
+        tx: &mut SqliteConnection,
         streamer_id: &str,
         disabled_until: Option<DateTime<Utc>>,
     ) -> Result<u64> {
@@ -131,17 +131,14 @@ impl StreamerTxOps {
         let result = sqlx::query("UPDATE streamers SET disabled_until = ? WHERE id = ?")
             .bind(disabled_until_str.as_deref())
             .bind(streamer_id)
-            .execute(&mut **tx)
+            .execute(tx)
             .await?;
 
         Ok(result.rows_affected())
     }
 
     /// Clear error state (reset consecutive_error_count, disabled_until, last_error).
-    pub async fn clear_error_state(
-        tx: &mut Transaction<'_, Sqlite>,
-        streamer_id: &str,
-    ) -> Result<u64> {
+    pub async fn clear_error_state(tx: &mut SqliteConnection, streamer_id: &str) -> Result<u64> {
         let result = sqlx::query(
             r#"
             UPDATE streamers
@@ -152,7 +149,7 @@ impl StreamerTxOps {
             "#,
         )
         .bind(streamer_id)
-        .execute(&mut **tx)
+        .execute(tx)
         .await?;
 
         Ok(result.rows_affected())
@@ -160,14 +157,14 @@ impl StreamerTxOps {
 
     /// Set a fatal error state (NOT_FOUND, FATAL_ERROR, etc.).
     pub async fn set_fatal_error(
-        tx: &mut Transaction<'_, Sqlite>,
+        tx: &mut SqliteConnection,
         streamer_id: &str,
         state: &str,
     ) -> Result<u64> {
         let result = sqlx::query("UPDATE streamers SET state = ? WHERE id = ?")
             .bind(state)
             .bind(streamer_id)
-            .execute(&mut **tx)
+            .execute(tx)
             .await?;
 
         Ok(result.rows_affected())

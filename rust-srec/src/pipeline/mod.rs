@@ -10,8 +10,8 @@
 
 mod job_queue;
 mod manager;
-mod progress;
 mod processors;
+mod progress;
 mod purge;
 mod throttle;
 mod worker_pool;
@@ -23,13 +23,12 @@ pub use job_queue::{
 pub use manager::{
     PipelineCreationResult, PipelineEvent, PipelineManager, PipelineManagerConfig, PipelineStats,
 };
-pub use progress::{JobProgressSnapshot, ProgressKind, ProgressReporter};
 pub use processors::{
     CopyMoveConfig, CopyMoveOperation, CopyMoveProcessor, ExecuteCommandProcessor, Processor,
     ProcessorContext, ProcessorInput, ProcessorOutput, ProcessorType, RcloneProcessor,
-    RemuxProcessor,
-    ThumbnailProcessor,
+    RemuxProcessor, ThumbnailProcessor,
 };
+pub use progress::{JobProgressSnapshot, ProgressKind, ProgressReporter};
 pub use purge::{JobPurgeService, PurgeConfig};
 pub use throttle::{DownloadLimitAdjuster, ThrottleConfig, ThrottleController, ThrottleEvent};
 pub use worker_pool::{WorkerPool, WorkerPoolConfig, WorkerType};

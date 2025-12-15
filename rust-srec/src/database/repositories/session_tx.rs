@@ -5,7 +5,7 @@
 //! (e.g., combined with streamer state updates and outbox events).
 
 use chrono::{DateTime, Utc};
-use sqlx::{Row, Sqlite, Transaction};
+use sqlx::{Row, Sqlite, SqliteConnection};
 
 use crate::Result;
 use crate::database::models::{LiveSessionDbModel, TitleEntry};
@@ -19,14 +19,14 @@ pub struct SessionTxOps;
 impl SessionTxOps {
     /// Get the most recent session for a streamer.
     pub async fn get_last_session(
-        tx: &mut Transaction<'_, Sqlite>,
+        tx: &mut SqliteConnection,
         streamer_id: &str,
     ) -> Result<Option<LiveSessionDbModel>> {
         let session = sqlx::query_as::<_, LiveSessionDbModel>(
             "SELECT * FROM live_sessions WHERE streamer_id = ? ORDER BY start_time DESC LIMIT 1",
         )
         .bind(streamer_id)
-        .fetch_optional(&mut **tx)
+        .fetch_optional(tx)
         .await?;
 
         Ok(session)
@@ -34,14 +34,14 @@ impl SessionTxOps {
 
     /// Get the active (no end_time) session ID for a streamer.
     pub async fn get_active_session_id(
-        tx: &mut Transaction<'_, Sqlite>,
+        tx: &mut SqliteConnection,
         streamer_id: &str,
     ) -> Result<Option<String>> {
         let session_id: Option<String> = sqlx::query(
             "SELECT id FROM live_sessions WHERE streamer_id = ? AND end_time IS NULL ORDER BY start_time DESC LIMIT 1",
         )
         .bind(streamer_id)
-        .fetch_optional(&mut **tx)
+        .fetch_optional(tx)
         .await?
         .map(|row| row.get::<String, _>("id"));
 
@@ -50,7 +50,7 @@ impl SessionTxOps {
 
     /// Create a new session.
     pub async fn create_session(
-        tx: &mut Transaction<'_, Sqlite>,
+        tx: &mut SqliteConnection,
         session_id: &str,
         streamer_id: &str,
         start_time: DateTime<Utc>,
@@ -75,17 +75,17 @@ impl SessionTxOps {
         .bind(Some(titles_json))
         .bind(Option::<String>::None)
         .bind(0_i64)
-        .execute(&mut **tx)
+        .execute(tx)
         .await?;
 
         Ok(())
     }
 
     /// Resume a session by clearing its end_time.
-    pub async fn resume_session(tx: &mut Transaction<'_, Sqlite>, session_id: &str) -> Result<u64> {
+    pub async fn resume_session(tx: &mut SqliteConnection, session_id: &str) -> Result<u64> {
         let result = sqlx::query("UPDATE live_sessions SET end_time = NULL WHERE id = ?")
             .bind(session_id)
-            .execute(&mut **tx)
+            .execute(tx)
             .await?;
 
         Ok(result.rows_affected())
@@ -93,7 +93,7 @@ impl SessionTxOps {
 
     /// End a session by setting end_time and calculating total_size_bytes.
     pub async fn end_session(
-        tx: &mut Transaction<'_, Sqlite>,
+        tx: &mut SqliteConnection,
         session_id: &str,
         end_time: DateTime<Utc>,
     ) -> Result<u64> {
@@ -108,7 +108,7 @@ impl SessionTxOps {
         .bind(end_time.to_rfc3339())
         .bind(session_id)
         .bind(session_id)
-        .execute(&mut **tx)
+        .execute(tx)
         .await?;
 
         Ok(result.rows_affected())
@@ -118,7 +118,7 @@ impl SessionTxOps {
     ///
     /// Returns the session ID if one was ended.
     pub async fn end_active_session(
-        tx: &mut Transaction<'_, Sqlite>,
+        tx: &mut SqliteConnection,
         streamer_id: &str,
         end_time: DateTime<Utc>,
     ) -> Result<Option<String>> {
@@ -135,7 +135,7 @@ impl SessionTxOps {
     ///
     /// Only adds if the new title differs from the last one.
     pub async fn update_titles(
-        tx: &mut Transaction<'_, Sqlite>,
+        tx: &mut SqliteConnection,
         session_id: &str,
         current_titles_json: Option<&str>,
         new_title: &str,
@@ -157,7 +157,7 @@ impl SessionTxOps {
             sqlx::query("UPDATE live_sessions SET titles = ? WHERE id = ?")
                 .bind(titles_json)
                 .bind(session_id)
-                .execute(&mut **tx)
+                .execute(tx)
                 .await?;
         }
 

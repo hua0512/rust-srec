@@ -213,7 +213,12 @@ function StreamersPage() {
   return (
     <div className="min-h-screen space-y-6">
       {/* Header */}
-      <div className="border-b border-border/40">
+      <motion.div
+        className="border-b border-border/40"
+        initial={{ y: -20, opacity: 0 }}
+        animate={{ y: 0, opacity: 1 }}
+        transition={{ duration: 0.2 }}
+      >
         <div className="w-full">
           {/* Title Row */}
           <div className="flex flex-col md:flex-row gap-4 items-start md:items-center justify-between p-4 md:px-8">
@@ -287,11 +292,10 @@ function StreamersPage() {
                   <button
                     key={filter.value}
                     onClick={() => handleStateChange(filter.value)}
-                    className={`relative px-3 py-1.5 text-sm font-medium rounded-full transition-all duration-200 flex items-center gap-2 ${
-                      isActive
-                        ? 'bg-primary text-primary-foreground shadow-sm'
-                        : 'text-muted-foreground hover:text-foreground hover:bg-muted'
-                    }`}
+                    className={`relative px-3 py-1.5 text-sm font-medium rounded-full transition-all duration-200 flex items-center gap-2 ${isActive
+                      ? 'bg-primary text-primary-foreground shadow-sm'
+                      : 'text-muted-foreground hover:text-foreground hover:bg-muted'
+                      }`}
                   >
                     <Icon className="h-3.5 w-3.5" />
                     <span className="relative z-10">{filter.label}</span>
@@ -301,7 +305,7 @@ function StreamersPage() {
             </nav>
           </div>
         </div>
-      </div>
+      </motion.div>
 
       {/* Content Content */}
       <div className="p-4 md:px-8 pb-20">
@@ -479,6 +483,6 @@ function StreamersPage() {
           </Button>
         </motion.div>
       </div>
-    </div>
+    </div >
   );
 }

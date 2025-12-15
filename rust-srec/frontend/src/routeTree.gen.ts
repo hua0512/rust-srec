@@ -9,6 +9,7 @@
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
 import { Route as rootRouteImport } from './routes/__root'
+import { Route as StreamProxyRouteImport } from './routes/stream-proxy'
 import { Route as LogoutRouteImport } from './routes/logout'
 import { Route as PublicRouteImport } from './routes/_public'
 import { Route as AuthedRouteImport } from './routes/_authed'
@@ -20,6 +21,7 @@ import { Route as AuthedDashboardDashboardRouteImport } from './routes/_authed/_
 import { Route as AuthedDashboardConfigRouteRouteImport } from './routes/_authed/_dashboard/config/route'
 import { Route as AuthedDashboardStreamersIndexRouteImport } from './routes/_authed/_dashboard/streamers/index'
 import { Route as AuthedDashboardSessionsIndexRouteImport } from './routes/_authed/_dashboard/sessions/index'
+import { Route as AuthedDashboardPlayerIndexRouteImport } from './routes/_authed/_dashboard/player/index'
 import { Route as AuthedDashboardPipelineIndexRouteImport } from './routes/_authed/_dashboard/pipeline/index'
 import { Route as AuthedDashboardSystemHealthRouteImport } from './routes/_authed/_dashboard/system/health'
 import { Route as AuthedDashboardStreamersNewRouteImport } from './routes/_authed/_dashboard/streamers/new'
@@ -46,6 +48,11 @@ import { Route as AuthedDashboardConfigPlatformsPlatformIdRouteImport } from './
 import { Route as AuthedDashboardConfigEnginesCreateRouteImport } from './routes/_authed/_dashboard/config/engines.create'
 import { Route as AuthedDashboardConfigEnginesEngineIdRouteImport } from './routes/_authed/_dashboard/config/engines.$engineId'
 
+const StreamProxyRoute = StreamProxyRouteImport.update({
+  id: '/stream-proxy',
+  path: '/stream-proxy',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const LogoutRoute = LogoutRouteImport.update({
   id: '/logout',
   path: '/logout',
@@ -100,6 +107,12 @@ const AuthedDashboardSessionsIndexRoute =
   AuthedDashboardSessionsIndexRouteImport.update({
     id: '/sessions/',
     path: '/sessions/',
+    getParentRoute: () => AuthedDashboardRoute,
+  } as any)
+const AuthedDashboardPlayerIndexRoute =
+  AuthedDashboardPlayerIndexRouteImport.update({
+    id: '/player/',
+    path: '/player/',
     getParentRoute: () => AuthedDashboardRoute,
   } as any)
 const AuthedDashboardPipelineIndexRoute =
@@ -256,6 +269,7 @@ const AuthedDashboardConfigEnginesEngineIdRoute =
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/logout': typeof LogoutRoute
+  '/stream-proxy': typeof StreamProxyRoute
   '/change-password': typeof AuthedChangePasswordRoute
   '/login': typeof PublicLoginRoute
   '/config': typeof AuthedDashboardConfigRouteRouteWithChildren
@@ -267,6 +281,7 @@ export interface FileRoutesByFullPath {
   '/streamers/new': typeof AuthedDashboardStreamersNewRoute
   '/system/health': typeof AuthedDashboardSystemHealthRoute
   '/pipeline': typeof AuthedDashboardPipelineIndexRoute
+  '/player': typeof AuthedDashboardPlayerIndexRoute
   '/sessions': typeof AuthedDashboardSessionsIndexRoute
   '/streamers': typeof AuthedDashboardStreamersIndexRoute
   '/config/engines/$engineId': typeof AuthedDashboardConfigEnginesEngineIdRoute
@@ -291,6 +306,7 @@ export interface FileRoutesByFullPath {
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/logout': typeof LogoutRoute
+  '/stream-proxy': typeof StreamProxyRoute
   '/change-password': typeof AuthedChangePasswordRoute
   '/login': typeof PublicLoginRoute
   '/config': typeof AuthedDashboardConfigRouteRouteWithChildren
@@ -302,6 +318,7 @@ export interface FileRoutesByTo {
   '/streamers/new': typeof AuthedDashboardStreamersNewRoute
   '/system/health': typeof AuthedDashboardSystemHealthRoute
   '/pipeline': typeof AuthedDashboardPipelineIndexRoute
+  '/player': typeof AuthedDashboardPlayerIndexRoute
   '/sessions': typeof AuthedDashboardSessionsIndexRoute
   '/streamers': typeof AuthedDashboardStreamersIndexRoute
   '/config/engines/$engineId': typeof AuthedDashboardConfigEnginesEngineIdRoute
@@ -329,6 +346,7 @@ export interface FileRoutesById {
   '/_authed': typeof AuthedRouteWithChildren
   '/_public': typeof PublicRouteWithChildren
   '/logout': typeof LogoutRoute
+  '/stream-proxy': typeof StreamProxyRoute
   '/_authed/_dashboard': typeof AuthedDashboardRouteWithChildren
   '/_authed/change-password': typeof AuthedChangePasswordRoute
   '/_public/login': typeof PublicLoginRoute
@@ -341,6 +359,7 @@ export interface FileRoutesById {
   '/_authed/_dashboard/streamers/new': typeof AuthedDashboardStreamersNewRoute
   '/_authed/_dashboard/system/health': typeof AuthedDashboardSystemHealthRoute
   '/_authed/_dashboard/pipeline/': typeof AuthedDashboardPipelineIndexRoute
+  '/_authed/_dashboard/player/': typeof AuthedDashboardPlayerIndexRoute
   '/_authed/_dashboard/sessions/': typeof AuthedDashboardSessionsIndexRoute
   '/_authed/_dashboard/streamers/': typeof AuthedDashboardStreamersIndexRoute
   '/_authed/_dashboard/config/engines/$engineId': typeof AuthedDashboardConfigEnginesEngineIdRoute
@@ -367,6 +386,7 @@ export interface FileRouteTypes {
   fullPaths:
     | '/'
     | '/logout'
+    | '/stream-proxy'
     | '/change-password'
     | '/login'
     | '/config'
@@ -378,6 +398,7 @@ export interface FileRouteTypes {
     | '/streamers/new'
     | '/system/health'
     | '/pipeline'
+    | '/player'
     | '/sessions'
     | '/streamers'
     | '/config/engines/$engineId'
@@ -402,6 +423,7 @@ export interface FileRouteTypes {
   to:
     | '/'
     | '/logout'
+    | '/stream-proxy'
     | '/change-password'
     | '/login'
     | '/config'
@@ -413,6 +435,7 @@ export interface FileRouteTypes {
     | '/streamers/new'
     | '/system/health'
     | '/pipeline'
+    | '/player'
     | '/sessions'
     | '/streamers'
     | '/config/engines/$engineId'
@@ -439,6 +462,7 @@ export interface FileRouteTypes {
     | '/_authed'
     | '/_public'
     | '/logout'
+    | '/stream-proxy'
     | '/_authed/_dashboard'
     | '/_authed/change-password'
     | '/_public/login'
@@ -451,6 +475,7 @@ export interface FileRouteTypes {
     | '/_authed/_dashboard/streamers/new'
     | '/_authed/_dashboard/system/health'
     | '/_authed/_dashboard/pipeline/'
+    | '/_authed/_dashboard/player/'
     | '/_authed/_dashboard/sessions/'
     | '/_authed/_dashboard/streamers/'
     | '/_authed/_dashboard/config/engines/$engineId'
@@ -478,10 +503,18 @@ export interface RootRouteChildren {
   AuthedRoute: typeof AuthedRouteWithChildren
   PublicRoute: typeof PublicRouteWithChildren
   LogoutRoute: typeof LogoutRoute
+  StreamProxyRoute: typeof StreamProxyRoute
 }
 
 declare module '@tanstack/react-router' {
   interface FileRoutesByPath {
+    '/stream-proxy': {
+      id: '/stream-proxy'
+      path: '/stream-proxy'
+      fullPath: '/stream-proxy'
+      preLoaderRoute: typeof StreamProxyRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/logout': {
       id: '/logout'
       path: '/logout'
@@ -557,6 +590,13 @@ declare module '@tanstack/react-router' {
       path: '/sessions'
       fullPath: '/sessions'
       preLoaderRoute: typeof AuthedDashboardSessionsIndexRouteImport
+      parentRoute: typeof AuthedDashboardRoute
+    }
+    '/_authed/_dashboard/player/': {
+      id: '/_authed/_dashboard/player/'
+      path: '/player'
+      fullPath: '/player'
+      preLoaderRoute: typeof AuthedDashboardPlayerIndexRouteImport
       parentRoute: typeof AuthedDashboardRoute
     }
     '/_authed/_dashboard/pipeline/': {
@@ -785,6 +825,7 @@ interface AuthedDashboardRouteChildren {
   AuthedDashboardStreamersNewRoute: typeof AuthedDashboardStreamersNewRoute
   AuthedDashboardSystemHealthRoute: typeof AuthedDashboardSystemHealthRoute
   AuthedDashboardPipelineIndexRoute: typeof AuthedDashboardPipelineIndexRoute
+  AuthedDashboardPlayerIndexRoute: typeof AuthedDashboardPlayerIndexRoute
   AuthedDashboardSessionsIndexRoute: typeof AuthedDashboardSessionsIndexRoute
   AuthedDashboardStreamersIndexRoute: typeof AuthedDashboardStreamersIndexRoute
   AuthedDashboardPipelineExecutionsPipelineIdRoute: typeof AuthedDashboardPipelineExecutionsPipelineIdRoute
@@ -807,6 +848,7 @@ const AuthedDashboardRouteChildren: AuthedDashboardRouteChildren = {
   AuthedDashboardStreamersNewRoute: AuthedDashboardStreamersNewRoute,
   AuthedDashboardSystemHealthRoute: AuthedDashboardSystemHealthRoute,
   AuthedDashboardPipelineIndexRoute: AuthedDashboardPipelineIndexRoute,
+  AuthedDashboardPlayerIndexRoute: AuthedDashboardPlayerIndexRoute,
   AuthedDashboardSessionsIndexRoute: AuthedDashboardSessionsIndexRoute,
   AuthedDashboardStreamersIndexRoute: AuthedDashboardStreamersIndexRoute,
   AuthedDashboardPipelineExecutionsPipelineIdRoute:
@@ -861,6 +903,7 @@ const rootRouteChildren: RootRouteChildren = {
   AuthedRoute: AuthedRouteWithChildren,
   PublicRoute: PublicRouteWithChildren,
   LogoutRoute: LogoutRoute,
+  StreamProxyRoute: StreamProxyRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

@@ -241,6 +241,12 @@ async fn update_platform_config(
     Path(id): Path<String>,
     Json(request): Json<UpdatePlatformConfigRequest>,
 ) -> ApiResult<Json<PlatformConfigResponse>> {
+    tracing::info!(
+        platform_id = %id,
+        ?request,
+        "Received request to update platform configuration"
+    );
+
     let config_service = state
         .config_service
         .as_ref()
@@ -249,8 +255,10 @@ async fn update_platform_config(
     // Get current config to apply partial updates
     let mut config = config_service.get_platform_config(&id).await.map_err(|e| {
         if e.to_string().contains("not found") {
+            tracing::warn!(platform_id = %id, "Platform config not found");
             ApiError::not_found(format!("Platform config with id '{}' not found", id))
         } else {
+            tracing::error!(platform_id = %id, error = %e, "Failed to get platform config");
             ApiError::internal(format!("Failed to get platform config: {}", e))
         }
     })?;
@@ -276,10 +284,22 @@ async fn update_platform_config(
     ]);
 
     // Update config (cache invalidation is handled automatically by ConfigService)
-    config_service
-        .update_platform_config(&config)
-        .await
-        .map_err(|e| ApiError::internal(format!("Failed to update platform config: {}", e)))?;
+    if let Err(e) = config_service.update_platform_config(&config).await {
+        tracing::error!(
+            platform_id = %id,
+            error = %e,
+            "Failed to update platform config"
+        );
+        return Err(ApiError::internal(format!(
+            "Failed to update platform config: {}",
+            e
+        )));
+    }
+
+    tracing::info!(
+        platform_id = %id,
+        "Platform configuration updated successfully"
+    );
 
     Ok(Json(map_platform_config_to_response(config)))
 }

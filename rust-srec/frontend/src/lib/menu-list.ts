@@ -10,6 +10,7 @@ import {
   GitBranch,
   Settings2,
   Activity,
+  Play,
 } from 'lucide-react';
 
 type Submenu = {
@@ -87,6 +88,12 @@ export function getMenuList(_pathname: string): Group[] {
               icon: FileVideo,
             },
           ],
+        },
+        {
+          href: '/player',
+          label: 'Player',
+          icon: Play,
+          submenus: [],
         },
       ],
     },

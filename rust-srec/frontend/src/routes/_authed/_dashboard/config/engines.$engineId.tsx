@@ -57,7 +57,7 @@ function EditEnginePage() {
   }
 
   return (
-    <div className="max-w-5xl p-4 sm:p-6 lg:p-8 pb-32">
+    <div className="max-w-8xl p-4 sm:p-6 lg:p-8 pb-32">
       <EngineEditor
         engine={engine}
         onSuccess={() => {

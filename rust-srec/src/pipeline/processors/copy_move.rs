@@ -143,7 +143,11 @@ impl Processor for CopyMoveProcessor {
         "CopyMoveProcessor"
     }
 
-    async fn process(&self, input: &ProcessorInput, _ctx: &ProcessorContext) -> Result<ProcessorOutput> {
+    async fn process(
+        &self,
+        input: &ProcessorInput,
+        _ctx: &ProcessorContext,
+    ) -> Result<ProcessorOutput> {
         let start = std::time::Instant::now();
 
         // Parse config or use defaults

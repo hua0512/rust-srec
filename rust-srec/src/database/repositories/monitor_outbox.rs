@@ -3,7 +3,7 @@
 //! This module provides transaction-aware operations for the monitor event outbox.
 //! The outbox pattern ensures that database changes and event emissions are atomic.
 
-use sqlx::{Row, Sqlite, SqlitePool, Transaction};
+use sqlx::{Row, Sqlite, SqliteConnection, SqlitePool};
 
 use crate::Result;
 use crate::monitor::MonitorEvent;
@@ -17,7 +17,7 @@ pub struct MonitorOutboxTxOps;
 impl MonitorOutboxTxOps {
     /// Enqueue a monitor event into the outbox within a transaction.
     pub async fn enqueue_event(
-        tx: &mut Transaction<'_, Sqlite>,
+        tx: &mut SqliteConnection,
         streamer_id: &str,
         event: &MonitorEvent,
     ) -> Result<()> {
@@ -43,7 +43,7 @@ impl MonitorOutboxTxOps {
         .bind(event_type)
         .bind(payload)
         .bind(chrono::Utc::now().to_rfc3339())
-        .execute(&mut **tx)
+        .execute(tx)
         .await?;
 
         Ok(())

@@ -8,6 +8,7 @@
 //! - Maintaining a dead letter queue for failed notifications
 
 use std::collections::HashMap;
+use std::collections::HashSet;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Duration;
@@ -16,16 +17,23 @@ use chrono::{DateTime, Utc};
 use dashmap::DashMap;
 use parking_lot::RwLock;
 use serde::{Deserialize, Serialize};
+use serde_json::Value;
 use tokio::sync::broadcast;
 use tokio::time::sleep;
 use tokio_util::sync::CancellationToken;
 use tracing::{debug, info, warn};
+use uuid::Uuid;
 
 use super::channels::{
     ChannelConfig, DiscordChannel, EmailChannel, NotificationChannel, WebhookChannel,
 };
-use super::events::NotificationEvent;
+use super::events::{NotificationEvent, NotificationPriority};
 use crate::Result;
+use crate::database::models::{
+    ChannelType, DiscordChannelSettings, EmailChannelSettings, NotificationChannelDbModel,
+    NotificationDeadLetterDbModel, WebhookChannelSettings,
+};
+use crate::database::repositories::NotificationRepository;
 use crate::downloader::DownloadManagerEvent;
 use crate::monitor::MonitorEvent;
 use crate::pipeline::PipelineEvent;
@@ -94,6 +102,14 @@ impl CircuitBreakerState {
 
     fn record_failure(&mut self, threshold: u32) {
         self.failures += 1;
+
+        // If already open (or in the "cooldown passed but not yet recovered" state),
+        // restart the cooldown on any failure so we don't allow unlimited attempts.
+        if self.is_open {
+            self.opened_at = Some(Utc::now());
+            return;
+        }
+
         if self.failures >= threshold && !self.is_open {
             self.is_open = true;
             self.opened_at = Some(Utc::now());
@@ -124,24 +140,52 @@ impl CircuitBreakerState {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum DeliveryStatus {
+    Pending,
+    Delivered,
+    DeadLettered,
+}
+
+#[derive(Debug, Clone)]
+struct ChannelDeliveryState {
+    status: DeliveryStatus,
+    attempts: u32,
+    last_attempt: Option<DateTime<Utc>>,
+    last_error: Option<String>,
+}
+
+#[derive(Clone)]
+struct RuntimeChannel {
+    key: String,
+    db_channel_id: Option<String>,
+    display_name: String,
+    channel_type: String,
+    channel: Arc<dyn NotificationChannel>,
+}
+
 /// A notification pending delivery.
 #[derive(Debug, Clone)]
 struct PendingNotification {
     id: u64,
     event: NotificationEvent,
-    attempts: u32,
     created_at: DateTime<Utc>,
-    last_attempt: Option<DateTime<Utc>>,
-    last_error: Option<String>,
+    channel_state: HashMap<String, ChannelDeliveryState>,
+    retry_generation: u64,
+    next_retry_at: Option<DateTime<Utc>>,
 }
 
 /// Dead letter entry for failed notifications.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DeadLetterEntry {
-    /// Notification ID.
+    /// Dead letter entry ID.
     pub id: u64,
+    /// Notification ID.
+    pub notification_id: u64,
     /// The event that failed.
     pub event: NotificationEvent,
+    /// Channel ID (DB-backed channels only).
+    pub channel_id: Option<String>,
     /// Channel that failed.
     pub channel_type: String,
     /// Number of attempts made.
@@ -157,11 +201,14 @@ pub struct DeadLetterEntry {
 /// The notification service.
 pub struct NotificationService {
     config: NotificationServiceConfig,
-    channels: RwLock<Vec<Arc<dyn NotificationChannel>>>,
-    circuit_breakers: DashMap<String, CircuitBreakerState>,
-    pending_queue: DashMap<u64, PendingNotification>,
-    dead_letters: DashMap<u64, DeadLetterEntry>,
+    notification_repo: Option<Arc<dyn NotificationRepository>>,
+    subscriptions_by_event: RwLock<HashMap<String, Vec<String>>>,
+    channels: RwLock<Vec<RuntimeChannel>>,
+    circuit_breakers: Arc<DashMap<String, CircuitBreakerState>>,
+    pending_queue: Arc<DashMap<u64, PendingNotification>>,
+    dead_letters: Arc<DashMap<u64, DeadLetterEntry>>,
     next_id: AtomicU64,
+    next_dead_letter_id: Arc<AtomicU64>,
     event_tx: broadcast::Sender<NotificationEvent>,
     cancellation_token: CancellationToken,
 }
@@ -172,16 +219,28 @@ impl NotificationService {
         Self::with_config(NotificationServiceConfig::default())
     }
 
+    pub fn with_repository(
+        config: NotificationServiceConfig,
+        notification_repo: Arc<dyn NotificationRepository>,
+    ) -> Self {
+        let mut service = Self::with_config(config);
+        service.notification_repo = Some(notification_repo);
+        service
+    }
+
     /// Create a new notification service with custom configuration.
     pub fn with_config(config: NotificationServiceConfig) -> Self {
         let (event_tx, _) = broadcast::channel(256);
 
         let service = Self {
+            notification_repo: None,
+            subscriptions_by_event: RwLock::new(HashMap::new()),
             channels: RwLock::new(Vec::new()),
-            circuit_breakers: DashMap::new(),
-            pending_queue: DashMap::new(),
-            dead_letters: DashMap::new(),
+            circuit_breakers: Arc::new(DashMap::new()),
+            pending_queue: Arc::new(DashMap::new()),
+            dead_letters: Arc::new(DashMap::new()),
             next_id: AtomicU64::new(1),
+            next_dead_letter_id: Arc::new(AtomicU64::new(1)),
             event_tx,
             cancellation_token: CancellationToken::new(),
             config,
@@ -198,7 +257,7 @@ impl NotificationService {
         let mut channels = self.channels.write();
         channels.clear();
 
-        for channel_config in &self.config.channels {
+        for (idx, channel_config) in self.config.channels.iter().enumerate() {
             let channel: Arc<dyn NotificationChannel> = match channel_config {
                 ChannelConfig::Discord(c) => Arc::new(DiscordChannel::new(c.clone())),
                 ChannelConfig::Email(c) => Arc::new(EmailChannel::new(c.clone())),
@@ -206,12 +265,20 @@ impl NotificationService {
             };
 
             if channel.is_enabled() {
-                // Initialize circuit breaker for this channel
+                let key = format!("config:{}:{}", channel_config.channel_type(), idx);
+
                 self.circuit_breakers.insert(
-                    channel.channel_type().to_string(),
+                    key.clone(),
                     CircuitBreakerState::new(self.config.circuit_breaker_cooldown_secs),
                 );
-                channels.push(channel);
+
+                channels.push(RuntimeChannel {
+                    key,
+                    db_channel_id: None,
+                    display_name: channel_config.channel_type().to_string(),
+                    channel_type: channel.channel_type().to_string(),
+                    channel,
+                });
                 info!(
                     "Initialized notification channel: {}",
                     channel_config.channel_type()
@@ -234,13 +301,192 @@ impl NotificationService {
         };
 
         if channel.is_enabled() {
+            let key = format!("dynamic:{}", Uuid::new_v4());
             self.circuit_breakers.insert(
-                channel.channel_type().to_string(),
+                key.clone(),
                 CircuitBreakerState::new(self.config.circuit_breaker_cooldown_secs),
             );
-            self.channels.write().push(channel);
+            self.channels.write().push(RuntimeChannel {
+                key,
+                db_channel_id: None,
+                display_name: config.channel_type().to_string(),
+                channel_type: channel.channel_type().to_string(),
+                channel,
+            });
             info!("Added notification channel: {}", config.channel_type());
         }
+    }
+
+    pub async fn reload_from_db(&self) -> Result<()> {
+        let Some(repo) = self.notification_repo.as_ref().cloned() else {
+            return Ok(());
+        };
+
+        let db_channels = repo.list_channels().await?;
+
+        let existing_config_channels: Vec<RuntimeChannel> = self
+            .channels
+            .read()
+            .iter()
+            .filter(|c| c.db_channel_id.is_none())
+            .cloned()
+            .collect();
+
+        let mut new_db_channels = Vec::new();
+        let mut subscriptions_by_event: HashMap<String, Vec<String>> = HashMap::new();
+
+        for db_channel in db_channels {
+            let runtime_channel = match self.build_runtime_channel_from_db(&db_channel) {
+                Ok(Some(c)) => c,
+                Ok(None) => continue,
+                Err(e) => {
+                    warn!(
+                        "Skipping invalid notification channel id={} type={}: {}",
+                        db_channel.id, db_channel.channel_type, e
+                    );
+                    continue;
+                }
+            };
+
+            self.circuit_breakers.insert(
+                runtime_channel.key.clone(),
+                CircuitBreakerState::new(self.config.circuit_breaker_cooldown_secs),
+            );
+
+            let subscriptions = repo.get_subscriptions_for_channel(&db_channel.id).await?;
+            for event_name in subscriptions {
+                subscriptions_by_event
+                    .entry(event_name)
+                    .or_default()
+                    .push(db_channel.id.clone());
+            }
+
+            new_db_channels.push(runtime_channel);
+        }
+
+        let mut combined_channels = existing_config_channels;
+        combined_channels.extend(new_db_channels);
+
+        let live_keys: HashSet<String> = combined_channels.iter().map(|c| c.key.clone()).collect();
+        self.circuit_breakers.retain(|k, _| live_keys.contains(k));
+
+        *self.subscriptions_by_event.write() = subscriptions_by_event;
+        *self.channels.write() = combined_channels;
+
+        info!(
+            "Notification DB config loaded: channels={}, subscribed_events={}",
+            self.channels.read().len(),
+            self.subscriptions_by_event.read().len()
+        );
+
+        Ok(())
+    }
+
+    fn build_runtime_channel_from_db(
+        &self,
+        db_channel: &NotificationChannelDbModel,
+    ) -> Result<Option<RuntimeChannel>> {
+        let settings_json: Value = serde_json::from_str(&db_channel.settings)?;
+        let enabled = settings_json
+            .get("enabled")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(true);
+        if !enabled {
+            return Ok(None);
+        }
+
+        let channel_type = ChannelType::parse(&db_channel.channel_type).ok_or_else(|| {
+            crate::Error::Validation(format!(
+                "Unsupported notification channel_type: {}",
+                db_channel.channel_type
+            ))
+        })?;
+
+        let min_priority = settings_json
+            .get("min_priority")
+            .and_then(|v| v.as_str())
+            .and_then(parse_notification_priority)
+            .unwrap_or(NotificationPriority::Normal);
+
+        let runtime_channel: Arc<dyn NotificationChannel> = match channel_type {
+            ChannelType::Discord => {
+                let settings: DiscordChannelSettings =
+                    serde_json::from_value(settings_json.clone())?;
+                Arc::new(DiscordChannel::new(super::channels::DiscordConfig {
+                    enabled: true,
+                    webhook_url: settings.webhook_url,
+                    username: settings.username,
+                    avatar_url: settings.avatar_url,
+                    min_priority,
+                }))
+            }
+            ChannelType::Email => {
+                let settings: EmailChannelSettings = serde_json::from_value(settings_json.clone())?;
+                Arc::new(EmailChannel::new(super::channels::EmailConfig {
+                    enabled: true,
+                    smtp_host: settings.smtp_host,
+                    smtp_port: settings.smtp_port,
+                    smtp_username: if settings.username.is_empty() {
+                        None
+                    } else {
+                        Some(settings.username)
+                    },
+                    smtp_password: if settings.password.is_empty() {
+                        None
+                    } else {
+                        Some(settings.password)
+                    },
+                    use_tls: settings.use_tls,
+                    from_address: settings.from_address,
+                    to_addresses: settings.to_addresses,
+                    min_priority,
+                    batch_window_secs: settings_json
+                        .get("batch_window_secs")
+                        .and_then(|v| v.as_u64())
+                        .unwrap_or(60),
+                }))
+            }
+            ChannelType::Webhook => {
+                let settings: WebhookChannelSettings =
+                    serde_json::from_value(settings_json.clone())?;
+
+                let mut headers_vec = Vec::new();
+                if let Some(headers) = settings.headers {
+                    let mut keys: Vec<_> = headers.keys().cloned().collect();
+                    keys.sort();
+                    for k in keys {
+                        if let Some(v) = headers.get(&k) {
+                            headers_vec.push((k.clone(), v.clone()));
+                        }
+                    }
+                }
+
+                Arc::new(WebhookChannel::new(super::channels::WebhookConfig {
+                    enabled: true,
+                    url: settings.url,
+                    method: settings.method,
+                    headers: headers_vec,
+                    auth: None,
+                    min_priority,
+                    timeout_secs: settings_json
+                        .get("timeout_secs")
+                        .and_then(|v| v.as_u64())
+                        .unwrap_or(30),
+                }))
+            }
+        };
+
+        if !runtime_channel.is_enabled() {
+            return Ok(None);
+        }
+
+        Ok(Some(RuntimeChannel {
+            key: db_channel.id.clone(),
+            db_channel_id: Some(db_channel.id.clone()),
+            display_name: db_channel.name.clone(),
+            channel_type: db_channel.channel_type.clone(),
+            channel: runtime_channel,
+        }))
     }
 
     /// Subscribe to notification events.
@@ -259,13 +505,53 @@ impl NotificationService {
 
         // Queue the notification
         let id = self.next_id.fetch_add(1, Ordering::SeqCst);
+        let channels = self.channels.read().clone();
+        if channels.is_empty() {
+            return Ok(());
+        }
+
+        let subscribed_db_channel_ids = {
+            let subscriptions = self.subscriptions_by_event.read();
+            let mut ids: HashSet<String> = HashSet::new();
+            for key in notification_event_subscription_keys(&event) {
+                if let Some(channels) = subscriptions.get(*key) {
+                    ids.extend(channels.iter().cloned());
+                }
+            }
+            ids
+        };
+
+        let target_channels: Vec<RuntimeChannel> = channels
+            .into_iter()
+            .filter(|c| match &c.db_channel_id {
+                None => true, // config/dynamic channels always receive events
+                Some(db_id) => subscribed_db_channel_ids.contains(db_id),
+            })
+            .collect();
+
+        if target_channels.is_empty() {
+            return Ok(());
+        }
+
+        let mut channel_state = HashMap::new();
+        for channel in &target_channels {
+            channel_state
+                .entry(channel.key.clone())
+                .or_insert(ChannelDeliveryState {
+                    status: DeliveryStatus::Pending,
+                    attempts: 0,
+                    last_attempt: None,
+                    last_error: None,
+                });
+        }
+
         let pending = PendingNotification {
             id,
             event: event.clone(),
-            attempts: 0,
             created_at: Utc::now(),
-            last_attempt: None,
-            last_error: None,
+            channel_state,
+            retry_generation: 0,
+            next_retry_at: None,
         };
 
         // Check queue size
@@ -290,83 +576,18 @@ impl NotificationService {
     /// Process a pending notification.
     async fn process_notification(&self, id: u64) {
         let channels = self.channels.read().clone();
-
-        for channel in &channels {
-            let channel_type = channel.channel_type().to_string();
-
-            // Check circuit breaker
-            let allowed = self
-                .circuit_breakers
-                .get(&channel_type)
-                .map(|cb| cb.is_allowed())
-                .unwrap_or(true);
-
-            if !allowed {
-                debug!(
-                    "Circuit breaker open for channel {}, skipping",
-                    channel_type
-                );
-                continue;
-            }
-
-            // Get the pending notification
-            let event = match self.pending_queue.get(&id) {
-                Some(pending) => pending.event.clone(),
-                None => continue,
-            };
-
-            // Attempt to send
-            match channel.send(&event).await {
-                Ok(()) => {
-                    // Record success
-                    if let Some(mut cb) = self.circuit_breakers.get_mut(&channel_type) {
-                        cb.record_success();
-                    }
-                    debug!("Notification {} sent via {}", id, channel_type);
-                }
-                Err(e) => {
-                    // Record failure
-                    if let Some(mut cb) = self.circuit_breakers.get_mut(&channel_type) {
-                        cb.record_failure(self.config.circuit_breaker_threshold);
-                    }
-
-                    // Update pending notification
-                    if let Some(mut pending) = self.pending_queue.get_mut(&id) {
-                        pending.attempts += 1;
-                        pending.last_attempt = Some(Utc::now());
-                        pending.last_error = Some(e.to_string());
-
-                        if pending.attempts >= self.config.max_retries {
-                            // Move to dead letter queue
-                            let dead_letter = DeadLetterEntry {
-                                id,
-                                event: pending.event.clone(),
-                                channel_type: channel_type.clone(),
-                                attempts: pending.attempts,
-                                error: e.to_string(),
-                                created_at: pending.created_at,
-                                dead_lettered_at: Utc::now(),
-                            };
-                            drop(pending);
-                            self.pending_queue.remove(&id);
-                            self.dead_letters.insert(id, dead_letter);
-                            warn!(
-                                "Notification {} moved to dead letter queue after {} attempts",
-                                id, self.config.max_retries
-                            );
-                        } else {
-                            // Schedule retry
-                            let delay = self.calculate_retry_delay(pending.attempts);
-                            drop(pending);
-                            self.schedule_retry(id, delay);
-                        }
-                    }
-                }
-            }
-        }
-
-        // Remove from pending if all channels succeeded
-        self.pending_queue.remove(&id);
+        Self::process_notification_detached(
+            id,
+            channels,
+            self.pending_queue.clone(),
+            self.dead_letters.clone(),
+            self.circuit_breakers.clone(),
+            self.notification_repo.clone(),
+            self.config.clone(),
+            self.next_dead_letter_id.clone(),
+            self.cancellation_token.clone(),
+        )
+        .await;
     }
 
     /// Calculate retry delay with exponential backoff and jitter.
@@ -389,53 +610,250 @@ impl NotificationService {
         Duration::from_millis(delay_ms.saturating_add(jitter))
     }
 
-    /// Schedule a retry for a notification.
-    fn schedule_retry(&self, id: u64, delay: Duration) {
-        debug!("Scheduling retry for notification {} in {:?}", id, delay);
-
-        let pending_queue = self.pending_queue.clone();
-        let channels = self.channels.read().clone();
-        let circuit_breakers = self.circuit_breakers.clone();
-        let config = self.config.clone();
+    fn spawn_retry_detached(
+        id: u64,
+        delay: Duration,
+        expected_generation: u64,
+        channels: Vec<RuntimeChannel>,
+        pending_queue: Arc<DashMap<u64, PendingNotification>>,
+        dead_letters: Arc<DashMap<u64, DeadLetterEntry>>,
+        circuit_breakers: Arc<DashMap<String, CircuitBreakerState>>,
+        notification_repo: Option<Arc<dyn NotificationRepository>>,
+        config: NotificationServiceConfig,
+        next_dead_letter_id: Arc<AtomicU64>,
+        cancellation_token: CancellationToken,
+    ) {
+        debug!(
+            "Scheduling retry for notification {} in {:?} (gen={})",
+            id, delay, expected_generation
+        );
 
         tokio::spawn(async move {
-            sleep(delay).await;
+            tokio::select! {
+                _ = cancellation_token.cancelled() => return,
+                _ = sleep(delay) => {},
+            }
 
-            if let Some(pending) = pending_queue.get(&id) {
-                let event = pending.event.clone();
-                drop(pending);
+            let should_run = pending_queue
+                .get(&id)
+                .map(|p| p.retry_generation == expected_generation)
+                .unwrap_or(false);
+            if !should_run {
+                return;
+            }
 
-                // Process notification inline instead of recursive call
-                for channel in &channels {
-                    let channel_type = channel.channel_type().to_string();
+            Self::process_notification_detached(
+                id,
+                channels,
+                pending_queue,
+                dead_letters,
+                circuit_breakers,
+                notification_repo,
+                config,
+                next_dead_letter_id,
+                cancellation_token,
+            )
+            .await;
+        });
+    }
 
-                    let allowed = circuit_breakers
-                        .get(&channel_type)
-                        .map(|cb| cb.is_allowed())
-                        .unwrap_or(true);
+    fn calculate_retry_delay_detached(
+        config: &NotificationServiceConfig,
+        attempts: u32,
+    ) -> Duration {
+        let base_delay = config.initial_retry_delay_ms;
+        let max_delay = config.max_retry_delay_ms;
 
-                    if !allowed {
-                        continue;
+        let delay_ms = base_delay.saturating_mul(2u64.saturating_pow(attempts));
+        let delay_ms = delay_ms.min(max_delay);
+
+        let jitter_range = delay_ms / 4;
+        let jitter = if jitter_range > 0 {
+            (rand::random::<u64>() % (jitter_range * 2)).saturating_sub(jitter_range)
+        } else {
+            0
+        };
+
+        Duration::from_millis(delay_ms.saturating_add(jitter))
+    }
+
+    async fn process_notification_detached(
+        id: u64,
+        channels: Vec<RuntimeChannel>,
+        pending_queue: Arc<DashMap<u64, PendingNotification>>,
+        dead_letters: Arc<DashMap<u64, DeadLetterEntry>>,
+        circuit_breakers: Arc<DashMap<String, CircuitBreakerState>>,
+        notification_repo: Option<Arc<dyn NotificationRepository>>,
+        config: NotificationServiceConfig,
+        next_dead_letter_id: Arc<AtomicU64>,
+        cancellation_token: CancellationToken,
+    ) {
+        let pending_snapshot = match pending_queue.get(&id) {
+            Some(p) => p.clone(),
+            None => return,
+        };
+
+        let mut circuit_blocked = false;
+
+        for channel in &channels {
+            let channel_key = channel.key.clone();
+
+            let is_pending = pending_queue
+                .get(&id)
+                .and_then(|p| p.channel_state.get(&channel_key).map(|cs| cs.status))
+                == Some(DeliveryStatus::Pending);
+            if !is_pending {
+                continue;
+            }
+
+            let allowed = circuit_breakers
+                .get(&channel_key)
+                .map(|cb| cb.is_allowed())
+                .unwrap_or(true);
+            if !allowed {
+                circuit_blocked = true;
+                continue;
+            }
+
+            let event = pending_snapshot.event.clone();
+            match channel.channel.send(&event).await {
+                Ok(()) => {
+                    if let Some(mut cb) = circuit_breakers.get_mut(&channel_key) {
+                        cb.record_success();
+                    }
+                    if let Some(mut p) = pending_queue.get_mut(&id) {
+                        if let Some(cs) = p.channel_state.get_mut(&channel_key) {
+                            cs.status = DeliveryStatus::Delivered;
+                            cs.last_attempt = Some(Utc::now());
+                            cs.last_error = None;
+                        }
+                    }
+                    debug!("Notification {} sent via {}", id, channel.channel_type);
+                }
+                Err(e) => {
+                    if let Some(mut cb) = circuit_breakers.get_mut(&channel_key) {
+                        cb.record_failure(config.circuit_breaker_threshold);
                     }
 
-                    match channel.send(&event).await {
-                        Ok(()) => {
-                            if let Some(mut cb) = circuit_breakers.get_mut(&channel_type) {
-                                cb.record_success();
+                    let now = Utc::now();
+                    let mut attempts = 0;
+                    let mut dead_lettered = false;
+
+                    if let Some(mut p) = pending_queue.get_mut(&id) {
+                        if let Some(cs) = p.channel_state.get_mut(&channel_key) {
+                            cs.attempts += 1;
+                            cs.last_attempt = Some(now);
+                            cs.last_error = Some(e.to_string());
+                            attempts = cs.attempts;
+                            if cs.attempts >= config.max_retries {
+                                cs.status = DeliveryStatus::DeadLettered;
+                                dead_lettered = true;
                             }
                         }
-                        Err(e) => {
-                            if let Some(mut cb) = circuit_breakers.get_mut(&channel_type) {
-                                cb.record_failure(config.circuit_breaker_threshold);
+                    }
+
+                    if dead_lettered {
+                        if let (Some(repo), Some(db_channel_id)) =
+                            (notification_repo.clone(), channel.db_channel_id.clone())
+                        {
+                            if let Ok(payload) = serde_json::to_string(&pending_snapshot.event) {
+                                let db_entry = NotificationDeadLetterDbModel::new(
+                                    db_channel_id.clone(),
+                                    pending_snapshot.event.event_type(),
+                                    payload,
+                                    e.to_string(),
+                                    attempts as i32,
+                                    pending_snapshot.created_at.to_rfc3339(),
+                                );
+                                if let Err(err) = repo.add_to_dead_letter(&db_entry).await {
+                                    warn!(
+                                        "Failed to persist dead letter entry for channel {}: {}",
+                                        db_channel_id, err
+                                    );
+                                }
                             }
-                            warn!("Retry failed for notification {}: {}", id, e);
                         }
+
+                        let dead_letter_id = next_dead_letter_id.fetch_add(1, Ordering::SeqCst);
+                        dead_letters.insert(
+                            dead_letter_id,
+                            DeadLetterEntry {
+                                id: dead_letter_id,
+                                notification_id: id,
+                                event: pending_snapshot.event.clone(),
+                                channel_id: channel.db_channel_id.clone(),
+                                channel_type: channel.channel_type.clone(),
+                                attempts,
+                                error: e.to_string(),
+                                created_at: pending_snapshot.created_at,
+                                dead_lettered_at: now,
+                            },
+                        );
+                        warn!(
+                            "Notification {} dead-lettered for channel {} after {} attempts",
+                            id, channel.channel_type, config.max_retries
+                        );
                     }
                 }
-
-                pending_queue.remove(&id);
             }
-        });
+        }
+
+        let (has_pending, min_delay) = match pending_queue.get(&id) {
+            Some(p) => {
+                let mut min_delay: Option<Duration> = None;
+                let mut has_pending = false;
+                for cs in p.channel_state.values() {
+                    if cs.status != DeliveryStatus::Pending {
+                        continue;
+                    }
+                    has_pending = true;
+                    let delay = Self::calculate_retry_delay_detached(&config, cs.attempts);
+                    min_delay = Some(match min_delay {
+                        Some(existing) => existing.min(delay),
+                        None => delay,
+                    });
+                }
+                (has_pending, min_delay)
+            }
+            None => return,
+        };
+
+        if !has_pending {
+            pending_queue.remove(&id);
+            return;
+        }
+
+        let mut delay = min_delay.unwrap_or_else(|| Duration::from_secs(1));
+        if circuit_blocked {
+            delay = delay.max(Duration::from_secs(config.circuit_breaker_cooldown_secs));
+        }
+
+        let expected_generation = match pending_queue.get_mut(&id) {
+            Some(mut p) => {
+                p.retry_generation = p.retry_generation.saturating_add(1);
+                p.next_retry_at = Some(
+                    Utc::now()
+                        + chrono::Duration::from_std(delay)
+                            .unwrap_or_else(|_| chrono::Duration::seconds(delay.as_secs() as i64)),
+                );
+                p.retry_generation
+            }
+            None => return,
+        };
+
+        Self::spawn_retry_detached(
+            id,
+            delay,
+            expected_generation,
+            channels,
+            pending_queue,
+            dead_letters,
+            circuit_breakers,
+            notification_repo,
+            config,
+            next_dead_letter_id,
+            cancellation_token,
+        );
     }
 
     /// Get dead letter entries.
@@ -483,7 +901,7 @@ impl NotificationService {
 
     /// Start listening for system events.
     pub fn start_event_listeners(
-        &self,
+        self: &Arc<Self>,
         monitor_rx: broadcast::Receiver<MonitorEvent>,
         download_rx: broadcast::Receiver<DownloadManagerEvent>,
         pipeline_rx: broadcast::Receiver<PipelineEvent>,
@@ -494,10 +912,10 @@ impl NotificationService {
     }
 
     /// Listen for monitor events.
-    fn listen_for_monitor_events(&self, mut rx: broadcast::Receiver<MonitorEvent>) {
-        let config = self.config.clone();
-        let event_tx = self.event_tx.clone();
-        let cancellation_token = self.cancellation_token.clone();
+    fn listen_for_monitor_events(self: &Arc<Self>, mut rx: broadcast::Receiver<MonitorEvent>) {
+        let service = Arc::clone(self);
+        let config = service.config.clone();
+        let cancellation_token = service.cancellation_token.clone();
 
         tokio::spawn(async move {
             loop {
@@ -510,6 +928,10 @@ impl NotificationService {
                         match result {
                             Ok(event) => {
                                 if !config.enabled {
+                                    continue;
+                                }
+
+                                if !event.should_notify() {
                                     continue;
                                 }
 
@@ -557,7 +979,12 @@ impl NotificationService {
                                 };
 
                                 if let Some(notification) = notification {
-                                    let _ = event_tx.send(notification);
+                                    let service = service.clone();
+                                    tokio::spawn(async move {
+                                        if let Err(e) = service.notify(notification).await {
+                                            warn!("Failed to dispatch notification: {}", e);
+                                        }
+                                    });
                                 }
                             }
                             Err(broadcast::error::RecvError::Lagged(n)) => {
@@ -575,10 +1002,13 @@ impl NotificationService {
     }
 
     /// Listen for download events.
-    fn listen_for_download_events(&self, mut rx: broadcast::Receiver<DownloadManagerEvent>) {
-        let config = self.config.clone();
-        let event_tx = self.event_tx.clone();
-        let cancellation_token = self.cancellation_token.clone();
+    fn listen_for_download_events(
+        self: &Arc<Self>,
+        mut rx: broadcast::Receiver<DownloadManagerEvent>,
+    ) {
+        let service = Arc::clone(self);
+        let config = service.config.clone();
+        let cancellation_token = service.cancellation_token.clone();
 
         tokio::spawn(async move {
             loop {
@@ -635,7 +1065,12 @@ impl NotificationService {
                                 };
 
                                 if let Some(notification) = notification {
-                                    let _ = event_tx.send(notification);
+                                    let service = service.clone();
+                                    tokio::spawn(async move {
+                                        if let Err(e) = service.notify(notification).await {
+                                            warn!("Failed to dispatch notification: {}", e);
+                                        }
+                                    });
                                 }
                             }
                             Err(broadcast::error::RecvError::Lagged(n)) => {
@@ -653,12 +1088,13 @@ impl NotificationService {
     }
 
     /// Listen for pipeline events.
-    fn listen_for_pipeline_events(&self, mut rx: broadcast::Receiver<PipelineEvent>) {
-        let config = self.config.clone();
-        let event_tx = self.event_tx.clone();
-        let cancellation_token = self.cancellation_token.clone();
+    fn listen_for_pipeline_events(self: &Arc<Self>, mut rx: broadcast::Receiver<PipelineEvent>) {
+        let service = Arc::clone(self);
+        let config = service.config.clone();
+        let cancellation_token = service.cancellation_token.clone();
 
         tokio::spawn(async move {
+            let mut job_to_streamer: HashMap<String, String> = HashMap::new();
             loop {
                 tokio::select! {
                     _ = cancellation_token.cancelled() => {
@@ -673,11 +1109,19 @@ impl NotificationService {
                                 }
 
                                 let notification = match event {
+                                    PipelineEvent::JobEnqueued { job_id, streamer_id, .. } => {
+                                        job_to_streamer.insert(job_id, streamer_id);
+                                        None
+                                    }
                                     PipelineEvent::JobStarted { job_id, job_type } => {
+                                        let streamer_id = job_to_streamer
+                                            .get(&job_id)
+                                            .cloned()
+                                            .unwrap_or_default();
                                         Some(NotificationEvent::PipelineStarted {
                                             job_id,
                                             job_type,
-                                            streamer_id: String::new(),
+                                            streamer_id,
                                             timestamp: Utc::now(),
                                         })
                                     }
@@ -685,23 +1129,29 @@ impl NotificationService {
                                         job_id,
                                         job_type,
                                         duration_secs,
-                                    } => Some(NotificationEvent::PipelineCompleted {
-                                        job_id,
-                                        job_type,
-                                        output_path: None,
-                                        duration_secs,
-                                        timestamp: Utc::now(),
-                                    }),
+                                    } => {
+                                        job_to_streamer.remove(&job_id);
+                                        Some(NotificationEvent::PipelineCompleted {
+                                            job_id,
+                                            job_type,
+                                            output_path: None,
+                                            duration_secs,
+                                            timestamp: Utc::now(),
+                                        })
+                                    }
                                     PipelineEvent::JobFailed {
                                         job_id,
                                         job_type,
                                         error,
-                                    } => Some(NotificationEvent::PipelineFailed {
-                                        job_id,
-                                        job_type,
-                                        error_message: error,
-                                        timestamp: Utc::now(),
-                                    }),
+                                    } => {
+                                        job_to_streamer.remove(&job_id);
+                                        Some(NotificationEvent::PipelineFailed {
+                                            job_id,
+                                            job_type,
+                                            error_message: error,
+                                            timestamp: Utc::now(),
+                                        })
+                                    }
                                     PipelineEvent::QueueWarning { depth } => {
                                         Some(NotificationEvent::PipelineQueueWarning {
                                             queue_depth: depth,
@@ -716,11 +1166,15 @@ impl NotificationService {
                                             timestamp: Utc::now(),
                                         })
                                     }
-                                    _ => None,
                                 };
 
                                 if let Some(notification) = notification {
-                                    let _ = event_tx.send(notification);
+                                    let service = service.clone();
+                                    tokio::spawn(async move {
+                                        if let Err(e) = service.notify(notification).await {
+                                            warn!("Failed to dispatch notification: {}", e);
+                                        }
+                                    });
                                 }
                             }
                             Err(broadcast::error::RecvError::Lagged(n)) => {
@@ -752,6 +1206,76 @@ impl NotificationService {
     }
 }
 
+fn parse_notification_priority(value: &str) -> Option<NotificationPriority> {
+    match value.trim().to_ascii_lowercase().as_str() {
+        "low" => Some(NotificationPriority::Low),
+        "normal" => Some(NotificationPriority::Normal),
+        "high" => Some(NotificationPriority::High),
+        "critical" => Some(NotificationPriority::Critical),
+        _ => None,
+    }
+}
+
+fn notification_event_subscription_keys(event: &NotificationEvent) -> &'static [&'static str] {
+    match event {
+        NotificationEvent::StreamOnline { .. } => {
+            &["stream_online", "streamer.online", "StreamOnline"]
+        }
+        NotificationEvent::StreamOffline { .. } => {
+            &["stream_offline", "streamer.offline", "StreamOffline"]
+        }
+        NotificationEvent::DownloadStarted { .. } => {
+            &["download_started", "download.started", "DownloadStarted"]
+        }
+        NotificationEvent::DownloadCompleted { .. } => &[
+            "download_completed",
+            "download.complete",
+            "download.completed",
+            "DownloadCompleted",
+        ],
+        NotificationEvent::DownloadError { .. } => {
+            &["download_error", "download.error", "DownloadError"]
+        }
+        NotificationEvent::PipelineStarted { .. } => {
+            &["pipeline_started", "pipeline.started", "PipelineStarted"]
+        }
+        NotificationEvent::PipelineCompleted { .. } => &[
+            "pipeline_completed",
+            "pipeline.complete",
+            "pipeline.completed",
+            "PipelineCompleted",
+        ],
+        NotificationEvent::PipelineFailed { .. } => {
+            &["pipeline_failed", "pipeline.failed", "PipelineFailed"]
+        }
+        NotificationEvent::PipelineCancelled { .. } => &[
+            "pipeline_cancelled",
+            "pipeline.cancelled",
+            "PipelineCancelled",
+        ],
+        NotificationEvent::FatalError { .. } => &["fatal_error", "fatal.error", "FatalError"],
+        NotificationEvent::OutOfSpace { .. } => {
+            &["out_of_space", "disk.out_of_space", "OutOfSpace"]
+        }
+        NotificationEvent::PipelineQueueWarning { .. } => &[
+            "pipeline_queue_warning",
+            "pipeline.queue.warning",
+            "PipelineQueueWarning",
+        ],
+        NotificationEvent::PipelineQueueCritical { .. } => &[
+            "pipeline_queue_critical",
+            "pipeline.queue.critical",
+            "PipelineQueueCritical",
+        ],
+        NotificationEvent::SystemStartup { .. } => {
+            &["system_startup", "system.startup", "SystemStartup"]
+        }
+        NotificationEvent::SystemShutdown { .. } => {
+            &["system_shutdown", "system.shutdown", "SystemShutdown"]
+        }
+    }
+}
+
 impl Default for NotificationService {
     fn default() -> Self {
         Self::new()
@@ -767,7 +1291,7 @@ pub struct NotificationStats {
     pub dead_letter_count: usize,
     /// Number of configured channels.
     pub channel_count: usize,
-    /// Circuit breaker states (channel_type -> is_open).
+    /// Circuit breaker states (channel_key -> is_open).
     pub circuit_breakers: HashMap<String, bool>,
 }
 
@@ -858,5 +1382,284 @@ mod tests {
 
         service.add_channel(config);
         assert_eq!(service.stats().channel_count, 1);
+    }
+
+    struct TestChannel {
+        channel_type: &'static str,
+        fail_for_attempts: u32,
+        attempts: Arc<std::sync::atomic::AtomicU32>,
+    }
+
+    #[async_trait::async_trait]
+    impl NotificationChannel for TestChannel {
+        fn channel_type(&self) -> &'static str {
+            self.channel_type
+        }
+
+        fn is_enabled(&self) -> bool {
+            true
+        }
+
+        async fn send(&self, _event: &NotificationEvent) -> Result<()> {
+            let attempt = self.attempts.fetch_add(1, Ordering::SeqCst) + 1;
+            if attempt <= self.fail_for_attempts {
+                Err(crate::Error::Other(format!("forced failure {}", attempt)))
+            } else {
+                Ok(())
+            }
+        }
+
+        async fn test(&self) -> Result<()> {
+            Ok(())
+        }
+    }
+
+    #[tokio::test]
+    async fn retries_do_not_duplicate_successful_channels() {
+        let config = NotificationServiceConfig {
+            enabled: true,
+            max_retries: 3,
+            initial_retry_delay_ms: 5,
+            max_retry_delay_ms: 20,
+            circuit_breaker_threshold: 100,
+            circuit_breaker_cooldown_secs: 1,
+            ..Default::default()
+        };
+        let service = NotificationService::with_config(config);
+
+        let ok_attempts = Arc::new(std::sync::atomic::AtomicU32::new(0));
+        let flaky_attempts = Arc::new(std::sync::atomic::AtomicU32::new(0));
+
+        service.channels.write().push(RuntimeChannel {
+            key: "ok".to_string(),
+            db_channel_id: None,
+            display_name: "ok".to_string(),
+            channel_type: "test".to_string(),
+            channel: Arc::new(TestChannel {
+                channel_type: "ok",
+                fail_for_attempts: 0,
+                attempts: ok_attempts.clone(),
+            }),
+        });
+        service
+            .circuit_breakers
+            .insert("ok".to_string(), CircuitBreakerState::new(1));
+
+        service.channels.write().push(RuntimeChannel {
+            key: "flaky".to_string(),
+            db_channel_id: None,
+            display_name: "flaky".to_string(),
+            channel_type: "test".to_string(),
+            channel: Arc::new(TestChannel {
+                channel_type: "flaky",
+                fail_for_attempts: 1,
+                attempts: flaky_attempts.clone(),
+            }),
+        });
+        service
+            .circuit_breakers
+            .insert("flaky".to_string(), CircuitBreakerState::new(1));
+
+        let event = NotificationEvent::SystemStartup {
+            version: "test".to_string(),
+            timestamp: Utc::now(),
+        };
+
+        service.notify(event).await.unwrap();
+
+        tokio::time::sleep(Duration::from_millis(200)).await;
+
+        assert_eq!(ok_attempts.load(Ordering::SeqCst), 1);
+        assert!(flaky_attempts.load(Ordering::SeqCst) >= 2);
+        assert_eq!(service.stats().pending_count, 0);
+    }
+
+    struct MockNotificationRepo {
+        dead_letters: tokio::sync::Mutex<Vec<NotificationDeadLetterDbModel>>,
+    }
+
+    impl MockNotificationRepo {
+        fn new() -> Self {
+            Self {
+                dead_letters: tokio::sync::Mutex::new(Vec::new()),
+            }
+        }
+    }
+
+    #[async_trait::async_trait]
+    impl NotificationRepository for MockNotificationRepo {
+        async fn get_channel(&self, _id: &str) -> Result<NotificationChannelDbModel> {
+            unimplemented!()
+        }
+
+        async fn list_channels(&self) -> Result<Vec<NotificationChannelDbModel>> {
+            unimplemented!()
+        }
+
+        async fn create_channel(&self, _channel: &NotificationChannelDbModel) -> Result<()> {
+            unimplemented!()
+        }
+
+        async fn update_channel(&self, _channel: &NotificationChannelDbModel) -> Result<()> {
+            unimplemented!()
+        }
+
+        async fn delete_channel(&self, _id: &str) -> Result<()> {
+            unimplemented!()
+        }
+
+        async fn get_subscriptions_for_channel(&self, _channel_id: &str) -> Result<Vec<String>> {
+            unimplemented!()
+        }
+
+        async fn get_channels_for_event(
+            &self,
+            _event_name: &str,
+        ) -> Result<Vec<NotificationChannelDbModel>> {
+            unimplemented!()
+        }
+
+        async fn subscribe(&self, _channel_id: &str, _event_name: &str) -> Result<()> {
+            unimplemented!()
+        }
+
+        async fn unsubscribe(&self, _channel_id: &str, _event_name: &str) -> Result<()> {
+            unimplemented!()
+        }
+
+        async fn unsubscribe_all(&self, _channel_id: &str) -> Result<()> {
+            unimplemented!()
+        }
+
+        async fn add_to_dead_letter(&self, entry: &NotificationDeadLetterDbModel) -> Result<()> {
+            self.dead_letters.lock().await.push(entry.clone());
+            Ok(())
+        }
+
+        async fn list_dead_letters(
+            &self,
+            _channel_id: Option<&str>,
+            _limit: i32,
+        ) -> Result<Vec<NotificationDeadLetterDbModel>> {
+            unimplemented!()
+        }
+
+        async fn get_dead_letter(&self, _id: &str) -> Result<NotificationDeadLetterDbModel> {
+            unimplemented!()
+        }
+
+        async fn delete_dead_letter(&self, _id: &str) -> Result<()> {
+            unimplemented!()
+        }
+
+        async fn cleanup_old_dead_letters(&self, _retention_days: i32) -> Result<i32> {
+            unimplemented!()
+        }
+    }
+
+    #[tokio::test]
+    async fn db_subscriptions_filter_delivery() {
+        let repo = Arc::new(MockNotificationRepo::new());
+        let service =
+            NotificationService::with_repository(NotificationServiceConfig::default(), repo);
+
+        let subscribed_attempts = Arc::new(std::sync::atomic::AtomicU32::new(0));
+        let unsubscribed_attempts = Arc::new(std::sync::atomic::AtomicU32::new(0));
+
+        service.channels.write().push(RuntimeChannel {
+            key: "channel-1".to_string(),
+            db_channel_id: Some("channel-1".to_string()),
+            display_name: "Channel 1".to_string(),
+            channel_type: "WEBHOOK".to_string(),
+            channel: Arc::new(TestChannel {
+                channel_type: "subscribed",
+                fail_for_attempts: 0,
+                attempts: subscribed_attempts.clone(),
+            }),
+        });
+        service
+            .circuit_breakers
+            .insert("channel-1".to_string(), CircuitBreakerState::new(1));
+
+        service.channels.write().push(RuntimeChannel {
+            key: "channel-2".to_string(),
+            db_channel_id: Some("channel-2".to_string()),
+            display_name: "Channel 2".to_string(),
+            channel_type: "WEBHOOK".to_string(),
+            channel: Arc::new(TestChannel {
+                channel_type: "unsubscribed",
+                fail_for_attempts: 0,
+                attempts: unsubscribed_attempts.clone(),
+            }),
+        });
+        service
+            .circuit_breakers
+            .insert("channel-2".to_string(), CircuitBreakerState::new(1));
+
+        service
+            .subscriptions_by_event
+            .write()
+            .insert("system_startup".to_string(), vec!["channel-1".to_string()]);
+
+        service
+            .notify(NotificationEvent::SystemStartup {
+                version: "test".to_string(),
+                timestamp: Utc::now(),
+            })
+            .await
+            .unwrap();
+
+        tokio::time::sleep(Duration::from_millis(50)).await;
+        assert_eq!(subscribed_attempts.load(Ordering::SeqCst), 1);
+        assert_eq!(unsubscribed_attempts.load(Ordering::SeqCst), 0);
+    }
+
+    #[tokio::test]
+    async fn dead_letters_persisted_to_repository() {
+        let repo = Arc::new(MockNotificationRepo::new());
+        let config = NotificationServiceConfig {
+            max_retries: 1,
+            initial_retry_delay_ms: 1,
+            max_retry_delay_ms: 5,
+            ..Default::default()
+        };
+        let service = NotificationService::with_repository(config, repo.clone());
+
+        let attempts = Arc::new(std::sync::atomic::AtomicU32::new(0));
+        service.channels.write().push(RuntimeChannel {
+            key: "channel-1".to_string(),
+            db_channel_id: Some("channel-1".to_string()),
+            display_name: "Channel 1".to_string(),
+            channel_type: "WEBHOOK".to_string(),
+            channel: Arc::new(TestChannel {
+                channel_type: "fail",
+                fail_for_attempts: 1,
+                attempts: attempts.clone(),
+            }),
+        });
+        service
+            .circuit_breakers
+            .insert("channel-1".to_string(), CircuitBreakerState::new(1));
+
+        service
+            .subscriptions_by_event
+            .write()
+            .insert("system_startup".to_string(), vec!["channel-1".to_string()]);
+
+        service
+            .notify(NotificationEvent::SystemStartup {
+                version: "test".to_string(),
+                timestamp: Utc::now(),
+            })
+            .await
+            .unwrap();
+
+        tokio::time::sleep(Duration::from_millis(50)).await;
+
+        let persisted = repo.dead_letters.lock().await;
+        assert_eq!(persisted.len(), 1);
+        assert_eq!(persisted[0].channel_id, "channel-1");
+        assert_eq!(persisted[0].event_name, "system_startup");
+        assert_eq!(persisted[0].retry_count, 1);
     }
 }

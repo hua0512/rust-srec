@@ -22,6 +22,7 @@ use crate::danmu::{
     service::{DanmuEvent, DanmuServiceConfig},
 };
 use crate::database::maintenance::{MaintenanceConfig, MaintenanceScheduler};
+use crate::database::repositories::SqlxNotificationRepository;
 use crate::database::repositories::{
     config::SqlxConfigRepository,
     filter::SqlxFilterRepository,
@@ -171,8 +172,10 @@ impl ServiceContainer {
         let danmu_service = Arc::new(DanmuService::new(DanmuServiceConfig::default()));
 
         // Create notification service with default config
-        let notification_service = Arc::new(NotificationService::with_config(
+        let notification_repo = Arc::new(SqlxNotificationRepository::new(pool.clone()));
+        let notification_service = Arc::new(NotificationService::with_repository(
             NotificationServiceConfig::default(),
+            notification_repo,
         ));
 
         // Create metrics collector
@@ -294,8 +297,10 @@ impl ServiceContainer {
         let danmu_service = Arc::new(DanmuService::new(danmu_config));
 
         // Create notification service with default config
-        let notification_service = Arc::new(NotificationService::with_config(
+        let notification_repo = Arc::new(SqlxNotificationRepository::new(pool.clone()));
+        let notification_service = Arc::new(NotificationService::with_repository(
             NotificationServiceConfig::default(),
+            notification_repo,
         ));
 
         // Create metrics collector
@@ -378,6 +383,11 @@ impl ServiceContainer {
 
         // Wire danmu events to download manager for segment coordination
         self.setup_danmu_event_subscriptions();
+
+        // Load notification channels/subscriptions from DB (best-effort).
+        if let Err(e) = self.notification_service.reload_from_db().await {
+            warn!("Failed to load notification configuration from DB: {}", e);
+        }
 
         // Wire notification service to system events
         self.setup_notification_event_subscriptions();

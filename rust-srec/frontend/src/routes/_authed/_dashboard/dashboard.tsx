@@ -187,9 +187,9 @@ function Dashboard() {
                   icon={HardDrive}
                 />
                 <ComponentStatusCard
-                  name="Pipeline"
+                  name="Download Manager"
                   component={health.components.find(
-                    (c: any) => c.name === 'pipeline_manager',
+                    (c: any) => c.name === 'download_manager',
                   )}
                   icon={Activity}
                 />
@@ -367,7 +367,7 @@ function ComponentStatusCard({
         className={cn(
           'bg-card/50 backdrop-blur-sm border-primary/5 shadow-sm transition-all hover:shadow-md h-full',
           !isHealthy &&
-            'border-red-500/20 bg-red-500/5 text-red-600 dark:text-red-400',
+          'border-red-500/20 bg-red-500/5 text-red-600 dark:text-red-400',
         )}
       >
         <CardHeader className="pb-2 flex flex-row items-center justify-between space-y-0">

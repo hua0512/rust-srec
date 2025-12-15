@@ -344,7 +344,11 @@ impl Processor for CompressionProcessor {
         true
     }
 
-    async fn process(&self, input: &ProcessorInput, ctx: &ProcessorContext) -> Result<ProcessorOutput> {
+    async fn process(
+        &self,
+        input: &ProcessorInput,
+        ctx: &ProcessorContext,
+    ) -> Result<ProcessorOutput> {
         let start = std::time::Instant::now();
 
         // Initialize logs

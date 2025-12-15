@@ -156,7 +156,11 @@ impl Processor for DeleteProcessor {
         "DeleteProcessor"
     }
 
-    async fn process(&self, input: &ProcessorInput, _ctx: &ProcessorContext) -> Result<ProcessorOutput> {
+    async fn process(
+        &self,
+        input: &ProcessorInput,
+        _ctx: &ProcessorContext,
+    ) -> Result<ProcessorOutput> {
         let start = std::time::Instant::now();
         let mut logs = Vec::new();
 

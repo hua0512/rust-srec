@@ -5,7 +5,7 @@ import { z } from 'zod';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { t } from '@lingui/core/macro';
 import { Trans } from '@lingui/react/macro';
-import { motion } from 'motion/react';
+import { motion, AnimatePresence } from 'motion/react';
 import {
   Form,
   FormControl,
@@ -331,27 +331,36 @@ export function EngineEditor({ engine, onSuccess }: EngineEditorProps) {
             </CardContent>
           </Card>
 
-          {/* Floating Save Button */}
-          <div className="fixed bottom-6 right-6 md:bottom-10 md:right-10 z-50">
-            <Button
-              type="submit"
-              disabled={isSubmitting || !form.formState.isDirty}
-              size="lg"
-              className={cn(
-                'h-14 px-8 rounded-full font-semibold shadow-2xl shadow-primary/30 transition-all duration-300',
-                isSubmitting || !form.formState.isDirty
-                  ? 'opacity-50 grayscale scale-95'
-                  : 'bg-gradient-to-r from-primary to-primary/90 hover:scale-105 active:scale-95 hover:shadow-primary/50',
-              )}
-            >
-              {isSubmitting ? (
-                <Loader2 className="w-5 h-5 mr-2 animate-spin" />
-              ) : (
-                <Save className="w-5 h-5 mr-2" />
-              )}
-              {isEdit ? t`Save Changes` : t`Create Engine`}
-            </Button>
-          </div>
+          <AnimatePresence>
+            {form.formState.isDirty && (
+              <motion.div
+                initial={{ opacity: 0, y: 20, scale: 0.9 }}
+                animate={{ opacity: 1, y: 0, scale: 1 }}
+                exit={{ opacity: 0, y: 20, scale: 0.9 }}
+                transition={{ duration: 0.2 }}
+                className="fixed bottom-6 right-6 md:bottom-10 md:right-10 z-50"
+              >
+                <Button
+                  type="submit"
+                  disabled={isSubmitting}
+                  size="lg"
+                  className={cn(
+                    'h-14 px-8 rounded-full font-semibold shadow-2xl shadow-primary/30 transition-all duration-300',
+                    isSubmitting
+                      ? 'opacity-50 grayscale scale-95'
+                      : 'bg-gradient-to-r from-primary to-primary/90 hover:scale-105 active:scale-95 hover:shadow-primary/50',
+                  )}
+                >
+                  {isSubmitting ? (
+                    <Loader2 className="w-5 h-5 mr-2 animate-spin" />
+                  ) : (
+                    <Save className="w-5 h-5 mr-2" />
+                  )}
+                  {isEdit ? t`Save Changes` : t`Create Engine`}
+                </Button>
+              </motion.div>
+            )}
+          </AnimatePresence>
           {/* Add padding at bottom to prevent floating button from covering content */}
           <div className="h-24" />
         </form>
