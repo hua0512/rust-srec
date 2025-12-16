@@ -1413,8 +1413,8 @@ mod tests {
         assert_eq!(
             request.steps,
             Some(vec![
-                crate::database::models::job::PipelineStep::Preset("remux".to_string()),
-                crate::database::models::job::PipelineStep::Preset("upload".to_string())
+                crate::database::models::job::PipelineStep::preset("remux"),
+                crate::database::models::job::PipelineStep::preset("upload")
             ])
         );
     }

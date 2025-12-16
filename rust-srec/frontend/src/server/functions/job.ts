@@ -52,13 +52,18 @@ export const createJobPreset = createServerFn({ method: 'POST' })
       description?: string;
       category?: string;
       processor: string;
-      config: string;
+      config: Record<string, unknown>;
     }) => d,
   )
   .handler(async ({ data }) => {
+    // Stringify config before sending to backend
+    const payload = {
+      ...data,
+      config: JSON.stringify(data.config),
+    };
     const json = await fetchBackend('/job/presets', {
       method: 'POST',
-      body: JSON.stringify(data),
+      body: JSON.stringify(payload),
     });
     return JobPresetSchema.parse(json);
   });
@@ -71,11 +76,16 @@ export const updateJobPreset = createServerFn({ method: 'POST' })
       description?: string;
       category?: string;
       processor: string;
-      config: string;
+      config: Record<string, unknown>;
     }) => d,
   )
   .handler(async ({ data }) => {
-    const { id, ...body } = data;
+    const { id, ...rest } = data;
+    // Stringify config before sending to backend
+    const body = {
+      ...rest,
+      config: JSON.stringify(data.config),
+    };
     const json = await fetchBackend(`/job/presets/${id}`, {
       method: 'PUT',
       body: JSON.stringify(body),

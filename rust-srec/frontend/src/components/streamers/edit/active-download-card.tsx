@@ -36,7 +36,7 @@ export function ActiveDownloadCard({
                 variant="outline"
                 className="border-red-500/30 text-red-500 bg-red-500/10 animate-pulse"
               >
-                {download.status || 'Downloading'}
+                {download.status || <Trans>Downloading</Trans>}
               </Badge>
             </div>
 

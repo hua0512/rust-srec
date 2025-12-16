@@ -4,7 +4,7 @@ import { useQuery, keepPreviousData } from '@tanstack/react-query';
 import { motion, AnimatePresence } from 'motion/react';
 import { listPipelineOutputs } from '@/server/functions';
 import { Skeleton } from '@/components/ui/skeleton';
-import { Trans } from '@lingui/react/macro';
+import { Trans, useLingui } from '@lingui/react/macro';
 import { t } from '@lingui/core/macro';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
@@ -32,21 +32,12 @@ export const Route = createFileRoute('/_authed/_dashboard/pipeline/outputs')({
   component: PipelineOutputsPage,
 });
 
-const FORMAT_FILTERS = [
-  { value: null, label: 'All Formats' },
-  { value: 'mp4', label: 'MP4' },
-  { value: 'mkv', label: 'MKV' },
-  { value: 'flv', label: 'FLV' },
-  { value: 'ts', label: 'TS' },
-  { value: 'mp3', label: 'MP3' },
-  { value: 'm4a', label: 'M4A' },
-] as const;
-
 const PAGE_SIZES = [12, 24, 48, 96];
 
 import { formatBytes } from '@/lib/format';
 
 function PipelineOutputsPage() {
+  const { i18n } = useLingui();
   const [selectedFormat, setSelectedFormat] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [debouncedSearch, setDebouncedSearch] = useState('');
@@ -194,7 +185,7 @@ function PipelineOutputsPage() {
                 variant="secondary"
                 className="h-9 px-3 text-sm whitespace-nowrap"
               >
-                {totalOutputs} <Trans>files</Trans>
+                {i18n.number(totalOutputs)} <Trans>files</Trans>
               </Badge>
               <Badge
                 variant="outline"
@@ -210,10 +201,11 @@ function PipelineOutputsPage() {
             <nav className="flex items-center gap-1">
               <button
                 onClick={() => handleFormatChange(null)}
-                className={`relative px-3 py-1.5 text-sm font-medium rounded-full transition-all duration-200 ${selectedFormat === null
+                className={`relative px-3 py-1.5 text-sm font-medium rounded-full transition-all duration-200 ${
+                  selectedFormat === null
                     ? 'bg-primary text-primary-foreground shadow-sm'
                     : 'text-muted-foreground hover:text-foreground hover:bg-muted'
-                  }`}
+                }`}
               >
                 <span className="relative z-10 flex items-center gap-1.5">
                   <Trans>All</Trans>
@@ -224,10 +216,11 @@ function PipelineOutputsPage() {
                 <button
                   key={format}
                   onClick={() => handleFormatChange(format)}
-                  className={`relative px-3 py-1.5 text-sm font-medium rounded-full transition-all duration-200 ${selectedFormat === format
+                  className={`relative px-3 py-1.5 text-sm font-medium rounded-full transition-all duration-200 ${
+                    selectedFormat === format
                       ? 'bg-primary text-primary-foreground shadow-sm'
                       : 'text-muted-foreground hover:text-foreground hover:bg-muted'
-                    }`}
+                  }`}
                 >
                   <span className="relative z-10 uppercase">{format}</span>
                 </button>

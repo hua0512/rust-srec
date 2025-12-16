@@ -214,10 +214,7 @@ function SessionsPage() {
       animate="show"
     >
       {/* Header */}
-      <motion.div
-        className="border-b border-border/40"
-        variants={item}
-      >
+      <motion.div className="border-b border-border/40" variants={item}>
         <div className="w-full">
           <div className="flex flex-col md:flex-row gap-4 items-start md:items-center justify-between p-4 md:px-8">
             <div className="flex items-center gap-4">

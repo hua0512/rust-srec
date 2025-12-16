@@ -1,4 +1,3 @@
-'use client';
 import { Menu } from '@/components/sidebar/menu';
 import { SidebarToggle } from '@/components/sidebar/sidebar-toggle';
 import { Button } from '@/components/ui/button';
@@ -6,6 +5,7 @@ import { useSidebar } from '@/store/sidebar';
 import { useStore } from '@/hooks/use-store';
 import { cn } from '@/lib/utils';
 import { Link } from '@tanstack/react-router';
+import { Trans } from '@lingui/react/macro';
 
 import { useShallow } from 'zustand/react/shallow';
 
@@ -53,7 +53,7 @@ export function Sidebar() {
                   : 'translate-x-0 opacity-100',
               )}
             >
-              Rust-Srec
+              <Trans>Rust-Srec</Trans>
             </h1>
           </Link>
         </Button>

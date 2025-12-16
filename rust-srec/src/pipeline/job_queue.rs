@@ -948,7 +948,8 @@ impl JobQueue {
                 current_job.pipeline_id.clone(),
                 next_next_type.map(|s| match s {
                     PipelineStep::Inline { processor, .. } => processor,
-                    PipelineStep::Preset(name) => name,
+                    PipelineStep::Preset { name } => name,
+                    PipelineStep::Workflow { name } => name,
                 }),
                 next_remaining,
             );
@@ -2275,7 +2276,7 @@ mod tests {
         )
         .with_pipeline_id("pipeline-1".to_string())
         .with_next_job_type("upload".to_string())
-        .with_remaining_steps(vec![PipelineStep::Preset("thumbnail".to_string())]);
+        .with_remaining_steps(vec![PipelineStep::preset("thumbnail")]);
 
         let original_id = job.id.clone();
         queue.enqueue(job.clone()).await.unwrap();
@@ -2300,7 +2301,7 @@ mod tests {
             assert_eq!(split_job.next_job_type, Some("upload".to_string()));
             assert_eq!(
                 split_job.remaining_steps,
-                Some(vec![PipelineStep::Preset("thumbnail".to_string())])
+                Some(vec![PipelineStep::preset("thumbnail")])
             );
         }
     }
@@ -2599,7 +2600,7 @@ mod tests {
             "session-1",
             Some("pipeline-123".to_string()),
             Some("upload".to_string()),
-            Some(vec![PipelineStep::Preset("thumbnail".to_string())]),
+            Some(vec![PipelineStep::preset("thumbnail")]),
         );
         let job_id = job.id.clone();
         queue.enqueue(job).await.unwrap();
@@ -2610,7 +2611,7 @@ mod tests {
         assert_eq!(retrieved.next_job_type, Some("upload".to_string()));
         assert_eq!(
             retrieved.remaining_steps,
-            Some(vec![PipelineStep::Preset("thumbnail".to_string())])
+            Some(vec![PipelineStep::preset("thumbnail")])
         );
     }
 
@@ -2630,7 +2631,7 @@ mod tests {
             "session-1",
             Some("pipeline-123".to_string()),
             Some("upload".to_string()),
-            Some(vec![PipelineStep::Preset("thumbnail".to_string())]),
+            Some(vec![PipelineStep::preset("thumbnail")]),
         );
         let job_id = job.id.clone();
         queue.enqueue(job).await.unwrap();

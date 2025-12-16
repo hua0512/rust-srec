@@ -1,9 +1,8 @@
-'use client';
-
 import * as React from 'react';
 
 import { Link, useLocation } from '@tanstack/react-router';
 import { Ellipsis, LogOut } from 'lucide-react';
+import { Trans } from '@lingui/react/macro';
 
 import { cn } from '@/lib/utils';
 import { getMenuList } from '@/lib/menu-list';
@@ -136,13 +135,15 @@ export function MenuComponent({ isOpen, className }: MenuProps) {
                           isOpen === false ? 'opacity-0 hidden' : 'opacity-100',
                         )}
                       >
-                        Sign out
+                        <Trans>Sign out</Trans>
                       </p>
                     </Link>
                   </Button>
                 </TooltipTrigger>
                 {isOpen === false && (
-                  <TooltipContent side="right">Sign out</TooltipContent>
+                  <TooltipContent side="right">
+                    <Trans>Sign out</Trans>
+                  </TooltipContent>
                 )}
               </Tooltip>
             </TooltipProvider>

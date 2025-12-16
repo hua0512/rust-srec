@@ -1,4 +1,3 @@
-// ... imports
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
@@ -44,6 +43,9 @@ import {
   EngineConfigSchema,
   CreateEngineRequestSchema,
   UpdateEngineRequestSchema,
+  FfmpegConfigSchema,
+  StreamlinkConfigSchema,
+  MesioConfigSchema,
 } from '@/api/schemas';
 import { createEngine, updateEngine } from '@/server/functions';
 import { FfmpegForm } from './forms/ffmpeg-form';
@@ -53,27 +55,6 @@ import { useEffect } from 'react';
 import { Link } from '@tanstack/react-router';
 import { cn } from '@/lib/utils';
 import { Badge } from '@/components/ui/badge';
-
-// ... Schemas remain same
-const FfmpegConfigSchema = z.object({
-  binary_path: z.string().default('ffmpeg'),
-  input_args: z.array(z.string()).default([]),
-  output_args: z.array(z.string()).default([]),
-  timeout_secs: z.coerce.number().default(30),
-  user_agent: z.string().optional(),
-});
-
-const StreamlinkConfigSchema = z.object({
-  binary_path: z.string().default('streamlink'),
-  quality: z.string().default('best'),
-  extra_args: z.array(z.string()).default([]),
-});
-
-const MesioConfigSchema = z.object({
-  buffer_size: z.coerce.number().default(8388608),
-  fix_flv: z.boolean().default(true),
-  fix_hls: z.boolean().default(true),
-});
 
 interface EngineEditorProps {
   engine?: z.infer<typeof EngineConfigSchema>;
@@ -95,16 +76,10 @@ export function EngineEditor({ engine, onSuccess }: EngineEditorProps) {
 
   useEffect(() => {
     if (engine) {
-      let parsedConfig = {};
-      try {
-        parsedConfig = JSON.parse(engine.config);
-      } catch (e) {
-        console.error('Failed to parse engine config JSON', e);
-      }
       form.reset({
         name: engine.name,
         engine_type: engine.engine_type,
-        config: parsedConfig,
+        config: engine.config as Record<string, unknown>,
       });
     }
   }, [engine, form]);
@@ -249,14 +224,20 @@ export function EngineEditor({ engine, onSuccess }: EngineEditorProps) {
                         field.onChange(value);
                         // Reset config to defaults of new type
                         if (value === 'FFMPEG')
-                          form.setValue('config', FfmpegConfigSchema.parse({}));
+                          form.setValue(
+                            'config',
+                            FfmpegConfigSchema.parse({}) as any,
+                          );
                         if (value === 'STREAMLINK')
                           form.setValue(
                             'config',
-                            StreamlinkConfigSchema.parse({}),
+                            StreamlinkConfigSchema.parse({}) as any,
                           );
                         if (value === 'MESIO')
-                          form.setValue('config', MesioConfigSchema.parse({}));
+                          form.setValue(
+                            'config',
+                            MesioConfigSchema.parse({}) as any,
+                          );
                       }}
                       defaultValue={field.value}
                     >

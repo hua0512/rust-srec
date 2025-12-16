@@ -747,8 +747,8 @@ mod tests {
                 "mesio".to_string(),
                 600,
                 Some(vec![
-                    PipelineStep::Preset("remux".to_string()),
-                    PipelineStep::Preset("upload".to_string()),
+                    PipelineStep::preset("remux"),
+                    PipelineStep::preset("upload"),
                 ]),
             )
             .with_platform(
@@ -775,8 +775,8 @@ mod tests {
 
         // Streamer pipeline should override global
         assert_eq!(config.pipeline.len(), 2);
-        assert!(matches!(&config.pipeline[0], PipelineStep::Preset(s) if s == "fast_remux"));
-        assert!(matches!(&config.pipeline[1], PipelineStep::Preset(s) if s == "s3_upload"));
+        assert!(matches!(&config.pipeline[0], PipelineStep::Preset{name} if name == "fast_remux"));
+        assert!(matches!(&config.pipeline[1], PipelineStep::Preset{name} if name == "s3_upload"));
     }
 
     #[test]
@@ -835,7 +835,7 @@ mod tests {
 
         // Should have 2 steps: preset + inline
         assert_eq!(config.pipeline.len(), 2);
-        assert!(matches!(&config.pipeline[0], PipelineStep::Preset(s) if s == "remux"));
+        assert!(matches!(&config.pipeline[0], PipelineStep::Preset{name} if name == "remux"));
         assert!(
             matches!(&config.pipeline[1], PipelineStep::Inline { processor, .. } if processor == "execute")
         );

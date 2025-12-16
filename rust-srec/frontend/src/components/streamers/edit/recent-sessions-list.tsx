@@ -1,6 +1,7 @@
 import { FileVideo, Calendar, Clock, HardDrive } from 'lucide-react';
 import { Trans } from '@lingui/react/macro';
 import { cn } from '@/lib/utils';
+import { useLingui } from '@lingui/react';
 
 interface RecentSessionsListProps {
   sessions: any[];
@@ -11,6 +12,7 @@ export function RecentSessionsList({
   sessions,
   isLoading,
 }: RecentSessionsListProps) {
+  const { i18n } = useLingui();
   const recentSessions = sessions
     ? [...sessions]
         .sort(
@@ -57,20 +59,21 @@ export function RecentSessionsList({
                       : 'bg-emerald-500/10 text-emerald-500 border-emerald-500/20',
                   )}
                 >
-                  {session.end_time ? 'Offline' : 'Live'}
+                  {session.end_time ? (
+                    <Trans>Offline</Trans>
+                  ) : (
+                    <Trans>Live</Trans>
+                  )}
                 </span>
               </div>
               <div className="flex items-center gap-3 text-[10px] text-muted-foreground">
                 <div className="flex items-center gap-1">
                   <Calendar className="w-3 h-3" />
                   <span>
-                    {new Date(session.start_time).toLocaleDateString(
-                      undefined,
-                      {
-                        month: 'short',
-                        day: 'numeric',
-                      },
-                    )}
+                    {i18n.date(session.start_time, {
+                      month: 'short',
+                      day: 'numeric',
+                    })}
                   </span>
                 </div>
                 <div className="flex items-center gap-1">

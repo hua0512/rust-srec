@@ -11,7 +11,27 @@ import { z } from 'zod';
 export const listEngines = createServerFn({ method: 'GET' }).handler(
   async () => {
     const json = await fetchBackend('/engines');
-    return z.array(EngineConfigSchema).parse(json);
+    const rawEngines = z.array(z.any()).parse(json);
+
+    // Parse config from JSON string to structured object
+    return rawEngines.map((raw: any) => {
+      try {
+        const config =
+          typeof raw.config === 'string' ? JSON.parse(raw.config) : raw.config;
+
+        return EngineConfigSchema.parse({
+          ...raw,
+          config,
+        });
+      } catch (e) {
+        console.error('Failed to parse engine config:', e);
+        // Return with default config if parsing fails
+        return {
+          ...raw,
+          config: {},
+        };
+      }
+    });
   },
 );
 
@@ -19,17 +39,35 @@ export const getEngine = createServerFn({ method: 'GET' })
   .inputValidator((id: string) => id)
   .handler(async ({ data: id }) => {
     const json = await fetchBackend(`/engines/${id}`);
-    return EngineConfigSchema.parse(json);
+    const raw = json as any;
+
+    // Parse config from JSON string to structured object
+    const config =
+      typeof raw.config === 'string' ? JSON.parse(raw.config) : raw.config;
+
+    return EngineConfigSchema.parse({
+      ...raw,
+      config,
+    });
   });
 
 export const createEngine = createServerFn({ method: 'POST' })
   .inputValidator((data: z.infer<typeof CreateEngineRequestSchema>) => data)
   .handler(async ({ data }) => {
+    // Backend expects config as JSON value (will be stringified by backend)
     const json = await fetchBackend('/engines', {
       method: 'POST',
       body: JSON.stringify(data),
     });
-    return EngineConfigSchema.parse(json);
+
+    const raw = json as any;
+    const config =
+      typeof raw.config === 'string' ? JSON.parse(raw.config) : raw.config;
+
+    return EngineConfigSchema.parse({
+      ...raw,
+      config,
+    });
   });
 
 export const updateEngine = createServerFn({ method: 'POST' })
@@ -37,11 +75,20 @@ export const updateEngine = createServerFn({ method: 'POST' })
     (d: { id: string; data: z.infer<typeof UpdateEngineRequestSchema> }) => d,
   )
   .handler(async ({ data: { id, data } }) => {
+    // Backend expects config as JSON value
     const json = await fetchBackend(`/engines/${id}`, {
       method: 'PATCH',
       body: JSON.stringify(data),
     });
-    return EngineConfigSchema.parse(json);
+
+    const raw = json as any;
+    const config =
+      typeof raw.config === 'string' ? JSON.parse(raw.config) : raw.config;
+
+    return EngineConfigSchema.parse({
+      ...raw,
+      config,
+    });
   });
 
 export const deleteEngine = createServerFn({ method: 'POST' })

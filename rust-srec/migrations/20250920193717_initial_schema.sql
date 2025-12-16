@@ -875,7 +875,7 @@ INSERT INTO pipeline_presets (id, name, description, steps, created_at, updated_
     'pipeline-standard',
     'Standard',
     'Basic post-processing: Remux FLV to MP4 and generate a thumbnail preview.',
-    '["remux", "thumbnail"]',
+    '[{"type":"preset","name":"remux"}, {"type":"preset","name":"thumbnail"}]',
     datetime('now'),
     datetime('now')
 );
@@ -885,7 +885,7 @@ INSERT INTO pipeline_presets (id, name, description, steps, created_at, updated_
     'pipeline-archive',
     'Archive to Cloud',
     'Compress video for storage, upload to cloud, then delete local file to save space.',
-    '["compress_fast", "upload", "delete_source"]',
+    '[{"type":"preset","name":"compress_fast"}, {"type":"preset","name":"upload"}, {"type":"preset","name":"delete_source"}]',
     datetime('now'),
     datetime('now')
 );
@@ -895,7 +895,7 @@ INSERT INTO pipeline_presets (id, name, description, steps, created_at, updated_
     'pipeline-hq-archive',
     'High Quality Archive',
     'Maximum quality compression with HEVC, then upload to cloud storage.',
-    '["compress_hq", "thumbnail_hd", "upload"]',
+    '[{"type":"preset","name":"compress_hq"}, {"type":"preset","name":"thumbnail_hd"}, {"type":"preset","name":"upload"}]',
     datetime('now'),
     datetime('now')
 );
@@ -905,7 +905,7 @@ INSERT INTO pipeline_presets (id, name, description, steps, created_at, updated_
     'pipeline-podcast',
     'Podcast Extraction',
     'Extract high-quality audio for podcast distribution and upload.',
-    '["audio_mp3", "upload"]',
+    '[{"type":"preset","name":"audio_mp3"}, {"type":"preset","name":"upload"}]',
     datetime('now'),
     datetime('now')
 );
@@ -915,7 +915,7 @@ INSERT INTO pipeline_presets (id, name, description, steps, created_at, updated_
     'pipeline-quick-share',
     'Quick Share',
     'Fast encoding for quick sharing on social media or messaging.',
-    '["compress_ultrafast", "thumbnail"]',
+    '[{"type":"preset","name":"compress_ultrafast"}, {"type":"preset","name":"thumbnail"}]',
     datetime('now'),
     datetime('now')
 );
@@ -925,7 +925,7 @@ INSERT INTO pipeline_presets (id, name, description, steps, created_at, updated_
     'pipeline-space-saver',
     'Space Saver',
     'Maximum compression to minimize storage usage, then delete original.',
-    '["compress_hevc_max", "delete_source"]',
+    '[{"type":"preset","name":"compress_hevc_max"}, {"type":"preset","name":"delete_source"}]',
     datetime('now'),
     datetime('now')
 );
@@ -935,7 +935,7 @@ INSERT INTO pipeline_presets (id, name, description, steps, created_at, updated_
     'pipeline-full',
     'Full Processing',
     'Complete workflow: Remux, generate thumbnail, add metadata, and upload.',
-    '["remux", "thumbnail", "add_metadata", "upload"]',
+    '[{"type":"preset","name":"remux"}, {"type":"preset","name":"thumbnail"}, {"type":"preset","name":"add_metadata"}, {"type":"preset","name":"upload"}]',
     datetime('now'),
     datetime('now')
 );
@@ -945,7 +945,7 @@ INSERT INTO pipeline_presets (id, name, description, steps, created_at, updated_
     'pipeline-local-archive',
     'Local Archive',
     'Process locally: Remux to MP4, generate thumbnail, move to archive folder.',
-    '["remux", "thumbnail", "move"]',
+    '[{"type":"preset","name":"remux"}, {"type":"preset","name":"thumbnail"}, {"type":"preset","name":"move"}]',
     datetime('now'),
     datetime('now')
 );

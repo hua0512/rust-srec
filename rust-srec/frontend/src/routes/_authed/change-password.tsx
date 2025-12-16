@@ -19,6 +19,7 @@ import { queryClient } from '../__root';
 import { sessionQueryOptions } from '../../api/session';
 import { z } from 'zod';
 import { Trans } from '@lingui/react/macro';
+import { t } from '@lingui/core/macro';
 import { useState, useEffect } from 'react';
 import { Eye, EyeOff } from 'lucide-react';
 
@@ -72,12 +73,12 @@ function ChangePasswordPage() {
 
       // Invalidate session query to refresh UI with updated session data
       queryClient.invalidateQueries({ queryKey: sessionQueryOptions.queryKey });
-      toast.success('Password changed successfully');
+      toast.success(t`Password changed successfully`);
 
       await router.invalidate();
       router.navigate({ to: '/dashboard' });
     } catch (error: any) {
-      toast.error(error?.message || 'Failed to change password');
+      toast.error(error?.message || t`Failed to change password`);
     }
   };
 
@@ -147,7 +148,7 @@ function ChangePasswordPage() {
                       <div className="relative">
                         <Input
                           type={showCurrentPassword ? 'text' : 'password'}
-                          placeholder="Current password"
+                          placeholder={t`Current password`}
                           {...field}
                           className="bg-background/50 lg:bg-background pr-10"
                         />
@@ -191,7 +192,7 @@ function ChangePasswordPage() {
                       <div className="relative">
                         <Input
                           type={showNewPassword ? 'text' : 'password'}
-                          placeholder="New password (min 8 chars)"
+                          placeholder={t`New password (min 8 chars)`}
                           {...field}
                           className="bg-background/50 lg:bg-background pr-10"
                         />
@@ -233,7 +234,7 @@ function ChangePasswordPage() {
                       <div className="relative">
                         <Input
                           type={showConfirmPassword ? 'text' : 'password'}
-                          placeholder="Confirm new password"
+                          placeholder={t`Confirm new password`}
                           {...field}
                           className="bg-background/50 lg:bg-background pr-10"
                         />

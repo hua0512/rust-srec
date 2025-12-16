@@ -363,22 +363,20 @@ function JobDetailsPage() {
                   <Trans>Cancel Execution</Trans>
                 </Button>
               )}
-              {['COMPLETED', 'FAILED', 'INTERRUPTED'].includes(
-                job.status,
-              ) && (
-                  <Button
-                    variant="destructive"
-                    className="shadow-lg shadow-destructive/20 hover:shadow-destructive/40 transition-all"
-                    onClick={() => {
-                      if (confirm('Are you sure you want to delete this job?')) {
-                        deleteMutation.mutate(job.id);
-                      }
-                    }}
-                    disabled={deleteMutation.isPending}
-                  >
-                    <Trash2 className="mr-2 h-4 w-4" /> <Trans>Delete Job</Trans>
-                  </Button>
-                )}
+              {['COMPLETED', 'FAILED', 'INTERRUPTED'].includes(job.status) && (
+                <Button
+                  variant="destructive"
+                  className="shadow-lg shadow-destructive/20 hover:shadow-destructive/40 transition-all"
+                  onClick={() => {
+                    if (confirm('Are you sure you want to delete this job?')) {
+                      deleteMutation.mutate(job.id);
+                    }
+                  }}
+                  disabled={deleteMutation.isPending}
+                >
+                  <Trash2 className="mr-2 h-4 w-4" /> <Trans>Delete Job</Trans>
+                </Button>
+              )}
             </motion.div>
           </div>
         </div>

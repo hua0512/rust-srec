@@ -29,7 +29,7 @@ impl ProviderRegistry {
     pub fn with_defaults() -> Self {
         let mut registry = Self::new();
         registry.register(Arc::new(HuyaDanmuProvider::new()));
-        registry.register(Arc::new(TwitchDanmuProvider::new()));
+        // registry.register(Arc::new(TwitchDanmuProvider::new()));
         registry
     }
 

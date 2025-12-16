@@ -1,5 +1,3 @@
-'use client';
-
 import { useState } from 'react';
 import { ChevronDown, Dot, LucideIcon } from 'lucide-react';
 import { Link, useLocation } from '@tanstack/react-router';
@@ -45,7 +43,7 @@ interface CollapseMenuButtonProps {
 export function CollapseMenuButton({
   icon: Icon,
   label,
-  active,
+  active: _active,
   submenus,
   isOpen,
 }: CollapseMenuButtonProps) {

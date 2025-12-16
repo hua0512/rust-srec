@@ -5,6 +5,7 @@ import {
   useLocation,
   redirect,
 } from '@tanstack/react-router';
+import { t } from '@lingui/core/macro';
 import { Trans } from '@lingui/react/macro';
 import {
   Settings,
@@ -13,6 +14,7 @@ import {
   Cpu,
   Palette,
   Share2,
+  Archive,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { motion } from 'motion/react';
@@ -36,41 +38,47 @@ interface SidebarItem {
   description: string;
 }
 
-const sidebarItems: SidebarItem[] = [
-  {
-    title: 'Global',
-    href: '/config/global',
-    icon: Globe,
-    description: 'System-wide preferences',
-  },
-  {
-    title: 'Platforms',
-    href: '/config/platforms',
-    icon: Share2,
-    description: 'Streaming services',
-  },
-  {
-    title: 'Templates',
-    href: '/config/templates',
-    icon: LayoutTemplate,
-    description: 'Job configurations',
-  },
-  {
-    title: 'Engines',
-    href: '/config/engines',
-    icon: Cpu,
-    description: 'Processing nodes',
-  },
-  {
-    title: 'Theme',
-    href: '/config/theme',
-    icon: Palette,
-    description: 'Appearance & style',
-  },
-];
-
 function ConfigLayout() {
   const { pathname } = useLocation();
+
+  const sidebarItems: SidebarItem[] = [
+    {
+      title: t`Global`,
+      href: '/config/global',
+      icon: Globe,
+      description: t`System-wide preferences`,
+    },
+    {
+      title: t`Platforms`,
+      href: '/config/platforms',
+      icon: Share2,
+      description: t`Streaming services`,
+    },
+    {
+      title: t`Templates`,
+      href: '/config/templates',
+      icon: LayoutTemplate,
+      description: t`Job configurations`,
+    },
+    {
+      title: t`Engines`,
+      href: '/config/engines',
+      icon: Cpu,
+      description: t`Processing nodes`,
+    },
+    {
+      title: t`Theme`,
+      href: '/config/theme',
+      icon: Palette,
+      description: t`Appearance & style`,
+    },
+    {
+      title: t`Backup & Restore`,
+      href: '/config/backup',
+      icon: Archive,
+      description: t`Backup & Restore`,
+    },
+  ];
 
   return (
     <div className="flex h-full flex-col space-y-8 lg:flex-row lg:space-x-8 lg:space-y-0 w-full min-h-[calc(100vh-4rem)]">
@@ -120,7 +128,7 @@ function ConfigLayout() {
                           : 'text-muted-foreground group-hover:text-foreground',
                       )}
                     >
-                      <Trans>{item.title}</Trans>
+                      {item.title}
                     </span>
                   </div>
                   {/* <p className="text-xs text-muted-foreground/60 pl-7 hidden lg:block line-clamp-1">

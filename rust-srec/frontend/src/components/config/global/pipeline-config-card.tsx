@@ -6,6 +6,7 @@ import { Trans } from '@lingui/react/macro';
 import { PipelineEditor } from '@/components/pipeline/editor/pipeline-editor';
 import { StepLibrary } from '@/components/pipeline/workflows/step-library';
 import { Button } from '@/components/ui/button';
+import { PipelineStep } from '@/api/schemas';
 
 interface PipelineConfigCardProps {
   control: Control<any>;
@@ -25,7 +26,8 @@ export function PipelineConfigCard({ control }: PipelineConfigCardProps) {
               steps = JSON.parse(field.value);
               if (!Array.isArray(steps)) steps = [];
             }
-          } catch (_) {
+          } catch (error) {
+            console.error('Failed to parse pipeline steps:', error);
             // If invalid JSON, showing empty steps or handling error might be needed.
           }
 
@@ -33,8 +35,8 @@ export function PipelineConfigCard({ control }: PipelineConfigCardProps) {
             field.onChange(JSON.stringify(newSteps));
           };
 
-          const handleAddStep = (name: string) => {
-            updateSteps([...steps, name]);
+          const handleAddStep = (step: PipelineStep) => {
+            updateSteps([...steps, step]);
           };
 
           return (
@@ -52,9 +54,15 @@ export function PipelineConfigCard({ control }: PipelineConfigCardProps) {
               action={
                 <StepLibrary
                   onAddStep={handleAddStep}
-                  currentSteps={steps.map((s) =>
-                    typeof s === 'string' ? s : s.processor,
-                  )}
+                  currentSteps={steps.map((s) => {
+                    if (typeof s === 'string') return s;
+                    if ('type' in s && typeof s.type === 'string') {
+                      if (s.type === 'inline') return s.processor;
+                      return s.name;
+                    }
+                    // Legacy object check if needed or just safe fallback
+                    return (s as any).processor || (s as any).name;
+                  })}
                   trigger={
                     <Button
                       type="button"

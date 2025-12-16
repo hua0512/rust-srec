@@ -29,6 +29,8 @@ import {
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Trans } from '@lingui/react/macro';
+import { useLingui } from '@lingui/react';
+import { t } from '@lingui/core/macro';
 import { cn } from '@/lib/utils';
 import { motion } from 'motion/react';
 
@@ -37,6 +39,7 @@ export const Route = createFileRoute('/_authed/_dashboard/system/health')({
 });
 
 function SystemHealthPage() {
+  const { i18n } = useLingui();
   const {
     data: health,
     isLoading,
@@ -151,28 +154,35 @@ function SystemHealthPage() {
                 className="text-base px-3 py-1"
               />
             }
-            description="Overall system status"
+            description={<Trans>Overall system status</Trans>}
             color="text-primary"
           />
           <MetricCard
             title={<Trans>Uptime</Trans>}
             icon={Clock}
             content={formatUptime(health.uptime_secs)}
-            description={`Since ${new Date(Date.now() - health.uptime_secs * 1000).toLocaleTimeString()}`}
+            description={
+              <Trans>
+                Since{' '}
+                {i18n.date(new Date(Date.now() - health.uptime_secs * 1000), {
+                  timeStyle: 'medium',
+                })}
+              </Trans>
+            }
             color="text-green-500"
           />
           <MetricCard
             title={<Trans>CPU Usage</Trans>}
             icon={Cpu}
             content={`${health.cpu_usage.toFixed(1)}%`}
-            description="Total system load"
+            description={<Trans>Total system load</Trans>}
             color="text-blue-500"
           />
           <MetricCard
             title={<Trans>Memory Usage</Trans>}
             icon={HardDrive}
             content={`${health.memory_usage.toFixed(1)}%`}
-            description="RAM utilization"
+            description={<Trans>RAM utilization</Trans>}
             color="text-purple-500"
           />
         </motion.div>
@@ -294,14 +304,14 @@ function formatUptime(seconds: number): string {
 }
 
 function formatComponentName(name: string): string {
-  if (name.startsWith('disk:')) return 'Disk Space';
-  if (name === 'database') return 'Database';
-  if (name === 'download_manager') return 'Download Manager';
-  if (name === 'pipeline_manager') return 'Pipeline Manager';
-  if (name === 'danmu_service') return 'Danmu Service';
-  if (name === 'scheduler') return 'Scheduler';
-  if (name === 'notification_service') return 'Notification Service';
-  if (name === 'maintenance_scheduler') return 'Maintenance';
+  if (name.startsWith('disk:')) return t`Disk Space`;
+  if (name === 'database') return t`Database`;
+  if (name === 'download_manager') return t`Download Manager`;
+  if (name === 'pipeline_manager') return t`Pipeline Manager`;
+  if (name === 'danmu_service') return t`Danmu Service`;
+  if (name === 'scheduler') return t`Scheduler`;
+  if (name === 'notification_service') return t`Notification Service`;
+  if (name === 'maintenance_scheduler') return t`Maintenance`;
   return name
     .split('_')
     .map((w) => w.charAt(0).toUpperCase() + w.slice(1))

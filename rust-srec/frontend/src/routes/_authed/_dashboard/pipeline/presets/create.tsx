@@ -28,11 +28,7 @@ function CreatePresetPage() {
   });
 
   const onSubmit = (data: any) => {
-    const formattedData = {
-      ...data,
-      config: JSON.stringify(data.config),
-    };
-    createMutation.mutate({ data: formattedData });
+    createMutation.mutate({ data });
   };
 
   return (

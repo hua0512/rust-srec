@@ -8,7 +8,12 @@
     "serve": "vite preview",
     "test": "vitest run",
     "extract": "lingui extract",
-    "compile": "lingui compile"
+    "compile": "lingui compile",
+    "format": "npx oxfmt --write .",
+    "lint": "oxlint ."
+  },
+  "overrides": {
+    "vite": "npm:rolldown-vite@latest"
   },
   "dependencies": {
     "@hookform/resolvers": "^5.2.2",
@@ -85,8 +90,5 @@
     "vite-plugin-oxlint": "^1.5.0",
     "vitest": "^3.0.5",
     "web-vitals": "^5.1.0"
-  },
-  "overrides": {
-    "vite": "npm:rolldown-vite@latest"
   }
 }

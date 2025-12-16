@@ -1,6 +1,6 @@
 import { createFileRoute } from '@tanstack/react-router';
 import { motion } from 'motion/react';
-import { useTheme } from '../../../../components/theme-provider';
+import { useTheme } from '@/components/theme-provider';
 import {
   Check,
   Monitor,
@@ -11,12 +11,12 @@ import {
   LayoutTemplate,
   RotateCcw,
 } from 'lucide-react';
-import { cn } from '../../../../lib/utils';
+import { cn } from '@/lib/utils';
 import { Trans } from '@lingui/react/macro';
-import { Button } from '../../../../components/ui/button';
-import { Label } from '../../../../components/ui/label';
-import { Textarea } from '../../../../components/ui/textarea';
-import { Switch } from '../../../../components/ui/switch';
+import { Button } from '@/components/ui/button';
+import { Label } from '@/components/ui/label';
+import { Textarea } from '@/components/ui/textarea';
+import { Switch } from '@/components/ui/switch';
 import {
   Dialog,
   DialogContent,
@@ -25,10 +25,10 @@ import {
   DialogHeader,
   DialogTitle,
   DialogTrigger,
-} from '../../../../components/ui/dialog';
-import { Slider } from '../../../../components/ui/slider';
-import { Card, CardContent } from '../../../../components/ui/card';
-import { ThemeColor, useThemeStore } from '../../../../stores/theme-store';
+} from '@/components/ui/dialog';
+import { Slider } from '@/components/ui/slider';
+import { Card, CardContent } from '@/components/ui/card';
+import { ThemeColor, useThemeStore } from '@/stores/theme-store';
 import { useState } from 'react';
 import { toast } from 'sonner';
 

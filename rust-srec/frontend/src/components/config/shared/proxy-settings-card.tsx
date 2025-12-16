@@ -1,14 +1,15 @@
 import { useState, useEffect } from 'react';
 import { UseFormReturn } from 'react-hook-form';
 import { z } from 'zod';
-import { ProxyConfigObjectSchema } from '../../../api/schemas';
-import { Input } from '../../ui/input';
-import { Label } from '../../ui/label';
-import { Switch } from '../../ui/switch';
+import { ProxyConfigObjectSchema } from '@/api/schemas';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Switch } from '@/components/ui/switch';
 import { Trans } from '@lingui/react/macro';
+import { t } from '@lingui/core/macro';
 import { Globe, Lock, User, Monitor, ShieldCheck, Shield } from 'lucide-react';
 import { cn } from '../../../lib/utils';
-import { Card, CardContent } from '../../ui/card';
+import { Card, CardContent } from '@/components/ui/card';
 import {
   FormControl,
   FormDescription,
@@ -16,14 +17,14 @@ import {
   FormItem,
   FormLabel,
   FormMessage,
-} from '../../ui/form';
+} from '@/components/ui/form';
 import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from '../../ui/select';
+} from '@/components/ui/select';
 
 // --- Inner Component (User's UI) ---
 type ProxyConfig = z.infer<typeof ProxyConfigObjectSchema>;
@@ -171,7 +172,7 @@ export function ProxyConfigSettings({
                     </Label>
                     <Input
                       id="proxy-username"
-                      placeholder="Optional"
+                      placeholder={t`Optional`}
                       value={parsedConfig.username || ''}
                       onChange={(e) =>
                         handleChange({ username: e.target.value })
@@ -190,7 +191,7 @@ export function ProxyConfigSettings({
                     <Input
                       id="proxy-password"
                       type="password"
-                      placeholder="Optional"
+                      placeholder={t`Optional`}
                       value={parsedConfig.password || ''}
                       onChange={(e) =>
                         handleChange({ password: e.target.value })
@@ -230,8 +231,7 @@ export function ProxySettingsCard({
           render={({ field }) => {
             // Fix: Check for null, undefined, implicit undefined vs object/string
             const isInherited =
-              field.value === null ||
-              field.value === undefined;
+              field.value === null || field.value === undefined;
 
             return (
               <FormItem className="space-y-6">

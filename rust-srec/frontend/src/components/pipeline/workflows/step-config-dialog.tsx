@@ -3,6 +3,7 @@ import { Form } from '@/components/ui/form';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { Trans } from '@lingui/macro';
+import { useLingui } from '@lingui/react';
 import { useQuery } from '@tanstack/react-query';
 import { Loader2, Unlink, X } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
@@ -12,7 +13,7 @@ import { PipelineStep } from '@/api/schemas';
 import { getProcessorDefinition } from '@/components/pipeline/presets/processors/registry';
 import { listJobPresets } from '@/server/functions/job';
 import { createPortal } from 'react-dom';
-import { motion, AnimatePresence } from 'framer-motion'; // Changed from "motion/react" to "framer-motion" for common usage
+import { motion, AnimatePresence } from 'motion/react';
 
 interface StepConfigDialogProps {
   open: boolean;
@@ -27,9 +28,10 @@ export function StepConfigDialog({
   step,
   onSave,
 }: StepConfigDialogProps) {
-  // 0. Handle String Steps (Presets)
-  const isPreset = typeof step === 'string';
-  const presetName = isPreset ? step : null;
+  const { i18n } = useLingui();
+  // 0. Handle Step Types
+  const isPreset = step?.type === 'preset';
+  const presetName = isPreset ? step.name : null;
   const [isDetached, setIsDetached] = useState(false);
 
   // Reset detached state when dialog closes
@@ -68,7 +70,12 @@ export function StepConfigDialog({
       return null;
     }
 
-    return getProcessorDefinition((step as any).processor);
+    // For inline steps, use the processor directly
+    if (step.type === 'inline') {
+      return getProcessorDefinition(step.processor);
+    }
+
+    return null;
   }, [step, isPreset, isDetached, presetDetail]);
 
   // 2. Create form schema (dynamically)
@@ -84,13 +91,13 @@ export function StepConfigDialog({
 
   // 4. Reset form when step changes
   useEffect(() => {
-    if (open && step && !isPreset) {
-      form.reset((step as any).config || {});
+    if (open && step && step.type === 'inline') {
+      form.reset(step.config || {});
     } else if (open && !isDetached) {
       // Only reset if NOT detached (if detached, we want to keep current edits or initial preset value)
       form.reset({});
     }
-  }, [open, step, form, isPreset, isDetached]);
+  }, [open, step, form, isDetached]);
 
   // Handle Escape key
   useEffect(() => {
@@ -108,6 +115,7 @@ export function StepConfigDialog({
       // We are saving a detached preset.
       // We need to pass the full object so StepsList knows the processor type.
       onSave({
+        type: 'inline',
         processor: presetDetail.processor,
         config: data,
       });
@@ -177,8 +185,8 @@ export function StepConfigDialog({
                         <Trans>Configure</Trans>
                       </span>
                       <span>
-                        {processorDef?.label ||
-                          (typeof step === 'object'
+                        {(processorDef && i18n._(processorDef.label)) ||
+                          (step?.type === 'inline'
                             ? step.processor
                             : presetDetail?.processor)}
                       </span>
@@ -226,7 +234,8 @@ export function StepConfigDialog({
                             <div className="flex items-center gap-2 mb-4">
                               <div className="h-8 w-1 rounded bg-primary/20" />
                               <h3 className="font-semibold text-lg tracking-tight">
-                                {presetProcessorDef?.label}{' '}
+                                {presetProcessorDef &&
+                                  i18n._(presetProcessorDef.label)}{' '}
                                 <Trans>Configuration</Trans>
                               </h3>
                             </div>

@@ -39,8 +39,10 @@ import {
   Tag,
   Copy,
 } from 'lucide-react';
-import { Trans } from '@lingui/react/macro';
+import { Trans, Plural } from '@lingui/react/macro';
+import { useLingui } from '@lingui/react';
 import type { PipelinePreset } from '@/server/functions/pipeline';
+import { DEFAULT_PIPELINE_PRESET_DESCRIPTIONS } from '../presets/default-presets-i18n';
 
 interface WorkflowCardProps {
   workflow: PipelinePreset;
@@ -119,7 +121,11 @@ export function WorkflowCard({
   onEdit,
   onDelete,
 }: WorkflowCardProps) {
+  const { i18n } = useLingui();
   const steps = workflow.steps;
+  const description = DEFAULT_PIPELINE_PRESET_DESCRIPTIONS[workflow.id]
+    ? i18n._(DEFAULT_PIPELINE_PRESET_DESCRIPTIONS[workflow.id])
+    : workflow.description;
 
   return (
     <Card className="relative h-full flex flex-col transition-all duration-500 hover:-translate-y-1 hover:shadow-2xl hover:shadow-primary/10 group overflow-hidden bg-gradient-to-br from-background/80 to-background/40 backdrop-blur-xl border-border/40 hover:border-primary/20">
@@ -138,8 +144,7 @@ export function WorkflowCard({
           </CardTitle>
           <div className="flex items-center gap-2">
             <span className="text-[10px] uppercase tracking-wider font-semibold text-muted-foreground/60">
-              {steps.length}{' '}
-              {steps.length === 1 ? <Trans>step</Trans> : <Trans>steps</Trans>}
+              <Plural value={steps.length} one="# step" other="# steps" />
             </span>
           </div>
         </div>
@@ -198,19 +203,21 @@ export function WorkflowCard({
         </DropdownMenu>
       </CardHeader>
       <CardContent className="relative pb-4 flex-1 z-10">
-        {workflow.description && (
+        {description && (
           <p className="text-xs text-muted-foreground/80 line-clamp-2 mb-4 leading-relaxed font-light">
-            {workflow.description}
+            {description}
           </p>
         )}
 
         {/* Pipeline Steps Visualization */}
         <div className="flex items-center gap-1 flex-wrap">
           {steps.map((step, index) => {
-            const stepName = typeof step === 'string' ? step : step.processor;
+            const stepName = step.type === 'inline'
+              ? step.processor
+              : step.name;
             const StepIcon = getStepIcon(stepName);
             const color = getStepColor(stepName);
-            const isInline = typeof step !== 'string';
+            const isInline = step.type === 'inline';
 
             return (
               <div key={index} className="flex items-center">

@@ -65,9 +65,9 @@ export function WorkflowEditor({
 
   const steps = form.watch('steps');
 
-  const handleAddStep = (presetName: string) => {
+  const handleAddStep = (step: PipelineStep) => {
     const currentSteps = form.getValues('steps');
-    form.setValue('steps', [...currentSteps, presetName], {
+    form.setValue('steps', [...currentSteps, step], {
       shouldDirty: true,
     });
   };
@@ -204,7 +204,7 @@ export function WorkflowEditor({
               <StepLibrary
                 onAddStep={handleAddStep}
                 currentSteps={steps.map((s) =>
-                  typeof s === 'string' ? s : s.processor,
+                  s.type === 'inline' ? s.processor : s.name,
                 )}
               />
             </div>

@@ -29,8 +29,9 @@ function NotificationsPage() {
   const [editingChannel, setEditingChannel] =
     useState<NotificationChannel | null>(null);
   const [isSubsOpen, setIsSubsOpen] = useState(false);
-  const [subsChannel, setSubsChannel] =
-    useState<NotificationChannel | null>(null);
+  const [subsChannel, setSubsChannel] = useState<NotificationChannel | null>(
+    null,
+  );
 
   const { data: channels, isLoading } = useQuery({
     queryKey: ['notification-channels'],

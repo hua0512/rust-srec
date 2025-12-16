@@ -30,6 +30,12 @@ export const Route = createFileRoute('/_public/login')({
       throw redirect({ to: '/dashboard' });
     }
   },
+  validateSearch: (search: Record<string, unknown>): { redirect?: string } => {
+    return {
+      redirect:
+        typeof search.redirect === 'string' ? search.redirect : undefined,
+    };
+  },
   component: LoginComp,
 });
 

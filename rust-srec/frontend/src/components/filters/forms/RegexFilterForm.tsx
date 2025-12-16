@@ -6,9 +6,9 @@ import {
   FormItem,
   FormLabel,
   FormMessage,
-} from '../../ui/form';
-import { Textarea } from '../../ui/textarea';
-import { Switch } from '../../ui/switch';
+} from '@/components/ui/form';
+import { Textarea } from '@/components/ui/textarea';
+import { Switch } from '@/components/ui/switch';
 import { Trans } from '@lingui/macro';
 
 export function RegexFilterForm() {

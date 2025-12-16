@@ -19,7 +19,8 @@ import { Button } from '@/components/ui/button';
 import { Plus, Settings2, Search } from 'lucide-react';
 import { toast } from 'sonner';
 import { Trans } from '@lingui/react/macro';
-import { t } from '@lingui/core/macro';
+import { t, msg } from '@lingui/core/macro';
+import { useLingui } from '@lingui/react';
 import { PresetCard } from '@/components/pipeline/presets/preset-card';
 import { Skeleton } from '@/components/ui/skeleton';
 import {
@@ -56,22 +57,23 @@ export const Route = createFileRoute('/_authed/_dashboard/pipeline/presets/')({
   component: PresetsPage,
 });
 
-const CATEGORY_LABELS: Record<string, string> = {
-  remux: 'Remux',
-  compression: 'Compression',
-  thumbnail: 'Thumbnail',
-  audio: 'Audio',
-  archive: 'Archive',
-  upload: 'Upload',
-  cleanup: 'Cleanup',
-  file_ops: 'File Ops',
-  custom: 'Custom',
-  metadata: 'Metadata',
+const CATEGORY_LABELS: Record<string, any> = {
+  remux: msg`Remux`,
+  compression: msg`Compression`,
+  thumbnail: msg`Thumbnail`,
+  audio: msg`Audio`,
+  archive: msg`Archive`,
+  upload: msg`Upload`,
+  cleanup: msg`Cleanup`,
+  file_ops: msg`File Ops`,
+  custom: msg`Custom`,
+  metadata: msg`Metadata`,
 };
 
 const PAGE_SIZES = [12, 24, 48, 96];
 
 function PresetsPage() {
+  const { i18n } = useLingui();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
@@ -300,7 +302,7 @@ function PresetsPage() {
                   }`}
                 >
                   <span className="relative z-10 capitalize">
-                    {CATEGORY_LABELS[cat] || cat}
+                    {i18n._(CATEGORY_LABELS[cat] || cat)}
                   </span>
                 </button>
               ))}

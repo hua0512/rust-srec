@@ -40,11 +40,7 @@ function EditPresetPage() {
   });
 
   const onSubmit = (data: any) => {
-    const formattedData = {
-      ...data,
-      config: JSON.stringify(data.config),
-    };
-    updateMutation.mutate({ data: formattedData });
+    updateMutation.mutate({ data });
   };
 
   if (isLoading) {

@@ -7,6 +7,7 @@ import {
   FormMessage,
 } from '@/components/ui/form';
 import { Input } from '@/components/ui/input';
+import { Textarea } from '@/components/ui/textarea';
 import {
   Select,
   SelectContent,
@@ -37,12 +38,15 @@ import {
   Settings2,
 } from 'lucide-react';
 import { Trans } from '@lingui/react/macro';
+import { t } from '@lingui/core/macro';
 import { motion } from 'motion/react';
+import { isDefaultPreset } from '../default-presets-i18n';
 
 interface PresetMetaFormProps {
   form: UseFormReturn<any>;
   initialData?: any;
   title: React.ReactNode;
+  isUpdating: boolean;
 }
 
 const PROCESSOR_OPTIONS = [
@@ -65,8 +69,11 @@ export function PresetMetaForm({
   form,
   initialData,
   title,
+  isUpdating,
 }: PresetMetaFormProps) {
   const currentProcessor = form.watch('processor');
+  const currentId = form.watch('id');
+  const isDefault = isUpdating && currentId && isDefaultPreset(currentId);
   // Find selected option to get label and icon safely
   const selectedOption = PROCESSOR_OPTIONS.find(
     (opt) => opt.id === currentProcessor,
@@ -83,7 +90,7 @@ export function PresetMetaForm({
       animate={{ opacity: 1, x: 0 }}
       transition={{ duration: 0.4 }}
     >
-      <Card className="border-border/40 shadow-sm bg-card/80 backdrop-blur-sm sticky top-6">
+      <Card className="border-border/40 shadow-sm bg-card/80 backdrop-blur-sm">
         <CardHeader className="pb-6 border-b border-border/40 bg-muted/10">
           <div className="flex items-center gap-4">
             <Button
@@ -135,7 +142,7 @@ export function PresetMetaForm({
                             {selectedOption.label}
                           </span>
                         ) : (
-                          <SelectValue placeholder="Select type" />
+                          <SelectValue placeholder={t`Select type`} />
                         )}
                       </div>
                     </SelectTrigger>
@@ -194,9 +201,47 @@ export function PresetMetaForm({
                   <FormControl>
                     <Input
                       {...field}
-                      placeholder="e.g. Remux to H.264"
+                      placeholder={t`e.g. Remux to H.264`}
                       className="h-11 bg-muted/30 border-muted-foreground/20 focus:bg-background transition-all"
                     />
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+
+            <FormField
+              control={form.control}
+              name="description"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel className="text-xs uppercase tracking-wider text-muted-foreground font-medium ml-1">
+                    <Trans>Description</Trans>
+                  </FormLabel>
+                  <FormControl>
+                    <div className="relative">
+                      <Textarea
+                        {...field}
+                        disabled={isDefault}
+                        placeholder={
+                          isDefault
+                            ? t`Description is managed by the system`
+                            : t`Optional description for this preset`
+                        }
+                        className={`min-h-[80px] bg-muted/30 border-muted-foreground/20 focus:bg-background transition-all resize-none ${
+                          isDefault ? 'opacity-70 cursor-not-allowed' : ''
+                        }`}
+                      />
+                      {isDefault && (
+                        <p className="mt-1.5 text-[10px] text-muted-foreground/60 flex items-center gap-1.5">
+                          <Settings2 className="h-3 w-3" />
+                          <Trans>
+                            This is a default preset. Description cannot be
+                            modified.
+                          </Trans>
+                        </p>
+                      )}
+                    </div>
                   </FormControl>
                   <FormMessage />
                 </FormItem>

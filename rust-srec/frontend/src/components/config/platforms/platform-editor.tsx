@@ -6,12 +6,7 @@ import { motion } from 'motion/react';
 import { Form } from '@/components/ui/form';
 import { Button } from '@/components/ui/button';
 
-import {
-  Settings,
-  Save,
-  Loader2,
-  ArrowLeft,
-} from 'lucide-react';
+import { Settings, Save, Loader2, ArrowLeft } from 'lucide-react';
 import { PlatformConfigFormSchema, PlatformConfigSchema } from '@/api/schemas';
 import { GeneralTab } from './tabs/general-tab';
 import { PlatformSpecificTab } from './tabs/platform-specific-tab';
@@ -21,7 +16,6 @@ import {
 } from '@/components/pipeline/constants';
 import { cn } from '@/lib/utils';
 import { SharedConfigEditor } from '../shared-config-editor';
-
 
 const EditPlatformSchema = PlatformConfigFormSchema.partial();
 export type EditPlatformFormValues = z.infer<typeof EditPlatformSchema>;
@@ -37,7 +31,6 @@ export function PlatformEditor({
   onSubmit,
   isUpdating,
 }: PlatformEditorProps) {
-
   const form = useForm({
     resolver: zodResolver(EditPlatformSchema),
     defaultValues: {
@@ -78,7 +71,6 @@ export function PlatformEditor({
         >
           {/* Header Section */}
           <div className="flex flex-col gap-6">
-
             <div className="flex items-start justify-between">
               <div className="flex items-center gap-4">
                 <div

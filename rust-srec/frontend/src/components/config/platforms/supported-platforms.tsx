@@ -1,6 +1,6 @@
-import { Card, CardContent, CardHeader, CardTitle } from '../../ui/card';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Trans } from '@lingui/react/macro';
-import { Badge } from '../../ui/badge';
+import { Badge } from '@/components/ui/badge';
 import { Globe } from 'lucide-react';
 
 const SUPPORTED_PLATFORMS = [

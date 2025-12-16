@@ -163,3 +163,20 @@ export const deleteTemplate = createServerFn({ method: 'POST' })
   .handler(async ({ data: id }) => {
     await fetchBackend(`/templates/${id}`, { method: 'DELETE' });
   });
+
+// --- Backup & Restore ---
+export const exportConfig = createServerFn({ method: 'GET' }).handler(
+  async () => {
+    // Returns the raw JSON config object
+    return await fetchBackend('/config/backup/export');
+  },
+);
+
+export const importConfig = createServerFn({ method: 'POST' })
+  .inputValidator((data: { config: any; mode: 'merge' | 'replace' }) => data)
+  .handler(async ({ data }) => {
+    return await fetchBackend('/config/backup/import', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  });

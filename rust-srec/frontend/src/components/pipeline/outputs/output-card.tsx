@@ -163,7 +163,7 @@ export function OutputCard({ output }: OutputCardProps) {
             <HardDrive className="h-3.5 w-3.5 text-muted-foreground" />
             <div className="flex flex-col">
               <span className="text-[9px] uppercase tracking-wider text-muted-foreground/50">
-                Size
+                <Trans>Size</Trans>
               </span>
               <span className="text-xs font-medium">
                 {formatBytes(output.file_size_bytes)}
@@ -174,7 +174,7 @@ export function OutputCard({ output }: OutputCardProps) {
             <Calendar className="h-3.5 w-3.5 text-muted-foreground" />
             <div className="flex flex-col">
               <span className="text-[9px] uppercase tracking-wider text-muted-foreground/50">
-                Created
+                <Trans>Created</Trans>
               </span>
               <span className="text-xs font-medium">
                 {format(new Date(output.created_at), 'PP')}
@@ -186,7 +186,7 @@ export function OutputCard({ output }: OutputCardProps) {
 
       <CardFooter className="relative pt-0 text-[10px] text-muted-foreground flex justify-between items-center z-10 border-t border-border/20 mt-auto px-6 py-3 bg-muted/5">
         <span className="font-mono opacity-50">
-          Session: {output.session_id.substring(0, 8)}
+          <Trans>Session</Trans>: {output.session_id.substring(0, 8)}
         </span>
         <span className="font-mono opacity-50">
           {formatBytes(output.file_size_bytes)}

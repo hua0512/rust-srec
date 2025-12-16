@@ -1,5 +1,5 @@
 import { UseFormReturn } from 'react-hook-form';
-import { EngineConfig } from '../../../api/schemas';
+import { EngineConfig } from '@/api/schemas';
 import { SharedConfigEditor } from '../../config/shared-config-editor';
 
 interface StreamerConfigurationProps {
@@ -7,7 +7,10 @@ interface StreamerConfigurationProps {
   engines?: EngineConfig[];
 }
 
-export function StreamerConfiguration({ form, engines }: StreamerConfigurationProps) {
+export function StreamerConfiguration({
+  form,
+  engines,
+}: StreamerConfigurationProps) {
   // We can directly watch form values if needed, but shared components bind directly to form context.
   // The 'streamer_specific_config' is now a nested object in the form state.
   const basePath = 'streamer_specific_config';

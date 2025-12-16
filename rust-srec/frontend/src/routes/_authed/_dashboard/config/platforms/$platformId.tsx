@@ -44,7 +44,7 @@ function EditPlatformPage() {
       queryClient.invalidateQueries({
         queryKey: ['config', 'platform', platformId],
       });
-      // navigate({ to: '/config/platforms' });
+      navigate({ to: '/config/platforms' });
     },
     onError: (error) =>
       toast.error(t`Failed to update platform: ${error.message}`),

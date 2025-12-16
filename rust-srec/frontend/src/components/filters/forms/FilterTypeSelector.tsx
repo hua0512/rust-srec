@@ -1,5 +1,10 @@
 import { useFormContext } from 'react-hook-form';
-import { FormField, FormItem, FormLabel, FormMessage } from '../../ui/form';
+import {
+  FormField,
+  FormItem,
+  FormLabel,
+  FormMessage,
+} from '@/components/ui/form';
 import { Trans } from '@lingui/macro';
 import { Clock, Tag, Folder, Calendar, Regex } from 'lucide-react';
 import { cn } from '@/lib/utils';

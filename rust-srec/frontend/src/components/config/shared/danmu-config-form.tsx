@@ -4,16 +4,16 @@ import {
   FormDescription,
   FormItem,
   FormLabel,
-} from '../../ui/form';
-import { Input } from '../../ui/input';
+} from '@/components/ui/form';
+import { Input } from '@/components/ui/input';
 import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from '../../ui/select';
-import { Card, CardContent } from '../../ui/card';
+} from '@/components/ui/select';
+import { Card, CardContent } from '@/components/ui/card';
 import { Trans } from '@lingui/react/macro';
 import { useEffect, useState } from 'react';
 

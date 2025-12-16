@@ -5,6 +5,8 @@ import { toast } from 'sonner';
 import { t } from '@lingui/core/macro';
 import { Trans } from '@lingui/react/macro';
 import { WorkflowEditor } from '@/components/pipeline/workflows/workflow-editor';
+import { PipelineStepSchema } from '@/api/schemas';
+import { z } from 'zod';
 
 export const Route = createFileRoute(
   '/_authed/_dashboard/pipeline/workflows/create',
@@ -30,7 +32,7 @@ function CreateWorkflowPage() {
   const onSubmit = (data: {
     name: string;
     description?: string;
-    steps: string[];
+    steps: z.infer<typeof PipelineStepSchema>[];
   }) => {
     createMutation.mutate({ data });
   };

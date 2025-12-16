@@ -190,13 +190,13 @@ async function performRefresh({
     const computedAccessExpiry =
       typeof json.expires_in === 'number' && Number.isFinite(json.expires_in)
         ? now + json.expires_in * 1000
-        : fallbackAccessExpiry ?? now;
+        : (fallbackAccessExpiry ?? now);
 
     const computedRefreshExpiry =
       typeof json.refresh_expires_in === 'number' &&
       Number.isFinite(json.refresh_expires_in)
         ? now + json.refresh_expires_in * 1000
-        : fallbackRefreshExpiry ?? now;
+        : (fallbackRefreshExpiry ?? now);
 
     console.log('[TokenRefresh] Token refreshed successfully.');
     return {

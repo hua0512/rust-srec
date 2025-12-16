@@ -1,7 +1,6 @@
 import { Link, useRouter } from '@tanstack/react-router';
 import { deleteSession } from '../../server/functions/sessions';
 import { toast } from 'sonner';
-import { format } from 'date-fns';
 import {
   MoreHorizontal,
   Play,
@@ -24,6 +23,9 @@ import {
 import { Avatar, AvatarFallback, AvatarImage } from '../ui/avatar';
 import { SessionSchema } from '../../api/schemas';
 import { z } from 'zod';
+import { useLingui } from '@lingui/react';
+import { Trans } from '@lingui/react/macro';
+import { t } from '@lingui/core/macro';
 
 type Session = z.infer<typeof SessionSchema>;
 
@@ -34,12 +36,15 @@ interface SessionCardProps {
 
 export function SessionCard({ session, token }: SessionCardProps) {
   const router = useRouter();
+  const { i18n } = useLingui();
   const isLive = !session.end_time;
 
   const handleDelete = async () => {
     if (
       !window.confirm(
-        'Are you sure you want to delete this session? This action cannot be undone.',
+        i18n._(
+          t`Are you sure you want to delete this session? This action cannot be undone.`,
+        ),
       )
     ) {
       return;
@@ -47,18 +52,18 @@ export function SessionCard({ session, token }: SessionCardProps) {
 
     try {
       await deleteSession({ data: session.id });
-      toast.success('Session deleted successfully');
+      toast.success(t`Session deleted successfully`);
       router.invalidate();
     } catch (error) {
       console.error('Failed to delete session:', error);
-      toast.error('Failed to delete session');
+      toast.error(t`Failed to delete session`);
     }
   };
 
   const duration = session.duration_secs
     ? formatDuration(session.duration_secs)
     : isLive
-      ? 'Ongoing'
+      ? t`Ongoing`
       : '-';
 
   const thumbnailUrl = getMediaUrl(session.thumbnail_url, token);
@@ -92,11 +97,11 @@ export function SessionCard({ session, token }: SessionCardProps) {
                   <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75"></span>
                   <span className="relative inline-flex rounded-full h-2 w-2 bg-red-500"></span>
                 </span>
-                LIVE
+                <Trans>LIVE</Trans>
               </Badge>
             ) : (
               <Badge variant="secondary" className="text-xs font-normal">
-                Offline
+                <Trans>Offline</Trans>
               </Badge>
             )}
           </div>
@@ -104,7 +109,7 @@ export function SessionCard({ session, token }: SessionCardProps) {
             className="font-semibold leading-tight truncate mt-1 group-hover:text-primary transition-colors"
             title={session.title}
           >
-            {session.title || 'Untitled Stream'}
+            {session.title || <Trans>Untitled Stream</Trans>}
           </h3>
         </div>
       </CardHeader>
@@ -114,7 +119,7 @@ export function SessionCard({ session, token }: SessionCardProps) {
           {thumbnailUrl ? (
             <img
               src={thumbnailUrl}
-              alt={`Thumbnail for ${session.title}`}
+              alt={t`Thumbnail for ${session.title}`}
               className="absolute inset-0 w-full h-full object-cover transition-transform duration-500 group-hover:scale-105"
               onError={(e) => {
                 // Fallback to placeholder on error
@@ -137,7 +142,8 @@ export function SessionCard({ session, token }: SessionCardProps) {
               variant="secondary"
               className="w-full gap-2 backdrop-blur-md bg-white/10 hover:bg-white/20 text-white border-0"
             >
-              <Play className="h-3 w-3 fill-current" /> Watch Replay
+              <Play className="h-3 w-3 fill-current" />{' '}
+              <Trans>Watch Replay</Trans>
             </Button>
           </div>
         </div>
@@ -145,7 +151,14 @@ export function SessionCard({ session, token }: SessionCardProps) {
         <div className="grid grid-cols-2 gap-2 text-xs text-muted-foreground">
           <div className="flex items-center gap-1.5">
             <Calendar className="h-3.5 w-3.5" />
-            <span>{format(new Date(session.start_time), 'MMM d, HH:mm')}</span>
+            <span>
+              {i18n.date(new Date(session.start_time), {
+                month: 'short',
+                day: 'numeric',
+                hour: 'numeric',
+                minute: 'numeric',
+              })}
+            </span>
           </div>
           <div className="flex items-center gap-1.5">
             <Clock className="h-3.5 w-3.5" />
@@ -157,7 +170,9 @@ export function SessionCard({ session, token }: SessionCardProps) {
           </div>
           <div className="flex items-center gap-1.5">
             <Film className="h-3.5 w-3.5" />
-            <span>{session.output_count} Files</span>
+            <span>
+              <Trans>{session.output_count} Files</Trans>
+            </span>
           </div>
         </div>
       </CardContent>
@@ -167,7 +182,7 @@ export function SessionCard({ session, token }: SessionCardProps) {
           params={{ sessionId: session.id }}
           className="hover:text-primary hover:underline transition-all"
         >
-          View Details
+          <Trans>View Details</Trans>
         </Link>
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
@@ -177,14 +192,16 @@ export function SessionCard({ session, token }: SessionCardProps) {
             </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end">
-            <DropdownMenuLabel>Actions</DropdownMenuLabel>
+            <DropdownMenuLabel>
+              <Trans>Actions</Trans>
+            </DropdownMenuLabel>
             <DropdownMenuItem>
               <Link
                 to="/sessions/$sessionId"
                 params={{ sessionId: session.id }}
                 className="flex w-full"
               >
-                View Details
+                <Trans>View Details</Trans>
               </Link>
             </DropdownMenuItem>
             <DropdownMenuSeparator />
@@ -192,7 +209,7 @@ export function SessionCard({ session, token }: SessionCardProps) {
               className="text-destructive focus:text-destructive cursor-pointer"
               onClick={handleDelete}
             >
-              Delete Session
+              <Trans>Delete Session</Trans>
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>

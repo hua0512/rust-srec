@@ -22,63 +22,65 @@ import { ExecuteConfigForm } from './execute-config-form';
 
 import { ComponentType } from 'react';
 import { ProcessorConfigFormProps } from './common-props';
+import { msg } from '@lingui/core/macro';
+import { type MessageDescriptor } from '@lingui/core';
 
 export interface ProcessorDefinition {
   schema: z.ZodType<any>;
   component: ComponentType<ProcessorConfigFormProps<any>>;
-  label: string;
+  label: MessageDescriptor;
 }
 
 export const PROCESSOR_REGISTRY: Record<string, ProcessorDefinition> = {
   remux: {
     schema: RemuxConfigSchema,
     component: RemuxConfigForm,
-    label: 'Remux / Transcode',
+    label: msg`Remux / Transcode`,
   },
   rclone: {
     schema: RcloneConfigSchema,
     component: RcloneConfigForm,
-    label: 'Rclone Transfer',
+    label: msg`Rclone Transfer`,
   },
   thumbnail: {
     schema: ThumbnailConfigSchema,
     component: ThumbnailConfigForm,
-    label: 'Thumbnail Generator',
+    label: msg`Thumbnail Generator`,
   },
   audio_extract: {
     schema: AudioExtractConfigSchema,
     component: AudioExtractConfigForm,
-    label: 'Audio Extraction',
+    label: msg`Audio Extraction`,
   },
   compression: {
     schema: CompressionConfigSchema,
     component: CompressionConfigForm,
-    label: 'Compression / Archive',
+    label: msg`Compression / Archive`,
   },
   copy: {
     schema: CopyMoveConfigSchema,
     component: CopyMoveConfigForm,
-    label: 'Copy / Move',
+    label: msg`Copy / Move`,
   },
   move: {
     schema: CopyMoveConfigSchema,
     component: CopyMoveConfigForm,
-    label: 'Copy / Move',
+    label: msg`Copy / Move`,
   },
   delete: {
     schema: DeleteConfigSchema,
     component: DeleteConfigForm,
-    label: 'Delete File',
+    label: msg`Delete File`,
   },
   metadata: {
     schema: MetadataConfigSchema,
     component: MetadataConfigForm,
-    label: 'Metadata Editor',
+    label: msg`Metadata Editor`,
   },
   execute: {
     schema: ExecuteConfigSchema,
     component: ExecuteConfigForm,
-    label: 'Execute Command',
+    label: msg`Execute Command`,
   },
 };
 

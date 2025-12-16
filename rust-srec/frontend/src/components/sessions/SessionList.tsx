@@ -4,6 +4,7 @@ import { SessionSchema } from '../../api/schemas';
 import { z } from 'zod';
 import { Button } from '../ui/button';
 import { RefreshCcw } from 'lucide-react';
+import { Trans } from '@lingui/react/macro';
 
 type Session = z.infer<typeof SessionSchema>;
 
@@ -61,14 +62,14 @@ export function SessionList({
           <RefreshCcw className="h-8 w-8 text-muted-foreground/50" />
         </div>
         <h3 className="text-lg font-semibold text-foreground">
-          No sessions found
+          <Trans>No sessions found</Trans>
         </h3>
         <p className="text-muted-foreground text-sm max-w-sm mt-1 mb-4">
-          There are no recorded sessions matching your criteria.
+          <Trans>There are no recorded sessions matching your criteria.</Trans>
         </p>
         {onRefresh && (
           <Button variant="outline" onClick={onRefresh}>
-            Refresh
+            <Trans>Refresh</Trans>
           </Button>
         )}
       </div>

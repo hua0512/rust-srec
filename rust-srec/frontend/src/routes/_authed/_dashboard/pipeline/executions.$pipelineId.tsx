@@ -23,9 +23,8 @@ import {
   Timer,
   Layers,
 } from 'lucide-react';
-import { Trans } from '@lingui/react/macro';
+import { Trans, useLingui } from '@lingui/react/macro';
 import { t } from '@lingui/core/macro';
-import { format } from 'date-fns';
 import { toast } from 'sonner';
 import { motion } from 'motion/react';
 import { cn } from '@/lib/utils';
@@ -89,6 +88,7 @@ const STATUS_CONFIG: Record<
 
 function PipelineExecutionPage() {
   const { pipelineId } = Route.useParams();
+  const { i18n } = useLingui();
   const queryClient = useQueryClient();
 
   const { data, isLoading, error } = useQuery({
@@ -356,8 +356,8 @@ function PipelineExecutionPage() {
           <StatsCard
             icon={<Calendar className="h-5 w-5 text-orange-400" />}
             label={t`Started`}
-            value={format(new Date(firstJob.created_at), 'HH:mm')}
-            subtext={format(new Date(firstJob.created_at), 'MMM d, yyyy')}
+            value={i18n.date(firstJob.created_at, { timeStyle: 'short' })}
+            subtext={i18n.date(firstJob.created_at, { dateStyle: 'medium' })}
             delay={0.4}
           />
         </motion.div>
@@ -467,10 +467,9 @@ function PipelineExecutionPage() {
                               </span>
                               <span className="font-medium text-foreground">
                                 {job.completed_at
-                                  ? format(
-                                    new Date(job.completed_at),
-                                    'HH:mm:ss',
-                                  )
+                                  ? i18n.date(job.completed_at, {
+                                      timeStyle: 'medium',
+                                    })
                                   : '-'}
                               </span>
                             </div>

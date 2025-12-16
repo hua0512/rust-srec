@@ -8,6 +8,7 @@ import {
 import type { ErrorComponentProps } from '@tanstack/react-router';
 import { Button } from '@/components/ui/button';
 import { AlertCircle, RefreshCcw } from 'lucide-react';
+import { Trans } from '@lingui/react/macro';
 
 export function DefaultCatchBoundary({ error }: ErrorComponentProps) {
   const router = useRouter();
@@ -23,7 +24,7 @@ export function DefaultCatchBoundary({ error }: ErrorComponentProps) {
       <AlertCircle className="h-24 w-24 text-destructive opacity-80" />
       <div className="space-y-2">
         <h2 className="text-3xl font-bold tracking-tight">
-          Something went wrong!
+          <Trans>Something went wrong!</Trans>
         </h2>
         <div className="text-muted-foreground max-w-md mx-auto">
           <ErrorComponent error={error} />
@@ -38,11 +39,13 @@ export function DefaultCatchBoundary({ error }: ErrorComponentProps) {
           variant="default"
         >
           <RefreshCcw className="mr-2 h-4 w-4" />
-          Try Again
+          <Trans>Try Again</Trans>
         </Button>
         {isRoot ? (
           <Button variant="outline" asChild>
-            <Link to="/">Home</Link>
+            <Link to="/">
+              <Trans>Home</Trans>
+            </Link>
           </Button>
         ) : (
           <Button
@@ -52,7 +55,7 @@ export function DefaultCatchBoundary({ error }: ErrorComponentProps) {
               window.history.back();
             }}
           >
-            Go Back
+            <Trans>Go Back</Trans>
           </Button>
         )}
       </div>

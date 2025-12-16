@@ -9,6 +9,7 @@ import { t } from '@lingui/core/macro';
 import { Trans } from '@lingui/react/macro';
 import { WorkflowEditor } from '@/components/pipeline/workflows/workflow-editor';
 import { Skeleton } from '@/components/ui/skeleton';
+import type { PipelineStep } from '@/api/schemas';
 
 export const Route = createFileRoute(
   '/_authed/_dashboard/pipeline/workflows/$workflowId',
@@ -47,7 +48,7 @@ function EditWorkflowPage() {
   const onSubmit = (data: {
     name: string;
     description?: string;
-    steps: string[];
+    steps: PipelineStep[];
   }) => {
     updateMutation.mutate({ data: { id: workflowId, ...data } });
   };

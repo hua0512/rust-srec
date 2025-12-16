@@ -24,6 +24,7 @@ import {
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
 import { Trans } from '@lingui/react/macro';
+import { useLingui } from '@lingui/react';
 import { useState } from 'react';
 import { useQueryClient, useMutation } from '@tanstack/react-query';
 import { toast } from 'sonner';
@@ -49,6 +50,7 @@ interface TemplateCardProps {
 export function TemplateCard({ template, onEdit }: TemplateCardProps) {
   const [showDeleteAlert, setShowDeleteAlert] = useState(false);
   const queryClient = useQueryClient();
+  const { i18n } = useLingui();
 
   const deleteMutation = useMutation({
     mutationFn: () => deleteTemplate({ data: template.id }),
@@ -161,7 +163,7 @@ export function TemplateCard({ template, onEdit }: TemplateCardProps) {
 
         <CardFooter className="relative pt-0 text-[10px] text-muted-foreground flex justify-between items-center z-10 border-t border-border/20 mt-auto px-6 py-3 bg-muted/5">
           <span className="opacity-50">
-            {new Date(template.updated_at).toLocaleDateString()}
+            {i18n.date(new Date(template.updated_at || 0))}
           </span>
           <span className="font-mono opacity-50">
             #{template.id.slice(0, 8)}

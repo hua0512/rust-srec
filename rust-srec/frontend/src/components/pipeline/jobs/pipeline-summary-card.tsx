@@ -38,9 +38,10 @@ import {
   Layers,
   Trash2,
 } from 'lucide-react';
-import { Trans } from '@lingui/react/macro';
-import { formatDistanceToNow } from 'date-fns';
+import { Trans, Plural } from '@lingui/react/macro';
+import { useLingui } from '@lingui/react';
 import { type PipelineSummary } from '@/server/functions/pipeline';
+import { formatRelativeTime } from '@/lib/date-utils';
 
 interface PipelineSummaryCardProps {
   pipeline: PipelineSummary;
@@ -100,6 +101,7 @@ export function PipelineSummaryCard({
   onCancelPipeline,
   onViewDetails,
 }: PipelineSummaryCardProps) {
+  const { i18n } = useLingui();
   const status = pipeline.status.toLowerCase();
   const statusConfig =
     STATUS_CONFIG[status] || STATUS_CONFIG[PipelineStatus.Mixed];
@@ -265,11 +267,10 @@ export function PipelineSummaryCard({
       <CardContent className="relative pb-4 flex-1 z-10">
         <p className="text-xs text-muted-foreground/80 mb-4 leading-relaxed font-light">
           <Trans>Started</Trans>{' '}
-          {formatDistanceToNow(new Date(pipeline.created_at), {
-            addSuffix: true,
-          })}
-          {pipeline.session_id &&
-            ` - Session: ${pipeline.session_id.substring(0, 8)}`}
+          {formatRelativeTime(new Date(pipeline.created_at), i18n.locale)}
+          {pipeline.session_id && (
+            <Trans> - Session: {pipeline.session_id.substring(0, 8)}</Trans>
+          )}
         </p>
 
         {/* Job Counts */}
@@ -277,14 +278,18 @@ export function PipelineSummaryCard({
           <div className="flex items-center gap-1.5 px-2 py-1 rounded-md bg-muted/50 border">
             <Layers className="h-3 w-3 text-muted-foreground" />
             <span className="text-[10px] font-medium">
-              {pipeline.job_count} <Trans>jobs</Trans>
+              <Plural value={pipeline.job_count} one="# job" other="# jobs" />
             </span>
           </div>
           {pipeline.completed_count > 0 && (
             <div className="flex items-center gap-1.5 px-2 py-1 rounded-md bg-green-500/10 border border-green-500/20">
               <CheckCircle2 className="h-3 w-3 text-green-500" />
               <span className="text-[10px] font-medium text-green-600 dark:text-green-400">
-                {pipeline.completed_count} <Trans>done</Trans>
+                <Plural
+                  value={pipeline.completed_count}
+                  one="# done"
+                  other="# done"
+                />
               </span>
             </div>
           )}
@@ -292,7 +297,11 @@ export function PipelineSummaryCard({
             <div className="flex items-center gap-1.5 px-2 py-1 rounded-md bg-red-500/10 border border-red-500/20">
               <XCircle className="h-3 w-3 text-red-500" />
               <span className="text-[10px] font-medium text-red-600 dark:text-red-400">
-                {pipeline.failed_count} <Trans>failed</Trans>
+                <Plural
+                  value={pipeline.failed_count}
+                  one="# failed"
+                  other="# failed"
+                />
               </span>
             </div>
           )}
@@ -321,7 +330,7 @@ export function PipelineSummaryCard({
 
       <CardFooter className="relative pt-0 text-[10px] text-muted-foreground flex justify-between items-center z-10 border-t border-border/20 mt-auto px-6 py-3 bg-muted/5">
         <span className="font-mono opacity-50">
-          {pipeline.job_count} {pipeline.job_count === 1 ? 'step' : 'steps'}
+          <Plural value={pipeline.job_count} one="# step" other="# steps" />
         </span>
         {isCompleted && pipeline.total_duration_secs > 0 && (
           <span className="font-mono opacity-50">

@@ -13,6 +13,7 @@ import {
   TooltipProvider,
 } from '@/components/ui/tooltip';
 import { useLingui } from '@lingui/react';
+import { Trans } from '@lingui/react/macro';
 
 export function LanguageSwitcher() {
   const { i18n } = useLingui();
@@ -34,11 +35,15 @@ export function LanguageSwitcher() {
                 className="rounded-full w-8 h-8 bg-background"
               >
                 <Languages className="h-[1.2rem] w-[1.2rem]" />
-                <span className="sr-only">Switch language</span>
+                <span className="sr-only">
+                  <Trans>Switch language</Trans>
+                </span>
               </Button>
             </DropdownMenuTrigger>
           </TooltipTrigger>
-          <TooltipContent side="bottom">Switch language</TooltipContent>
+          <TooltipContent side="bottom">
+            <Trans>Switch language</Trans>
+          </TooltipContent>
         </Tooltip>
       </TooltipProvider>
       <DropdownMenuContent align="end">

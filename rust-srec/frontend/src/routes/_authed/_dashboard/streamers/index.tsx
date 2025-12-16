@@ -234,10 +234,7 @@ function StreamersPage() {
       animate="show"
     >
       {/* Header */}
-      <motion.div
-        className="border-b border-border/40"
-        variants={item}
-      >
+      <motion.div className="border-b border-border/40" variants={item}>
         <div className="w-full">
           {/* Title Row */}
           <div className="flex flex-col md:flex-row gap-4 items-start md:items-center justify-between p-4 md:px-8">
@@ -311,10 +308,11 @@ function StreamersPage() {
                   <button
                     key={filter.value}
                     onClick={() => handleStateChange(filter.value)}
-                    className={`relative px-3 py-1.5 text-sm font-medium rounded-full transition-all duration-200 flex items-center gap-2 ${isActive
-                      ? 'bg-primary text-primary-foreground shadow-sm'
-                      : 'text-muted-foreground hover:text-foreground hover:bg-muted'
-                      }`}
+                    className={`relative px-3 py-1.5 text-sm font-medium rounded-full transition-all duration-200 flex items-center gap-2 ${
+                      isActive
+                        ? 'bg-primary text-primary-foreground shadow-sm'
+                        : 'text-muted-foreground hover:text-foreground hover:bg-muted'
+                    }`}
                   >
                     <Icon className="h-3.5 w-3.5" />
                     <span className="relative z-10">{filter.label}</span>
@@ -501,6 +499,6 @@ function StreamersPage() {
           </Button>
         </motion.div>
       </div>
-    </motion.div >
+    </motion.div>
   );
 }

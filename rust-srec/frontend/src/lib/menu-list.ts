@@ -13,6 +13,7 @@ import {
   Play,
   Bell,
 } from 'lucide-react';
+import { t } from '@lingui/core/macro';
 
 type Submenu = {
   href: string;
@@ -41,7 +42,7 @@ export function getMenuList(_pathname: string): Group[] {
       menus: [
         {
           href: '/dashboard',
-          label: 'Dashboard',
+          label: t`Dashboard`,
           icon: LayoutGrid,
           submenus: [],
         },
@@ -53,46 +54,46 @@ export function getMenuList(_pathname: string): Group[] {
       menus: [
         {
           href: '/streamers',
-          label: 'Streamers',
+          label: t`Streamers`,
           icon: Users,
           submenus: [],
         },
         {
           href: '/sessions',
-          label: 'Sessions',
+          label: t`Sessions`,
           icon: Film,
           submenus: [],
         },
         {
           href: '/pipeline',
-          label: 'Pipeline',
+          label: t`Pipeline`,
           icon: Workflow,
           submenus: [
             {
               href: '/pipeline/presets',
-              label: 'Presets',
+              label: t`Presets`,
               icon: Settings2,
             },
             {
               href: '/pipeline/workflows',
-              label: 'Workflows',
+              label: t`Workflows`,
               icon: GitBranch,
             },
             {
               href: '/pipeline/jobs',
-              label: 'Jobs',
+              label: t`Jobs`,
               icon: ListTodo,
             },
             {
               href: '/pipeline/outputs',
-              label: 'Outputs',
+              label: t`Outputs`,
               icon: FileVideo,
             },
           ],
         },
         {
           href: '/player',
-          label: 'Player',
+          label: t`Player`,
           icon: Play,
           submenus: [],
         },
@@ -100,11 +101,11 @@ export function getMenuList(_pathname: string): Group[] {
     },
 
     {
-      groupLabel: 'Settings',
+      groupLabel: t`Settings`,
       menus: [
         {
           href: '/system/health',
-          label: 'System Health',
+          label: t`System Health`,
           icon: Activity,
         },
         // {
@@ -114,12 +115,12 @@ export function getMenuList(_pathname: string): Group[] {
         // },
         {
           href: '/config',
-          label: 'Configuration',
+          label: t`Configuration`,
           icon: Settings,
         },
         {
           href: '/notifications',
-          label: 'Notifications',
+          label: t`Notifications`,
           icon: Bell,
         },
       ],

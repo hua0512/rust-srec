@@ -41,11 +41,15 @@ export function StepsList({
   const presets = presetsData?.presets || [];
 
   const getPresetInfo = (step: PipelineStep) => {
-    if (typeof step === 'string') {
-      return presets.find((p) => p.name === step);
+    if (step.type === 'preset') {
+      return presets.find((p) => p.name === step.name);
     }
-    // If it's an object, we can try to find preset matching the processor name as fallback
-    return presets.find((p) => p.processor === step.processor);
+    if (step.type === 'inline') {
+      // Try to find preset matching the processor name as fallback
+      return presets.find((p) => p.processor === step.processor);
+    }
+    // Workflow steps don't have preset info
+    return undefined;
   };
 
   const [editingIndex, setEditingIndex] = useState<number | null>(null);
@@ -64,8 +68,8 @@ export function StepsList({
     if (
       typeof data === 'object' &&
       data !== null &&
-      'processor' in data &&
-      'config' in data
+      'type' in data &&
+      data.type === 'inline'
     ) {
       onUpdate(editingIndex, data as PipelineStep);
       return;
@@ -74,18 +78,24 @@ export function StepsList({
     // Otherwise data is just the config object
     const config = data;
 
+    // Convert to inline step with config
     let newStep: PipelineStep;
-    if (typeof originalStep === 'string') {
+    if (originalStep.type === 'preset') {
       const preset = getPresetInfo(originalStep);
       newStep = {
-        processor: preset?.processor || 'unknown',
+        type: 'inline',
+        processor: preset?.processor || originalStep.name,
+        config: config,
+      };
+    } else if (originalStep.type === 'inline') {
+      newStep = {
+        type: 'inline',
+        processor: originalStep.processor,
         config: config,
       };
     } else {
-      newStep = {
-        ...originalStep,
-        config: config,
-      };
+      // Workflow - shouldn't normally get here
+      return;
     }
     onUpdate(editingIndex, newStep);
   };
@@ -101,8 +111,10 @@ export function StepsList({
         >
           <AnimatePresence mode="popLayout">
             {steps.map((step, index) => {
-              const isInline = typeof step !== 'string';
-              const stepName = isInline ? step.processor : step;
+              const isInline = step.type === 'inline';
+              const stepName = step.type === 'inline'
+                ? step.processor
+                : step.name;
               const presetInfo = getPresetInfo(step);
               const Icon = presetInfo
                 ? getStepIcon(presetInfo.processor)
@@ -113,9 +125,9 @@ export function StepsList({
               // Use different color style for inline detached steps to distinguish them
               let colorClass = presetInfo
                 ? getStepColor(
-                    presetInfo.processor,
-                    presetInfo.category || undefined,
-                  )
+                  presetInfo.processor,
+                  presetInfo.category || undefined,
+                )
                 : 'from-muted/20 to-muted/10 text-muted-foreground border-border';
 
               if (isInline && !presetInfo) {
@@ -127,9 +139,9 @@ export function StepsList({
               return (
                 <Reorder.Item
                   key={
-                    typeof step === 'string'
-                      ? `${step}-${index}`
-                      : `${step.processor}-${index}`
+                    step.type === 'inline'
+                      ? `${step.processor}-${index}`
+                      : `${step.name}-${index}`
                   }
                   value={step}
                   className="relative"
@@ -203,7 +215,7 @@ export function StepsList({
                     </div>
 
                     <div className="flex items-center opacity-0 group-hover:opacity-100 transition-opacity">
-                      {onUpdate && (
+                      {onUpdate && step.type !== 'workflow' && (
                         <Button
                           type="button"
                           variant="ghost"

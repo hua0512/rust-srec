@@ -6,20 +6,20 @@ import {
   FormItem,
   FormLabel,
   FormMessage,
-} from '../../ui/form';
-import { Input } from '../../ui/input';
+} from '@/components/ui/form';
+import { Input } from '@/components/ui/input';
 import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from '../../ui/select';
-import { Checkbox } from '../../ui/checkbox';
+} from '@/components/ui/select';
+import { Checkbox } from '@/components/ui/checkbox';
 import { Trans } from '@lingui/react/macro';
 import { t } from '@lingui/core/macro';
 import { Link, User } from 'lucide-react';
-import { PlatformConfig, Template } from '../../../api/schemas'; // ensure correct import path
+import { PlatformConfig, Template } from '@/api/schemas';
 
 interface StreamerGeneralSettingsProps {
   form: UseFormReturn<any>;
@@ -32,7 +32,6 @@ export function StreamerGeneralSettings({
   form,
   platformConfigs,
   templates,
-  isLoading,
 }: StreamerGeneralSettingsProps) {
   return (
     <div className="space-y-6">

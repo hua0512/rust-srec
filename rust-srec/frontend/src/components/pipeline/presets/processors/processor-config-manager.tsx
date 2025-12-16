@@ -1,4 +1,5 @@
 import { Control, UseFormRegister } from 'react-hook-form';
+import { Trans } from '@lingui/react/macro';
 import { RemuxConfigForm } from './remux-config-form';
 import { RcloneConfigForm } from './rclone-config-form';
 import { ThumbnailConfigForm } from './thumbnail-config-form';
@@ -58,7 +59,7 @@ export function ProcessorConfigManager({
     default:
       return (
         <div className="text-muted-foreground italic">
-          No configuration available for this processor.
+          <Trans>No configuration available for this processor.</Trans>
         </div>
       );
   }

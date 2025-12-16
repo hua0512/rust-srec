@@ -5,8 +5,6 @@ import {
   StreamSelectionConfig,
 } from '../../streamers/config/stream-selection-input';
 
-
-
 interface StreamSelectionTabProps {
   form: UseFormReturn<any>;
   basePath?: string;
@@ -22,7 +20,9 @@ export function StreamSelectionTab({
 }: StreamSelectionTabProps) {
   const fieldName =
     propFieldName ??
-    (basePath ? `${basePath}.stream_selection_config` : 'stream_selection_config');
+    (basePath
+      ? `${basePath}.stream_selection_config`
+      : 'stream_selection_config');
   const rawConfig = form.watch(fieldName);
 
   const currentConfig: StreamSelectionConfig = useMemo(() => {
@@ -71,9 +71,6 @@ export function StreamSelectionTab({
   };
 
   return (
-    <StreamSelectionInput
-      value={currentConfig}
-      onChange={handleConfigChange}
-    />
+    <StreamSelectionInput value={currentConfig} onChange={handleConfigChange} />
   );
 }

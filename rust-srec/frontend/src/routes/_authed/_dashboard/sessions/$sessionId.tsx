@@ -22,12 +22,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
-import {
-  Tabs,
-  TabsList,
-  TabsTrigger,
-  TabsContent,
-} from '@/components/ui/tabs';
+import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 
 import { Trans } from '@lingui/react/macro';
 import { t } from '@lingui/core/macro';
@@ -78,10 +73,12 @@ function SessionDetailPage() {
   const outputs = outputsData?.items || [];
   const jobs = jobsData?.items || [];
 
-
   const handleDownload = async (outputId: string, filename: string) => {
     try {
-      const url = getMediaUrl(`/media/${outputId}/content`, user?.token?.access_token);
+      const url = getMediaUrl(
+        `/media/${outputId}/content`,
+        user?.token?.access_token,
+      );
       if (!url) throw new Error('Invalid download URL');
 
       toast.promise(
@@ -167,9 +164,9 @@ function SessionDetailPage() {
     ? formatDuration(session.duration_secs)
     : session.start_time
       ? formatDuration(
-        (new Date().getTime() - new Date(session.start_time).getTime()) /
-        1000,
-      )
+          (new Date().getTime() - new Date(session.start_time).getTime()) /
+            1000,
+        )
       : '-';
 
   return (
@@ -183,14 +180,14 @@ function SessionDetailPage() {
           className="absolute inset-0 opacity-[0.03]"
           style={{
             backgroundImage: `radial-gradient(#000 1px, transparent 1px)`,
-            backgroundSize: '24px 24px'
+            backgroundSize: '24px 24px',
           }}
         />
         <div
           className="absolute inset-0 opacity-[0.03] dark:invert"
           style={{
             backgroundImage: `radial-gradient(#fff 1px, transparent 1px)`,
-            backgroundSize: '24px 24px'
+            backgroundSize: '24px 24px',
           }}
         />
       </div>
@@ -247,7 +244,10 @@ function SessionDetailPage() {
             </TabsList>
           </div>
 
-          <TabsContent value="overview" className="mt-6 focus-visible:outline-none">
+          <TabsContent
+            value="overview"
+            className="mt-6 focus-visible:outline-none"
+          >
             <OverviewTab
               session={session}
               duration={duration}
@@ -257,11 +257,17 @@ function SessionDetailPage() {
             />
           </TabsContent>
 
-          <TabsContent value="timeline" className="mt-6 focus-visible:outline-none">
+          <TabsContent
+            value="timeline"
+            className="mt-6 focus-visible:outline-none"
+          >
             <TimelineTab session={session} />
           </TabsContent>
 
-          <TabsContent value="recordings" className="mt-6 focus-visible:outline-none">
+          <TabsContent
+            value="recordings"
+            className="mt-6 focus-visible:outline-none"
+          >
             <RecordingsTab
               isLoading={isOutputsLoading}
               outputs={outputs}
@@ -271,10 +277,7 @@ function SessionDetailPage() {
           </TabsContent>
 
           <TabsContent value="jobs" className="mt-6 focus-visible:outline-none">
-            <JobsTab
-              isLoading={isJobsLoading}
-              jobs={jobs}
-            />
+            <JobsTab isLoading={isJobsLoading} jobs={jobs} />
           </TabsContent>
         </Tabs>
       </div>
@@ -283,27 +286,42 @@ function SessionDetailPage() {
         open={!!playingOutput}
         onOpenChange={(open) => !open && setPlayingOutput(null)}
       >
-        <DialogContent className={playingOutput?.format === 'DANMU_XML' ? "max-w-4xl p-0 overflow-hidden bg-transparent border-0 shadow-none focus:outline-none" : "max-w-4xl p-0 overflow-hidden bg-black/95 border-border/20"}>
+        <DialogContent
+          className={
+            playingOutput?.format === 'DANMU_XML'
+              ? 'max-w-4xl p-0 overflow-hidden bg-transparent border-0 shadow-none focus:outline-none'
+              : 'max-w-4xl p-0 overflow-hidden bg-black/95 border-border/20'
+          }
+        >
           <DialogHeader className="sr-only">
             <DialogTitle>Media Player</DialogTitle>
           </DialogHeader>
           <div className="aspect-video w-full flex items-center justify-center">
-            {playingOutput && (
-              playingOutput.format === 'DANMU_XML' ? (
+            {playingOutput &&
+              (playingOutput.format === 'DANMU_XML' ? (
                 <DanmuViewer
-                  url={getMediaUrl(`/media/${playingOutput.id}/content`, user?.token?.access_token) || ''}
+                  url={
+                    getMediaUrl(
+                      `/media/${playingOutput.id}/content`,
+                      user?.token?.access_token,
+                    ) || ''
+                  }
                   title={playingOutput.file_path.split('/').pop()}
                   onClose={() => setPlayingOutput(null)}
                 />
               ) : (
                 <PlayerCard
-                  url={getMediaUrl(`/media/${playingOutput.id}/content`, user?.token?.access_token) || ''}
+                  url={
+                    getMediaUrl(
+                      `/media/${playingOutput.id}/content`,
+                      user?.token?.access_token,
+                    ) || ''
+                  }
                   title={playingOutput.file_path.split('/').pop()}
                   className="w-full h-full border-0 rounded-none bg-black"
                   contentClassName="min-h-0"
                 />
-              )
-            )}
+              ))}
           </div>
         </DialogContent>
       </Dialog>

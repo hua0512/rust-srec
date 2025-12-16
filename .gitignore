@@ -6,6 +6,7 @@ rust-toolchain.toml
 
 # Logs
 *.log
+*/logs/
 
 # Env
 .env
@@ -39,10 +40,6 @@ desktop.ini
 .roomodes
 .cursorrules
 .rules
-
-
-# Logs (runtime)
-rust-srec/logs/
 
 # Local SQLite databases
 *.db

@@ -103,7 +103,9 @@ export function PlatformCard({ platform, onEdit }: PlatformCardProps) {
               {platform.fetch_delay_ms ? (
                 `${(platform.fetch_delay_ms / 1000).toFixed(0)}s`
               ) : (
-                <span className="opacity-50">default</span>
+                <span className="opacity-50">
+                  <Trans>default</Trans>
+                </span>
               )}
             </span>
           </div>
@@ -116,7 +118,9 @@ export function PlatformCard({ platform, onEdit }: PlatformCardProps) {
               {platform.download_delay_ms ? (
                 `${(platform.download_delay_ms / 1000).toFixed(0)}s`
               ) : (
-                <span className="opacity-50">default</span>
+                <span className="opacity-50">
+                  <Trans>default</Trans>
+                </span>
               )}
             </span>
           </div>

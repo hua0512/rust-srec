@@ -16,6 +16,7 @@ import {
 } from '@/components/ui/select';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Trans } from '@lingui/react/macro';
+import { t } from '@lingui/core/macro';
 import { FolderOpen } from 'lucide-react';
 import { UseFormReturn } from 'react-hook-form';
 import { EngineConfig } from '@/api/schemas';
@@ -124,7 +125,7 @@ export function OutputSettingsCard({
                 >
                   <FormControl>
                     <SelectTrigger className="bg-background">
-                      <SelectValue placeholder="Select a format" />
+                      <SelectValue placeholder={t`Select a format`} />
                     </SelectTrigger>
                   </FormControl>
                   <SelectContent>
@@ -161,7 +162,7 @@ export function OutputSettingsCard({
                 >
                   <FormControl>
                     <SelectTrigger className="bg-background">
-                      <SelectValue placeholder="Select an engine" />
+                      <SelectValue placeholder={t`Select an engine`} />
                     </SelectTrigger>
                   </FormControl>
                   <SelectContent>
@@ -184,6 +185,6 @@ export function OutputSettingsCard({
           />
         </div>
       </CardContent>
-    </Card >
+    </Card>
   );
 }

@@ -21,7 +21,7 @@ function CreateTemplatePage() {
   const createMutation = useMutation({
     mutationFn: (data: TemplateFormValues) => {
       if (!data.name) throw new Error('Name is required');
-      return createTemplate({ data: data as any });
+      return createTemplate({ data: data });
     },
     onSuccess: () => {
       toast.success(t`Template created successfully`);

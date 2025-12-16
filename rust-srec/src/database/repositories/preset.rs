@@ -331,6 +331,9 @@ pub trait PipelinePresetRepository: Send + Sync {
     /// Get a pipeline preset by ID.
     async fn get_pipeline_preset(&self, id: &str) -> Result<Option<PipelinePreset>>;
 
+    /// Get a pipeline preset by name.
+    async fn get_pipeline_preset_by_name(&self, name: &str) -> Result<Option<PipelinePreset>>;
+
     /// Create a new pipeline preset.
     async fn create_pipeline_preset(&self, preset: &PipelinePreset) -> Result<()>;
 
@@ -426,6 +429,19 @@ impl PipelinePresetRepository for SqlitePipelinePresetRepository {
             "#,
         )
         .bind(id)
+        .fetch_optional(&*self.pool)
+        .await?;
+
+        Ok(preset)
+    }
+
+    async fn get_pipeline_preset_by_name(&self, name: &str) -> Result<Option<PipelinePreset>> {
+        let preset = sqlx::query_as::<_, PipelinePreset>(
+            r#"
+            SELECT * FROM pipeline_presets WHERE name = $1
+            "#,
+        )
+        .bind(name)
         .fetch_optional(&*self.pool)
         .await?;
 

@@ -15,7 +15,7 @@ export interface FormatOptions {
  */
 export function formatBytes(
   bytes: number | bigint | null | undefined,
-  options: FormatOptions = {}
+  options: FormatOptions = {},
 ): string {
   const { decimals = 2, nullValue = '0 B' } = options;
 
@@ -29,7 +29,11 @@ export function formatBytes(
   const i = Math.floor(Math.log(numBytes) / Math.log(k));
   const unitIndex = Math.min(i, sizes.length - 1);
 
-  return parseFloat((numBytes / Math.pow(k, unitIndex)).toFixed(dm)) + ' ' + sizes[unitIndex];
+  return (
+    parseFloat((numBytes / Math.pow(k, unitIndex)).toFixed(dm)) +
+    ' ' +
+    sizes[unitIndex]
+  );
 }
 
 /**
@@ -38,7 +42,7 @@ export function formatBytes(
  */
 export function formatDuration(
   seconds: number | null | undefined,
-  options: FormatOptions = {}
+  options: FormatOptions = {},
 ): string {
   const { compact = false, nullValue = '-', decimals = 1 } = options;
 
@@ -82,7 +86,7 @@ export function formatDuration(
  */
 export function formatSpeed(
   bytesPerSec: number | null | undefined,
-  options: FormatOptions = {}
+  options: FormatOptions = {},
 ): string {
   const { nullValue = '0 B/s' } = options;
 

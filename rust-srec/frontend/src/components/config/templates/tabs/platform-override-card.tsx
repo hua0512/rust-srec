@@ -1,5 +1,5 @@
 import { UseFormReturn } from 'react-hook-form';
-import { Button } from '../../../ui/button';
+import { Button } from '@/components/ui/button';
 import {
   Trash2,
   ChevronDown,
@@ -12,10 +12,10 @@ import {
   Collapsible,
   CollapsibleContent,
   CollapsibleTrigger,
-} from '../../../ui/collapsible';
+} from '@/components/ui/collapsible';
 import { useState } from 'react';
 import { Trans } from '@lingui/react/macro';
-import { Card, CardHeader, CardContent } from '../../../ui/card';
+import { Card, CardHeader, CardContent } from '@/components/ui/card';
 import { cn } from '@/lib/utils';
 import { EngineConfig } from '@/api/schemas';
 import { PlatformSpecificTab } from '../../platforms/tabs/platform-specific-tab';

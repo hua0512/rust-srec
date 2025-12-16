@@ -1,4 +1,4 @@
-import { useWatch } from 'react-hook-form';
+
 import {
   FormControl,
   FormField,
@@ -30,6 +30,9 @@ import {
   RefreshCw,
 } from 'lucide-react';
 import { ProcessorConfigFormProps } from './common-props';
+import { Trans } from '@lingui/react/macro';
+import { useLingui } from '@lingui/react';
+import { t } from '@lingui/core/macro';
 
 type RcloneConfig = z.infer<typeof RcloneConfigSchema>;
 
@@ -37,23 +40,8 @@ export function RcloneConfigForm({
   control,
   pathPrefix,
 }: ProcessorConfigFormProps<RcloneConfig>) {
+  const { i18n } = useLingui();
   const prefix = pathPrefix ? `${pathPrefix}.` : '';
-  const operation = useWatch({
-    control,
-    name: `${prefix}operation` as any,
-  });
-
-  const getOperationIcon = () => {
-    switch (operation) {
-      case 'move':
-        return <Move className="h-4 w-4 text-orange-400" />;
-      case 'sync':
-        return <RefreshCw className="h-4 w-4 text-blue-400" />;
-      case 'copy':
-      default:
-        return <Copy className="h-4 w-4 text-green-400" />;
-    }
-  };
 
   return (
     <Tabs defaultValue="general" className="w-full">
@@ -62,13 +50,13 @@ export function RcloneConfigForm({
           value="general"
           className="data-[state=active]:bg-background data-[state=active]:shadow-sm"
         >
-          General
+          <Trans>General</Trans>
         </TabsTrigger>
         <TabsTrigger
           value="advanced"
           className="data-[state=active]:bg-background data-[state=active]:shadow-sm"
         >
-          Advanced
+          <Trans>Advanced</Trans>
         </TabsTrigger>
       </TabsList>
 
@@ -81,7 +69,7 @@ export function RcloneConfigForm({
                 <ArrowRightLeft className="h-4 w-4 text-primary" />
               </div>
               <CardTitle className="text-sm font-medium">
-                Operation Mode
+                <Trans>Operation Mode</Trans>
               </CardTitle>
             </div>
           </CardHeader>
@@ -91,7 +79,9 @@ export function RcloneConfigForm({
               name={`${prefix}operation` as any}
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel>Operation</FormLabel>
+                  <FormLabel>
+                    <Trans>Operation</Trans>
+                  </FormLabel>
                   <Select
                     onValueChange={field.onChange}
                     defaultValue={field.value}
@@ -99,8 +89,9 @@ export function RcloneConfigForm({
                     <FormControl>
                       <SelectTrigger className="h-11 bg-background/50">
                         <div className="flex items-center gap-2">
-                          {getOperationIcon()}
-                          <SelectValue placeholder="Select operation" />
+                          <SelectValue
+                            placeholder={t(i18n)`Select operation`}
+                          />
                         </div>
                       </SelectTrigger>
                     </FormControl>
@@ -108,34 +99,42 @@ export function RcloneConfigForm({
                       <SelectItem value="copy">
                         <div className="flex items-center gap-2">
                           <Copy className="h-4 w-4 text-green-400" />
-                          <span>Copy</span>
+                          <span>
+                            <Trans>Copy</Trans>
+                          </span>
                           <span className="ml-2 text-xs text-muted-foreground/50">
-                            (Preserve source)
+                            <Trans>(Preserve source)</Trans>
                           </span>
                         </div>
                       </SelectItem>
                       <SelectItem value="move">
                         <div className="flex items-center gap-2">
                           <Move className="h-4 w-4 text-orange-400" />
-                          <span>Move</span>
+                          <span>
+                            <Trans>Move</Trans>
+                          </span>
                           <span className="ml-2 text-xs text-muted-foreground/50">
-                            (Delete source)
+                            <Trans>(Delete source)</Trans>
                           </span>
                         </div>
                       </SelectItem>
                       <SelectItem value="sync">
                         <div className="flex items-center gap-2">
                           <RefreshCw className="h-4 w-4 text-blue-400" />
-                          <span>Sync</span>
+                          <span>
+                            <Trans>Sync</Trans>
+                          </span>
                           <span className="ml-2 text-xs text-muted-foreground/50">
-                            (Mirror source)
+                            <Trans>(Mirror source)</Trans>
                           </span>
                         </div>
                       </SelectItem>
                     </SelectContent>
                   </Select>
                   <FormDescription>
-                    Choose how files are transferred to the remote.
+                    <Trans>
+                      Choose how files are transferred to the remote.
+                    </Trans>
                   </FormDescription>
                   <FormMessage />
                 </FormItem>
@@ -152,7 +151,7 @@ export function RcloneConfigForm({
                 <Cloud className="h-4 w-4 text-primary" />
               </div>
               <CardTitle className="text-sm font-medium">
-                Target Configuration
+                <Trans>Target Configuration</Trans>
               </CardTitle>
             </div>
           </CardHeader>
@@ -162,16 +161,18 @@ export function RcloneConfigForm({
               name={`${prefix}destination_root` as any}
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel>Destination Root</FormLabel>
+                  <FormLabel>
+                    <Trans>Destination Root</Trans>
+                  </FormLabel>
                   <FormControl>
                     <Input
-                      placeholder="e.g. gdrive:/videos"
+                      placeholder={t(i18n)`e.g. gdrive:/videos`}
                       {...field}
                       className="h-11 bg-background/50 font-mono text-sm"
                     />
                   </FormControl>
                   <FormDescription>
-                    Base path for remote storage.
+                    <Trans>Base path for remote storage.</Trans>
                   </FormDescription>
                   <FormMessage />
                 </FormItem>
@@ -184,10 +185,12 @@ export function RcloneConfigForm({
                 name={`${prefix}config_path` as any}
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>Config Path (Optional)</FormLabel>
+                    <FormLabel>
+                      <Trans>Config Path (Optional)</Trans>
+                    </FormLabel>
                     <FormControl>
                       <Input
-                        placeholder="/path/to/rclone.conf"
+                        placeholder={t(i18n)`/path/to/rclone.conf`}
                         {...field}
                         className="bg-background/50"
                       />
@@ -201,7 +204,9 @@ export function RcloneConfigForm({
                 name={`${prefix}rclone_path` as any}
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>Rclone Executable</FormLabel>
+                    <FormLabel>
+                      <Trans>Rclone Executable</Trans>
+                    </FormLabel>
                     <FormControl>
                       <Input {...field} className="bg-background/50" />
                     </FormControl>
@@ -223,7 +228,7 @@ export function RcloneConfigForm({
                 <Settings2 className="h-4 w-4 text-primary" />
               </div>
               <CardTitle className="text-sm font-medium">
-                Retry Policy
+                <Trans>Retry Policy</Trans>
               </CardTitle>
             </div>
           </CardHeader>
@@ -233,7 +238,9 @@ export function RcloneConfigForm({
               name={`${prefix}max_retries` as any}
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel>Max Retries</FormLabel>
+                  <FormLabel>
+                    <Trans>Max Retries</Trans>
+                  </FormLabel>
                   <FormControl>
                     <Input
                       type="number"
@@ -243,7 +250,7 @@ export function RcloneConfigForm({
                     />
                   </FormControl>
                   <FormDescription>
-                    Number of attempts before failing the upload.
+                    <Trans>Number of attempts before failing the upload.</Trans>
                   </FormDescription>
                   <FormMessage />
                 </FormItem>
@@ -260,7 +267,7 @@ export function RcloneConfigForm({
                 <Terminal className="h-4 w-4 text-primary" />
               </div>
               <CardTitle className="text-sm font-medium">
-                Extra Arguments
+                <Trans>Extra Arguments</Trans>
               </CardTitle>
             </div>
           </CardHeader>
@@ -274,10 +281,12 @@ export function RcloneConfigForm({
                     <ListInput
                       value={field.value || []}
                       onChange={field.onChange}
-                      placeholder="Add rclone argument"
+                      placeholder={t(i18n)`Add rclone argument`}
                     />
                   </FormControl>
-                  <FormDescription>Double click to edit items.</FormDescription>
+                  <FormDescription>
+                    <Trans>Double click to edit items.</Trans>
+                  </FormDescription>
                   <FormMessage />
                 </FormItem>
               )}

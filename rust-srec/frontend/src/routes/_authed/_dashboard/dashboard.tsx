@@ -18,14 +18,16 @@ import {
   PlayCircle,
 } from 'lucide-react';
 import { Trans } from '@lingui/react/macro';
+import { useLingui } from '@lingui/react';
 import { t } from '@lingui/core/macro';
-import { formatDistanceToNow } from 'date-fns';
 import { createFileRoute, Link } from '@tanstack/react-router';
 import { useMutation, useQueryClient, useQuery } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { motion } from 'motion/react';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
+import { formatRelativeTime } from '@/lib/date-utils';
+import { formatDuration } from '@/lib/format';
 
 export const Route = createFileRoute('/_authed/_dashboard/dashboard')({
   component: Dashboard,
@@ -167,12 +169,12 @@ function Dashboard() {
                           )}
                         />
                         <span className="text-2xl font-bold capitalize">
-                          {health.status}
+                          {getStatusLabel(health.status)}
                         </span>
                       </div>
                       <p className="text-xs text-muted-foreground mt-2">
                         <Trans>Uptime</Trans>:{' '}
-                        {formatUptime(health.uptime_secs)}
+                        {formatDuration(health.uptime_secs)}
                       </p>
                     </CardContent>
                   </Card>
@@ -180,21 +182,21 @@ function Dashboard() {
 
                 {/* Key Components */}
                 <ComponentStatusCard
-                  name="Database"
+                  name={t`Database`}
                   component={health.components.find(
                     (c: any) => c.name === 'database',
                   )}
                   icon={HardDrive}
                 />
                 <ComponentStatusCard
-                  name="Download Manager"
+                  name={t`Download Manager`}
                   component={health.components.find(
                     (c: any) => c.name === 'download_manager',
                   )}
                   icon={Activity}
                 />
                 <ComponentStatusCard
-                  name="Disk"
+                  name={t`Disk`}
                   component={health.components.find((c: any) =>
                     c.name.startsWith('disk:'),
                   )}
@@ -335,6 +337,8 @@ function ComponentStatusCard({
   component: any;
   icon: any;
 }) {
+  const { i18n } = useLingui();
+
   if (!component)
     return (
       <motion.div
@@ -367,7 +371,7 @@ function ComponentStatusCard({
         className={cn(
           'bg-card/50 backdrop-blur-sm border-primary/5 shadow-sm transition-all hover:shadow-md h-full',
           !isHealthy &&
-          'border-red-500/20 bg-red-500/5 text-red-600 dark:text-red-400',
+            'border-red-500/20 bg-red-500/5 text-red-600 dark:text-red-400',
         )}
       >
         <CardHeader className="pb-2 flex flex-row items-center justify-between space-y-0">
@@ -402,15 +406,13 @@ function ComponentStatusCard({
               {/* For key components on dashboard, prefer simple status unless it's an error message that fits */}
               {!isHealthy && component.message && component.message.length < 30
                 ? component.message
-                : component.status}
+                : getStatusLabel(component.status)}
             </div>
           </div>
           {component.last_check && (
             <p className="text-[10px] text-muted-foreground mt-2 text-right">
               <Trans>Checked</Trans>{' '}
-              {formatDistanceToNow(new Date(component.last_check), {
-                addSuffix: true,
-              })}
+              {formatRelativeTime(component.last_check, i18n.locale)}
             </p>
           )}
         </CardContent>
@@ -463,12 +465,17 @@ function StatCard({
   );
 }
 
-function formatUptime(seconds: number): string {
-  const days = Math.floor(seconds / 86400);
-  const hours = Math.floor((seconds % 86400) / 3600);
-  const minutes = Math.floor((seconds % 3600) / 60);
-
-  if (days > 0) return `${days}d ${hours}h`;
-  if (hours > 0) return `${hours}h ${minutes}m`;
-  return `${minutes}m`;
+function getStatusLabel(status: string) {
+  switch (status.toLowerCase()) {
+    case 'healthy':
+      return t`Healthy`;
+    case 'degraded':
+      return t`Degraded`;
+    case 'unhealthy':
+      return t`Unhealthy`;
+    case 'unknown':
+      return t`Unknown`;
+    default:
+      return status;
+  }
 }

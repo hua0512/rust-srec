@@ -14,6 +14,7 @@ import {
 } from '@/components/ui/select';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Trans } from '@lingui/react/macro';
+import { t } from '@lingui/core/macro';
 import { Tv } from 'lucide-react';
 import { UseFormReturn } from 'react-hook-form';
 
@@ -73,7 +74,7 @@ export function RecordDanmuCard({ form, basePath }: RecordDanmuCardProps) {
                 >
                   <FormControl>
                     <SelectTrigger className="w-[180px] bg-background">
-                      <SelectValue placeholder="Select behavior" />
+                      <SelectValue placeholder={t`Select behavior`} />
                     </SelectTrigger>
                   </FormControl>
                   <SelectContent>

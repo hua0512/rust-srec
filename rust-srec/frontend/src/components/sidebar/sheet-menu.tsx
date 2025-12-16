@@ -1,5 +1,6 @@
 import { Link } from '@tanstack/react-router';
 import { MenuIcon } from 'lucide-react';
+import { Trans } from '@lingui/react/macro';
 
 import { Button } from '@/components/ui/button';
 import { Menu } from '@/components/sidebar/menu';
@@ -28,7 +29,9 @@ export function SheetMenu() {
           >
             <Link to="/dashboard" className="flex items-center gap-2">
               <div className="w-6 h-6 mr-1 bg-primary/80 dark:bg-primary transition-colors [mask-image:url(/stream-rec-white.svg)] [mask-size:contain] [mask-repeat:no-repeat] [mask-position:center]" />
-              <SheetTitle className="font-bold text-lg">Rust-Srec</SheetTitle>
+              <SheetTitle className="font-bold text-lg">
+                <Trans>Rust-Srec</Trans>
+              </SheetTitle>
             </Link>
           </Button>
         </SheetHeader>

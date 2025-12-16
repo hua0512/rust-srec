@@ -41,6 +41,7 @@ import {
 } from 'lucide-react';
 import { z } from 'zod';
 import { Trans } from '@lingui/react/macro';
+import { DEFAULT_JOB_PRESET_DESCRIPTIONS } from './default-presets-i18n';
 
 interface PresetCardProps {
   preset: z.infer<typeof JobPresetSchema>;
@@ -75,17 +76,20 @@ const PROCESSOR_COLORS: Record<string, string> = {
   copy_move: 'bg-amber-500/10 text-amber-500 border-amber-500/20',
 };
 
-const CATEGORY_LABELS: Record<string, string> = {
-  remux: 'Remux',
-  compression: 'Compression',
-  thumbnail: 'Thumbnail',
-  audio: 'Audio',
-  archive: 'Archive',
-  upload: 'Upload',
-  cleanup: 'Cleanup',
-  file_ops: 'File Ops',
-  custom: 'Custom',
-  metadata: 'Metadata',
+import { msg } from '@lingui/core/macro';
+import { useLingui } from '@lingui/react';
+
+const CATEGORY_LABELS: Record<string, any> = {
+  remux: msg`Remux`,
+  compression: msg`Compression`,
+  thumbnail: msg`Thumbnail`,
+  audio: msg`Audio`,
+  archive: msg`Archive`,
+  upload: msg`Upload`,
+  cleanup: msg`Cleanup`,
+  file_ops: msg`File Ops`,
+  custom: msg`Custom`,
+  metadata: msg`Metadata`,
 };
 
 export function PresetCard({
@@ -94,13 +98,17 @@ export function PresetCard({
   onDelete,
   onClone,
 }: PresetCardProps) {
+  const { i18n } = useLingui();
   const Icon = PROCESSOR_ICONS[preset.processor] || FileVideo;
   const colorClass =
     PROCESSOR_COLORS[preset.processor] ||
     'bg-primary/10 text-primary border-primary/20';
-  const categoryLabel = preset.category
-    ? CATEGORY_LABELS[preset.category] || preset.category
+  const categoryLabelKey = preset.category
+    ? CATEGORY_LABELS[preset.category]
     : null;
+  const categoryLabel = categoryLabelKey
+    ? i18n._(categoryLabelKey)
+    : (preset.category ?? null);
 
   let configObj: any = {};
   try {
@@ -110,12 +118,16 @@ export function PresetCard({
         : preset.config;
   } catch {}
 
+  const description = DEFAULT_JOB_PRESET_DESCRIPTIONS[preset.id]
+    ? i18n._(DEFAULT_JOB_PRESET_DESCRIPTIONS[preset.id])
+    : preset.description;
+
   const configKeys = Object.keys(configObj).filter(
     (k) => k !== 'overwrite' && k !== 'create_dirs',
   );
 
   return (
-    <Card className="relative h-full flex flex-col transition-all duration-500 hover:-translate-y-1 hover:shadow-2xl hover:shadow-primary/10 group overflow-hidden bg-gradient-to-br from-background/80 to-background/40 backdrop-blur-xl border-border/40 hover:border-primary/20">
+    <Card className="relative h-full flex flex-col transition-all duration-500 hover:-translate-y-1 hover:shadow-xl hover:shadow-primary/5 group overflow-hidden bg-gradient-to-br from-background/50 to-background/80 backdrop-blur-sm border-border/40 hover:border-primary/20">
       <div className="absolute inset-x-0 top-0 h-0.5 bg-gradient-to-r from-transparent via-primary/40 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-700" />
 
       {/* Hover Glow Effect */}
@@ -199,11 +211,14 @@ export function PresetCard({
         </DropdownMenu>
       </CardHeader>
       <CardContent className="relative pb-4 flex-1 z-10">
-        {preset.description && (
-          <p className="text-xs text-muted-foreground/80 line-clamp-2 mb-4 leading-relaxed font-light">
-            {preset.description}
-          </p>
-        )}
+        {/* Description or Config Summary */}
+        <div className="text-xs text-muted-foreground/70 mb-4 line-clamp-2 leading-relaxed min-h-[2.5em]">
+          {description || (
+            <span className="italic opacity-40 text-xs">
+              <Trans>No description.</Trans>
+            </span>
+          )}
+        </div>
         <div className="text-sm text-muted-foreground">
           {configKeys.length > 0 ? (
             <div className="grid grid-cols-2 gap-2">

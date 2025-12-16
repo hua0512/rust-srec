@@ -159,11 +159,16 @@ impl ServiceContainer {
         // Create job preset repository
         let preset_repo = Arc::new(SqliteJobPresetRepository::new(pool.clone().into()));
 
+        // Create pipeline preset repository
+        let pipeline_preset_repo =
+            Arc::new(SqlitePipelinePresetRepository::new(pool.clone().into()));
+
         // Create pipeline manager with job repository for database persistence
         let pipeline_manager = Arc::new(
             PipelineManager::with_repository(PipelineManagerConfig::default(), job_repo)
                 .with_session_repository(session_repo)
                 .with_preset_repository(preset_repo)
+                .with_pipeline_preset_repository(pipeline_preset_repo)
                 .with_config_service(config_service.clone()),
         );
 
@@ -286,11 +291,16 @@ impl ServiceContainer {
         // Create job preset repository
         let preset_repo = Arc::new(SqliteJobPresetRepository::new(pool.clone().into()));
 
+        // Create pipeline preset repository (for workflow expansion)
+        let pipeline_preset_repo =
+            Arc::new(SqlitePipelinePresetRepository::new(pool.clone().into()));
+
         // Create pipeline manager with job repository for database persistence
         let pipeline_manager = Arc::new(
             PipelineManager::with_repository(pipeline_config, job_repo)
                 .with_session_repository(session_repo.clone())
-                .with_preset_repository(preset_repo),
+                .with_preset_repository(preset_repo)
+                .with_pipeline_preset_repository(pipeline_preset_repo),
         );
 
         // Get monitor event broadcaster

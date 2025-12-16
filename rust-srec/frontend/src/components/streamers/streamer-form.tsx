@@ -10,17 +10,10 @@ import {
 } from '@/server/functions';
 import { Button } from '../ui/button';
 
-import {
-  Form,
-} from '../ui/form';
+import { Form } from '../ui/form';
 import { z } from 'zod';
 import { Trans } from '@lingui/react/macro';
-import {
-  Loader2,
-  ArrowRight,
-  ArrowLeft,
-  Undo2,
-} from 'lucide-react';
+import { Loader2, ArrowRight, ArrowLeft, Undo2 } from 'lucide-react';
 import { useState } from 'react';
 import { StreamerMetaForm } from './edit/streamer-meta-form';
 import { StreamerConfigForm } from './edit/streamer-config-form';
@@ -89,7 +82,6 @@ export function StreamerForm({
     streamer_specific_config: initialSpecificConfig,
   };
 
-
   const form = useForm<StreamerFormValues>({
     resolver: zodResolver(
       StreamerFormSchema,
@@ -114,7 +106,6 @@ export function StreamerForm({
       const metadata = await extractMetadata({ data: url });
       setDetectedPlatform(metadata.platform ?? null);
       setValidPlatformConfigs(metadata.valid_platform_configs);
-
 
       // If only one valid config and user hasn't selected one, select it
       if (
@@ -160,10 +151,7 @@ export function StreamerForm({
         <Form {...form}>
           <form className="space-y-6">
             <div className="animate-in fade-in slide-in-from-right-4 duration-300">
-              <StreamerMetaForm
-                form={form}
-                title={title}
-              >
+              <StreamerMetaForm form={form} title={title}>
                 <div className="flex justify-end pt-4 gap-2">
                   <Button
                     variant="ghost"
@@ -213,7 +201,8 @@ export function StreamerForm({
                 onClick={() => setStage(1)}
                 className="mb-4"
               >
-                <ArrowLeft className="mr-2 h-4 w-4" /> <Trans>Back to Details</Trans>
+                <ArrowLeft className="mr-2 h-4 w-4" />{' '}
+                <Trans>Back to Details</Trans>
               </Button>
 
               <StreamerConfigForm
@@ -235,7 +224,6 @@ export function StreamerForm({
             onSubmit(data);
           })}
         />
-
       </div>
     </div>
   );

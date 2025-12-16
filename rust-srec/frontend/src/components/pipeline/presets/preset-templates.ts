@@ -1,6 +1,8 @@
+import { msg } from '@lingui/core/macro';
+
 export const PRESET_TEMPLATES = {
   remux: {
-    label: 'Remux / Transcode',
+    label: msg`Remux / Transcode`,
     value: {
       video_codec: 'copy',
       audio_codec: 'copy',
@@ -9,7 +11,7 @@ export const PRESET_TEMPLATES = {
     },
   },
   transcode_h264: {
-    label: 'Transcode H.264',
+    label: msg`Transcode H.264`,
     value: {
       video_codec: 'h264',
       audio_codec: 'aac',
@@ -19,7 +21,7 @@ export const PRESET_TEMPLATES = {
     },
   },
   thumbnail: {
-    label: 'Thumbnail',
+    label: msg`Thumbnail`,
     value: {
       timestamp_secs: 10.0,
       width: 320,
@@ -27,7 +29,7 @@ export const PRESET_TEMPLATES = {
     },
   },
   rclone: {
-    label: 'Rclone',
+    label: msg`Rclone`,
     value: {
       operation: 'copy',
       destination_root: 'drive:/stream-recordings',
@@ -36,7 +38,7 @@ export const PRESET_TEMPLATES = {
     },
   },
   audio_extract: {
-    label: 'Audio Extract',
+    label: msg`Audio Extract`,
     value: {
       format: 'mp3',
       bitrate: '192k',
@@ -44,7 +46,7 @@ export const PRESET_TEMPLATES = {
     },
   },
   compression: {
-    label: 'Compression (Zip)',
+    label: msg`Compression (Zip)`,
     value: {
       format: 'zip',
       compression_level: 6,
@@ -52,7 +54,7 @@ export const PRESET_TEMPLATES = {
     },
   },
   copy_move: {
-    label: 'Copy/Move',
+    label: msg`Copy/Move`,
     value: {
       operation: 'copy',
       create_dirs: true,
@@ -60,14 +62,14 @@ export const PRESET_TEMPLATES = {
     },
   },
   delete: {
-    label: 'Delete',
+    label: msg`Delete`,
     value: {
       max_retries: 3,
       retry_delay_ms: 1000,
     },
   },
   metadata: {
-    label: 'Metadata',
+    label: msg`Metadata`,
     value: {
       copyright: 'My Organization',
       overwrite: true,

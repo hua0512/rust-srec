@@ -12,6 +12,7 @@ import { PresetSaveFab } from './editor/preset-save-fab';
 const PresetFormSchema = z.object({
   id: z.string().min(1, t`ID is required`),
   name: z.string().min(1, t`Name is required`),
+  description: z.string().optional(),
   processor: z.string().min(1, t`Processor is required`),
   config: z.any(),
 });
@@ -36,6 +37,7 @@ export function PresetEditor({
     defaultValues: {
       id: '',
       name: '',
+      description: '',
       processor: 'remux',
       config: {},
     },
@@ -43,20 +45,12 @@ export function PresetEditor({
 
   useEffect(() => {
     if (initialData) {
-      let parsedConfig: any = initialData.config;
-      try {
-        if (typeof initialData.config === 'string') {
-          parsedConfig = JSON.parse(initialData.config);
-        }
-      } catch {
-        parsedConfig = {};
-      }
-
       form.reset({
         id: initialData.id,
         name: initialData.name,
+        description: initialData.description || '',
         processor: initialData.processor,
-        config: parsedConfig,
+        config: initialData.config,
       });
     }
   }, [initialData, form]);
@@ -75,6 +69,7 @@ export function PresetEditor({
                 form={form}
                 initialData={initialData}
                 title={title}
+                isUpdating={isUpdating}
               />
             </div>
 

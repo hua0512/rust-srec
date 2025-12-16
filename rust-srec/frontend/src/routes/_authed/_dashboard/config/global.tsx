@@ -2,25 +2,25 @@ import { createFileRoute } from '@tanstack/react-router';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { motion } from 'motion/react';
-import { GlobalConfigSchema } from '../../../../api/schemas';
+import { GlobalConfigSchema } from '@/api/schemas';
 import {
   getGlobalConfig,
   updateGlobalConfig,
   listEngines,
 } from '@/server/functions';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Button } from '../../../../components/ui/button';
-import { Form } from '../../../../components/ui/form';
+import { Button } from '@/components/ui/button';
+import { Form } from '@/components/ui/form';
 import { toast } from 'sonner';
 import { z } from 'zod';
 import { t } from '@lingui/core/macro';
-import { Skeleton } from '../../../../components/ui/skeleton';
+import { Skeleton } from '@/components/ui/skeleton';
 import { Save } from 'lucide-react';
-import { FileConfigCard } from '../../../../components/config/global/file-config-card';
-import { ResourceLimitsCard } from '../../../../components/config/global/resource-limits-card';
-import { ConcurrencyCard } from '../../../../components/config/global/concurrency-card';
-import { NetworkSystemCard } from '../../../../components/config/global/network-system-card';
-import { PipelineConfigCard } from '../../../../components/config/global/pipeline-config-card';
+import { FileConfigCard } from '@/components/config/global/file-config-card';
+import { ResourceLimitsCard } from '@/components/config/global/resource-limits-card';
+import { ConcurrencyCard } from '@/components/config/global/concurrency-card';
+import { NetworkSystemCard } from '@/components/config/global/network-system-card';
+import { PipelineConfigCard } from '@/components/config/global/pipeline-config-card';
 
 export const Route = createFileRoute('/_authed/_dashboard/config/global')({
   component: GlobalConfigPage,
@@ -43,37 +43,37 @@ function GlobalConfigPage() {
     resolver: zodResolver(GlobalConfigSchema),
     defaultValues: config
       ? {
-        ...config,
-        proxy_config: config.proxy_config ?? null,
-        pipeline: config.pipeline ?? null,
-      }
+          ...config,
+          proxy_config: config.proxy_config ?? null,
+          pipeline: config.pipeline ?? null,
+        }
       : {
-        output_folder: '',
-        output_filename_template: '',
-        output_file_format: 'flv',
-        min_segment_size_bytes: 0,
-        max_download_duration_secs: 0,
-        max_part_size_bytes: 0,
-        record_danmu: false,
-        max_concurrent_downloads: 0,
-        max_concurrent_uploads: 0,
-        max_concurrent_cpu_jobs: 0,
-        max_concurrent_io_jobs: 0,
-        streamer_check_delay_ms: 0,
-        proxy_config: null,
-        offline_check_delay_ms: 0,
-        offline_check_count: 0,
-        default_download_engine: 'default-mesio',
-        job_history_retention_days: 30,
-        session_gap_time_secs: 3600,
-        pipeline: null,
-      },
+          output_folder: '',
+          output_filename_template: '',
+          output_file_format: 'flv',
+          min_segment_size_bytes: 0,
+          max_download_duration_secs: 0,
+          max_part_size_bytes: 0,
+          record_danmu: false,
+          max_concurrent_downloads: 0,
+          max_concurrent_uploads: 0,
+          max_concurrent_cpu_jobs: 0,
+          max_concurrent_io_jobs: 0,
+          streamer_check_delay_ms: 0,
+          proxy_config: null,
+          offline_check_delay_ms: 0,
+          offline_check_count: 0,
+          default_download_engine: 'default-mesio',
+          job_history_retention_days: 30,
+          session_gap_time_secs: 3600,
+          pipeline: null,
+        },
     values: config
       ? {
-        ...config,
-        proxy_config: config.proxy_config ?? null,
-        pipeline: config.pipeline ?? null,
-      }
+          ...config,
+          proxy_config: config.proxy_config ?? null,
+          pipeline: config.pipeline ?? null,
+        }
       : undefined,
   });
 
@@ -164,7 +164,7 @@ function GlobalConfigPage() {
           <motion.div
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.3, delay: 0.2 }}
+            transition={{ duration: 0.3, delay: 0.25 }}
             className="md:col-span-2"
           >
             <PipelineConfigCard control={form.control} />

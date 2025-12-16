@@ -10,8 +10,6 @@ import {
 import { z } from 'zod';
 import { removeEmpty } from '@/lib/format';
 
-
-
 export const listStreamers = createServerFn({ method: 'GET' })
   .inputValidator(
     (
@@ -138,4 +136,3 @@ export const updateStreamerPriority = createServerFn({ method: 'POST' })
     });
     return StreamerSchema.parse(json);
   });
-

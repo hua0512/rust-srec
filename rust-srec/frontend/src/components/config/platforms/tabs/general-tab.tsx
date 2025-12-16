@@ -5,12 +5,12 @@ import {
   FormItem,
   FormLabel,
   FormMessage,
-} from '../../../ui/form';
+} from '@/components/ui/form';
 
 import { Trans } from '@lingui/react/macro';
 import { t } from '@lingui/core/macro';
 import { Clock } from 'lucide-react';
-import { InputWithUnit } from '../../../ui/input-with-unit';
+import { InputWithUnit } from '@/components/ui/input-with-unit';
 import { UseFormReturn } from 'react-hook-form';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 

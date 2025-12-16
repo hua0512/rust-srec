@@ -91,13 +91,6 @@ export const Route = createFileRoute('/_authed/_dashboard/pipeline/jobs/')({
   component: PipelineJobsPage,
 });
 
-const STATUS_FILTERS = [
-  { value: null, label: 'All', icon: ListTodo },
-  { value: 'PENDING', label: 'Pending', icon: Clock },
-  { value: 'PROCESSING', label: 'Processing', icon: RefreshCw },
-  { value: 'COMPLETED', label: 'Completed', icon: CheckCircle2 },
-  { value: 'FAILED', label: 'Failed', icon: XCircle },
-] as const;
 
 const PAGE_SIZES = [12, 24, 48, 96];
 
@@ -105,6 +98,15 @@ function PipelineJobsPage() {
   const navigate = Route.useNavigate();
   const queryClient = useQueryClient();
   const [selectedStatus, setSelectedStatus] = useState<string | null>(null);
+
+  const STATUS_FILTERS = [
+    { value: null, label: t`All`, icon: ListTodo },
+    { value: 'PENDING', label: t`Pending`, icon: Clock },
+    { value: 'PROCESSING', label: t`Processing`, icon: RefreshCw },
+    { value: 'COMPLETED', label: t`Completed`, icon: CheckCircle2 },
+    { value: 'FAILED', label: t`Failed`, icon: XCircle },
+  ] as const;
+
   const [searchQuery, setSearchQuery] = useState('');
   const [debouncedSearch, setDebouncedSearch] = useState('');
   const [pageSize, setPageSize] = useState(24);
@@ -227,8 +229,14 @@ function PipelineJobsPage() {
   });
 
   const createPipelineMutation = useMutation({
-    mutationFn: (payload: CreatePipelineForm) =>
-      createPipelineJob({ data: payload }),
+    mutationFn: (payload: CreatePipelineForm) => {
+      // Convert string steps to tagged preset format
+      const formattedPayload = {
+        ...payload,
+        steps: payload.steps.map((name) => ({ type: 'preset' as const, name })),
+      };
+      return createPipelineJob({ data: formattedPayload });
+    },
     onSuccess: () => {
       toast.success(t`Pipeline created`);
       queryClient.invalidateQueries({ queryKey: ['pipeline', 'pipelines'] });
@@ -556,13 +564,13 @@ function PipelineJobsPage() {
                   key={label}
                   onClick={() => handleStatusChange(value)}
                   className={`relative px-3 py-1.5 text-sm font-medium rounded-full transition-all duration-200 flex items-center gap-1.5 ${selectedStatus === value
-                      ? 'bg-primary text-primary-foreground shadow-sm'
-                      : 'text-muted-foreground hover:text-foreground hover:bg-muted'
+                    ? 'bg-primary text-primary-foreground shadow-sm'
+                    : 'text-muted-foreground hover:text-foreground hover:bg-muted'
                     }`}
                 >
                   <Icon className="h-3.5 w-3.5" />
                   <span className="relative z-10">
-                    <Trans>{label}</Trans>
+                    {label}
                   </span>
                 </button>
               ))}

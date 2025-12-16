@@ -25,7 +25,10 @@ function tryDecodeDevServerFnId(serverFnId: string): {
   try {
     const decoded = Buffer.from(serverFnId, 'base64url').toString('utf8');
     const parsed = JSON.parse(decoded) as { file?: string; export?: string };
-    if (typeof parsed?.file !== 'string' || typeof parsed?.export !== 'string') {
+    if (
+      typeof parsed?.file !== 'string' ||
+      typeof parsed?.export !== 'string'
+    ) {
       return null;
     }
     return { file: parsed.file, export: parsed.export };

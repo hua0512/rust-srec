@@ -12,7 +12,7 @@ import { Trans } from '@lingui/react/macro';
 import { Type } from 'lucide-react';
 import { UseFormReturn } from 'react-hook-form';
 import { z } from 'zod';
-import { UpdateTemplateRequestSchema } from '../../../../api/schemas';
+import { UpdateTemplateRequestSchema } from '@/api/schemas';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 
 type EditTemplateFormValues = z.infer<typeof UpdateTemplateRequestSchema>;

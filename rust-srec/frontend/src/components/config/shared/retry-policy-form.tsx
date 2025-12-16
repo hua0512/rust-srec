@@ -4,10 +4,10 @@ import {
   FormDescription,
   FormItem,
   FormLabel,
-} from '../../ui/form';
-import { Input } from '../../ui/input';
-import { Switch } from '../../ui/switch';
-import { Card, CardContent } from '../../ui/card';
+} from '@/components/ui/form';
+import { Input } from '@/components/ui/input';
+import { Switch } from '@/components/ui/switch';
+import { Card, CardContent } from '@/components/ui/card';
 import { Trans } from '@lingui/react/macro';
 import { useEffect, useState } from 'react';
 

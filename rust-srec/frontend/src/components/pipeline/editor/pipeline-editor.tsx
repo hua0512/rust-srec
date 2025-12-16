@@ -3,10 +3,11 @@ import { Plus } from 'lucide-react';
 import { Trans } from '@lingui/react/macro';
 import { StepLibrary } from '@/components/pipeline/workflows/step-library';
 import { StepsList } from '@/components/pipeline/workflows/steps-list';
+import { PipelineStep } from '@/api/schemas';
 
 interface PipelineEditorProps {
-  steps: any[];
-  onChange: (steps: any[]) => void;
+  steps: PipelineStep[];
+  onChange: (steps: PipelineStep[]) => void;
   readonly?: boolean;
   hideAddButton?: boolean;
 }
@@ -17,23 +18,28 @@ export function PipelineEditor({
   readonly = false,
   hideAddButton = false,
 }: PipelineEditorProps) {
-  const handleAddStep = (name: string) => {
-    onChange([...steps, name]);
+  const handleAddStep = (step: PipelineStep) => {
+    onChange([...steps, step]);
   };
 
   const handleRemoveStep = (index: number) => {
     onChange(steps.filter((_, i) => i !== index));
   };
 
-  const handleReorder = (newOrder: any[]) => {
+  const handleReorder = (newOrder: PipelineStep[]) => {
     onChange(newOrder);
   };
 
-  const handleUpdateStep = (index: number, newStep: any) => {
+  const handleUpdateStep = (index: number, newStep: PipelineStep) => {
     const updatedSteps = [...steps];
     updatedSteps[index] = newStep;
     onChange(updatedSteps);
   };
+
+  // Extract step names for the step library (to prevent duplicate additions)
+  const currentStepNames = steps.map((s) =>
+    s.type === 'inline' ? s.processor : s.name
+  );
 
   return (
     <div className="space-y-4">
@@ -42,9 +48,7 @@ export function PipelineEditor({
           {!readonly && (
             <StepLibrary
               onAddStep={handleAddStep}
-              currentSteps={steps.map((s) =>
-                typeof s === 'string' ? s : s.processor,
-              )}
+              currentSteps={currentStepNames}
               trigger={
                 <Button
                   type="button"

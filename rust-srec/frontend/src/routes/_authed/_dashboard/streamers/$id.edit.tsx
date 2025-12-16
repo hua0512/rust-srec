@@ -4,27 +4,22 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { t } from '@lingui/core/macro';
 import { Trans } from '@lingui/react/macro';
-import { Skeleton } from '../../../../components/ui/skeleton';
+import { Skeleton } from '@/components/ui/skeleton';
 import { motion } from 'motion/react';
 
-import { StreamerGeneralSettings } from '../../../../components/streamers/config/streamer-general-settings';
-import { StreamerConfiguration } from '../../../../components/streamers/config/streamer-configuration';
+import { StreamerGeneralSettings } from '@/components/streamers/config/streamer-general-settings';
+import { StreamerConfiguration } from '@/components/streamers/config/streamer-configuration';
 import {
   UpdateStreamerSchema,
   StreamerFormSchema,
   StreamerFormValues,
-} from '../../../../api/schemas';
+} from '@/api/schemas';
 import { z } from 'zod';
-import { useDownloadProgress } from '../../../../hooks/use-download-progress';
-import { useDownloadStore } from '../../../../store/downloads';
+import { useDownloadProgress } from '@/hooks/use-download-progress';
+import { useDownloadStore } from '@/store/downloads';
 import { useShallow } from 'zustand/react/shallow';
 
-import {
-  Tabs,
-  TabsContent,
-  TabsList,
-  TabsTrigger,
-} from '../../../../components/ui/tabs';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Settings, Filter as FilterIcon, Activity } from 'lucide-react';
 import {
   getStreamer,
@@ -37,24 +32,24 @@ import {
   listEngines,
 } from '@/server/functions';
 
-import { getPlatformFromUrl } from '../../../../lib/utils';
+import { getPlatformFromUrl } from '@/lib/utils';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
-import { Form } from '../../../../components/ui/form';
+import { Form } from '@/components/ui/form';
 import {
   Card,
   CardHeader,
   CardTitle,
   CardDescription,
   CardContent,
-} from '../../../../components/ui/card';
+} from '@/components/ui/card';
 
 // Modular Components
-import { StreamerHeader } from '../../../../components/streamers/edit/streamer-header';
-import { ActiveDownloadCard } from '../../../../components/streamers/edit/active-download-card';
-import { RecentSessionsList } from '../../../../components/streamers/edit/recent-sessions-list';
-import { StreamerFiltersTab } from '../../../../components/streamers/edit/streamer-filters-tab';
-import { StreamerSaveFab } from '../../../../components/streamers/edit/streamer-save-fab';
+import { StreamerHeader } from '@/components/streamers/edit/streamer-header';
+import { ActiveDownloadCard } from '@/components/streamers/edit/active-download-card';
+import { RecentSessionsList } from '@/components/streamers/edit/recent-sessions-list';
+import { StreamerFiltersTab } from '@/components/streamers/edit/streamer-filters-tab';
+import { StreamerSaveFab } from '@/components/streamers/edit/streamer-save-fab';
 
 export const Route = createFileRoute('/_authed/_dashboard/streamers/$id/edit')({
   component: EditStreamerPage,
@@ -139,7 +134,6 @@ function EditStreamerPage() {
     updateMutation.mutate(payload);
   };
 
-
   const onInvalid = (errors: any) => {
     console.error('Form validation errors:', errors);
     toast.error(t`Please fix validation errors`);
@@ -166,9 +160,10 @@ function EditStreamerPage() {
   const defaultValues = useMemo(() => {
     if (!streamer) return undefined;
     // Parse the specific config if it's a string
-    const specificConfig = typeof streamer.streamer_specific_config === 'string'
-      ? JSON.parse(streamer.streamer_specific_config)
-      : streamer.streamer_specific_config ?? {};
+    const specificConfig =
+      typeof streamer.streamer_specific_config === 'string'
+        ? JSON.parse(streamer.streamer_specific_config)
+        : (streamer.streamer_specific_config ?? {});
 
     return {
       ...streamer,
@@ -180,7 +175,6 @@ function EditStreamerPage() {
       danmu_sampling_config: specificConfig?.danmu_sampling_config ?? undefined,
     };
   }, [streamer]);
-
 
   const form = useForm<StreamerFormValues>({
     resolver: zodResolver(StreamerFormSchema) as any,

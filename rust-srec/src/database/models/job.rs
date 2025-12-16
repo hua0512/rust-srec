@@ -537,27 +537,70 @@ pub struct PipelineJobConfig {
 }
 
 /// Pipeline step configuration.
+/// Uses internally tagged enum to disambiguate step types.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(untagged)]
+#[serde(tag = "type", rename_all = "lowercase")]
 pub enum PipelineStep {
-    /// Reference to a named job preset (e.g., "fast_remux").
-    Preset(String),
+    /// Reference to a named job preset (e.g., "remux").
+    Preset {
+        /// Name of the job preset to use.
+        name: String,
+    },
+    /// Reference to a pipeline workflow (expands to multiple steps).
+    Workflow {
+        /// Name of the pipeline preset/workflow to expand.
+        name: String,
+    },
     /// Inline definition of a job step.
     Inline {
+        /// Processor type (e.g., "remux", "execute").
         processor: String,
+        /// Optional configuration for the processor.
         #[serde(default)]
         config: serde_json::Value,
     },
 }
 
 impl PipelineStep {
-    /// Get the processor name regardless of variant.
-    /// For Presets, this requires lookup (so it returns None or we need a repository).
-    /// Actually, for immediate use, we might just need to know if it is a preset or inline.
+    /// Get the preset name if this is a Preset variant.
     pub fn as_preset(&self) -> Option<&str> {
         match self {
-            Self::Preset(name) => Some(name),
+            Self::Preset { name } => Some(name),
             _ => None,
+        }
+    }
+
+    /// Get the workflow name if this is a Workflow variant.
+    pub fn as_workflow(&self) -> Option<&str> {
+        match self {
+            Self::Workflow { name } => Some(name),
+            _ => None,
+        }
+    }
+
+    /// Get the processor and config if this is an Inline variant.
+    pub fn as_inline(&self) -> Option<(&str, &serde_json::Value)> {
+        match self {
+            Self::Inline { processor, config } => Some((processor, config)),
+            _ => None,
+        }
+    }
+
+    /// Create a new Preset step.
+    pub fn preset(name: impl Into<String>) -> Self {
+        Self::Preset { name: name.into() }
+    }
+
+    /// Create a new Workflow step.
+    pub fn workflow(name: impl Into<String>) -> Self {
+        Self::Workflow { name: name.into() }
+    }
+
+    /// Create a new Inline step.
+    pub fn inline(processor: impl Into<String>, config: serde_json::Value) -> Self {
+        Self::Inline {
+            processor: processor.into(),
+            config,
         }
     }
 }
@@ -753,5 +796,82 @@ mod tests {
         let job = JobDbModel::new(JobType::Pipeline, r#"{"steps":[]}"#);
         assert_eq!(job.get_status(), Some(JobStatus::Pending));
         assert_eq!(job.get_job_type(), Some(JobType::Pipeline));
+    }
+
+    #[test]
+    fn test_pipeline_step_json_format() {
+        use serde_json::json;
+
+        // 1. Tagged Preset
+        let json = json!({
+            "type": "preset",
+            "name": "fast-preset"
+        });
+        let step: PipelineStep = serde_json::from_value(json).unwrap();
+        assert_eq!(
+            step,
+            PipelineStep::Preset {
+                name: "fast-preset".to_string()
+            }
+        );
+
+        // 2. Tagged Workflow
+        let json = json!({
+            "type": "workflow",
+            "name": "full-pipeline"
+        });
+        let step: PipelineStep = serde_json::from_value(json).unwrap();
+        assert_eq!(
+            step,
+            PipelineStep::Workflow {
+                name: "full-pipeline".to_string()
+            }
+        );
+
+        // 3. Tagged Inline
+        let json = json!({
+            "type": "inline",
+            "processor": "execute",
+            "config": { "cmd": "echo" }
+        });
+        let step: PipelineStep = serde_json::from_value(json).unwrap();
+        assert!(matches!(step, PipelineStep::Inline { .. }));
+        if let PipelineStep::Inline { processor, config } = step {
+            assert_eq!(processor, "execute");
+            assert_eq!(config["cmd"], "echo");
+        }
+
+        // 4. Invalid/Legacy formats should fail
+        let legacy_string = json!("my-preset");
+        assert!(serde_json::from_value::<PipelineStep>(legacy_string).is_err());
+
+        let legacy_obj = json!({ "processor": "remux" });
+        assert!(serde_json::from_value::<PipelineStep>(legacy_obj).is_err());
+    }
+
+    #[test]
+    fn test_pipeline_step_serialization() {
+        // Serialization should be tagged
+        let step = PipelineStep::Preset {
+            name: "foo".to_string(),
+        };
+        let json = serde_json::to_value(&step).unwrap();
+        assert_eq!(json["type"], "preset");
+        assert_eq!(json["name"], "foo");
+
+        let step = PipelineStep::Workflow {
+            name: "bar".to_string(),
+        };
+        let json = serde_json::to_value(&step).unwrap();
+        assert_eq!(json["type"], "workflow");
+        assert_eq!(json["name"], "bar");
+
+        let step = PipelineStep::Inline {
+            processor: "proc".to_string(),
+            config: serde_json::json!({}),
+        };
+        let json = serde_json::to_value(&step).unwrap();
+        assert_eq!(json["type"], "inline");
+        assert_eq!(json["processor"], "proc");
     }
 }

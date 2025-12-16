@@ -3,12 +3,13 @@ import {
   FormDescription,
   FormItem,
   FormLabel,
-} from '../../ui/form';
-import { Input } from '../../ui/input';
-import { TagInput } from '../../ui/tag-input';
+} from '@/components/ui/form';
+import { Input } from '@/components/ui/input';
+import { TagInput } from '@/components/ui/tag-input';
 import { Trans } from '@lingui/react/macro';
+import { t } from '@lingui/core/macro';
 import { Filter, Zap } from 'lucide-react';
-import { Card, CardContent, CardHeader, CardTitle } from '../../ui/card';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 
 export interface StreamSelectionConfig {
   preferred_qualities?: string[];
@@ -73,7 +74,10 @@ export function StreamSelectionInput({
                 />
               </FormControl>
               <FormDescription>
-                <Trans>Prioritize specific qualities (case-insensitive). Press Enter to add.</Trans>
+                <Trans>
+                  Prioritize specific qualities (case-insensitive). Press Enter
+                  to add.
+                </Trans>
               </FormDescription>
             </FormItem>
 
@@ -90,7 +94,9 @@ export function StreamSelectionInput({
                 />
               </FormControl>
               <FormDescription>
-                <Trans>Prioritize specific streaming protocols. Press Enter to add.</Trans>
+                <Trans>
+                  Prioritize specific streaming protocols. Press Enter to add.
+                </Trans>
               </FormDescription>
             </FormItem>
 
@@ -107,7 +113,9 @@ export function StreamSelectionInput({
                 />
               </FormControl>
               <FormDescription>
-                <Trans>Prioritize specific CDN providers. Press Enter to add.</Trans>
+                <Trans>
+                  Prioritize specific CDN providers. Press Enter to add.
+                </Trans>
               </FormDescription>
             </FormItem>
           </div>
@@ -141,7 +149,7 @@ export function StreamSelectionInput({
                     e.target.value ? Number(e.target.value) : undefined,
                   )
                 }
-                placeholder="No limit"
+                placeholder={t`No limit`}
                 className="bg-background"
               />
             </FormControl>
@@ -165,7 +173,7 @@ export function StreamSelectionInput({
                     e.target.value ? Number(e.target.value) : undefined,
                   )
                 }
-                placeholder="No limit"
+                placeholder={t`No limit`}
                 className="bg-background"
               />
             </FormControl>

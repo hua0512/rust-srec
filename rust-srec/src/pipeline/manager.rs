@@ -23,7 +23,9 @@ use crate::database::models::job::PipelineStep;
 use crate::database::models::{JobFilters, MediaFileType, MediaOutputDbModel, Pagination};
 use crate::database::repositories::config::{ConfigRepository, SqlxConfigRepository};
 use crate::database::repositories::streamer::{SqlxStreamerRepository, StreamerRepository};
-use crate::database::repositories::{JobPresetRepository, JobRepository, SessionRepository};
+use crate::database::repositories::{
+    JobPresetRepository, JobRepository, PipelinePresetRepository, SessionRepository,
+};
 use crate::downloader::DownloadManagerEvent;
 
 /// Configuration for the Pipeline Manager.
@@ -127,6 +129,8 @@ pub struct PipelineManager<
     purge_service: Option<Arc<JobPurgeService>>,
     /// Job preset repository for resolving named pipeline steps.
     preset_repo: Option<Arc<dyn JobPresetRepository>>,
+    /// Pipeline preset repository for resolving workflow steps.
+    pipeline_preset_repo: Option<Arc<dyn PipelinePresetRepository>>,
     /// Config service for resolving pipeline rules.
     config_service: Option<Arc<ConfigService<CR, SR>>>,
     /// Last observed queue depth status (edge-trigger warnings).
@@ -185,9 +189,9 @@ where
             cancellation_token: CancellationToken::new(),
             throttle_controller,
             download_adjuster: None,
-            // Purge service requires a job repository, so it's None for in-memory queue
             purge_service: None,
             preset_repo: None,
+            pipeline_preset_repo: None,
             config_service: None,
             last_queue_status: AtomicU8::new(0),
         }
@@ -256,6 +260,7 @@ where
             download_adjuster: None,
             purge_service,
             preset_repo: None,
+            pipeline_preset_repo: None,
             config_service: None,
             last_queue_status: AtomicU8::new(0),
         }
@@ -282,6 +287,15 @@ where
     /// Set the job preset repository.
     pub fn with_preset_repository(mut self, preset_repo: Arc<dyn JobPresetRepository>) -> Self {
         self.preset_repo = Some(preset_repo);
+        self
+    }
+
+    /// Set the pipeline preset repository (for workflow expansion).
+    pub fn with_pipeline_preset_repository(
+        mut self,
+        pipeline_preset_repo: Arc<dyn PipelinePresetRepository>,
+    ) -> Self {
+        self.pipeline_preset_repo = Some(pipeline_preset_repo);
         self
     }
 
@@ -562,7 +576,10 @@ where
                 // It's already Inline, so we can just grab the processor
                 match next {
                     PipelineStep::Inline { processor, .. } => Some(processor.clone()),
-                    PipelineStep::Preset(name) => Some(name.clone()), // Should not happen
+
+                    // These should never happen
+                    PipelineStep::Preset { name } => unreachable!(),
+                    PipelineStep::Workflow { name } => unreachable!(),
                 }
             } else {
                 None
@@ -621,7 +638,8 @@ where
         let string_steps: Vec<String> = steps
             .iter()
             .map(|s| match s {
-                PipelineStep::Preset(n) => n.clone(),
+                PipelineStep::Preset { name } => name.clone(),
+                PipelineStep::Workflow { name } => name.clone(),
                 PipelineStep::Inline { processor, .. } => processor.clone(),
             })
             .collect();
@@ -642,9 +660,8 @@ where
         let mut resolved_steps = Vec::new();
         for step in steps {
             match step {
-                PipelineStep::Preset(name) => {
+                PipelineStep::Preset { name } => {
                     if let Some(repo) = &self.preset_repo {
-                        // Fix: use get_preset_by_name
                         match repo.get_preset_by_name(&name).await {
                             Ok(Some(preset)) => {
                                 let config = if !preset.config.is_empty() {
@@ -675,6 +692,33 @@ where
                         });
                     }
                 }
+                PipelineStep::Workflow { name } => {
+                    // Expand workflow by looking up pipeline preset
+                    if let Some(repo) = &self.pipeline_preset_repo {
+                        match repo.get_pipeline_preset_by_name(&name).await {
+                            Ok(Some(workflow)) => {
+                                // Parse the steps from the workflow
+                                let workflow_steps: Vec<PipelineStep> =
+                                    serde_json::from_str(&workflow.steps).unwrap_or_default();
+                                // Recursively resolve the workflow's steps
+                                let expanded =
+                                    Box::pin(self.resolve_pipeline(workflow_steps)).await?;
+                                resolved_steps.extend(expanded);
+                            }
+                            Ok(None) => {
+                                warn!("Workflow '{}' not found, skipping", name);
+                            }
+                            Err(e) => {
+                                warn!("Failed to load workflow '{}': {}", name, e);
+                            }
+                        }
+                    } else {
+                        warn!(
+                            "No pipeline preset repository, cannot expand workflow '{}'",
+                            name
+                        );
+                    }
+                }
                 PipelineStep::Inline { .. } => {
                     resolved_steps.push(step);
                 }
@@ -689,7 +733,7 @@ where
         step: &PipelineStep,
     ) -> Result<(String, Option<serde_json::Value>)> {
         match step {
-            PipelineStep::Preset(name) => {
+            PipelineStep::Preset { name } => {
                 debug!("Resolving pipeline step preset: {}", name);
                 if let Some(repo) = &self.preset_repo {
                     match repo.get_preset_by_name(name).await {
@@ -719,6 +763,14 @@ where
                     );
                     Ok((name.clone(), None))
                 }
+            }
+            PipelineStep::Workflow { name } => {
+                // TODO: Expand workflow steps
+                debug!("Workflow step '{}' - expansion not yet implemented", name);
+                Err(crate::Error::Validation(format!(
+                    "Workflow expansion not yet implemented for '{}'",
+                    name
+                )))
             }
             PipelineStep::Inline { processor, config } => {
                 debug!("Resolving inline pipeline step: {}", processor);
@@ -767,12 +819,9 @@ where
 
                 // Check if user's pipeline contains a thumbnail step
                 let pipeline_has_thumbnail = pipeline_steps.iter().any(|step| match step {
-                    crate::database::models::job::PipelineStep::Inline { processor, .. } => {
-                        processor == "thumbnail"
-                    }
-                    crate::database::models::job::PipelineStep::Preset(name) => {
-                        name.contains("thumbnail")
-                    }
+                    PipelineStep::Inline { processor, .. } => processor == "thumbnail",
+                    PipelineStep::Preset { name } => name.contains("thumbnail"),
+                    PipelineStep::Workflow { name } => name.contains("thumbnail"),
                 });
 
                 // Generate automatic thumbnail for first segment only if:
@@ -1534,8 +1583,8 @@ mod tests {
         let manager: PipelineManager = PipelineManager::new();
 
         let custom_steps = vec![
-            PipelineStep::Preset("remux".to_string()),
-            PipelineStep::Preset("upload".to_string()),
+            PipelineStep::preset("remux"),
+            PipelineStep::preset("upload"),
         ];
         let result = manager
             .create_pipeline("session-1", "streamer-1", "/input.flv", Some(custom_steps))
@@ -1558,7 +1607,7 @@ mod tests {
         assert_eq!(job.next_job_type, Some("upload".to_string()));
         assert_eq!(
             job.remaining_steps,
-            Some(vec![PipelineStep::Preset("upload".to_string())])
+            Some(vec![PipelineStep::preset("upload")])
         );
     }
 
@@ -1566,7 +1615,7 @@ mod tests {
     async fn test_create_pipeline_single_step() {
         let manager: PipelineManager = PipelineManager::new();
 
-        let single_step = vec![PipelineStep::Preset("remux".to_string())];
+        let single_step = vec![PipelineStep::preset("remux")];
         let result = manager
             .create_pipeline("session-1", "streamer-1", "/input.flv", Some(single_step))
             .await
@@ -1663,9 +1712,9 @@ mod tests {
 
         // Create a pipeline with 3 steps
         let steps = vec![
-            PipelineStep::Preset("remux".to_string()),
-            PipelineStep::Preset("upload".to_string()),
-            PipelineStep::Preset("thumbnail".to_string()),
+            PipelineStep::preset("remux"),
+            PipelineStep::preset("upload"),
+            PipelineStep::preset("thumbnail"),
         ];
         let result = manager
             .create_pipeline("session-1", "streamer-1", "/input.flv", Some(steps))
@@ -1707,8 +1756,8 @@ mod tests {
                 "streamer-1",
                 "/input1.flv",
                 Some(vec![
-                    PipelineStep::Preset("remux".to_string()),
-                    PipelineStep::Preset("upload".to_string()),
+                    PipelineStep::preset("remux"),
+                    PipelineStep::preset("upload"),
                 ]),
             )
             .await
@@ -1721,8 +1770,8 @@ mod tests {
                 "streamer-2",
                 "/input2.flv",
                 Some(vec![
-                    PipelineStep::Preset("remux".to_string()),
-                    PipelineStep::Preset("thumbnail".to_string()),
+                    PipelineStep::preset("remux"),
+                    PipelineStep::preset("thumbnail"),
                 ]),
             )
             .await
@@ -1765,9 +1814,9 @@ mod tests {
 
         // Create a pipeline with 3 steps
         let steps = vec![
-            PipelineStep::Preset("remux".to_string()),
-            PipelineStep::Preset("upload".to_string()),
-            PipelineStep::Preset("thumbnail".to_string()),
+            PipelineStep::preset("remux"),
+            PipelineStep::preset("upload"),
+            PipelineStep::preset("thumbnail"),
         ];
         let result = manager
             .create_pipeline("session-1", "streamer-1", "/input.flv", Some(steps))
@@ -1787,8 +1836,8 @@ mod tests {
         assert_eq!(
             job.remaining_steps,
             Some(vec![
-                PipelineStep::Preset("upload".to_string()),
-                PipelineStep::Preset("thumbnail".to_string())
+                PipelineStep::preset("upload"),
+                PipelineStep::preset("thumbnail")
             ])
         );
 
@@ -1810,8 +1859,8 @@ mod tests {
                 "streamer-1",
                 "/input.flv",
                 Some(vec![
-                    PipelineStep::Preset("remux".to_string()),
-                    PipelineStep::Preset("upload".to_string()),
+                    PipelineStep::preset("remux"),
+                    PipelineStep::preset("upload"),
                 ]),
             )
             .await
