@@ -27,8 +27,8 @@ use uuid::Uuid;
 use super::channels::{
     ChannelConfig, DiscordChannel, EmailChannel, NotificationChannel, WebhookChannel,
 };
-use super::events::{NotificationEvent, NotificationPriority};
 use super::events::canonicalize_subscription_event_name;
+use super::events::{NotificationEvent, NotificationPriority};
 use crate::Result;
 use crate::database::models::{
     ChannelType, DiscordChannelSettings, EmailChannelSettings, NotificationChannelDbModel,

@@ -202,6 +202,8 @@ pub struct CheckResult {
     pub checked_at: DateTime<Utc>,
     /// Error message if check failed.
     pub error: Option<String>,
+    /// Hint for when to check next (used for smart wake).
+    pub next_check_hint: Option<DateTime<Utc>>,
 }
 
 impl CheckResult {
@@ -213,6 +215,7 @@ impl CheckResult {
             title: None,
             checked_at: Utc::now(),
             error: None,
+            next_check_hint: None,
         }
     }
 
@@ -224,6 +227,7 @@ impl CheckResult {
             title: None,
             checked_at: Utc::now(),
             error: Some(error.into()),
+            next_check_hint: None,
         }
     }
 
@@ -567,6 +571,34 @@ impl StreamerActorState {
         } else {
             config.check_interval_ms
         };
+
+        // Check if we have a hint from the last result (e.g. smart wake for OutOfSchedule)
+        if let Some(ref last) = self.last_check {
+            if let Some(hint) = last.next_check_hint {
+                // Only use hint if we are in OutOfSchedule state
+                if self.streamer_state == StreamerState::OutOfSchedule {
+                    let now = Utc::now();
+                    if hint > now {
+                        let delay = hint
+                            .signed_duration_since(now)
+                            .to_std()
+                            .unwrap_or(std::time::Duration::from_secs(0));
+                        // Add a small buffer (5s) to ensure we wake up inside the window
+                        let buffer = std::time::Duration::from_secs(5);
+                        let total_delay = delay + buffer;
+
+                        tracing::debug!(
+                            "Smart wake: sleep for {:?} until {:?} (hint)",
+                            total_delay,
+                            hint
+                        );
+
+                        self.next_check = Some(Instant::now() + total_delay);
+                        return;
+                    }
+                }
+            }
+        }
 
         self.next_check = Some(Instant::now() + std::time::Duration::from_millis(interval_ms));
     }

@@ -44,6 +44,7 @@ export const JobSchema = z.object({
     id: z.string(),
     session_id: z.string(),
     streamer_id: z.string(),
+    streamer_name: z.string().nullable().optional(),
     pipeline_id: z.string().nullable().optional(),
     status: JobStatusSchema,
     processor_type: z.string(),

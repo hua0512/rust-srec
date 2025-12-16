@@ -121,15 +121,24 @@ impl StreamerTxOps {
     }
 
     /// Set disabled_until for temporary backoff.
+    ///
+    /// When a timestamp is provided, also sets state to TEMPORAL_DISABLED.
+    /// When clearing (None), sets state back to NOT_LIVE.
     pub async fn set_disabled_until(
         tx: &mut SqliteConnection,
         streamer_id: &str,
         disabled_until: Option<DateTime<Utc>>,
     ) -> Result<u64> {
         let disabled_until_str = disabled_until.map(|dt| dt.to_rfc3339());
+        let state = if disabled_until.is_some() {
+            "TEMPORAL_DISABLED"
+        } else {
+            "NOT_LIVE"
+        };
 
-        let result = sqlx::query("UPDATE streamers SET disabled_until = ? WHERE id = ?")
+        let result = sqlx::query("UPDATE streamers SET disabled_until = ?, state = ? WHERE id = ?")
             .bind(disabled_until_str.as_deref())
+            .bind(state)
             .bind(streamer_id)
             .execute(tx)
             .await?;
@@ -304,13 +313,28 @@ mod tests {
 
         tx.commit().await.unwrap();
 
-        // Verify disabled_until set but state unchanged
+        // Verify disabled_until set AND state changed to TEMPORAL_DISABLED
         let row: (String, Option<String>) =
             sqlx::query_as("SELECT state, disabled_until FROM streamers WHERE id = 'test-1'")
                 .fetch_one(&pool)
                 .await
                 .unwrap();
-        assert_eq!(row.0, "NOT_LIVE");
+        assert_eq!(row.0, "TEMPORAL_DISABLED");
         assert!(row.1.is_some());
+
+        // Test clearing disabled_until resets state to NOT_LIVE
+        let mut tx2 = pool.begin().await.unwrap();
+        StreamerTxOps::set_disabled_until(&mut tx2, "test-1", None)
+            .await
+            .unwrap();
+        tx2.commit().await.unwrap();
+
+        let row2: (String, Option<String>) =
+            sqlx::query_as("SELECT state, disabled_until FROM streamers WHERE id = 'test-1'")
+                .fetch_one(&pool)
+                .await
+                .unwrap();
+        assert_eq!(row2.0, "NOT_LIVE");
+        assert!(row2.1.is_none());
     }
 }

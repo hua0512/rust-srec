@@ -3,7 +3,7 @@
 //! This module provides transaction-aware operations for the monitor event outbox.
 //! The outbox pattern ensures that database changes and event emissions are atomic.
 
-use sqlx::{Row, Sqlite, SqliteConnection, SqlitePool};
+use sqlx::{Row, SqliteConnection, SqlitePool};
 
 use crate::Result;
 use crate::monitor::MonitorEvent;

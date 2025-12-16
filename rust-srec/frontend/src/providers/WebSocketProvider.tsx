@@ -155,6 +155,7 @@ export function WebSocketProvider({ children }: { children: ReactNode }) {
     if (!accessToken || !isAuthenticated) return;
     if (isConnectingRef.current) return;
     if (wsRef.current?.readyState === WebSocket.OPEN) return;
+    if (wsRef.current?.readyState === WebSocket.CONNECTING) return;
 
     isConnectingRef.current = true;
     setConnectionStatus('connecting');
@@ -245,8 +246,8 @@ export function WebSocketProvider({ children }: { children: ReactNode }) {
   }, [isAuthenticated, accessToken, connect, disconnect]);
 
   // No-op for now as we use global subscription
-  const subscribe = useCallback((_streamerId: string) => {}, []);
-  const unsubscribe = useCallback((_streamerId: string) => {}, []);
+  const subscribe = useCallback((_streamerId: string) => { }, []);
+  const unsubscribe = useCallback((_streamerId: string) => { }, []);
 
   return (
     <WebSocketContext.Provider

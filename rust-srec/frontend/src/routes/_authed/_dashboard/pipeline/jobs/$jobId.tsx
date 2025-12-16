@@ -51,6 +51,7 @@ import {
   FileOutput,
   HardDrive,
   Hash,
+  Trash2,
 } from 'lucide-react';
 
 export const Route = createFileRoute(
@@ -59,14 +60,7 @@ export const Route = createFileRoute(
   component: JobDetailsPage,
 });
 
-function formatDuration(seconds: number | null | undefined): string {
-  if (seconds == null || seconds === 0) return '-';
-  if (seconds < 1) return `${Math.round(seconds * 1000)}ms`;
-  if (seconds < 60) return `${seconds.toFixed(1)}s`;
-  const mins = Math.floor(seconds / 60);
-  const secs = Math.round(seconds % 60);
-  return `${mins}m ${secs}s`;
-}
+import { formatDuration } from '@/lib/format';
 
 const STATUS_CONFIG: Record<
   string,
@@ -201,6 +195,16 @@ function JobDetailsPage() {
       queryClient.invalidateQueries({ queryKey: ['pipeline', 'job', jobId] });
     },
     onError: () => toast.error(t`Failed to cancel job`),
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: (id: string) => cancelPipelineJob({ data: id }),
+    onSuccess: () => {
+      toast.success(t`Job deleted`);
+      // Redirect to jobs list on deletion since the job no longer exists
+      window.history.back();
+    },
+    onError: () => toast.error(t`Failed to delete job`),
   });
 
   if (isLoading) {
@@ -359,6 +363,22 @@ function JobDetailsPage() {
                   <Trans>Cancel Execution</Trans>
                 </Button>
               )}
+              {['COMPLETED', 'FAILED', 'INTERRUPTED'].includes(
+                job.status,
+              ) && (
+                  <Button
+                    variant="destructive"
+                    className="shadow-lg shadow-destructive/20 hover:shadow-destructive/40 transition-all"
+                    onClick={() => {
+                      if (confirm('Are you sure you want to delete this job?')) {
+                        deleteMutation.mutate(job.id);
+                      }
+                    }}
+                    disabled={deleteMutation.isPending}
+                  >
+                    <Trash2 className="mr-2 h-4 w-4" /> <Trans>Delete Job</Trans>
+                  </Button>
+                )}
             </motion.div>
           </div>
         </div>

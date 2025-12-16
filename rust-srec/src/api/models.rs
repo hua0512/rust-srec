@@ -449,6 +449,8 @@ pub struct JobResponse {
     pub id: String,
     pub session_id: String,
     pub streamer_id: String,
+    /// Streamer display name
+    pub streamer_name: Option<String>,
     pub pipeline_id: Option<String>,
     pub status: JobStatus,
     pub processor_type: String,

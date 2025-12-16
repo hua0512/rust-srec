@@ -3,7 +3,7 @@
 use async_trait::async_trait;
 use std::path::Path;
 use tokio::process::Command;
-use tracing::{debug, error, info};
+use tracing::debug;
 
 use super::traits::{Processor, ProcessorContext, ProcessorInput, ProcessorOutput, ProcessorType};
 use super::utils::{get_extension, is_image, is_video};

@@ -61,6 +61,19 @@ impl Filter {
         }
     }
 
+    /// Calculate the next time this filter will match.
+    /// Returns None if it cannot be determined (e.g. content-based filters) or won't match again.
+    pub fn next_match_time(
+        &self,
+        now: chrono::DateTime<chrono::Utc>,
+    ) -> Option<chrono::DateTime<chrono::Utc>> {
+        match self {
+            Self::TimeBased(f) => f.next_match_time(now),
+            Self::Cron(f) => f.next_match_time(now),
+            _ => None,
+        }
+    }
+
     /// Create a Filter from a database model.
     pub fn from_db_model(model: &crate::database::models::FilterDbModel) -> Result<Self, String> {
         use crate::database::models::filter::FilterType as DbFilterType;
@@ -206,6 +219,49 @@ impl TimeBasedFilter {
         // We're on the "next day" part of an overnight range
         current_time <= end
     }
+
+    /// Calculate the next time this filter will match.
+    pub fn next_match_time(
+        &self,
+        now: chrono::DateTime<chrono::Utc>,
+    ) -> Option<chrono::DateTime<chrono::Utc>> {
+        use chrono::{Days, TimeZone};
+
+        let local_now = now.with_timezone(&chrono::Local);
+        let start_time = parse_time(&self.start_time)?;
+
+        // Scan upcoming days (today + 7 days to cover a full week)
+        for i in 0..8 {
+            let target_date = match local_now.date_naive().checked_add_days(Days::new(i)) {
+                Some(d) => d,
+                None => continue,
+            };
+            let weekday = target_date.weekday();
+            let day_name = weekday_to_string(weekday);
+
+            if self
+                .days_of_week
+                .iter()
+                .any(|d| d.eq_ignore_ascii_case(&day_name))
+            {
+                // Found a valid day. Construct the candidate start time.
+                // We use the start_time of the filter on this valid day.
+                let candidate_time =
+                    match chrono::Local.from_local_datetime(&target_date.and_time(start_time)) {
+                        chrono::LocalResult::Single(t) => t,
+                        _ => continue,
+                    };
+
+                let candidate_utc = candidate_time.with_timezone(&chrono::Utc);
+
+                // If the start time is in the future, that's our next match start
+                if candidate_utc > now {
+                    return Some(candidate_utc);
+                }
+            }
+        }
+        None
+    }
 }
 
 /// Keyword filter with include/exclude lists.
@@ -315,6 +371,30 @@ impl CronFilter {
             timezone: self.timezone.clone(),
         };
         FilterEvaluator::evaluate_cron(&config, now).unwrap_or(false)
+    }
+
+    /// Calculate the next time this filter will match.
+    pub fn next_match_time(
+        &self,
+        now: chrono::DateTime<chrono::Utc>,
+    ) -> Option<chrono::DateTime<chrono::Utc>> {
+        use chrono_tz::Tz;
+        use std::str::FromStr;
+
+        let schedule = cron::Schedule::from_str(&self.expression).ok()?;
+
+        let tz: Tz = match &self.timezone {
+            Some(tz_str) => tz_str.parse().ok()?,
+            None => chrono_tz::UTC,
+        };
+
+        let now_in_tz = now.with_timezone(&tz);
+
+        // Find next occurrence after now
+        schedule
+            .after(&now_in_tz)
+            .next()
+            .map(|t| t.with_timezone(&chrono::Utc))
     }
 }
 

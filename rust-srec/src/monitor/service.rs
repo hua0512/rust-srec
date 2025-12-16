@@ -636,7 +636,7 @@ impl<
         _category: Option<String>,
     ) -> Result<()> {
         let new_state = match reason {
-            FilterReason::OutOfSchedule => StreamerState::OutOfSchedule,
+            FilterReason::OutOfSchedule { .. } => StreamerState::OutOfSchedule,
             FilterReason::TitleMismatch | FilterReason::CategoryMismatch => {
                 // For title/category mismatch, we still consider it "out of schedule"
                 StreamerState::OutOfSchedule
@@ -879,7 +879,9 @@ mod tests {
 
         assert_eq!(
             status_summary(&LiveStatus::Filtered {
-                reason: FilterReason::OutOfSchedule,
+                reason: FilterReason::OutOfSchedule {
+                    next_available: None,
+                },
                 title: "Test".to_string(),
                 category: None,
             }),

@@ -36,14 +36,7 @@ export const Route = createFileRoute(
   component: PipelineExecutionPage,
 });
 
-function formatDuration(seconds: number | null | undefined): string {
-  if (seconds == null || seconds === 0) return '-';
-  if (seconds < 1) return `${Math.round(seconds * 1000)}ms`;
-  if (seconds < 60) return `${seconds.toFixed(1)}s`;
-  const mins = Math.floor(seconds / 60);
-  const secs = Math.round(seconds % 60);
-  return `${mins}m ${secs}s`;
-}
+import { formatDuration } from '@/lib/format';
 
 const STATUS_CONFIG: Record<
   string,
@@ -475,9 +468,9 @@ function PipelineExecutionPage() {
                               <span className="font-medium text-foreground">
                                 {job.completed_at
                                   ? format(
-                                      new Date(job.completed_at),
-                                      'HH:mm:ss',
-                                    )
+                                    new Date(job.completed_at),
+                                    'HH:mm:ss',
+                                  )
                                   : '-'}
                               </span>
                             </div>

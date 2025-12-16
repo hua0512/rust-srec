@@ -5,7 +5,7 @@
 //! (e.g., combined with streamer state updates and outbox events).
 
 use chrono::{DateTime, Utc};
-use sqlx::{Row, Sqlite, SqliteConnection};
+use sqlx::{Row, SqliteConnection};
 
 use crate::Result;
 use crate::database::models::{LiveSessionDbModel, TitleEntry};

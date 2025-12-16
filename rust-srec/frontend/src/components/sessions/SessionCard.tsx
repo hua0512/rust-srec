@@ -198,28 +198,4 @@ export function SessionCard({ session }: SessionCardProps) {
   );
 }
 
-function formatDuration(seconds: number): string {
-  const hours = Math.floor(seconds / 3600);
-  const minutes = Math.floor((seconds % 3600) / 60);
-  const secs = seconds % 60;
-
-  const parts = [];
-  if (hours > 0) parts.push(`${hours}h`);
-  if (minutes > 0) parts.push(`${minutes}m`);
-  // if (hours === 0 && minutes === 0) parts.push(`${secs}s`);
-  parts.push(`${secs}s`);
-
-  return parts.join(' ');
-}
-
-function formatBytes(bytes: number, decimals = 2) {
-  if (!+bytes) return '0 B';
-
-  const k = 1024;
-  const dm = decimals < 0 ? 0 : decimals;
-  const sizes = ['B', 'KB', 'MB', 'GB', 'TB', 'PB', 'EB', 'ZB', 'YB'];
-
-  const i = Math.floor(Math.log(bytes) / Math.log(k));
-
-  return `${parseFloat((bytes / Math.pow(k, i)).toFixed(dm))} ${sizes[i]}`;
-}
+import { formatBytes, formatDuration } from '@/lib/format';

@@ -144,10 +144,7 @@ pub fn canonicalize_subscription_event_name(input: &str) -> Option<&'static str>
 
 fn normalize_subscription_key(input: &str) -> String {
     let lower = input.trim().to_ascii_lowercase();
-    let snakeish = lower
-        .replace('.', "_")
-        .replace('-', "_")
-        .replace(' ', "_");
+    let snakeish = lower.replace('.', "_").replace('-', "_").replace(' ', "_");
     let compact: String = snakeish.chars().filter(|c| *c != '_').collect();
     compact
 }

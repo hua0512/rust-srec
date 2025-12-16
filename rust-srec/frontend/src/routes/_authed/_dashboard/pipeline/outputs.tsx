@@ -44,15 +44,7 @@ const FORMAT_FILTERS = [
 
 const PAGE_SIZES = [12, 24, 48, 96];
 
-// Helper to format bytes
-function formatBytes(bytes: number, decimals = 1): string {
-  if (!+bytes) return '0 Bytes';
-  const k = 1024;
-  const dm = decimals < 0 ? 0 : decimals;
-  const sizes = ['Bytes', 'KB', 'MB', 'GB', 'TB'];
-  const i = Math.floor(Math.log(bytes) / Math.log(k));
-  return `${parseFloat((bytes / Math.pow(k, i)).toFixed(dm))} ${sizes[i]}`;
-}
+import { formatBytes } from '@/lib/format';
 
 function PipelineOutputsPage() {
   const [selectedFormat, setSelectedFormat] = useState<string | null>(null);
@@ -218,11 +210,10 @@ function PipelineOutputsPage() {
             <nav className="flex items-center gap-1">
               <button
                 onClick={() => handleFormatChange(null)}
-                className={`relative px-3 py-1.5 text-sm font-medium rounded-full transition-all duration-200 ${
-                  selectedFormat === null
+                className={`relative px-3 py-1.5 text-sm font-medium rounded-full transition-all duration-200 ${selectedFormat === null
                     ? 'bg-primary text-primary-foreground shadow-sm'
                     : 'text-muted-foreground hover:text-foreground hover:bg-muted'
-                }`}
+                  }`}
               >
                 <span className="relative z-10 flex items-center gap-1.5">
                   <Trans>All</Trans>
@@ -233,11 +224,10 @@ function PipelineOutputsPage() {
                 <button
                   key={format}
                   onClick={() => handleFormatChange(format)}
-                  className={`relative px-3 py-1.5 text-sm font-medium rounded-full transition-all duration-200 ${
-                    selectedFormat === format
+                  className={`relative px-3 py-1.5 text-sm font-medium rounded-full transition-all duration-200 ${selectedFormat === format
                       ? 'bg-primary text-primary-foreground shadow-sm'
                       : 'text-muted-foreground hover:text-foreground hover:bg-muted'
-                  }`}
+                    }`}
                 >
                   <span className="relative z-10 uppercase">{format}</span>
                 </button>

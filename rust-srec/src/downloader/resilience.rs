@@ -11,6 +11,72 @@ use tracing::{debug, info, warn};
 
 use super::engine::EngineType;
 
+/// Key for circuit breaker isolation.
+///
+/// Combines engine type with optional config ID to support per-instance tracking:
+/// - `config_id: None` → global default engine (shared by all users of that type)
+/// - `config_id: Some(id)` → custom engine config or override (isolated breaker)
+///
+/// ## Equality Cases
+///
+/// | Scenario | EngineKey | Shared? |
+/// |----------|-----------|---------|
+/// | Global FFMPEG | `{ FFMPEG, None }` | Yes - all global FFMPEG users |
+/// | Custom "my-ffmpeg" | `{ FFMPEG, Some("my-ffmpeg") }` | Only same config ID |
+/// | Global + override | `{ FFMPEG, Some("ffmpeg#hash") }` | No - ephemeral |
+/// | Fallback default | `{ default_type, None }` | Yes - all defaults |
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct EngineKey {
+    /// The engine type (FFMPEG, MESIO, STREAMLINK).
+    pub engine_type: EngineType,
+    /// Custom config ID, or None for the global default instance.
+    pub config_id: Option<String>,
+}
+
+impl EngineKey {
+    /// Create a key for the global default engine of a type.
+    pub fn global(engine_type: EngineType) -> Self {
+        Self {
+            engine_type,
+            config_id: None,
+        }
+    }
+
+    /// Create a key for a custom engine configuration.
+    pub fn custom(engine_type: EngineType, config_id: impl Into<String>) -> Self {
+        Self {
+            engine_type,
+            config_id: Some(config_id.into()),
+        }
+    }
+
+    /// Create a key for an engine with an override applied.
+    /// The hash ensures different overrides get different breakers.
+    pub fn with_override(
+        engine_type: EngineType,
+        base_id: Option<&str>,
+        override_hash: u64,
+    ) -> Self {
+        let config_id = match base_id {
+            Some(id) => format!("{}#{:x}", id, override_hash),
+            None => format!("{}#{:x}", engine_type.as_str(), override_hash),
+        };
+        Self {
+            engine_type,
+            config_id: Some(config_id),
+        }
+    }
+}
+
+impl std::fmt::Display for EngineKey {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match &self.config_id {
+            Some(id) => write!(f, "{}:{}", self.engine_type, id),
+            None => write!(f, "{}", self.engine_type),
+        }
+    }
+}
+
 /// Configuration for retry behavior.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RetryConfig {
@@ -214,9 +280,12 @@ impl Default for CircuitBreaker {
     }
 }
 
-/// Manager for circuit breakers per engine type.
+/// Manager for circuit breakers per engine key.
+///
+/// Keys circuit breakers by `EngineKey` (type + optional config ID) to support
+/// per-instance isolation. Different custom configs get their own breakers.
 pub struct CircuitBreakerManager {
-    breakers: RwLock<HashMap<EngineType, Arc<CircuitBreaker>>>,
+    breakers: RwLock<HashMap<EngineKey, Arc<CircuitBreaker>>>,
     failure_threshold: u32,
     cooldown_secs: u64,
 }
@@ -231,18 +300,18 @@ impl CircuitBreakerManager {
         }
     }
 
-    /// Get or create a circuit breaker for an engine type.
-    pub fn get(&self, engine_type: EngineType) -> Arc<CircuitBreaker> {
+    /// Get or create a circuit breaker for an engine key.
+    pub fn get(&self, key: &EngineKey) -> Arc<CircuitBreaker> {
         {
             let breakers = self.breakers.read();
-            if let Some(breaker) = breakers.get(&engine_type) {
+            if let Some(breaker) = breakers.get(key) {
                 return breaker.clone();
             }
         }
 
         let mut breakers = self.breakers.write();
         breakers
-            .entry(engine_type)
+            .entry(key.clone())
             .or_insert_with(|| {
                 Arc::new(CircuitBreaker::new(
                     self.failure_threshold,
@@ -253,18 +322,18 @@ impl CircuitBreakerManager {
     }
 
     /// Check if an engine is allowed (circuit not open).
-    pub fn is_engine_allowed(&self, engine_type: EngineType) -> bool {
-        self.get(engine_type).is_allowed()
+    pub fn is_allowed(&self, key: &EngineKey) -> bool {
+        self.get(key).is_allowed()
     }
 
     /// Record success for an engine.
-    pub fn record_success(&self, engine_type: EngineType) {
-        self.get(engine_type).record_success();
+    pub fn record_success(&self, key: &EngineKey) {
+        self.get(key).record_success();
     }
 
     /// Record failure for an engine.
-    pub fn record_failure(&self, engine_type: EngineType) {
-        self.get(engine_type).record_failure();
+    pub fn record_failure(&self, key: &EngineKey) {
+        self.get(key).record_failure();
     }
 }
 
@@ -355,16 +424,42 @@ mod tests {
     }
 
     #[test]
-    fn test_circuit_breaker_manager() {
+    fn test_circuit_breaker_manager_global() {
+        let manager = CircuitBreakerManager::new(3, 60);
+        let key_ffmpeg = EngineKey::global(EngineType::Ffmpeg);
+        let key_streamlink = EngineKey::global(EngineType::Streamlink);
+
+        assert!(manager.is_allowed(&key_ffmpeg));
+
+        manager.record_failure(&key_ffmpeg);
+        manager.record_failure(&key_ffmpeg);
+        manager.record_failure(&key_ffmpeg);
+
+        assert!(!manager.is_allowed(&key_ffmpeg));
+        assert!(manager.is_allowed(&key_streamlink)); // Different engine type
+    }
+
+    #[test]
+    fn test_circuit_breaker_manager_custom_isolation() {
         let manager = CircuitBreakerManager::new(3, 60);
 
-        assert!(manager.is_engine_allowed(EngineType::Ffmpeg));
+        // Global FFMPEG key
+        let key_global = EngineKey::global(EngineType::Ffmpeg);
+        // Custom config key
+        let key_custom = EngineKey::custom(EngineType::Ffmpeg, "my-custom-ffmpeg");
+        // Another custom config key
+        let key_custom2 = EngineKey::custom(EngineType::Ffmpeg, "alt-ffmpeg");
 
-        manager.record_failure(EngineType::Ffmpeg);
-        manager.record_failure(EngineType::Ffmpeg);
-        manager.record_failure(EngineType::Ffmpeg);
+        // Trip the custom config breaker
+        manager.record_failure(&key_custom);
+        manager.record_failure(&key_custom);
+        manager.record_failure(&key_custom);
 
-        assert!(!manager.is_engine_allowed(EngineType::Ffmpeg));
-        assert!(manager.is_engine_allowed(EngineType::Streamlink)); // Different engine
+        // Custom config is blocked
+        assert!(!manager.is_allowed(&key_custom));
+        // Global FFMPEG is NOT blocked - isolated!
+        assert!(manager.is_allowed(&key_global));
+        // Other custom config is NOT blocked
+        assert!(manager.is_allowed(&key_custom2));
     }
 }

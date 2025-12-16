@@ -68,7 +68,10 @@ pub enum LiveStatus {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum FilterReason {
     /// Outside scheduled time window.
-    OutOfSchedule,
+    OutOfSchedule {
+        /// Next time the schedule window opens.
+        next_available: Option<DateTime<Utc>>,
+    },
     /// Title doesn't match keyword filter.
     TitleMismatch,
     /// Category doesn't match filter.
@@ -296,13 +299,20 @@ impl StreamDetector {
                     stream.quality, stream.url
                 );
                 (*stream).clone()
-            } else {
-                // Fallback: if no candidates (shouldn't happen if streams is not empty), take the first one
+            } else if let Some(stream) = media_info.streams.first() {
+                // Fallback: if no candidates match selection criteria, take the first available stream
                 debug!(
                     "No streams match selection criteria, using first of {} streams",
                     media_info.streams.len()
                 );
-                media_info.streams[0].clone()
+                stream.clone()
+            } else {
+                // No streams available at all - treat as offline
+                warn!(
+                    "Streamer {} is reported as live but has no streams available. Treating as OFFLINE.",
+                    streamer.name
+                );
+                return Ok(LiveStatus::Offline);
             };
 
             // Resolve final URL for the selected stream
@@ -398,10 +408,12 @@ impl StreamDetector {
 
                 if !matches {
                     let reason = match filter.filter_type() {
-                        FilterType::TimeBased => FilterReason::OutOfSchedule,
+                        FilterType::TimeBased | FilterType::Cron => {
+                            let next_available = filter.next_match_time(now);
+                            FilterReason::OutOfSchedule { next_available }
+                        }
                         FilterType::Keyword => FilterReason::TitleMismatch,
                         FilterType::Category => FilterReason::CategoryMismatch,
-                        FilterType::Cron => FilterReason::OutOfSchedule,
                         FilterType::Regex => FilterReason::TitleMismatch,
                     };
 
@@ -472,7 +484,9 @@ mod tests {
     #[test]
     fn test_live_status_is_filtered() {
         let status = LiveStatus::Filtered {
-            reason: FilterReason::OutOfSchedule,
+            reason: FilterReason::OutOfSchedule {
+                next_available: None,
+            },
             title: "Test Stream".to_string(),
             category: None,
         };
@@ -495,7 +509,9 @@ mod tests {
         assert_eq!(live.title(), Some("Live Title"));
 
         let filtered = LiveStatus::Filtered {
-            reason: FilterReason::OutOfSchedule,
+            reason: FilterReason::OutOfSchedule {
+                next_available: None,
+            },
             title: "Filtered Title".to_string(),
             category: None,
         };

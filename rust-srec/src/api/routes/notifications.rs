@@ -12,4 +12,3 @@ pub fn router() -> Router<AppState> {
 async fn list_event_types() -> Json<Vec<NotificationEventTypeInfo>> {
     Json(notification_event_types().to_vec())
 }
-

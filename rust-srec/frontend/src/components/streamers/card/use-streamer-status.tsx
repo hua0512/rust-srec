@@ -30,7 +30,9 @@ export function useStreamerStatus(streamer: z.infer<typeof StreamerSchema>) {
         const disabledUntil = streamer.disabled_until
             ? new Date(streamer.disabled_until)
             : null;
-        const isTemporarilyPaused = disabledUntil && disabledUntil > now;
+        const isTemporarilyPaused =
+            (disabledUntil && disabledUntil > now) ||
+            streamer.state === 'TEMPORAL_DISABLED';
 
         const stopStates = [
             'FATAL_ERROR',
@@ -163,6 +165,36 @@ export function useStreamerStatus(streamer: z.infer<typeof StreamerSchema>) {
                 tooltip: (
                     <div className="p-2 text-xs font-medium">
                         <Trans>Checking stream status...</Trans>
+                    </div>
+                ),
+            };
+        }
+
+        if (streamer.state === 'OUT_OF_SCHEDULE') {
+            return {
+                label: <Trans>Scheduled</Trans>,
+                color:
+                    'bg-violet-500/10 text-violet-600 border-violet-500/20 hover:bg-violet-500/20 dark:text-violet-400 dark:border-violet-400/30',
+                iconColor: 'bg-violet-500',
+                pulsing: false,
+                tooltip: (
+                    <div className="flex flex-col gap-2 p-3 min-w-[220px]">
+                        <div className="flex items-center gap-2 pb-2 border-b border-border/10">
+                            <div className="h-2 w-2 rounded-full bg-violet-500 shadow-[0_0_8px_rgba(139,92,246,0.5)]" />
+                            <span className="font-semibold text-sm">
+                                <Trans>Outside Schedule</Trans>
+                            </span>
+                        </div>
+                        <div className="text-xs text-muted-foreground leading-relaxed">
+                            <Trans>
+                                This streamer is currently live, but outside
+                                your configured recording schedule.
+                            </Trans>
+                        </div>
+                        <div className="flex items-center gap-1.5 text-xs text-violet-600 dark:text-violet-400 font-medium">
+                            <Calendar className="h-3.5 w-3.5" />
+                            <Trans>Recording will start when schedule allows</Trans>
+                        </div>
                     </div>
                 ),
             };

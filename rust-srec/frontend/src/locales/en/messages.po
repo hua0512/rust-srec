@@ -71,7 +71,7 @@ msgstr "1 (best) - 31 (worst)"
 msgid "A unique and descriptive name for this configuration."
 msgstr "A unique and descriptive name for this configuration."
 
-#: src/components/config/templates/tabs/general-tab.tsx:65
+#: src/components/config/templates/tabs/general-tab.tsx:62
 msgid "A unique name for this configuration template."
 msgstr "A unique name for this configuration template."
 
@@ -91,7 +91,7 @@ msgstr "Absolute path or 'streamlink' in PATH"
 msgid "Accent Color"
 msgstr "Accent Color"
 
-#: src/components/streamers/card/stream-actions-menu.tsx:49
+#: src/components/streamers/card/stream-actions-menu.tsx:50
 msgid "Actions"
 msgstr "Actions"
 
@@ -115,15 +115,15 @@ msgstr "Active Download"
 msgid "Active Recordings"
 msgstr "Active Recordings"
 
-#: src/routes/_authed/_dashboard/player/index.tsx:284
+#: src/routes/_authed/_dashboard/player/index.tsx:327
 msgid "Add a stream to start your viewing session."
 msgstr "Add a stream to start your viewing session."
 
-#: src/components/config/templates/tabs/platform-overrides-tab.tsx:120
+#: src/components/config/templates/tabs/platform-overrides-tab.tsx:125
 msgid "Add an override to customize behavior for specific platforms."
 msgstr "Add an override to customize behavior for specific platforms."
 
-#: src/components/config/templates/tabs/engine-overrides-tab.tsx:130
+#: src/components/config/templates/tabs/engine-overrides-tab.tsx:131
 msgid "Add an override to customize engine behavior for this template."
 msgstr "Add an override to customize engine behavior for this template."
 
@@ -151,8 +151,8 @@ msgstr "Add New Filter"
 msgid "Add New Streamer"
 msgstr "Add New Streamer"
 
-#: src/components/config/templates/tabs/engine-overrides-tab.tsx:89
-#: src/components/config/templates/tabs/platform-overrides-tab.tsx:85
+#: src/components/config/templates/tabs/engine-overrides-tab.tsx:90
+#: src/components/config/templates/tabs/platform-overrides-tab.tsx:90
 msgid "Add Override"
 msgstr "Add Override"
 
@@ -160,26 +160,25 @@ msgstr "Add Override"
 msgid "Add Pipeline Step"
 msgstr "Add Pipeline Step"
 
-#: src/components/streamers/config/retry-policy-form.tsx:161
+#: src/components/config/shared/retry-policy-form.tsx:171
 msgid "Add randomness to retry delays to prevent thundering herd."
 msgstr "Add randomness to retry delays to prevent thundering herd."
 
 #: src/components/config/global/pipeline-config-card.tsx:66
-#: src/components/config/platforms/tabs/pipeline-tab.tsx:76
 #: src/components/pipeline/editor/pipeline-editor.tsx:56
 msgid "Add Step"
 msgstr "Add Step"
 
-#: src/routes/_authed/_dashboard/player/index.tsx:295
-#: src/routes/_authed/_dashboard/player/index.tsx:326
+#: src/routes/_authed/_dashboard/player/index.tsx:338
+#: src/routes/_authed/_dashboard/player/index.tsx:369
 msgid "Add Stream"
 msgstr "Add Stream"
 
-#: src/routes/_authed/_dashboard/streamers/index.tsx:392
+#: src/routes/_authed/_dashboard/streamers/index.tsx:410
 msgid "Add Streamer"
 msgstr "Add Streamer"
 
-#: src/components/streamers/config/danmu-config-form.tsx:131
+#: src/components/config/shared/danmu-config-form.tsx:149
 msgid "Adjust sampling rate based on danmu traffic volume."
 msgstr "Adjust sampling rate based on danmu traffic volume."
 
@@ -187,20 +186,15 @@ msgstr "Adjust sampling rate based on danmu traffic volume."
 msgid "Adjust the roundness of UI elements."
 msgstr "Adjust the roundness of UI elements."
 
-#: src/components/config/platforms/edit-platform-dialog.tsx:170
-#: src/components/config/platforms/platform-editor.tsx:199
-#: src/components/config/templates/tabs/platform-override-card.tsx:141
-#: src/components/config/templates/template-editor.tsx:222
 #: src/components/pipeline/presets/processors/audio-extract-config-form.tsx:63
 #: src/components/pipeline/presets/processors/remux-config-form.tsx:106
-#: src/components/streamers/edit/streamer-config-form.tsx:78
-#: src/routes/_authed/_dashboard/streamers/$id.edit.tsx:244
+#: src/components/streamers/edit/streamer-config-form.tsx:80
+#: src/routes/_authed/_dashboard/streamers/$id.edit.tsx:267
 msgid "Advanced"
 msgstr "Advanced"
 
-#: src/components/config/platforms/tabs/advanced-tab.tsx:41
-#: src/components/streamers/edit/streamer-config-form.tsx:114
-#: src/routes/_authed/_dashboard/streamers/$id.edit.tsx:309
+#: src/components/streamers/edit/streamer-config-form.tsx:116
+#: src/routes/_authed/_dashboard/streamers/$id.edit.tsx:333
 msgid "Advanced Configuration"
 msgstr "Advanced Configuration"
 
@@ -232,7 +226,7 @@ msgstr "Album"
 msgid "All"
 msgstr "All"
 
-#: src/routes/_authed/_dashboard/streamers/index.tsx:266
+#: src/routes/_authed/_dashboard/streamers/index.tsx:285
 msgid "All Platforms"
 msgstr "All Platforms"
 
@@ -321,16 +315,16 @@ msgstr "Audio Settings"
 #: src/components/config/platforms/platform-editor.tsx:172
 #: src/components/config/templates/tabs/platform-override-card.tsx:120
 #: src/components/config/templates/template-editor.tsx:177
-msgid "Auth"
-msgstr "Auth"
+#~ msgid "Auth"
+#~ msgstr "Auth"
 
-#: src/components/config/platforms/edit-platform-dialog.tsx:152
+#: src/components/config/shared/network-settings-card.tsx:40
 msgid "Authentication"
 msgstr "Authentication"
 
 #: src/components/config/platforms/tabs/auth-tab.tsx:29
-msgid "Authentication Cookies"
-msgstr "Authentication Cookies"
+#~ msgid "Authentication Cookies"
+#~ msgstr "Authentication Cookies"
 
 #: src/components/pipeline/presets/processors/execute-config-form.tsx:70
 msgid "Available Variables"
@@ -340,12 +334,12 @@ msgstr "Available Variables"
 msgid "Avg. Duration"
 msgstr "Avg. Duration"
 
-#: src/components/config/platforms/platform-editor.tsx:119
-#: src/components/config/templates/template-editor.tsx:123
+#: src/components/config/platforms/platform-editor.tsx:111
+#: src/components/config/templates/template-editor.tsx:132
 msgid "Back"
 msgstr "Back"
 
-#: src/components/streamers/streamer-form.tsx:210
+#: src/components/streamers/streamer-form.tsx:216
 msgid "Back to Details"
 msgstr "Back to Details"
 
@@ -362,7 +356,7 @@ msgstr "Back to Pipeline Jobs"
 msgid "Back to Sessions"
 msgstr "Back to Sessions"
 
-#: src/components/streamers/config/retry-policy-form.tsx:98
+#: src/components/config/shared/retry-policy-form.tsx:108
 msgid "Backoff Multiplier"
 msgstr "Backoff Multiplier"
 
@@ -370,7 +364,7 @@ msgstr "Backoff Multiplier"
 msgid "Base delay between retries"
 msgstr "Base delay between retries"
 
-#: src/components/config/templates/tabs/general-tab.tsx:42
+#: src/components/config/templates/tabs/general-tab.tsx:39
 msgid "Basic details for this configuration template."
 msgstr "Basic details for this configuration template."
 
@@ -378,8 +372,8 @@ msgstr "Basic details for this configuration template."
 msgid "Basic Information"
 msgstr "Basic Information"
 
-#: src/components/streamers/edit/streamer-config-form.tsx:92
-#: src/routes/_authed/_dashboard/streamers/$id.edit.tsx:282
+#: src/components/streamers/edit/streamer-config-form.tsx:94
+#: src/routes/_authed/_dashboard/streamers/$id.edit.tsx:306
 msgid "Basic settings for the streamer."
 msgstr "Basic settings for the streamer."
 
@@ -421,7 +415,6 @@ msgid "bytes"
 msgstr "bytes"
 
 #: src/components/config/engines/engine-card.tsx:238
-#: src/components/config/platforms/edit-platform-dialog.tsx:220
 #: src/components/config/templates/template-card.tsx:187
 #: src/components/filters/FilterDialog.tsx:267
 #: src/components/pipeline/jobs/job-card.tsx:268
@@ -430,8 +423,8 @@ msgstr "bytes"
 #: src/components/pipeline/jobs/pipeline-summary-card.tsx:226
 #: src/components/pipeline/presets/preset-card.tsx:187
 #: src/components/pipeline/workflows/step-config-dialog.tsx:300
-#: src/components/pipeline/workflows/workflow-card.tsx:192
-#: src/components/streamers/streamer-form.tsx:167
+#: src/components/pipeline/workflows/workflow-card.tsx:186
+#: src/components/streamers/streamer-form.tsx:173
 #: src/routes/_authed/_dashboard/pipeline/jobs/index.tsx:501
 #: src/routes/_authed/_dashboard/pipeline/presets/index.tsx:513
 msgid "Cancel"
@@ -501,7 +494,7 @@ msgstr "Changing Password..."
 msgid "Channels"
 msgstr "Channels"
 
-#: src/components/streamers/card/stream-actions-menu.tsx:57
+#: src/components/streamers/card/stream-actions-menu.tsx:58
 msgid "Check Now"
 msgstr "Check Now"
 
@@ -522,17 +515,21 @@ msgstr "Checked"
 msgid "Checking"
 msgstr "Checking"
 
-#: src/components/streamers/card/use-streamer-status.tsx:165
+#: src/components/streamers/card/use-streamer-status.tsx:166
 msgid "Checking stream status..."
 msgstr "Checking stream status..."
 
-#: src/components/streamers/streamer-form.tsx:178
+#: src/components/streamers/streamer-form.tsx:184
 msgid "Checking..."
 msgstr "Checking..."
 
 #: src/components/config/platforms/tabs/proxy-tab.tsx:61
-msgid "Choose how this platform handles proxy connections."
-msgstr "Choose how this platform handles proxy connections."
+#~ msgid "Choose how this platform handles proxy connections."
+#~ msgstr "Choose how this platform handles proxy connections."
+
+#: src/components/config/shared/proxy-settings-card.tsx:245
+msgid "Choose how this streamer handles proxy connections."
+msgstr "Choose how this streamer handles proxy connections."
 
 #: src/components/config/templates/tabs/proxy-tab.tsx:90
 #~ msgid "Choose whether to use the global proxy configuration or define a specific one for this template."
@@ -604,7 +601,7 @@ msgstr "Config"
 
 #: src/components/pipeline/presets/editor/preset-config-form.tsx:44
 #: src/components/pipeline/workflows/step-config-dialog.tsx:230
-#: src/components/pipeline/workflows/workflow-editor.tsx:163
+#: src/components/pipeline/workflows/workflow-editor.tsx:158
 msgid "Configuration"
 msgstr "Configuration"
 
@@ -614,8 +611,8 @@ msgid "Configure"
 msgstr "Configure"
 
 #: src/components/config/platforms/tabs/pipeline-tab.tsx:59
-msgid "Configure a custom processing pipeline."
-msgstr "Configure a custom processing pipeline."
+#~ msgid "Configure a custom processing pipeline."
+#~ msgstr "Configure a custom processing pipeline."
 
 #: src/components/config/engines/engine-card.tsx:274
 msgid "Configure a new download tool."
@@ -634,8 +631,8 @@ msgid "Configure granular options for the selected engine."
 msgstr "Configure granular options for the selected engine."
 
 #: src/components/config/platforms/edit-platform-dialog.tsx:113
-msgid "Configure platform behavior, authentication, and advanced settings."
-msgstr "Configure platform behavior, authentication, and advanced settings."
+#~ msgid "Configure platform behavior, authentication, and advanced settings."
+#~ msgstr "Configure platform behavior, authentication, and advanced settings."
 
 #: src/components/filters/FilterDialog.tsx:239
 msgid "Configure recording rules for this streamer."
@@ -657,7 +654,7 @@ msgstr "Configure recording rules for this streamer."
 msgid "Confirm Password"
 msgstr "Confirm Password"
 
-#: src/components/streamers/card/stream-avatar-info.tsx:112
+#: src/components/streamers/card/stream-avatar-info.tsx:113
 msgid "Connection Instability"
 msgstr "Connection Instability"
 
@@ -665,7 +662,7 @@ msgstr "Connection Instability"
 msgid "Connection/activity timeout"
 msgstr "Connection/activity timeout"
 
-#: src/components/streamers/card/stream-avatar-info.tsx:125
+#: src/components/streamers/card/stream-avatar-info.tsx:126
 msgid "Consecutive Failures"
 msgstr "Consecutive Failures"
 
@@ -681,7 +678,7 @@ msgstr "Content"
 msgid "Context"
 msgstr "Context"
 
-#: src/components/streamers/config/streamer-configuration.tsx:125
+#: src/components/config/shared/network-settings-card.tsx:51
 msgid "Cookies"
 msgstr "Cookies"
 
@@ -726,7 +723,7 @@ msgstr "Could not connect to the server. Please check your connection."
 msgid "CPU Usage"
 msgstr "CPU Usage"
 
-#: src/components/config/templates/template-editor.tsx:141
+#: src/components/config/templates/template-editor.tsx:150
 #: src/routes/_authed/_dashboard/config/templates.index.tsx:89
 #: src/routes/_authed/_dashboard/pipeline/jobs/index.tsx:513
 msgid "Create"
@@ -786,7 +783,7 @@ msgstr "Create Preset"
 msgid "Create Streamer"
 msgstr "Create Streamer"
 
-#: src/components/config/templates/template-editor.tsx:101
+#: src/components/config/templates/template-editor.tsx:110
 #: src/routes/_authed/_dashboard/config/templates.index.tsx:180
 msgid "Create Template"
 msgstr "Create Template"
@@ -835,7 +832,7 @@ msgstr "Current Password"
 msgid "Custom Config"
 msgstr "Custom Config"
 
-#: src/components/config/platforms/tabs/proxy-tab.tsx:92
+#: src/components/config/shared/proxy-settings-card.tsx:280
 msgid "Custom Configuration"
 msgstr "Custom Configuration"
 
@@ -871,7 +868,7 @@ msgstr "Custom theme applied"
 msgid "Custom User-Agent string (Optional)"
 msgstr "Custom User-Agent string (Optional)"
 
-#: src/components/config/templates/tabs/engine-overrides-tab.tsx:78
+#: src/components/config/templates/tabs/engine-overrides-tab.tsx:79
 msgid "Customize specific engine settings for this template."
 msgstr "Customize specific engine settings for this template."
 
@@ -883,7 +880,7 @@ msgstr "Customize Step"
 msgid "Customize the look and feel of your dashboard."
 msgstr "Customize the look and feel of your dashboard."
 
-#: src/components/streamers/config/streamer-configuration.tsx:80
+#: src/components/config/shared-config-editor.tsx:186
 msgid "Danmu"
 msgstr "Danmu"
 
@@ -955,9 +952,9 @@ msgstr "Delays, proxy, and retention policies."
 #: src/components/pipeline/presets/editor/preset-meta-form.tsx:54
 #: src/components/pipeline/presets/preset-card.tsx:170
 #: src/components/pipeline/presets/preset-card.tsx:193
-#: src/components/pipeline/workflows/workflow-card.tsx:175
-#: src/components/pipeline/workflows/workflow-card.tsx:198
-#: src/components/streamers/card/stream-actions-menu.tsx:95
+#: src/components/pipeline/workflows/workflow-card.tsx:169
+#: src/components/pipeline/workflows/workflow-card.tsx:192
+#: src/components/streamers/card/stream-actions-menu.tsx:108
 msgid "Delete"
 msgstr "Delete"
 
@@ -977,19 +974,19 @@ msgstr "Delete Preset?"
 msgid "Delete Template"
 msgstr "Delete Template"
 
-#: src/components/pipeline/workflows/workflow-card.tsx:181
+#: src/components/pipeline/workflows/workflow-card.tsx:175
 msgid "Delete Workflow?"
 msgstr "Delete Workflow?"
 
-#: src/components/pipeline/workflows/workflow-editor.tsx:197
+#: src/components/pipeline/workflows/workflow-editor.tsx:192
 msgid "Describe what this workflow does..."
 msgstr "Describe what this workflow does..."
 
-#: src/components/pipeline/workflows/workflow-editor.tsx:193
+#: src/components/pipeline/workflows/workflow-editor.tsx:188
 msgid "Description"
 msgstr "Description"
 
-#: src/components/pipeline/workflows/workflow-editor.tsx:123
+#: src/components/pipeline/workflows/workflow-editor.tsx:118
 msgid "Design your automation pipeline step by step"
 msgstr "Design your automation pipeline step by step"
 
@@ -1017,7 +1014,7 @@ msgstr "Dimensions & Filters"
 msgid "Directory to scan for new files after command execution"
 msgstr "Directory to scan for new files after command execution"
 
-#: src/components/streamers/card/stream-actions-menu.tsx:68
+#: src/components/streamers/card/stream-actions-menu.tsx:69
 msgid "Disable"
 msgstr "Disable"
 
@@ -1041,11 +1038,11 @@ msgstr "Down"
 msgid "Download"
 msgstr "Download"
 
-#: src/components/config/platforms/tabs/general-tab.tsx:81
+#: src/components/config/platforms/tabs/general-tab.tsx:76
 msgid "Download Delay"
 msgstr "Download Delay"
 
-#: src/components/config/shared/output-settings-card.tsx:151
+#: src/components/config/shared/output-settings-card.tsx:154
 msgid "Download Engine"
 msgstr "Download Engine"
 
@@ -1053,7 +1050,7 @@ msgstr "Download Engine"
 msgid "Download or view recorded content"
 msgstr "Download or view recorded content"
 
-#: src/components/streamers/config/streamer-configuration.tsx:144
+#: src/components/config/shared/network-settings-card.tsx:81
 msgid "Download Retry Policy"
 msgstr "Download Retry Policy"
 
@@ -1097,7 +1094,7 @@ msgstr "e.g. My Favorite Streamer"
 #~ msgid "e.g. Production FFmpeg"
 #~ msgstr "e.g. Production FFmpeg"
 
-#: src/components/pipeline/workflows/workflow-editor.tsx:177
+#: src/components/pipeline/workflows/workflow-editor.tsx:172
 msgid "e.g., Standard Processing"
 msgstr "e.g., Standard Processing"
 
@@ -1105,15 +1102,14 @@ msgstr "e.g., Standard Processing"
 #: src/components/config/templates/template-card.tsx:112
 #: src/components/filters/FilterCard.tsx:274
 #: src/components/pipeline/presets/preset-card.tsx:157
-#: src/components/pipeline/workflows/workflow-card.tsx:167
-#: src/components/streamers/card/stream-actions-menu.tsx:85
+#: src/components/pipeline/workflows/workflow-card.tsx:161
+#: src/components/streamers/card/stream-actions-menu.tsx:98
 msgid "Edit"
 msgstr "Edit"
 
-#. placeholder {0}: platform.name
 #: src/components/config/platforms/edit-platform-dialog.tsx:110
-msgid "Edit {0}"
-msgstr "Edit {0}"
+#~ msgid "Edit {0}"
+#~ msgstr "Edit {0}"
 
 #: src/components/pipeline/workflows/steps-list.tsx:214
 msgid "Edit Configuration"
@@ -1153,7 +1149,7 @@ msgstr "Edit Workflow: {0}"
 msgid "Editing Mode"
 msgstr "Editing Mode"
 
-#: src/components/streamers/card/stream-actions-menu.tsx:75
+#: src/components/streamers/card/stream-actions-menu.tsx:76
 msgid "Enable"
 msgstr "Enable"
 
@@ -1169,8 +1165,7 @@ msgstr "Enable Monitoring"
 #~ msgid "Enable or disable danmu recording explicitly."
 #~ msgstr "Enable or disable danmu recording explicitly."
 
-#: src/components/config/proxy-config-settings.tsx:80
-#: src/components/streamers/config/streamer-configuration.tsx:162
+#: src/components/config/shared/proxy-settings-card.tsx:110
 msgid "Enable Proxy"
 msgstr "Enable Proxy"
 
@@ -1221,7 +1216,7 @@ msgstr "Engine created successfully"
 msgid "Engine Name"
 msgstr "Engine Name"
 
-#: src/components/config/templates/tabs/engine-overrides-tab.tsx:75
+#: src/components/config/templates/tabs/engine-overrides-tab.tsx:76
 msgid "Engine Overrides"
 msgstr "Engine Overrides"
 
@@ -1237,7 +1232,7 @@ msgstr "Engine updated successfully"
 msgid "Engine used for downloads when not specified by platform/streamer."
 msgstr "Engine used for downloads when not specified by platform/streamer."
 
-#: src/components/config/templates/template-editor.tsx:186
+#: src/components/config/templates/template-editor.tsx:189
 msgid "Engines"
 msgstr "Engines"
 
@@ -1249,7 +1244,7 @@ msgstr "Engines"
 msgid "Enter a unique name"
 msgstr "Enter a unique name"
 
-#: src/routes/_authed/_dashboard/player/index.tsx:328
+#: src/routes/_authed/_dashboard/player/index.tsx:371
 msgid "Enter a URL to parse and play a stream"
 msgstr "Enter a URL to parse and play a stream"
 
@@ -1278,7 +1273,7 @@ msgstr "Enter your credentials to access your account"
 msgid "Error"
 msgstr "Error"
 
-#: src/components/streamers/card/use-streamer-status.tsx:129
+#: src/components/streamers/card/use-streamer-status.tsx:130
 #: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.tsx:591
 msgid "Error Details"
 msgstr "Error Details"
@@ -1291,7 +1286,7 @@ msgstr "Error Loading Job"
 msgid "Error Loading Pipeline"
 msgstr "Error Loading Pipeline"
 
-#: src/routes/_authed/_dashboard/config/platforms.$platformId.tsx:73
+#: src/routes/_authed/_dashboard/config/platforms.$platformId.tsx:79
 msgid "Error loading platform"
 msgstr "Error loading platform"
 
@@ -1300,7 +1295,7 @@ msgid "Error loading preset"
 msgstr "Error loading preset"
 
 #. placeholder {0}: (error as any).message
-#: src/routes/_authed/_dashboard/streamers/index.tsx:207
+#: src/routes/_authed/_dashboard/streamers/index.tsx:223
 msgid "Error loading streamers: {0}"
 msgstr "Error loading streamers: {0}"
 
@@ -1325,8 +1320,8 @@ msgid "ETA"
 msgstr "ETA"
 
 #: src/components/config/platforms/tabs/advanced-tab.tsx:121
-msgid "Event Hooks"
-msgstr "Event Hooks"
+#~ msgid "Event Hooks"
+#~ msgstr "Event Hooks"
 
 #: src/components/config/platforms/tabs/advanced-tab.tsx:112
 #: src/components/config/templates/tabs/advanced-tab.tsx:178
@@ -1346,12 +1341,12 @@ msgstr "Exclude"
 msgid "Execute Command"
 msgstr "Execute Command"
 
-#: src/components/streamers/config/streamer-configuration.tsx:272
+#: src/components/config/shared/event-hooks-form.tsx:107
 msgid "Execute shell commands on lifecycle events. Commands run in the system shell."
 msgstr "Execute shell commands on lifecycle events. Commands run in the system shell."
 
-#: src/routes/_authed/_dashboard/player/index.tsx:172
-#: src/routes/_authed/_dashboard/player/index.tsx:250
+#: src/routes/_authed/_dashboard/player/index.tsx:191
+#: src/routes/_authed/_dashboard/player/index.tsx:269
 msgid "Exit Immersive"
 msgstr "Exit Immersive"
 
@@ -1407,7 +1402,7 @@ msgstr "Failed to create pipeline"
 msgid "Failed to create preset: {0}"
 msgstr "Failed to create preset: {0}"
 
-#: src/routes/_authed/_dashboard/streamers/new.tsx:25
+#: src/routes/_authed/_dashboard/streamers/new.tsx:26
 msgid "Failed to create streamer"
 msgstr "Failed to create streamer"
 
@@ -1421,7 +1416,7 @@ msgstr "Failed to create template: {0}"
 msgid "Failed to create workflow: {0}"
 msgstr "Failed to create workflow: {0}"
 
-#: src/routes/_authed/_dashboard/streamers/$id.edit.tsx:154
+#: src/routes/_authed/_dashboard/streamers/$id.edit.tsx:162
 msgid "Failed to delete filter"
 msgstr "Failed to delete filter"
 
@@ -1503,7 +1498,7 @@ msgid "Failed to update filter"
 msgstr "Failed to update filter"
 
 #. placeholder {0}: error.message
-#: src/routes/_authed/_dashboard/config/platforms.$platformId.tsx:45
+#: src/routes/_authed/_dashboard/config/platforms.$platformId.tsx:50
 msgid "Failed to update platform: {0}"
 msgstr "Failed to update platform: {0}"
 
@@ -1517,7 +1512,7 @@ msgid "Failed to update settings"
 msgstr "Failed to update settings"
 
 #: src/routes/_authed/_dashboard/dashboard.tsx:83
-#: src/routes/_authed/_dashboard/streamers/$id.edit.tsx:121
+#: src/routes/_authed/_dashboard/streamers/$id.edit.tsx:123
 #: src/routes/_authed/_dashboard/streamers/index.tsx:194
 msgid "Failed to update streamer"
 msgstr "Failed to update streamer"
@@ -1536,7 +1531,7 @@ msgstr "Failed to update workflow: {0}"
 msgid "Fetch"
 msgstr "Fetch"
 
-#: src/components/config/platforms/tabs/general-tab.tsx:49
+#: src/components/config/platforms/tabs/general-tab.tsx:44
 msgid "Fetch Delay"
 msgstr "Fetch Delay"
 
@@ -1573,7 +1568,7 @@ msgid "Filename pattern (e.g., thumb.jpg)"
 msgstr "Filename pattern (e.g., thumb.jpg)"
 
 #: src/components/config/global/file-config-card.tsx:64
-#: src/components/config/shared/output-settings-card.tsx:85
+#: src/components/config/shared/output-settings-card.tsx:88
 msgid "Filename Template"
 msgstr "Filename Template"
 
@@ -1597,7 +1592,7 @@ msgstr "Filter by title keywords"
 msgid "Filter created successfully"
 msgstr "Filter created successfully"
 
-#: src/routes/_authed/_dashboard/streamers/$id.edit.tsx:150
+#: src/routes/_authed/_dashboard/streamers/$id.edit.tsx:158
 msgid "Filter deleted successfully"
 msgstr "Filter deleted successfully"
 
@@ -1609,7 +1604,7 @@ msgstr "Filter Type"
 msgid "Filter updated successfully"
 msgstr "Filter updated successfully"
 
-#: src/components/streamers/config/streamer-configuration.tsx:50
+#: src/components/config/shared-config-editor.tsx:131
 msgid "Filters"
 msgstr "Filters"
 
@@ -1625,7 +1620,7 @@ msgstr "Fix FLV"
 msgid "Fix HLS"
 msgstr "Fix HLS"
 
-#: src/components/streamers/config/danmu-config-form.tsx:120
+#: src/components/config/shared/danmu-config-form.tsx:138
 msgid "Fixed Interval"
 msgstr "Fixed Interval"
 
@@ -1633,7 +1628,7 @@ msgstr "Fixed Interval"
 msgid "Force overwrite if output exists"
 msgstr "Force overwrite if output exists"
 
-#: src/components/config/shared/output-settings-card.tsx:138
+#: src/components/config/shared/output-settings-card.tsx:141
 msgid "Force specific output format."
 msgstr "Force specific output format."
 
@@ -1652,19 +1647,18 @@ msgstr "Formats"
 msgid "Framerate (FPS)"
 msgstr "Framerate (FPS)"
 
-#: src/components/config/platforms/edit-platform-dialog.tsx:134
-#: src/components/config/platforms/platform-editor.tsx:154
-#: src/components/config/templates/tabs/platform-override-card.tsx:113
-#: src/components/config/templates/template-editor.tsx:159
+#: src/components/config/platforms/platform-editor.tsx:155
+#: src/components/config/templates/tabs/platform-override-card.tsx:62
+#: src/components/config/templates/template-editor.tsx:179
 #: src/components/pipeline/presets/processors/audio-extract-config-form.tsx:54
 #: src/components/pipeline/presets/processors/remux-config-form.tsx:70
-#: src/components/streamers/edit/streamer-config-form.tsx:71
-#: src/routes/_authed/_dashboard/streamers/$id.edit.tsx:237
+#: src/components/streamers/edit/streamer-config-form.tsx:73
+#: src/routes/_authed/_dashboard/streamers/$id.edit.tsx:260
 msgid "General"
 msgstr "General"
 
-#: src/components/streamers/edit/streamer-config-form.tsx:91
-#: src/routes/_authed/_dashboard/streamers/$id.edit.tsx:279
+#: src/components/streamers/edit/streamer-config-form.tsx:93
+#: src/routes/_authed/_dashboard/streamers/$id.edit.tsx:303
 msgid "General Configuration"
 msgstr "General Configuration"
 
@@ -1676,13 +1670,13 @@ msgstr "Get Started"
 #~ msgid "Global"
 #~ msgstr "Global"
 
-#: src/components/config/platforms/tabs/general-tab.tsx:62
-#: src/components/config/platforms/tabs/general-tab.tsx:94
-#: src/components/config/platforms/tabs/proxy-tab.tsx:89
+#: src/components/config/platforms/tabs/general-tab.tsx:57
+#: src/components/config/platforms/tabs/general-tab.tsx:89
 #: src/components/config/shared/limits-card.tsx:57
 #: src/components/config/shared/limits-card.tsx:85
 #: src/components/config/shared/limits-card.tsx:111
-#: src/components/config/shared/output-settings-card.tsx:129
+#: src/components/config/shared/output-settings-card.tsx:132
+#: src/components/config/shared/proxy-settings-card.tsx:277
 msgid "Global Default"
 msgstr "Global Default"
 
@@ -1727,17 +1721,21 @@ msgstr "History"
 msgid "History Retention (Days)"
 msgstr "History Retention (Days)"
 
-#: src/components/streamers/config/streamer-configuration.tsx:74
+#: src/components/config/shared-config-editor.tsx:175
 msgid "Hooks"
 msgstr "Hooks"
 
 #: src/components/streamers/config/streamer-configuration.tsx:136
-msgid "HTTP cookies for authentication (if required)."
-msgstr "HTTP cookies for authentication (if required)."
+#~ msgid "HTTP cookies for authentication (if required)."
+#~ msgstr "HTTP cookies for authentication (if required)."
+
+#: src/components/config/shared/network-settings-card.tsx:62
+msgid "HTTP cookies for authentication (Result of document.cookie)."
+msgstr "HTTP cookies for authentication (Result of document.cookie)."
 
 #: src/components/streamers/config/streamer-configuration.tsx:218
-msgid "HTTP/HTTPS/SOCKS5 proxy URL."
-msgstr "HTTP/HTTPS/SOCKS5 proxy URL."
+#~ msgid "HTTP/HTTPS/SOCKS5 proxy URL."
+#~ msgstr "HTTP/HTTPS/SOCKS5 proxy URL."
 
 #: src/components/filters/FilterCard.tsx:216
 msgid "i"
@@ -1775,17 +1773,15 @@ msgstr "If enabled, streams matching these keywords will be ignored."
 msgid "If enabled, streams matching this pattern will be ignored."
 msgstr "If enabled, streams matching this pattern will be ignored."
 
-#: src/components/config/platforms/tabs/stream-selection-tab.tsx:194
-#: src/components/streamers/config/stream-selection-input.tsx:161
+#: src/components/streamers/config/stream-selection-input.tsx:173
 msgid "Ignore streams above this bitrate."
 msgstr "Ignore streams above this bitrate."
 
-#: src/components/config/platforms/tabs/stream-selection-tab.tsx:171
-#: src/components/streamers/config/stream-selection-input.tsx:137
+#: src/components/streamers/config/stream-selection-input.tsx:149
 msgid "Ignore streams below this bitrate."
 msgstr "Ignore streams below this bitrate."
 
-#: src/routes/_authed/_dashboard/player/index.tsx:255
+#: src/routes/_authed/_dashboard/player/index.tsx:274
 msgid "Immersive Mode"
 msgstr "Immersive Mode"
 
@@ -1795,7 +1791,11 @@ msgstr "Immersive Mode"
 msgid "Include"
 msgstr "Include"
 
-#: src/components/streamers/config/retry-policy-form.tsx:122
+#: src/components/config/shared/output-settings-card.tsx:169
+msgid "Inherited / Default"
+msgstr "Inherited / Default"
+
+#: src/components/config/shared/retry-policy-form.tsx:132
 msgid "Initial Delay (ms)"
 msgstr "Initial Delay (ms)"
 
@@ -1813,19 +1813,19 @@ msgid "Input Path"
 msgstr "Input Path"
 
 #: src/components/streamers/card/use-streamer-status.tsx:20
-#: src/components/streamers/card/use-streamer-status.tsx:158
+#: src/components/streamers/card/use-streamer-status.tsx:159
 msgid "Inspecting"
 msgstr "Inspecting"
 
-#: src/components/streamers/config/danmu-config-form.tsx:139
+#: src/components/config/shared/danmu-config-form.tsx:157
 msgid "Interval (seconds)"
 msgstr "Interval (seconds)"
 
-#: src/components/config/platforms/tabs/general-tab.tsx:67
+#: src/components/config/platforms/tabs/general-tab.tsx:62
 msgid "Interval between checks."
 msgstr "Interval between checks."
 
-#: src/components/streamers/config/retry-policy-form.tsx:158
+#: src/components/config/shared/retry-policy-form.tsx:168
 msgid "Jitter"
 msgstr "Jitter"
 
@@ -1895,7 +1895,7 @@ msgstr "Keyword"
 msgid "Keywords"
 msgstr "Keywords"
 
-#: src/components/streamers/card/use-streamer-status.tsx:190
+#: src/components/streamers/card/use-streamer-status.tsx:191
 msgid "Last Activity"
 msgstr "Last Activity"
 
@@ -1903,11 +1903,11 @@ msgstr "Last Activity"
 msgid "Last Check"
 msgstr "Last Check"
 
-#: src/components/streamers/card/use-streamer-status.tsx:85
+#: src/components/streamers/card/use-streamer-status.tsx:86
 msgid "Last Error"
 msgstr "Last Error"
 
-#: src/components/streamers/card/stream-avatar-info.tsx:138
+#: src/components/streamers/card/stream-avatar-info.tsx:139
 msgid "Last Error Log"
 msgstr "Last Error Log"
 
@@ -1920,8 +1920,8 @@ msgid "Leave empty for stream copy"
 msgstr "Leave empty for stream copy"
 
 #: src/components/config/platforms/tabs/advanced-tab.tsx:77
-msgid "Legacy JSON blob."
-msgstr "Legacy JSON blob."
+#~ msgid "Legacy JSON blob."
+#~ msgstr "Legacy JSON blob."
 
 #: src/components/config/platforms/tabs/advanced-tab.tsx:77
 #~ msgid "Legacy JSON blob. Use explicit fields in General tab preferred."
@@ -1935,8 +1935,7 @@ msgstr "Legacy JSON blob."
 msgid "Light"
 msgstr "Light"
 
-#: src/components/config/platforms/tabs/stream-selection-tab.tsx:147
-#: src/components/streamers/config/stream-selection-input.tsx:112
+#: src/components/streamers/config/stream-selection-input.tsx:124
 msgid "Limits"
 msgstr "Limits"
 
@@ -1945,14 +1944,14 @@ msgid "Limits & Validation"
 msgstr "Limits & Validation"
 
 #: src/components/streamers/card/use-streamer-status.tsx:19
-#: src/components/streamers/card/use-streamer-status.tsx:145
+#: src/components/streamers/card/use-streamer-status.tsx:146
 #: src/components/streamers/edit/streamer-header.tsx:62
 #: src/routes/_authed/_dashboard/streamers/index.tsx:62
 msgid "Live"
 msgstr "Live"
 
-#: src/components/player/stream-info-card.tsx:70
-#: src/components/player/stream-info-card.tsx:88
+#: src/components/player/stream-info-card.tsx:73
+#: src/components/player/stream-info-card.tsx:91
 msgid "LIVE"
 msgstr "LIVE"
 
@@ -1995,10 +1994,10 @@ msgstr "Lower value = Higher Quality"
 #~ msgstr "Manage global configuration templates."
 
 #: src/components/config/platforms/tabs/proxy-tab.tsx:40
-msgid "Manage network proxy settings for this platform."
-msgstr "Manage network proxy settings for this platform."
+#~ msgid "Manage network proxy settings for this platform."
+#~ msgstr "Manage network proxy settings for this platform."
 
-#: src/components/config/shared/output-settings-card.tsx:43
+#: src/components/config/shared/output-settings-card.tsx:46
 msgid "Manage storage paths and file formats."
 msgstr "Manage storage paths and file formats."
 
@@ -2006,12 +2005,11 @@ msgstr "Manage storage paths and file formats."
 #~ msgid "Manage system settings, platform configurations, and templates."
 #~ msgstr "Manage system settings, platform configurations, and templates."
 
-#: src/routes/_authed/_dashboard/streamers/index.tsx:234
+#: src/routes/_authed/_dashboard/streamers/index.tsx:253
 msgid "Manage your monitored channels and downloads"
 msgstr "Manage your monitored channels and downloads"
 
-#: src/components/config/platforms/tabs/stream-selection-tab.tsx:177
-#: src/components/streamers/config/stream-selection-input.tsx:143
+#: src/components/streamers/config/stream-selection-input.tsx:155
 msgid "Max Bitrate (bps)"
 msgstr "Max Bitrate (bps)"
 
@@ -2029,7 +2027,7 @@ msgstr "Max Bitrate (bps)"
 msgid "Max CPU Jobs"
 msgstr "Max CPU Jobs"
 
-#: src/components/streamers/config/retry-policy-form.tsx:139
+#: src/components/config/shared/retry-policy-form.tsx:149
 msgid "Max Delay (ms)"
 msgstr "Max Delay (ms)"
 
@@ -2046,7 +2044,7 @@ msgstr "Max Duration"
 #~ msgid "Max Duration (s)"
 #~ msgstr "Max Duration (s)"
 
-#: src/components/streamers/config/danmu-config-form.tsx:182
+#: src/components/config/shared/danmu-config-form.tsx:200
 msgid "Max Interval (s)"
 msgstr "Max Interval (s)"
 
@@ -2063,8 +2061,8 @@ msgstr "Max Part Size"
 #~ msgid "Max Part Size (Bytes)"
 #~ msgstr "Max Part Size (Bytes)"
 
+#: src/components/config/shared/retry-policy-form.tsx:88
 #: src/components/pipeline/presets/processors/delete-config-form.tsx:53
-#: src/components/streamers/config/retry-policy-form.tsx:78
 msgid "Max Retries"
 msgstr "Max Retries"
 
@@ -2072,7 +2070,7 @@ msgstr "Max Retries"
 msgid "Max Uploads"
 msgstr "Max Uploads"
 
-#: src/components/streamers/config/retry-policy-form.tsx:92
+#: src/components/config/shared/retry-policy-form.tsx:102
 msgid "Maximum number of retry attempts."
 msgstr "Maximum number of retry attempts."
 
@@ -2100,12 +2098,11 @@ msgstr "Message"
 msgid "Metadata"
 msgstr "Metadata"
 
-#: src/components/config/platforms/tabs/stream-selection-tab.tsx:154
-#: src/components/streamers/config/stream-selection-input.tsx:119
+#: src/components/streamers/config/stream-selection-input.tsx:131
 msgid "Min Bitrate (bps)"
 msgstr "Min Bitrate (bps)"
 
-#: src/components/streamers/config/danmu-config-form.tsx:162
+#: src/components/config/shared/danmu-config-form.tsx:180
 msgid "Min Interval (s)"
 msgstr "Min Interval (s)"
 
@@ -2134,7 +2131,7 @@ msgstr "Monitor and manage processing jobs"
 msgid "Monitor this streamer"
 msgstr "Monitor this streamer"
 
-#: src/components/streamers/card/use-streamer-status.tsx:100
+#: src/components/streamers/card/use-streamer-status.tsx:101
 msgid "Monitoring Stopped"
 msgstr "Monitoring Stopped"
 
@@ -2146,12 +2143,12 @@ msgstr "Move Files"
 msgid "Mozilla/5.0..."
 msgstr "Mozilla/5.0..."
 
-#: src/components/streamers/config/retry-policy-form.tsx:116
+#: src/components/config/shared/retry-policy-form.tsx:126
 msgid "Multiplier for exponential backoff."
 msgstr "Multiplier for exponential backoff."
 
 #: src/components/pipeline/presets/editor/preset-meta-form.tsx:192
-#: src/components/pipeline/workflows/workflow-editor.tsx:173
+#: src/components/pipeline/workflows/workflow-editor.tsx:168
 #: src/components/streamers/config/streamer-general-settings.tsx:75
 #: src/components/streamers/edit/streamer-meta-form.tsx:123
 msgid "Name"
@@ -2165,7 +2162,7 @@ msgstr "Name is required"
 msgid "name@example.com"
 msgstr "name@example.com"
 
-#: src/components/streamers/config/streamer-configuration.tsx:62
+#: src/components/config/shared-config-editor.tsx:153
 msgid "Network"
 msgstr "Network"
 
@@ -2185,7 +2182,7 @@ msgstr "New Password"
 msgid "New Preset Name"
 msgstr "New Preset Name"
 
-#: src/components/streamers/streamer-form.tsx:182
+#: src/components/streamers/streamer-form.tsx:188
 msgid "Next"
 msgstr "Next"
 
@@ -2213,11 +2210,11 @@ msgstr "No configuration."
 msgid "No custom tags added"
 msgstr "No custom tags added"
 
-#: src/components/streamers/card/stream-avatar-info.tsx:143
+#: src/components/streamers/card/stream-avatar-info.tsx:144
 msgid "No detailed error message available"
 msgstr "No detailed error message available"
 
-#: src/components/config/templates/tabs/engine-overrides-tab.tsx:97
+#: src/components/config/templates/tabs/engine-overrides-tab.tsx:98
 msgid "No engines found."
 msgstr "No engines found."
 
@@ -2249,7 +2246,7 @@ msgstr "No media outputs yet"
 msgid "No outputs found"
 msgstr "No outputs found"
 
-#: src/components/config/templates/tabs/engine-overrides-tab.tsx:127
+#: src/components/config/templates/tabs/engine-overrides-tab.tsx:128
 msgid "No overrides configured"
 msgstr "No overrides configured"
 
@@ -2257,11 +2254,11 @@ msgstr "No overrides configured"
 msgid "No pipeline jobs yet"
 msgstr "No pipeline jobs yet"
 
-#: src/components/config/templates/tabs/platform-overrides-tab.tsx:93
+#: src/components/config/templates/tabs/platform-overrides-tab.tsx:98
 msgid "No platform found."
 msgstr "No platform found."
 
-#: src/components/config/templates/tabs/platform-overrides-tab.tsx:117
+#: src/components/config/templates/tabs/platform-overrides-tab.tsx:122
 msgid "No platform overrides configured"
 msgstr "No platform overrides configured"
 
@@ -2290,7 +2287,7 @@ msgstr "No recent sessions found."
 msgid "No Steps Added"
 msgstr "No Steps Added"
 
-#: src/components/pipeline/workflows/workflow-card.tsx:239
+#: src/components/pipeline/workflows/workflow-card.tsx:236
 msgid "No steps defined"
 msgstr "No steps defined"
 
@@ -2298,7 +2295,7 @@ msgstr "No steps defined"
 msgid "No steps selected yet"
 msgstr "No steps selected yet"
 
-#: src/routes/_authed/_dashboard/streamers/index.tsx:378
+#: src/routes/_authed/_dashboard/streamers/index.tsx:396
 msgid "No streamers found"
 msgstr "No streamers found"
 
@@ -2341,7 +2338,7 @@ msgid "Not available"
 msgstr "Not available"
 
 #: src/components/streamers/card/use-streamer-status.tsx:18
-#: src/components/streamers/card/use-streamer-status.tsx:181
+#: src/components/streamers/card/use-streamer-status.tsx:182
 #: src/components/streamers/edit/streamer-header.tsx:64
 #: src/routes/_authed/_dashboard/streamers/index.tsx:63
 msgid "Offline"
@@ -2355,27 +2352,27 @@ msgstr "Offline Check (ms)"
 msgid "Offline Check Count"
 msgstr "Offline Check Count"
 
-#: src/components/streamers/config/streamer-configuration.tsx:353
+#: src/components/config/shared/event-hooks-form.tsx:133
 msgid "On Download Complete"
 msgstr "On Download Complete"
 
-#: src/components/streamers/config/streamer-configuration.tsx:376
+#: src/components/config/shared/event-hooks-form.tsx:139
 msgid "On Download Error"
 msgstr "On Download Error"
 
-#: src/components/streamers/config/streamer-configuration.tsx:330
+#: src/components/config/shared/event-hooks-form.tsx:127
 msgid "On Download Start"
 msgstr "On Download Start"
 
-#: src/components/streamers/config/streamer-configuration.tsx:307
+#: src/components/config/shared/event-hooks-form.tsx:121
 msgid "On Offline"
 msgstr "On Offline"
 
-#: src/components/streamers/config/streamer-configuration.tsx:284
+#: src/components/config/shared/event-hooks-form.tsx:115
 msgid "On Online"
 msgstr "On Online"
 
-#: src/components/streamers/config/streamer-configuration.tsx:399
+#: src/components/config/shared/event-hooks-form.tsx:145
 msgid "On Pipeline Complete"
 msgstr "On Pipeline Complete"
 
@@ -2389,7 +2386,7 @@ msgstr "Only include files with this extension (without dot)"
 #: src/components/pipeline/jobs/pipeline-summary-card.tsx:179
 #: src/components/pipeline/outputs/output-card.tsx:124
 #: src/components/pipeline/presets/preset-card.tsx:151
-#: src/components/pipeline/workflows/workflow-card.tsx:161
+#: src/components/pipeline/workflows/workflow-card.tsx:155
 msgid "Open menu"
 msgstr "Open menu"
 
@@ -2411,9 +2408,9 @@ msgid "Options"
 msgstr "Options"
 
 #: src/components/config/platforms/platform-card.tsx:126
+#: src/components/config/shared-config-editor.tsx:142
 #: src/components/config/templates/template-card.tsx:152
 #: src/components/pipeline/presets/processors/thumbnail-config-form.tsx:134
-#: src/components/streamers/config/streamer-configuration.tsx:56
 msgid "Output"
 msgstr "Output"
 
@@ -2421,7 +2418,7 @@ msgstr "Output"
 msgid "Output Arguments"
 msgstr "Output Arguments"
 
-#: src/components/config/shared/output-settings-card.tsx:40
+#: src/components/config/shared/output-settings-card.tsx:43
 msgid "Output Configuration"
 msgstr "Output Configuration"
 
@@ -2430,11 +2427,11 @@ msgid "Output Detection"
 msgstr "Output Detection"
 
 #: src/components/config/global/file-config-card.tsx:48
-#: src/components/config/shared/output-settings-card.tsx:56
+#: src/components/config/shared/output-settings-card.tsx:59
 msgid "Output Folder"
 msgstr "Output Folder"
 
-#: src/components/config/shared/output-settings-card.tsx:114
+#: src/components/config/shared/output-settings-card.tsx:117
 #: src/components/pipeline/presets/processors/remux-config-form.tsx:253
 msgid "Output Format"
 msgstr "Output Format"
@@ -2463,11 +2460,11 @@ msgstr "Output Settings"
 msgid "Overall Health"
 msgstr "Overall Health"
 
-#: src/components/config/templates/tabs/platform-overrides-tab.tsx:73
+#: src/components/config/templates/tabs/platform-overrides-tab.tsx:78
 msgid "Override configuration (paths, delays, etc.) for specific platforms."
 msgstr "Override configuration (paths, delays, etc.) for specific platforms."
 
-#: src/components/config/shared/output-settings-card.tsx:163
+#: src/components/config/shared/output-settings-card.tsx:179
 msgid "Override download engine."
 msgstr "Override download engine."
 
@@ -2475,7 +2472,7 @@ msgstr "Override download engine."
 #~ msgid "Override engine configs."
 #~ msgstr "Override engine configs."
 
-#: src/components/config/shared/output-settings-card.tsx:97
+#: src/components/config/shared/output-settings-card.tsx:100
 msgid "Override filename template."
 msgstr "Override filename template."
 
@@ -2483,8 +2480,8 @@ msgstr "Override filename template."
 msgid "Override global default."
 msgstr "Override global default."
 
-#: src/components/streamers/edit/streamer-config-form.tsx:115
-#: src/routes/_authed/_dashboard/streamers/$id.edit.tsx:312
+#: src/components/streamers/edit/streamer-config-form.tsx:117
+#: src/routes/_authed/_dashboard/streamers/$id.edit.tsx:336
 msgid "Override global defaults for this streamer."
 msgstr "Override global defaults for this streamer."
 
@@ -2492,7 +2489,7 @@ msgstr "Override global defaults for this streamer."
 #~ msgid "Override output folder for this platform."
 #~ msgstr "Override output folder for this platform."
 
-#: src/components/config/shared/output-settings-card.tsx:68
+#: src/components/config/shared/output-settings-card.tsx:71
 msgid "Override output folder."
 msgstr "Override output folder."
 
@@ -2526,7 +2523,7 @@ msgstr "Overwrite existing files"
 msgid "Overwrite Files"
 msgstr "Overwrite Files"
 
-#: src/routes/_authed/_dashboard/player/index.tsx:236
+#: src/routes/_authed/_dashboard/player/index.tsx:255
 msgid "Parse and play live streams"
 msgstr "Parse and play live streams"
 
@@ -2538,13 +2535,16 @@ msgstr "Parse Batch"
 msgid "Parse Stream"
 msgstr "Parse Stream"
 
+#: src/routes/_authed/_dashboard/player/index.tsx:300
+msgid "Parsing Stream..."
+msgstr "Parsing Stream..."
+
 #: src/components/player/url-input-form.tsx:207
 #: src/components/player/url-input-form.tsx:292
 msgid "Parsing..."
 msgstr "Parsing..."
 
-#: src/components/config/proxy-config-settings.tsx:158
-#: src/components/streamers/config/streamer-configuration.tsx:250
+#: src/components/config/shared/proxy-settings-card.tsx:188
 #: src/routes/_public/login.tsx:163
 msgid "Password"
 msgstr "Password"
@@ -2554,8 +2554,8 @@ msgid "Paste your exported CSS variables here."
 msgstr "Paste your exported CSS variables here."
 
 #: src/components/config/platforms/tabs/auth-tab.tsx:53
-msgid "Paste your Netscape formatted cookies or raw key=value string here."
-msgstr "Paste your Netscape formatted cookies or raw key=value string here."
+#~ msgid "Paste your Netscape formatted cookies or raw key=value string here."
+#~ msgstr "Paste your Netscape formatted cookies or raw key=value string here."
 
 #: src/routes/_authed/_dashboard/pipeline/jobs/index.tsx:528
 msgid "Pending"
@@ -2577,15 +2577,12 @@ msgstr "Per page:"
 msgid "Performance"
 msgstr "Performance"
 
-#: src/components/config/platforms/platform-editor.tsx:181
-#: src/components/config/templates/template-editor.tsx:213
-#: src/components/streamers/config/streamer-configuration.tsx:86
+#: src/components/config/shared-config-editor.tsx:197
 #: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.tsx:397
 msgid "Pipeline"
 msgstr "Pipeline"
 
 #: src/components/config/global/pipeline-config-card.tsx:42
-#: src/components/config/platforms/tabs/pipeline-tab.tsx:56
 msgid "Pipeline Configuration"
 msgstr "Pipeline Configuration"
 
@@ -2609,7 +2606,7 @@ msgstr "Pipeline is empty."
 msgid "Pipeline Jobs"
 msgstr "Pipeline Jobs"
 
-#: src/components/pipeline/workflows/workflow-editor.tsx:225
+#: src/components/pipeline/workflows/workflow-editor.tsx:220
 msgid "Pipeline Sequence"
 msgstr "Pipeline Sequence"
 
@@ -2625,7 +2622,7 @@ msgstr "Pipeline Steps"
 msgid "pipelines"
 msgstr "pipelines"
 
-#: src/routes/_authed/_dashboard/streamers/index.tsx:260
+#: src/routes/_authed/_dashboard/streamers/index.tsx:279
 msgid "Platform"
 msgstr "Platform"
 
@@ -2638,7 +2635,7 @@ msgstr "Platform"
 msgid "Platform Configuration"
 msgstr "Platform Configuration"
 
-#: src/routes/_authed/_dashboard/config/platforms.$platformId.tsx:37
+#: src/routes/_authed/_dashboard/config/platforms.$platformId.tsx:42
 msgid "Platform configuration updated successfully"
 msgstr "Platform configuration updated successfully"
 
@@ -2646,19 +2643,19 @@ msgstr "Platform configuration updated successfully"
 msgid "Platform configurations will appear here when available."
 msgstr "Platform configurations will appear here when available."
 
-#: src/components/streamers/edit/streamer-config-form.tsx:55
+#: src/components/streamers/edit/streamer-config-form.tsx:57
 msgid "Platform Detected: {detectedPlatform}"
 msgstr "Platform Detected: {detectedPlatform}"
 
-#: src/routes/_authed/_dashboard/config/platforms.$platformId.tsx:76
+#: src/routes/_authed/_dashboard/config/platforms.$platformId.tsx:82
 msgid "Platform not found"
 msgstr "Platform not found"
 
-#: src/components/config/templates/tabs/platform-override-card.tsx:84
+#: src/components/config/templates/tabs/platform-override-card.tsx:112
 msgid "Platform Override Settings"
 msgstr "Platform Override Settings"
 
-#: src/components/config/templates/tabs/platform-overrides-tab.tsx:70
+#: src/components/config/templates/tabs/platform-overrides-tab.tsx:75
 msgid "Platform Overrides"
 msgstr "Platform Overrides"
 
@@ -2667,14 +2664,18 @@ msgstr "Platform Overrides"
 #~ msgstr "Platform Overrides (JSON)"
 
 #: src/components/config/platforms/tabs/advanced-tab.tsx:54
-msgid "Platform Specific Config"
-msgstr "Platform Specific Config"
+#~ msgid "Platform Specific Config"
+#~ msgstr "Platform Specific Config"
+
+#: src/components/config/platforms/tabs/platform-specific-tab.tsx:33
+msgid "Platform Specific Configuration"
+msgstr "Platform Specific Configuration"
 
 #: src/routes/_authed/_dashboard/config/platforms.index.tsx:84
 msgid "platforms"
 msgstr "platforms"
 
-#: src/components/config/templates/template-editor.tsx:195
+#: src/components/config/templates/template-editor.tsx:199
 msgid "Platforms"
 msgstr "Platforms"
 
@@ -2690,23 +2691,27 @@ msgstr "Please enter at least one URL"
 msgid "Please enter your new password details"
 msgstr "Please enter your new password details"
 
-#: src/components/config/platforms/tabs/stream-selection-tab.tsx:80
-#: src/components/streamers/config/stream-selection-input.tsx:55
+#: src/routes/_authed/_dashboard/streamers/$id.edit.tsx:145
+msgid "Please fix validation errors"
+msgstr "Please fix validation errors"
+
+#: src/routes/_authed/_dashboard/player/index.tsx:303
+msgid "Please wait while we resolve the stream URL."
+msgstr "Please wait while we resolve the stream URL."
+
+#: src/components/streamers/config/stream-selection-input.tsx:57
 msgid "Preferences"
 msgstr "Preferences"
 
-#: src/components/config/platforms/tabs/stream-selection-tab.tsx:122
-#: src/components/streamers/config/stream-selection-input.tsx:94
+#: src/components/streamers/config/stream-selection-input.tsx:99
 msgid "Preferred CDNs"
 msgstr "Preferred CDNs"
 
-#: src/components/config/platforms/tabs/stream-selection-tab.tsx:105
-#: src/components/streamers/config/stream-selection-input.tsx:78
+#: src/components/streamers/config/stream-selection-input.tsx:82
 msgid "Preferred Formats"
 msgstr "Preferred Formats"
 
-#: src/components/config/platforms/tabs/stream-selection-tab.tsx:88
-#: src/components/streamers/config/stream-selection-input.tsx:62
+#: src/components/streamers/config/stream-selection-input.tsx:65
 msgid "Preferred Qualities"
 msgstr "Preferred Qualities"
 
@@ -2768,18 +2773,30 @@ msgstr "Primary color for buttons and interactions."
 
 #: src/components/config/platforms/tabs/stream-selection-tab.tsx:133
 #: src/components/streamers/config/stream-selection-input.tsx:104
-msgid "Prioritize specific CDN providers."
-msgstr "Prioritize specific CDN providers."
+#~ msgid "Prioritize specific CDN providers."
+#~ msgstr "Prioritize specific CDN providers."
+
+#: src/components/streamers/config/stream-selection-input.tsx:110
+msgid "Prioritize specific CDN providers. Press Enter to add."
+msgstr "Prioritize specific CDN providers. Press Enter to add."
 
 #: src/components/config/platforms/tabs/stream-selection-tab.tsx:99
 #: src/components/streamers/config/stream-selection-input.tsx:72
-msgid "Prioritize specific qualities (case-insensitive)."
-msgstr "Prioritize specific qualities (case-insensitive)."
+#~ msgid "Prioritize specific qualities (case-insensitive)."
+#~ msgstr "Prioritize specific qualities (case-insensitive)."
+
+#: src/components/streamers/config/stream-selection-input.tsx:76
+msgid "Prioritize specific qualities (case-insensitive). Press Enter to add."
+msgstr "Prioritize specific qualities (case-insensitive). Press Enter to add."
 
 #: src/components/config/platforms/tabs/stream-selection-tab.tsx:116
 #: src/components/streamers/config/stream-selection-input.tsx:88
-msgid "Prioritize specific streaming protocols."
-msgstr "Prioritize specific streaming protocols."
+#~ msgid "Prioritize specific streaming protocols."
+#~ msgstr "Prioritize specific streaming protocols."
+
+#: src/components/streamers/config/stream-selection-input.tsx:93
+msgid "Prioritize specific streaming protocols. Press Enter to add."
+msgstr "Prioritize specific streaming protocols. Press Enter to add."
 
 #: src/components/streamers/config/streamer-general-settings.tsx:178
 #: src/components/streamers/edit/streamer-meta-form.tsx:146
@@ -2816,30 +2833,24 @@ msgstr "Processor is required"
 msgid "Provide session details and choose the processing steps to launch a manual pipeline."
 msgstr "Provide session details and choose the processing steps to launch a manual pipeline."
 
-#: src/components/config/platforms/edit-platform-dialog.tsx:161
-#: src/components/config/platforms/platform-editor.tsx:190
-#: src/components/config/templates/tabs/platform-override-card.tsx:134
-#: src/components/config/templates/template-editor.tsx:204
-#: src/components/streamers/config/streamer-configuration.tsx:68
+#: src/components/config/shared-config-editor.tsx:164
 msgid "Proxy"
 msgstr "Proxy"
 
 #: src/components/config/global/network-system-card.tsx:136
-#: src/components/config/platforms/tabs/proxy-tab.tsx:37
 msgid "Proxy Configuration"
 msgstr "Proxy Configuration"
 
-#: src/components/config/platforms/tabs/proxy-tab.tsx:58
+#: src/components/config/shared/proxy-settings-card.tsx:242
 msgid "Proxy Strategy"
 msgstr "Proxy Strategy"
 
-#: src/components/config/proxy-config-settings.tsx:123
-#: src/components/streamers/config/streamer-configuration.tsx:207
+#: src/components/config/shared/proxy-settings-card.tsx:153
 msgid "Proxy URL"
 msgstr "Proxy URL"
 
 #: src/components/config/engines/forms/streamlink-form.tsx:61
-#: src/components/player/stream-info-card.tsx:101
+#: src/components/player/stream-info-card.tsx:143
 msgid "Quality"
 msgstr "Quality"
 
@@ -2863,9 +2874,13 @@ msgstr "Ratio"
 #~ msgid "Raw Configuration"
 #~ msgstr "Raw Configuration"
 
+#: src/components/config/platforms/tabs/platform-specific-tab.tsx:102
+msgid "Raw JSON configuration specific to this platform."
+msgstr "Raw JSON configuration specific to this platform."
+
 #: src/components/config/platforms/tabs/advanced-tab.tsx:44
-msgid "Raw JSON configurations for advanced users."
-msgstr "Raw JSON configurations for advanced users."
+#~ msgid "Raw JSON configurations for advanced users."
+#~ msgstr "Raw JSON configurations for advanced users."
 
 #: src/components/pipeline/presets/editor/preset-meta-form.tsx:58
 msgid "Rclone (Upload / Move / Sync)"
@@ -2875,7 +2890,7 @@ msgstr "Rclone (Upload / Move / Sync)"
 msgid "Ready"
 msgstr "Ready"
 
-#: src/routes/_authed/_dashboard/player/index.tsx:281
+#: src/routes/_authed/_dashboard/player/index.tsx:324
 msgid "Ready to Watch"
 msgstr "Ready to Watch"
 
@@ -2883,7 +2898,7 @@ msgstr "Ready to Watch"
 msgid "Real-time status of all system components and resources."
 msgstr "Real-time status of all system components and resources."
 
-#: src/components/streamers/card/use-streamer-status.tsx:116
+#: src/components/streamers/card/use-streamer-status.tsx:117
 msgid "Reason"
 msgstr "Reason"
 
@@ -2901,7 +2916,7 @@ msgid "Recording"
 msgstr "Recording"
 
 #: src/components/streamers/edit/streamer-filters-tab.tsx:30
-#: src/routes/_authed/_dashboard/streamers/$id.edit.tsx:251
+#: src/routes/_authed/_dashboard/streamers/$id.edit.tsx:274
 msgid "Recording Filters"
 msgstr "Recording Filters"
 
@@ -2925,7 +2940,7 @@ msgstr "Regex Pattern"
 #~ msgid "Remember me"
 #~ msgstr "Remember me"
 
-#: src/components/config/templates/tabs/engine-overrides-tab.tsx:152
+#: src/components/config/templates/tabs/engine-overrides-tab.tsx:160
 msgid "Remove"
 msgstr "Remove"
 
@@ -2950,8 +2965,8 @@ msgid "Replace output files if they already exist"
 msgstr "Replace output files if they already exist"
 
 #: src/components/config/platforms/tabs/auth-tab.tsx:32
-msgid "Required for premium/login-only content."
-msgstr "Required for premium/login-only content."
+#~ msgid "Required for premium/login-only content."
+#~ msgstr "Required for premium/login-only content."
 
 #: src/components/pipeline/presets/processors/remux-config-form.tsx:397
 msgid "Resolution (Scale)"
@@ -2969,7 +2984,7 @@ msgstr "Resources"
 msgid "Restore password"
 msgstr "Restore password"
 
-#: src/components/streamers/card/use-streamer-status.tsx:63
+#: src/components/streamers/card/use-streamer-status.tsx:64
 msgid "Resuming in"
 msgstr "Resuming in"
 
@@ -2997,7 +3012,6 @@ msgstr "Retry Failed Steps"
 msgid "Retry Job"
 msgstr "Retry Job"
 
-#: src/components/config/platforms/tabs/advanced-tab.tsx:89
 #: src/components/pipeline/presets/processors/delete-config-form.tsx:42
 msgid "Retry Policy"
 msgstr "Retry Policy"
@@ -3014,39 +3028,39 @@ msgstr "Return Previous Page"
 msgid "Reusable processor configurations for pipeline steps"
 msgstr "Reusable processor configurations for pipeline steps"
 
-#: src/routes/_authed/_dashboard/sessions/index.tsx:206
+#: src/routes/_authed/_dashboard/sessions/index.tsx:231
 msgid "Review recorded streams and manage archives"
 msgstr "Review recorded streams and manage archives"
 
-#: src/components/config/proxy-config-settings.tsx:83
+#: src/components/config/shared/proxy-settings-card.tsx:113
 msgid "Route traffic through an intermediate server"
 msgstr "Route traffic through an intermediate server"
 
-#: src/routes/_authed/_dashboard/streamers/index.tsx:403
+#: src/routes/_authed/_dashboard/streamers/index.tsx:421
 msgid "Rows per page"
 msgstr "Rows per page"
 
-#: src/components/streamers/config/streamer-configuration.tsx:341
+#: src/components/config/shared/event-hooks-form.tsx:129
 msgid "Runs when a download begins."
 msgstr "Runs when a download begins."
 
-#: src/components/streamers/config/streamer-configuration.tsx:364
+#: src/components/config/shared/event-hooks-form.tsx:135
 msgid "Runs when a download completes successfully."
 msgstr "Runs when a download completes successfully."
 
-#: src/components/streamers/config/streamer-configuration.tsx:387
+#: src/components/config/shared/event-hooks-form.tsx:141
 msgid "Runs when a download encounters an error."
 msgstr "Runs when a download encounters an error."
 
-#: src/components/streamers/config/streamer-configuration.tsx:410
+#: src/components/config/shared/event-hooks-form.tsx:147
 msgid "Runs when the post-processing pipeline completes."
 msgstr "Runs when the post-processing pipeline completes."
 
-#: src/components/streamers/config/streamer-configuration.tsx:318
+#: src/components/config/shared/event-hooks-form.tsx:123
 msgid "Runs when the streamer goes offline."
 msgstr "Runs when the streamer goes offline."
 
-#: src/components/streamers/config/streamer-configuration.tsx:295
+#: src/components/config/shared/event-hooks-form.tsx:117
 msgid "Runs when the streamer goes online."
 msgstr "Runs when the streamer goes online."
 
@@ -3054,7 +3068,7 @@ msgstr "Runs when the streamer goes online."
 msgid "Rust regex syntax supported."
 msgstr "Rust regex syntax supported."
 
-#: src/components/streamers/config/danmu-config-form.tsx:129
+#: src/components/config/shared/danmu-config-form.tsx:147
 msgid "Sample danmu at a constant time interval."
 msgstr "Sample danmu at a constant time interval."
 
@@ -3062,18 +3076,17 @@ msgstr "Sample danmu at a constant time interval."
 msgid "Sample Rate (Hz)"
 msgstr "Sample Rate (Hz)"
 
-#: src/components/streamers/config/danmu-config-form.tsx:105
+#: src/components/config/shared/danmu-config-form.tsx:123
 msgid "Sampling Strategy"
 msgstr "Sampling Strategy"
 
 #: src/components/config/engines/engine-editor.tsx:359
-#: src/components/config/platforms/edit-platform-dialog.tsx:230
-#: src/components/config/platforms/platform-editor.tsx:137
-#: src/components/config/templates/template-editor.tsx:143
+#: src/components/config/platforms/platform-editor.tsx:129
+#: src/components/config/templates/template-editor.tsx:152
 #: src/components/filters/FilterDialog.tsx:280
 #: src/components/pipeline/presets/editor/preset-save-fab.tsx:37
 #: src/components/pipeline/workflows/step-config-dialog.tsx:317
-#: src/components/streamers/edit/streamer-save-fab.tsx:41
+#: src/components/streamers/edit/streamer-save-fab.tsx:45
 #: src/routes/_authed/_dashboard/config/global.tsx:183
 msgid "Save Changes"
 msgstr "Save Changes"
@@ -3082,15 +3095,15 @@ msgstr "Save Changes"
 #~ msgid "Save Streamer"
 #~ msgstr "Save Streamer"
 
-#: src/components/pipeline/workflows/workflow-editor.tsx:138
+#: src/components/pipeline/workflows/workflow-editor.tsx:133
 msgid "Save Workflow"
 msgstr "Save Workflow"
 
-#: src/components/config/platforms/platform-editor.tsx:135
-#: src/components/config/templates/template-editor.tsx:139
+#: src/components/config/platforms/platform-editor.tsx:127
+#: src/components/config/templates/template-editor.tsx:148
 #: src/components/filters/FilterDialog.tsx:277
-#: src/components/pipeline/workflows/workflow-editor.tsx:136
-#: src/components/streamers/edit/streamer-save-fab.tsx:36
+#: src/components/pipeline/workflows/workflow-editor.tsx:131
+#: src/components/streamers/edit/streamer-save-fab.tsx:40
 #: src/routes/_authed/_dashboard/config/global.tsx:183
 msgid "Saving..."
 msgstr "Saving..."
@@ -3119,7 +3132,7 @@ msgstr "Script"
 msgid "Search by name or description..."
 msgstr "Search by name or description..."
 
-#: src/components/config/templates/tabs/engine-overrides-tab.tsx:94
+#: src/components/config/templates/tabs/engine-overrides-tab.tsx:95
 msgid "Search engines..."
 msgstr "Search engines..."
 
@@ -3139,11 +3152,11 @@ msgstr "Search platforms..."
 msgid "Search presets..."
 msgstr "Search presets..."
 
-#: src/routes/_authed/_dashboard/sessions/index.tsx:216
+#: src/routes/_authed/_dashboard/sessions/index.tsx:241
 msgid "Search sessions..."
 msgstr "Search sessions..."
 
-#: src/routes/_authed/_dashboard/streamers/index.tsx:244
+#: src/routes/_authed/_dashboard/streamers/index.tsx:263
 msgid "Search streamers..."
 msgstr "Search streamers..."
 
@@ -3212,8 +3225,8 @@ msgstr "Select your preferred color scheme."
 
 #: src/components/config/platforms/platform-editor.tsx:163
 #: src/components/config/templates/template-editor.tsx:168
-msgid "Selection"
-msgstr "Selection"
+#~ msgid "Selection"
+#~ msgstr "Selection"
 
 #: src/routes/_authed/_dashboard/sessions/$sessionId.tsx:615
 msgid "Session events and title changes"
@@ -3240,7 +3253,7 @@ msgstr "Session Preview"
 msgid "Session Started"
 msgstr "Session Started"
 
-#: src/routes/_authed/_dashboard/sessions/index.tsx:203
+#: src/routes/_authed/_dashboard/sessions/index.tsx:228
 msgid "Sessions"
 msgstr "Sessions"
 
@@ -3257,7 +3270,7 @@ msgstr "Set up a new download tool configuration"
 msgid "Settings"
 msgstr "Settings"
 
-#: src/components/streamers/edit/streamer-config-form.tsx:58
+#: src/components/streamers/edit/streamer-config-form.tsx:60
 msgid "Settings have been optimized for this platform."
 msgstr "Settings have been optimized for this platform."
 
@@ -3292,9 +3305,14 @@ msgstr "Size"
 msgid "Size and duration constraints for recordings."
 msgstr "Size and duration constraints for recordings."
 
-#: src/components/player/stream-info-card.tsx:137
+#: src/components/player/stream-info-card.tsx:104
 msgid "Source"
 msgstr "Source"
+
+#: src/components/config/platforms/platform-editor.tsx:165
+#: src/components/config/templates/tabs/platform-override-card.tsx:68
+msgid "Specific"
+msgstr "Specific"
 
 #: src/components/streamers/streamer-form.tsx:262
 #~ msgid "Specific settings for {0}."
@@ -3359,7 +3377,7 @@ msgstr "Started"
 msgid "Status"
 msgstr "Status"
 
-#: src/components/pipeline/workflows/workflow-card.tsx:148
+#: src/components/pipeline/workflows/workflow-card.tsx:142
 msgid "step"
 msgstr "step"
 
@@ -3375,11 +3393,11 @@ msgstr "step"
 msgid "Step Library"
 msgstr "Step Library"
 
-#: src/components/pipeline/workflows/workflow-card.tsx:148
+#: src/components/pipeline/workflows/workflow-card.tsx:142
 msgid "steps"
 msgstr "steps"
 
-#: src/components/pipeline/workflows/workflow-editor.tsx:232
+#: src/components/pipeline/workflows/workflow-editor.tsx:227
 msgid "Steps"
 msgstr "Steps"
 
@@ -3387,22 +3405,22 @@ msgstr "Steps"
 msgid "Stream Details"
 msgstr "Stream Details"
 
-#: src/components/streamers/card/stream-avatar-info.tsx:115
+#: src/components/streamers/card/stream-avatar-info.tsx:116
 msgid "Stream monitoring encountered issues"
 msgstr "Stream monitoring encountered issues"
 
-#: src/components/player/stream-info-card.tsx:65
-#: src/components/player/stream-info-card.tsx:83
+#: src/components/player/stream-info-card.tsx:68
+#: src/components/player/stream-info-card.tsx:86
 msgid "Stream Options"
 msgstr "Stream Options"
 
-#: src/routes/_authed/_dashboard/player/index.tsx:233
+#: src/routes/_authed/_dashboard/player/index.tsx:252
 msgid "Stream Player"
 msgstr "Stream Player"
 
 #: src/components/config/platforms/edit-platform-dialog.tsx:143
-msgid "Stream Selection"
-msgstr "Stream Selection"
+#~ msgid "Stream Selection"
+#~ msgstr "Stream Selection"
 
 #: src/components/config/platforms/tabs/advanced-tab.tsx:43
 #~ msgid "Stream Selection Config (JSON)"
@@ -3412,7 +3430,7 @@ msgstr "Stream Selection"
 msgid "Streamer Check (ms)"
 msgstr "Streamer Check (ms)"
 
-#: src/routes/_authed/_dashboard/streamers/new.tsx:21
+#: src/routes/_authed/_dashboard/streamers/new.tsx:22
 msgid "Streamer created successfully"
 msgstr "Streamer created successfully"
 
@@ -3435,11 +3453,11 @@ msgstr "Streamer ID"
 msgid "Streamer updated"
 msgstr "Streamer updated"
 
-#: src/routes/_authed/_dashboard/streamers/$id.edit.tsx:115
+#: src/routes/_authed/_dashboard/streamers/$id.edit.tsx:117
 msgid "Streamer updated successfully"
 msgstr "Streamer updated successfully"
 
-#: src/routes/_authed/_dashboard/streamers/index.tsx:231
+#: src/routes/_authed/_dashboard/streamers/index.tsx:250
 msgid "Streamers"
 msgstr "Streamers"
 
@@ -3452,8 +3470,8 @@ msgid "streamlink"
 msgstr "streamlink"
 
 #: src/components/config/templates/tabs/platform-override-card.tsx:127
-msgid "Streams"
-msgstr "Streams"
+#~ msgid "Streams"
+#~ msgstr "Streams"
 
 #: src/components/config/platforms/supported-platforms.tsx:27
 msgid "Supported Platforms"
@@ -3476,11 +3494,11 @@ msgstr "System Status"
 msgid "Target Bitrate"
 msgstr "Target Bitrate"
 
-#: src/components/streamers/config/danmu-config-form.tsx:202
+#: src/components/config/shared/danmu-config-form.tsx:220
 msgid "Target Danmus per Sample"
 msgstr "Target Danmus per Sample"
 
-#: src/components/streamers/config/danmu-config-form.tsx:219
+#: src/components/config/shared/danmu-config-form.tsx:237
 msgid "Target number of messages to capture per sample period."
 msgstr "Target number of messages to capture per sample period."
 
@@ -3497,11 +3515,11 @@ msgstr "Template"
 msgid "Template created successfully"
 msgstr "Template created successfully"
 
-#: src/components/config/templates/tabs/general-tab.tsx:39
+#: src/components/config/templates/tabs/general-tab.tsx:36
 msgid "Template Information"
 msgstr "Template Information"
 
-#: src/components/config/templates/tabs/general-tab.tsx:54
+#: src/components/config/templates/tabs/general-tab.tsx:51
 msgid "Template Name"
 msgstr "Template Name"
 
@@ -3521,7 +3539,7 @@ msgstr "templates"
 #~ msgid "Templates"
 #~ msgstr "Templates"
 
-#: src/components/streamers/card/use-streamer-status.tsx:47
+#: src/components/streamers/card/use-streamer-status.tsx:48
 msgid "Temporarily Paused"
 msgstr "Temporarily Paused"
 
@@ -3565,7 +3583,7 @@ msgid "This will permanently delete the preset \"{0}\". Pipelines using this pre
 msgstr "This will permanently delete the preset \"{0}\". Pipelines using this preset may fail if not updated."
 
 #. placeholder {0}: workflow.name
-#: src/components/pipeline/workflows/workflow-card.tsx:184
+#: src/components/pipeline/workflows/workflow-card.tsx:178
 msgid "This will permanently delete the workflow \"{0}\". Streamers using this workflow will need to be updated."
 msgstr "This will permanently delete the workflow \"{0}\". Streamers using this workflow will need to be updated."
 
@@ -3582,7 +3600,7 @@ msgstr "Thumbnail"
 msgid "Time Based"
 msgstr "Time Based"
 
-#: src/components/streamers/config/danmu-config-form.tsx:153
+#: src/components/config/shared/danmu-config-form.tsx:171
 msgid "Time between sampling attempts."
 msgstr "Time between sampling attempts."
 
@@ -3606,7 +3624,7 @@ msgstr "Timestamp"
 msgid "Timezone"
 msgstr "Timezone"
 
-#: src/components/config/platforms/tabs/general-tab.tsx:38
+#: src/components/config/platforms/tabs/general-tab.tsx:33
 msgid "Timing & Delays"
 msgstr "Timing & Delays"
 
@@ -3614,7 +3632,7 @@ msgstr "Timing & Delays"
 msgid "Title"
 msgstr "Title"
 
-#: src/routes/_authed/_dashboard/streamers/index.tsx:280
+#: src/routes/_authed/_dashboard/streamers/index.tsx:299
 msgid "total"
 msgstr "total"
 
@@ -3655,7 +3673,7 @@ msgstr "Trimming & Time"
 msgid "Try adjusting your search or filters"
 msgstr "Try adjusting your search or filters"
 
-#: src/routes/_authed/_dashboard/streamers/index.tsx:381
+#: src/routes/_authed/_dashboard/streamers/index.tsx:399
 msgid "Try adjusting your search or filters, or add a new streamer to start monitoring."
 msgstr "Try adjusting your search or filters, or add a new streamer to start monitoring."
 
@@ -3683,11 +3701,11 @@ msgstr "Unhealthy"
 #~ msgid "Unique identifier for this config."
 #~ msgstr "Unique identifier for this config."
 
-#: src/components/config/templates/tabs/engine-overrides-tab.tsx:145
+#: src/components/config/templates/tabs/engine-overrides-tab.tsx:153
 msgid "Unknown Engine ID: {engineId}"
 msgstr "Unknown Engine ID: {engineId}"
 
-#: src/components/streamers/card/use-streamer-status.tsx:74
+#: src/components/streamers/card/use-streamer-status.tsx:75
 msgid "Until"
 msgstr "Until"
 
@@ -3726,24 +3744,22 @@ msgid "Use <0>-movflags +faststart</0>"
 msgstr "Use <0>-movflags +faststart</0>"
 
 #: src/components/streamers/config/streamer-configuration.tsx:165
-msgid "Use a proxy server for this streamer."
-msgstr "Use a proxy server for this streamer."
+#~ msgid "Use a proxy server for this streamer."
+#~ msgstr "Use a proxy server for this streamer."
 
-#: src/components/config/proxy-config-settings.tsx:103
-#: src/components/streamers/config/streamer-configuration.tsx:185
+#: src/components/config/shared/proxy-settings-card.tsx:133
 msgid "Use System Proxy"
 msgstr "Use System Proxy"
 
 #: src/components/streamers/config/streamer-configuration.tsx:188
-msgid "Use system-configured proxy settings."
-msgstr "Use system-configured proxy settings."
+#~ msgid "Use system-configured proxy settings."
+#~ msgstr "Use system-configured proxy settings."
 
 #: src/components/config/engines/forms/ffmpeg-form.tsx:94
 msgid "User Agent"
 msgstr "User Agent"
 
-#: src/components/config/proxy-config-settings.tsx:140
-#: src/components/streamers/config/streamer-configuration.tsx:231
+#: src/components/config/shared/proxy-settings-card.tsx:170
 #: src/routes/_public/login.tsx:144
 msgid "Username"
 msgstr "Username"
@@ -3752,7 +3768,7 @@ msgstr "Username"
 msgid "Vars: '{streamer}', '{title}' | Time: %Y, %m, %d, %H, %M, %S"
 msgstr "Vars: '{streamer}', '{title}' | Time: %Y, %m, %d, %H, %M, %S"
 
-#: src/components/streamers/config/danmu-config-form.tsx:123
+#: src/components/config/shared/danmu-config-form.tsx:141
 msgid "Velocity Based (Dynamic)"
 msgstr "Velocity Based (Dynamic)"
 
@@ -3798,9 +3814,13 @@ msgstr "View Output & Logs"
 msgid "Wait"
 msgstr "Wait"
 
-#: src/components/config/platforms/tabs/general-tab.tsx:99
+#: src/components/config/platforms/tabs/general-tab.tsx:94
 msgid "Wait time before starting."
 msgstr "Wait time before starting."
+
+#: src/components/streamers/card/stream-actions-menu.tsx:89
+msgid "Watch"
+msgstr "Watch"
 
 #: src/components/pipeline/presets/processors/remux-config-form.tsx:647
 msgid "Web Optimize"

@@ -97,6 +97,7 @@ impl StreamerMetadata {
                 | StreamerState::Live
                 | StreamerState::OutOfSchedule
                 | StreamerState::InspectingLive
+                | StreamerState::TemporalDisabled
         )
     }
 

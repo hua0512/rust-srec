@@ -243,6 +243,7 @@ fn map_event_to_protobuf(
         DownloadManagerEvent::DownloadCancelled { streamer_id, .. } => streamer_id,
         DownloadManagerEvent::ConfigUpdated { streamer_id, .. } => streamer_id,
         DownloadManagerEvent::ConfigUpdateFailed { streamer_id, .. } => streamer_id,
+        DownloadManagerEvent::DownloadRejected { streamer_id, .. } => streamer_id,
     };
 
     // Apply filter
@@ -375,6 +376,26 @@ fn map_event_to_protobuf(
         // Config events are internal, don't broadcast to clients
         DownloadManagerEvent::ConfigUpdated { .. }
         | DownloadManagerEvent::ConfigUpdateFailed { .. } => None,
+        // DownloadRejected is informational - could optionally broadcast
+        // For now, we include it as it provides useful feedback to UI
+        DownloadManagerEvent::DownloadRejected {
+            streamer_id,
+            session_id,
+            reason,
+            retry_after_secs,
+        } => {
+            // Use DownloadFailed payload with empty download_id to indicate rejection
+            let payload = DownloadFailed {
+                download_id: String::new(), // No download_id for rejected downloads
+                streamer_id: streamer_id.clone(),
+                error: format!("{} (retry in {}s)", reason, retry_after_secs.unwrap_or(0)),
+                recoverable: true, // Circuit breaker rejections are always recoverable
+            };
+            Some(WsMessage {
+                event_type: EventType::DownloadFailed as i32,
+                payload: Some(Payload::DownloadFailed(payload)),
+            })
+        }
     }
 }
 

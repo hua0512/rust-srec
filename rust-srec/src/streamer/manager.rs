@@ -536,6 +536,10 @@ where
             entry.consecutive_error_count = new_count;
             entry.disabled_until = disabled_until;
             entry.last_error = Some(error.to_string());
+            // Sync state with DB: TemporalDisabled when backoff is applied
+            if disabled_until.is_some() {
+                entry.state = StreamerState::TemporalDisabled;
+            }
         }
 
         if let Some(until) = disabled_until {

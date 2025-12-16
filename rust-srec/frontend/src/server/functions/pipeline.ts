@@ -124,6 +124,7 @@ export const getPipelineJobProgress = createServerFn({ method: 'GET' })
 const PipelineSummarySchema = z.object({
   pipeline_id: z.string(),
   streamer_id: z.string(),
+  streamer_name: z.string().nullable().optional(),
   session_id: z.string().nullable().optional(),
   status: z.string(),
   job_count: z.number(),

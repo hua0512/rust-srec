@@ -261,6 +261,7 @@ pub struct OutputFilterParams {
 pub struct PipelineSummaryResponse {
     pub pipeline_id: String,
     pub streamer_id: String,
+    pub streamer_name: Option<String>,
     pub session_id: Option<String>,
     pub status: String,
     pub job_count: i64,
@@ -342,8 +343,17 @@ async fn list_jobs(
         .await
         .map_err(ApiError::from)?;
 
+    // Batch-fetch streamer names
+    let streamer_names = fetch_streamer_names(&state, &jobs).await;
+
     // Convert jobs to API response format
-    let job_responses: Vec<JobResponse> = jobs.iter().map(job_to_response).collect();
+    let job_responses: Vec<JobResponse> = jobs
+        .iter()
+        .map(|job| {
+            let name = streamer_names.get(&job.streamer_id).cloned();
+            job_to_response(job, name)
+        })
+        .collect();
 
     let response = PaginatedResponse::new(job_responses, total, effective_limit, pagination.offset);
     Ok(Json(response))
@@ -384,7 +394,16 @@ async fn list_jobs_page(
         .await
         .map_err(ApiError::from)?;
 
-    let job_responses: Vec<JobResponse> = jobs.iter().map(job_to_response).collect();
+    // Batch-fetch streamer names
+    let streamer_names = fetch_streamer_names(&state, &jobs).await;
+
+    let job_responses: Vec<JobResponse> = jobs
+        .iter()
+        .map(|job| {
+            let name = streamer_names.get(&job.streamer_id).cloned();
+            job_to_response(job, name)
+        })
+        .collect();
     Ok(Json(PageResponse::new(
         job_responses,
         effective_limit,
@@ -503,19 +522,42 @@ async fn list_pipelines(
         .await
         .map_err(ApiError::from)?;
 
+    // Batch-fetch streamer names
+    let streamer_ids: HashSet<String> = pipelines.iter().map(|p| p.streamer_id.clone()).collect();
+    let streamer_names: HashMap<String, String> = if let Some(repo) = &state.streamer_repository {
+        let fetches = streamer_ids.into_iter().map(|streamer_id| {
+            let repo = repo.clone();
+            async move {
+                let name = repo.get_streamer(&streamer_id).await.ok().map(|s| s.name);
+                (streamer_id, name)
+            }
+        });
+        join_all(fetches)
+            .await
+            .into_iter()
+            .filter_map(|(id, name)| name.map(|n| (id, n)))
+            .collect()
+    } else {
+        HashMap::new()
+    };
+
     let responses: Vec<PipelineSummaryResponse> = pipelines
         .into_iter()
-        .map(|p| PipelineSummaryResponse {
-            pipeline_id: p.pipeline_id,
-            streamer_id: p.streamer_id,
-            session_id: p.session_id,
-            status: p.status,
-            job_count: p.job_count,
-            completed_count: p.completed_count,
-            failed_count: p.failed_count,
-            total_duration_secs: p.total_duration_secs,
-            created_at: p.created_at,
-            updated_at: p.updated_at,
+        .map(|p| {
+            let streamer_name = streamer_names.get(&p.streamer_id).cloned();
+            PipelineSummaryResponse {
+                pipeline_id: p.pipeline_id,
+                streamer_id: p.streamer_id,
+                streamer_name,
+                session_id: p.session_id,
+                status: p.status,
+                job_count: p.job_count,
+                completed_count: p.completed_count,
+                failed_count: p.failed_count,
+                total_duration_secs: p.total_duration_secs,
+                created_at: p.created_at,
+                updated_at: p.updated_at,
+            }
         })
         .collect();
 
@@ -577,7 +619,14 @@ async fn get_job(
         .map_err(ApiError::from)?
         .ok_or_else(|| ApiError::not_found(format!("Job with id '{}' not found", id)))?;
 
-    Ok(Json(job_to_response(&job)))
+    // Fetch streamer name
+    let streamer_name = state.streamer_repository.as_ref().and_then(|repo| {
+        futures::executor::block_on(repo.get_streamer(&job.streamer_id))
+            .ok()
+            .map(|s| s.name)
+    });
+
+    Ok(Json(job_to_response(&job, streamer_name)))
 }
 
 /// Retry a failed job.
@@ -628,7 +677,14 @@ async fn retry_job(
         .await
         .map_err(ApiError::from)?;
 
-    Ok(Json(job_to_response(&job)))
+    // Fetch streamer name
+    let streamer_name = state.streamer_repository.as_ref().and_then(|repo| {
+        futures::executor::block_on(repo.get_streamer(&job.streamer_id))
+            .ok()
+            .map(|s| s.name)
+    });
+
+    Ok(Json(job_to_response(&job, streamer_name)))
 }
 
 /// Cancel a pending or processing job.
@@ -678,16 +734,27 @@ async fn cancel_job(
         .as_ref()
         .ok_or_else(|| ApiError::service_unavailable("Pipeline service not available"))?;
 
-    // Call PipelineManager.cancel_job
-    pipeline_manager
-        .cancel_job(&id)
-        .await
-        .map_err(ApiError::from)?;
+    // Call PipelineManager.cancel_job. If it fails because the job is already
+    // terminal (Completed/Failed), we try to DELETE it instead.
+    match pipeline_manager.cancel_job(&id).await {
+        Ok(_) => Ok(Json(serde_json::json!({
+            "success": true,
+            "message": format!("Job '{}' cancelled successfully", id)
+        }))),
+        Err(crate::Error::InvalidStateTransition { .. }) => {
+            // Job is already in a terminal state (Completed/Failed), so delete it
+            pipeline_manager
+                .delete_job(&id)
+                .await
+                .map_err(ApiError::from)?;
 
-    Ok(Json(serde_json::json!({
-        "success": true,
-        "message": format!("Job '{}' cancelled successfully", id)
-    })))
+            Ok(Json(serde_json::json!({
+                "success": true,
+                "message": format!("Job '{}' deleted successfully", id)
+            })))
+        }
+        Err(e) => Err(ApiError::from(e)),
+    }
 }
 
 /// Cancel all jobs in a pipeline.
@@ -1002,9 +1069,16 @@ async fn create_pipeline(
         .map_err(ApiError::from)?
         .ok_or_else(|| ApiError::internal("Failed to retrieve created job"))?;
 
+    // Fetch streamer name (we have the ID from the request)
+    let streamer_name = state.streamer_repository.as_ref().and_then(|repo| {
+        futures::executor::block_on(repo.get_streamer(&request.streamer_id))
+            .ok()
+            .map(|s| s.name)
+    });
+
     let response = CreatePipelineResponse {
         pipeline_id: result.pipeline_id,
-        first_job: job_to_response(&first_job),
+        first_job: job_to_response(&first_job, streamer_name),
     };
 
     Ok(Json(response))
@@ -1037,11 +1111,12 @@ fn queue_status_to_api_status(status: QueueJobStatus) -> ApiJobStatus {
 }
 
 /// Convert a Job to JobResponse.
-fn job_to_response(job: &Job) -> JobResponse {
+fn job_to_response(job: &Job, streamer_name: Option<String>) -> JobResponse {
     JobResponse {
         id: job.id.clone(),
         session_id: job.session_id.clone(),
         streamer_id: job.streamer_id.clone(),
+        streamer_name,
         pipeline_id: job.pipeline_id.clone(),
         status: queue_status_to_api_status(job.status),
         processor_type: job.job_type.clone(),
@@ -1090,6 +1165,32 @@ fn job_to_response(job: &Job) -> JobResponse {
         duration_secs: job.duration_secs,
         queue_wait_secs: job.queue_wait_secs,
     }
+}
+
+/// Helper to batch-fetch streamer names for a list of jobs.
+async fn fetch_streamer_names(state: &AppState, jobs: &[Job]) -> HashMap<String, String> {
+    let streamer_repository = match &state.streamer_repository {
+        Some(repo) => repo.clone(),
+        None => return HashMap::new(),
+    };
+
+    // Collect unique streamer IDs
+    let streamer_ids: HashSet<String> = jobs.iter().map(|j| j.streamer_id.clone()).collect();
+
+    // Fetch streamers in parallel
+    let fetches = streamer_ids.into_iter().map(|streamer_id| {
+        let repo = streamer_repository.clone();
+        async move {
+            let name = repo.get_streamer(&streamer_id).await.ok().map(|s| s.name);
+            (streamer_id, name)
+        }
+    });
+
+    join_all(fetches)
+        .await
+        .into_iter()
+        .filter_map(|(id, name)| name.map(|n| (id, n)))
+        .collect()
 }
 
 // ============================================================================

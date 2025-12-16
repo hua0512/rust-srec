@@ -16,9 +16,10 @@ use super::progress::{JobProgressSnapshot, JobProgressUpdate, ProgressReporter};
 use crate::database::models::JobExecutionProgressDbModel;
 use crate::database::models::job::{LogEntry as DbLogEntry, PipelineStep};
 use crate::database::models::{
-    JobDbModel, JobExecutionLogDbModel, JobFilters, JobStatus as DbJobStatus, Pagination,
+    JobDbModel, JobExecutionLogDbModel, JobFilters, JobStatus as DbJobStatus, MediaFileType,
+    MediaOutputDbModel, Pagination,
 };
-use crate::database::repositories::JobRepository;
+use crate::database::repositories::{JobRepository, SessionRepository};
 use crate::{Error, Result};
 
 const EXECUTION_INFO_MAX_LOGS: usize = 200;
@@ -140,7 +141,7 @@ pub enum JobStatus {
 }
 
 /// Log level for job execution logs.
-/// Requirements: 6.1, 6.2, 6.3, 6.4
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum LogLevel {
@@ -161,7 +162,7 @@ impl Default for LogLevel {
 }
 
 /// A single log entry for job execution.
-/// Requirements: 6.1, 6.2, 6.3, 6.4
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct JobLogEntry {
     /// Timestamp of the log entry.
@@ -219,7 +220,7 @@ pub struct StepDuration {
 }
 
 /// Extended job information for observability.
-/// Requirements: 6.1, 6.2, 6.3, 6.4
+
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct JobExecutionInfo {
     /// Current processor name.
@@ -356,7 +357,7 @@ pub struct Job {
     pub error: Option<String>,
     /// Number of retry attempts.
     pub retry_count: i32,
-    // Pipeline chain fields (Requirements 7.1, 7.2)
+    // Pipeline chain fields
     /// Next job type to create on completion (e.g., "upload" after "remux").
     pub next_job_type: Option<String>,
     /// Pipeline steps remaining after this job (e.g., ["upload", "thumbnail"]).
@@ -364,7 +365,6 @@ pub struct Job {
     /// Pipeline ID to group related jobs (first job's ID).
     pub pipeline_id: Option<String>,
     /// Execution information for observability.
-    /// Requirements: 6.1, 6.2, 6.3, 6.4
     pub execution_info: Option<JobExecutionInfo>,
     /// Processing duration in seconds (from processor output).
     pub duration_secs: Option<f64>,
@@ -484,8 +484,6 @@ pub struct JobResult {
     pub logs: Vec<JobLogEntry>,
 }
 
-// ... [Skipping JobQueue struct definition which is unchanged]
-
 /// The job queue service.
 pub struct JobQueue {
     /// Configuration.
@@ -496,6 +494,8 @@ pub struct JobQueue {
     notify: Arc<Notify>,
     /// Job repository for database persistence.
     job_repository: Option<Arc<dyn JobRepository>>,
+    /// Session repository for persisting media outputs (e.g., thumbnails).
+    session_repo: std::sync::OnceLock<Arc<dyn SessionRepository>>,
     /// In-memory cache of jobs (for quick lookups).
     jobs_cache: DashMap<String, Job>,
     /// Cancellation tokens for processing jobs.
@@ -525,6 +525,7 @@ impl JobQueue {
             depth: AtomicUsize::new(0),
             notify: Arc::new(Notify::new()),
             job_repository: None,
+            session_repo: std::sync::OnceLock::new(),
             jobs_cache: DashMap::new(),
             cancellation_tokens: DashMap::new(),
             progress_cache,
@@ -548,6 +549,7 @@ impl JobQueue {
             depth: AtomicUsize::new(0),
             notify: Arc::new(Notify::new()),
             job_repository: Some(repository),
+            session_repo: std::sync::OnceLock::new(),
             jobs_cache: DashMap::new(),
             cancellation_tokens: DashMap::new(),
             progress_cache,
@@ -559,6 +561,44 @@ impl JobQueue {
     /// Set the job repository for database persistence.
     pub fn set_repository(&mut self, repository: Arc<dyn JobRepository>) {
         self.job_repository = Some(repository);
+    }
+
+    /// Set the session repository for persisting media outputs (e.g., thumbnails).
+    /// This can only be called once.
+    pub fn set_session_repo(&self, repo: Arc<dyn SessionRepository>) {
+        let _ = self.session_repo.set(repo);
+    }
+
+    /// Persist thumbnail output to media_outputs table.
+    async fn persist_thumbnail_output(&self, session_id: &str, output_path: &str) {
+        let Some(repo) = self.session_repo.get() else {
+            return;
+        };
+
+        // Get file size
+        let size_bytes = tokio::fs::metadata(output_path)
+            .await
+            .map(|m| m.len() as i64)
+            .unwrap_or(0);
+
+        let output = MediaOutputDbModel::new(
+            session_id,
+            output_path,
+            MediaFileType::Thumbnail,
+            size_bytes,
+        );
+
+        if let Err(e) = repo.create_media_output(&output).await {
+            warn!(
+                "Failed to persist thumbnail output for session {}: {}",
+                session_id, e
+            );
+        } else {
+            info!(
+                "Persisted thumbnail output for session {}: {}",
+                session_id, output_path
+            );
+        }
     }
 
     pub async fn append_log_entry(&self, job_id: &str, logs: &[JobLogEntry]) -> Result<()> {
@@ -839,7 +879,7 @@ impl JobQueue {
     /// Atomically complete a job and create the next job in the pipeline.
     /// This ensures crash-safe transition between pipeline steps.
     /// Returns the ID of the newly created job, if any.
-    /// Requirements: 7.2, 7.3
+
     pub async fn complete_with_next(
         &self,
         job_id: &str,
@@ -913,6 +953,25 @@ impl JobQueue {
                 next_remaining,
             );
 
+            // Inherit and update execution info
+            let prev_exec_info: Option<JobExecutionInfo> = current_job
+                .execution_info
+                .as_ref()
+                .and_then(|s| serde_json::from_str(s).ok());
+
+            if let Some(prev_info) = prev_exec_info {
+                let mut new_info = JobExecutionInfo::new();
+                new_info.current_processor = Some(next_type.clone());
+
+                if let Some(step) = prev_info.current_step {
+                    new_info.current_step = Some(step + 1);
+                }
+                new_info.total_steps = prev_info.total_steps;
+
+                next_job.execution_info =
+                    Some(serde_json::to_string(&new_info).unwrap_or_else(|_| "{}".to_string()));
+            }
+
             // Apply the resolved configuration
             next_job.config = next_config;
 
@@ -951,6 +1010,9 @@ impl JobQueue {
             )
             .await?;
 
+        // Save first output path for thumbnail persistence
+        let first_output_path = result.outputs.first().cloned();
+
         // Update cache for completed job
         if let Some(mut job) = self.jobs_cache.get_mut(job_id) {
             job.status = JobStatus::Completed;
@@ -983,6 +1045,16 @@ impl JobQueue {
         }
 
         info!("Job {} completed in {:.2}s", job_id, result.duration_secs);
+
+        // Persist thumbnail output to media_outputs table
+        if current_job.job_type == "thumbnail" {
+            if let (Some(session_id), Some(output_path)) =
+                (&current_job.session_id, first_output_path.as_ref())
+            {
+                self.persist_thumbnail_output(session_id, output_path).await;
+            }
+        }
+
         if let Some(ref id) = next_job_id {
             info!("Created next pipeline job: {}", id);
             // Notify workers about the new job
@@ -1034,7 +1106,7 @@ impl JobQueue {
 
     /// Mark a job as failed with step information for observability.
     /// Records the error message, failing step, and processor name in execution_info.
-    /// Requirements: 6.4, 10.3
+
     pub async fn fail_with_step_info(
         &self,
         job_id: &str,
@@ -1453,6 +1525,69 @@ impl JobQueue {
         Ok(cancelled_job)
     }
 
+    /// Delete a job.
+    /// Only allows deleting jobs in terminal states (Completed, Failed, Interrupted).
+    /// Removes from database and cache.
+    pub async fn delete_job(&self, id: &str) -> Result<()> {
+        // Try to get from cache first to check status
+        if let Some(job) = self.jobs_cache.get(id) {
+            match job.status {
+                JobStatus::Pending | JobStatus::Processing => {
+                    return Err(Error::InvalidStateTransition {
+                        from: format!("{:?}", job.status),
+                        to: "Deleted".to_string(),
+                    });
+                }
+                _ => {} // Terminal states are fine for deletion
+            }
+        } else if let Some(repo) = &self.job_repository {
+            // If not in cache, check DB
+            match repo.get_job(id).await {
+                Ok(job) => {
+                    let status = match job.get_status() {
+                        Some(s) => s,
+                        None => {
+                            // Should parse, but if not, assume it's weird and let's try to delete anyway?
+                            // Or be safe and error. Let's error if we can't parse status.
+                            DbJobStatus::Failed // Fallback
+                        }
+                    };
+
+                    match status {
+                        DbJobStatus::Pending | DbJobStatus::Processing => {
+                            return Err(Error::InvalidStateTransition {
+                                from: format!("{:?}", status),
+                                to: "Deleted".to_string(),
+                            });
+                        }
+                        _ => {}
+                    }
+                }
+                Err(Error::NotFound { .. }) => {
+                    // Job doesn't exist, so deletion is trivially successful
+                    return Ok(());
+                }
+                Err(e) => return Err(e),
+            }
+        }
+
+        // Proceed with deletion
+
+        // 1. Delete from database if available
+        if let Some(repo) = &self.job_repository {
+            repo.delete_job(id).await?;
+        }
+
+        // 2. Remove from in-memory components
+        self.jobs_cache.remove(id);
+        self.cancellation_tokens.remove(id);
+        self.persisted_log_cursor.remove(id);
+        self.progress_cache.remove(id);
+
+        info!("Job {} deleted", id);
+        Ok(())
+    }
+
     /// Cancel all jobs in a pipeline.
     /// Returns the list of cancelled jobs.
     pub async fn cancel_pipeline(&self, pipeline_id: &str) -> Result<Vec<Job>> {
@@ -1613,13 +1748,11 @@ impl JobQueue {
 
     // ========================================================================
     // Fan-out and Multi-input Support Methods
-    // Requirements: 9.1, 9.2, 9.5, 11.1, 11.2, 11.3
     // ========================================================================
 
     /// Split a multi-input job into separate jobs for single-input processors.
     /// Creates one job per input file, all sharing the same pipeline context.
     /// Returns the IDs of the newly created jobs.
-    /// Requirements: 11.2
     pub async fn split_job_for_single_input(&self, job: &Job) -> Result<Vec<String>> {
         if job.inputs.len() <= 1 {
             // No splitting needed
@@ -1677,7 +1810,7 @@ impl JobQueue {
 
     /// Track partial outputs for a job (used for cleanup on failure).
     /// Updates the job's execution_info with items_produced.
-    /// Requirements: 9.5
+
     pub async fn track_partial_outputs(&self, job_id: &str, outputs: &[String]) -> Result<()> {
         // Update database if repository is available
         if let Some(repo) = &self.job_repository {
@@ -1708,7 +1841,7 @@ impl JobQueue {
     }
 
     /// Get partial outputs for a job (for cleanup on failure).
-    /// Requirements: 9.5
+
     pub async fn get_partial_outputs(&self, job_id: &str) -> Result<Vec<String>> {
         // Try cache first
         if let Some(job) = self.jobs_cache.get(job_id) {
@@ -1731,7 +1864,7 @@ impl JobQueue {
     }
 
     /// Fail a job and clean up partial outputs.
-    /// Requirements: 9.5
+
     pub async fn fail_with_cleanup(&self, job_id: &str, error: &str) -> Result<Vec<String>> {
         self.fail_with_cleanup_and_step_info(job_id, error, None, None, None)
             .await
@@ -1739,7 +1872,7 @@ impl JobQueue {
 
     /// Fail a job with step info and clean up partial outputs.
     /// Records the error message, failing step, and processor name in execution_info.
-    /// Requirements: 6.4, 9.5, 10.3
+
     pub async fn fail_with_cleanup_and_step_info(
         &self,
         job_id: &str,
@@ -1760,7 +1893,7 @@ impl JobQueue {
     }
 
     /// Update execution info for a job.
-    /// Requirements: 6.1, 6.2, 6.3, 6.4
+
     pub async fn update_execution_info(
         &self,
         job_id: &str,
@@ -2101,9 +2234,7 @@ mod tests {
 
     // ========================================================================
     // Fan-out and Multi-input Support Tests
-    // Requirements: 9.1, 9.2, 9.5, 11.1, 11.2, 11.3
     // ========================================================================
-
     #[tokio::test]
     async fn test_split_job_single_input_no_split() {
         // A job with single input should not be split
@@ -2298,11 +2429,9 @@ mod tests {
 
     // ========================================================================
     // Job Failure Handling Tests
-    // Requirements: 6.4, 10.3
     // ========================================================================
 
     /// Test that fail_with_step_info records the failing step and processor.
-    /// Requirements: 6.4
     #[tokio::test]
     async fn test_fail_with_step_info_records_failure_details() {
         let queue = JobQueue::new();
@@ -2355,7 +2484,7 @@ mod tests {
 
     /// Test that failed jobs don't create subsequent jobs.
     /// This is verified by checking that complete_with_next is only called on success.
-    /// Requirements: 10.3
+
     #[tokio::test]
     async fn test_failed_job_does_not_create_next_job() {
         let queue = JobQueue::new();
@@ -2398,7 +2527,7 @@ mod tests {
     }
 
     /// Test that fail_with_cleanup_and_step_info combines cleanup and step info.
-    /// Requirements: 6.4, 9.5, 10.3
+
     #[tokio::test]
     async fn test_fail_with_cleanup_and_step_info() {
         let queue = JobQueue::new();
@@ -2452,13 +2581,11 @@ mod tests {
 
     // ========================================================================
     // Pipeline Recovery Tests
-    // Requirements: 10.5
     // ========================================================================
 
     /// Test that pipeline jobs preserve chain info in the job struct.
     /// This info is essential for recovery - when a job is recovered,
     /// it should still have all the info needed to continue the pipeline.
-    /// Requirements: 10.5
     #[tokio::test]
     async fn test_pipeline_job_chain_info_preserved() {
         let queue = JobQueue::new();
@@ -2489,7 +2616,7 @@ mod tests {
 
     /// Test that complete_with_next creates the next job in the pipeline.
     /// This is the core mechanism for pipeline continuation after recovery.
-    /// Requirements: 10.2, 10.5
+
     #[tokio::test]
     async fn test_complete_with_next_creates_next_job() {
         let queue = JobQueue::new();
@@ -2534,7 +2661,7 @@ mod tests {
 
     /// Test that recover_jobs without repository returns 0.
     /// This verifies the fallback behavior when no database is configured.
-    /// Requirements: 10.5
+
     #[tokio::test]
     async fn test_recover_jobs_without_repository() {
         let queue = JobQueue::new();
@@ -2563,5 +2690,47 @@ mod tests {
 
         // But in-memory jobs are still there
         assert_eq!(queue.depth(), 2);
+    }
+
+    /// Test deletion of jobs.
+
+    #[tokio::test]
+    async fn test_delete_job() {
+        let queue = JobQueue::new();
+
+        let job = Job::new(
+            "remux",
+            vec!["/input.flv".to_string()],
+            vec![],
+            "streamer-1",
+            "session-1",
+        );
+        let job_id = job.id.clone();
+        queue.enqueue(job).await.unwrap();
+
+        // 1. Try to delete pending job - should fail
+        let result = queue.delete_job(&job_id).await;
+        assert!(result.is_err());
+        match result.unwrap_err() {
+            Error::InvalidStateTransition { from, to } => {
+                assert_eq!(from, "Pending");
+                assert_eq!(to, "Deleted");
+            }
+            _ => panic!("Expected InvalidStateTransition error"),
+        }
+
+        // 2. Cancel the job
+        queue.cancel_job(&job_id).await.unwrap();
+
+        // Verify status is interrupted
+        let job = queue.get_job(&job_id).await.unwrap().unwrap();
+        assert_eq!(job.status, JobStatus::Interrupted);
+
+        // 3. Delete the job - should succeed
+        queue.delete_job(&job_id).await.unwrap();
+
+        // 4. Verify job is gone from cache
+        let job = queue.get_job(&job_id).await.unwrap();
+        assert!(job.is_none());
     }
 }

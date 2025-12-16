@@ -53,15 +53,7 @@ const FORMAT_COLORS: Record<string, string> = {
   webp: 'from-amber-500/10 to-amber-500/5 text-amber-500 border-amber-500/20',
 };
 
-// Helper to format bytes
-function formatBytes(bytes: number, decimals = 2): string {
-  if (!+bytes) return '0 Bytes';
-  const k = 1024;
-  const dm = decimals < 0 ? 0 : decimals;
-  const sizes = ['Bytes', 'KB', 'MB', 'GB', 'TB'];
-  const i = Math.floor(Math.log(bytes) / Math.log(k));
-  return `${parseFloat((bytes / Math.pow(k, i)).toFixed(dm))} ${sizes[i]}`;
-}
+import { formatBytes } from '@/lib/format';
 
 export function OutputCard({ output }: OutputCardProps) {
   const [copied, setCopied] = useState(false);

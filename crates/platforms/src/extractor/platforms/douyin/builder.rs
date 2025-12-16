@@ -386,11 +386,33 @@ impl<'a> DouyinRequest<'a> {
     fn parse_pc_response(&mut self, body: &str) -> Result<MediaInfo, ExtractorError> {
         if body.is_empty() {
             return Err(ExtractorError::ValidationError(
-                "Failed to extract room data".to_string(),
+                "Empty response from API".to_string(),
             ));
         }
 
-        let response: DouyinPcResponse = serde_json::from_str(body)?;
+        // Check if response is HTML (likely an error page)
+        let trimmed = body.trim_start();
+        if trimmed.starts_with("<!") || trimmed.starts_with("<html") {
+            debug!(
+                "Received HTML instead of JSON. First 500 chars: {}",
+                &body[..body.len().min(500)]
+            );
+            return Err(ExtractorError::ValidationError(
+                "Received HTML error page instead of JSON - API may be rate limiting or blocking requests".to_string(),
+            ));
+        }
+
+        let response: DouyinPcResponse = match serde_json::from_str(body) {
+            Ok(resp) => resp,
+            Err(e) => {
+                debug!(
+                    "Failed to parse JSON response. Error: {}. First 500 chars of body: {}",
+                    e,
+                    &body[..body.len().min(500)]
+                );
+                return Err(ExtractorError::JsonError(e));
+            }
+        };
 
         // Check for "直播已结束" prompt
         if let Some(prompts) = &response.data.prompts
@@ -440,7 +462,35 @@ impl<'a> DouyinRequest<'a> {
     }
 
     fn parse_app_response(&mut self, body: &str) -> Result<MediaInfo, ExtractorError> {
-        let response: DouyinAppResponse = serde_json::from_str(body)?;
+        // Check for empty or HTML response
+        if body.is_empty() {
+            return Err(ExtractorError::ValidationError(
+                "Empty response from APP API".to_string(),
+            ));
+        }
+
+        let trimmed = body.trim_start();
+        if trimmed.starts_with("<!") || trimmed.starts_with("<html") {
+            debug!(
+                "Received HTML instead of JSON from APP API. First 500 chars: {}",
+                &body[..body.len().min(500)]
+            );
+            return Err(ExtractorError::ValidationError(
+                "Received HTML error page from APP API".to_string(),
+            ));
+        }
+
+        let response: DouyinAppResponse = match serde_json::from_str(body) {
+            Ok(resp) => resp,
+            Err(e) => {
+                debug!(
+                    "Failed to parse APP JSON response. Error: {}. First 500 chars of body: {}",
+                    e,
+                    &body[..body.len().min(500)]
+                );
+                return Err(ExtractorError::JsonError(e));
+            }
+        };
         if let Some(prompts) = &response.data.prompts {
             if prompts.contains("直播已结束") {
                 debug!("Stream ended with response: {:?}", response);

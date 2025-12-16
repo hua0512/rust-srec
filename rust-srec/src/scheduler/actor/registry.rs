@@ -348,6 +348,7 @@ mod tests {
     use crate::scheduler::actor::messages::StreamerConfig;
     use crate::scheduler::actor::monitor_adapter::NoOpStatusChecker;
     use crate::streamer::StreamerMetadata;
+    use chrono::Utc;
     use dashmap::DashMap;
     use std::sync::Arc;
 
@@ -366,8 +367,8 @@ mod tests {
             last_live_time: None,
             last_error: None,
             streamer_specific_config: None,
-            download_retry_policy: None,
-            danmu_sampling_config: None,
+            created_at: Utc::now(),
+            updated_at: Utc::now(),
         }
     }
 

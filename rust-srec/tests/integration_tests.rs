@@ -3,7 +3,6 @@
 //! These tests use a real SQLite database (in-memory) to verify
 //! repository operations work correctly with the actual schema.
 
-use rust_srec::Error;
 use rust_srec::database::{DbPool, init_pool, run_migrations};
 
 /// Helper to create a test database pool with migrations applied.
@@ -1134,7 +1133,7 @@ mod end_to_end_tests {
     use rust_srec::database::repositories::session::SqlxSessionRepository;
     use rust_srec::database::repositories::streamer::SqlxStreamerRepository;
     use rust_srec::domain::StreamerState;
-    use rust_srec::monitor::{LiveStatus, MonitorEvent, StreamMonitor};
+    use rust_srec::monitor::{FilterReason, LiveStatus, MonitorEvent, StreamMonitor};
     use rust_srec::streamer::{StreamerManager, StreamerMetadata};
     use std::sync::Arc;
 
@@ -1170,10 +1169,10 @@ mod end_to_end_tests {
             disabled_until: None,
             last_live_time: None,
             avatar_url: None,
-            danmu_sampling_config: None,
-            download_retry_policy: None,
             streamer_specific_config: None,
             last_error: None,
+            created_at: Utc::now(),
+            updated_at: Utc::now(),
         }
     }
 
@@ -1502,7 +1501,9 @@ mod end_to_end_tests {
 
         // Process filtered status (out of schedule)
         let filtered_status = LiveStatus::Filtered {
-            reason: rust_srec::monitor::FilterReason::OutOfSchedule,
+            reason: FilterReason::OutOfSchedule {
+                next_available: None,
+            },
             title: "Late Night Stream".to_string(),
             category: Some("Just Chatting".to_string()),
         };

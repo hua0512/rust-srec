@@ -36,6 +36,7 @@ import {
   Timer,
   ExternalLink,
   Layers,
+  Trash2,
 } from 'lucide-react';
 import { Trans } from '@lingui/react/macro';
 import { formatDistanceToNow } from 'date-fns';
@@ -48,23 +49,7 @@ interface PipelineSummaryCardProps {
 }
 
 // Helper function to format duration in human-readable format
-function formatDuration(seconds: number | null | undefined): string {
-  if (seconds == null || seconds === 0) return '-';
-
-  if (seconds < 1) {
-    return `${Math.round(seconds * 1000)}ms`;
-  } else if (seconds < 60) {
-    return `${seconds.toFixed(1)}s`;
-  } else if (seconds < 3600) {
-    const mins = Math.floor(seconds / 60);
-    const secs = Math.round(seconds % 60);
-    return `${mins}m ${secs}s`;
-  } else {
-    const hours = Math.floor(seconds / 3600);
-    const mins = Math.floor((seconds % 3600) / 60);
-    return `${hours}h ${mins}m`;
-  }
-}
+import { formatDuration } from '@/lib/format';
 
 const PipelineStatus = {
   Pending: 'pending',
@@ -160,7 +145,7 @@ export function PipelineSummaryCard({
           </CardTitle>
           <div className="flex items-center gap-2">
             <span className="text-[10px] uppercase tracking-wider font-semibold text-muted-foreground/60">
-              {pipeline.streamer_id}
+              {pipeline.streamer_name ?? pipeline.streamer_id}
             </span>
           </div>
         </div>
@@ -224,6 +209,49 @@ export function PipelineSummaryCard({
                         className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
                       >
                         <Trans>Cancel</Trans>
+                      </AlertDialogAction>
+                    </AlertDialogFooter>
+                  </AlertDialogContent>
+                </AlertDialog>
+              </>
+            )}
+
+            {/* Delete option for terminal states */}
+            {(isCompleted || isFailed) && onCancelPipeline && (
+              <>
+                <DropdownMenuSeparator />
+                <AlertDialog>
+                  <AlertDialogTrigger asChild>
+                    <DropdownMenuItem
+                      className="text-destructive focus:text-destructive"
+                      onSelect={(e) => e.preventDefault()}
+                      onClick={(e) => e.stopPropagation()}
+                    >
+                      <Trash2 className="mr-2 h-4 w-4" /> <Trans>Delete</Trans>
+                    </DropdownMenuItem>
+                  </AlertDialogTrigger>
+                  <AlertDialogContent onClick={(e) => e.stopPropagation()}>
+                    <AlertDialogHeader>
+                      <AlertDialogTitle>
+                        <Trans>Delete Pipeline?</Trans>
+                      </AlertDialogTitle>
+                      <AlertDialogDescription>
+                        <Trans>
+                          This will permanently delete the pipeline and all its
+                          associated jobs and logs. This action cannot be
+                          undone.
+                        </Trans>
+                      </AlertDialogDescription>
+                    </AlertDialogHeader>
+                    <AlertDialogFooter>
+                      <AlertDialogCancel>
+                        <Trans>Cancel</Trans>
+                      </AlertDialogCancel>
+                      <AlertDialogAction
+                        onClick={() => onCancelPipeline(pipeline.pipeline_id)}
+                        className="bg-destructive text-white hover:bg-destructive/90"
+                      >
+                        <Trans>Delete</Trans>
                       </AlertDialogAction>
                     </AlertDialogFooter>
                   </AlertDialogContent>

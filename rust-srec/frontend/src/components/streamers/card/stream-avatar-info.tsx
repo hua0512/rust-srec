@@ -29,7 +29,9 @@ export const StreamAvatarInfo = ({ streamer }: StreamAvatarInfoProps) => {
     const disabledUntil = streamer.disabled_until
         ? new Date(streamer.disabled_until)
         : null;
-    const isTemporarilyPaused = disabledUntil && disabledUntil > now;
+    const isTemporarilyPaused =
+        (disabledUntil && disabledUntil > now) ||
+        streamer.state === 'TEMPORAL_DISABLED';
 
     const stopStates = [
         'FATAL_ERROR',

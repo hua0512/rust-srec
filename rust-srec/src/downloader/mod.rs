@@ -19,5 +19,5 @@ pub use engine::{
 };
 
 pub use manager::{ConfigUpdateType, DownloadManager, DownloadManagerConfig, DownloadManagerEvent};
-pub use resilience::{CircuitBreaker, RetryConfig};
+pub use resilience::{CircuitBreaker, EngineKey, RetryConfig};
 pub use stream_selector::{StreamSelectionConfig, StreamSelector};

@@ -86,6 +86,7 @@ where
 pub struct PipelineSummary {
     pub pipeline_id: String,
     pub streamer_id: String,
+    pub streamer_name: Option<String>,
     pub session_id: Option<String>,
     pub status: String,
     pub job_count: i64,
@@ -1398,6 +1399,7 @@ impl JobRepository for SqlxJobRepository {
             .map(|row| PipelineSummary {
                 pipeline_id: row.0,
                 streamer_id: row.1,
+                streamer_name: None, // Populated at API layer
                 session_id: row.2,
                 status: row.3,
                 job_count: row.4,

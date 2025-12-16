@@ -18,6 +18,7 @@ export interface PlayerCardProps {
     streamData?: any; // The original stream object for resolution
     onRemove?: () => void;
     className?: string;
+    contentClassName?: string;
     settingsContent?: React.ReactNode;
 }
 
@@ -29,6 +30,7 @@ export function PlayerCard({
     onRemove,
     className,
     settingsContent,
+    contentClassName,
 }: PlayerCardProps) {
     const artRef = useRef<HTMLDivElement>(null);
     const playerRef = useRef<Artplayer | null>(null);
@@ -91,15 +93,35 @@ export function PlayerCard({
     useEffect(() => {
         if (!artRef.current || resolving) return;
 
-        const isHLS = currentUrl.includes('.m3u8') || currentUrl.includes('m3u8');
-        const isMPEGTS = currentUrl.includes('.flv') || currentUrl.includes('.ts');
+        if (playerRef.current) {
+            playerRef.current.destroy(false);
+            playerRef.current = null;
+        }
+
+        // Clear only if we are about to create a new one, ensuring clean slate
+        if (artRef.current) {
+            artRef.current.innerHTML = '';
+        }
+
+        const checkString = (currentUrl + (title || '')).toLowerCase();
+        const isHLS = checkString.includes('.m3u8') || checkString.includes('m3u8');
+        const isMPEGTS = checkString.includes('.flv') || checkString.includes('.ts');
 
         // Build proxy URL if headers are needed
-        const playUrl = currentHeaders
+        const shouldProxy = !!currentHeaders && Object.keys(currentHeaders).length > 0;
+        const playUrl = shouldProxy
             ? `/stream-proxy?url=${encodeURIComponent(currentUrl)}&headers=${encodeURIComponent(JSON.stringify(currentHeaders))}`
             : currentUrl;
 
-        console.log('[PlayerCard] Init:', { url: currentUrl, headers: currentHeaders, playUrl, isHeaderPresent: !!currentHeaders });
+        console.log('[PlayerCard] Init:', {
+            originalUrl: url,
+            currentUrl,
+            headers: currentHeaders,
+            shouldProxy,
+            playUrl,
+            isHLS,
+            isMPEGTS
+        });
 
         const options: any = {
             container: artRef.current,
@@ -197,6 +219,10 @@ export function PlayerCard({
                 playerRef.current.destroy(false);
                 playerRef.current = null;
             }
+            // Aggressive cleanup for strict mode
+            if (artRef.current) {
+                artRef.current.innerHTML = '';
+            }
         };
     }, [url, headers, refreshKey]);
 
@@ -269,7 +295,7 @@ export function PlayerCard({
                 </div>
             </CardHeader>
 
-            <CardContent className="relative p-0 flex-1 min-h-[500px] bg-black/50 group-hover:bg-black/40 transition-colors rounded-b-xl overflow-hidden">
+            <CardContent className={cn("relative p-0 flex-1 min-h-[500px] bg-black/50 group-hover:bg-black/40 transition-colors rounded-b-xl overflow-hidden", contentClassName)}>
                 {error ? (
                     <div className="flex flex-col items-center justify-center h-full text-center space-y-3 p-8">
                         <div className="p-3 rounded-full bg-destructive/10 text-destructive mb-2">

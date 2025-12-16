@@ -85,23 +85,7 @@ const createPipelineSchema = z.object({
 type CreatePipelineForm = z.infer<typeof createPipelineSchema>;
 
 // Helper function to format duration in human-readable format
-function formatDuration(seconds: number | null | undefined): string {
-  if (seconds == null || seconds === 0) return '-';
-
-  if (seconds < 1) {
-    return `${Math.round(seconds * 1000)}ms`;
-  } else if (seconds < 60) {
-    return `${seconds.toFixed(1)}s`;
-  } else if (seconds < 3600) {
-    const mins = Math.floor(seconds / 60);
-    const secs = Math.round(seconds % 60);
-    return `${mins}m ${secs}s`;
-  } else {
-    const hours = Math.floor(seconds / 3600);
-    const mins = Math.floor((seconds % 3600) / 60);
-    return `${hours}h ${mins}m`;
-  }
-}
+import { formatDuration } from '@/lib/format';
 
 export const Route = createFileRoute('/_authed/_dashboard/pipeline/jobs/')({
   component: PipelineJobsPage,
@@ -571,11 +555,10 @@ function PipelineJobsPage() {
                 <button
                   key={label}
                   onClick={() => handleStatusChange(value)}
-                  className={`relative px-3 py-1.5 text-sm font-medium rounded-full transition-all duration-200 flex items-center gap-1.5 ${
-                    selectedStatus === value
+                  className={`relative px-3 py-1.5 text-sm font-medium rounded-full transition-all duration-200 flex items-center gap-1.5 ${selectedStatus === value
                       ? 'bg-primary text-primary-foreground shadow-sm'
                       : 'text-muted-foreground hover:text-foreground hover:bg-muted'
-                  }`}
+                    }`}
                 >
                   <Icon className="h-3.5 w-3.5" />
                   <span className="relative z-10">

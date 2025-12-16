@@ -266,13 +266,14 @@ where
         mut self,
         session_repository: Arc<dyn SessionRepository>,
     ) -> Self {
-        self.session_repo = Some(session_repository);
+        self.session_repo = Some(session_repository.clone());
+        // Also set session repo on job queue
+        self.job_queue.set_session_repo(session_repository);
         self
     }
 
     /// Set the download limit adjuster for throttle controller integration.
     /// This connects the throttle controller to the download manager.
-    /// Requirements: 8.1, 8.2, 8.3
     pub fn with_download_adjuster(mut self, adjuster: Arc<dyn DownloadLimitAdjuster>) -> Self {
         self.download_adjuster = Some(adjuster);
         self
@@ -595,7 +596,16 @@ where
         let pipeline_id = first_job.id.clone();
 
         // Set the pipeline_id on the first job
-        let first_job = first_job.with_pipeline_id(pipeline_id.clone());
+        let mut first_job = first_job.with_pipeline_id(pipeline_id.clone());
+
+        // Initialize execution info with step 1/N
+        let mut exec_info = crate::pipeline::job_queue::JobExecutionInfo::new()
+            .with_processor(first_processor.clone());
+
+        exec_info.current_step = Some(1);
+        exec_info.total_steps = Some(steps.len() as u32);
+
+        first_job.execution_info = Some(exec_info);
 
         // Enqueue the first job
         let job_id = self.enqueue(first_job.clone()).await?;
@@ -732,6 +742,7 @@ where
                 streamer_id,
                 session_id,
                 segment_path,
+                segment_index,
                 size_bytes,
                 ..
             } => {
@@ -742,6 +753,12 @@ where
                 // Persist segment to database
                 self.persist_segment(&session_id, &segment_path, size_bytes)
                     .await;
+
+                // Generate thumbnail for first segment (if not already done)
+                if segment_index == 0 {
+                    self.maybe_create_thumbnail_job(&streamer_id, &session_id, &segment_path)
+                        .await;
+                }
 
                 // Create pipeline jobs if config service is available
                 if let Some(config_service) = &self.config_service {
@@ -791,6 +808,63 @@ where
                 // Could create post-processing jobs here
             }
             _ => {}
+        }
+    }
+
+    /// Check if session already has a thumbnail by querying media outputs.
+    async fn session_has_thumbnail(&self, session_id: &str) -> bool {
+        if let Some(repo) = &self.session_repo {
+            if let Ok(outputs) = repo.get_media_outputs_for_session(session_id).await {
+                return outputs
+                    .iter()
+                    .any(|o| o.file_type == MediaFileType::Thumbnail.as_str());
+            }
+        }
+        false
+    }
+
+    /// Create a thumbnail job for the first segment if session doesn't already have one.
+    async fn maybe_create_thumbnail_job(
+        &self,
+        streamer_id: &str,
+        session_id: &str,
+        segment_path: &str,
+    ) {
+        // Check if session already has a thumbnail (reuses existing query)
+        if self.session_has_thumbnail(session_id).await {
+            debug!("Session {} already has a thumbnail, skipping", session_id);
+            return;
+        }
+
+        // Generate output path: replace extension with .jpg
+        let thumbnail_path = std::path::Path::new(segment_path)
+            .with_extension("jpg")
+            .to_string_lossy()
+            .to_string();
+
+        // Use thumbnail_native preset config (preserve_resolution: true)
+        let config = r#"{"timestamp_secs":10,"preserve_resolution":true,"quality":1}"#;
+
+        if let Err(e) = self
+            .create_thumbnail_job(
+                segment_path,
+                &thumbnail_path,
+                streamer_id,
+                session_id,
+                Some(config),
+            )
+            .await
+        {
+            tracing::error!(
+                "Failed to create thumbnail job for session {}: {}",
+                session_id,
+                e
+            );
+        } else {
+            debug!(
+                "Created thumbnail job for first segment of session {}",
+                session_id
+            );
         }
     }
 
@@ -965,6 +1039,14 @@ where
         });
 
         Ok(())
+    }
+
+    /// Delete a job.
+    /// Only allows deleting jobs in terminal states (Completed, Failed, Interrupted).
+    /// Removes from database and cache.
+    /// Delegates to JobQueue.
+    pub async fn delete_job(&self, id: &str) -> Result<()> {
+        self.job_queue.delete_job(id).await
     }
 
     /// Cancel all jobs in a pipeline.

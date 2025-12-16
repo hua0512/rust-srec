@@ -8,7 +8,7 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 
-use crate::monitor::LiveStatus;
+use crate::monitor::{FilterReason, LiveStatus};
 use crate::streamer::StreamerMetadata;
 
 use super::messages::{BatchDetectionResult, CheckResult};
@@ -259,15 +259,30 @@ fn convert_live_status_to_check_result(status: &LiveStatus) -> CheckResult {
             title: Some(title.clone()),
             checked_at: chrono::Utc::now(),
             error: None,
+            next_check_hint: None,
         },
         LiveStatus::Offline => CheckResult::success(StreamerState::NotLive),
-        LiveStatus::Filtered { .. } => CheckResult::success(StreamerState::OutOfSchedule),
+        LiveStatus::Filtered { reason, title, .. } => {
+            let next_check_hint = match reason {
+                FilterReason::OutOfSchedule { next_available } => *next_available,
+                _ => None,
+            };
+            CheckResult {
+                state: StreamerState::OutOfSchedule,
+                stream_url: None,
+                title: Some(title.clone()),
+                checked_at: chrono::Utc::now(),
+                error: None,
+                next_check_hint,
+            }
+        }
         LiveStatus::NotFound => CheckResult {
             state: StreamerState::NotFound,
             stream_url: None,
             title: None,
             checked_at: chrono::Utc::now(),
             error: Some("Streamer not found".to_string()),
+            next_check_hint: None,
         },
         LiveStatus::Banned => CheckResult {
             state: StreamerState::FatalError,
@@ -275,6 +290,7 @@ fn convert_live_status_to_check_result(status: &LiveStatus) -> CheckResult {
             title: None,
             checked_at: chrono::Utc::now(),
             error: Some("Streamer is banned".to_string()),
+            next_check_hint: None,
         },
         LiveStatus::AgeRestricted => CheckResult {
             state: StreamerState::FatalError,
@@ -282,6 +298,7 @@ fn convert_live_status_to_check_result(status: &LiveStatus) -> CheckResult {
             title: None,
             checked_at: chrono::Utc::now(),
             error: Some("Content is age-restricted".to_string()),
+            next_check_hint: None,
         },
         LiveStatus::RegionLocked => CheckResult {
             state: StreamerState::FatalError,
@@ -289,6 +306,7 @@ fn convert_live_status_to_check_result(status: &LiveStatus) -> CheckResult {
             title: None,
             checked_at: chrono::Utc::now(),
             error: Some("Content is region-locked".to_string()),
+            next_check_hint: None,
         },
         LiveStatus::Private => CheckResult {
             state: StreamerState::FatalError,
@@ -296,6 +314,7 @@ fn convert_live_status_to_check_result(status: &LiveStatus) -> CheckResult {
             title: None,
             checked_at: chrono::Utc::now(),
             error: Some("Content is private".to_string()),
+            next_check_hint: None,
         },
         LiveStatus::UnsupportedPlatform => CheckResult {
             state: StreamerState::FatalError,
@@ -303,6 +322,7 @@ fn convert_live_status_to_check_result(status: &LiveStatus) -> CheckResult {
             title: None,
             checked_at: chrono::Utc::now(),
             error: Some("Unsupported platform".to_string()),
+            next_check_hint: None,
         },
     }
 }

@@ -14,7 +14,7 @@ use super::engine::{
     DownloadConfig, DownloadEngine, DownloadHandle, DownloadInfo, DownloadProgress, DownloadStatus,
     EngineType, FfmpegEngine, MesioEngine, SegmentEvent, StreamlinkEngine,
 };
-use super::resilience::{CircuitBreakerManager, RetryConfig};
+use super::resilience::{CircuitBreakerManager, EngineKey, RetryConfig};
 use crate::Result;
 use crate::database::models::engine::{
     FfmpegEngineConfig, MesioEngineConfig, StreamlinkEngineConfig,
@@ -215,6 +215,17 @@ pub enum DownloadManagerEvent {
         streamer_id: String,
         error: String,
     },
+    /// Download was rejected before starting (e.g., circuit breaker open).
+    ///
+    /// Unlike DownloadFailed, this indicates the download never started.
+    /// No download_id is available because the download was never created.
+    DownloadRejected {
+        streamer_id: String,
+        session_id: String,
+        reason: String,
+        /// How long to wait before retrying (circuit breaker cooldown).
+        retry_after_secs: Option<u64>,
+    },
 }
 
 impl DownloadManager {
@@ -304,24 +315,34 @@ impl DownloadManager {
         is_high_priority: bool,
     ) -> Result<String> {
         let overrides = config.engines_override.as_ref();
-        let (engine, engine_type) = self.resolve_engine(engine_id.as_deref(), overrides).await?;
+        let (engine, engine_type, engine_key) =
+            self.resolve_engine(engine_id.as_deref(), overrides).await?;
 
-        // Check circuit breaker
-        if !self.circuit_breakers.is_engine_allowed(engine_type) {
+        // Check circuit breaker using the specific engine key
+        if !self.circuit_breakers.is_allowed(&engine_key) {
             warn!(
                 "Engine {} is disabled by circuit breaker, trying fallback",
-                engine_type
+                engine_key
             );
+
+            // Emit rejection event for visibility
+            let _ = self.event_tx.send(DownloadManagerEvent::DownloadRejected {
+                streamer_id: config.streamer_id.clone(),
+                session_id: config.session_id.clone(),
+                reason: format!("Circuit breaker open for engine {}", engine_key),
+                retry_after_secs: Some(self.config.circuit_breaker_cooldown_secs),
+            });
+
             // Try to find an alternative engine
             // For now, fallback to default ffmpeg if validation fails
             // TODO: Implement smarter fallback
             return Err(crate::Error::Other(format!(
                 "Engine {} is disabled by circuit breaker",
-                engine_type
+                engine_key
             )));
         }
 
-        self.start_download_with_engine(config, engine, engine_type, is_high_priority)
+        self.start_download_with_engine(config, engine, engine_type, engine_key, is_high_priority)
             .await
     }
 
@@ -337,7 +358,7 @@ impl DownloadManager {
         &self,
         engine_id: Option<&str>,
         overrides: Option<&serde_json::Value>,
-    ) -> Result<(Arc<dyn DownloadEngine>, EngineType)> {
+    ) -> Result<(Arc<dyn DownloadEngine>, EngineType, EngineKey)> {
         // Determine which engine ID we are using
         let target_id = if let Some(id) = engine_id {
             id
@@ -348,6 +369,14 @@ impl DownloadManager {
 
         // 1. Check for overrides first
         let specific_override = overrides.and_then(|o| o.get(target_id));
+
+        // Compute override hash for circuit breaker key (if needed)
+        let override_hash = specific_override.map(|v| {
+            use std::hash::{Hash, Hasher};
+            let mut hasher = std::collections::hash_map::DefaultHasher::new();
+            v.to_string().hash(&mut hasher);
+            hasher.finish()
+        });
 
         // If we have an override, we MUST create a new engine instance
         // We cannot reuse the shared engine because it has different config
@@ -401,9 +430,15 @@ impl DownloadManager {
                         base_config = serde_json::from_value(merged).unwrap_or(base_config);
                     }
 
+                    let key = EngineKey::with_override(
+                        EngineType::Ffmpeg,
+                        engine_id,
+                        override_hash.unwrap(),
+                    );
                     return Ok((
                         Arc::new(FfmpegEngine::with_config(base_config)),
                         EngineType::Ffmpeg,
+                        key,
                     ));
                 }
                 EngineType::Streamlink => {
@@ -423,9 +458,15 @@ impl DownloadManager {
                         base_config = serde_json::from_value(merged).unwrap_or(base_config);
                     }
 
+                    let key = EngineKey::with_override(
+                        EngineType::Streamlink,
+                        engine_id,
+                        override_hash.unwrap(),
+                    );
                     return Ok((
                         Arc::new(StreamlinkEngine::with_config(base_config)),
                         EngineType::Streamlink,
+                        key,
                     ));
                 }
                 EngineType::Mesio => {
@@ -444,9 +485,15 @@ impl DownloadManager {
                         base_config = serde_json::from_value(merged).unwrap_or(base_config);
                     }
 
+                    let key = EngineKey::with_override(
+                        EngineType::Mesio,
+                        engine_id,
+                        override_hash.unwrap(),
+                    );
                     return Ok((
                         Arc::new(MesioEngine::with_config(base_config)),
                         EngineType::Mesio,
+                        key,
                     ));
                 }
             }
@@ -461,7 +508,9 @@ impl DownloadManager {
                 let engine = self.get_engine(known_type).ok_or_else(|| {
                     crate::Error::Other(format!("Default engine {} not registered", known_type))
                 })?;
-                return Ok((engine, known_type));
+                // Global default for this type
+                let key = EngineKey::global(known_type);
+                return Ok((engine, known_type, key));
             }
 
             // Otherwise try to look up in DB
@@ -482,6 +531,7 @@ impl DownloadManager {
                                     Arc::new(FfmpegEngine::with_config(engine_config))
                                         as Arc<dyn DownloadEngine>,
                                     engine_type,
+                                    EngineKey::custom(engine_type, id),
                                 ))
                             }
                             EngineType::Streamlink => {
@@ -496,6 +546,7 @@ impl DownloadManager {
                                     Arc::new(StreamlinkEngine::with_config(engine_config))
                                         as Arc<dyn DownloadEngine>,
                                     engine_type,
+                                    EngineKey::custom(engine_type, id),
                                 ))
                             }
                             EngineType::Mesio => {
@@ -510,6 +561,7 @@ impl DownloadManager {
                                     Arc::new(MesioEngine::with_config(engine_config))
                                         as Arc<dyn DownloadEngine>,
                                     engine_type,
+                                    EngineKey::custom(engine_type, id),
                                 ))
                             }
                         };
@@ -530,7 +582,8 @@ impl DownloadManager {
         let engine = self.get_engine(default_type).ok_or_else(|| {
             crate::Error::Other(format!("Default engine {} not registered", default_type))
         })?;
-        Ok((engine, default_type))
+        let key = EngineKey::global(default_type);
+        Ok((engine, default_type, key))
     }
 
     /// Helper to merge a base config with JSON overrides
@@ -550,6 +603,7 @@ impl DownloadManager {
         config: DownloadConfig,
         engine: Arc<dyn DownloadEngine>,
         engine_type: EngineType,
+        engine_key: EngineKey,
         is_high_priority: bool,
     ) -> Result<String> {
         if !engine.is_available() {
@@ -645,7 +699,7 @@ impl DownloadManager {
         // Clone references for the spawned task
         let active_downloads = self.active_downloads.clone();
         let pending_updates = self.pending_updates.clone();
-        let circuit_breakers_ref = self.circuit_breakers.get(engine_type);
+        let circuit_breakers_ref = self.circuit_breakers.get(&engine_key);
 
         tokio::spawn(async move {
             while let Some(event) = segment_rx.recv().await {

@@ -707,6 +707,8 @@ pub struct SupervisorStats {
 
 #[cfg(test)]
 mod tests {
+    use chrono::Utc;
+
     use super::*;
     use crate::domain::{Priority, StreamerState};
     use crate::scheduler::actor::messages::StreamerConfig;
@@ -729,8 +731,8 @@ mod tests {
             last_live_time: None,
             last_error: None,
             streamer_specific_config: None,
-            download_retry_policy: None,
-            danmu_sampling_config: None,
+            created_at: Utc::now(),
+            updated_at: Utc::now(),
         }
     }
 

@@ -3,8 +3,8 @@
 use std::path::PathBuf;
 
 use axum::Router;
-use axum::extract::{Path, State};
-use axum::http::{HeaderMap, header::AUTHORIZATION};
+use axum::extract::{Path, Query, Request, State};
+use axum::http::header::AUTHORIZATION;
 use axum::response::{IntoResponse, Response};
 use axum::routing::get;
 use tower_http::services::ServeFile;
@@ -17,28 +17,52 @@ pub fn router() -> Router<AppState> {
     Router::new().route("/{id}/content", get(get_media_content))
 }
 
+#[derive(serde::Deserialize)]
+struct AuthQuery {
+    token: Option<String>,
+}
+
 /// Get media content by ID.
 ///
 /// Query the media output by ID to get the file path, then serve the file.
 async fn get_media_content(
     State(state): State<AppState>,
     Path(id): Path<String>,
-    headers: HeaderMap,
+    Query(query): Query<AuthQuery>,
+    req: Request,
 ) -> ApiResult<Response> {
     let jwt_service = state
         .jwt_service
         .as_ref()
         .ok_or_else(|| ApiError::unauthorized("Authentication not configured"))?;
 
-    let token = headers
+    let headers = req.headers();
+    let (token, source) = if let Some(t) = query.token {
+        (t, "Query")
+    } else if let Some(t) = headers
         .get(AUTHORIZATION)
         .and_then(|h| h.to_str().ok())
         .and_then(|s| s.strip_prefix("Bearer "))
-        .ok_or_else(|| ApiError::unauthorized("Missing or invalid Authorization header"))?;
+        .map(String::from)
+    {
+        (t, "Header")
+    } else {
+        tracing::warn!("Missing or invalid Authorization header or token query");
+        return Err(ApiError::unauthorized(
+            "Missing or invalid Authorization header",
+        ));
+    };
 
-    jwt_service
-        .validate_token(token)
-        .map_err(|_| ApiError::unauthorized("Invalid or expired token"))?;
+    tracing::info!(
+        "Validating token from {}: {}...",
+        source,
+        &token.chars().take(10).collect::<String>()
+    );
+
+    jwt_service.validate_token(&token).map_err(|e| {
+        tracing::error!("Token validation failed (source: {}): {}", source, e);
+        ApiError::unauthorized("Invalid or expired token")
+    })?;
 
     let session_repo = state
         .session_repository
@@ -54,11 +78,6 @@ async fn get_media_content(
     if !path.exists() {
         return Err(ApiError::not_found(format!("Media file not found: {}", id)));
     }
-
-    // Serve the file
-    let req = axum::http::Request::builder()
-        .body(axum::body::Body::empty())
-        .map_err(|e| ApiError::internal(e.to_string()))?;
 
     match ServeFile::new(path).try_call(req).await {
         Ok(response) => Ok(response.into_response()),

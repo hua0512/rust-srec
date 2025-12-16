@@ -11,10 +11,11 @@ import {
   BreadcrumbPage,
   BreadcrumbSeparator,
 } from '@/components/ui/breadcrumb';
+import { ConnectionStatusIndicator } from '@/components/connection-status-indicator';
 
-interface NavbarProps {}
+interface NavbarProps { }
 
-export function Navbar({}: NavbarProps) {
+export function Navbar({ }: NavbarProps) {
   const location = useLocation();
   const pathSegments = location.pathname.split('/').filter(Boolean);
 
@@ -54,6 +55,7 @@ export function Navbar({}: NavbarProps) {
           </Breadcrumb>
         </div>
         <div className="flex flex-1 items-center justify-end space-x-4">
+          <ConnectionStatusIndicator />
           <LanguageSwitcher />
           <ModeToggle />
         </div>

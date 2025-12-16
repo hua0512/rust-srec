@@ -43,7 +43,6 @@ pub fn create_router(state: AppState) -> Router {
         .nest("/api/sessions", sessions::router())
         .nest("/api/notifications", notifications::router())
         .nest("/api/parse", parse::router())
-        .nest("/api/media", media::router())
         .nest("/api/auth", auth::protected_router());
 
     // Apply JWT auth layer to protected routes if JWT service is configured
@@ -61,6 +60,8 @@ pub fn create_router(state: AppState) -> Router {
         .nest("/api/auth", auth::public_router())
         // WebSocket route with JWT auth via query parameter (not middleware)
         .nest("/api/downloads", downloads::router())
+        // Media route with optional query param auth (not middleware)
+        .nest("/api/media", media::router())
         // Merge protected routes
         .merge(protected_routes)
         // Apply state to all routes
