@@ -271,10 +271,10 @@ impl Processor<FlvData> for ScriptKeyframesFillerOperator {
             }
             // Handle other FlvData types if necessary
             _ => {
-                trace!(
-                    "{} Received other data type. Forwarding.",
-                    self.context.name
-                );
+                // trace!(
+                //     "{} Received other data type. Forwarding.",
+                //     self.context.name
+                // );
                 output(input)
             }
         }

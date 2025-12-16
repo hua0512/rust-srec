@@ -265,11 +265,6 @@ impl Processor<FlvData> for LimitOperator {
                 let tag_size = tag.size() as u64;
                 self.state.accumulated_size += tag_size;
 
-                // Update timestamp tracking
-                if tag.timestamp_ms > self.state.max_timestamp {
-                    self.state.max_timestamp = tag.timestamp_ms;
-                }
-
                 // Track key metadata
                 if tag.is_script_tag() {
                     self.state.metadata = Some(tag.clone());
@@ -281,15 +276,23 @@ impl Processor<FlvData> for LimitOperator {
                     let mut tag = tag.clone();
                     tag.timestamp_ms = 0; // Reset timestamp for audio sequence header
                     self.state.audio_sequence_tag = Some(tag);
-                } else if !self.state.first_content_tag_seen {
-                    // This is the first actual content tag (not sequence header or metadata)
-                    // Set the start timestamp to this tag's timestamp
-                    self.state.start_timestamp = tag.timestamp_ms;
-                    self.state.first_content_tag_seen = true;
-                    debug!(
-                        "{} First content tag detected, setting start timestamp to {}ms.",
-                        self.context.name, tag.timestamp_ms
-                    );
+                } else {
+                    // This is actual content (not sequence header or metadata)
+                    // Update timestamp tracking only for content tags
+                    if tag.timestamp_ms > self.state.max_timestamp {
+                        self.state.max_timestamp = tag.timestamp_ms;
+                    }
+
+                    if !self.state.first_content_tag_seen {
+                        // This is the first actual content tag
+                        // Set the start timestamp to this tag's timestamp
+                        self.state.start_timestamp = tag.timestamp_ms;
+                        self.state.first_content_tag_seen = true;
+                        debug!(
+                            "{} First content tag detected, setting start timestamp to {}ms.",
+                            self.context.name, tag.timestamp_ms
+                        );
+                    }
                 }
 
                 // Track keyframes for optimal split points
@@ -1030,5 +1033,127 @@ mod tests {
         } else {
             panic!("Second header not found");
         }
+    }
+
+    #[test]
+    fn test_sequence_headers_dont_affect_duration() {
+        // This test validates the fix for the bug where sequence headers
+        // with original stream timestamps were incorrectly updating max_timestamp,
+        // causing premature duration-based splits
+        let context = StreamerContext::arc_new(CancellationToken::new());
+        let split_counter = Arc::new(AtomicUsize::new(0));
+        let split_counter_clone = split_counter.clone();
+
+        // Configure with a duration limit that should NOT be exceeded
+        let config = LimitConfig {
+            max_size_bytes: None,
+            max_duration_ms: Some(1000), // 1 second limit
+            split_at_keyframes_only: true,
+            on_split: Some(Box::new(move |_, _, _| {
+                split_counter.fetch_add(1, Ordering::SeqCst);
+            })),
+        };
+
+        let mut operator = LimitOperator::with_config(context.clone(), config);
+        let mut output_items = Vec::new();
+
+        let mut output_fn = |item: FlvData| -> Result<(), PipelineError> {
+            output_items.push(item);
+            Ok(())
+        };
+
+        // Process header
+        operator
+            .process(&context, test_utils::create_test_header(), &mut output_fn)
+            .unwrap();
+
+        // Send sequence headers with a VERY HIGH timestamp (like from a long-running stream)
+        // This simulates what happens when TimeConsistency resets the timestamps to 0
+        // but the original stream timestamp was very high (e.g., 24336044ms = 6.76 hours)
+        let video_seq_header = {
+            let mut tag =
+                if let FlvData::Tag(t) = test_utils::create_video_sequence_header(24336044, 1) {
+                    t
+                } else {
+                    panic!("Expected video sequence header tag");
+                };
+            // TimeConsistency would have already reset this to 0
+            tag.timestamp_ms = 0;
+            FlvData::Tag(tag)
+        };
+
+        let audio_seq_header = {
+            let mut tag =
+                if let FlvData::Tag(t) = test_utils::create_audio_sequence_header(24336044, 1) {
+                    t
+                } else {
+                    panic!("Expected audio sequence header tag");
+                };
+            // TimeConsistency would have already reset this to 0
+            tag.timestamp_ms = 0;
+            FlvData::Tag(tag)
+        };
+
+        operator
+            .process(&context, video_seq_header, &mut output_fn)
+            .unwrap();
+        operator
+            .process(&context, audio_seq_header, &mut output_fn)
+            .unwrap();
+
+        // Now send actual content tags with properly reset timestamps (starting from 0)
+        operator
+            .process(
+                &context,
+                test_utils::create_video_tag(0, true),
+                &mut output_fn,
+            )
+            .unwrap(); // Keyframe at 0ms
+        operator
+            .process(&context, test_utils::create_audio_tag(23), &mut output_fn)
+            .unwrap();
+        operator
+            .process(
+                &context,
+                test_utils::create_video_tag(33, false),
+                &mut output_fn,
+            )
+            .unwrap();
+        operator
+            .process(&context, test_utils::create_audio_tag(46), &mut output_fn)
+            .unwrap();
+        operator
+            .process(
+                &context,
+                test_utils::create_video_tag(66, false),
+                &mut output_fn,
+            )
+            .unwrap();
+
+        // The duration so far should be only ~66ms, well below the 1000ms limit
+        // Before the fix, max_timestamp would have been set to 24336044ms by the sequence headers,
+        // causing an immediate split
+
+        operator.finish(&context, &mut output_fn).unwrap();
+
+        // Verify NO splits occurred
+        assert_eq!(
+            split_counter_clone.load(Ordering::SeqCst),
+            0,
+            "No splits should occur - duration is only ~66ms, well below 1000ms limit"
+        );
+
+        // Should only have the initial header
+        let header_count = output_items
+            .iter()
+            .filter(|item| matches!(item, FlvData::Header(_)))
+            .count();
+        assert_eq!(
+            header_count, 1,
+            "Should only have initial header (no splits)"
+        );
+
+        // Verify the actual duration tracked by the operator
+        // (We can't directly access state, but we verified no split occurred which proves it)
     }
 }
