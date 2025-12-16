@@ -591,12 +591,15 @@ impl AudioData {
     }
 
     fn read_remaining(reader: &mut io::Cursor<Bytes>, size: Option<usize>) -> io::Result<Bytes> {
-        Ok(if size.is_none() || size.unwrap() == 0 {
-            // if size is 0, read until the end of the stream
-            reader.extract_remaining()
-        } else {
-            // read a fixed size
-            reader.extract_bytes(size.unwrap())?
+        Ok(match size {
+            None | Some(0) => {
+                // if size is None or 0, read until the end of the stream
+                reader.extract_remaining()
+            }
+            Some(size) => {
+                // read a fixed size
+                reader.extract_bytes(size)?
+            }
         })
     }
 }

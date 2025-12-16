@@ -107,18 +107,18 @@ impl ScriptData {
 
         let (data, error) = amf0_reader.decode_all();
 
-        // If data is empty and we have an error, return the error
-        if data.is_empty() && error.is_some() {
-            return Err(io::Error::new(
-                io::ErrorKind::InvalidData,
-                format!("Failed to parse script data: {:?}", error.unwrap()),
-            ));
-        } else if error.is_some() {
-            // If we have data but also an error, log the error but continue
-            warn!(
-                "Partial script data parsed with error: {:?}",
-                error.unwrap()
-            );
+        // Handle any parsing error
+        if let Some(err) = error {
+            if data.is_empty() {
+                // If data is empty and we have an error, return the error
+                return Err(io::Error::new(
+                    io::ErrorKind::InvalidData,
+                    format!("Failed to parse script data: {:?}", err),
+                ));
+            } else {
+                // If we have data but also an error, log the error but continue
+                warn!("Partial script data parsed with error: {:?}", err);
+            }
         }
 
         Ok(Self {
