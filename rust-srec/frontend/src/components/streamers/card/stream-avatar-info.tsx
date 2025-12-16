@@ -18,6 +18,7 @@ import { cn, getPlatformFromUrl } from '../../../lib/utils';
 import { Trans } from '@lingui/react/macro';
 import { z } from 'zod';
 import { StreamerSchema } from '../../../api/schemas';
+import { StatusInfoTooltip } from './status-info-tooltip';
 
 interface StreamAvatarInfoProps {
     streamer: z.infer<typeof StreamerSchema>;
@@ -102,53 +103,45 @@ export const StreamAvatarInfo = ({ streamer }: StreamAvatarInfoProps) => {
                                         side="bottom"
                                         className="p-0 border-border/50 shadow-2xl bg-background/95 backdrop-blur-xl overflow-hidden ring-1 ring-white/5"
                                     >
-                                        <div className="flex flex-col min-w-[280px] max-w-[340px]">
-                                            {/* Header */}
-                                            <div className="p-3 bg-gradient-to-br from-orange-500/10 via-orange-500/5 to-transparent border-b border-orange-500/10">
-                                                <div className="flex items-center gap-2.5">
-                                                    <div className="p-1.5 rounded-full bg-orange-500/10 text-orange-600 shadow-[inset_0_0_10px_rgba(249,115,22,0.1)] ring-1 ring-orange-500/20">
-                                                        <AlertTriangle className="h-3.5 w-3.5" />
-                                                    </div>
-                                                    <div>
-                                                        <p className="font-semibold text-sm leading-none tracking-tight text-foreground/90">
-                                                            <Trans>Connection Instability</Trans>
-                                                        </p>
-                                                        <p className="text-[10px] text-muted-foreground mt-1 font-medium">
-                                                            <Trans>Stream monitoring encountered issues</Trans>
-                                                        </p>
-                                                    </div>
-                                                </div>
+                                        <StatusInfoTooltip
+                                            theme="orange"
+                                            icon={<AlertTriangle className="h-3.5 w-3.5" />}
+                                            title={<Trans>Connection Instability</Trans>}
+                                            subtitle={
+                                                <Trans>
+                                                    Stream monitoring encountered issues
+                                                </Trans>
+                                            }
+                                        >
+                                            <div className="flex items-center justify-between text-xs p-2 rounded-md bg-muted/30 border border-border/40">
+                                                <span className="text-muted-foreground font-medium">
+                                                    <Trans>Consecutive Failures</Trans>
+                                                </span>
+                                                <Badge
+                                                    variant="secondary"
+                                                    className="font-mono font-bold text-[10px] bg-orange-500/10 text-orange-700 border-orange-500/20 dark:text-orange-400"
+                                                >
+                                                    {streamer.consecutive_error_count}
+                                                </Badge>
                                             </div>
 
-                                            {/* Content */}
-                                            <div className="p-3 space-y-3">
-                                                <div className="flex items-center justify-between text-xs p-2 rounded-md bg-muted/30 border border-border/40">
-                                                    <span className="text-muted-foreground font-medium">
-                                                        <Trans>Consecutive Failures</Trans>
-                                                    </span>
-                                                    <Badge
-                                                        variant="secondary"
-                                                        className="font-mono font-bold text-[10px] bg-orange-500/10 text-orange-700 border-orange-500/20 dark:text-orange-400"
-                                                    >
-                                                        {streamer.consecutive_error_count}
-                                                    </Badge>
-                                                </div>
-
-                                                <div className="space-y-2">
-                                                    <p className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider flex items-center gap-1.5 ml-0.5">
-                                                        <Activity className="h-3 w-3 opacity-70" />
-                                                        <Trans>Last Error Log</Trans>
-                                                    </p>
-                                                    <div className="text-xs bg-muted/40 text-muted-foreground/90 p-2.5 rounded-md font-mono break-all border border-border/40 shadow-sm leading-relaxed max-h-[120px] overflow-y-auto">
-                                                        {streamer.last_error || (
-                                                            <span className="italic text-muted-foreground/60">
-                                                                <Trans>No detailed error message available</Trans>
-                                                            </span>
-                                                        )}
-                                                    </div>
+                                            <div className="space-y-2">
+                                                <p className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider flex items-center gap-1.5 ml-0.5">
+                                                    <Activity className="h-3 w-3 opacity-70" />
+                                                    <Trans>Last Error Log</Trans>
+                                                </p>
+                                                <div className="text-xs bg-muted/40 text-muted-foreground/90 p-2.5 rounded-md font-mono break-all border border-border/40 shadow-sm leading-relaxed max-h-[120px] overflow-y-auto">
+                                                    {streamer.last_error || (
+                                                        <span className="italic text-muted-foreground/60">
+                                                            <Trans>
+                                                                No detailed error message
+                                                                available
+                                                            </Trans>
+                                                        </span>
+                                                    )}
                                                 </div>
                                             </div>
-                                        </div>
+                                        </StatusInfoTooltip>
                                     </TooltipContent>
                                 </Tooltip>
                             </TooltipProvider>

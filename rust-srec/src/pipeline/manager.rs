@@ -754,46 +754,63 @@ where
                 self.persist_segment(&session_id, &segment_path, size_bytes)
                     .await;
 
-                // Generate thumbnail for first segment (if not already done)
-                if segment_index == 0 {
+                // Get pipeline config for this streamer (if available)
+                let pipeline_steps = if let Some(config_service) = &self.config_service {
+                    config_service
+                        .get_config_for_streamer(&streamer_id)
+                        .await
+                        .map(|c| c.pipeline)
+                        .unwrap_or_default()
+                } else {
+                    vec![]
+                };
+
+                // Check if user's pipeline contains a thumbnail step
+                let pipeline_has_thumbnail = pipeline_steps.iter().any(|step| match step {
+                    crate::database::models::job::PipelineStep::Inline { processor, .. } => {
+                        processor == "thumbnail"
+                    }
+                    crate::database::models::job::PipelineStep::Preset(name) => {
+                        name.contains("thumbnail")
+                    }
+                });
+
+                // Generate automatic thumbnail for first segment only if:
+                // 1. This is the first segment (segment_index == 0)
+                // 2. User's pipeline doesn't already include a thumbnail step
+                if segment_index == 0 && !pipeline_has_thumbnail {
                     self.maybe_create_thumbnail_job(&streamer_id, &session_id, &segment_path)
                         .await;
                 }
 
-                // Create pipeline jobs if config service is available
-                if let Some(config_service) = &self.config_service {
-                    debug!("Resolving config for pipeline creation: {}", streamer_id);
-                    match config_service.get_config_for_streamer(&streamer_id).await {
-                        Ok(config) => {
-                            if config.pipeline.is_empty() {
-                                debug!(
-                                    "No pipeline steps configured for {} (session: {}), skipping pipeline creation",
-                                    streamer_id, session_id
-                                );
-                            } else if let Err(e) = self
-                                .create_pipeline(
-                                    &session_id,
-                                    &streamer_id,
-                                    &segment_path,
-                                    Some(config.pipeline),
-                                )
-                                .await
-                            {
-                                tracing::error!(
-                                    "Failed to create pipeline for session {}: {}",
-                                    session_id,
-                                    e
-                                );
-                            }
-                        }
-                        Err(e) => {
-                            tracing::error!(
-                                "Failed to resolve config for pipeline creation (streamer: {}): {}",
-                                streamer_id,
-                                e
-                            );
-                        }
+                // Create pipeline jobs if pipeline is configured
+                if !pipeline_steps.is_empty() {
+                    debug!(
+                        "Creating pipeline for {} (session: {}) with {} steps",
+                        streamer_id,
+                        session_id,
+                        pipeline_steps.len()
+                    );
+                    if let Err(e) = self
+                        .create_pipeline(
+                            &session_id,
+                            &streamer_id,
+                            &segment_path,
+                            Some(pipeline_steps),
+                        )
+                        .await
+                    {
+                        tracing::error!(
+                            "Failed to create pipeline for session {}: {}",
+                            session_id,
+                            e
+                        );
                     }
+                } else {
+                    debug!(
+                        "No pipeline steps configured for {} (session: {}), skipping pipeline creation",
+                        streamer_id, session_id
+                    );
                 }
             }
             DownloadManagerEvent::DownloadCompleted {

@@ -11,6 +11,7 @@ import {
   Settings2,
   Activity,
   Play,
+  Bell,
 } from 'lucide-react';
 
 type Submenu = {
@@ -115,6 +116,11 @@ export function getMenuList(_pathname: string): Group[] {
           href: '/config',
           label: 'Configuration',
           icon: Settings,
+        },
+        {
+          href: '/notifications',
+          label: 'Notifications',
+          icon: Bell,
         },
       ],
     },

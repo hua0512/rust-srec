@@ -1280,6 +1280,69 @@ impl NotificationService {
                                         recoverable,
                                         timestamp: Utc::now(),
                                     }),
+                                    DownloadManagerEvent::SegmentStarted {
+                                        streamer_id,
+                                        session_id,
+                                        segment_path,
+                                        segment_index,
+                                        ..
+                                    } => Some(NotificationEvent::SegmentStarted {
+                                        streamer_id: streamer_id.clone(),
+                                        streamer_name: streamer_id,
+                                        session_id,
+                                        segment_path,
+                                        segment_index,
+                                        timestamp: Utc::now(),
+                                    }),
+                                    DownloadManagerEvent::SegmentCompleted {
+                                        streamer_id,
+                                        session_id,
+                                        segment_path,
+                                        segment_index,
+                                        duration_secs,
+                                        size_bytes,
+                                        ..
+                                    } => Some(NotificationEvent::SegmentCompleted {
+                                        streamer_id: streamer_id.clone(),
+                                        streamer_name: streamer_id,
+                                        session_id,
+                                        segment_path,
+                                        segment_index,
+                                        size_bytes,
+                                        duration_secs,
+                                        timestamp: Utc::now(),
+                                    }),
+                                    DownloadManagerEvent::DownloadCancelled {
+                                        streamer_id,
+                                        ..
+                                    } => Some(NotificationEvent::DownloadCancelled {
+                                        streamer_id: streamer_id.clone(),
+                                        streamer_name: streamer_id.clone(),
+                                        session_id: String::new(), // Not available in the event
+                                        timestamp: Utc::now(),
+                                    }),
+                                    DownloadManagerEvent::DownloadRejected {
+                                        streamer_id,
+                                        session_id,
+                                        reason,
+                                        ..
+                                    } => Some(NotificationEvent::DownloadRejected {
+                                        streamer_id: streamer_id.clone(),
+                                        streamer_name: streamer_id,
+                                        session_id,
+                                        reason,
+                                        timestamp: Utc::now(),
+                                    }),
+                                    DownloadManagerEvent::ConfigUpdated {
+                                        streamer_id,
+                                        update_type,
+                                        ..
+                                    } => Some(NotificationEvent::ConfigUpdated {
+                                        streamer_id: streamer_id.clone(),
+                                        streamer_name: streamer_id,
+                                        update_type: format!("{:?}", update_type),
+                                        timestamp: Utc::now(),
+                                    }),
                                     _ => None,
                                 };
 

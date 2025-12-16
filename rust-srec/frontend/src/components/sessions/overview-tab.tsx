@@ -22,15 +22,18 @@ import {
     Zap,
     HardDrive,
 } from 'lucide-react';
+import { getMediaUrl } from '@/lib/url';
 
 interface OverviewTabProps {
     session: any;
     duration: string;
     outputs: any[];
     onPlay: (output: any) => void;
+    token?: string;
 }
 
-export function OverviewTab({ session, duration, outputs, onPlay }: OverviewTabProps) {
+export function OverviewTab({ session, duration, outputs, onPlay, token }: OverviewTabProps) {
+    const thumbnailUrl = getMediaUrl(session.thumbnail_url, token);
     return (
         <motion.div
             initial={{ opacity: 0, y: 10 }}
@@ -125,10 +128,10 @@ export function OverviewTab({ session, duration, outputs, onPlay }: OverviewTabP
                         </CardHeader>
                         <CardContent className="p-0 flex-1 flex flex-col">
                             <div className="aspect-video bg-muted/30 flex items-center justify-center relative group overflow-hidden flex-1 min-h-[300px]">
-                                {session.thumbnail_url ? (
+                                {thumbnailUrl ? (
                                     <>
                                         <img
-                                            src={session.thumbnail_url}
+                                            src={thumbnailUrl}
                                             alt="Session thumbnail"
                                             className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-105"
                                         />

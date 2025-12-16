@@ -57,6 +57,7 @@ export const Route = createFileRoute('/_authed/_dashboard/sessions/')({
 function SessionsPage() {
   const search = Route.useSearch();
   const navigate = Route.useNavigate();
+  const { user } = Route.useRouteContext();
   const [isCalendarOpen, setIsCalendarOpen] = useState(false);
 
   // Calculate dates based on timeRange or use custom dates
@@ -395,6 +396,7 @@ function SessionsPage() {
           sessions={query.data?.items || []}
           isLoading={query.isLoading}
           onRefresh={() => query.refetch()}
+          token={user?.token?.access_token}
         />
 
         {/* Pagination */}

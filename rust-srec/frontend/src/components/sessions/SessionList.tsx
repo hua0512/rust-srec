@@ -11,12 +11,14 @@ interface SessionListProps {
   sessions: Session[];
   isLoading: boolean;
   onRefresh?: () => void;
+  token?: string;
 }
 
 export function SessionList({
   sessions,
   isLoading,
   onRefresh,
+  token,
 }: SessionListProps) {
   if (isLoading) {
     return (
@@ -76,7 +78,7 @@ export function SessionList({
   return (
     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6 animate-in fade-in duration-500">
       {sessions.map((session) => (
-        <SessionCard key={session.id} session={session} />
+        <SessionCard key={session.id} session={session} token={token} />
       ))}
     </div>
   );

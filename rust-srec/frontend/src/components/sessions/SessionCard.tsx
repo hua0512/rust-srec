@@ -29,9 +29,10 @@ type Session = z.infer<typeof SessionSchema>;
 
 interface SessionCardProps {
   session: Session;
+  token?: string;
 }
 
-export function SessionCard({ session }: SessionCardProps) {
+export function SessionCard({ session, token }: SessionCardProps) {
   const router = useRouter();
   const isLive = !session.end_time;
 
@@ -59,6 +60,8 @@ export function SessionCard({ session }: SessionCardProps) {
     : isLive
       ? 'Ongoing'
       : '-';
+
+  const thumbnailUrl = getMediaUrl(session.thumbnail_url, token);
 
   return (
     <Card className="flex flex-col h-full bg-linear-to-b from-card to-card/50 hover:shadow-lg hover:border-primary/20 transition-all duration-300 group">
@@ -108,9 +111,9 @@ export function SessionCard({ session }: SessionCardProps) {
       <CardContent className="p-4 pt-2 grow">
         {/* Thumbnail placeholder - would be nice to have real thumbnails */}
         <div className="relative aspect-video bg-muted/50 rounded-md mb-4 overflow-hidden group-hover:ring-1 group-hover:ring-primary/20 transition-all">
-          {session.thumbnail_url ? (
+          {thumbnailUrl ? (
             <img
-              src={session.thumbnail_url}
+              src={thumbnailUrl}
               alt={`Thumbnail for ${session.title}`}
               className="absolute inset-0 w-full h-full object-cover transition-transform duration-500 group-hover:scale-105"
               onError={(e) => {
@@ -123,7 +126,7 @@ export function SessionCard({ session }: SessionCardProps) {
             />
           ) : null}
           <div
-            className={`absolute inset-0 flex items-center justify-center text-muted-foreground/30 placeholder-icon ${session.thumbnail_url ? 'hidden' : ''}`}
+            className={`absolute inset-0 flex items-center justify-center text-muted-foreground/30 placeholder-icon ${thumbnailUrl ? 'hidden' : ''}`}
           >
             <Film className="h-12 w-12" />
           </div>
@@ -199,3 +202,4 @@ export function SessionCard({ session }: SessionCardProps) {
 }
 
 import { formatBytes, formatDuration } from '@/lib/format';
+import { getMediaUrl } from '@/lib/url';

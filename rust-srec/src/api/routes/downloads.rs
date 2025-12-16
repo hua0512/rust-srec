@@ -238,6 +238,7 @@ fn map_event_to_protobuf(
         DownloadManagerEvent::DownloadStarted { streamer_id, .. } => streamer_id,
         DownloadManagerEvent::Progress { streamer_id, .. } => streamer_id,
         DownloadManagerEvent::SegmentCompleted { streamer_id, .. } => streamer_id,
+        DownloadManagerEvent::SegmentStarted { streamer_id, .. } => streamer_id, // Added
         DownloadManagerEvent::DownloadCompleted { streamer_id, .. } => streamer_id,
         DownloadManagerEvent::DownloadFailed { streamer_id, .. } => streamer_id,
         DownloadManagerEvent::DownloadCancelled { streamer_id, .. } => streamer_id,
@@ -375,7 +376,9 @@ fn map_event_to_protobuf(
         }
         // Config events are internal, don't broadcast to clients
         DownloadManagerEvent::ConfigUpdated { .. }
-        | DownloadManagerEvent::ConfigUpdateFailed { .. } => None,
+        | DownloadManagerEvent::ConfigUpdateFailed { .. }
+        // TODO: SegmentStarted ignored for now
+        | DownloadManagerEvent::SegmentStarted { .. } => None,
         // DownloadRejected is informational - could optionally broadcast
         // For now, we include it as it provides useful feedback to UI
         DownloadManagerEvent::DownloadRejected {

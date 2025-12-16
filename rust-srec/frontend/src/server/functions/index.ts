@@ -7,3 +7,4 @@ export * from './pipeline';
 export * from './sessions';
 export * from './streamers';
 export * from './system';
+export * from './notifications';

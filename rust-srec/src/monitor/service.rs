@@ -579,6 +579,23 @@ impl<
     }
 
     /// Handle a streamer going offline with optional session ID.
+    ///
+    /// A successful Offline check (no network error) proves connectivity to the platform,
+    /// so we aggressively clear any accumulated transient errors.
+    ///
+    /// # State Transition Table
+    ///
+    /// | Previous State       | Has Errors? | Action                                          |
+    /// |----------------------|-------------|------------------------------------------------|
+    /// | Live                 | No          | End session, set state to NOT_LIVE             |
+    /// | Live                 | Yes         | End session, set NOT_LIVE, clear errors        |
+    /// | TemporalDisabled     | Yes         | Set state to NOT_LIVE, clear errors            |
+    /// | NotLive              | Yes         | Clear errors only                              |
+    /// | NotLive              | No          | No action (already clean)                      |
+    /// | OutOfSchedule        | Yes         | Clear errors only                              |
+    /// | OutOfSchedule        | No          | No action                                      |
+    ///
+    /// "Has Errors" means `consecutive_error_count > 0` or `disabled_until` is set.
     pub async fn handle_offline_with_session(
         &self,
         streamer: &StreamerMetadata,
@@ -586,8 +603,11 @@ impl<
     ) -> Result<()> {
         debug!("Streamer {} is OFFLINE", streamer.name);
 
-        // Only update if currently live
+        // Check if we have accumulated errors that should be cleared on successful check
+        let has_errors = streamer.consecutive_error_count > 0 || streamer.disabled_until.is_some();
+
         if streamer.state == StreamerState::Live {
+            // Live -> Offline transition: end session and update state
             info!("Streamer {} went offline", streamer.name);
 
             let now = chrono::Utc::now();
@@ -603,6 +623,11 @@ impl<
 
             StreamerTxOps::set_offline(&mut tx, &streamer.id).await?;
 
+            // Clear any accumulated errors since we successfully checked
+            if has_errors {
+                StreamerTxOps::clear_error_state(&mut tx, &streamer.id).await?;
+            }
+
             let event = MonitorEvent::StreamerOffline {
                 streamer_id: streamer.id.clone(),
                 streamer_name: streamer.name.clone(),
@@ -614,7 +639,6 @@ impl<
             tx.commit().await?;
 
             // Reload metadata from DB to sync in-memory cache.
-            // Errors here are logged but not propagated since the DB transaction succeeded.
             if let Err(e) = self.streamer_manager.reload_from_repo(&streamer.id).await {
                 warn!(
                     "Failed to reload streamer {} after offline update: {}. Cache may be stale.",
@@ -622,6 +646,33 @@ impl<
                 );
             }
             self.outbox_notify.notify_one();
+        } else if has_errors {
+            // Successful check with accumulated errors: clear them
+            // This handles TemporalDisabled -> NotLive and NotLive with errors -> NotLive clean
+            info!(
+                "Streamer {} successful check, clearing {} accumulated errors",
+                streamer.name, streamer.consecutive_error_count
+            );
+
+            let mut tx = self.begin_immediate().await?;
+
+            // Clear error state: reset consecutive_error_count, disabled_until, last_error
+            StreamerTxOps::clear_error_state(&mut tx, &streamer.id).await?;
+
+            // If was TemporalDisabled, also set state back to NOT_LIVE
+            if streamer.state == StreamerState::TemporalDisabled {
+                StreamerTxOps::set_offline(&mut tx, &streamer.id).await?;
+            }
+
+            tx.commit().await?;
+
+            // Reload metadata from DB to sync in-memory cache.
+            if let Err(e) = self.streamer_manager.reload_from_repo(&streamer.id).await {
+                warn!(
+                    "Failed to reload streamer {} after clearing error state: {}. Cache may be stale.",
+                    streamer.id, e
+                );
+            }
         }
 
         Ok(())

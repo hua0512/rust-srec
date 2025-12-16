@@ -12,7 +12,9 @@ use tower_http::trace::TraceLayer;
 use tracing::Span;
 
 use crate::api::routes;
+use crate::database::repositories::NotificationRepository;
 use crate::error::Result;
+use crate::notification::NotificationService;
 
 /// API server configuration.
 #[derive(Debug, Clone)]
@@ -111,6 +113,10 @@ pub struct AppState {
     pub streamer_repository: Option<Arc<dyn StreamerRepository>>,
     /// Pipeline preset repository for pipeline presets (workflow sequences)
     pub pipeline_preset_repository: Option<Arc<dyn PipelinePresetRepository>>,
+    /// Notification repository for channel/subscription management
+    pub notification_repository: Option<Arc<dyn NotificationRepository>>,
+    /// Notification service for testing and reloading
+    pub notification_service: Option<Arc<NotificationService>>,
 }
 
 impl AppState {
@@ -130,6 +136,8 @@ impl AppState {
             health_checker: None,
             streamer_repository: None,
             pipeline_preset_repository: None,
+            notification_repository: None,
+            notification_service: None,
         }
     }
 
@@ -150,6 +158,8 @@ impl AppState {
             health_checker: None,
             streamer_repository: None,
             pipeline_preset_repository: None,
+            notification_repository: None,
+            notification_service: None,
         }
     }
 
@@ -195,6 +205,8 @@ impl AppState {
             health_checker: None,
             streamer_repository: None,
             pipeline_preset_repository: None,
+            notification_repository: None,
+            notification_service: None,
         }
     }
 
@@ -246,6 +258,18 @@ impl AppState {
         repo: Arc<dyn PipelinePresetRepository>,
     ) -> Self {
         self.pipeline_preset_repository = Some(repo);
+        self
+    }
+
+    /// Set the notification repository.
+    pub fn with_notification_repository(mut self, repo: Arc<dyn NotificationRepository>) -> Self {
+        self.notification_repository = Some(repo);
+        self
+    }
+
+    /// Set the notification service.
+    pub fn with_notification_service(mut self, service: Arc<NotificationService>) -> Self {
+        self.notification_service = Some(service);
         self
     }
 }
@@ -327,7 +351,7 @@ impl ApiServer {
                         if span.is_disabled() {
                             return;
                         }
-                        let mut on_response =
+                        let on_response =
                             tower_http::trace::DefaultOnResponse::new().level(tracing::Level::INFO);
                         use tower_http::trace::OnResponse;
                         on_response.on_response(res, latency, span);

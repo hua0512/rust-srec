@@ -106,6 +106,9 @@ export function PlayerCard({
         const checkString = (currentUrl + (title || '')).toLowerCase();
         const isHLS = checkString.includes('.m3u8') || checkString.includes('m3u8');
         const isMPEGTS = checkString.includes('.flv') || checkString.includes('.ts');
+        const isMP4 = checkString.includes('.mp4');
+        const isMKV = checkString.includes('.mkv');
+        const isAudio = checkString.includes('.mp3') || checkString.includes('.wav') || checkString.includes('.ogg');
 
         // Build proxy URL if headers are needed
         const shouldProxy = !!currentHeaders && Object.keys(currentHeaders).length > 0;
@@ -120,7 +123,10 @@ export function PlayerCard({
             shouldProxy,
             playUrl,
             isHLS,
-            isMPEGTS
+            isMPEGTS,
+            isMP4,
+            isMKV,
+            isAudio
         });
 
         const options: any = {
@@ -139,7 +145,7 @@ export function PlayerCard({
             fullscreenWeb: true,
             miniProgressBar: true,
             theme: '#3b82f6',
-            type: isHLS ? 'm3u8' : isMPEGTS ? 'flv' : 'auto',
+            type: isHLS ? 'm3u8' : isMPEGTS ? 'flv' : isMP4 ? 'mp4' : isMKV ? 'mkv' : isAudio ? 'mp3' : 'auto',
         };
 
         // Custom type for HLS

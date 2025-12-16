@@ -393,6 +393,20 @@ fn determine_ffmpeg_log_level(line: &str) -> LogLevel {
     }
 }
 
+/// Determine log level from an rclone stderr line.
+/// Rclone uses prefixes like ERROR, NOTICE, WARNING in its log output.
+fn determine_rclone_log_level(line: &str) -> LogLevel {
+    // Rclone log format typically: "YYYY/MM/DD HH:MM:SS LEVEL: message"
+    // or just contains these keywords
+    if line.contains("ERROR") || line.contains("Failed") || line.contains("error:") {
+        LogLevel::Error
+    } else if line.contains("NOTICE") || line.contains("WARNING") || line.contains("WARN") {
+        LogLevel::Warn
+    } else {
+        LogLevel::Info
+    }
+}
+
 /// Run an ffmpeg-style command that emits `-progress pipe:1` key=value lines on stdout.
 /// This parses progress snapshots and emits them via `progress` while capturing only stderr logs.
 pub async fn run_ffmpeg_with_progress(
@@ -538,10 +552,9 @@ pub async fn run_rclone_with_progress(
                     progress.report(snapshot);
                     continue;
                 }
-                if tx
-                    .try_send(create_log_entry(LogLevel::Error, line))
-                    .is_err()
-                {
+                // Determine log level based on rclone output patterns
+                let level = determine_rclone_log_level(&line);
+                if tx.try_send(create_log_entry(level, line)).is_err() {
                     dropped_count.fetch_add(1, Ordering::Relaxed);
                 }
             }

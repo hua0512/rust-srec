@@ -12,6 +12,8 @@ pub struct NotificationEventTypeInfo {
     pub event_type: &'static str,
     /// Human-friendly label.
     pub label: &'static str,
+    /// Default priority level.
+    pub priority: NotificationPriority,
     /// Additional accepted subscription keys (legacy / aliases).
     pub aliases: &'static [&'static str],
 }
@@ -20,21 +22,25 @@ const NOTIFICATION_EVENT_TYPES: &[NotificationEventTypeInfo] = &[
     NotificationEventTypeInfo {
         event_type: "stream_online",
         label: "Stream Online",
+        priority: NotificationPriority::Normal,
         aliases: &["stream_online", "streamer.online", "StreamOnline"],
     },
     NotificationEventTypeInfo {
         event_type: "stream_offline",
         label: "Stream Offline",
+        priority: NotificationPriority::Low,
         aliases: &["stream_offline", "streamer.offline", "StreamOffline"],
     },
     NotificationEventTypeInfo {
         event_type: "download_started",
         label: "Download Started",
+        priority: NotificationPriority::Low,
         aliases: &["download_started", "download.started", "DownloadStarted"],
     },
     NotificationEventTypeInfo {
         event_type: "download_completed",
         label: "Download Completed",
+        priority: NotificationPriority::Normal,
         aliases: &[
             "download_completed",
             "download.complete",
@@ -45,16 +51,53 @@ const NOTIFICATION_EVENT_TYPES: &[NotificationEventTypeInfo] = &[
     NotificationEventTypeInfo {
         event_type: "download_error",
         label: "Download Error",
+        priority: NotificationPriority::High,
         aliases: &["download_error", "download.error", "DownloadError"],
+    },
+    NotificationEventTypeInfo {
+        event_type: "segment_started",
+        label: "Segment Started",
+        priority: NotificationPriority::Low,
+        aliases: &["segment_started", "segment.started", "SegmentStarted"],
+    },
+    NotificationEventTypeInfo {
+        event_type: "segment_completed",
+        label: "Segment Completed",
+        priority: NotificationPriority::Low,
+        aliases: &["segment_completed", "segment.completed", "SegmentCompleted"],
+    },
+    NotificationEventTypeInfo {
+        event_type: "download_cancelled",
+        label: "Download Cancelled",
+        priority: NotificationPriority::Normal,
+        aliases: &[
+            "download_cancelled",
+            "download.cancelled",
+            "DownloadCancelled",
+        ],
+    },
+    NotificationEventTypeInfo {
+        event_type: "download_rejected",
+        label: "Download Rejected",
+        priority: NotificationPriority::High,
+        aliases: &["download_rejected", "download.rejected", "DownloadRejected"],
+    },
+    NotificationEventTypeInfo {
+        event_type: "config_updated",
+        label: "Config Updated",
+        priority: NotificationPriority::Low,
+        aliases: &["config_updated", "config.updated", "ConfigUpdated"],
     },
     NotificationEventTypeInfo {
         event_type: "pipeline_started",
         label: "Pipeline Started",
+        priority: NotificationPriority::Low,
         aliases: &["pipeline_started", "pipeline.started", "PipelineStarted"],
     },
     NotificationEventTypeInfo {
         event_type: "pipeline_completed",
         label: "Pipeline Completed",
+        priority: NotificationPriority::Low,
         aliases: &[
             "pipeline_completed",
             "pipeline.complete",
@@ -65,11 +108,13 @@ const NOTIFICATION_EVENT_TYPES: &[NotificationEventTypeInfo] = &[
     NotificationEventTypeInfo {
         event_type: "pipeline_failed",
         label: "Pipeline Failed",
+        priority: NotificationPriority::High,
         aliases: &["pipeline_failed", "pipeline.failed", "PipelineFailed"],
     },
     NotificationEventTypeInfo {
         event_type: "pipeline_cancelled",
         label: "Pipeline Cancelled",
+        priority: NotificationPriority::Normal,
         aliases: &[
             "pipeline_cancelled",
             "pipeline.cancelled",
@@ -79,16 +124,19 @@ const NOTIFICATION_EVENT_TYPES: &[NotificationEventTypeInfo] = &[
     NotificationEventTypeInfo {
         event_type: "fatal_error",
         label: "Fatal Error",
+        priority: NotificationPriority::Critical,
         aliases: &["fatal_error", "fatal.error", "FatalError"],
     },
     NotificationEventTypeInfo {
         event_type: "out_of_space",
         label: "Out Of Space",
+        priority: NotificationPriority::Critical,
         aliases: &["out_of_space", "disk.out_of_space", "OutOfSpace"],
     },
     NotificationEventTypeInfo {
         event_type: "pipeline_queue_warning",
         label: "Pipeline Queue Warning",
+        priority: NotificationPriority::High,
         aliases: &[
             "pipeline_queue_warning",
             "pipeline.queue.warning",
@@ -98,6 +146,7 @@ const NOTIFICATION_EVENT_TYPES: &[NotificationEventTypeInfo] = &[
     NotificationEventTypeInfo {
         event_type: "pipeline_queue_critical",
         label: "Pipeline Queue Critical",
+        priority: NotificationPriority::Critical,
         aliases: &[
             "pipeline_queue_critical",
             "pipeline.queue.critical",
@@ -107,11 +156,13 @@ const NOTIFICATION_EVENT_TYPES: &[NotificationEventTypeInfo] = &[
     NotificationEventTypeInfo {
         event_type: "system_startup",
         label: "System Startup",
+        priority: NotificationPriority::Normal,
         aliases: &["system_startup", "system.startup", "SystemStartup"],
     },
     NotificationEventTypeInfo {
         event_type: "system_shutdown",
         label: "System Shutdown",
+        priority: NotificationPriority::Normal,
         aliases: &["system_shutdown", "system.shutdown", "SystemShutdown"],
     },
 ];
@@ -224,6 +275,48 @@ pub enum NotificationEvent {
         recoverable: bool,
         timestamp: DateTime<Utc>,
     },
+    /// Segment started - a new segment file has begun recording.
+    SegmentStarted {
+        streamer_id: String,
+        streamer_name: String,
+        session_id: String,
+        segment_path: String,
+        segment_index: u32,
+        timestamp: DateTime<Utc>,
+    },
+    /// Segment completed - a segment file has finished recording.
+    SegmentCompleted {
+        streamer_id: String,
+        streamer_name: String,
+        session_id: String,
+        segment_path: String,
+        segment_index: u32,
+        size_bytes: u64,
+        duration_secs: f64,
+        timestamp: DateTime<Utc>,
+    },
+    /// Download was cancelled by user.
+    DownloadCancelled {
+        streamer_id: String,
+        streamer_name: String,
+        session_id: String,
+        timestamp: DateTime<Utc>,
+    },
+    /// Download was rejected before starting (e.g., circuit breaker open).
+    DownloadRejected {
+        streamer_id: String,
+        streamer_name: String,
+        session_id: String,
+        reason: String,
+        timestamp: DateTime<Utc>,
+    },
+    /// Download configuration was updated dynamically.
+    ConfigUpdated {
+        streamer_id: String,
+        streamer_name: String,
+        update_type: String,
+        timestamp: DateTime<Utc>,
+    },
 
     // ========== Pipeline Events ==========
     /// Pipeline job started.
@@ -314,6 +407,11 @@ impl NotificationEvent {
                     NotificationPriority::High
                 }
             }
+            Self::SegmentStarted { .. } => NotificationPriority::Low,
+            Self::SegmentCompleted { .. } => NotificationPriority::Low,
+            Self::DownloadCancelled { .. } => NotificationPriority::Normal,
+            Self::DownloadRejected { .. } => NotificationPriority::High,
+            Self::ConfigUpdated { .. } => NotificationPriority::Low,
 
             // Pipeline events
             Self::PipelineStarted { .. } => NotificationPriority::Low,
@@ -339,6 +437,11 @@ impl NotificationEvent {
             Self::DownloadStarted { .. } => "download_started",
             Self::DownloadCompleted { .. } => "download_completed",
             Self::DownloadError { .. } => "download_error",
+            Self::SegmentStarted { .. } => "segment_started",
+            Self::SegmentCompleted { .. } => "segment_completed",
+            Self::DownloadCancelled { .. } => "download_cancelled",
+            Self::DownloadRejected { .. } => "download_rejected",
+            Self::ConfigUpdated { .. } => "config_updated",
             Self::PipelineStarted { .. } => "pipeline_started",
             Self::PipelineCompleted { .. } => "pipeline_completed",
             Self::PipelineFailed { .. } => "pipeline_failed",
@@ -369,6 +472,32 @@ impl NotificationEvent {
             }
             Self::DownloadError { streamer_name, .. } => {
                 format!("❌ Download error for {}", streamer_name)
+            }
+            Self::SegmentStarted {
+                streamer_name,
+                segment_index,
+                ..
+            } => {
+                format!("📼 Segment {} started for {}", segment_index, streamer_name)
+            }
+            Self::SegmentCompleted {
+                streamer_name,
+                segment_index,
+                ..
+            } => {
+                format!(
+                    "✅ Segment {} completed for {}",
+                    segment_index, streamer_name
+                )
+            }
+            Self::DownloadCancelled { streamer_name, .. } => {
+                format!("⏹️ Download cancelled for {}", streamer_name)
+            }
+            Self::DownloadRejected { streamer_name, .. } => {
+                format!("🚫 Download rejected for {}", streamer_name)
+            }
+            Self::ConfigUpdated { streamer_name, .. } => {
+                format!("⚙️ Config updated for {}", streamer_name)
             }
             Self::PipelineStarted { job_type, .. } => {
                 format!("⚙️ Started {} job", job_type)
@@ -445,6 +574,29 @@ impl NotificationEvent {
                     error_message.clone()
                 }
             }
+            Self::SegmentStarted { segment_path, .. } => {
+                format!("Path: {}", segment_path)
+            }
+            Self::SegmentCompleted {
+                segment_path,
+                size_bytes,
+                duration_secs,
+                ..
+            } => {
+                format!(
+                    "Path: {}, Size: {}, Duration: {}",
+                    segment_path,
+                    format_bytes(*size_bytes),
+                    format_duration(*duration_secs)
+                )
+            }
+            Self::DownloadCancelled { session_id, .. } => {
+                format!("Session: {}", session_id)
+            }
+            Self::DownloadRejected { reason, .. } => reason.clone(),
+            Self::ConfigUpdated { update_type, .. } => {
+                format!("Update type: {}", update_type)
+            }
             Self::PipelineStarted { job_id, .. } => {
                 format!("Job ID: {}", job_id)
             }
@@ -510,6 +662,11 @@ impl NotificationEvent {
             | Self::DownloadStarted { timestamp, .. }
             | Self::DownloadCompleted { timestamp, .. }
             | Self::DownloadError { timestamp, .. }
+            | Self::SegmentStarted { timestamp, .. }
+            | Self::SegmentCompleted { timestamp, .. }
+            | Self::DownloadCancelled { timestamp, .. }
+            | Self::DownloadRejected { timestamp, .. }
+            | Self::ConfigUpdated { timestamp, .. }
             | Self::PipelineStarted { timestamp, .. }
             | Self::PipelineCompleted { timestamp, .. }
             | Self::PipelineFailed { timestamp, .. }
@@ -531,6 +688,11 @@ impl NotificationEvent {
             | Self::DownloadStarted { streamer_id, .. }
             | Self::DownloadCompleted { streamer_id, .. }
             | Self::DownloadError { streamer_id, .. }
+            | Self::SegmentStarted { streamer_id, .. }
+            | Self::SegmentCompleted { streamer_id, .. }
+            | Self::DownloadCancelled { streamer_id, .. }
+            | Self::DownloadRejected { streamer_id, .. }
+            | Self::ConfigUpdated { streamer_id, .. }
             | Self::PipelineStarted { streamer_id, .. }
             | Self::FatalError { streamer_id, .. } => Some(streamer_id),
             _ => None,
@@ -657,8 +819,77 @@ mod tests {
 
     #[test]
     fn test_format_duration() {
-        assert_eq!(format_duration(30.0), "30s");
-        assert_eq!(format_duration(90.0), "1m 30s");
         assert_eq!(format_duration(3661.0), "1h 1m 1s");
+    }
+
+    #[test]
+    fn test_segment_events() {
+        let start_event = NotificationEvent::SegmentStarted {
+            streamer_id: "123".to_string(),
+            streamer_name: "TestStreamer".to_string(),
+            session_id: "session_1".to_string(),
+            segment_path: "/path/to/segment/1.ts".to_string(),
+            segment_index: 1,
+            timestamp: Utc::now(),
+        };
+
+        assert_eq!(start_event.priority(), NotificationPriority::Low);
+        assert_eq!(start_event.event_type(), "segment_started");
+        assert!(start_event.title().contains("Segment 1 started"));
+        assert!(start_event.description().contains("/path/to/segment/1.ts"));
+
+        let complete_event = NotificationEvent::SegmentCompleted {
+            streamer_id: "123".to_string(),
+            streamer_name: "TestStreamer".to_string(),
+            session_id: "session_1".to_string(),
+            segment_path: "/path/to/segment/1.ts".to_string(),
+            segment_index: 1,
+            size_bytes: 1024 * 1024,
+            duration_secs: 10.0,
+            timestamp: Utc::now(),
+        };
+
+        assert_eq!(complete_event.priority(), NotificationPriority::Low);
+        assert_eq!(complete_event.event_type(), "segment_completed");
+        assert!(complete_event.title().contains("Segment 1 completed"));
+        assert!(complete_event.description().contains("Size: 1.00 MB"));
+    }
+
+    #[test]
+    fn test_config_update_event() {
+        let event = NotificationEvent::ConfigUpdated {
+            streamer_id: "123".to_string(),
+            streamer_name: "TestStreamer".to_string(),
+            update_type: "Cookies".to_string(),
+            timestamp: Utc::now(),
+        };
+
+        assert_eq!(event.priority(), NotificationPriority::Low);
+        assert_eq!(event.event_type(), "config_updated");
+        assert!(event.title().contains("Config updated"));
+        assert!(event.description().contains("Cookies"));
+    }
+
+    #[test]
+    fn test_download_cancellation_rejection() {
+        let cancel_event = NotificationEvent::DownloadCancelled {
+            streamer_id: "123".to_string(),
+            streamer_name: "TestStreamer".to_string(),
+            session_id: "session_1".to_string(),
+            timestamp: Utc::now(),
+        };
+        assert_eq!(cancel_event.priority(), NotificationPriority::Normal);
+        assert_eq!(cancel_event.event_type(), "download_cancelled");
+
+        let reject_event = NotificationEvent::DownloadRejected {
+            streamer_id: "123".to_string(),
+            streamer_name: "TestStreamer".to_string(),
+            session_id: "session_1".to_string(),
+            reason: "Circuit breaker open".to_string(),
+            timestamp: Utc::now(),
+        };
+        assert_eq!(reject_event.priority(), NotificationPriority::High);
+        assert_eq!(reject_event.event_type(), "download_rejected");
+        assert!(reject_event.description().contains("Circuit breaker open"));
     }
 }

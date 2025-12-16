@@ -171,6 +171,14 @@ pub enum DownloadManagerEvent {
         session_id: String,
         progress: DownloadProgress,
     },
+    /// Segment started - a new segment file has been opened for writing.
+    SegmentStarted {
+        download_id: String,
+        streamer_id: String,
+        session_id: String,
+        segment_path: String,
+        segment_index: u32,
+    },
     /// Segment completed.
     SegmentCompleted {
         download_id: String,
@@ -807,6 +815,17 @@ impl DownloadManager {
                         break;
                     }
                     SegmentEvent::SegmentStarted { path, sequence } => {
+                        let segment_path = path.to_string_lossy().to_string();
+
+                        // Emit segment started event
+                        let _ = event_tx.send(DownloadManagerEvent::SegmentStarted {
+                            download_id: download_id_clone.clone(),
+                            streamer_id: streamer_id.clone(),
+                            session_id: session_id.clone(),
+                            segment_path: segment_path.clone(),
+                            segment_index: sequence,
+                        });
+
                         if let Some((_, pending_update)) =
                             pending_updates.remove(&download_id_clone)
                         {
@@ -822,7 +841,6 @@ impl DownloadManager {
                             }
                         }
 
-                        // Segment started event - a new segment file has been opened
                         debug!(
                             download_id = %download_id_clone,
                             path = %path.display(),

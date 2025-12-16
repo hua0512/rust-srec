@@ -33,13 +33,14 @@ import { Trans } from '@lingui/react/macro';
 import { t } from '@lingui/core/macro';
 import { toast } from 'sonner';
 import { ArrowLeft, AlertCircle } from 'lucide-react';
-import { BASE_URL } from '@/utils/env';
+import { getMediaUrl } from '@/lib/url';
 import { PlayerCard } from '@/components/player/player-card';
 import { formatDuration } from '@/lib/format';
 import { SessionHeader } from '@/components/sessions/session-header';
 import { OverviewTab } from '@/components/sessions/overview-tab';
 import { RecordingsTab } from '@/components/sessions/recordings-tab';
 import { JobsTab } from '@/components/sessions/jobs-tab';
+import { DanmuViewer } from '@/components/danmu/DanmuViewer';
 
 import { TimelineTab } from '@/components/sessions/timeline-tab';
 
@@ -77,10 +78,11 @@ function SessionDetailPage() {
   const outputs = outputsData?.items || [];
   const jobs = jobsData?.items || [];
 
+
   const handleDownload = async (outputId: string, filename: string) => {
     try {
-      const baseUrl = BASE_URL.endsWith('/') ? BASE_URL.slice(0, -1) : BASE_URL;
-      const url = `${baseUrl}/media/${outputId}/content`;
+      const url = getMediaUrl(`/media/${outputId}/content`, user?.token?.access_token);
+      if (!url) throw new Error('Invalid download URL');
 
       toast.promise(
         async () => {
@@ -251,6 +253,7 @@ function SessionDetailPage() {
               duration={duration}
               outputs={outputs}
               onPlay={setPlayingOutput}
+              token={user?.token?.access_token}
             />
           </TabsContent>
 
@@ -280,18 +283,26 @@ function SessionDetailPage() {
         open={!!playingOutput}
         onOpenChange={(open) => !open && setPlayingOutput(null)}
       >
-        <DialogContent className="max-w-4xl p-0 overflow-hidden bg-black/95 border-border/20">
+        <DialogContent className={playingOutput?.format === 'DANMU_XML' ? "max-w-4xl p-0 overflow-hidden bg-transparent border-0 shadow-none focus:outline-none" : "max-w-4xl p-0 overflow-hidden bg-black/95 border-border/20"}>
           <DialogHeader className="sr-only">
             <DialogTitle>Media Player</DialogTitle>
           </DialogHeader>
-          <div className="aspect-video w-full">
+          <div className="aspect-video w-full flex items-center justify-center">
             {playingOutput && (
-              <PlayerCard
-                url={`${BASE_URL.endsWith('/') ? BASE_URL.slice(0, -1) : BASE_URL}/media/${playingOutput.id}/content${user?.token?.access_token ? `?token=${user.token.access_token}` : ''}`}
-                title={playingOutput.file_path.split('/').pop()}
-                className="w-full h-full border-0 rounded-none bg-black"
-                contentClassName="min-h-0"
-              />
+              playingOutput.format === 'DANMU_XML' ? (
+                <DanmuViewer
+                  url={getMediaUrl(`/media/${playingOutput.id}/content`, user?.token?.access_token) || ''}
+                  title={playingOutput.file_path.split('/').pop()}
+                  onClose={() => setPlayingOutput(null)}
+                />
+              ) : (
+                <PlayerCard
+                  url={getMediaUrl(`/media/${playingOutput.id}/content`, user?.token?.access_token) || ''}
+                  title={playingOutput.file_path.split('/').pop()}
+                  className="w-full h-full border-0 rounded-none bg-black"
+                  contentClassName="min-h-0"
+                />
+              )
             )}
           </div>
         </DialogContent>

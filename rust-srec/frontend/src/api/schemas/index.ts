@@ -8,3 +8,4 @@ export * from './platform';
 export * from './template';
 export * from './engine';
 export * from './system';
+export * from './notifications';

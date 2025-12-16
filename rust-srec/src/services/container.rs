@@ -22,7 +22,7 @@ use crate::danmu::{
     service::{DanmuEvent, DanmuServiceConfig},
 };
 use crate::database::maintenance::{MaintenanceConfig, MaintenanceScheduler};
-use crate::database::repositories::SqlxNotificationRepository;
+use crate::database::repositories::{NotificationRepository, SqlxNotificationRepository};
 use crate::database::repositories::{
     config::SqlxConfigRepository,
     filter::SqlxFilterRepository,
@@ -74,6 +74,8 @@ pub struct ServiceContainer {
     pub danmu_service: Arc<DanmuService>,
     /// Notification service.
     pub notification_service: Arc<NotificationService>,
+    /// Notification repository.
+    pub notification_repository: Arc<dyn NotificationRepository>,
     /// Metrics collector.
     pub metrics_collector: Arc<MetricsCollector>,
     /// Health checker.
@@ -172,10 +174,10 @@ impl ServiceContainer {
         let danmu_service = Arc::new(DanmuService::new(DanmuServiceConfig::default()));
 
         // Create notification service with default config
-        let notification_repo = Arc::new(SqlxNotificationRepository::new(pool.clone()));
+        let notification_repository = Arc::new(SqlxNotificationRepository::new(pool.clone()));
         let notification_service = Arc::new(NotificationService::with_repository(
             NotificationServiceConfig::default(),
-            notification_repo,
+            notification_repository.clone(),
         ));
 
         // Create metrics collector
@@ -216,6 +218,7 @@ impl ServiceContainer {
             monitor_event_broadcaster,
             danmu_service,
             notification_service,
+            notification_repository,
             metrics_collector,
             health_checker,
             maintenance_scheduler,
@@ -297,10 +300,10 @@ impl ServiceContainer {
         let danmu_service = Arc::new(DanmuService::new(danmu_config));
 
         // Create notification service with default config
-        let notification_repo = Arc::new(SqlxNotificationRepository::new(pool.clone()));
+        let notification_repository = Arc::new(SqlxNotificationRepository::new(pool.clone()));
         let notification_service = Arc::new(NotificationService::with_repository(
             NotificationServiceConfig::default(),
-            notification_repo,
+            notification_repository.clone(),
         ));
 
         // Create metrics collector
@@ -341,6 +344,7 @@ impl ServiceContainer {
             monitor_event_broadcaster,
             danmu_service,
             notification_service,
+            notification_repository,
             metrics_collector,
             health_checker,
             maintenance_scheduler,
@@ -477,7 +481,9 @@ impl ServiceContainer {
             .with_streamer_repository(Arc::new(SqlxStreamerRepository::new(self.pool.clone())))
             .with_pipeline_preset_repository(Arc::new(SqlitePipelinePresetRepository::new(
                 Arc::new(self.pool.clone()),
-            )));
+            )))
+            .with_notification_repository(self.notification_repository.clone())
+            .with_notification_service(self.notification_service.clone());
 
         let server = ApiServer::with_state(self.api_server_config.clone(), state);
         let cancel_token = self.cancellation_token.clone();
@@ -508,7 +514,6 @@ impl ServiceContainer {
     /// Set up config event subscriptions between services.
     fn setup_config_event_subscriptions(&self) {
         let streamer_manager = self.streamer_manager.clone();
-        let scheduler = self.scheduler.clone();
         let download_manager = self.download_manager.clone();
         let danmu_service = self.danmu_service.clone();
         let stream_monitor = self.stream_monitor.clone();
@@ -548,7 +553,6 @@ impl ServiceContainer {
                                                     streamer_id, metadata.state
                                                 );
                                                 Self::handle_streamer_disabled(
-                                                    &scheduler,
                                                     &download_manager,
                                                     &danmu_service,
                                                     &stream_monitor,
@@ -566,7 +570,6 @@ impl ServiceContainer {
                                                     streamer_id
                                                 );
                                                 Self::handle_streamer_disabled(
-                                                    &scheduler,
                                                     &download_manager,
                                                     &danmu_service,
                                                     &stream_monitor,
@@ -599,7 +602,6 @@ impl ServiceContainer {
                                         );
                                         // Reuse the same cleanup logic as disabled state
                                         Self::handle_streamer_disabled(
-                                            &scheduler,
                                             &download_manager,
                                             &danmu_service,
                                             &stream_monitor,
@@ -622,7 +624,6 @@ impl ServiceContainer {
                                         if !is_active {
                                             info!("Streamer {} became inactive, initiating cleanup", streamer_id);
                                             Self::handle_streamer_disabled(
-                                                &scheduler,
                                                 &download_manager,
                                                 &danmu_service,
                                                 &stream_monitor,
@@ -1100,14 +1101,16 @@ impl ServiceContainer {
     /// and should not block other operations.
     ///
     /// # Arguments
-    /// * `scheduler` - The scheduler service to remove the actor from
     /// * `download_manager` - The download manager to cancel downloads
     /// * `danmu_service` - The danmu service to stop collection
     /// * `stream_monitor` - The stream monitor to end active sessions
     /// * `streamer_manager` - The streamer manager to get streamer metadata
     /// * `streamer_id` - The ID of the streamer being disabled
+    ///
+    /// # Note
+    /// Actor removal is handled by the Scheduler's own config event handler.
+    /// We don't do it here to avoid RwLock deadlock (scheduler.run() holds the write lock).
     pub async fn handle_streamer_disabled(
-        scheduler: &Arc<tokio::sync::RwLock<Scheduler<SqlxStreamerRepository>>>,
         download_manager: &Arc<DownloadManager>,
         danmu_service: &Arc<DanmuService>,
         stream_monitor: &Arc<
@@ -1142,17 +1145,10 @@ impl ServiceContainer {
             }
         }
 
-        // 2. Remove actor from scheduler
-        {
-            let mut scheduler_guard = scheduler.write().await;
-            if scheduler_guard.remove_streamer(streamer_id) {
-                info!("Removed actor for disabled streamer: {}", streamer_id);
-            } else {
-                debug!("No actor found for disabled streamer: {}", streamer_id);
-            }
-        }
+        // Note: Actor removal is handled by the Scheduler's own config event handler.
+        // We don't do it here because scheduler.run() holds the RwLock write lock forever.
 
-        // 3. Cancel active download if exists
+        // 2. Cancel active download if exists
         if let Some(download_info) = download_manager.get_download_by_streamer(streamer_id) {
             match download_manager.stop_download(&download_info.id).await {
                 Ok(()) => {

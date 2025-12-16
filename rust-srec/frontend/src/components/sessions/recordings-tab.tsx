@@ -16,6 +16,7 @@ import {
     Download,
     Play,
     Video,
+    MessageSquare,
 } from 'lucide-react';
 
 interface RecordingsTabProps {
@@ -26,6 +27,17 @@ interface RecordingsTabProps {
 }
 
 export function RecordingsTab({ isLoading, outputs, onDownload, onPlay }: RecordingsTabProps) {
+    const isPlayable = (output: any) => {
+        // Filter out thumbnails and danmu files
+        if (output.format === 'THUMBNAIL' || output.format === 'DANMU_XML') return false;
+
+        // Whitelist supported extensions
+        const validExtensions = ['mp4', 'webm', 'ogg', 'mp3', 'wav', 'mkv'];
+        const extension = output.file_path.split('.').pop()?.toLowerCase();
+
+        return validExtensions.includes(extension || '');
+    };
+
     return (
         <motion.div
             initial={{ opacity: 0, y: 10 }}
@@ -108,17 +120,32 @@ export function RecordingsTab({ isLoading, outputs, onDownload, onPlay }: Record
                                                 <Download className="mr-2 h-3 w-3" />{' '}
                                                 <Trans>Download</Trans>
                                             </Button>
-                                            <Button
-                                                variant="default"
-                                                size="sm"
-                                                className="h-8 text-xs"
-                                                onClick={(e) => {
-                                                    e.stopPropagation();
-                                                    onPlay(output);
-                                                }}
-                                            >
-                                                <Play className="mr-2 h-3 w-3" /> <Trans>Play</Trans>
-                                            </Button>
+                                            {output.format === 'DANMU_XML' && (
+                                                <Button
+                                                    variant="secondary"
+                                                    size="sm"
+                                                    className="h-8 text-xs"
+                                                    onClick={(e) => {
+                                                        e.stopPropagation();
+                                                        onPlay(output);
+                                                    }}
+                                                >
+                                                    <MessageSquare className="mr-2 h-3 w-3" /> <Trans>View Danmu</Trans>
+                                                </Button>
+                                            )}
+                                            {isPlayable(output) && (
+                                                <Button
+                                                    variant="default"
+                                                    size="sm"
+                                                    className="h-8 text-xs"
+                                                    onClick={(e) => {
+                                                        e.stopPropagation();
+                                                        onPlay(output);
+                                                    }}
+                                                >
+                                                    <Play className="mr-2 h-3 w-3" /> <Trans>Play</Trans>
+                                                </Button>
+                                            )}
                                         </div>
                                     </motion.div>
                                 ))}

@@ -10,6 +10,11 @@ pub mod download_progress {
     include!(concat!(env!("OUT_DIR"), "/download_progress.rs"));
 }
 
+// TODO: REXPORT DOUYIN PROTO
+pub mod douyin_proto {
+    include!(concat!(env!("OUT_DIR"), "/douyin.rs"));
+}
+
 // Re-export commonly used types
 pub use download_progress::{
     ClientMessage, DownloadCancelled, DownloadCompleted, DownloadFailed, DownloadProgress,

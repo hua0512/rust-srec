@@ -23,6 +23,7 @@ import { Route as AuthedDashboardStreamersIndexRouteImport } from './routes/_aut
 import { Route as AuthedDashboardSessionsIndexRouteImport } from './routes/_authed/_dashboard/sessions/index'
 import { Route as AuthedDashboardPlayerIndexRouteImport } from './routes/_authed/_dashboard/player/index'
 import { Route as AuthedDashboardPipelineIndexRouteImport } from './routes/_authed/_dashboard/pipeline/index'
+import { Route as AuthedDashboardNotificationsIndexRouteImport } from './routes/_authed/_dashboard/notifications/index'
 import { Route as AuthedDashboardSystemHealthRouteImport } from './routes/_authed/_dashboard/system/health'
 import { Route as AuthedDashboardStreamersNewRouteImport } from './routes/_authed/_dashboard/streamers/new'
 import { Route as AuthedDashboardSessionsSessionIdRouteImport } from './routes/_authed/_dashboard/sessions/$sessionId'
@@ -119,6 +120,12 @@ const AuthedDashboardPipelineIndexRoute =
   AuthedDashboardPipelineIndexRouteImport.update({
     id: '/pipeline/',
     path: '/pipeline/',
+    getParentRoute: () => AuthedDashboardRoute,
+  } as any)
+const AuthedDashboardNotificationsIndexRoute =
+  AuthedDashboardNotificationsIndexRouteImport.update({
+    id: '/notifications/',
+    path: '/notifications/',
     getParentRoute: () => AuthedDashboardRoute,
   } as any)
 const AuthedDashboardSystemHealthRoute =
@@ -280,6 +287,7 @@ export interface FileRoutesByFullPath {
   '/sessions/$sessionId': typeof AuthedDashboardSessionsSessionIdRoute
   '/streamers/new': typeof AuthedDashboardStreamersNewRoute
   '/system/health': typeof AuthedDashboardSystemHealthRoute
+  '/notifications': typeof AuthedDashboardNotificationsIndexRoute
   '/pipeline': typeof AuthedDashboardPipelineIndexRoute
   '/player': typeof AuthedDashboardPlayerIndexRoute
   '/sessions': typeof AuthedDashboardSessionsIndexRoute
@@ -317,6 +325,7 @@ export interface FileRoutesByTo {
   '/sessions/$sessionId': typeof AuthedDashboardSessionsSessionIdRoute
   '/streamers/new': typeof AuthedDashboardStreamersNewRoute
   '/system/health': typeof AuthedDashboardSystemHealthRoute
+  '/notifications': typeof AuthedDashboardNotificationsIndexRoute
   '/pipeline': typeof AuthedDashboardPipelineIndexRoute
   '/player': typeof AuthedDashboardPlayerIndexRoute
   '/sessions': typeof AuthedDashboardSessionsIndexRoute
@@ -358,6 +367,7 @@ export interface FileRoutesById {
   '/_authed/_dashboard/sessions/$sessionId': typeof AuthedDashboardSessionsSessionIdRoute
   '/_authed/_dashboard/streamers/new': typeof AuthedDashboardStreamersNewRoute
   '/_authed/_dashboard/system/health': typeof AuthedDashboardSystemHealthRoute
+  '/_authed/_dashboard/notifications/': typeof AuthedDashboardNotificationsIndexRoute
   '/_authed/_dashboard/pipeline/': typeof AuthedDashboardPipelineIndexRoute
   '/_authed/_dashboard/player/': typeof AuthedDashboardPlayerIndexRoute
   '/_authed/_dashboard/sessions/': typeof AuthedDashboardSessionsIndexRoute
@@ -397,6 +407,7 @@ export interface FileRouteTypes {
     | '/sessions/$sessionId'
     | '/streamers/new'
     | '/system/health'
+    | '/notifications'
     | '/pipeline'
     | '/player'
     | '/sessions'
@@ -434,6 +445,7 @@ export interface FileRouteTypes {
     | '/sessions/$sessionId'
     | '/streamers/new'
     | '/system/health'
+    | '/notifications'
     | '/pipeline'
     | '/player'
     | '/sessions'
@@ -474,6 +486,7 @@ export interface FileRouteTypes {
     | '/_authed/_dashboard/sessions/$sessionId'
     | '/_authed/_dashboard/streamers/new'
     | '/_authed/_dashboard/system/health'
+    | '/_authed/_dashboard/notifications/'
     | '/_authed/_dashboard/pipeline/'
     | '/_authed/_dashboard/player/'
     | '/_authed/_dashboard/sessions/'
@@ -604,6 +617,13 @@ declare module '@tanstack/react-router' {
       path: '/pipeline'
       fullPath: '/pipeline'
       preLoaderRoute: typeof AuthedDashboardPipelineIndexRouteImport
+      parentRoute: typeof AuthedDashboardRoute
+    }
+    '/_authed/_dashboard/notifications/': {
+      id: '/_authed/_dashboard/notifications/'
+      path: '/notifications'
+      fullPath: '/notifications'
+      preLoaderRoute: typeof AuthedDashboardNotificationsIndexRouteImport
       parentRoute: typeof AuthedDashboardRoute
     }
     '/_authed/_dashboard/system/health': {
@@ -824,6 +844,7 @@ interface AuthedDashboardRouteChildren {
   AuthedDashboardSessionsSessionIdRoute: typeof AuthedDashboardSessionsSessionIdRoute
   AuthedDashboardStreamersNewRoute: typeof AuthedDashboardStreamersNewRoute
   AuthedDashboardSystemHealthRoute: typeof AuthedDashboardSystemHealthRoute
+  AuthedDashboardNotificationsIndexRoute: typeof AuthedDashboardNotificationsIndexRoute
   AuthedDashboardPipelineIndexRoute: typeof AuthedDashboardPipelineIndexRoute
   AuthedDashboardPlayerIndexRoute: typeof AuthedDashboardPlayerIndexRoute
   AuthedDashboardSessionsIndexRoute: typeof AuthedDashboardSessionsIndexRoute
@@ -847,6 +868,8 @@ const AuthedDashboardRouteChildren: AuthedDashboardRouteChildren = {
   AuthedDashboardSessionsSessionIdRoute: AuthedDashboardSessionsSessionIdRoute,
   AuthedDashboardStreamersNewRoute: AuthedDashboardStreamersNewRoute,
   AuthedDashboardSystemHealthRoute: AuthedDashboardSystemHealthRoute,
+  AuthedDashboardNotificationsIndexRoute:
+    AuthedDashboardNotificationsIndexRoute,
   AuthedDashboardPipelineIndexRoute: AuthedDashboardPipelineIndexRoute,
   AuthedDashboardPlayerIndexRoute: AuthedDashboardPlayerIndexRoute,
   AuthedDashboardSessionsIndexRoute: AuthedDashboardSessionsIndexRoute,
