@@ -12,7 +12,7 @@ use pipeline_common::{
     expand_filename_template,
 };
 
-use tracing::{Span, debug, error, info};
+use tracing::{Span, debug, info};
 use tracing_indicatif::span_ext::IndicatifSpanExt;
 
 use crate::analyzer::HlsAnalyzer;
