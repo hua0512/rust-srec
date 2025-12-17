@@ -31,6 +31,8 @@ pub struct GlobalConfigDbModel {
     pub session_gap_time_secs: i64,
     /// JSON serialized Vec<PipelineStep>
     pub pipeline: Option<String>,
+    /// Log filter directive (e.g., "rust_srec=debug,sqlx=warn")
+    pub log_filter_directive: String,
 }
 
 impl Default for GlobalConfigDbModel {
@@ -56,6 +58,8 @@ impl Default for GlobalConfigDbModel {
             job_history_retention_days: 30,
             session_gap_time_secs: 3600,
             pipeline: None,
+            log_filter_directive: "rust_srec=info,sqlx=warn,mesio_engine=info,flv=info,hls=info"
+                .to_string(),
         }
     }
 }

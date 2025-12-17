@@ -67,7 +67,7 @@ impl ApiServerConfig {
 
 use std::sync::Arc;
 
-use crate::api::auth_service::AuthService;
+use crate::api::auth_service::{AuthConfig, AuthService};
 use crate::api::jwt::JwtService;
 use crate::config::ConfigService;
 use crate::danmu::DanmuService;
@@ -117,6 +117,8 @@ pub struct AppState {
     pub notification_repository: Option<Arc<dyn NotificationRepository>>,
     /// Notification service for testing and reloading
     pub notification_service: Option<Arc<NotificationService>>,
+    /// Logging configuration for dynamic log level changes
+    pub logging_config: Option<Arc<crate::logging::LoggingConfig>>,
 }
 
 impl AppState {
@@ -138,12 +140,15 @@ impl AppState {
             pipeline_preset_repository: None,
             notification_repository: None,
             notification_service: None,
+            logging_config: None,
         }
     }
 
     /// Create a new application state with JWT service from environment variables.
     pub fn with_jwt_from_env() -> Self {
-        let jwt_service = Self::create_jwt_service_from_env();
+        let auth_config = AuthConfig::from_env();
+        let jwt_service =
+            JwtService::from_env(auth_config.access_token_expiration_secs).map(Arc::new);
         Self {
             start_time: Instant::now(),
             jwt_service,
@@ -160,26 +165,8 @@ impl AppState {
             pipeline_preset_repository: None,
             notification_repository: None,
             notification_service: None,
+            logging_config: None,
         }
-    }
-
-    /// Create JWT service from environment variables.
-    fn create_jwt_service_from_env() -> Option<Arc<JwtService>> {
-        let secret = std::env::var("JWT_SECRET").ok()?;
-        let issuer = std::env::var("JWT_ISSUER").unwrap_or_else(|_| "rust-srec".to_string());
-        let audience =
-            std::env::var("JWT_AUDIENCE").unwrap_or_else(|_| "rust-srec-api".to_string());
-        let expiration_secs = std::env::var("JWT_EXPIRATION_SECS")
-            .ok()
-            .and_then(|s| s.parse().ok())
-            .unwrap_or(3600);
-
-        Some(Arc::new(JwtService::new(
-            &secret,
-            &issuer,
-            &audience,
-            Some(expiration_secs),
-        )))
     }
 
     /// Create application state with all services.
@@ -207,6 +194,7 @@ impl AppState {
             pipeline_preset_repository: None,
             notification_repository: None,
             notification_service: None,
+            logging_config: None,
         }
     }
 
@@ -270,6 +258,12 @@ impl AppState {
     /// Set the notification service.
     pub fn with_notification_service(mut self, service: Arc<NotificationService>) -> Self {
         self.notification_service = Some(service);
+        self
+    }
+
+    /// Set the logging configuration.
+    pub fn with_logging_config(mut self, config: Arc<crate::logging::LoggingConfig>) -> Self {
+        self.logging_config = Some(config);
         self
     }
 }

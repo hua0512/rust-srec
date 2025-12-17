@@ -308,16 +308,20 @@ impl SessionRepository for SqlxSessionRepository {
         let mut conditions: Vec<String> = Vec::new();
 
         if filters.streamer_id.is_some() {
-            conditions.push("streamer_id = ?".to_string());
+            conditions.push("s.streamer_id = ?".to_string());
         }
         if filters.from_date.is_some() {
-            conditions.push("start_time >= ?".to_string());
+            conditions.push("s.start_time >= ?".to_string());
         }
         if filters.to_date.is_some() {
-            conditions.push("start_time <= ?".to_string());
+            conditions.push("s.start_time <= ?".to_string());
         }
         if filters.active_only == Some(true) {
-            conditions.push("end_time IS NULL".to_string());
+            conditions.push("s.end_time IS NULL".to_string());
+        }
+
+        if filters.search.is_some() {
+            conditions.push("(st.name LIKE ? OR s.titles LIKE ? OR s.id LIKE ?)".to_string());
         }
 
         let where_clause = if conditions.is_empty() {
@@ -326,15 +330,20 @@ impl SessionRepository for SqlxSessionRepository {
             format!("WHERE {}", conditions.join(" AND "))
         };
 
-        // Count query
+        // Count query with JOIN to support search by streamer name
         let count_sql = format!(
-            "SELECT COUNT(*) as count FROM live_sessions {}",
+            "SELECT COUNT(s.id) as count FROM live_sessions s \
+             LEFT JOIN streamers st ON s.streamer_id = st.id \
+             {}",
             where_clause
         );
 
         // Data query with pagination, ordered by start_time descending
+        // Join with streamers table to filter by streamer name if needed
         let data_sql = format!(
-            "SELECT * FROM live_sessions {} ORDER BY start_time DESC LIMIT ? OFFSET ?",
+            "SELECT s.* FROM live_sessions s \
+             LEFT JOIN streamers st ON s.streamer_id = st.id \
+             {} ORDER BY s.start_time DESC LIMIT ? OFFSET ?",
             where_clause
         );
 
@@ -351,6 +360,13 @@ impl SessionRepository for SqlxSessionRepository {
         if let Some(to_date) = &filters.to_date {
             count_query = count_query.bind(to_date.to_rfc3339());
         }
+        if let Some(search) = &filters.search {
+            let pattern = format!("%{}%", search);
+            count_query = count_query
+                .bind(pattern.clone())
+                .bind(pattern.clone())
+                .bind(pattern);
+        }
 
         let total_count = count_query.fetch_one(&self.pool).await? as u64;
 
@@ -366,6 +382,13 @@ impl SessionRepository for SqlxSessionRepository {
         }
         if let Some(to_date) = &filters.to_date {
             data_query = data_query.bind(to_date.to_rfc3339());
+        }
+        if let Some(search) = &filters.search {
+            let pattern = format!("%{}%", search);
+            data_query = data_query
+                .bind(pattern.clone())
+                .bind(pattern.clone())
+                .bind(pattern);
         }
 
         // Bind pagination parameters

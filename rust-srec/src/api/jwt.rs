@@ -48,6 +48,8 @@ pub struct JwtService {
     expiration_secs: u64,
 }
 
+use tracing::info;
+
 impl JwtService {
     /// Create a new JWT service.
     ///
@@ -64,6 +66,29 @@ impl JwtService {
             audience: audience.to_string(),
             expiration_secs: expiration_secs.unwrap_or(3600),
         }
+    }
+
+    /// Create a new JWT service from environment variables.
+    ///
+    /// # Arguments
+    /// * `expiration_secs` - Token expiration time in seconds
+    pub fn from_env(expiration_secs: u64) -> Option<Self> {
+        let secret = std::env::var("JWT_SECRET").ok()?;
+        let issuer = std::env::var("JWT_ISSUER").unwrap_or_else(|_| "rust-srec".to_string());
+        let audience =
+            std::env::var("JWT_AUDIENCE").unwrap_or_else(|_| "rust-srec-api".to_string());
+
+        info!(
+            "JWT service initialized (issuer: {}, audience: {}, expiration: {}s)",
+            issuer, audience, expiration_secs
+        );
+
+        Some(Self::new(
+            &secret,
+            &issuer,
+            &audience,
+            Some(expiration_secs),
+        ))
     }
 
     /// Generate a JWT token for a user.

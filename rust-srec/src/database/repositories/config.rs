@@ -92,7 +92,8 @@ impl ConfigRepository for SqlxConfigRepository {
                 max_concurrent_io_jobs = ?,
                 job_history_retention_days = ?,
                 session_gap_time_secs = ?,
-                pipeline = ?
+                pipeline = ?,
+                log_filter_directive = ?
             WHERE id = ?
             "#,
         )
@@ -115,6 +116,7 @@ impl ConfigRepository for SqlxConfigRepository {
         .bind(config.job_history_retention_days)
         .bind(config.session_gap_time_secs)
         .bind(&config.pipeline)
+        .bind(&config.log_filter_directive)
         .bind(&config.id)
         .execute(&self.pool)
         .await?;
@@ -130,8 +132,9 @@ impl ConfigRepository for SqlxConfigRepository {
                 record_danmu, max_concurrent_downloads, max_concurrent_uploads,
                 streamer_check_delay_ms, proxy_config, offline_check_delay_ms,
                 offline_check_count, default_download_engine, max_concurrent_cpu_jobs,
-                max_concurrent_io_jobs, job_history_retention_days, session_gap_time_secs, pipeline
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                max_concurrent_io_jobs, job_history_retention_days, session_gap_time_secs,
+                pipeline, log_filter_directive
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             "#,
         )
         .bind(&config.id)
@@ -154,6 +157,7 @@ impl ConfigRepository for SqlxConfigRepository {
         .bind(config.job_history_retention_days)
         .bind(config.session_gap_time_secs)
         .bind(&config.pipeline)
+        .bind(&config.log_filter_directive)
         .execute(&self.pool)
         .await?;
         Ok(())

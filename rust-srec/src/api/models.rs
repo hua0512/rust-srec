@@ -244,6 +244,8 @@ pub struct GlobalConfigResponse {
     pub job_history_retention_days: u32,
     pub session_gap_time_secs: u64,
     pub pipeline: Option<String>,
+    /// Log filter directive for dynamic logging (e.g., "rust_srec=debug,sqlx=warn")
+    pub log_filter_directive: String,
 }
 
 /// Request to update global configuration.
@@ -270,6 +272,8 @@ pub struct UpdateGlobalConfigRequest {
     pub session_gap_time_secs: Option<serde_json::Value>,
     /// Global pipeline configuration (JSON serialized Vec<PipelineStep>)
     pub pipeline: Option<serde_json::Value>,
+    /// Log filter directive for dynamic logging
+    pub log_filter_directive: Option<serde_json::Value>,
 }
 
 /// Platform configuration response.
@@ -721,6 +725,8 @@ pub struct SessionFilterParams {
     pub to_date: Option<DateTime<Utc>>,
     /// Only include active sessions
     pub active_only: Option<bool>,
+    /// Search query (matches title, streamer name, etc.)
+    pub search: Option<String>,
 }
 
 // ============================================================================

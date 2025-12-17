@@ -27,6 +27,7 @@ use crate::database::repositories::{
     JobPresetRepository, JobRepository, PipelinePresetRepository, SessionRepository,
 };
 use crate::downloader::DownloadManagerEvent;
+use crate::pipeline::job_queue::JobExecutionInfo;
 
 /// Configuration for the Pipeline Manager.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -538,15 +539,14 @@ where
             ));
         }
 
-        // Resolve all steps config/processor upfront
-        let mut resolved_steps_config: Vec<PipelineStep> = Vec::with_capacity(steps.len());
+        // Resolve all steps (expand workflows/presets)
+        let resolved_steps_config = self.resolve_pipeline(steps).await?;
+        let resolved_len = resolved_steps_config.len();
 
-        for step in &steps {
-            let (processor, config) = self.resolve_step(step).await?;
-            resolved_steps_config.push(PipelineStep::Inline {
-                processor,
-                config: config.unwrap_or(serde_json::Value::Null),
-            });
+        if resolved_steps_config.is_empty() {
+            return Err(crate::Error::Validation(
+                "Pipeline resulted in 0 steps after expansion".to_string(),
+            ));
         }
 
         // Get the first step from resolved list
@@ -558,7 +558,7 @@ where
 
         // Calculate pipeline chain for this job
         // We will store the full remaining steps list (fully resolved) in the job
-        let remaining_steps = if resolved_steps_config.len() > 1 {
+        let remaining_steps = if resolved_len > 1 {
             Some(
                 resolved_steps_config
                     .iter()
@@ -578,8 +578,8 @@ where
                     PipelineStep::Inline { processor, .. } => Some(processor.clone()),
 
                     // These should never happen
-                    PipelineStep::Preset { name } => unreachable!(),
-                    PipelineStep::Workflow { name } => unreachable!(),
+                    PipelineStep::Preset { name: _ } => unreachable!(),
+                    PipelineStep::Workflow { name: _ } => unreachable!(),
                 }
             } else {
                 None
@@ -616,11 +616,10 @@ where
         let mut first_job = first_job.with_pipeline_id(pipeline_id.clone());
 
         // Initialize execution info with step 1/N
-        let mut exec_info = crate::pipeline::job_queue::JobExecutionInfo::new()
-            .with_processor(first_processor.clone());
+        let mut exec_info = JobExecutionInfo::new().with_processor(first_processor.clone());
 
         exec_info.current_step = Some(1);
-        exec_info.total_steps = Some(steps.len() as u32);
+        exec_info.total_steps = Some(resolved_len as u32);
 
         first_job.execution_info = Some(exec_info);
 
@@ -629,13 +628,11 @@ where
 
         info!(
             "Created pipeline {} with {} steps for session {}",
-            pipeline_id,
-            steps.len(),
-            session_id
+            pipeline_id, resolved_len, session_id
         );
 
-        // Convert steps to strings for result (legacy compat)
-        let string_steps: Vec<String> = steps
+        // Use resolved_steps_config to show the actual expanded pipeline steps
+        let string_steps: Vec<String> = resolved_steps_config
             .iter()
             .map(|s| match s {
                 PipelineStep::Preset { name } => name.clone(),
@@ -648,7 +645,7 @@ where
             pipeline_id,
             first_job_id: job_id,
             first_job_type: first_processor,
-            total_steps: steps.len(),
+            total_steps: resolved_len,
             steps: string_steps,
         })
     }
@@ -706,17 +703,20 @@ where
                                 resolved_steps.extend(expanded);
                             }
                             Ok(None) => {
-                                warn!("Workflow '{}' not found, skipping", name);
+                                return Err(crate::Error::Validation(format!(
+                                    "Workflow '{}' not found",
+                                    name
+                                )));
                             }
                             Err(e) => {
                                 warn!("Failed to load workflow '{}': {}", name, e);
                             }
                         }
                     } else {
-                        warn!(
+                        return Err(crate::Error::Validation(format!(
                             "No pipeline preset repository, cannot expand workflow '{}'",
                             name
-                        );
+                        )));
                     }
                 }
                 PipelineStep::Inline { .. } => {
@@ -776,14 +776,6 @@ where
                 debug!("Resolving inline pipeline step: {}", processor);
                 Ok((processor.clone(), Some(config.clone())))
             }
-        }
-    }
-
-    /// Helper to just get processor name (for next_job_type field).
-    async fn resolve_step_processor_name(&self, step: &PipelineStep) -> String {
-        match self.resolve_step(step).await {
-            Ok((proc, _)) => proc,
-            Err(_) => "unknown".to_string(),
         }
     }
 

@@ -5,7 +5,7 @@ import { Trans } from '@lingui/react/macro';
 import { t } from '@lingui/core/macro';
 import { useLingui } from '@lingui/react';
 import { motion } from 'motion/react';
-import { cn } from '@/lib/utils';
+import { cn, getProxiedUrl } from '@/lib/utils';
 import { formatBytes } from '@/lib/format';
 import {
   Monitor,
@@ -39,6 +39,7 @@ export function OverviewTab({
 
   // Find first playable output (not thumbnail or danmu)
   const playableOutput = outputs.find(isPlayable);
+
   return (
     <motion.div
       initial={{ opacity: 0, y: 10 }}
@@ -55,9 +56,9 @@ export function OverviewTab({
               <div className="relative group">
                 <div className="absolute -inset-1 bg-gradient-to-br from-primary to-blue-600 rounded-full opacity-20 group-hover:opacity-40 transition-opacity blur-md" />
                 <Avatar className="h-24 w-24 border-4 border-background shadow-xl relative">
-                  {session.streamer_avatar && (
+                  {getProxiedUrl(session.streamer_avatar) && (
                     <AvatarImage
-                      src={session.streamer_avatar}
+                      src={getProxiedUrl(session.streamer_avatar)}
                       alt={session.streamer_name}
                       className="object-cover"
                     />
@@ -271,10 +272,10 @@ function TimeBlock({ label, date, icon: Icon, delay }: any) {
       <div className="font-mono text-sm font-semibold">
         {date
           ? i18n.date(new Date(date), {
-            hour: 'numeric',
-            minute: 'numeric',
-            second: 'numeric',
-          })
+              hour: 'numeric',
+              minute: 'numeric',
+              second: 'numeric',
+            })
           : '-'}
       </div>
       <div className="text-[10px] text-muted-foreground/60">

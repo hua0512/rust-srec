@@ -104,6 +104,7 @@ async fn list_sessions(
         from_date: filters.from_date,
         to_date: filters.to_date,
         active_only: filters.active_only,
+        search: filters.search,
     };
 
     let effective_limit = pagination.limit.min(100);

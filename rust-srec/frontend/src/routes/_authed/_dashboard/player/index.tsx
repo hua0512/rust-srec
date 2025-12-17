@@ -50,6 +50,7 @@ function PlayerPage() {
   const [players, setPlayers] = useState<PlayerInstance[]>([]);
   const [isImmersive, setIsImmersive] = useState(false);
   const [isAddStreamOpen, setIsAddStreamOpen] = useState(false);
+  const [isParsing, setIsParsing] = useState(false);
 
   const { url } = Route.useSearch();
   const autoPlayProcessed = useRef<string | null>(null);
@@ -77,6 +78,8 @@ function PlayerPage() {
 
   const parseSingleMutation = useMutation({
     mutationFn: (data: { url: string; cookies?: string }) => parseUrl({ data }),
+    onMutate: () => setIsParsing(true),
+    onSettled: () => setIsParsing(false),
     onSuccess: (response, variables) => {
       if (players.some((p) => p.title === variables.url)) {
         toast.warning('This stream is already active');
@@ -120,6 +123,8 @@ function PlayerPage() {
       }));
       return parseUrlBatch({ data: requests });
     },
+    onMutate: () => setIsParsing(true),
+    onSettled: () => setIsParsing(false),
     onSuccess: (responses, variables) => {
       const newPlayers: PlayerInstance[] = [];
       let skippedCount = 0;
@@ -184,8 +189,7 @@ function PlayerPage() {
     );
   };
 
-  const isLoading =
-    parseSingleMutation.isPending || parseBatchMutation.isPending;
+  const isLoading = isParsing;
 
   const playerGrid = (
     <motion.div

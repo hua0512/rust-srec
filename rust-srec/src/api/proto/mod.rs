@@ -15,6 +15,11 @@ pub mod douyin_proto {
     include!(concat!(env!("OUT_DIR"), "/douyin.rs"));
 }
 
+// Log event protobuf types
+pub mod log_event {
+    include!(concat!(env!("OUT_DIR"), "/log_event.rs"));
+}
+
 // Re-export commonly used types
 pub use download_progress::{
     ClientMessage, DownloadCancelled, DownloadCompleted, DownloadFailed, DownloadProgress,

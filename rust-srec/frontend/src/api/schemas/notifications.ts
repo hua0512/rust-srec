@@ -8,6 +8,8 @@ export const DiscordSettingsSchema = z.object({
   webhook_url: z.url(),
   username: z.string().optional(),
   avatar_url: z.url().optional(),
+  min_priority: z.enum(['Low', 'Normal', 'High', 'Critical']).default('Normal'),
+  enabled: z.boolean().default(true),
 });
 
 export const EmailSettingsSchema = z.object({
@@ -16,8 +18,10 @@ export const EmailSettingsSchema = z.object({
   username: z.string().min(1),
   password: z.string().min(1),
   from_address: z.email(),
-  to_addresses: z.array(z.string().email()).min(1),
+  to_addresses: z.array(z.email()).min(1),
   use_tls: z.boolean().default(true),
+  min_priority: z.enum(['Low', 'Normal', 'High', 'Critical']).default('High'),
+  enabled: z.boolean().default(true),
 });
 
 export const WebhookAuthTypeSchema = z.enum([
@@ -41,9 +45,12 @@ export const WebhookAuthSchema = z.discriminatedUnion('type', [
 
 export const WebhookSettingsSchema = z.object({
   url: z.url(),
-  headers: z.array(z.tuple([z.string(), z.string()])).optional(), // Backend uses Vec<(String, String)>
+  headers: z.array(z.tuple([z.string(), z.string()])).optional(),
   method: z.string().default('POST'),
   auth: WebhookAuthSchema.optional(),
+  min_priority: z.enum(['Low', 'Normal', 'High', 'Critical']).default('Low'),
+  enabled: z.boolean().default(true),
+  timeout_secs: z.number().int().positive().default(30),
 });
 
 export const NotificationChannelSchema = z.object({
@@ -109,34 +116,11 @@ export const WebhookChannelFormSchema = z.object({
 
 // Base schema for react-hook-form compatibility - uses generic record for settings
 // and validates the settings based on channel_type via superRefine
-export const ChannelFormSchema = z
-  .object({
-    name: z.string().min(1, 'Name is required'),
-    channel_type: ChannelTypeSchema,
-    settings: z.record(z.string(), z.unknown()),
-  })
-  .superRefine((data, ctx) => {
-    let result;
-    switch (data.channel_type) {
-      case 'Discord':
-        result = DiscordSettingsSchema.safeParse(data.settings);
-        break;
-      case 'Email':
-        result = EmailSettingsSchema.safeParse(data.settings);
-        break;
-      case 'Webhook':
-        result = WebhookSettingsSchema.safeParse(data.settings);
-        break;
-    }
-
-    if (result && !result.success) {
-      result.error.issues.forEach((issue) => {
-        ctx.addIssue({
-          ...issue,
-          path: ['settings', ...issue.path],
-        });
-      });
-    }
-  });
+// Base schema using discriminated union for type-safe settings validation
+export const ChannelFormSchema = z.discriminatedUnion('channel_type', [
+  DiscordChannelFormSchema,
+  EmailChannelFormSchema,
+  WebhookChannelFormSchema,
+]);
 
 export type ChannelFormData = z.infer<typeof ChannelFormSchema>;

@@ -77,6 +77,7 @@ pub struct GlobalConfigExport {
     pub job_history_retention_days: i32,
     pub session_gap_time_secs: i64,
     pub pipeline: Option<String>,
+    pub log_filter_directive: Option<String>,
 }
 
 /// Template for export (uses name as identifier).
@@ -360,6 +361,7 @@ async fn export_config(State(state): State<AppState>) -> Result<impl IntoRespons
             job_history_retention_days: global_config.job_history_retention_days,
             session_gap_time_secs: global_config.session_gap_time_secs,
             pipeline: global_config.pipeline,
+            log_filter_directive: Some(global_config.log_filter_directive),
         },
         templates: templates
             .iter()
@@ -456,9 +458,9 @@ async fn import_config(
     let mode = request.mode;
 
     // Validate schema version
-    if !config.version.starts_with("1.") {
+    if !config.version.starts_with("0.") {
         return Err(ApiError::bad_request(format!(
-            "Unsupported schema version: {}. Expected 1.x",
+            "Unsupported schema version: {}. Expected 0.x",
             config.version
         )));
     }
@@ -511,6 +513,9 @@ async fn import_config(
     global.job_history_retention_days = config.global_config.job_history_retention_days;
     global.session_gap_time_secs = config.global_config.session_gap_time_secs;
     global.pipeline = config.global_config.pipeline;
+    if let Some(log_filter) = config.global_config.log_filter_directive {
+        global.log_filter_directive = log_filter;
+    }
 
     config_service
         .update_global_config(&global)
@@ -910,4 +915,38 @@ async fn import_config(
         message: "Configuration imported successfully".to_string(),
         stats,
     }))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_global_config_export_serialization_with_log_filter() {
+        let export = GlobalConfigExport {
+            output_folder: "test".to_string(),
+            output_filename_template: "test".to_string(),
+            output_file_format: "test".to_string(),
+            min_segment_size_bytes: 0,
+            max_download_duration_secs: 0,
+            max_part_size_bytes: 0,
+            record_danmu: false,
+            max_concurrent_downloads: 0,
+            max_concurrent_uploads: 0,
+            streamer_check_delay_ms: 0,
+            proxy_config: "test".to_string(),
+            offline_check_delay_ms: 0,
+            offline_check_count: 0,
+            default_download_engine: "test".to_string(),
+            max_concurrent_cpu_jobs: 0,
+            max_concurrent_io_jobs: 0,
+            job_history_retention_days: 0,
+            session_gap_time_secs: 0,
+            pipeline: None,
+            log_filter_directive: Some("rust_srec=debug".to_string()),
+        };
+        let json = serde_json::to_string(&export).unwrap();
+        assert!(json.contains("rust_srec=debug"));
+        assert!(json.contains("log_filter_directive"));
+    }
 }

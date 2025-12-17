@@ -53,6 +53,8 @@ pub struct SessionFilters {
     pub to_date: Option<DateTime<Utc>>,
     /// Filter for active sessions only (sessions without an end_time).
     pub active_only: Option<bool>,
+    /// Search query.
+    pub search: Option<String>,
 }
 
 impl SessionFilters {
@@ -81,6 +83,12 @@ impl SessionFilters {
     /// Filter for active sessions only.
     pub fn with_active_only(mut self, active_only: bool) -> Self {
         self.active_only = Some(active_only);
+        self
+    }
+
+    /// Filter by search query.
+    pub fn with_search(mut self, search: impl Into<String>) -> Self {
+        self.search = Some(search.into());
         self
     }
 }

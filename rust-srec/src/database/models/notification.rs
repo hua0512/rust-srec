@@ -92,6 +92,14 @@ pub struct WebhookChannelSettings {
     pub headers: Option<std::collections::HashMap<String, String>>,
     #[serde(default = "default_method")]
     pub method: String,
+    #[serde(default)]
+    pub min_priority: Option<String>,
+    #[serde(default)]
+    pub enabled: Option<bool>,
+    #[serde(default)]
+    pub timeout_secs: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub auth: Option<serde_json::Value>,
 }
 
 fn default_method() -> String {

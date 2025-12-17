@@ -7,15 +7,7 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { Button } from '@/components/ui/button';
-import {
-  MoreHorizontal,
-  RefreshCw,
-  Trash,
-  Edit,
-  Play,
-  Pause,
-  Video,
-} from 'lucide-react';
+import { MoreHorizontal, Trash, Edit, Play, Pause, Video } from 'lucide-react';
 import { Link } from '@tanstack/react-router';
 import { Trans } from '@lingui/react/macro';
 import { z } from 'zod';
@@ -32,7 +24,7 @@ export const StreamActionsMenu = ({
   streamer,
   onDelete,
   onToggle,
-  onCheck,
+  onCheck: _onCheck,
 }: StreamActionsMenuProps) => {
   return (
     <DropdownMenu>
@@ -49,7 +41,8 @@ export const StreamActionsMenu = ({
         <DropdownMenuLabel>
           <Trans>Actions</Trans>
         </DropdownMenuLabel>
-        <DropdownMenuItem
+        {/* Hide for a now, as it is not implemented */}
+        {/* <DropdownMenuItem
           onClick={() => onCheck(streamer.id)}
           className="cursor-pointer group"
         >
@@ -57,7 +50,7 @@ export const StreamActionsMenu = ({
           <span className="group-hover:text-primary transition-colors">
             <Trans>Check Now</Trans>
           </span>
-        </DropdownMenuItem>
+        </DropdownMenuItem> */}
         <DropdownMenuItem
           onClick={() => onToggle(streamer.id, !streamer.enabled)}
           className="cursor-pointer group"

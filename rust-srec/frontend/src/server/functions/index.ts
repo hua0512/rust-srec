@@ -2,6 +2,7 @@ export * from './auth';
 export * from './config';
 export * from './engines';
 export * from './filters';
+export * from './logging';
 export * from './parse';
 export * from './pipeline';
 export * from './sessions';

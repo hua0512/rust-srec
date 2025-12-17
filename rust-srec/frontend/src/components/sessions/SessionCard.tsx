@@ -26,6 +26,9 @@ import { z } from 'zod';
 import { useLingui } from '@lingui/react';
 import { Trans } from '@lingui/react/macro';
 import { t } from '@lingui/core/macro';
+import { formatBytes, formatDuration } from '@/lib/format';
+import { getMediaUrl } from '@/lib/url';
+import { getProxiedUrl } from '@/lib/utils';
 
 type Session = z.infer<typeof SessionSchema>;
 
@@ -74,7 +77,7 @@ export function SessionCard({ session, token }: SessionCardProps) {
         <Avatar className="h-10 w-10 border border-border shadow-2xs group-hover:border-primary/50 transition-colors">
           {session.streamer_avatar && (
             <AvatarImage
-              src={session.streamer_avatar}
+              src={getProxiedUrl(session.streamer_avatar)}
               alt={session.streamer_name}
               className="object-cover"
             />
@@ -217,6 +220,3 @@ export function SessionCard({ session, token }: SessionCardProps) {
     </Card>
   );
 }
-
-import { formatBytes, formatDuration } from '@/lib/format';
-import { getMediaUrl } from '@/lib/url';

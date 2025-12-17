@@ -1,5 +1,5 @@
 import { useEffect } from 'react';
-import { useForm, useWatch } from 'react-hook-form';
+import { useForm, useWatch, Resolver } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import {
   ChannelType,
@@ -41,6 +41,7 @@ import { Loader2, Box } from 'lucide-react';
 import { DiscordForm } from './forms/discord-form';
 import { EmailForm } from './forms/email-form';
 import { WebhookForm } from './forms/webhook-form';
+import { removeEmpty } from '@/lib/format';
 
 interface ChannelFormProps {
   channel?: NotificationChannel | null;
@@ -56,7 +57,7 @@ export function ChannelForm({ channel, open, onOpenChange }: ChannelFormProps) {
   const isEditing = !!channel;
 
   const form = useForm<FormData>({
-    resolver: zodResolver(ChannelFormSchema),
+    resolver: zodResolver(ChannelFormSchema) as Resolver<FormData>,
     defaultValues: {
       name: '',
       channel_type: 'Webhook',
@@ -64,6 +65,10 @@ export function ChannelForm({ channel, open, onOpenChange }: ChannelFormProps) {
         url: '',
         method: 'POST',
         auth: { type: 'None' },
+        min_priority: 'Low',
+        enabled: true,
+        timeout_secs: 30,
+        headers: [],
       },
     },
   });
@@ -94,7 +99,9 @@ export function ChannelForm({ channel, open, onOpenChange }: ChannelFormProps) {
             webhook_url: settings.webhook_url || '',
             username: settings.username,
             avatar_url: settings.avatar_url,
-          } as Record<string, unknown>,
+            min_priority: settings.min_priority || 'Normal',
+            enabled: settings.enabled !== false,
+          },
         });
       } else if (channel.channel_type === 'Email') {
         form.reset({
@@ -108,7 +115,9 @@ export function ChannelForm({ channel, open, onOpenChange }: ChannelFormProps) {
             from_address: settings.from_address || '',
             to_addresses: settings.to_addresses || [],
             use_tls: settings.use_tls ?? true,
-          } as Record<string, unknown>,
+            min_priority: settings.min_priority || 'High',
+            enabled: settings.enabled !== false,
+          },
         });
       } else if (channel.channel_type === 'Webhook') {
         // Map auth to discriminated union format
@@ -131,6 +140,15 @@ export function ChannelForm({ channel, open, onOpenChange }: ChannelFormProps) {
           }
         }
 
+        let headers: [string, string][] = [];
+        if (settings.headers) {
+          if (Array.isArray(settings.headers)) {
+            headers = settings.headers;
+          } else if (typeof settings.headers === 'object') {
+            headers = Object.entries(settings.headers);
+          }
+        }
+
         form.reset({
           name: channel.name,
           channel_type: 'Webhook',
@@ -138,7 +156,11 @@ export function ChannelForm({ channel, open, onOpenChange }: ChannelFormProps) {
             url: settings.url || '',
             method: settings.method || 'POST',
             auth,
-          } as Record<string, unknown>,
+            min_priority: settings.min_priority || 'Low',
+            enabled: settings.enabled !== false,
+            timeout_secs: settings.timeout_secs || 30,
+            headers,
+          },
         });
       }
     } else if (!channel && open) {
@@ -149,7 +171,11 @@ export function ChannelForm({ channel, open, onOpenChange }: ChannelFormProps) {
           url: '',
           method: 'POST',
           auth: { type: 'None' },
-        } as Record<string, unknown>,
+          min_priority: 'Low',
+          enabled: true,
+          timeout_secs: 30,
+          headers: [],
+        },
       });
     }
   }, [channel, open, form]);
@@ -178,12 +204,38 @@ export function ChannelForm({ channel, open, onOpenChange }: ChannelFormProps) {
   });
 
   const onSubmit = (data: FormData) => {
-    // Settings are already in the correct nested structure!
-    const payload = {
+    let finalSettings: any = { ...data.settings };
+
+    // Transform headers array to object for Webhook
+    if (data.channel_type === 'Webhook') {
+      const settings = data.settings;
+      console.log(settings);
+      // Transform headers array to object
+      const headersMap: Record<string, string> = {};
+      if (settings.headers && Array.isArray(settings.headers)) {
+        settings.headers.forEach(([key, value]: any) => {
+          if (key) {
+            headersMap[key] = value;
+          }
+        });
+      }
+
+      // Handle auth: if type is 'None', send null to backend
+      const auth = settings.auth?.type === 'None' ? null : settings.auth;
+
+      finalSettings = {
+        ...settings,
+        headers: headersMap,
+        auth,
+      };
+      console.log('final ', finalSettings);
+    }
+
+    const payload = removeEmpty({
       name: data.name,
       channel_type: data.channel_type as ChannelType,
-      settings: data.settings,
-    };
+      settings: finalSettings,
+    });
 
     if (isEditing) {
       updateMutation.mutate(payload);
@@ -208,7 +260,7 @@ export function ChannelForm({ channel, open, onOpenChange }: ChannelFormProps) {
 
         <Form {...form}>
           <form
-            onSubmit={form.handleSubmit(onSubmit)}
+            onSubmit={form.handleSubmit(onSubmit as any)}
             className="space-y-6 pt-4"
           >
             <div className="grid gap-6">

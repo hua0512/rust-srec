@@ -91,7 +91,6 @@ export const Route = createFileRoute('/_authed/_dashboard/pipeline/jobs/')({
   component: PipelineJobsPage,
 });
 
-
 const PAGE_SIZES = [12, 24, 48, 96];
 
 function PipelineJobsPage() {
@@ -563,15 +562,14 @@ function PipelineJobsPage() {
                 <button
                   key={label}
                   onClick={() => handleStatusChange(value)}
-                  className={`relative px-3 py-1.5 text-sm font-medium rounded-full transition-all duration-200 flex items-center gap-1.5 ${selectedStatus === value
-                    ? 'bg-primary text-primary-foreground shadow-sm'
-                    : 'text-muted-foreground hover:text-foreground hover:bg-muted'
-                    }`}
+                  className={`relative px-3 py-1.5 text-sm font-medium rounded-full transition-all duration-200 flex items-center gap-1.5 ${
+                    selectedStatus === value
+                      ? 'bg-primary text-primary-foreground shadow-sm'
+                      : 'text-muted-foreground hover:text-foreground hover:bg-muted'
+                  }`}
                 >
                   <Icon className="h-3.5 w-3.5" />
-                  <span className="relative z-10">
-                    {label}
-                  </span>
+                  <span className="relative z-10">{label}</span>
                 </button>
               ))}
             </nav>

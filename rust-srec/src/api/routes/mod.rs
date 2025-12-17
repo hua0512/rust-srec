@@ -10,6 +10,7 @@ pub mod export_import;
 pub mod filters;
 pub mod health;
 pub mod job;
+pub mod logging;
 pub mod media;
 pub mod notifications;
 pub mod parse;
@@ -62,6 +63,8 @@ pub fn create_router(state: AppState) -> Router {
         .nest("/api/auth", auth::public_router())
         // WebSocket route with JWT auth via query parameter (not middleware)
         .nest("/api/downloads", downloads::router())
+        // Logging routes with WebSocket (JWT auth via query param)
+        .nest("/api/logging", logging::router())
         // Media route with optional query param auth (not middleware)
         .nest("/api/media", media::router())
         // Merge protected routes

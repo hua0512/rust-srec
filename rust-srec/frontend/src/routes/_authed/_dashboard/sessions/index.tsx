@@ -40,6 +40,7 @@ const searchSchema = z.object({
   page: z.number().optional().catch(1),
   limit: z.number().optional().catch(50),
   streamer_id: z.string().optional(),
+  search: z.string().optional(),
   status: z.enum(['all', 'active', 'completed']).optional().catch('all'),
   timeRange: z
     .enum(['all', 'today', 'yesterday', 'week', 'month', 'custom'])
@@ -108,6 +109,7 @@ function SessionsPage() {
       search.page,
       search.limit,
       search.streamer_id,
+      search.search,
       activeOnly,
       from_date,
       to_date,
@@ -118,6 +120,7 @@ function SessionsPage() {
           page: search.page,
           limit: search.limit,
           streamer_id: search.streamer_id,
+          search: search.search,
           active_only: activeOnly,
           from_date,
           to_date,
@@ -164,21 +167,22 @@ function SessionsPage() {
   }, [totalPages, currentPage]);
 
   const statusFilters = [
-    { value: 'all', label: 'All', icon: Filter },
-    { value: 'active', label: 'Live', icon: Activity },
-    { value: 'completed', label: 'Done', icon: CheckCircle2 },
+    { value: 'all', label: t`All`, icon: Filter },
+    { value: 'active', label: t`Live`, icon: Activity },
+    { value: 'completed', label: t`Done`, icon: CheckCircle2 },
   ];
 
   const timeFilters = [
-    { value: 'all', label: 'All Time' },
-    { value: 'today', label: 'Today' },
-    { value: 'yesterday', label: 'Yesterday' },
-    { value: 'week', label: 'Week' },
-    { value: 'month', label: 'Month' },
+    { value: 'all', label: t`All Time` },
+    { value: 'today', label: t`Today` },
+    { value: 'yesterday', label: t`Yesterday` },
+    { value: 'week', label: t`Week` },
+    { value: 'month', label: t`Month` },
   ];
 
   const hasActiveFilters =
     search.streamer_id ||
+    search.search ||
     (search.status && search.status !== 'all') ||
     (search.timeRange && search.timeRange !== 'all') ||
     search.from;
@@ -237,10 +241,10 @@ function SessionsPage() {
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
                 <Input
                   placeholder={t`Search sessions...`}
-                  value={search.streamer_id || ''}
+                  value={search.search || ''}
                   onChange={(e) =>
                     updateSearch({
-                      streamer_id: e.target.value || undefined,
+                      search: e.target.value || undefined,
                       page: 1,
                     })
                   }
@@ -305,7 +309,7 @@ function SessionsPage() {
                           ? dateRange.to
                             ? `${format(dateRange.from, 'MMM dd')} - ${format(dateRange.to, 'MMM dd')} `
                             : format(dateRange.from, 'MMM dd')
-                          : 'Custom'}
+                          : t`Custom`}
                       </span>
                     </button>
                   </PopoverTrigger>

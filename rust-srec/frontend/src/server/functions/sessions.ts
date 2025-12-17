@@ -20,6 +20,7 @@ export const listSessions = createServerFn({ method: 'GET' })
         active_only?: boolean;
         from_date?: string;
         to_date?: string;
+        search?: string;
       } = {},
     ) => d,
   )
@@ -37,6 +38,7 @@ export const listSessions = createServerFn({ method: 'GET' })
       params.set('active_only', data.active_only.toString());
     if (data.from_date) params.set('from_date', data.from_date);
     if (data.to_date) params.set('to_date', data.to_date);
+    if (data.search) params.set('search', data.search);
 
     const json = await fetchBackend(`/sessions?${params.toString()}`);
 

@@ -39,7 +39,8 @@ import {
   Tag,
   Copy,
 } from 'lucide-react';
-import { Trans, Plural } from '@lingui/react/macro';
+import { Trans } from '@lingui/react/macro';
+import { plural } from '@lingui/core/macro';
 import { useLingui } from '@lingui/react';
 import type { PipelinePreset } from '@/server/functions/pipeline';
 import { DEFAULT_PIPELINE_PRESET_DESCRIPTIONS } from '../presets/default-presets-i18n';
@@ -144,7 +145,10 @@ export function WorkflowCard({
           </CardTitle>
           <div className="flex items-center gap-2">
             <span className="text-[10px] uppercase tracking-wider font-semibold text-muted-foreground/60">
-              <Plural value={steps.length} one="# step" other="# steps" />
+              {plural(steps.length, {
+                one: '# step',
+                other: '# steps',
+              })}
             </span>
           </div>
         </div>
@@ -212,9 +216,8 @@ export function WorkflowCard({
         {/* Pipeline Steps Visualization */}
         <div className="flex items-center gap-1 flex-wrap">
           {steps.map((step, index) => {
-            const stepName = step.type === 'inline'
-              ? step.processor
-              : step.name;
+            const stepName =
+              step.type === 'inline' ? step.processor : step.name;
             const StepIcon = getStepIcon(stepName);
             const color = getStepColor(stepName);
             const isInline = step.type === 'inline';

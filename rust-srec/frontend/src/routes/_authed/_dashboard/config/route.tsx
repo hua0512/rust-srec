@@ -15,6 +15,7 @@ import {
   Palette,
   Share2,
   Archive,
+  Terminal,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { motion } from 'motion/react';
@@ -67,6 +68,12 @@ function ConfigLayout() {
       description: t`Processing nodes`,
     },
     {
+      title: t`Logging`,
+      href: '/config/logging',
+      icon: Terminal,
+      description: t`Log levels & modules`,
+    },
+    {
       title: t`Theme`,
       href: '/config/theme',
       icon: Palette,
@@ -97,7 +104,7 @@ function ConfigLayout() {
 
           <Separator className="opacity-50" />
 
-          <nav className="flex space-x-2 lg:flex-col lg:space-x-0 lg:space-y-2 overflow-x-auto lg:overflow-visible pb-2 lg:pb-0 no-scrollbar">
+          <nav className="flex gap-2 lg:flex-col lg:gap-2 overflow-x-auto lg:overflow-visible pb-2 lg:pb-0 no-scrollbar">
             {sidebarItems.map((item) => {
               const isActive = pathname.includes(item.href);
               return (
@@ -105,35 +112,30 @@ function ConfigLayout() {
                   key={item.href}
                   to={item.href}
                   className={cn(
-                    'group flex min-w-[180px] lg:min-w-0 flex-col gap-1 rounded-xl px-4 py-3 text-sm font-medium transition-all hover:bg-accent',
+                    'group flex shrink-0 lg:shrink items-center gap-2 rounded-xl px-3 py-2 lg:px-4 lg:py-3 text-sm font-medium transition-all hover:bg-accent whitespace-nowrap',
                     isActive
                       ? 'bg-accent/80 text-accent-foreground'
                       : 'text-muted-foreground',
                   )}
                 >
-                  <div className="flex items-center gap-3">
-                    <item.icon
-                      className={cn(
-                        'h-4 w-4 transition-colors',
-                        isActive
-                          ? 'text-primary'
-                          : 'text-muted-foreground group-hover:text-foreground',
-                      )}
-                    />
-                    <span
-                      className={cn(
-                        'font-semibold',
-                        isActive
-                          ? 'text-foreground'
-                          : 'text-muted-foreground group-hover:text-foreground',
-                      )}
-                    >
-                      {item.title}
-                    </span>
-                  </div>
-                  {/* <p className="text-xs text-muted-foreground/60 pl-7 hidden lg:block line-clamp-1">
-                    <Trans>{item.description}</Trans>
-                  </p> */}
+                  <item.icon
+                    className={cn(
+                      'h-4 w-4 transition-colors shrink-0',
+                      isActive
+                        ? 'text-primary'
+                        : 'text-muted-foreground group-hover:text-foreground',
+                    )}
+                  />
+                  <span
+                    className={cn(
+                      'font-semibold',
+                      isActive
+                        ? 'text-foreground'
+                        : 'text-muted-foreground group-hover:text-foreground',
+                    )}
+                  >
+                    {item.title}
+                  </span>
                 </Link>
               );
             })}

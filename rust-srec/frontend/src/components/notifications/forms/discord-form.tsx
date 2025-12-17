@@ -8,7 +8,15 @@ import {
 import { Input } from '@/components/ui/input';
 import { Trans } from '@lingui/react/macro';
 import { Globe, User } from 'lucide-react';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 import { useFormContext } from 'react-hook-form';
+import { Switch } from '@/components/ui/switch';
 
 export function DiscordForm() {
   const form = useFormContext();
@@ -17,7 +25,7 @@ export function DiscordForm() {
     <div className="space-y-4 rounded-xl border border-primary/10 bg-primary/5 p-4">
       <FormField
         control={form.control}
-        name="discord_webhook_url"
+        name="settings.webhook_url"
         render={({ field }) => (
           <FormItem>
             <FormLabel>
@@ -40,7 +48,7 @@ export function DiscordForm() {
       <div className="grid grid-cols-2 gap-4">
         <FormField
           control={form.control}
-          name="discord_username"
+          name="settings.username"
           render={({ field }) => (
             <FormItem>
               <FormLabel>
@@ -62,7 +70,7 @@ export function DiscordForm() {
         />
         <FormField
           control={form.control}
-          name="discord_avatar_url"
+          name="settings.avatar_url"
           render={({ field }) => (
             <FormItem>
               <FormLabel>
@@ -76,6 +84,52 @@ export function DiscordForm() {
                 />
               </FormControl>
               <FormMessage />
+            </FormItem>
+          )}
+        />
+      </div>
+      <div className="pt-2 grid grid-cols-2 gap-4">
+        <FormField
+          control={form.control}
+          name="settings.min_priority"
+          render={({ field }) => (
+            <FormItem>
+              <FormLabel>
+                <Trans>Min Priority</Trans>
+              </FormLabel>
+              <Select onValueChange={field.onChange} defaultValue={field.value}>
+                <FormControl>
+                  <SelectTrigger className="bg-background/50">
+                    <SelectValue />
+                  </SelectTrigger>
+                </FormControl>
+                <SelectContent>
+                  <SelectItem value="Low">Low</SelectItem>
+                  <SelectItem value="Normal">Normal</SelectItem>
+                  <SelectItem value="High">High</SelectItem>
+                  <SelectItem value="Critical">Critical</SelectItem>
+                </SelectContent>
+              </Select>
+              <FormMessage />
+            </FormItem>
+          )}
+        />
+        <FormField
+          control={form.control}
+          name="settings.enabled"
+          render={({ field }) => (
+            <FormItem className="flex flex-row items-center justify-between rounded-lg border border-primary/10 bg-background/50 p-3 shadow-sm h-full">
+              <div className="space-y-0.5">
+                <FormLabel>
+                  <Trans>Enabled</Trans>
+                </FormLabel>
+              </div>
+              <FormControl>
+                <Switch
+                  checked={field.value}
+                  onCheckedChange={field.onChange}
+                />
+              </FormControl>
             </FormItem>
           )}
         />

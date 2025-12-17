@@ -2,17 +2,15 @@ use axum::{
     Json, Router,
     extract::{Path, State},
     http::StatusCode,
-    routing::{delete, get, post, put},
+    routing::{get, post},
 };
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
 use serde_json::Value;
 
 use crate::api::error::ApiError;
 use crate::api::server::AppState;
 use crate::database::models::notification::{ChannelType, NotificationChannelDbModel};
-use crate::notification::events::{
-    NotificationEvent, NotificationEventTypeInfo, notification_event_types,
-};
+use crate::notification::events::{NotificationEventTypeInfo, notification_event_types};
 use crate::notification::service::NotificationChannelInstance;
 
 pub fn router() -> Router<AppState> {

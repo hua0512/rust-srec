@@ -115,16 +115,38 @@ export function StepLibrary({
 
   // Auto-fetch when in view
   useEffect(() => {
-    if (activeTab === 'presets' && presetsInView && hasNextPresets && !isFetchingNextPresets) {
+    if (
+      activeTab === 'presets' &&
+      presetsInView &&
+      hasNextPresets &&
+      !isFetchingNextPresets
+    ) {
       fetchNextPresets();
     }
-  }, [activeTab, presetsInView, hasNextPresets, isFetchingNextPresets, fetchNextPresets]);
+  }, [
+    activeTab,
+    presetsInView,
+    hasNextPresets,
+    isFetchingNextPresets,
+    fetchNextPresets,
+  ]);
 
   useEffect(() => {
-    if (activeTab === 'workflows' && workflowsInView && hasNextWorkflows && !isFetchingNextWorkflows) {
+    if (
+      activeTab === 'workflows' &&
+      workflowsInView &&
+      hasNextWorkflows &&
+      !isFetchingNextWorkflows
+    ) {
       fetchNextWorkflows();
     }
-  }, [activeTab, workflowsInView, hasNextWorkflows, isFetchingNextWorkflows, fetchNextWorkflows]);
+  }, [
+    activeTab,
+    workflowsInView,
+    hasNextWorkflows,
+    isFetchingNextWorkflows,
+    fetchNextWorkflows,
+  ]);
 
   // Flatten pages
   const presets = presetsData?.pages.flatMap((page) => page.presets) || [];
@@ -194,7 +216,8 @@ export function StepLibrary({
               <div className="flex items-center gap-2 text-xs font-medium text-muted-foreground/70 pt-1">
                 <Tag className="h-3 w-3" />
                 <span>
-                  {presetsData?.pages[0]?.total ?? 0} <Trans>Presets Available</Trans>
+                  {presetsData?.pages[0]?.total ?? 0}{' '}
+                  <Trans>Presets Available</Trans>
                 </span>
               </div>
             </div>
@@ -205,14 +228,20 @@ export function StepLibrary({
         side="left"
         className="w-full sm:max-w-[600px] flex flex-col p-0 gap-0 border-r border-border/60 bg-background/95 backdrop-blur-2xl shadow-2xl"
       >
-        <Tabs value={activeTab} onValueChange={setActiveTab} className="h-full flex flex-col">
+        <Tabs
+          value={activeTab}
+          onValueChange={setActiveTab}
+          className="h-full flex flex-col"
+        >
           <SheetHeader className="px-6 py-6 border-b border-border/40 space-y-4 bg-muted/5">
             <div className="space-y-1">
               <SheetTitle className="text-2xl font-bold tracking-tight">
                 <Trans>Add Pipeline Step</Trans>
               </SheetTitle>
               <SheetDescription className="text-base">
-                <Trans>Select a processing job or workflow to add to your pipeline.</Trans>
+                <Trans>
+                  Select a processing job or workflow to add to your pipeline.
+                </Trans>
               </SheetDescription>
             </div>
 
@@ -309,7 +338,7 @@ export function StepLibrary({
                                 'border-border/50 hover:border-primary/30',
                                 'shadow-sm hover:shadow-md hover:shadow-primary/5',
                                 isAdded &&
-                                'ring-1 ring-green-500/30 bg-green-50/50 dark:bg-green-950/10',
+                                  'ring-1 ring-green-500/30 bg-green-50/50 dark:bg-green-950/10',
                               )}
                             >
                               <div className="flex items-start justify-between w-full relative z-10">
@@ -392,7 +421,10 @@ export function StepLibrary({
                     )}
 
                     {hasNextPresets && (
-                      <div ref={presetsRef} className="flex justify-center py-6">
+                      <div
+                        ref={presetsRef}
+                        className="flex justify-center py-6"
+                      >
                         {isFetchingNextPresets && (
                           <div className="flex items-center gap-2 text-muted-foreground text-sm">
                             <Loader2 className="h-4 w-4 animate-spin" />
@@ -443,7 +475,7 @@ export function StepLibrary({
                                 'border-border/50 hover:border-primary/30',
                                 'shadow-sm hover:shadow-md hover:shadow-primary/5',
                                 isAdded &&
-                                'ring-1 ring-green-500/30 bg-green-50/50 dark:bg-green-950/10',
+                                  'ring-1 ring-green-500/30 bg-green-50/50 dark:bg-green-950/10',
                               )}
                             >
                               <div className="flex items-start justify-between w-full relative z-10">
@@ -480,7 +512,9 @@ export function StepLibrary({
                                     {workflow.description}
                                   </p>
                                 )}
-                                {!workflow.description && <div className="h-9" />}
+                                {!workflow.description && (
+                                  <div className="h-9" />
+                                )}
                               </div>
 
                               {/* Hover Action */}
@@ -518,7 +552,10 @@ export function StepLibrary({
                     )}
 
                     {hasNextWorkflows && (
-                      <div ref={workflowsRef} className="flex justify-center py-6">
+                      <div
+                        ref={workflowsRef}
+                        className="flex justify-center py-6"
+                      >
                         {isFetchingNextWorkflows && (
                           <div className="flex items-center gap-2 text-muted-foreground text-sm">
                             <Loader2 className="h-4 w-4 animate-spin" />

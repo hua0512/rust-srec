@@ -29,6 +29,7 @@ import { Route as AuthedDashboardStreamersNewRouteImport } from './routes/_authe
 import { Route as AuthedDashboardSessionsSessionIdRouteImport } from './routes/_authed/_dashboard/sessions/$sessionId'
 import { Route as AuthedDashboardPipelineOutputsRouteImport } from './routes/_authed/_dashboard/pipeline/outputs'
 import { Route as AuthedDashboardConfigThemeRouteImport } from './routes/_authed/_dashboard/config/theme'
+import { Route as AuthedDashboardConfigLoggingRouteImport } from './routes/_authed/_dashboard/config/logging'
 import { Route as AuthedDashboardConfigGlobalRouteImport } from './routes/_authed/_dashboard/config/global'
 import { Route as AuthedDashboardConfigBackupRouteImport } from './routes/_authed/_dashboard/config/backup'
 import { Route as AuthedDashboardPipelineWorkflowsIndexRouteImport } from './routes/_authed/_dashboard/pipeline/workflows/index'
@@ -157,6 +158,12 @@ const AuthedDashboardConfigThemeRoute =
   AuthedDashboardConfigThemeRouteImport.update({
     id: '/theme',
     path: '/theme',
+    getParentRoute: () => AuthedDashboardConfigRouteRoute,
+  } as any)
+const AuthedDashboardConfigLoggingRoute =
+  AuthedDashboardConfigLoggingRouteImport.update({
+    id: '/logging',
+    path: '/logging',
     getParentRoute: () => AuthedDashboardConfigRouteRoute,
   } as any)
 const AuthedDashboardConfigGlobalRoute =
@@ -290,6 +297,7 @@ export interface FileRoutesByFullPath {
   '/dashboard': typeof AuthedDashboardDashboardRoute
   '/config/backup': typeof AuthedDashboardConfigBackupRoute
   '/config/global': typeof AuthedDashboardConfigGlobalRoute
+  '/config/logging': typeof AuthedDashboardConfigLoggingRoute
   '/config/theme': typeof AuthedDashboardConfigThemeRoute
   '/pipeline/outputs': typeof AuthedDashboardPipelineOutputsRoute
   '/sessions/$sessionId': typeof AuthedDashboardSessionsSessionIdRoute
@@ -329,6 +337,7 @@ export interface FileRoutesByTo {
   '/dashboard': typeof AuthedDashboardDashboardRoute
   '/config/backup': typeof AuthedDashboardConfigBackupRoute
   '/config/global': typeof AuthedDashboardConfigGlobalRoute
+  '/config/logging': typeof AuthedDashboardConfigLoggingRoute
   '/config/theme': typeof AuthedDashboardConfigThemeRoute
   '/pipeline/outputs': typeof AuthedDashboardPipelineOutputsRoute
   '/sessions/$sessionId': typeof AuthedDashboardSessionsSessionIdRoute
@@ -372,6 +381,7 @@ export interface FileRoutesById {
   '/_authed/_dashboard/dashboard': typeof AuthedDashboardDashboardRoute
   '/_authed/_dashboard/config/backup': typeof AuthedDashboardConfigBackupRoute
   '/_authed/_dashboard/config/global': typeof AuthedDashboardConfigGlobalRoute
+  '/_authed/_dashboard/config/logging': typeof AuthedDashboardConfigLoggingRoute
   '/_authed/_dashboard/config/theme': typeof AuthedDashboardConfigThemeRoute
   '/_authed/_dashboard/pipeline/outputs': typeof AuthedDashboardPipelineOutputsRoute
   '/_authed/_dashboard/sessions/$sessionId': typeof AuthedDashboardSessionsSessionIdRoute
@@ -413,6 +423,7 @@ export interface FileRouteTypes {
     | '/dashboard'
     | '/config/backup'
     | '/config/global'
+    | '/config/logging'
     | '/config/theme'
     | '/pipeline/outputs'
     | '/sessions/$sessionId'
@@ -452,6 +463,7 @@ export interface FileRouteTypes {
     | '/dashboard'
     | '/config/backup'
     | '/config/global'
+    | '/config/logging'
     | '/config/theme'
     | '/pipeline/outputs'
     | '/sessions/$sessionId'
@@ -494,6 +506,7 @@ export interface FileRouteTypes {
     | '/_authed/_dashboard/dashboard'
     | '/_authed/_dashboard/config/backup'
     | '/_authed/_dashboard/config/global'
+    | '/_authed/_dashboard/config/logging'
     | '/_authed/_dashboard/config/theme'
     | '/_authed/_dashboard/pipeline/outputs'
     | '/_authed/_dashboard/sessions/$sessionId'
@@ -674,6 +687,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthedDashboardConfigThemeRouteImport
       parentRoute: typeof AuthedDashboardConfigRouteRoute
     }
+    '/_authed/_dashboard/config/logging': {
+      id: '/_authed/_dashboard/config/logging'
+      path: '/logging'
+      fullPath: '/config/logging'
+      preLoaderRoute: typeof AuthedDashboardConfigLoggingRouteImport
+      parentRoute: typeof AuthedDashboardConfigRouteRoute
+    }
     '/_authed/_dashboard/config/global': {
       id: '/_authed/_dashboard/config/global'
       path: '/global'
@@ -820,6 +840,7 @@ declare module '@tanstack/react-router' {
 interface AuthedDashboardConfigRouteRouteChildren {
   AuthedDashboardConfigBackupRoute: typeof AuthedDashboardConfigBackupRoute
   AuthedDashboardConfigGlobalRoute: typeof AuthedDashboardConfigGlobalRoute
+  AuthedDashboardConfigLoggingRoute: typeof AuthedDashboardConfigLoggingRoute
   AuthedDashboardConfigThemeRoute: typeof AuthedDashboardConfigThemeRoute
   AuthedDashboardConfigEnginesEngineIdRoute: typeof AuthedDashboardConfigEnginesEngineIdRoute
   AuthedDashboardConfigEnginesCreateRoute: typeof AuthedDashboardConfigEnginesCreateRoute
@@ -835,6 +856,7 @@ const AuthedDashboardConfigRouteRouteChildren: AuthedDashboardConfigRouteRouteCh
   {
     AuthedDashboardConfigBackupRoute: AuthedDashboardConfigBackupRoute,
     AuthedDashboardConfigGlobalRoute: AuthedDashboardConfigGlobalRoute,
+    AuthedDashboardConfigLoggingRoute: AuthedDashboardConfigLoggingRoute,
     AuthedDashboardConfigThemeRoute: AuthedDashboardConfigThemeRoute,
     AuthedDashboardConfigEnginesEngineIdRoute:
       AuthedDashboardConfigEnginesEngineIdRoute,

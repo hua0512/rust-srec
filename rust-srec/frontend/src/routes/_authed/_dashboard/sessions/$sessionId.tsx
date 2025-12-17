@@ -302,7 +302,7 @@ function SessionDetailPage() {
                 <DanmuViewer
                   url={
                     getMediaUrl(
-                      `/media/${playingOutput.id}/content`,
+                      `/api/media/${playingOutput.id}/content`,
                       user?.token?.access_token,
                     ) || ''
                   }
@@ -313,7 +313,7 @@ function SessionDetailPage() {
                 <PlayerCard
                   url={
                     getMediaUrl(
-                      `/media/${playingOutput.id}/content`,
+                      `/api/media/${playingOutput.id}/content`,
                       user?.token?.access_token,
                     ) || ''
                   }

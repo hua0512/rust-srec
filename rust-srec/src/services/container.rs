@@ -36,6 +36,7 @@ use crate::database::repositories::{
 use crate::downloader::{
     DownloadConfig, DownloadManager, DownloadManagerConfig, DownloadManagerEvent,
 };
+use crate::logging::LoggingConfig;
 use crate::metrics::{HealthChecker, MetricsCollector, PrometheusExporter};
 use crate::monitor::{MonitorEvent, MonitorEventBroadcaster, StreamMonitor};
 use crate::notification::{NotificationService, NotificationServiceConfig};
@@ -97,6 +98,8 @@ pub struct ServiceContainer {
     api_server_config: ApiServerConfig,
     /// Cancellation token for graceful shutdown.
     cancellation_token: CancellationToken,
+    /// Logging configuration
+    logging_config: std::sync::OnceLock<Arc<LoggingConfig>>,
 }
 
 impl ServiceContainer {
@@ -231,6 +234,7 @@ impl ServiceContainer {
             stream_monitor,
             api_server_config: ApiServerConfig::from_env_or_default(),
             cancellation_token,
+            logging_config: std::sync::OnceLock::new(),
         })
     }
 
@@ -362,6 +366,7 @@ impl ServiceContainer {
             stream_monitor,
             api_server_config: api_config,
             cancellation_token,
+            logging_config: std::sync::OnceLock::new(),
         })
     }
 
@@ -449,9 +454,8 @@ impl ServiceContainer {
         // Create AuthConfig from environment first (single source of truth for token expiration)
         let auth_config = AuthConfig::from_env();
 
-        // Create JWT service
         let jwt_service =
-            Self::create_jwt_service_from_env(auth_config.access_token_expiration_secs);
+            JwtService::from_env(auth_config.access_token_expiration_secs).map(Arc::new);
 
         // Create AuthService if JWT is configured
         let auth_service = if let Some(ref jwt) = jwt_service {
@@ -494,6 +498,11 @@ impl ServiceContainer {
             )))
             .with_notification_repository(self.notification_repository.clone())
             .with_notification_service(self.notification_service.clone());
+
+        // Wire logging config if available
+        if let Some(logging_config) = self.logging_config.get().cloned() {
+            state = state.with_logging_config(logging_config);
+        }
 
         let server = ApiServer::with_state(self.api_server_config.clone(), state);
         let cancel_token = self.cancellation_token.clone();
@@ -1592,34 +1601,9 @@ impl ServiceContainer {
         &self.monitor_event_broadcaster
     }
 
-    /// Create JWT service from environment variables.
-    ///
-    /// Required environment variable:
-    /// - `JWT_SECRET`: Secret key for signing tokens
-    ///
-    /// Optional environment variables:
-    /// - `JWT_ISSUER`: Token issuer (default: "rust-srec")
-    /// - `JWT_AUDIENCE`: Token audience (default: "rust-srec-api")
-    ///
-    /// # Arguments
-    /// * `expiration_secs` - Token expiration in seconds (from AuthConfig)
-    fn create_jwt_service_from_env(expiration_secs: u64) -> Option<Arc<JwtService>> {
-        let secret = std::env::var("JWT_SECRET").ok()?;
-        let issuer = std::env::var("JWT_ISSUER").unwrap_or_else(|_| "rust-srec".to_string());
-        let audience =
-            std::env::var("JWT_AUDIENCE").unwrap_or_else(|_| "rust-srec-api".to_string());
-
-        info!(
-            "JWT authentication enabled (issuer: {}, audience: {}, expiration: {}s)",
-            issuer, audience, expiration_secs
-        );
-
-        Some(Arc::new(JwtService::new(
-            &secret,
-            &issuer,
-            &audience,
-            Some(expiration_secs),
-        )))
+    /// Set the logging configuration
+    pub fn set_logging_config(&self, config: Arc<LoggingConfig>) {
+        self.logging_config.get_or_init(|| config);
     }
 }
 

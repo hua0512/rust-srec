@@ -11,6 +11,13 @@ import { Switch } from '@/components/ui/switch';
 import { TagInput } from '@/components/ui/tag-input';
 import { Trans } from '@lingui/react/macro';
 import { Globe, Hash, User, Shield, Mail } from 'lucide-react';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 import { useFormContext } from 'react-hook-form';
 
 export function EmailForm() {
@@ -22,7 +29,7 @@ export function EmailForm() {
         <div className="col-span-2">
           <FormField
             control={form.control}
-            name="smtp_host"
+            name="settings.smtp_host"
             render={({ field }) => (
               <FormItem>
                 <FormLabel>
@@ -45,7 +52,7 @@ export function EmailForm() {
         </div>
         <FormField
           control={form.control}
-          name="smtp_port"
+          name="settings.smtp_port"
           render={({ field }) => (
             <FormItem>
               <FormLabel>
@@ -72,7 +79,7 @@ export function EmailForm() {
       <div className="grid grid-cols-2 gap-4">
         <FormField
           control={form.control}
-          name="email_username"
+          name="settings.username"
           render={({ field }) => (
             <FormItem>
               <FormLabel>
@@ -90,7 +97,7 @@ export function EmailForm() {
         />
         <FormField
           control={form.control}
-          name="email_password"
+          name="settings.password"
           render={({ field }) => (
             <FormItem>
               <FormLabel>
@@ -114,7 +121,7 @@ export function EmailForm() {
 
       <FormField
         control={form.control}
-        name="from_address"
+        name="settings.from_address"
         render={({ field }) => (
           <FormItem>
             <FormLabel>
@@ -137,7 +144,7 @@ export function EmailForm() {
 
       <FormField
         control={form.control}
-        name="to_addresses"
+        name="settings.to_addresses"
         render={({ field }) => (
           <FormItem>
             <FormLabel>
@@ -160,25 +167,71 @@ export function EmailForm() {
         )}
       />
 
-      <FormField
-        control={form.control}
-        name="use_tls"
-        render={({ field }) => (
-          <FormItem className="flex flex-row items-center justify-between rounded-lg border border-primary/10 bg-background/50 p-3 shadow-sm">
-            <div className="space-y-0.5">
+      <div className="grid grid-cols-3 gap-4">
+        <FormField
+          control={form.control}
+          name="settings.min_priority"
+          render={({ field }) => (
+            <FormItem>
               <FormLabel>
-                <Trans>Use TLS/StartTLS</Trans>
+                <Trans>Min Priority</Trans>
               </FormLabel>
-              <FormDescription>
-                <Trans>Enable encryption for secure communication</Trans>
-              </FormDescription>
-            </div>
-            <FormControl>
-              <Switch checked={field.value} onCheckedChange={field.onChange} />
-            </FormControl>
-          </FormItem>
-        )}
-      />
+              <Select onValueChange={field.onChange} defaultValue={field.value}>
+                <FormControl>
+                  <SelectTrigger className="bg-background/50">
+                    <SelectValue />
+                  </SelectTrigger>
+                </FormControl>
+                <SelectContent>
+                  <SelectItem value="Low">Low</SelectItem>
+                  <SelectItem value="Normal">Normal</SelectItem>
+                  <SelectItem value="High">High</SelectItem>
+                  <SelectItem value="Critical">Critical</SelectItem>
+                </SelectContent>
+              </Select>
+              <FormMessage />
+            </FormItem>
+          )}
+        />
+        <FormField
+          control={form.control}
+          name="settings.use_tls"
+          render={({ field }) => (
+            <FormItem className="flex flex-row items-center justify-between rounded-lg border border-primary/10 bg-background/50 p-3 shadow-sm h-full">
+              <div className="space-y-0.5">
+                <FormLabel>
+                  <Trans>Use TLS</Trans>
+                </FormLabel>
+              </div>
+              <FormControl>
+                <Switch
+                  checked={field.value}
+                  onCheckedChange={field.onChange}
+                />
+              </FormControl>
+            </FormItem>
+          )}
+        />
+        <FormField
+          control={form.control}
+          name="settings.enabled"
+          render={({ field }) => (
+            <FormItem className="flex flex-row items-center justify-between rounded-lg border border-primary/10 bg-background/50 p-3 shadow-sm h-full">
+              <div className="space-y-0.5">
+                <FormLabel>
+                  <Trans>Enabled</Trans>
+                </FormLabel>
+              </div>
+              <FormControl>
+                <Switch
+                  checked={field.value}
+                  onCheckedChange={field.onChange}
+                />
+              </FormControl>
+            </FormItem>
+          )}
+        />
+      </div>
     </div>
   );
 }

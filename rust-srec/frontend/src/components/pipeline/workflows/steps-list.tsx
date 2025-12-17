@@ -112,9 +112,8 @@ export function StepsList({
           <AnimatePresence mode="popLayout">
             {steps.map((step, index) => {
               const isInline = step.type === 'inline';
-              const stepName = step.type === 'inline'
-                ? step.processor
-                : step.name;
+              const stepName =
+                step.type === 'inline' ? step.processor : step.name;
               const presetInfo = getPresetInfo(step);
               const Icon = presetInfo
                 ? getStepIcon(presetInfo.processor)
@@ -125,9 +124,9 @@ export function StepsList({
               // Use different color style for inline detached steps to distinguish them
               let colorClass = presetInfo
                 ? getStepColor(
-                  presetInfo.processor,
-                  presetInfo.category || undefined,
-                )
+                    presetInfo.processor,
+                    presetInfo.category || undefined,
+                  )
                 : 'from-muted/20 to-muted/10 text-muted-foreground border-border';
 
               if (isInline && !presetInfo) {
@@ -182,7 +181,7 @@ export function StepsList({
 
                     <div className="flex-1 min-w-0 flex flex-col justify-center">
                       <div className="flex items-center gap-2">
-                        <span className="font-semibold tracking-tight truncate text-foreground/90">
+                        <span className="font-semibold tracking-tight truncate text-foreground/90 min-w-0">
                           {isInline ? (
                             <Trans>{stepName} (Custom)</Trans>
                           ) : (

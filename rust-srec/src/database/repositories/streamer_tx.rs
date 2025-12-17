@@ -5,7 +5,7 @@
 //! (e.g., session management, outbox events).
 
 use chrono::{DateTime, Utc};
-use sqlx::{Sqlite, SqliteConnection};
+use sqlx::SqliteConnection;
 
 use crate::Result;
 

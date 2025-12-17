@@ -26,7 +26,8 @@ CREATE TABLE global_config (
     max_concurrent_io_jobs INTEGER NOT NULL DEFAULT 8,
     job_history_retention_days INTEGER NOT NULL DEFAULT 30,
     session_gap_time_secs INTEGER NOT NULL DEFAULT 3600,
-    pipeline TEXT
+    pipeline TEXT,
+    log_filter_directive TEXT NOT NULL DEFAULT 'rust_srec=info,sqlx=warn,mesio_engine=info,flv=info,hls=info'
 );
 
 -- `platform_config` table: Stores settings specific to each supported streaming platform.
@@ -495,7 +496,8 @@ INSERT INTO global_config (
     max_concurrent_cpu_jobs,
     max_concurrent_io_jobs,
     job_history_retention_days,
-    session_gap_time_secs
+    session_gap_time_secs,
+    log_filter_directive
 ) VALUES (
     'global-configuration',
     './downloads',
@@ -515,7 +517,8 @@ INSERT INTO global_config (
     0,                       -- Auto
     8,
     30,
-    3600                      -- 1 hour
+    3600,                    -- 1 hour
+    'rust_srec=info,sqlx=warn,mesio_engine=info,flv=info,hls=info'
 );
 
 -- ============================================

@@ -558,19 +558,28 @@ impl NotificationService {
                     }
                 }
 
+                let auth = if let Some(auth_val) = settings.auth {
+                    match serde_json::from_value::<super::channels::WebhookAuth>(auth_val.clone()) {
+                        Ok(a) => Some(a),
+                        Err(e) => {
+                            warn!("Failed to parse webhook auth for channel: {}", e);
+                            None
+                        }
+                    }
+                } else {
+                    None
+                };
+
                 Arc::new(WebhookChannel::new(super::channels::WebhookConfig {
                     id: None,
                     name: None,
-                    enabled: true,
+                    enabled: settings.enabled.unwrap_or(true),
                     url: settings.url,
                     method: settings.method,
                     headers: headers_vec,
-                    auth: None,
+                    auth,
                     min_priority,
-                    timeout_secs: settings_json
-                        .get("timeout_secs")
-                        .and_then(|v| v.as_u64())
-                        .unwrap_or(30),
+                    timeout_secs: settings.timeout_secs.unwrap_or(30),
                 }))
             }
         };

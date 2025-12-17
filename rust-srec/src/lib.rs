@@ -9,6 +9,7 @@ pub mod database;
 pub mod domain;
 pub mod downloader;
 pub mod error;
+pub mod logging;
 pub mod metrics;
 pub mod monitor;
 pub mod notification;

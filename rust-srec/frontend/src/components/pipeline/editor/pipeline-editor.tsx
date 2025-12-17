@@ -38,7 +38,7 @@ export function PipelineEditor({
 
   // Extract step names for the step library (to prevent duplicate additions)
   const currentStepNames = steps.map((s) =>
-    s.type === 'inline' ? s.processor : s.name
+    s.type === 'inline' ? s.processor : s.name,
   );
 
   return (

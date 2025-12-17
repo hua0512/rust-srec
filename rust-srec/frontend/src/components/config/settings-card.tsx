@@ -38,26 +38,26 @@ export function SettingsCard({
       )}
     >
       <CardHeader className="space-y-1">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-3">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+          <div className="flex items-start sm:items-center gap-3">
             <div
               className={cn(
-                'p-2.5 rounded-xl ring-1 ring-inset ring-black/5 dark:ring-white/5 transition-colors duration-300 group-hover:scale-105',
+                'p-2.5 rounded-xl ring-1 ring-inset ring-black/5 dark:ring-white/5 transition-colors duration-300 group-hover:scale-105 shrink-0',
                 iconBgColor,
               )}
             >
               <Icon className={cn('w-5 h-5', iconColor)} />
             </div>
-            <div>
-              <CardTitle className="text-lg font-semibold tracking-tight">
+            <div className="space-y-1">
+              <CardTitle className="text-lg font-semibold tracking-tight leading-none">
                 {title}
               </CardTitle>
-              <CardDescription className="text-sm text-muted-foreground/80 mt-1">
+              <CardDescription className="text-sm text-muted-foreground/80 leading-snug">
                 {description}
               </CardDescription>
             </div>
           </div>
-          {action && <div>{action}</div>}
+          {action && <div className="self-end sm:self-auto">{action}</div>}
         </div>
       </CardHeader>
       <CardContent className="pt-2">{children}</CardContent>

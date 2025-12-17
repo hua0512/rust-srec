@@ -24,7 +24,6 @@ export function RecordingsTab({
 }: RecordingsTabProps) {
   const { i18n } = useLingui();
 
-
   return (
     <motion.div
       initial={{ opacity: 0, y: 10 }}

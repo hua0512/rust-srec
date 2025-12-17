@@ -96,6 +96,7 @@ fn map_global_config_to_response(config: GlobalConfigDbModel) -> GlobalConfigRes
         job_history_retention_days: config.job_history_retention_days as u32,
         session_gap_time_secs: config.session_gap_time_secs as u64,
         pipeline: config.pipeline,
+        log_filter_directive: config.log_filter_directive,
     }
 }
 
@@ -345,6 +346,7 @@ mod tests {
             job_history_retention_days: 30,
             session_gap_time_secs: 3600,
             pipeline: None,
+            log_filter_directive: "rust_srec=info".to_string(),
         };
 
         let json = serde_json::to_string(&response).unwrap();
@@ -495,6 +497,7 @@ mod property_tests {
                 proxy_config: proxy_config.clone().map(|v| serde_json::json!(v)),
                 session_gap_time_secs: None,
                 pipeline: None,
+                log_filter_directive: None,
             };
 
             // Apply the update

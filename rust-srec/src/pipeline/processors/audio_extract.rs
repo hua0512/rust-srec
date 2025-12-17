@@ -481,8 +481,10 @@ impl Processor for AudioExtractProcessor {
 
         // Requirements: 2.5 - Record output file path in job outputs
         // Requirements: 11.5 - Track succeeded inputs for partial failure reporting
+        // Passthrough: include the original video along with the extracted audio
+        // This allows downstream processors (like rclone) to receive all files
         Ok(ProcessorOutput {
-            outputs: vec![output_path.clone()],
+            outputs: vec![input_path.clone(), output_path.clone()],
             duration_secs: command_output.duration,
             metadata: Some(
                 serde_json::json!({
@@ -492,6 +494,7 @@ impl Processor for AudioExtractProcessor {
                     "channels": config.channels,
                     "input": input_path,
                     "output": output_path,
+                    "passthrough": true,
                 })
                 .to_string(),
             ),

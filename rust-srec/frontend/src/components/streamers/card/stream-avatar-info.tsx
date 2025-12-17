@@ -14,7 +14,7 @@ import {
   AlertTriangle,
   Activity,
 } from 'lucide-react';
-import { cn, getPlatformFromUrl } from '../../../lib/utils';
+import { cn, getPlatformFromUrl, getProxiedUrl } from '@/lib/utils';
 import { Trans } from '@lingui/react/macro';
 import { z } from 'zod';
 import { StreamerSchema } from '@/api/schemas';
@@ -48,7 +48,7 @@ export const StreamAvatarInfo = ({ streamer }: StreamAvatarInfoProps) => {
     <div className="flex items-center gap-3">
       <Avatar className="h-10 w-10 border border-border/60 shadow-sm transition-transform group-hover:scale-105">
         <AvatarImage
-          src={streamer.avatar_url || undefined}
+          src={getProxiedUrl(streamer.avatar_url) || undefined}
           alt={streamer.name}
         />
         <AvatarFallback className="text-xs bg-muted text-muted-foreground font-medium">

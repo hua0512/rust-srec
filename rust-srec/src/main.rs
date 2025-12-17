@@ -6,30 +6,16 @@
 use std::sync::Arc;
 
 use rust_srec::database;
+use rust_srec::logging::init_logging;
 use rust_srec::services::ServiceContainer;
 use tracing::{error, info, warn};
-use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    // Initialize logging
+    // Initialize logging with reloadable filter
     let log_dir = std::env::var("LOG_DIR").unwrap_or_else(|_| "logs".to_string());
-    let file_appender = tracing_appender::rolling::daily(&log_dir, "rust-srec.log");
-    let (non_blocking, _guard) = tracing_appender::non_blocking(file_appender);
-
-    tracing_subscriber::registry()
-        .with(
-            tracing_subscriber::EnvFilter::try_from_default_env().unwrap_or_else(|_| {
-                "rust_srec=trace,sqlx=warn,mesio=debug,flv=debug,platforms_parser=debug".into()
-            }),
-        )
-        .with(tracing_subscriber::fmt::layer())
-        .with(
-            tracing_subscriber::fmt::layer()
-                .with_writer(non_blocking)
-                .with_ansi(false),
-        )
-        .init();
+    let (logging_config, _guard) = init_logging(&log_dir)
+        .map_err(|e| anyhow::anyhow!("Failed to initialize logging: {}", e))?;
 
     info!("Starting rust-srec v{}", env!("CARGO_PKG_VERSION"));
 
@@ -51,6 +37,17 @@ async fn main() -> anyhow::Result<()> {
     // Create service container
     info!("Initializing services...");
     let container = Arc::new(ServiceContainer::new(pool).await?);
+
+    // Apply persisted log filter from database
+    logging_config
+        .apply_persisted_filter(&container.config_service)
+        .await;
+
+    // Start log retention cleanup task
+    logging_config.start_retention_cleanup(container.cancellation_token());
+
+    // Store logging config in container for API access
+    container.set_logging_config(logging_config.clone());
 
     // Initialize all services
     container.initialize().await?;

@@ -606,17 +606,27 @@ impl Processor for RemuxProcessor {
         let output_size_bytes = tokio::fs::metadata(output_path).await.ok().map(|m| m.len());
 
         // Requirements: 11.5 - Track succeeded inputs for partial failure reporting
+        // Passthrough: when not removing input, include it in outputs for downstream processors
+        let outputs = if config.remove_input_on_success {
+            // Input was deleted, only output the remuxed file
+            vec![output_path.to_string()]
+        } else {
+            // Input preserved, include both for downstream processors (like rclone)
+            vec![input_path.to_string(), output_path.to_string()]
+        };
+
         Ok(ProcessorOutput {
-            outputs: vec![output_path.to_string()],
+            outputs,
             duration_secs: command_output.duration,
             metadata: Some(
                 serde_json::json!({
                     "video_codec": format!("{:?}", config.video_codec),
                     "audio_codec": format!("{:?}", config.audio_codec),
+                    "passthrough": !config.remove_input_on_success,
                 })
                 .to_string(),
             ),
-            items_produced: vec![],
+            items_produced: vec![output_path.to_string()],
             input_size_bytes,
             output_size_bytes,
             failed_inputs: vec![],

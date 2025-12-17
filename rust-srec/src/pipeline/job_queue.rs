@@ -2499,7 +2499,7 @@ mod tests {
             "session-1",
             Some("pipeline-1".to_string()),
             Some("upload".to_string()),
-            Some(vec![PipelineStep::Preset("thumbnail".to_string())]),
+            Some(vec![PipelineStep::preset("thumbnail")]),
         );
         let job_id = job.id.clone();
         queue.enqueue(job).await.unwrap();
