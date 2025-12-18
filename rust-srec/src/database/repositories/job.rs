@@ -81,23 +81,6 @@ where
     }
 }
 
-/// Summary of a pipeline (group of jobs with same pipeline_id).
-#[derive(Debug, Clone)]
-pub struct PipelineSummary {
-    pub pipeline_id: String,
-    pub streamer_id: String,
-    pub streamer_name: Option<String>,
-    pub session_id: Option<String>,
-    pub status: String,
-    pub job_count: i64,
-    pub completed_count: i64,
-    pub failed_count: i64,
-    pub total_duration_secs: f64,
-    pub created_at: String,
-    pub updated_at: String,
-    pub name: Option<String>,
-}
-
 /// Job repository trait.
 #[async_trait]
 pub trait JobRepository: Send + Sync {
@@ -194,17 +177,6 @@ pub trait JobRepository: Send + Sync {
     async fn get_avg_processing_time(&self) -> Result<Option<f64>>;
 
     // Atomic pipeline operations (Requirements 7.2, 7.3)
-    /// Atomically complete a job and create the next job in the pipeline.
-    /// This ensures crash-safe transition between pipeline steps.
-    /// Returns the ID of the newly created job, if any.
-    async fn complete_job_and_create_next(
-        &self,
-        job_id: &str,
-        outputs_json: &str,
-        duration_secs: f64,
-        queue_wait_secs: f64,
-        next_job: Option<&JobDbModel>,
-    ) -> Result<Option<String>>;
 
     /// Cancel all pending/processing jobs in a pipeline.
     /// Returns the number of jobs cancelled.
@@ -213,13 +185,9 @@ pub trait JobRepository: Send + Sync {
     /// Get all jobs in a pipeline.
     async fn get_jobs_by_pipeline(&self, pipeline_id: &str) -> Result<Vec<JobDbModel>>;
 
-    /// List pipelines (grouped by pipeline_id) with pagination.
-    /// Returns summaries of pipelines and total count.
-    async fn list_pipelines(
-        &self,
-        filters: &JobFilters,
-        pagination: &Pagination,
-    ) -> Result<(Vec<PipelineSummary>, u64)>;
+    /// Delete all jobs in a pipeline and their associated data (logs, progress).
+    /// Returns the number of jobs deleted.
+    async fn delete_jobs_by_pipeline(&self, pipeline_id: &str) -> Result<u64>;
 }
 
 /// SQLx implementation of JobRepository.
@@ -279,10 +247,10 @@ impl JobRepository for SqlxJobRepository {
                 id, job_type, status, config, state, created_at, updated_at,
                 input, outputs, priority, streamer_id, session_id,
                 started_at, completed_at, error, retry_count,
-                next_job_type, remaining_steps, pipeline_id, execution_info,
+                 pipeline_id, execution_info,
                 duration_secs, queue_wait_secs, dag_step_execution_id
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             "#,
         )
         .bind(&job.id)
@@ -301,8 +269,6 @@ impl JobRepository for SqlxJobRepository {
         .bind(&job.completed_at)
         .bind(&job.error)
         .bind(job.retry_count)
-        .bind(&job.next_job_type)
-        .bind(&job.remaining_steps)
         .bind(&job.pipeline_id)
         .bind(&job.execution_info)
         .bind(job.duration_secs)
@@ -569,8 +535,6 @@ impl JobRepository for SqlxJobRepository {
                 completed_at = ?,
                 error = ?,
                 retry_count = ?,
-                next_job_type = ?,
-                remaining_steps = ?,
                 pipeline_id = ?,
                 execution_info = ?,
                 duration_secs = ?,
@@ -593,8 +557,6 @@ impl JobRepository for SqlxJobRepository {
         .bind(&job.completed_at)
         .bind(&job.error)
         .bind(job.retry_count)
-        .bind(&job.next_job_type)
-        .bind(&job.remaining_steps)
         .bind(&job.pipeline_id)
         .bind(&job.execution_info)
         .bind(job.duration_secs)
@@ -1135,95 +1097,6 @@ impl JobRepository for SqlxJobRepository {
         Ok(result)
     }
 
-    async fn complete_job_and_create_next(
-        &self,
-        job_id: &str,
-        outputs_json: &str,
-        duration_secs: f64,
-        queue_wait_secs: f64,
-        next_job: Option<&JobDbModel>,
-    ) -> Result<Option<String>> {
-        retry_on_sqlite_busy("complete_job_and_create_next", || async {
-            let now = chrono::Utc::now().to_rfc3339();
-
-            // Start a transaction for atomic operation
-            let mut tx = self.pool.begin().await?;
-
-            // 1. Mark current job as COMPLETED
-            sqlx::query(
-                r#"
-                UPDATE job SET
-                    status = 'COMPLETED',
-                    completed_at = ?,
-                    updated_at = ?,
-                    outputs = ?,
-                    duration_secs = ?,
-                    queue_wait_secs = ?
-                WHERE id = ?
-                "#,
-            )
-            .bind(&now)
-            .bind(&now)
-            .bind(outputs_json)
-            .bind(duration_secs)
-            .bind(queue_wait_secs)
-            .bind(job_id)
-            .execute(&mut *tx)
-            .await?;
-
-            // 2. Create next job if defined
-            let next_job_id = if let Some(job) = next_job {
-                sqlx::query(
-                    r#"
-                    INSERT INTO job (
-                        id, job_type, status, config, state, created_at, updated_at,
-                        input, outputs, priority, streamer_id, session_id,
-                        started_at, completed_at, error, retry_count,
-                        next_job_type, remaining_steps, pipeline_id, execution_info,
-                        duration_secs, queue_wait_secs, dag_step_execution_id
-                    )
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                    "#,
-                )
-                .bind(&job.id)
-                .bind(&job.job_type)
-                .bind(&job.status)
-                .bind(&job.config)
-                .bind(&job.state)
-                .bind(&job.created_at)
-                .bind(&job.updated_at)
-                .bind(&job.input)
-                .bind(&job.outputs)
-                .bind(job.priority)
-                .bind(&job.streamer_id)
-                .bind(&job.session_id)
-                .bind(&job.started_at)
-                .bind(&job.completed_at)
-                .bind(&job.error)
-                .bind(job.retry_count)
-                .bind(&job.next_job_type)
-                .bind(&job.remaining_steps)
-                .bind(&job.pipeline_id)
-                .bind(&job.execution_info)
-                .bind(job.duration_secs)
-                .bind(job.queue_wait_secs)
-                .bind(&job.dag_step_execution_id)
-                .execute(&mut *tx)
-                .await?;
-
-                Some(job.id.clone())
-            } else {
-                None
-            };
-
-            // 3. Commit transaction - atomic!
-            tx.commit().await?;
-
-            Ok(next_job_id)
-        })
-        .await
-    }
-
     async fn cancel_jobs_by_pipeline(&self, pipeline_id: &str) -> Result<u64> {
         let now = chrono::Utc::now().to_rfc3339();
 
@@ -1257,188 +1130,14 @@ impl JobRepository for SqlxJobRepository {
         Ok(jobs)
     }
 
-    async fn list_pipelines(
-        &self,
-        filters: &JobFilters,
-        pagination: &Pagination,
-    ) -> Result<(Vec<PipelineSummary>, u64)> {
-        // Build WHERE clause for filters (applied before aggregation)
-        // We now allow NULL pipeline_id to include standalone jobs
-        let mut where_conditions = vec!["1=1".to_string()];
+    async fn delete_jobs_by_pipeline(&self, pipeline_id: &str) -> Result<u64> {
+        // Delete the jobs (logs and progress omitted, they are deleted via CASCADE)
+        let result = sqlx::query("DELETE FROM job WHERE pipeline_id = ?")
+            .bind(pipeline_id)
+            .execute(&self.pool)
+            .await?;
 
-        if filters.streamer_id.is_some() {
-            where_conditions.push("j.streamer_id = ?".to_string());
-        }
-        if filters.session_id.is_some() {
-            where_conditions.push("j.session_id = ?".to_string());
-        }
-        if filters.search.is_some() {
-            // Updated to search in derived name too if possible, but for now stick to basic fields
-            // plus we can search in json_extract result if we wanted to be fancy
-            where_conditions.push(
-                "(j.pipeline_id LIKE ? OR j.streamer_id LIKE ? OR j.session_id LIKE ?)".to_string(),
-            );
-        }
-
-        let where_clause = where_conditions.join(" AND ");
-
-        // Build HAVING clause for status filtering (applied after aggregation)
-        let having_clause = if filters.status.is_some() {
-            "HAVING computed_status = ?"
-        } else {
-            ""
-        };
-
-        // Query to get pipeline summaries
-        // For DAG pipelines, use dag_execution's authoritative values
-        // For standalone jobs, fallback to job-based aggregation
-        let query = format!(
-            r#"
-            SELECT
-                COALESCE(j.pipeline_id, j.id) as pipeline_id,
-                MAX(j.streamer_id) as streamer_id,
-                MAX(j.session_id) as session_id,
-                CASE
-                    WHEN d.id IS NOT NULL THEN d.status
-                    WHEN SUM(CASE WHEN j.status = 'FAILED' THEN 1 ELSE 0 END) > 0 THEN 'FAILED'
-                    WHEN SUM(CASE WHEN j.status = 'PROCESSING' THEN 1 ELSE 0 END) > 0 THEN 'PROCESSING'
-                    WHEN SUM(CASE WHEN j.status = 'INTERRUPTED' THEN 1 ELSE 0 END) > 0 THEN 'INTERRUPTED'
-                    WHEN COUNT(*) = SUM(CASE WHEN j.status = 'COMPLETED' THEN 1 ELSE 0 END) THEN 'COMPLETED'
-                    ELSE 'PENDING'
-                END as computed_status,
-                CASE
-                    WHEN d.id IS NOT NULL THEN d.total_steps
-                    ELSE COUNT(*)
-                END as job_count,
-                CASE
-                    WHEN d.id IS NOT NULL THEN d.completed_steps
-                    ELSE SUM(CASE WHEN j.status = 'COMPLETED' THEN 1 ELSE 0 END)
-                END as completed_count,
-                CASE
-                    WHEN d.id IS NOT NULL THEN d.failed_steps
-                    ELSE SUM(CASE WHEN j.status = 'FAILED' THEN 1 ELSE 0 END)
-                END as failed_count,
-                COALESCE(SUM(j.duration_secs), 0.0) as total_duration_secs,
-                MIN(j.created_at) as created_at,
-                MAX(j.updated_at) as updated_at,
-                CASE
-                    WHEN d.id IS NOT NULL THEN json_extract(d.dag_definition, '$.name')
-                    ELSE MAX(j.job_type) -- Fallback to job type for standalone/legacy
-                END as pipeline_name
-            FROM job j
-            LEFT JOIN dag_execution d ON j.pipeline_id = d.id
-            WHERE {}
-            GROUP BY COALESCE(j.pipeline_id, j.id)
-            {}
-            ORDER BY MAX(j.created_at) DESC
-            LIMIT ? OFFSET ?
-            "#,
-            where_clause, having_clause
-        );
-
-        // Count query needs to match grouping
-        let count_query = format!(
-            r#"
-            SELECT COUNT(*) FROM (
-                SELECT
-                    COALESCE(j.pipeline_id, j.id),
-                    CASE
-                        WHEN SUM(CASE WHEN j.status = 'FAILED' THEN 1 ELSE 0 END) > 0 THEN 'FAILED'
-                        WHEN SUM(CASE WHEN j.status = 'PROCESSING' THEN 1 ELSE 0 END) > 0 THEN 'PROCESSING'
-                        WHEN SUM(CASE WHEN j.status = 'INTERRUPTED' THEN 1 ELSE 0 END) > 0 THEN 'INTERRUPTED'
-                        WHEN COUNT(*) = SUM(CASE WHEN j.status = 'COMPLETED' THEN 1 ELSE 0 END) THEN 'COMPLETED'
-                        ELSE 'PENDING'
-                    END as computed_status
-                FROM job j
-                LEFT JOIN dag_execution d ON j.pipeline_id = d.id
-                WHERE {}
-                GROUP BY COALESCE(j.pipeline_id, j.id)
-                {}
-            )
-            "#,
-            where_clause, having_clause
-        );
-
-        // Execute count query
-        let count_builder = sqlx::query_scalar::<_, i64>(&count_query);
-        let count_builder = {
-            let mut q = count_builder;
-            if let Some(ref streamer_id) = filters.streamer_id {
-                q = q.bind(streamer_id);
-            }
-            if let Some(ref session_id) = filters.session_id {
-                q = q.bind(session_id);
-            }
-            if let Some(ref search) = filters.search {
-                let pattern = format!("%{}%", search);
-                q = q.bind(pattern.clone()).bind(pattern.clone()).bind(pattern);
-            }
-            if let Some(ref status) = filters.status {
-                q = q.bind(status.as_str());
-            }
-            q
-        };
-        let total: i64 = count_builder.fetch_one(&self.pool).await.unwrap_or(0);
-
-        // Execute main query
-        let mut query_builder = sqlx::query_as::<
-            _,
-            (
-                String,
-                String,
-                Option<String>,
-                String,
-                i64,
-                i64,
-                i64,
-                f64,
-                String,
-                String,
-                Option<String>,
-            ),
-        >(&query);
-
-        if let Some(ref streamer_id) = filters.streamer_id {
-            query_builder = query_builder.bind(streamer_id);
-        }
-        if let Some(ref session_id) = filters.session_id {
-            query_builder = query_builder.bind(session_id);
-        }
-        if let Some(ref search) = filters.search {
-            let pattern = format!("%{}%", search);
-            query_builder = query_builder
-                .bind(pattern.clone())
-                .bind(pattern.clone())
-                .bind(pattern);
-        }
-        if let Some(ref status) = filters.status {
-            query_builder = query_builder.bind(status.as_str());
-        }
-        query_builder = query_builder
-            .bind(pagination.limit as i64)
-            .bind(pagination.offset as i64);
-
-        let rows = query_builder.fetch_all(&self.pool).await?;
-
-        let summaries: Vec<PipelineSummary> = rows
-            .into_iter()
-            .map(|row| PipelineSummary {
-                pipeline_id: row.0,
-                streamer_id: row.1,
-                streamer_name: None, // Populated at API layer
-                session_id: row.2,
-                status: row.3,
-                job_count: row.4,
-                completed_count: row.5,
-                failed_count: row.6,
-                total_duration_secs: row.7,
-                created_at: row.8,
-                updated_at: row.9,
-                name: row.10,
-            })
-            .collect();
-
-        Ok((summaries, total as u64))
+        Ok(result.rows_affected())
     }
 
     /// Purge completed/failed jobs older than the specified number of days.

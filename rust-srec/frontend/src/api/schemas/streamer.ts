@@ -4,7 +4,6 @@ import {
   DownloadRetryPolicyObjectSchema,
   DanmuSamplingConfigObjectSchema,
   EventHooksSchema,
-  PipelineStepSchema,
   PrioritySchema,
 } from './common';
 import { DagPipelineDefinitionSchema } from './pipeline';
@@ -70,10 +69,7 @@ export const StreamerSpecificConfigSchema = z.object({
   pipeline: z
     .preprocess(
       (val) => (typeof val === 'string' ? JSON.parse(val) : val),
-      z
-        .union([z.array(PipelineStepSchema), DagPipelineDefinitionSchema])
-        .nullable()
-        .optional(),
+      DagPipelineDefinitionSchema.nullable().optional(),
     )
     .nullable()
     .optional(),

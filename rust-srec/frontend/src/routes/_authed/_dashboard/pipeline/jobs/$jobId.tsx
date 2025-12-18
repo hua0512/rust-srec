@@ -141,6 +141,8 @@ function JobDetailsPage() {
     queryFn: () => getPipelineJobProgress({ data: { id: jobId } }),
     enabled: job?.status === 'PROCESSING',
     refetchInterval: 1000,
+    retry: false, // Don't retry on 404 when no progress is available
+    throwOnError: false, // Silently handle errors - progress is optional
   });
 
   // Fetch logs separately with infinite scroll

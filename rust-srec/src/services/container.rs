@@ -496,6 +496,9 @@ impl ServiceContainer {
             .with_pipeline_preset_repository(Arc::new(SqlitePipelinePresetRepository::new(
                 Arc::new(self.pool.clone()),
             )))
+            .with_job_preset_repository(Arc::new(SqliteJobPresetRepository::new(Arc::new(
+                self.pool.clone(),
+            ))))
             .with_notification_repository(self.notification_repository.clone())
             .with_notification_service(self.notification_service.clone());
 

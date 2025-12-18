@@ -324,8 +324,6 @@ impl DagScheduler {
             streamer_id,
             session_id,
             Some(dag_id.to_string()), // Use DAG ID as pipeline_id for grouping
-            None,                     // No next_job_type for DAG (handled by scheduler)
-            None,                     // No remaining_steps for DAG
         );
         job_db.config = config;
         job_db.dag_step_execution_id = Some(step_execution_id.to_string());
@@ -360,8 +358,6 @@ impl DagScheduler {
             completed_at: None,
             error: None,
             retry_count: 0,
-            next_job_type: None,
-            remaining_steps: None,
             pipeline_id: Some(dag_id.to_string()),
             execution_info: None,
             duration_secs: None,
@@ -438,6 +434,18 @@ impl DagScheduler {
         dag_id: &str,
     ) -> Result<crate::database::models::dag::DagExecutionStats> {
         self.dag_repository.get_dag_stats(dag_id).await
+    }
+
+    /// Permanently delete a DAG execution, all its steps, and associated jobs/logs.
+    pub async fn delete_dag(&self, dag_id: &str) -> Result<()> {
+        // Verify DAG exists first
+        self.dag_repository.get_dag(dag_id).await?;
+
+        // Delete all associated jobs and their logs
+        self.job_repository.delete_jobs_by_pipeline(dag_id).await?;
+
+        // Delete the DAG (CASCADE deletes steps)
+        self.dag_repository.delete_dag(dag_id).await
     }
 }
 

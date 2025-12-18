@@ -498,11 +498,10 @@ impl WorkerPool {
                                                 .await;
                                         }
                                     } else {
-                                        // Regular sequential pipeline job
-                                        // Complete job and pass all outputs to next step
-                                        // Requirements: 9.1, 9.2
+                                        // Non-DAG job (manual job or legacy)
+                                        // Just complete the job normally
                                         let _ = job_queue
-                                            .complete_with_next(
+                                            .complete(
                                                 &job_id,
                                                 JobResult {
                                                     outputs: output.outputs,

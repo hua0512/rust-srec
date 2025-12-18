@@ -220,7 +220,7 @@ impl StatisticsAggregator {
 
         // Get top talkers
         let mut user_list: Vec<_> = self.user_counts.into_iter().collect();
-        user_list.sort_by(|a, b| b.1 .1.cmp(&a.1 .1));
+        user_list.sort_by(|a, b| b.1.1.cmp(&a.1.1));
         let top_talkers: Vec<TopTalker> = user_list
             .into_iter()
             .take(self.max_top_talkers)
@@ -257,7 +257,7 @@ impl StatisticsAggregator {
     pub fn current_stats(&self) -> DanmuStatistics {
         // Get top talkers
         let mut user_list: Vec<_> = self.user_counts.iter().collect();
-        user_list.sort_by(|a, b| b.1 .1.cmp(&a.1 .1));
+        user_list.sort_by(|a, b| b.1.1.cmp(&a.1.1));
         let top_talkers: Vec<TopTalker> = user_list
             .into_iter()
             .take(self.max_top_talkers)

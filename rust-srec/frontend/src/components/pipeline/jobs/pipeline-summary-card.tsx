@@ -48,6 +48,7 @@ import { plural } from '@lingui/core/macro';
 interface PipelineSummaryCardProps {
   pipeline: DagSummary;
   onCancelPipeline?: (pipelineId: string) => void;
+  onDeletePipeline?: (pipelineId: string) => void;
   onViewDetails: (pipelineId: string) => void;
 }
 
@@ -100,6 +101,7 @@ const STATUS_CONFIG: Record<string, StatusConfigItem> = {
 export function PipelineSummaryCard({
   pipeline,
   onCancelPipeline,
+  onDeletePipeline,
   onViewDetails,
 }: PipelineSummaryCardProps) {
   const { i18n } = useLingui();
@@ -148,11 +150,14 @@ export function PipelineSummaryCard({
           </CardTitle>
           <div className="flex items-center gap-2">
             <span className="text-[10px] uppercase tracking-wider font-semibold text-muted-foreground/60">
-              {pipeline.name ?? pipeline.streamer_id}
+              {pipeline.streamer_name ?? pipeline.name ?? pipeline.streamer_id}
             </span>
           </div>
         </div>
-        <Badge variant={statusConfig.badgeVariant} className="capitalize py-0 h-6 text-[10px] sm:text-xs">
+        <Badge
+          variant={statusConfig.badgeVariant}
+          className="capitalize py-0 h-6 text-[10px] sm:text-xs"
+        >
           {status}
         </Badge>
         <DropdownMenu>
@@ -220,7 +225,7 @@ export function PipelineSummaryCard({
             )}
 
             {/* Delete option for terminal states */}
-            {(isCompleted || isFailed) && onCancelPipeline && (
+            {(isCompleted || isFailed) && onDeletePipeline && (
               <>
                 <DropdownMenuSeparator />
                 <AlertDialog>
@@ -251,7 +256,7 @@ export function PipelineSummaryCard({
                         <Trans>Cancel</Trans>
                       </AlertDialogCancel>
                       <AlertDialogAction
-                        onClick={() => onCancelPipeline(pipeline.id)}
+                        onClick={() => onDeletePipeline(pipeline.id)}
                         className="bg-destructive text-white hover:bg-destructive/90"
                       >
                         <Trans>Delete</Trans>

@@ -2,6 +2,7 @@ import { createServerFn } from '@tanstack/react-start';
 import { fetchBackend } from '../api';
 import {
   GlobalConfigSchema,
+  GlobalConfigWriteSchema,
   PlatformConfigSchema,
   TemplateSchema,
   CreateTemplateRequestSchema,
@@ -18,21 +19,39 @@ export const getGlobalConfig = createServerFn({ method: 'GET' }).handler(
 );
 
 // Helper to stringify complex objects for backend (which expects Option<String>)
-const jsonToString = z
-  .any()
-  .transform((val) =>
-    typeof val === 'object' && val !== null ? JSON.stringify(val) : val,
-  );
+const jsonToString = z.any().transform((val) => {
+  if (typeof val === 'string') return val;
+  if (typeof val === 'object' && val !== null) return JSON.stringify(val);
+  return val;
+});
 
-const GlobalConfigWriteSchema = GlobalConfigSchema.extend({
+// Extend the write schema to handle stringification
+const GlobalConfigUpdateSchema = GlobalConfigWriteSchema.extend({
   proxy_config: jsonToString.optional(),
   pipeline: jsonToString.optional(),
 });
 
 export const updateGlobalConfig = createServerFn({ method: 'POST' })
-  .inputValidator((data: z.infer<typeof GlobalConfigSchema>) => data)
+  .inputValidator((data: z.infer<typeof GlobalConfigWriteSchema>) => {
+    console.log(
+      'updateGlobalConfig inputValidator - raw data.pipeline:',
+      typeof data.pipeline,
+      data.pipeline,
+    );
+    return data;
+  })
   .handler(async ({ data }) => {
-    const payload = GlobalConfigWriteSchema.parse(data);
+    console.log(
+      'updateGlobalConfig handler - data.pipeline before parse:',
+      typeof data.pipeline,
+      data.pipeline,
+    );
+    const payload = GlobalConfigUpdateSchema.parse(data);
+    console.log(
+      'updateGlobalConfig handler - payload.pipeline after parse:',
+      typeof payload.pipeline,
+      payload.pipeline,
+    );
     await fetchBackend('/config/global', {
       method: 'PATCH',
       body: JSON.stringify(payload),

@@ -1,6 +1,9 @@
 import { z } from 'zod';
+import { DagPipelineDefinitionSchema } from './pipeline';
 
 // --- System Schemas ---
+
+// Schema for reading global config from backend (parses JSON strings)
 export const GlobalConfigSchema = z.object({
   output_folder: z.string(),
   output_filename_template: z.string(),
@@ -22,8 +25,49 @@ export const GlobalConfigSchema = z.object({
   max_concurrent_io_jobs: z.number(),
   job_history_retention_days: z.number(),
   session_gap_time_secs: z.number(),
+  // Handle pipeline as either string (from backend) or object (from form)
+  pipeline: z
+    .preprocess((val) => {
+      // If it's a string, parse it
+      if (typeof val === 'string') {
+        try {
+          return JSON.parse(val);
+        } catch {
+          return null;
+        }
+      }
+      // If it's already an object, pass through
+      return val;
+    }, DagPipelineDefinitionSchema.nullable().optional())
+    .nullable()
+    .optional(),
+});
 
-  pipeline: z.any().optional(),
+// Schema for writing global config to backend (keeps pipeline as object, will be stringified by config.ts)
+export const GlobalConfigWriteSchema = z.object({
+  output_folder: z.string(),
+  output_filename_template: z.string(),
+  output_file_format: z.string(),
+  min_segment_size_bytes: z.number(),
+  max_download_duration_secs: z.number(),
+  max_part_size_bytes: z.number(),
+  record_danmu: z.boolean(),
+  max_concurrent_downloads: z.number(),
+  max_concurrent_uploads: z.number(),
+  streamer_check_delay_ms: z.number(),
+
+  proxy_config: z.any().optional(),
+
+  offline_check_delay_ms: z.number(),
+  offline_check_count: z.number(),
+  default_download_engine: z.string(),
+  max_concurrent_cpu_jobs: z.number(),
+  max_concurrent_io_jobs: z.number(),
+  job_history_retention_days: z.number(),
+  session_gap_time_secs: z.number(),
+
+  // Accept any object - will be stringified by config.ts when sending to backend
+  pipeline: z.any().nullable().optional(),
 });
 
 export const ComponentHealthSchema = z.object({

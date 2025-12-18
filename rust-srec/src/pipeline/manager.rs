@@ -39,9 +39,7 @@ pub struct PipelineManagerConfig {
     pub cpu_pool: WorkerPoolConfig,
     /// IO worker pool configuration.
     pub io_pool: WorkerPoolConfig,
-    /// Whether to enable download throttling on backpressure.
-    /// Deprecated: Use throttle.enabled instead.
-    pub enable_throttling: bool,
+
     /// Throttle controller configuration.
     /// Requirements: 8.1, 8.2, 8.3, 8.4, 8.5
     #[serde(default)]
@@ -64,7 +62,7 @@ impl Default for PipelineManagerConfig {
                 max_workers: 4,
                 ..Default::default()
             },
-            enable_throttling: false,
+
             throttle: ThrottleConfig::default(),
             purge: PurgeConfig::default(),
         }
@@ -175,13 +173,8 @@ where
 
         // Create throttle controller if enabled
         // Requirements: 8.1, 8.5
-        let throttle_controller = if config.throttle.enabled || config.enable_throttling {
-            let mut throttle_config = config.throttle.clone();
-            // Support legacy enable_throttling flag
-            if config.enable_throttling && !config.throttle.enabled {
-                throttle_config.enabled = true;
-            }
-            Some(Arc::new(ThrottleController::new(throttle_config)))
+        let throttle_controller = if config.throttle.enabled {
+            Some(Arc::new(ThrottleController::new(config.throttle.clone())))
         } else {
             None
         };
@@ -247,13 +240,8 @@ where
 
         // Create throttle controller if enabled
         // Requirements: 8.1, 8.5
-        let throttle_controller = if config.throttle.enabled || config.enable_throttling {
-            let mut throttle_config = config.throttle.clone();
-            // Support legacy enable_throttling flag
-            if config.enable_throttling && !config.throttle.enabled {
-                throttle_config.enabled = true;
-            }
-            Some(Arc::new(ThrottleController::new(throttle_config)))
+        let throttle_controller = if config.throttle.enabled {
+            Some(Arc::new(ThrottleController::new(config.throttle.clone())))
         } else {
             None
         };
@@ -545,155 +533,6 @@ where
         self.enqueue(job).await
     }
 
-    /// Create a new pipeline with sequential job execution.
-    /// Only the first job is created immediately; subsequent jobs are created
-    /// atomically when each job completes.
-    ///
-    /// Returns the pipeline_id (which is the first job's ID) for tracking.
-    ///
-    /// Requirements: 6.1, 7.1, 7.5
-    ///
-    /// DEPRECATED: Use `create_dag_pipeline` for new pipelines. DAG pipelines
-    /// support fan-in, fan-out, and parallel execution. Sequential pipelines
-    /// are being phased out.
-    #[deprecated(
-        since = "0.2.0",
-        note = "Use create_dag_pipeline() instead. Sequential pipelines are deprecated in favor of DAG pipelines which support fan-in, fan-out, and parallel execution."
-    )]
-    pub async fn create_pipeline(
-        &self,
-        session_id: &str,
-        streamer_id: &str,
-        input_paths: &[String],
-        steps: Option<Vec<PipelineStep>>,
-    ) -> Result<PipelineCreationResult> {
-        // Require explicit pipeline steps
-        let steps = match steps {
-            Some(steps) => steps,
-            None => {
-                return Err(crate::Error::Validation(
-                    "Pipeline must have at least one step".to_string(),
-                ));
-            }
-        };
-
-        if steps.is_empty() {
-            return Err(crate::Error::Validation(
-                "Pipeline must have at least one step".to_string(),
-            ));
-        }
-
-        // Resolve all steps (expand workflows/presets)
-        let resolved_steps_config = self.resolve_pipeline(steps).await?;
-        let resolved_len = resolved_steps_config.len();
-
-        if resolved_steps_config.is_empty() {
-            return Err(crate::Error::Validation(
-                "Pipeline resulted in 0 steps after expansion".to_string(),
-            ));
-        }
-
-        // Get the first step from resolved list
-        let first_resolved_step = &resolved_steps_config[0];
-        let (first_processor, first_config) = match first_resolved_step {
-            PipelineStep::Inline { processor, config } => (processor.clone(), Some(config.clone())),
-            _ => unreachable!("We just converted everything to Inline"),
-        };
-
-        // Calculate pipeline chain for this job
-        // We will store the full remaining steps list (fully resolved) in the job
-        let remaining_steps = if resolved_len > 1 {
-            Some(
-                resolved_steps_config
-                    .iter()
-                    .skip(1)
-                    .cloned()
-                    .collect::<Vec<PipelineStep>>(),
-            )
-        } else {
-            None
-        };
-
-        // Determine next_job_type for observability/legacy fields (it's the processor name of the next step)
-        let next_job_type = if let Some(remaining) = &remaining_steps {
-            if let Some(next) = remaining.first() {
-                // It's already Inline, so we can just grab the processor
-                match next {
-                    PipelineStep::Inline { processor, .. } => Some(processor.clone()),
-
-                    // These should never happen
-                    PipelineStep::Preset { name: _ } => unreachable!(),
-                    PipelineStep::Workflow { name: _ } => unreachable!(),
-                }
-            } else {
-                None
-            }
-        } else {
-            None
-        };
-
-        // Create the first job with pipeline chain information
-        let first_job = Job::new_pipeline_step(
-            first_processor.clone(),
-            input_paths.to_vec(),
-            vec![], // Output path will be determined by the processor logic or previous output
-            streamer_id,
-            session_id,
-            None, // pipeline_id will be set to this job's ID
-            next_job_type,
-            remaining_steps,
-        );
-
-        // Apply specific config if present
-        let first_job = if let Some(cfg) = first_config {
-            let mut j = first_job;
-            j.config = Some(cfg.to_string());
-            j
-        } else {
-            first_job
-        };
-
-        // The pipeline_id is the first job's ID
-        let pipeline_id = first_job.id.clone();
-
-        // Set the pipeline_id on the first job
-        let mut first_job = first_job.with_pipeline_id(pipeline_id.clone());
-
-        // Initialize execution info with step 1/N
-        let mut exec_info = JobExecutionInfo::new().with_processor(first_processor.clone());
-
-        exec_info.current_step = Some(1);
-        exec_info.total_steps = Some(resolved_len as u32);
-
-        first_job.execution_info = Some(exec_info);
-
-        // Enqueue the first job
-        let job_id = self.enqueue(first_job.clone()).await?;
-
-        info!(
-            "Created pipeline {} with {} steps for session {}",
-            pipeline_id, resolved_len, session_id
-        );
-
-        // Use resolved_steps_config to show the actual expanded pipeline steps
-        let string_steps: Vec<String> = resolved_steps_config
-            .iter()
-            .map(|s| match s {
-                PipelineStep::Preset { name } => name.clone(),
-                PipelineStep::Workflow { name } => name.clone(),
-                PipelineStep::Inline { processor, .. } => processor.clone(),
-            })
-            .collect();
-
-        Ok(PipelineCreationResult {
-            pipeline_id,
-            first_job_id: job_id,
-            first_job_type: first_processor,
-            total_steps: resolved_len,
-            steps: string_steps,
-        })
-    }
-
     /// Create a DAG pipeline with fan-in/fan-out support.
     ///
     /// Unlike sequential pipelines, DAG pipelines support:
@@ -957,135 +796,6 @@ where
         }
     }
 
-    /// Resolve all steps in a pipeline to Inline steps.
-    /// This ensures that all presets are expanded at creation time,
-    /// so that the JobQueue doesn't need to depend on the JobPresetRepository.
-    pub async fn resolve_pipeline(&self, steps: Vec<PipelineStep>) -> Result<Vec<PipelineStep>> {
-        let mut resolved_steps = Vec::new();
-        for step in steps {
-            match step {
-                PipelineStep::Preset { name } => {
-                    if let Some(repo) = &self.preset_repo {
-                        match repo.get_preset_by_name(&name).await {
-                            Ok(Some(preset)) => {
-                                let config = if !preset.config.is_empty() {
-                                    serde_json::from_str(&preset.config)
-                                        .unwrap_or(serde_json::Value::Null)
-                                } else {
-                                    serde_json::Value::Null
-                                };
-                                resolved_steps.push(PipelineStep::Inline {
-                                    processor: preset.processor,
-                                    config,
-                                });
-                            }
-                            Ok(None) => {
-                                // Fallback: assume name is processor
-                                resolved_steps.push(PipelineStep::Inline {
-                                    processor: name,
-                                    config: serde_json::Value::Null,
-                                });
-                            }
-                            Err(e) => return Err(crate::Error::Database(e.to_string())),
-                        }
-                    } else {
-                        // No repo, fallback
-                        resolved_steps.push(PipelineStep::Inline {
-                            processor: name,
-                            config: serde_json::Value::Null,
-                        });
-                    }
-                }
-                PipelineStep::Workflow { name } => {
-                    // Expand workflow by looking up pipeline preset
-                    if let Some(repo) = &self.pipeline_preset_repo {
-                        match repo.get_pipeline_preset_by_name(&name).await {
-                            Ok(Some(workflow)) => {
-                                // Parse the steps from the workflow
-                                let workflow_steps: Vec<PipelineStep> =
-                                    serde_json::from_str(&workflow.steps).unwrap_or_default();
-                                // Recursively resolve the workflow's steps
-                                let expanded =
-                                    Box::pin(self.resolve_pipeline(workflow_steps)).await?;
-                                resolved_steps.extend(expanded);
-                            }
-                            Ok(None) => {
-                                return Err(crate::Error::Validation(format!(
-                                    "Workflow '{}' not found",
-                                    name
-                                )));
-                            }
-                            Err(e) => {
-                                warn!("Failed to load workflow '{}': {}", name, e);
-                            }
-                        }
-                    } else {
-                        return Err(crate::Error::Validation(format!(
-                            "No pipeline preset repository, cannot expand workflow '{}'",
-                            name
-                        )));
-                    }
-                }
-                PipelineStep::Inline { .. } => {
-                    resolved_steps.push(step);
-                }
-            }
-        }
-        Ok(resolved_steps)
-    }
-
-    /// Resolve a PipelineStep to (processor_name, optional_config).
-    pub async fn resolve_step(
-        &self,
-        step: &PipelineStep,
-    ) -> Result<(String, Option<serde_json::Value>)> {
-        match step {
-            PipelineStep::Preset { name } => {
-                debug!("Resolving pipeline step preset: {}", name);
-                if let Some(repo) = &self.preset_repo {
-                    match repo.get_preset_by_name(name).await {
-                        Ok(Some(preset)) => {
-                            debug!("Found preset '{}', config: {}", name, preset.config);
-                            let config = if !preset.config.is_empty() {
-                                serde_json::from_str(&preset.config)
-                                    .unwrap_or(serde_json::Value::Null)
-                            } else {
-                                serde_json::Value::Null
-                            };
-                            Ok((preset.processor, Some(config)))
-                        }
-                        Ok(None) => {
-                            debug!(
-                                "Preset '{}' not found, falling back to processor name",
-                                name
-                            );
-                            Ok((name.clone(), None))
-                        }
-                        Err(e) => Err(e.into()),
-                    }
-                } else {
-                    debug!(
-                        "No preset repo available, falling back to processor name: {}",
-                        name
-                    );
-                    Ok((name.clone(), None))
-                }
-            }
-            PipelineStep::Workflow { name } => {
-                // TODO: Expand workflow steps
-                debug!("Workflow step '{}' - expansion not yet implemented", name);
-                Err(crate::Error::Validation(format!(
-                    "Workflow expansion not yet implemented for '{}'",
-                    name
-                )))
-            }
-            PipelineStep::Inline { processor, config } => {
-                debug!("Resolving inline pipeline step: {}", processor);
-                Ok((processor.clone(), Some(config.clone())))
-            }
-        }
-    }
-
     /// Handle download manager events.
     pub async fn handle_download_event(&self, event: DownloadManagerEvent) {
         match event {
@@ -1206,7 +916,12 @@ where
         let dag_def = DagPipelineDefinition::new("Automatic Thumbnail", vec![dag_step]);
 
         if let Err(e) = self
-            .create_dag_pipeline(session_id, streamer_id, vec![segment_path], dag_def)
+            .create_dag_pipeline(
+                session_id,
+                streamer_id,
+                vec![segment_path.to_string()],
+                dag_def,
+            )
             .await
         {
             tracing::error!(
@@ -1299,7 +1014,7 @@ where
 
     /// Check if throttling should be enabled.
     pub fn should_throttle(&self) -> bool {
-        self.config.enable_throttling && self.job_queue.is_critical()
+        self.config.throttle.enabled && self.job_queue.is_critical()
     }
 
     // ========================================================================
@@ -1338,16 +1053,6 @@ where
     /// Get latest execution progress snapshot for a job (if available).
     pub async fn get_job_progress(&self, job_id: &str) -> Result<Option<JobProgressSnapshot>> {
         self.job_queue.get_job_progress(job_id).await
-    }
-
-    /// List pipelines (grouped by pipeline_id) with pagination.
-    /// Returns pipeline summaries and total count.
-    pub async fn list_pipelines(
-        &self,
-        filters: &JobFilters,
-        pagination: &Pagination,
-    ) -> Result<(Vec<crate::database::repositories::PipelineSummary>, u64)> {
-        self.job_queue.list_pipelines(filters, pagination).await
     }
 
     /// Get a job by ID.
@@ -1661,7 +1366,6 @@ mod tests {
         let config = PipelineManagerConfig::default();
         assert_eq!(config.cpu_pool.max_workers, 2);
         assert_eq!(config.io_pool.max_workers, 4);
-        assert!(!config.enable_throttling);
         // Verify throttle config defaults
         assert!(!config.throttle.enabled);
         assert_eq!(config.throttle.critical_threshold, 500);
@@ -1855,109 +1559,6 @@ mod tests {
         assert_eq!(cancelled.status, JobStatus::Interrupted);
     }
 
-    #[tokio::test]
-    #[allow(deprecated)]
-    async fn test_create_pipeline_requires_steps_when_none() {
-        let manager: PipelineManager = PipelineManager::new();
-
-        let result = manager
-            .create_pipeline("session-1", "streamer-1", "/input.flv", None)
-            .await;
-
-        assert!(result.is_err());
-    }
-
-    #[tokio::test]
-    #[allow(deprecated)]
-    async fn test_create_pipeline_custom_steps() {
-        let manager: PipelineManager = PipelineManager::new();
-
-        let custom_steps = vec![
-            PipelineStep::preset("remux"),
-            PipelineStep::preset("upload"),
-        ];
-        let result = manager
-            .create_pipeline(
-                "session-1",
-                "streamer-1",
-                vec!["/input.flv".to_string()],
-                Some(custom_steps),
-            )
-            .await
-            .unwrap();
-
-        assert_eq!(result.total_steps, 2);
-        assert_eq!(
-            result.steps,
-            vec!["remux".to_string(), "upload".to_string()]
-        );
-        assert_eq!(result.first_job_type, "remux");
-
-        // Verify the first job has correct chain info
-        let job = manager
-            .get_job(&result.first_job_id)
-            .await
-            .unwrap()
-            .unwrap();
-        assert_eq!(job.next_job_type, Some("upload".to_string()));
-        // The remaining_steps are resolved to Inline format now
-        let remaining = job
-            .remaining_steps
-            .as_ref()
-            .expect("Should have remaining steps");
-        assert_eq!(remaining.len(), 1);
-        assert!(
-            matches!(&remaining[0], PipelineStep::Inline { processor, .. } if processor == "upload")
-        );
-    }
-
-    #[tokio::test]
-    #[allow(deprecated)]
-    async fn test_create_pipeline_single_step() {
-        let manager: PipelineManager = PipelineManager::new();
-
-        let single_step = vec![PipelineStep::preset("remux")];
-        let result = manager
-            .create_pipeline(
-                "session-1",
-                "streamer-1",
-                vec!["/input.flv".to_string()],
-                Some(single_step),
-            )
-            .await
-            .unwrap();
-
-        assert_eq!(result.total_steps, 1);
-        assert_eq!(result.first_job_type, "remux");
-
-        // Verify the first job has no next job
-        let job = manager
-            .get_job(&result.first_job_id)
-            .await
-            .unwrap()
-            .unwrap();
-        assert_eq!(job.next_job_type, None);
-        assert_eq!(job.remaining_steps, None);
-    }
-
-    #[tokio::test]
-    #[allow(deprecated)]
-    async fn test_create_pipeline_empty_steps_error() {
-        let manager: PipelineManager = PipelineManager::new();
-
-        let empty_steps: Vec<PipelineStep> = vec![];
-        let result = manager
-            .create_pipeline(
-                "session-1",
-                "streamer-1",
-                vec!["/input.flv".to_string()],
-                Some(empty_steps),
-            )
-            .await;
-
-        assert!(result.is_err());
-    }
-
     #[test]
     fn test_throttle_controller_disabled_by_default() {
         let manager: PipelineManager = PipelineManager::new();
@@ -1985,19 +1586,6 @@ mod tests {
         assert!(manager.throttle_controller().is_some());
         assert!(!manager.is_throttled());
         assert!(manager.subscribe_throttle_events().is_some());
-    }
-
-    #[test]
-    fn test_throttle_controller_enabled_with_legacy_flag() {
-        // Test backward compatibility with enable_throttling flag
-        let config = PipelineManagerConfig {
-            enable_throttling: true,
-            ..Default::default()
-        };
-        let manager: PipelineManager = PipelineManager::with_config(config);
-
-        // Throttle controller should be Some when legacy flag is set
-        assert!(manager.throttle_controller().is_some());
     }
 
     #[test]

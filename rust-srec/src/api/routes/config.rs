@@ -5,6 +5,7 @@ use axum::{
     extract::{Path, State},
     routing::{get, patch, put},
 };
+use tracing::debug;
 
 use crate::api::error::{ApiError, ApiResult};
 use crate::api::models::{GlobalConfigResponse, PlatformConfigResponse, UpdateGlobalConfigRequest};
@@ -163,6 +164,11 @@ async fn update_global_config(
 
     let mut updated_fields: Vec<&'static str> = Vec::new();
 
+    debug!(
+        pipeline_before = ?config.pipeline,
+        "Global config pipeline value BEFORE apply_updates"
+    );
+
     apply_updates!(config, request, updated_fields; [
         output_folder: |v: serde_json::Value| v.as_str().map(String::from),
         output_filename_template: |v: serde_json::Value| v.as_str().map(String::from),
@@ -184,6 +190,12 @@ async fn update_global_config(
         proxy_config: |v: serde_json::Value| v.as_str().map(String::from),
         pipeline: |v: serde_json::Value| v.as_str().map(String::from)
     ]);
+
+    debug!(
+        pipeline_after = ?config.pipeline,
+        updated_fields = ?updated_fields,
+        "Global config pipeline value AFTER apply_updates"
+    );
 
     let updated_fields_summary = if updated_fields.is_empty() {
         "none".to_string()

@@ -44,9 +44,6 @@ pub enum Error {
     #[error("API error: {0}")]
     ApiError(String),
 
-    #[error("TARS codec error: {0}")]
-    TarsError(#[from] tars_codec::TarsError),
-
     #[error("Danmaku crate error: {0}")]
     DanmakuError(#[from] danmaku::DanmakuError),
 

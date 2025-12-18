@@ -170,11 +170,6 @@ pub struct JobDbModel {
     pub error: Option<String>,
     /// Number of retry attempts
     pub retry_count: i32,
-    // Pipeline chain fields (Requirements 7.1, 7.2)
-    /// Next job type to create on completion (e.g., "upload" after "remux")
-    pub next_job_type: Option<String>,
-    /// Pipeline steps remaining after this job (JSON array)
-    pub remaining_steps: Option<String>,
     /// Pipeline ID to group related jobs (first job's ID)
     pub pipeline_id: Option<String>,
     /// Execution information for observability (JSON)
@@ -208,8 +203,7 @@ impl JobDbModel {
             completed_at: None,
             error: None,
             retry_count: 0,
-            next_job_type: None,
-            remaining_steps: None,
+
             pipeline_id: None,
             execution_info: None,
             duration_secs: None,
@@ -244,8 +238,7 @@ impl JobDbModel {
             completed_at: None,
             error: None,
             retry_count: 0,
-            next_job_type: None,
-            remaining_steps: None,
+
             pipeline_id: None,
             execution_info: None,
             duration_secs: None,
@@ -254,8 +247,8 @@ impl JobDbModel {
         }
     }
 
-    /// Create a new pipeline step job with chain information.
-    /// This is used for sequential pipeline job creation.
+    /// Create a new pipeline step job with pipeline ID.
+    /// This is used for DAG pipeline job creation.
     ///
     /// # Arguments
     ///
@@ -269,8 +262,6 @@ impl JobDbModel {
         streamer_id: Option<String>,
         session_id: Option<String>,
         pipeline_id: Option<String>,
-        next_job_type: Option<String>,
-        remaining_steps: Option<Vec<PipelineStep>>,
     ) -> Self {
         let now = chrono::Utc::now().to_rfc3339();
         let id = uuid::Uuid::new_v4().to_string();
@@ -292,30 +283,12 @@ impl JobDbModel {
             completed_at: None,
             error: None,
             retry_count: 0,
-            next_job_type,
-            remaining_steps: remaining_steps
-                .map(|steps| serde_json::to_string(&steps).unwrap_or_else(|_| "[]".to_string())),
-            pipeline_id,
+            pipeline_id: None,
             execution_info: None,
             duration_secs: None,
             queue_wait_secs: None,
             dag_step_execution_id: None,
         }
-    }
-
-    /// Get the remaining pipeline steps.
-    pub fn get_remaining_steps(&self) -> Vec<PipelineStep> {
-        self.remaining_steps
-            .as_ref()
-            .and_then(|s| serde_json::from_str(s).ok())
-            .unwrap_or_default()
-    }
-
-    /// Set the remaining pipeline steps.
-    pub fn set_remaining_steps(&mut self, steps: &[PipelineStep]) {
-        self.remaining_steps =
-            Some(serde_json::to_string(steps).unwrap_or_else(|_| "[]".to_string()));
-        self.updated_at = chrono::Utc::now().to_rfc3339();
     }
 
     /// Get the list of output paths produced by this job.

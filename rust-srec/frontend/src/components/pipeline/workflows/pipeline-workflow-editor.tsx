@@ -18,6 +18,12 @@ export function PipelineWorkflowEditor({
   steps,
   onChange,
 }: PipelineWorkflowEditorProps) {
+  // Debug log to trace steps in editor
+  console.log('PipelineWorkflowEditor render:', {
+    stepsCount: steps.length,
+    steps,
+  });
+
   const [viewMode, setViewMode] = useState<'list' | 'graph'>('list');
   const [editingIndex, setEditingIndex] = useState<number | null>(null);
 
@@ -111,7 +117,7 @@ export function PipelineWorkflowEditor({
         </div>
       </div>
 
-      <div className="min-h-[400px] sm:min-h-[500px] border rounded-lg overflow-hidden bg-background/50 relative">
+      <div className="h-[400px] sm:h-[500px] border rounded-lg overflow-hidden bg-background/50 relative">
         {viewMode === 'list' ? (
           <div className="p-4 h-full">
             <StepsList

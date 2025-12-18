@@ -113,6 +113,8 @@ pub struct AppState {
     pub streamer_repository: Option<Arc<dyn StreamerRepository>>,
     /// Pipeline preset repository for pipeline presets (workflow sequences)
     pub pipeline_preset_repository: Option<Arc<dyn PipelinePresetRepository>>,
+    /// Job preset repository for job presets (reusable processor configs)
+    pub job_preset_repository: Option<Arc<dyn crate::database::repositories::JobPresetRepository>>,
     /// Notification repository for channel/subscription management
     pub notification_repository: Option<Arc<dyn NotificationRepository>>,
     /// Notification service for testing and reloading
@@ -138,6 +140,7 @@ impl AppState {
             health_checker: None,
             streamer_repository: None,
             pipeline_preset_repository: None,
+            job_preset_repository: None,
             notification_repository: None,
             notification_service: None,
             logging_config: None,
@@ -163,6 +166,7 @@ impl AppState {
             health_checker: None,
             streamer_repository: None,
             pipeline_preset_repository: None,
+            job_preset_repository: None,
             notification_repository: None,
             notification_service: None,
             logging_config: None,
@@ -192,6 +196,7 @@ impl AppState {
             health_checker: None,
             streamer_repository: None,
             pipeline_preset_repository: None,
+            job_preset_repository: None,
             notification_repository: None,
             notification_service: None,
             logging_config: None,
@@ -246,6 +251,15 @@ impl AppState {
         repo: Arc<dyn PipelinePresetRepository>,
     ) -> Self {
         self.pipeline_preset_repository = Some(repo);
+        self
+    }
+
+    /// Set the job preset repository.
+    pub fn with_job_preset_repository(
+        mut self,
+        repo: Arc<dyn crate::database::repositories::JobPresetRepository>,
+    ) -> Self {
+        self.job_preset_repository = Some(repo);
         self
     }
 

@@ -11,6 +11,7 @@ import {
   getPipelineStats,
   listPipelines,
   cancelPipeline,
+  deletePipeline,
 } from '@/server/functions';
 import { Card } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -153,11 +154,29 @@ function PipelineJobsPage() {
   const cancelPipelineMutation = useMutation({
     mutationFn: (pipelineId: string) => cancelPipeline({ data: pipelineId }),
     onSuccess: (result: any) => {
-      toast.success(t`Cancelled ${result.cancelled_count} jobs in pipeline`);
+      toast.success(t`Cancelled ${result.cancelled_steps} steps in pipeline`);
       queryClient.invalidateQueries({ queryKey: ['pipeline', 'pipelines'] });
       queryClient.invalidateQueries({ queryKey: ['pipeline', 'stats'] });
     },
-    onError: () => toast.error(t`Failed to cancel pipeline`),
+    onError: (error: any) => {
+      // Handle case where DAG is already in terminal state (completed/failed)
+      if (error?.body?.message?.includes('terminal state')) {
+        toast.info(t`Pipeline is already completed or cancelled`);
+        queryClient.invalidateQueries({ queryKey: ['pipeline', 'pipelines'] });
+      } else {
+        toast.error(t`Failed to cancel pipeline`);
+      }
+    },
+  });
+
+  const deletePipelineMutation = useMutation({
+    mutationFn: (pipelineId: string) => deletePipeline({ data: pipelineId }),
+    onSuccess: () => {
+      toast.success(t`Pipeline deleted successfully`);
+      queryClient.invalidateQueries({ queryKey: ['pipeline', 'pipelines'] });
+      queryClient.invalidateQueries({ queryKey: ['pipeline', 'stats'] });
+    },
+    onError: () => toast.error(t`Failed to delete pipeline`),
   });
 
   const handleViewDetails = (pipelineId: string) => {
@@ -227,8 +246,12 @@ function PipelineJobsPage() {
                   onClick={() => navigate({ to: '/pipeline/jobs/new' })}
                 >
                   <Plus className="h-4 w-4" />
-                  <span className="hidden xs:inline"><Trans>Create Pipeline</Trans></span>
-                  <span className="xs:hidden"><Trans>Create</Trans></span>
+                  <span className="hidden xs:inline">
+                    <Trans>Create Pipeline</Trans>
+                  </span>
+                  <span className="xs:hidden">
+                    <Trans>Create</Trans>
+                  </span>
                 </Button>
               </div>
             </div>
@@ -284,13 +307,16 @@ function PipelineJobsPage() {
                 <button
                   key={label}
                   onClick={() => handleStatusChange(value)}
-                  className={`relative px-3.5 py-1.5 text-xs sm:text-sm font-medium rounded-full transition-all duration-200 flex items-center gap-1.5 shrink-0 shadow-sm ring-1 ${selectedStatus === value
-                    ? 'bg-primary text-primary-foreground ring-primary'
-                    : 'text-muted-foreground hover:text-foreground bg-background hover:bg-muted ring-border/50'
-                    }`}
+                  className={`relative px-3.5 py-1.5 text-xs sm:text-sm font-medium rounded-full transition-all duration-200 flex items-center gap-1.5 shrink-0 shadow-sm ring-1 ${
+                    selectedStatus === value
+                      ? 'bg-primary text-primary-foreground ring-primary'
+                      : 'text-muted-foreground hover:text-foreground bg-background hover:bg-muted ring-border/50'
+                  }`}
                 >
                   <Icon className="h-4 w-4" />
-                  <span className="relative z-10 whitespace-nowrap">{label}</span>
+                  <span className="relative z-10 whitespace-nowrap">
+                    {label}
+                  </span>
                 </button>
               ))}
             </nav>
@@ -350,6 +376,9 @@ function PipelineJobsPage() {
                     onCancelPipeline={(pipelineId) =>
                       cancelPipelineMutation.mutate(pipelineId)
                     }
+                    onDeletePipeline={(pipelineId) =>
+                      deletePipelineMutation.mutate(pipelineId)
+                    }
                     onViewDetails={handleViewDetails}
                   />
                 </motion.div>
@@ -406,7 +435,11 @@ function PipelineJobsPage() {
                 </SelectTrigger>
                 <SelectContent>
                   {PAGE_SIZES.map((size) => (
-                    <SelectItem key={size} value={size.toString()} className="text-xs sm:text-sm">
+                    <SelectItem
+                      key={size}
+                      value={size.toString()}
+                      className="text-xs sm:text-sm"
+                    >
                       {size}
                     </SelectItem>
                   ))}
@@ -419,33 +452,36 @@ function PipelineJobsPage() {
                 <PaginationContent className="flex-nowrap">
                   <PaginationItem>
                     <PaginationPrevious
-                      onClick={() => setCurrentPage((p: number) => Math.max(0, p - 1))}
+                      onClick={() =>
+                        setCurrentPage((p: number) => Math.max(0, p - 1))
+                      }
                       className={cn(
-                        "h-8 px-2 sm:px-3 text-xs sm:text-sm",
+                        'h-8 px-2 sm:px-3 text-xs sm:text-sm',
                         currentPage === 0
                           ? 'pointer-events-none opacity-50'
-                          : 'cursor-pointer'
+                          : 'cursor-pointer',
                       )}
                     />
                   </PaginationItem>
 
                   <div className="hidden sm:flex items-center">
-                    {paginationPages.map((page: number | 'ellipsis', idx: number) =>
-                      page === 'ellipsis' ? (
-                        <PaginationItem key={`ellipsis-${idx}`}>
-                          <PaginationEllipsis />
-                        </PaginationItem>
-                      ) : (
-                        <PaginationItem key={page}>
-                          <PaginationLink
-                            isActive={currentPage === page}
-                            onClick={() => setCurrentPage(page)}
-                            className="cursor-pointer h-8 w-8 text-xs font-medium"
-                          >
-                            {page + 1}
-                          </PaginationLink>
-                        </PaginationItem>
-                      ),
+                    {paginationPages.map(
+                      (page: number | 'ellipsis', idx: number) =>
+                        page === 'ellipsis' ? (
+                          <PaginationItem key={`ellipsis-${idx}`}>
+                            <PaginationEllipsis />
+                          </PaginationItem>
+                        ) : (
+                          <PaginationItem key={page}>
+                            <PaginationLink
+                              isActive={currentPage === page}
+                              onClick={() => setCurrentPage(page)}
+                              className="cursor-pointer h-8 w-8 text-xs font-medium"
+                            >
+                              {page + 1}
+                            </PaginationLink>
+                          </PaginationItem>
+                        ),
                     )}
                   </div>
 
@@ -456,13 +492,15 @@ function PipelineJobsPage() {
                   <PaginationItem>
                     <PaginationNext
                       onClick={() =>
-                        setCurrentPage((p: number) => Math.min(totalPages - 1, p + 1))
+                        setCurrentPage((p: number) =>
+                          Math.min(totalPages - 1, p + 1),
+                        )
                       }
                       className={cn(
-                        "h-8 px-2 sm:px-3 text-xs sm:text-sm",
+                        'h-8 px-2 sm:px-3 text-xs sm:text-sm',
                         currentPage >= totalPages - 1
                           ? 'pointer-events-none opacity-50'
-                          : 'cursor-pointer'
+                          : 'cursor-pointer',
                       )}
                     />
                   </PaginationItem>
@@ -497,11 +535,15 @@ function StatCard({
         {title}
         {icon}
       </div>
-      <div className={cn("text-xl sm:text-2xl font-bold tracking-tight", color)}>
+      <div
+        className={cn('text-xl sm:text-2xl font-bold tracking-tight', color)}
+      >
         {loading ? (
           <Skeleton className="h-8 w-16" />
+        ) : formatValue ? (
+          formatValue(value || 0)
         ) : (
-          formatValue ? formatValue(value || 0) : (value || 0)
+          value || 0
         )}
       </div>
     </Card>

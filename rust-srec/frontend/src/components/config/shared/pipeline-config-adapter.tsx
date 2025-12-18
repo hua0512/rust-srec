@@ -1,11 +1,7 @@
 import { UseFormReturn } from 'react-hook-form';
 import { useEffect, useState } from 'react';
 import { PipelineWorkflowEditor } from '@/components/pipeline/workflows/pipeline-workflow-editor';
-import {
-  DagStepDefinition,
-  DagPipelineDefinition,
-  PipelineStep,
-} from '@/api/schemas';
+import { DagStepDefinition, DagPipelineDefinition } from '@/api/schemas';
 
 interface PipelineConfigAdapterProps {
   form: UseFormReturn<any>;
@@ -20,10 +16,13 @@ export function PipelineConfigAdapter({
 }: PipelineConfigAdapterProps) {
   const currentVal = form.watch(name);
   const [steps, setSteps] = useState<DagStepDefinition[]>([]);
-  const [initialized, setInitialized] = useState(false);
-
   useEffect(() => {
-    if (initialized) return;
+    // Debug log
+    console.log('PipelineConfigAdapter: input changed', {
+      currentVal,
+      type: typeof currentVal,
+      currentStepCount: steps.length,
+    });
 
     if (currentVal) {
       try {
@@ -37,39 +36,34 @@ export function PipelineConfigAdapter({
           typeof parsed === 'object' &&
           Array.isArray(parsed.steps)
         ) {
-          // New DAG format
-          setSteps(parsed.steps);
-        } else if (Array.isArray(parsed)) {
-          // Legacy linear format - migrate to DAG
-          const migratedSteps: DagStepDefinition[] = (
-            parsed as PipelineStep[]
-          ).map((step, i, arr) => {
-            const stepName =
-              step.type === 'inline' ? step.processor : step.name;
-            return {
-              id: `${stepName}-${i}`,
-              step: step,
-              depends_on:
-                i > 0
-                  ? [
-                      `${(arr[i - 1] as PipelineStep).type === 'inline' ? (arr[i - 1] as any).processor : (arr[i - 1] as any).name}-${i - 1}`,
-                    ]
-                  : [],
-            };
-          });
-          setSteps(migratedSteps);
+          // Sync local state with form state
+          // JSON stringify comparison to avoid unnecessary re-renders/loops if objects are identical
+          const currentJson = JSON.stringify(steps);
+          const newJson = JSON.stringify(parsed.steps);
+
+          if (currentJson !== newJson) {
+            console.log('PipelineConfigAdapter: updating steps', {
+              from: steps.length,
+              to: parsed.steps.length,
+            });
+            setSteps(parsed.steps);
+          }
         }
       } catch (e) {
         console.warn('Invalid Pipeline data', e);
-        setSteps([]);
       }
     } else {
-      setSteps([]);
+      if (steps.length > 0) {
+        console.log('PipelineConfigAdapter: clearing steps');
+        setSteps([]);
+      }
     }
-    setInitialized(true);
-  }, [currentVal, mode, initialized]);
+  }, [currentVal, mode, steps]); // Added steps to dependency array for correct comparison
 
   const handleChange = (newSteps: DagStepDefinition[]) => {
+    console.log('PipelineConfigAdapter: handleChange called', {
+      count: newSteps.length,
+    });
     setSteps(newSteps);
 
     const dagConfig: DagPipelineDefinition = {
@@ -85,8 +79,6 @@ export function PipelineConfigAdapter({
       shouldValidate: true,
     });
   };
-
-  if (!initialized) return null;
 
   return <PipelineWorkflowEditor steps={steps} onChange={handleChange} />;
 }

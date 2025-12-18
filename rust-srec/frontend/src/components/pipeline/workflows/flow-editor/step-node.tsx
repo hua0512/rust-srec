@@ -18,6 +18,8 @@ export type StepNode = Node<StepNodeData, 'stepNode'>;
 export function StepNode({ data }: NodeProps<StepNode>) {
   const { step, id, onEdit, onRemove } = data;
 
+  console.log('StepNode render:', { id, stepType: step.type });
+
   const isPreset = step.type === 'preset';
   const isWorkflow = step.type === 'workflow';
 

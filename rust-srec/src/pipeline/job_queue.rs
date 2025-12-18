@@ -14,7 +14,7 @@ use tracing::{info, warn};
 
 use super::progress::{JobProgressSnapshot, JobProgressUpdate, ProgressReporter};
 use crate::database::models::JobExecutionProgressDbModel;
-use crate::database::models::job::{LogEntry as DbLogEntry, PipelineStep};
+use crate::database::models::job::LogEntry as DbLogEntry;
 use crate::database::models::{
     JobDbModel, JobExecutionLogDbModel, JobFilters, JobStatus as DbJobStatus, MediaFileType,
     MediaOutputDbModel, Pagination,
@@ -358,10 +358,6 @@ pub struct Job {
     /// Number of retry attempts.
     pub retry_count: i32,
     // Pipeline chain fields
-    /// Next job type to create on completion (e.g., "upload" after "remux").
-    pub next_job_type: Option<String>,
-    /// Pipeline steps remaining after this job (e.g., ["upload", "thumbnail"]).
-    pub remaining_steps: Option<Vec<PipelineStep>>,
     /// Pipeline ID to group related jobs (first job's ID).
     pub pipeline_id: Option<String>,
     /// Execution information for observability.
@@ -398,8 +394,6 @@ impl Job {
             completed_at: None,
             error: None,
             retry_count: 0,
-            next_job_type: None,
-            remaining_steps: None,
             pipeline_id: None,
             execution_info: None,
             duration_secs: None,
@@ -408,7 +402,7 @@ impl Job {
         }
     }
 
-    /// Create a new pipeline step job with chain information.
+    /// Create a new pipeline step job with pipeline ID.
     pub fn new_pipeline_step(
         job_type: impl Into<String>,
         inputs: Vec<String>,
@@ -416,8 +410,6 @@ impl Job {
         streamer_id: impl Into<String>,
         session_id: impl Into<String>,
         pipeline_id: Option<String>,
-        next_job_type: Option<String>,
-        remaining_steps: Option<Vec<PipelineStep>>,
     ) -> Self {
         Self {
             id: uuid::Uuid::new_v4().to_string(),
@@ -434,8 +426,6 @@ impl Job {
             completed_at: None,
             error: None,
             retry_count: 0,
-            next_job_type,
-            remaining_steps,
             pipeline_id,
             execution_info: None,
             duration_secs: None,
@@ -453,18 +443,6 @@ impl Job {
     /// Set the job configuration.
     pub fn with_config(mut self, config: impl Into<String>) -> Self {
         self.config = Some(config.into());
-        self
-    }
-
-    /// Set the next job type for pipeline chaining.
-    pub fn with_next_job_type(mut self, next_job_type: impl Into<String>) -> Self {
-        self.next_job_type = Some(next_job_type.into());
-        self
-    }
-
-    /// Set the remaining pipeline steps.
-    pub fn with_remaining_steps(mut self, steps: Vec<PipelineStep>) -> Self {
-        self.remaining_steps = Some(steps);
         self
     }
 
@@ -909,196 +887,6 @@ impl JobQueue {
         info!("Job {} completed in {:.2}s", job_id, result.duration_secs);
         Ok(())
     }
-
-    /// Atomically complete a job and create the next job in the pipeline.
-    /// This ensures crash-safe transition between pipeline steps.
-    /// Returns the ID of the newly created job, if any.
-
-    pub async fn complete_with_next(
-        &self,
-        job_id: &str,
-        result: JobResult,
-    ) -> Result<Option<String>> {
-        let Some(repo) = &self.job_repository else {
-            // Without repository, fall back to simple completion
-            self.complete(job_id, result).await?;
-            return Ok(None);
-        };
-
-        // Get the current job to check for next_job_type
-        let current_job = repo.get_job(job_id).await?;
-
-        // Calculate queue wait time
-        let queue_wait_secs = if let (Some(created), Some(started)) = (
-            &current_job.created_at.parse::<chrono::DateTime<Utc>>().ok(),
-            &current_job.started_at,
-        ) {
-            if let Ok(started_dt) = started.parse::<chrono::DateTime<Utc>>() {
-                let wait_secs = (started_dt - *created).num_milliseconds() as f64 / 1000.0;
-                wait_secs.max(0.0)
-            } else {
-                0.0
-            }
-        } else {
-            0.0
-        };
-
-        // Build the next job if there's a next_job_type defined
-        let next_job = if let Some(next_type) = &current_job.next_job_type {
-            // Get remaining steps after the next job
-            let remaining = current_job.get_remaining_steps();
-
-            // Extract config for the next job if available
-            let next_config = if let Some(PipelineStep::Inline { config, .. }) = remaining.first() {
-                config.to_string()
-            } else {
-                "{}".to_string()
-            };
-
-            let (next_next_type, next_remaining) = if remaining.is_empty() {
-                (None, None)
-            } else {
-                let rest: Vec<PipelineStep> = remaining.into_iter().skip(1).collect();
-                let next_next = rest.first().cloned();
-
-                (next_next, if rest.is_empty() { None } else { Some(rest) })
-            };
-
-            // Determine next job type from PipelineStep
-            let next_job_type_str = next_type.clone();
-
-            // Create the next job
-            // Output of current job becomes input of next job
-            let inputs_json =
-                serde_json::to_string(&result.outputs).unwrap_or_else(|_| "[]".to_string());
-
-            let mut next_job = JobDbModel::new_pipeline_step(
-                next_job_type_str,
-                inputs_json,      // Inputs for next job (from current outputs)
-                "[]".to_string(), // Initial outputs for next job (empty)
-                current_job.priority,
-                current_job.streamer_id.clone(),
-                current_job.session_id.clone(),
-                current_job.pipeline_id.clone(),
-                next_next_type.map(|s| match s {
-                    PipelineStep::Inline { processor, .. } => processor,
-                    PipelineStep::Preset { name } => name,
-                    PipelineStep::Workflow { name } => name,
-                }),
-                next_remaining,
-            );
-
-            // Inherit and update execution info
-            let prev_exec_info: Option<JobExecutionInfo> = current_job
-                .execution_info
-                .as_ref()
-                .and_then(|s| serde_json::from_str(s).ok());
-
-            if let Some(prev_info) = prev_exec_info {
-                let mut new_info = JobExecutionInfo::new();
-                new_info.current_processor = Some(next_type.clone());
-
-                if let Some(step) = prev_info.current_step {
-                    new_info.current_step = Some(step + 1);
-                }
-                new_info.total_steps = prev_info.total_steps;
-
-                next_job.execution_info =
-                    Some(serde_json::to_string(&new_info).unwrap_or_else(|_| "{}".to_string()));
-            }
-
-            // Apply the resolved configuration
-            next_job.config = next_config;
-
-            Some(next_job)
-        } else {
-            None
-        };
-
-        // Perform atomic completion and next job creation
-        let outputs_str =
-            serde_json::to_string(&result.outputs).unwrap_or_else(|_| "[]".to_string());
-
-        if !result.logs.is_empty() {
-            let new_logs = self.persist_logs_to_db(job_id, &result.logs).await?;
-
-            let mut exec_info: JobExecutionInfo = current_job
-                .execution_info
-                .as_ref()
-                .and_then(|s| serde_json::from_str(s).ok())
-                .unwrap_or_default();
-            update_log_summary(&mut exec_info, &new_logs);
-            extend_logs_capped(&mut exec_info, &new_logs);
-            let exec_info_json =
-                serde_json::to_string(&exec_info).unwrap_or_else(|_| "{}".to_string());
-            repo.update_job_execution_info(job_id, &exec_info_json)
-                .await?;
-        }
-
-        let next_job_id = repo
-            .complete_job_and_create_next(
-                job_id,
-                &outputs_str,
-                result.duration_secs,
-                queue_wait_secs,
-                next_job.as_ref(),
-            )
-            .await?;
-
-        // Save first output path for thumbnail persistence
-        let first_output_path = result.outputs.first().cloned();
-
-        // Update cache for completed job
-        if let Some(mut job) = self.jobs_cache.get_mut(job_id) {
-            job.status = JobStatus::Completed;
-            job.completed_at = Some(Utc::now());
-            job.outputs = result.outputs;
-            job.duration_secs = Some(result.duration_secs);
-            job.queue_wait_secs = Some(queue_wait_secs);
-
-            if !result.logs.is_empty() {
-                let mut exec_info = job.execution_info.clone().unwrap_or_default();
-                update_log_summary(&mut exec_info, &result.logs);
-                extend_logs_capped(&mut exec_info, &result.logs);
-                job.execution_info = Some(exec_info);
-            }
-        }
-
-        // Add next job to cache if created
-        if let Some(ref next) = next_job {
-            let job = db_model_to_job(next);
-            self.jobs_cache.insert(job.id.clone(), job);
-        }
-
-        // Remove cancellation token for completed job
-        let _ = self.cancellation_tokens.remove(job_id);
-        let _ = self.persisted_log_cursor.remove(job_id);
-
-        // Depth stays the same if we created a new job, otherwise decrement
-        if next_job.is_none() {
-            self.depth.fetch_sub(1, Ordering::SeqCst);
-        }
-
-        info!("Job {} completed in {:.2}s", job_id, result.duration_secs);
-
-        // Persist thumbnail output to media_outputs table
-        if current_job.job_type == "thumbnail" {
-            if let (Some(session_id), Some(output_path)) =
-                (&current_job.session_id, first_output_path.as_ref())
-            {
-                self.persist_thumbnail_output(session_id, output_path).await;
-            }
-        }
-
-        if let Some(ref id) = next_job_id {
-            info!("Created next pipeline job: {}", id);
-            // Notify workers about the new job
-            self.notify.notify_one();
-        }
-
-        Ok(next_job_id)
-    }
-
     /// Mark a job as failed.
     pub async fn fail(&self, job_id: &str, error: &str) -> Result<()> {
         // Update database if repository is available
@@ -1434,20 +1222,6 @@ impl JobQueue {
         };
 
         Ok(jobs)
-    }
-
-    /// List pipelines (grouped by pipeline_id) with pagination.
-    pub async fn list_pipelines(
-        &self,
-        filters: &JobFilters,
-        pagination: &Pagination,
-    ) -> Result<(Vec<crate::database::repositories::PipelineSummary>, u64)> {
-        if let Some(repo) = &self.job_repository {
-            return repo.list_pipelines(filters, pagination).await;
-        }
-
-        // Fallback: return empty if no repository
-        Ok((vec![], 0))
     }
 
     /// Retry a failed job.
@@ -1805,9 +1579,6 @@ impl JobQueue {
                 job.streamer_id.clone(),
                 job.session_id.clone(),
                 job.pipeline_id.clone(),
-                // Propagate pipeline chain to ALL split jobs (Parallel Chaining)
-                job.next_job_type.clone(),
-                job.remaining_steps.clone(),
             )
             .with_priority(job.priority)
             .with_config(job.config.clone().unwrap_or_else(|| "{}".to_string()));
@@ -2097,11 +1868,6 @@ fn job_to_db_model(job: &Job) -> JobDbModel {
         completed_at: job.completed_at.map(|dt| dt.to_rfc3339()),
         error: job.error.clone(),
         retry_count: job.retry_count,
-        next_job_type: job.next_job_type.clone(),
-        remaining_steps: job
-            .remaining_steps
-            .as_ref()
-            .map(|steps| serde_json::to_string(steps).unwrap_or_else(|_| "[]".to_string())),
         pipeline_id: job.pipeline_id.clone(),
         execution_info: execution_info_json,
         duration_secs: job.duration_secs,
@@ -2168,12 +1934,6 @@ fn db_model_to_job(db_job: &JobDbModel) -> Job {
         }
     };
 
-    // Parse remaining_steps JSON array
-    let remaining_steps = db_job
-        .remaining_steps
-        .as_ref()
-        .and_then(|s| serde_json::from_str::<Vec<PipelineStep>>(s).ok());
-
     Job {
         id: db_job.id.clone(),
         job_type: db_job.job_type.clone(),
@@ -2193,8 +1953,6 @@ fn db_model_to_job(db_job: &JobDbModel) -> Job {
         completed_at,
         error: db_job.error.clone(),
         retry_count: db_job.retry_count,
-        next_job_type: db_job.next_job_type.clone(),
-        remaining_steps,
         pipeline_id: db_job.pipeline_id.clone(),
         // Parse execution_info JSON
         execution_info: db_job
@@ -2294,9 +2052,9 @@ mod tests {
         assert_eq!(split_ids[0], job_id);
     }
 
+    /// Test that split jobs preserve pipeline context.
     #[tokio::test]
-    async fn test_split_job_multiple_inputs() {
-        // A job with multiple inputs should be split into separate jobs
+    async fn test_split_job_preserves_pipeline_context() {
         let queue = JobQueue::new();
 
         let job = Job::new(
@@ -2310,9 +2068,7 @@ mod tests {
             "streamer-1",
             "session-1",
         )
-        .with_pipeline_id("pipeline-1".to_string())
-        .with_next_job_type("upload".to_string())
-        .with_remaining_steps(vec![PipelineStep::preset("thumbnail")]);
+        .with_pipeline_id("pipeline-1".to_string());
 
         let original_id = job.id.clone();
         queue.enqueue(job.clone()).await.unwrap();
@@ -2326,19 +2082,12 @@ mod tests {
         let original = queue.get_job(&original_id).await.unwrap().unwrap();
         assert_eq!(original.status, JobStatus::Completed);
 
-        // Verify each split job has single input
-        for (idx, split_id) in split_ids.iter().enumerate() {
+        // Verify each split job has single input and preserves pipeline context
+        for split_id in split_ids.iter() {
             let split_job = queue.get_job(split_id).await.unwrap().unwrap();
             assert_eq!(split_job.inputs.len(), 1);
             assert_eq!(split_job.job_type, "remux");
             assert_eq!(split_job.pipeline_id, Some("pipeline-1".to_string()));
-
-            // All jobs should have next_job_type (Parallel Chaining)
-            assert_eq!(split_job.next_job_type, Some("upload".to_string()));
-            assert_eq!(
-                split_job.remaining_steps,
-                Some(vec![PipelineStep::preset("thumbnail")])
-            );
         }
     }
 
@@ -2519,50 +2268,6 @@ mod tests {
         assert!(last_log.message.contains("FFmpeg error"));
     }
 
-    /// Test that failed jobs don't create subsequent jobs.
-    /// This is verified by checking that complete_with_next is only called on success.
-
-    #[tokio::test]
-    async fn test_failed_job_does_not_create_next_job() {
-        let queue = JobQueue::new();
-
-        // Create a pipeline job with next_job_type
-        let job = Job::new_pipeline_step(
-            "remux",
-            vec!["/input.flv".to_string()],
-            vec![],
-            "streamer-1",
-            "session-1",
-            Some("pipeline-1".to_string()),
-            Some("upload".to_string()),
-            Some(vec![PipelineStep::preset("thumbnail")]),
-        );
-        let job_id = job.id.clone();
-        queue.enqueue(job).await.unwrap();
-
-        // Verify only one job exists
-        assert_eq!(queue.depth(), 1);
-
-        // Fail the job (not using complete_with_next)
-        queue
-            .fail_with_step_info(
-                &job_id,
-                "Processing failed",
-                Some("RemuxProcessor"),
-                Some(1),
-                Some(3),
-            )
-            .await
-            .unwrap();
-
-        // Verify job is failed
-        let failed_job = queue.get_job(&job_id).await.unwrap().unwrap();
-        assert_eq!(failed_job.status, JobStatus::Failed);
-
-        // Verify no new jobs were created (depth should be 0 after failure)
-        assert_eq!(queue.depth(), 0);
-    }
-
     /// Test that fail_with_cleanup_and_step_info combines cleanup and step info.
 
     #[tokio::test]
@@ -2619,82 +2324,6 @@ mod tests {
     // ========================================================================
     // Pipeline Recovery Tests
     // ========================================================================
-
-    /// Test that pipeline jobs preserve chain info in the job struct.
-    /// This info is essential for recovery - when a job is recovered,
-    /// it should still have all the info needed to continue the pipeline.
-    #[tokio::test]
-    async fn test_pipeline_job_chain_info_preserved() {
-        let queue = JobQueue::new();
-
-        // Create a pipeline job with chain info
-        let job = Job::new_pipeline_step(
-            "remux",
-            vec!["/input.flv".to_string()],
-            vec![],
-            "streamer-1",
-            "session-1",
-            Some("pipeline-123".to_string()),
-            Some("upload".to_string()),
-            Some(vec![PipelineStep::preset("thumbnail")]),
-        );
-        let job_id = job.id.clone();
-        queue.enqueue(job).await.unwrap();
-
-        // Retrieve the job and verify chain info is preserved
-        let retrieved = queue.get_job(&job_id).await.unwrap().unwrap();
-        assert_eq!(retrieved.pipeline_id, Some("pipeline-123".to_string()));
-        assert_eq!(retrieved.next_job_type, Some("upload".to_string()));
-        assert_eq!(
-            retrieved.remaining_steps,
-            Some(vec![PipelineStep::preset("thumbnail")])
-        );
-    }
-
-    /// Test that complete_with_next creates the next job in the pipeline.
-    /// This is the core mechanism for pipeline continuation after recovery.
-
-    #[tokio::test]
-    async fn test_complete_with_next_creates_next_job() {
-        let queue = JobQueue::new();
-
-        // Create a pipeline job with next_job_type
-        let job = Job::new_pipeline_step(
-            "remux",
-            vec!["/input.flv".to_string()],
-            vec![],
-            "streamer-1",
-            "session-1",
-            Some("pipeline-123".to_string()),
-            Some("upload".to_string()),
-            Some(vec![PipelineStep::preset("thumbnail")]),
-        );
-        let job_id = job.id.clone();
-        queue.enqueue(job).await.unwrap();
-
-        // Complete the job with outputs
-        // Note: Without a repository, complete_with_next falls back to simple completion
-        // and doesn't create the next job (that requires database atomicity)
-        let result = queue
-            .complete_with_next(
-                &job_id,
-                JobResult {
-                    outputs: vec!["/output.mp4".to_string()],
-                    duration_secs: 10.0,
-                    metadata: None,
-                    logs: vec![],
-                },
-            )
-            .await
-            .unwrap();
-
-        // Without repository, no next job is created
-        assert!(result.is_none());
-
-        // But the job is completed
-        let completed = queue.get_job(&job_id).await.unwrap().unwrap();
-        assert_eq!(completed.status, JobStatus::Completed);
-    }
 
     /// Test that recover_jobs without repository returns 0.
     /// This verifies the fallback behavior when no database is configured.

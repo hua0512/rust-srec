@@ -19,6 +19,7 @@ use crate::database::models::{
     EngineConfigurationDbModel, FilterDbModel, NotificationChannelDbModel, PlatformConfigDbModel,
     StreamerDbModel, TemplateConfigDbModel,
 };
+use crate::database::models::{JobPreset, PipelinePreset};
 
 /// Current schema version for exports.
 const EXPORT_SCHEMA_VERSION: &str = "0.1.0";
@@ -53,6 +54,12 @@ pub struct ConfigExport {
     pub platforms: Vec<PlatformExport>,
     /// All notification channels with subscriptions.
     pub notification_channels: Vec<NotificationChannelExport>,
+    /// All job presets (processor configurations).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub job_presets: Vec<JobPresetExport>,
+    /// All pipeline presets (workflow configurations).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub pipeline_presets: Vec<PipelinePresetExport>,
 }
 
 /// Global configuration for export (excludes internal ID).
@@ -165,6 +172,25 @@ pub struct NotificationChannelExport {
     pub subscriptions: Vec<String>,
 }
 
+/// Job preset configuration for export.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct JobPresetExport {
+    pub name: String,
+    pub description: Option<String>,
+    pub category: Option<String>,
+    pub processor: String,
+    pub config: serde_json::Value,
+}
+
+/// Pipeline preset configuration for export.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PipelinePresetExport {
+    pub name: String,
+    pub description: Option<String>,
+    pub dag_definition: Option<String>,
+    pub pipeline_type: Option<String>,
+}
+
 // ============================================================================
 // Import Data Models
 // ============================================================================
@@ -214,6 +240,12 @@ pub struct ImportStats {
     pub channels_created: u32,
     pub channels_updated: u32,
     pub channels_deleted: u32,
+    pub job_presets_created: u32,
+    pub job_presets_updated: u32,
+    pub job_presets_deleted: u32,
+    pub pipeline_presets_created: u32,
+    pub pipeline_presets_updated: u32,
+    pub pipeline_presets_deleted: u32,
 }
 
 // ============================================================================
@@ -244,6 +276,16 @@ async fn export_config(State(state): State<AppState>) -> Result<impl IntoRespons
         .as_ref()
         .ok_or_else(|| ApiError::internal("FilterRepository not available"))?;
 
+    let job_preset_repo = state
+        .job_preset_repository
+        .as_ref()
+        .ok_or_else(|| ApiError::internal("JobPresetRepository not available"))?;
+
+    let pipeline_preset_repo = state
+        .pipeline_preset_repository
+        .as_ref()
+        .ok_or_else(|| ApiError::internal("PipelinePresetRepository not available"))?;
+
     // Collect all data
     let global_config = config_service
         .get_global_config()
@@ -272,6 +314,16 @@ async fn export_config(State(state): State<AppState>) -> Result<impl IntoRespons
         .list_channels()
         .await
         .map_err(|e| ApiError::internal(format!("Failed to list notification channels: {}", e)))?;
+
+    let job_presets = job_preset_repo
+        .list_presets()
+        .await
+        .map_err(|e| ApiError::internal(format!("Failed to list job presets: {}", e)))?;
+
+    let pipeline_presets = pipeline_preset_repo
+        .list_pipeline_presets()
+        .await
+        .map_err(|e| ApiError::internal(format!("Failed to list pipeline presets: {}", e)))?;
 
     // Build platform ID to name map for streamer export
     let platform_map: HashMap<String, String> = platforms
@@ -419,6 +471,25 @@ async fn export_config(State(state): State<AppState>) -> Result<impl IntoRespons
             })
             .collect(),
         notification_channels: channel_exports,
+        job_presets: job_presets
+            .into_iter()
+            .map(|jp| JobPresetExport {
+                name: jp.name,
+                description: jp.description,
+                category: jp.category,
+                processor: jp.processor,
+                config: serde_json::Value::String(jp.config),
+            })
+            .collect(),
+        pipeline_presets: pipeline_presets
+            .into_iter()
+            .map(|pp| PipelinePresetExport {
+                name: pp.name,
+                description: pp.description,
+                dag_definition: pp.dag_definition,
+                pipeline_type: pp.pipeline_type,
+            })
+            .collect(),
     };
 
     let json = serde_json::to_string_pretty(&export)
@@ -484,6 +555,16 @@ async fn import_config(
         .filter_repository
         .as_ref()
         .ok_or_else(|| ApiError::internal("FilterRepository not available"))?;
+
+    let job_preset_repo = state
+        .job_preset_repository
+        .as_ref()
+        .ok_or_else(|| ApiError::internal("JobPresetRepository not available"))?;
+
+    let pipeline_preset_repo = state
+        .pipeline_preset_repository
+        .as_ref()
+        .ok_or_else(|| ApiError::internal("PipelinePresetRepository not available"))?;
 
     let mut stats = ImportStats::default();
     let is_replace = mode == ImportMode::Replace;
@@ -910,9 +991,147 @@ async fn import_config(
         let _ = notification_service.reload_from_db().await;
     }
 
+    // 7. Import job presets (by name)
+    let existing_job_presets = job_preset_repo.list_presets().await.unwrap_or_default();
+    let job_preset_name_map: HashMap<String, JobPreset> = existing_job_presets
+        .into_iter()
+        .map(|jp| (jp.name.clone(), jp))
+        .collect();
+
+    for preset_export in &config.job_presets {
+        if let Some(existing) = job_preset_name_map.get(&preset_export.name) {
+            // Update existing
+            let mut updated = existing.clone();
+            updated.description = preset_export.description.clone();
+            updated.category = preset_export.category.clone();
+            updated.processor = preset_export.processor.clone();
+            updated.config = preset_export.config.to_string();
+            updated.updated_at = Utc::now();
+
+            job_preset_repo
+                .update_preset(&updated)
+                .await
+                .map_err(|e| ApiError::internal(format!("Failed to update job preset: {}", e)))?;
+            stats.job_presets_updated += 1;
+        } else {
+            // Create new
+            let mut new_preset = JobPreset::new(
+                &preset_export.name,
+                &preset_export.processor,
+                preset_export.config.clone(),
+            );
+            new_preset.description = preset_export.description.clone();
+            new_preset.category = preset_export.category.clone();
+
+            job_preset_repo
+                .create_preset(&new_preset)
+                .await
+                .map_err(|e| ApiError::internal(format!("Failed to create job preset: {}", e)))?;
+            stats.job_presets_created += 1;
+        }
+    }
+
+    // In replace mode, delete job presets not in the import
+    if is_replace {
+        let imported_job_preset_names: std::collections::HashSet<&str> =
+            config.job_presets.iter().map(|p| p.name.as_str()).collect();
+        for (name, preset) in &job_preset_name_map {
+            if !imported_job_preset_names.contains(name.as_str()) {
+                if job_preset_repo.delete_preset(&preset.id).await.is_ok() {
+                    stats.job_presets_deleted += 1;
+                }
+            }
+        }
+    }
+
+    // 8. Import pipeline presets (by name)
+    let existing_pipeline_presets = pipeline_preset_repo
+        .list_pipeline_presets()
+        .await
+        .unwrap_or_default();
+    let pipeline_preset_name_map: HashMap<String, PipelinePreset> = existing_pipeline_presets
+        .into_iter()
+        .map(|pp| (pp.name.clone(), pp))
+        .collect();
+
+    for preset_export in &config.pipeline_presets {
+        if let Some(existing) = pipeline_preset_name_map.get(&preset_export.name) {
+            // Update existing
+            let mut updated = existing.clone();
+            updated.description = preset_export.description.clone();
+            updated.dag_definition = preset_export.dag_definition.clone();
+            updated.pipeline_type = preset_export.pipeline_type.clone();
+            updated.updated_at = Utc::now();
+
+            pipeline_preset_repo
+                .update_pipeline_preset(&updated)
+                .await
+                .map_err(|e| {
+                    ApiError::internal(format!("Failed to update pipeline preset: {}", e))
+                })?;
+            stats.pipeline_presets_updated += 1;
+        } else {
+            // Create new
+            let dag_json = preset_export.dag_definition.as_deref().ok_or_else(|| {
+                ApiError::bad_request("Missing dag_definition for pipeline preset")
+            })?;
+
+            let dag_def: crate::database::models::job::DagPipelineDefinition =
+                serde_json::from_str(dag_json).map_err(|e| {
+                    ApiError::bad_request(format!(
+                        "Invalid dag_definition for pipeline preset '{}': {}",
+                        preset_export.name, e
+                    ))
+                })?;
+
+            let mut new_preset = PipelinePreset::new(&preset_export.name, dag_def);
+            new_preset.description = preset_export.description.clone();
+            new_preset.pipeline_type = preset_export.pipeline_type.clone();
+
+            pipeline_preset_repo
+                .create_pipeline_preset(&new_preset)
+                .await
+                .map_err(|e| {
+                    ApiError::internal(format!("Failed to create pipeline preset: {}", e))
+                })?;
+            stats.pipeline_presets_created += 1;
+        }
+    }
+
+    // In replace mode, delete pipeline presets not in the import
+    if is_replace {
+        let imported_pipeline_preset_names: std::collections::HashSet<&str> = config
+            .pipeline_presets
+            .iter()
+            .map(|p| p.name.as_str())
+            .collect();
+        for (name, preset) in &pipeline_preset_name_map {
+            if !imported_pipeline_preset_names.contains(name.as_str()) {
+                if pipeline_preset_repo
+                    .delete_pipeline_preset(&preset.id)
+                    .await
+                    .is_ok()
+                {
+                    stats.pipeline_presets_deleted += 1;
+                }
+            }
+        }
+    }
+
+    let stats_msg = format!(
+        "Imported: {} templates, {} streamers, {} engines, {} platforms updated, {} channels, {} job presets, {} pipeline presets",
+        stats.templates_created + stats.templates_updated,
+        stats.streamers_created + stats.streamers_updated,
+        stats.engines_created + stats.engines_updated,
+        stats.platforms_updated,
+        stats.channels_created + stats.channels_updated,
+        stats.job_presets_created + stats.job_presets_updated,
+        stats.pipeline_presets_created + stats.pipeline_presets_updated
+    );
+
     Ok(Json(ImportResult {
         success: true,
-        message: "Configuration imported successfully".to_string(),
+        message: stats_msg,
         stats,
     }))
 }

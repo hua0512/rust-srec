@@ -117,7 +117,6 @@ pub fn router() -> Router<AppState> {
         .route("/jobs/{id}/retry", post(retry_job))
         .route("/jobs/{id}", delete(cancel_job))
         .route("/{pipeline_id}", delete(cancel_pipeline))
-        .route("/pipelines", get(list_pipelines))
         .route("/outputs", get(list_outputs))
         .route("/stats", get(get_stats))
         .route("/create", post(create_pipeline))
@@ -135,6 +134,7 @@ pub fn router() -> Router<AppState> {
         .route("/presets/{id}/preview", get(preview_pipeline_preset))
         .route("/dags", get(list_dags))
         .route("/dag/{dag_id}", get(get_dag_status).delete(cancel_dag))
+        .route("/dag/{dag_id}/delete", delete(delete_dag))
         .route("/dag/{dag_id}/graph", get(get_dag_graph))
         .route("/dag/{dag_id}/stats", get(get_dag_stats))
         .route("/dag/{dag_id}/retry", post(retry_dag))
@@ -303,34 +303,8 @@ pub struct PipelinePresetResponse {
 impl From<crate::database::models::PipelinePreset> for PipelinePresetResponse {
     fn from(preset: crate::database::models::PipelinePreset) -> Self {
         let dag = preset.get_dag_definition().unwrap_or_else(|| {
-            // Fallback: convert legacy steps to DAG format
-            #[allow(deprecated)]
-            let steps = preset.get_steps();
-            let dag_steps: Vec<DagStep> = steps
-                .iter()
-                .enumerate()
-                .map(|(i, step)| {
-                    let step_id = match step {
-                        PipelineStep::Preset { name } => name.clone(),
-                        PipelineStep::Workflow { name } => name.clone(),
-                        PipelineStep::Inline { processor, .. } => format!("{}_{}", processor, i),
-                    };
-
-                    if i == 0 {
-                        DagStep::new(step_id, step.clone())
-                    } else {
-                        let prev_step_id = match &steps[i - 1] {
-                            PipelineStep::Preset { name } => name.clone(),
-                            PipelineStep::Workflow { name } => name.clone(),
-                            PipelineStep::Inline { processor, .. } => {
-                                format!("{}_{}", processor, i - 1)
-                            }
-                        };
-                        DagStep::with_dependencies(step_id, step.clone(), vec![prev_step_id])
-                    }
-                })
-                .collect();
-            DagPipelineDefinition::new(&preset.name, dag_steps)
+            // Default to empty DAG if missing
+            DagPipelineDefinition::new(&preset.name, vec![])
         });
         Self {
             id: preset.id,
@@ -358,22 +332,6 @@ pub struct OutputFilterParams {
     pub streamer_id: Option<String>,
     /// Search query (matches file path, session ID, or format).
     pub search: Option<String>,
-}
-
-/// Response for a single pipeline summary.
-#[derive(Debug, Clone, Serialize)]
-pub struct PipelineSummaryResponse {
-    pub pipeline_id: String,
-    pub streamer_id: String,
-    pub streamer_name: Option<String>,
-    pub session_id: Option<String>,
-    pub status: String,
-    pub job_count: i64,
-    pub completed_count: i64,
-    pub failed_count: i64,
-    pub total_duration_secs: f64,
-    pub created_at: String,
-    pub updated_at: String,
 }
 
 // ============================================================================
@@ -589,6 +547,8 @@ pub struct DagListItem {
     pub status: String,
     /// Associated streamer ID.
     pub streamer_id: Option<String>,
+    /// Associated streamer name.
+    pub streamer_name: Option<String>,
     /// Associated session ID.
     pub session_id: Option<String>,
     /// Total number of steps.
@@ -839,97 +799,6 @@ async fn get_job_progress(
         .ok_or_else(|| ApiError::not_found(format!("No progress available for job {}", id)))?;
 
     Ok(Json(snapshot))
-}
-
-/// List pipelines with pagination and filtering.
-///
-/// # Endpoint
-///
-/// `GET /api/pipeline/pipelines`
-///
-/// # Query Parameters
-///
-/// - `limit` - Maximum number of results (default: 20, max: 100)
-/// - `offset` - Number of results to skip (default: 0)
-/// - `status` - Filter by overall pipeline status
-/// - `streamer_id` - Filter by streamer ID
-/// - `session_id` - Filter by session ID
-/// - `search` - Search query
-///
-/// # Response
-///
-/// Returns a paginated list of pipeline summaries.
-async fn list_pipelines(
-    State(state): State<AppState>,
-    Query(pagination): Query<PaginationParams>,
-    Query(filters): Query<JobFilterParams>,
-) -> ApiResult<Json<PaginatedResponse<PipelineSummaryResponse>>> {
-    let pipeline_manager = state
-        .pipeline_manager
-        .as_ref()
-        .ok_or_else(|| ApiError::service_unavailable("Pipeline service not available"))?;
-
-    let db_filters = JobFilters {
-        status: filters.status.map(api_status_to_db_status),
-        streamer_id: filters.streamer_id,
-        session_id: filters.session_id,
-        pipeline_id: filters.pipeline_id,
-        from_date: filters.from_date,
-        to_date: filters.to_date,
-        job_type: None,
-        job_types: None,
-        search: filters.search,
-    };
-
-    let effective_limit = pagination.limit.min(100);
-    let db_pagination = Pagination::new(effective_limit, pagination.offset);
-
-    let (pipelines, total) = pipeline_manager
-        .list_pipelines(&db_filters, &db_pagination)
-        .await
-        .map_err(ApiError::from)?;
-
-    // Batch-fetch streamer names
-    let streamer_ids: HashSet<String> = pipelines.iter().map(|p| p.streamer_id.clone()).collect();
-    let streamer_names: HashMap<String, String> = if let Some(repo) = &state.streamer_repository {
-        let fetches = streamer_ids.into_iter().map(|streamer_id| {
-            let repo = repo.clone();
-            async move {
-                let name = repo.get_streamer(&streamer_id).await.ok().map(|s| s.name);
-                (streamer_id, name)
-            }
-        });
-        join_all(fetches)
-            .await
-            .into_iter()
-            .filter_map(|(id, name)| name.map(|n| (id, n)))
-            .collect()
-    } else {
-        HashMap::new()
-    };
-
-    let responses: Vec<PipelineSummaryResponse> = pipelines
-        .into_iter()
-        .map(|p| {
-            let streamer_name = streamer_names.get(&p.streamer_id).cloned();
-            PipelineSummaryResponse {
-                pipeline_id: p.pipeline_id,
-                streamer_id: p.streamer_id,
-                streamer_name,
-                session_id: p.session_id,
-                status: p.status,
-                job_count: p.job_count,
-                completed_count: p.completed_count,
-                failed_count: p.failed_count,
-                total_duration_secs: p.total_duration_secs,
-                created_at: p.created_at,
-                updated_at: p.updated_at,
-            }
-        })
-        .collect();
-
-    let response = PaginatedResponse::new(responses, total, effective_limit, pagination.offset);
-    Ok(Json(response))
 }
 
 /// Get a single job by ID.
@@ -1661,7 +1530,7 @@ async fn create_pipeline_preset(
     }
 
     // Create DAG preset
-    let mut preset = crate::database::models::PipelinePreset::new_dag(payload.name, payload.dag);
+    let mut preset = crate::database::models::PipelinePreset::new(payload.name, payload.dag);
     if let Some(desc) = payload.description {
         preset = preset.with_description(desc);
     }
@@ -1710,7 +1579,6 @@ async fn update_pipeline_preset(
         id: id.clone(),
         name: payload.name,
         description: payload.description,
-        steps: "[]".to_string(), // Empty legacy steps
         dag_definition: Some(dag_json),
         pipeline_type: Some("dag".to_string()),
         created_at: existing.created_at,
@@ -2096,66 +1964,88 @@ async fn list_dags(
         .as_ref()
         .ok_or_else(|| ApiError::service_unavailable("Pipeline service not available"))?;
 
+    let dag_scheduler = pipeline_manager
+        .dag_scheduler()
+        .ok_or_else(|| ApiError::service_unavailable("DAG scheduler not available"))?;
+
     let effective_limit = pagination.limit.min(100);
 
-    // Convert status string to DbJobStatus
+    // Convert status string to match DAG execution status
     let status_filter = filters
         .status
         .as_ref()
-        .and_then(|s| match s.to_uppercase().as_str() {
-            "PENDING" => Some(DbJobStatus::Pending),
-            "PROCESSING" => Some(DbJobStatus::Processing),
-            "COMPLETED" => Some(DbJobStatus::Completed),
-            "FAILED" => Some(DbJobStatus::Failed),
-            "INTERRUPTED" => Some(DbJobStatus::Interrupted),
-            "CANCELLED" => Some(DbJobStatus::Interrupted),
-            _ => None,
+        .map(|s| match s.to_uppercase().as_str() {
+            "PENDING" => "PENDING",
+            "PROCESSING" => "PROCESSING",
+            "COMPLETED" => "COMPLETED",
+            "FAILED" => "FAILED",
+            "INTERRUPTED" | "CANCELLED" => "INTERRUPTED",
+            _ => s.as_str(),
         });
 
-    let db_filters = JobFilters {
-        status: status_filter,
-        streamer_id: None,
-        session_id: None,
-        pipeline_id: None,
-        from_date: None,
-        to_date: None,
-        job_type: None,
-        job_types: None,
-        search: filters.search,
-    };
-
-    let db_pagination = Pagination::new(effective_limit, pagination.offset);
-
-    // Get pipelines/jobs from manager which provides unified view
-    let (pipelines, total) = pipeline_manager
-        .list_pipelines(&db_filters, &db_pagination)
+    // List DAG executions from dag_execution table
+    let dags = dag_scheduler
+        .list_dags(status_filter, effective_limit, pagination.offset)
         .await
         .map_err(ApiError::from)?;
 
-    // Convert to response format
-    let dag_items: Vec<DagListItem> = pipelines
-        .into_iter()
-        .map(|p| {
-            let progress_percent = if p.job_count > 0 {
-                (p.completed_count as f64 / p.job_count as f64) * 100.0
-            } else {
-                0.0
-            };
+    // Count total matching DAGs
+    let total = dag_scheduler
+        .count_dags(status_filter)
+        .await
+        .map_err(ApiError::from)?;
 
-            let name = p.name.unwrap_or_else(|| "Unknown".to_string());
+    // Batch-fetch streamer names
+    let streamer_ids: std::collections::HashSet<String> =
+        dags.iter().filter_map(|d| d.streamer_id.clone()).collect();
+    let streamer_names: std::collections::HashMap<String, String> =
+        if let Some(repo) = &state.streamer_repository {
+            let fetches = streamer_ids.into_iter().map(|streamer_id| {
+                let repo = repo.clone();
+                async move {
+                    let name = repo.get_streamer(&streamer_id).await.ok().map(|s| s.name);
+                    (streamer_id, name)
+                }
+            });
+            futures::future::join_all(fetches)
+                .await
+                .into_iter()
+                .filter_map(|(id, name)| name.map(|n| (id, n)))
+                .collect()
+        } else {
+            std::collections::HashMap::new()
+        };
+
+    // Convert to response format
+    let dag_items: Vec<DagListItem> = dags
+        .into_iter()
+        .map(|dag| {
+            let progress_percent = dag.progress_percent();
+
+            // Parse DAG definition to get the name
+            let name = dag
+                .get_dag_definition()
+                .map(|def| def.name)
+                .unwrap_or_else(|| "Unknown".to_string());
+
+            let streamer_name = dag
+                .streamer_id
+                .as_ref()
+                .and_then(|id| streamer_names.get(id).cloned());
 
             DagListItem {
-                id: p.pipeline_id,
+                id: dag.id,
                 name,
-                status: p.status,
-                streamer_id: Some(p.streamer_id),
-                session_id: p.session_id,
-                total_steps: p.job_count as i32,
-                completed_steps: p.completed_count as i32,
-                failed_steps: p.failed_count as i32,
+                status: dag.status,
+                streamer_id: dag.streamer_id,
+                streamer_name,
+                session_id: dag.session_id,
+                total_steps: dag.total_steps,
+                completed_steps: dag.completed_steps,
+                failed_steps: dag.failed_steps,
                 progress_percent,
-                created_at: p.created_at,
-                updated_at: p.updated_at,
+                created_at: dag.created_at,
+                updated_at: dag.updated_at,
             }
         })
         .collect();
@@ -2219,6 +2109,50 @@ async fn cancel_dag(
         cancelled_steps,
         message,
     }))
+}
+
+/// Permanently delete a DAG execution and all its steps.
+///
+/// # Endpoint
+///
+/// `DELETE /api/pipeline/dag/{dag_id}/delete`
+///
+/// # Path Parameters
+///
+/// - `dag_id` - The DAG execution ID
+///
+/// # Response
+///
+/// Returns a success message.
+///
+/// # Behavior
+///
+/// - Permanently deletes the DAG execution record
+/// - Deletes all associated step executions (via CASCADE)
+/// - Cannot be undone
+async fn delete_dag(
+    State(state): State<AppState>,
+    Path(dag_id): Path<String>,
+) -> ApiResult<Json<serde_json::Value>> {
+    let pipeline_manager = state
+        .pipeline_manager
+        .as_ref()
+        .ok_or_else(|| ApiError::service_unavailable("Pipeline service not available"))?;
+
+    let dag_scheduler = pipeline_manager
+        .dag_scheduler()
+        .ok_or_else(|| ApiError::service_unavailable("DAG scheduler not available"))?;
+
+    // Delete the DAG
+    dag_scheduler
+        .delete_dag(&dag_id)
+        .await
+        .map_err(ApiError::from)?;
+
+    Ok(Json(serde_json::json!({
+        "dag_id": dag_id,
+        "message": format!("DAG '{}' deleted successfully", dag_id)
+    })))
 }
 
 /// Get DAG step statistics.

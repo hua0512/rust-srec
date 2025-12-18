@@ -11,6 +11,9 @@ import {
   Panel,
   ConnectionMode,
   Node,
+  useReactFlow,
+  ReactFlowProvider,
+  useNodesInitialized,
 } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
 
@@ -40,7 +43,7 @@ interface WorkflowFlowEditorProps {
   onEditStep?: (id: string) => void;
 }
 
-export function WorkflowFlowEditor({
+function WorkflowFlowEditorInner({
   steps,
   onUpdateSteps,
   onEditStep,
@@ -48,6 +51,8 @@ export function WorkflowFlowEditor({
   const [nodes, setNodes, onNodesChange] = useNodesState<Node>([]);
   const [edges, setEdges, onEdgesChange] = useEdgesState<Edge>([]);
   const [hasLaidOut, setHasLaidOut] = useState(false);
+  const nodesInitialized = useNodesInitialized();
+  const { fitView } = useReactFlow();
 
   // Sync from props
   useEffect(() => {
@@ -110,19 +115,45 @@ export function WorkflowFlowEditor({
     setEdges(newEdges);
   }, [steps, onEditStep, onUpdateSteps, setNodes, setEdges]);
 
-  // Separate effect to handle the Initial Auto-Layout
-  // We want to run this ONLY when we go from 0 nodes to >0 nodes for the first time
-  // OR if we explicitly want to force layout (which is handled by the button).
-  // Actually, simply checking if we have nodes and haven't laid out is safer.
+  // Separate effect to handle Auto-Layout logic
+  // We want to re-layout when the structure changes (e.g. loading a preset)
+  // We detect this by checking if we have unlayouted nodes (position 0,0) or if the step count changed significantly
   useEffect(() => {
-    if (!hasLaidOut && nodes.length > 0) {
+    // Only run layout if:
+    // 1. We have nodes
+    // 2. Nodes are initialized (measured by React Flow)
+    // 3. We haven't laid out yet OR nodes are all at 0,0 (new load)
+    const needsLayout =
+      nodes.length > 0 &&
+      nodesInitialized &&
+      (!hasLaidOut ||
+        nodes.every((n) => n.position.x === 0 && n.position.y === 0));
+
+    if (needsLayout) {
+      console.log('WorkflowFlowEditor: Running auto-layout', {
+        nodeCount: nodes.length,
+      });
       const { nodes: layoutedNodes, edges: layoutedEdges } =
         getLayoutedElements(nodes, edges);
+
       setNodes([...layoutedNodes]);
       setEdges([...layoutedEdges]);
       setHasLaidOut(true);
+
+      window.requestAnimationFrame(() => {
+        fitView({ padding: 0.2, duration: 200 });
+      });
     }
-  }, [nodes.length, hasLaidOut, nodes, edges, setNodes, setEdges]);
+  }, [
+    nodes,
+    edges,
+    nodesInitialized,
+    hasLaidOut,
+    setNodes,
+    setEdges,
+    fitView,
+    nodes.length,
+  ]);
 
   const onConnect = useCallback(
     (params: Connection) => {
@@ -228,5 +259,13 @@ export function WorkflowFlowEditor({
         </Panel>
       </ReactFlow>
     </GraphViewport>
+  );
+}
+
+export function WorkflowFlowEditor(props: WorkflowFlowEditorProps) {
+  return (
+    <ReactFlowProvider>
+      <WorkflowFlowEditorInner {...props} />
+    </ReactFlowProvider>
   );
 }

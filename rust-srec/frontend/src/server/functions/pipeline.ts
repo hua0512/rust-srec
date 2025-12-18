@@ -29,10 +29,6 @@ export type CreatePipelineJobRequest = z.infer<
   typeof CreatePipelineJobRequestSchema
 >;
 
-// listPipelineJobs is deprecated. Use getDagExecution to see steps and statuses.
-
-// listPipelineJobsPage is deprecated.
-
 export const getPipelineJobLogs = createServerFn({ method: 'GET' })
   .inputValidator((d: { id: string; limit?: number; offset?: number }) => d)
   .handler(async ({ data }) => {
@@ -189,19 +185,27 @@ export const cancelPipeline = createServerFn({ method: 'POST' })
     const json = await fetchBackend(`/pipeline/dag/${pipelineId}`, {
       method: 'DELETE',
     });
-    // For compatibility with old components
-    const result = z
+    return z
       .object({
         dag_id: z.string(),
         cancelled_steps: z.number(),
         message: z.string(),
       })
       .parse(json);
-    return {
-      success: true,
-      message: result.message,
-      cancelled_count: result.cancelled_steps,
-    };
+  });
+
+export const deletePipeline = createServerFn({ method: 'POST' })
+  .inputValidator((pipelineId: string) => pipelineId)
+  .handler(async ({ data: pipelineId }) => {
+    const json = await fetchBackend(`/pipeline/dag/${pipelineId}/delete`, {
+      method: 'DELETE',
+    });
+    return z
+      .object({
+        dag_id: z.string(),
+        message: z.string(),
+      })
+      .parse(json);
   });
 
 export const createPipelineJob = createServerFn({ method: 'POST' })

@@ -50,10 +50,7 @@ tracing-appender = "0.2"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
 
 sysinfo = { version = "0.30" }
-tokio-tungstenite = { version = "0.23.1", features = ["native-tls"] }
-tokio-rustls = { version = "0.26", default-features = false, features = ["ring", "tls12"] }
-webpki-roots = "0.26"
-quick-xml = { version = "0.36.0", features = ["serde", "serialize"] }
+tokio-tungstenite = { version = "0.23.1", features = ["rustls-tls-native-roots"] }
 
 # Workspace crates
 danmaku = { path = "../crates/danmaku" }
@@ -64,7 +61,6 @@ hls = { path = "../crates/hls" }
 hls-fix = { path = "../crates/hls-fix" }
 mesio = { path = "../crates/mesio", package = "mesio-engine" }
 platforms-parser = { path = "../crates/platforms" }
-tars-codec = { path = "../crates/tars-codec" }
 thiserror = "1.0"
 dotenvy = "0.15"
 rand = "0.9.2"

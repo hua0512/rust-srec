@@ -26,21 +26,17 @@ export function PipelineConfigCard({ control }: PipelineConfigCardProps) {
 
   // Initialize state from field value
   useEffect(() => {
+    // fieldValue is now a DagPipelineDefinition object (parsed by GlobalConfigSchema), not a string
+
     // Only initialize once or if fieldValue changes significantly (e.g. after form reset)
     if (initialized) {
       // If initialized, we only want to update if the value from the form (server)
       // is different from our local state (meaning it was updated externally)
-      if (fieldValue) {
-        try {
-          const parsed = JSON.parse(fieldValue);
-          const steps = (parsed?.steps || []) as DagStepDefinition[];
-          // Simple equality check to avoid infinite loops if possible
-          if (JSON.stringify(steps) !== JSON.stringify(currentSteps)) {
-            setCurrentSteps(steps);
-          }
-        } catch (e) {
-          console.error('Failed to parse pipeline config', e);
-          // ignore parse errors for existing state sync
+      if (fieldValue && typeof fieldValue === 'object') {
+        const steps = (fieldValue?.steps || []) as DagStepDefinition[];
+        // Simple equality check to avoid infinite loops if possible
+        if (JSON.stringify(steps) !== JSON.stringify(currentSteps)) {
+          setCurrentSteps(steps);
         }
       } else if (currentSteps.length > 0) {
         setCurrentSteps([]);
@@ -49,24 +45,27 @@ export function PipelineConfigCard({ control }: PipelineConfigCardProps) {
     }
 
     let loadedSteps: DagStepDefinition[] = [];
-    try {
-      if (fieldValue) {
-        const parsed = JSON.parse(fieldValue);
 
-        // Strict DAG support only
-        if (
-          parsed &&
-          typeof parsed === 'object' &&
-          Array.isArray(parsed.steps)
-        ) {
-          loadedSteps = parsed.steps;
-        } else if (Array.isArray(parsed)) {
-          // If user has old config, we could show an error or just clear it.
-          console.warn('Legacy pipeline config detected and ignored.');
+    // Handle fieldValue as an object (from parsed schema) or as a string (legacy)
+    if (fieldValue) {
+      if (typeof fieldValue === 'object' && Array.isArray(fieldValue.steps)) {
+        // New format: fieldValue is already a DagPipelineDefinition object
+        loadedSteps = fieldValue.steps;
+      } else if (typeof fieldValue === 'string') {
+        // Legacy format: fieldValue is a JSON string (shouldn't happen after schema changes, but handle just in case)
+        try {
+          const parsed = JSON.parse(fieldValue);
+          if (
+            parsed &&
+            typeof parsed === 'object' &&
+            Array.isArray(parsed.steps)
+          ) {
+            loadedSteps = parsed.steps;
+          }
+        } catch (e) {
+          console.error('Failed to parse pipeline config string', e);
         }
       }
-    } catch (e) {
-      console.error('Failed to parse pipeline config', e);
     }
 
     setCurrentSteps(loadedSteps);
@@ -81,12 +80,12 @@ export function PipelineConfigCard({ control }: PipelineConfigCardProps) {
         render={({ field }) => {
           const updateSteps = (newSteps: DagStepDefinition[]) => {
             setCurrentSteps(newSteps);
-            // Always save as DAG object
+            // Pass as DAG object (will be stringified by GlobalConfigUpdateSchema when sending to backend)
             const dagConfig: DagPipelineDefinition = {
               name: 'global_pipeline',
               steps: newSteps,
             };
-            field.onChange(JSON.stringify(dagConfig));
+            field.onChange(dagConfig);
           };
 
           return (

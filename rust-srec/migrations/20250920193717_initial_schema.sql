@@ -203,12 +203,12 @@ CREATE TABLE job (
     completed_at TEXT,                       -- When job completed
     error TEXT,                              -- Error message if failed
     retry_count INTEGER NOT NULL DEFAULT 0,  -- Number of retry attempts
-    next_job_type TEXT,                      -- Next job type to create on completion
-    remaining_steps TEXT,                    -- Pipeline steps remaining (JSON array)
     pipeline_id TEXT,                        -- Pipeline ID to group related jobs
     execution_info TEXT,                     -- JSON blob for detailed execution logs/result
     duration_secs REAL,                      -- Processing duration in seconds (from processor)
-    queue_wait_secs REAL                     -- Time spent waiting in queue (started_at - created_at)
+    queue_wait_secs REAL,                    -- Time spent waiting in queue (started_at - created_at)
+    -- Link jobs to their DAG step execution (if part of a DAG)
+    dag_step_execution_id TEXT REFERENCES dag_step_execution(id) ON DELETE SET NULL
 );
 
 CREATE TABLE job_execution_logs (
@@ -248,15 +248,74 @@ CREATE TABLE job_presets (
     updated_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
--- Pipeline Presets: Reusable pipeline configurations (sequences of job steps)
+-- Pipeline Presets: Reusable pipeline configurations
 -- Users can copy these to configure streamers/templates
 CREATE TABLE pipeline_presets (
     id TEXT PRIMARY KEY,
     name TEXT NOT NULL UNIQUE,
     description TEXT,
-    steps TEXT NOT NULL, -- JSON array of PipelineStep (job preset names or inline definitions)
+    -- JSON-serialized DAG pipeline definition (DagPipelineDefinition)
+    dag_definition TEXT,
+    pipeline_type TEXT NOT NULL DEFAULT 'dag',
     created_at TEXT NOT NULL DEFAULT (datetime('now')),
     updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+-- ============================================
+-- DAG SYSTEM TABLES
+-- ============================================
+
+-- Tracks the overall state of a DAG pipeline execution
+CREATE TABLE dag_execution (
+    id TEXT PRIMARY KEY,
+    -- JSON-serialized DAG pipeline definition (DagPipelineDefinition)
+    dag_definition TEXT NOT NULL,
+    -- Execution status: PENDING, PROCESSING, COMPLETED, FAILED, INTERRUPTED
+    status TEXT NOT NULL DEFAULT 'PENDING',
+    -- Associated streamer ID
+    streamer_id TEXT,
+    -- Associated session ID
+    session_id TEXT,
+    -- ISO 8601 timestamp when the DAG was created
+    created_at TEXT NOT NULL,
+    -- ISO 8601 timestamp when the DAG was last updated
+    updated_at TEXT NOT NULL,
+    -- ISO 8601 timestamp when the DAG completed (success or failure)
+    completed_at TEXT,
+    -- Error message if the DAG failed
+    error TEXT,
+    -- Total number of steps in the DAG
+    total_steps INTEGER NOT NULL,
+    -- Number of steps that have completed successfully
+    completed_steps INTEGER NOT NULL DEFAULT 0,
+    -- Number of steps that have failed
+    failed_steps INTEGER NOT NULL DEFAULT 0
+);
+
+-- Tracks individual step state within a DAG execution
+CREATE TABLE dag_step_execution (
+    id TEXT PRIMARY KEY,
+    -- Parent DAG execution ID
+    dag_id TEXT NOT NULL,
+    -- Step ID within the DAG definition (e.g., "remux", "upload")
+    step_id TEXT NOT NULL,
+    -- Associated job ID (NULL until job is created)
+    job_id TEXT,
+    -- Step status: BLOCKED, PENDING, PROCESSING, COMPLETED, FAILED, CANCELLED
+    status TEXT NOT NULL DEFAULT 'BLOCKED',
+    -- JSON array of step IDs this step depends on
+    depends_on_step_ids TEXT NOT NULL DEFAULT '[]',
+    -- JSON array of output paths produced by this step
+    outputs TEXT,
+    -- ISO 8601 timestamp when the step was created
+    created_at TEXT NOT NULL,
+    -- ISO 8601 timestamp when the step was last updated
+    updated_at TEXT NOT NULL,
+    -- Foreign key constraints
+    FOREIGN KEY (dag_id) REFERENCES dag_execution(id) ON DELETE CASCADE,
+    FOREIGN KEY (job_id) REFERENCES job(id) ON DELETE SET NULL,
+    -- Each step_id must be unique within a DAG
+    UNIQUE (dag_id, step_id)
 );
 
 -- ============================================
@@ -402,6 +461,21 @@ CREATE INDEX idx_job_completed_at ON job(completed_at);
 CREATE INDEX idx_job_pipeline_id ON job(pipeline_id);
 -- Index for efficient purge queries
 CREATE INDEX idx_jobs_completed_at_status ON job(completed_at) WHERE status IN ('COMPLETED', 'FAILED');
+-- Job table index for DAG reference
+CREATE INDEX idx_job_dag_step ON job(dag_step_execution_id);
+
+-- DAG execution indexes
+CREATE INDEX idx_dag_execution_status ON dag_execution(status);
+CREATE INDEX idx_dag_execution_session ON dag_execution(session_id);
+CREATE INDEX idx_dag_execution_streamer ON dag_execution(streamer_id);
+CREATE INDEX idx_dag_execution_created_at ON dag_execution(created_at);
+
+-- DAG step execution indexes
+CREATE INDEX idx_dag_step_dag_id ON dag_step_execution(dag_id);
+CREATE INDEX idx_dag_step_job_id ON dag_step_execution(job_id);
+CREATE INDEX idx_dag_step_status ON dag_step_execution(status);
+-- Index for finding blocked steps that might be ready
+CREATE INDEX idx_dag_step_dag_status ON dag_step_execution(dag_id, status);
 
 -- Index for the job_execution_logs table
 CREATE INDEX idx_job_execution_logs_job_id ON job_execution_logs(job_id);
@@ -869,86 +943,349 @@ INSERT INTO job_presets (id, name, description, category, processor, config, cre
     datetime('now')
 );
 
+-- Remux Clean: Remux to MP4 and delete original file on success
+INSERT INTO job_presets (id, name, description, category, processor, config, created_at, updated_at) VALUES (
+    'preset-remux-clean',
+    'remux_clean',
+    'Remux to MP4 without re-encoding and delete the original file on success. Saves disk space.',
+    'remux',
+    'remux',
+    '{"video_codec":"copy","audio_codec":"copy","format":"mp4","faststart":true,"overwrite":true,"remove_input_on_success":true}',
+    datetime('now'),
+    datetime('now')
+);
+
 -- ============================================
--- PIPELINE PRESETS (Sequences of job steps)
+-- PIPELINE PRESETS (DAG Workflows)
 -- ============================================
 
--- Standard: Remux to MP4 + Generate thumbnail
-INSERT INTO pipeline_presets (id, name, description, steps, created_at, updated_at) VALUES (
+-- Standard: Remux -> Thumbnail (can run in parallel since they both read the same input)
+INSERT INTO pipeline_presets (id, name, description, dag_definition, pipeline_type, created_at, updated_at) VALUES (
     'pipeline-standard',
     'Standard',
     'Basic post-processing: Remux FLV to MP4 and generate a thumbnail preview.',
-    '[{"type":"preset","name":"remux"}, {"type":"preset","name":"thumbnail"}]',
+    '{
+        "name": "Standard",
+        "steps": [
+            {"id": "remux", "step": {"type": "preset", "name": "remux"}, "depends_on": []},
+            {"id": "thumbnail", "step": {"type": "preset", "name": "thumbnail"}, "depends_on": []}
+        ]
+    }',
+    'dag',
     datetime('now'),
     datetime('now')
 );
 
--- Archive: Compress + Upload to cloud + Delete local
-INSERT INTO pipeline_presets (id, name, description, steps, created_at, updated_at) VALUES (
+-- Archive to Cloud: Compress -> Upload -> Delete (sequential, each depends on previous)
+INSERT INTO pipeline_presets (id, name, description, dag_definition, pipeline_type, created_at, updated_at) VALUES (
     'pipeline-archive',
     'Archive to Cloud',
     'Compress video for storage, upload to cloud, then delete local file to save space.',
-    '[{"type":"preset","name":"compress_fast"}, {"type":"preset","name":"upload"}, {"type":"preset","name":"delete_source"}]',
+    '{
+        "name": "Archive to Cloud",
+        "steps": [
+            {"id": "compress", "step": {"type": "preset", "name": "compress_fast"}, "depends_on": []},
+            {"id": "upload", "step": {"type": "preset", "name": "upload"}, "depends_on": ["compress"]},
+            {"id": "delete", "step": {"type": "preset", "name": "delete_source"}, "depends_on": ["upload"]}
+        ]
+    }',
+    'dag',
     datetime('now'),
     datetime('now')
 );
 
--- High Quality Archive: Best compression + Upload
-INSERT INTO pipeline_presets (id, name, description, steps, created_at, updated_at) VALUES (
+-- High Quality Archive: Compress + Thumbnail (parallel) -> Upload (fan-in)
+INSERT INTO pipeline_presets (id, name, description, dag_definition, pipeline_type, created_at, updated_at) VALUES (
     'pipeline-hq-archive',
     'High Quality Archive',
     'Maximum quality compression with HEVC, then upload to cloud storage.',
-    '[{"type":"preset","name":"compress_hq"}, {"type":"preset","name":"thumbnail_hd"}, {"type":"preset","name":"upload"}]',
+    '{
+        "name": "High Quality Archive",
+        "steps": [
+            {"id": "compress", "step": {"type": "preset", "name": "compress_hq"}, "depends_on": []},
+            {"id": "thumbnail", "step": {"type": "preset", "name": "thumbnail_hd"}, "depends_on": []},
+            {"id": "upload", "step": {"type": "preset", "name": "upload"}, "depends_on": ["compress", "thumbnail"]}
+        ]
+    }',
+    'dag',
     datetime('now'),
     datetime('now')
 );
 
--- Podcast: Extract audio + Upload
-INSERT INTO pipeline_presets (id, name, description, steps, created_at, updated_at) VALUES (
+-- Podcast Extraction: Audio extraction -> Upload (sequential)
+INSERT INTO pipeline_presets (id, name, description, dag_definition, pipeline_type, created_at, updated_at) VALUES (
     'pipeline-podcast',
     'Podcast Extraction',
     'Extract high-quality audio for podcast distribution and upload.',
-    '[{"type":"preset","name":"audio_mp3"}, {"type":"preset","name":"upload"}]',
+    '{
+        "name": "Podcast Extraction",
+        "steps": [
+            {"id": "audio", "step": {"type": "preset", "name": "audio_mp3"}, "depends_on": []},
+            {"id": "upload", "step": {"type": "preset", "name": "upload"}, "depends_on": ["audio"]}
+        ]
+    }',
+    'dag',
     datetime('now'),
     datetime('now')
 );
 
--- Quick Share: Fast encode + Thumbnail
-INSERT INTO pipeline_presets (id, name, description, steps, created_at, updated_at) VALUES (
+-- Quick Share: Compress + Thumbnail (parallel for speed)
+INSERT INTO pipeline_presets (id, name, description, dag_definition, pipeline_type, created_at, updated_at) VALUES (
     'pipeline-quick-share',
     'Quick Share',
     'Fast encoding for quick sharing on social media or messaging.',
-    '[{"type":"preset","name":"compress_ultrafast"}, {"type":"preset","name":"thumbnail"}]',
+    '{
+        "name": "Quick Share",
+        "steps": [
+            {"id": "compress", "step": {"type": "preset", "name": "compress_ultrafast"}, "depends_on": []},
+            {"id": "thumbnail", "step": {"type": "preset", "name": "thumbnail"}, "depends_on": []}
+        ]
+    }',
+    'dag',
     datetime('now'),
     datetime('now')
 );
 
--- Space Saver: Maximum compression + Delete source
-INSERT INTO pipeline_presets (id, name, description, steps, created_at, updated_at) VALUES (
+-- Space Saver: Compress -> Delete (sequential)
+INSERT INTO pipeline_presets (id, name, description, dag_definition, pipeline_type, created_at, updated_at) VALUES (
     'pipeline-space-saver',
     'Space Saver',
     'Maximum compression to minimize storage usage, then delete original.',
-    '[{"type":"preset","name":"compress_hevc_max"}, {"type":"preset","name":"delete_source"}]',
+    '{
+        "name": "Space Saver",
+        "steps": [
+            {"id": "compress", "step": {"type": "preset", "name": "compress_hevc_max"}, "depends_on": []},
+            {"id": "delete", "step": {"type": "preset", "name": "delete_source"}, "depends_on": ["compress"]}
+        ]
+    }',
+    'dag',
     datetime('now'),
     datetime('now')
 );
 
--- Full Processing: Remux + Thumbnail + Metadata + Upload
-INSERT INTO pipeline_presets (id, name, description, steps, created_at, updated_at) VALUES (
+-- Full Processing: Remux -> (Thumbnail + Metadata parallel) -> Upload
+-- Optimized: thumbnail and metadata can run in parallel after remux
+INSERT INTO pipeline_presets (id, name, description, dag_definition, pipeline_type, created_at, updated_at) VALUES (
     'pipeline-full',
     'Full Processing',
     'Complete workflow: Remux, generate thumbnail, add metadata, and upload.',
-    '[{"type":"preset","name":"remux"}, {"type":"preset","name":"thumbnail"}, {"type":"preset","name":"add_metadata"}, {"type":"preset","name":"upload"}]',
+    '{
+        "name": "Full Processing",
+        "steps": [
+            {"id": "remux", "step": {"type": "preset", "name": "remux"}, "depends_on": []},
+            {"id": "thumbnail", "step": {"type": "preset", "name": "thumbnail"}, "depends_on": ["remux"]},
+            {"id": "metadata", "step": {"type": "preset", "name": "add_metadata"}, "depends_on": ["remux"]},
+            {"id": "upload", "step": {"type": "preset", "name": "upload"}, "depends_on": ["thumbnail", "metadata"]}
+        ]
+    }',
+    'dag',
     datetime('now'),
     datetime('now')
 );
 
--- Local Only: Remux + Thumbnail + Move to archive folder
-INSERT INTO pipeline_presets (id, name, description, steps, created_at, updated_at) VALUES (
+-- Local Archive: Remux + Thumbnail (parallel) -> Move
+INSERT INTO pipeline_presets (id, name, description, dag_definition, pipeline_type, created_at, updated_at) VALUES (
     'pipeline-local-archive',
     'Local Archive',
     'Process locally: Remux to MP4, generate thumbnail, move to archive folder.',
-    '[{"type":"preset","name":"remux"}, {"type":"preset","name":"thumbnail"}, {"type":"preset","name":"move"}]',
+    '{
+        "name": "Local Archive",
+        "steps": [
+            {"id": "remux", "step": {"type": "preset", "name": "remux"}, "depends_on": []},
+            {"id": "thumbnail", "step": {"type": "preset", "name": "thumbnail"}, "depends_on": []},
+            {"id": "move", "step": {"type": "preset", "name": "move"}, "depends_on": ["remux", "thumbnail"]}
+        ]
+    }',
+    'dag',
+    datetime('now'),
+    datetime('now')
+);
+
+-- ============================================
+-- NEW DAG-SPECIFIC PIPELINE PRESETS
+-- ============================================
+
+-- Diamond Pattern: Remux -> (Thumbnail + Audio parallel) -> Upload
+-- Demonstrates fan-out and fan-in
+INSERT INTO pipeline_presets (id, name, description, dag_definition, pipeline_type, created_at, updated_at) VALUES (
+    'pipeline-multimedia-archive',
+    'Multimedia Archive',
+    'Full multimedia processing: Remux video, extract audio and thumbnail in parallel, then upload all.',
+    '{
+        "name": "Multimedia Archive",
+        "steps": [
+            {"id": "remux", "step": {"type": "preset", "name": "remux"}, "depends_on": []},
+            {"id": "thumbnail", "step": {"type": "preset", "name": "thumbnail_native"}, "depends_on": ["remux"]},
+            {"id": "audio", "step": {"type": "preset", "name": "audio_aac"}, "depends_on": ["remux"]},
+            {"id": "upload", "step": {"type": "preset", "name": "upload"}, "depends_on": ["remux", "thumbnail", "audio"]}
+        ]
+    }',
+    'dag',
+    datetime('now'),
+    datetime('now')
+);
+
+-- Multi-Output: Generate multiple thumbnails at different timestamps
+INSERT INTO pipeline_presets (id, name, description, dag_definition, pipeline_type, created_at, updated_at) VALUES (
+    'pipeline-preview-gallery',
+    'Preview Gallery',
+    'Generate multiple preview images at different timestamps for a gallery view.',
+    '{
+        "name": "Preview Gallery",
+        "steps": [
+            {"id": "thumb_10s", "step": {"type": "inline", "processor": "thumbnail", "config": {"timestamp_secs": 10, "width": 640, "quality": 2}}, "depends_on": []},
+            {"id": "thumb_30s", "step": {"type": "inline", "processor": "thumbnail", "config": {"timestamp_secs": 30, "width": 640, "quality": 2}}, "depends_on": []},
+            {"id": "thumb_60s", "step": {"type": "inline", "processor": "thumbnail", "config": {"timestamp_secs": 60, "width": 640, "quality": 2}}, "depends_on": []},
+            {"id": "thumb_120s", "step": {"type": "inline", "processor": "thumbnail", "config": {"timestamp_secs": 120, "width": 640, "quality": 2}}, "depends_on": []}
+        ]
+    }',
+    'dag',
+    datetime('now'),
+    datetime('now')
+);
+
+-- Podcast + Video: Extract audio for podcast while also processing video
+INSERT INTO pipeline_presets (id, name, description, dag_definition, pipeline_type, created_at, updated_at) VALUES (
+    'pipeline-dual-format',
+    'Dual Format',
+    'Process video and extract podcast audio in parallel, then upload both.',
+    '{
+        "name": "Dual Format",
+        "steps": [
+            {"id": "video", "step": {"type": "preset", "name": "remux"}, "depends_on": []},
+            {"id": "audio", "step": {"type": "preset", "name": "audio_mp3_hq"}, "depends_on": []},
+            {"id": "thumbnail", "step": {"type": "preset", "name": "thumbnail"}, "depends_on": ["video"]},
+            {"id": "upload", "step": {"type": "preset", "name": "upload"}, "depends_on": ["video", "audio", "thumbnail"]}
+        ]
+    }',
+    'dag',
+    datetime('now'),
+    datetime('now')
+);
+
+-- Stream Archive: Remux (delete original) -> Thumbnail (native) -> Upload+Delete (move)
+--
+-- DAG Flow Explanation:
+-- ====================
+--
+--   [INPUT: stream.flv]
+--          │
+--          ▼
+--   ┌─────────────┐
+--   │   remux     │  Step 1: Remux FLV to MP4 (copy codecs, delete original)
+--   │  (root)     │  - No dependencies, starts immediately
+--   │             │  - Deletes input file on success (remove_input_on_success=true)
+--   │             │  - Output: video.mp4
+--   └─────────────┘
+--          │
+--          ▼
+--   ┌─────────────┐
+--   │  thumbnail  │  Step 2: Generate thumbnail at native resolution
+--   │  (native)   │  - Depends on remux (needs the MP4 file)
+--   │             │  - Output: video.jpg
+--   └─────────────┘
+--          │
+--          ▼
+--   ┌─────────────┐
+--   │   upload    │  Step 3: Upload BOTH files and delete local (fan-in)
+--   │  (move)     │  - Uses rclone "move" operation (upload + delete in one step)
+--   │             │  - Receives outputs from both: [video.mp4, video.jpg]
+--   │             │  - After upload: local files automatically deleted by rclone
+--   └─────────────┘
+--          │
+--          ▼
+--     [COMPLETE]
+--
+-- Why use rclone "move" instead of "copy" + separate "cleanup"?
+-- =============================================================
+--
+-- Option A: upload (copy) -> cleanup (delete)
+--   - Two separate steps
+--   - If cleanup fails, files remain locally (wasted space)
+--   - If system crashes between upload and cleanup, files orphaned
+--   - More jobs to track and manage
+--
+-- Option B: upload_and_delete (move) [RECOMMENDED]
+--   - Single atomic operation
+--   - rclone only deletes AFTER successful upload verification
+--   - No orphaned files on crash (rclone handles this)
+--   - Fewer jobs, simpler DAG
+--
+-- IMPORTANT: Do NOT add a "cleanup" step after "upload_and_delete"!
+--   - The files are already deleted by rclone move
+--   - A cleanup step would FAIL with "file not found"
+--
+-- Execution Flow Simulation:
+-- ==========================
+--
+-- T=0: Pipeline created with input "stream.flv"
+--      - DAG scheduler analyzes dependencies
+--      - "remux" has no dependencies -> READY
+--      - "thumbnail" depends on remux -> BLOCKED
+--      - "upload" depends on remux, thumbnail -> BLOCKED
+--
+-- T=0: Job "remux" created and enqueued (status: PENDING)
+--      - Worker picks up job
+--      - Remuxes stream.flv -> stream.mp4
+--      - Deletes stream.flv (remove_input_on_success=true)
+--      - Job completes (status: COMPLETED)
+--      - Output: ["stream.mp4"]
+--
+-- T=1: DAG scheduler notified of "remux" completion
+--      - Checks dependents: "thumbnail" now has all deps satisfied -> READY
+--      - "upload" still waiting for thumbnail -> BLOCKED
+--
+-- T=1: Job "thumbnail" created and enqueued
+--      - Input: ["stream.mp4"] (from remux output)
+--      - Worker picks up job
+--      - Generates stream.jpg at native resolution
+--      - Job completes (status: COMPLETED)
+--      - Output: ["stream.jpg"]
+--
+-- T=2: DAG scheduler notified of "thumbnail" completion
+--      - Checks dependents: "upload" now has all deps satisfied -> READY
+--
+-- T=2: Job "upload" created and enqueued
+--      - Input: ["stream.mp4", "stream.jpg"] (merged from remux + thumbnail)
+--      - Worker picks up job
+--      - rclone MOVE: uploads stream.mp4 to cloud, then deletes local
+--      - rclone MOVE: uploads stream.jpg to cloud, then deletes local
+--      - Job completes (status: COMPLETED)
+--      - Output: ["remote:path/stream.mp4", "remote:path/stream.jpg"]
+--      - Local files: DELETED (by rclone, not a separate step)
+--
+-- T=3: DAG scheduler notified of "upload" completion
+--      - No more dependents
+--      - All steps completed -> DAG status: COMPLETED
+--
+-- Final state:
+--   - Local: stream.flv (DELETED by remux)
+--   - Local: stream.mp4 (DELETED by rclone move)
+--   - Local: stream.jpg (DELETED by rclone move)
+--   - Cloud: remote:path/stream.mp4 (uploaded)
+--   - Cloud: remote:path/stream.jpg (uploaded)
+--
+-- Benefits of this DAG structure:
+-- 1. Fan-in: Upload receives outputs from both remux and thumbnail
+-- 2. Atomic cleanup: rclone move = upload + delete in one operation
+-- 3. Native quality: Thumbnail preserves original video resolution
+-- 4. Fail-fast: If any step fails, downstream steps don't start
+-- 5. Complete archive: Both video and thumbnail uploaded together
+-- 6. No orphaned files: rclone handles upload verification before delete
+--
+INSERT INTO pipeline_presets (id, name, description, dag_definition, pipeline_type, created_at, updated_at) VALUES (
+    'pipeline-stream-archive',
+    'Stream Archive',
+    'Default workflow: Remux to MP4 (deletes original), generate native-resolution thumbnail, upload both to cloud and delete local files.',
+    '{
+        "name": "Stream Archive",
+        "steps": [
+            {"id": "remux", "step": {"type": "preset", "name": "remux_clean"}, "depends_on": []},
+            {"id": "thumbnail", "step": {"type": "preset", "name": "thumbnail_native"}, "depends_on": ["remux"]},
+            {"id": "upload", "step": {"type": "preset", "name": "upload_and_delete"}, "depends_on": ["remux", "thumbnail"]}
+        ]
+    }',
+    'dag',
     datetime('now'),
     datetime('now')
 );
