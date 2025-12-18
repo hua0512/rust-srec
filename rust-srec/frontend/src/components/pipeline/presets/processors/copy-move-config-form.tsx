@@ -62,7 +62,7 @@ export function CopyMoveConfigForm({
                   </FormLabel>
                   <Select
                     onValueChange={field.onChange}
-                    defaultValue={field.value}
+                    value={field.value || 'copy'}
                   >
                     <FormControl>
                       <SelectTrigger className="h-11 bg-background/50 border-border/50 focus:bg-background transition-colors rounded-lg">
@@ -95,6 +95,7 @@ export function CopyMoveConfigForm({
                     <Input
                       className="h-11 bg-background/50 border-border/50 focus:bg-background rounded-lg font-mono text-sm"
                       {...field}
+                      value={field.value ?? ''}
                       placeholder="/path/to/destination"
                     />
                   </FormControl>

@@ -16,6 +16,7 @@ import {
   Share2,
   Archive,
   Terminal,
+  Languages,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { motion } from 'motion/react';
@@ -85,26 +86,32 @@ function ConfigLayout() {
       icon: Archive,
       description: t`Backup & Restore`,
     },
+    {
+      title: t`Language`,
+      href: '/config/language',
+      icon: Languages,
+      description: t`Choose your display language`,
+    },
   ];
 
   return (
-    <div className="flex h-full flex-col space-y-8 lg:flex-row lg:space-x-8 lg:space-y-0 w-full min-h-[calc(100vh-4rem)]">
-      <aside className="lg:w-1/5 xl:w-1/6 self-start sticky top-24">
-        <div className="flex flex-col gap-6">
-          <div className="flex items-center gap-3 px-2">
-            <div className="p-2.5 rounded-xl bg-gradient-to-br from-primary/20 to-primary/5 ring-1 ring-primary/10 shadow-sm">
-              <Settings className="h-6 w-6 text-primary" />
-            </div>
-            <div>
-              <h1 className="text-xl font-semibold tracking-tight">
-                <Trans>Settings</Trans>
-              </h1>
-            </div>
+    <div className="flex h-full flex-col space-y-6 lg:flex-row lg:space-x-8 lg:space-y-0 w-full min-h-[calc(100vh-4rem)] overflow-x-hidden lg:overflow-x-visible">
+      <aside className="w-full lg:w-64 shrink-0 self-start lg:sticky top-24 flex flex-col gap-4 sm:gap-6 lg:px-0 min-w-0">
+        <div className="flex items-center gap-3 px-3 lg:px-2">
+          <div className="p-2.5 rounded-xl bg-gradient-to-br from-primary/20 to-primary/5 ring-1 ring-primary/10 shadow-sm">
+            <Settings className="h-6 w-6 text-primary" />
           </div>
+          <div>
+            <h1 className="text-xl font-semibold tracking-tight">
+              <Trans>Settings</Trans>
+            </h1>
+          </div>
+        </div>
 
-          <Separator className="opacity-50" />
+        <Separator className="hidden lg:block opacity-50" />
 
-          <nav className="flex gap-2 lg:flex-col lg:gap-2 overflow-x-auto lg:overflow-visible pb-2 lg:pb-0 no-scrollbar">
+        <nav className="sticky top-[56px] z-20 lg:relative lg:top-0 -mx-3 px-3 lg:mx-0 lg:px-0 bg-background/95 lg:bg-transparent backdrop-blur-md lg:backdrop-blur-0 border-b lg:border-b-0 border-border/50 py-3 lg:py-0 flex w-full overflow-x-auto lg:overflow-visible no-scrollbar">
+          <div className="flex gap-2 min-w-0 lg:flex-col lg:w-full lg:gap-2 px-3 lg:px-0">
             {sidebarItems.map((item) => {
               const isActive = pathname.includes(item.href);
               return (
@@ -112,9 +119,9 @@ function ConfigLayout() {
                   key={item.href}
                   to={item.href}
                   className={cn(
-                    'group flex shrink-0 lg:shrink items-center gap-2 rounded-xl px-3 py-2 lg:px-4 lg:py-3 text-sm font-medium transition-all hover:bg-accent whitespace-nowrap',
+                    'group flex shrink-0 lg:shrink items-center gap-2 rounded-xl px-3 py-2 lg:px-4 lg:py-3 text-sm font-medium transition-all hover:bg-accent hover:text-accent-foreground whitespace-nowrap',
                     isActive
-                      ? 'bg-accent/80 text-accent-foreground'
+                      ? 'bg-primary/10 text-primary'
                       : 'text-muted-foreground',
                   )}
                 >
@@ -130,7 +137,7 @@ function ConfigLayout() {
                     className={cn(
                       'font-semibold',
                       isActive
-                        ? 'text-foreground'
+                        ? 'text-primary'
                         : 'text-muted-foreground group-hover:text-foreground',
                     )}
                   >
@@ -139,11 +146,11 @@ function ConfigLayout() {
                 </Link>
               );
             })}
-          </nav>
-        </div>
+          </div>
+        </nav>
       </aside>
 
-      <div className="flex-1">
+      <div className="flex-1 min-w-0">
         <motion.div
           initial={{ opacity: 0, x: 20 }}
           animate={{ opacity: 1, x: 0 }}

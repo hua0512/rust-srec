@@ -1,4 +1,4 @@
-import { SessionCard } from './SessionCard';
+import { SessionCard } from './session-card';
 import { Skeleton } from '../ui/skeleton';
 import { SessionSchema } from '../../api/schemas';
 import { z } from 'zod';
@@ -23,11 +23,11 @@ export function SessionList({
 }: SessionListProps) {
   if (isLoading) {
     return (
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
         {Array.from({ length: 8 }).map((_, i) => (
           <div
             key={i}
-            className="flex flex-col h-full bg-card/30 rounded-xl border border-border/50 overflow-hidden"
+            className="flex flex-col h-full bg-white/60 dark:bg-card/40 backdrop-blur-xl border-black/5 dark:border-white/5 rounded-xl overflow-hidden shadow-sm dark:shadow-xl"
           >
             <div className="p-4 pb-2 flex flex-row gap-3 items-center">
               <Skeleton className="h-10 w-10 rounded-full" />
@@ -57,7 +57,7 @@ export function SessionList({
 
   if (sessions.length === 0) {
     return (
-      <div className="flex flex-col items-center justify-center p-12 text-center border-2 border-dashed rounded-xl bg-card/30 border-muted">
+      <div className="flex flex-col items-center justify-center p-12 text-center border-dashed rounded-xl bg-white/60 dark:bg-card/30 backdrop-blur-xl border-black/5 dark:border-white/5 shadow-sm">
         <div className="bg-muted/50 p-4 rounded-full mb-4">
           <RefreshCcw className="h-8 w-8 text-muted-foreground/50" />
         </div>
@@ -77,7 +77,7 @@ export function SessionList({
   }
 
   return (
-    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6 animate-in fade-in duration-500">
+    <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4 animate-in fade-in duration-500">
       {sessions.map((session) => (
         <SessionCard key={session.id} session={session} token={token} />
       ))}

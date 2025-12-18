@@ -1075,6 +1075,30 @@ dependencies = [
 ]
 
 [[package]]
+name = "danmaku"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "bytes",
+ "chrono",
+ "futures",
+ "proptest",
+ "rand 0.9.2",
+ "regex",
+ "rustc-hash",
+ "serde",
+ "serde_json",
+ "tars-codec",
+ "thiserror 2.0.17",
+ "tokio",
+ "tokio-rustls",
+ "tokio-tungstenite 0.23.1",
+ "tracing",
+ "uuid",
+ "webpki-roots 0.26.11",
+]
+
+[[package]]
 name = "dashmap"
 version = "5.5.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3683,6 +3707,7 @@ dependencies = [
  "chrono-tz",
  "clap",
  "cron",
+ "danmaku",
  "dashmap 5.5.3",
  "dotenvy",
  "flate2",
@@ -3695,6 +3720,7 @@ dependencies = [
  "json-patch",
  "jsonwebtoken",
  "mesio-engine",
+ "mimalloc",
  "mockall",
  "moka",
  "parking_lot",
@@ -4836,9 +4862,13 @@ dependencies = [
  "futures-util",
  "log",
  "native-tls",
+ "rustls",
+ "rustls-pki-types",
  "tokio",
  "tokio-native-tls",
+ "tokio-rustls",
  "tungstenite 0.23.0",
+ "webpki-roots 0.26.11",
 ]
 
 [[package]]
@@ -5108,6 +5138,8 @@ dependencies = [
  "log",
  "native-tls",
  "rand 0.8.5",
+ "rustls",
+ "rustls-pki-types",
  "sha1",
  "thiserror 1.0.69",
  "utf-8",

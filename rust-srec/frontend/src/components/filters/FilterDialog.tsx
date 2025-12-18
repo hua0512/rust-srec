@@ -31,7 +31,8 @@ import { CategoryFilterForm } from './forms/CategoryFilterForm';
 import { CronFilterForm } from './forms/CronFilterForm';
 import { RegexFilterForm } from './forms/RegexFilterForm';
 import { useEffect } from 'react';
-import { Trans, t } from '@lingui/macro';
+import { t } from '@lingui/core/macro';
+import { Trans } from '@lingui/react/macro';
 
 // Union of all possible configs for the form state
 const FormSchema = CreateFilterRequestSchema;

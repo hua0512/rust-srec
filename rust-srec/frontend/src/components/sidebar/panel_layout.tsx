@@ -30,7 +30,7 @@ export default function DashboardPanelLayout({
         )}
       >
         <Navbar />
-        <div className="w-full pt-8 pb-8 px-4 sm:px-8">{children}</div>
+        <div className="w-full pt-8 pb-8 px-3 sm:px-8">{children}</div>
       </main>
       <footer
         className={cn(

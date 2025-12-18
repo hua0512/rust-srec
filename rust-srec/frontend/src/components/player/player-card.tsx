@@ -1,7 +1,4 @@
 import { useEffect, useRef, useState } from 'react';
-import Artplayer from 'artplayer';
-import Hls from 'hls.js';
-import mpegts from 'mpegts.js';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -37,9 +34,9 @@ export function PlayerCard({
   contentClassName,
 }: PlayerCardProps) {
   const artRef = useRef<HTMLDivElement>(null);
-  const playerRef = useRef<Artplayer | null>(null);
-  const hlsRef = useRef<Hls | null>(null);
-  const flvRef = useRef<mpegts.Player | null>(null);
+  const playerRef = useRef<any | null>(null); // Type loose for dynamic import
+  const hlsRef = useRef<any | null>(null);
+  const flvRef = useRef<any | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [resolving, setResolving] = useState(false);
@@ -143,100 +140,125 @@ export function PlayerCard({
       isAudio,
     });
 
-    const options: any = {
-      container: artRef.current,
-      url: playUrl,
-      autoplay: true,
-      volume: 0.5,
-      muted: false,
-      autoSize: false,
-      pip: true,
-      mutex: false,
-      setting: true,
-      playbackRate: true,
-      aspectRatio: true,
-      fullscreen: true,
-      fullscreenWeb: true,
-      miniProgressBar: true,
-      theme: '#3b82f6',
-      type: isHLS
-        ? 'm3u8'
-        : isMPEGTS
-          ? 'flv'
-          : isMP4
-            ? 'mp4'
-            : isMKV
-              ? 'mkv'
-              : isAudio
-                ? 'mp3'
-                : 'auto',
+    const initPlayer = async () => {
+      try {
+        const { default: Artplayer } = await import('artplayer');
+
+        const options: any = {
+          container: artRef.current,
+          url: playUrl,
+          autoplay: true,
+          volume: 0.5,
+          muted: false,
+          autoSize: false,
+          pip: true,
+          mutex: false,
+          setting: true,
+          playbackRate: true,
+          aspectRatio: true,
+          fullscreen: true,
+          fullscreenWeb: true,
+          miniProgressBar: true,
+          theme: '#3b82f6',
+          type: isHLS
+            ? 'm3u8'
+            : isMPEGTS
+              ? 'flv'
+              : isMP4
+                ? 'mp4'
+                : isMKV
+                  ? 'mkv'
+                  : isAudio
+                    ? 'mp3'
+                    : 'auto',
+        };
+
+        // Custom type for HLS
+        if (isHLS) {
+          try {
+            // Dynamically import Hls.js
+            const { default: Hls } = await import('hls.js');
+            if (Hls.isSupported()) {
+              console.log('[PlayerCard] Using custom type for HLS');
+              options.customType = {
+                m3u8: (video: HTMLMediaElement, url: string) => {
+                  const hls = new Hls({
+                    enableWorker: true,
+                    lowLatencyMode: true,
+                  });
+                  hlsRef.current = hls;
+                  hls.loadSource(url);
+                  hls.attachMedia(video);
+                  hls.on(Hls.Events.ERROR, (_event: any, data: any) => {
+                    if (data.fatal) {
+                      setError(`HLS Error: ${data.type} - ${data.details}`);
+                      setLoading(false);
+                    }
+                  });
+                },
+              };
+            }
+          } catch (e) {
+            console.error('Failed to load hls.js', e);
+          }
+        }
+
+        // Custom type for MPEG-TS
+        if (isMPEGTS) {
+          try {
+            // Dynamically import mpegts.js
+            const { default: mpegts } = await import('mpegts.js');
+            if (mpegts.isSupported()) {
+              console.log('[PlayerCard] Using custom type for MPEG-TS');
+              options.customType = {
+                flv: (video: HTMLMediaElement, url: string) => {
+                  const player = mpegts.createPlayer({
+                    type: 'flv',
+                    url: url,
+                    isLive: true,
+                    cors: true,
+                  });
+                  flvRef.current = player;
+                  player.attachMediaElement(video);
+                  player.load();
+                  player.on(
+                    mpegts.Events.ERROR,
+                    (type: any, details: any, data: any) => {
+                      console.error('MPEG-TS Error:', { type, details, data });
+                      setError(`MPEG-TS Error: ${type} - ${details}`);
+                      setLoading(false);
+                    },
+                  );
+                },
+              };
+            }
+          } catch (e) {
+            console.error('Failed to load mpegts.js', e);
+          }
+        }
+
+        const art = new Artplayer(options);
+        playerRef.current = art;
+
+        art.on('ready', () => {
+          setLoading(false);
+          setError(null);
+        });
+
+        art.on('error', (err: any) => {
+          console.log('Player Error: ', err);
+          setError(`Player Error: ${err?.message || 'Unknown error'}`);
+          setLoading(false);
+        });
+      } catch (err) {
+        setError(
+          `Failed to initialize player: ${err instanceof Error ? err.message : 'Unknown error'}`,
+        );
+        setLoading(false);
+      }
     };
 
-    // Custom type for HLS
-    if (isHLS && Hls.isSupported()) {
-      console.log('[PlayerCard] Using custom type for HLS');
-      options.customType = {
-        m3u8: (video: HTMLMediaElement, url: string) => {
-          const hls = new Hls({
-            enableWorker: true,
-            lowLatencyMode: true,
-          });
-          hlsRef.current = hls;
-          hls.loadSource(url);
-          hls.attachMedia(video);
-          hls.on(Hls.Events.ERROR, (_event, data) => {
-            if (data.fatal) {
-              setError(`HLS Error: ${data.type} - ${data.details}`);
-              setLoading(false);
-            }
-          });
-        },
-      };
-    }
-
-    // Custom type for MPEG-TS
-    if (isMPEGTS && mpegts.isSupported()) {
-      console.log('[PlayerCard] Using custom type for MPEG-TS');
-      options.customType = {
-        flv: (video: HTMLMediaElement, url: string) => {
-          const player = mpegts.createPlayer({
-            type: 'flv',
-            url: url,
-            isLive: true,
-            cors: true,
-          });
-          flvRef.current = player;
-          player.attachMediaElement(video);
-          player.load();
-          player.on(mpegts.Events.ERROR, (type, details, data) => {
-            console.error('MPEG-TS Error:', { type, details, data });
-            setError(`MPEG-TS Error: ${type} - ${details}`);
-            setLoading(false);
-          });
-        },
-      };
-    }
-
-    try {
-      const art = new Artplayer(options);
-      playerRef.current = art;
-
-      art.on('ready', () => {
-        setLoading(false);
-        setError(null);
-      });
-
-      art.on('error', (err) => {
-        console.log('Player Error: ', err);
-        setError(`Player Error: ${err?.message || 'Unknown error'}`);
-        setLoading(false);
-      });
-    } catch (err) {
-      setError(
-        `Failed to initialize player: ${err instanceof Error ? err.message : 'Unknown error'}`,
-      );
-      setLoading(false);
-    }
+    initPlayer();
 
     return () => {
       if (hlsRef.current) {

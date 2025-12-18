@@ -5,6 +5,7 @@ members = [
     "mesio-cli",
     "strev-cli",
     "rust-srec",
+    "crates/danmaku",
     "crates/flv",
     "crates/flv-fix",
     "crates/hls",

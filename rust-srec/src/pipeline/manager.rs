@@ -20,7 +20,7 @@ use super::throttle::{DownloadLimitAdjuster, ThrottleConfig, ThrottleController,
 use super::worker_pool::{WorkerPool, WorkerPoolConfig, WorkerType};
 use crate::Result;
 use crate::config::ConfigService;
-use crate::database::models::job::{DagPipelineDefinition, PipelineStep};
+use crate::database::models::job::{DagPipelineDefinition, DagStep, PipelineStep};
 use crate::database::models::{JobFilters, MediaFileType, MediaOutputDbModel, Pagination};
 use crate::database::repositories::config::{ConfigRepository, SqlxConfigRepository};
 use crate::database::repositories::streamer::{SqlxStreamerRepository, StreamerRepository};
@@ -564,7 +564,7 @@ where
         &self,
         session_id: &str,
         streamer_id: &str,
-        input_path: &str,
+        input_paths: &[String],
         steps: Option<Vec<PipelineStep>>,
     ) -> Result<PipelineCreationResult> {
         // Require explicit pipeline steps
@@ -635,7 +635,7 @@ where
         // Create the first job with pipeline chain information
         let first_job = Job::new_pipeline_step(
             first_processor.clone(),
-            vec![input_path.to_string()],
+            input_paths.to_vec(),
             vec![], // Output path will be determined by the processor logic or previous output
             streamer_id,
             session_id,
@@ -706,7 +706,7 @@ where
         &self,
         session_id: &str,
         streamer_id: &str,
-        input_path: &str,
+        input_paths: Vec<String>,
         dag_definition: DagPipelineDefinition,
     ) -> Result<DagCreationResult> {
         let dag_scheduler = self.dag_scheduler.as_ref().ok_or_else(|| {
@@ -715,8 +715,11 @@ where
             )
         })?;
 
-        // Resolve all steps in the DAG before creation
-        let mut resolved_dag = dag_definition.clone();
+        // First, expand any workflow steps in the DAG
+        let expanded_dag = self.expand_workflows_in_dag(dag_definition).await?;
+
+        // Resolve all steps in the DAG before creation (Presets -> Inline)
+        let mut resolved_dag = expanded_dag;
         for dag_step in &mut resolved_dag.steps {
             let resolved = self.resolve_dag_step(&dag_step.step).await?;
             dag_step.step = resolved;
@@ -726,7 +729,7 @@ where
         let result = dag_scheduler
             .create_dag_pipeline(
                 resolved_dag,
-                input_path,
+                &input_paths,
                 Some(streamer_id.to_string()),
                 Some(session_id.to_string()),
             )
@@ -753,6 +756,158 @@ where
         self.check_queue_depth();
 
         Ok(result)
+    }
+
+    /// Expand workflow steps in a DAG definition.
+    ///
+    /// For each step that is a `Workflow`, this method:
+    /// 1. Looks up the workflow by name from the pipeline preset repository
+    /// 2. Gets the workflow's `dag_definition` (its internal DAG structure)
+    /// 3. Expands the workflow's steps into the parent DAG with prefixed IDs
+    /// 4. Wires up dependencies correctly:
+    ///    - Workflow's root steps inherit the original workflow step's `depends_on`
+    ///    - Steps that depended on the workflow step now depend on the workflow's leaf steps
+    ///
+    /// This process is applied until no workflow steps remain (handles nested workflows).
+    async fn expand_workflows_in_dag(
+        &self,
+        mut dag: DagPipelineDefinition,
+    ) -> Result<DagPipelineDefinition> {
+        use std::collections::HashSet;
+
+        // Keep expanding until no workflow steps remain (handles nested workflows)
+        let mut iteration = 0;
+        const MAX_ITERATIONS: usize = 10; // Prevent infinite loops from circular workflow references
+
+        loop {
+            iteration += 1;
+            if iteration > MAX_ITERATIONS {
+                return Err(crate::Error::Validation(
+                    "Maximum workflow expansion depth exceeded. Check for circular workflow references.".to_string(),
+                ));
+            }
+
+            // Find workflow steps that need expansion
+            let workflow_steps: Vec<(usize, String, Vec<String>)> = dag
+                .steps
+                .iter()
+                .enumerate()
+                .filter_map(|(idx, step)| {
+                    if let PipelineStep::Workflow { name } = &step.step {
+                        Some((idx, name.clone(), step.depends_on.clone()))
+                    } else {
+                        None
+                    }
+                })
+                .collect();
+
+            if workflow_steps.is_empty() {
+                break; // No more workflows to expand
+            }
+
+            // Process each workflow step
+            for (_, workflow_name, _) in workflow_steps.iter().rev() {
+                // Process in reverse to maintain index validity
+                let workflow_step_idx = dag
+                    .steps
+                    .iter()
+                    .position(|s| matches!(&s.step, PipelineStep::Workflow { name } if name == workflow_name))
+                    .unwrap();
+
+                let workflow_step = &dag.steps[workflow_step_idx];
+                let workflow_step_id = workflow_step.id.clone();
+                let workflow_step_deps = workflow_step.depends_on.clone();
+
+                // Look up the workflow
+                let workflow_dag = self.lookup_workflow(workflow_name).await?;
+
+                // Find workflow's root and leaf steps
+                let root_step_ids: HashSet<String> = workflow_dag
+                    .root_steps()
+                    .iter()
+                    .map(|s| s.id.clone())
+                    .collect();
+                let leaf_step_ids: HashSet<String> = workflow_dag
+                    .leaf_steps()
+                    .iter()
+                    .map(|s| s.id.clone())
+                    .collect();
+
+                // Create a prefix to avoid ID collisions
+                let prefix = format!("{}__", workflow_step_id);
+
+                // Build expanded steps with prefixed IDs
+                let expanded_steps: Vec<DagStep> = workflow_dag
+                    .steps
+                    .iter()
+                    .map(|s| {
+                        let new_id = format!("{}{}", prefix, s.id);
+                        let new_deps: Vec<String> = if root_step_ids.contains(&s.id) {
+                            // Root steps inherit the original workflow step's dependencies
+                            workflow_step_deps.clone()
+                        } else {
+                            // Internal steps get prefixed dependencies
+                            s.depends_on
+                                .iter()
+                                .map(|d| format!("{}{}", prefix, d))
+                                .collect()
+                        };
+                        DagStep {
+                            id: new_id,
+                            step: s.step.clone(),
+                            depends_on: new_deps,
+                        }
+                    })
+                    .collect();
+
+                // Find steps that depend on the workflow step and update their dependencies
+                let prefixed_leaf_ids: Vec<String> = leaf_step_ids
+                    .iter()
+                    .map(|id| format!("{}{}", prefix, id))
+                    .collect();
+
+                for step in &mut dag.steps {
+                    if step.depends_on.contains(&workflow_step_id) {
+                        // Remove the workflow step ID and add the workflow's leaf step IDs
+                        step.depends_on.retain(|d| d != &workflow_step_id);
+                        step.depends_on.extend(prefixed_leaf_ids.clone());
+                    }
+                }
+
+                // Remove the workflow step and insert the expanded steps
+                dag.steps.remove(workflow_step_idx);
+                dag.steps
+                    .splice(workflow_step_idx..workflow_step_idx, expanded_steps);
+            }
+        }
+
+        Ok(dag)
+    }
+
+    /// Look up a workflow by name and return its DAG definition.
+    async fn lookup_workflow(&self, name: &str) -> Result<DagPipelineDefinition> {
+        let repo = self.pipeline_preset_repo.as_ref().ok_or_else(|| {
+            crate::Error::Validation(format!(
+                "No pipeline preset repository, cannot expand workflow '{}'",
+                name
+            ))
+        })?;
+
+        let workflow = repo
+            .get_pipeline_preset_by_name(name)
+            .await
+            .map_err(|e| crate::Error::Database(e.to_string()))?
+            .ok_or_else(|| crate::Error::Validation(format!("Workflow '{}' not found", name)))?;
+
+        // Get the DAG definition from the workflow
+        let dag_def = workflow.get_dag_definition().ok_or_else(|| {
+            crate::Error::Validation(format!(
+                "Workflow '{}' does not have a DAG definition. Only DAG-based workflows can be embedded.",
+                name
+            ))
+        })?;
+
+        Ok(dag_def)
     }
 
     /// Resolve a DAG step's PipelineStep to an Inline step.
@@ -985,7 +1140,7 @@ where
                 // Create pipeline jobs if pipeline is configured
                 if let Some(dag) = pipeline_config {
                     if let Err(e) = self
-                        .create_dag_pipeline(&session_id, &streamer_id, &segment_path, dag)
+                        .create_dag_pipeline(&session_id, &streamer_id, vec![segment_path], dag)
                         .await
                     {
                         tracing::error!(
@@ -1041,33 +1196,27 @@ where
             return;
         }
 
-        // Generate output path: replace extension with .jpg
-        let thumbnail_path = std::path::Path::new(segment_path)
-            .with_extension("jpg")
-            .to_string_lossy()
-            .to_string();
+        // Use thumbnail_native preset
+        let step = PipelineStep::Preset {
+            name: "thumbnail_native".to_string(),
+        };
 
-        // Use thumbnail_native preset config (preserve_resolution: true)
-        let config = r#"{"timestamp_secs":10,"preserve_resolution":true,"quality":1}"#;
+        // Create DAG definition
+        let dag_step = DagStep::new("thumbnail", step);
+        let dag_def = DagPipelineDefinition::new("Automatic Thumbnail", vec![dag_step]);
 
         if let Err(e) = self
-            .create_thumbnail_job(
-                segment_path,
-                &thumbnail_path,
-                streamer_id,
-                session_id,
-                Some(config),
-            )
+            .create_dag_pipeline(session_id, streamer_id, vec![segment_path], dag_def)
             .await
         {
             tracing::error!(
-                "Failed to create thumbnail job for session {}: {}",
+                "Failed to create automatic thumbnail pipeline for session {}: {}",
                 session_id,
                 e
             );
         } else {
             debug!(
-                "Created thumbnail job for first segment of session {}",
+                "Created automatic thumbnail pipeline for first segment of session {}",
                 session_id
             );
         }
@@ -1728,7 +1877,12 @@ mod tests {
             PipelineStep::preset("upload"),
         ];
         let result = manager
-            .create_pipeline("session-1", "streamer-1", "/input.flv", Some(custom_steps))
+            .create_pipeline(
+                "session-1",
+                "streamer-1",
+                vec!["/input.flv".to_string()],
+                Some(custom_steps),
+            )
             .await
             .unwrap();
 
@@ -1764,7 +1918,12 @@ mod tests {
 
         let single_step = vec![PipelineStep::preset("remux")];
         let result = manager
-            .create_pipeline("session-1", "streamer-1", "/input.flv", Some(single_step))
+            .create_pipeline(
+                "session-1",
+                "streamer-1",
+                vec!["/input.flv".to_string()],
+                Some(single_step),
+            )
             .await
             .unwrap();
 
@@ -1788,7 +1947,12 @@ mod tests {
 
         let empty_steps: Vec<PipelineStep> = vec![];
         let result = manager
-            .create_pipeline("session-1", "streamer-1", "/input.flv", Some(empty_steps))
+            .create_pipeline(
+                "session-1",
+                "streamer-1",
+                vec!["/input.flv".to_string()],
+                Some(empty_steps),
+            )
             .await;
 
         assert!(result.is_err());
@@ -1846,40 +2010,30 @@ mod tests {
         assert!((config.throttle.reduction_factor - 0.5).abs() < f32::EPSILON);
     }
 
-    // ========================================================================
-    // Pipeline Job Chaining Tests
-    // Requirements: 10.1, 10.2, 10.3, 10.5
-    // ========================================================================
-
-    /// Test that create_pipeline creates only the first job immediately.
-    /// Subsequent jobs should only be created when each job completes.
-    /// Requirements: 10.1
     #[tokio::test]
-    async fn test_create_pipeline_creates_only_first_job() {
+    async fn test_create_dag_pipeline_requires_dag_scheduler() {
+        use crate::database::models::job::{DagPipelineDefinition, DagStep, PipelineStep};
+
         let manager: PipelineManager = PipelineManager::new();
+
+        // Create a simple DAG definition
+        let dag_def = DagPipelineDefinition::new(
+            "Test Pipeline",
+            vec![DagStep::new("remux", PipelineStep::preset("remux"))],
+        );
+
+        // Without a DAG scheduler configured, this should fail
         let result = manager
-            .create_dag_pipeline("session-1", "streamer-1", "/input.flv", None)
-            .await
-            .unwrap();
+            .create_dag_pipeline(
+                "session-1",
+                "streamer-1",
+                vec!["/input.flv".to_string()],
+                dag_def,
+            )
+            .await;
 
-        // Verify job exists
-        let job = manager
-            .get_job(&result.first_job_id)
-            .await
-            .unwrap()
-            .unwrap();
-        assert_eq!(job.status, JobStatus::Pending);
-
-        // Without a database, recover_jobs returns 0 (no persistence)
-        let recovered = manager.recover_jobs().await.unwrap();
-        assert_eq!(recovered, 0);
-
-        // But the in-memory job is still there
-        let job_after = manager
-            .get_job(&result.first_job_id)
-            .await
-            .unwrap()
-            .unwrap();
-        assert_eq!(job_after.status, JobStatus::Pending);
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        assert!(err.to_string().contains("DAG scheduler not configured"));
     }
 }

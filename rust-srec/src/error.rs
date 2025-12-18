@@ -35,9 +35,6 @@ pub enum Error {
     #[error("Monitor error: {0}")]
     Monitor(String),
 
-    #[error("Danmu error: {0}")]
-    DanmuError(String),
-
     #[error("Download error: {0}")]
     DownloadError(String),
 
@@ -49,6 +46,9 @@ pub enum Error {
 
     #[error("TARS codec error: {0}")]
     TarsError(#[from] tars_codec::TarsError),
+
+    #[error("Danmaku crate error: {0}")]
+    DanmakuError(#[from] danmaku::DanmakuError),
 
     #[error("{0}")]
     Other(String),

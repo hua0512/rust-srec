@@ -179,112 +179,12 @@ impl MergedConfigBuilder {
             self.pipeline = Some(pipe);
         }
 
-        // Apply platform-specific config overrides (Legacy, but still respected if explicit fields are None)
-        // JSON parsing happens implicitly if matching keys are found, but explicit args override below.
+        // Apply platform-specific config overrides
         if let Some(config) = platform_specific_config {
             debug!("Applying platform-specific config overrides");
-            if let Some(v) = config.get("output_folder").and_then(|v| v.as_str()) {
-                if self.output_folder.is_none() {
-                    debug!("Platform config override: output_folder = {}", v);
-                    self.output_folder = Some(v.to_string());
-                }
-            }
-            if let Some(v) = config
-                .get("output_filename_template")
-                .and_then(|v| v.as_str())
-            {
-                if self.output_filename_template.is_none() {
-                    debug!("Platform config override: output_filename_template = {}", v);
-                    self.output_filename_template = Some(v.to_string());
-                }
-            }
-            if let Some(v) = config.get("download_engine").and_then(|v| v.as_str()) {
-                if self.download_engine.is_none() {
-                    debug!("Platform config override: download_engine = {}", v);
-                    self.download_engine = Some(v.to_string());
-                }
-            }
-            if let Some(v) = config.get("record_danmu").and_then(|v| v.as_bool()) {
-                if self.record_danmu.is_none() {
-                    debug!("Platform config override: record_danmu = {}", v);
-                    self.record_danmu = Some(v);
-                }
-            }
-            if let Some(v) = config.get("cookies").and_then(|v| v.as_str()) {
-                if self.cookies.is_none() {
-                    debug!("Platform config override: cookies");
-                    self.cookies = Some(v.to_string());
-                }
-            }
-            // Stream selection from JSON
-            if let Some(stream_sel) = config.get("stream_selection_config") {
-                if let Ok(v) = serde_json::from_value::<StreamSelectionConfig>(stream_sel.clone()) {
-                    if self.stream_selection.is_none() {
-                        if let Some(existing) = &self.stream_selection {
-                            debug!("Platform config override: merging stream_selection");
-                            self.stream_selection = Some(existing.merge(&v));
-                        } else {
-                            debug!("Platform config override: stream_selection");
-                            self.stream_selection = Some(v);
-                        }
-                    }
-                }
-            }
-            // Parse new fields from JSON (Legacy support)
-            if let Some(v) = config.get("output_file_format").and_then(|v| v.as_str()) {
-                if self.output_file_format.is_none() {
-                    debug!("Platform config override: output_file_format = {}", v);
-                    self.output_file_format = Some(v.to_string());
-                }
-            }
-            if let Some(v) = config
-                .get("min_segment_size_bytes")
-                .and_then(|v| v.as_i64())
-            {
-                if self.min_segment_size_bytes.is_none() {
-                    debug!("Platform config override: min_segment_size_bytes = {}", v);
-                    self.min_segment_size_bytes = Some(v);
-                }
-            }
-            if let Some(v) = config
-                .get("max_download_duration_secs")
-                .and_then(|v| v.as_i64())
-            {
-                if self.max_download_duration_secs.is_none() {
-                    debug!(
-                        "Platform config override: max_download_duration_secs = {}",
-                        v
-                    );
-                    self.max_download_duration_secs = Some(v);
-                }
-            }
-            if let Some(v) = config.get("max_part_size_bytes").and_then(|v| v.as_i64()) {
-                if self.max_part_size_bytes.is_none() {
-                    debug!("Platform config override: max_part_size_bytes = {}", v);
-                    self.max_part_size_bytes = Some(v);
-                }
-            }
-            // download_retry_policy and event_hooks from JSON?
-            // If they exist in JSON as objects, we can parse them.
-            if let Some(retry) = config.get("download_retry_policy") {
-                if let Ok(v) = serde_json::from_value::<RetryPolicy>(retry.clone()) {
-                    if self.download_retry_policy.is_none() {
-                        debug!("Platform config override: download_retry_policy");
-                        self.download_retry_policy = Some(v);
-                    }
-                }
-            }
-            if let Some(hooks) = config.get("event_hooks") {
-                if let Ok(v) = serde_json::from_value::<EventHooks>(hooks.clone()) {
-                    if self.event_hooks.is_none() {
-                        debug!("Platform config override: event_hooks");
-                        self.event_hooks = Some(v);
-                    }
-                }
-            }
         }
 
-        // Apply explicit overrides - MOVED executed after JSON parsing below
+        // Apply explicit overrides
         if let Some(v) = output_folder {
             debug!("Platform override: output_folder = {}", v);
             self.output_folder = Some(v);
@@ -621,6 +521,8 @@ impl MergedConfigBuilder {
 
 #[cfg(test)]
 mod tests {
+    use crate::database::models::PipelineStep;
+
     use super::*;
 
     #[test]

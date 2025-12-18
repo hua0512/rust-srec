@@ -20,7 +20,6 @@ pub mod actor;
 mod batch;
 mod resource;
 mod service;
-mod task;
 
 // Actor model exports (primary API)
 pub use actor::{
@@ -41,6 +40,3 @@ pub use resource::{DiskInfo, DiskSpaceStatus, ResourceMonitor};
 
 // Scheduler service
 pub use service::{Scheduler, SchedulerConfig};
-
-// Legacy task types (kept for compatibility, may be deprecated)
-pub use task::{MonitoringTask, TaskHandle, TaskStatus};

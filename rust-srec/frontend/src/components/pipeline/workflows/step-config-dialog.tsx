@@ -2,7 +2,8 @@ import { Button } from '@/components/ui/button';
 import { Form } from '@/components/ui/form';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { zodResolver } from '@hookform/resolvers/zod';
-import { Trans, t } from '@lingui/macro';
+import { t } from '@lingui/core/macro';
+import { Trans } from '@lingui/react/macro';
 import { useLingui } from '@lingui/react';
 import { useQuery } from '@tanstack/react-query';
 import { Loader2, Unlink, X } from 'lucide-react';
@@ -41,6 +42,8 @@ export function StepConfigDialog({
   // 0. Handle Step Types
   const isPreset = step?.type === 'preset';
   const presetName = isPreset ? step.name : null;
+  const isWorkflow = step?.type === 'workflow';
+  const workflowName = isWorkflow ? (step as any).name : null;
   const [isDetached, setIsDetached] = useState(false);
 
   // Reset detached state when dialog closes
@@ -92,21 +95,62 @@ export function StepConfigDialog({
     return processorDef?.schema || z.any();
   }, [processorDef]);
 
-  // 3. Initialize form
+  // 3. Compute form values
+  const formValues = useMemo(() => {
+    if (!step) return {};
+
+    // Get default values from schema if available
+    let baseConfig = {};
+    if (processorDef?.schema) {
+      try {
+        const result = processorDef.schema.safeParse({});
+        if (result.success) {
+          baseConfig = result.data;
+        }
+      } catch (e) {
+        console.error('Failed to parse default values:', e);
+        // Fallback to empty if unexpected error
+      }
+    }
+
+    const getSafeConfig = (config: any) => {
+      if (!config) return {};
+      if (typeof config === 'string') {
+        try {
+          return JSON.parse(config);
+        } catch (e) {
+          console.error('Failed to parse config:', e);
+          return {};
+        }
+      }
+      return config;
+    };
+
+    if (step.type === 'inline') {
+      const finalConfig = { ...baseConfig, ...getSafeConfig(step.config) };
+      return finalConfig;
+    } else if (!isDetached) {
+      return baseConfig;
+    }
+    return {};
+  }, [step, isDetached, processorDef]);
+
+  // 4. Initialize form with default empty values
   const form = useForm({
     resolver: zodResolver(formSchema as any),
     defaultValues: {},
   });
 
-  // 4. Reset form when step changes
+  // 5. Reset form values when dialog opens or formValues change
+  const formValuesJson = JSON.stringify(formValues);
   useEffect(() => {
-    if (open && step && step.type === 'inline') {
-      form.reset(step.config || {});
-    } else if (open && !isDetached) {
-      // Only reset if NOT detached (if detached, we want to keep current edits or initial preset value)
-      form.reset({});
+    if (open && step) {
+      // Always reset form when dialog opens to ensure values are properly applied
+      console.log('[StepConfigDialog] Resetting form with values:', formValues);
+      form.reset(formValues);
     }
-  }, [open, step, form, isDetached]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, step, formValuesJson]);
 
   // Handle Escape key
   useEffect(() => {
@@ -122,17 +166,22 @@ export function StepConfigDialog({
   const handleSubmit = (data: any) => {
     if (!dagStep) return;
 
-    const finalStepContent: PipelineStep =
-      isPreset && isDetached && presetDetail
-        ? {
-          type: 'inline',
-          processor: presetDetail.processor,
-          config: data,
-        }
-        : ({
-          ...step!,
-          config: step?.type === 'inline' ? data : (step as any)?.config,
-        } as PipelineStep);
+    let finalStepContent: PipelineStep;
+
+    if (isPreset && isDetached && presetDetail) {
+      finalStepContent = {
+        type: 'inline',
+        processor: presetDetail.processor,
+        config: data,
+      };
+    } else if (step?.type === 'inline') {
+      finalStepContent = {
+        ...step,
+        config: data,
+      };
+    } else {
+      finalStepContent = step!;
+    }
 
     onSave({
       id: idValue,
@@ -148,16 +197,30 @@ export function StepConfigDialog({
     return getProcessorDefinition(presetDetail.processor);
   }, [presetDetail]);
 
+  const presetDefaults = useMemo(() => {
+    if (!presetProcessorDef) return {};
+    try {
+      const result = presetProcessorDef.schema.safeParse({});
+      return result.success ? result.data : {};
+    } catch {
+      return {};
+    }
+  }, [presetProcessorDef]);
+
   // Form for displaying the preset config (read-only)
   const presetForm = useForm({
-    values:
-      typeof presetDetail?.config === 'string'
+    values: {
+      ...presetDefaults,
+      ...(typeof presetDetail?.config === 'string'
         ? JSON.parse(presetDetail.config)
-        : presetDetail?.config || {},
+        : presetDetail?.config || {}),
+    },
   });
 
   const [idValue, setIdValue] = useState(dagStep?.id || '');
-  const [dependsOn, setDependsOn] = useState<string[]>(dagStep?.depends_on || []);
+  const [dependsOn, setDependsOn] = useState<string[]>(
+    dagStep?.depends_on || [],
+  );
 
   useEffect(() => {
     if (open && dagStep) {
@@ -182,7 +245,7 @@ export function StepConfigDialog({
   return createPortal(
     <AnimatePresence>
       {open && step && (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 sm:p-6">
+        <div className="fixed inset-0 z-40 flex items-center justify-center p-4 sm:p-6">
           {/* Backdrop */}
           <motion.div
             initial={{ opacity: 0 }}
@@ -203,7 +266,9 @@ export function StepConfigDialog({
             <div className="flex items-center justify-between p-6 pb-4 border-b border-border/40 shrink-0">
               <div className="space-y-1">
                 <h2 className="text-lg font-semibold tracking-tight">
-                  {isPreset && !isDetached ? (
+                  {isWorkflow ? (
+                    <Trans>Workflow Step</Trans>
+                  ) : isPreset && !isDetached ? (
                     <Trans>Preset Step</Trans>
                   ) : (
                     <span className="flex items-center gap-2">
@@ -220,7 +285,15 @@ export function StepConfigDialog({
                   )}
                 </h2>
                 <p className="text-sm text-muted-foreground">
-                  {isPreset && !isDetached ? (
+                  {isWorkflow ? (
+                    <Trans>
+                      This step is a sub-workflow:{' '}
+                      <strong className="text-foreground">
+                        {workflowName}
+                      </strong>
+                      .
+                    </Trans>
+                  ) : isPreset && !isDetached ? (
                     <Trans>
                       This step is linked to the preset{' '}
                       <strong className="text-foreground">{presetName}</strong>.
@@ -243,15 +316,20 @@ export function StepConfigDialog({
             </div>
 
             {/* Content Body */}
-            <Tabs defaultValue="config" className="flex-1 min-h-0 flex flex-col overflow-hidden">
+            <Tabs
+              defaultValue={isWorkflow ? 'flow' : 'config'}
+              className="flex-1 min-h-0 flex flex-col overflow-hidden"
+            >
               <div className="px-6 pt-6 pb-2 shrink-0">
                 <TabsList className="w-full justify-start h-auto p-1 bg-muted/50 rounded-full gap-1">
-                  <TabsTrigger
-                    value="config"
-                    className="rounded-full px-4 py-2 flex-1 data-[state=active]:bg-background data-[state=active]:text-foreground data-[state=active]:shadow-sm transition-all"
-                  >
-                    <Trans>Step Configuration</Trans>
-                  </TabsTrigger>
+                  {!isWorkflow && (
+                    <TabsTrigger
+                      value="config"
+                      className="rounded-full px-4 py-2 flex-1 data-[state=active]:bg-background data-[state=active]:text-foreground data-[state=active]:shadow-sm transition-all"
+                    >
+                      <Trans>Step Configuration</Trans>
+                    </TabsTrigger>
+                  )}
                   <TabsTrigger
                     value="flow"
                     className="rounded-full px-4 py-2 flex-1 data-[state=active]:bg-background data-[state=active]:text-foreground data-[state=active]:shadow-sm transition-all"
@@ -262,8 +340,11 @@ export function StepConfigDialog({
               </div>
 
               {/* TAB 1: CONFIGURATION */}
-              <TabsContent value="config" className="flex-1 min-h-0 mt-0 overflow-hidden flex flex-col data-[state=inactive]:hidden">
-                <ScrollArea className="flex-1 h-full bg-background/50">
+              <TabsContent
+                value="config"
+                className="flex-1 min-h-0 mt-0 flex flex-col data-[state=inactive]:hidden"
+              >
+                <ScrollArea className="flex-1 bg-background/50">
                   {isPreset && !isDetached ? (
                     // PRESET VIEW
                     <div className="p-6">
@@ -291,7 +372,9 @@ export function StepConfigDialog({
                                     presetDetail.processor,
                                   );
                                   return Def ? (
-                                    <Def.component control={presetForm.control} />
+                                    <Def.component
+                                      control={presetForm.control}
+                                    />
                                   ) : null;
                                 })()}
                               </form>
@@ -309,7 +392,7 @@ export function StepConfigDialog({
                     // EDIT VIEW
                     <div className="p-6">
                       {processorDef ? (
-                        <Form {...form}>
+                        <Form {...form} key={formValuesJson}>
                           <form
                             onSubmit={form.handleSubmit(handleSubmit)}
                             className="contents"
@@ -330,8 +413,11 @@ export function StepConfigDialog({
               </TabsContent>
 
               {/* TAB 2: FLOW & DEPENDENCIES */}
-              <TabsContent value="flow" className="flex-1 min-h-0 mt-0 overflow-hidden flex flex-col data-[state=inactive]:hidden">
-                <ScrollArea className="flex-1 h-full bg-background/50">
+              <TabsContent
+                value="flow"
+                className="flex-1 min-h-0 mt-0 flex flex-col data-[state=inactive]:hidden"
+              >
+                <ScrollArea className="flex-1 bg-background/50">
                   <div className="p-6 max-w-2xl mx-auto space-y-6">
                     <div className="flex items-center gap-2 mb-6">
                       <div className="h-8 w-1 rounded bg-blue-500/50" />
@@ -340,19 +426,27 @@ export function StepConfigDialog({
                           <Trans>DAG Configuration</Trans>
                         </h3>
                         <p className="text-sm text-muted-foreground">
-                          <Trans>Define how this step identifies itself and connects to others.</Trans>
+                          <Trans>
+                            Define how this step identifies itself and connects
+                            to others.
+                          </Trans>
                         </p>
                       </div>
                     </div>
 
                     <div className="space-y-6">
                       <div className="space-y-3">
-                        <Label htmlFor="step-id" className="text-sm font-medium">
+                        <Label
+                          htmlFor="step-id"
+                          className="text-sm font-medium"
+                        >
                           <Trans>Step Identifier (Unique)</Trans>
                         </Label>
                         <div className="relative">
                           <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                            <span className="text-muted-foreground text-xs font-mono">#</span>
+                            <span className="text-muted-foreground text-xs font-mono">
+                              #
+                            </span>
                           </div>
                           <UiInput
                             id="step-id"
@@ -363,7 +457,10 @@ export function StepConfigDialog({
                           />
                         </div>
                         <p className="text-[10px] text-muted-foreground">
-                          <Trans>A unique ID used by other steps to reference this one.</Trans>
+                          <Trans>
+                            A unique ID used by other steps to reference this
+                            one.
+                          </Trans>
                         </p>
                       </div>
 
@@ -384,18 +481,26 @@ export function StepConfigDialog({
                                     return (
                                       <div
                                         key={otherId}
-                                        className={`flex items-center space-x-3 p-3 rounded-md transition-colors ${isDep ? 'bg-primary/10 border border-primary/20' : 'hover:bg-muted/50 border border-transparent'
-                                          }`}
+                                        className={`flex items-center space-x-3 p-3 rounded-md transition-colors ${
+                                          isDep
+                                            ? 'bg-primary/10 border border-primary/20'
+                                            : 'hover:bg-muted/50 border border-transparent'
+                                        }`}
                                       >
                                         <Checkbox
                                           id={`dep-${otherId}`}
                                           checked={isDep}
                                           onCheckedChange={(checked) => {
                                             if (checked) {
-                                              setDependsOn([...dependsOn, otherId]);
+                                              setDependsOn([
+                                                ...dependsOn,
+                                                otherId,
+                                              ]);
                                             } else {
                                               setDependsOn(
-                                                dependsOn.filter((d) => d !== otherId),
+                                                dependsOn.filter(
+                                                  (d) => d !== otherId,
+                                                ),
                                               );
                                             }
                                           }}
@@ -419,20 +524,24 @@ export function StepConfigDialog({
                               </div>
                             ) : (
                               <div className="p-8 text-center text-muted-foreground text-sm italic">
-                                <Trans>No other steps available to depend on.</Trans>
+                                <Trans>
+                                  No other steps available to depend on.
+                                </Trans>
                               </div>
                             )}
                           </div>
                         </div>
                         <p className="text-[10px] text-muted-foreground">
-                          <Trans>Select the steps that must complete successfully before this step runs.</Trans>
+                          <Trans>
+                            Select the steps that must complete successfully
+                            before this step runs.
+                          </Trans>
                         </p>
                       </div>
                     </div>
                   </div>
                 </ScrollArea>
               </TabsContent>
-
             </Tabs>
 
             {/* Footer Actions */}

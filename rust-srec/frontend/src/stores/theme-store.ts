@@ -3,13 +3,27 @@ import { persist } from 'zustand/middleware';
 
 export type ThemeColor =
   | 'zinc'
+  | 'slate'
+  | 'stone'
+  | 'gray'
+  | 'neutral'
   | 'red'
   | 'rose'
   | 'orange'
   | 'green'
   | 'blue'
   | 'yellow'
-  | 'violet';
+  | 'violet'
+  | 'teal'
+  | 'cyan'
+  | 'indigo'
+  | 'pink'
+  | 'purple'
+  | 'fuchsia'
+  | 'emerald'
+  | 'sky'
+  | 'lime'
+  | 'amber';
 export type ThemeRadius = 0 | 0.3 | 0.5 | 0.625 | 0.75 | 1.0;
 
 interface ThemeState {
@@ -17,11 +31,13 @@ interface ThemeState {
   radius: ThemeRadius;
   customCss: string;
   isCustomCssEnabled: boolean;
+  isGlassEnabled: boolean;
 
   setThemeColor: (color: ThemeColor) => void;
   setRadius: (radius: ThemeRadius) => void;
   setCustomCss: (css: string) => void;
   setIsCustomCssEnabled: (enabled: boolean) => void;
+  setIsGlassEnabled: (enabled: boolean) => void;
 }
 
 export const useThemeStore = create<ThemeState>()(
@@ -31,6 +47,7 @@ export const useThemeStore = create<ThemeState>()(
       radius: 0.625,
       customCss: '',
       isCustomCssEnabled: false,
+      isGlassEnabled: false,
 
       setThemeColor: (themeColor) => {
         set({ themeColor });
@@ -50,6 +67,10 @@ export const useThemeStore = create<ThemeState>()(
         set({ isCustomCssEnabled });
         updateCustomCss(get().customCss, isCustomCssEnabled);
       },
+      setIsGlassEnabled: (isGlassEnabled) => {
+        set({ isGlassEnabled });
+        updateGlassMode(isGlassEnabled);
+      },
     }),
     {
       name: 'app-theme-storage',
@@ -58,6 +79,7 @@ export const useThemeStore = create<ThemeState>()(
           updateThemeColor(state.themeColor);
           updateRadius(state.radius);
           updateCustomCss(state.customCss, state.isCustomCssEnabled);
+          updateGlassMode(state.isGlassEnabled);
         }
       },
     },
@@ -94,6 +116,16 @@ function updateCustomCss(css: string, enabled: boolean) {
       style.id = styleId;
       style.textContent = css;
       document.head.appendChild(style);
+    }
+  }
+}
+
+function updateGlassMode(enabled: boolean) {
+  if (typeof document !== 'undefined') {
+    if (enabled) {
+      document.body.setAttribute('data-glass', 'true');
+    } else {
+      document.body.removeAttribute('data-glass');
     }
   }
 }

@@ -25,6 +25,7 @@ import {
   StopCircle,
   Timer,
   Layers,
+  ExternalLink,
 } from 'lucide-react';
 import { Trans, useLingui } from '@lingui/react/macro';
 import { t } from '@lingui/core/macro';
@@ -37,9 +38,6 @@ export const Route = createFileRoute(
 )({
   component: PipelineExecutionPage,
 });
-
-// formatDuration removed to avoid lint error
-
 
 const STATUS_CONFIG: Record<
   string,
@@ -95,7 +93,11 @@ function PipelineExecutionPage() {
   const { i18n } = useLingui();
   const queryClient = useQueryClient();
 
-  const { data: dag, isLoading, error } = useQuery({
+  const {
+    data: dag,
+    isLoading,
+    error,
+  } = useQuery({
     queryKey: ['pipeline', 'executions', pipelineId, 'status'],
     queryFn: () => getDagExecution({ data: pipelineId }),
     refetchInterval: (query) => {
@@ -109,7 +111,9 @@ function PipelineExecutionPage() {
     queryFn: () => getDagGraph({ data: pipelineId }),
     enabled: !!dag,
     refetchInterval: () => {
-      return ['PENDING', 'PROCESSING'].includes(dag?.status || '') ? 2000 : false;
+      return ['PENDING', 'PROCESSING'].includes(dag?.status || '')
+        ? 2000
+        : false;
     },
   });
 
@@ -184,12 +188,13 @@ function PipelineExecutionPage() {
   const StatusIcon = statusConfig.icon;
 
   return (
-
     <div className="relative min-h-screen overflow-hidden selection:bg-primary/20">
       {/* Background Decoration */}
-      <div className="fixed inset-0 pointer-events-none">
-        <div className="absolute top-0 right-0 -mt-20 -mr-20 w-[500px] h-[500px] bg-primary/5 rounded-full blur-[120px]" />
-        <div className="absolute bottom-0 left-0 -mb-40 -ml-20 w-[600px] h-[600px] bg-blue-500/5 rounded-full blur-[120px]" />
+      <div className="fixed inset-0 pointer-events-none overflow-hidden">
+        <div className="absolute top-0 right-0 -mt-20 -mr-20 w-[500px] h-[500px] bg-primary/5 rounded-full blur-[120px] animate-pulse" />
+        <div className="absolute top-1/2 left-0 -translate-y-1/2 -ml-20 w-[400px] h-[400px] bg-purple-500/5 rounded-full blur-[100px]" />
+        <div className="absolute bottom-0 right-1/4 -mb-40 w-[600px] h-[600px] bg-blue-500/5 rounded-full blur-[120px]" />
+        <div className="absolute inset-0 bg-[radial-gradient(circle_at_50%_120%,rgba(120,119,198,0.05),rgba(255,255,255,0))]" />
       </div>
 
       <div className="relative z-10 max-w-7xl mx-auto px-6 py-8 pb-32">
@@ -243,10 +248,13 @@ function PipelineExecutionPage() {
                     <Badge
                       variant="outline"
                       className={cn(
-                        'text-xs font-mono uppercase tracking-wider bg-background/50 backdrop-blur border-border/50',
+                        'text-xs font-mono uppercase tracking-wider bg-background/50 backdrop-blur border-border/50 relative overflow-hidden',
                         statusConfig.color,
                       )}
                     >
+                      {overallStatus === 'PROCESSING' && (
+                        <span className="absolute inset-0 bg-current opacity-10 animate-pulse pointer-events-none" />
+                      )}
                       {overallStatus}
                     </Badge>
                   </div>
@@ -263,7 +271,8 @@ function PipelineExecutionPage() {
               transition={{ delay: 0.2 }}
               className="flex items-center gap-3"
             >
-              {(overallStatus === 'PENDING' || overallStatus === 'PROCESSING') && (
+              {(overallStatus === 'PENDING' ||
+                overallStatus === 'PROCESSING') && (
                 <Button
                   variant="destructive"
                   className="shadow-lg shadow-destructive/20 hover:shadow-destructive/40 transition-shadow"
@@ -277,9 +286,7 @@ function PipelineExecutionPage() {
               {overallStatus === 'FAILED' && (
                 <Button
                   className="bg-primary shadow-lg shadow-primary/20 hover:shadow-primary/40 transition-shadow"
-                  onClick={() =>
-                    retryMutation.mutate(pipelineId)
-                  }
+                  onClick={() => retryMutation.mutate(pipelineId)}
                   disabled={retryMutation.isPending}
                 >
                   <RefreshCw
@@ -305,7 +312,7 @@ function PipelineExecutionPage() {
           <StatsCard
             icon={<Timer className="h-5 w-5 text-blue-400" />}
             label={t`Progress`}
-            value={`${dag.progress_percent}%`}
+            value={`${(dag.progress_percent || 0).toFixed(1)}%`}
             delay={0.1}
           />
           <StatsCard
@@ -330,9 +337,19 @@ function PipelineExecutionPage() {
         </motion.div>
 
         <Tabs defaultValue="graph" className="w-full">
-          <TabsList className="grid w-full grid-cols-2 mb-8 max-w-md mx-auto">
-            <TabsTrigger value="graph"><Trans>DAG Graph</Trans></TabsTrigger>
-            <TabsTrigger value="list"><Trans>Steps List</Trans></TabsTrigger>
+          <TabsList className="bg-muted/30 backdrop-blur-sm border border-border/40 p-1 h-11 rounded-full gap-1 mb-12 max-w-md mx-auto">
+            <TabsTrigger
+              value="graph"
+              className="rounded-full px-6 transition-all data-[state=active]:bg-background data-[state=active]:text-primary data-[state=active]:shadow-md hover:text-foreground/80"
+            >
+              <Trans>DAG Graph</Trans>
+            </TabsTrigger>
+            <TabsTrigger
+              value="list"
+              className="rounded-full px-6 transition-all data-[state=active]:bg-background data-[state=active]:text-primary data-[state=active]:shadow-md hover:text-foreground/80"
+            >
+              <Trans>Steps List</Trans>
+            </TabsTrigger>
           </TabsList>
 
           <TabsContent value="graph" className="mt-0">
@@ -358,10 +375,10 @@ function PipelineExecutionPage() {
                         params={{ jobId: step.job_id }}
                         className="group"
                       >
-                        <StepCard step={step} isEven={false} jobConfig={jobConfig} />
+                        <StepCard step={step} jobConfig={jobConfig} />
                       </Link>
                     ) : (
-                      <StepCard step={step} isEven={false} jobConfig={jobConfig} />
+                      <StepCard step={step} jobConfig={jobConfig} />
                     )}
                   </div>
                 );
@@ -374,68 +391,121 @@ function PipelineExecutionPage() {
   );
 }
 
-function StepCard({ step, isEven, jobConfig }: { step: any, isEven: boolean, jobConfig: any }) {
+function StepCard({ step, jobConfig }: { step: any; jobConfig: any }) {
+  const isProcessing = step.status === 'PROCESSING';
+  const isCompleted = step.status === 'COMPLETED';
+  const isFailed = step.status === 'FAILED';
+
+  const StatusIcon = jobConfig.icon;
 
   return (
-    <Card className="overflow-hidden border-border/40 bg-card/40 backdrop-blur-sm transition-all duration-300 hover:shadow-2xl hover:-translate-y-1 hover:border-primary/20 hover:bg-card/60">
-      {step.status === 'PROCESSING' && (
-        <div className="h-1 w-full bg-muted/50">
-          <div className="h-full bg-blue-500 animate-[progress_1s_ease-in-out_infinite]" />
+    <Card className="group relative overflow-hidden border-border/40 bg-card/40 backdrop-blur-md transition-all duration-500 hover:shadow-2xl hover:-translate-y-1 hover:border-primary/30 hover:bg-card/60">
+      {/* Top Progress Bar for active jobs */}
+      {isProcessing && (
+        <div className="absolute top-0 left-0 right-0 h-1 bg-blue-500/10 overflow-hidden">
+          <motion.div
+            className="h-full bg-blue-500 shadow-[0_0_10px_rgba(59,130,246,0.5)]"
+            initial={{ x: '-100%' }}
+            animate={{ x: '100%' }}
+            transition={{ repeat: Infinity, duration: 1.5, ease: 'linear' }}
+          />
         </div>
       )}
-      <CardContent className="p-6">
-        <div
-          className={cn(
-            'flex flex-col gap-1 mb-4',
-            isEven ? 'md:items-end' : '',
-          )}
-        >
-          <Badge
-            variant="outline"
-            className="w-fit mb-2 font-mono text-xs uppercase opacity-70"
-          >
-            {step.processor}
-          </Badge>
-          <h3 className="text-lg font-semibold tracking-tight group-hover:text-primary transition-colors">
-            {step.step_id.replace(/_/g, ' ')}
-          </h3>
-          {step.job_id && (
-            <p className="text-xs text-muted-foreground font-mono">
-              Job ID: {step.job_id.split('-')[0]}...{step.job_id.slice(-8)}
-            </p>
-          )}
-        </div>
 
-        <div
-          className={cn(
-            'grid grid-cols-2 gap-4 text-sm text-muted-foreground',
-            isEven ? 'md:text-right' : '',
-          )}
-        >
-          <div>
-            <span className="block text-xs uppercase tracking-wider opacity-60">
-              <Trans>Status</Trans>
-            </span>
-            <span className={cn("font-medium", jobConfig.color)}>
-              {step.status}
-            </span>
+      {/* Background Pattern */}
+      <div className="absolute top-0 right-0 p-4 opacity-[0.03] group-hover:opacity-[0.05] transition-opacity pointer-events-none">
+        <Layers className="h-24 w-24 rotate-12" />
+      </div>
+
+      <CardContent className="p-6">
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
+          <div className="space-y-3 flex-1">
+            <div className="flex items-center gap-3">
+              <div
+                className={cn(
+                  'p-2 rounded-lg ring-1 ring-inset transition-colors duration-500',
+                  jobConfig.gradient,
+                  'ring-white/5',
+                )}
+              >
+                <StatusIcon
+                  className={cn(
+                    'h-4 w-4',
+                    jobConfig.color,
+                    isProcessing && 'animate-spin',
+                  )}
+                />
+              </div>
+              <Badge
+                variant="outline"
+                className="font-mono text-[10px] uppercase opacity-60 tracking-tight"
+              >
+                {step.processor}
+              </Badge>
+            </div>
+
+            <div>
+              <h3 className="text-xl font-bold tracking-tight text-foreground/90 group-hover:text-primary transition-colors duration-300">
+                {step.step_id.replace(/_/g, ' ')}
+              </h3>
+              {step.job_id && (
+                <div className="flex items-center gap-1.5 mt-1 text-xs text-muted-foreground/60 font-mono">
+                  <div className="w-1.5 h-1.5 rounded-full bg-current opacity-40" />
+                  ID: {step.job_id.substring(0, 8)}...{step.job_id.slice(-4)}
+                </div>
+              )}
+            </div>
           </div>
-          <div>
-            <span className="block text-xs uppercase tracking-wider opacity-60">
-              <Trans>Outputs</Trans>
-            </span>
-            <span className="font-medium text-foreground">
-              {step.outputs.length} files
-            </span>
+
+          <div className="flex flex-wrap items-center gap-8 md:text-right">
+            <div className="space-y-1">
+              <span className="block text-[10px] uppercase tracking-widest font-bold text-muted-foreground/40">
+                <Trans>Status</Trans>
+              </span>
+              <div className="flex items-center md:justify-end gap-2">
+                <span
+                  className={cn(
+                    'text-sm font-semibold tracking-wide',
+                    jobConfig.color,
+                  )}
+                >
+                  {step.status}
+                </span>
+                {isCompleted && (
+                  <CheckCircle2 className="h-4 w-4 text-emerald-500" />
+                )}
+                {isFailed && <XCircle className="h-4 w-4 text-red-500" />}
+              </div>
+            </div>
+
+            <div className="space-y-1">
+              <span className="block text-[10px] uppercase tracking-widest font-bold text-muted-foreground/40">
+                <Trans>Outputs</Trans>
+              </span>
+              <div className="flex items-center md:justify-end gap-2 text-foreground/80">
+                <span className="text-sm font-semibold">
+                  {step.outputs.length}
+                </span>
+                <span className="text-xs opacity-60 font-medium">files</span>
+              </div>
+            </div>
           </div>
         </div>
       </CardContent>
+
       {step.job_id && (
-        <div className="px-6 py-2 bg-muted/20 border-t border-border/20 flex items-center justify-between text-xs text-muted-foreground group-hover:bg-primary/5 transition-colors">
-          <span className="font-medium">
-            <Trans>View Output & Logs</Trans>
-          </span>
-          <ArrowRight className="h-3 w-3 transition-transform group-hover:translate-x-1" />
+        <div className="px-6 py-3 bg-muted/10 border-t border-border/10 flex items-center justify-between group-hover:bg-primary/5 transition-colors duration-300">
+          <div className="flex items-center gap-2 text-[11px] font-medium text-muted-foreground/80 group-hover:text-primary/80 transition-colors">
+            <ExternalLink className="h-3.5 w-3.5" />
+            <Trans>View Detailed Logs & Outputs</Trans>
+          </div>
+          <motion.div
+            initial={{ x: 0 }}
+            whileHover={{ x: 5 }}
+            transition={{ type: 'spring', stiffness: 400, damping: 10 }}
+          >
+            <ArrowRight className="h-4 w-4 text-primary/40 group-hover:text-primary transition-colors" />
+          </motion.div>
         </div>
       )}
     </Card>
@@ -457,25 +527,39 @@ function StatsCard({
 }) {
   return (
     <motion.div
-      initial={{ opacity: 0, scale: 0.95 }}
+      initial={{ opacity: 0, scale: 0.9 }}
       animate={{ opacity: 1, scale: 1 }}
-      transition={{ delay, duration: 0.4 }}
-      className="h-full"
+      transition={{
+        delay,
+        duration: 0.5,
+        type: 'spring',
+        stiffness: 100,
+        damping: 15,
+      }}
+      className="h-full group"
     >
-      <Card className="bg-card/30 backdrop-blur border-border/40 hover:bg-card/50 transition-colors h-full flex flex-col justify-center">
-        <CardContent className="p-6 flex items-start justify-between">
-          <div>
-            <p className="text-sm font-medium text-muted-foreground mb-1">
+      <Card className="relative overflow-hidden bg-card/30 backdrop-blur-xl border-border/40 hover:bg-card/50 hover:border-primary/20 transition-all duration-500 h-full flex flex-col justify-center">
+        {/* Subtle hover glow */}
+        <div className="absolute inset-0 bg-primary/5 opacity-0 group-hover:opacity-100 blur-2xl transition-opacity duration-700 pointer-events-none" />
+
+        <CardContent className="p-6 flex items-start justify-between relative z-10">
+          <div className="space-y-1">
+            <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-muted-foreground/60 mb-2">
               {label}
             </p>
-            <h4 className="text-2xl font-bold tracking-tight text-foreground">
+            <h4 className="text-3xl font-extrabold tracking-tight text-foreground decoration-primary/20 decoration-2 transition-colors group-hover:text-primary/90">
               {value}
             </h4>
             {subtext && (
-              <p className="text-xs text-muted-foreground mt-1">{subtext}</p>
+              <div className="flex items-center gap-1.5 mt-2">
+                <div className="w-1 h-1 rounded-full bg-primary/40" />
+                <p className="text-[10px] font-medium text-muted-foreground/80 tracking-wide uppercase">
+                  {subtext}
+                </p>
+              </div>
             )}
           </div>
-          <div className="p-3 rounded-xl bg-background/50 ring-1 ring-border/50">
+          <div className="p-3.5 rounded-2xl bg-gradient-to-br from-background/80 to-background/20 ring-1 ring-white/10 shadow-xl group-hover:scale-110 group-hover:rotate-3 transition-transform duration-500 bg-background/50">
             {icon}
           </div>
         </CardContent>

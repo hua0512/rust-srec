@@ -17,60 +17,14 @@ use std::sync::Arc;
 use tokio::sync::{Mutex, broadcast, mpsc};
 use tokio_util::sync::CancellationToken;
 
-use crate::danmu::providers::ProviderRegistry;
-use crate::danmu::sampler::{DanmuSampler, DanmuSamplingConfig as SamplerConfig, create_sampler};
-use crate::danmu::statistics::{DanmuStatistics, StatisticsAggregator};
-use crate::danmu::{DanmuMessage, DanmuProvider, DanmuType};
+use crate::danmu::{
+    DanmuProvider, DanmuSampler, DanmuSamplingConfig as SamplerConfig, DanmuStatistics, DanmuType,
+    ProviderRegistry, StatisticsAggregator, XmlDanmuWriter, create_sampler,
+};
 use crate::domain::DanmuSamplingConfig;
 use crate::error::{Error, Result};
 
-/// Events emitted by the danmu service.
-#[derive(Debug, Clone)]
-pub enum DanmuEvent {
-    /// Collection started for a session
-    CollectionStarted {
-        session_id: String,
-        streamer_id: String,
-    },
-    /// Collection stopped for a session
-    CollectionStopped {
-        session_id: String,
-        statistics: DanmuStatistics,
-    },
-    /// Segment file started
-    SegmentStarted {
-        session_id: String,
-        segment_id: String,
-        output_path: PathBuf,
-    },
-    /// Segment file completed
-    SegmentCompleted {
-        session_id: String,
-        segment_id: String,
-        output_path: PathBuf,
-        message_count: u64,
-    },
-    /// Connection lost and reconnecting
-    Reconnecting { session_id: String, attempt: u32 },
-    /// Reconnection failed
-    ReconnectFailed { session_id: String, error: String },
-    /// Error during collection
-    Error { session_id: String, error: String },
-}
-
-/// Commands sent to the collection task.
-#[derive(Debug)]
-enum CollectionCommand {
-    /// Start a new segment file
-    StartSegment {
-        segment_id: String,
-        output_path: PathBuf,
-    },
-    /// End the current segment file
-    EndSegment { segment_id: String },
-    /// Stop collection entirely
-    Stop,
-}
+use super::events::{CollectionCommand, DanmuEvent};
 
 /// Configuration for the danmu service.
 #[derive(Debug, Clone)]
@@ -134,7 +88,11 @@ impl CollectionHandle {
                 output_path,
             })
             .await
-            .map_err(|_| Error::DanmuError("Collection task not running".to_string()))
+            .map_err(|_| {
+                Error::from(danmaku::DanmakuError::connection(
+                    "Collection task not running",
+                ))
+            })
     }
 
     /// End the current segment file (finalize XML).
@@ -144,7 +102,11 @@ impl CollectionHandle {
                 segment_id: segment_id.to_string(),
             })
             .await
-            .map_err(|_| Error::DanmuError("Collection task not running".to_string()))
+            .map_err(|_| {
+                Error::from(danmaku::DanmakuError::connection(
+                    "Collection task not running",
+                ))
+            })
     }
 
     /// Get the session ID.
@@ -230,23 +192,26 @@ impl DanmuService {
     ) -> Result<CollectionHandle> {
         // Check if already collecting
         if self.collections.contains_key(session_id) {
-            return Err(Error::DanmuError(format!(
+            return Err(Error::from(danmaku::DanmakuError::connection(format!(
                 "Collection already active for session {}",
                 session_id
-            )));
+            ))));
         }
 
         // Find provider for URL
         let provider = self.providers.get_by_url(streamer_url).ok_or_else(|| {
-            Error::DanmuError(format!("No danmu provider for URL: {}", streamer_url))
+            Error::from(danmaku::DanmakuError::connection(format!(
+                "No danmu provider for URL: {}",
+                streamer_url
+            )))
         })?;
 
         // Extract room ID
         let room_id = provider.extract_room_id(streamer_url).ok_or_else(|| {
-            Error::DanmuError(format!(
+            Error::from(danmaku::DanmakuError::connection(format!(
                 "Could not extract room ID from URL: {}",
                 streamer_url
-            ))
+            )))
         })?;
 
         // Create command channel
@@ -316,7 +281,10 @@ impl DanmuService {
     pub async fn stop_collection(&self, session_id: &str) -> Result<DanmuStatistics> {
         // Get and remove state
         let (_, state) = self.collections.remove(session_id).ok_or_else(|| {
-            Error::DanmuError(format!("No active collection for session {}", session_id))
+            Error::from(danmaku::DanmakuError::connection(format!(
+                "No active collection for session {}",
+                session_id
+            )))
         })?;
 
         // Send stop command
@@ -423,8 +391,8 @@ async fn run_collection(
                     Some(CollectionCommand::StartSegment { segment_id, output_path }) => {
                         // Finalize previous segment if any
                         if let Some((old_id, mut writer)) = current_writer.take() {
-                            let count = writer.message_count;
-                            let path = writer.output_path();
+                            let count = writer.message_count();
+                            let path = writer.output_path().to_path_buf();
                             writer.finalize().await?;
                             let _ = event_tx.send(DanmuEvent::SegmentCompleted {
                                 session_id: session_id.to_string(),
@@ -452,8 +420,8 @@ async fn run_collection(
                         // Finalize segment if it matches
                         if let Some((current_id, mut writer)) = current_writer.take() {
                             if current_id == segment_id {
-                                let count = writer.message_count;
-                                let path = writer.output_path();
+                                let count = writer.message_count();
+                                let path = writer.output_path().to_path_buf();
                                 writer.finalize().await?;
                                 let _ = event_tx.send(DanmuEvent::SegmentCompleted {
                                     session_id: session_id.to_string(),
@@ -470,8 +438,8 @@ async fn run_collection(
                     Some(CollectionCommand::Stop) | None => {
                         // Finalize current segment and exit
                         if let Some((segment_id, mut writer)) = current_writer.take() {
-                            let count = writer.message_count;
-                            let path = writer.output_path();
+                            let count = writer.message_count();
+                            let path = writer.output_path().to_path_buf();
                             writer.finalize().await?;
                             let _ = event_tx.send(DanmuEvent::SegmentCompleted {
                                 session_id: session_id.to_string(),
@@ -490,8 +458,8 @@ async fn run_collection(
             _ = cancel_token.cancelled() => {
                 // Finalize current segment and exit
                 if let Some((segment_id, mut writer)) = current_writer.take() {
-                    let count = writer.message_count;
-                    let path = writer.output_path();
+                    let count = writer.message_count();
+                    let path = writer.output_path().to_path_buf();
                     writer.finalize().await?;
                     let _ = event_tx.send(DanmuEvent::SegmentCompleted {
                         session_id: session_id.to_string(),
@@ -549,7 +517,7 @@ async fn run_collection(
                                 session_id: session_id.to_string(),
                                 error: format!("Max reconnect attempts ({}) exceeded", config.max_reconnect_attempts),
                             });
-                            return Err(e);
+                            return Err(Error::DanmakuError(e));
                         }
 
                         reconnect_attempts += 1;
@@ -580,117 +548,9 @@ async fn run_collection(
     Ok(())
 }
 
-/// XML writer for danmu messages.
-struct XmlDanmuWriter {
-    path: PathBuf,
-    file: Option<tokio::fs::File>,
-    message_count: u64,
-}
-
-impl XmlDanmuWriter {
-    async fn new(path: &PathBuf) -> Result<Self> {
-        let file = tokio::fs::File::create(path).await?;
-        let mut writer = Self {
-            path: path.clone(),
-            file: Some(file),
-            message_count: 0,
-        };
-
-        // Write XML header
-        writer.write_header().await?;
-
-        Ok(writer)
-    }
-
-    fn output_path(&self) -> PathBuf {
-        self.path.clone()
-    }
-
-    async fn write_header(&mut self) -> Result<()> {
-        use tokio::io::AsyncWriteExt;
-
-        if let Some(file) = &mut self.file {
-            file.write_all(b"<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n")
-                .await?;
-            file.write_all(b"<danmu>\n").await?;
-        }
-        Ok(())
-    }
-
-    async fn write_message(&mut self, message: &DanmuMessage) -> Result<()> {
-        use tokio::io::AsyncWriteExt;
-
-        if let Some(file) = &mut self.file {
-            let xml = format!(
-                "  <d p=\"{},{},{},{}\">{}</d>\n",
-                message.timestamp.timestamp_millis(),
-                message_type_to_int(&message.message_type),
-                escape_xml(&message.user_id),
-                escape_xml(&message.username),
-                escape_xml(&message.content),
-            );
-            file.write_all(xml.as_bytes()).await?;
-            self.message_count += 1;
-
-            // Flush periodically
-            if self.message_count % 100 == 0 {
-                file.flush().await?;
-            }
-        }
-        Ok(())
-    }
-
-    async fn finalize(&mut self) -> Result<()> {
-        use tokio::io::AsyncWriteExt;
-
-        if let Some(file) = &mut self.file {
-            file.write_all(b"</danmu>\n").await?;
-            file.flush().await?;
-        }
-        self.file = None;
-        Ok(())
-    }
-}
-
-fn message_type_to_int(msg_type: &DanmuType) -> u8 {
-    match msg_type {
-        DanmuType::Chat => 1,
-        DanmuType::Gift => 2,
-        DanmuType::SuperChat => 3,
-        DanmuType::System => 4,
-        DanmuType::UserJoin => 5,
-        DanmuType::Follow => 6,
-        DanmuType::Subscription => 7,
-        DanmuType::Other => 0,
-    }
-}
-
-fn escape_xml(s: &str) -> String {
-    s.replace('&', "&amp;")
-        .replace('<', "&lt;")
-        .replace('>', "&gt;")
-        .replace('"', "&quot;")
-        .replace('\'', "&apos;")
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn test_escape_xml() {
-        assert_eq!(escape_xml("hello"), "hello");
-        assert_eq!(escape_xml("<script>"), "&lt;script&gt;");
-        assert_eq!(escape_xml("a & b"), "a &amp; b");
-        assert_eq!(escape_xml("\"quoted\""), "&quot;quoted&quot;");
-    }
-
-    #[test]
-    fn test_message_type_to_int() {
-        assert_eq!(message_type_to_int(&DanmuType::Chat), 1);
-        assert_eq!(message_type_to_int(&DanmuType::Gift), 2);
-        assert_eq!(message_type_to_int(&DanmuType::SuperChat), 3);
-    }
 
     #[tokio::test]
     async fn test_danmu_service_creation() {

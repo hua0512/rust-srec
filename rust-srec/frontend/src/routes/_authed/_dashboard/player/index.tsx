@@ -1,5 +1,5 @@
 import { createFileRoute } from '@tanstack/react-router';
-import { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, Suspense } from 'react';
 import { createPortal } from 'react-dom';
 import { useMutation } from '@tanstack/react-query';
 import {
@@ -8,7 +8,6 @@ import {
   type ParseUrlResponse,
 } from '@/server/functions';
 import { UrlInputForm } from '@/components/player/url-input-form';
-import { PlayerCard } from '@/components/player/player-card';
 import { Button } from '@/components/ui/button';
 import {
   StreamInfoCard,
@@ -32,6 +31,13 @@ import { z } from 'zod';
 const playerSearchSchema = z.object({
   url: z.string().optional(),
 });
+
+// Lazy load PlayerCard for code splitting
+const PlayerCard = React.lazy(() =>
+  import('@/components/player/player-card').then((module) => ({
+    default: module.PlayerCard,
+  })),
+);
 
 export const Route = createFileRoute('/_authed/_dashboard/player/')({
   validateSearch: (search) => playerSearchSchema.parse(search),
@@ -226,31 +232,39 @@ function PlayerPage() {
           className="w-full"
         >
           <div className="w-full h-full min-h-[500px]">
-            <PlayerCard
-              url={player.currentStream.url}
-              title={player.title}
-              headers={{ ...player.currentStream.headers, ...player.headers }}
-              streamData={
-                // Find the original stream object from media_info
-                player.response.media_info?.streams?.find(
-                  (s: any) =>
-                    s.url === player.currentStream.url ||
-                    s.src === player.currentStream.url,
-                ) || player.response.media_info?.streams?.[0]
+            <Suspense
+              fallback={
+                <div className="w-full h-full min-h-[500px] flex items-center justify-center bg-muted/10 rounded-xl">
+                  <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+                </div>
               }
-              onRemove={() => handleRemovePlayer(player.id)}
-              settingsContent={
-                <StreamInfoCard
-                  mediaInfo={player.response.media_info}
-                  selectedStream={player.currentStream}
-                  onStreamSelect={(stream) =>
-                    handleStreamChange(player.id, stream)
-                  }
-                  isLive={player.response.is_live}
-                  variant="minimal"
-                />
-              }
-            />
+            >
+              <PlayerCard
+                url={player.currentStream.url}
+                title={player.title}
+                headers={{ ...player.currentStream.headers, ...player.headers }}
+                streamData={
+                  // Find the original stream object from media_info
+                  player.response.media_info?.streams?.find(
+                    (s: any) =>
+                      s.url === player.currentStream.url ||
+                      s.src === player.currentStream.url,
+                  ) || player.response.media_info?.streams?.[0]
+                }
+                onRemove={() => handleRemovePlayer(player.id)}
+                settingsContent={
+                  <StreamInfoCard
+                    mediaInfo={player.response.media_info}
+                    selectedStream={player.currentStream}
+                    onStreamSelect={(stream) =>
+                      handleStreamChange(player.id, stream)
+                    }
+                    isLive={player.response.is_live}
+                    variant="minimal"
+                  />
+                }
+              />
+            </Suspense>
           </div>
         </motion.div>
       ))}

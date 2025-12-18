@@ -7,30 +7,18 @@ import {
   Moon,
   Sun,
   Palette,
-  Type,
   LayoutTemplate,
   RotateCcw,
+  Sparkles,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Trans } from '@lingui/react/macro';
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
-import { Textarea } from '@/components/ui/textarea';
 import { Switch } from '@/components/ui/switch';
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-  DialogTrigger,
-} from '@/components/ui/dialog';
 import { Slider } from '@/components/ui/slider';
-import { Card, CardContent } from '@/components/ui/card';
+import { Card } from '@/components/ui/card';
 import { ThemeColor, useThemeStore } from '@/stores/theme-store';
-import { useState } from 'react';
-import { toast } from 'sonner';
 
 export const Route = createFileRoute('/_authed/_dashboard/config/theme')({
   component: ConfigTheme,
@@ -64,6 +52,17 @@ function ConfigTheme() {
             <ThemeModeSelector />
           </Section>
 
+          {/* Glass Mode */}
+          <Section
+            title={<Trans>Glass Mode</Trans>}
+            description={
+              <Trans>Enable translucent background blur effects.</Trans>
+            }
+            icon={Sparkles}
+          >
+            <ThemeGlassSelector />
+          </Section>
+
           {/* Accent Color */}
           <Section
             title={<Trans>Accent Color</Trans>}
@@ -83,15 +82,6 @@ function ConfigTheme() {
           >
             <ThemeRadiusSelector />
           </Section>
-
-          {/* Custom CSS */}
-          <Section
-            title={<Trans>Custom CSS</Trans>}
-            description={<Trans>Advanced theming options.</Trans>}
-            icon={Type}
-          >
-            <CustomThemeImport />
-          </Section>
         </div>
       </motion.div>
 
@@ -100,7 +90,7 @@ function ConfigTheme() {
         initial={{ opacity: 0, x: 20 }}
         animate={{ opacity: 1, x: 0 }}
         transition={{ duration: 0.4, delay: 0.1 }}
-        className="flex-1 xl:max-w-md 2xl:max-w-lg"
+        className="flex-1 xl:max-w-md 2xl:max-w-lg hidden lg:block"
       >
         <div className="sticky top-24 space-y-4">
           <div className="flex items-center justify-between">
@@ -248,6 +238,10 @@ function ThemeColorSelector() {
   const { themeColor, setThemeColor } = useThemeStore();
   const colors: { name: ThemeColor; class: string }[] = [
     { name: 'zinc', class: 'bg-zinc-900 dark:bg-zinc-100' },
+    { name: 'slate', class: 'bg-slate-500' },
+    { name: 'stone', class: 'bg-stone-500' },
+    { name: 'gray', class: 'bg-gray-500' },
+    { name: 'neutral', class: 'bg-neutral-500' },
     { name: 'red', class: 'bg-red-500' },
     { name: 'rose', class: 'bg-rose-500' },
     { name: 'orange', class: 'bg-orange-500' },
@@ -255,6 +249,16 @@ function ThemeColorSelector() {
     { name: 'blue', class: 'bg-blue-500' },
     { name: 'yellow', class: 'bg-yellow-500' },
     { name: 'violet', class: 'bg-violet-500' },
+    { name: 'teal', class: 'bg-teal-500' },
+    { name: 'cyan', class: 'bg-cyan-500' },
+    { name: 'indigo', class: 'bg-indigo-500' },
+    { name: 'pink', class: 'bg-pink-500' },
+    { name: 'purple', class: 'bg-purple-500' },
+    { name: 'fuchsia', class: 'bg-fuchsia-500' },
+    { name: 'emerald', class: 'bg-emerald-500' },
+    { name: 'sky', class: 'bg-sky-500' },
+    { name: 'lime', class: 'bg-lime-500' },
+    { name: 'amber', class: 'bg-amber-500' },
   ];
 
   return (
@@ -330,78 +334,20 @@ function ThemeRadiusSelector() {
   );
 }
 
-function CustomThemeImport() {
-  const { customCss, setCustomCss, isCustomCssEnabled, setIsCustomCssEnabled } =
-    useThemeStore();
-  const [open, setOpen] = useState(false);
-  const [tempCss, setTempCss] = useState(customCss);
-
-  const handleSave = () => {
-    setCustomCss(tempCss);
-    setOpen(false);
-    if (!isCustomCssEnabled) {
-      setIsCustomCssEnabled(true);
-      toast.success(<Trans>Custom theme applied</Trans>);
-    }
-  };
+function ThemeGlassSelector() {
+  const { isGlassEnabled, setIsGlassEnabled } = useThemeStore();
 
   return (
-    <Card className="border-dashed shadow-none bg-muted/20">
-      <CardContent className="flex items-center justify-between p-4">
-        <div className="space-y-1">
-          <div className="flex items-center gap-2">
-            <span className="font-medium text-sm">
-              <Trans>Enable Custom CSS</Trans>
-            </span>
-            {isCustomCssEnabled && (
-              <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium bg-primary/10 text-primary">
-                Active
-              </span>
-            )}
-          </div>
-          <p className="text-xs text-muted-foreground">
-            <Trans>Override system colors with your own CSS variables.</Trans>
-          </p>
-        </div>
-        <div className="flex items-center gap-3">
-          <Dialog open={open} onOpenChange={setOpen}>
-            <DialogTrigger asChild>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => setTempCss(customCss)}
-              >
-                <Trans>Edit CSS</Trans>
-              </Button>
-            </DialogTrigger>
-            <DialogContent className="sm:max-w-xl">
-              <DialogHeader>
-                <DialogTitle>
-                  <Trans>Edit Custom Theme</Trans>
-                </DialogTitle>
-                <DialogDescription>
-                  <Trans>Paste your exported CSS variables here.</Trans>
-                </DialogDescription>
-              </DialogHeader>
-              <Textarea
-                value={tempCss}
-                onChange={(e) => setTempCss(e.target.value)}
-                className="font-mono text-xs min-h-[300px] bg-muted/30"
-                placeholder=":root { --background: ... }"
-              />
-              <DialogFooter>
-                <Button onClick={handleSave}>
-                  <Trans>Apply Changes</Trans>
-                </Button>
-              </DialogFooter>
-            </DialogContent>
-          </Dialog>
-          <Switch
-            checked={isCustomCssEnabled}
-            onCheckedChange={setIsCustomCssEnabled}
-          />
-        </div>
-      </CardContent>
-    </Card>
+    <div className="flex items-center justify-between rounded-xl border-2 p-4 transition-all hover:bg-muted/50 border-muted">
+      <div className="space-y-0.5">
+        <Label className="text-base">Glassmorphism</Label>
+        <p className="text-xs text-muted-foreground">
+          <Trans>
+            Apply a blur effect to the background of cards and sidebars.
+          </Trans>
+        </p>
+      </div>
+      <Switch checked={isGlassEnabled} onCheckedChange={setIsGlassEnabled} />
+    </div>
   );
 }

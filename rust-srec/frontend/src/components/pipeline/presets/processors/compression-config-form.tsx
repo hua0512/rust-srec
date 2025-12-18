@@ -62,7 +62,7 @@ export function CompressionConfigForm({
                   </FormLabel>
                   <Select
                     onValueChange={field.onChange}
-                    defaultValue={field.value}
+                    value={field.value || 'zip'}
                   >
                     <FormControl>
                       <SelectTrigger className="h-11 bg-background/50 border-border/50 focus:bg-background transition-colors rounded-lg">
@@ -94,6 +94,7 @@ export function CompressionConfigForm({
                       min={0}
                       max={9}
                       {...field}
+                      value={field.value ?? ''}
                       onChange={(e) => field.onChange(parseInt(e.target.value))}
                     />
                   </FormControl>

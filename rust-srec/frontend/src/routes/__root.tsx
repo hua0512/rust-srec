@@ -73,7 +73,7 @@ export const queryClient = new QueryClient();
 
 function RootDocument({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="en">
+    <html lang={i18n.locale}>
       <head>
         <link rel="icon" type="image/svg+xml" href="/stream-rec.svg"></link>
         <HeadContent />

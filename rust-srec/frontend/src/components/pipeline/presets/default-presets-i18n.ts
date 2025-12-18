@@ -1,5 +1,34 @@
 import { msg } from '@lingui/core/macro';
 
+export const DEFAULT_JOB_PRESET_NAMES: Record<string, any> = {
+  'preset-default-remux': msg`Remux`,
+  'preset-default-remux-mkv': msg`Remux to MKV`,
+  'preset-default-compress-fast': msg`Fast Compression`,
+  'preset-default-compress-hq': msg`High Quality Compression`,
+  'preset-default-thumbnail': msg`Thumbnail`,
+  'preset-default-thumbnail-hd': msg`HD Thumbnail`,
+  'preset-default-thumbnail-fullhd': msg`Full HD Thumbnail`,
+  'preset-default-thumbnail-max': msg`Max Quality Thumbnail`,
+  'preset-default-thumbnail-native': msg`Native Resolution Thumbnail`,
+  'preset-default-audio-mp3': msg`Extract MP3`,
+  'preset-default-audio-aac': msg`Extract AAC`,
+  'preset-default-archive-zip': msg`ZIP Archive`,
+  'preset-default-delete': msg`Delete Source`,
+  'preset-default-copy': msg`Copy File`,
+  'preset-default-move': msg`Move File`,
+  'preset-default-upload': msg`Upload (Rclone)`,
+  'preset-default-upload-delete': msg`Upload and Delete`,
+  'preset-default-metadata': msg`Add Metadata`,
+  'preset-default-custom-ffmpeg': msg`Custom FFmpeg`,
+  'preset-remux-faststart': msg`Remux with Faststart`,
+  'preset-compress-archive': msg`Archive Compression`,
+  'preset-audio-mp3-hq': msg`High Quality MP3`,
+  'preset-thumbnail-preview': msg`Preview Thumbnail`,
+  'preset-compress-hevc-max': msg`Max HEVC Compression`,
+  'preset-compress-ultrafast': msg`Ultrafast Compression`,
+  'preset-remux-clean': msg`Remux and Clean`,
+};
+
 export const DEFAULT_JOB_PRESET_DESCRIPTIONS: Record<string, any> = {
   'preset-default-remux': msg`Remux to MP4 without re-encoding. Fast and lossless - just changes the container format.`,
   'preset-default-remux-mkv': msg`Remux to MKV without re-encoding. Matroska supports more codecs and features.`,
@@ -26,6 +55,22 @@ export const DEFAULT_JOB_PRESET_DESCRIPTIONS: Record<string, any> = {
   'preset-thumbnail-preview': msg`Generate a thumbnail at 30 seconds with 480px width for previews.`,
   'preset-compress-hevc-max': msg`Maximum HEVC/H.265 compression (CRF 28) for minimal file size.`,
   'preset-compress-ultrafast': msg`Ultrafast H.264 encoding (CRF 26) for quick sharing.`,
+  'preset-remux-clean': msg`Remux to MP4 without re-encoding and delete the original file on success. Saves disk space.`,
+};
+
+export const DEFAULT_PIPELINE_PRESET_NAMES: Record<string, any> = {
+  'pipeline-standard': msg`Standard`,
+  'pipeline-archive': msg`Archive to Cloud`,
+  'pipeline-hq-archive': msg`High Quality Archive`,
+  'pipeline-podcast': msg`Podcast Extraction`,
+  'pipeline-quick-share': msg`Quick Share`,
+  'pipeline-space-saver': msg`Space Saver`,
+  'pipeline-full': msg`Full Processing`,
+  'pipeline-local-archive': msg`Local Archive`,
+  'pipeline-multimedia-archive': msg`Multimedia Archive`,
+  'pipeline-preview-gallery': msg`Preview Gallery`,
+  'pipeline-dual-format': msg`Dual Format`,
+  'pipeline-stream-archive': msg`Stream Archive`,
 };
 
 export const DEFAULT_PIPELINE_PRESET_DESCRIPTIONS: Record<string, any> = {
@@ -37,6 +82,10 @@ export const DEFAULT_PIPELINE_PRESET_DESCRIPTIONS: Record<string, any> = {
   'pipeline-space-saver': msg`Maximum compression to minimize storage usage, then delete original.`,
   'pipeline-full': msg`Complete workflow: Remux, generate thumbnail, add metadata, and upload.`,
   'pipeline-local-archive': msg`Process locally: Remux to MP4, generate thumbnail, move to archive folder.`,
+  'pipeline-multimedia-archive': msg`Full multimedia processing: Remux video, extract audio and thumbnail in parallel, then upload all.`,
+  'pipeline-preview-gallery': msg`Generate multiple preview images at different timestamps for a gallery view.`,
+  'pipeline-dual-format': msg`Process video and extract podcast audio in parallel, then upload both.`,
+  'pipeline-stream-archive': msg`Default workflow: Remux to MP4 (deletes original), generate native-resolution thumbnail, upload both to cloud and delete local files.`,
 };
 
 export function isDefaultPreset(id: string): boolean {

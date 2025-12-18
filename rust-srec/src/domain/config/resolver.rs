@@ -57,10 +57,19 @@ impl<R: ConfigRepository> ConfigResolver<R> {
             serde_json::from_str(&global_config.proxy_config).unwrap_or_default(),
             global_config.default_download_engine.clone(),
             global_config.session_gap_time_secs,
-            global_config
-                .pipeline
-                .as_ref()
-                .and_then(|p| serde_json::from_str::<DagPipelineDefinition>(p).ok()),
+            global_config.pipeline.as_ref().and_then(|p| {
+                match serde_json::from_str::<DagPipelineDefinition>(p) {
+                    Ok(pipe) => Some(pipe),
+                    Err(e) => {
+                        tracing::error!(
+                            "Failed to parse global pipeline config: {} (JSON: {})",
+                            e,
+                            p
+                        );
+                        None
+                    }
+                }
+            }),
         );
 
         // Layer 2: Platform config
@@ -107,10 +116,19 @@ impl<R: ConfigRepository> ConfigResolver<R> {
             platform_config.max_part_size_bytes,
             platform_download_retry_policy,
             platform_event_hooks,
-            platform_config
-                .pipeline
-                .as_ref()
-                .and_then(|p| serde_json::from_str::<DagPipelineDefinition>(p).ok()),
+            platform_config.pipeline.as_ref().and_then(|p| {
+                match serde_json::from_str::<DagPipelineDefinition>(p) {
+                    Ok(pipe) => Some(pipe),
+                    Err(e) => {
+                        tracing::error!(
+                            "Failed to parse platform pipeline config: {} (JSON: {})",
+                            e,
+                            p
+                        );
+                        None
+                    }
+                }
+            }),
         );
 
         // Layer 3: Template config (if assigned)

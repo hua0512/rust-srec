@@ -1,14 +1,7 @@
 import { Link, useRouter } from '@tanstack/react-router';
 import { deleteSession } from '../../server/functions/sessions';
 import { toast } from 'sonner';
-import {
-  MoreHorizontal,
-  Play,
-  Film,
-  Clock,
-  HardDrive,
-  Calendar,
-} from 'lucide-react';
+import { MoreHorizontal, Film, Clock, HardDrive, Calendar } from 'lucide-react';
 import { Badge } from '../ui/badge';
 import { Button } from '../ui/button';
 import { Card, CardContent, CardFooter, CardHeader } from '../ui/card';
@@ -72,9 +65,10 @@ export function SessionCard({ session, token }: SessionCardProps) {
   const thumbnailUrl = getMediaUrl(session.thumbnail_url, token);
 
   return (
-    <Card className="flex flex-col h-full bg-linear-to-b from-card to-card/50 hover:shadow-lg hover:border-primary/20 transition-all duration-300 group">
-      <CardHeader className="p-4 pb-2 flex-row gap-3 space-y-0 items-start">
-        <Avatar className="h-10 w-10 border border-border shadow-2xs group-hover:border-primary/50 transition-colors">
+    <Card className="flex flex-col h-full bg-white/60 dark:bg-card/40 backdrop-blur-xl border-black/5 dark:border-white/5 shadow-sm dark:shadow-2xl dark:shadow-black/5 hover:shadow-md dark:hover:shadow-black/10 hover:-translate-y-1 transition-all duration-300 group relative overflow-hidden">
+      <div className="absolute inset-0 bg-gradient-to-br from-primary/5 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-500 pointer-events-none" />
+      <CardHeader className="p-3 pb-1.5 flex-row gap-2.5 space-y-0 items-center relative z-10">
+        <Avatar className="h-8 w-8 border border-border shadow-2xs group-hover:border-primary/50 transition-colors">
           {session.streamer_avatar && (
             <AvatarImage
               src={getProxiedUrl(session.streamer_avatar)}
@@ -82,43 +76,46 @@ export function SessionCard({ session, token }: SessionCardProps) {
               className="object-cover"
             />
           )}
-          <AvatarFallback>
+          <AvatarFallback className="text-[10px]">
             {session.streamer_id.substring(0, 2).toUpperCase()}
           </AvatarFallback>
         </Avatar>
         <div className="flex-1 min-w-0">
           <div className="flex items-center justify-between">
-            <p className="text-sm font-medium text-muted-foreground truncate">
+            <p className="text-xs font-medium text-muted-foreground truncate">
               {session.streamer_name || session.streamer_id}
             </p>
             {isLive ? (
               <Badge
                 variant="default"
-                className="bg-red-500/10 text-red-500 hover:bg-red-500/20 border-red-500/20 animate-pulse"
+                className="bg-red-500/10 text-red-500 hover:bg-red-500/20 border-red-500/20 animate-pulse px-1.5 py-0 text-[10px] h-4"
               >
-                <span className="relative flex h-2 w-2 mr-1.5">
+                <span className="relative flex h-1.5 w-1.5 mr-1">
                   <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75"></span>
-                  <span className="relative inline-flex rounded-full h-2 w-2 bg-red-500"></span>
+                  <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-red-500"></span>
                 </span>
                 <Trans>LIVE</Trans>
               </Badge>
             ) : (
-              <Badge variant="secondary" className="text-xs font-normal">
+              <Badge
+                variant="secondary"
+                className="text-[10px] font-normal px-1.5 py-0 h-4"
+              >
                 <Trans>Offline</Trans>
               </Badge>
             )}
           </div>
           <h3
-            className="font-semibold leading-tight truncate mt-1 group-hover:text-primary transition-colors"
+            className="text-sm font-semibold leading-tight truncate mt-0.5 group-hover:text-primary transition-colors"
             title={session.title}
           >
             {session.title || <Trans>Untitled Stream</Trans>}
           </h3>
         </div>
       </CardHeader>
-      <CardContent className="p-4 pt-2 grow">
+      <CardContent className="p-3 pt-1.5 grow relative z-10">
         {/* Thumbnail placeholder - would be nice to have real thumbnails */}
-        <div className="relative aspect-video bg-muted/50 rounded-md mb-4 overflow-hidden group-hover:ring-1 group-hover:ring-primary/20 transition-all">
+        <div className="relative aspect-video bg-muted/50 rounded-sm mb-2.5 overflow-hidden group-hover:ring-1 group-hover:ring-primary/20 transition-all">
           {thumbnailUrl ? (
             <img
               src={thumbnailUrl}
@@ -136,24 +133,13 @@ export function SessionCard({ session, token }: SessionCardProps) {
           <div
             className={`absolute inset-0 flex items-center justify-center text-muted-foreground/30 placeholder-icon ${thumbnailUrl ? 'hidden' : ''}`}
           >
-            <Film className="h-12 w-12" />
-          </div>
-          {/* Gradient overlay */}
-          <div className="absolute inset-0 bg-linear-to-t from-black/60 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300 flex items-end p-3">
-            <Button
-              size="sm"
-              variant="secondary"
-              className="w-full gap-2 backdrop-blur-md bg-white/10 hover:bg-white/20 text-white border-0"
-            >
-              <Play className="h-3 w-3 fill-current" />{' '}
-              <Trans>Watch Replay</Trans>
-            </Button>
+            <Film className="h-8 w-8" />
           </div>
         </div>
 
-        <div className="grid grid-cols-2 gap-2 text-xs text-muted-foreground">
+        <div className="grid grid-cols-2 gap-x-2 gap-y-1 text-[10px] text-muted-foreground font-medium">
           <div className="flex items-center gap-1.5">
-            <Calendar className="h-3.5 w-3.5" />
+            <Calendar className="h-3 w-3" />
             <span>
               {i18n.date(new Date(session.start_time), {
                 month: 'short',
@@ -164,22 +150,22 @@ export function SessionCard({ session, token }: SessionCardProps) {
             </span>
           </div>
           <div className="flex items-center gap-1.5">
-            <Clock className="h-3.5 w-3.5" />
+            <Clock className="h-3 w-3" />
             <span>{duration}</span>
           </div>
           <div className="flex items-center gap-1.5">
-            <HardDrive className="h-3.5 w-3.5" />
+            <HardDrive className="h-3 w-3" />
             <span>{formatBytes(session.total_size_bytes)}</span>
           </div>
           <div className="flex items-center gap-1.5">
-            <Film className="h-3.5 w-3.5" />
+            <Film className="h-3 w-3" />
             <span>
               <Trans>{session.output_count} Files</Trans>
             </span>
           </div>
         </div>
       </CardContent>
-      <CardFooter className="p-2 px-4 border-t bg-muted/20 flex justify-between items-center text-xs text-muted-foreground">
+      <CardFooter className="p-1.5 px-3 border-t border-black/5 dark:border-white/5 flex justify-between items-center text-[10px] text-muted-foreground relative z-10">
         <Link
           to="/sessions/$sessionId"
           params={{ sessionId: session.id }}
@@ -189,9 +175,9 @@ export function SessionCard({ session, token }: SessionCardProps) {
         </Link>
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
-            <Button variant="ghost" size="icon" className="h-8 w-8 -mr-2">
+            <Button variant="ghost" size="icon" className="h-6 w-6 -mr-1.5">
               <span className="sr-only">Open menu</span>
-              <MoreHorizontal className="h-4 w-4" />
+              <MoreHorizontal className="h-3.5 w-3.5" />
             </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end">

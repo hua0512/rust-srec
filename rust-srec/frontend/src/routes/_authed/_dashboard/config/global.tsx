@@ -100,12 +100,12 @@ function GlobalConfigPage() {
           <Skeleton className="h-8 w-48" />
           <Skeleton className="h-10 w-32" />
         </div>
-        <div className="grid gap-8 md:grid-cols-2">
+        <div className="grid gap-6 lg:gap-8 lg:grid-cols-2">
           <Skeleton className="h-[400px] rounded-xl border-border/40 bg-muted/60" />
           <Skeleton className="h-[400px] rounded-xl border-border/40 bg-muted/60" />
           <Skeleton className="h-[400px] rounded-xl border-border/40 bg-muted/60" />
           <Skeleton className="h-[400px] rounded-xl border-border/40 bg-muted/60" />
-          <Skeleton className="h-[500px] md:col-span-2 rounded-xl border-border/40 bg-muted/60" />
+          <Skeleton className="h-[500px] lg:col-span-2 rounded-xl border-border/40 bg-muted/60" />
         </div>
       </div>
     );
@@ -115,7 +115,7 @@ function GlobalConfigPage() {
     <Form {...form}>
       <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-8 pb-32">
         <motion.div
-          className="grid gap-8 md:grid-cols-2"
+          className="grid gap-6 lg:gap-8 lg:grid-cols-2"
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           transition={{ duration: 0.3 }}
@@ -165,7 +165,7 @@ function GlobalConfigPage() {
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.3, delay: 0.25 }}
-            className="md:col-span-2 min-w-0"
+            className="lg:col-span-2 min-w-0"
           >
             <PipelineConfigCard control={form.control} />
           </motion.div>

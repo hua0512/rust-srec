@@ -2,7 +2,17 @@ import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { motion } from 'motion/react';
-import { ArrowLeft, Workflow, Save, Settings2, Layout, List, Share2, CheckCircle2, ShieldCheck } from 'lucide-react';
+import {
+  ArrowLeft,
+  Workflow,
+  Save,
+  Settings2,
+  Layout,
+  List,
+  Share2,
+  CheckCircle2,
+  ShieldCheck,
+} from 'lucide-react';
 import { useNavigate } from '@tanstack/react-router';
 import { useState } from 'react';
 import { Trans } from '@lingui/react/macro';
@@ -26,14 +36,20 @@ import { StepsList } from './steps-list';
 import type { PipelinePreset } from '@/server/functions/pipeline';
 import { validateDagDefinition } from '@/server/functions/pipeline';
 import { toast } from 'sonner';
-import { PipelineStep, DagStepDefinition, DagStepDefinitionSchema } from '@/api/schemas';
+import {
+  PipelineStep,
+  DagStepDefinition,
+  DagStepDefinitionSchema,
+} from '@/api/schemas';
 import { WorkflowFlowEditor } from './flow-editor/workflow-flow-editor';
 import { StepConfigDialog } from './step-config-dialog';
 
 const workflowSchema = z.object({
   name: z.string().min(1, 'Name is required'),
   description: z.string().optional(),
-  steps: z.array(DagStepDefinitionSchema).min(1, 'At least one step is required'),
+  steps: z
+    .array(DagStepDefinitionSchema)
+    .min(1, 'At least one step is required'),
 });
 
 type WorkflowFormData = z.infer<typeof workflowSchema>;
@@ -71,11 +87,17 @@ export function WorkflowEditor({
 
   const handleAddStep = (pipelineStep: PipelineStep) => {
     const currentSteps = form.getValues('steps');
-    const stepName = pipelineStep.type === 'inline' ? pipelineStep.processor : pipelineStep.name;
+    const stepName =
+      pipelineStep.type === 'inline'
+        ? pipelineStep.processor
+        : pipelineStep.name;
     const newStep: DagStepDefinition = {
       id: `${stepName}-${currentSteps.length}`,
       step: pipelineStep,
-      depends_on: currentSteps.length > 0 ? [currentSteps[currentSteps.length - 1].id] : [],
+      depends_on:
+        currentSteps.length > 0
+          ? [currentSteps[currentSteps.length - 1].id]
+          : [],
     };
     form.setValue('steps', [...currentSteps, newStep], {
       shouldDirty: true,
@@ -122,23 +144,33 @@ export function WorkflowEditor({
         data: {
           name: data.name,
           steps: data.steps,
-        }
+        },
       });
 
       if (result.valid) {
         toast.success(t`Pipeline is valid`, {
           description: t`No errors found. Max depth: ${result.max_depth}`,
-          icon: <CheckCircle2 className="h-4 w-4 text-green-500" />
+          icon: <CheckCircle2 className="h-4 w-4 text-green-500" />,
         });
       } else {
         toast.error(t`Validation Failed`, {
           description: (
             <div className="space-y-1 mt-1">
               {result.errors.map((e, i) => (
-                <p key={i} className="text-xs font-mono bg-destructive/10 p-1 rounded text-destructive">{e}</p>
+                <p
+                  key={i}
+                  className="text-xs font-mono bg-destructive/10 p-1 rounded text-destructive"
+                >
+                  {e}
+                </p>
               ))}
               {result.warnings.map((e, i) => (
-                <p key={i} className="text-xs font-mono bg-yellow-500/10 p-1 rounded text-yellow-500">{e}</p>
+                <p
+                  key={i}
+                  className="text-xs font-mono bg-yellow-500/10 p-1 rounded text-yellow-500"
+                >
+                  {e}
+                </p>
               ))}
             </div>
           ),

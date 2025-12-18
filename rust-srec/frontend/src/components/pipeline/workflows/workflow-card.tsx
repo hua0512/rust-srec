@@ -42,7 +42,10 @@ import { Trans } from '@lingui/react/macro';
 import { plural } from '@lingui/core/macro';
 import { useLingui } from '@lingui/react';
 import type { PipelinePreset } from '@/server/functions/pipeline';
-import { DEFAULT_PIPELINE_PRESET_DESCRIPTIONS } from '../presets/default-presets-i18n';
+import {
+  DEFAULT_PIPELINE_PRESET_DESCRIPTIONS,
+  DEFAULT_PIPELINE_PRESET_NAMES,
+} from '../presets/default-presets-i18n';
 
 interface WorkflowCardProps {
   workflow: PipelinePreset;
@@ -140,7 +143,9 @@ export function WorkflowCard({
         </div>
         <div className="flex-1 min-w-0 space-y-1">
           <CardTitle className="text-base font-medium truncate tracking-tight text-foreground/90 group-hover:text-primary transition-colors duration-300">
-            {workflow.name}
+            {DEFAULT_PIPELINE_PRESET_NAMES[workflow.id]
+              ? i18n._(DEFAULT_PIPELINE_PRESET_NAMES[workflow.id])
+              : workflow.name}
           </CardTitle>
           <div className="flex items-center gap-2">
             <span className="text-[10px] uppercase tracking-wider font-semibold text-muted-foreground/60">
@@ -226,7 +231,11 @@ export function WorkflowCard({
               <div
                 key={index}
                 className={`flex items-center gap-1.5 px-2 py-1 rounded-lg ${color}/10 border border-${color.replace('bg-', '')}/20 transition-all hover:scale-105 group/step`}
-                title={id ? `${id}: ${stepName}` : stepName + (isInline ? ' (Inline)' : '')}
+                title={
+                  id
+                    ? `${id}: ${stepName}`
+                    : stepName + (isInline ? ' (Inline)' : '')
+                }
               >
                 <StepIcon
                   className={`h-3 w-3 ${color.replace('bg-', 'text-')}`}

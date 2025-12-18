@@ -2,7 +2,7 @@ import { createFileRoute } from '@tanstack/react-router';
 import { useQuery, keepPreviousData } from '@tanstack/react-query';
 import { z } from 'zod';
 import { listSessions } from '@/server/functions/sessions';
-import { SessionList } from '@/components/sessions/SessionList';
+import { SessionList } from '@/components/sessions/session-list';
 import { startOfDay, subDays, format } from 'date-fns';
 import { useMemo, useState } from 'react';
 import {
@@ -212,7 +212,7 @@ function SessionsPage() {
 
   return (
     <motion.div
-      className="min-h-screen space-y-6"
+      className="min-h-screen space-y-6 bg-gradient-to-br from-background via-background to-muted/20"
       variants={container}
       initial="hidden"
       animate="show"

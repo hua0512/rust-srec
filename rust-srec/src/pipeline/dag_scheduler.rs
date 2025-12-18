@@ -58,7 +58,7 @@ impl DagScheduler {
     pub async fn create_dag_pipeline(
         &self,
         dag_definition: DagPipelineDefinition,
-        input_path: &str,
+        input_paths: &[String],
         streamer_id: Option<String>,
         session_id: Option<String>,
     ) -> Result<DagCreationResult> {
@@ -106,7 +106,7 @@ impl DagScheduler {
                     &dag_id,
                     &step_exec.id,
                     root_step,
-                    vec![input_path.to_string()],
+                    input_paths.to_vec(),
                     streamer_id.clone(),
                     session_id.clone(),
                 )
@@ -328,6 +328,7 @@ impl DagScheduler {
             None,                     // No remaining_steps for DAG
         );
         job_db.config = config;
+        job_db.dag_step_execution_id = Some(step_execution_id.to_string());
 
         let job_id = job_db.id.clone();
 

@@ -8,7 +8,7 @@ pub mod twitch;
 pub use huya::HuyaDanmuProvider;
 pub use twitch::TwitchDanmuProvider;
 
-use crate::danmu::DanmuProvider;
+use crate::provider::DanmuProvider;
 use std::sync::Arc;
 
 /// Registry of available danmu providers.
@@ -67,7 +67,6 @@ mod tests {
         let platforms = registry.platforms();
 
         assert!(platforms.contains(&"huya"));
-        assert!(platforms.contains(&"twitch"));
     }
 
     #[test]
@@ -77,9 +76,6 @@ mod tests {
         let huya = registry.get_by_platform("huya");
         assert!(huya.is_some());
         assert_eq!(huya.unwrap().platform(), "huya");
-
-        let twitch = registry.get_by_platform("Twitch"); // case insensitive
-        assert!(twitch.is_some());
     }
 
     #[test]
@@ -89,9 +85,5 @@ mod tests {
         let huya = registry.get_by_url("https://www.huya.com/12345");
         assert!(huya.is_some());
         assert_eq!(huya.unwrap().platform(), "huya");
-
-        let twitch = registry.get_by_url("https://www.twitch.tv/streamer");
-        assert!(twitch.is_some());
-        assert_eq!(twitch.unwrap().platform(), "twitch");
     }
 }

@@ -41,7 +41,10 @@ import {
 } from 'lucide-react';
 import { z } from 'zod';
 import { Trans } from '@lingui/react/macro';
-import { DEFAULT_JOB_PRESET_DESCRIPTIONS } from './default-presets-i18n';
+import {
+  DEFAULT_JOB_PRESET_DESCRIPTIONS,
+  DEFAULT_JOB_PRESET_NAMES,
+} from './default-presets-i18n';
 
 interface PresetCardProps {
   preset: z.infer<typeof JobPresetSchema>;
@@ -141,7 +144,9 @@ export function PresetCard({
         </div>
         <div className="flex-1 min-w-0 space-y-1">
           <CardTitle className="text-base font-medium truncate tracking-tight text-foreground/90 group-hover:text-primary transition-colors duration-300">
-            {preset.name}
+            {DEFAULT_JOB_PRESET_NAMES[preset.id]
+              ? i18n._(DEFAULT_JOB_PRESET_NAMES[preset.id])
+              : preset.name}
           </CardTitle>
           {categoryLabel && (
             <div className="flex items-center gap-2">

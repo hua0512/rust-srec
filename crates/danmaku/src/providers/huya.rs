@@ -21,8 +21,8 @@ use tokio_tungstenite::{
 };
 use tracing::{debug, error, info, warn};
 
-use crate::danmu::{DanmuConnection, DanmuMessage, DanmuProvider, DanmuType};
-use crate::error::{Error, Result};
+use crate::error::{DanmakuError, Result};
+use crate::{DanmuConnection, DanmuMessage, DanmuProvider, DanmuType};
 
 /// Huya WebSocket server URL
 const HUYA_WS_URL: &str = "wss://cdnws.api.huya.com";
@@ -260,7 +260,7 @@ impl HuyaDanmuProvider {
         info!("Connecting to Huya WebSocket: {}", url);
 
         let (ws_stream, _) = connect_async(&url).await.map_err(|e| {
-            Error::DanmuError(format!("Failed to connect to Huya WebSocket: {}", e))
+            DanmakuError::connection(format!("Failed to connect to Huya WebSocket: {}", e))
         })?;
 
         info!("Connected to Huya WebSocket for room {}", room_id);
@@ -333,8 +333,9 @@ impl HuyaDanmuProvider {
             body: body_map,
         };
 
-        let encoded = tars_codec::encode_request(&message)
-            .map_err(|e| Error::DanmuError(format!("Failed to encode auth packet: {}", e)))?;
+        let encoded = tars_codec::encode_request(&message).map_err(|e| {
+            DanmakuError::connection(format!("Failed to encode auth packet: {}", e))
+        })?;
 
         Ok(encoded.freeze())
     }
@@ -384,8 +385,9 @@ impl HuyaDanmuProvider {
             body: body_map,
         };
 
-        let encoded = tars_codec::encode_request(&message)
-            .map_err(|e| Error::DanmuError(format!("Failed to encode room join packet: {}", e)))?;
+        let encoded = tars_codec::encode_request(&message).map_err(|e| {
+            DanmakuError::connection(format!("Failed to encode room join packet: {}", e))
+        })?;
 
         Ok(encoded.freeze())
     }
@@ -403,7 +405,7 @@ impl HuyaDanmuProvider {
     pub fn create_register_packet(room_id: &str) -> Result<Bytes> {
         let room_id_num: i64 = room_id
             .parse()
-            .map_err(|_| Error::DanmuError("Invalid room ID".to_string()))?;
+            .map_err(|_| DanmakuError::connection("Invalid room ID".to_string()))?;
 
         let room_join = HuyaRoomJoinPacket::new(room_id_num);
         Self::create_room_join_packet(&room_join)
@@ -447,8 +449,9 @@ impl HuyaDanmuProvider {
             body: body_map,
         };
 
-        let encoded = tars_codec::encode_request(&message)
-            .map_err(|e| Error::DanmuError(format!("Failed to encode heartbeat packet: {}", e)))?;
+        let encoded = tars_codec::encode_request(&message).map_err(|e| {
+            DanmakuError::connection(format!("Failed to encode heartbeat packet: {}", e))
+        })?;
 
         Ok(encoded.freeze())
     }
@@ -499,8 +502,9 @@ impl HuyaDanmuProvider {
         }
 
         let mut src = BytesMut::from(data);
-        let message = tars_codec::decode_response(&mut src)
-            .map_err(|e| Error::DanmuError(format!("Failed to decode TARS message: {}", e)))?;
+        let message = tars_codec::decode_response(&mut src).map_err(|e| {
+            DanmakuError::connection(format!("Failed to decode TARS message: {}", e))
+        })?;
 
         let Some(message) = message else {
             return Ok(None);
@@ -1193,7 +1197,10 @@ impl HuyaDanmuProvider {
                         .send(Message::Binary(register_packet.to_vec().into()))
                         .await
                         .map_err(|e| {
-                            Error::DanmuError(format!("Failed to send register packet: {}", e))
+                            DanmakuError::connection(format!(
+                                "Failed to send register packet: {}",
+                                e
+                            ))
                         })?;
 
                     let ws_sender = Arc::new(Mutex::new(write));
@@ -1235,7 +1242,7 @@ impl HuyaDanmuProvider {
             }
         }
 
-        Err(Error::DanmuError(format!(
+        Err(DanmakuError::connection(format!(
             "Failed to reconnect after {} attempts",
             MAX_RECONNECT_ATTEMPTS
         )))
@@ -1268,7 +1275,9 @@ impl DanmuProvider for HuyaDanmuProvider {
         write
             .send(Message::Binary(register_packet.to_vec().into()))
             .await
-            .map_err(|e| Error::DanmuError(format!("Failed to send register packet: {}", e)))?;
+            .map_err(|e| {
+                DanmakuError::connection(format!("Failed to send register packet: {}", e))
+            })?;
 
         info!("Sent register packet for room {}", room_id);
 
@@ -1384,13 +1393,15 @@ impl DanmuProvider for HuyaDanmuProvider {
 
     async fn receive(&self, connection: &DanmuConnection) -> Result<Option<DanmuMessage>> {
         if !connection.is_connected {
-            return Err(Error::DanmuError("Connection is not active".to_string()));
+            return Err(DanmakuError::connection(
+                "Connection is not active".to_string(),
+            ));
         }
 
         let connections = self.connections.read().await;
-        let conn_state = connections
-            .get(&connection.id)
-            .ok_or_else(|| Error::DanmuError(format!("Connection {} not found", connection.id)))?;
+        let conn_state = connections.get(&connection.id).ok_or_else(|| {
+            DanmakuError::connection(format!("Connection {} not found", connection.id))
+        })?;
 
         let mut state = conn_state.lock().await;
 
@@ -1410,7 +1421,7 @@ impl DanmuProvider for HuyaDanmuProvider {
                 return Ok(state.message_rx.recv().await);
             }
 
-            return Err(Error::DanmuError("Failed to reconnect".to_string()));
+            return Err(DanmakuError::connection("Failed to reconnect".to_string()));
         }
 
         // Try to receive a message with timeout

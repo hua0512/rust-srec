@@ -9,7 +9,7 @@ import { nitro } from 'nitro/vite';
 import { lingui } from '@lingui/vite-plugin';
 import oxlintPlugin from 'vite-plugin-oxlint';
 
-const config = defineConfig({
+export default defineConfig(() => ({
   plugins: [
     devtools(),
     nitro(),
@@ -35,6 +35,40 @@ const config = defineConfig({
       },
     },
   },
-});
+  build: {
+    chunkSizeWarningLimit: 600,
+    rollupOptions: {
+      output: {
+        manualChunks: (id) => {
+          if (id.includes('node_modules')) {
+            if (id.includes('artplayer')) return 'vendor-player-art';
+            if (id.includes('hls.js')) return 'vendor-player-hls';
+            if (id.includes('mpegts.js')) return 'vendor-player-mpegts';
 
-export default config;
+            // UI Libraries
+            if (
+              id.includes('@radix-ui') ||
+              id.includes('lucide-react') ||
+              id.includes('motion') ||
+              id.includes('sonner')
+            ) {
+              return 'vendor-ui';
+            }
+
+            // Utils
+            if (
+              id.includes('date-fns') ||
+              id.includes('zod') ||
+              id.includes('react-hook-form') ||
+              id.includes('ky')
+            ) {
+              return 'vendor-utils';
+            }
+
+            // We avoid bundling react/tanstack explicitly here to let Vite handle common chunking
+          }
+        },
+      },
+    },
+  },
+}));

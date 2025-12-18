@@ -189,7 +189,7 @@ function SystemHealthPage() {
 
         {/* Detailed Components Table */}
         <motion.div variants={item}>
-          <Card>
+          <Card className="overflow-hidden border-white/10 bg-background/30 backdrop-blur-xl shadow-2xl">
             <CardHeader>
               <CardTitle>
                 <Trans>Component Status</Trans>
@@ -225,7 +225,10 @@ function SystemHealthPage() {
                   {health.components
                     .sort((a, b) => a.name.localeCompare(b.name))
                     .map((component) => (
-                      <TableRow key={component.name}>
+                      <TableRow
+                        key={component.name}
+                        className="hover:bg-white/5 transition-colors border-white/5"
+                      >
                         <TableCell className="font-medium">
                           {formatComponentName(component.name)}
                           <div className="text-xs text-muted-foreground font-mono mt-0.5">
@@ -278,7 +281,7 @@ function SystemHealthPage() {
 
 function MetricCard({ title, icon: Icon, content, description, color }: any) {
   return (
-    <Card>
+    <Card className="border-white/10 bg-background/30 backdrop-blur-xl shadow-xl transition-all hover:bg-background/40 hover:scale-[1.02]">
       <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
         <CardTitle className="text-sm font-medium text-muted-foreground">
           {title}

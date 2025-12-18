@@ -108,25 +108,25 @@ export function SharedConfigEditor<T extends FieldValues>({
 
   return (
     <Tabs defaultValue={defaultTab} className="w-full">
-      <div className="bg-muted/50 p-1 rounded-2xl backdrop-blur-sm border border-border/50 inline-flex flex-wrap gap-1 w-full sm:w-auto">
-        <TabsList className="h-auto bg-transparent p-0 gap-1 flex-wrap justify-start">
+      <div className="bg-muted/50 p-0.5 sm:p-1 rounded-2xl backdrop-blur-sm border border-border/50 flex flex-col w-full">
+        <TabsList className="h-auto bg-transparent p-0 gap-0.5 sm:gap-1 flex w-full overflow-x-auto no-scrollbar justify-start">
           {extraTabs.map((tab) => (
             <TabsTrigger
               key={tab.value}
               value={tab.value}
-              className="gap-2 px-4 py-2.5 h-10 data-[state=active]:bg-background data-[state=active]:text-foreground data-[state=active]:shadow-sm rounded-xl transition-all"
+              className="gap-1.5 sm:gap-2 px-3 sm:px-4 py-2 sm:py-2.5 h-9 sm:h-10 data-[state=active]:bg-background data-[state=active]:text-foreground data-[state=active]:shadow-sm rounded-xl transition-all shrink-0"
             >
-              {tab.icon && <tab.icon className="w-4 h-4" />}
-              <span className="hidden sm:inline">{tab.label}</span>
+              {tab.icon && <tab.icon className="w-3.5 h-3.5 sm:w-4 sm:h-4" />}
+              <span className="text-xs sm:text-sm">{tab.label}</span>
             </TabsTrigger>
           ))}
           {showTab('filters') && (
             <TabsTrigger
               value="filters"
-              className="gap-2 px-4 py-2.5 h-10 data-[state=active]:bg-background data-[state=active]:text-foreground data-[state=active]:shadow-sm rounded-xl transition-all"
+              className="gap-1.5 sm:gap-2 px-3 sm:px-4 py-2 sm:py-2.5 h-9 sm:h-10 data-[state=active]:bg-background data-[state=active]:text-foreground data-[state=active]:shadow-sm rounded-xl transition-all shrink-0"
             >
-              <Filter className="w-4 h-4" />
-              <span className="hidden sm:inline">
+              <Filter className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
+              <span className="text-xs sm:text-sm">
                 <Trans>Filters</Trans>
               </span>
             </TabsTrigger>
@@ -134,10 +134,10 @@ export function SharedConfigEditor<T extends FieldValues>({
           {showTab('output') && (
             <TabsTrigger
               value="output"
-              className="gap-2 px-4 py-2.5 h-10 data-[state=active]:bg-background data-[state=active]:text-foreground data-[state=active]:shadow-sm rounded-xl transition-all"
+              className="gap-1.5 sm:gap-2 px-3 sm:px-4 py-2 sm:py-2.5 h-9 sm:h-10 data-[state=active]:bg-background data-[state=active]:text-foreground data-[state=active]:shadow-sm rounded-xl transition-all shrink-0"
             >
-              <FolderOutput className="w-4 h-4" />
-              <span className="hidden sm:inline">
+              <FolderOutput className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
+              <span className="text-xs sm:text-sm">
                 <Trans>Output</Trans>
               </span>
             </TabsTrigger>
@@ -145,10 +145,10 @@ export function SharedConfigEditor<T extends FieldValues>({
           {showTab('network') && (
             <TabsTrigger
               value="network"
-              className="gap-2 px-4 py-2.5 h-10 data-[state=active]:bg-background data-[state=active]:text-foreground data-[state=active]:shadow-sm rounded-xl transition-all"
+              className="gap-1.5 sm:gap-2 px-3 sm:px-4 py-2 sm:py-2.5 h-9 sm:h-10 data-[state=active]:bg-background data-[state=active]:text-foreground data-[state=active]:shadow-sm rounded-xl transition-all shrink-0"
             >
-              <Network className="w-4 h-4" />
-              <span className="hidden sm:inline">
+              <Network className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
+              <span className="text-xs sm:text-sm">
                 <Trans>Network</Trans>
               </span>
             </TabsTrigger>
@@ -156,10 +156,10 @@ export function SharedConfigEditor<T extends FieldValues>({
           {showTab('proxy') && (
             <TabsTrigger
               value="proxy"
-              className="gap-2 px-4 py-2.5 h-10 data-[state=active]:bg-background data-[state=active]:text-foreground data-[state=active]:shadow-sm rounded-xl transition-all"
+              className="gap-1.5 sm:gap-2 px-3 sm:px-4 py-2 sm:py-2.5 h-9 sm:h-10 data-[state=active]:bg-background data-[state=active]:text-foreground data-[state=active]:shadow-sm rounded-xl transition-all shrink-0"
             >
-              <Shield className="w-4 h-4" />
-              <span className="hidden sm:inline">
+              <Shield className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
+              <span className="text-xs sm:text-sm">
                 <Trans>Proxy</Trans>
               </span>
             </TabsTrigger>
@@ -167,10 +167,10 @@ export function SharedConfigEditor<T extends FieldValues>({
           {showTab('hooks') && (
             <TabsTrigger
               value="hooks"
-              className="gap-2 px-4 py-2.5 h-10 data-[state=active]:bg-background data-[state=active]:text-foreground data-[state=active]:shadow-sm rounded-xl transition-all"
+              className="gap-1.5 sm:gap-2 px-3 sm:px-4 py-2 sm:py-2.5 h-9 sm:h-10 data-[state=active]:bg-background data-[state=active]:text-foreground data-[state=active]:shadow-sm rounded-xl transition-all shrink-0"
             >
-              <Webhook className="w-4 h-4" />
-              <span className="hidden sm:inline">
+              <Webhook className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
+              <span className="text-xs sm:text-sm">
                 <Trans>Hooks</Trans>
               </span>
             </TabsTrigger>
@@ -178,10 +178,10 @@ export function SharedConfigEditor<T extends FieldValues>({
           {showTab('danmu') && (
             <TabsTrigger
               value="danmu"
-              className="gap-2 px-4 py-2.5 h-10 data-[state=active]:bg-background data-[state=active]:text-foreground data-[state=active]:shadow-sm rounded-xl transition-all"
+              className="gap-1.5 sm:gap-2 px-3 sm:px-4 py-2 sm:py-2.5 h-9 sm:h-10 data-[state=active]:bg-background data-[state=active]:text-foreground data-[state=active]:shadow-sm rounded-xl transition-all shrink-0"
             >
-              <MessageSquare className="w-4 h-4" />
-              <span className="hidden sm:inline">
+              <MessageSquare className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
+              <span className="text-xs sm:text-sm">
                 <Trans>Danmu</Trans>
               </span>
             </TabsTrigger>
@@ -189,10 +189,10 @@ export function SharedConfigEditor<T extends FieldValues>({
           {showTab('pipeline') && (
             <TabsTrigger
               value="pipeline"
-              className="gap-2 px-4 py-2.5 h-10 data-[state=active]:bg-background data-[state=active]:text-foreground data-[state=active]:shadow-sm rounded-xl transition-all"
+              className="gap-1.5 sm:gap-2 px-3 sm:px-4 py-2 sm:py-2.5 h-9 sm:h-10 data-[state=active]:bg-background data-[state=active]:text-foreground data-[state=active]:shadow-sm rounded-xl transition-all shrink-0"
             >
-              <Workflow className="w-4 h-4" />
-              <span className="hidden sm:inline">
+              <Workflow className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
+              <span className="text-xs sm:text-sm">
                 <Trans>Pipeline</Trans>
               </span>
             </TabsTrigger>
@@ -230,7 +230,7 @@ export function SharedConfigEditor<T extends FieldValues>({
               exit="exit"
             >
               <Card className="border-dashed shadow-none">
-                <CardContent className="pt-6">
+                <CardContent className="p-4 sm:pt-6">
                   <StreamSelectionTab
                     form={form}
                     fieldName={paths.streamSelection}
@@ -343,7 +343,7 @@ export function SharedConfigEditor<T extends FieldValues>({
               exit="exit"
             >
               <Card className="border-dashed shadow-none">
-                <CardContent className="pt-6">
+                <CardContent className="p-4 sm:pt-6">
                   <RecordDanmuCard
                     form={form}
                     basePath={paths.danmu === '' ? undefined : paths.danmu}
@@ -374,7 +374,7 @@ export function SharedConfigEditor<T extends FieldValues>({
               exit="exit"
             >
               <Card className="border-dashed shadow-none">
-                <CardContent className="pt-6">
+                <CardContent className="p-4 sm:pt-6">
                   <PipelineConfigAdapter
                     form={form}
                     name={paths.pipeline}

@@ -755,7 +755,9 @@ impl DagPipelineDefinition {
 
         // Check for at least one root step
         if !self.steps.iter().any(|s| s.is_root()) {
-            return Err("DAG pipeline must have at least one root step (no dependencies)".to_string());
+            return Err(
+                "DAG pipeline must have at least one root step (no dependencies)".to_string(),
+            );
         }
 
         // Check for cycles using DFS
@@ -764,7 +766,12 @@ impl DagPipelineDefinition {
         let adj: HashMap<&str, Vec<&str>> = self
             .steps
             .iter()
-            .map(|s| (s.id.as_str(), s.depends_on.iter().map(|d| d.as_str()).collect()))
+            .map(|s| {
+                (
+                    s.id.as_str(),
+                    s.depends_on.iter().map(|d| d.as_str()).collect(),
+                )
+            })
             .collect();
 
         fn has_cycle<'a>(
@@ -862,7 +869,9 @@ impl DagPipelineDefinition {
 
                 // Find all steps that depend on this node
                 for step in &self.steps {
-                    if step.depends_on.iter().any(|d| d == node) && !processed.contains(step.id.as_str()) {
+                    if step.depends_on.iter().any(|d| d == node)
+                        && !processed.contains(step.id.as_str())
+                    {
                         let deg = in_degree.entry(step.id.as_str()).or_insert(0);
                         if *deg > 0 {
                             *deg -= 1;
@@ -899,7 +908,9 @@ impl DagPipelineDefinition {
 }
 
 /// Status of a DAG step execution.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, strum::Display, strum::EnumString)]
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, strum::Display, strum::EnumString,
+)]
 #[strum(serialize_all = "SCREAMING_SNAKE_CASE")]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
 pub enum DagStepStatus {
@@ -948,7 +959,9 @@ impl DagStepStatus {
 }
 
 /// Status of a DAG execution.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, strum::Display, strum::EnumString)]
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, strum::Display, strum::EnumString,
+)]
 #[strum(serialize_all = "SCREAMING_SNAKE_CASE")]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
 pub enum DagExecutionStatus {
@@ -1246,8 +1259,16 @@ mod tests {
             "test-dag",
             vec![
                 DagStep::new("A", PipelineStep::preset("remux")),
-                DagStep::with_dependencies("B", PipelineStep::preset("upload"), vec!["A".to_string()]),
-                DagStep::with_dependencies("C", PipelineStep::preset("thumbnail"), vec!["B".to_string()]),
+                DagStep::with_dependencies(
+                    "B",
+                    PipelineStep::preset("upload"),
+                    vec!["A".to_string()],
+                ),
+                DagStep::with_dependencies(
+                    "C",
+                    PipelineStep::preset("thumbnail"),
+                    vec!["B".to_string()],
+                ),
             ],
         );
         assert!(dag.validate().is_ok());
@@ -1260,8 +1281,16 @@ mod tests {
             "fan-out-dag",
             vec![
                 DagStep::new("A", PipelineStep::preset("remux")),
-                DagStep::with_dependencies("B", PipelineStep::preset("upload"), vec!["A".to_string()]),
-                DagStep::with_dependencies("C", PipelineStep::preset("thumbnail"), vec!["A".to_string()]),
+                DagStep::with_dependencies(
+                    "B",
+                    PipelineStep::preset("upload"),
+                    vec!["A".to_string()],
+                ),
+                DagStep::with_dependencies(
+                    "C",
+                    PipelineStep::preset("thumbnail"),
+                    vec!["A".to_string()],
+                ),
             ],
         );
         assert!(dag.validate().is_ok());
@@ -1296,8 +1325,16 @@ mod tests {
             "diamond-dag",
             vec![
                 DagStep::new("A", PipelineStep::preset("remux")),
-                DagStep::with_dependencies("B", PipelineStep::preset("upload"), vec!["A".to_string()]),
-                DagStep::with_dependencies("C", PipelineStep::preset("thumbnail"), vec!["A".to_string()]),
+                DagStep::with_dependencies(
+                    "B",
+                    PipelineStep::preset("upload"),
+                    vec!["A".to_string()],
+                ),
+                DagStep::with_dependencies(
+                    "C",
+                    PipelineStep::preset("thumbnail"),
+                    vec!["A".to_string()],
+                ),
                 DagStep::with_dependencies(
                     "D",
                     PipelineStep::preset("notify"),
@@ -1336,7 +1373,11 @@ mod tests {
             "missing-dep-dag",
             vec![
                 DagStep::new("A", PipelineStep::preset("remux")),
-                DagStep::with_dependencies("B", PipelineStep::preset("upload"), vec!["X".to_string()]),
+                DagStep::with_dependencies(
+                    "B",
+                    PipelineStep::preset("upload"),
+                    vec!["X".to_string()],
+                ),
             ],
         );
         assert!(dag.validate().is_err());
@@ -1349,8 +1390,16 @@ mod tests {
         let dag = DagPipelineDefinition::new(
             "no-root-dag",
             vec![
-                DagStep::with_dependencies("A", PipelineStep::preset("remux"), vec!["B".to_string()]),
-                DagStep::with_dependencies("B", PipelineStep::preset("upload"), vec!["A".to_string()]),
+                DagStep::with_dependencies(
+                    "A",
+                    PipelineStep::preset("remux"),
+                    vec!["B".to_string()],
+                ),
+                DagStep::with_dependencies(
+                    "B",
+                    PipelineStep::preset("upload"),
+                    vec!["A".to_string()],
+                ),
             ],
         );
         assert!(dag.validate().is_err());
@@ -1412,7 +1461,10 @@ mod tests {
     #[test]
     fn test_dag_step_status() {
         assert_eq!(DagStepStatus::Blocked.as_str(), "BLOCKED");
-        assert_eq!(DagStepStatus::parse("BLOCKED"), Some(DagStepStatus::Blocked));
+        assert_eq!(
+            DagStepStatus::parse("BLOCKED"),
+            Some(DagStepStatus::Blocked)
+        );
         assert_eq!(DagStepStatus::parse("INVALID"), None);
 
         assert!(!DagStepStatus::Blocked.is_terminal());
@@ -1426,7 +1478,10 @@ mod tests {
     #[test]
     fn test_dag_execution_status() {
         assert_eq!(DagExecutionStatus::Processing.as_str(), "PROCESSING");
-        assert_eq!(DagExecutionStatus::parse("PROCESSING"), Some(DagExecutionStatus::Processing));
+        assert_eq!(
+            DagExecutionStatus::parse("PROCESSING"),
+            Some(DagExecutionStatus::Processing)
+        );
         assert_eq!(DagExecutionStatus::parse("INVALID"), None);
 
         assert!(!DagExecutionStatus::Pending.is_terminal());
@@ -1464,7 +1519,11 @@ mod tests {
             "test-dag",
             vec![
                 DagStep::new("remux", PipelineStep::preset("remux")),
-                DagStep::with_dependencies("upload", PipelineStep::preset("upload"), vec!["remux".to_string()]),
+                DagStep::with_dependencies(
+                    "upload",
+                    PipelineStep::preset("upload"),
+                    vec!["remux".to_string()],
+                ),
             ],
         );
 

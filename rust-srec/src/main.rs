@@ -10,6 +10,9 @@ use rust_srec::logging::init_logging;
 use rust_srec::services::ServiceContainer;
 use tracing::{error, info, warn};
 
+#[global_allocator]
+static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;
+
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     // Initialize logging with reloadable filter

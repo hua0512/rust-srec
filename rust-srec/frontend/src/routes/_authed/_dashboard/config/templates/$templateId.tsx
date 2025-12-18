@@ -50,9 +50,9 @@ function EditTemplatePage() {
   if (isLoading) {
     return (
       <div className="space-y-6">
-        <div className="flex gap-2">
+        <div className="flex gap-2 overflow-x-auto no-scrollbar -mx-3 px-3">
           {[1, 2, 3, 4, 5, 6, 7].map((i) => (
-            <Skeleton key={i} className="h-10 w-32 rounded-lg" />
+            <Skeleton key={i} className="h-10 w-32 shrink-0 rounded-lg" />
           ))}
         </div>
         <div className="space-y-4">

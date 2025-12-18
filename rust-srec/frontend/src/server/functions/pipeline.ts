@@ -21,7 +21,7 @@ import { z } from 'zod';
 const CreatePipelineJobRequestSchema = z.object({
   session_id: z.string().min(1),
   streamer_id: z.string().min(1),
-  input_path: z.string().min(1),
+  input_paths: z.array(z.string()).min(1),
   dag: DagPipelineDefinitionSchema,
 });
 
@@ -31,9 +31,7 @@ export type CreatePipelineJobRequest = z.infer<
 
 // listPipelineJobs is deprecated. Use getDagExecution to see steps and statuses.
 
-
 // listPipelineJobsPage is deprecated.
-
 
 export const getPipelineJobLogs = createServerFn({ method: 'GET' })
   .inputValidator((d: { id: string; limit?: number; offset?: number }) => d)
@@ -282,23 +280,35 @@ export const getPipelinePreset = createServerFn({ method: 'GET' })
   .inputValidator((id: string) => id)
   .handler(async ({ data: id }) => {
     const json = await fetchBackend(`/pipeline/presets/${id}`);
-    console.log('[getPipelinePreset] Raw Response:', JSON.stringify(json, null, 2));
+    console.log(
+      '[getPipelinePreset] Raw Response:',
+      JSON.stringify(json, null, 2),
+    );
     return PipelinePresetSchema.parse(json);
   });
 
 export const createPipelinePreset = createServerFn({ method: 'POST' })
   .inputValidator((d: z.infer<typeof CreatePipelinePresetRequestSchema>) => d)
   .handler(async ({ data }) => {
-    console.log('[createPipelinePreset] Payload:', JSON.stringify(data, null, 2));
+    console.log(
+      '[createPipelinePreset] Payload:',
+      JSON.stringify(data, null, 2),
+    );
     try {
       const json = await fetchBackend('/pipeline/presets', {
         method: 'POST',
         body: JSON.stringify(data),
       });
-      console.log('[createPipelinePreset] Raw Response:', JSON.stringify(json, null, 2));
+      console.log(
+        '[createPipelinePreset] Raw Response:',
+        JSON.stringify(json, null, 2),
+      );
       const parsed = PipelinePresetSchema.safeParse(json);
       if (!parsed.success) {
-        console.error('[createPipelinePreset] Zod schema validation failed:', parsed.error);
+        console.error(
+          '[createPipelinePreset] Zod schema validation failed:',
+          parsed.error,
+        );
         throw new Error('Response validation failed');
       }
       return parsed.data;
@@ -316,18 +326,30 @@ export const updatePipelinePreset = createServerFn({ method: 'POST' })
     }) => d,
   )
   .handler(async ({ data }) => {
-    console.log('[updatePipelinePreset] Payload:', JSON.stringify(data, null, 2));
+    console.log(
+      '[updatePipelinePreset] Payload:',
+      JSON.stringify(data, null, 2),
+    );
     const { id, data: body } = data;
     try {
       const json = await fetchBackend(`/pipeline/presets/${id}`, {
         method: 'PUT',
         body: JSON.stringify(body),
       });
-      console.log('[updatePipelinePreset] Raw Response:', JSON.stringify(json, null, 2));
+      console.log(
+        '[updatePipelinePreset] Raw Response:',
+        JSON.stringify(json, null, 2),
+      );
       const parsed = PipelinePresetSchema.safeParse(json);
-      console.log('[updatePipelinePreset] Parsed Response:', JSON.stringify(parsed, null, 2));
+      console.log(
+        '[updatePipelinePreset] Parsed Response:',
+        JSON.stringify(parsed, null, 2),
+      );
       if (!parsed.success) {
-        console.error('[updatePipelinePreset] Zod schema validation failed:', parsed.error);
+        console.error(
+          '[updatePipelinePreset] Zod schema validation failed:',
+          parsed.error,
+        );
         throw new Error('Response validation failed');
       }
       return parsed.data;

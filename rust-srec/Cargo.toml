@@ -56,6 +56,7 @@ webpki-roots = "0.26"
 quick-xml = { version = "0.36.0", features = ["serde", "serialize"] }
 
 # Workspace crates
+danmaku = { path = "../crates/danmaku" }
 pipeline-common = { path = "../crates/pipeline-common" }
 flv = { path = "../crates/flv" }
 flv-fix = { path = "../crates/flv-fix" }
@@ -73,6 +74,7 @@ tower-http = { version = "0.6", features = ["cors", "trace", "request-id", "fs"]
 rayon = "1.10.0"
 jsonwebtoken = "9"
 rustc-hash = "2.0"
+mimalloc = "0.1.48"
 
 # Cryptography for password hashing and token generation
 argon2 = "0.5"

@@ -63,7 +63,6 @@ export type Job = z.infer<typeof JobSchema>;
 
 // PipelineJobsPageResponseSchema removed in favor of DagListResponseSchema
 
-
 export const JobLogsResponseSchema = z.object({
   items: z.array(JobLogEntrySchema),
   total: z.number(),

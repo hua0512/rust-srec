@@ -95,47 +95,55 @@ export function TemplateEditor({
           initial={{ opacity: 0, y: 10 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.3 }}
-          className="max-w-8xl space-y-8 px-4 sm:px-6 lg:px-8 py-8"
+          className="max-w-8xl space-y-6 sm:space-y-8 px-3 sm:px-6 lg:px-8 py-4 sm:py-8"
         >
           {/* Header Section */}
           <div className="flex flex-col gap-6">
-            <div className="flex items-start justify-between">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
               <div className="flex items-center gap-4">
-                <div className="p-3 rounded-2xl ring-1 ring-inset ring-black/5 dark:ring-white/10 shadow-sm bg-indigo-500/10 text-indigo-600 dark:text-indigo-400">
-                  <FileBox className="w-8 h-8" />
+                <div className="p-2 sm:p-3 rounded-2xl ring-1 ring-inset ring-black/5 dark:ring-white/10 shadow-sm bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 shrink-0">
+                  <FileBox className="w-6 h-6 sm:w-8 sm:h-8" />
                 </div>
-                <div className="space-y-1">
-                  <h1 className="text-3xl font-bold tracking-tight">
+                <div className="space-y-1 min-w-0">
+                  <h1 className="text-xl sm:text-3xl font-bold tracking-tight truncate">
                     {mode === 'create' ? (
                       <Trans>Create Template</Trans>
                     ) : (
                       template?.name
                     )}
                   </h1>
-                  <p className="text-muted-foreground text-sm flex items-center gap-2">
-                    {mode === 'edit' && (
+                  {mode === 'edit' && (
+                    <p className="text-muted-foreground text-xs flex items-center gap-2">
                       <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-accent/50 text-xs font-medium border border-border/50">
-                        ID: <span className="font-mono">{template?.id}</span>
+                        ID:{' '}
+                        <span className="font-mono truncate max-w-[100px] sm:max-w-none">
+                          {template?.id}
+                        </span>
                       </span>
-                    )}
-                  </p>
+                    </p>
+                  )}
                 </div>
               </div>
-              <div className="flex gap-2">
+              <div className="flex gap-2 w-full sm:w-auto">
                 <Button
                   type="button"
                   variant="outline"
                   onClick={() => window.history.back()}
-                  className="gap-2"
+                  className="gap-2 shrink-0 h-9 sm:h-10"
                 >
                   <ArrowLeft className="w-4 h-4" />
-                  <Trans>Back</Trans>
+                  <span className="hidden sm:inline">
+                    <Trans>Back</Trans>
+                  </span>
+                  <span className="sm:hidden text-xs">
+                    <Trans>Back</Trans>
+                  </span>
                 </Button>
                 <Button
                   type="submit"
                   disabled={isSubmitting}
                   className={cn(
-                    'min-w-[140px] gap-2 shadow-lg shadow-primary/20 transition-all hover:scale-105 active:scale-95',
+                    'flex-1 sm:min-w-[140px] gap-2 h-9 sm:h-10 shadow-lg shadow-primary/20 transition-all hover:scale-105 active:scale-95 text-xs sm:text-sm',
                     isSubmitting && 'opacity-80',
                   )}
                 >

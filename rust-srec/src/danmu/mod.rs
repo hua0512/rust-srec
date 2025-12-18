@@ -2,14 +2,20 @@
 //!
 //! This module provides functionality for collecting live comments (danmu/弹幕)
 //! from streaming platforms during live sessions.
+//!
+//! Core types are re-exported from the `danmaku` crate for reusability.
 
-pub mod provider;
-pub mod providers;
-pub mod sampler;
+// Re-export core types from danmaku crate
+pub use danmaku::{
+    DanmuConnection, DanmuMessage, DanmuProvider, DanmuSampler, DanmuSamplingConfig,
+    DanmuStatistics, DanmuType, FixedIntervalSampler, HuyaDanmuProvider, ProviderRegistry,
+    RateDataPoint, StatisticsAggregator, TopTalker, TwitchDanmuProvider, VelocitySampler,
+    WordFrequency, XmlDanmuWriter, create_sampler, escape_xml, message_type_to_int,
+};
+
+// Local modules (application-specific)
+pub mod events;
 pub mod service;
-pub mod statistics;
 
-pub use provider::{DanmuConnection, DanmuMessage, DanmuProvider, DanmuType};
-pub use sampler::{DanmuSampler, FixedIntervalSampler, VelocitySampler};
+pub use events::DanmuEvent;
 pub use service::DanmuService;
-pub use statistics::DanmuStatistics;

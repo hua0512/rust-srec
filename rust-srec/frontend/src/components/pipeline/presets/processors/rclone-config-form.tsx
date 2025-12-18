@@ -82,8 +82,9 @@ export function RcloneConfigForm({
                     <Trans>Operation</Trans>
                   </FormLabel>
                   <Select
+                    key={field.value ?? 'initial'}
                     onValueChange={field.onChange}
-                    defaultValue={field.value}
+                    defaultValue={field.value ?? 'copy'}
                   >
                     <FormControl>
                       <SelectTrigger className="h-11 bg-background/50">
@@ -167,6 +168,7 @@ export function RcloneConfigForm({
                     <Input
                       placeholder={t(i18n)`e.g. gdrive:/videos`}
                       {...field}
+                      value={field.value ?? ''}
                       className="h-11 bg-background/50 font-mono text-sm"
                     />
                   </FormControl>
@@ -191,6 +193,7 @@ export function RcloneConfigForm({
                       <Input
                         placeholder={t(i18n)`/path/to/rclone.conf`}
                         {...field}
+                        value={field.value ?? ''}
                         className="bg-background/50"
                       />
                     </FormControl>
@@ -207,7 +210,11 @@ export function RcloneConfigForm({
                       <Trans>Rclone Executable</Trans>
                     </FormLabel>
                     <FormControl>
-                      <Input {...field} className="bg-background/50" />
+                      <Input
+                        {...field}
+                        value={field.value ?? ''}
+                        className="bg-background/50"
+                      />
                     </FormControl>
                     <FormMessage />
                   </FormItem>

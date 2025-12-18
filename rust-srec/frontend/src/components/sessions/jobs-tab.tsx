@@ -67,9 +67,9 @@ export function JobsTab({ isLoading, dags }: JobsTabProps) {
                           className={cn(
                             'w-24 justify-center',
                             dag.status === 'COMPLETED' &&
-                            'bg-green-500/15 text-green-600 hover:bg-green-500/25 border-green-500/20',
+                              'bg-green-500/15 text-green-600 hover:bg-green-500/25 border-green-500/20',
                             dag.status === 'PROCESSING' &&
-                            'bg-blue-500/15 text-blue-600 hover:bg-blue-500/25 border-blue-500/20 animate-pulse',
+                              'bg-blue-500/15 text-blue-600 hover:bg-blue-500/25 border-blue-500/20 animate-pulse',
                           )}
                         >
                           {dag.status}
@@ -101,7 +101,7 @@ export function JobsTab({ isLoading, dags }: JobsTabProps) {
                         </div>
                         {dag.progress_percent !== undefined && (
                           <div className="font-mono">
-                            {dag.progress_percent}%
+                            {(dag.progress_percent || 0).toFixed(1)}%
                           </div>
                         )}
                       </div>

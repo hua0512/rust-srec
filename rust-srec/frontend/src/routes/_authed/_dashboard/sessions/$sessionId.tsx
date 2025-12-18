@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import React, { useState, Suspense } from 'react';
 import { createFileRoute } from '@tanstack/react-router';
 import { useQuery } from '@tanstack/react-query';
 import { getSession } from '@/server/functions/sessions';
@@ -29,7 +29,6 @@ import { t } from '@lingui/core/macro';
 import { toast } from 'sonner';
 import { ArrowLeft, AlertCircle } from 'lucide-react';
 import { getMediaUrl } from '@/lib/url';
-import { PlayerCard } from '@/components/player/player-card';
 import { formatDuration } from '@/lib/format';
 import { SessionHeader } from '@/components/sessions/session-header';
 import { OverviewTab } from '@/components/sessions/overview-tab';
@@ -43,6 +42,13 @@ export const Route = createFileRoute('/_authed/_dashboard/sessions/$sessionId')(
   {
     component: SessionDetailPage,
   },
+);
+
+// Lazy load PlayerCard
+const PlayerCard = React.lazy(() =>
+  import('@/components/player/player-card').then((module) => ({
+    default: module.PlayerCard,
+  })),
 );
 
 function SessionDetailPage() {
@@ -164,9 +170,9 @@ function SessionDetailPage() {
     ? formatDuration(session.duration_secs)
     : session.start_time
       ? formatDuration(
-        (new Date().getTime() - new Date(session.start_time).getTime()) /
-        1000,
-      )
+          (new Date().getTime() - new Date(session.start_time).getTime()) /
+            1000,
+        )
       : '-';
 
   return (
@@ -310,17 +316,25 @@ function SessionDetailPage() {
                   onClose={() => setPlayingOutput(null)}
                 />
               ) : (
-                <PlayerCard
-                  url={
-                    getMediaUrl(
-                      `/api/media/${playingOutput.id}/content`,
-                      user?.token?.access_token,
-                    ) || ''
+                <Suspense
+                  fallback={
+                    <div className="w-full h-full flex items-center justify-center bg-muted/10">
+                      <div className="h-8 w-8 animate-spin rounded-full border-2 border-primary border-t-transparent" />
+                    </div>
                   }
-                  title={playingOutput.file_path.split('/').pop()}
-                  className="w-full h-full border-0 rounded-none bg-black"
-                  contentClassName="min-h-0"
-                />
+                >
+                  <PlayerCard
+                    url={
+                      getMediaUrl(
+                        `/api/media/${playingOutput.id}/content`,
+                        user?.token?.access_token,
+                      ) || ''
+                    }
+                    title={playingOutput.file_path.split('/').pop()}
+                    className="w-full h-full border-0 rounded-none bg-black"
+                    contentClassName="min-h-0"
+                  />
+                </Suspense>
               ))}
           </div>
         </DialogContent>

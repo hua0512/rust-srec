@@ -107,28 +107,30 @@ function Dashboard() {
   };
 
   return (
-    <div className="min-h-screen p-4 md:p-8 space-y-8">
+    <div className="min-h-screen p-3 md:p-8 space-y-6 md:space-y-8 bg-gradient-to-br from-background via-background to-muted/20">
       <motion.div
         variants={container}
         initial="hidden"
         animate="show"
-        className="space-y-10"
+        className="space-y-10 relative z-10"
       >
         {/* System Health Section */}
-        <section className="space-y-4">
+        <section className="space-y-6">
           <motion.div
             variants={item}
             className="flex items-center justify-between"
           >
-            <h2 className="text-lg font-semibold tracking-tight text-foreground/90 flex items-center gap-2">
-              <Activity className="h-4 w-4 text-primary" />
+            <h2 className="text-xl font-bold tracking-tight text-foreground flex items-center gap-3">
+              <div className="p-2 rounded-lg bg-primary/10 text-primary">
+                <Activity className="h-5 w-5" />
+              </div>
               <Trans>System Status</Trans>
             </h2>
             <Button
-              variant="ghost"
+              variant="outline"
               size="sm"
               asChild
-              className="text-muted-foreground hover:text-primary"
+              className="bg-card/50 backdrop-blur-md border-primary/20 hover:bg-primary/10 hover:border-primary/40 transition-all duration-300"
             >
               <Link to="/system/health">
                 <Trans>View Details</Trans>
@@ -136,10 +138,10 @@ function Dashboard() {
             </Button>
           </motion.div>
 
-          <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+          <div className="grid gap-4 md:gap-6 md:grid-cols-2 lg:grid-cols-4">
             {isHealthLoading || !health ? (
               Array.from({ length: 4 }).map((_, i) => (
-                <Skeleton key={i} className="h-28 rounded-xl" />
+                <Skeleton key={i} className="h-32 rounded-2xl bg-muted/20" />
               ))
             ) : (
               <motion.div
@@ -150,31 +152,47 @@ function Dashboard() {
               >
                 {/* Summary Card */}
                 <motion.div variants={item} className="h-full">
-                  <Card className="bg-card/50 backdrop-blur-sm border-primary/5 shadow-sm h-full">
-                    <CardHeader className="pb-2">
-                      <CardTitle className="text-sm font-medium text-muted-foreground">
+                  <Card className="bg-white/60 dark:bg-card/40 backdrop-blur-xl border-black/5 dark:border-white/5 shadow-sm dark:shadow-2xl dark:shadow-black/5 hover:shadow-md dark:hover:shadow-black/10 transition-all duration-300 h-full overflow-hidden relative group">
+                    <div className="absolute inset-0 bg-gradient-to-br from-primary/5 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-500" />
+                    <CardHeader className="pb-2 relative z-10">
+                      <CardTitle className="text-sm font-medium text-muted-foreground uppercase tracking-wider">
                         <Trans>Overall Health</Trans>
                       </CardTitle>
                     </CardHeader>
-                    <CardContent>
-                      <div className="flex items-center gap-3">
-                        <div
-                          className={cn(
-                            'h-3 w-3 rounded-full',
-                            health.status === 'healthy'
-                              ? 'bg-green-500 shadow-[0_0_8px] shadow-green-500/50'
-                              : health.status === 'degraded'
-                                ? 'bg-yellow-500 shadow-[0_0_8px] shadow-yellow-500/50'
-                                : 'bg-red-500',
-                          )}
-                        />
-                        <span className="text-2xl font-bold capitalize">
+                    <CardContent className="relative z-10">
+                      <div className="flex items-center gap-4">
+                        <div className="relative">
+                          <div
+                            className={cn(
+                              'h-4 w-4 rounded-full',
+                              health.status === 'healthy'
+                                ? 'bg-green-500'
+                                : health.status === 'degraded'
+                                  ? 'bg-yellow-500'
+                                  : 'bg-red-500',
+                            )}
+                          />
+                          <div
+                            className={cn(
+                              'absolute inset-0 rounded-full animate-ping opacity-75',
+                              health.status === 'healthy'
+                                ? 'bg-green-500'
+                                : health.status === 'degraded'
+                                  ? 'bg-yellow-500'
+                                  : 'bg-red-500',
+                            )}
+                          />
+                        </div>
+                        <span className="text-2xl font-bold capitalize bg-clip-text text-transparent bg-gradient-to-r from-foreground to-foreground/70">
                           {getStatusLabel(health.status)}
                         </span>
                       </div>
-                      <p className="text-xs text-muted-foreground mt-2">
-                        <Trans>Uptime</Trans>:{' '}
-                        {formatDuration(health.uptime_secs)}
+                      <p className="text-xs font-medium text-muted-foreground/70 mt-3 flex items-center gap-2">
+                        <Activity className="w-3 h-3" />
+                        <span className="font-mono">
+                          {formatDuration(health.uptime_secs)}
+                        </span>{' '}
+                        uptime
                       </p>
                     </CardContent>
                   </Card>
@@ -208,65 +226,73 @@ function Dashboard() {
         </section>
 
         {/* Pipeline Stats Section */}
-        <section className="space-y-4">
+        <section className="space-y-6">
           <motion.div variants={item}>
-            <h2 className="text-lg font-semibold tracking-tight text-foreground/90 flex items-center gap-2">
-              <Activity className="h-4 w-4 text-primary" />
+            <h2 className="text-xl font-bold tracking-tight text-foreground flex items-center gap-3">
+              <div className="p-2 rounded-lg bg-primary/10 text-primary">
+                <Activity className="h-5 w-5" />
+              </div>
               <Trans>Pipeline Statistics</Trans>
             </h2>
           </motion.div>
-          <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+          <div className="grid gap-4 md:gap-6 md:grid-cols-2 lg:grid-cols-4">
             <StatCard
               title={<Trans>Pending Jobs</Trans>}
               icon={Circle}
               value={stats?.pending_count}
               loading={isStatsLoading}
-              color="text-yellow-600 dark:text-yellow-400"
+              color="text-yellow-500"
               bg="bg-yellow-500/10"
+              borderColor="group-hover:border-yellow-500/30"
             />
             <StatCard
               title={<Trans>Processing</Trans>}
               icon={Activity}
               value={stats?.processing_count}
               loading={isStatsLoading}
-              color="text-blue-600 dark:text-blue-400"
+              color="text-blue-500"
               bg="bg-blue-500/10"
+              borderColor="group-hover:border-blue-500/30"
             />
             <StatCard
               title={<Trans>Completed</Trans>}
               icon={CheckCircle}
               value={stats?.completed_count}
               loading={isStatsLoading}
-              color="text-green-600 dark:text-green-400"
+              color="text-green-500"
               bg="bg-green-500/10"
+              borderColor="group-hover:border-green-500/30"
             />
             <StatCard
               title={<Trans>Failed</Trans>}
               icon={XCircle}
               value={stats?.failed_count}
               loading={isStatsLoading}
-              color="text-red-600 dark:text-red-400"
+              color="text-red-500"
               bg="bg-red-500/10"
+              borderColor="group-hover:border-red-500/30"
             />
           </div>
         </section>
 
         {/* Active Recordings Section */}
-        <section className="space-y-4">
+        <section className="space-y-6">
           <motion.div
             variants={item}
             className="flex items-center justify-between"
           >
-            <h2 className="text-lg font-semibold tracking-tight text-foreground/90 flex items-center gap-2">
-              <PlayCircle className="h-4 w-4 text-red-500" />
+            <h2 className="text-xl font-bold tracking-tight text-foreground flex items-center gap-3">
+              <div className="p-2 rounded-lg bg-red-500/10 text-red-500">
+                <PlayCircle className="h-5 w-5" />
+              </div>
               <Trans>Active Recordings</Trans>
             </h2>
             {activeStreamers.length > 0 && (
               <Button
-                variant="ghost"
+                variant="outline"
                 size="sm"
                 asChild
-                className="text-muted-foreground hover:text-primary"
+                className="bg-card/50 backdrop-blur-md border-primary/20 hover:bg-primary/10 hover:border-primary/40 transition-all duration-300"
               >
                 <Link to="/streamers">
                   <Trans>View All</Trans>
@@ -275,12 +301,12 @@ function Dashboard() {
             )}
           </motion.div>
 
-          <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+          <div className="grid gap-4 md:gap-6 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
             {isStreamersLoading ? (
               Array.from({ length: 4 }).map((_, i) => (
                 <Skeleton
                   key={i}
-                  className="h-[200px] w-full rounded-xl bg-muted/10"
+                  className="h-[200px] w-full rounded-2xl bg-muted/20"
                 />
               ))
             ) : activeStreamers.length > 0 ? (
@@ -306,7 +332,7 @@ function Dashboard() {
                 initial={{ opacity: 0, y: 20 }}
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ delay: 0.4 }}
-                className="col-span-full flex flex-col items-center justify-center p-12 text-center space-y-4 border-2 border-dashed border-muted-foreground/10 rounded-xl bg-muted/5"
+                className="col-span-full flex flex-col items-center justify-center p-12 text-center space-y-4 border border-dashed border-white/10 rounded-3xl bg-card/30 backdrop-blur-sm"
               >
                 <div className="p-4 rounded-full bg-muted/20">
                   <Activity className="h-8 w-8 text-muted-foreground/50" />
@@ -345,14 +371,14 @@ function ComponentStatusCard({
         variants={{ hidden: { opacity: 0, y: 20 }, show: { opacity: 1, y: 0 } }}
         className="h-full"
       >
-        <Card className="bg-card/50 backdrop-blur-sm border-primary/5 shadow-sm opacity-50 h-full">
+        <Card className="bg-card/30 backdrop-blur-md border-white/5 shadow-lg h-full opacity-60">
           <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground">
+            <CardTitle className="text-sm font-medium text-muted-foreground uppercase tracking-wider">
               {name}
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="text-sm text-muted-foreground">
+            <div className="text-sm text-muted-foreground font-mono">
               <Trans>Not available</Trans>
             </div>
           </CardContent>
@@ -369,49 +395,65 @@ function ComponentStatusCard({
     >
       <Card
         className={cn(
-          'bg-card/50 backdrop-blur-sm border-primary/5 shadow-sm transition-all hover:shadow-md h-full',
-          !isHealthy &&
-            'border-red-500/20 bg-red-500/5 text-red-600 dark:text-red-400',
+          'bg-white/60 dark:bg-card/40 backdrop-blur-xl border-black/5 dark:border-white/5 shadow-sm dark:shadow-2xl dark:shadow-black/5 hover:shadow-md dark:hover:shadow-black/10 transition-all duration-300 h-full group overflow-hidden relative',
+          !isHealthy && 'border-red-500/30 bg-red-500/5',
         )}
       >
-        <CardHeader className="pb-2 flex flex-row items-center justify-between space-y-0">
-          <CardTitle className="text-sm font-medium text-muted-foreground">
+        <div
+          className={cn(
+            'absolute inset-0 bg-gradient-to-br opacity-0 group-hover:opacity-100 transition-opacity duration-500',
+            isHealthy
+              ? 'from-primary/5 via-transparent'
+              : 'from-red-500/10 via-transparent',
+          )}
+        />
+        <CardHeader className="pb-2 flex flex-row items-center justify-between space-y-0 relative z-10">
+          <CardTitle className="text-sm font-medium text-muted-foreground uppercase tracking-wider">
             {name}
           </CardTitle>
-          <Icon
+          <div
             className={cn(
-              'h-4 w-4',
-              isHealthy ? 'text-muted-foreground' : 'text-red-500',
+              'p-1.5 rounded-md transition-colors',
+              isHealthy
+                ? 'bg-secondary/50 text-secondary-foreground'
+                : 'bg-red-500/10 text-red-500',
             )}
-          />
+          >
+            <Icon className="h-4 w-4" />
+          </div>
         </CardHeader>
-        <CardContent>
+        <CardContent className="relative z-10">
           <div className="flex items-center gap-3">
-            <div
-              className={cn(
-                'h-3 w-3 rounded-full shrink-0',
-                isHealthy
-                  ? 'bg-green-500 shadow-[0_0_8px] shadow-green-500/50'
-                  : component.status === 'degraded'
-                    ? 'bg-yellow-500 shadow-[0_0_8px] shadow-yellow-500/50'
-                    : 'bg-red-500',
+            <div className="relative flex h-3 w-3">
+              {!isHealthy && (
+                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75"></span>
               )}
-            />
+              <span
+                className={cn(
+                  'relative inline-flex rounded-full h-3 w-3',
+                  isHealthy
+                    ? 'bg-green-500'
+                    : component.status === 'degraded'
+                      ? 'bg-yellow-500'
+                      : 'bg-red-500',
+                )}
+              ></span>
+            </div>
+
             <div
               className={cn(
-                'text-2xl font-bold capitalize truncate',
-                !isHealthy && 'text-red-600 dark:text-red-400',
+                'text-lg font-bold capitalize truncate tracking-tight',
+                !isHealthy && 'text-red-500 dark:text-red-400',
               )}
             >
-              {/* For key components on dashboard, prefer simple status unless it's an error message that fits */}
               {!isHealthy && component.message && component.message.length < 30
                 ? component.message
                 : getStatusLabel(component.status)}
             </div>
           </div>
           {component.last_check && (
-            <p className="text-[10px] text-muted-foreground mt-2 text-right">
-              <Trans>Checked</Trans>{' '}
+            <p className="text-[10px] text-muted-foreground/60 mt-3 font-mono">
+              <Trans>Updated</Trans>{' '}
               {formatRelativeTime(component.last_check, i18n.locale)}
             </p>
           )}
@@ -428,6 +470,7 @@ function StatCard({
   loading,
   color,
   bg,
+  borderColor,
 }: {
   title: React.ReactNode;
   icon: any;
@@ -435,27 +478,43 @@ function StatCard({
   loading: boolean;
   color?: string;
   bg?: string;
+  borderColor?: string;
 }) {
   return (
     <motion.div
       variants={{ hidden: { opacity: 0, y: 20 }, show: { opacity: 1, y: 0 } }}
     >
-      <Card className="overflow-hidden bg-card/50 backdrop-blur-sm border-primary/5 hover:border-primary/20 transition-all duration-300 shadow-sm hover:shadow-md group">
-        <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-          <CardTitle className="text-sm font-medium text-muted-foreground group-hover:text-foreground transition-colors">
+      <Card
+        className={cn(
+          'overflow-hidden bg-white/60 dark:bg-card/40 backdrop-blur-xl border-black/5 dark:border-white/5 shadow-sm dark:shadow-2xl dark:shadow-black/5 hover:shadow-md dark:hover:shadow-black/10 transition-all duration-300 group relative',
+          borderColor,
+        )}
+      >
+        <div
+          className={cn(
+            'absolute inset-0 bg-gradient-to-br opacity-0 group-hover:opacity-100 transition-opacity duration-500',
+            bg ? bg.replace('/10', '/5') : 'from-primary/5',
+          )}
+        />
+
+        <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 relative z-10">
+          <CardTitle className="text-sm font-medium text-muted-foreground uppercase tracking-wider">
             {title}
           </CardTitle>
           <div
-            className={cn('p-2 rounded-lg transition-colors', bg || 'bg-muted')}
+            className={cn(
+              'p-2 rounded-xl transition-colors ring-1 ring-inset ring-black/5',
+              bg || 'bg-muted',
+            )}
           >
             <Icon className={cn('h-4 w-4', color || 'text-muted-foreground')} />
           </div>
         </CardHeader>
-        <CardContent>
+        <CardContent className="relative z-10">
           {loading ? (
-            <Skeleton className="h-8 w-10" />
+            <Skeleton className="h-9 w-16 rounded-lg bg-muted/20" />
           ) : (
-            <div className="text-2xl font-bold tracking-tight text-foreground/90">
+            <div className="text-2xl font-bold tracking-tighter text-foreground">
               {value}
             </div>
           )}

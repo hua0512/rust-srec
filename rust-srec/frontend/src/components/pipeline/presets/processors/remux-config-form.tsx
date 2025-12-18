@@ -1,5 +1,6 @@
 import { useLingui } from '@lingui/react';
-import { Trans, t } from '@lingui/macro';
+import { t } from '@lingui/core/macro';
+import { Trans } from '@lingui/react/macro';
 import {
   FormField,
   FormItem,
@@ -133,7 +134,7 @@ export function RemuxConfigForm({
                       </FormLabel>
                       <Select
                         onValueChange={field.onChange}
-                        defaultValue={field.value || 'copy'}
+                        value={field.value || 'copy'}
                       >
                         <FormControl>
                           <SelectTrigger className="h-11 bg-background/50 border-border/50 focus:bg-background transition-colors rounded-lg">
@@ -170,7 +171,7 @@ export function RemuxConfigForm({
                       </div>
                       <Select
                         onValueChange={field.onChange}
-                        defaultValue={field.value}
+                        value={field.value || 'medium'}
                       >
                         <FormControl>
                           <SelectTrigger className="h-11 bg-background/50 border-border/50 focus:bg-background transition-colors rounded-lg">
@@ -214,7 +215,7 @@ export function RemuxConfigForm({
                         </FormLabel>
                         <Select
                           onValueChange={field.onChange}
-                          defaultValue={field.value || 'copy'}
+                          value={field.value || 'copy'}
                         >
                           <FormControl>
                             <SelectTrigger className="h-11 bg-background/50 border-border/50 focus:bg-background transition-colors rounded-lg">
@@ -257,6 +258,7 @@ export function RemuxConfigForm({
                             className="h-11 bg-background/50 border-border/50 focus:bg-background rounded-lg"
                             placeholder="mp4"
                             {...field}
+                            value={field.value ?? ''}
                           />
                         </FormControl>
                         <FormMessage />
@@ -345,6 +347,7 @@ export function RemuxConfigForm({
                           className="h-11 bg-background/50 border-border/50 focus:bg-background rounded-lg font-mono text-sm"
                           placeholder="e.g. 5000k"
                           {...field}
+                          value={field.value ?? ''}
                         />
                       </FormControl>
                       <FormMessage />
@@ -365,6 +368,7 @@ export function RemuxConfigForm({
                           className="h-11 bg-background/50 border-border/50 focus:bg-background rounded-lg font-mono text-sm"
                           placeholder="e.g. 192k"
                           {...field}
+                          value={field.value ?? ''}
                         />
                       </FormControl>
                       <FormMessage />
@@ -401,6 +405,7 @@ export function RemuxConfigForm({
                           className="h-11 bg-background/50 border-border/50 focus:bg-background rounded-lg font-mono text-sm"
                           placeholder="e.g. 1920:1080"
                           {...field}
+                          value={field.value ?? ''}
                         />
                       </FormControl>
                       <FormMessage />
@@ -422,6 +427,7 @@ export function RemuxConfigForm({
                           type="number"
                           placeholder="e.g. 60"
                           {...field}
+                          value={field.value ?? ''}
                           onChange={(e) =>
                             field.onChange(parseFloat(e.target.value))
                           }
@@ -445,6 +451,7 @@ export function RemuxConfigForm({
                           className="h-11 bg-background/50 border-border/50 focus:bg-background rounded-lg font-mono text-xs"
                           placeholder="e.g. hflip,noise=alls=20:allf=t+u"
                           {...field}
+                          value={field.value ?? ''}
                         />
                       </FormControl>
                       <FormMessage />
@@ -579,6 +586,7 @@ export function RemuxConfigForm({
                         className="h-11 bg-background/50 border-border/50 focus:bg-background rounded-lg font-mono text-xs"
                         placeholder="e.g. volume=0.5"
                         {...field}
+                        value={field.value ?? ''}
                       />
                     </FormControl>
                     <FormMessage />

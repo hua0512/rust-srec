@@ -66,36 +66,30 @@ export function CollapseMenuButton({
         asChild
       >
         <Button
-          variant={isSubmenuActive ? 'default' : 'ghost'}
-          className="w-full justify-start h-10"
+          variant="ghost"
+          className={cn(
+            'w-full justify-start h-11 transition-all duration-200 group relative overflow-hidden px-4',
+            isSubmenuActive
+              ? 'bg-primary/10 text-primary hover:bg-primary/15 hover:text-primary shadow-sm shadow-primary/5'
+              : 'text-muted-foreground hover:bg-muted/50 hover:text-foreground',
+          )}
         >
+          {isSubmenuActive && (
+            <div className="absolute left-0 top-1/2 -translate-y-1/2 w-1.5 h-6 bg-primary rounded-r-full" />
+          )}
           <div className="w-full items-center flex justify-between">
             <div className="flex items-center">
-              <span className="mr-4">
-                <Icon size={18} />
+              <span className="transition-transform duration-200 group-hover:scale-110 shrink-0 mr-4">
+                <Icon size={18} strokeWidth={isSubmenuActive ? 2.5 : 2} />
               </span>
-              <p
-                className={cn(
-                  'max-w-[150px] truncate',
-                  isOpen
-                    ? 'translate-x-0 opacity-100'
-                    : '-translate-x-96 opacity-0',
-                )}
-              >
+              <p className="truncate font-medium transition-all duration-300 translate-x-0 opacity-100 w-auto">
                 {label}
               </p>
             </div>
-            <div
-              className={cn(
-                'whitespace-nowrap',
-                isOpen
-                  ? 'translate-x-0 opacity-100'
-                  : '-translate-x-96 opacity-0',
-              )}
-            >
+            <div className="transition-all duration-300 translate-x-0 opacity-100">
               <ChevronDown
-                size={18}
-                className="transition-transform duration-200"
+                size={16}
+                className="transition-transform duration-200 opacity-60"
               />
             </div>
           </div>
@@ -105,26 +99,31 @@ export function CollapseMenuButton({
         {submenus.map(({ href, label, active, icon: SubmenuIcon }, index) => (
           <Button
             key={index}
-            variant={
+            variant="ghost"
+            className={cn(
+              'w-full justify-start h-9 mb-1 transition-all duration-200 group relative overflow-hidden px-4',
               (active === undefined && pathname === href) || active
-                ? 'default'
-                : 'ghost'
-            }
-            className="w-full justify-start h-10 mb-1"
+                ? 'text-primary bg-primary/5 font-semibold'
+                : 'text-muted-foreground/70 hover:bg-muted/30 hover:text-foreground',
+            )}
             asChild
           >
             <Link to={href}>
-              <span className="mr-4 ml-2">
-                {SubmenuIcon ? <SubmenuIcon size={18} /> : <Dot size={18} />}
-              </span>
-              <p
-                className={cn(
-                  'max-w-[170px] truncate',
-                  isOpen
-                    ? 'translate-x-0 opacity-100'
-                    : '-translate-x-96 opacity-0',
+              <span className="shrink-0 mr-4 ml-6 transition-transform duration-200 group-hover:scale-110">
+                {SubmenuIcon ? (
+                  <SubmenuIcon size={16} />
+                ) : (
+                  <Dot
+                    size={18}
+                    className={cn(
+                      (active === undefined && pathname === href) || active
+                        ? 'opacity-100 scale-125'
+                        : 'opacity-40',
+                    )}
+                  />
                 )}
-              >
+              </span>
+              <p className="truncate text-sm transition-all duration-300 translate-x-0 opacity-100 w-auto">
                 {label}
               </p>
             </Link>
@@ -139,22 +138,23 @@ export function CollapseMenuButton({
           <TooltipTrigger asChild>
             <DropdownMenuTrigger asChild>
               <Button
-                variant={isSubmenuActive ? 'secondary' : 'ghost'}
-                className="w-full justify-start h-10 mb-1"
+                variant="ghost"
+                className={cn(
+                  'w-full justify-start h-11 mb-1 transition-all duration-200 group relative overflow-hidden justify-center',
+                  isSubmenuActive
+                    ? 'bg-primary/10 text-primary hover:bg-primary/15 hover:text-primary shadow-sm shadow-primary/5'
+                    : 'text-muted-foreground hover:bg-muted/50 hover:text-foreground',
+                )}
               >
-                <div className="w-full items-center flex justify-between">
+                {isSubmenuActive && (
+                  <div className="absolute left-0 top-1/2 -translate-y-1/2 w-1.5 h-6 bg-primary rounded-r-full" />
+                )}
+                <div className="w-full items-center flex justify-center">
                   <div className="flex items-center">
-                    <span className={cn(isOpen === false ? '' : 'mr-4')}>
-                      <Icon size={18} />
+                    <span className="transition-transform duration-200 group-hover:scale-110 shrink-0">
+                      <Icon size={18} strokeWidth={isSubmenuActive ? 2.5 : 2} />
                     </span>
-                    <p
-                      className={cn(
-                        'max-w-[200px] truncate',
-                        isOpen === false ? 'opacity-0' : 'opacity-100',
-                      )}
-                    >
-                      {label}
-                    </p>
+                    <p className="opacity-0 w-0 pointer-events-none">{label}</p>
                   </div>
                 </div>
               </Button>
@@ -165,26 +165,45 @@ export function CollapseMenuButton({
           </TooltipContent>
         </Tooltip>
       </TooltipProvider>
-      <DropdownMenuContent side="right" sideOffset={25} align="start">
-        <DropdownMenuLabel className="max-w-[190px] truncate">
+      <DropdownMenuContent
+        side="right"
+        sideOffset={16}
+        align="start"
+        className="min-w-[180px] p-2 bg-popover/95 backdrop-blur-xl border border-border/50 shadow-xl shadow-black/5"
+      >
+        <DropdownMenuLabel className="px-2 py-1.5 text-xs font-semibold uppercase tracking-wider text-muted-foreground/70">
           {label}
         </DropdownMenuLabel>
-        <DropdownMenuSeparator />
+        <DropdownMenuSeparator className="my-1.5 bg-border/50" />
         {submenus.map(({ href, label, active, icon: SubmenuIcon }, index) => (
-          <DropdownMenuItem key={index} asChild>
+          <DropdownMenuItem
+            key={index}
+            asChild
+            className="p-0 focus:bg-transparent"
+          >
             <Link
-              className={`cursor-pointer ${
-                ((active === undefined && pathname === href) || active) &&
-                'bg-primary text-primary-foreground'
-              }`}
+              className={cn(
+                'flex items-center w-full px-3 py-2 rounded-md cursor-pointer transition-all duration-200 group',
+                (active === undefined && pathname === href) || active
+                  ? 'bg-primary/10 text-primary font-medium'
+                  : 'text-foreground/80 hover:bg-muted/50 hover:text-foreground',
+              )}
               to={href}
             >
-              {SubmenuIcon && <SubmenuIcon size={16} className="mr-2" />}
-              <p className="max-w-[180px] truncate">{label}</p>
+              {SubmenuIcon && (
+                <SubmenuIcon
+                  size={16}
+                  className="mr-3 shrink-0 transition-transform duration-200 group-hover:scale-110"
+                />
+              )}
+              <p className="truncate text-sm">{label}</p>
+              {((active === undefined && pathname === href) || active) && (
+                <div className="ml-auto w-1.5 h-1.5 rounded-full bg-primary" />
+              )}
             </Link>
           </DropdownMenuItem>
         ))}
-        <DropdownMenuArrow className="fill-border" />
+        <DropdownMenuArrow className="fill-popover" />
       </DropdownMenuContent>
     </DropdownMenu>
   );

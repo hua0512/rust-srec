@@ -287,7 +287,12 @@ pub struct DagExecutionStats {
 impl DagExecutionStats {
     /// Get total number of steps.
     pub fn total(&self) -> u64 {
-        self.blocked + self.pending + self.processing + self.completed + self.failed + self.cancelled
+        self.blocked
+            + self.pending
+            + self.processing
+            + self.completed
+            + self.failed
+            + self.cancelled
     }
 
     /// Get number of finished steps (completed + failed + cancelled).

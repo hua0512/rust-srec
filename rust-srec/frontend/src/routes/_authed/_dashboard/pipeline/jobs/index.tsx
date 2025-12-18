@@ -6,16 +6,13 @@ import {
   useQueryClient,
   keepPreviousData,
 } from '@tanstack/react-query';
-import { useForm } from 'react-hook-form';
-import { zodResolver } from '@hookform/resolvers/zod';
 import { motion, AnimatePresence } from 'motion/react';
 import {
   getPipelineStats,
   listPipelines,
   cancelPipeline,
-  createPipelineJob,
 } from '@/server/functions';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Trans } from '@lingui/react/macro';
 import { t } from '@lingui/core/macro';
@@ -23,6 +20,7 @@ import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
+import { cn } from '@/lib/utils';
 import {
   Select,
   SelectContent,
@@ -40,23 +38,6 @@ import {
   PaginationPrevious,
 } from '@/components/ui/pagination';
 import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-  DialogTrigger,
-} from '@/components/ui/dialog';
-import {
-  Form,
-  FormControl,
-  FormField,
-  FormItem,
-  FormLabel,
-  FormMessage,
-} from '@/components/ui/form';
-import {
   RefreshCw,
   XCircle,
   CheckCircle2,
@@ -66,26 +47,9 @@ import {
   ListTodo,
   Search,
   Plus,
-  Workflow,
-  Trash2,
-  Loader2,
 } from 'lucide-react';
 import { toast } from 'sonner';
-import { z } from 'zod';
 import { PipelineSummaryCard } from '@/components/pipeline/jobs/pipeline-summary-card';
-import { listJobPresets } from '@/server/functions/job';
-
-const createPipelineSchema = z.object({
-  name: z.string().min(1, 'Pipeline name is required'),
-  session_id: z.string().min(1, 'Session ID is required'),
-  streamer_id: z.string().min(1, 'Streamer ID is required'),
-  input_path: z.string().min(1, 'Input path is required'),
-  steps: z.array(z.string()).min(1, 'Add at least one step'),
-});
-
-type CreatePipelineForm = z.infer<typeof createPipelineSchema>;
-
-// Helper function to format duration in human-readable format
 import { formatDuration } from '@/lib/format';
 
 export const Route = createFileRoute('/_authed/_dashboard/pipeline/jobs/')({
@@ -111,20 +75,6 @@ function PipelineJobsPage() {
   const [debouncedSearch, setDebouncedSearch] = useState('');
   const [pageSize, setPageSize] = useState(24);
   const [currentPage, setCurrentPage] = useState(0);
-  const [createDialogOpen, setCreateDialogOpen] = useState(false);
-  const [selectedPreset, setSelectedPreset] = useState('');
-
-  const createPipelineForm = useForm<CreatePipelineForm>({
-    resolver: zodResolver(createPipelineSchema),
-    defaultValues: {
-      name: '',
-      session_id: '',
-      streamer_id: '',
-      input_path: '',
-      steps: [],
-    },
-  });
-  const stepsValue = createPipelineForm.watch('steps');
 
   // Debounce search
   useEffect(() => {
@@ -134,18 +84,6 @@ function PipelineJobsPage() {
     }, 300);
     return () => clearTimeout(timer);
   }, [searchQuery]);
-
-  useEffect(() => {
-    if (!createDialogOpen) {
-      createPipelineForm.reset({
-        session_id: '',
-        streamer_id: '',
-        input_path: '',
-        steps: [],
-      });
-      setSelectedPreset('');
-    }
-  }, [createDialogOpen, createPipelineForm]);
 
   // Reset page when status changes
   const handleStatusChange = (status: string | null) => {
@@ -186,16 +124,8 @@ function PipelineJobsPage() {
     placeholderData: keepPreviousData,
   });
 
-  const { data: presetsData, isLoading: presetsLoading } = useQuery({
-    queryKey: ['job', 'presets'],
-    queryFn: () => listJobPresets({ data: {} }),
-    enabled: createDialogOpen,
-  });
-  const presets = presetsData?.presets ?? [];
-
   const pipelines = pipelinesData?.dags || [];
   const totalPipelines = pipelinesData?.total || 0;
-
 
   const totalPages = Math.ceil(totalPipelines / pageSize);
 
@@ -222,69 +152,13 @@ function PipelineJobsPage() {
 
   const cancelPipelineMutation = useMutation({
     mutationFn: (pipelineId: string) => cancelPipeline({ data: pipelineId }),
-    onSuccess: (result) => {
+    onSuccess: (result: any) => {
       toast.success(t`Cancelled ${result.cancelled_count} jobs in pipeline`);
       queryClient.invalidateQueries({ queryKey: ['pipeline', 'pipelines'] });
       queryClient.invalidateQueries({ queryKey: ['pipeline', 'stats'] });
     },
     onError: () => toast.error(t`Failed to cancel pipeline`),
   });
-
-  const createPipelineMutation = useMutation({
-    mutationFn: (payload: CreatePipelineForm) => {
-      // Convert string steps to tagged preset format with generated IDs and sequential dependencies
-      const formattedPayload = {
-        session_id: payload.session_id,
-        streamer_id: payload.streamer_id,
-        input_path: payload.input_path,
-        dag: {
-          name: payload.name,
-          steps: payload.steps.map((name, idx) => ({
-            id: `${name}_${idx}`,
-            step: {
-              type: 'preset' as const,
-              name,
-            },
-            depends_on: [], // Steps are parallel by default now
-          })),
-        },
-      };
-      return createPipelineJob({ data: formattedPayload });
-    },
-    onSuccess: () => {
-      toast.success(t`Pipeline created`);
-      queryClient.invalidateQueries({ queryKey: ['pipeline', 'pipelines'] });
-      setCreateDialogOpen(false);
-      createPipelineForm.reset({
-        session_id: '',
-        streamer_id: '',
-        input_path: '',
-        steps: [],
-      });
-      setSelectedPreset('');
-    },
-    onError: (error: any) => {
-      toast.error(error?.message || t`Failed to create pipeline`);
-    },
-  });
-
-  const handleAddStep = () => {
-    if (!selectedPreset) return;
-    const current = createPipelineForm.getValues('steps');
-    createPipelineForm.setValue('steps', [...current, selectedPreset], {
-      shouldDirty: true,
-    });
-    setSelectedPreset('');
-  };
-
-  const handleRemoveStep = (index: number) => {
-    const current = createPipelineForm.getValues('steps');
-    createPipelineForm.setValue(
-      'steps',
-      current.filter((_, i) => i !== index),
-      { shouldDirty: true },
-    );
-  };
 
   const handleViewDetails = (pipelineId: string) => {
     navigate({
@@ -329,9 +203,9 @@ function PipelineJobsPage() {
                 </p>
               </div>
             </div>
-            <div className="flex items-center gap-2 w-full md:w-auto">
+            <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 w-full md:w-auto">
               {/* Search Input */}
-              <div className="relative flex-1 md:w-64">
+              <div className="relative flex-1 sm:w-64">
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
                 <Input
                   placeholder={t`Search jobs...`}
@@ -340,211 +214,29 @@ function PipelineJobsPage() {
                   className="pl-9 h-9"
                 />
               </div>
-              <Badge
-                variant="secondary"
-                className="h-9 px-3 text-sm whitespace-nowrap"
-              >
-                {totalPipelines} <Trans>pipelines</Trans>
-              </Badge>
-              <Dialog
-                open={createDialogOpen}
-                onOpenChange={setCreateDialogOpen}
-              >
-                <DialogTrigger asChild>
-                  <Button className="h-9 gap-2" variant="default">
-                    <Plus className="h-4 w-4" />
-                    <Trans>Create Pipeline</Trans>
-                  </Button>
-                </DialogTrigger>
-                <DialogContent className="max-w-xl">
-                  <DialogHeader>
-                    <DialogTitle>
-                      <Trans>Create Pipeline Job</Trans>
-                    </DialogTitle>
-                    <DialogDescription>
-                      <Trans>
-                        Provide session details and choose the processing steps
-                        to launch a manual pipeline.
-                      </Trans>
-                    </DialogDescription>
-                  </DialogHeader>
-                  <Form {...createPipelineForm}>
-                    <form
-                      className="space-y-4"
-                      onSubmit={createPipelineForm.handleSubmit((values) =>
-                        createPipelineMutation.mutate(values),
-                      )}
-                    >
-                      <FormField
-                        control={createPipelineForm.control}
-                        name="name"
-                        render={({ field }) => (
-                          <FormItem>
-                            <FormLabel>
-                              <Trans>Pipeline Name</Trans>
-                            </FormLabel>
-                            <FormControl>
-                              <Input placeholder="My Archiving Workflow" {...field} />
-                            </FormControl>
-                            <FormMessage />
-                          </FormItem>
-                        )}
-                      />
-                      <FormField
-                        control={createPipelineForm.control}
-                        name="session_id"
-                        render={({ field }) => (
-                          <FormItem>
-                            <FormLabel>
-                              <Trans>Session ID</Trans>
-                            </FormLabel>
-                            <FormControl>
-                              <Input placeholder="session-uuid" {...field} />
-                            </FormControl>
-                            <FormMessage />
-                          </FormItem>
-                        )}
-                      />
-                      <FormField
-                        control={createPipelineForm.control}
-                        name="streamer_id"
-                        render={({ field }) => (
-                          <FormItem>
-                            <FormLabel>
-                              <Trans>Streamer ID</Trans>
-                            </FormLabel>
-                            <FormControl>
-                              <Input placeholder="streamer-uuid" {...field} />
-                            </FormControl>
-                            <FormMessage />
-                          </FormItem>
-                        )}
-                      />
-                      <FormField
-                        control={createPipelineForm.control}
-                        name="input_path"
-                        render={({ field }) => (
-                          <FormItem>
-                            <FormLabel>
-                              <Trans>Input Path</Trans>
-                            </FormLabel>
-                            <FormControl>
-                              <Input
-                                placeholder="C:\path\to\recording.flv"
-                                {...field}
-                              />
-                            </FormControl>
-                            <FormMessage />
-                          </FormItem>
-                        )}
-                      />
-                      <FormField
-                        control={createPipelineForm.control}
-                        name="steps"
-                        render={() => (
-                          <FormItem>
-                            <FormLabel>
-                              <Trans>Pipeline Steps</Trans>
-                            </FormLabel>
-                            <div className="space-y-3">
-                              <div className="flex gap-2">
-                                <Select
-                                  value={selectedPreset}
-                                  onValueChange={setSelectedPreset}
-                                  disabled={presetsLoading}
-                                >
-                                  <SelectTrigger>
-                                    <SelectValue
-                                      placeholder={t`Select preset`}
-                                    />
-                                  </SelectTrigger>
-                                  <SelectContent>
-                                    {presets.map((preset) => (
-                                      <SelectItem
-                                        key={preset.id}
-                                        value={preset.name}
-                                      >
-                                        {preset.name}
-                                      </SelectItem>
-                                    ))}
-                                  </SelectContent>
-                                </Select>
-                                <Button
-                                  type="button"
-                                  onClick={handleAddStep}
-                                  disabled={!selectedPreset}
-                                  size="icon"
-                                >
-                                  <Plus className="h-4 w-4" />
-                                </Button>
-                              </div>
-                              {stepsValue.length > 0 ? (
-                                <div className="space-y-2 border rounded-md p-3">
-                                  {stepsValue.map((step, idx) => (
-                                    <div
-                                      key={`${step}-${idx}`}
-                                      className="flex items-center justify-between text-sm bg-muted/40 px-3 py-2 rounded-md"
-                                    >
-                                      <div className="flex items-center gap-2">
-                                        <Workflow className="h-4 w-4 text-muted-foreground" />
-                                        <span>
-                                          {idx + 1}. {step}
-                                        </span>
-                                      </div>
-                                      <Button
-                                        type="button"
-                                        variant="ghost"
-                                        size="icon"
-                                        className="h-8 w-8 text-muted-foreground hover:text-destructive"
-                                        onClick={() => handleRemoveStep(idx)}
-                                      >
-                                        <Trash2 className="h-4 w-4" />
-                                      </Button>
-                                    </div>
-                                  ))}
-                                </div>
-                              ) : (
-                                <div className="text-sm text-muted-foreground border border-dashed rounded-md p-4 text-center">
-                                  <Trans>No steps selected yet</Trans>
-                                </div>
-                              )}
-                            </div>
-                            <FormMessage />
-                          </FormItem>
-                        )}
-                      />
-                      <DialogFooter>
-                        <Button
-                          type="button"
-                          variant="outline"
-                          onClick={() => setCreateDialogOpen(false)}
-                        >
-                          <Trans>Cancel</Trans>
-                        </Button>
-                        <Button
-                          type="submit"
-                          disabled={createPipelineMutation.isPending}
-                        >
-                          {createPipelineMutation.isPending ? (
-                            <span className="flex items-center gap-2">
-                              <Loader2 className="h-4 w-4 animate-spin" />
-                              <Trans>Creating...</Trans>
-                            </span>
-                          ) : (
-                            <Trans>Create</Trans>
-                          )}
-                        </Button>
-                      </DialogFooter>
-                    </form>
-                  </Form>
-                </DialogContent>
-              </Dialog>
+              <div className="flex items-center gap-2 shrink-0">
+                <Badge
+                  variant="secondary"
+                  className="h-9 px-3 text-sm whitespace-nowrap bg-muted/50 text-muted-foreground border-border/50"
+                >
+                  {totalPipelines} <Trans>pipelines</Trans>
+                </Badge>
+                <Button
+                  className="h-9 gap-2 whitespace-nowrap"
+                  variant="default"
+                  onClick={() => navigate({ to: '/pipeline/jobs/new' })}
+                >
+                  <Plus className="h-4 w-4" />
+                  <span className="hidden xs:inline"><Trans>Create Pipeline</Trans></span>
+                  <span className="xs:hidden"><Trans>Create</Trans></span>
+                </Button>
+              </div>
             </div>
           </div>
 
           {/* Stats Overview */}
-          <div className="px-4 md:px-8 pb-4">
-            <div className="grid gap-3 grid-cols-2 md:grid-cols-5">
+          <div className="px-4 md:px-8 pb-4 w-full">
+            <div className="grid gap-3 grid-cols-2 sm:grid-cols-3 lg:grid-cols-5">
               <StatCard
                 title={<Trans>Pending</Trans>}
                 value={stats?.pending_count}
@@ -586,19 +278,19 @@ function PipelineJobsPage() {
           </div>
 
           {/* Status Filter */}
-          <div className="px-4 md:px-8 pb-3 overflow-x-auto no-scrollbar">
-            <nav className="flex items-center gap-1">
+          <div className="px-4 md:px-8 pb-3 -mx-4 md:mx-0">
+            <nav className="flex items-center gap-1.5 px-4 md:px-0 overflow-x-auto no-scrollbar pt-1 pb-1">
               {STATUS_FILTERS.map(({ value, label, icon: Icon }) => (
                 <button
                   key={label}
                   onClick={() => handleStatusChange(value)}
-                  className={`relative px-3 py-1.5 text-sm font-medium rounded-full transition-all duration-200 flex items-center gap-1.5 ${selectedStatus === value
-                    ? 'bg-primary text-primary-foreground shadow-sm'
-                    : 'text-muted-foreground hover:text-foreground hover:bg-muted'
+                  className={`relative px-3.5 py-1.5 text-xs sm:text-sm font-medium rounded-full transition-all duration-200 flex items-center gap-1.5 shrink-0 shadow-sm ring-1 ${selectedStatus === value
+                    ? 'bg-primary text-primary-foreground ring-primary'
+                    : 'text-muted-foreground hover:text-foreground bg-background hover:bg-muted ring-border/50'
                     }`}
                 >
-                  <Icon className="h-3.5 w-3.5" />
-                  <span className="relative z-10">{label}</span>
+                  <Icon className="h-4 w-4" />
+                  <span className="relative z-10 whitespace-nowrap">{label}</span>
                 </button>
               ))}
             </nav>
@@ -614,7 +306,7 @@ function PipelineJobsPage() {
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
-              className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6"
+              className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-6"
             >
               {[1, 2, 3, 4, 5, 6].map((i) => (
                 <div
@@ -638,12 +330,12 @@ function PipelineJobsPage() {
           ) : pipelines.length > 0 ? (
             <motion.div
               key="list"
-              className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6"
+              className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-6"
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               transition={{ duration: 0.3 }}
             >
-              {pipelines.map((pipeline, index) => (
+              {pipelines.map((pipeline: any, index: number) => (
                 <motion.div
                   key={pipeline.id}
                   initial={{ opacity: 0, y: 20 }}
@@ -698,8 +390,8 @@ function PipelineJobsPage() {
         {/* Pagination Controls */}
         {totalPages > 1 && (
           <div className="flex items-center justify-between mt-8 pt-6 border-t">
-            <div className="flex items-center gap-2">
-              <span className="text-sm text-muted-foreground">
+            <div className="flex items-center gap-2 shrink-0">
+              <span className="text-xs sm:text-sm text-muted-foreground">
                 <Trans>Per page:</Trans>
               </span>
               <Select
@@ -709,12 +401,12 @@ function PipelineJobsPage() {
                   setCurrentPage(0);
                 }}
               >
-                <SelectTrigger className="w-20 h-8">
+                <SelectTrigger className="w-16 sm:w-20 h-8 text-xs sm:text-sm">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
                   {PAGE_SIZES.map((size) => (
-                    <SelectItem key={size} value={size.toString()}>
+                    <SelectItem key={size} value={size.toString()} className="text-xs sm:text-sm">
                       {size}
                     </SelectItem>
                   ))}
@@ -722,51 +414,61 @@ function PipelineJobsPage() {
               </Select>
             </div>
 
-            <Pagination>
-              <PaginationContent>
-                <PaginationItem>
-                  <PaginationPrevious
-                    onClick={() => setCurrentPage((p) => Math.max(0, p - 1))}
-                    className={
-                      currentPage === 0
-                        ? 'pointer-events-none opacity-50'
-                        : 'cursor-pointer'
-                    }
-                  />
-                </PaginationItem>
+            <div className="flex-1 min-w-0">
+              <Pagination className="justify-end w-auto overflow-x-auto no-scrollbar">
+                <PaginationContent className="flex-nowrap">
+                  <PaginationItem>
+                    <PaginationPrevious
+                      onClick={() => setCurrentPage((p: number) => Math.max(0, p - 1))}
+                      className={cn(
+                        "h-8 px-2 sm:px-3 text-xs sm:text-sm",
+                        currentPage === 0
+                          ? 'pointer-events-none opacity-50'
+                          : 'cursor-pointer'
+                      )}
+                    />
+                  </PaginationItem>
 
-                {paginationPages.map((page, idx) =>
-                  page === 'ellipsis' ? (
-                    <PaginationItem key={`ellipsis-${idx}`}>
-                      <PaginationEllipsis />
-                    </PaginationItem>
-                  ) : (
-                    <PaginationItem key={page}>
-                      <PaginationLink
-                        isActive={currentPage === page}
-                        onClick={() => setCurrentPage(page)}
-                        className="cursor-pointer"
-                      >
-                        {page + 1}
-                      </PaginationLink>
-                    </PaginationItem>
-                  ),
-                )}
+                  <div className="hidden sm:flex items-center">
+                    {paginationPages.map((page: number | 'ellipsis', idx: number) =>
+                      page === 'ellipsis' ? (
+                        <PaginationItem key={`ellipsis-${idx}`}>
+                          <PaginationEllipsis />
+                        </PaginationItem>
+                      ) : (
+                        <PaginationItem key={page}>
+                          <PaginationLink
+                            isActive={currentPage === page}
+                            onClick={() => setCurrentPage(page)}
+                            className="cursor-pointer h-8 w-8 text-xs font-medium"
+                          >
+                            {page + 1}
+                          </PaginationLink>
+                        </PaginationItem>
+                      ),
+                    )}
+                  </div>
 
-                <PaginationItem>
-                  <PaginationNext
-                    onClick={() =>
-                      setCurrentPage((p) => Math.min(totalPages - 1, p + 1))
-                    }
-                    className={
-                      currentPage >= totalPages - 1
-                        ? 'pointer-events-none opacity-50'
-                        : 'cursor-pointer'
-                    }
-                  />
-                </PaginationItem>
-              </PaginationContent>
-            </Pagination>
+                  <div className="sm:hidden flex items-center px-4 text-xs font-medium text-muted-foreground">
+                    {currentPage + 1} / {totalPages}
+                  </div>
+
+                  <PaginationItem>
+                    <PaginationNext
+                      onClick={() =>
+                        setCurrentPage((p: number) => Math.min(totalPages - 1, p + 1))
+                      }
+                      className={cn(
+                        "h-8 px-2 sm:px-3 text-xs sm:text-sm",
+                        currentPage >= totalPages - 1
+                          ? 'pointer-events-none opacity-50'
+                          : 'cursor-pointer'
+                      )}
+                    />
+                  </PaginationItem>
+                </PaginationContent>
+              </Pagination>
+            </div>
           </div>
         )}
       </div>
@@ -784,28 +486,24 @@ function StatCard({
 }: {
   title: React.ReactNode;
   value?: number | null;
-  loading: boolean;
+  loading?: boolean;
   color?: string;
   icon?: React.ReactNode;
-  formatValue?: (v: number | null | undefined) => string;
+  formatValue?: (v: number) => string;
 }) {
   return (
-    <Card className="bg-background/50 backdrop-blur-sm border-border/40">
-      <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-1 pt-3 px-4">
-        <CardTitle className="text-xs font-medium text-muted-foreground">
-          {title}
-        </CardTitle>
+    <Card className="flex flex-col p-4 space-y-2 ring-1 ring-border/50 shadow-sm hover:shadow-md transition-shadow duration-200">
+      <div className="flex items-center justify-between text-xs sm:text-sm font-medium text-muted-foreground">
+        {title}
         {icon}
-      </CardHeader>
-      <CardContent className="px-4 pb-3">
+      </div>
+      <div className={cn("text-xl sm:text-2xl font-bold tracking-tight", color)}>
         {loading ? (
-          <Skeleton className="h-7 w-12" />
+          <Skeleton className="h-8 w-16" />
         ) : (
-          <div className={`text-xl font-bold ${color}`}>
-            {formatValue ? formatValue(value) : (value ?? 0)}
-          </div>
+          formatValue ? formatValue(value || 0) : (value || 0)
         )}
-      </CardContent>
+      </div>
     </Card>
   );
 }

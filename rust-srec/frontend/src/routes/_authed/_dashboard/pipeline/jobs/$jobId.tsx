@@ -473,15 +473,29 @@ function JobDetailsPage() {
                     </CardTitle>
                   </CardHeader>
                   <CardContent>
-                    <div className="text-xs font-mono bg-muted/40 p-3 rounded-lg border border-border/40 text-muted-foreground break-all leading-relaxed">
-                      {job.input_path[0] || (
-                        <span className="italic opacity-50">No input</span>
-                      )}
-                      {job.input_path.length > 1 && (
-                        <div className="mt-2 pt-2 border-t border-border/40">
-                          +{job.input_path.length - 1} more
-                        </div>
-                      )}
+                    <div className="text-xs font-mono bg-muted/40 p-4 rounded-xl border border-border/40 text-muted-foreground leading-relaxed shadow-inner">
+                      <div className="space-y-2.5 max-h-[160px] overflow-y-auto pr-2 custom-scrollbar">
+                        {job.input_path.length > 0 ? (
+                          job.input_path.map((path, i) => (
+                            <div
+                              key={i}
+                              className="group/item flex items-start gap-3 p-2 rounded-lg hover:bg-background/80 hover:text-foreground transition-all duration-300 border border-transparent hover:border-border/50"
+                            >
+                              <FileCode className="h-3.5 w-3.5 mt-0.5 shrink-0 text-blue-500/50 group-hover/item:text-blue-500 transition-colors" />
+                              <span className="flex-1 break-all tracking-tight selection:bg-blue-500/20">
+                                {path}
+                              </span>
+                            </div>
+                          ))
+                        ) : (
+                          <div className="flex flex-col items-center justify-center py-4 opacity-40">
+                            <FileCode className="h-8 w-8 mb-2" />
+                            <span className="italic">
+                              <Trans>No input paths</Trans>
+                            </span>
+                          </div>
+                        )}
+                      </div>
                     </div>
                   </CardContent>
                 </Card>
@@ -494,19 +508,29 @@ function JobDetailsPage() {
                     </CardTitle>
                   </CardHeader>
                   <CardContent>
-                    <div className="text-xs font-mono bg-muted/40 p-3 rounded-lg border border-border/40 text-muted-foreground break-all leading-relaxed">
-                      {job.output_path && job.output_path[0] ? (
-                        job.output_path[0]
-                      ) : (
-                        <span className="italic opacity-50">
-                          No output generated
-                        </span>
-                      )}
-                      {job.output_path && job.output_path.length > 1 && (
-                        <div className="mt-2 pt-2 border-t border-border/40">
-                          +{job.output_path.length - 1} more
-                        </div>
-                      )}
+                    <div className="text-xs font-mono bg-muted/40 p-4 rounded-xl border border-border/40 text-muted-foreground leading-relaxed shadow-inner">
+                      <div className="space-y-2.5 max-h-[160px] overflow-y-auto pr-2 custom-scrollbar">
+                        {job.output_path && job.output_path.length > 0 ? (
+                          job.output_path.map((path, i) => (
+                            <div
+                              key={i}
+                              className="group/item flex items-start gap-3 p-2 rounded-lg hover:bg-background/80 hover:text-foreground transition-all duration-300 border border-transparent hover:border-border/50"
+                            >
+                              <FileOutput className="h-3.5 w-3.5 mt-0.5 shrink-0 text-emerald-500/50 group-hover/item:text-emerald-500 transition-colors" />
+                              <span className="flex-1 break-all tracking-tight selection:bg-emerald-500/20">
+                                {path}
+                              </span>
+                            </div>
+                          ))
+                        ) : (
+                          <div className="flex flex-col items-center justify-center py-4 opacity-40">
+                            <FileOutput className="h-8 w-8 mb-2" />
+                            <span className="italic">
+                              <Trans>No output generated</Trans>
+                            </span>
+                          </div>
+                        )}
+                      </div>
                     </div>
                   </CardContent>
                 </Card>

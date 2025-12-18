@@ -34,13 +34,14 @@ export function StreamerCard({
   return (
     <Card
       className={cn(
-        'group overflow-hidden transition-all duration-300 hover:shadow-xl hover:border-primary/20 h-full flex flex-col',
+        'group overflow-hidden transition-all duration-300 hover:shadow-md dark:hover:shadow-2xl dark:hover:shadow-black/5 hover:-translate-y-1 h-full flex flex-col bg-white/60 dark:bg-card/40 backdrop-blur-xl border-black/5 dark:border-white/5 shadow-sm relative',
         !streamer.enabled
           ? 'opacity-60 grayscale-[0.8] hover:grayscale-0 hover:opacity-100'
           : '',
       )}
     >
-      <CardHeader className="px-4 py-3">
+      <div className="absolute inset-x-0 top-0 h-1 bg-gradient-to-r from-transparent via-primary/20 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300" />
+      <CardHeader className="px-5 py-4">
         <div className="flex justify-between items-start">
           <div className="space-y-3 w-full">
             <div className="flex items-center justify-between w-full">

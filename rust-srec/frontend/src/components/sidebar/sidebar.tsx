@@ -24,7 +24,7 @@ export function Sidebar() {
   return (
     <aside
       className={cn(
-        'fixed top-0 left-0 z-20 h-screen -translate-x-full lg:translate-x-0 transition-[width] ease-in-out duration-300 bg-sidebar border-r border-border',
+        'fixed top-0 left-0 z-20 h-screen -translate-x-full lg:translate-x-0 transition-[width] ease-in-out duration-300 bg-sidebar/80 backdrop-blur-xl border-r border-border/50',
         !isOpen ? 'w-[90px]' : 'w-72',
         settings.disabled && 'hidden',
       )}
@@ -33,24 +33,29 @@ export function Sidebar() {
       <div
         onMouseEnter={() => setIsHover(true)}
         onMouseLeave={() => setIsHover(false)}
-        className="relative h-full flex flex-col px-3 py-4 overflow-hidden shadow-md dark:shadow-zinc-800"
+        className={cn(
+          'relative h-full flex flex-col py-4 overflow-hidden',
+          !isOpen ? 'px-0' : 'px-3',
+        )}
       >
         <Button
           className={cn(
-            'transition-transform ease-in-out duration-300 mb-1',
-            !isOpen ? 'translate-x-1' : 'translate-x-0',
+            'transition-all ease-in-out duration-300 mb-6 bg-transparent hover:bg-transparent px-2',
+            !isOpen ? 'justify-center' : 'justify-start',
           )}
           variant="link"
           asChild
         >
-          <Link to="/dashboard" className="flex items-center gap-2">
-            <div className="w-8 h-8 mr-1 bg-primary dark:bg-primary transition-colors [mask-image:url(/stream-rec-white.svg)] [mask-size:contain] [mask-repeat:no-repeat] [mask-position:center]" />
+          <Link to="/dashboard" className="flex items-center gap-3">
+            <div className="w-10 h-10 bg-primary rounded-xl flex items-center justify-center shrink-0 shadow-lg shadow-primary/20 transition-all duration-300 group-hover:scale-105">
+              <div className="w-6 h-6 bg-primary-foreground [mask-image:url(/stream-rec-white.svg)] [mask-size:contain] [mask-repeat:no-repeat] [mask-position:center]" />
+            </div>
             <h1
               className={cn(
-                'font-bold text-lg whitespace-nowrap transition-[transform,opacity,display] ease-in-out duration-300',
+                'font-bold text-xl tracking-tight whitespace-nowrap transition-all ease-in-out duration-300',
                 !isOpen
-                  ? '-translate-x-96 opacity-0 hidden'
-                  : 'translate-x-0 opacity-100',
+                  ? 'opacity-0 w-0 pointer-events-none'
+                  : 'opacity-100 translate-x-0',
               )}
             >
               <Trans>Rust-Srec</Trans>

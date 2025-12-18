@@ -14,8 +14,8 @@ use tokio::sync::{Mutex, RwLock, mpsc};
 use tokio::task::JoinHandle;
 use tracing::{debug, error, info, warn};
 
-use crate::danmu::{DanmuConnection, DanmuMessage, DanmuProvider, DanmuType};
-use crate::error::{Error, Result};
+use crate::error::{DanmakuError, Result};
+use crate::{DanmuConnection, DanmuMessage, DanmuProvider, DanmuType};
 
 /// Twitch IRC server address (TLS)
 const TWITCH_IRC_HOST: &str = "irc.chat.twitch.tv";
@@ -101,7 +101,9 @@ impl TwitchDanmuProvider {
         // Create TCP connection
         let tcp_stream = TcpStream::connect((TWITCH_IRC_HOST, TWITCH_IRC_TLS_PORT))
             .await
-            .map_err(|e| Error::DanmuError(format!("Failed to connect to Twitch IRC: {}", e)))?;
+            .map_err(|e| {
+                DanmakuError::connection(format!("Failed to connect to Twitch IRC: {}", e))
+            })?;
 
         // Set up TLS
         let mut root_store = tokio_rustls::rustls::RootCertStore::empty();
@@ -113,12 +115,12 @@ impl TwitchDanmuProvider {
 
         let connector = tokio_rustls::TlsConnector::from(Arc::new(config));
         let server_name = tokio_rustls::rustls::pki_types::ServerName::try_from(TWITCH_IRC_HOST)
-            .map_err(|e| Error::DanmuError(format!("Invalid server name: {}", e)))?;
+            .map_err(|e| DanmakuError::connection(format!("Invalid server name: {}", e)))?;
 
         let tls_stream = connector
             .connect(server_name.to_owned(), tcp_stream)
             .await
-            .map_err(|e| Error::DanmuError(format!("TLS handshake failed: {}", e)))?;
+            .map_err(|e| DanmakuError::connection(format!("TLS handshake failed: {}", e)))?;
 
         info!(
             "Connected to Twitch IRC server with TLS for channel #{}",
@@ -150,11 +152,11 @@ impl TwitchDanmuProvider {
         stream
             .write_all(cmd.as_bytes())
             .await
-            .map_err(|e| Error::DanmuError(format!("Failed to send IRC command: {}", e)))?;
+            .map_err(|e| DanmakuError::connection(format!("Failed to send IRC command: {}", e)))?;
         stream
             .flush()
             .await
-            .map_err(|e| Error::DanmuError(format!("Failed to flush IRC stream: {}", e)))?;
+            .map_err(|e| DanmakuError::connection(format!("Failed to flush IRC stream: {}", e)))?;
         debug!("Sent IRC command: {}", command);
         Ok(())
     }
@@ -236,7 +238,7 @@ impl TwitchDanmuProvider {
                     let server_name =
                         tokio_rustls::rustls::pki_types::ServerName::try_from(TWITCH_IRC_HOST)
                             .map_err(|e| {
-                                Error::DanmuError(format!("Invalid server name: {}", e))
+                                DanmakuError::connection(format!("Invalid server name: {}", e))
                             })?;
 
                     match connector.connect(server_name.to_owned(), tcp_stream).await {
@@ -276,7 +278,7 @@ impl TwitchDanmuProvider {
             attempt += 1;
         }
 
-        Err(Error::DanmuError(format!(
+        Err(DanmakuError::connection(format!(
             "Failed to reconnect after {} attempts",
             MAX_RECONNECT_ATTEMPTS
         )))
@@ -538,7 +540,9 @@ impl DanmuProvider for TwitchDanmuProvider {
 
     async fn receive(&self, connection: &DanmuConnection) -> Result<Option<DanmuMessage>> {
         if !connection.is_connected {
-            return Err(Error::DanmuError("Connection is not active".to_string()));
+            return Err(DanmakuError::connection(
+                "Connection is not active".to_string(),
+            ));
         }
 
         let connections = self.connections.read().await;
@@ -547,7 +551,7 @@ impl DanmuProvider for TwitchDanmuProvider {
 
             // Check if still connected
             if !state.is_connected.load(Ordering::SeqCst) {
-                return Err(Error::DanmuError("Connection lost".to_string()));
+                return Err(DanmakuError::connection("Connection lost".to_string()));
             }
 
             // Try to receive a message with timeout
@@ -555,7 +559,9 @@ impl DanmuProvider for TwitchDanmuProvider {
                 Ok(Some(msg)) => Ok(Some(msg)),
                 Ok(None) => {
                     // Channel closed
-                    Err(Error::DanmuError("Message channel closed".to_string()))
+                    Err(DanmakuError::connection(
+                        "Message channel closed".to_string(),
+                    ))
                 }
                 Err(_) => {
                     // Timeout - no message available
@@ -563,7 +569,7 @@ impl DanmuProvider for TwitchDanmuProvider {
                 }
             }
         } else {
-            Err(Error::DanmuError("Connection not found".to_string()))
+            Err(DanmakuError::connection("Connection not found".to_string()))
         }
     }
 
@@ -617,7 +623,9 @@ pub fn parse_twitch_irc_message(line: &str) -> Result<Option<DanmuMessage>> {
     // Parse the rest: :user!user@user.tmi.twitch.tv PRIVMSG #channel :message
     let parts: Vec<&str> = remaining.splitn(4, ' ').collect();
     if parts.len() < 4 {
-        return Err(Error::DanmuError("Invalid IRC message format".to_string()));
+        return Err(DanmakuError::connection(
+            "Invalid IRC message format".to_string(),
+        ));
     }
 
     let prefix = parts[0];

@@ -172,8 +172,8 @@ pub struct CreatePipelineRequest {
     pub session_id: String,
     /// Streamer ID for the pipeline.
     pub streamer_id: String,
-    /// Input file path.
-    pub input_path: String,
+    /// Input file paths.
+    pub input_paths: Vec<String>,
     /// DAG pipeline definition.
     pub dag: DagPipelineDefinition,
 }
@@ -537,6 +537,8 @@ pub struct PresetPreviewJob {
 pub struct DagFilterParams {
     /// Filter by DAG status (PENDING, PROCESSING, COMPLETED, FAILED, CANCELLED).
     pub status: Option<String>,
+    /// Search query
+    pub search: Option<String>,
 }
 
 /// Pagination parameters for DAG list.
@@ -1416,7 +1418,7 @@ async fn create_pipeline(
         .create_dag_pipeline(
             &request.session_id,
             &request.streamer_id,
-            &request.input_path,
+            request.input_paths,
             request.dag,
         )
         .await
@@ -2094,53 +2096,69 @@ async fn list_dags(
         .as_ref()
         .ok_or_else(|| ApiError::service_unavailable("Pipeline service not available"))?;
 
-    let dag_scheduler = pipeline_manager
-        .dag_scheduler()
-        .ok_or_else(|| ApiError::service_unavailable("DAG scheduler not available"))?;
-
     let effective_limit = pagination.limit.min(100);
 
-    // Get DAGs from repository via scheduler
-    let dags = dag_scheduler
-        .list_dags(
-            filters.status.as_deref(),
-            effective_limit,
-            pagination.offset,
-        )
+    // Convert status string to DbJobStatus
+    let status_filter = filters
+        .status
+        .as_ref()
+        .and_then(|s| match s.to_uppercase().as_str() {
+            "PENDING" => Some(DbJobStatus::Pending),
+            "PROCESSING" => Some(DbJobStatus::Processing),
+            "COMPLETED" => Some(DbJobStatus::Completed),
+            "FAILED" => Some(DbJobStatus::Failed),
+            "INTERRUPTED" => Some(DbJobStatus::Interrupted),
+            "CANCELLED" => Some(DbJobStatus::Interrupted),
+            _ => None,
+        });
+
+    let db_filters = JobFilters {
+        status: status_filter,
+        streamer_id: None,
+        session_id: None,
+        pipeline_id: None,
+        from_date: None,
+        to_date: None,
+        job_type: None,
+        job_types: None,
+        search: filters.search,
+    };
+
+    let db_pagination = Pagination::new(effective_limit, pagination.offset);
+
+    // Get pipelines/jobs from manager which provides unified view
+    let (pipelines, total) = pipeline_manager
+        .list_pipelines(&db_filters, &db_pagination)
         .await
         .map_err(ApiError::from)?;
 
     // Convert to response format
-    let dag_items: Vec<DagListItem> = dags
+    let dag_items: Vec<DagListItem> = pipelines
         .into_iter()
-        .map(|dag| {
-            let name = dag
-                .get_dag_definition()
-                .map(|d| d.name)
-                .unwrap_or_else(|| "Unknown".to_string());
-            let progress_percent = dag.progress_percent();
+        .map(|p| {
+            let progress_percent = if p.job_count > 0 {
+                (p.completed_count as f64 / p.job_count as f64) * 100.0
+            } else {
+                0.0
+            };
+
+            let name = p.name.unwrap_or_else(|| "Unknown".to_string());
 
             DagListItem {
-                id: dag.id,
+                id: p.pipeline_id,
                 name,
-                status: dag.status,
-                streamer_id: dag.streamer_id,
-                session_id: dag.session_id,
-                total_steps: dag.total_steps,
-                completed_steps: dag.completed_steps,
-                failed_steps: dag.failed_steps,
+                status: p.status,
+                streamer_id: Some(p.streamer_id),
+                session_id: p.session_id,
+                total_steps: p.job_count as i32,
+                completed_steps: p.completed_count as i32,
+                failed_steps: p.failed_count as i32,
                 progress_percent,
-                created_at: dag.created_at,
-                updated_at: dag.updated_at,
+                created_at: p.created_at,
+                updated_at: p.updated_at,
             }
         })
         .collect();
-
-    // Get total count for pagination
-    let total = dag_scheduler
-        .count_dags(filters.status.as_deref())
-        .await
-        .map_err(ApiError::from)?;
 
     Ok(Json(DagListResponse {
         dags: dag_items,
@@ -2259,7 +2277,7 @@ async fn get_dag_stats(
     }))
 }
 
-/// Validate a DAG definition.
+/// Validate a DAG definition
 ///
 /// # Endpoint
 ///
@@ -2270,6 +2288,11 @@ async fn get_dag_stats(
 /// - Missing dependencies
 /// - Empty DAG
 /// - Duplicate step IDs
+///
+/// # Performance
+///
+/// Uses integer-indexed arrays instead of String-keyed HashMaps for O(1) lookups.
+/// All operations complete in O(V+E) time complexity.
 async fn validate_dag(
     State(_state): State<AppState>,
     Json(request): Json<ValidateDagRequest>,
@@ -2277,6 +2300,9 @@ async fn validate_dag(
     let dag = &request.dag;
     let mut errors: Vec<String> = Vec::new();
     let mut warnings: Vec<String> = Vec::new();
+
+    // Maximum allowed steps to prevent DoS
+    const MAX_STEPS: usize = 1000;
 
     // Check for empty DAG
     if dag.steps.is_empty() {
@@ -2291,69 +2317,139 @@ async fn validate_dag(
         }));
     }
 
-    // Check for duplicate step IDs
-    let mut step_ids: HashSet<String> = HashSet::new();
-    for step in &dag.steps {
-        if !step_ids.insert(step.id.clone()) {
+    // Check for too many steps (prevent DoS)
+    if dag.steps.len() > MAX_STEPS {
+        errors.push(format!(
+            "DAG has {} steps, maximum allowed is {}",
+            dag.steps.len(),
+            MAX_STEPS
+        ));
+        return Ok(Json(ValidateDagResponse {
+            valid: false,
+            errors,
+            warnings,
+            root_steps: vec![],
+            leaf_steps: vec![],
+            max_depth: 0,
+        }));
+    }
+
+    let n = dag.steps.len();
+
+    // Build id -> index map with capacity pre-allocation
+    let mut id_to_idx: HashMap<&str, usize> = HashMap::with_capacity(n);
+    for (i, step) in dag.steps.iter().enumerate() {
+        if id_to_idx.insert(&step.id, i).is_some() {
             errors.push(format!("Duplicate step ID: {}", step.id));
         }
     }
 
-    // Check for missing dependencies
-    for step in &dag.steps {
+    // Pre-allocate vectors for graph representation
+    let mut in_degree: Vec<usize> = vec![0; n];
+    let mut dependents: Vec<Vec<usize>> = vec![Vec::new(); n];
+    let mut has_dependents = vec![false; n];
+
+    // Single pass: build graph, check missing deps, check self-deps
+    for (i, step) in dag.steps.iter().enumerate() {
         for dep in &step.depends_on {
-            if !step_ids.contains(dep) {
-                errors.push(format!(
-                    "Step '{}' depends on non-existent step '{}'",
-                    step.id, dep
-                ));
+            // Check self-dependency
+            if dep == &step.id {
+                errors.push(format!("Step '{}' depends on itself", step.id));
+                continue;
+            }
+
+            // Check missing dependency
+            match id_to_idx.get(dep.as_str()) {
+                Some(&dep_idx) => {
+                    dependents[dep_idx].push(i);
+                    in_degree[i] += 1;
+                    has_dependents[dep_idx] = true;
+                }
+                None => {
+                    errors.push(format!(
+                        "Step '{}' depends on non-existent step '{}'",
+                        step.id, dep
+                    ));
+                }
             }
         }
     }
 
-    // Check for self-dependencies
-    for step in &dag.steps {
-        if step.depends_on.contains(&step.id) {
-            errors.push(format!("Step '{}' depends on itself", step.id));
+    // Find root and leaf steps (single pass using pre-computed data)
+    let mut root_steps: Vec<String> = Vec::new();
+    let mut leaf_steps: Vec<String> = Vec::new();
+    for (i, step) in dag.steps.iter().enumerate() {
+        if in_degree[i] == 0 {
+            root_steps.push(step.id.clone());
+        }
+        if !has_dependents[i] {
+            leaf_steps.push(step.id.clone());
         }
     }
 
-    // Check for cycles using DFS
-    if let Some(cycle) = detect_cycle(dag) {
-        errors.push(format!("Cycle detected: {}", cycle.join(" -> ")));
-    }
-
-    // Find root steps (no dependencies)
-    let root_steps: Vec<String> = dag
-        .steps
-        .iter()
-        .filter(|s| s.depends_on.is_empty())
-        .map(|s| s.id.clone())
-        .collect();
-
-    if root_steps.is_empty() && !dag.steps.is_empty() {
+    if root_steps.is_empty() && n > 0 {
         errors.push("DAG has no root steps (all steps have dependencies)".to_string());
     }
 
-    // Find leaf steps (no dependents)
-    let mut has_dependents: HashSet<String> = HashSet::new();
-    for step in &dag.steps {
-        for dep in &step.depends_on {
-            has_dependents.insert(dep.clone());
+    // Cycle detection + depth calculation in single Kahn's algorithm pass
+    // This is O(V+E) and cannot infinite loop
+    let mut queue: Vec<usize> = Vec::with_capacity(n);
+    let mut depths: Vec<usize> = vec![0; n];
+    let mut remaining_in_degree = in_degree.clone();
+
+    // Initialize queue with roots
+    for i in 0..n {
+        if remaining_in_degree[i] == 0 {
+            queue.push(i);
+            depths[i] = 1;
         }
     }
-    let leaf_steps: Vec<String> = dag
-        .steps
-        .iter()
-        .filter(|s| !has_dependents.contains(&s.id))
-        .map(|s| s.id.clone())
-        .collect();
 
-    // Calculate max depth
-    let max_depth = calculate_max_depth(dag);
+    let mut processed = 0;
+    let mut head = 0;
+
+    // Process queue (using head pointer instead of pop for speed)
+    while head < queue.len() {
+        let node = queue[head];
+        head += 1;
+        processed += 1;
+
+        let current_depth = depths[node];
+
+        for &dependent in &dependents[node] {
+            // Update max depth for this dependent
+            let new_depth = current_depth + 1;
+            if new_depth > depths[dependent] {
+                depths[dependent] = new_depth;
+            }
+
+            // Decrease in-degree
+            remaining_in_degree[dependent] -= 1;
+            if remaining_in_degree[dependent] == 0 {
+                queue.push(dependent);
+            }
+        }
+    }
+
+    // If we didn't process all nodes, there's a cycle
+    if processed < n {
+        // Find cycle for error message (nodes with remaining in-degree > 0)
+        let cycle_nodes: Vec<String> = (0..n)
+            .filter(|&i| remaining_in_degree[i] > 0)
+            .take(5) // Limit to first 5 to avoid huge error messages
+            .map(|i| dag.steps[i].id.clone())
+            .collect();
+        errors.push(format!(
+            "Cycle detected involving: {}{}",
+            cycle_nodes.join(" -> "),
+            if cycle_nodes.len() == 5 { " ..." } else { "" }
+        ));
+    }
+
+    let max_depth = depths.iter().copied().max().unwrap_or(0);
 
     // Add warnings
-    if dag.steps.len() == 1 {
+    if n == 1 {
         warnings.push("DAG has only one step - consider if a pipeline is necessary".to_string());
     }
 
@@ -2374,146 +2470,52 @@ async fn validate_dag(
     }))
 }
 
-// ============================================================================
-// DAG Validation Helper Functions
-// ============================================================================
-
-/// Detect cycles in a DAG using DFS.
-fn detect_cycle(dag: &DagPipelineDefinition) -> Option<Vec<String>> {
-    let mut visited: HashSet<String> = HashSet::new();
-    let mut rec_stack: HashSet<String> = HashSet::new();
-    let mut path: Vec<String> = Vec::new();
-
-    // Build adjacency list
-    let mut adj: HashMap<String, Vec<String>> = HashMap::new();
-    for step in &dag.steps {
-        adj.insert(step.id.clone(), step.depends_on.clone());
+/// Topologically sort DAG steps using Kahn's algorithm with integer indexing.
+/// O(V+E) time complexity, guaranteed to terminate.
+fn topological_sort(dag: &DagPipelineDefinition) -> Vec<String> {
+    if dag.steps.is_empty() {
+        return Vec::new();
     }
 
-    fn dfs(
-        node: &str,
-        adj: &HashMap<String, Vec<String>>,
-        visited: &mut HashSet<String>,
-        rec_stack: &mut HashSet<String>,
-        path: &mut Vec<String>,
-    ) -> Option<Vec<String>> {
-        visited.insert(node.to_string());
-        rec_stack.insert(node.to_string());
-        path.push(node.to_string());
+    let n = dag.steps.len();
 
-        if let Some(deps) = adj.get(node) {
-            for dep in deps {
-                if !visited.contains(dep) {
-                    if let Some(cycle) = dfs(dep, adj, visited, rec_stack, path) {
-                        return Some(cycle);
-                    }
-                } else if rec_stack.contains(dep) {
-                    // Found cycle
-                    let mut cycle = path.clone();
-                    cycle.push(dep.clone());
-                    return Some(cycle);
-                }
-            }
-        }
-
-        path.pop();
-        rec_stack.remove(node);
-        None
-    }
-
-    for step in &dag.steps {
-        if !visited.contains(&step.id) {
-            if let Some(cycle) = dfs(&step.id, &adj, &mut visited, &mut rec_stack, &mut path) {
-                return Some(cycle);
-            }
-        }
-    }
-
-    None
-}
-
-/// Calculate the maximum depth of a DAG.
-fn calculate_max_depth(dag: &DagPipelineDefinition) -> usize {
-    let mut depths: HashMap<String, usize> = HashMap::new();
-
-    // Build adjacency list (reverse - from dependency to dependent)
-    let mut dependents: HashMap<String, Vec<String>> = HashMap::new();
-    for step in &dag.steps {
-        dependents.entry(step.id.clone()).or_default();
-        for dep in &step.depends_on {
-            dependents
-                .entry(dep.clone())
-                .or_default()
-                .push(step.id.clone());
-        }
-    }
-
-    // Find root steps
-    let roots: Vec<String> = dag
+    // Build id -> index map
+    let id_to_idx: HashMap<&str, usize> = dag
         .steps
         .iter()
-        .filter(|s| s.depends_on.is_empty())
-        .map(|s| s.id.clone())
+        .enumerate()
+        .map(|(i, s)| (s.id.as_str(), i))
         .collect();
 
-    // BFS to calculate depths
-    let mut queue: std::collections::VecDeque<String> = roots.into_iter().collect();
-    for step in &dag.steps {
-        if step.depends_on.is_empty() {
-            depths.insert(step.id.clone(), 1);
-        }
-    }
+    // Build graph
+    let mut in_degree: Vec<usize> = vec![0; n];
+    let mut dependents: Vec<Vec<usize>> = vec![Vec::new(); n];
 
-    while let Some(node) = queue.pop_front() {
-        let current_depth = *depths.get(&node).unwrap_or(&1);
-        if let Some(deps) = dependents.get(&node) {
-            for dep in deps {
-                let new_depth = current_depth + 1;
-                let existing = depths.entry(dep.clone()).or_insert(0);
-                if new_depth > *existing {
-                    *existing = new_depth;
-                    queue.push_back(dep.clone());
-                }
+    for (i, step) in dag.steps.iter().enumerate() {
+        for dep in &step.depends_on {
+            if let Some(&dep_idx) = id_to_idx.get(dep.as_str()) {
+                dependents[dep_idx].push(i);
+                in_degree[i] += 1;
             }
         }
     }
 
-    depths.values().copied().max().unwrap_or(0)
-}
+    // Kahn's algorithm
+    let mut result: Vec<String> = Vec::with_capacity(n);
+    let mut queue: Vec<usize> = (0..n).filter(|&i| in_degree[i] == 0).collect();
+    let mut head = 0;
 
-/// Topologically sort DAG steps.
-fn topological_sort(dag: &DagPipelineDefinition) -> Vec<String> {
-    let mut result: Vec<String> = Vec::new();
-    let mut visited: HashSet<String> = HashSet::new();
+    while head < queue.len() {
+        let node = queue[head];
+        head += 1;
+        result.push(dag.steps[node].id.clone());
 
-    // Build adjacency list
-    let mut adj: HashMap<String, Vec<String>> = HashMap::new();
-    for step in &dag.steps {
-        adj.insert(step.id.clone(), step.depends_on.clone());
-    }
-
-    fn visit(
-        node: &str,
-        adj: &HashMap<String, Vec<String>>,
-        visited: &mut HashSet<String>,
-        result: &mut Vec<String>,
-    ) {
-        if visited.contains(node) {
-            return;
-        }
-        visited.insert(node.to_string());
-
-        if let Some(deps) = adj.get(node) {
-            for dep in deps {
-                visit(dep, adj, visited, result);
+        for &dependent in &dependents[node] {
+            in_degree[dependent] -= 1;
+            if in_degree[dependent] == 0 {
+                queue.push(dependent);
             }
         }
-
-        result.push(node.to_string());
-    }
-
-    for step in &dag.steps {
-        visit(&step.id, &adj, &mut visited, &mut result);
     }
 
     result
@@ -2543,7 +2545,7 @@ mod tests {
         let json = r#"{
             "session_id": "session-123",
             "streamer_id": "streamer-456",
-            "input_path": "/recordings/stream.flv",
+            "input_paths": ["/recordings/stream.flv"],
             "dag": {
                 "name": "test_pipeline",
                 "steps": [
@@ -2555,7 +2557,10 @@ mod tests {
         let request: CreatePipelineRequest = serde_json::from_str(json).unwrap();
         assert_eq!(request.session_id, "session-123");
         assert_eq!(request.streamer_id, "streamer-456");
-        assert_eq!(request.input_path, "/recordings/stream.flv");
+        assert_eq!(
+            request.input_paths,
+            vec!["/recordings/stream.flv".to_string()]
+        );
         assert_eq!(request.dag.name, "test_pipeline");
         assert_eq!(request.dag.steps.len(), 1);
     }
@@ -2633,100 +2638,6 @@ mod tests {
             queue_status_to_api_status(QueueJobStatus::Interrupted),
             ApiJobStatus::Interrupted
         );
-    }
-
-    // ========================================================================
-    // DAG Validation Tests
-    // ========================================================================
-
-    #[test]
-    fn test_detect_cycle_no_cycle() {
-        let dag = DagPipelineDefinition::new(
-            "test",
-            vec![
-                DagStep::new("A", PipelineStep::preset("remux")),
-                DagStep::with_dependencies(
-                    "B",
-                    PipelineStep::preset("upload"),
-                    vec!["A".to_string()],
-                ),
-                DagStep::with_dependencies(
-                    "C",
-                    PipelineStep::preset("notify"),
-                    vec!["B".to_string()],
-                ),
-            ],
-        );
-
-        assert!(detect_cycle(&dag).is_none());
-    }
-
-    #[test]
-    fn test_detect_cycle_with_cycle() {
-        let dag = DagPipelineDefinition::new(
-            "test",
-            vec![
-                DagStep::with_dependencies(
-                    "A",
-                    PipelineStep::preset("remux"),
-                    vec!["C".to_string()],
-                ),
-                DagStep::with_dependencies(
-                    "B",
-                    PipelineStep::preset("upload"),
-                    vec!["A".to_string()],
-                ),
-                DagStep::with_dependencies(
-                    "C",
-                    PipelineStep::preset("notify"),
-                    vec!["B".to_string()],
-                ),
-            ],
-        );
-
-        let cycle = detect_cycle(&dag);
-        assert!(cycle.is_some());
-    }
-
-    #[test]
-    fn test_calculate_max_depth_linear() {
-        let dag = DagPipelineDefinition::new(
-            "test",
-            vec![
-                DagStep::new("A", PipelineStep::preset("remux")),
-                DagStep::with_dependencies(
-                    "B",
-                    PipelineStep::preset("upload"),
-                    vec!["A".to_string()],
-                ),
-                DagStep::with_dependencies(
-                    "C",
-                    PipelineStep::preset("notify"),
-                    vec!["B".to_string()],
-                ),
-            ],
-        );
-
-        assert_eq!(calculate_max_depth(&dag), 3);
-    }
-
-    #[test]
-    fn test_calculate_max_depth_parallel() {
-        // A and B run in parallel, C depends on both
-        let dag = DagPipelineDefinition::new(
-            "test",
-            vec![
-                DagStep::new("A", PipelineStep::preset("remux")),
-                DagStep::new("B", PipelineStep::preset("thumbnail")),
-                DagStep::with_dependencies(
-                    "C",
-                    PipelineStep::preset("upload"),
-                    vec!["A".to_string(), "B".to_string()],
-                ),
-            ],
-        );
-
-        assert_eq!(calculate_max_depth(&dag), 2);
     }
 
     #[test]

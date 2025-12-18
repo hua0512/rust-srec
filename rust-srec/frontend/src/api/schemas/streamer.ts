@@ -7,6 +7,7 @@ import {
   PipelineStepSchema,
   PrioritySchema,
 } from './common';
+import { DagPipelineDefinitionSchema } from './pipeline';
 
 // --- Streamer Schemas ---
 export const StreamerStateSchema = z.enum([
@@ -69,7 +70,10 @@ export const StreamerSpecificConfigSchema = z.object({
   pipeline: z
     .preprocess(
       (val) => (typeof val === 'string' ? JSON.parse(val) : val),
-      z.array(PipelineStepSchema).nullable().optional(),
+      z
+        .union([z.array(PipelineStepSchema), DagPipelineDefinitionSchema])
+        .nullable()
+        .optional(),
     )
     .nullable()
     .optional(),

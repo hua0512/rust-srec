@@ -53,7 +53,6 @@ interface PipelineSummaryCardProps {
 
 // Helper function to format duration removed as unused
 
-
 const PipelineStatus = {
   Pending: 'pending',
   Processing: 'processing',
@@ -128,12 +127,12 @@ export function PipelineSummaryCard({
       {/* Hover Glow Effect */}
       <div className="absolute -inset-0.5 bg-gradient-to-br from-primary/5 to-transparent opacity-0 group-hover:opacity-100 blur-2xl transition-opacity duration-500 pointer-events-none" />
 
-      <CardHeader className="relative flex flex-row items-center gap-4 pb-2 space-y-0 z-10">
+      <CardHeader className="relative flex flex-row items-center gap-3 sm:gap-4 p-3 sm:pb-2 sm:space-y-0 z-10">
         <div
-          className={`p-3 rounded-2xl ${statusConfig.color} ring-1 ring-inset ring-black/5 dark:ring-white/5 transition-transform duration-500 group-hover:scale-110 group-hover:rotate-3`}
+          className={`p-2.5 sm:p-3 rounded-xl sm:rounded-2xl ${statusConfig.color} ring-1 ring-inset ring-black/5 dark:ring-white/5 transition-transform duration-500 group-hover:scale-110 group-hover:rotate-3 shrink-0`}
         >
           <StatusIcon
-            className={`h-5 w-5 ${statusConfig.animate ? 'animate-spin' : ''}`}
+            className={`h-4 w-4 sm:h-5 sm:w-5 ${statusConfig.animate ? 'animate-spin' : ''}`}
           />
         </div>
         <div className="flex-1 min-w-0 space-y-1">
@@ -153,7 +152,7 @@ export function PipelineSummaryCard({
             </span>
           </div>
         </div>
-        <Badge variant={statusConfig.badgeVariant} className="capitalize">
+        <Badge variant={statusConfig.badgeVariant} className="capitalize py-0 h-6 text-[10px] sm:text-xs">
           {status}
         </Badge>
         <DropdownMenu>
@@ -267,7 +266,7 @@ export function PipelineSummaryCard({
       </CardHeader>
 
       <CardContent className="relative pb-4 flex-1 z-10">
-        <p className="text-xs text-muted-foreground/80 mb-4 leading-relaxed font-light">
+        <p className="text-[10px] sm:text-xs text-muted-foreground/80 mb-3 sm:mb-4 leading-relaxed font-light truncate">
           <Trans>Started</Trans>{' '}
           {formatRelativeTime(new Date(pipeline.created_at), i18n.locale)}
           {pipeline.session_id && (
@@ -288,7 +287,6 @@ export function PipelineSummaryCard({
           </div>
           {pipeline.completed_steps > 0 && (
             <div className="flex items-center gap-1.5 px-2 py-1 rounded-md bg-green-500/10 border border-green-500/20">
-
               <CheckCircle2 className="h-3 w-3 text-green-500" />
               <span className="text-[10px] font-medium text-green-600 dark:text-green-400">
                 {plural(pipeline.completed_steps, {
@@ -300,7 +298,6 @@ export function PipelineSummaryCard({
           )}
           {pipeline.failed_steps > 0 && (
             <div className="flex items-center gap-1.5 px-2 py-1 rounded-md bg-red-500/10 border border-red-500/20">
-
               <XCircle className="h-3 w-3 text-red-500" />
               <span className="text-[10px] font-medium text-red-600 dark:text-red-400">
                 {plural(pipeline.failed_steps, {
@@ -315,7 +312,8 @@ export function PipelineSummaryCard({
         <div className="flex items-center gap-2 mt-3 text-xs text-muted-foreground">
           <Timer className="h-3 w-3" />
           <span>
-            <Trans>Progress:</Trans> {pipeline.progress_percent}%
+            <Trans>Progress:</Trans>{' '}
+            {(pipeline.progress_percent || 0).toFixed(1)}%
           </span>
         </div>
 
@@ -337,7 +335,7 @@ export function PipelineSummaryCard({
           })}
         </span>
         <span className="font-mono opacity-50">
-          {pipeline.progress_percent}%
+          {(pipeline.progress_percent || 0).toFixed(1)}%
         </span>
       </CardFooter>
     </Card>

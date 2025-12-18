@@ -95,6 +95,7 @@ pub struct PipelineSummary {
     pub total_duration_secs: f64,
     pub created_at: String,
     pub updated_at: String,
+    pub name: Option<String>,
 }
 
 /// Job repository trait.
@@ -279,9 +280,9 @@ impl JobRepository for SqlxJobRepository {
                 input, outputs, priority, streamer_id, session_id,
                 started_at, completed_at, error, retry_count,
                 next_job_type, remaining_steps, pipeline_id, execution_info,
-                duration_secs, queue_wait_secs
+                duration_secs, queue_wait_secs, dag_step_execution_id
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             "#,
         )
         .bind(&job.id)
@@ -306,6 +307,7 @@ impl JobRepository for SqlxJobRepository {
         .bind(&job.execution_info)
         .bind(job.duration_secs)
         .bind(job.queue_wait_secs)
+        .bind(&job.dag_step_execution_id)
         .execute(&self.pool)
         .await?;
         Ok(())
@@ -572,7 +574,8 @@ impl JobRepository for SqlxJobRepository {
                 pipeline_id = ?,
                 execution_info = ?,
                 duration_secs = ?,
-                queue_wait_secs = ?
+                queue_wait_secs = ?,
+                dag_step_execution_id = ?
             WHERE id = ?
             "#,
         )
@@ -596,6 +599,7 @@ impl JobRepository for SqlxJobRepository {
         .bind(&job.execution_info)
         .bind(job.duration_secs)
         .bind(job.queue_wait_secs)
+        .bind(&job.dag_step_execution_id)
         .bind(&job.id)
         .execute(&self.pool)
         .await?;
@@ -1176,9 +1180,9 @@ impl JobRepository for SqlxJobRepository {
                         input, outputs, priority, streamer_id, session_id,
                         started_at, completed_at, error, retry_count,
                         next_job_type, remaining_steps, pipeline_id, execution_info,
-                        duration_secs, queue_wait_secs
+                        duration_secs, queue_wait_secs, dag_step_execution_id
                     )
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     "#,
                 )
                 .bind(&job.id)
@@ -1203,6 +1207,7 @@ impl JobRepository for SqlxJobRepository {
                 .bind(&job.execution_info)
                 .bind(job.duration_secs)
                 .bind(job.queue_wait_secs)
+                .bind(&job.dag_step_execution_id)
                 .execute(&mut *tx)
                 .await?;
 
@@ -1258,17 +1263,20 @@ impl JobRepository for SqlxJobRepository {
         pagination: &Pagination,
     ) -> Result<(Vec<PipelineSummary>, u64)> {
         // Build WHERE clause for filters (applied before aggregation)
-        let mut where_conditions = vec!["pipeline_id IS NOT NULL".to_string()];
+        // We now allow NULL pipeline_id to include standalone jobs
+        let mut where_conditions = vec!["1=1".to_string()];
 
         if filters.streamer_id.is_some() {
-            where_conditions.push("streamer_id = ?".to_string());
+            where_conditions.push("j.streamer_id = ?".to_string());
         }
         if filters.session_id.is_some() {
-            where_conditions.push("session_id = ?".to_string());
+            where_conditions.push("j.session_id = ?".to_string());
         }
         if filters.search.is_some() {
+            // Updated to search in derived name too if possible, but for now stick to basic fields
+            // plus we can search in json_extract result if we wanted to be fancy
             where_conditions.push(
-                "(pipeline_id LIKE ? OR streamer_id LIKE ? OR session_id LIKE ?)".to_string(),
+                "(j.pipeline_id LIKE ? OR j.streamer_id LIKE ? OR j.session_id LIKE ?)".to_string(),
             );
         }
 
@@ -1281,53 +1289,70 @@ impl JobRepository for SqlxJobRepository {
             ""
         };
 
-        // Query to get pipeline summaries with aggregation
-        // Status logic: FAILED if any failed, PROCESSING if any processing, COMPLETED if all completed, else PENDING
+        // Query to get pipeline summaries
+        // For DAG pipelines, use dag_execution's authoritative values
+        // For standalone jobs, fallback to job-based aggregation
         let query = format!(
             r#"
             SELECT
-                pipeline_id,
-                MAX(streamer_id) as streamer_id,
-                MAX(session_id) as session_id,
+                COALESCE(j.pipeline_id, j.id) as pipeline_id,
+                MAX(j.streamer_id) as streamer_id,
+                MAX(j.session_id) as session_id,
                 CASE
-                    WHEN SUM(CASE WHEN status = 'FAILED' THEN 1 ELSE 0 END) > 0 THEN 'FAILED'
-                    WHEN SUM(CASE WHEN status = 'PROCESSING' THEN 1 ELSE 0 END) > 0 THEN 'PROCESSING'
-                    WHEN SUM(CASE WHEN status = 'INTERRUPTED' THEN 1 ELSE 0 END) > 0 THEN 'INTERRUPTED'
-                    WHEN COUNT(*) = SUM(CASE WHEN status = 'COMPLETED' THEN 1 ELSE 0 END) THEN 'COMPLETED'
+                    WHEN d.id IS NOT NULL THEN d.status
+                    WHEN SUM(CASE WHEN j.status = 'FAILED' THEN 1 ELSE 0 END) > 0 THEN 'FAILED'
+                    WHEN SUM(CASE WHEN j.status = 'PROCESSING' THEN 1 ELSE 0 END) > 0 THEN 'PROCESSING'
+                    WHEN SUM(CASE WHEN j.status = 'INTERRUPTED' THEN 1 ELSE 0 END) > 0 THEN 'INTERRUPTED'
+                    WHEN COUNT(*) = SUM(CASE WHEN j.status = 'COMPLETED' THEN 1 ELSE 0 END) THEN 'COMPLETED'
                     ELSE 'PENDING'
                 END as computed_status,
-                COUNT(*) as job_count,
-                SUM(CASE WHEN status = 'COMPLETED' THEN 1 ELSE 0 END) as completed_count,
-                SUM(CASE WHEN status = 'FAILED' THEN 1 ELSE 0 END) as failed_count,
-                COALESCE(SUM(duration_secs), 0.0) as total_duration_secs,
-                MIN(created_at) as created_at,
-                MAX(updated_at) as updated_at
-            FROM job
+                CASE
+                    WHEN d.id IS NOT NULL THEN d.total_steps
+                    ELSE COUNT(*)
+                END as job_count,
+                CASE
+                    WHEN d.id IS NOT NULL THEN d.completed_steps
+                    ELSE SUM(CASE WHEN j.status = 'COMPLETED' THEN 1 ELSE 0 END)
+                END as completed_count,
+                CASE
+                    WHEN d.id IS NOT NULL THEN d.failed_steps
+                    ELSE SUM(CASE WHEN j.status = 'FAILED' THEN 1 ELSE 0 END)
+                END as failed_count,
+                COALESCE(SUM(j.duration_secs), 0.0) as total_duration_secs,
+                MIN(j.created_at) as created_at,
+                MAX(j.updated_at) as updated_at,
+                CASE
+                    WHEN d.id IS NOT NULL THEN json_extract(d.dag_definition, '$.name')
+                    ELSE MAX(j.job_type) -- Fallback to job type for standalone/legacy
+                END as pipeline_name
+            FROM job j
+            LEFT JOIN dag_execution d ON j.pipeline_id = d.id
             WHERE {}
-            GROUP BY pipeline_id
+            GROUP BY COALESCE(j.pipeline_id, j.id)
             {}
-            ORDER BY MAX(created_at) DESC
+            ORDER BY MAX(j.created_at) DESC
             LIMIT ? OFFSET ?
             "#,
             where_clause, having_clause
         );
 
-        // Count query needs to count pipelines with matching aggregated status
+        // Count query needs to match grouping
         let count_query = format!(
             r#"
             SELECT COUNT(*) FROM (
                 SELECT
-                    pipeline_id,
+                    COALESCE(j.pipeline_id, j.id),
                     CASE
-                        WHEN SUM(CASE WHEN status = 'FAILED' THEN 1 ELSE 0 END) > 0 THEN 'FAILED'
-                        WHEN SUM(CASE WHEN status = 'PROCESSING' THEN 1 ELSE 0 END) > 0 THEN 'PROCESSING'
-                        WHEN SUM(CASE WHEN status = 'INTERRUPTED' THEN 1 ELSE 0 END) > 0 THEN 'INTERRUPTED'
-                        WHEN COUNT(*) = SUM(CASE WHEN status = 'COMPLETED' THEN 1 ELSE 0 END) THEN 'COMPLETED'
+                        WHEN SUM(CASE WHEN j.status = 'FAILED' THEN 1 ELSE 0 END) > 0 THEN 'FAILED'
+                        WHEN SUM(CASE WHEN j.status = 'PROCESSING' THEN 1 ELSE 0 END) > 0 THEN 'PROCESSING'
+                        WHEN SUM(CASE WHEN j.status = 'INTERRUPTED' THEN 1 ELSE 0 END) > 0 THEN 'INTERRUPTED'
+                        WHEN COUNT(*) = SUM(CASE WHEN j.status = 'COMPLETED' THEN 1 ELSE 0 END) THEN 'COMPLETED'
                         ELSE 'PENDING'
                     END as computed_status
-                FROM job
+                FROM job j
+                LEFT JOIN dag_execution d ON j.pipeline_id = d.id
                 WHERE {}
-                GROUP BY pipeline_id
+                GROUP BY COALESCE(j.pipeline_id, j.id)
                 {}
             )
             "#,
@@ -1369,6 +1394,7 @@ impl JobRepository for SqlxJobRepository {
                 f64,
                 String,
                 String,
+                Option<String>,
             ),
         >(&query);
 
@@ -1408,6 +1434,7 @@ impl JobRepository for SqlxJobRepository {
                 total_duration_secs: row.7,
                 created_at: row.8,
                 updated_at: row.9,
+                name: row.10,
             })
             .collect();
 

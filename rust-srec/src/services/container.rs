@@ -17,10 +17,7 @@ use crate::api::{
     server::{ApiServerConfig, AppState},
 };
 use crate::config::{ConfigCache, ConfigEventBroadcaster, ConfigService};
-use crate::danmu::{
-    DanmuService,
-    service::{DanmuEvent, DanmuServiceConfig},
-};
+use crate::danmu::{DanmuEvent, DanmuService, service::DanmuServiceConfig};
 use crate::database::maintenance::{MaintenanceConfig, MaintenanceScheduler};
 use crate::database::repositories::{NotificationRepository, SqlxNotificationRepository};
 use crate::database::repositories::{

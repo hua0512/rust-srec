@@ -7,6 +7,7 @@ import {
   EventHooksSchema,
   PipelineStepSchema,
 } from './common';
+import { DagPipelineDefinitionSchema } from './pipeline';
 
 // --- Template ---
 export const TemplateSchema = z.object({
@@ -62,7 +63,12 @@ export const TemplateSchema = z.object({
         return null;
       }
     })
-    .pipe(z.array(PipelineStepSchema).nullable().optional())
+    .pipe(
+      z
+        .union([z.array(PipelineStepSchema), DagPipelineDefinitionSchema])
+        .nullable()
+        .optional(),
+    )
     .nullable()
     .optional(),
   usage_count: z.number().optional(),
@@ -92,7 +98,10 @@ export const CreateTemplateRequestSchema = z.object({
   danmu_sampling_config: DanmuSamplingConfigObjectSchema.nullable().optional(),
   proxy_config: ProxyConfigObjectSchema.nullable().optional(),
   event_hooks: EventHooksSchema.nullable().optional(),
-  pipeline: z.array(PipelineStepSchema).nullable().optional(),
+  pipeline: z
+    .union([z.array(PipelineStepSchema), DagPipelineDefinitionSchema])
+    .nullable()
+    .optional(),
 });
 export const UpdateTemplateRequestSchema = CreateTemplateRequestSchema;
 export const TemplateFormSchema = CreateTemplateRequestSchema;

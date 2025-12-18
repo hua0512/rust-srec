@@ -33,7 +33,7 @@ export function SettingsCard({
   return (
     <Card
       className={cn(
-        'h-full border-border/50 bg-card/50 backdrop-blur-sm shadow-sm hover:shadow-md transition-all duration-300 hover:border-border/80 group',
+        'h-full border-white/10 bg-background/30 backdrop-blur-xl shadow-xl hover:shadow-2xl transition-all duration-300 hover:bg-background/40 hover:scale-[1.01] group',
         className,
       )}
     >

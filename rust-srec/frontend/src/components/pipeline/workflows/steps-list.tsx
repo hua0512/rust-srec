@@ -1,11 +1,5 @@
 import { motion, Reorder, AnimatePresence } from 'motion/react';
-import {
-  X,
-  Workflow,
-  GripVertical,
-  Settings,
-  ArrowRight,
-} from 'lucide-react';
+import { X, Workflow, GripVertical, Settings, ArrowRight } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Trans } from '@lingui/react/macro';
@@ -14,8 +8,6 @@ import { getStepColor, getStepIcon } from '@/components/pipeline/constants';
 import { listJobPresets } from '@/server/functions/job';
 import { useQuery } from '@tanstack/react-query';
 import { DagStepDefinition } from '@/api/schemas';
-
-
 
 interface StepsListProps {
   steps: DagStepDefinition[];
@@ -40,8 +32,6 @@ export function StepsList({
 
   const presets = presetsData?.presets || [];
 
-
-
   return (
     <div className="rounded-2xl border border-dashed border-border/60 bg-muted/5 min-h-[120px] p-4 sm:p-6 h-full flex flex-col relative">
       {steps.length > 0 ? (
@@ -64,9 +54,9 @@ export function StepsList({
               // Use different color style for inline detached steps to distinguish them
               let stepColorClass = presetInfo
                 ? getStepColor(
-                  presetInfo.processor,
-                  presetInfo.category || undefined,
-                )
+                    presetInfo.processor,
+                    presetInfo.category || undefined,
+                  )
                 : 'from-muted/20 to-muted/10 text-muted-foreground border-border';
 
               if (isInline && !presetInfo) {
@@ -93,7 +83,7 @@ export function StepsList({
                     whileHover={{ scale: 1.005 }}
                     whileTap={{ scale: 0.995 }}
                     className={`
-                      flex items-center gap-4 p-4 rounded-xl border bg-gradient-to-r ${stepColorClass}
+                      flex items-center gap-2 sm:gap-4 p-3 sm:p-4 rounded-xl border bg-gradient-to-r ${stepColorClass}
                       shadow-sm hover:shadow-md transition-all cursor-grab active:cursor-grabbing
                     `}
                   >
@@ -101,67 +91,69 @@ export function StepsList({
                       {index + 1}
                     </div>
 
-                    <div className="h-10 w-10 rounded-xl bg-background/40 backdrop-blur flex items-center justify-center shrink-0 border border-current border-opacity-20 shadow-sm relative">
-                      <Icon className="h-5 w-5 opacity-90" />
+                    <div className="h-9 w-9 sm:h-10 sm:w-10 rounded-xl bg-background/40 backdrop-blur flex items-center justify-center shrink-0 border border-current border-opacity-20 shadow-sm relative">
+                      <Icon className="h-4 w-4 sm:h-5 sm:w-5 opacity-90" />
                       {isInline && (
                         <div
-                          className="absolute -top-1 -right-1 h-4 w-4 rounded-full bg-background border border-current flex items-center justify-center"
+                          className="absolute -top-1 -right-1 h-3.5 w-3.5 sm:h-4 sm:w-4 rounded-full bg-background border border-current flex items-center justify-center"
                           title={t`Custom Config`}
                         >
-                          <Settings className="h-2.5 w-2.5" />
+                          <Settings className="h-2 w-2 sm:h-2.5 sm:w-2.5" />
                         </div>
                       )}
                     </div>
 
                     <div className="flex-1 min-w-0 flex flex-col justify-center">
-                      <div className="flex items-center gap-1.5 min-w-0">
+                      <div className="flex items-center gap-1.5 min-w-0 flex-wrap">
                         {id && (
                           <Badge
                             variant="outline"
-                            className="text-[10px] h-4 px-1.5 font-mono opacity-60 bg-background/20"
+                            className="text-[9px] sm:text-[10px] h-3.5 sm:h-4 px-1.5 font-mono opacity-60 bg-background/20 truncate max-w-[80px] sm:max-w-none"
                           >
                             {id}
                           </Badge>
                         )}
-                        <span className="font-semibold tracking-tight truncate text-foreground/90 min-w-0">
-                          {isInline ? (
-                            <Trans>{stepName} (Custom)</Trans>
-                          ) : (
-                            stepName
-                          )}
+                        <span className="font-semibold tracking-tight truncate text-foreground/90 min-w-0 text-xs sm:text-sm">
+                          {isInline ? <Trans>{stepName}</Trans> : stepName}
                         </span>
                       </div>
                       <div className="flex items-center gap-2 flex-wrap mt-0.5">
                         {presetInfo?.category && (
                           <Badge
                             variant="outline"
-                            className="text-[9px] uppercase h-3.5 px-1 bg-background/30 backdrop-blur border-current border-opacity-20 text-inherit"
+                            className="text-[8px] sm:text-[9px] uppercase h-3 sm:h-3.5 px-1 bg-background/30 backdrop-blur border-current border-opacity-20 text-inherit truncate max-w-[60px] sm:max-w-none"
                           >
                             {presetInfo.category}
                           </Badge>
                         )}
-                        {dagStep.depends_on && dagStep.depends_on.length > 0 && (
-                          <div className="flex items-center gap-1 opacity-60">
-                            <ArrowRight className="h-2.5 w-2.5" />
-                            <span className="text-[9px] font-mono leading-none">
-                              AFTER: {dagStep.depends_on.join(', ')}
-                            </span>
-                          </div>
-                        )}
+                        {dagStep.depends_on &&
+                          dagStep.depends_on.length > 0 && (
+                            <div className="flex items-center gap-1 opacity-60">
+                              <ArrowRight className="h-2 w-2 sm:h-2.5 sm:w-2.5" />
+                              <span className="text-[8px] sm:text-[9px] font-mono leading-none truncate max-w-[100px] sm:max-w-none">
+                                <Trans>
+                                  AFTER: {dagStep.depends_on.join(', ')}
+                                </Trans>
+                              </span>
+                            </div>
+                          )}
                       </div>
                     </div>
 
-                    <div className="flex items-center opacity-0 group-hover:opacity-100 transition-opacity">
+                    <div className="flex items-center opacity-100 sm:opacity-0 group-hover:opacity-100 transition-opacity">
                       {onUpdate && (
                         <Button
                           type="button"
                           variant="ghost"
                           size="icon"
-                          className="h-8 w-8 text-muted-foreground hover:text-foreground hover:bg-background/40 rounded-lg mr-1"
-                          onClick={() => onEdit?.(index)}
+                          className="h-7 w-7 sm:h-8 sm:w-8 text-muted-foreground hover:text-foreground hover:bg-background/40 rounded-lg mr-0.5 sm:mr-1"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            onEdit?.(index);
+                          }}
                           title={t`Configure Step`}
                         >
-                          <Settings className="h-4 w-4" />
+                          <Settings className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
                         </Button>
                       )}
                       {onRemove && (
@@ -169,13 +161,16 @@ export function StepsList({
                           type="button"
                           variant="ghost"
                           size="icon"
-                          className="h-8 w-8 hover:bg-destructive/10 hover:text-destructive rounded-lg"
-                          onClick={() => onRemove(index)}
+                          className="h-7 w-7 sm:h-8 sm:w-8 hover:bg-destructive/10 hover:text-destructive rounded-lg"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            onRemove(index);
+                          }}
                         >
-                          <X className="h-4 w-4" />
+                          <X className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
                         </Button>
                       )}
-                      <GripVertical className="h-4 w-4 opacity-20 group-hover:opacity-50 transition-opacity ml-1 cursor-grab" />
+                      <GripVertical className="hidden sm:block h-4 w-4 opacity-20 group-hover:opacity-50 transition-opacity ml-1 cursor-grab" />
                     </div>
                   </motion.div>
                 </Reorder.Item>
@@ -198,7 +193,6 @@ export function StepsList({
           </div>
         </div>
       )}
-
     </div>
   );
 }

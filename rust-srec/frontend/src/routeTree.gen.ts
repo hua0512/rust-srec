@@ -30,6 +30,7 @@ import { Route as AuthedDashboardSessionsSessionIdRouteImport } from './routes/_
 import { Route as AuthedDashboardPipelineOutputsRouteImport } from './routes/_authed/_dashboard/pipeline/outputs'
 import { Route as AuthedDashboardConfigThemeRouteImport } from './routes/_authed/_dashboard/config/theme'
 import { Route as AuthedDashboardConfigLoggingRouteImport } from './routes/_authed/_dashboard/config/logging'
+import { Route as AuthedDashboardConfigLanguageRouteImport } from './routes/_authed/_dashboard/config/language'
 import { Route as AuthedDashboardConfigGlobalRouteImport } from './routes/_authed/_dashboard/config/global'
 import { Route as AuthedDashboardConfigBackupRouteImport } from './routes/_authed/_dashboard/config/backup'
 import { Route as AuthedDashboardPipelineWorkflowsIndexRouteImport } from './routes/_authed/_dashboard/pipeline/workflows/index'
@@ -43,6 +44,7 @@ import { Route as AuthedDashboardPipelineWorkflowsCreateRouteImport } from './ro
 import { Route as AuthedDashboardPipelineWorkflowsWorkflowIdRouteImport } from './routes/_authed/_dashboard/pipeline/workflows/$workflowId'
 import { Route as AuthedDashboardPipelinePresetsCreateRouteImport } from './routes/_authed/_dashboard/pipeline/presets/create'
 import { Route as AuthedDashboardPipelinePresetsPresetIdRouteImport } from './routes/_authed/_dashboard/pipeline/presets/$presetId'
+import { Route as AuthedDashboardPipelineJobsNewRouteImport } from './routes/_authed/_dashboard/pipeline/jobs/new'
 import { Route as AuthedDashboardPipelineJobsJobIdRouteImport } from './routes/_authed/_dashboard/pipeline/jobs/$jobId'
 import { Route as AuthedDashboardPipelineExecutionsPipelineIdRouteImport } from './routes/_authed/_dashboard/pipeline/executions.$pipelineId'
 import { Route as AuthedDashboardConfigTemplatesCreateRouteImport } from './routes/_authed/_dashboard/config/templates/create'
@@ -166,6 +168,12 @@ const AuthedDashboardConfigLoggingRoute =
     path: '/logging',
     getParentRoute: () => AuthedDashboardConfigRouteRoute,
   } as any)
+const AuthedDashboardConfigLanguageRoute =
+  AuthedDashboardConfigLanguageRouteImport.update({
+    id: '/language',
+    path: '/language',
+    getParentRoute: () => AuthedDashboardConfigRouteRoute,
+  } as any)
 const AuthedDashboardConfigGlobalRoute =
   AuthedDashboardConfigGlobalRouteImport.update({
     id: '/global',
@@ -244,6 +252,12 @@ const AuthedDashboardPipelinePresetsPresetIdRoute =
     path: '/pipeline/presets/$presetId',
     getParentRoute: () => AuthedDashboardRoute,
   } as any)
+const AuthedDashboardPipelineJobsNewRoute =
+  AuthedDashboardPipelineJobsNewRouteImport.update({
+    id: '/pipeline/jobs/new',
+    path: '/pipeline/jobs/new',
+    getParentRoute: () => AuthedDashboardRoute,
+  } as any)
 const AuthedDashboardPipelineJobsJobIdRoute =
   AuthedDashboardPipelineJobsJobIdRouteImport.update({
     id: '/pipeline/jobs/$jobId',
@@ -297,6 +311,7 @@ export interface FileRoutesByFullPath {
   '/dashboard': typeof AuthedDashboardDashboardRoute
   '/config/backup': typeof AuthedDashboardConfigBackupRoute
   '/config/global': typeof AuthedDashboardConfigGlobalRoute
+  '/config/language': typeof AuthedDashboardConfigLanguageRoute
   '/config/logging': typeof AuthedDashboardConfigLoggingRoute
   '/config/theme': typeof AuthedDashboardConfigThemeRoute
   '/pipeline/outputs': typeof AuthedDashboardPipelineOutputsRoute
@@ -315,6 +330,7 @@ export interface FileRoutesByFullPath {
   '/config/templates/create': typeof AuthedDashboardConfigTemplatesCreateRoute
   '/pipeline/executions/$pipelineId': typeof AuthedDashboardPipelineExecutionsPipelineIdRoute
   '/pipeline/jobs/$jobId': typeof AuthedDashboardPipelineJobsJobIdRoute
+  '/pipeline/jobs/new': typeof AuthedDashboardPipelineJobsNewRoute
   '/pipeline/presets/$presetId': typeof AuthedDashboardPipelinePresetsPresetIdRoute
   '/pipeline/presets/create': typeof AuthedDashboardPipelinePresetsCreateRoute
   '/pipeline/workflows/$workflowId': typeof AuthedDashboardPipelineWorkflowsWorkflowIdRoute
@@ -337,6 +353,7 @@ export interface FileRoutesByTo {
   '/dashboard': typeof AuthedDashboardDashboardRoute
   '/config/backup': typeof AuthedDashboardConfigBackupRoute
   '/config/global': typeof AuthedDashboardConfigGlobalRoute
+  '/config/language': typeof AuthedDashboardConfigLanguageRoute
   '/config/logging': typeof AuthedDashboardConfigLoggingRoute
   '/config/theme': typeof AuthedDashboardConfigThemeRoute
   '/pipeline/outputs': typeof AuthedDashboardPipelineOutputsRoute
@@ -355,6 +372,7 @@ export interface FileRoutesByTo {
   '/config/templates/create': typeof AuthedDashboardConfigTemplatesCreateRoute
   '/pipeline/executions/$pipelineId': typeof AuthedDashboardPipelineExecutionsPipelineIdRoute
   '/pipeline/jobs/$jobId': typeof AuthedDashboardPipelineJobsJobIdRoute
+  '/pipeline/jobs/new': typeof AuthedDashboardPipelineJobsNewRoute
   '/pipeline/presets/$presetId': typeof AuthedDashboardPipelinePresetsPresetIdRoute
   '/pipeline/presets/create': typeof AuthedDashboardPipelinePresetsCreateRoute
   '/pipeline/workflows/$workflowId': typeof AuthedDashboardPipelineWorkflowsWorkflowIdRoute
@@ -381,6 +399,7 @@ export interface FileRoutesById {
   '/_authed/_dashboard/dashboard': typeof AuthedDashboardDashboardRoute
   '/_authed/_dashboard/config/backup': typeof AuthedDashboardConfigBackupRoute
   '/_authed/_dashboard/config/global': typeof AuthedDashboardConfigGlobalRoute
+  '/_authed/_dashboard/config/language': typeof AuthedDashboardConfigLanguageRoute
   '/_authed/_dashboard/config/logging': typeof AuthedDashboardConfigLoggingRoute
   '/_authed/_dashboard/config/theme': typeof AuthedDashboardConfigThemeRoute
   '/_authed/_dashboard/pipeline/outputs': typeof AuthedDashboardPipelineOutputsRoute
@@ -399,6 +418,7 @@ export interface FileRoutesById {
   '/_authed/_dashboard/config/templates/create': typeof AuthedDashboardConfigTemplatesCreateRoute
   '/_authed/_dashboard/pipeline/executions/$pipelineId': typeof AuthedDashboardPipelineExecutionsPipelineIdRoute
   '/_authed/_dashboard/pipeline/jobs/$jobId': typeof AuthedDashboardPipelineJobsJobIdRoute
+  '/_authed/_dashboard/pipeline/jobs/new': typeof AuthedDashboardPipelineJobsNewRoute
   '/_authed/_dashboard/pipeline/presets/$presetId': typeof AuthedDashboardPipelinePresetsPresetIdRoute
   '/_authed/_dashboard/pipeline/presets/create': typeof AuthedDashboardPipelinePresetsCreateRoute
   '/_authed/_dashboard/pipeline/workflows/$workflowId': typeof AuthedDashboardPipelineWorkflowsWorkflowIdRoute
@@ -423,6 +443,7 @@ export interface FileRouteTypes {
     | '/dashboard'
     | '/config/backup'
     | '/config/global'
+    | '/config/language'
     | '/config/logging'
     | '/config/theme'
     | '/pipeline/outputs'
@@ -441,6 +462,7 @@ export interface FileRouteTypes {
     | '/config/templates/create'
     | '/pipeline/executions/$pipelineId'
     | '/pipeline/jobs/$jobId'
+    | '/pipeline/jobs/new'
     | '/pipeline/presets/$presetId'
     | '/pipeline/presets/create'
     | '/pipeline/workflows/$workflowId'
@@ -463,6 +485,7 @@ export interface FileRouteTypes {
     | '/dashboard'
     | '/config/backup'
     | '/config/global'
+    | '/config/language'
     | '/config/logging'
     | '/config/theme'
     | '/pipeline/outputs'
@@ -481,6 +504,7 @@ export interface FileRouteTypes {
     | '/config/templates/create'
     | '/pipeline/executions/$pipelineId'
     | '/pipeline/jobs/$jobId'
+    | '/pipeline/jobs/new'
     | '/pipeline/presets/$presetId'
     | '/pipeline/presets/create'
     | '/pipeline/workflows/$workflowId'
@@ -506,6 +530,7 @@ export interface FileRouteTypes {
     | '/_authed/_dashboard/dashboard'
     | '/_authed/_dashboard/config/backup'
     | '/_authed/_dashboard/config/global'
+    | '/_authed/_dashboard/config/language'
     | '/_authed/_dashboard/config/logging'
     | '/_authed/_dashboard/config/theme'
     | '/_authed/_dashboard/pipeline/outputs'
@@ -524,6 +549,7 @@ export interface FileRouteTypes {
     | '/_authed/_dashboard/config/templates/create'
     | '/_authed/_dashboard/pipeline/executions/$pipelineId'
     | '/_authed/_dashboard/pipeline/jobs/$jobId'
+    | '/_authed/_dashboard/pipeline/jobs/new'
     | '/_authed/_dashboard/pipeline/presets/$presetId'
     | '/_authed/_dashboard/pipeline/presets/create'
     | '/_authed/_dashboard/pipeline/workflows/$workflowId'
@@ -694,6 +720,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthedDashboardConfigLoggingRouteImport
       parentRoute: typeof AuthedDashboardConfigRouteRoute
     }
+    '/_authed/_dashboard/config/language': {
+      id: '/_authed/_dashboard/config/language'
+      path: '/language'
+      fullPath: '/config/language'
+      preLoaderRoute: typeof AuthedDashboardConfigLanguageRouteImport
+      parentRoute: typeof AuthedDashboardConfigRouteRoute
+    }
     '/_authed/_dashboard/config/global': {
       id: '/_authed/_dashboard/config/global'
       path: '/global'
@@ -785,6 +818,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthedDashboardPipelinePresetsPresetIdRouteImport
       parentRoute: typeof AuthedDashboardRoute
     }
+    '/_authed/_dashboard/pipeline/jobs/new': {
+      id: '/_authed/_dashboard/pipeline/jobs/new'
+      path: '/pipeline/jobs/new'
+      fullPath: '/pipeline/jobs/new'
+      preLoaderRoute: typeof AuthedDashboardPipelineJobsNewRouteImport
+      parentRoute: typeof AuthedDashboardRoute
+    }
     '/_authed/_dashboard/pipeline/jobs/$jobId': {
       id: '/_authed/_dashboard/pipeline/jobs/$jobId'
       path: '/pipeline/jobs/$jobId'
@@ -840,6 +880,7 @@ declare module '@tanstack/react-router' {
 interface AuthedDashboardConfigRouteRouteChildren {
   AuthedDashboardConfigBackupRoute: typeof AuthedDashboardConfigBackupRoute
   AuthedDashboardConfigGlobalRoute: typeof AuthedDashboardConfigGlobalRoute
+  AuthedDashboardConfigLanguageRoute: typeof AuthedDashboardConfigLanguageRoute
   AuthedDashboardConfigLoggingRoute: typeof AuthedDashboardConfigLoggingRoute
   AuthedDashboardConfigThemeRoute: typeof AuthedDashboardConfigThemeRoute
   AuthedDashboardConfigEnginesEngineIdRoute: typeof AuthedDashboardConfigEnginesEngineIdRoute
@@ -856,6 +897,7 @@ const AuthedDashboardConfigRouteRouteChildren: AuthedDashboardConfigRouteRouteCh
   {
     AuthedDashboardConfigBackupRoute: AuthedDashboardConfigBackupRoute,
     AuthedDashboardConfigGlobalRoute: AuthedDashboardConfigGlobalRoute,
+    AuthedDashboardConfigLanguageRoute: AuthedDashboardConfigLanguageRoute,
     AuthedDashboardConfigLoggingRoute: AuthedDashboardConfigLoggingRoute,
     AuthedDashboardConfigThemeRoute: AuthedDashboardConfigThemeRoute,
     AuthedDashboardConfigEnginesEngineIdRoute:
@@ -895,6 +937,7 @@ interface AuthedDashboardRouteChildren {
   AuthedDashboardStreamersIndexRoute: typeof AuthedDashboardStreamersIndexRoute
   AuthedDashboardPipelineExecutionsPipelineIdRoute: typeof AuthedDashboardPipelineExecutionsPipelineIdRoute
   AuthedDashboardPipelineJobsJobIdRoute: typeof AuthedDashboardPipelineJobsJobIdRoute
+  AuthedDashboardPipelineJobsNewRoute: typeof AuthedDashboardPipelineJobsNewRoute
   AuthedDashboardPipelinePresetsPresetIdRoute: typeof AuthedDashboardPipelinePresetsPresetIdRoute
   AuthedDashboardPipelinePresetsCreateRoute: typeof AuthedDashboardPipelinePresetsCreateRoute
   AuthedDashboardPipelineWorkflowsWorkflowIdRoute: typeof AuthedDashboardPipelineWorkflowsWorkflowIdRoute
@@ -921,6 +964,7 @@ const AuthedDashboardRouteChildren: AuthedDashboardRouteChildren = {
   AuthedDashboardPipelineExecutionsPipelineIdRoute:
     AuthedDashboardPipelineExecutionsPipelineIdRoute,
   AuthedDashboardPipelineJobsJobIdRoute: AuthedDashboardPipelineJobsJobIdRoute,
+  AuthedDashboardPipelineJobsNewRoute: AuthedDashboardPipelineJobsNewRoute,
   AuthedDashboardPipelinePresetsPresetIdRoute:
     AuthedDashboardPipelinePresetsPresetIdRoute,
   AuthedDashboardPipelinePresetsCreateRoute:

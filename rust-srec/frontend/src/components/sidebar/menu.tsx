@@ -30,19 +30,24 @@ export function MenuComponent({ isOpen, className }: MenuProps) {
   return (
     <ScrollArea className={cn('[&>div>div[style]]:!block', className)}>
       <nav className="mt-8 h-full w-full">
-        <ul className="flex flex-col min-h-[calc(100vh-48px-36px-16px-32px)] lg:min-h-[calc(100vh-32px-40px-32px)] items-start space-y-1 px-2">
+        <ul
+          className={cn(
+            'flex flex-col min-h-[calc(100vh-48px-36px-16px-32px)] lg:min-h-[calc(100vh-32px-40px-32px)] items-start space-y-1',
+            isOpen === false ? 'px-1' : 'px-2',
+          )}
+        >
           {menuList.map(({ groupLabel, menus }, index) => (
-            <li className={cn('w-full', groupLabel ? 'pt-5' : '')} key={index}>
+            <li className={cn('w-full', groupLabel ? 'pt-6' : '')} key={index}>
               {(isOpen && groupLabel) || isOpen === undefined ? (
-                <p className="text-sm font-medium text-muted-foreground px-4 pb-2 max-w-[248px] truncate">
+                <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground/60 px-4 pb-3 max-w-[248px] truncate">
                   {groupLabel}
                 </p>
               ) : !isOpen && isOpen !== undefined && groupLabel ? (
                 <TooltipProvider>
                   <Tooltip delayDuration={100}>
                     <TooltipTrigger className="w-full">
-                      <div className="w-full flex justify-center items-center">
-                        <Ellipsis className="h-5 w-5" />
+                      <div className="w-full flex justify-center items-center py-2">
+                        <Ellipsis className="h-5 w-5 text-muted-foreground/40" />
                       </div>
                     </TooltipTrigger>
                     <TooltipContent side="right">
@@ -51,7 +56,7 @@ export function MenuComponent({ isOpen, className }: MenuProps) {
                   </Tooltip>
                 </TooltipProvider>
               ) : (
-                <p className="pb-2"></p>
+                <div className="pb-2"></div>
               )}
               {menus.map(
                 ({ href, label, icon: Icon, active, submenus }, index) =>
@@ -61,28 +66,49 @@ export function MenuComponent({ isOpen, className }: MenuProps) {
                         <Tooltip delayDuration={100}>
                           <TooltipTrigger asChild>
                             <Button
-                              variant={
+                              variant="ghost"
+                              className={cn(
+                                'w-full h-11 mb-1 transition-all duration-200 group relative overflow-hidden',
+                                isOpen === false
+                                  ? 'justify-center'
+                                  : 'justify-start px-4',
                                 (active === undefined &&
                                   pathname.startsWith(href)) ||
-                                active
-                                  ? 'default'
-                                  : 'ghost'
-                              }
-                              className="w-full justify-start h-10 mb-1"
+                                  active
+                                  ? 'bg-primary/10 text-primary hover:bg-primary/15 hover:text-primary shadow-sm shadow-primary/5'
+                                  : 'text-muted-foreground hover:bg-muted/50 hover:text-foreground',
+                              )}
                               asChild
                             >
                               <Link to={href}>
+                                {((active === undefined &&
+                                  pathname.startsWith(href)) ||
+                                  active) && (
+                                  <div className="absolute left-0 top-1/2 -translate-y-1/2 w-1.5 h-6 bg-primary rounded-r-full" />
+                                )}
                                 <span
-                                  className={cn(isOpen === false ? '' : 'mr-4')}
+                                  className={cn(
+                                    'transition-transform duration-200 group-hover:scale-110 shrink-0',
+                                    isOpen === false ? '' : 'mr-4',
+                                  )}
                                 >
-                                  <Icon size={18} />
+                                  <Icon
+                                    size={18}
+                                    strokeWidth={
+                                      (active === undefined &&
+                                        pathname.startsWith(href)) ||
+                                      active
+                                        ? 2.5
+                                        : 2
+                                    }
+                                  />
                                 </span>
                                 <p
                                   className={cn(
-                                    'max-w-[200px] truncate',
+                                    'truncate font-medium transition-all duration-300',
                                     isOpen === false
-                                      ? '-translate-x-96 opacity-0'
-                                      : 'translate-x-0 opacity-100',
+                                      ? 'opacity-0 w-0 pointer-events-none'
+                                      : 'opacity-100 translate-x-0 w-auto',
                                   )}
                                 >
                                   {label}
@@ -116,23 +142,35 @@ export function MenuComponent({ isOpen, className }: MenuProps) {
               )}
             </li>
           ))}
-          <li className="w-full grow flex items-end">
+          <li className="w-full grow flex items-end pb-4">
             <TooltipProvider disableHoverableContent>
               <Tooltip delayDuration={100}>
                 <TooltipTrigger asChild>
                   <Button
-                    variant="outline"
-                    className="w-full justify-center h-10 mt-5"
+                    variant="ghost"
+                    className={cn(
+                      'w-full h-11 mt-5 bg-destructive/5 text-destructive hover:bg-destructive/10 hover:text-destructive transition-all duration-200 border-none group relative overflow-hidden',
+                      isOpen === false
+                        ? 'justify-center'
+                        : 'justify-start px-4',
+                    )}
                     asChild
                   >
                     <Link to="/logout">
-                      <span className={cn(isOpen === false ? '' : 'mr-4')}>
+                      <span
+                        className={cn(
+                          'transition-transform duration-200 group-hover:scale-110 shrink-0',
+                          isOpen === false ? '' : 'mr-4',
+                        )}
+                      >
                         <LogOut size={18} />
                       </span>
                       <p
                         className={cn(
-                          'whitespace-nowrap',
-                          isOpen === false ? 'opacity-0 hidden' : 'opacity-100',
+                          'whitespace-nowrap font-medium transition-all duration-300',
+                          isOpen === false
+                            ? 'opacity-0 w-0 pointer-events-none'
+                            : 'opacity-100 translate-x-0 w-auto',
                         )}
                       >
                         <Trans>Sign out</Trans>

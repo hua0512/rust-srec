@@ -442,6 +442,10 @@ impl WorkerPool {
                                     }
 
                                     // Check if this is a DAG job
+                                    debug!(
+                                        "Job {} completed, dag_step_execution_id={:?}",
+                                        job_id, job.dag_step_execution_id
+                                    );
                                     if let Some(dag_step_id) = &job.dag_step_execution_id {
                                         // Handle DAG job completion via scheduler
                                         if let Some(scheduler) = &dag_scheduler {
