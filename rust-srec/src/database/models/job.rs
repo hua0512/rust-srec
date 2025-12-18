@@ -184,6 +184,8 @@ pub struct JobDbModel {
     pub duration_secs: Option<f64>,
     /// Time spent waiting in queue before processing started (seconds)
     pub queue_wait_secs: Option<f64>,
+    /// DAG step execution ID (if this job is part of a DAG pipeline)
+    pub dag_step_execution_id: Option<String>,
 }
 
 impl JobDbModel {
@@ -212,6 +214,7 @@ impl JobDbModel {
             execution_info: None,
             duration_secs: None,
             queue_wait_secs: None,
+            dag_step_execution_id: None,
         }
     }
 
@@ -247,6 +250,7 @@ impl JobDbModel {
             execution_info: None,
             duration_secs: None,
             queue_wait_secs: None,
+            dag_step_execution_id: None,
         }
     }
 
@@ -295,6 +299,7 @@ impl JobDbModel {
             execution_info: None,
             duration_secs: None,
             queue_wait_secs: None,
+            dag_step_execution_id: None,
         }
     }
 
@@ -648,6 +653,345 @@ impl Default for PipelineDefinition {
     }
 }
 
+// ============================================================================
+// DAG Pipeline Support
+// ============================================================================
+
+/// A step within a DAG pipeline with explicit dependencies.
+/// Each step has a unique ID and can depend on other steps.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DagStep {
+    /// Unique step identifier within the DAG (e.g., "remux", "upload", "notify").
+    pub id: String,
+    /// The processor or preset to run for this step.
+    pub step: PipelineStep,
+    /// IDs of steps this depends on (fan-in: waits for all to complete).
+    #[serde(default)]
+    pub depends_on: Vec<String>,
+}
+
+impl DagStep {
+    /// Create a new DAG step.
+    pub fn new(id: impl Into<String>, step: PipelineStep) -> Self {
+        Self {
+            id: id.into(),
+            step,
+            depends_on: Vec::new(),
+        }
+    }
+
+    /// Create a new DAG step with dependencies.
+    pub fn with_dependencies(
+        id: impl Into<String>,
+        step: PipelineStep,
+        depends_on: Vec<String>,
+    ) -> Self {
+        Self {
+            id: id.into(),
+            step,
+            depends_on,
+        }
+    }
+
+    /// Check if this step has no dependencies (root step).
+    pub fn is_root(&self) -> bool {
+        self.depends_on.is_empty()
+    }
+}
+
+/// DAG pipeline definition with named steps and explicit dependencies.
+/// Supports fan-in (multiple inputs to one step) and fan-out (one step to multiple).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DagPipelineDefinition {
+    /// Unique name for the DAG pipeline.
+    pub name: String,
+    /// All steps in the DAG (order doesn't matter - topology is defined by depends_on).
+    pub steps: Vec<DagStep>,
+}
+
+impl DagPipelineDefinition {
+    /// Create a new DAG pipeline definition.
+    pub fn new(name: impl Into<String>, steps: Vec<DagStep>) -> Self {
+        Self {
+            name: name.into(),
+            steps,
+        }
+    }
+
+    /// Validate the DAG structure.
+    /// Returns an error if:
+    /// - There are cycles in the dependency graph
+    /// - A step references a non-existent dependency
+    /// - There are no root steps (steps with no dependencies)
+    /// - Step IDs are not unique
+    pub fn validate(&self) -> Result<(), String> {
+        use std::collections::{HashMap, HashSet};
+
+        // Check for empty DAG
+        if self.steps.is_empty() {
+            return Err("DAG pipeline must have at least one step".to_string());
+        }
+
+        // Check for unique step IDs
+        let mut seen_ids = HashSet::new();
+        for step in &self.steps {
+            if !seen_ids.insert(&step.id) {
+                return Err(format!("Duplicate step ID: {}", step.id));
+            }
+        }
+
+        // Check that all dependencies reference existing steps
+        let step_ids: HashSet<&str> = self.steps.iter().map(|s| s.id.as_str()).collect();
+        for step in &self.steps {
+            for dep in &step.depends_on {
+                if !step_ids.contains(dep.as_str()) {
+                    return Err(format!(
+                        "Step '{}' depends on non-existent step '{}'",
+                        step.id, dep
+                    ));
+                }
+            }
+        }
+
+        // Check for at least one root step
+        if !self.steps.iter().any(|s| s.is_root()) {
+            return Err("DAG pipeline must have at least one root step (no dependencies)".to_string());
+        }
+
+        // Check for cycles using DFS
+        let mut visited = HashSet::new();
+        let mut rec_stack = HashSet::new();
+        let adj: HashMap<&str, Vec<&str>> = self
+            .steps
+            .iter()
+            .map(|s| (s.id.as_str(), s.depends_on.iter().map(|d| d.as_str()).collect()))
+            .collect();
+
+        fn has_cycle<'a>(
+            node: &'a str,
+            adj: &HashMap<&'a str, Vec<&'a str>>,
+            visited: &mut HashSet<&'a str>,
+            rec_stack: &mut HashSet<&'a str>,
+        ) -> bool {
+            visited.insert(node);
+            rec_stack.insert(node);
+
+            if let Some(deps) = adj.get(node) {
+                for dep in deps {
+                    if !visited.contains(dep) {
+                        if has_cycle(dep, adj, visited, rec_stack) {
+                            return true;
+                        }
+                    } else if rec_stack.contains(dep) {
+                        return true;
+                    }
+                }
+            }
+
+            rec_stack.remove(node);
+            false
+        }
+
+        for step in &self.steps {
+            if !visited.contains(step.id.as_str()) {
+                if has_cycle(step.id.as_str(), &adj, &mut visited, &mut rec_stack) {
+                    return Err("DAG pipeline contains a cycle".to_string());
+                }
+            }
+        }
+
+        Ok(())
+    }
+
+    /// Get steps with no dependencies (entry points).
+    pub fn root_steps(&self) -> Vec<&DagStep> {
+        self.steps.iter().filter(|s| s.is_root()).collect()
+    }
+
+    /// Get steps that are not depended on by any other step (exit points).
+    pub fn leaf_steps(&self) -> Vec<&DagStep> {
+        use std::collections::HashSet;
+
+        let depended_on: HashSet<&str> = self
+            .steps
+            .iter()
+            .flat_map(|s| s.depends_on.iter().map(|d| d.as_str()))
+            .collect();
+
+        self.steps
+            .iter()
+            .filter(|s| !depended_on.contains(s.id.as_str()))
+            .collect()
+    }
+
+    /// Get a topological ordering of the steps (dependencies before dependents).
+    /// Returns an error if the graph contains a cycle.
+    pub fn topological_order(&self) -> Result<Vec<&DagStep>, String> {
+        use std::collections::{HashMap, HashSet, VecDeque};
+
+        let step_map: HashMap<&str, &DagStep> =
+            self.steps.iter().map(|s| (s.id.as_str(), s)).collect();
+
+        // Calculate in-degrees
+        let mut in_degree: HashMap<&str, usize> =
+            self.steps.iter().map(|s| (s.id.as_str(), 0)).collect();
+
+        for step in &self.steps {
+            for dep in &step.depends_on {
+                // dep -> step edge means step has one more incoming edge
+                *in_degree.entry(step.id.as_str()).or_insert(0) += 1;
+                // Ensure dep is in the map (it should be)
+                in_degree.entry(dep.as_str()).or_insert(0);
+            }
+        }
+
+        // Start with nodes that have no incoming edges (root steps)
+        let mut queue: VecDeque<&str> = in_degree
+            .iter()
+            .filter(|&(_, &deg)| deg == 0)
+            .map(|(&id, _)| id)
+            .collect();
+
+        let mut result = Vec::new();
+        let mut processed = HashSet::new();
+
+        while let Some(node) = queue.pop_front() {
+            if let Some(step) = step_map.get(node) {
+                result.push(*step);
+                processed.insert(node);
+
+                // Find all steps that depend on this node
+                for step in &self.steps {
+                    if step.depends_on.iter().any(|d| d == node) && !processed.contains(step.id.as_str()) {
+                        let deg = in_degree.entry(step.id.as_str()).or_insert(0);
+                        if *deg > 0 {
+                            *deg -= 1;
+                            if *deg == 0 {
+                                queue.push_back(step.id.as_str());
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        if result.len() != self.steps.len() {
+            return Err("DAG pipeline contains a cycle".to_string());
+        }
+
+        Ok(result)
+    }
+
+    /// Get a step by its ID.
+    pub fn get_step(&self, id: &str) -> Option<&DagStep> {
+        self.steps.iter().find(|s| s.id == id)
+    }
+
+    /// Get the number of steps in the DAG.
+    pub fn len(&self) -> usize {
+        self.steps.len()
+    }
+
+    /// Check if the DAG is empty.
+    pub fn is_empty(&self) -> bool {
+        self.steps.is_empty()
+    }
+}
+
+/// Status of a DAG step execution.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, strum::Display, strum::EnumString)]
+#[strum(serialize_all = "SCREAMING_SNAKE_CASE")]
+#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
+pub enum DagStepStatus {
+    /// Step is waiting for dependencies to complete.
+    Blocked,
+    /// All dependencies complete, job created and queued.
+    Pending,
+    /// Job is currently being executed.
+    Processing,
+    /// Job finished successfully.
+    Completed,
+    /// Job failed.
+    Failed,
+    /// Step was cancelled due to fail-fast or user intervention.
+    Cancelled,
+}
+
+impl DagStepStatus {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Self::Blocked => "BLOCKED",
+            Self::Pending => "PENDING",
+            Self::Processing => "PROCESSING",
+            Self::Completed => "COMPLETED",
+            Self::Failed => "FAILED",
+            Self::Cancelled => "CANCELLED",
+        }
+    }
+
+    pub fn parse(s: &str) -> Option<Self> {
+        match s {
+            "BLOCKED" => Some(Self::Blocked),
+            "PENDING" => Some(Self::Pending),
+            "PROCESSING" => Some(Self::Processing),
+            "COMPLETED" => Some(Self::Completed),
+            "FAILED" => Some(Self::Failed),
+            "CANCELLED" => Some(Self::Cancelled),
+            _ => None,
+        }
+    }
+
+    /// Check if this is a terminal status.
+    pub fn is_terminal(&self) -> bool {
+        matches!(self, Self::Completed | Self::Failed | Self::Cancelled)
+    }
+}
+
+/// Status of a DAG execution.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, strum::Display, strum::EnumString)]
+#[strum(serialize_all = "SCREAMING_SNAKE_CASE")]
+#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
+pub enum DagExecutionStatus {
+    /// DAG is pending (not yet started).
+    Pending,
+    /// DAG is currently being executed.
+    Processing,
+    /// All steps completed successfully.
+    Completed,
+    /// At least one step failed.
+    Failed,
+    /// DAG was interrupted by shutdown.
+    Interrupted,
+}
+
+impl DagExecutionStatus {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Self::Pending => "PENDING",
+            Self::Processing => "PROCESSING",
+            Self::Completed => "COMPLETED",
+            Self::Failed => "FAILED",
+            Self::Interrupted => "INTERRUPTED",
+        }
+    }
+
+    pub fn parse(s: &str) -> Option<Self> {
+        match s {
+            "PENDING" => Some(Self::Pending),
+            "PROCESSING" => Some(Self::Processing),
+            "COMPLETED" => Some(Self::Completed),
+            "FAILED" => Some(Self::Failed),
+            "INTERRUPTED" => Some(Self::Interrupted),
+            _ => None,
+        }
+    }
+
+    /// Check if this is a terminal status.
+    pub fn is_terminal(&self) -> bool {
+        matches!(self, Self::Completed | Self::Failed)
+    }
+}
+
 /// Pipeline job state.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct PipelineJobState {
@@ -873,5 +1217,262 @@ mod tests {
         let json = serde_json::to_value(&step).unwrap();
         assert_eq!(json["type"], "inline");
         assert_eq!(json["processor"], "proc");
+    }
+
+    // ========================================================================
+    // DAG Pipeline Tests
+    // ========================================================================
+
+    #[test]
+    fn test_dag_step_creation() {
+        let step = DagStep::new("remux", PipelineStep::preset("remux"));
+        assert_eq!(step.id, "remux");
+        assert!(step.is_root());
+
+        let step_with_deps = DagStep::with_dependencies(
+            "upload",
+            PipelineStep::preset("upload"),
+            vec!["remux".to_string()],
+        );
+        assert_eq!(step_with_deps.id, "upload");
+        assert!(!step_with_deps.is_root());
+        assert_eq!(step_with_deps.depends_on, vec!["remux"]);
+    }
+
+    #[test]
+    fn test_dag_pipeline_validation_valid() {
+        // Simple linear DAG: A -> B -> C
+        let dag = DagPipelineDefinition::new(
+            "test-dag",
+            vec![
+                DagStep::new("A", PipelineStep::preset("remux")),
+                DagStep::with_dependencies("B", PipelineStep::preset("upload"), vec!["A".to_string()]),
+                DagStep::with_dependencies("C", PipelineStep::preset("thumbnail"), vec!["B".to_string()]),
+            ],
+        );
+        assert!(dag.validate().is_ok());
+    }
+
+    #[test]
+    fn test_dag_pipeline_validation_fan_out() {
+        // Fan-out: A -> [B, C]
+        let dag = DagPipelineDefinition::new(
+            "fan-out-dag",
+            vec![
+                DagStep::new("A", PipelineStep::preset("remux")),
+                DagStep::with_dependencies("B", PipelineStep::preset("upload"), vec!["A".to_string()]),
+                DagStep::with_dependencies("C", PipelineStep::preset("thumbnail"), vec!["A".to_string()]),
+            ],
+        );
+        assert!(dag.validate().is_ok());
+        assert_eq!(dag.root_steps().len(), 1);
+        assert_eq!(dag.leaf_steps().len(), 2);
+    }
+
+    #[test]
+    fn test_dag_pipeline_validation_fan_in() {
+        // Fan-in: [A, B] -> C
+        let dag = DagPipelineDefinition::new(
+            "fan-in-dag",
+            vec![
+                DagStep::new("A", PipelineStep::preset("remux")),
+                DagStep::new("B", PipelineStep::preset("thumbnail")),
+                DagStep::with_dependencies(
+                    "C",
+                    PipelineStep::preset("upload"),
+                    vec!["A".to_string(), "B".to_string()],
+                ),
+            ],
+        );
+        assert!(dag.validate().is_ok());
+        assert_eq!(dag.root_steps().len(), 2);
+        assert_eq!(dag.leaf_steps().len(), 1);
+    }
+
+    #[test]
+    fn test_dag_pipeline_validation_diamond() {
+        // Diamond pattern: A -> [B, C] -> D
+        let dag = DagPipelineDefinition::new(
+            "diamond-dag",
+            vec![
+                DagStep::new("A", PipelineStep::preset("remux")),
+                DagStep::with_dependencies("B", PipelineStep::preset("upload"), vec!["A".to_string()]),
+                DagStep::with_dependencies("C", PipelineStep::preset("thumbnail"), vec!["A".to_string()]),
+                DagStep::with_dependencies(
+                    "D",
+                    PipelineStep::preset("notify"),
+                    vec!["B".to_string(), "C".to_string()],
+                ),
+            ],
+        );
+        assert!(dag.validate().is_ok());
+        assert_eq!(dag.root_steps().len(), 1);
+        assert_eq!(dag.leaf_steps().len(), 1);
+    }
+
+    #[test]
+    fn test_dag_pipeline_validation_empty() {
+        let dag = DagPipelineDefinition::new("empty-dag", vec![]);
+        assert!(dag.validate().is_err());
+        assert!(dag.validate().unwrap_err().contains("at least one step"));
+    }
+
+    #[test]
+    fn test_dag_pipeline_validation_duplicate_ids() {
+        let dag = DagPipelineDefinition::new(
+            "dup-dag",
+            vec![
+                DagStep::new("A", PipelineStep::preset("remux")),
+                DagStep::new("A", PipelineStep::preset("upload")),
+            ],
+        );
+        assert!(dag.validate().is_err());
+        assert!(dag.validate().unwrap_err().contains("Duplicate"));
+    }
+
+    #[test]
+    fn test_dag_pipeline_validation_missing_dependency() {
+        let dag = DagPipelineDefinition::new(
+            "missing-dep-dag",
+            vec![
+                DagStep::new("A", PipelineStep::preset("remux")),
+                DagStep::with_dependencies("B", PipelineStep::preset("upload"), vec!["X".to_string()]),
+            ],
+        );
+        assert!(dag.validate().is_err());
+        assert!(dag.validate().unwrap_err().contains("non-existent"));
+    }
+
+    #[test]
+    fn test_dag_pipeline_validation_no_root() {
+        // All steps have dependencies (cycle)
+        let dag = DagPipelineDefinition::new(
+            "no-root-dag",
+            vec![
+                DagStep::with_dependencies("A", PipelineStep::preset("remux"), vec!["B".to_string()]),
+                DagStep::with_dependencies("B", PipelineStep::preset("upload"), vec!["A".to_string()]),
+            ],
+        );
+        assert!(dag.validate().is_err());
+    }
+
+    #[test]
+    fn test_dag_pipeline_validation_cycle() {
+        // A -> B -> C -> A (cycle)
+        let dag = DagPipelineDefinition::new(
+            "cycle-dag",
+            vec![
+                DagStep::with_dependencies("A", PipelineStep::preset("a"), vec!["C".to_string()]),
+                DagStep::with_dependencies("B", PipelineStep::preset("b"), vec!["A".to_string()]),
+                DagStep::with_dependencies("C", PipelineStep::preset("c"), vec!["B".to_string()]),
+            ],
+        );
+        assert!(dag.validate().is_err());
+    }
+
+    #[test]
+    fn test_dag_pipeline_topological_order() {
+        // A -> B -> C
+        let dag = DagPipelineDefinition::new(
+            "topo-dag",
+            vec![
+                DagStep::with_dependencies("C", PipelineStep::preset("c"), vec!["B".to_string()]),
+                DagStep::new("A", PipelineStep::preset("a")),
+                DagStep::with_dependencies("B", PipelineStep::preset("b"), vec!["A".to_string()]),
+            ],
+        );
+
+        let order = dag.topological_order().unwrap();
+        let ids: Vec<&str> = order.iter().map(|s| s.id.as_str()).collect();
+
+        // A must come before B, B must come before C
+        let a_pos = ids.iter().position(|&x| x == "A").unwrap();
+        let b_pos = ids.iter().position(|&x| x == "B").unwrap();
+        let c_pos = ids.iter().position(|&x| x == "C").unwrap();
+
+        assert!(a_pos < b_pos);
+        assert!(b_pos < c_pos);
+    }
+
+    #[test]
+    fn test_dag_pipeline_get_step() {
+        let dag = DagPipelineDefinition::new(
+            "get-step-dag",
+            vec![
+                DagStep::new("A", PipelineStep::preset("remux")),
+                DagStep::new("B", PipelineStep::preset("upload")),
+            ],
+        );
+
+        assert!(dag.get_step("A").is_some());
+        assert!(dag.get_step("B").is_some());
+        assert!(dag.get_step("C").is_none());
+    }
+
+    #[test]
+    fn test_dag_step_status() {
+        assert_eq!(DagStepStatus::Blocked.as_str(), "BLOCKED");
+        assert_eq!(DagStepStatus::parse("BLOCKED"), Some(DagStepStatus::Blocked));
+        assert_eq!(DagStepStatus::parse("INVALID"), None);
+
+        assert!(!DagStepStatus::Blocked.is_terminal());
+        assert!(!DagStepStatus::Pending.is_terminal());
+        assert!(!DagStepStatus::Processing.is_terminal());
+        assert!(DagStepStatus::Completed.is_terminal());
+        assert!(DagStepStatus::Failed.is_terminal());
+        assert!(DagStepStatus::Cancelled.is_terminal());
+    }
+
+    #[test]
+    fn test_dag_execution_status() {
+        assert_eq!(DagExecutionStatus::Processing.as_str(), "PROCESSING");
+        assert_eq!(DagExecutionStatus::parse("PROCESSING"), Some(DagExecutionStatus::Processing));
+        assert_eq!(DagExecutionStatus::parse("INVALID"), None);
+
+        assert!(!DagExecutionStatus::Pending.is_terminal());
+        assert!(!DagExecutionStatus::Processing.is_terminal());
+        assert!(DagExecutionStatus::Completed.is_terminal());
+        assert!(DagExecutionStatus::Failed.is_terminal());
+        assert!(!DagExecutionStatus::Interrupted.is_terminal());
+    }
+
+    #[test]
+    fn test_dag_step_json_serialization() {
+        use serde_json::json;
+
+        let step = DagStep::with_dependencies(
+            "upload",
+            PipelineStep::preset("upload"),
+            vec!["remux".to_string()],
+        );
+
+        let json_val = serde_json::to_value(&step).unwrap();
+        assert_eq!(json_val["id"], "upload");
+        assert_eq!(json_val["step"]["type"], "preset");
+        assert_eq!(json_val["step"]["name"], "upload");
+        assert_eq!(json_val["depends_on"], json!(["remux"]));
+
+        // Deserialize back
+        let deserialized: DagStep = serde_json::from_value(json_val).unwrap();
+        assert_eq!(deserialized.id, "upload");
+        assert_eq!(deserialized.depends_on, vec!["remux"]);
+    }
+
+    #[test]
+    fn test_dag_pipeline_json_serialization() {
+        let dag = DagPipelineDefinition::new(
+            "test-dag",
+            vec![
+                DagStep::new("remux", PipelineStep::preset("remux")),
+                DagStep::with_dependencies("upload", PipelineStep::preset("upload"), vec!["remux".to_string()]),
+            ],
+        );
+
+        let json_str = serde_json::to_string(&dag).unwrap();
+        let deserialized: DagPipelineDefinition = serde_json::from_str(&json_str).unwrap();
+
+        assert_eq!(deserialized.name, "test-dag");
+        assert_eq!(deserialized.steps.len(), 2);
+        assert!(deserialized.validate().is_ok());
     }
 }

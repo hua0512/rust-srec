@@ -4,6 +4,7 @@
 //! creating a clean and maintainable data access layer.
 
 pub mod config;
+pub mod dag;
 pub mod filter;
 pub mod job;
 pub mod monitor_outbox;
@@ -17,6 +18,7 @@ pub mod streamer_tx;
 pub mod user;
 
 pub use config::*;
+pub use dag::*;
 pub use filter::*;
 pub use job::*;
 pub use monitor_outbox::*;

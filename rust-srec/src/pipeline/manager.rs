@@ -7,6 +7,7 @@ use tokio::sync::{broadcast, mpsc};
 use tokio_util::sync::CancellationToken;
 use tracing::{debug, info, warn};
 
+use super::dag_scheduler::{DagCreationResult, DagScheduler};
 use super::job_queue::{Job, JobLogEntry, JobQueue, JobQueueConfig, QueueDepthStatus};
 use super::processors::{
     AudioExtractProcessor, CompressionProcessor, CopyMoveProcessor, DeleteProcessor,
@@ -19,12 +20,12 @@ use super::throttle::{DownloadLimitAdjuster, ThrottleConfig, ThrottleController,
 use super::worker_pool::{WorkerPool, WorkerPoolConfig, WorkerType};
 use crate::Result;
 use crate::config::ConfigService;
-use crate::database::models::job::PipelineStep;
+use crate::database::models::job::{DagPipelineDefinition, PipelineStep};
 use crate::database::models::{JobFilters, MediaFileType, MediaOutputDbModel, Pagination};
 use crate::database::repositories::config::{ConfigRepository, SqlxConfigRepository};
 use crate::database::repositories::streamer::{SqlxStreamerRepository, StreamerRepository};
 use crate::database::repositories::{
-    JobPresetRepository, JobRepository, PipelinePresetRepository, SessionRepository,
+    DagRepository, JobPresetRepository, JobRepository, PipelinePresetRepository, SessionRepository,
 };
 use crate::downloader::DownloadManagerEvent;
 use crate::pipeline::job_queue::JobExecutionInfo;
@@ -136,6 +137,12 @@ pub struct PipelineManager<
     config_service: Option<Arc<ConfigService<CR, SR>>>,
     /// Last observed queue depth status (edge-trigger warnings).
     last_queue_status: AtomicU8,
+    /// DAG repository for DAG pipeline persistence.
+    dag_repository: Option<Arc<dyn DagRepository>>,
+    /// Job repository reference (needed for DAG scheduler).
+    job_repository: Option<Arc<dyn JobRepository>>,
+    /// DAG scheduler for orchestrating DAG pipeline execution.
+    dag_scheduler: Option<Arc<DagScheduler>>,
 }
 
 impl<CR, SR> PipelineManager<CR, SR>
@@ -195,6 +202,9 @@ where
             pipeline_preset_repo: None,
             config_service: None,
             last_queue_status: AtomicU8::new(0),
+            dag_repository: None,
+            job_repository: None,
+            dag_scheduler: None,
         }
     }
 
@@ -216,7 +226,7 @@ where
         let purge_service = if config.purge.retention_days > 0 {
             Some(Arc::new(JobPurgeService::new(
                 config.purge.clone(),
-                job_repository,
+                job_repository.clone(),
             )))
         } else {
             None
@@ -264,6 +274,9 @@ where
             pipeline_preset_repo: None,
             config_service: None,
             last_queue_status: AtomicU8::new(0),
+            dag_repository: None,
+            job_repository: Some(job_repository),
+            dag_scheduler: None,
         }
     }
 
@@ -304,6 +317,28 @@ where
     pub fn with_config_service(mut self, config_service: Arc<ConfigService<CR, SR>>) -> Self {
         self.config_service = Some(config_service);
         self
+    }
+
+    /// Set the DAG repository for DAG pipeline persistence.
+    /// This also creates the DAG scheduler if job_repository is already set.
+    pub fn with_dag_repository(mut self, dag_repository: Arc<dyn DagRepository>) -> Self {
+        self.dag_repository = Some(dag_repository.clone());
+
+        // Create DAG scheduler if we have both repositories
+        if let Some(job_repo) = &self.job_repository {
+            self.dag_scheduler = Some(Arc::new(DagScheduler::new(
+                self.job_queue.clone(),
+                dag_repository,
+                job_repo.clone(),
+            )));
+        }
+
+        self
+    }
+
+    /// Get a reference to the DAG scheduler, if available.
+    pub fn dag_scheduler(&self) -> Option<&Arc<DagScheduler>> {
+        self.dag_scheduler.as_ref()
     }
 
     /// Get a reference to the throttle controller, if enabled.
@@ -377,9 +412,17 @@ where
             io_processors.iter().map(|p| p.name()).collect::<Vec<_>>()
         );
 
-        // Start worker pools
-        self.cpu_pool.start(self.job_queue.clone(), cpu_processors);
-        self.io_pool.start(self.job_queue.clone(), io_processors);
+        // Start worker pools with optional DAG scheduler
+        self.cpu_pool.start_with_dag_scheduler(
+            self.job_queue.clone(),
+            cpu_processors,
+            self.dag_scheduler.clone(),
+        );
+        self.io_pool.start_with_dag_scheduler(
+            self.job_queue.clone(),
+            io_processors,
+            self.dag_scheduler.clone(),
+        );
 
         // Start throttle controller monitoring if enabled and adjuster is set
         // Requirements: 8.1, 8.2, 8.3
@@ -509,13 +552,14 @@ where
     /// Returns the pipeline_id (which is the first job's ID) for tracking.
     ///
     /// Requirements: 6.1, 7.1, 7.5
-    /// Create a new pipeline with sequential job execution.
-    /// Only the first job is created immediately; subsequent jobs are created
-    /// atomically when each job completes.
     ///
-    /// Returns the pipeline_id (which is the first job's ID) for tracking.
-    ///
-    /// Requirements: 6.1, 7.1, 7.5
+    /// DEPRECATED: Use `create_dag_pipeline` for new pipelines. DAG pipelines
+    /// support fan-in, fan-out, and parallel execution. Sequential pipelines
+    /// are being phased out.
+    #[deprecated(
+        since = "0.2.0",
+        note = "Use create_dag_pipeline() instead. Sequential pipelines are deprecated in favor of DAG pipelines which support fan-in, fan-out, and parallel execution."
+    )]
     pub async fn create_pipeline(
         &self,
         session_id: &str,
@@ -648,6 +692,114 @@ where
             total_steps: resolved_len,
             steps: string_steps,
         })
+    }
+
+    /// Create a DAG pipeline with fan-in/fan-out support.
+    ///
+    /// Unlike sequential pipelines, DAG pipelines support:
+    /// - Fan-out: One step can trigger multiple downstream steps
+    /// - Fan-in: Multiple steps can merge their outputs before a downstream step
+    /// - Fail-fast: Any step failure cancels all pending/running jobs in the DAG
+    ///
+    /// Returns the DAG ID and root job IDs for tracking.
+    pub async fn create_dag_pipeline(
+        &self,
+        session_id: &str,
+        streamer_id: &str,
+        input_path: &str,
+        dag_definition: DagPipelineDefinition,
+    ) -> Result<DagCreationResult> {
+        let dag_scheduler = self.dag_scheduler.as_ref().ok_or_else(|| {
+            crate::Error::Validation(
+                "DAG scheduler not configured. Call with_dag_repository() first.".to_string(),
+            )
+        })?;
+
+        // Resolve all steps in the DAG before creation
+        let mut resolved_dag = dag_definition.clone();
+        for dag_step in &mut resolved_dag.steps {
+            let resolved = self.resolve_dag_step(&dag_step.step).await?;
+            dag_step.step = resolved;
+        }
+
+        // Delegate to DAG scheduler
+        let result = dag_scheduler
+            .create_dag_pipeline(
+                resolved_dag,
+                input_path,
+                Some(streamer_id.to_string()),
+                Some(session_id.to_string()),
+            )
+            .await?;
+
+        info!(
+            "Created DAG pipeline {} with {} steps ({} root jobs) for session {}",
+            result.dag_id,
+            result.total_steps,
+            result.root_job_ids.len(),
+            session_id
+        );
+
+        // Emit events for root jobs
+        for job_id in &result.root_job_ids {
+            let _ = self.event_tx.send(PipelineEvent::JobEnqueued {
+                job_id: job_id.clone(),
+                job_type: "dag_step".to_string(),
+                streamer_id: streamer_id.to_string(),
+            });
+        }
+
+        // Check queue depth
+        self.check_queue_depth();
+
+        Ok(result)
+    }
+
+    /// Resolve a DAG step's PipelineStep to an Inline step.
+    async fn resolve_dag_step(&self, step: &PipelineStep) -> Result<PipelineStep> {
+        match step {
+            PipelineStep::Preset { name } => {
+                if let Some(repo) = &self.preset_repo {
+                    match repo.get_preset_by_name(name).await {
+                        Ok(Some(preset)) => {
+                            let config = if !preset.config.is_empty() {
+                                serde_json::from_str(&preset.config)
+                                    .unwrap_or(serde_json::Value::Null)
+                            } else {
+                                serde_json::Value::Null
+                            };
+                            Ok(PipelineStep::Inline {
+                                processor: preset.processor,
+                                config,
+                            })
+                        }
+                        Ok(None) => {
+                            // Fallback: assume name is processor
+                            Ok(PipelineStep::Inline {
+                                processor: name.clone(),
+                                config: serde_json::Value::Null,
+                            })
+                        }
+                        Err(e) => Err(crate::Error::Database(e.to_string())),
+                    }
+                } else {
+                    // No repo, fallback
+                    Ok(PipelineStep::Inline {
+                        processor: name.clone(),
+                        config: serde_json::Value::Null,
+                    })
+                }
+            }
+            PipelineStep::Workflow { name } => {
+                // Workflows should be expanded before DAG creation
+                Err(crate::Error::Validation(format!(
+                    "Workflow '{}' should be resolved before DAG creation. \
+                     Expand workflows into individual DAG steps.",
+                    name
+                )))
+            }
+            PipelineStep::Inline { .. } => Ok(step.clone()),
+        }
     }
 
     /// Resolve all steps in a pipeline to Inline steps.
@@ -832,12 +984,43 @@ where
                         session_id,
                         pipeline_steps.len()
                     );
+
+                    // Convert sequential steps to DAG format
+                    let dag_steps: Vec<crate::database::models::job::DagStep> = pipeline_steps
+                        .iter()
+                        .enumerate()
+                        .map(|(i, step)| {
+                            let step_id = match step {
+                                PipelineStep::Preset { name } => name.clone(),
+                                PipelineStep::Workflow { name } => name.clone(),
+                                PipelineStep::Inline { processor, .. } => format!("{}_{}", processor, i),
+                            };
+
+                            if i == 0 {
+                                crate::database::models::job::DagStep::new(step_id, step.clone())
+                            } else {
+                                let prev_step_id = match &pipeline_steps[i - 1] {
+                                    PipelineStep::Preset { name } => name.clone(),
+                                    PipelineStep::Workflow { name } => name.clone(),
+                                    PipelineStep::Inline { processor, .. } => format!("{}_{}", processor, i - 1),
+                                };
+                                crate::database::models::job::DagStep::with_dependencies(
+                                    step_id,
+                                    step.clone(),
+                                    vec![prev_step_id],
+                                )
+                            }
+                        })
+                        .collect();
+
+                    let dag = DagPipelineDefinition::new("segment_pipeline", dag_steps);
+
                     if let Err(e) = self
-                        .create_pipeline(
+                        .create_dag_pipeline(
                             &session_id,
                             &streamer_id,
                             &segment_path,
-                            Some(pipeline_steps),
+                            dag,
                         )
                         .await
                     {
@@ -1560,6 +1743,7 @@ mod tests {
     }
 
     #[tokio::test]
+    #[allow(deprecated)]
     async fn test_create_pipeline_requires_steps_when_none() {
         let manager: PipelineManager = PipelineManager::new();
 
@@ -1571,6 +1755,7 @@ mod tests {
     }
 
     #[tokio::test]
+    #[allow(deprecated)]
     async fn test_create_pipeline_custom_steps() {
         let manager: PipelineManager = PipelineManager::new();
 
@@ -1597,13 +1782,14 @@ mod tests {
             .unwrap()
             .unwrap();
         assert_eq!(job.next_job_type, Some("upload".to_string()));
-        assert_eq!(
-            job.remaining_steps,
-            Some(vec![PipelineStep::preset("upload")])
-        );
+        // The remaining_steps are resolved to Inline format now
+        let remaining = job.remaining_steps.as_ref().expect("Should have remaining steps");
+        assert_eq!(remaining.len(), 1);
+        assert!(matches!(&remaining[0], PipelineStep::Inline { processor, .. } if processor == "upload"));
     }
 
     #[tokio::test]
+    #[allow(deprecated)]
     async fn test_create_pipeline_single_step() {
         let manager: PipelineManager = PipelineManager::new();
 
@@ -1627,6 +1813,7 @@ mod tests {
     }
 
     #[tokio::test]
+    #[allow(deprecated)]
     async fn test_create_pipeline_empty_steps_error() {
         let manager: PipelineManager = PipelineManager::new();
 
@@ -1801,6 +1988,7 @@ mod tests {
     /// to continue the pipeline after recovery.
     /// Requirements: 10.5
     #[tokio::test]
+    #[allow(deprecated)]
     async fn test_pipeline_job_preserves_chain_info_for_recovery() {
         let manager: PipelineManager = PipelineManager::new();
 
@@ -1825,13 +2013,11 @@ mod tests {
         // Verify the job has all chain info needed for recovery
         assert_eq!(job.pipeline_id, Some(result.pipeline_id.clone()));
         assert_eq!(job.next_job_type, Some("upload".to_string()));
-        assert_eq!(
-            job.remaining_steps,
-            Some(vec![
-                PipelineStep::preset("upload"),
-                PipelineStep::preset("thumbnail")
-            ])
-        );
+        // The remaining_steps are resolved to Inline format now
+        let remaining = job.remaining_steps.as_ref().expect("Should have remaining steps");
+        assert_eq!(remaining.len(), 2);
+        assert!(matches!(&remaining[0], PipelineStep::Inline { processor, .. } if processor == "upload"));
+        assert!(matches!(&remaining[1], PipelineStep::Inline { processor, .. } if processor == "thumbnail"));
 
         // This info is preserved in the database and will be available after recovery
         // When the job completes, complete_with_next will use this info to create the next job

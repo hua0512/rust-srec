@@ -1,9 +1,16 @@
-//! Pipeline management routes.
+//! Pipeline management routes (DAG-native).
 //!
-//! This module provides REST API endpoints for managing pipeline jobs,
+//! This module provides REST API endpoints for managing DAG pipeline jobs,
 //! including job listing, retrieval, retry, cancellation, and statistics.
 //!
+//! All pipelines are DAG (Directed Acyclic Graph) pipelines supporting:
+//! - Fan-out: One step can trigger multiple downstream steps
+//! - Fan-in: Multiple steps can merge their outputs before a downstream step
+//! - Parallel execution: Independent steps run concurrently
+//!
 //! # Endpoints
+//!
+//! ## Jobs
 //!
 //! | Method | Path | Description |
 //! |--------|------|-------------|
@@ -14,16 +21,44 @@
 //! | GET | `/api/pipeline/jobs/{id}/progress` | Get latest job progress snapshot |
 //! | POST | `/api/pipeline/jobs/{id}/retry` | Retry a failed job |
 //! | DELETE | `/api/pipeline/jobs/{id}` | Cancel a pending or processing job |
-//! | DELETE | `/api/pipeline/{pipeline_id}` | Cancel all jobs in a pipeline |
+//!
+//! ## Pipelines
+//!
+//! | Method | Path | Description |
+//! |--------|------|-------------|
 //! | GET | `/api/pipeline/pipelines` | List pipelines with filtering and pagination |
-//! | GET | `/api/pipeline/outputs` | List media outputs with filtering |
-//! | GET | `/api/pipeline/stats` | Get pipeline statistics |
-//! | POST | `/api/pipeline/create` | Create a new pipeline |
-//! | GET | `/api/pipeline/presets` | List pipeline presets (workflows) |
+//! | DELETE | `/api/pipeline/{pipeline_id}` | Cancel all jobs in a pipeline |
+//! | POST | `/api/pipeline/create` | Create a new DAG pipeline |
+//! | POST | `/api/pipeline/validate` | Validate a DAG definition |
+//!
+//! ## DAG Status & Operations
+//!
+//! | Method | Path | Description |
+//! |--------|------|-------------|
+//! | GET | `/api/pipeline/dags` | List all DAG executions with filtering and pagination |
+//! | GET | `/api/pipeline/dag/{dag_id}` | Get full DAG status with all steps |
+//! | GET | `/api/pipeline/dag/{dag_id}/graph` | Get DAG visualization data (nodes/edges) |
+//! | GET | `/api/pipeline/dag/{dag_id}/stats` | Get DAG step statistics (blocked/pending/processing/etc.) |
+//! | POST | `/api/pipeline/dag/{dag_id}/retry` | Retry all failed steps in a DAG |
+//! | DELETE | `/api/pipeline/dag/{dag_id}` | Cancel a DAG execution and all its steps |
+//!
+//! ## Presets (Workflow Templates)
+//!
+//! | Method | Path | Description |
+//! |--------|------|-------------|
+//! | GET | `/api/pipeline/presets` | List pipeline presets (DAG workflows) |
 //! | GET | `/api/pipeline/presets/{id}` | Get a pipeline preset by ID |
+//! | GET | `/api/pipeline/presets/{id}/preview` | Preview jobs from a preset |
 //! | POST | `/api/pipeline/presets` | Create a pipeline preset |
 //! | PUT | `/api/pipeline/presets/{id}` | Update a pipeline preset |
 //! | DELETE | `/api/pipeline/presets/{id}` | Delete a pipeline preset |
+//!
+//! ## Other
+//!
+//! | Method | Path | Description |
+//! |--------|------|-------------|
+//! | GET | `/api/pipeline/outputs` | List media outputs with filtering |
+//! | GET | `/api/pipeline/stats` | Get pipeline statistics |
 
 use axum::{
     Json, Router,
@@ -41,12 +76,12 @@ use crate::api::models::{
     PaginationParams, PipelineStatsResponse, StepDurationInfo as ApiStepDurationInfo,
 };
 use crate::api::server::AppState;
-use crate::database::models::job::PipelineStep;
+use crate::database::models::job::{DagPipelineDefinition, DagStep, PipelineStep};
 use crate::database::models::{JobFilters, JobStatus as DbJobStatus, OutputFilters, Pagination};
 use crate::pipeline::JobProgressSnapshot;
 use crate::pipeline::{Job, JobStatus as QueueJobStatus};
 
-/// Create the pipeline router.
+/// Create the pipeline router (DAG-native).
 ///
 /// # Routes
 ///
@@ -54,16 +89,24 @@ use crate::pipeline::{Job, JobStatus as QueueJobStatus};
 /// - `GET /jobs/{id}` - Get a single job by ID
 /// - `POST /jobs/{id}/retry` - Retry a failed job
 /// - `DELETE /jobs/{id}` - Cancel a job
-/// - `DELETE /{pipeline_id}` - Cancel all jobs in a pipeline
-/// - `GET /pipelines` - List pipelines with filtering and pagination
+/// - `DELETE /{pipeline_id}` - Cancel all jobs in a DAG pipeline
+/// - `GET /pipelines` - List DAG pipelines with filtering and pagination
 /// - `GET /outputs` - List media outputs
 /// - `GET /stats` - Get pipeline statistics
-/// - `POST /create` - Create a new pipeline
-/// - `GET /presets` - List pipeline presets (workflows)
+/// - `POST /create` - Create a new DAG pipeline
+/// - `GET /presets` - List pipeline presets (DAG workflows)
 /// - `GET /presets/{id}` - Get a pipeline preset by ID
-/// - `POST /presets` - Create a pipeline preset
-/// - `PUT /presets/{id}` - Update a pipeline preset
+/// - `POST /presets` - Create a DAG pipeline preset
+/// - `PUT /presets/{id}` - Update a DAG pipeline preset
 /// - `DELETE /presets/{id}` - Delete a pipeline preset
+/// - `GET /presets/{id}/preview` - Preview jobs from a preset
+/// - `GET /dags` - List all DAG executions with filtering and pagination
+/// - `GET /dag/{dag_id}` - Get full DAG status with all steps
+/// - `GET /dag/{dag_id}/graph` - Get DAG visualization data
+/// - `GET /dag/{dag_id}/stats` - Get DAG step statistics
+/// - `POST /dag/{dag_id}/retry` - Retry failed steps in a DAG
+/// - `DELETE /dag/{dag_id}` - Cancel a DAG execution
+/// - `POST /validate` - Validate a DAG definition
 pub fn router() -> Router<AppState> {
     Router::new()
         .route("/jobs", get(list_jobs))
@@ -78,6 +121,7 @@ pub fn router() -> Router<AppState> {
         .route("/outputs", get(list_outputs))
         .route("/stats", get(get_stats))
         .route("/create", post(create_pipeline))
+        .route("/validate", post(validate_dag))
         .route(
             "/presets",
             get(list_pipeline_presets).post(create_pipeline_preset),
@@ -88,9 +132,18 @@ pub fn router() -> Router<AppState> {
                 .put(update_pipeline_preset)
                 .delete(delete_pipeline_preset),
         )
+        .route("/presets/{id}/preview", get(preview_pipeline_preset))
+        .route("/dags", get(list_dags))
+        .route(
+            "/dag/{dag_id}",
+            get(get_dag_status).delete(cancel_dag),
+        )
+        .route("/dag/{dag_id}/graph", get(get_dag_graph))
+        .route("/dag/{dag_id}/stats", get(get_dag_stats))
+        .route("/dag/{dag_id}/retry", post(retry_dag))
 }
 
-/// Request body for creating a new pipeline.
+/// Request body for creating a new DAG pipeline.
 ///
 /// # Example
 ///
@@ -99,7 +152,14 @@ pub fn router() -> Router<AppState> {
 ///     "session_id": "session-123",
 ///     "streamer_id": "streamer-456",
 ///     "input_path": "/recordings/stream.flv",
-///     "steps": ["remux", "upload", "thumbnail"]
+///     "dag": {
+///         "name": "my_pipeline",
+///         "steps": [
+///             {"id": "remux", "step": {"type": "preset", "name": "remux"}, "depends_on": []},
+///             {"id": "thumbnail", "step": {"type": "preset", "name": "thumbnail"}, "depends_on": ["remux"]},
+///             {"id": "upload", "step": {"type": "preset", "name": "upload"}, "depends_on": ["remux", "thumbnail"]}
+///         ]
+///     }
 /// }
 /// ```
 ///
@@ -108,7 +168,7 @@ pub fn router() -> Router<AppState> {
 /// - `session_id` - The recording session ID this pipeline belongs to
 /// - `streamer_id` - The streamer ID this pipeline belongs to
 /// - `input_path` - Path to the input file to process
-/// - `steps` - Optional list of processing steps. Requests without steps will be rejected.
+/// - `dag` - DAG pipeline definition with steps and dependencies
 #[derive(Debug, Clone, Deserialize)]
 pub struct CreatePipelineRequest {
     /// Session ID for the pipeline.
@@ -117,8 +177,8 @@ pub struct CreatePipelineRequest {
     pub streamer_id: String,
     /// Input file path.
     pub input_path: String,
-    /// Pipeline steps (optional, but at least one step is required).
-    pub steps: Option<Vec<PipelineStep>>,
+    /// DAG pipeline definition.
+    pub dag: DagPipelineDefinition,
 }
 
 /// Response body for pipeline creation.
@@ -148,26 +208,43 @@ pub struct CreatePipelineResponse {
     pub first_job: JobResponse,
 }
 
-/// Request body for creating a new pipeline preset.
+/// Request body for creating a new DAG pipeline preset.
+///
+/// # Example
+///
+/// ```json
+/// {
+///     "name": "Stream Archive",
+///     "description": "Remux, thumbnail, and upload workflow",
+///     "dag": {
+///         "name": "Stream Archive",
+///         "steps": [
+///             {"id": "remux", "step": {"type": "preset", "name": "remux_clean"}, "depends_on": []},
+///             {"id": "thumbnail", "step": {"type": "preset", "name": "thumbnail_native"}, "depends_on": ["remux"]},
+///             {"id": "upload", "step": {"type": "preset", "name": "upload_and_delete"}, "depends_on": ["remux", "thumbnail"]}
+///         ]
+///     }
+/// }
+/// ```
 #[derive(Debug, Clone, Deserialize)]
 pub struct CreatePipelinePresetRequest {
     /// Human-readable name.
     pub name: String,
     /// Optional description.
     pub description: Option<String>,
-    /// Pipeline steps (list of job preset names or inline definitions).
-    pub steps: Vec<PipelineStep>,
+    /// DAG pipeline definition.
+    pub dag: DagPipelineDefinition,
 }
 
-/// Request body for updating a pipeline preset.
+/// Request body for updating a DAG pipeline preset.
 #[derive(Debug, Clone, Deserialize)]
 pub struct UpdatePipelinePresetRequest {
     /// Human-readable name.
     pub name: String,
     /// Optional description.
     pub description: Option<String>,
-    /// Pipeline steps (list of job preset names or inline definitions).
-    pub steps: Vec<PipelineStep>,
+    /// DAG pipeline definition.
+    pub dag: DagPipelineDefinition,
 }
 
 /// Query parameters for filtering pipeline presets.
@@ -214,25 +291,55 @@ pub struct PipelinePresetListResponse {
     pub offset: u32,
 }
 
-/// Response for a single pipeline preset with parsed steps.
+/// Response for a single DAG pipeline preset.
 #[derive(Debug, Clone, Serialize)]
 pub struct PipelinePresetResponse {
     pub id: String,
     pub name: String,
     pub description: Option<String>,
-    pub steps: Vec<PipelineStep>,
+    /// DAG definition.
+    pub dag: DagPipelineDefinition,
     pub created_at: chrono::DateTime<chrono::Utc>,
     pub updated_at: chrono::DateTime<chrono::Utc>,
 }
 
 impl From<crate::database::models::PipelinePreset> for PipelinePresetResponse {
     fn from(preset: crate::database::models::PipelinePreset) -> Self {
-        let steps = preset.get_steps();
+        let dag = preset.get_dag_definition().unwrap_or_else(|| {
+            // Fallback: convert legacy steps to DAG format
+            #[allow(deprecated)]
+            let steps = preset.get_steps();
+            let dag_steps: Vec<DagStep> = steps
+                .iter()
+                .enumerate()
+                .map(|(i, step)| {
+                    let step_id = match step {
+                        PipelineStep::Preset { name } => name.clone(),
+                        PipelineStep::Workflow { name } => name.clone(),
+                        PipelineStep::Inline { processor, .. } => format!("{}_{}", processor, i),
+                    };
+
+                    if i == 0 {
+                        DagStep::new(step_id, step.clone())
+                    } else {
+                        let prev_step_id = match &steps[i - 1] {
+                            PipelineStep::Preset { name } => name.clone(),
+                            PipelineStep::Workflow { name } => name.clone(),
+                            PipelineStep::Inline { processor, .. } => {
+                                format!("{}_{}", processor, i - 1)
+                            }
+                        };
+                        DagStep::with_dependencies(step_id, step.clone(), vec![prev_step_id])
+                    }
+                })
+                .collect();
+            DagPipelineDefinition::new(&preset.name, dag_steps)
+        });
         Self {
             id: preset.id,
             name: preset.name,
             description: preset.description,
-            steps,
+            dag,
             created_at: preset.created_at,
             updated_at: preset.updated_at,
         }
@@ -270,6 +377,265 @@ pub struct PipelineSummaryResponse {
     pub total_duration_secs: f64,
     pub created_at: String,
     pub updated_at: String,
+}
+
+// ============================================================================
+// DAG Status and Graph Response Types
+// ============================================================================
+
+/// Response for DAG status with all steps.
+#[derive(Debug, Clone, Serialize)]
+pub struct DagStatusResponse {
+    /// DAG execution ID.
+    pub id: String,
+    /// DAG name from definition.
+    pub name: String,
+    /// Overall DAG status.
+    pub status: String,
+    /// Associated streamer ID.
+    pub streamer_id: Option<String>,
+    /// Associated session ID.
+    pub session_id: Option<String>,
+    /// Total number of steps.
+    pub total_steps: i32,
+    /// Number of completed steps.
+    pub completed_steps: i32,
+    /// Number of failed steps.
+    pub failed_steps: i32,
+    /// Progress percentage (0-100).
+    pub progress_percent: f64,
+    /// All steps in the DAG with their status.
+    pub steps: Vec<DagStepStatusResponse>,
+    /// Error message if DAG failed.
+    pub error: Option<String>,
+    /// When the DAG was created.
+    pub created_at: String,
+    /// When the DAG was last updated.
+    pub updated_at: String,
+    /// When the DAG completed (if finished).
+    pub completed_at: Option<String>,
+}
+
+/// Response for a single DAG step status.
+#[derive(Debug, Clone, Serialize)]
+pub struct DagStepStatusResponse {
+    /// Step ID within the DAG.
+    pub step_id: String,
+    /// Step status (blocked, pending, processing, completed, failed, cancelled).
+    pub status: String,
+    /// Associated job ID (if job has been created).
+    pub job_id: Option<String>,
+    /// Step IDs this step depends on.
+    pub depends_on: Vec<String>,
+    /// Output paths produced by this step.
+    pub outputs: Vec<String>,
+    /// The processor type for this step.
+    pub processor: Option<String>,
+}
+
+/// Response for DAG graph visualization.
+#[derive(Debug, Clone, Serialize)]
+pub struct DagGraphResponse {
+    /// DAG execution ID.
+    pub dag_id: String,
+    /// DAG name.
+    pub name: String,
+    /// Graph nodes (steps).
+    pub nodes: Vec<DagGraphNode>,
+    /// Graph edges (dependencies).
+    pub edges: Vec<DagGraphEdge>,
+}
+
+/// A node in the DAG graph.
+#[derive(Debug, Clone, Serialize)]
+pub struct DagGraphNode {
+    /// Step ID (unique within DAG).
+    pub id: String,
+    /// Display label.
+    pub label: String,
+    /// Node status for styling.
+    pub status: String,
+    /// Processor type.
+    pub processor: Option<String>,
+    /// Associated job ID.
+    pub job_id: Option<String>,
+}
+
+/// An edge in the DAG graph (dependency relationship).
+#[derive(Debug, Clone, Serialize)]
+pub struct DagGraphEdge {
+    /// Source step ID (dependency).
+    pub from: String,
+    /// Target step ID (dependent).
+    pub to: String,
+}
+
+/// Response for DAG retry operation.
+#[derive(Debug, Clone, Serialize)]
+pub struct DagRetryResponse {
+    /// DAG execution ID.
+    pub dag_id: String,
+    /// Number of steps that were retried.
+    pub retried_steps: usize,
+    /// IDs of jobs created for retry.
+    pub job_ids: Vec<String>,
+    /// Message describing the retry operation.
+    pub message: String,
+}
+
+/// Request body for DAG validation.
+#[derive(Debug, Clone, Deserialize)]
+pub struct ValidateDagRequest {
+    /// DAG definition to validate.
+    pub dag: DagPipelineDefinition,
+}
+
+/// Response for DAG validation.
+#[derive(Debug, Clone, Serialize)]
+pub struct ValidateDagResponse {
+    /// Whether the DAG is valid.
+    pub valid: bool,
+    /// Validation errors (if any).
+    pub errors: Vec<String>,
+    /// Validation warnings (if any).
+    pub warnings: Vec<String>,
+    /// Detected root steps (no dependencies).
+    pub root_steps: Vec<String>,
+    /// Detected leaf steps (no dependents).
+    pub leaf_steps: Vec<String>,
+    /// Maximum depth of the DAG.
+    pub max_depth: usize,
+}
+
+/// Response for pipeline preset preview.
+#[derive(Debug, Clone, Serialize)]
+pub struct PresetPreviewResponse {
+    /// Preset ID.
+    pub preset_id: String,
+    /// Preset name.
+    pub preset_name: String,
+    /// Preview of jobs that would be created.
+    pub jobs: Vec<PresetPreviewJob>,
+    /// Execution order (topologically sorted).
+    pub execution_order: Vec<String>,
+}
+
+/// A preview of a job that would be created from a preset.
+#[derive(Debug, Clone, Serialize)]
+pub struct PresetPreviewJob {
+    /// Step ID.
+    pub step_id: String,
+    /// Processor type.
+    pub processor: String,
+    /// Dependencies (step IDs).
+    pub depends_on: Vec<String>,
+    /// Whether this is a root step (runs first).
+    pub is_root: bool,
+    /// Whether this is a leaf step (runs last).
+    pub is_leaf: bool,
+}
+
+/// Query parameters for filtering DAG executions.
+#[derive(Debug, Clone, Deserialize, Default)]
+pub struct DagFilterParams {
+    /// Filter by DAG status (PENDING, PROCESSING, COMPLETED, FAILED, CANCELLED).
+    pub status: Option<String>,
+}
+
+/// Pagination parameters for DAG list.
+#[derive(Debug, Clone, Deserialize)]
+pub struct DagPaginationParams {
+    /// Number of items to return (default: 20, max: 100).
+    #[serde(default = "default_dag_limit")]
+    pub limit: u32,
+    /// Number of items to skip.
+    #[serde(default)]
+    pub offset: u32,
+}
+
+fn default_dag_limit() -> u32 {
+    20
+}
+
+impl Default for DagPaginationParams {
+    fn default() -> Self {
+        Self {
+            limit: default_dag_limit(),
+            offset: 0,
+        }
+    }
+}
+
+/// Response for DAG list with pagination.
+#[derive(Debug, Clone, Serialize)]
+pub struct DagListResponse {
+    /// List of DAG executions.
+    pub dags: Vec<DagListItem>,
+    /// Number of items returned.
+    pub limit: u32,
+    /// Number of items skipped.
+    pub offset: u32,
+}
+
+/// A single DAG execution in the list response.
+#[derive(Debug, Clone, Serialize)]
+pub struct DagListItem {
+    /// DAG execution ID.
+    pub id: String,
+    /// DAG name from definition.
+    pub name: String,
+    /// Overall DAG status.
+    pub status: String,
+    /// Associated streamer ID.
+    pub streamer_id: Option<String>,
+    /// Associated session ID.
+    pub session_id: Option<String>,
+    /// Total number of steps.
+    pub total_steps: i32,
+    /// Number of completed steps.
+    pub completed_steps: i32,
+    /// Number of failed steps.
+    pub failed_steps: i32,
+    /// Progress percentage (0-100).
+    pub progress_percent: f64,
+    /// When the DAG was created.
+    pub created_at: String,
+    /// When the DAG was last updated.
+    pub updated_at: String,
+}
+
+/// Response for DAG cancellation.
+#[derive(Debug, Clone, Serialize)]
+pub struct DagCancelResponse {
+    /// DAG execution ID.
+    pub dag_id: String,
+    /// Number of steps that were cancelled.
+    pub cancelled_steps: u64,
+    /// Message describing the cancellation.
+    pub message: String,
+}
+
+/// Response for DAG step statistics.
+#[derive(Debug, Clone, Serialize)]
+pub struct DagStatsResponse {
+    /// DAG execution ID.
+    pub dag_id: String,
+    /// Number of blocked steps (waiting for dependencies).
+    pub blocked: u64,
+    /// Number of pending steps (ready to run).
+    pub pending: u64,
+    /// Number of processing steps (currently running).
+    pub processing: u64,
+    /// Number of completed steps.
+    pub completed: u64,
+    /// Number of failed steps.
+    pub failed: u64,
+    /// Number of cancelled steps.
+    pub cancelled: u64,
+    /// Total number of steps.
+    pub total: u64,
+    /// Progress percentage (0-100).
+    pub progress_percent: f64,
 }
 
 /// List pipeline jobs with pagination and filtering.
@@ -988,7 +1354,7 @@ async fn get_stats(State(state): State<AppState>) -> ApiResult<Json<PipelineStat
     Ok(Json(response))
 }
 
-/// Create a new pipeline with sequential job execution.
+/// Create a new DAG pipeline.
 ///
 /// # Endpoint
 ///
@@ -1001,7 +1367,14 @@ async fn get_stats(State(state): State<AppState>) -> ApiResult<Json<PipelineStat
 ///     "session_id": "session-123",
 ///     "streamer_id": "streamer-456",
 ///     "input_path": "/recordings/stream.flv",
-///     "steps": ["remux", "upload", "thumbnail"]
+///     "dag": {
+///         "name": "my_pipeline",
+///         "steps": [
+///             {"id": "remux", "step": {"type": "preset", "name": "remux"}, "depends_on": []},
+///             {"id": "thumbnail", "step": {"type": "preset", "name": "thumbnail"}, "depends_on": ["remux"]},
+///             {"id": "upload", "step": {"type": "preset", "name": "upload"}, "depends_on": ["remux", "thumbnail"]}
+///         ]
+///     }
 /// }
 /// ```
 ///
@@ -1010,37 +1383,18 @@ async fn get_stats(State(state): State<AppState>) -> ApiResult<Json<PipelineStat
 /// - `session_id` (required) - The recording session ID
 /// - `streamer_id` (required) - The streamer ID
 /// - `input_path` (required) - Path to the input file
-/// - `steps` (optional) - Processing steps. Requests without steps are rejected.
+/// - `dag` (required) - DAG pipeline definition with steps and dependencies
 ///
 /// # Response
 ///
 /// Returns the pipeline ID and first job details.
 ///
-/// ```json
-/// {
-///     "pipeline_id": "job-uuid-123",
-///     "first_job": {
-///         "id": "job-uuid-123",
-///         "status": "pending",
-///         "processor_type": "remux",
-///         ...
-///     }
-/// }
-/// ```
+/// # DAG Pipeline Features
 ///
-/// # Pipeline Execution
-///
-/// Jobs are executed sequentially. When a job completes, the next job in the
-/// pipeline is created atomically within a database transaction. This ensures
-/// crash-safe transitions between pipeline steps.
-///
-/// # Requirements
-///
-/// - 6.1: Persist job to database on enqueue
-/// - 7.1: Create only first job with metadata for subsequent steps
-/// - 7.5: Accept session_id, streamer_id, input_path, and optional steps
-/// - 8.1: Create pipeline and return pipeline_id
-/// - 8.2: Validate that at least one step is provided
+/// - Fan-out: One step can trigger multiple downstream steps
+/// - Fan-in: Multiple steps can merge their outputs before a downstream step
+/// - Parallel execution: Independent steps (no dependencies between them) run concurrently
+/// - Fail-fast: Any step failure cancels all pending/running jobs in the DAG
 async fn create_pipeline(
     State(state): State<AppState>,
     Json(request): Json<CreatePipelineRequest>,
@@ -1051,20 +1405,31 @@ async fn create_pipeline(
         .as_ref()
         .ok_or_else(|| ApiError::service_unavailable("Pipeline service not available"))?;
 
-    // Call PipelineManager.create_pipeline
+    // Validate DAG has at least one step
+    if request.dag.steps.is_empty() {
+        return Err(ApiError::bad_request(
+            "DAG pipeline must have at least one step",
+        ));
+    }
+
+    // Create DAG pipeline
     let result = pipeline_manager
-        .create_pipeline(
+        .create_dag_pipeline(
             &request.session_id,
             &request.streamer_id,
             &request.input_path,
-            request.steps,
+            request.dag,
         )
         .await
         .map_err(ApiError::from)?;
 
-    // Get the first job details
+    // Get the first job details (first root job)
+    let first_job_id = result.root_job_ids.first().ok_or_else(|| {
+        ApiError::internal("DAG pipeline created but no root jobs returned")
+    })?;
+
     let first_job = pipeline_manager
-        .get_job(&result.first_job_id)
+        .get_job(first_job_id)
         .await
         .map_err(ApiError::from)?
         .ok_or_else(|| ApiError::internal("Failed to retrieve created job"))?;
@@ -1077,7 +1442,7 @@ async fn create_pipeline(
     });
 
     let response = CreatePipelineResponse {
-        pipeline_id: result.pipeline_id,
+        pipeline_id: result.dag_id,
         first_job: job_to_response(&first_job, streamer_name),
     };
 
@@ -1270,11 +1635,13 @@ async fn get_pipeline_preset_by_id(
     Ok(Json(PipelinePresetResponse::from(preset)))
 }
 
-/// Create a new pipeline preset.
+/// Create a new DAG pipeline preset.
 ///
 /// # Endpoint
 ///
 /// `POST /api/pipeline/presets`
+///
+/// Creates a new pipeline preset as a DAG (Directed Acyclic Graph).
 async fn create_pipeline_preset(
     State(state): State<AppState>,
     Json(payload): Json<CreatePipelinePresetRequest>,
@@ -1284,8 +1651,15 @@ async fn create_pipeline_preset(
         .as_ref()
         .ok_or_else(|| ApiError::service_unavailable("Pipeline preset service not available"))?;
 
-    // Create via PipelinePreset::new which now accepts Vec<PipelineStep>
-    let mut preset = crate::database::models::PipelinePreset::new(payload.name, payload.steps);
+    // Validate DAG has at least one step
+    if payload.dag.steps.is_empty() {
+        return Err(ApiError::bad_request(
+            "DAG pipeline preset must have at least one step",
+        ));
+    }
+
+    // Create DAG preset
+    let mut preset = crate::database::models::PipelinePreset::new_dag(payload.name, payload.dag);
     if let Some(desc) = payload.description {
         preset = preset.with_description(desc);
     }
@@ -1298,7 +1672,7 @@ async fn create_pipeline_preset(
     Ok(Json(PipelinePresetResponse::from(preset)))
 }
 
-/// Update an existing pipeline preset.
+/// Update an existing DAG pipeline preset.
 ///
 /// # Endpoint
 ///
@@ -1320,18 +1694,23 @@ async fn update_pipeline_preset(
         .map_err(ApiError::from)?
         .ok_or_else(|| ApiError::not_found(format!("Pipeline preset {} not found", id)))?;
 
-    // Use PipelinePreset::new to handle serialization of steps
-    // But we want to preserve ID and created_at
-    // So we can use the same logic as new but manually construct or assume a helper?
-    // Let's just standard serialize since we have steps in payload
-    let steps_json = serde_json::to_string(&payload.steps)
-        .map_err(|e| ApiError::bad_request(format!("Invalid steps: {}", e)))?;
+    // Validate DAG has at least one step
+    if payload.dag.steps.is_empty() {
+        return Err(ApiError::bad_request(
+            "DAG pipeline preset must have at least one step",
+        ));
+    }
+
+    let dag_json = serde_json::to_string(&payload.dag)
+        .map_err(|e| ApiError::bad_request(format!("Invalid DAG definition: {}", e)))?;
 
     let preset = crate::database::models::PipelinePreset {
         id: id.clone(),
         name: payload.name,
         description: payload.description,
-        steps: steps_json,
+        steps: "[]".to_string(), // Empty legacy steps
+        dag_definition: Some(dag_json),
+        pipeline_type: Some("dag".to_string()),
         created_at: existing.created_at,
         updated_at: chrono::Utc::now(),
     };
@@ -1366,6 +1745,757 @@ async fn delete_pipeline_preset(
     Ok(Json(()))
 }
 
+/// Preview jobs that would be created from a pipeline preset.
+///
+/// # Endpoint
+///
+/// `GET /api/pipeline/presets/{id}/preview`
+///
+/// Shows what jobs would be created when using this preset, including
+/// the execution order and dependency relationships.
+async fn preview_pipeline_preset(
+    State(state): State<AppState>,
+    Path(id): Path<String>,
+) -> ApiResult<Json<PresetPreviewResponse>> {
+    let preset_repo = state
+        .pipeline_preset_repository
+        .as_ref()
+        .ok_or_else(|| ApiError::service_unavailable("Pipeline preset service not available"))?;
+
+    let preset = preset_repo
+        .get_pipeline_preset(&id)
+        .await
+        .map_err(ApiError::from)?
+        .ok_or_else(|| ApiError::not_found(format!("Pipeline preset {} not found", id)))?;
+
+    let dag = preset.get_dag_definition().ok_or_else(|| {
+        ApiError::internal("Pipeline preset has no DAG definition")
+    })?;
+
+    // Build dependency map for finding leaf steps
+    let mut has_dependents: HashSet<String> = HashSet::new();
+    for step in &dag.steps {
+        for dep in &step.depends_on {
+            has_dependents.insert(dep.clone());
+        }
+    }
+
+    // Build preview jobs
+    let jobs: Vec<PresetPreviewJob> = dag
+        .steps
+        .iter()
+        .map(|step| {
+            let processor = match &step.step {
+                PipelineStep::Preset { name } => name.clone(),
+                PipelineStep::Workflow { name } => format!("workflow:{}", name),
+                PipelineStep::Inline { processor, .. } => processor.clone(),
+            };
+            let is_root = step.depends_on.is_empty();
+            let is_leaf = !has_dependents.contains(&step.id);
+
+            PresetPreviewJob {
+                step_id: step.id.clone(),
+                processor,
+                depends_on: step.depends_on.clone(),
+                is_root,
+                is_leaf,
+            }
+        })
+        .collect();
+
+    // Compute topological order
+    let execution_order = topological_sort(&dag);
+
+    Ok(Json(PresetPreviewResponse {
+        preset_id: preset.id,
+        preset_name: preset.name,
+        jobs,
+        execution_order,
+    }))
+}
+
+// ============================================================================
+// DAG Status, Graph, Retry, and Validation Handlers
+// ============================================================================
+
+/// Get full DAG status with all steps.
+///
+/// # Endpoint
+///
+/// `GET /api/pipeline/dag/{dag_id}`
+///
+/// Returns the complete status of a DAG pipeline including all steps,
+/// their current status, and progress information.
+async fn get_dag_status(
+    State(state): State<AppState>,
+    Path(dag_id): Path<String>,
+) -> ApiResult<Json<DagStatusResponse>> {
+    let pipeline_manager = state
+        .pipeline_manager
+        .as_ref()
+        .ok_or_else(|| ApiError::service_unavailable("Pipeline service not available"))?;
+
+    let dag_scheduler = pipeline_manager.dag_scheduler().ok_or_else(|| {
+        ApiError::service_unavailable("DAG scheduler not available")
+    })?;
+
+    // Get DAG execution
+    let dag = dag_scheduler
+        .get_dag_status(&dag_id)
+        .await
+        .map_err(ApiError::from)?;
+
+    // Get all steps
+    let steps = dag_scheduler
+        .get_dag_steps(&dag_id)
+        .await
+        .map_err(ApiError::from)?;
+
+    // Get DAG definition for step processor info
+    let dag_def = dag.get_dag_definition();
+
+    // Build step responses
+    let step_responses: Vec<DagStepStatusResponse> = steps
+        .iter()
+        .map(|step| {
+            let processor = dag_def.as_ref().and_then(|def| {
+                def.steps.iter().find(|s| s.id == step.step_id).map(|s| {
+                    match &s.step {
+                        PipelineStep::Preset { name } => name.clone(),
+                        PipelineStep::Workflow { name } => format!("workflow:{}", name),
+                        PipelineStep::Inline { processor, .. } => processor.clone(),
+                    }
+                })
+            });
+
+            DagStepStatusResponse {
+                step_id: step.step_id.clone(),
+                status: step.status.clone(),
+                job_id: step.job_id.clone(),
+                depends_on: step.get_depends_on(),
+                outputs: step.get_outputs(),
+                processor,
+            }
+        })
+        .collect();
+
+    let name = dag_def.map(|d| d.name).unwrap_or_else(|| "Unknown".to_string());
+    let progress_percent = dag.progress_percent();
+
+    Ok(Json(DagStatusResponse {
+        id: dag.id,
+        name,
+        status: dag.status,
+        streamer_id: dag.streamer_id,
+        session_id: dag.session_id,
+        total_steps: dag.total_steps,
+        completed_steps: dag.completed_steps,
+        failed_steps: dag.failed_steps,
+        progress_percent,
+        steps: step_responses,
+        error: dag.error,
+        created_at: dag.created_at,
+        updated_at: dag.updated_at,
+        completed_at: dag.completed_at,
+    }))
+}
+
+/// Get DAG graph visualization data.
+///
+/// # Endpoint
+///
+/// `GET /api/pipeline/dag/{dag_id}/graph`
+///
+/// Returns nodes and edges for visualizing the DAG as a graph.
+async fn get_dag_graph(
+    State(state): State<AppState>,
+    Path(dag_id): Path<String>,
+) -> ApiResult<Json<DagGraphResponse>> {
+    let pipeline_manager = state
+        .pipeline_manager
+        .as_ref()
+        .ok_or_else(|| ApiError::service_unavailable("Pipeline service not available"))?;
+
+    let dag_scheduler = pipeline_manager.dag_scheduler().ok_or_else(|| {
+        ApiError::service_unavailable("DAG scheduler not available")
+    })?;
+
+    // Get DAG execution
+    let dag = dag_scheduler
+        .get_dag_status(&dag_id)
+        .await
+        .map_err(ApiError::from)?;
+
+    // Get all steps
+    let steps = dag_scheduler
+        .get_dag_steps(&dag_id)
+        .await
+        .map_err(ApiError::from)?;
+
+    // Get DAG definition for step processor info
+    let dag_def = dag.get_dag_definition();
+    let name = dag_def.as_ref().map(|d| d.name.clone()).unwrap_or_else(|| "Unknown".to_string());
+
+    // Build nodes
+    let nodes: Vec<DagGraphNode> = steps
+        .iter()
+        .map(|step| {
+            let processor = dag_def.as_ref().and_then(|def| {
+                def.steps.iter().find(|s| s.id == step.step_id).map(|s| {
+                    match &s.step {
+                        PipelineStep::Preset { name } => name.clone(),
+                        PipelineStep::Workflow { name } => name.clone(),
+                        PipelineStep::Inline { processor, .. } => processor.clone(),
+                    }
+                })
+            });
+
+            let label = processor.clone().unwrap_or_else(|| step.step_id.clone());
+
+            DagGraphNode {
+                id: step.step_id.clone(),
+                label,
+                status: step.status.clone(),
+                processor,
+                job_id: step.job_id.clone(),
+            }
+        })
+        .collect();
+
+    // Build edges from dependencies
+    let mut edges: Vec<DagGraphEdge> = Vec::new();
+    for step in &steps {
+        for dep in step.get_depends_on() {
+            edges.push(DagGraphEdge {
+                from: dep,
+                to: step.step_id.clone(),
+            });
+        }
+    }
+
+    Ok(Json(DagGraphResponse {
+        dag_id,
+        name,
+        nodes,
+        edges,
+    }))
+}
+
+/// Retry failed steps in a DAG.
+///
+/// # Endpoint
+///
+/// `POST /api/pipeline/dag/{dag_id}/retry`
+///
+/// Retries all failed steps in the DAG. This will:
+/// 1. Reset failed steps to pending
+/// 2. Create new jobs for those steps
+/// 3. Resume DAG execution
+async fn retry_dag(
+    State(state): State<AppState>,
+    Path(dag_id): Path<String>,
+) -> ApiResult<Json<DagRetryResponse>> {
+    let pipeline_manager = state
+        .pipeline_manager
+        .as_ref()
+        .ok_or_else(|| ApiError::service_unavailable("Pipeline service not available"))?;
+
+    let dag_scheduler = pipeline_manager.dag_scheduler().ok_or_else(|| {
+        ApiError::service_unavailable("DAG scheduler not available")
+    })?;
+
+    // Get DAG execution
+    let dag = dag_scheduler
+        .get_dag_status(&dag_id)
+        .await
+        .map_err(ApiError::from)?;
+
+    // Check if DAG has failed steps
+    if dag.failed_steps == 0 {
+        return Err(ApiError::bad_request("DAG has no failed steps to retry"));
+    }
+
+    // Get all steps
+    let steps = dag_scheduler
+        .get_dag_steps(&dag_id)
+        .await
+        .map_err(ApiError::from)?;
+
+    // Find failed steps
+    let failed_steps: Vec<_> = steps
+        .iter()
+        .filter(|s| s.status == "FAILED")
+        .collect();
+
+    if failed_steps.is_empty() {
+        return Err(ApiError::bad_request("No failed steps found to retry"));
+    }
+
+    // Retry each failed job
+    let mut job_ids = Vec::new();
+    for step in &failed_steps {
+        if let Some(job_id) = &step.job_id {
+            match pipeline_manager.retry_job(job_id).await {
+                Ok(job) => {
+                    job_ids.push(job.id);
+                }
+                Err(e) => {
+                    tracing::warn!("Failed to retry job {}: {}", job_id, e);
+                }
+            }
+        }
+    }
+
+    let retried_steps = job_ids.len();
+    let message = if retried_steps == failed_steps.len() {
+        format!("Successfully retried {} failed steps", retried_steps)
+    } else {
+        format!(
+            "Retried {} of {} failed steps",
+            retried_steps,
+            failed_steps.len()
+        )
+    };
+
+    Ok(Json(DagRetryResponse {
+        dag_id,
+        retried_steps,
+        job_ids,
+        message,
+    }))
+}
+
+/// List all DAG executions with filtering and pagination.
+///
+/// # Endpoint
+///
+/// `GET /api/pipeline/dags`
+///
+/// # Query Parameters
+///
+/// - `status` - Filter by DAG status (PENDING, PROCESSING, COMPLETED, FAILED, CANCELLED)
+/// - `limit` - Maximum number of results (default: 20, max: 100)
+/// - `offset` - Number of results to skip (default: 0)
+///
+/// # Response
+///
+/// Returns a list of DAG executions matching the filter criteria.
+async fn list_dags(
+    State(state): State<AppState>,
+    Query(filters): Query<DagFilterParams>,
+    Query(pagination): Query<DagPaginationParams>,
+) -> ApiResult<Json<DagListResponse>> {
+    let pipeline_manager = state
+        .pipeline_manager
+        .as_ref()
+        .ok_or_else(|| ApiError::service_unavailable("Pipeline service not available"))?;
+
+    let dag_scheduler = pipeline_manager.dag_scheduler().ok_or_else(|| {
+        ApiError::service_unavailable("DAG scheduler not available")
+    })?;
+
+    let effective_limit = pagination.limit.min(100);
+
+    // Get DAGs from repository via scheduler
+    let dags = dag_scheduler
+        .list_dags(filters.status.as_deref(), effective_limit, pagination.offset)
+        .await
+        .map_err(ApiError::from)?;
+
+    // Convert to response format
+    let dag_items: Vec<DagListItem> = dags
+        .into_iter()
+        .map(|dag| {
+            let name = dag
+                .get_dag_definition()
+                .map(|d| d.name)
+                .unwrap_or_else(|| "Unknown".to_string());
+            let progress_percent = dag.progress_percent();
+
+            DagListItem {
+                id: dag.id,
+                name,
+                status: dag.status,
+                streamer_id: dag.streamer_id,
+                session_id: dag.session_id,
+                total_steps: dag.total_steps,
+                completed_steps: dag.completed_steps,
+                failed_steps: dag.failed_steps,
+                progress_percent,
+                created_at: dag.created_at,
+                updated_at: dag.updated_at,
+            }
+        })
+        .collect();
+
+    Ok(Json(DagListResponse {
+        dags: dag_items,
+        limit: effective_limit,
+        offset: pagination.offset,
+    }))
+}
+
+/// Cancel a DAG execution.
+///
+/// # Endpoint
+///
+/// `DELETE /api/pipeline/dag/{dag_id}`
+///
+/// # Path Parameters
+///
+/// - `dag_id` - The DAG execution ID
+///
+/// # Response
+///
+/// Returns the number of steps that were cancelled.
+///
+/// # Behavior
+///
+/// - Cancels all pending and processing steps in the DAG
+/// - Marks the DAG as CANCELLED
+/// - Already completed or failed steps are not affected
+async fn cancel_dag(
+    State(state): State<AppState>,
+    Path(dag_id): Path<String>,
+) -> ApiResult<Json<DagCancelResponse>> {
+    let pipeline_manager = state
+        .pipeline_manager
+        .as_ref()
+        .ok_or_else(|| ApiError::service_unavailable("Pipeline service not available"))?;
+
+    let dag_scheduler = pipeline_manager.dag_scheduler().ok_or_else(|| {
+        ApiError::service_unavailable("DAG scheduler not available")
+    })?;
+
+    let cancelled_steps = dag_scheduler
+        .cancel_dag(&dag_id)
+        .await
+        .map_err(ApiError::from)?;
+
+    let message = if cancelled_steps == 0 {
+        format!("DAG '{}' cancelled (no active steps to cancel)", dag_id)
+    } else {
+        format!(
+            "DAG '{}' cancelled successfully ({} steps cancelled)",
+            dag_id, cancelled_steps
+        )
+    };
+
+    Ok(Json(DagCancelResponse {
+        dag_id,
+        cancelled_steps,
+        message,
+    }))
+}
+
+/// Get DAG step statistics.
+///
+/// # Endpoint
+///
+/// `GET /api/pipeline/dag/{dag_id}/stats`
+///
+/// # Path Parameters
+///
+/// - `dag_id` - The DAG execution ID
+///
+/// # Response
+///
+/// Returns statistics about the DAG's steps including counts by status.
+async fn get_dag_stats(
+    State(state): State<AppState>,
+    Path(dag_id): Path<String>,
+) -> ApiResult<Json<DagStatsResponse>> {
+    let pipeline_manager = state
+        .pipeline_manager
+        .as_ref()
+        .ok_or_else(|| ApiError::service_unavailable("Pipeline service not available"))?;
+
+    let dag_scheduler = pipeline_manager.dag_scheduler().ok_or_else(|| {
+        ApiError::service_unavailable("DAG scheduler not available")
+    })?;
+
+    let stats = dag_scheduler
+        .get_dag_stats(&dag_id)
+        .await
+        .map_err(ApiError::from)?;
+
+    let total = stats.blocked + stats.pending + stats.processing + stats.completed + stats.failed + stats.cancelled;
+    let progress_percent = if total > 0 {
+        (stats.completed as f64 / total as f64) * 100.0
+    } else {
+        0.0
+    };
+
+    Ok(Json(DagStatsResponse {
+        dag_id,
+        blocked: stats.blocked,
+        pending: stats.pending,
+        processing: stats.processing,
+        completed: stats.completed,
+        failed: stats.failed,
+        cancelled: stats.cancelled,
+        total,
+        progress_percent,
+    }))
+}
+
+/// Validate a DAG definition.
+///
+/// # Endpoint
+///
+/// `POST /api/pipeline/validate`
+///
+/// Validates a DAG definition without creating it. Checks for:
+/// - Cycles in the dependency graph
+/// - Missing dependencies
+/// - Empty DAG
+/// - Duplicate step IDs
+async fn validate_dag(
+    State(_state): State<AppState>,
+    Json(request): Json<ValidateDagRequest>,
+) -> ApiResult<Json<ValidateDagResponse>> {
+    let dag = &request.dag;
+    let mut errors: Vec<String> = Vec::new();
+    let mut warnings: Vec<String> = Vec::new();
+
+    // Check for empty DAG
+    if dag.steps.is_empty() {
+        errors.push("DAG must have at least one step".to_string());
+        return Ok(Json(ValidateDagResponse {
+            valid: false,
+            errors,
+            warnings,
+            root_steps: vec![],
+            leaf_steps: vec![],
+            max_depth: 0,
+        }));
+    }
+
+    // Check for duplicate step IDs
+    let mut step_ids: HashSet<String> = HashSet::new();
+    for step in &dag.steps {
+        if !step_ids.insert(step.id.clone()) {
+            errors.push(format!("Duplicate step ID: {}", step.id));
+        }
+    }
+
+    // Check for missing dependencies
+    for step in &dag.steps {
+        for dep in &step.depends_on {
+            if !step_ids.contains(dep) {
+                errors.push(format!(
+                    "Step '{}' depends on non-existent step '{}'",
+                    step.id, dep
+                ));
+            }
+        }
+    }
+
+    // Check for self-dependencies
+    for step in &dag.steps {
+        if step.depends_on.contains(&step.id) {
+            errors.push(format!("Step '{}' depends on itself", step.id));
+        }
+    }
+
+    // Check for cycles using DFS
+    if let Some(cycle) = detect_cycle(dag) {
+        errors.push(format!("Cycle detected: {}", cycle.join(" -> ")));
+    }
+
+    // Find root steps (no dependencies)
+    let root_steps: Vec<String> = dag
+        .steps
+        .iter()
+        .filter(|s| s.depends_on.is_empty())
+        .map(|s| s.id.clone())
+        .collect();
+
+    if root_steps.is_empty() && !dag.steps.is_empty() {
+        errors.push("DAG has no root steps (all steps have dependencies)".to_string());
+    }
+
+    // Find leaf steps (no dependents)
+    let mut has_dependents: HashSet<String> = HashSet::new();
+    for step in &dag.steps {
+        for dep in &step.depends_on {
+            has_dependents.insert(dep.clone());
+        }
+    }
+    let leaf_steps: Vec<String> = dag
+        .steps
+        .iter()
+        .filter(|s| !has_dependents.contains(&s.id))
+        .map(|s| s.id.clone())
+        .collect();
+
+    // Calculate max depth
+    let max_depth = calculate_max_depth(dag);
+
+    // Add warnings
+    if dag.steps.len() == 1 {
+        warnings.push("DAG has only one step - consider if a pipeline is necessary".to_string());
+    }
+
+    if max_depth > 10 {
+        warnings.push(format!(
+            "DAG has depth {} - deep pipelines may be slow",
+            max_depth
+        ));
+    }
+
+    Ok(Json(ValidateDagResponse {
+        valid: errors.is_empty(),
+        errors,
+        warnings,
+        root_steps,
+        leaf_steps,
+        max_depth,
+    }))
+}
+
+// ============================================================================
+// DAG Validation Helper Functions
+// ============================================================================
+
+/// Detect cycles in a DAG using DFS.
+fn detect_cycle(dag: &DagPipelineDefinition) -> Option<Vec<String>> {
+    let mut visited: HashSet<String> = HashSet::new();
+    let mut rec_stack: HashSet<String> = HashSet::new();
+    let mut path: Vec<String> = Vec::new();
+
+    // Build adjacency list
+    let mut adj: HashMap<String, Vec<String>> = HashMap::new();
+    for step in &dag.steps {
+        adj.insert(step.id.clone(), step.depends_on.clone());
+    }
+
+    fn dfs(
+        node: &str,
+        adj: &HashMap<String, Vec<String>>,
+        visited: &mut HashSet<String>,
+        rec_stack: &mut HashSet<String>,
+        path: &mut Vec<String>,
+    ) -> Option<Vec<String>> {
+        visited.insert(node.to_string());
+        rec_stack.insert(node.to_string());
+        path.push(node.to_string());
+
+        if let Some(deps) = adj.get(node) {
+            for dep in deps {
+                if !visited.contains(dep) {
+                    if let Some(cycle) = dfs(dep, adj, visited, rec_stack, path) {
+                        return Some(cycle);
+                    }
+                } else if rec_stack.contains(dep) {
+                    // Found cycle
+                    let mut cycle = path.clone();
+                    cycle.push(dep.clone());
+                    return Some(cycle);
+                }
+            }
+        }
+
+        path.pop();
+        rec_stack.remove(node);
+        None
+    }
+
+    for step in &dag.steps {
+        if !visited.contains(&step.id) {
+            if let Some(cycle) = dfs(&step.id, &adj, &mut visited, &mut rec_stack, &mut path) {
+                return Some(cycle);
+            }
+        }
+    }
+
+    None
+}
+
+/// Calculate the maximum depth of a DAG.
+fn calculate_max_depth(dag: &DagPipelineDefinition) -> usize {
+    let mut depths: HashMap<String, usize> = HashMap::new();
+
+    // Build adjacency list (reverse - from dependency to dependent)
+    let mut dependents: HashMap<String, Vec<String>> = HashMap::new();
+    for step in &dag.steps {
+        dependents.entry(step.id.clone()).or_default();
+        for dep in &step.depends_on {
+            dependents.entry(dep.clone()).or_default().push(step.id.clone());
+        }
+    }
+
+    // Find root steps
+    let roots: Vec<String> = dag
+        .steps
+        .iter()
+        .filter(|s| s.depends_on.is_empty())
+        .map(|s| s.id.clone())
+        .collect();
+
+    // BFS to calculate depths
+    let mut queue: std::collections::VecDeque<String> = roots.into_iter().collect();
+    for step in &dag.steps {
+        if step.depends_on.is_empty() {
+            depths.insert(step.id.clone(), 1);
+        }
+    }
+
+    while let Some(node) = queue.pop_front() {
+        let current_depth = *depths.get(&node).unwrap_or(&1);
+        if let Some(deps) = dependents.get(&node) {
+            for dep in deps {
+                let new_depth = current_depth + 1;
+                let existing = depths.entry(dep.clone()).or_insert(0);
+                if new_depth > *existing {
+                    *existing = new_depth;
+                    queue.push_back(dep.clone());
+                }
+            }
+        }
+    }
+
+    depths.values().copied().max().unwrap_or(0)
+}
+
+/// Topologically sort DAG steps.
+fn topological_sort(dag: &DagPipelineDefinition) -> Vec<String> {
+    let mut result: Vec<String> = Vec::new();
+    let mut visited: HashSet<String> = HashSet::new();
+
+    // Build adjacency list
+    let mut adj: HashMap<String, Vec<String>> = HashMap::new();
+    for step in &dag.steps {
+        adj.insert(step.id.clone(), step.depends_on.clone());
+    }
+
+    fn visit(
+        node: &str,
+        adj: &HashMap<String, Vec<String>>,
+        visited: &mut HashSet<String>,
+        result: &mut Vec<String>,
+    ) {
+        if visited.contains(node) {
+            return;
+        }
+        visited.insert(node.to_string());
+
+        if let Some(deps) = adj.get(node) {
+            for dep in deps {
+                visit(dep, adj, visited, result);
+            }
+        }
+
+        result.push(node.to_string());
+    }
+
+    for step in &dag.steps {
+        visit(&step.id, &adj, &mut visited, &mut result);
+    }
+
+    result
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1390,33 +2520,48 @@ mod tests {
         let json = r#"{
             "session_id": "session-123",
             "streamer_id": "streamer-456",
-            "input_path": "/recordings/stream.flv"
+            "input_path": "/recordings/stream.flv",
+            "dag": {
+                "name": "test_pipeline",
+                "steps": [
+                    {"id": "remux", "step": {"type": "preset", "name": "remux"}, "depends_on": []}
+                ]
+            }
         }"#;
 
         let request: CreatePipelineRequest = serde_json::from_str(json).unwrap();
         assert_eq!(request.session_id, "session-123");
         assert_eq!(request.streamer_id, "streamer-456");
         assert_eq!(request.input_path, "/recordings/stream.flv");
-        assert!(request.steps.is_none());
+        assert_eq!(request.dag.name, "test_pipeline");
+        assert_eq!(request.dag.steps.len(), 1);
     }
 
     #[test]
-    fn test_create_pipeline_request_with_steps() {
+    fn test_create_pipeline_request_with_dag() {
         let json = r#"{
             "session_id": "session-123",
             "streamer_id": "streamer-456",
             "input_path": "/recordings/stream.flv",
-            "steps": ["remux", "upload"]
+            "dag": {
+                "name": "my_pipeline",
+                "steps": [
+                    {"id": "remux", "step": {"type": "preset", "name": "remux"}, "depends_on": []},
+                    {"id": "thumbnail", "step": {"type": "preset", "name": "thumbnail"}, "depends_on": ["remux"]},
+                    {"id": "upload", "step": {"type": "preset", "name": "upload"}, "depends_on": ["remux", "thumbnail"]}
+                ]
+            }
         }"#;
 
         let request: CreatePipelineRequest = serde_json::from_str(json).unwrap();
-        assert_eq!(
-            request.steps,
-            Some(vec![
-                crate::database::models::job::PipelineStep::preset("remux"),
-                crate::database::models::job::PipelineStep::preset("upload")
-            ])
-        );
+        assert_eq!(request.dag.name, "my_pipeline");
+        assert_eq!(request.dag.steps.len(), 3);
+        assert_eq!(request.dag.steps[0].id, "remux");
+        assert!(request.dag.steps[0].depends_on.is_empty());
+        assert_eq!(request.dag.steps[1].id, "thumbnail");
+        assert_eq!(request.dag.steps[1].depends_on, vec!["remux"]);
+        assert_eq!(request.dag.steps[2].id, "upload");
+        assert_eq!(request.dag.steps[2].depends_on, vec!["remux", "thumbnail"]);
     }
 
     #[test]
@@ -1465,5 +2610,106 @@ mod tests {
             queue_status_to_api_status(QueueJobStatus::Interrupted),
             ApiJobStatus::Interrupted
         );
+    }
+
+    // ========================================================================
+    // DAG Validation Tests
+    // ========================================================================
+
+    #[test]
+    fn test_detect_cycle_no_cycle() {
+        let dag = DagPipelineDefinition::new(
+            "test",
+            vec![
+                DagStep::new("A", PipelineStep::preset("remux")),
+                DagStep::with_dependencies("B", PipelineStep::preset("upload"), vec!["A".to_string()]),
+                DagStep::with_dependencies("C", PipelineStep::preset("notify"), vec!["B".to_string()]),
+            ],
+        );
+
+        assert!(detect_cycle(&dag).is_none());
+    }
+
+    #[test]
+    fn test_detect_cycle_with_cycle() {
+        let dag = DagPipelineDefinition::new(
+            "test",
+            vec![
+                DagStep::with_dependencies("A", PipelineStep::preset("remux"), vec!["C".to_string()]),
+                DagStep::with_dependencies("B", PipelineStep::preset("upload"), vec!["A".to_string()]),
+                DagStep::with_dependencies("C", PipelineStep::preset("notify"), vec!["B".to_string()]),
+            ],
+        );
+
+        let cycle = detect_cycle(&dag);
+        assert!(cycle.is_some());
+    }
+
+    #[test]
+    fn test_calculate_max_depth_linear() {
+        let dag = DagPipelineDefinition::new(
+            "test",
+            vec![
+                DagStep::new("A", PipelineStep::preset("remux")),
+                DagStep::with_dependencies("B", PipelineStep::preset("upload"), vec!["A".to_string()]),
+                DagStep::with_dependencies("C", PipelineStep::preset("notify"), vec!["B".to_string()]),
+            ],
+        );
+
+        assert_eq!(calculate_max_depth(&dag), 3);
+    }
+
+    #[test]
+    fn test_calculate_max_depth_parallel() {
+        // A and B run in parallel, C depends on both
+        let dag = DagPipelineDefinition::new(
+            "test",
+            vec![
+                DagStep::new("A", PipelineStep::preset("remux")),
+                DagStep::new("B", PipelineStep::preset("thumbnail")),
+                DagStep::with_dependencies("C", PipelineStep::preset("upload"), vec!["A".to_string(), "B".to_string()]),
+            ],
+        );
+
+        assert_eq!(calculate_max_depth(&dag), 2);
+    }
+
+    #[test]
+    fn test_topological_sort() {
+        let dag = DagPipelineDefinition::new(
+            "test",
+            vec![
+                DagStep::new("A", PipelineStep::preset("remux")),
+                DagStep::with_dependencies("B", PipelineStep::preset("upload"), vec!["A".to_string()]),
+                DagStep::with_dependencies("C", PipelineStep::preset("notify"), vec!["B".to_string()]),
+            ],
+        );
+
+        let order = topological_sort(&dag);
+
+        // A must come before B, B must come before C
+        let pos_a = order.iter().position(|x| x == "A").unwrap();
+        let pos_b = order.iter().position(|x| x == "B").unwrap();
+        let pos_c = order.iter().position(|x| x == "C").unwrap();
+
+        assert!(pos_a < pos_b);
+        assert!(pos_b < pos_c);
+    }
+
+    #[test]
+    fn test_validate_dag_request_deserialize() {
+        let json = r#"{
+            "dag": {
+                "name": "test_pipeline",
+                "steps": [
+                    {"id": "remux", "step": {"type": "preset", "name": "remux"}, "depends_on": []},
+                    {"id": "upload", "step": {"type": "preset", "name": "upload"}, "depends_on": ["remux"]}
+                ]
+            }
+        }"#;
+
+        let request: ValidateDagRequest = serde_json::from_str(json).unwrap();
+        assert_eq!(request.dag.name, "test_pipeline");
+        assert_eq!(request.dag.steps.len(), 2);
     }
 }

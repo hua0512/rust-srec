@@ -8,6 +8,7 @@ use tokio::task::JoinSet;
 use tokio_util::sync::CancellationToken;
 use tracing::{debug, error, info, warn};
 
+use super::dag_scheduler::DagScheduler;
 use super::job_queue::{JobExecutionInfo, JobLogEntry, JobQueue, JobResult};
 use super::processors::{Processor, ProcessorContext, ProcessorInput};
 
@@ -198,6 +199,16 @@ impl WorkerPool {
 
     /// Start the worker pool.
     pub fn start(&self, job_queue: Arc<JobQueue>, processors: Vec<Arc<dyn Processor>>) {
+        self.start_with_dag_scheduler(job_queue, processors, None);
+    }
+
+    /// Start the worker pool with optional DAG scheduler support.
+    pub fn start_with_dag_scheduler(
+        &self,
+        job_queue: Arc<JobQueue>,
+        processors: Vec<Arc<dyn Processor>>,
+        dag_scheduler: Option<Arc<DagScheduler>>,
+    ) {
         let worker_type = self.worker_type;
         let semaphore = self.semaphore.clone();
         let cancellation_token = self.cancellation_token.clone();
@@ -253,6 +264,7 @@ impl WorkerPool {
                 let supported_job_types = supported_job_types.clone();
                 let active_workers = active_workers.clone();
                 let avg_runtime_ms = avg_runtime_ms.clone();
+                let dag_scheduler = dag_scheduler.clone();
 
                 join_set.spawn(async move {
                     debug!("{} worker {} started", worker_type, i);
@@ -429,59 +441,200 @@ impl WorkerPool {
                                         }
                                     }
 
-                                    // Complete job and pass all outputs to next step
-                                    // Requirements: 9.1, 9.2
-                                    let _ = job_queue
-                                        .complete_with_next(
-                                            &job_id,
-                                            JobResult {
-                                                outputs: output.outputs,
-                                                duration_secs: output.duration_secs,
-                                                metadata: output.metadata,
-                                                logs: output.logs,
-                                            },
-                                        )
-                                        .await;
+                                    // Check if this is a DAG job
+                                    if let Some(dag_step_id) = &job.dag_step_execution_id {
+                                        // Handle DAG job completion via scheduler
+                                        if let Some(scheduler) = &dag_scheduler {
+                                            // First complete the job normally
+                                            let _ = job_queue
+                                                .complete(
+                                                    &job_id,
+                                                    JobResult {
+                                                        outputs: output.outputs.clone(),
+                                                        duration_secs: output.duration_secs,
+                                                        metadata: output.metadata.clone(),
+                                                        logs: output.logs.clone(),
+                                                    },
+                                                )
+                                                .await;
+
+                                            // Then notify DAG scheduler to create next jobs
+                                            match scheduler
+                                                .on_job_completed(dag_step_id, output.outputs)
+                                                .await
+                                            {
+                                                Ok(new_jobs) => {
+                                                    if !new_jobs.is_empty() {
+                                                        info!(
+                                                            "DAG step {} completed, created {} downstream jobs",
+                                                            dag_step_id,
+                                                            new_jobs.len()
+                                                        );
+                                                    }
+                                                }
+                                                Err(e) => {
+                                                    error!(
+                                                        "Failed to handle DAG job completion for {}: {}",
+                                                        dag_step_id, e
+                                                    );
+                                                }
+                                            }
+                                        } else {
+                                            // No DAG scheduler, just complete normally
+                                            let _ = job_queue
+                                                .complete(
+                                                    &job_id,
+                                                    JobResult {
+                                                        outputs: output.outputs,
+                                                        duration_secs: output.duration_secs,
+                                                        metadata: output.metadata,
+                                                        logs: output.logs,
+                                                    },
+                                                )
+                                                .await;
+                                        }
+                                    } else {
+                                        // Regular sequential pipeline job
+                                        // Complete job and pass all outputs to next step
+                                        // Requirements: 9.1, 9.2
+                                        let _ = job_queue
+                                            .complete_with_next(
+                                                &job_id,
+                                                JobResult {
+                                                    outputs: output.outputs,
+                                                    duration_secs: output.duration_secs,
+                                                    metadata: output.metadata,
+                                                    logs: output.logs,
+                                                },
+                                            )
+                                            .await;
+                                    }
                                 }
                                 Ok(Err(e)) => {
-                                    // Clean up partial outputs on failure
-                                    // Record step info for observability
-                                    // Requirements: 6.4, 9.5, 10.3
-                                    let partial_outputs = job_queue
-                                        .fail_with_cleanup_and_step_info(
-                                            &job_id,
-                                            &e.to_string(),
-                                            Some(processor.name()),
-                                            job.execution_info
-                                                .as_ref()
-                                                .and_then(|i| i.current_step),
-                                            job.execution_info.as_ref().and_then(|i| i.total_steps),
-                                        )
-                                        .await;
-                                    if let Ok(outputs) = partial_outputs {
-                                        if !outputs.is_empty() {
-                                            cleanup_partial_outputs(&outputs).await;
+                                    // Check if this is a DAG job for fail-fast handling
+                                    if let Some(dag_step_id) = &job.dag_step_execution_id {
+                                        // First mark job as failed
+                                        let partial_outputs = job_queue
+                                            .fail_with_cleanup_and_step_info(
+                                                &job_id,
+                                                &e.to_string(),
+                                                Some(processor.name()),
+                                                job.execution_info
+                                                    .as_ref()
+                                                    .and_then(|i| i.current_step),
+                                                job.execution_info.as_ref().and_then(|i| i.total_steps),
+                                            )
+                                            .await;
+                                        if let Ok(outputs) = partial_outputs {
+                                            if !outputs.is_empty() {
+                                                cleanup_partial_outputs(&outputs).await;
+                                            }
+                                        }
+
+                                        // Then notify DAG scheduler for fail-fast
+                                        if let Some(scheduler) = &dag_scheduler {
+                                            match scheduler
+                                                .on_job_failed(dag_step_id, &e.to_string())
+                                                .await
+                                            {
+                                                Ok(cancelled) => {
+                                                    info!(
+                                                        "DAG step {} failed, cancelled {} jobs (fail-fast)",
+                                                        dag_step_id, cancelled
+                                                    );
+                                                }
+                                                Err(err) => {
+                                                    error!(
+                                                        "Failed to handle DAG job failure for {}: {}",
+                                                        dag_step_id, err
+                                                    );
+                                                }
+                                            }
+                                        }
+                                    } else {
+                                        // Regular pipeline job failure
+                                        // Clean up partial outputs on failure
+                                        // Record step info for observability
+                                        // Requirements: 6.4, 9.5, 10.3
+                                        let partial_outputs = job_queue
+                                            .fail_with_cleanup_and_step_info(
+                                                &job_id,
+                                                &e.to_string(),
+                                                Some(processor.name()),
+                                                job.execution_info
+                                                    .as_ref()
+                                                    .and_then(|i| i.current_step),
+                                                job.execution_info.as_ref().and_then(|i| i.total_steps),
+                                            )
+                                            .await;
+                                        if let Ok(outputs) = partial_outputs {
+                                            if !outputs.is_empty() {
+                                                cleanup_partial_outputs(&outputs).await;
+                                            }
                                         }
                                     }
                                 }
                                 Err(_) => {
-                                    // Clean up partial outputs on timeout
-                                    // Record step info for observability
-                                    // Requirements: 6.4, 9.5, 10.3
-                                    let partial_outputs = job_queue
-                                        .fail_with_cleanup_and_step_info(
-                                            &job_id,
-                                            "Job timed out",
-                                            Some(processor.name()),
-                                            job.execution_info
-                                                .as_ref()
-                                                .and_then(|i| i.current_step),
-                                            job.execution_info.as_ref().and_then(|i| i.total_steps),
-                                        )
-                                        .await;
-                                    if let Ok(outputs) = partial_outputs {
-                                        if !outputs.is_empty() {
-                                            cleanup_partial_outputs(&outputs).await;
+                                    // Check if this is a DAG job for fail-fast handling
+                                    if let Some(dag_step_id) = &job.dag_step_execution_id {
+                                        // First mark job as failed
+                                        let partial_outputs = job_queue
+                                            .fail_with_cleanup_and_step_info(
+                                                &job_id,
+                                                "Job timed out",
+                                                Some(processor.name()),
+                                                job.execution_info
+                                                    .as_ref()
+                                                    .and_then(|i| i.current_step),
+                                                job.execution_info.as_ref().and_then(|i| i.total_steps),
+                                            )
+                                            .await;
+                                        if let Ok(outputs) = partial_outputs {
+                                            if !outputs.is_empty() {
+                                                cleanup_partial_outputs(&outputs).await;
+                                            }
+                                        }
+
+                                        // Then notify DAG scheduler for fail-fast
+                                        if let Some(scheduler) = &dag_scheduler {
+                                            match scheduler
+                                                .on_job_failed(dag_step_id, "Job timed out")
+                                                .await
+                                            {
+                                                Ok(cancelled) => {
+                                                    info!(
+                                                        "DAG step {} timed out, cancelled {} jobs (fail-fast)",
+                                                        dag_step_id, cancelled
+                                                    );
+                                                }
+                                                Err(err) => {
+                                                    error!(
+                                                        "Failed to handle DAG job timeout for {}: {}",
+                                                        dag_step_id, err
+                                                    );
+                                                }
+                                            }
+                                        }
+                                    } else {
+                                        // Regular pipeline job timeout
+                                        // Clean up partial outputs on timeout
+                                        // Record step info for observability
+                                        // Requirements: 6.4, 9.5, 10.3
+                                        let partial_outputs = job_queue
+                                            .fail_with_cleanup_and_step_info(
+                                                &job_id,
+                                                "Job timed out",
+                                                Some(processor.name()),
+                                                job.execution_info
+                                                    .as_ref()
+                                                    .and_then(|i| i.current_step),
+                                                job.execution_info.as_ref().and_then(|i| i.total_steps),
+                                            )
+                                            .await;
+                                        if let Ok(outputs) = partial_outputs {
+                                            if !outputs.is_empty() {
+                                                cleanup_partial_outputs(&outputs).await;
+                                            }
                                         }
                                     }
                                 }

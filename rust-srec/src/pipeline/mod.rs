@@ -7,7 +7,9 @@
 //! - Handling backpressure and queue monitoring
 //! - Automatic purging of old completed/failed jobs
 //! - Download throttling based on queue depth
+//! - DAG pipeline support with fan-in/fan-out
 
+mod dag_scheduler;
 mod job_queue;
 mod manager;
 mod processors;
@@ -16,6 +18,7 @@ mod purge;
 mod throttle;
 mod worker_pool;
 
+pub use dag_scheduler::{DagCreationResult, DagScheduler};
 pub use job_queue::{
     Job, JobExecutionInfo, JobLogEntry, JobQueue, JobQueueConfig, JobResult, JobStats, JobStatus,
     LogLevel, QueueDepthStatus,

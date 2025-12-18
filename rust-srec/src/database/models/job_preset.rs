@@ -125,9 +125,39 @@ impl JobPreset {
     }
 }
 
+/// Pipeline type identifier.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "lowercase")]
+pub enum PipelineType {
+    /// Sequential pipeline (legacy, deprecated).
+    Sequential,
+    /// DAG pipeline with fan-in/fan-out support.
+    #[default]
+    Dag,
+}
+
+impl PipelineType {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Self::Sequential => "sequential",
+            Self::Dag => "dag",
+        }
+    }
+
+    pub fn from_str(s: &str) -> Self {
+        match s.to_lowercase().as_str() {
+            "sequential" => Self::Sequential,
+            _ => Self::Dag,
+        }
+    }
+}
+
 /// Pipeline Preset configuration.
 ///
-/// Represents a reusable, named sequence of pipeline steps (job presets).
+/// Represents a reusable pipeline configuration that can be either:
+/// - DAG (Directed Acyclic Graph): Supports fan-in, fan-out, and parallel execution
+/// - Sequential (legacy, deprecated): Simple linear chain of steps
+///
 /// Users can copy these to configure streamers/templates.
 #[derive(Debug, Clone, FromRow, Serialize, Deserialize)]
 pub struct PipelinePreset {
@@ -139,23 +169,51 @@ pub struct PipelinePreset {
     #[sqlx(default)]
     pub description: Option<String>,
     /// JSON array of pipeline steps (job preset names or inline definitions).
+    /// DEPRECATED: Use dag_definition for new pipelines.
     pub steps: String,
+    /// DAG pipeline definition (JSON-serialized DagPipelineDefinition).
+    /// This is the primary field for defining pipeline structure.
+    #[sqlx(default)]
+    pub dag_definition: Option<String>,
+    /// Pipeline type: 'dag' (default) or 'sequential' (legacy).
+    #[sqlx(default)]
+    #[serde(default)]
+    pub pipeline_type: Option<String>,
     /// Creation timestamp.
     pub created_at: DateTime<Utc>,
     /// Last update timestamp.
     pub updated_at: DateTime<Utc>,
 }
 
-use crate::database::models::job::PipelineStep;
+use crate::database::models::job::{DagPipelineDefinition, PipelineStep};
 
 impl PipelinePreset {
-    /// Create a new Pipeline Preset.
+    /// Create a new Pipeline Preset (legacy sequential format).
+    /// DEPRECATED: Use `new_dag` for new pipelines.
+    #[deprecated(note = "Use new_dag() for new pipelines")]
     pub fn new(name: impl Into<String>, steps: Vec<PipelineStep>) -> Self {
         Self {
             id: uuid::Uuid::new_v4().to_string(),
             name: name.into(),
             description: None,
             steps: serde_json::to_string(&steps).unwrap_or_else(|_| "[]".to_string()),
+            dag_definition: None,
+            pipeline_type: Some("sequential".to_string()),
+            created_at: Utc::now(),
+            updated_at: Utc::now(),
+        }
+    }
+
+    /// Create a new DAG Pipeline Preset.
+    /// This is the recommended way to create new pipelines.
+    pub fn new_dag(name: impl Into<String>, dag: DagPipelineDefinition) -> Self {
+        Self {
+            id: uuid::Uuid::new_v4().to_string(),
+            name: name.into(),
+            description: None,
+            steps: "[]".to_string(), // Empty for DAG pipelines
+            dag_definition: Some(serde_json::to_string(&dag).unwrap_or_else(|_| "{}".to_string())),
+            pipeline_type: Some("dag".to_string()),
             created_at: Utc::now(),
             updated_at: Utc::now(),
         }
@@ -167,7 +225,29 @@ impl PipelinePreset {
         self
     }
 
-    /// Get the steps as a parsed vector.
+    /// Get the pipeline type.
+    pub fn get_pipeline_type(&self) -> PipelineType {
+        self.pipeline_type
+            .as_ref()
+            .map(|s| PipelineType::from_str(s))
+            .unwrap_or(PipelineType::Dag)
+    }
+
+    /// Check if this is a DAG pipeline.
+    pub fn is_dag(&self) -> bool {
+        self.get_pipeline_type() == PipelineType::Dag
+    }
+
+    /// Get the DAG definition if this is a DAG pipeline.
+    pub fn get_dag_definition(&self) -> Option<DagPipelineDefinition> {
+        self.dag_definition
+            .as_ref()
+            .and_then(|s| serde_json::from_str(s).ok())
+    }
+
+    /// Get the steps as a parsed vector (for legacy sequential pipelines).
+    /// DEPRECATED: Use `get_dag_definition` for DAG pipelines.
+    #[deprecated(note = "Use get_dag_definition() for DAG pipelines")]
     pub fn get_steps(&self) -> Vec<PipelineStep> {
         serde_json::from_str(&self.steps).unwrap_or_default()
     }
@@ -179,10 +259,29 @@ impl PipelinePreset {
             return Err("Name cannot be empty".to_string());
         }
 
-        // Validate steps is valid JSON array
-        let steps: Result<Vec<serde_json::Value>, _> = serde_json::from_str(&self.steps);
-        if steps.is_err() {
-            return Err("Steps must be a valid JSON array".to_string());
+        // Validate based on pipeline type
+        if self.is_dag() {
+            // Validate DAG definition
+            if let Some(ref dag_str) = self.dag_definition {
+                let dag: Result<DagPipelineDefinition, _> = serde_json::from_str(dag_str);
+                match dag {
+                    Ok(d) => {
+                        // Validate the DAG structure
+                        d.validate()?;
+                    }
+                    Err(e) => {
+                        return Err(format!("Invalid DAG definition: {}", e));
+                    }
+                }
+            } else {
+                return Err("DAG pipeline must have a dag_definition".to_string());
+            }
+        } else {
+            // Validate legacy sequential steps
+            let steps: Result<Vec<serde_json::Value>, _> = serde_json::from_str(&self.steps);
+            if steps.is_err() {
+                return Err("Steps must be a valid JSON array".to_string());
+            }
         }
 
         Ok(())

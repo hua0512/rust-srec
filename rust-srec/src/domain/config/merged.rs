@@ -726,11 +726,11 @@ mod tests {
     #[test]
     fn test_streamer_pipeline_override() {
         // Create a streamer-specific config with custom pipeline
-        // PipelineStep uses #[serde(untagged)], so Preset is just a string
+        // PipelineStep uses #[serde(tag = "type")], so Preset requires {"type": "preset", "name": "..."}
         let streamer_config = serde_json::json!({
             "pipeline": [
-                "fast_remux",
-                "s3_upload"
+                {"type": "preset", "name": "fast_remux"},
+                {"type": "preset", "name": "s3_upload"}
             ]
         });
 
@@ -782,13 +782,14 @@ mod tests {
     #[test]
     fn test_streamer_inline_pipeline() {
         // Create a streamer-specific config with inline pipeline step
-        // PipelineStep uses #[serde(untagged)]:
-        // - Preset is just a string: "remux"
-        // - Inline is an object with processor and config fields
+        // PipelineStep uses #[serde(tag = "type")]:
+        // - Preset is {"type": "preset", "name": "..."}
+        // - Inline is {"type": "inline", "processor": "...", "config": {...}}
         let streamer_config = serde_json::json!({
             "pipeline": [
-                "remux",
+                {"type": "preset", "name": "remux"},
                 {
+                    "type": "inline",
                     "processor": "execute",
                     "config": {
                         "command": "echo {input}"

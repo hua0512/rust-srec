@@ -320,17 +320,15 @@ impl Processor for ThumbnailProcessor {
             config.width.to_string()
         };
 
-        // Passthrough: include the original video along with the generated thumbnail
-        // This allows downstream processors (like rclone) to receive all files
+        // Only return the newly produced thumbnail (no additive passthrough)
         Ok(ProcessorOutput {
-            outputs: vec![input_path.to_string(), output_path.to_string()],
+            outputs: vec![output_path.to_string()],
             duration_secs: command_output.duration,
             metadata: Some(
                 serde_json::json!({
                     "timestamp_secs": config.timestamp_secs,
                     "width": width_str,
                     "preserve_resolution": config.preserve_resolution,
-                    "passthrough": true,
                 })
                 .to_string(),
             ),

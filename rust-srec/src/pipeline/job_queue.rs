@@ -370,6 +370,8 @@ pub struct Job {
     pub duration_secs: Option<f64>,
     /// Time spent waiting in queue before processing started (seconds).
     pub queue_wait_secs: Option<f64>,
+    /// DAG step execution ID (if this job is part of a DAG pipeline).
+    pub dag_step_execution_id: Option<String>,
 }
 
 impl Job {
@@ -402,6 +404,7 @@ impl Job {
             execution_info: None,
             duration_secs: None,
             queue_wait_secs: None,
+            dag_step_execution_id: None,
         }
     }
 
@@ -437,6 +440,7 @@ impl Job {
             execution_info: None,
             duration_secs: None,
             queue_wait_secs: None,
+            dag_step_execution_id: None,
         }
     }
 
@@ -468,6 +472,17 @@ impl Job {
     pub fn with_pipeline_id(mut self, pipeline_id: impl Into<String>) -> Self {
         self.pipeline_id = Some(pipeline_id.into());
         self
+    }
+
+    /// Set the DAG step execution ID.
+    pub fn with_dag_step_execution_id(mut self, dag_step_execution_id: impl Into<String>) -> Self {
+        self.dag_step_execution_id = Some(dag_step_execution_id.into());
+        self
+    }
+
+    /// Check if this job is part of a DAG pipeline.
+    pub fn is_dag_job(&self) -> bool {
+        self.dag_step_execution_id.is_some()
     }
 }
 
@@ -711,6 +726,25 @@ impl JobQueue {
         self.depth.fetch_add(1, Ordering::SeqCst);
 
         info!("Enqueued job {} of type {}", job_id, job.job_type);
+
+        // Notify waiting workers
+        self.notify.notify_one();
+
+        Ok(job_id)
+    }
+
+    /// Enqueue an existing job (already persisted to database).
+    /// This adds the job to the in-memory cache and notifies workers.
+    /// Used by DagScheduler when creating jobs for DAG steps.
+    pub async fn enqueue_existing(&self, job: Job) -> Result<String> {
+        let job_id = job.id.clone();
+
+        // Add to in-memory cache (job is already in database)
+        self.jobs_cache.insert(job_id.clone(), job.clone());
+
+        self.depth.fetch_add(1, Ordering::SeqCst);
+
+        info!("Enqueued existing job {} of type {}", job_id, job.job_type);
 
         // Notify waiting workers
         self.notify.notify_one();
@@ -2072,6 +2106,7 @@ fn job_to_db_model(job: &Job) -> JobDbModel {
         execution_info: execution_info_json,
         duration_secs: job.duration_secs,
         queue_wait_secs: job.queue_wait_secs,
+        dag_step_execution_id: job.dag_step_execution_id.clone(),
     }
 }
 
@@ -2168,6 +2203,7 @@ fn db_model_to_job(db_job: &JobDbModel) -> Job {
             .and_then(|s| serde_json::from_str::<JobExecutionInfo>(s).ok()),
         duration_secs: db_job.duration_secs,
         queue_wait_secs: db_job.queue_wait_secs,
+        dag_step_execution_id: db_job.dag_step_execution_id.clone(),
     }
 }
 

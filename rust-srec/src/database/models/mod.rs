@@ -4,6 +4,7 @@
 //! serialization/deserialization of JSON fields.
 
 pub mod config;
+pub mod dag;
 pub mod engine;
 pub mod filter;
 pub mod job;
@@ -15,6 +16,7 @@ pub mod streamer;
 pub mod user;
 
 pub use config::*;
+pub use dag::*;
 pub use engine::*;
 pub use filter::*;
 pub use job::*;
