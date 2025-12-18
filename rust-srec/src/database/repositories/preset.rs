@@ -451,14 +451,16 @@ impl PipelinePresetRepository for SqlitePipelinePresetRepository {
     async fn create_pipeline_preset(&self, preset: &PipelinePreset) -> Result<()> {
         sqlx::query(
             r#"
-            INSERT INTO pipeline_presets (id, name, description, steps, created_at, updated_at)
-            VALUES ($1, $2, $3, $4, $5, $6)
+            INSERT INTO pipeline_presets (id, name, description, steps, dag_definition, pipeline_type, created_at, updated_at)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
             "#,
         )
         .bind(&preset.id)
         .bind(&preset.name)
         .bind(&preset.description)
         .bind(&preset.steps)
+        .bind(&preset.dag_definition)
+        .bind(&preset.pipeline_type)
         .bind(preset.created_at)
         .bind(preset.updated_at)
         .execute(&*self.pool)
@@ -471,13 +473,15 @@ impl PipelinePresetRepository for SqlitePipelinePresetRepository {
         sqlx::query(
             r#"
             UPDATE pipeline_presets
-            SET name = $1, description = $2, steps = $3, updated_at = $4
-            WHERE id = $5
+            SET name = $1, description = $2, steps = $3, dag_definition = $4, pipeline_type = $5, updated_at = $6
+            WHERE id = $7
             "#,
         )
         .bind(&preset.name)
         .bind(&preset.description)
         .bind(&preset.steps)
+        .bind(&preset.dag_definition)
+        .bind(&preset.pipeline_type)
         .bind(chrono::Utc::now())
         .bind(&preset.id)
         .execute(&*self.pool)

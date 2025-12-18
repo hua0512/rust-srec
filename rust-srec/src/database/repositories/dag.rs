@@ -88,12 +88,7 @@ pub trait DagRepository: Send + Sync {
     async fn get_dag(&self, id: &str) -> Result<DagExecutionDbModel>;
 
     /// Update DAG execution status.
-    async fn update_dag_status(
-        &self,
-        id: &str,
-        status: &str,
-        error: Option<&str>,
-    ) -> Result<()>;
+    async fn update_dag_status(&self, id: &str, status: &str, error: Option<&str>) -> Result<()>;
 
     /// Increment completed steps counter for a DAG.
     async fn increment_dag_completed(&self, dag_id: &str) -> Result<()>;
@@ -108,6 +103,9 @@ pub trait DagRepository: Send + Sync {
         limit: u32,
         offset: u32,
     ) -> Result<Vec<DagExecutionDbModel>>;
+
+    /// Count DAG executions with optional status filter.
+    async fn count_dags(&self, status: Option<&str>) -> Result<u64>;
 
     /// Delete a DAG execution and all its steps.
     async fn delete_dag(&self, id: &str) -> Result<()>;
@@ -142,12 +140,8 @@ pub trait DagRepository: Send + Sync {
     async fn update_step_status(&self, id: &str, status: &str) -> Result<()>;
 
     /// Update step status and job ID.
-    async fn update_step_status_with_job(
-        &self,
-        id: &str,
-        status: &str,
-        job_id: &str,
-    ) -> Result<()>;
+    async fn update_step_status_with_job(&self, id: &str, status: &str, job_id: &str)
+    -> Result<()>;
 
     // ========================================================================
     // Core DAG Operations (Atomic)
@@ -163,11 +157,7 @@ pub trait DagRepository: Send + Sync {
 
     /// Atomically fail a DAG and cancel all pending/blocked steps.
     /// Returns job IDs of steps that had jobs created (for cancellation).
-    async fn fail_dag_and_cancel_steps(
-        &self,
-        dag_id: &str,
-        error: &str,
-    ) -> Result<Vec<String>>;
+    async fn fail_dag_and_cancel_steps(&self, dag_id: &str, error: &str) -> Result<Vec<String>>;
 
     // ========================================================================
     // Query Operations
@@ -181,11 +171,7 @@ pub trait DagRepository: Send + Sync {
     ) -> Result<Vec<String>>;
 
     /// Check if all dependencies for a step are complete.
-    async fn check_all_dependencies_complete(
-        &self,
-        dag_id: &str,
-        step_id: &str,
-    ) -> Result<bool>;
+    async fn check_all_dependencies_complete(&self, dag_id: &str, step_id: &str) -> Result<bool>;
 
     /// Get statistics for a DAG execution.
     async fn get_dag_stats(&self, dag_id: &str) -> Result<DagExecutionStats>;
@@ -250,12 +236,7 @@ impl DagRepository for SqlxDagRepository {
             .ok_or_else(|| Error::not_found("DAG execution", id))
     }
 
-    async fn update_dag_status(
-        &self,
-        id: &str,
-        status: &str,
-        error: Option<&str>,
-    ) -> Result<()> {
+    async fn update_dag_status(&self, id: &str, status: &str, error: Option<&str>) -> Result<()> {
         retry_on_sqlite_busy("update_dag_status", || async {
             let now = chrono::Utc::now().to_rfc3339();
             let completed_at = if status == "COMPLETED" || status == "FAILED" {
@@ -338,6 +319,20 @@ impl DagRepository for SqlxDagRepository {
             .await?
         };
         Ok(dags)
+    }
+
+    async fn count_dags(&self, status: Option<&str>) -> Result<u64> {
+        let count: i64 = if let Some(status) = status {
+            sqlx::query_scalar("SELECT COUNT(*) FROM dag_execution WHERE status = ?")
+                .bind(status)
+                .fetch_one(&self.pool)
+                .await?
+        } else {
+            sqlx::query_scalar("SELECT COUNT(*) FROM dag_execution")
+                .fetch_one(&self.pool)
+                .await?
+        };
+        Ok(count as u64)
     }
 
     async fn delete_dag(&self, id: &str) -> Result<()> {
@@ -663,11 +658,7 @@ impl DagRepository for SqlxDagRepository {
         .await
     }
 
-    async fn fail_dag_and_cancel_steps(
-        &self,
-        dag_id: &str,
-        error: &str,
-    ) -> Result<Vec<String>> {
+    async fn fail_dag_and_cancel_steps(&self, dag_id: &str, error: &str) -> Result<Vec<String>> {
         retry_on_sqlite_busy("fail_dag_and_cancel_steps", || async {
             let mut tx = self.pool.begin().await?;
             let now = chrono::Utc::now().to_rfc3339();
@@ -754,11 +745,7 @@ impl DagRepository for SqlxDagRepository {
         Ok(merged)
     }
 
-    async fn check_all_dependencies_complete(
-        &self,
-        dag_id: &str,
-        step_id: &str,
-    ) -> Result<bool> {
+    async fn check_all_dependencies_complete(&self, dag_id: &str, step_id: &str) -> Result<bool> {
         // Get the step's dependencies
         let step = self.get_step_by_dag_and_step_id(dag_id, step_id).await?;
 
@@ -949,11 +936,17 @@ mod tests {
         let steps = repo.get_steps_by_dag(&dag_id).await.unwrap();
         assert_eq!(steps.len(), 2);
 
-        let step_a = repo.get_step_by_dag_and_step_id(&dag_id, "A").await.unwrap();
+        let step_a = repo
+            .get_step_by_dag_and_step_id(&dag_id, "A")
+            .await
+            .unwrap();
         assert!(step_a.is_root());
         assert_eq!(step_a.status, "PENDING"); // Root starts as PENDING
 
-        let step_b = repo.get_step_by_dag_and_step_id(&dag_id, "B").await.unwrap();
+        let step_b = repo
+            .get_step_by_dag_and_step_id(&dag_id, "B")
+            .await
+            .unwrap();
         assert!(!step_b.is_root());
         assert_eq!(step_b.status, "BLOCKED"); // Non-root starts as BLOCKED
     }
@@ -1045,8 +1038,16 @@ mod tests {
         assert_eq!(ready.len(), 1);
         assert_eq!(ready[0].step.step_id, "C");
         assert_eq!(ready[0].merged_inputs.len(), 2);
-        assert!(ready[0].merged_inputs.contains(&"/output/a.mp4".to_string()));
-        assert!(ready[0].merged_inputs.contains(&"/output/b.jpg".to_string()));
+        assert!(
+            ready[0]
+                .merged_inputs
+                .contains(&"/output/a.mp4".to_string())
+        );
+        assert!(
+            ready[0]
+                .merged_inputs
+                .contains(&"/output/b.jpg".to_string())
+        );
     }
 
     #[tokio::test]
@@ -1059,8 +1060,16 @@ mod tests {
             "test-dag",
             vec![
                 DagStep::new("A", PipelineStep::preset("remux")),
-                DagStep::with_dependencies("B", PipelineStep::preset("upload"), vec!["A".to_string()]),
-                DagStep::with_dependencies("C", PipelineStep::preset("notify"), vec!["B".to_string()]),
+                DagStep::with_dependencies(
+                    "B",
+                    PipelineStep::preset("upload"),
+                    vec!["A".to_string()],
+                ),
+                DagStep::with_dependencies(
+                    "C",
+                    PipelineStep::preset("notify"),
+                    vec!["B".to_string()],
+                ),
             ],
         );
 
@@ -1085,10 +1094,16 @@ mod tests {
         assert_eq!(dag.error, Some("Step A failed".to_string()));
 
         // Check step statuses - B and C should be cancelled
-        let step_b = repo.get_step_by_dag_and_step_id(&dag_id, "B").await.unwrap();
+        let step_b = repo
+            .get_step_by_dag_and_step_id(&dag_id, "B")
+            .await
+            .unwrap();
         assert_eq!(step_b.status, "CANCELLED");
 
-        let step_c = repo.get_step_by_dag_and_step_id(&dag_id, "C").await.unwrap();
+        let step_c = repo
+            .get_step_by_dag_and_step_id(&dag_id, "C")
+            .await
+            .unwrap();
         assert_eq!(step_c.status, "CANCELLED");
     }
 }

@@ -472,7 +472,5 @@ impl ConfigRepository for SqlxConfigRepository {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-
     // Integration tests would go here with a test database
 }

@@ -134,10 +134,7 @@ pub fn router() -> Router<AppState> {
         )
         .route("/presets/{id}/preview", get(preview_pipeline_preset))
         .route("/dags", get(list_dags))
-        .route(
-            "/dag/{dag_id}",
-            get(get_dag_status).delete(cancel_dag),
-        )
+        .route("/dag/{dag_id}", get(get_dag_status).delete(cancel_dag))
         .route("/dag/{dag_id}/graph", get(get_dag_graph))
         .route("/dag/{dag_id}/stats", get(get_dag_stats))
         .route("/dag/{dag_id}/retry", post(retry_dag))
@@ -571,6 +568,8 @@ impl Default for DagPaginationParams {
 pub struct DagListResponse {
     /// List of DAG executions.
     pub dags: Vec<DagListItem>,
+    /// Total number of DAGs matching the filter.
+    pub total: u64,
     /// Number of items returned.
     pub limit: u32,
     /// Number of items skipped.
@@ -1424,9 +1423,10 @@ async fn create_pipeline(
         .map_err(ApiError::from)?;
 
     // Get the first job details (first root job)
-    let first_job_id = result.root_job_ids.first().ok_or_else(|| {
-        ApiError::internal("DAG pipeline created but no root jobs returned")
-    })?;
+    let first_job_id = result
+        .root_job_ids
+        .first()
+        .ok_or_else(|| ApiError::internal("DAG pipeline created but no root jobs returned"))?;
 
     let first_job = pipeline_manager
         .get_job(first_job_id)
@@ -1768,9 +1768,9 @@ async fn preview_pipeline_preset(
         .map_err(ApiError::from)?
         .ok_or_else(|| ApiError::not_found(format!("Pipeline preset {} not found", id)))?;
 
-    let dag = preset.get_dag_definition().ok_or_else(|| {
-        ApiError::internal("Pipeline preset has no DAG definition")
-    })?;
+    let dag = preset
+        .get_dag_definition()
+        .ok_or_else(|| ApiError::internal("Pipeline preset has no DAG definition"))?;
 
     // Build dependency map for finding leaf steps
     let mut has_dependents: HashSet<String> = HashSet::new();
@@ -1835,9 +1835,9 @@ async fn get_dag_status(
         .as_ref()
         .ok_or_else(|| ApiError::service_unavailable("Pipeline service not available"))?;
 
-    let dag_scheduler = pipeline_manager.dag_scheduler().ok_or_else(|| {
-        ApiError::service_unavailable("DAG scheduler not available")
-    })?;
+    let dag_scheduler = pipeline_manager
+        .dag_scheduler()
+        .ok_or_else(|| ApiError::service_unavailable("DAG scheduler not available"))?;
 
     // Get DAG execution
     let dag = dag_scheduler
@@ -1859,13 +1859,14 @@ async fn get_dag_status(
         .iter()
         .map(|step| {
             let processor = dag_def.as_ref().and_then(|def| {
-                def.steps.iter().find(|s| s.id == step.step_id).map(|s| {
-                    match &s.step {
+                def.steps
+                    .iter()
+                    .find(|s| s.id == step.step_id)
+                    .map(|s| match &s.step {
                         PipelineStep::Preset { name } => name.clone(),
                         PipelineStep::Workflow { name } => format!("workflow:{}", name),
                         PipelineStep::Inline { processor, .. } => processor.clone(),
-                    }
-                })
+                    })
             });
 
             DagStepStatusResponse {
@@ -1879,7 +1880,9 @@ async fn get_dag_status(
         })
         .collect();
 
-    let name = dag_def.map(|d| d.name).unwrap_or_else(|| "Unknown".to_string());
+    let name = dag_def
+        .map(|d| d.name)
+        .unwrap_or_else(|| "Unknown".to_string());
     let progress_percent = dag.progress_percent();
 
     Ok(Json(DagStatusResponse {
@@ -1916,9 +1919,9 @@ async fn get_dag_graph(
         .as_ref()
         .ok_or_else(|| ApiError::service_unavailable("Pipeline service not available"))?;
 
-    let dag_scheduler = pipeline_manager.dag_scheduler().ok_or_else(|| {
-        ApiError::service_unavailable("DAG scheduler not available")
-    })?;
+    let dag_scheduler = pipeline_manager
+        .dag_scheduler()
+        .ok_or_else(|| ApiError::service_unavailable("DAG scheduler not available"))?;
 
     // Get DAG execution
     let dag = dag_scheduler
@@ -1934,20 +1937,24 @@ async fn get_dag_graph(
 
     // Get DAG definition for step processor info
     let dag_def = dag.get_dag_definition();
-    let name = dag_def.as_ref().map(|d| d.name.clone()).unwrap_or_else(|| "Unknown".to_string());
+    let name = dag_def
+        .as_ref()
+        .map(|d| d.name.clone())
+        .unwrap_or_else(|| "Unknown".to_string());
 
     // Build nodes
     let nodes: Vec<DagGraphNode> = steps
         .iter()
         .map(|step| {
             let processor = dag_def.as_ref().and_then(|def| {
-                def.steps.iter().find(|s| s.id == step.step_id).map(|s| {
-                    match &s.step {
+                def.steps
+                    .iter()
+                    .find(|s| s.id == step.step_id)
+                    .map(|s| match &s.step {
                         PipelineStep::Preset { name } => name.clone(),
                         PipelineStep::Workflow { name } => name.clone(),
                         PipelineStep::Inline { processor, .. } => processor.clone(),
-                    }
-                })
+                    })
             });
 
             let label = processor.clone().unwrap_or_else(|| step.step_id.clone());
@@ -2000,9 +2007,9 @@ async fn retry_dag(
         .as_ref()
         .ok_or_else(|| ApiError::service_unavailable("Pipeline service not available"))?;
 
-    let dag_scheduler = pipeline_manager.dag_scheduler().ok_or_else(|| {
-        ApiError::service_unavailable("DAG scheduler not available")
-    })?;
+    let dag_scheduler = pipeline_manager
+        .dag_scheduler()
+        .ok_or_else(|| ApiError::service_unavailable("DAG scheduler not available"))?;
 
     // Get DAG execution
     let dag = dag_scheduler
@@ -2022,10 +2029,7 @@ async fn retry_dag(
         .map_err(ApiError::from)?;
 
     // Find failed steps
-    let failed_steps: Vec<_> = steps
-        .iter()
-        .filter(|s| s.status == "FAILED")
-        .collect();
+    let failed_steps: Vec<_> = steps.iter().filter(|s| s.status == "FAILED").collect();
 
     if failed_steps.is_empty() {
         return Err(ApiError::bad_request("No failed steps found to retry"));
@@ -2090,15 +2094,19 @@ async fn list_dags(
         .as_ref()
         .ok_or_else(|| ApiError::service_unavailable("Pipeline service not available"))?;
 
-    let dag_scheduler = pipeline_manager.dag_scheduler().ok_or_else(|| {
-        ApiError::service_unavailable("DAG scheduler not available")
-    })?;
+    let dag_scheduler = pipeline_manager
+        .dag_scheduler()
+        .ok_or_else(|| ApiError::service_unavailable("DAG scheduler not available"))?;
 
     let effective_limit = pagination.limit.min(100);
 
     // Get DAGs from repository via scheduler
     let dags = dag_scheduler
-        .list_dags(filters.status.as_deref(), effective_limit, pagination.offset)
+        .list_dags(
+            filters.status.as_deref(),
+            effective_limit,
+            pagination.offset,
+        )
         .await
         .map_err(ApiError::from)?;
 
@@ -2128,8 +2136,15 @@ async fn list_dags(
         })
         .collect();
 
+    // Get total count for pagination
+    let total = dag_scheduler
+        .count_dags(filters.status.as_deref())
+        .await
+        .map_err(ApiError::from)?;
+
     Ok(Json(DagListResponse {
         dags: dag_items,
+        total,
         limit: effective_limit,
         offset: pagination.offset,
     }))
@@ -2163,9 +2178,9 @@ async fn cancel_dag(
         .as_ref()
         .ok_or_else(|| ApiError::service_unavailable("Pipeline service not available"))?;
 
-    let dag_scheduler = pipeline_manager.dag_scheduler().ok_or_else(|| {
-        ApiError::service_unavailable("DAG scheduler not available")
-    })?;
+    let dag_scheduler = pipeline_manager
+        .dag_scheduler()
+        .ok_or_else(|| ApiError::service_unavailable("DAG scheduler not available"))?;
 
     let cancelled_steps = dag_scheduler
         .cancel_dag(&dag_id)
@@ -2210,16 +2225,21 @@ async fn get_dag_stats(
         .as_ref()
         .ok_or_else(|| ApiError::service_unavailable("Pipeline service not available"))?;
 
-    let dag_scheduler = pipeline_manager.dag_scheduler().ok_or_else(|| {
-        ApiError::service_unavailable("DAG scheduler not available")
-    })?;
+    let dag_scheduler = pipeline_manager
+        .dag_scheduler()
+        .ok_or_else(|| ApiError::service_unavailable("DAG scheduler not available"))?;
 
     let stats = dag_scheduler
         .get_dag_stats(&dag_id)
         .await
         .map_err(ApiError::from)?;
 
-    let total = stats.blocked + stats.pending + stats.processing + stats.completed + stats.failed + stats.cancelled;
+    let total = stats.blocked
+        + stats.pending
+        + stats.processing
+        + stats.completed
+        + stats.failed
+        + stats.cancelled;
     let progress_percent = if total > 0 {
         (stats.completed as f64 / total as f64) * 100.0
     } else {
@@ -2421,7 +2441,10 @@ fn calculate_max_depth(dag: &DagPipelineDefinition) -> usize {
     for step in &dag.steps {
         dependents.entry(step.id.clone()).or_default();
         for dep in &step.depends_on {
-            dependents.entry(dep.clone()).or_default().push(step.id.clone());
+            dependents
+                .entry(dep.clone())
+                .or_default()
+                .push(step.id.clone());
         }
     }
 
@@ -2622,8 +2645,16 @@ mod tests {
             "test",
             vec![
                 DagStep::new("A", PipelineStep::preset("remux")),
-                DagStep::with_dependencies("B", PipelineStep::preset("upload"), vec!["A".to_string()]),
-                DagStep::with_dependencies("C", PipelineStep::preset("notify"), vec!["B".to_string()]),
+                DagStep::with_dependencies(
+                    "B",
+                    PipelineStep::preset("upload"),
+                    vec!["A".to_string()],
+                ),
+                DagStep::with_dependencies(
+                    "C",
+                    PipelineStep::preset("notify"),
+                    vec!["B".to_string()],
+                ),
             ],
         );
 
@@ -2635,9 +2666,21 @@ mod tests {
         let dag = DagPipelineDefinition::new(
             "test",
             vec![
-                DagStep::with_dependencies("A", PipelineStep::preset("remux"), vec!["C".to_string()]),
-                DagStep::with_dependencies("B", PipelineStep::preset("upload"), vec!["A".to_string()]),
-                DagStep::with_dependencies("C", PipelineStep::preset("notify"), vec!["B".to_string()]),
+                DagStep::with_dependencies(
+                    "A",
+                    PipelineStep::preset("remux"),
+                    vec!["C".to_string()],
+                ),
+                DagStep::with_dependencies(
+                    "B",
+                    PipelineStep::preset("upload"),
+                    vec!["A".to_string()],
+                ),
+                DagStep::with_dependencies(
+                    "C",
+                    PipelineStep::preset("notify"),
+                    vec!["B".to_string()],
+                ),
             ],
         );
 
@@ -2651,8 +2694,16 @@ mod tests {
             "test",
             vec![
                 DagStep::new("A", PipelineStep::preset("remux")),
-                DagStep::with_dependencies("B", PipelineStep::preset("upload"), vec!["A".to_string()]),
-                DagStep::with_dependencies("C", PipelineStep::preset("notify"), vec!["B".to_string()]),
+                DagStep::with_dependencies(
+                    "B",
+                    PipelineStep::preset("upload"),
+                    vec!["A".to_string()],
+                ),
+                DagStep::with_dependencies(
+                    "C",
+                    PipelineStep::preset("notify"),
+                    vec!["B".to_string()],
+                ),
             ],
         );
 
@@ -2667,7 +2718,11 @@ mod tests {
             vec![
                 DagStep::new("A", PipelineStep::preset("remux")),
                 DagStep::new("B", PipelineStep::preset("thumbnail")),
-                DagStep::with_dependencies("C", PipelineStep::preset("upload"), vec!["A".to_string(), "B".to_string()]),
+                DagStep::with_dependencies(
+                    "C",
+                    PipelineStep::preset("upload"),
+                    vec!["A".to_string(), "B".to_string()],
+                ),
             ],
         );
 
@@ -2680,8 +2735,16 @@ mod tests {
             "test",
             vec![
                 DagStep::new("A", PipelineStep::preset("remux")),
-                DagStep::with_dependencies("B", PipelineStep::preset("upload"), vec!["A".to_string()]),
-                DagStep::with_dependencies("C", PipelineStep::preset("notify"), vec!["B".to_string()]),
+                DagStep::with_dependencies(
+                    "B",
+                    PipelineStep::preset("upload"),
+                    vec!["A".to_string()],
+                ),
+                DagStep::with_dependencies(
+                    "C",
+                    PipelineStep::preset("notify"),
+                    vec!["B".to_string()],
+                ),
             ],
         );
 

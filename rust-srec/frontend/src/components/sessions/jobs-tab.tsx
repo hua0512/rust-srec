@@ -6,15 +6,14 @@ import { Trans } from '@lingui/react/macro';
 import { useLingui } from '@lingui/react';
 import { motion, AnimatePresence } from 'motion/react';
 import { cn } from '@/lib/utils';
-import { formatDuration } from '@/lib/format';
 import { Server, Clock } from 'lucide-react';
 
 interface JobsTabProps {
   isLoading: boolean;
-  jobs: any[];
+  dags: any[];
 }
 
-export function JobsTab({ isLoading, jobs }: JobsTabProps) {
+export function JobsTab({ isLoading, dags }: JobsTabProps) {
   const { i18n } = useLingui();
   return (
     <motion.div
@@ -34,69 +33,65 @@ export function JobsTab({ isLoading, jobs }: JobsTabProps) {
             <div className="p-6 space-y-4">
               <Skeleton className="h-12 w-full" />
             </div>
-          ) : jobs.length === 0 ? (
+          ) : dags.length === 0 ? (
             <div className="p-10 text-center text-muted-foreground">
               <Server className="h-10 w-10 mx-auto mb-3 opacity-20" />
               <p>
-                <Trans>No pipeline jobs found.</Trans>
+                <Trans>No pipeline DAGs found.</Trans>
               </p>
             </div>
           ) : (
             <div className="divide-y divide-border/40">
               <AnimatePresence mode="popLayout">
-                {jobs.map((job: any, index: number) => (
+                {dags.map((dag: any, index: number) => (
                   <motion.div
-                    key={job.id}
+                    key={dag.id}
                     initial={{ opacity: 0, x: -10 }}
                     animate={{ opacity: 1, x: 0 }}
                     transition={{ delay: index * 0.05 }}
                   >
                     <Link
-                      to="/pipeline/jobs/$jobId"
-                      params={{ jobId: job.id }}
+                      to="/pipeline/executions/$pipelineId"
+                      params={{ pipelineId: dag.id }}
                       className="flex items-center justify-between p-4 hover:bg-muted/30 transition-colors group"
                     >
                       <div className="flex items-center gap-4">
                         <Badge
                           variant={
-                            job.status === 'COMPLETED'
+                            dag.status === 'COMPLETED'
                               ? 'default'
-                              : job.status === 'FAILED'
+                              : dag.status === 'FAILED'
                                 ? 'destructive'
                                 : 'secondary'
                           }
                           className={cn(
                             'w-24 justify-center',
-                            job.status === 'COMPLETED' &&
-                              'bg-green-500/15 text-green-600 hover:bg-green-500/25 border-green-500/20',
-                            job.status === 'PROCESSING' &&
-                              'bg-blue-500/15 text-blue-600 hover:bg-blue-500/25 border-blue-500/20 animate-pulse',
+                            dag.status === 'COMPLETED' &&
+                            'bg-green-500/15 text-green-600 hover:bg-green-500/25 border-green-500/20',
+                            dag.status === 'PROCESSING' &&
+                            'bg-blue-500/15 text-blue-600 hover:bg-blue-500/25 border-blue-500/20 animate-pulse',
                           )}
                         >
-                          {job.status}
+                          {dag.status}
                         </Badge>
                         <div>
                           <p className="font-medium text-sm group-hover:text-primary transition-colors">
-                            {job.processor_type}
-                            {job.execution_info?.current_step &&
-                              job.execution_info?.total_steps && (
-                                <span className="text-xs text-muted-foreground font-normal ml-2">
-                                  <Trans>
-                                    Step {job.execution_info.current_step}/
-                                    {job.execution_info.total_steps}
-                                  </Trans>
-                                </span>
-                              )}
+                            {dag.name}
+                            <span className="text-xs text-muted-foreground font-normal ml-2">
+                              <Trans>
+                                {dag.completed_steps}/{dag.total_steps} steps
+                              </Trans>
+                            </span>
                           </p>
                           <p className="text-xs text-muted-foreground font-mono mt-0.5">
-                            ID: {job.id}
+                            ID: {dag.id}
                           </p>
                         </div>
                       </div>
                       <div className="flex items-center gap-6 text-sm text-muted-foreground">
                         <div className="flex items-center gap-1.5">
                           <Clock className="h-3.5 w-3.5" />
-                          {i18n.date(new Date(job.created_at), {
+                          {i18n.date(new Date(dag.created_at), {
                             month: 'short',
                             day: 'numeric',
                             hour: 'numeric',
@@ -104,9 +99,9 @@ export function JobsTab({ isLoading, jobs }: JobsTabProps) {
                             second: 'numeric',
                           })}
                         </div>
-                        {job.duration_secs && (
+                        {dag.progress_percent !== undefined && (
                           <div className="font-mono">
-                            {formatDuration(job.duration_secs)}
+                            {dag.progress_percent}%
                           </div>
                         )}
                       </div>

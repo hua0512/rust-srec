@@ -7,9 +7,9 @@
 use tracing::debug;
 
 use crate::Error;
-use crate::database::models::job::PipelineStep;
+use crate::database::models::job::DagPipelineDefinition;
 use crate::database::repositories::config::ConfigRepository;
-use crate::domain::config::MergedConfig;
+use crate::domain::config::merged::MergedConfig;
 use crate::domain::streamer::Streamer;
 use crate::domain::{DanmuSamplingConfig, EventHooks, ProxyConfig, RetryPolicy};
 use std::sync::Arc;
@@ -45,25 +45,22 @@ impl<R: ConfigRepository> ConfigResolver<R> {
 
         // Layer 1: Global config
         let global_config = self.config_repo.get_global_config().await?;
-        let global_proxy: ProxyConfig =
-            serde_json::from_str(&global_config.proxy_config).unwrap_or_default();
-        let global_pipeline: Option<Vec<PipelineStep>> = global_config
-            .pipeline
-            .as_ref()
-            .and_then(|s| serde_json::from_str(s).ok());
 
         builder = builder.with_global(
-            global_config.output_folder,
-            global_config.output_filename_template,
-            global_config.output_file_format,
+            global_config.output_folder.clone(),
+            global_config.output_filename_template.clone(),
+            global_config.output_file_format.clone(),
             global_config.min_segment_size_bytes,
             global_config.max_download_duration_secs,
             global_config.max_part_size_bytes,
             global_config.record_danmu,
-            global_proxy,
-            global_config.default_download_engine,
+            serde_json::from_str(&global_config.proxy_config).unwrap_or_default(),
+            global_config.default_download_engine.clone(),
             global_config.session_gap_time_secs,
-            global_pipeline,
+            global_config
+                .pipeline
+                .as_ref()
+                .and_then(|p| serde_json::from_str::<DagPipelineDefinition>(p).ok()),
         );
 
         // Layer 2: Platform config
@@ -75,8 +72,17 @@ impl<R: ConfigRepository> ConfigResolver<R> {
             .proxy_config
             .as_ref()
             .and_then(|s| serde_json::from_str(s).ok());
-        let platform_pipeline: Option<Vec<PipelineStep>> = platform_config
-            .pipeline
+
+        let platform_stream_selection = platform_config
+            .stream_selection_config
+            .as_ref()
+            .and_then(|s| serde_json::from_str(s).ok());
+        let platform_download_retry_policy = platform_config
+            .download_retry_policy
+            .as_ref()
+            .and_then(|s| serde_json::from_str(s).ok());
+        let platform_event_hooks = platform_config
+            .event_hooks
             .as_ref()
             .and_then(|s| serde_json::from_str(s).ok());
 
@@ -94,23 +100,17 @@ impl<R: ConfigRepository> ConfigResolver<R> {
             platform_config.output_folder.clone(),
             platform_config.output_filename_template.clone(),
             platform_config.download_engine.clone(),
-            platform_config
-                .stream_selection_config
-                .as_ref()
-                .and_then(|s| serde_json::from_str(s).ok()),
+            platform_stream_selection,
             platform_config.output_file_format.clone(),
             platform_config.min_segment_size_bytes,
             platform_config.max_download_duration_secs,
             platform_config.max_part_size_bytes,
+            platform_download_retry_policy,
+            platform_event_hooks,
             platform_config
-                .download_retry_policy
+                .pipeline
                 .as_ref()
-                .and_then(|s| serde_json::from_str(s).ok()),
-            platform_config
-                .event_hooks
-                .as_ref()
-                .and_then(|s| serde_json::from_str(s).ok()),
-            platform_pipeline,
+                .and_then(|p| serde_json::from_str::<DagPipelineDefinition>(p).ok()),
         );
 
         // Layer 3: Template config (if assigned)
@@ -140,8 +140,8 @@ impl<R: ConfigRepository> ConfigResolver<R> {
                 .as_ref()
                 .and_then(|s| serde_json::from_str(s).ok());
 
-            let template_pipeline: Option<Vec<PipelineStep>> = template_config
-                .pipeline
+            let template_engines_override = template_config
+                .engines_override
                 .as_ref()
                 .and_then(|s| serde_json::from_str(s).ok());
 
@@ -160,11 +160,11 @@ impl<R: ConfigRepository> ConfigResolver<R> {
                 template_danmu,
                 template_hooks,
                 template_stream_selection,
+                template_engines_override,
                 template_config
-                    .engines_override
+                    .pipeline
                     .as_ref()
-                    .and_then(|s| serde_json::from_str(s).ok()),
-                template_pipeline,
+                    .and_then(|p| serde_json::from_str::<DagPipelineDefinition>(p).ok()),
             );
         }
 

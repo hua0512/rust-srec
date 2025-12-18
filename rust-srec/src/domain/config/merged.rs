@@ -1,6 +1,6 @@
 //! Merged configuration.
 
-use crate::database::models::job::PipelineStep;
+use crate::database::models::job::DagPipelineDefinition;
 use crate::domain::{DanmuSamplingConfig, EventHooks, ProxyConfig, RetryPolicy};
 use crate::downloader::StreamSelectionConfig;
 use serde::{Deserialize, Serialize};
@@ -49,7 +49,7 @@ pub struct MergedConfig {
     pub engines_override: Option<serde_json::Value>,
 
     // Pipeline configuration
-    pub pipeline: Vec<PipelineStep>,
+    pub pipeline: Option<DagPipelineDefinition>,
 }
 
 impl MergedConfig {
@@ -80,7 +80,7 @@ pub struct MergedConfigBuilder {
     session_gap_time_secs: Option<i64>,
     stream_selection: Option<StreamSelectionConfig>,
     engines_override: Option<serde_json::Value>,
-    pipeline: Option<Vec<PipelineStep>>,
+    pipeline: Option<DagPipelineDefinition>,
 }
 
 impl MergedConfigBuilder {
@@ -98,7 +98,7 @@ impl MergedConfigBuilder {
         proxy_config: ProxyConfig,
         download_engine: String,
         session_gap_time_secs: i64,
-        pipeline: Option<Vec<PipelineStep>>,
+        pipeline: Option<DagPipelineDefinition>,
     ) -> Self {
         debug!(
             "[Layer 1: Global] Setting base config: output_folder={}, output_format={}, engine={}, record_danmu={}, session_gap={}s, pipeline_steps={}",
@@ -107,7 +107,7 @@ impl MergedConfigBuilder {
             download_engine,
             record_danmu,
             session_gap_time_secs,
-            pipeline.as_ref().map(|p| p.len()).unwrap_or(0)
+            pipeline.as_ref().map(|p| p.steps.len()).unwrap_or(0)
         );
         self.output_folder = Some(output_folder);
         self.output_filename_template = Some(output_filename_template);
@@ -146,7 +146,7 @@ impl MergedConfigBuilder {
         max_part_size_bytes: Option<i64>,
         download_retry_policy: Option<RetryPolicy>,
         event_hooks: Option<EventHooks>,
-        pipeline: Option<Vec<PipelineStep>>,
+        pipeline: Option<DagPipelineDefinition>,
     ) -> Self {
         debug!(
             "[Layer 2: Platform] Applying overrides: output_folder={:?}, engine={:?}, record_danmu={:?}, cookies={}, stream_selection={}, pipeline_steps={}",
@@ -155,7 +155,7 @@ impl MergedConfigBuilder {
             record_danmu,
             cookies.is_some(),
             stream_selection.is_some(),
-            pipeline.as_ref().map(|p| p.len()).unwrap_or(0)
+            pipeline.as_ref().map(|p| p.steps.len()).unwrap_or(0)
         );
         if let Some(v) = fetch_delay_ms {
             self.fetch_delay_ms = Some(v);
@@ -358,7 +358,7 @@ impl MergedConfigBuilder {
         event_hooks: Option<EventHooks>,
         stream_selection: Option<StreamSelectionConfig>,
         engines_override: Option<serde_json::Value>,
-        pipeline: Option<Vec<PipelineStep>>,
+        pipeline: Option<DagPipelineDefinition>,
     ) -> Self {
         debug!(
             "[Layer 3: Template] Applying overrides: output_folder={:?}, engine={:?}, record_danmu={:?}, cookies={}, stream_selection={}, engines_override={}, pipeline_steps={}",
@@ -368,7 +368,7 @@ impl MergedConfigBuilder {
             cookies.is_some(),
             stream_selection.is_some(),
             engines_override.is_some(),
-            pipeline.as_ref().map(|p| p.len()).unwrap_or(0)
+            pipeline.as_ref().map(|p| p.steps.len()).unwrap_or(0)
         );
         if let Some(v) = output_folder {
             debug!("Template override: output_folder = {}", v);
@@ -542,10 +542,14 @@ impl MergedConfigBuilder {
                 }
             }
 
-            // Parse pipeline config from streamer-specific config
+            // Parse pipeline config from streamer-specific config (Flexible: Enum untagged)
             if let Some(pipeline_val) = config.get("pipeline") {
-                if let Ok(v) = serde_json::from_value::<Vec<PipelineStep>>(pipeline_val.clone()) {
-                    debug!("Streamer config override: pipeline ({} steps)", v.len());
+                if let Ok(v) = serde_json::from_value::<DagPipelineDefinition>(pipeline_val.clone())
+                {
+                    debug!(
+                        "Streamer config override: pipeline ({} items/nodes)",
+                        v.steps.len()
+                    );
                     self.pipeline = Some(v);
                 }
             }
@@ -579,7 +583,7 @@ impl MergedConfigBuilder {
         let download_engine = self.download_engine.unwrap_or_else(|| "mesio".to_string());
         let record_danmu = self.record_danmu.unwrap_or(false);
         let stream_selection = self.stream_selection.unwrap_or_default();
-        let pipeline = self.pipeline.unwrap_or_else(Vec::new);
+        let pipeline = self.pipeline;
 
         debug!(
             "[Config Merge Complete] Final config: output_folder={}, format={}, engine={}, record_danmu={}, stream_selection={:?}, pipeline_steps={}",
@@ -588,7 +592,7 @@ impl MergedConfigBuilder {
             download_engine,
             record_danmu,
             stream_selection,
-            pipeline.len()
+            pipeline.as_ref().map(|p| p.steps.len()).unwrap_or(0)
         );
 
         MergedConfig {
@@ -746,10 +750,19 @@ mod tests {
                 ProxyConfig::disabled(),
                 "mesio".to_string(),
                 600,
-                Some(vec![
-                    PipelineStep::preset("remux"),
-                    PipelineStep::preset("upload"),
-                ]),
+                Some(DagPipelineDefinition::new(
+                    "global",
+                    vec![
+                        crate::database::models::job::DagStep::new(
+                            "step1",
+                            PipelineStep::preset("remux"),
+                        ),
+                        crate::database::models::job::DagStep::new(
+                            "step2",
+                            PipelineStep::preset("upload"),
+                        ),
+                    ],
+                )),
             )
             .with_platform(
                 Some(60000),
@@ -774,9 +787,10 @@ mod tests {
             .build();
 
         // Streamer pipeline should override global
-        assert_eq!(config.pipeline.len(), 2);
-        assert!(matches!(&config.pipeline[0], PipelineStep::Preset{name} if name == "fast_remux"));
-        assert!(matches!(&config.pipeline[1], PipelineStep::Preset{name} if name == "s3_upload"));
+        let dag = config.pipeline.expect("Pipeline should be set");
+        assert_eq!(dag.steps.len(), 2);
+        assert!(matches!(&dag.steps[0].step, PipelineStep::Preset{name} if name == "fast_remux"));
+        assert!(matches!(&dag.steps[1].step, PipelineStep::Preset{name} if name == "s3_upload"));
     }
 
     #[test]
@@ -835,10 +849,11 @@ mod tests {
             .build();
 
         // Should have 2 steps: preset + inline
-        assert_eq!(config.pipeline.len(), 2);
-        assert!(matches!(&config.pipeline[0], PipelineStep::Preset{name} if name == "remux"));
+        let dag = config.pipeline.expect("Pipeline should be set");
+        assert_eq!(dag.steps.len(), 2);
+        assert!(matches!(&dag.steps[0].step, PipelineStep::Preset{name} if name == "remux"));
         assert!(
-            matches!(&config.pipeline[1], PipelineStep::Inline { processor, .. } if processor == "execute")
+            matches!(&dag.steps[1].step, PipelineStep::Inline { processor, .. } if processor == "execute")
         );
     }
 }

@@ -10,8 +10,8 @@ use std::sync::Arc;
 use tracing::{debug, error, info, warn};
 
 use crate::database::models::{
-    DagExecutionDbModel, DagPipelineDefinition, DagStepExecutionDbModel, DagStepStatus,
-    JobDbModel, PipelineStep, ReadyStep,
+    DagExecutionDbModel, DagPipelineDefinition, DagStepExecutionDbModel, DagStepStatus, JobDbModel,
+    PipelineStep, ReadyStep,
 };
 use crate::database::repositories::{DagRepository, JobRepository};
 use crate::pipeline::{Job, JobQueue, JobStatus};
@@ -68,7 +68,8 @@ impl DagScheduler {
             .map_err(|e| Error::Validation(e.into()))?;
 
         // 2. Create DAG execution record
-        let dag_exec = DagExecutionDbModel::new(&dag_definition, streamer_id.clone(), session_id.clone());
+        let dag_exec =
+            DagExecutionDbModel::new(&dag_definition, streamer_id.clone(), session_id.clone());
         let dag_id = dag_exec.id.clone();
 
         self.dag_repository.create_dag(&dag_exec).await?;
@@ -162,9 +163,9 @@ impl DagScheduler {
 
         // Get DAG definition to resolve step configs
         let dag = self.dag_repository.get_dag(&step.dag_id).await?;
-        let dag_def = dag.get_dag_definition().ok_or_else(|| {
-            Error::Validation("Failed to parse DAG definition".into())
-        })?;
+        let dag_def = dag
+            .get_dag_definition()
+            .ok_or_else(|| Error::Validation("Failed to parse DAG definition".into()))?;
 
         // Create jobs for ready steps
         let mut new_job_ids = Vec::with_capacity(ready_steps.len());
@@ -175,7 +176,10 @@ impl DagScheduler {
         } in ready_steps
         {
             let dag_step = dag_def.get_step(&ready_step.step_id).ok_or_else(|| {
-                Error::Validation(format!("Step '{}' not found in DAG definition", ready_step.step_id))
+                Error::Validation(format!(
+                    "Step '{}' not found in DAG definition",
+                    ready_step.step_id
+                ))
             })?;
 
             info!(
@@ -230,11 +234,7 @@ impl DagScheduler {
     /// 4. Marks the DAG as failed
     ///
     /// Returns the count of cancelled items.
-    pub async fn on_job_failed(
-        &self,
-        dag_step_execution_id: &str,
-        error: &str,
-    ) -> Result<u64> {
+    pub async fn on_job_failed(&self, dag_step_execution_id: &str, error: &str) -> Result<u64> {
         // Get step info
         let step = self.dag_repository.get_step(dag_step_execution_id).await?;
 
@@ -299,9 +299,7 @@ impl DagScheduler {
     ) -> Result<String> {
         // Get processor and config from the step
         let (processor, config) = match &dag_step.step {
-            PipelineStep::Inline { processor, config } => {
-                (processor.clone(), config.to_string())
-            }
+            PipelineStep::Inline { processor, config } => (processor.clone(), config.to_string()),
             PipelineStep::Preset { name } => {
                 // For presets, we need the manager to resolve them
                 // For now, use the preset name as the job type
@@ -326,8 +324,8 @@ impl DagScheduler {
             streamer_id,
             session_id,
             Some(dag_id.to_string()), // Use DAG ID as pipeline_id for grouping
-            None, // No next_job_type for DAG (handled by scheduler)
-            None, // No remaining_steps for DAG
+            None,                     // No next_job_type for DAG (handled by scheduler)
+            None,                     // No remaining_steps for DAG
         );
         job_db.config = config;
 
@@ -426,6 +424,11 @@ impl DagScheduler {
         offset: u32,
     ) -> Result<Vec<DagExecutionDbModel>> {
         self.dag_repository.list_dags(status, limit, offset).await
+    }
+
+    /// Count DAG executions with optional status filter.
+    pub async fn count_dags(&self, status: Option<&str>) -> Result<u64> {
+        self.dag_repository.count_dags(status).await
     }
 
     /// Get statistics for a DAG execution.

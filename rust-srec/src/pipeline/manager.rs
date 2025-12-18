@@ -951,22 +951,28 @@ where
                     .await;
 
                 // Get pipeline config for this streamer (if available)
-                let pipeline_steps = if let Some(config_service) = &self.config_service {
+                let pipeline_config = if let Some(config_service) = &self.config_service {
                     config_service
                         .get_config_for_streamer(&streamer_id)
                         .await
                         .map(|c| c.pipeline)
-                        .unwrap_or_default()
+                        .ok()
+                        .flatten()
                 } else {
-                    vec![]
+                    None
                 };
 
-                // Check if user's pipeline contains a thumbnail step
-                let pipeline_has_thumbnail = pipeline_steps.iter().any(|step| match step {
-                    PipelineStep::Inline { processor, .. } => processor == "thumbnail",
-                    PipelineStep::Preset { name } => name.contains("thumbnail"),
-                    PipelineStep::Workflow { name } => name.contains("thumbnail"),
-                });
+                // Check for thumbnail step in DAG nodes
+                // For direct DAG support, we check if any node is a thumbnail processor/workflow
+                let pipeline_has_thumbnail = if let Some(dag) = &pipeline_config {
+                    dag.steps.iter().any(|node| match &node.step {
+                        PipelineStep::Inline { processor, .. } => processor == "thumbnail",
+                        PipelineStep::Preset { name } => name.contains("thumbnail"),
+                        PipelineStep::Workflow { name } => name.contains("thumbnail"),
+                    })
+                } else {
+                    false
+                };
 
                 // Generate automatic thumbnail for first segment only if:
                 // 1. This is the first segment (segment_index == 0)
@@ -977,51 +983,9 @@ where
                 }
 
                 // Create pipeline jobs if pipeline is configured
-                if !pipeline_steps.is_empty() {
-                    debug!(
-                        "Creating pipeline for {} (session: {}) with {} steps",
-                        streamer_id,
-                        session_id,
-                        pipeline_steps.len()
-                    );
-
-                    // Convert sequential steps to DAG format
-                    let dag_steps: Vec<crate::database::models::job::DagStep> = pipeline_steps
-                        .iter()
-                        .enumerate()
-                        .map(|(i, step)| {
-                            let step_id = match step {
-                                PipelineStep::Preset { name } => name.clone(),
-                                PipelineStep::Workflow { name } => name.clone(),
-                                PipelineStep::Inline { processor, .. } => format!("{}_{}", processor, i),
-                            };
-
-                            if i == 0 {
-                                crate::database::models::job::DagStep::new(step_id, step.clone())
-                            } else {
-                                let prev_step_id = match &pipeline_steps[i - 1] {
-                                    PipelineStep::Preset { name } => name.clone(),
-                                    PipelineStep::Workflow { name } => name.clone(),
-                                    PipelineStep::Inline { processor, .. } => format!("{}_{}", processor, i - 1),
-                                };
-                                crate::database::models::job::DagStep::with_dependencies(
-                                    step_id,
-                                    step.clone(),
-                                    vec![prev_step_id],
-                                )
-                            }
-                        })
-                        .collect();
-
-                    let dag = DagPipelineDefinition::new("segment_pipeline", dag_steps);
-
+                if let Some(dag) = pipeline_config {
                     if let Err(e) = self
-                        .create_dag_pipeline(
-                            &session_id,
-                            &streamer_id,
-                            &segment_path,
-                            dag,
-                        )
+                        .create_dag_pipeline(&session_id, &streamer_id, &segment_path, dag)
                         .await
                     {
                         tracing::error!(
@@ -1783,9 +1747,14 @@ mod tests {
             .unwrap();
         assert_eq!(job.next_job_type, Some("upload".to_string()));
         // The remaining_steps are resolved to Inline format now
-        let remaining = job.remaining_steps.as_ref().expect("Should have remaining steps");
+        let remaining = job
+            .remaining_steps
+            .as_ref()
+            .expect("Should have remaining steps");
         assert_eq!(remaining.len(), 1);
-        assert!(matches!(&remaining[0], PipelineStep::Inline { processor, .. } if processor == "upload"));
+        assert!(
+            matches!(&remaining[0], PipelineStep::Inline { processor, .. } if processor == "upload")
+        );
     }
 
     #[tokio::test]
@@ -1888,159 +1857,8 @@ mod tests {
     #[tokio::test]
     async fn test_create_pipeline_creates_only_first_job() {
         let manager: PipelineManager = PipelineManager::new();
-
-        // Create a pipeline with 3 steps
-        let steps = vec![
-            PipelineStep::preset("remux"),
-            PipelineStep::preset("upload"),
-            PipelineStep::preset("thumbnail"),
-        ];
         let result = manager
-            .create_pipeline("session-1", "streamer-1", "/input.flv", Some(steps))
-            .await
-            .unwrap();
-
-        // Verify only one job exists in the queue
-        assert_eq!(manager.queue_depth(), 1);
-
-        // Verify the job is the first step
-        let job = manager
-            .get_job(&result.first_job_id)
-            .await
-            .unwrap()
-            .unwrap();
-        assert_eq!(job.job_type, "remux");
-
-        // List all jobs and verify only one exists
-        let filters = JobFilters::default();
-        let pagination = Pagination::new(100, 0);
-        let (jobs, total) = manager.list_jobs(&filters, &pagination).await.unwrap();
-
-        assert_eq!(total, 1);
-        assert_eq!(jobs.len(), 1);
-        assert_eq!(jobs[0].id, result.first_job_id);
-        assert_eq!(jobs[0].job_type, "remux");
-    }
-
-    /// Test that multiple pipelines each create only their first job.
-    /// Requirements: 10.1
-    #[tokio::test]
-    async fn test_multiple_pipelines_create_only_first_jobs() {
-        let manager: PipelineManager = PipelineManager::new();
-
-        // Create first pipeline
-        let result1 = manager
-            .create_pipeline(
-                "session-1",
-                "streamer-1",
-                "/input1.flv",
-                Some(vec![
-                    PipelineStep::preset("remux"),
-                    PipelineStep::preset("upload"),
-                ]),
-            )
-            .await
-            .unwrap();
-
-        // Create second pipeline
-        let result2 = manager
-            .create_pipeline(
-                "session-2",
-                "streamer-2",
-                "/input2.flv",
-                Some(vec![
-                    PipelineStep::preset("remux"),
-                    PipelineStep::preset("thumbnail"),
-                ]),
-            )
-            .await
-            .unwrap();
-
-        // Verify exactly 2 jobs exist (one per pipeline)
-        assert_eq!(manager.queue_depth(), 2);
-
-        // Verify both jobs are first steps
-        let job1 = manager
-            .get_job(&result1.first_job_id)
-            .await
-            .unwrap()
-            .unwrap();
-        let job2 = manager
-            .get_job(&result2.first_job_id)
-            .await
-            .unwrap()
-            .unwrap();
-
-        assert_eq!(job1.job_type, "remux");
-        assert_eq!(job2.job_type, "remux");
-
-        // Verify they have different pipeline IDs
-        assert_ne!(result1.pipeline_id, result2.pipeline_id);
-    }
-
-    // ========================================================================
-    // Pipeline Recovery Tests
-    // Requirements: 10.5
-    // ========================================================================
-
-    /// Test that pipeline jobs preserve chain info for recovery.
-    /// When a pipeline job is created, it should have all the info needed
-    /// to continue the pipeline after recovery.
-    /// Requirements: 10.5
-    #[tokio::test]
-    #[allow(deprecated)]
-    async fn test_pipeline_job_preserves_chain_info_for_recovery() {
-        let manager: PipelineManager = PipelineManager::new();
-
-        // Create a pipeline with 3 steps
-        let steps = vec![
-            PipelineStep::preset("remux"),
-            PipelineStep::preset("upload"),
-            PipelineStep::preset("thumbnail"),
-        ];
-        let result = manager
-            .create_pipeline("session-1", "streamer-1", "/input.flv", Some(steps))
-            .await
-            .unwrap();
-
-        // Get the first job
-        let job = manager
-            .get_job(&result.first_job_id)
-            .await
-            .unwrap()
-            .unwrap();
-
-        // Verify the job has all chain info needed for recovery
-        assert_eq!(job.pipeline_id, Some(result.pipeline_id.clone()));
-        assert_eq!(job.next_job_type, Some("upload".to_string()));
-        // The remaining_steps are resolved to Inline format now
-        let remaining = job.remaining_steps.as_ref().expect("Should have remaining steps");
-        assert_eq!(remaining.len(), 2);
-        assert!(matches!(&remaining[0], PipelineStep::Inline { processor, .. } if processor == "upload"));
-        assert!(matches!(&remaining[1], PipelineStep::Inline { processor, .. } if processor == "thumbnail"));
-
-        // This info is preserved in the database and will be available after recovery
-        // When the job completes, complete_with_next will use this info to create the next job
-    }
-
-    /// Test that pipeline recovery works with in-memory queue.
-    /// This verifies the basic recovery mechanism without database.
-    /// Requirements: 10.5
-    #[tokio::test]
-    async fn test_pipeline_recovery_without_database() {
-        let manager: PipelineManager = PipelineManager::new();
-
-        // Create a pipeline
-        let result = manager
-            .create_pipeline(
-                "session-1",
-                "streamer-1",
-                "/input.flv",
-                Some(vec![
-                    PipelineStep::preset("remux"),
-                    PipelineStep::preset("upload"),
-                ]),
-            )
+            .create_dag_pipeline("session-1", "streamer-1", "/input.flv", None)
             .await
             .unwrap();
 

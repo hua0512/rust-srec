@@ -4,8 +4,17 @@ import {
   JobSchema,
   PipelineStatsSchema,
   MediaOutputSchema,
-  PipelineStepSchema,
   JobProgressSnapshotSchema,
+  DagExecutionSchema,
+  DagGraphSchema,
+  DagStatsSchema,
+  DagListResponseSchema,
+  PipelinePresetSchema,
+  PipelinePresetListResponseSchema,
+  PipelinePresetPreviewSchema,
+  DagPipelineDefinitionSchema,
+  CreatePipelinePresetRequestSchema,
+  UpdatePipelinePresetRequestSchema,
 } from '../../api/schemas';
 import { z } from 'zod';
 
@@ -13,79 +22,18 @@ const CreatePipelineJobRequestSchema = z.object({
   session_id: z.string().min(1),
   streamer_id: z.string().min(1),
   input_path: z.string().min(1),
-  steps: z
-    .array(PipelineStepSchema)
-    .min(1, 'Pipeline requires at least one step'),
+  dag: DagPipelineDefinitionSchema,
 });
 
 export type CreatePipelineJobRequest = z.infer<
   typeof CreatePipelineJobRequestSchema
 >;
 
-export const listPipelineJobs = createServerFn({ method: 'GET' })
-  .inputValidator(
-    (
-      d: {
-        status?: string;
-        session_id?: string;
-        pipeline_id?: string;
-        search?: string;
-        limit?: number;
-        offset?: number;
-      } = {},
-    ) => d,
-  )
-  .handler(async ({ data }) => {
-    const params = new URLSearchParams();
-    if (data.status) params.set('status', data.status);
-    if (data.session_id) params.set('session_id', data.session_id);
-    if (data.pipeline_id) params.set('pipeline_id', data.pipeline_id);
-    if (data.search) params.set('search', data.search);
-    if (data.limit !== undefined) params.set('limit', data.limit.toString());
-    if (data.offset !== undefined) params.set('offset', data.offset.toString());
+// listPipelineJobs is deprecated. Use getDagExecution to see steps and statuses.
 
-    const json = await fetchBackend(`/pipeline/jobs?${params.toString()}`);
-    return z
-      .object({
-        items: z.array(JobSchema),
-        total: z.number(),
-        limit: z.number(),
-        offset: z.number(),
-      })
-      .parse(json);
-  });
 
-export const listPipelineJobsPage = createServerFn({ method: 'GET' })
-  .inputValidator(
-    (
-      d: {
-        status?: string;
-        session_id?: string;
-        pipeline_id?: string;
-        search?: string;
-        limit?: number;
-        offset?: number;
-      } = {},
-    ) => d,
-  )
-  .handler(async ({ data }) => {
-    const params = new URLSearchParams();
-    if (data.status) params.set('status', data.status);
-    if (data.session_id) params.set('session_id', data.session_id);
-    if (data.pipeline_id) params.set('pipeline_id', data.pipeline_id);
-    if (data.search) params.set('search', data.search);
-    if (data.limit !== undefined) params.set('limit', data.limit.toString());
-    if (data.offset !== undefined) params.set('offset', data.offset.toString());
+// listPipelineJobsPage is deprecated.
 
-    const json = await fetchBackend(`/pipeline/jobs/page?${params.toString()}`);
-    return z
-      .object({
-        items: z.array(JobSchema),
-        limit: z.number(),
-        offset: z.number(),
-      })
-      .parse(json);
-  });
 
 export const getPipelineJobLogs = createServerFn({ method: 'GET' })
   .inputValidator((d: { id: string; limit?: number; offset?: number }) => d)
@@ -120,22 +68,7 @@ export const getPipelineJobProgress = createServerFn({ method: 'GET' })
     return JobProgressSnapshotSchema.parse(json);
   });
 
-// Pipeline summary schema for list_pipelines endpoint
-const PipelineSummarySchema = z.object({
-  pipeline_id: z.string(),
-  streamer_id: z.string(),
-  streamer_name: z.string().nullable().optional(),
-  session_id: z.string().nullable().optional(),
-  status: z.string(),
-  job_count: z.number(),
-  completed_count: z.number(),
-  failed_count: z.number(),
-  total_duration_secs: z.number(),
-  created_at: z.string(),
-  updated_at: z.string(),
-});
-export type PipelineSummary = z.infer<typeof PipelineSummarySchema>;
-
+// DagSummary is used for list_pipelines results
 export const listPipelines = createServerFn({ method: 'GET' })
   .inputValidator(
     (
@@ -158,13 +91,77 @@ export const listPipelines = createServerFn({ method: 'GET' })
     if (data.limit !== undefined) params.set('limit', data.limit.toString());
     if (data.offset !== undefined) params.set('offset', data.offset.toString());
 
-    const json = await fetchBackend(`/pipeline/pipelines?${params.toString()}`);
+    const json = await fetchBackend(`/pipeline/dags?${params.toString()}`);
+    return DagListResponseSchema.parse(json);
+  });
+
+export const getDagExecution = createServerFn({ method: 'GET' })
+  .inputValidator((id: string) => id)
+  .handler(async ({ data: id }) => {
+    const json = await fetchBackend(`/pipeline/dag/${id}`);
+    return DagExecutionSchema.parse(json);
+  });
+
+export const getDagGraph = createServerFn({ method: 'GET' })
+  .inputValidator((id: string) => id)
+  .handler(async ({ data: id }) => {
+    const json = await fetchBackend(`/pipeline/dag/${id}/graph`);
+    return DagGraphSchema.parse(json);
+  });
+
+export const getDagStats = createServerFn({ method: 'GET' })
+  .inputValidator((id: string) => id)
+  .handler(async ({ data: id }) => {
+    const json = await fetchBackend(`/pipeline/dag/${id}/stats`);
+    return DagStatsSchema.parse(json);
+  });
+
+export const cancelDag = createServerFn({ method: 'POST' })
+  .inputValidator((id: string) => id)
+  .handler(async ({ data: id }) => {
+    const json = await fetchBackend(`/pipeline/dag/${id}`, {
+      method: 'DELETE',
+    });
     return z
       .object({
-        items: z.array(PipelineSummarySchema),
-        total: z.number(),
-        limit: z.number(),
-        offset: z.number(),
+        dag_id: z.string(),
+        cancelled_steps: z.number(),
+        message: z.string(),
+      })
+      .parse(json);
+  });
+
+export const retryDagSteps = createServerFn({ method: 'POST' })
+  .inputValidator((id: string) => id)
+  .handler(async ({ data: id }) => {
+    const json = await fetchBackend(`/pipeline/dag/${id}/retry`, {
+      method: 'POST',
+    });
+    return z
+      .object({
+        dag_id: z.string(),
+        retried_steps: z.number(),
+        job_ids: z.array(z.string()),
+        message: z.string(),
+      })
+      .parse(json);
+  });
+
+export const validateDagDefinition = createServerFn({ method: 'POST' })
+  .inputValidator((dag: any) => dag)
+  .handler(async ({ data: dag }) => {
+    const json = await fetchBackend('/pipeline/validate', {
+      method: 'POST',
+      body: JSON.stringify({ dag }),
+    });
+    return z
+      .object({
+        valid: z.boolean(),
+        errors: z.array(z.string()),
+        warnings: z.array(z.string()),
+        root_steps: z.array(z.string()),
+        leaf_steps: z.array(z.string()),
+        max_depth: z.number(),
       })
       .parse(json);
   });
@@ -191,16 +188,22 @@ export const cancelPipelineJob = createServerFn({ method: 'POST' })
 export const cancelPipeline = createServerFn({ method: 'POST' })
   .inputValidator((pipelineId: string) => pipelineId)
   .handler(async ({ data: pipelineId }) => {
-    const json = await fetchBackend(`/pipeline/${pipelineId}`, {
+    const json = await fetchBackend(`/pipeline/dag/${pipelineId}`, {
       method: 'DELETE',
     });
-    return z
+    // For compatibility with old components
+    const result = z
       .object({
-        success: z.boolean(),
+        dag_id: z.string(),
+        cancelled_steps: z.number(),
         message: z.string(),
-        cancelled_count: z.number(),
       })
       .parse(json);
+    return {
+      success: true,
+      message: result.message,
+      cancelled_count: result.cancelled_steps,
+    };
   });
 
 export const createPipelineJob = createServerFn({ method: 'POST' })
@@ -250,25 +253,8 @@ export const listPipelineOutputs = createServerFn({ method: 'GET' })
       .parse(json);
   });
 
-// Pipeline Preset schema (workflow sequences)
-const PipelinePresetSchema = z.object({
-  id: z.string(),
-  name: z.string(),
-  description: z.string().nullable().optional(),
-  steps: z.array(PipelineStepSchema),
-  created_at: z.string(),
-  updated_at: z.string(),
-});
+// Redundant schemas removed - now imported from api/schemas
 export type PipelinePreset = z.infer<typeof PipelinePresetSchema>;
-
-// Response schema for pipeline preset list with pagination
-const PipelinePresetListResponseSchema = z.object({
-  presets: z.array(PipelinePresetSchema),
-  total: z.number(),
-  limit: z.number(),
-  offset: z.number(),
-});
-
 export type PipelinePresetListResponse = z.infer<
   typeof PipelinePresetListResponseSchema
 >;
@@ -296,45 +282,70 @@ export const getPipelinePreset = createServerFn({ method: 'GET' })
   .inputValidator((id: string) => id)
   .handler(async ({ data: id }) => {
     const json = await fetchBackend(`/pipeline/presets/${id}`);
+    console.log('[getPipelinePreset] Raw Response:', JSON.stringify(json, null, 2));
     return PipelinePresetSchema.parse(json);
   });
 
 export const createPipelinePreset = createServerFn({ method: 'POST' })
-  .inputValidator(
-    (d: {
-      name: string;
-      description?: string;
-      steps: z.infer<typeof PipelineStepSchema>[];
-    }) => d,
-  )
+  .inputValidator((d: z.infer<typeof CreatePipelinePresetRequestSchema>) => d)
   .handler(async ({ data }) => {
-    const json = await fetchBackend('/pipeline/presets', {
-      method: 'POST',
-      body: JSON.stringify(data),
-    });
-    return PipelinePresetSchema.parse(json);
+    console.log('[createPipelinePreset] Payload:', JSON.stringify(data, null, 2));
+    try {
+      const json = await fetchBackend('/pipeline/presets', {
+        method: 'POST',
+        body: JSON.stringify(data),
+      });
+      console.log('[createPipelinePreset] Raw Response:', JSON.stringify(json, null, 2));
+      const parsed = PipelinePresetSchema.safeParse(json);
+      if (!parsed.success) {
+        console.error('[createPipelinePreset] Zod schema validation failed:', parsed.error);
+        throw new Error('Response validation failed');
+      }
+      return parsed.data;
+    } catch (err) {
+      console.error('[createPipelinePreset] Error:', err);
+      throw err;
+    }
   });
 
 export const updatePipelinePreset = createServerFn({ method: 'POST' })
   .inputValidator(
     (d: {
       id: string;
-      name: string;
-      description?: string;
-      steps: z.infer<typeof PipelineStepSchema>[];
+      data: z.infer<typeof UpdatePipelinePresetRequestSchema>;
     }) => d,
   )
   .handler(async ({ data }) => {
-    const { id, ...body } = data;
-    const json = await fetchBackend(`/pipeline/presets/${id}`, {
-      method: 'PUT',
-      body: JSON.stringify(body),
-    });
-    return PipelinePresetSchema.parse(json);
+    console.log('[updatePipelinePreset] Payload:', JSON.stringify(data, null, 2));
+    const { id, data: body } = data;
+    try {
+      const json = await fetchBackend(`/pipeline/presets/${id}`, {
+        method: 'PUT',
+        body: JSON.stringify(body),
+      });
+      console.log('[updatePipelinePreset] Raw Response:', JSON.stringify(json, null, 2));
+      const parsed = PipelinePresetSchema.safeParse(json);
+      console.log('[updatePipelinePreset] Parsed Response:', JSON.stringify(parsed, null, 2));
+      if (!parsed.success) {
+        console.error('[updatePipelinePreset] Zod schema validation failed:', parsed.error);
+        throw new Error('Response validation failed');
+      }
+      return parsed.data;
+    } catch (err) {
+      console.error('[updatePipelinePreset] Error:', err);
+      throw err;
+    }
   });
 
 export const deletePipelinePreset = createServerFn({ method: 'POST' })
   .inputValidator((id: string) => id)
   .handler(async ({ data: id }) => {
     await fetchBackend(`/pipeline/presets/${id}`, { method: 'DELETE' });
+  });
+
+export const previewPipelinePreset = createServerFn({ method: 'GET' })
+  .inputValidator((id: string) => id)
+  .handler(async ({ data: id }) => {
+    const json = await fetchBackend(`/pipeline/presets/${id}/preview`);
+    return PipelinePresetPreviewSchema.parse(json);
   });

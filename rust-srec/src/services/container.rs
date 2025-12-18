@@ -25,6 +25,7 @@ use crate::database::maintenance::{MaintenanceConfig, MaintenanceScheduler};
 use crate::database::repositories::{NotificationRepository, SqlxNotificationRepository};
 use crate::database::repositories::{
     config::SqlxConfigRepository,
+    dag::SqlxDagRepository,
     filter::SqlxFilterRepository,
     job::SqlxJobRepository,
     preset::{SqliteJobPresetRepository, SqlitePipelinePresetRepository},
@@ -172,7 +173,8 @@ impl ServiceContainer {
                 .with_session_repository(session_repo)
                 .with_preset_repository(preset_repo)
                 .with_pipeline_preset_repository(pipeline_preset_repo)
-                .with_config_service(config_service.clone()),
+                .with_config_service(config_service.clone())
+                .with_dag_repository(Arc::new(SqlxDagRepository::new(pool.clone()))),
         );
 
         // Event broadcaster
@@ -304,7 +306,8 @@ impl ServiceContainer {
             PipelineManager::with_repository(pipeline_config, job_repo)
                 .with_session_repository(session_repo.clone())
                 .with_preset_repository(preset_repo)
-                .with_pipeline_preset_repository(pipeline_preset_repo),
+                .with_pipeline_preset_repository(pipeline_preset_repo)
+                .with_dag_repository(Arc::new(SqlxDagRepository::new(pool.clone()))),
         );
 
         // Get monitor event broadcaster

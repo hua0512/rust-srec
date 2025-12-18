@@ -28,7 +28,6 @@ import {
   MoreHorizontal,
   Trash,
   Workflow,
-  ArrowRight,
   FileVideo,
   Upload,
   Image as ImageIcon,
@@ -123,7 +122,7 @@ export function WorkflowCard({
   onDelete,
 }: WorkflowCardProps) {
   const { i18n } = useLingui();
-  const steps = workflow.steps;
+  const steps = workflow.dag.steps;
   const description = DEFAULT_PIPELINE_PRESET_DESCRIPTIONS[workflow.id]
     ? i18n._(DEFAULT_PIPELINE_PRESET_DESCRIPTIONS[workflow.id])
     : workflow.description;
@@ -214,8 +213,9 @@ export function WorkflowCard({
         )}
 
         {/* Pipeline Steps Visualization */}
-        <div className="flex items-center gap-1 flex-wrap">
-          {steps.map((step, index) => {
+        <div className="flex items-center gap-2 flex-wrap">
+          {steps.map((dagStep, index) => {
+            const { step, id } = dagStep;
             const stepName =
               step.type === 'inline' ? step.processor : step.name;
             const StepIcon = getStepIcon(stepName);
@@ -223,26 +223,27 @@ export function WorkflowCard({
             const isInline = step.type === 'inline';
 
             return (
-              <div key={index} className="flex items-center">
-                <div
-                  className={`flex items-center gap-1.5 px-2 py-1 rounded-md ${color}/10 border border-${color.replace('bg-', '')}/20 transition-all group-hover:scale-105`}
-                  title={stepName + (isInline ? ' (Inline)' : '')}
-                >
-                  <StepIcon
-                    className={`h-3 w-3 ${color.replace('bg-', 'text-')}`}
-                  />
-                  <span className="text-[10px] font-medium truncate max-w-[60px]">
-                    {stepName}
+              <div
+                key={index}
+                className={`flex items-center gap-1.5 px-2 py-1 rounded-lg ${color}/10 border border-${color.replace('bg-', '')}/20 transition-all hover:scale-105 group/step`}
+                title={id ? `${id}: ${stepName}` : stepName + (isInline ? ' (Inline)' : '')}
+              >
+                <StepIcon
+                  className={`h-3 w-3 ${color.replace('bg-', 'text-')}`}
+                />
+                {id && (
+                  <span className="text-[9px] font-mono opacity-50 mr-0.5 border-r border-current border-opacity-20 pr-1 leading-none h-2.5 flex items-center">
+                    {id}
                   </span>
-                </div>
-                {index < steps.length - 1 && (
-                  <ArrowRight className="h-3 w-3 mx-1 text-muted-foreground/30" />
                 )}
+                <span className="text-[10px] font-medium truncate max-w-[80px]">
+                  {stepName}
+                </span>
               </div>
             );
           })}
           {steps.length === 0 && (
-            <span className="italic opacity-40 text-xs">
+            <span className="italic opacity-40 text-xs text-center w-full py-2">
               <Trans>No steps defined</Trans>
             </span>
           )}

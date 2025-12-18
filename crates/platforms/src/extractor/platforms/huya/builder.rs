@@ -53,7 +53,7 @@ impl Huya {
     const MP_URL: &'static str = "https://mp.huya.com/cache.php";
     // WUP User-Agent for Huya
     const WUP_UA: &'static str =
-        "HYSDK(Windows, 30000002)_APP(pc_exe&7050007&official)_SDK(trans&2.31.0.5636)";
+        "HYSDK(Windows, 30000002)_APP(pc_exe&7060000&official)_SDK(trans&2.32.3.5646)";
 
     pub fn new(
         platform_url: String,

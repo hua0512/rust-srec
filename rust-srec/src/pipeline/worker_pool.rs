@@ -9,7 +9,7 @@ use tokio_util::sync::CancellationToken;
 use tracing::{debug, error, info, warn};
 
 use super::dag_scheduler::DagScheduler;
-use super::job_queue::{JobExecutionInfo, JobLogEntry, JobQueue, JobResult};
+use super::job_queue::{JobExecutionInfo, JobQueue, JobResult};
 use super::processors::{Processor, ProcessorContext, ProcessorInput};
 
 /// Type of worker.

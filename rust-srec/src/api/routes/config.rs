@@ -322,7 +322,8 @@ async fn replace_platform_config(
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+
+    use crate::api::models::GlobalConfigResponse;
 
     #[test]
     fn test_global_config_response_serialization() {
@@ -359,7 +360,7 @@ mod tests {
 mod property_tests {
     use super::ApplyUpdate;
     use crate::api::models::UpdateGlobalConfigRequest;
-    use crate::database::models::{GlobalConfigDbModel, PlatformConfigDbModel};
+    use crate::database::models::GlobalConfigDbModel;
     use proptest::prelude::*;
 
     /// Apply partial updates from UpdateGlobalConfigRequest to GlobalConfigDbModel

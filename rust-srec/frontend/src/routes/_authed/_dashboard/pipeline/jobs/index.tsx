@@ -76,6 +76,7 @@ import { PipelineSummaryCard } from '@/components/pipeline/jobs/pipeline-summary
 import { listJobPresets } from '@/server/functions/job';
 
 const createPipelineSchema = z.object({
+  name: z.string().min(1, 'Pipeline name is required'),
   session_id: z.string().min(1, 'Session ID is required'),
   streamer_id: z.string().min(1, 'Streamer ID is required'),
   input_path: z.string().min(1, 'Input path is required'),
@@ -116,6 +117,7 @@ function PipelineJobsPage() {
   const createPipelineForm = useForm<CreatePipelineForm>({
     resolver: zodResolver(createPipelineSchema),
     defaultValues: {
+      name: '',
       session_id: '',
       streamer_id: '',
       input_path: '',
@@ -191,8 +193,9 @@ function PipelineJobsPage() {
   });
   const presets = presetsData?.presets ?? [];
 
-  const pipelines = pipelinesData?.items || [];
+  const pipelines = pipelinesData?.dags || [];
   const totalPipelines = pipelinesData?.total || 0;
+
 
   const totalPages = Math.ceil(totalPipelines / pageSize);
 
@@ -229,10 +232,22 @@ function PipelineJobsPage() {
 
   const createPipelineMutation = useMutation({
     mutationFn: (payload: CreatePipelineForm) => {
-      // Convert string steps to tagged preset format
+      // Convert string steps to tagged preset format with generated IDs and sequential dependencies
       const formattedPayload = {
-        ...payload,
-        steps: payload.steps.map((name) => ({ type: 'preset' as const, name })),
+        session_id: payload.session_id,
+        streamer_id: payload.streamer_id,
+        input_path: payload.input_path,
+        dag: {
+          name: payload.name,
+          steps: payload.steps.map((name, idx) => ({
+            id: `${name}_${idx}`,
+            step: {
+              type: 'preset' as const,
+              name,
+            },
+            depends_on: [], // Steps are parallel by default now
+          })),
+        },
       };
       return createPipelineJob({ data: formattedPayload });
     },
@@ -360,6 +375,21 @@ function PipelineJobsPage() {
                         createPipelineMutation.mutate(values),
                       )}
                     >
+                      <FormField
+                        control={createPipelineForm.control}
+                        name="name"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>
+                              <Trans>Pipeline Name</Trans>
+                            </FormLabel>
+                            <FormControl>
+                              <Input placeholder="My Archiving Workflow" {...field} />
+                            </FormControl>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
                       <FormField
                         control={createPipelineForm.control}
                         name="session_id"
@@ -562,11 +592,10 @@ function PipelineJobsPage() {
                 <button
                   key={label}
                   onClick={() => handleStatusChange(value)}
-                  className={`relative px-3 py-1.5 text-sm font-medium rounded-full transition-all duration-200 flex items-center gap-1.5 ${
-                    selectedStatus === value
-                      ? 'bg-primary text-primary-foreground shadow-sm'
-                      : 'text-muted-foreground hover:text-foreground hover:bg-muted'
-                  }`}
+                  className={`relative px-3 py-1.5 text-sm font-medium rounded-full transition-all duration-200 flex items-center gap-1.5 ${selectedStatus === value
+                    ? 'bg-primary text-primary-foreground shadow-sm'
+                    : 'text-muted-foreground hover:text-foreground hover:bg-muted'
+                    }`}
                 >
                   <Icon className="h-3.5 w-3.5" />
                   <span className="relative z-10">{label}</span>
@@ -616,7 +645,7 @@ function PipelineJobsPage() {
             >
               {pipelines.map((pipeline, index) => (
                 <motion.div
-                  key={pipeline.pipeline_id}
+                  key={pipeline.id}
                   initial={{ opacity: 0, y: 20 }}
                   animate={{ opacity: 1, y: 0 }}
                   transition={{

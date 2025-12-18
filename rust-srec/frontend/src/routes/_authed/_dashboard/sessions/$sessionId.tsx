@@ -3,7 +3,7 @@ import { createFileRoute } from '@tanstack/react-router';
 import { useQuery } from '@tanstack/react-query';
 import { getSession } from '@/server/functions/sessions';
 import {
-  listPipelineJobs,
+  listPipelines,
   listPipelineOutputs,
 } from '@/server/functions/pipeline';
 import { Button } from '@/components/ui/button';
@@ -65,13 +65,13 @@ function SessionDetailPage() {
     queryFn: () => listPipelineOutputs({ data: { session_id: sessionId } }),
   });
 
-  const { data: jobsData, isLoading: isJobsLoading } = useQuery({
-    queryKey: ['pipeline', 'jobs', sessionId],
-    queryFn: () => listPipelineJobs({ data: { session_id: sessionId } }),
+  const { data: dagsData, isLoading: isDagsLoading } = useQuery({
+    queryKey: ['pipeline', 'dags', sessionId],
+    queryFn: () => listPipelines({ data: { session_id: sessionId } }),
   });
 
   const outputs = outputsData?.items || [];
-  const jobs = jobsData?.items || [];
+  const dags = dagsData?.dags || [];
 
   const handleDownload = async (outputId: string, filename: string) => {
     try {
@@ -164,9 +164,9 @@ function SessionDetailPage() {
     ? formatDuration(session.duration_secs)
     : session.start_time
       ? formatDuration(
-          (new Date().getTime() - new Date(session.start_time).getTime()) /
-            1000,
-        )
+        (new Date().getTime() - new Date(session.start_time).getTime()) /
+        1000,
+      )
       : '-';
 
   return (
@@ -238,7 +238,7 @@ function SessionDetailPage() {
                   variant="secondary"
                   className="rounded-full px-1.5 h-5 text-[10px] min-w-5 justify-center bg-muted/50 data-[state=active]:bg-primary/10 data-[state=active]:text-primary"
                 >
-                  {jobs.length}
+                  {dags.length}
                 </Badge>
               </TabsTrigger>
             </TabsList>
@@ -277,7 +277,7 @@ function SessionDetailPage() {
           </TabsContent>
 
           <TabsContent value="jobs" className="mt-6 focus-visible:outline-none">
-            <JobsTab isLoading={isJobsLoading} jobs={jobs} />
+            <JobsTab isLoading={isDagsLoading} dags={dags} />
           </TabsContent>
         </Tabs>
       </div>

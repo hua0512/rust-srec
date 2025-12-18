@@ -40,18 +40,19 @@ import {
 } from 'lucide-react';
 import { Trans } from '@lingui/react/macro';
 import { useLingui } from '@lingui/react';
-import { type PipelineSummary } from '@/server/functions/pipeline';
+import { type DagSummary } from '@/api/schemas';
+
 import { formatRelativeTime } from '@/lib/date-utils';
 import { plural } from '@lingui/core/macro';
 
 interface PipelineSummaryCardProps {
-  pipeline: PipelineSummary;
+  pipeline: DagSummary;
   onCancelPipeline?: (pipelineId: string) => void;
   onViewDetails: (pipelineId: string) => void;
 }
 
-// Helper function to format duration in human-readable format
-import { formatDuration } from '@/lib/format';
+// Helper function to format duration removed as unused
+
 
 const PipelineStatus = {
   Pending: 'pending',
@@ -114,12 +115,12 @@ export function PipelineSummaryCard({
   const isProcessing = status === PipelineStatus.Processing;
   // Show cancel button if there are any jobs that aren't completed or failed
   const hasUnfinishedJobs =
-    pipeline.job_count > pipeline.completed_count + pipeline.failed_count;
+    pipeline.total_steps > pipeline.completed_steps + pipeline.failed_steps;
   const canCancel = isPending || isProcessing || hasUnfinishedJobs;
 
   return (
     <Card
-      onClick={() => onViewDetails(pipeline.pipeline_id)}
+      onClick={() => onViewDetails(pipeline.id)}
       className="relative h-full flex flex-col transition-all duration-500 hover:-translate-y-1 hover:shadow-2xl hover:shadow-primary/10 group overflow-hidden bg-gradient-to-br from-background/80 to-background/40 backdrop-blur-xl border-border/40 hover:border-primary/20 cursor-pointer"
     >
       <div className="absolute inset-x-0 top-0 h-0.5 bg-gradient-to-r from-transparent via-primary/40 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-700" />
@@ -139,16 +140,16 @@ export function PipelineSummaryCard({
           <CardTitle className="text-base font-medium truncate tracking-tight text-foreground/90 group-hover:text-primary transition-colors duration-300">
             <Link
               to="/pipeline/executions/$pipelineId"
-              params={{ pipelineId: pipeline.pipeline_id }}
+              params={{ pipelineId: pipeline.id }}
               className="hover:underline underline-offset-4 decoration-primary/50"
               onClick={(e: React.MouseEvent) => e.stopPropagation()}
             >
-              PIPE-{pipeline.pipeline_id.substring(0, 8)}
+              PIPE-{pipeline.id.substring(0, 8)}
             </Link>
           </CardTitle>
           <div className="flex items-center gap-2">
             <span className="text-[10px] uppercase tracking-wider font-semibold text-muted-foreground/60">
-              {pipeline.streamer_name ?? pipeline.streamer_id}
+              {pipeline.name ?? pipeline.streamer_id}
             </span>
           </div>
         </div>
@@ -172,7 +173,7 @@ export function PipelineSummaryCard({
             <DropdownMenuItem
               onClick={(e) => {
                 e.stopPropagation();
-                onViewDetails(pipeline.pipeline_id);
+                onViewDetails(pipeline.id);
               }}
             >
               <ExternalLink className="mr-2 h-4 w-4" />{' '}
@@ -208,7 +209,7 @@ export function PipelineSummaryCard({
                         <Trans>Keep Running</Trans>
                       </AlertDialogCancel>
                       <AlertDialogAction
-                        onClick={() => onCancelPipeline(pipeline.pipeline_id)}
+                        onClick={() => onCancelPipeline(pipeline.id)}
                         className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
                       >
                         <Trans>Cancel</Trans>
@@ -251,7 +252,7 @@ export function PipelineSummaryCard({
                         <Trans>Cancel</Trans>
                       </AlertDialogCancel>
                       <AlertDialogAction
-                        onClick={() => onCancelPipeline(pipeline.pipeline_id)}
+                        onClick={() => onCancelPipeline(pipeline.id)}
                         className="bg-destructive text-white hover:bg-destructive/90"
                       >
                         <Trans>Delete</Trans>
@@ -279,28 +280,30 @@ export function PipelineSummaryCard({
           <div className="flex items-center gap-1.5 px-2 py-1 rounded-md bg-muted/50 border">
             <Layers className="h-3 w-3 text-muted-foreground" />
             <span className="text-[10px] font-medium">
-              {plural(pipeline.job_count, {
-                one: '# job',
-                other: '# jobs',
+              {plural(pipeline.total_steps, {
+                one: '# step',
+                other: '# steps',
               })}
             </span>
           </div>
-          {pipeline.completed_count > 0 && (
+          {pipeline.completed_steps > 0 && (
             <div className="flex items-center gap-1.5 px-2 py-1 rounded-md bg-green-500/10 border border-green-500/20">
+
               <CheckCircle2 className="h-3 w-3 text-green-500" />
               <span className="text-[10px] font-medium text-green-600 dark:text-green-400">
-                {plural(pipeline.completed_count, {
+                {plural(pipeline.completed_steps, {
                   one: '# done',
                   other: '# done',
                 })}
               </span>
             </div>
           )}
-          {pipeline.failed_count > 0 && (
+          {pipeline.failed_steps > 0 && (
             <div className="flex items-center gap-1.5 px-2 py-1 rounded-md bg-red-500/10 border border-red-500/20">
+
               <XCircle className="h-3 w-3 text-red-500" />
               <span className="text-[10px] font-medium text-red-600 dark:text-red-400">
-                {plural(pipeline.failed_count, {
+                {plural(pipeline.failed_steps, {
                   one: '# failed',
                   other: '# failed',
                 })}
@@ -309,16 +312,12 @@ export function PipelineSummaryCard({
           )}
         </div>
 
-        {/* Duration Info */}
-        {isCompleted && pipeline.total_duration_secs > 0 && (
-          <div className="flex items-center gap-2 mt-3 text-xs text-muted-foreground">
-            <Timer className="h-3 w-3" />
-            <span>
-              <Trans>Total time:</Trans>{' '}
-              {formatDuration(pipeline.total_duration_secs)}
-            </span>
-          </div>
-        )}
+        <div className="flex items-center gap-2 mt-3 text-xs text-muted-foreground">
+          <Timer className="h-3 w-3" />
+          <span>
+            <Trans>Progress:</Trans> {pipeline.progress_percent}%
+          </span>
+        </div>
 
         {/* Failed indicator */}
         {isFailed && (
@@ -332,16 +331,14 @@ export function PipelineSummaryCard({
 
       <CardFooter className="relative pt-0 text-[10px] text-muted-foreground flex justify-between items-center z-10 border-t border-border/20 mt-auto px-6 py-3 bg-muted/5">
         <span className="font-mono opacity-50">
-          {plural(pipeline.job_count, {
+          {plural(pipeline.total_steps, {
             one: '# step',
             other: '# steps',
           })}
         </span>
-        {isCompleted && pipeline.total_duration_secs > 0 && (
-          <span className="font-mono opacity-50">
-            {formatDuration(pipeline.total_duration_secs)}
-          </span>
-        )}
+        <span className="font-mono opacity-50">
+          {pipeline.progress_percent}%
+        </span>
       </CardFooter>
     </Card>
   );

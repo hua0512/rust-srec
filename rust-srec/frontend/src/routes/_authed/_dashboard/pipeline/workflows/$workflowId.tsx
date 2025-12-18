@@ -9,7 +9,7 @@ import { t } from '@lingui/core/macro';
 import { Trans } from '@lingui/react/macro';
 import { WorkflowEditor } from '@/components/pipeline/workflows/workflow-editor';
 import { Skeleton } from '@/components/ui/skeleton';
-import type { PipelineStep } from '@/api/schemas';
+import type { DagStepDefinition } from '@/api/schemas';
 
 export const Route = createFileRoute(
   '/_authed/_dashboard/pipeline/workflows/$workflowId',
@@ -41,16 +41,31 @@ function EditWorkflowPage() {
       });
       navigate({ to: '/pipeline/workflows' });
     },
-    onError: (error) =>
-      toast.error(t`Failed to update workflow: ${error.message}`),
+    onError: (error) => {
+      console.error('Failed to update workflow:', error);
+      toast.error(t`Failed to update workflow: ${error.message}`);
+    },
   });
 
   const onSubmit = (data: {
     name: string;
     description?: string;
-    steps: PipelineStep[];
+    steps: DagStepDefinition[];
   }) => {
-    updateMutation.mutate({ data: { id: workflowId, ...data } });
+    console.log(data);
+    updateMutation.mutate({
+      data: {
+        id: workflowId,
+        data: {
+          name: data.name,
+          description: data.description,
+          dag: {
+            name: data.name,
+            steps: data.steps,
+          },
+        },
+      },
+    });
   };
 
   if (isLoading) {

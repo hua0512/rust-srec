@@ -29,9 +29,6 @@ use super::streamer_actor::{ActorError, ActorOutcome, ActorResult};
 use crate::domain::StreamerState;
 use crate::streamer::StreamerMetadata;
 
-/// Default batch window in milliseconds.
-pub const DEFAULT_BATCH_WINDOW_MS: u64 = 500;
-
 /// A pending check request waiting to be batched.
 #[derive(Debug)]
 struct PendingCheckRequest {
@@ -39,8 +36,6 @@ struct PendingCheckRequest {
     streamer_id: String,
     /// Channel to acknowledge the request was queued.
     reply: oneshot::Sender<()>,
-    /// When the request was received.
-    received_at: Instant,
 }
 
 /// Default priority mailbox capacity for platform actors.
@@ -443,11 +438,8 @@ impl PlatformActor {
         );
 
         // Queue the request
-        self.pending_requests.push(PendingCheckRequest {
-            streamer_id,
-            reply,
-            received_at: Instant::now(),
-        });
+        self.pending_requests
+            .push(PendingCheckRequest { streamer_id, reply });
 
         self.state.pending_count = self.pending_requests.len();
 
@@ -684,7 +676,6 @@ impl PlatformActor {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::domain::Priority;
 
     fn create_test_config() -> PlatformConfig {
         PlatformConfig {

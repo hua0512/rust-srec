@@ -5,8 +5,7 @@ import { toast } from 'sonner';
 import { t } from '@lingui/core/macro';
 import { Trans } from '@lingui/react/macro';
 import { WorkflowEditor } from '@/components/pipeline/workflows/workflow-editor';
-import { PipelineStepSchema } from '@/api/schemas';
-import { z } from 'zod';
+import { DagStepDefinition } from '@/api/schemas';
 
 export const Route = createFileRoute(
   '/_authed/_dashboard/pipeline/workflows/create',
@@ -25,16 +24,29 @@ function CreateWorkflowPage() {
       queryClient.invalidateQueries({ queryKey: ['pipeline', 'workflows'] });
       navigate({ to: '/pipeline/workflows' });
     },
-    onError: (error) =>
-      toast.error(t`Failed to create workflow: ${error.message}`),
+    onError: (error) => {
+      console.error('Failed to create workflow:', error);
+      toast.error(t`Failed to create workflow: ${error.message}`);
+    },
   });
 
   const onSubmit = (data: {
     name: string;
     description?: string;
-    steps: z.infer<typeof PipelineStepSchema>[];
+    steps: DagStepDefinition[];
   }) => {
-    createMutation.mutate({ data });
+
+    console.log(data);
+    createMutation.mutate({
+      data: {
+        name: data.name,
+        description: data.description,
+        dag: {
+          name: data.name,
+          steps: data.steps,
+        },
+      },
+    });
   };
 
   return (

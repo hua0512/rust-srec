@@ -13,7 +13,7 @@ mod traits;
 pub mod utils;
 
 pub use audio_extract::AudioExtractProcessor;
-pub use compression::{ArchiveFormat, CompressionConfig, CompressionProcessor};
+pub use compression::CompressionProcessor;
 pub use copy_move::{CopyMoveConfig, CopyMoveOperation, CopyMoveProcessor};
 pub use delete::{DeleteConfig, DeleteProcessor};
 pub use execute::ExecuteCommandProcessor;

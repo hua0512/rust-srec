@@ -1,10 +1,13 @@
 import { Link, createFileRoute } from '@tanstack/react-router';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
-  listPipelineJobsPage,
-  retryPipelineJob,
-  cancelPipeline,
+  getDagExecution,
+  getDagGraph,
+  retryDagSteps,
+  cancelDag,
 } from '@/server/functions';
+import { DagGraphView } from '@/components/pipeline/dag-graph-view';
+import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -35,7 +38,8 @@ export const Route = createFileRoute(
   component: PipelineExecutionPage,
 });
 
-import { formatDuration } from '@/lib/format';
+// formatDuration removed to avoid lint error
+
 
 const STATUS_CONFIG: Record<
   string,
@@ -91,33 +95,39 @@ function PipelineExecutionPage() {
   const { i18n } = useLingui();
   const queryClient = useQueryClient();
 
-  const { data, isLoading, error } = useQuery({
-    queryKey: ['pipeline', 'executions', pipelineId],
-    queryFn: () => listPipelineJobsPage({ data: { pipeline_id: pipelineId } }),
+  const { data: dag, isLoading, error } = useQuery({
+    queryKey: ['pipeline', 'executions', pipelineId, 'status'],
+    queryFn: () => getDagExecution({ data: pipelineId }),
     refetchInterval: (query) => {
-      const jobs = query.state.data?.items || [];
-      const isActive = jobs.some((j) =>
-        ['PENDING', 'PROCESSING'].includes(j.status),
-      );
-      return isActive ? 1000 : false;
+      const status = query.state.data?.status;
+      return ['PENDING', 'PROCESSING'].includes(status || '') ? 1000 : false;
+    },
+  });
+
+  const { data: graph } = useQuery({
+    queryKey: ['pipeline', 'executions', pipelineId, 'graph'],
+    queryFn: () => getDagGraph({ data: pipelineId }),
+    enabled: !!dag,
+    refetchInterval: () => {
+      return ['PENDING', 'PROCESSING'].includes(dag?.status || '') ? 2000 : false;
     },
   });
 
   const retryMutation = useMutation({
-    mutationFn: (id: string) => retryPipelineJob({ data: id }),
+    mutationFn: (id: string) => retryDagSteps({ data: id }),
     onSuccess: () => {
-      toast.success(t`Job retry initiated`);
+      toast.success(t`Failed steps retry initiated`);
       queryClient.invalidateQueries({
         queryKey: ['pipeline', 'executions', pipelineId],
       });
     },
-    onError: () => toast.error(t`Failed to retry job`),
+    onError: () => toast.error(t`Failed to retry steps`),
   });
 
   const cancelMutation = useMutation({
-    mutationFn: (pipelineId: string) => cancelPipeline({ data: pipelineId }),
+    mutationFn: (pipelineId: string) => cancelDag({ data: pipelineId }),
     onSuccess: (result) => {
-      toast.success(t`Cancelled ${result.cancelled_count} jobs in pipeline`);
+      toast.success(t`Cancelled ${result.cancelled_steps} steps in pipeline`);
       queryClient.invalidateQueries({
         queryKey: ['pipeline', 'executions', pipelineId],
       });
@@ -126,7 +136,7 @@ function PipelineExecutionPage() {
     onError: () => toast.error(t`Failed to cancel pipeline`),
   });
 
-  if (isLoading) {
+  if (isLoading || !dag) {
     return (
       <div className="min-h-screen bg-background p-6 space-y-8">
         <div className="max-w-7xl mx-auto space-y-8">
@@ -167,55 +177,14 @@ function PipelineExecutionPage() {
     );
   }
 
-  const jobs = data?.items || [];
-  const sortedJobs = [...jobs].sort(
-    (a, b) =>
-      new Date(a.created_at).getTime() - new Date(b.created_at).getTime(),
-  );
+  const steps = dag.steps || [];
 
-  if (sortedJobs.length === 0) {
-    return (
-      <div className="flex flex-col items-center justify-center min-h-[60vh] text-center space-y-4">
-        <div className="p-4 rounded-full bg-muted/30 mb-4">
-          <Layers className="h-12 w-12 text-muted-foreground/50" />
-        </div>
-        <h3 className="text-xl font-semibold text-foreground/80">
-          <Trans>No Jobs Found</Trans>
-        </h3>
-        <p className="text-muted-foreground">
-          <Trans>This pipeline sequence appears to be empty.</Trans>
-        </p>
-        <Button variant="outline" onClick={() => window.history.back()}>
-          <ArrowLeft className="mr-2 h-4 w-4" /> <Trans>Go Back</Trans>
-        </Button>
-      </div>
-    );
-  }
-
-  const firstJob = sortedJobs[0];
-  const isFailed = sortedJobs.some((j) => j.status === 'FAILED');
-  const isProcessing = sortedJobs.some((j) => j.status === 'PROCESSING');
-  const isPending = sortedJobs.some((j) => j.status === 'PENDING');
-  const isCompleted = sortedJobs.every((j) => j.status === 'COMPLETED');
-
-  const overallStatus = isFailed
-    ? 'FAILED'
-    : isProcessing
-      ? 'PROCESSING'
-      : isCompleted
-        ? 'COMPLETED'
-        : isPending
-          ? 'PENDING'
-          : 'PROCESSING';
+  const overallStatus = dag?.status || 'PENDING';
   const statusConfig = STATUS_CONFIG[overallStatus] || STATUS_CONFIG.PENDING;
   const StatusIcon = statusConfig.icon;
 
-  const totalDuration = sortedJobs.reduce(
-    (acc, job) => acc + (job.duration_secs || 0),
-    0,
-  );
-
   return (
+
     <div className="relative min-h-screen overflow-hidden selection:bg-primary/20">
       {/* Background Decoration */}
       <div className="fixed inset-0 pointer-events-none">
@@ -294,7 +263,7 @@ function PipelineExecutionPage() {
               transition={{ delay: 0.2 }}
               className="flex items-center gap-3"
             >
-              {(isPending || isProcessing) && (
+              {(overallStatus === 'PENDING' || overallStatus === 'PROCESSING') && (
                 <Button
                   variant="destructive"
                   className="shadow-lg shadow-destructive/20 hover:shadow-destructive/40 transition-shadow"
@@ -305,13 +274,11 @@ function PipelineExecutionPage() {
                   <Trans>Cancel Pipeline</Trans>
                 </Button>
               )}
-              {isFailed && (
+              {overallStatus === 'FAILED' && (
                 <Button
                   className="bg-primary shadow-lg shadow-primary/20 hover:shadow-primary/40 transition-shadow"
                   onClick={() =>
-                    sortedJobs
-                      .filter((j) => j.status === 'FAILED')
-                      .forEach((j) => retryMutation.mutate(j.id))
+                    retryMutation.mutate(pipelineId)
                   }
                   disabled={retryMutation.isPending}
                 >
@@ -337,177 +304,141 @@ function PipelineExecutionPage() {
         >
           <StatsCard
             icon={<Timer className="h-5 w-5 text-blue-400" />}
-            label={t`Total Duration`}
-            value={formatDuration(totalDuration)}
+            label={t`Progress`}
+            value={`${dag.progress_percent}%`}
             delay={0.1}
           />
           <StatsCard
             icon={<Layers className="h-5 w-5 text-purple-400" />}
             label={t`Total Steps`}
-            value={sortedJobs.length}
+            value={dag.total_steps}
             delay={0.2}
           />
           <StatsCard
             icon={<CheckCircle2 className="h-5 w-5 text-emerald-400" />}
             label={t`Completed`}
-            value={sortedJobs.filter((j) => j.status === 'COMPLETED').length}
+            value={dag.completed_steps}
             delay={0.3}
           />
           <StatsCard
             icon={<Calendar className="h-5 w-5 text-orange-400" />}
             label={t`Started`}
-            value={i18n.date(firstJob.created_at, { timeStyle: 'short' })}
-            subtext={i18n.date(firstJob.created_at, { dateStyle: 'medium' })}
+            value={i18n.date(dag.created_at, { timeStyle: 'short' })}
+            subtext={i18n.date(dag.created_at, { dateStyle: 'medium' })}
             delay={0.4}
           />
         </motion.div>
 
-        {/* Visual Timeline */}
-        <div className="relative">
-          <div className="absolute left-[27px] top-4 bottom-8 w-px bg-gradient-to-b from-border via-border/50 to-transparent md:left-1/2 md:-ml-px" />
+        <Tabs defaultValue="graph" className="w-full">
+          <TabsList className="grid w-full grid-cols-2 mb-8 max-w-md mx-auto">
+            <TabsTrigger value="graph"><Trans>DAG Graph</Trans></TabsTrigger>
+            <TabsTrigger value="list"><Trans>Steps List</Trans></TabsTrigger>
+          </TabsList>
 
-          <div className="space-y-12">
-            {sortedJobs.map((job, index) => {
-              const jobConfig =
-                STATUS_CONFIG[job.status] || STATUS_CONFIG.PENDING;
-              const JobIcon = jobConfig.icon;
-              const isEven = index % 2 === 0;
+          <TabsContent value="graph" className="mt-0">
+            {graph ? (
+              <DagGraphView graph={graph} />
+            ) : (
+              <div className="h-[500px] flex items-center justify-center border border-dashed rounded-xl">
+                <Skeleton className="h-[400px] w-full max-w-3xl rounded-xl" />
+              </div>
+            )}
+          </TabsContent>
 
-              return (
-                <motion.div
-                  key={job.id}
-                  initial={{ opacity: 0, y: 50 }}
-                  whileInView={{ opacity: 1, y: 0 }}
-                  viewport={{ once: true, margin: '-50px' }}
-                  transition={{ duration: 0.5, delay: index * 0.1 }}
-                  className={cn(
-                    'relative flex items-center gap-8',
-                    'md:justify-center',
-                  )}
-                >
-                  {/* Timeline Node */}
-                  <div
-                    className={cn(
-                      'absolute left-0 w-14 h-14 rounded-full border-4 border-background flex items-center justify-center shrink-0 z-10 transition-transform duration-300 hover:scale-110 shadow-lg',
-                      'md:left-1/2 md:-ml-7',
-                      jobConfig.color,
-                      'bg-card',
+          <TabsContent value="list" className="mt-0">
+            <div className="space-y-4">
+              {steps.map((step) => {
+                const jobConfig =
+                  STATUS_CONFIG[step.status] || STATUS_CONFIG.PENDING;
+                return (
+                  <div key={step.step_id} className="block">
+                    {step.job_id ? (
+                      <Link
+                        to="/pipeline/jobs/$jobId"
+                        params={{ jobId: step.job_id }}
+                        className="group"
+                      >
+                        <StepCard step={step} isEven={false} jobConfig={jobConfig} />
+                      </Link>
+                    ) : (
+                      <StepCard step={step} isEven={false} jobConfig={jobConfig} />
                     )}
-                  >
-                    <div
-                      className={cn(
-                        'absolute inset-0 rounded-full opacity-20',
-                        jobConfig.gradient,
-                      )}
-                    />
-                    <JobIcon
-                      className={cn(
-                        'h-6 w-6 relative z-10',
-                        jobConfig.animate && 'animate-spin',
-                      )}
-                    />
                   </div>
-
-                  {/* Content Card */}
-                  <div
-                    className={cn(
-                      'flex-1 ml-20 md:ml-0 md:w-1/2',
-                      isEven ? 'md:pr-20 md:text-right' : 'md:pl-20 md:order-1',
-                    )}
-                  >
-                    <Link
-                      to="/pipeline/jobs/$jobId"
-                      params={{ jobId: job.id }}
-                      className="block group"
-                    >
-                      <Card className="overflow-hidden border-border/40 bg-card/40 backdrop-blur-sm transition-all duration-300 hover:shadow-2xl hover:-translate-y-1 hover:border-primary/20 hover:bg-card/60">
-                        {job.status === 'PROCESSING' && (
-                          <div className="h-1 w-full bg-muted/50">
-                            <div className="h-full bg-blue-500 animate-[progress_1s_ease-in-out_infinite]" />
-                          </div>
-                        )}
-                        <CardContent className="p-6">
-                          <div
-                            className={cn(
-                              'flex flex-col gap-1 mb-4',
-                              isEven ? 'md:items-end' : '',
-                            )}
-                          >
-                            <Badge
-                              variant="outline"
-                              className="w-fit mb-2 font-mono text-xs uppercase opacity-70"
-                            >
-                              {job.processor_type}
-                            </Badge>
-                            <h3 className="text-lg font-semibold tracking-tight group-hover:text-primary transition-colors">
-                              {job.processor_type.replace(/_/g, ' ')}
-                            </h3>
-                            <p className="text-xs text-muted-foreground font-mono">
-                              {job.id.split('-')[0]}...{job.id.slice(-8)}
-                            </p>
-                          </div>
-
-                          <div
-                            className={cn(
-                              'grid grid-cols-2 gap-4 text-sm text-muted-foreground',
-                              isEven ? 'md:text-right' : '',
-                            )}
-                          >
-                            <div>
-                              <span className="block text-xs uppercase tracking-wider opacity-60">
-                                <Trans>Duration</Trans>
-                              </span>
-                              <span className="font-medium text-foreground">
-                                {formatDuration(job.duration_secs)}
-                              </span>
-                            </div>
-                            <div>
-                              <span className="block text-xs uppercase tracking-wider opacity-60">
-                                <Trans>Finished</Trans>
-                              </span>
-                              <span className="font-medium text-foreground">
-                                {job.completed_at
-                                  ? i18n.date(job.completed_at, {
-                                      timeStyle: 'medium',
-                                    })
-                                  : '-'}
-                              </span>
-                            </div>
-                          </div>
-
-                          {job.error_message && (
-                            <div className="mt-4 p-3 rounded-lg bg-destructive/10 border border-destructive/20 text-destructive text-xs font-medium">
-                              <div className="flex items-center gap-2 mb-1">
-                                <AlertCircle className="h-3 w-3" />
-                                <span className="uppercase tracking-wider">
-                                  <Trans>Error Output</Trans>
-                                </span>
-                              </div>
-                              <p className="line-clamp-2 opacity-90">
-                                {job.error_message}
-                              </p>
-                            </div>
-                          )}
-                        </CardContent>
-                        <div className="px-6 py-2 bg-muted/20 border-t border-border/20 flex items-center justify-between text-xs text-muted-foreground group-hover:bg-primary/5 transition-colors">
-                          <span className="font-medium">
-                            <Trans>View Output & Logs</Trans>
-                          </span>
-                          <ArrowRight className="h-3 w-3 transition-transform group-hover:translate-x-1" />
-                        </div>
-                      </Card>
-                    </Link>
-                  </div>
-
-                  {/* Empty spacer for the other side on desktop */}
-                  <div className="hidden md:block md:w-1/2" />
-                </motion.div>
-              );
-            })}
-          </div>
-        </div>
+                );
+              })}
+            </div>
+          </TabsContent>
+        </Tabs>
       </div>
     </div>
+  );
+}
+
+function StepCard({ step, isEven, jobConfig }: { step: any, isEven: boolean, jobConfig: any }) {
+
+  return (
+    <Card className="overflow-hidden border-border/40 bg-card/40 backdrop-blur-sm transition-all duration-300 hover:shadow-2xl hover:-translate-y-1 hover:border-primary/20 hover:bg-card/60">
+      {step.status === 'PROCESSING' && (
+        <div className="h-1 w-full bg-muted/50">
+          <div className="h-full bg-blue-500 animate-[progress_1s_ease-in-out_infinite]" />
+        </div>
+      )}
+      <CardContent className="p-6">
+        <div
+          className={cn(
+            'flex flex-col gap-1 mb-4',
+            isEven ? 'md:items-end' : '',
+          )}
+        >
+          <Badge
+            variant="outline"
+            className="w-fit mb-2 font-mono text-xs uppercase opacity-70"
+          >
+            {step.processor}
+          </Badge>
+          <h3 className="text-lg font-semibold tracking-tight group-hover:text-primary transition-colors">
+            {step.step_id.replace(/_/g, ' ')}
+          </h3>
+          {step.job_id && (
+            <p className="text-xs text-muted-foreground font-mono">
+              Job ID: {step.job_id.split('-')[0]}...{step.job_id.slice(-8)}
+            </p>
+          )}
+        </div>
+
+        <div
+          className={cn(
+            'grid grid-cols-2 gap-4 text-sm text-muted-foreground',
+            isEven ? 'md:text-right' : '',
+          )}
+        >
+          <div>
+            <span className="block text-xs uppercase tracking-wider opacity-60">
+              <Trans>Status</Trans>
+            </span>
+            <span className={cn("font-medium", jobConfig.color)}>
+              {step.status}
+            </span>
+          </div>
+          <div>
+            <span className="block text-xs uppercase tracking-wider opacity-60">
+              <Trans>Outputs</Trans>
+            </span>
+            <span className="font-medium text-foreground">
+              {step.outputs.length} files
+            </span>
+          </div>
+        </div>
+      </CardContent>
+      {step.job_id && (
+        <div className="px-6 py-2 bg-muted/20 border-t border-border/20 flex items-center justify-between text-xs text-muted-foreground group-hover:bg-primary/5 transition-colors">
+          <span className="font-medium">
+            <Trans>View Output & Logs</Trans>
+          </span>
+          <ArrowRight className="h-3 w-3 transition-transform group-hover:translate-x-1" />
+        </div>
+      )}
+    </Card>
   );
 }
 

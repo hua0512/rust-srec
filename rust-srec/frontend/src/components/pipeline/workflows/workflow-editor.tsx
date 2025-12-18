@@ -2,12 +2,14 @@ import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { motion } from 'motion/react';
-import { ArrowLeft, Workflow, Save, Settings2, Layout } from 'lucide-react';
+import { ArrowLeft, Workflow, Save, Settings2, Layout, List, Share2, CheckCircle2, ShieldCheck } from 'lucide-react';
 import { useNavigate } from '@tanstack/react-router';
+import { useState } from 'react';
 import { Trans } from '@lingui/react/macro';
 import { t } from '@lingui/core/macro';
 
 import { Button } from '@/components/ui/button';
+import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import {
@@ -22,13 +24,16 @@ import {
 import { StepLibrary } from './step-library';
 import { StepsList } from './steps-list';
 import type { PipelinePreset } from '@/server/functions/pipeline';
-import { Badge } from '@/components/ui/badge';
-import { PipelineStep, PipelineStepSchema } from '@/api/schemas';
+import { validateDagDefinition } from '@/server/functions/pipeline';
+import { toast } from 'sonner';
+import { PipelineStep, DagStepDefinition, DagStepDefinitionSchema } from '@/api/schemas';
+import { WorkflowFlowEditor } from './flow-editor/workflow-flow-editor';
+import { StepConfigDialog } from './step-config-dialog';
 
 const workflowSchema = z.object({
   name: z.string().min(1, 'Name is required'),
   description: z.string().optional(),
-  steps: z.array(PipelineStepSchema).min(1, 'At least one step is required'),
+  steps: z.array(DagStepDefinitionSchema).min(1, 'At least one step is required'),
 });
 
 type WorkflowFormData = z.infer<typeof workflowSchema>;
@@ -47,12 +52,11 @@ export function WorkflowEditor({
   isUpdating,
 }: WorkflowEditorProps) {
   const navigate = useNavigate();
+  const [viewMode, setViewMode] = useState<'list' | 'graph'>('list');
+  const [editingIndex, setEditingIndex] = useState<number | null>(null);
+  const [isValidating, setIsValidating] = useState(false);
 
-  // Parse initial steps
-  let initialSteps: PipelineStep[] = [];
-  if (initialData?.steps) {
-    initialSteps = initialData.steps;
-  }
+  const initialSteps = initialData?.dag?.steps || [];
 
   const form = useForm<WorkflowFormData>({
     resolver: zodResolver(workflowSchema) as any,
@@ -65,9 +69,15 @@ export function WorkflowEditor({
 
   const steps = form.watch('steps');
 
-  const handleAddStep = (step: PipelineStep) => {
+  const handleAddStep = (pipelineStep: PipelineStep) => {
     const currentSteps = form.getValues('steps');
-    form.setValue('steps', [...currentSteps, step], {
+    const stepName = pipelineStep.type === 'inline' ? pipelineStep.processor : pipelineStep.name;
+    const newStep: DagStepDefinition = {
+      id: `${stepName}-${currentSteps.length}`,
+      step: pipelineStep,
+      depends_on: currentSteps.length > 0 ? [currentSteps[currentSteps.length - 1].id] : [],
+    };
+    form.setValue('steps', [...currentSteps, newStep], {
       shouldDirty: true,
     });
   };
@@ -81,15 +91,66 @@ export function WorkflowEditor({
     );
   };
 
-  const handleReorder = (newOrder: PipelineStep[]) => {
+  const handleReorder = (newOrder: DagStepDefinition[]) => {
     form.setValue('steps', newOrder, { shouldDirty: true });
   };
 
-  const handleUpdateStep = (index: number, newStep: PipelineStep) => {
+  const handleUpdateStep = (index: number, newStep: DagStepDefinition) => {
     const currentSteps = form.getValues('steps');
     const updatedSteps = [...currentSteps];
     updatedSteps[index] = newStep;
     form.setValue('steps', updatedSteps, { shouldDirty: true });
+  };
+
+  const handleEditStepById = (id: string) => {
+    const index = steps.findIndex((s) => s.id === id);
+    if (index !== -1) {
+      setEditingIndex(index);
+    }
+  };
+
+  const handleValidate = async () => {
+    const data = form.getValues();
+    if (data.steps.length === 0) {
+      toast.error(t`Pipeline must have at least one step`);
+      return;
+    }
+
+    setIsValidating(true);
+    try {
+      const result = await validateDagDefinition({
+        data: {
+          name: data.name,
+          steps: data.steps,
+        }
+      });
+
+      if (result.valid) {
+        toast.success(t`Pipeline is valid`, {
+          description: t`No errors found. Max depth: ${result.max_depth}`,
+          icon: <CheckCircle2 className="h-4 w-4 text-green-500" />
+        });
+      } else {
+        toast.error(t`Validation Failed`, {
+          description: (
+            <div className="space-y-1 mt-1">
+              {result.errors.map((e, i) => (
+                <p key={i} className="text-xs font-mono bg-destructive/10 p-1 rounded text-destructive">{e}</p>
+              ))}
+              {result.warnings.map((e, i) => (
+                <p key={i} className="text-xs font-mono bg-yellow-500/10 p-1 rounded text-yellow-500">{e}</p>
+              ))}
+            </div>
+          ),
+          duration: 5000,
+        });
+      }
+    } catch (error) {
+      console.error(error);
+      toast.error(t`Validation service unavailable`);
+    } finally {
+      setIsValidating(false);
+    }
   };
 
   return (
@@ -121,6 +182,20 @@ export function WorkflowEditor({
             </div>
           </div>
           <div className="flex items-center gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={handleValidate}
+              disabled={isValidating}
+              className="hidden sm:flex"
+            >
+              {isValidating ? (
+                <span className="animate-spin mr-2">⏳</span>
+              ) : (
+                <ShieldCheck className="h-4 w-4 mr-2" />
+              )}
+              <Trans>Validate</Trans>
+            </Button>
             <Button
               onClick={form.handleSubmit(onSubmit)}
               disabled={isUpdating || !form.formState.isDirty}
@@ -204,42 +279,83 @@ export function WorkflowEditor({
               <StepLibrary
                 onAddStep={handleAddStep}
                 currentSteps={steps.map((s) =>
-                  s.type === 'inline' ? s.processor : s.name,
+                  s.step.type === 'inline' ? s.step.processor : s.step.name,
                 )}
               />
             </div>
 
             {/* Right Column: Steps Visualizer */}
-            <div className="lg:col-span-8 flex flex-col h-full">
-              <div className="flex items-center justify-between mb-4 px-1">
+            <div className="lg:col-span-8 flex flex-col h-full min-h-[600px] space-y-4">
+              <div className="flex items-center justify-between px-1 shrink-0">
                 <div className="flex items-center gap-2">
                   <div className="p-2 rounded-lg bg-primary/10">
                     <Layout className="h-4 w-4 text-primary" />
                   </div>
                   <h3 className="font-semibold tracking-tight">
-                    <Trans>Pipeline Sequence</Trans>
+                    <Trans>Pipeline Structure</Trans>
                   </h3>
                 </div>
-                <Badge
-                  variant="outline"
-                  className="px-3 bg-background/50 backdrop-blur"
-                >
-                  {steps.length} <Trans>Steps</Trans>
-                </Badge>
+                <div className="flex items-center gap-4">
+                  <Tabs
+                    value={viewMode}
+                    onValueChange={(v) => setViewMode(v as any)}
+                    className="h-9"
+                  >
+                    <TabsList className="grid w-full grid-cols-2 h-9 p-1">
+                      <TabsTrigger value="list" className="h-7 px-4">
+                        <List className="h-3.5 w-3.5 mr-2" />
+                        <span className="text-xs">
+                          <Trans>List</Trans>
+                        </span>
+                      </TabsTrigger>
+                      <TabsTrigger value="graph" className="h-7 px-4">
+                        <Share2 className="h-3.5 w-3.5 mr-2" />
+                        <span className="text-xs">
+                          <Trans>Graph</Trans>
+                        </span>
+                      </TabsTrigger>
+                    </TabsList>
+                  </Tabs>
+                </div>
               </div>
 
-              <div className="flex-1">
-                <StepsList
-                  steps={steps}
-                  onReorder={handleReorder}
-                  onRemove={handleRemoveStep}
-                  onUpdate={handleUpdateStep}
-                />
-              </div>
+              {viewMode === 'list' ? (
+                <div className="flex-1">
+                  <StepsList
+                    steps={steps}
+                    onReorder={handleReorder}
+                    onRemove={handleRemoveStep}
+                    onUpdate={handleUpdateStep}
+                    onEdit={setEditingIndex}
+                  />
+                </div>
+              ) : (
+                <div className="flex-1 border border-border/40 rounded-2xl overflow-hidden bg-muted/5 relative min-h-[500px]">
+                  <WorkflowFlowEditor
+                    steps={steps}
+                    onUpdateSteps={handleReorder}
+                    onEditStep={handleEditStepById}
+                  />
+                </div>
+              )}
             </div>
           </form>
         </Form>
       </div>
+
+      <StepConfigDialog
+        open={editingIndex !== null}
+        onOpenChange={(open) => !open && setEditingIndex(null)}
+        dagStep={editingIndex !== null ? steps[editingIndex] : null}
+        onSave={(data) => {
+          if (editingIndex !== null) {
+            handleUpdateStep(editingIndex, data);
+            setEditingIndex(null);
+          }
+        }}
+        allSteps={steps}
+        currentStepIndex={editingIndex ?? -1}
+      />
     </div>
   );
 }

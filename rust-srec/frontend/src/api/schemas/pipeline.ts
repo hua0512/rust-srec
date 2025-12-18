@@ -61,14 +61,8 @@ export const JobSchema = z.object({
 });
 export type Job = z.infer<typeof JobSchema>;
 
-export const PipelineJobsPageResponseSchema = z.object({
-  items: z.array(JobSchema),
-  limit: z.number(),
-  offset: z.number(),
-});
-export type PipelineJobsPageResponse = z.infer<
-  typeof PipelineJobsPageResponseSchema
->;
+// PipelineJobsPageResponseSchema removed in favor of DagListResponseSchema
+
 
 export const JobLogsResponseSchema = z.object({
   items: z.array(JobLogEntrySchema),
@@ -124,6 +118,127 @@ export const VALID_CATEGORIES = [
 ] as const;
 export type PresetCategory = (typeof VALID_CATEGORIES)[number];
 
+// --- DAG Pipeline Schemas ---
+
+export const DagStatusSchema = z.enum([
+  'PENDING',
+  'PROCESSING',
+  'COMPLETED',
+  'FAILED',
+  'CANCELLED',
+]);
+export type DagStatus = z.infer<typeof DagStatusSchema>;
+
+export const DagStepStatusSchema = z.enum([
+  'BLOCKED',
+  'PENDING',
+  'PROCESSING',
+  'COMPLETED',
+  'FAILED',
+  'CANCELLED',
+]);
+export type DagStepStatus = z.infer<typeof DagStepStatusSchema>;
+
+export const DagStepSchema = z.object({
+  step_id: z.string(),
+  status: DagStepStatusSchema,
+  job_id: z.string().nullable().optional(),
+  depends_on: z.array(z.string()),
+  outputs: z.array(z.string()),
+  processor: z.string(),
+});
+export type DagStep = z.infer<typeof DagStepSchema>;
+
+export const DagExecutionSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  status: DagStatusSchema,
+  streamer_id: z.string().nullable().optional(),
+  session_id: z.string().nullable().optional(),
+  total_steps: z.number(),
+  completed_steps: z.number(),
+  failed_steps: z.number(),
+  progress_percent: z.number(),
+  steps: z.array(DagStepSchema),
+  error: z.string().nullable().optional(),
+  created_at: z.string(),
+  updated_at: z.string(),
+  completed_at: z.string().nullable().optional(),
+});
+export type DagExecution = z.infer<typeof DagExecutionSchema>;
+
+export const DagGraphNodeSchema = z.object({
+  id: z.string(),
+  label: z.string(),
+  status: DagStepStatusSchema,
+  processor: z.string().nullable().optional(),
+  job_id: z.string().nullable().optional(),
+});
+export type DagGraphNode = z.infer<typeof DagGraphNodeSchema>;
+
+export const DagGraphEdgeSchema = z.object({
+  from: z.string(),
+  to: z.string(),
+});
+export type DagGraphEdge = z.infer<typeof DagGraphEdgeSchema>;
+
+export const DagGraphSchema = z.object({
+  dag_id: z.string(),
+  name: z.string(),
+  nodes: z.array(DagGraphNodeSchema),
+  edges: z.array(DagGraphEdgeSchema),
+});
+export type DagGraph = z.infer<typeof DagGraphSchema>;
+
+export const DagStatsSchema = z.object({
+  dag_id: z.string(),
+  blocked: z.number(),
+  pending: z.number(),
+  processing: z.number(),
+  completed: z.number(),
+  failed: z.number(),
+  cancelled: z.number(),
+  total: z.number(),
+  progress_percent: z.number(),
+});
+export type DagStats = z.infer<typeof DagStatsSchema>;
+
+export const DagSummarySchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  status: DagStatusSchema,
+  streamer_id: z.string().nullable().optional(),
+  session_id: z.string().nullable().optional(),
+  total_steps: z.number(),
+  completed_steps: z.number(),
+  failed_steps: z.number(),
+  progress_percent: z.number(),
+  created_at: z.string(),
+  updated_at: z.string(),
+});
+export type DagSummary = z.infer<typeof DagSummarySchema>;
+
+export const DagListResponseSchema = z.object({
+  dags: z.array(DagSummarySchema),
+  total: z.number(),
+  limit: z.number(),
+  offset: z.number(),
+});
+export type DagListResponse = z.infer<typeof DagListResponseSchema>;
+
+export const DagStepDefinitionSchema = z.object({
+  id: z.string(),
+  step: PipelineStepSchema,
+  depends_on: z.array(z.string()).default([]),
+});
+export type DagStepDefinition = z.infer<typeof DagStepDefinitionSchema>;
+
+export const DagPipelineDefinitionSchema = z.object({
+  name: z.string(),
+  steps: z.array(DagStepDefinitionSchema),
+});
+export type DagPipelineDefinition = z.infer<typeof DagPipelineDefinitionSchema>;
+
 // --- Pipeline Presets (Workflows) ---
 
 import { PipelineStepSchema } from './common';
@@ -132,7 +247,7 @@ export const PipelinePresetSchema = z.object({
   id: z.string(),
   name: z.string(),
   description: z.string().nullable().optional(),
-  steps: z.array(PipelineStepSchema),
+  dag: DagPipelineDefinitionSchema,
   created_at: z.string(),
   updated_at: z.string(),
 });
@@ -141,11 +256,27 @@ export type PipelinePreset = z.infer<typeof PipelinePresetSchema>;
 export const CreatePipelinePresetRequestSchema = z.object({
   name: z.string().min(1),
   description: z.string().nullable().optional(),
-  steps: z.array(PipelineStepSchema),
+  dag: DagPipelineDefinitionSchema,
 });
 export type CreatePipelinePresetRequest = z.infer<
   typeof CreatePipelinePresetRequestSchema
 >;
+
+export const PipelinePresetPreviewSchema = z.object({
+  preset_id: z.string(),
+  preset_name: z.string(),
+  jobs: z.array(
+    z.object({
+      step_id: z.string(),
+      processor: z.string(),
+      depends_on: z.array(z.string()),
+      is_root: z.boolean(),
+      is_leaf: z.boolean(),
+    }),
+  ),
+  execution_order: z.array(z.string()),
+});
+export type PipelinePresetPreview = z.infer<typeof PipelinePresetPreviewSchema>;
 
 export const UpdatePipelinePresetRequestSchema =
   CreatePipelinePresetRequestSchema;
