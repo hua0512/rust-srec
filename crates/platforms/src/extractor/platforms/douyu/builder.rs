@@ -1203,9 +1203,9 @@ impl Douyu {
     }
 
     const JS_DOM: &str = "
-        encripted = {decryptedCodes: []};
-        if (!this.window) {window = {};}
-        if (!this.document) {document = {}}
+        var encripted = {decryptedCodes: [], sign: ''};
+        var window = window || {};
+        var document = document || {};
     ";
 
     const JS_DEBUG: &str = "
@@ -1214,9 +1214,9 @@ impl Douyu {
             try {
                 encripted.sign = encripted_fun(p1, p2, p3);
             } catch(e) {
-                encripted.sign = e.message;
+                encripted.sign = 'ERROR:' + e.message;
             }
-            return encripted;
+            return encripted.sign;
         }
     ";
 
