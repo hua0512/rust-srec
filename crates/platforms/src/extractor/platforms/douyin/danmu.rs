@@ -58,61 +58,18 @@ impl Default for DouyinDanmuProtocol {
 impl DouyinDanmuProtocol {
     /// Generates the ac_signature (X-Bogus) using the webmssdk.js
     fn generate_signature(md5_hash: &str) -> Result<String> {
-        // Create a minimal JS environment
-        let js_code = format!(
-            r#"
-            var document = {{}};
-            var window = {{}};
-            var Request = {{}};
-            var Headers = {{}};
-            var navigator = {{
-                userAgent: '{user_agent}'
-            }};
-            window.innerHeight = 910;
-            window.innerWidth = 1920;
-            window.outerHeight = 28;
-            window.outerWidth = 160;
-            window.screenX = 0;
-            window.screenY = 9;
-            window.pageYOffset = 0;
-            window.pageXOffset = 0;
-            window.screen = {{}};
-            window.onwheelx = {{ "_Ax": "0X21" }};
-            window.navigator = navigator;
-            window.navigator.cookieEnabled = true;
-            window.navigator.platform = "Win32";
-            window.navigator.language = "zh-CN";
-            window.navigator.appCodeName = "Mozilla";
-            window.navigator.appVersion = '{user_agent}';
-            window.navigator.onLine = true;
-            window.addEventListener = function() {{}};
-            window.sessionStorage = {{}};
-            window.localStorage = {{}};
-            document.hidden = true;
-            document.webkitHidden = true;
-            document.cookie = '';
+        use crate::js_engine::JsEngineManager;
 
-            {webmssdk}
+        let manager = JsEngineManager::global();
 
-            get_sign("{md5_hash}")
-            "#,
-            user_agent = DEFAULT_UA,
-            webmssdk = WEBMSSDK_JS,
-            md5_hash = md5_hash
-        );
-
-        let runtime = rquickjs::Runtime::new()
-            .map_err(|e| DanmakuError::protocol(format!("Failed to create JS runtime: {}", e)))?;
-        let context = rquickjs::Context::full(&runtime)
-            .map_err(|e| DanmakuError::protocol(format!("Failed to create JS context: {}", e)))?;
-
-        context.with(|ctx| {
-            let result: String = ctx
-                .eval(js_code)
-                .map_err(|e| DanmakuError::protocol(format!("JS evaluation failed: {}", e)))?;
-            // debug!("Signature: {}", result);
-            Ok(result)
-        })
+        manager
+            .execute_with_browser_env(|ctx| {
+                // Load the webmssdk.js library
+                ctx.load_script(WEBMSSDK_JS)?;
+                // Call get_sign with the MD5 hash
+                ctx.eval_string(&format!("get_sign(\"{}\")", md5_hash))
+            })
+            .map_err(|e| DanmakuError::protocol(format!("Signature generation failed: {}", e)))
     }
 
     /// Generates MD5 hash of the input string

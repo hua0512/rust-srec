@@ -1216,8 +1216,8 @@ impl Douyu {
     ";
 
     fn get_js_token(response: &str, rid: u64) -> Result<DouyuTokenResult, ExtractorError> {
+        use crate::js_engine::JsEngineManager;
         use md5::{Digest, Md5};
-        use rquickjs::CatchResultExt;
 
         let encoded_script = ENCODED_SCRIPT_REGEX
             .captures(response)
@@ -1238,49 +1238,25 @@ impl Douyu {
             .unwrap()
             .as_secs();
 
-        let runtime =
-            rquickjs::Runtime::new().map_err(|e| ExtractorError::JsError(e.to_string()))?;
-        let context = rquickjs::Context::full(&runtime)
-            .map_err(|e| ExtractorError::JsError(e.to_string()))?;
-
         // Step 1: Execute ub98484234 to get the intermediate JS code containing 'v' value
-        // We modify the function to return the intermediate code (strc) instead of eval'ing it
         // The original pattern is: eval(strc)(rid, did, tt); - we replace it with: strc;
         let modified_script = EVAL_STRC_REGEX.replace(encoded_script, "strc;");
 
         let step1_js = format!(
-            "{}\n{}\nub98484234({}, \"{}\", {})",
-            Self::JS_DOM,
-            modified_script,
-            rid,
-            did,
-            tt
+            "{}\nub98484234({}, \"{}\", {})",
+            modified_script, rid, did, tt
         );
 
-        let intermediate_js: String = context.with(|ctx| {
-            let result: Result<String, _> = ctx.eval(step1_js);
-            result.catch(&ctx).map_err(|caught| {
-                use rquickjs::CaughtError;
-                let error_msg = match caught {
-                    CaughtError::Exception(exc) => {
-                        format!(
-                            "JS Exception (step1): {}",
-                            exc.message().unwrap_or_default()
-                        )
-                    }
-                    CaughtError::Value(val) => {
-                        format!(
-                            "JS Error value: {:?}",
-                            val.as_string().map(|s| s.to_string())
-                        )
-                    }
-                    CaughtError::Error(err) => {
-                        format!("JS execution error: {}", err)
-                    }
-                };
-                ExtractorError::JsError(error_msg)
+        // Use the centralized JS engine manager
+        let manager = JsEngineManager::global();
+
+        let intermediate_js = manager
+            .execute(|ctx| {
+                // Set up encripted variable needed by the script
+                ctx.load_script(Self::JS_DOM)?;
+                ctx.eval_string(&step1_js)
             })
-        })?;
+            .map_err(|e| ExtractorError::JsError(format!("Step 1 failed: {}", e)))?;
 
         // Step 2: Extract 'v' value from the intermediate JS
         let v_value = V_REGEX
@@ -1307,48 +1283,18 @@ impl Douyu {
             intermediate_js.replace("CryptoJS.MD5(cb).toString()", &format!("\"{}\"", rb));
 
         // Step 5: Transform the patched JS into a callable function and execute it
-        // The intermediate code is like: (function(rid, did, tt) { ... return rt; })(...)
-        // We need to wrap it to return the result
         let final_patched_js = patched_js
             .replace("return rt;});", "return rt;}")
             .replace("(function (", "function sign(");
 
-        let step2_js = format!(
-            "{}\n{}\nsign({}, \"{}\", {})",
-            Self::JS_DOM,
-            final_patched_js,
-            rid,
-            did,
-            tt
-        );
+        let step2_js = format!("{}\nsign({}, \"{}\", {})", final_patched_js, rid, did, tt);
 
-        let sign: String = context.with(|ctx| {
-            let result: Result<String, _> = ctx.eval(step2_js);
-            result.catch(&ctx).map_err(|caught| {
-                use rquickjs::CaughtError;
-                let error_msg = match caught {
-                    CaughtError::Exception(exc) => {
-                        let msg = exc.message().unwrap_or_default();
-                        let stack = exc.stack().unwrap_or_default();
-                        if stack.is_empty() {
-                            format!("JS Exception (step2): {}", msg)
-                        } else {
-                            format!("JS Exception (step2): {}\nStack: {}", msg, stack)
-                        }
-                    }
-                    CaughtError::Value(val) => {
-                        format!(
-                            "JS Error value: {:?}",
-                            val.as_string().map(|s| s.to_string())
-                        )
-                    }
-                    CaughtError::Error(err) => {
-                        format!("JS execution error: {}", err)
-                    }
-                };
-                ExtractorError::JsError(error_msg)
+        let sign = manager
+            .execute(|ctx| {
+                ctx.load_script(Self::JS_DOM)?;
+                ctx.eval_string(&step2_js)
             })
-        })?;
+            .map_err(|e| ExtractorError::JsError(format!("Step 2 failed: {}", e)))?;
 
         debug!("sign result: {}", sign);
 

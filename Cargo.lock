@@ -2671,6 +2671,7 @@ dependencies = [
  "libsm",
  "m3u8-rs",
  "md-5",
+ "parking_lot",
  "prost",
  "prost-build",
  "prost-types",
@@ -4395,11 +4396,11 @@ dependencies = [
  "futures-util",
  "log",
  "rustls",
- "rustls-native-certs 0.8.2",
  "rustls-pki-types",
  "tokio",
  "tokio-rustls",
  "tungstenite 0.26.2",
+ "webpki-roots 0.26.11",
 ]
 
 [[package]]
