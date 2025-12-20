@@ -50,6 +50,13 @@ static SIGN_REGEX: LazyLock<Regex> =
 static TX_HOST_SUFFIX_REGEX: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r".+(sa|3a|1a|3|1)").unwrap());
 
+/// Regex to extract 'v' value (12-char hex) from the ub98484234 intermediate result
+static V_REGEX: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"v=(\w{12})").unwrap());
+
+/// Regex to match eval(strc)(rid, did, tt); pattern - needs to be replaced with strc;
+static EVAL_STRC_REGEX: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"eval\(strc\)\(\w+,\w+,.\w+\);").unwrap());
+
 /// Default device ID for Douyu requests
 pub const DOUYU_DEFAULT_DID: &str = "10000000000000000000000000001501";
 
@@ -1208,19 +1215,8 @@ impl Douyu {
         var document = document || {};
     ";
 
-    const JS_DEBUG: &str = "
-        var encripted_fun = ub98484234;
-        ub98484234 = function(p1, p2, p3) {
-            try {
-                encripted.sign = encripted_fun(p1, p2, p3);
-            } catch(e) {
-                encripted.sign = 'ERROR:' + e.message;
-            }
-            return encripted.sign;
-        }
-    ";
-
     fn get_js_token(response: &str, rid: u64) -> Result<DouyuTokenResult, ExtractorError> {
+        use md5::{Digest, Md5};
         use rquickjs::CatchResultExt;
 
         let encoded_script = ENCODED_SCRIPT_REGEX
@@ -1237,49 +1233,107 @@ impl Douyu {
         }
 
         let did = Uuid::new_v4().to_string().replace("-", "");
-        // epoch seconds
         let tt = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap()
-            .as_secs()
-            .to_string();
-        // debug!("tt: {}", tt);
-
-        let md5_encoded_script = include_str!("../../../resources/crypto-js-md5.min.js");
-
-        let final_js = format!(
-            "{}\n{}\n{}\n{}\nub98484234('{}', '{}', '{}')",
-            md5_encoded_script,
-            Self::JS_DOM,
-            encoded_script,
-            Self::JS_DEBUG,
-            rid,
-            did,
-            tt
-        );
-
-        debug!("final_js: {}", final_js);
+            .as_secs();
 
         let runtime =
             rquickjs::Runtime::new().map_err(|e| ExtractorError::JsError(e.to_string()))?;
         let context = rquickjs::Context::full(&runtime)
             .map_err(|e| ExtractorError::JsError(e.to_string()))?;
 
-        let sign = context.with(|ctx| {
-            let result: Result<String, _> = ctx.eval(final_js.clone());
+        // Step 1: Execute ub98484234 to get the intermediate JS code containing 'v' value
+        // We modify the function to return the intermediate code (strc) instead of eval'ing it
+        // The original pattern is: eval(strc)(rid, did, tt); - we replace it with: strc;
+        let modified_script = EVAL_STRC_REGEX.replace(encoded_script, "strc;");
 
-            // Use catch() to get detailed exception info
-            let res: String = result.catch(&ctx).map_err(|caught| {
+        let step1_js = format!(
+            "{}\n{}\nub98484234({}, \"{}\", {})",
+            Self::JS_DOM,
+            modified_script,
+            rid,
+            did,
+            tt
+        );
+
+        let intermediate_js: String = context.with(|ctx| {
+            let result: Result<String, _> = ctx.eval(step1_js);
+            result.catch(&ctx).map_err(|caught| {
                 use rquickjs::CaughtError;
-                // Pattern match on the CaughtError enum to get error details
+                let error_msg = match caught {
+                    CaughtError::Exception(exc) => {
+                        format!(
+                            "JS Exception (step1): {}",
+                            exc.message().unwrap_or_default()
+                        )
+                    }
+                    CaughtError::Value(val) => {
+                        format!(
+                            "JS Error value: {:?}",
+                            val.as_string().map(|s| s.to_string())
+                        )
+                    }
+                    CaughtError::Error(err) => {
+                        format!("JS execution error: {}", err)
+                    }
+                };
+                ExtractorError::JsError(error_msg)
+            })
+        })?;
+
+        // Step 2: Extract 'v' value from the intermediate JS
+        let v_value = V_REGEX
+            .captures(&intermediate_js)
+            .and_then(|c| c.get(1))
+            .map(|m| m.as_str())
+            .ok_or_else(|| {
+                ExtractorError::JsError("Failed to extract 'v' value from intermediate JS".into())
+            })?;
+
+        // Step 3: Compute MD5(rid + did + tt + v) natively in Rust (this is 'rb' in the original code)
+        let cb = format!("{}{}{}{}", rid, did, tt, v_value);
+        let mut hasher = Md5::new();
+        hasher.update(cb.as_bytes());
+        let rb = format!("{:x}", hasher.finalize());
+
+        debug!(
+            "Native MD5: rid={}, did={}, tt={}, v={}, rb={}",
+            rid, did, tt, v_value, rb
+        );
+
+        // Step 4: Replace CryptoJS.MD5(cb).toString() with our pre-computed hash
+        let patched_js =
+            intermediate_js.replace("CryptoJS.MD5(cb).toString()", &format!("\"{}\"", rb));
+
+        // Step 5: Transform the patched JS into a callable function and execute it
+        // The intermediate code is like: (function(rid, did, tt) { ... return rt; })(...)
+        // We need to wrap it to return the result
+        let final_patched_js = patched_js
+            .replace("return rt;});", "return rt;}")
+            .replace("(function (", "function sign(");
+
+        let step2_js = format!(
+            "{}\n{}\nsign({}, \"{}\", {})",
+            Self::JS_DOM,
+            final_patched_js,
+            rid,
+            did,
+            tt
+        );
+
+        let sign: String = context.with(|ctx| {
+            let result: Result<String, _> = ctx.eval(step2_js);
+            result.catch(&ctx).map_err(|caught| {
+                use rquickjs::CaughtError;
                 let error_msg = match caught {
                     CaughtError::Exception(exc) => {
                         let msg = exc.message().unwrap_or_default();
                         let stack = exc.stack().unwrap_or_default();
                         if stack.is_empty() {
-                            format!("JS Exception: {}", msg)
+                            format!("JS Exception (step2): {}", msg)
                         } else {
-                            format!("JS Exception: {}\nStack: {}", msg, stack)
+                            format!("JS Exception (step2): {}\nStack: {}", msg, stack)
                         }
                     }
                     CaughtError::Value(val) => {
@@ -1293,13 +1347,12 @@ impl Douyu {
                     }
                 };
                 ExtractorError::JsError(error_msg)
-            })?;
-
-            Ok::<_, ExtractorError>(res)
+            })
         })?;
 
-        debug!("sign: {}", sign);
+        debug!("sign result: {}", sign);
 
+        // Parse the sign result: v=XXX&did=XXX&tt=XXX&sign=XXX
         let sign_captures = SIGN_REGEX.captures(&sign);
         if let Some(captures) = sign_captures {
             let v = captures.get(1).unwrap().as_str();
@@ -1309,9 +1362,10 @@ impl Douyu {
 
             Ok(DouyuTokenResult::new(v, did, tt, sign))
         } else {
-            Err(ExtractorError::JsError(
-                "Failed to get js token".to_string(),
-            ))
+            Err(ExtractorError::JsError(format!(
+                "Failed to parse sign result: {}",
+                sign
+            )))
         }
     }
 
