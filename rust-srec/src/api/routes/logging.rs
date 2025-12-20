@@ -15,7 +15,7 @@ use axum::{
 use bytes::Bytes;
 use futures::{SinkExt, StreamExt};
 use prost::Message as ProstMessage;
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
 use std::time::Duration;
 
 use crate::api::error::{ApiError, ApiResult};
@@ -30,20 +30,20 @@ pub struct WsAuthParams {
 }
 
 /// Request to update the log filter.
-#[derive(Debug, Deserialize)]
+#[derive(Debug, serde::Deserialize, utoipa::ToSchema)]
 pub struct UpdateLogFilterRequest {
     pub filter: String,
 }
 
 /// Response for logging configuration.
-#[derive(Debug, Serialize)]
+#[derive(Debug, serde::Serialize, utoipa::ToSchema)]
 pub struct LoggingConfigResponse {
     pub filter: String,
     pub available_modules: Vec<ModuleInfo>,
 }
 
 /// Information about an available logging module.
-#[derive(Debug, Serialize)]
+#[derive(Debug, serde::Serialize, utoipa::ToSchema)]
 pub struct ModuleInfo {
     pub name: String,
     pub description: String,
@@ -56,8 +56,16 @@ pub fn router() -> Router<AppState> {
         .route("/stream", get(logging_stream_ws))
 }
 
-/// Get current logging configuration.
-async fn get_logging_config(
+#[utoipa::path(
+    get,
+    path = "/api/logging",
+    tag = "logging",
+    responses(
+        (status = 200, description = "Logging configuration", body = LoggingConfigResponse)
+    ),
+    security(("bearer_auth" = []))
+)]
+pub async fn get_logging_config(
     State(state): State<AppState>,
 ) -> ApiResult<Json<LoggingConfigResponse>> {
     let logging_config = state
@@ -80,8 +88,18 @@ async fn get_logging_config(
     }))
 }
 
-/// Update logging configuration.
-async fn update_logging_config(
+#[utoipa::path(
+    put,
+    path = "/api/logging",
+    tag = "logging",
+    request_body = UpdateLogFilterRequest,
+    responses(
+        (status = 200, description = "Logging configuration updated", body = LoggingConfigResponse),
+        (status = 400, description = "Invalid filter", body = crate::api::error::ApiErrorResponse)
+    ),
+    security(("bearer_auth" = []))
+)]
+pub async fn update_logging_config(
     State(state): State<AppState>,
     Json(request): Json<UpdateLogFilterRequest>,
 ) -> ApiResult<Json<LoggingConfigResponse>> {
@@ -93,21 +111,21 @@ async fn update_logging_config(
     // Apply the new filter
     logging_config
         .set_filter(&request.filter)
-        .map_err(|e| ApiError::bad_request(&format!("Invalid filter: {}", e)))?;
+        .map_err(|e| ApiError::bad_request(format!("Invalid filter: {}", e)))?;
 
     // Persist to database if config service is available
     if let Some(config_service) = &state.config_service {
         let mut global_config = config_service
             .get_global_config()
             .await
-            .map_err(|e| ApiError::internal(&format!("Failed to get config: {}", e)))?;
+            .map_err(|e| ApiError::internal(format!("Failed to get config: {}", e)))?;
 
         global_config.log_filter_directive = request.filter.clone();
 
         config_service
             .update_global_config(&global_config)
             .await
-            .map_err(|e| ApiError::internal(&format!("Failed to persist config: {}", e)))?;
+            .map_err(|e| ApiError::internal(format!("Failed to persist config: {}", e)))?;
     }
 
     let modules: Vec<ModuleInfo> = available_modules()

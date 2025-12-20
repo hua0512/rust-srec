@@ -35,7 +35,7 @@ pub const VALID_CATEGORIES: &[&str] = &[
 ///
 /// Represents a reusable, named configuration for a specific processor.
 /// Used in pipeline definitions to simplify configuration and promote reuse.
-#[derive(Debug, Clone, FromRow, Serialize, Deserialize)]
+#[derive(Debug, Clone, FromRow, Serialize, Deserialize, utoipa::ToSchema)]
 pub struct JobPreset {
     /// Unique identifier (UUID).
     pub id: String,
@@ -101,14 +101,14 @@ impl JobPreset {
         }
 
         // Validate category if provided
-        if let Some(ref cat) = self.category {
-            if !VALID_CATEGORIES.contains(&cat.as_str()) {
-                return Err(format!(
-                    "Invalid category '{}'. Valid categories: {}",
-                    cat,
-                    VALID_CATEGORIES.join(", ")
-                ));
-            }
+        if let Some(ref cat) = self.category
+            && !VALID_CATEGORIES.contains(&cat.as_str())
+        {
+            return Err(format!(
+                "Invalid category '{}'. Valid categories: {}",
+                cat,
+                VALID_CATEGORIES.join(", ")
+            ));
         }
 
         // Validate config is valid JSON
@@ -140,10 +140,15 @@ impl PipelineType {
             Self::Dag => "dag",
         }
     }
+}
 
-    pub fn from_str(s: &str) -> Self {
+impl std::str::FromStr for PipelineType {
+    type Err = String;
+
+    fn from_str(s: &str) -> std::result::Result<Self, Self::Err> {
         match s.to_lowercase().as_str() {
-            _ => Self::Dag,
+            "dag" => Ok(Self::Dag),
+            _ => Err(format!("Unknown pipeline type: {}", s)),
         }
     }
 }
@@ -201,7 +206,7 @@ impl PipelinePreset {
     pub fn get_pipeline_type(&self) -> PipelineType {
         self.pipeline_type
             .as_ref()
-            .map(|s| PipelineType::from_str(s))
+            .and_then(|s| s.parse::<PipelineType>().ok())
             .unwrap_or(PipelineType::Dag)
     }
 

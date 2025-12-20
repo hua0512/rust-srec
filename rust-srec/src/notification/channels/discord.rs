@@ -169,17 +169,17 @@ impl DiscordChannel {
     /// Parse the Retry-After duration from a 429 response.
     async fn parse_retry_after(&self, response: &reqwest::Response) -> Option<Duration> {
         // Try Retry-After header first (Discord sets this)
-        if let Some(retry_after) = response.headers().get("Retry-After") {
-            if let Ok(secs) = retry_after.to_str().ok()?.parse::<f64>() {
-                return Some(Duration::from_secs_f64(secs));
-            }
+        if let Some(retry_after) = response.headers().get("Retry-After")
+            && let Ok(secs) = retry_after.to_str().ok()?.parse::<f64>()
+        {
+            return Some(Duration::from_secs_f64(secs));
         }
 
         // Fallback: try X-RateLimit-Reset-After header
-        if let Some(reset_after) = response.headers().get("X-RateLimit-Reset-After") {
-            if let Ok(secs) = reset_after.to_str().ok()?.parse::<f64>() {
-                return Some(Duration::from_secs_f64(secs));
-            }
+        if let Some(reset_after) = response.headers().get("X-RateLimit-Reset-After")
+            && let Ok(secs) = reset_after.to_str().ok()?.parse::<f64>()
+        {
+            return Some(Duration::from_secs_f64(secs));
         }
 
         None

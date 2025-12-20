@@ -4,7 +4,7 @@ use crate::danmaku::provider::DanmuProvider;
 use crate::extractor::platforms::bilibili::danmu::create_bilibili_danmu_provider;
 use crate::extractor::platforms::douyin::create_douyin_danmu_provider;
 use crate::extractor::platforms::douyu::create_douyu_danmu_provider;
-use crate::extractor::platforms::huya::HuyaDanmuProvider;
+use crate::extractor::platforms::huya::create_huya_danmu_provider;
 use crate::extractor::platforms::twitcasting::create_twitcasting_danmu_provider;
 use crate::extractor::platforms::twitch::create_twitch_danmu_provider;
 use std::sync::Arc;
@@ -26,7 +26,7 @@ impl ProviderRegistry {
     /// Create a registry with default providers.
     pub fn with_defaults() -> Self {
         let mut registry = Self::new();
-        registry.register(Arc::new(HuyaDanmuProvider::new()));
+        registry.register(Arc::new(create_huya_danmu_provider()));
         registry.register(Arc::new(create_bilibili_danmu_provider()));
         registry.register(Arc::new(create_douyu_danmu_provider()));
         registry.register(Arc::new(create_douyin_danmu_provider()));

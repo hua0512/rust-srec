@@ -104,7 +104,7 @@ impl Processor for ThumbnailProcessor {
             match serde_json::from_str(config_str) {
                 Ok(c) => c,
                 Err(e) => {
-                    let _ = ctx.error(&format!(
+                    let _ = ctx.error(format!(
                         "Failed to parse thumbnail config: {} (config: '{}'). Using defaults.",
                         e, config_str
                     ));
@@ -131,7 +131,7 @@ impl Processor for ThumbnailProcessor {
         // Check if input is already an image - pass through as-is
         if is_image(&ext) {
             let duration = start.elapsed().as_secs_f64();
-            let _ = ctx.info(&format!(
+            let _ = ctx.info(format!(
                 "Input is already an image, passing through: {}",
                 input_path
             ));
@@ -158,7 +158,7 @@ impl Processor for ThumbnailProcessor {
         // If not supported, pass through the input file instead of failing
         if !is_video(&ext) {
             let duration = start.elapsed().as_secs_f64();
-            let _ = ctx.info(&format!(
+            let _ = ctx.info(format!(
                 "Input file is not a supported video format for thumbnail extraction, passing through: {}",
                 input_path
             ));
@@ -203,7 +203,7 @@ impl Processor for ThumbnailProcessor {
         };
         let output_path = output_string.as_str();
 
-        let _ = ctx.info(&format!(
+        let _ = ctx.info(format!(
             "Extracting thumbnail from {} at {:.2}s{}",
             input_path,
             config.timestamp_secs,
@@ -227,7 +227,7 @@ impl Processor for ThumbnailProcessor {
             "-ss",
             &format!("{:.2}", config.timestamp_secs),
             "-i",
-            &input_path,
+            input_path,
             "-vframes",
             "1",
         ]);
@@ -242,7 +242,7 @@ impl Processor for ThumbnailProcessor {
             &config.quality.to_string(),
             "-update",
             "1",
-            &output_path,
+            output_path,
         ])
         .env("LC_ALL", "C");
 
@@ -264,7 +264,7 @@ impl Processor for ThumbnailProcessor {
                 .collect::<Vec<_>>()
                 .join("\n");
 
-            let _ = ctx.error(&format!("ffmpeg failed: {}", stderr));
+            let _ = ctx.error(format!("ffmpeg failed: {}", stderr));
 
             // Check for no video stream error - pass through instead of failing
             if stderr.contains("does not contain any stream")
@@ -272,7 +272,7 @@ impl Processor for ThumbnailProcessor {
                 || stderr.contains("Invalid data found")
                 || stderr.contains("no video stream")
             {
-                let _ = ctx.info(&format!(
+                let _ = ctx.info(format!(
                     "Input file has no extractable video frames, passing through: {}",
                     input_path
                 ));
@@ -304,7 +304,7 @@ impl Processor for ThumbnailProcessor {
 
         debug!("ffmpeg exited successfully");
 
-        let _ = ctx.info(&format!(
+        let _ = ctx.info(format!(
             "Thumbnail extracted in {:.2}s: {}",
             command_output.duration, output_path
         ));

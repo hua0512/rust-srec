@@ -238,7 +238,7 @@ pub fn create_douyu_danmu_provider() -> DouyuDanmuProvider {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{danmaku::provider::DanmuProvider, extractor::default::DEFAULT_UA};
+    use crate::extractor::default::DEFAULT_UA;
 
     #[test]
     fn test_url_matching() {
@@ -445,10 +445,10 @@ mod tests {
                 }
 
                 // Send heartbeat periodically (simplified for test)
-                if message_count % 5 == 0 {
-                    if let Some(heartbeat) = protocol.heartbeat_message() {
-                        let _ = ws_stream.send(heartbeat).await;
-                    }
+                if message_count % 5 == 0
+                    && let Some(heartbeat) = protocol.heartbeat_message()
+                {
+                    let _ = ws_stream.send(heartbeat).await;
                 }
             }
         })

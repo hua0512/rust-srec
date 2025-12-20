@@ -4,8 +4,6 @@ use axum::{
     http::StatusCode,
     routing::{get, post},
 };
-use serde::Deserialize;
-use serde_json::Value;
 
 use crate::api::error::ApiError;
 use crate::api::server::AppState;
@@ -35,31 +33,49 @@ pub fn router() -> Router<AppState> {
 
 // DTOs
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, serde::Deserialize, utoipa::ToSchema)]
 pub struct CreateChannelRequest {
     pub name: String,
     pub channel_type: ChannelType,
-    pub settings: Value,
+    pub settings: serde_json::Value,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, serde::Deserialize, utoipa::ToSchema)]
 pub struct UpdateChannelRequest {
     pub name: String,
-    pub settings: Value,
+    pub settings: serde_json::Value,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, serde::Deserialize, utoipa::ToSchema)]
 pub struct UpdateSubscriptionsRequest {
     pub events: Vec<String>,
 }
 
 // Handlers
 
-async fn list_event_types() -> Json<Vec<NotificationEventTypeInfo>> {
+#[utoipa::path(
+    get,
+    path = "/api/notifications/event-types",
+    tag = "notifications",
+    responses(
+        (status = 200, description = "List of event types", body = Vec<crate::notification::events::NotificationEventTypeInfo>)
+    ),
+    security(("bearer_auth" = []))
+)]
+pub async fn list_event_types() -> Json<Vec<NotificationEventTypeInfo>> {
     Json(notification_event_types().to_vec())
 }
 
-async fn list_instances(
+#[utoipa::path(
+    get,
+    path = "/api/notifications/instances",
+    tag = "notifications",
+    responses(
+        (status = 200, description = "List of active channel instances", body = Vec<crate::notification::service::NotificationChannelInstance>)
+    ),
+    security(("bearer_auth" = []))
+)]
+pub async fn list_instances(
     State(state): State<AppState>,
 ) -> Result<Json<Vec<NotificationChannelInstance>>, ApiError> {
     let service = state
@@ -68,7 +84,16 @@ async fn list_instances(
     Ok(Json(service.list_channel_instances()))
 }
 
-async fn list_channels(
+#[utoipa::path(
+    get,
+    path = "/api/notifications/channels",
+    tag = "notifications",
+    responses(
+        (status = 200, description = "List of channels", body = Vec<crate::database::models::notification::NotificationChannelDbModel>)
+    ),
+    security(("bearer_auth" = []))
+)]
+pub async fn list_channels(
     State(state): State<AppState>,
 ) -> Result<Json<Vec<NotificationChannelDbModel>>, ApiError> {
     let repo = state
@@ -82,7 +107,18 @@ async fn list_channels(
     Ok(Json(channels))
 }
 
-async fn get_channel(
+#[utoipa::path(
+    get,
+    path = "/api/notifications/channels/{id}",
+    tag = "notifications",
+    params(("id" = String, Path, description = "Channel ID")),
+    responses(
+        (status = 200, description = "Channel details", body = crate::database::models::notification::NotificationChannelDbModel),
+        (status = 404, description = "Channel not found", body = crate::api::error::ApiErrorResponse)
+    ),
+    security(("bearer_auth" = []))
+)]
+pub async fn get_channel(
     State(state): State<AppState>,
     Path(id): Path<String>,
 ) -> Result<Json<NotificationChannelDbModel>, ApiError> {
@@ -97,7 +133,17 @@ async fn get_channel(
     Ok(Json(channel))
 }
 
-async fn create_channel(
+#[utoipa::path(
+    post,
+    path = "/api/notifications/channels",
+    tag = "notifications",
+    request_body = CreateChannelRequest,
+    responses(
+        (status = 201, description = "Channel created", body = crate::database::models::notification::NotificationChannelDbModel)
+    ),
+    security(("bearer_auth" = []))
+)]
+pub async fn create_channel(
     State(state): State<AppState>,
     Json(req): Json<CreateChannelRequest>,
 ) -> Result<Json<NotificationChannelDbModel>, ApiError> {
@@ -127,7 +173,19 @@ async fn create_channel(
     Ok(Json(channel))
 }
 
-async fn update_channel(
+#[utoipa::path(
+    put,
+    path = "/api/notifications/channels/{id}",
+    tag = "notifications",
+    params(("id" = String, Path, description = "Channel ID")),
+    request_body = UpdateChannelRequest,
+    responses(
+        (status = 200, description = "Channel updated", body = crate::database::models::notification::NotificationChannelDbModel),
+        (status = 404, description = "Channel not found", body = crate::api::error::ApiErrorResponse)
+    ),
+    security(("bearer_auth" = []))
+)]
+pub async fn update_channel(
     State(state): State<AppState>,
     Path(id): Path<String>,
     Json(req): Json<UpdateChannelRequest>,
@@ -160,7 +218,18 @@ async fn update_channel(
     Ok(Json(channel))
 }
 
-async fn delete_channel(
+#[utoipa::path(
+    delete,
+    path = "/api/notifications/channels/{id}",
+    tag = "notifications",
+    params(("id" = String, Path, description = "Channel ID")),
+    responses(
+        (status = 204, description = "Channel deleted"),
+        (status = 404, description = "Channel not found", body = crate::api::error::ApiErrorResponse)
+    ),
+    security(("bearer_auth" = []))
+)]
+pub async fn delete_channel(
     State(state): State<AppState>,
     Path(id): Path<String>,
 ) -> Result<StatusCode, ApiError> {
@@ -183,7 +252,17 @@ async fn delete_channel(
     Ok(StatusCode::NO_CONTENT)
 }
 
-async fn get_subscriptions(
+#[utoipa::path(
+    get,
+    path = "/api/notifications/channels/{id}/subscriptions",
+    tag = "notifications",
+    params(("id" = String, Path, description = "Channel ID")),
+    responses(
+        (status = 200, description = "List of subscribed event types", body = Vec<String>)
+    ),
+    security(("bearer_auth" = []))
+)]
+pub async fn get_subscriptions(
     State(state): State<AppState>,
     Path(id): Path<String>,
 ) -> Result<Json<Vec<String>>, ApiError> {
@@ -198,7 +277,18 @@ async fn get_subscriptions(
     Ok(Json(subs))
 }
 
-async fn update_subscriptions(
+#[utoipa::path(
+    put,
+    path = "/api/notifications/channels/{id}/subscriptions",
+    tag = "notifications",
+    params(("id" = String, Path, description = "Channel ID")),
+    request_body = UpdateSubscriptionsRequest,
+    responses(
+        (status = 200, description = "Subscriptions updated", body = Vec<String>)
+    ),
+    security(("bearer_auth" = []))
+)]
+pub async fn update_subscriptions(
     State(state): State<AppState>,
     Path(id): Path<String>,
     Json(req): Json<UpdateSubscriptionsRequest>,
@@ -247,7 +337,18 @@ async fn update_subscriptions(
     Ok(Json(req.events))
 }
 
-async fn test_channel(
+#[utoipa::path(
+    post,
+    path = "/api/notifications/channels/{id}/test",
+    tag = "notifications",
+    params(("id" = String, Path, description = "Channel ID")),
+    responses(
+        (status = 200, description = "Test notification sent"),
+        (status = 404, description = "Channel not found", body = crate::api::error::ApiErrorResponse)
+    ),
+    security(("bearer_auth" = []))
+)]
+pub async fn test_channel(
     State(state): State<AppState>,
     Path(id): Path<String>,
 ) -> Result<StatusCode, ApiError> {

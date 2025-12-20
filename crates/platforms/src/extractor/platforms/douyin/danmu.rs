@@ -203,7 +203,8 @@ impl DouyinDanmuProtocol {
         messages_list: &[douyin_proto::webcast::im::Message],
     ) -> Vec<DanmuMessage> {
         let mut parsed = Vec::new();
-        for (i, message) in messages_list.iter().enumerate() {
+        for message in messages_list.iter() {
+            #[allow(clippy::single_match)]
             match message.method.as_str() {
                 "WebcastChatMessage" => {
                     if let Ok(chat_msg) =
@@ -347,44 +348,6 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_url_matching() {
-        let protocol = DouyinDanmuProtocol::default();
-
-        // Test supported URLs
-        assert!(protocol.supports_url("https://live.douyin.com/123456789"));
-        assert!(protocol.supports_url("https://www.douyin.com/123456789"));
-        assert!(protocol.supports_url("http://live.douyin.com/123456789"));
-        assert!(protocol.supports_url("https://live.douyin.com/999888777"));
-
-        // Test unsupported URLs
-        assert!(!protocol.supports_url("https://www.bilibili.com/123"));
-        assert!(!protocol.supports_url("https://www.huya.com/123"));
-        assert!(!protocol.supports_url("https://douyin.com/")); // No room ID
-    }
-
-    #[test]
-    fn test_extract_room_id() {
-        let protocol = DouyinDanmuProtocol::default();
-
-        assert_eq!(
-            protocol.extract_room_id("https://live.douyin.com/123456789"),
-            Some("123456789".to_string())
-        );
-        assert_eq!(
-            protocol.extract_room_id("https://www.douyin.com/999888777"),
-            Some("999888777".to_string())
-        );
-        assert_eq!(
-            protocol.extract_room_id("http://live.douyin.com/12345"),
-            Some("12345".to_string())
-        );
-        assert_eq!(
-            protocol.extract_room_id("https://www.bilibili.com/123"),
-            None
-        );
-    }
-
-    #[test]
     fn test_md5_hash() {
         let hash = DouyinDanmuProtocol::md5_hash("test");
         assert_eq!(hash, "098f6bcd4621d373cade4e832627b4f6");
@@ -480,7 +443,6 @@ mod tests {
     async fn test_real_connection() {
         use futures::StreamExt;
         use tokio_tungstenite::connect_async;
-        use tokio_tungstenite::tungstenite::http::Request;
 
         tracing_subscriber::fmt()
             .with_max_level(tracing::Level::DEBUG)

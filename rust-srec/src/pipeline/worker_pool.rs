@@ -429,8 +429,8 @@ impl WorkerPool {
                                 Ok(Ok(output)) => {
                                     // Track partial outputs for observability
                                     // Requirements: 9.1, 9.2
-                                    if !output.items_produced.is_empty() {
-                                        if let Err(e) = job_queue
+                                    if !output.items_produced.is_empty()
+                                        && let Err(e) = job_queue
                                             .track_partial_outputs(&job_id, &output.items_produced)
                                             .await
                                         {
@@ -439,7 +439,6 @@ impl WorkerPool {
                                                 job_id, e
                                             );
                                         }
-                                    }
 
                                     // Check if this is a DAG job
                                     debug!(
@@ -528,11 +527,10 @@ impl WorkerPool {
                                                 job.execution_info.as_ref().and_then(|i| i.total_steps),
                                             )
                                             .await;
-                                        if let Ok(outputs) = partial_outputs {
-                                            if !outputs.is_empty() {
+                                        if let Ok(outputs) = partial_outputs
+                                            && !outputs.is_empty() {
                                                 cleanup_partial_outputs(&outputs).await;
                                             }
-                                        }
 
                                         // Then notify DAG scheduler for fail-fast
                                         if let Some(scheduler) = &dag_scheduler {
@@ -570,11 +568,10 @@ impl WorkerPool {
                                                 job.execution_info.as_ref().and_then(|i| i.total_steps),
                                             )
                                             .await;
-                                        if let Ok(outputs) = partial_outputs {
-                                            if !outputs.is_empty() {
+                                        if let Ok(outputs) = partial_outputs
+                                            && !outputs.is_empty() {
                                                 cleanup_partial_outputs(&outputs).await;
                                             }
-                                        }
                                     }
                                 }
                                 Err(_) => {
@@ -592,11 +589,10 @@ impl WorkerPool {
                                                 job.execution_info.as_ref().and_then(|i| i.total_steps),
                                             )
                                             .await;
-                                        if let Ok(outputs) = partial_outputs {
-                                            if !outputs.is_empty() {
+                                        if let Ok(outputs) = partial_outputs
+                                            && !outputs.is_empty() {
                                                 cleanup_partial_outputs(&outputs).await;
                                             }
-                                        }
 
                                         // Then notify DAG scheduler for fail-fast
                                         if let Some(scheduler) = &dag_scheduler {
@@ -634,11 +630,10 @@ impl WorkerPool {
                                                 job.execution_info.as_ref().and_then(|i| i.total_steps),
                                             )
                                             .await;
-                                        if let Ok(outputs) = partial_outputs {
-                                            if !outputs.is_empty() {
+                                        if let Ok(outputs) = partial_outputs
+                                            && !outputs.is_empty() {
                                                 cleanup_partial_outputs(&outputs).await;
                                             }
-                                        }
                                     }
                                 }
                             }
@@ -728,11 +723,9 @@ impl WorkerPool {
                         if target > current {
                             let step = adaptive.max_step_up.max(1);
                             next = (current + step).min(target);
-                        } else if target < current {
-                            if idle_ticks >= adaptive.scale_down_idle_ticks.max(1) {
-                                let step = adaptive.max_step_down.max(1);
-                                next = current.saturating_sub(step).max(target);
-                            }
+                        } else if target < current && idle_ticks >= adaptive.scale_down_idle_ticks.max(1) {
+                            let step = adaptive.max_step_down.max(1);
+                            next = current.saturating_sub(step).max(target);
                         }
 
                         if next != current {

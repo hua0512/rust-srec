@@ -21,7 +21,6 @@ use crate::danmu::{DanmuSampler, StatisticsAggregator, XmlDanmuWriter};
 use crate::error::{Error, Result};
 
 use super::events::{CollectionCommand, DanmuEvent};
-use super::service::DanmuServiceConfig;
 
 /// Configuration constants for the collection runner.
 mod config {
@@ -52,7 +51,6 @@ pub(crate) struct CollectionRunner {
     // Provider and connection
     provider: Arc<dyn DanmuProvider>,
     connection: DanmuConnection,
-    cookies: Option<String>,
 
     // Current segment writer
     current_writer: Option<(String, XmlDanmuWriter)>,
@@ -64,25 +62,32 @@ pub(crate) struct CollectionRunner {
     stats: Arc<Mutex<StatisticsAggregator>>,
     sampler: Arc<Mutex<Box<dyn DanmuSampler>>>,
 
-    // Channels
     event_tx: broadcast::Sender<DanmuEvent>,
+}
 
-    // Configuration
-    config: DanmuServiceConfig,
+/// Parameters for creating a new collection runner.
+pub(crate) struct RunnerParams {
+    pub session_id: String,
+    pub room_id: String,
+    pub provider: Arc<dyn DanmuProvider>,
+    pub conn_config: ConnectionConfig,
+    pub stats: Arc<Mutex<StatisticsAggregator>>,
+    pub sampler: Arc<Mutex<Box<dyn DanmuSampler>>>,
+    pub event_tx: broadcast::Sender<DanmuEvent>,
 }
 
 impl CollectionRunner {
     /// Create a new collection runner.
-    pub async fn new(
-        session_id: String,
-        room_id: String,
-        provider: Arc<dyn DanmuProvider>,
-        conn_config: ConnectionConfig,
-        stats: Arc<Mutex<StatisticsAggregator>>,
-        sampler: Arc<Mutex<Box<dyn DanmuSampler>>>,
-        event_tx: broadcast::Sender<DanmuEvent>,
-        app_config: DanmuServiceConfig,
-    ) -> Result<Self> {
+    pub async fn new(params: RunnerParams) -> Result<Self> {
+        let RunnerParams {
+            session_id,
+            room_id,
+            provider,
+            conn_config,
+            stats,
+            sampler,
+            event_tx,
+        } = params;
         // Connect to danmu stream
         let connection = provider.connect(&room_id, conn_config.clone()).await?;
 
@@ -91,13 +96,11 @@ impl CollectionRunner {
             room_id,
             provider,
             connection,
-            cookies: conn_config.cookies,
             current_writer: None,
             message_buffer: Vec::with_capacity(config::MAX_BUFFER_SIZE),
             stats,
             sampler,
             event_tx,
-            config: app_config,
         })
     }
 
@@ -214,12 +217,12 @@ impl CollectionRunner {
 
     /// End a specific segment by ID.
     async fn end_segment(&mut self, target_segment_id: &str) -> Result<()> {
-        if let Some((current_id, _)) = &self.current_writer {
-            if current_id == target_segment_id {
-                // Flush buffer before finalizing
-                self.flush_buffer().await?;
-                self.finalize_current_segment().await?;
-            }
+        if let Some((current_id, _)) = &self.current_writer
+            && current_id == target_segment_id
+        {
+            // Flush buffer before finalizing
+            self.flush_buffer().await?;
+            self.finalize_current_segment().await?;
         }
         Ok(())
     }

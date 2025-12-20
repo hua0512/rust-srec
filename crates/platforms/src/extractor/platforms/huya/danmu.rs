@@ -15,7 +15,6 @@ use tars_codec::{
 use tokio_tungstenite::tungstenite::protocol::Message;
 use tracing::debug;
 
-use crate::danmaku::ConnectionConfig;
 use crate::danmaku::DanmuMessage;
 use crate::danmaku::error::{DanmakuError, Result};
 use crate::danmaku::websocket::{DanmuProtocol, WebSocketDanmuProvider};
@@ -99,15 +98,15 @@ impl DanmuProtocol for HuyaDanmuProtocol {
         // 2512200523
         let ua = format!("webh5&{}&websocket", Utc::now().format("%y%m%d%H%M"));
         // let ua = "webh5&2512200523&websocket";
-        debug!("ua: {}", ua);
+        // debug!("ua: {}", ua);
         let device = "chrome";
 
         // 1. Living info packet
         let living_info_packet =
-            HuyaDanmuProtocol::create_living_info_packet(room_id_num, &ua, &device)?;
+            HuyaDanmuProtocol::create_living_info_packet(room_id_num, &ua, device)?;
 
         // 2. Register packet
-        let reg_packet = HuyaDanmuProtocol::create_do_launch_packet(&ua, &device)?;
+        let reg_packet = HuyaDanmuProtocol::create_do_launch_packet(&ua, device)?;
 
         Ok(vec![
             Message::Binary(living_info_packet),
@@ -139,10 +138,8 @@ impl DanmuProtocol for HuyaDanmuProtocol {
 // Re-export the provider type
 pub type HuyaDanmuProvider = WebSocketDanmuProvider<HuyaDanmuProtocol>;
 
-impl HuyaDanmuProvider {
-    pub fn new() -> Self {
-        WebSocketDanmuProvider::with_protocol(HuyaDanmuProtocol::default(), None)
-    }
+pub fn create_huya_danmu_provider() -> HuyaDanmuProvider {
+    HuyaDanmuProvider::with_protocol(HuyaDanmuProtocol::default(), None)
 }
 
 // Static helper methods for TARS encoding/decoding
@@ -170,16 +167,8 @@ impl HuyaDanmuProtocol {
     }
 
     pub fn create_do_launch_packet(ua: &str, device: &str) -> Result<Bytes> {
-        let user_id = HuyaUserId::new(
-            0,
-            String::new(),
-            String::new(),
-            ua.to_string(),
-            String::new(),
-            0,
-            device.to_string(),
-            String::new(),
-        );
+        let user_id = HuyaUserId::new(0, String::new(), String::new(), ua.to_string())
+            .with_device_info(device.to_string());
         let user_base = LiveUserBase::new(HuyaSourceType::PcWeb as i32, 0, LiveAppUAEx::default());
         let live_launch_req = LiveLaunchReq::new(user_id, user_base, true);
 
@@ -418,30 +407,7 @@ impl HuyaDanmuProtocol {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::danmaku::provider::DanmuProvider;
-
-    /// Test that the protocol can extract room ID from various URL formats
-    #[test]
-    fn test_extract_room_id() {
-        let protocol = HuyaDanmuProtocol::default();
-
-        assert_eq!(
-            protocol.extract_room_id("https://www.huya.com/123456"),
-            Some("123456".to_string())
-        );
-        assert_eq!(
-            protocol.extract_room_id("http://huya.com/789012"),
-            Some("789012".to_string())
-        );
-        assert_eq!(
-            protocol.extract_room_id("huya.com/111222"),
-            Some("111222".to_string())
-        );
-        assert_eq!(
-            protocol.extract_room_id("https://www.huya.com/invalid"),
-            None
-        );
-    }
+    use crate::danmaku::{ConnectionConfig, provider::DanmuProvider};
 
     /// Test that living info packet can be created
     #[test]
@@ -491,7 +457,7 @@ mod tests {
         // Use a popular room that's likely to be live
         let room_id = "660000";
 
-        let provider = HuyaDanmuProvider::new();
+        let provider = create_huya_danmu_provider();
 
         // Test connection with timeout
         let connect_result = timeout(
@@ -589,8 +555,7 @@ mod tests {
                     match msg_result {
                         Some(Ok(Message::Binary(data))) => {
                             // Try to decode as WebSocketCommand using manual pattern
-                            if let Ok(tars_val) = tars_codec::decode_tars_value(data.clone()) {
-                                if let Ok(cmd) = WebSocketCommand::try_from(tars_val) {
+                            if let Ok(tars_val) = tars_codec::decode_tars_value(data.clone()) && let Ok(cmd) = WebSocketCommand::try_from(tars_val) {
                                     let _cmd_type = cmd.cmd_type();
                                     response_count += 1;
 
@@ -606,7 +571,6 @@ mod tests {
                                         }
                                     }
                                 }
-                            }
                         }
                         Some(Ok(other)) => {
                             println!("Received other message: {:?}", other);

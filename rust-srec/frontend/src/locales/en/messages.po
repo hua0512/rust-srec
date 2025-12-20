@@ -199,7 +199,7 @@ msgstr "Active Days"
 msgid "Active Download"
 msgstr "Active Download"
 
-#: src/routes/_authed/_dashboard/dashboard.tsx:288
+#: src/routes/_authed/_dashboard/dashboard.tsx:284
 msgid "Active Recordings"
 msgstr "Active Recordings"
 
@@ -423,7 +423,7 @@ msgstr "Are you sure you want to delete the template \"{0}\"? This action cannot
 msgid "Are you sure you want to delete this session? This action cannot be undone."
 msgstr "Are you sure you want to delete this session? This action cannot be undone."
 
-#: src/routes/_authed/_dashboard/dashboard.tsx:89
+#: src/routes/_authed/_dashboard/dashboard.tsx:90
 #: src/routes/_authed/_dashboard/streamers/index.tsx:198
 msgid "Are you sure you want to delete this streamer?"
 msgstr "Are you sure you want to delete this streamer?"
@@ -741,7 +741,7 @@ msgstr "Channels"
 msgid "Check size after copy"
 msgstr "Check size after copy"
 
-#: src/routes/_authed/_dashboard/dashboard.tsx:72
+#: src/routes/_authed/_dashboard/dashboard.tsx:73
 #: src/routes/_authed/_dashboard/streamers/index.tsx:181
 msgid "Check triggered"
 msgstr "Check triggered"
@@ -816,7 +816,7 @@ msgstr "Comment"
 msgid "Complete workflow: Remux, generate thumbnail, add metadata, and upload."
 msgstr "Complete workflow: Remux, generate thumbnail, add metadata, and upload."
 
-#: src/routes/_authed/_dashboard/dashboard.tsx:258
+#: src/routes/_authed/_dashboard/dashboard.tsx:256
 #: src/routes/_authed/_dashboard/pipeline/executions.$pipelineId.tsx:326
 #: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.tsx:613
 #: src/routes/_authed/_dashboard/pipeline/jobs/index.tsx:71
@@ -1312,7 +1312,7 @@ msgid "Define sequences of processing steps for your recordings"
 msgstr "Define sequences of processing steps for your recordings"
 
 #: src/components/health/health-status-badge.tsx:53
-#: src/routes/_authed/_dashboard/dashboard.tsx:532
+#: src/routes/_authed/_dashboard/dashboard.tsx:503
 msgid "Degraded"
 msgstr "Degraded"
 
@@ -1884,7 +1884,7 @@ msgstr "Extract MP3"
 #~ msgid "failed"
 #~ msgstr "failed"
 
-#: src/routes/_authed/_dashboard/dashboard.tsx:267
+#: src/routes/_authed/_dashboard/dashboard.tsx:264
 #: src/routes/_authed/_dashboard/pipeline/jobs/index.tsx:72
 #: src/routes/_authed/_dashboard/pipeline/jobs/index.tsx:286
 msgid "Failed"
@@ -1972,7 +1972,7 @@ msgstr "Failed to delete preset: {0}"
 msgid "Failed to delete session"
 msgstr "Failed to delete session"
 
-#: src/routes/_authed/_dashboard/dashboard.tsx:66
+#: src/routes/_authed/_dashboard/dashboard.tsx:67
 #: src/routes/_authed/_dashboard/streamers/index.tsx:176
 msgid "Failed to delete streamer"
 msgstr "Failed to delete streamer"
@@ -2046,7 +2046,7 @@ msgstr "Failed to retry steps"
 msgid "Failed to send test notification"
 msgstr "Failed to send test notification"
 
-#: src/routes/_authed/_dashboard/dashboard.tsx:74
+#: src/routes/_authed/_dashboard/dashboard.tsx:75
 #: src/routes/_authed/_dashboard/streamers/index.tsx:183
 msgid "Failed to trigger check"
 msgstr "Failed to trigger check"
@@ -2077,7 +2077,7 @@ msgstr "Failed to update preset: {0}"
 msgid "Failed to update settings"
 msgstr "Failed to update settings"
 
-#: src/routes/_authed/_dashboard/dashboard.tsx:85
+#: src/routes/_authed/_dashboard/dashboard.tsx:86
 #: src/routes/_authed/_dashboard/streamers/$id.edit.tsx:118
 #: src/routes/_authed/_dashboard/streamers/index.tsx:194
 msgid "Failed to update streamer"
@@ -2374,7 +2374,7 @@ msgid "Health"
 msgstr "Health"
 
 #: src/components/health/health-status-badge.tsx:40
-#: src/routes/_authed/_dashboard/dashboard.tsx:530
+#: src/routes/_authed/_dashboard/dashboard.tsx:501
 msgid "Healthy"
 msgstr "Healthy"
 
@@ -3026,7 +3026,7 @@ msgstr "New Preset Name"
 msgid "Next"
 msgstr "Next"
 
-#: src/routes/_authed/_dashboard/dashboard.tsx:342
+#: src/routes/_authed/_dashboard/dashboard.tsx:338
 msgid "No active recordings"
 msgstr "No active recordings"
 
@@ -3244,7 +3244,7 @@ msgstr "None (Default)"
 msgid "Normal"
 msgstr "Normal"
 
-#: src/routes/_authed/_dashboard/dashboard.tsx:382
+#: src/routes/_authed/_dashboard/dashboard.tsx:378
 msgid "Not available"
 msgstr "Not available"
 
@@ -3713,8 +3713,12 @@ msgid "Port"
 msgstr "Port"
 
 #: src/components/sidebar/footer.tsx:8
-msgid "Powered by <0>Rust-srec</0>. WebUI version: 0.3.6"
-msgstr "Powered by <0>Rust-srec</0>. WebUI version: 0.3.6"
+msgid "Powered by <0>Rust-srec</0>. WebUI version: 0.1.0"
+msgstr "Powered by <0>Rust-srec</0>. WebUI version: 0.1.0"
+
+#: src/components/sidebar/footer.tsx:8
+#~ msgid "Powered by <0>Rust-srec</0>. WebUI version: 0.3.6"
+#~ msgstr "Powered by <0>Rust-srec</0>. WebUI version: 0.3.6"
 
 #: src/components/streamers/config/stream-selection-input.tsx:58
 msgid "Preferences"
@@ -3827,7 +3831,7 @@ msgstr "Process locally: Remux to MP4, generate thumbnail, move to archive folde
 msgid "Process video and extract podcast audio in parallel, then upload both."
 msgstr "Process video and extract podcast audio in parallel, then upload both."
 
-#: src/routes/_authed/_dashboard/dashboard.tsx:249
+#: src/routes/_authed/_dashboard/dashboard.tsx:248
 #: src/routes/_authed/_dashboard/pipeline/jobs/index.tsx:70
 #: src/routes/_authed/_dashboard/pipeline/jobs/index.tsx:270
 msgid "Processing"
@@ -4639,7 +4643,7 @@ msgstr "Streamer Check (ms)"
 msgid "Streamer created successfully"
 msgstr "Streamer created successfully"
 
-#: src/routes/_authed/_dashboard/dashboard.tsx:62
+#: src/routes/_authed/_dashboard/dashboard.tsx:63
 #: src/routes/_authed/_dashboard/streamers/index.tsx:172
 msgid "Streamer deleted"
 msgstr "Streamer deleted"
@@ -4660,7 +4664,7 @@ msgstr "Streamer ID is required"
 msgid "Streamer is on cooldown"
 msgstr "Streamer is on cooldown"
 
-#: src/routes/_authed/_dashboard/dashboard.tsx:81
+#: src/routes/_authed/_dashboard/dashboard.tsx:82
 #: src/routes/_authed/_dashboard/streamers/index.tsx:190
 msgid "Streamer updated"
 msgstr "Streamer updated"
@@ -4678,7 +4682,7 @@ msgstr "Streamer updated successfully"
 msgid "Streamers"
 msgstr "Streamers"
 
-#: src/routes/_authed/_dashboard/dashboard.tsx:345
+#: src/routes/_authed/_dashboard/dashboard.tsx:341
 msgid "Streamers currently live will appear here."
 msgstr "Streamers currently live will appear here."
 
@@ -4727,7 +4731,7 @@ msgid "System Health"
 msgstr "System Health"
 
 #: src/components/config/engines/engine-card.tsx:171
-#: src/routes/_authed/_dashboard/dashboard.tsx:127
+#: src/routes/_authed/_dashboard/dashboard.tsx:128
 msgid "System Status"
 msgstr "System Status"
 
@@ -5089,11 +5093,11 @@ msgid "Ultrafast H.264 encoding (CRF 26) for quick sharing."
 msgstr "Ultrafast H.264 encoding (CRF 26) for quick sharing."
 
 #: src/components/health/health-status-badge.tsx:66
-#: src/routes/_authed/_dashboard/dashboard.tsx:534
+#: src/routes/_authed/_dashboard/dashboard.tsx:505
 msgid "Unhealthy"
 msgstr "Unhealthy"
 
-#: src/routes/_authed/_dashboard/dashboard.tsx:536
+#: src/routes/_authed/_dashboard/dashboard.tsx:507
 msgid "Unknown"
 msgstr "Unknown"
 
@@ -5122,7 +5126,7 @@ msgid "Update Channel"
 msgstr "Update Channel"
 
 #: src/components/config/global/backup-restore-card.tsx:177
-#: src/routes/_authed/_dashboard/dashboard.tsx:456
+#: src/routes/_authed/_dashboard/dashboard.tsx:441
 msgid "Updated"
 msgstr "Updated"
 
@@ -5244,7 +5248,7 @@ msgstr "Video Codec"
 msgid "Video Settings"
 msgstr "Video Settings"
 
-#: src/routes/_authed/_dashboard/dashboard.tsx:298
+#: src/routes/_authed/_dashboard/dashboard.tsx:294
 msgid "View All"
 msgstr "View All"
 
@@ -5263,7 +5267,7 @@ msgstr "View Detailed Logs & Outputs"
 #: src/components/pipeline/jobs/pipeline-summary-card.tsx:184
 #: src/components/sessions/session-card.tsx:174
 #: src/components/sessions/session-card.tsx:193
-#: src/routes/_authed/_dashboard/dashboard.tsx:136
+#: src/routes/_authed/_dashboard/dashboard.tsx:137
 msgid "View Details"
 msgstr "View Details"
 

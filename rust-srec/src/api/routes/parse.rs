@@ -16,15 +16,17 @@ pub fn router() -> Router<AppState> {
         .route("/resolve", post(resolve_url))
 }
 
-/// Parse a URL and extract media info.
-///
-/// POST /api/parse
-///
-/// Uses the platforms_parser crate to extract media information from the given URL.
-/// Returns the full MediaInfo structure as JSON.
-/// If cookies are not provided in the request, looks up cookies from the streamer's
-/// configuration if a matching streamer exists.
-async fn parse_url(
+#[utoipa::path(
+    post,
+    path = "/api/parse",
+    tag = "parse",
+    request_body = ParseUrlRequest,
+    responses(
+        (status = 200, description = "URL parsed", body = ParseUrlResponse)
+    ),
+    security(("bearer_auth" = []))
+)]
+pub async fn parse_url(
     State(state): State<AppState>,
     Json(request): Json<ParseUrlRequest>,
 ) -> ApiResult<Json<ParseUrlResponse>> {
@@ -33,10 +35,17 @@ async fn parse_url(
     Ok(Json(response))
 }
 
-/// Batch parse URLs and extract media info.
-///
-/// POST /api/parse/batch
-async fn parse_url_batch(
+#[utoipa::path(
+    post,
+    path = "/api/parse/batch",
+    tag = "parse",
+    request_body = Vec<ParseUrlRequest>,
+    responses(
+        (status = 200, description = "URLs parsed", body = Vec<ParseUrlResponse>)
+    ),
+    security(("bearer_auth" = []))
+)]
+pub async fn parse_url_batch(
     State(state): State<AppState>,
     Json(requests): Json<Vec<ParseUrlRequest>>,
 ) -> ApiResult<Json<Vec<ParseUrlResponse>>> {
@@ -96,33 +105,38 @@ async fn resolve_cookies_for_url(
     // Fallback: Try to detect platform from URL and use platform config cookies
     use crate::domain::value_objects::StreamerUrl;
 
-    if let Ok(streamer_url) = StreamerUrl::new(url) {
-        if let Some(platform_name) = streamer_url.platform() {
-            // Find a matching platform config
-            if let Ok(platform_configs) = config_service.list_platform_configs().await {
-                if let Some(platform_config) = platform_configs
-                    .into_iter()
-                    .find(|c| c.platform_name.eq_ignore_ascii_case(platform_name))
-                {
-                    if platform_config.cookies.is_some() {
-                        debug!(
-                            "Using cookies from platform config for URL: {} (platform: {})",
-                            url, platform_name
-                        );
-                        return platform_config.cookies;
-                    }
-                }
-            }
+    if let Ok(streamer_url) = StreamerUrl::new(url)
+        && let Some(platform_name) = streamer_url.platform()
+    {
+        // Find a matching platform config
+        if let Ok(platform_configs) = config_service.list_platform_configs().await
+            && let Some(platform_config) = platform_configs
+                .into_iter()
+                .find(|c| c.platform_name.eq_ignore_ascii_case(platform_name))
+            && platform_config.cookies.is_some()
+        {
+            debug!(
+                "Using cookies from platform config for URL: {} (platform: {})",
+                url, platform_name
+            );
+            return platform_config.cookies;
         }
     }
 
     None
 }
 
-/// Resolve the true URL for a stream.
-///
-/// POST /api/parse/resolve
-async fn resolve_url(
+#[utoipa::path(
+    post,
+    path = "/api/parse/resolve",
+    tag = "parse",
+    request_body = crate::api::models::ResolveUrlRequest,
+    responses(
+        (status = 200, description = "URL resolved", body = crate::api::models::ResolveUrlResponse)
+    ),
+    security(("bearer_auth" = []))
+)]
+pub async fn resolve_url(
     Json(request): Json<crate::api::models::ResolveUrlRequest>,
 ) -> ApiResult<Json<crate::api::models::ResolveUrlResponse>> {
     if request.url.is_empty() {

@@ -21,19 +21,14 @@ fn default_true() -> bool {
 }
 
 /// Operation type for copy/move processor.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
 #[serde(rename_all = "lowercase")]
 pub enum CopyMoveOperation {
     /// Copy the file to destination (keeps original).
+    #[default]
     Copy,
     /// Move the file to destination (removes original).
     Move,
-}
-
-impl Default for CopyMoveOperation {
-    fn default() -> Self {
-        Self::Copy
-    }
 }
 
 /// Configuration for copy/move operations.
@@ -230,37 +225,35 @@ impl Processor for CopyMoveProcessor {
         }
 
         // Create destination directory if needed (Requirements: 1.3)
-        if config.create_dirs {
-            if let Some(parent) = dest.parent() {
-                if !parent.exists() {
-                    let log_msg = format!("Creating destination directory: {:?}", parent);
-                    debug!("{}", log_msg);
-                    logs.push(create_log_entry(
-                        crate::pipeline::job_queue::LogLevel::Debug,
-                        log_msg,
-                    ));
+        if config.create_dirs
+            && let Some(parent) = dest.parent()
+            && !parent.exists()
+        {
+            let log_msg = format!("Creating destination directory: {:?}", parent);
+            debug!("{}", log_msg);
+            logs.push(create_log_entry(
+                crate::pipeline::job_queue::LogLevel::Debug,
+                log_msg,
+            ));
 
-                    fs::create_dir_all(parent).await.map_err(|e| {
-                        crate::Error::PipelineError(format!(
-                            "Failed to create destination directory: {}",
-                            e
-                        ))
-                    })?;
-                }
-            }
+            fs::create_dir_all(parent).await.map_err(|e| {
+                crate::Error::PipelineError(format!(
+                    "Failed to create destination directory: {}",
+                    e
+                ))
+            })?;
         }
 
         // Check available disk space (Requirements: 1.4)
-        if let Some(parent) = dest.parent() {
-            if let Some(available) = Self::get_available_space(parent).await {
-                if available < source_size {
-                    return Err(crate::Error::PipelineError(format!(
-                        "Insufficient disk space. Required: {}, Available: {}",
-                        Self::format_bytes(source_size),
-                        Self::format_bytes(available)
-                    )));
-                }
-            }
+        if let Some(parent) = dest.parent()
+            && let Some(available) = Self::get_available_space(parent).await
+            && available < source_size
+        {
+            return Err(crate::Error::PipelineError(format!(
+                "Insufficient disk space. Required: {}, Available: {}",
+                Self::format_bytes(source_size),
+                Self::format_bytes(available)
+            )));
         }
 
         // Perform the copy operation (Requirements: 1.1)

@@ -63,9 +63,7 @@ impl DagScheduler {
         session_id: Option<String>,
     ) -> Result<DagCreationResult> {
         // 1. Validate DAG structure
-        dag_definition
-            .validate()
-            .map_err(|e| Error::Validation(e.into()))?;
+        dag_definition.validate().map_err(Error::Validation)?;
 
         // 2. Create DAG execution record
         let dag_exec =
@@ -323,7 +321,6 @@ impl DagScheduler {
             0, // priority
             streamer_id,
             session_id,
-            Some(dag_id.to_string()), // Use DAG ID as pipeline_id for grouping
         );
         job_db.config = config;
         job_db.dag_step_execution_id = Some(step_execution_id.to_string());

@@ -18,14 +18,23 @@ pub fn router() -> Router<AppState> {
 }
 
 #[derive(serde::Deserialize)]
-struct AuthQuery {
-    token: Option<String>,
+pub struct AuthQuery {
+    pub token: Option<String>,
 }
 
-/// Get media content by ID.
-///
-/// Query the media output by ID to get the file path, then serve the file.
-async fn get_media_content(
+#[utoipa::path(
+    get,
+    path = "/api/media/{id}/content",
+    tag = "media",
+    params(("id" = String, Path, description = "Media output ID")),
+    responses(
+        (status = 200, description = "Media file content"),
+        (status = 404, description = "Media not found", body = crate::api::error::ApiErrorResponse),
+        (status = 401, description = "Unauthorized", body = crate::api::error::ApiErrorResponse)
+    ),
+    security(("bearer_auth" = []))
+)]
+pub async fn get_media_content(
     State(state): State<AppState>,
     Path(id): Path<String>,
     Query(query): Query<AuthQuery>,

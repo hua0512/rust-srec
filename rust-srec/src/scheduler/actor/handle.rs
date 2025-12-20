@@ -281,30 +281,6 @@ impl<M> fmt::Debug for ActorHandle<M> {
     }
 }
 
-/// Create a new actor mailbox with the default capacity.
-pub fn create_mailbox<M>() -> (mpsc::Sender<M>, mpsc::Receiver<M>) {
-    mpsc::channel(DEFAULT_MAILBOX_CAPACITY)
-}
-
-/// Create a new actor mailbox with a custom capacity.
-pub fn create_mailbox_with_capacity<M>(capacity: usize) -> (mpsc::Sender<M>, mpsc::Receiver<M>) {
-    mpsc::channel(capacity)
-}
-
-/// Create a priority mailbox pair (normal + priority channels).
-pub fn create_priority_mailbox<M>(
-    capacity: usize,
-) -> (
-    mpsc::Sender<M>,
-    mpsc::Receiver<M>,
-    mpsc::Sender<M>,
-    mpsc::Receiver<M>,
-) {
-    let (normal_tx, normal_rx) = mpsc::channel(capacity);
-    let (priority_tx, priority_rx) = mpsc::channel(capacity / 4); // Smaller priority queue
-    (normal_tx, normal_rx, priority_tx, priority_rx)
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;

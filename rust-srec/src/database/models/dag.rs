@@ -467,14 +467,14 @@ mod tests {
 
     #[test]
     fn test_dag_execution_stats() {
-        let mut stats = DagExecutionStats::default();
-
-        stats.blocked = 2;
-        stats.pending = 1;
-        stats.processing = 1;
-        stats.completed = 3;
-        stats.failed = 1;
-        stats.cancelled = 0;
+        let stats = DagExecutionStats {
+            blocked: 2,
+            pending: 1,
+            processing: 1,
+            completed: 3,
+            failed: 1,
+            cancelled: 0,
+        };
 
         assert_eq!(stats.total(), 8);
         assert_eq!(stats.finished(), 4);

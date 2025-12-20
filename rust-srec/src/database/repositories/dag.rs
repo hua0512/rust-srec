@@ -566,8 +566,8 @@ impl DagRepository for SqlxDagRepository {
             let mut ready_steps = Vec::new();
 
             for dependent in blocked_dependents {
-                let depends_on: Vec<String> =
-                    serde_json::from_str(&dependent.depends_on_step_ids).unwrap_or_default();
+                // let depends_on: Vec<String> =
+                //     serde_json::from_str(&dependent.depends_on_step_ids).unwrap_or_default();
 
                 // Check if all dependencies are COMPLETED
                 let incomplete_count: i64 = sqlx::query_scalar(
@@ -609,7 +609,7 @@ impl DagRepository for SqlxDagRepository {
 
                     let merged_inputs: Vec<String> = outputs_rows
                         .into_iter()
-                        .filter_map(|o| o)
+                        .flatten()
                         .flat_map(|s| {
                             serde_json::from_str::<Vec<String>>(&s).unwrap_or_default()
                         })
@@ -738,7 +738,7 @@ impl DagRepository for SqlxDagRepository {
 
         let merged: Vec<String> = outputs_rows
             .into_iter()
-            .filter_map(|o| o)
+            .flatten()
             .flat_map(|s| serde_json::from_str::<Vec<String>>(&s).unwrap_or_default())
             .collect();
 

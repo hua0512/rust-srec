@@ -95,31 +95,31 @@ impl FlvDownloader {
 
         // Fast path: Check Content-Type header if present
         // Reject obviously wrong content types early without reading body
-        if let Some(content_type) = response.headers().get("content-type") {
-            if let Ok(ct_str) = content_type.to_str() {
-                let ct_lower = ct_str.to_lowercase();
+        if let Some(content_type) = response.headers().get("content-type")
+            && let Ok(ct_str) = content_type.to_str()
+        {
+            let ct_lower = ct_str.to_lowercase();
 
-                // Accept: video/x-flv, video/flv, application/octet-stream, or no/unknown content type
-                // Reject: text/html, text/plain, application/json (likely error responses)
-                let is_text_response = ct_lower.starts_with("text/")
-                    || ct_lower.contains("html")
-                    || ct_lower.contains("json")
-                    || ct_lower.contains("xml");
+            // Accept: video/x-flv, video/flv, application/octet-stream, or no/unknown content type
+            // Reject: text/html, text/plain, application/json (likely error responses)
+            let is_text_response = ct_lower.starts_with("text/")
+                || ct_lower.contains("html")
+                || ct_lower.contains("json")
+                || ct_lower.contains("xml");
 
-                if is_text_response {
-                    warn!(
-                        url = %url,
-                        content_type = %ct_str,
-                        "Response has text Content-Type, likely not FLV data"
-                    );
-                    return Err(DownloadError::FlvError(format!(
-                        "Invalid Content-Type: {}. Expected video/x-flv or binary content",
-                        ct_str
-                    )));
-                }
-
-                debug!(url = %url, content_type = %ct_str, "Content-Type check passed");
+            if is_text_response {
+                warn!(
+                    url = %url,
+                    content_type = %ct_str,
+                    "Response has text Content-Type, likely not FLV data"
+                );
+                return Err(DownloadError::FlvError(format!(
+                    "Invalid Content-Type: {}. Expected video/x-flv or binary content",
+                    ct_str
+                )));
             }
+
+            debug!(url = %url, content_type = %ct_str, "Content-Type check passed");
         }
 
         // Log file size and update progress bar if available
@@ -192,7 +192,7 @@ impl FlvDownloader {
                 if first_chunk.is_empty() {
                     warn!(url = %url, "Empty first chunk received");
                     return Err(DownloadError::FlvError(
-                       format!("Empty response received")
+                        "Empty response received".to_string()
                     ));
                 }
 
@@ -239,7 +239,7 @@ impl FlvDownloader {
                         "Invalid FLV content: expected FLV signature or valid tag type but got different data"
                     );
                     return Err(DownloadError::FlvError(
-                        format!("Invalid FLV content: expected FLV signature or valid tag type but got different data")
+                        format!("Invalid FLV content: expected FLV signature or valid tag type: 0x{:02X}", first_byte)
                     ));
                 }
 

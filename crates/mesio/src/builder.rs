@@ -226,8 +226,8 @@ mod tests {
     #[test]
     fn test_builder_defaults() {
         let config = DownloaderConfigBuilder::new().build();
-        assert_eq!(config.timeout, Duration::from_secs(30));
-        assert_eq!(config.connect_timeout, Duration::from_secs(10));
+        assert_eq!(config.timeout, Duration::from_secs(0));
+        assert_eq!(config.connect_timeout, Duration::from_secs(30));
         assert!(config.follow_redirects);
         assert!(config.use_system_proxy);
         assert!(!config.danger_accept_invalid_certs);

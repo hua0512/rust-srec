@@ -112,10 +112,7 @@ async fn webhook(State(state): State<Arc<WebhookState>>, request: Request) -> Re
         }
     };
 
-    let parsed_json: Option<Value> = match serde_json::from_slice(&bytes) {
-        Ok(v) => Some(v),
-        Err(_) => None,
-    };
+    let parsed_json: Option<Value> = serde_json::from_slice(&bytes).ok();
 
     info!(
         content_type = ?parts.headers.get("content-type").and_then(|v| v.to_str().ok()),

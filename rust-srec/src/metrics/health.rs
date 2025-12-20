@@ -14,7 +14,7 @@ use tracing::{debug, warn};
 use crate::notification::NotificationEvent;
 
 /// Health status of a component.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
 #[serde(rename_all = "lowercase")]
 pub enum HealthStatus {
     /// Component is healthy.
@@ -24,13 +24,8 @@ pub enum HealthStatus {
     /// Component is unhealthy.
     Unhealthy,
     /// Component status is unknown.
+    #[default]
     Unknown,
-}
-
-impl Default for HealthStatus {
-    fn default() -> Self {
-        Self::Unknown
-    }
 }
 
 impl std::fmt::Display for HealthStatus {

@@ -16,8 +16,8 @@ use rustc_hash::FxHashMap;
 /// Magic number for client → server messages
 const CLIENT_MAGIC: [u8; 4] = [0xb1, 0x02, 0x00, 0x00];
 
-/// Magic number for server → client messages  
-const SERVER_MAGIC: [u8; 4] = [0xb2, 0x02, 0x00, 0x00];
+// /// Magic number for server → client messages
+// const SERVER_MAGIC: [u8; 4] = [0xb2, 0x02, 0x00, 0x00];
 
 /// Heartbeat packet: type@=mrkl/
 pub(crate) const HEARTBEAT: &[u8] = &[

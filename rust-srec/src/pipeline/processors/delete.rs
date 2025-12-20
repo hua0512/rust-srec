@@ -452,13 +452,11 @@ mod tests {
     #[test]
     fn test_is_file_locked_error() {
         // Test various error messages that indicate locked files
-        let locked_msg = std::io::Error::new(
-            std::io::ErrorKind::Other,
+        let locked_msg = std::io::Error::other(
             "The process cannot access the file because it is being used by another process",
         );
         assert!(DeleteProcessor::is_file_locked_error(&locked_msg));
-
-        let busy_msg = std::io::Error::new(std::io::ErrorKind::Other, "Device or resource busy");
+        let busy_msg = std::io::Error::other("Device or resource busy");
         assert!(DeleteProcessor::is_file_locked_error(&busy_msg));
 
         // Test non-locked error

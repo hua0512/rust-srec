@@ -170,9 +170,9 @@ function SessionDetailPage() {
     ? formatDuration(session.duration_secs)
     : session.start_time
       ? formatDuration(
-        (new Date().getTime() - new Date(session.start_time).getTime()) /
-        1000,
-      )
+          (new Date().getTime() - new Date(session.start_time).getTime()) /
+            1000,
+        )
       : '-';
 
   return (
@@ -302,7 +302,13 @@ function SessionDetailPage() {
           <DialogHeader className="sr-only">
             <DialogTitle>Media Player</DialogTitle>
           </DialogHeader>
-          <div className={playingOutput?.format === 'DANMU_XML' ? 'w-full flex items-center justify-center' : 'aspect-video w-full flex items-center justify-center'}>
+          <div
+            className={
+              playingOutput?.format === 'DANMU_XML'
+                ? 'w-full flex items-center justify-center'
+                : 'aspect-video w-full flex items-center justify-center'
+            }
+          >
             {playingOutput &&
               (playingOutput.format === 'DANMU_XML' ? (
                 <DanmuViewer

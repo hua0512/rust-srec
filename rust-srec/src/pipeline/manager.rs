@@ -28,7 +28,6 @@ use crate::database::repositories::{
     DagRepository, JobPresetRepository, JobRepository, PipelinePresetRepository, SessionRepository,
 };
 use crate::downloader::DownloadManagerEvent;
-use crate::pipeline::job_queue::JobExecutionInfo;
 
 /// Configuration for the Pipeline Manager.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -413,22 +412,19 @@ where
         );
 
         // Start throttle controller monitoring if enabled and adjuster is set
-        // Requirements: 8.1, 8.2, 8.3
-        if let (Some(throttle_controller), Some(adjuster)) =
-            (&self.throttle_controller, &self.download_adjuster)
+        if let Some(throttle_controller) = &self.throttle_controller
+            && let Some(adjuster) = &self.download_adjuster
+            && throttle_controller.is_enabled()
         {
-            if throttle_controller.is_enabled() {
-                info!("Starting throttle controller monitoring");
-                throttle_controller.clone().start_monitoring(
-                    self.job_queue.clone(),
-                    adjuster.clone(),
-                    self.cancellation_token.clone(),
-                );
-            }
+            info!("Starting throttle controller monitoring");
+            throttle_controller.clone().start_monitoring(
+                self.job_queue.clone(),
+                adjuster.clone(),
+                self.cancellation_token.clone(),
+            );
         }
 
         // Start purge service background task if enabled
-        // Requirements: 7.1, 7.2, 7.3, 7.4, 7.5
         if let Some(purge_service) = &self.purge_service {
             info!("Starting job purge service");
             purge_service.start_background_task(self.cancellation_token.clone());
@@ -883,12 +879,12 @@ where
 
     /// Check if session already has a thumbnail by querying media outputs.
     async fn session_has_thumbnail(&self, session_id: &str) -> bool {
-        if let Some(repo) = &self.session_repo {
-            if let Ok(outputs) = repo.get_media_outputs_for_session(session_id).await {
-                return outputs
-                    .iter()
-                    .any(|o| o.file_type == MediaFileType::Thumbnail.as_str());
-            }
+        if let Some(repo) = &self.session_repo
+            && let Ok(outputs) = repo.get_media_outputs_for_session(session_id).await
+        {
+            return outputs
+                .iter()
+                .any(|o| o.file_type == MediaFileType::Thumbnail.as_str());
         }
         false
     }
@@ -1358,8 +1354,6 @@ impl Default for PipelineManager {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::database::models::job::PipelineStep;
-    use crate::pipeline::JobStatus;
 
     #[test]
     fn test_pipeline_manager_config_default() {

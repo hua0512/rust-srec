@@ -49,16 +49,16 @@ impl ApiServerConfig {
     pub fn from_env_or_default() -> Self {
         let mut config = Self::default();
 
-        if let Ok(bind_address) = std::env::var("API_BIND_ADDRESS") {
-            if !bind_address.trim().is_empty() {
-                config.bind_address = bind_address;
-            }
+        if let Ok(bind_address) = std::env::var("API_BIND_ADDRESS")
+            && !bind_address.trim().is_empty()
+        {
+            config.bind_address = bind_address;
         }
 
-        if let Ok(port) = std::env::var("API_PORT") {
-            if let Ok(parsed) = port.parse::<u16>() {
-                config.port = parsed;
-            }
+        if let Ok(port) = std::env::var("API_PORT")
+            && let Ok(parsed) = port.parse::<u16>()
+        {
+            config.port = parsed;
         }
 
         config

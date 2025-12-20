@@ -12,7 +12,7 @@ use serde::Serialize;
 use crate::error::Error;
 
 /// API error response body.
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, utoipa::ToSchema)]
 pub struct ApiErrorResponse {
     /// Error code for programmatic handling
     pub code: String,

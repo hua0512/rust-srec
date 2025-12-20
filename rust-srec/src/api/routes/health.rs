@@ -43,8 +43,17 @@ fn validate_health_auth(
     Ok(())
 }
 
-/// Health check endpoint.
-async fn health_check(
+#[utoipa::path(
+    get,
+    path = "/api/health",
+    tag = "health",
+    security(("bearer_auth" = [])),
+    responses(
+        (status = 200, description = "Full health check response", body = HealthResponse),
+        (status = 401, description = "Unauthorized", body = crate::api::error::ApiErrorResponse)
+    )
+)]
+pub async fn health_check(
     State(state): State<AppState>,
     headers: HeaderMap,
 ) -> ApiResult<Json<HealthResponse>> {
@@ -90,9 +99,21 @@ async fn health_check(
     }
 }
 
-/// Readiness check - is the service ready to accept traffic?
-/// Returns HTTP 200 if healthy/degraded, HTTP 503 if unhealthy/unknown.
-async fn readiness_check(State(state): State<AppState>, headers: HeaderMap) -> impl IntoResponse {
+#[utoipa::path(
+    get,
+    path = "/api/health/ready",
+    tag = "health",
+    security(("bearer_auth" = [])),
+    responses(
+        (status = 200, description = "Service is ready"),
+        (status = 401, description = "Unauthorized", body = crate::api::error::ApiErrorResponse),
+        (status = 503, description = "Service not ready")
+    )
+)]
+pub async fn readiness_check(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+) -> impl IntoResponse {
     if let Err(err) = validate_health_auth(&headers, &state) {
         return err.into_response();
     }
@@ -109,9 +130,15 @@ async fn readiness_check(State(state): State<AppState>, headers: HeaderMap) -> i
     }
 }
 
-/// Liveness check - is the service alive?
-/// Returns HTTP 200 with status and uptime if the service is responsive.
-async fn liveness_check(State(state): State<AppState>) -> impl IntoResponse {
+#[utoipa::path(
+    get,
+    path = "/api/health/live",
+    tag = "health",
+    responses(
+        (status = 200, description = "Service is alive", body = crate::api::openapi::LivenessResponse)
+    )
+)]
+pub async fn liveness_check(State(state): State<AppState>) -> impl IntoResponse {
     let uptime = state.start_time.elapsed().as_secs();
     (
         StatusCode::OK,

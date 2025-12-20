@@ -19,10 +19,10 @@ fn make_absolute(path: &str) -> String {
         return path.to_string();
     }
 
-    if path_obj.exists() {
-        if let Ok(abs) = std::fs::canonicalize(path_obj) {
-            return abs.to_string_lossy().to_string();
-        }
+    if path_obj.exists()
+        && let Ok(abs) = std::fs::canonicalize(path_obj)
+    {
+        return abs.to_string_lossy().to_string();
     }
 
     if let Ok(cwd) = std::env::current_dir() {
@@ -33,10 +33,11 @@ fn make_absolute(path: &str) -> String {
 }
 
 /// Video codec options.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 #[serde(rename_all = "lowercase")]
 pub enum VideoCodec {
     /// Copy video stream without re-encoding.
+    #[default]
     Copy,
     /// H.264/AVC codec.
     H264,
@@ -48,12 +49,6 @@ pub enum VideoCodec {
     Av1,
     /// Custom codec string.
     Custom(String),
-}
-
-impl Default for VideoCodec {
-    fn default() -> Self {
-        Self::Copy
-    }
 }
 
 impl VideoCodec {
@@ -70,10 +65,11 @@ impl VideoCodec {
 }
 
 /// Audio codec options.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 #[serde(rename_all = "lowercase")]
 pub enum AudioCodec {
     /// Copy audio stream without re-encoding.
+    #[default]
     Copy,
     /// AAC codec.
     Aac,
@@ -87,12 +83,6 @@ pub enum AudioCodec {
     None,
     /// Custom codec string.
     Custom(String),
-}
-
-impl Default for AudioCodec {
-    fn default() -> Self {
-        Self::Copy
-    }
 }
 
 impl AudioCodec {
@@ -110,7 +100,7 @@ impl AudioCodec {
 }
 
 /// Video quality preset (for encoding speed vs quality tradeoff).
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 #[serde(rename_all = "lowercase")]
 pub enum Preset {
     Ultrafast,
@@ -118,16 +108,11 @@ pub enum Preset {
     Veryfast,
     Faster,
     Fast,
+    #[default]
     Medium,
     Slow,
     Slower,
     Veryslow,
-}
-
-impl Default for Preset {
-    fn default() -> Self {
-        Self::Medium
-    }
 }
 
 impl Preset {
@@ -455,7 +440,7 @@ impl Processor for RemuxProcessor {
         // Parse config or use defaults
         let config: RemuxConfig = if let Some(ref config_str) = input.config {
             serde_json::from_str(config_str).unwrap_or_else(|e| {
-                let _ = ctx.warn(&format!(
+                let _ = ctx.warn(format!(
                     "Failed to parse remux config, using defaults: {}",
                     e
                 ));
@@ -484,7 +469,7 @@ impl Processor for RemuxProcessor {
         // If not supported, pass through the input file instead of failing
         if !is_media(&ext) {
             let duration = start.elapsed().as_secs_f64();
-            let _ = ctx.info(&format!(
+            let _ = ctx.info(format!(
                 "Input file is not a supported media format for remuxing, passing through: {}",
                 input_path
             ));
@@ -533,7 +518,7 @@ impl Processor for RemuxProcessor {
         let output_path_string = make_absolute(&output_string);
         let output_path = output_path_string.as_str();
 
-        let _ = ctx.info(&format!(
+        let _ = ctx.info(format!(
             "Processing {} -> {} (video: {:?}, audio: {:?})",
             input_path, output_path, config.video_codec, config.audio_codec
         ));
@@ -558,12 +543,11 @@ impl Processor for RemuxProcessor {
             let error_msg = command_output
                 .logs
                 .iter()
-                .filter(|l| l.level == crate::pipeline::job_queue::LogLevel::Error)
-                .last()
+                .rfind(|l| l.level == crate::pipeline::job_queue::LogLevel::Error)
                 .map(|l| l.message.clone())
                 .unwrap_or_else(|| "Unknown ffmpeg error".to_string());
 
-            let _ = ctx.error(&format!("ffmpeg failed: {}", error_msg));
+            let _ = ctx.error(format!("ffmpeg failed: {}", error_msg));
 
             return Err(crate::Error::Other(format!(
                 "ffmpeg failed with exit code {}: {}",
@@ -572,7 +556,7 @@ impl Processor for RemuxProcessor {
             )));
         }
 
-        let _ = ctx.info(&format!(
+        let _ = ctx.info(format!(
             "Processing completed in {:.2}s: {}",
             command_output.duration, output_path
         ));
@@ -589,10 +573,7 @@ impl Processor for RemuxProcessor {
                     ));
                 }
                 Err(e) => {
-                    let _ = ctx.warn(&format!(
-                        "Failed to remove input file {}: {}",
-                        input_path, e
-                    ));
+                    let _ = ctx.warn(format!("Failed to remove input file {}: {}", input_path, e));
                     logs.push(create_log_entry(
                         crate::pipeline::job_queue::LogLevel::Warn,
                         format!("Failed to remove input file {}: {}", input_path, e),

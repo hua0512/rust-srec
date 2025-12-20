@@ -645,7 +645,7 @@ impl PlatformActor {
             let streamer_id = result.streamer_id.clone();
 
             if let Some(handle) = self.streamer_handles.get(&streamer_id) {
-                let msg = StreamerMessage::BatchResult(result);
+                let msg = StreamerMessage::BatchResult(Box::new(result));
 
                 if let Err(e) = handle.send(msg).await {
                     warn!(

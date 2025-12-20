@@ -67,12 +67,14 @@ struct TwitcastingComment {
     #[serde(default, alias = "createdAt", alias = "created_at")]
     created_at: Option<i64>,
     #[serde(default, alias = "num_comments")]
+    #[allow(dead_code)]
     num_comments: Option<u64>,
 }
 
 /// User info in comment
 #[derive(Debug, Deserialize, Default, Clone)]
 #[serde(rename_all = "camelCase")]
+#[allow(dead_code)]
 struct CommentUser {
     #[serde(default)]
     name: Option<String>,
@@ -274,11 +276,11 @@ impl TwitcastingDanmuProtocol {
     /// Convert a single TwitcastingComment to DanmuMessage.
     fn comment_to_danmu(comment: &TwitcastingComment) -> Option<DanmuMessage> {
         // Skip if it is not a comment message (if type is present)
-        if let Some(ref t) = comment.msg_type {
-            if t != "comment" && t != "gift" {
-                debug!("TwitCasting: skipping message type: {}", t);
-                return None;
-            }
+        if let Some(ref t) = comment.msg_type
+            && (t != "comment" && t != "gift")
+        {
+            debug!("TwitCasting: skipping message type: {}", t);
+            return None;
         }
 
         let message = match comment.message.as_ref() {

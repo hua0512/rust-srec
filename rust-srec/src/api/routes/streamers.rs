@@ -74,10 +74,19 @@ fn metadata_to_response(metadata: &StreamerMetadata) -> StreamerResponse {
     }
 }
 
-/// Create a new streamer.
-///
-/// POST /api/streamers
-async fn create_streamer(
+#[utoipa::path(
+    post,
+    path = "/api/streamers",
+    tag = "streamers",
+    request_body = CreateStreamerRequest,
+    responses(
+        (status = 201, description = "Streamer created", body = StreamerResponse),
+        (status = 409, description = "Streamer URL already exists", body = crate::api::error::ApiErrorResponse),
+        (status = 422, description = "Validation error", body = crate::api::error::ApiErrorResponse)
+    ),
+    security(("bearer_auth" = []))
+)]
+pub async fn create_streamer(
     State(state): State<AppState>,
     Json(request): Json<CreateStreamerRequest>,
 ) -> ApiResult<Json<StreamerResponse>> {
@@ -140,10 +149,17 @@ async fn create_streamer(
     Ok(Json(metadata_to_response(&metadata)))
 }
 
-/// List streamers with pagination and filtering.
-///
-/// GET /api/streamers
-async fn list_streamers(
+#[utoipa::path(
+    get,
+    path = "/api/streamers",
+    tag = "streamers",
+    params(PaginationParams, StreamerFilterParams),
+    responses(
+        (status = 200, description = "List of streamers", body = PaginatedResponse<StreamerResponse>)
+    ),
+    security(("bearer_auth" = []))
+)]
+pub async fn list_streamers(
     State(state): State<AppState>,
     Query(pagination): Query<PaginationParams>,
     Query(filters): Query<StreamerFilterParams>,
@@ -161,14 +177,14 @@ async fn list_streamers(
     if let Some(platform) = &filters.platform {
         streamers.retain(|s| &s.platform_config_id == platform);
     }
-    if let Some(state_str) = &filters.state {
-        if !state_str.is_empty() {
-            let states: Vec<StreamerState> = state_str
-                .split(',')
-                .filter_map(|s| StreamerState::parse(&s.trim().to_uppercase()))
-                .collect();
-            streamers.retain(|s| states.contains(&s.state));
-        }
+    if let Some(state_str) = &filters.state
+        && !state_str.is_empty()
+    {
+        let states: Vec<StreamerState> = state_str
+            .split(',')
+            .filter_map(|s| StreamerState::parse(&s.trim().to_uppercase()))
+            .collect();
+        streamers.retain(|s| states.contains(&s.state));
     }
     if let Some(priority) = &filters.priority {
         let domain_priority = api_to_domain_priority(*priority);
@@ -177,13 +193,13 @@ async fn list_streamers(
     if let Some(enabled) = filters.enabled {
         streamers.retain(|s| (s.state != StreamerState::Disabled) == enabled);
     }
-    if let Some(search) = &filters.search {
-        if !search.is_empty() {
-            let search = search.to_lowercase();
-            streamers.retain(|s| {
-                s.name.to_lowercase().contains(&search) || s.url.to_lowercase().contains(&search)
-            });
-        }
+    if let Some(search) = &filters.search
+        && !search.is_empty()
+    {
+        let search = search.to_lowercase();
+        streamers.retain(|s| {
+            s.name.to_lowercase().contains(&search) || s.url.to_lowercase().contains(&search)
+        });
     }
 
     // Sort for stable pagination
@@ -191,7 +207,7 @@ async fn list_streamers(
     let desc = filters
         .sort_dir
         .as_deref()
-        .map_or(false, |dir| dir.eq_ignore_ascii_case("desc"));
+        .is_some_and(|dir| dir.eq_ignore_ascii_case("desc"));
 
     match sort_by {
         Some("name") => {
@@ -262,10 +278,18 @@ async fn list_streamers(
     Ok(Json(response))
 }
 
-/// Get a single streamer by ID.
-///
-/// GET /api/streamers/:id
-async fn get_streamer(
+#[utoipa::path(
+    get,
+    path = "/api/streamers/{id}",
+    tag = "streamers",
+    params(("id" = String, Path, description = "Streamer ID")),
+    responses(
+        (status = 200, description = "Streamer details", body = StreamerResponse),
+        (status = 404, description = "Streamer not found", body = crate::api::error::ApiErrorResponse)
+    ),
+    security(("bearer_auth" = []))
+)]
+pub async fn get_streamer(
     State(state): State<AppState>,
     Path(id): Path<String>,
 ) -> ApiResult<Json<StreamerResponse>> {
@@ -283,10 +307,20 @@ async fn get_streamer(
     Ok(Json(metadata_to_response(&metadata)))
 }
 
-/// Update a streamer.
-///
-/// PUT /api/streamers/:id
-async fn update_streamer(
+#[utoipa::path(
+    put,
+    path = "/api/streamers/{id}",
+    tag = "streamers",
+    params(("id" = String, Path, description = "Streamer ID")),
+    request_body = UpdateStreamerRequest,
+    responses(
+        (status = 200, description = "Streamer updated", body = StreamerResponse),
+        (status = 404, description = "Streamer not found", body = crate::api::error::ApiErrorResponse),
+        (status = 409, description = "URL already exists", body = crate::api::error::ApiErrorResponse)
+    ),
+    security(("bearer_auth" = []))
+)]
+pub async fn update_streamer(
     State(state): State<AppState>,
     Path(id): Path<String>,
     Json(request): Json<UpdateStreamerRequest>,
@@ -298,12 +332,12 @@ async fn update_streamer(
         .ok_or_else(|| ApiError::service_unavailable("Streamer service not available"))?;
 
     // Check URL uniqueness if URL is being changed (case-insensitive)
-    if let Some(ref new_url) = request.url {
-        if streamer_manager.url_exists_for_other(new_url, &id) {
-            return Err(ApiError::conflict(
-                "A streamer with this URL already exists",
-            ));
-        }
+    if let Some(ref new_url) = request.url
+        && streamer_manager.url_exists_for_other(new_url, &id)
+    {
+        return Err(ApiError::conflict(
+            "A streamer with this URL already exists",
+        ));
     }
 
     // Convert enabled flag to state if provided
@@ -324,31 +358,39 @@ async fn update_streamer(
 
     // Use partial_update_streamer for atomic update
     let metadata = streamer_manager
-        .partial_update_streamer(
-            &id,
-            request.name,
-            request.url,
+        .partial_update_streamer(crate::streamer::manager::StreamerUpdateParams {
+            id: id.clone(),
+            name: request.name,
+            url: request.url,
             template_config_id,
-            new_priority,
-            new_state,
-            request.streamer_specific_config.map(|v| {
+            priority: new_priority,
+            state: new_state,
+            streamer_specific_config: request.streamer_specific_config.map(|v| {
                 if v.is_null() {
                     None
                 } else {
                     Some(v.to_string())
                 }
             }),
-        )
+        })
         .await
         .map_err(ApiError::from)?;
 
     Ok(Json(metadata_to_response(&metadata)))
 }
 
-/// Delete a streamer.
-///
-/// DELETE /api/streamers/:id
-async fn delete_streamer(
+#[utoipa::path(
+    delete,
+    path = "/api/streamers/{id}",
+    tag = "streamers",
+    params(("id" = String, Path, description = "Streamer ID")),
+    responses(
+        (status = 200, description = "Streamer deleted", body = crate::api::openapi::MessageResponse),
+        (status = 404, description = "Streamer not found", body = crate::api::error::ApiErrorResponse)
+    ),
+    security(("bearer_auth" = []))
+)]
+pub async fn delete_streamer(
     State(state): State<AppState>,
     Path(id): Path<String>,
 ) -> ApiResult<Json<serde_json::Value>> {
@@ -378,10 +420,18 @@ async fn delete_streamer(
     })))
 }
 
-/// Clear error state for a streamer.
-///
-/// POST /api/streamers/:id/clear-error
-async fn clear_error(
+#[utoipa::path(
+    post,
+    path = "/api/streamers/{id}/clear-error",
+    tag = "streamers",
+    params(("id" = String, Path, description = "Streamer ID")),
+    responses(
+        (status = 200, description = "Error cleared", body = StreamerResponse),
+        (status = 404, description = "Streamer not found", body = crate::api::error::ApiErrorResponse)
+    ),
+    security(("bearer_auth" = []))
+)]
+pub async fn clear_error(
     State(state): State<AppState>,
     Path(id): Path<String>,
 ) -> ApiResult<Json<StreamerResponse>> {
@@ -413,10 +463,19 @@ async fn clear_error(
     Ok(Json(metadata_to_response(&metadata)))
 }
 
-/// Update streamer priority.
-///
-/// PATCH /api/streamers/:id/priority
-async fn update_priority(
+#[utoipa::path(
+    patch,
+    path = "/api/streamers/{id}/priority",
+    tag = "streamers",
+    params(("id" = String, Path, description = "Streamer ID")),
+    request_body = UpdatePriorityRequest,
+    responses(
+        (status = 200, description = "Priority updated", body = StreamerResponse),
+        (status = 404, description = "Streamer not found", body = crate::api::error::ApiErrorResponse)
+    ),
+    security(("bearer_auth" = []))
+)]
+pub async fn update_priority(
     State(state): State<AppState>,
     Path(id): Path<String>,
     Json(request): Json<UpdatePriorityRequest>,
@@ -1007,10 +1066,18 @@ mod property_tests {
         }
     }
 }
-/// Extract metadata from a streamer URL and return valid platform configs.
-///
-/// POST /api/streamers/extract-metadata
-async fn extract_metadata(
+#[utoipa::path(
+    post,
+    path = "/api/streamers/extract-metadata",
+    tag = "streamers",
+    request_body = ExtractMetadataRequest,
+    responses(
+        (status = 200, description = "Metadata extracted", body = ExtractMetadataResponse),
+        (status = 422, description = "Invalid URL", body = crate::api::error::ApiErrorResponse)
+    ),
+    security(("bearer_auth" = []))
+)]
+pub async fn extract_metadata(
     State(state): State<AppState>,
     Json(request): Json<ExtractMetadataRequest>,
 ) -> ApiResult<Json<ExtractMetadataResponse>> {

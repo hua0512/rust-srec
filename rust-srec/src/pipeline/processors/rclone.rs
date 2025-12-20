@@ -11,21 +11,16 @@ use super::traits::{Processor, ProcessorContext, ProcessorInput, ProcessorOutput
 use crate::Result;
 
 /// Rclone operation type.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
 #[serde(rename_all = "lowercase")]
 pub enum RcloneOperation {
     /// Copy files (default).
+    #[default]
     Copy,
     /// Move files (deletes source).
     Move,
     /// Sync files (make destination identical to source).
     Sync,
-}
-
-impl Default for RcloneOperation {
-    fn default() -> Self {
-        Self::Copy
-    }
 }
 
 /// Processor for interacting with Rclone.
@@ -228,8 +223,7 @@ impl RcloneProcessor {
                 let error_msg = command_output
                     .logs
                     .iter()
-                    .filter(|l| l.level == crate::pipeline::job_queue::LogLevel::Error)
-                    .last()
+                    .rfind(|l| l.level == crate::pipeline::job_queue::LogLevel::Error)
                     .map(|l| l.message.clone())
                     .unwrap_or_else(|| "Unknown error".to_string());
 
@@ -387,8 +381,7 @@ impl RcloneProcessor {
                 let error_msg = command_output
                     .logs
                     .iter()
-                    .filter(|l| l.level == crate::pipeline::job_queue::LogLevel::Error)
-                    .last()
+                    .rfind(|l| l.level == crate::pipeline::job_queue::LogLevel::Error)
                     .map(|l| l.message.clone())
                     .unwrap_or_else(|| "Unknown error".to_string());
 

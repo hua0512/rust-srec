@@ -310,11 +310,11 @@ impl BilibiliDanmuProtocol {
 
         // info[2][0] = uid, info[2][1] = name
         let user_info = info.get(2)?.as_array()?;
-        let uid = user_info.get(0)?.as_u64().unwrap_or(0);
+        let uid = user_info.first()?.as_u64().unwrap_or(0);
         let name = user_info.get(1)?.as_str().unwrap_or("").to_string();
 
         // info[0][3] = color
-        let meta = info.get(0)?.as_array()?;
+        let meta = info.first()?.as_array()?;
         let color = meta
             .get(3)
             .and_then(|v| v.as_u64())
@@ -622,10 +622,7 @@ mod tests {
         let room_id = "1721766859";
 
         println!("Connecting to Bilibili room: {}", room_id);
-        let connection = match provider
-            .connect(&room_id.to_string(), ConnectionConfig::default())
-            .await
-        {
+        let connection = match provider.connect(room_id, ConnectionConfig::default()).await {
             Ok(conn) => conn,
             Err(e) => {
                 eprintln!("Failed to connect: {}", e);

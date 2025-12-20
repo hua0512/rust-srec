@@ -75,10 +75,10 @@ impl ExecuteCommandProcessor {
                 if path.is_file() {
                     // Apply extension filter if specified
                     if let Some(ext_filter) = extension_filter {
-                        if let Some(ext) = path.extension().and_then(|e| e.to_str()) {
-                            if ext.eq_ignore_ascii_case(ext_filter) {
-                                files.push(path.to_string_lossy().to_string());
-                            }
+                        if let Some(ext) = path.extension().and_then(|e| e.to_str())
+                            && ext.eq_ignore_ascii_case(ext_filter)
+                        {
+                            files.push(path.to_string_lossy().to_string());
                         }
                     } else {
                         files.push(path.to_string_lossy().to_string());
@@ -151,7 +151,7 @@ impl Processor for ExecuteCommandProcessor {
 
         let command = Self::substitute_variables(&config.command, input);
 
-        let _ = ctx.info(&format!("Executing command: {}", command));
+        let _ = ctx.info(format!("Executing command: {}", command));
 
         // Take snapshot of output directory before execution (if scanning enabled)
         let before_snapshot: Option<HashSet<String>> = if let Some(ref dir) = config.scan_output_dir
@@ -167,7 +167,7 @@ impl Processor for ExecuteCommandProcessor {
             } else {
                 // Create directory if it doesn't exist
                 if let Err(e) = tokio::fs::create_dir_all(dir_path).await {
-                    let _ = ctx.warn(&format!("Failed to create output directory {}: {}", dir, e));
+                    let _ = ctx.warn(format!("Failed to create output directory {}: {}", dir, e));
                 }
                 Some(HashSet::new())
             }
@@ -204,7 +204,7 @@ impl Processor for ExecuteCommandProcessor {
             Ok(Ok(output)) => output,
             Ok(Err(e)) => return Err(e),
             Err(_) => {
-                let _ = ctx.error(&format!("Command timed out after {}s", self.timeout_secs));
+                let _ = ctx.error(format!("Command timed out after {}s", self.timeout_secs));
                 // Child process cleanup depends on implementation details of utils::run_command_with_logs
                 // ideally that helper should handle cancellation/timeout cleanups if possible.
                 // For now, we return timeout error.
@@ -217,12 +217,11 @@ impl Processor for ExecuteCommandProcessor {
             let error_msg = command_output
                 .logs
                 .iter()
-                .filter(|l| l.level == crate::pipeline::job_queue::LogLevel::Error)
-                .last()
+                .rfind(|l| l.level == crate::pipeline::job_queue::LogLevel::Error)
                 .map(|l| l.message.clone())
                 .unwrap_or_else(|| "Command failed".to_string());
 
-            let _ = ctx.error(&format!(
+            let _ = ctx.error(format!(
                 "Command failed with status: {}",
                 command_output.status
             ));
@@ -235,7 +234,7 @@ impl Processor for ExecuteCommandProcessor {
 
         let duration = command_output.duration;
 
-        let _ = ctx.info(&format!("Command completed in {:.2}s", duration));
+        let _ = ctx.info(format!("Command completed in {:.2}s", duration));
 
         // Get file sizes for metrics if paths exist
         let input_path = input.inputs.first().map(|s| s.as_str()).unwrap_or("");
@@ -271,7 +270,7 @@ impl Processor for ExecuteCommandProcessor {
                 // Fall back to inputs if no new files detected
                 input.inputs.clone()
             } else {
-                let _ = ctx.info(&format!(
+                let _ = ctx.info(format!(
                     "Detected {} new files in output directory",
                     new_files.len()
                 ));

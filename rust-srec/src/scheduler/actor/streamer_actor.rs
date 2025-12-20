@@ -17,7 +17,7 @@
 //! rather than holding a local copy. This eliminates state drift between the
 //! actor and the canonical source of truth (StreamerManager).
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
@@ -526,7 +526,7 @@ impl StreamerActor {
         // Perform the actual status check using the status checker
         match self.status_checker.check_status(&metadata).await {
             Ok((result, status)) => {
-                let prev_state = self.state.streamer_state;
+                // let prev_state = self.state.streamer_state;
                 let next_state = result.state;
                 let error_count = self.get_error_count();
 
@@ -534,10 +534,10 @@ impl StreamerActor {
                 let should_emit = self.state.record_check(result, &self.config, error_count);
 
                 // Call process_status only if hysteresis allows it
-                if should_emit {
-                    if let Err(e) = self.status_checker.process_status(&metadata, status).await {
-                        warn!("StreamerActor {} failed to process status: {}", self.id, e);
-                    }
+                if should_emit
+                    && let Err(e) = self.status_checker.process_status(&metadata, status).await
+                {
+                    warn!("StreamerActor {} failed to process status: {}", self.id, e);
                 }
 
                 // Check for fatal states - actor should stop monitoring
@@ -607,7 +607,7 @@ impl StreamerActor {
                 Ok(false)
             }
             StreamerMessage::BatchResult(result) => {
-                self.handle_batch_result(result).await?;
+                self.handle_batch_result(*result).await?;
                 Ok(false)
             }
             StreamerMessage::DownloadStarted {
@@ -696,8 +696,8 @@ impl StreamerActor {
             return Ok(());
         }
 
-        let prev_state = self.state.streamer_state;
-        let next_state = result.result.state;
+        let _prev_state = self.state.streamer_state;
+        let _next_state = result.result.state;
         let error_count = self.get_error_count();
         let is_error = result.result.is_error();
         let error_message = result.result.error.clone();
@@ -725,17 +725,16 @@ impl StreamerActor {
         // Call process_status only if hysteresis allows it
         if should_emit {
             // Fetch fresh metadata for process_status
-            if let Some(metadata) = self.get_metadata() {
-                if let Err(e) = self
+            if let Some(metadata) = self.get_metadata()
+                && let Err(e) = self
                     .status_checker
                     .process_status(&metadata, result.status)
                     .await
-                {
-                    warn!(
-                        "StreamerActor {} failed to process batch status: {}",
-                        self.id, e
-                    );
-                }
+            {
+                warn!(
+                    "StreamerActor {} failed to process batch status: {}",
+                    self.id, e
+                );
             }
         }
 
@@ -978,7 +977,7 @@ impl StreamerActor {
     /// Returns `None` if no persisted state exists or if restoration fails.
     pub async fn restore_state(
         id: &str,
-        state_path: &PathBuf,
+        state_path: &Path,
     ) -> Option<(StreamerActorState, StreamerConfig)> {
         let path = state_path.join(format!("{}.json", id));
 
@@ -1416,10 +1415,11 @@ mod tests {
                 avatar: None,
                 streams: vec![],
                 media_headers: None,
+                media_extras: None,
             },
         };
         handle
-            .send(StreamerMessage::BatchResult(batch_result))
+            .send(StreamerMessage::BatchResult(Box::new(batch_result)))
             .await
             .unwrap();
 
@@ -1586,7 +1586,7 @@ mod tests {
                 status: crate::monitor::LiveStatus::Offline,
             };
             handle
-                .send(StreamerMessage::BatchResult(batch_result))
+                .send(StreamerMessage::BatchResult(Box::new(batch_result)))
                 .await
                 .unwrap();
         }

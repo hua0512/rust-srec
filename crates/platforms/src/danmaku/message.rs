@@ -7,10 +7,11 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
 /// Type of danmu message.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
 #[serde(rename_all = "snake_case")]
 pub enum DanmuType {
     /// Regular chat message
+    #[default]
     Chat,
     /// Gift/donation
     Gift,
@@ -26,12 +27,6 @@ pub enum DanmuType {
     Subscription,
     /// Other platform-specific message type
     Other,
-}
-
-impl Default for DanmuType {
-    fn default() -> Self {
-        Self::Chat
-    }
 }
 
 /// A single danmu message.

@@ -310,10 +310,7 @@ where
 
         // Use ConfigResolver to handle the merging logic
         let resolver = ConfigResolver::new(Arc::clone(&self.config_repo));
-        resolver
-            .resolve_config_for_streamer(&streamer)
-            .await
-            .map_err(Into::into)
+        resolver.resolve_config_for_streamer(&streamer).await
     }
 
     /// Convert database streamer model to domain entity.

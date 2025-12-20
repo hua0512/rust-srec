@@ -126,8 +126,18 @@ fn map_platform_config_to_response(config: PlatformConfigDbModel) -> PlatformCon
     }
 }
 
-/// Get global configuration.
-async fn get_global_config(State(state): State<AppState>) -> ApiResult<Json<GlobalConfigResponse>> {
+#[utoipa::path(
+    get,
+    path = "/api/config/global",
+    tag = "config",
+    responses(
+        (status = 200, description = "Global configuration", body = GlobalConfigResponse)
+    ),
+    security(("bearer_auth" = []))
+)]
+pub async fn get_global_config(
+    State(state): State<AppState>,
+) -> ApiResult<Json<GlobalConfigResponse>> {
     let config_service = state
         .config_service
         .as_ref()
@@ -141,8 +151,17 @@ async fn get_global_config(State(state): State<AppState>) -> ApiResult<Json<Glob
     Ok(Json(map_global_config_to_response(config)))
 }
 
-/// Update global configuration.
-async fn update_global_config(
+#[utoipa::path(
+    patch,
+    path = "/api/config/global",
+    tag = "config",
+    request_body = UpdateGlobalConfigRequest,
+    responses(
+        (status = 200, description = "Configuration updated", body = GlobalConfigResponse)
+    ),
+    security(("bearer_auth" = []))
+)]
+pub async fn update_global_config(
     State(state): State<AppState>,
     Json(request): Json<UpdateGlobalConfigRequest>,
 ) -> ApiResult<Json<GlobalConfigResponse>> {
@@ -224,8 +243,16 @@ async fn update_global_config(
     Ok(Json(map_global_config_to_response(config)))
 }
 
-/// List all platform configurations.
-async fn list_platform_configs(
+#[utoipa::path(
+    get,
+    path = "/api/config/platforms",
+    tag = "config",
+    responses(
+        (status = 200, description = "List of platform configurations", body = Vec<PlatformConfigResponse>)
+    ),
+    security(("bearer_auth" = []))
+)]
+pub async fn list_platform_configs(
     State(state): State<AppState>,
 ) -> ApiResult<Json<Vec<PlatformConfigResponse>>> {
     let config_service = state
@@ -246,8 +273,18 @@ async fn list_platform_configs(
     Ok(Json(responses))
 }
 
-/// Get a specific platform configuration.
-async fn get_platform_config(
+#[utoipa::path(
+    get,
+    path = "/api/config/platforms/{id}",
+    tag = "config",
+    params(("id" = String, Path, description = "Platform config ID")),
+    responses(
+        (status = 200, description = "Platform configuration", body = PlatformConfigResponse),
+        (status = 404, description = "Not found", body = crate::api::error::ApiErrorResponse)
+    ),
+    security(("bearer_auth" = []))
+)]
+pub async fn get_platform_config(
     State(state): State<AppState>,
     Path(id): Path<String>,
 ) -> ApiResult<Json<PlatformConfigResponse>> {
@@ -267,8 +304,19 @@ async fn get_platform_config(
     Ok(Json(map_platform_config_to_response(config)))
 }
 
-/// Replace a platform configuration (PUT).
-async fn replace_platform_config(
+#[utoipa::path(
+    put,
+    path = "/api/config/platforms/{id}",
+    tag = "config",
+    params(("id" = String, Path, description = "Platform config ID")),
+    request_body = PlatformConfigResponse,
+    responses(
+        (status = 200, description = "Platform configuration updated", body = PlatformConfigResponse),
+        (status = 400, description = "Bad request", body = crate::api::error::ApiErrorResponse)
+    ),
+    security(("bearer_auth" = []))
+)]
+pub async fn replace_platform_config(
     State(state): State<AppState>,
     Path(id): Path<String>,
     Json(request): Json<PlatformConfigResponse>,
@@ -440,13 +488,6 @@ mod property_tests {
             "mesio".to_string(),
             "streamlink".to_string(),
         ])
-    }
-
-    /// Strategy for generating valid cookie strings
-    fn cookies_strategy() -> impl Strategy<Value = String> {
-        prop::string::string_regex(r"[a-zA-Z0-9_]+=[a-zA-Z0-9_]+")
-            .unwrap()
-            .prop_filter("non-empty cookies", |s| !s.is_empty())
     }
 
     /// Strategy for generating valid proxy config JSON

@@ -142,7 +142,7 @@ async fn sqlite_claim_stress_no_double_claims_or_lost_transitions() {
                         assert!(inserted, "double-claimed job {}", claimed.id);
 
                         // Add a tiny jitter to increase interleavings.
-                        if random::<u8>() % 3 == 0 {
+                        if random::<u8>().is_multiple_of(3) {
                             tokio::task::yield_now().await;
                         } else {
                             tokio::time::sleep(Duration::from_millis((random::<u64>() % 3) as u64))

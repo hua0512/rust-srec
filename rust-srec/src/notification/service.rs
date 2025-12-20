@@ -168,7 +168,7 @@ struct RuntimeChannel {
 /// A notification pending delivery.
 #[derive(Debug, Clone)]
 struct PendingNotification {
-    id: u64,
+    _id: u64,
     event: NotificationEvent,
     created_at: DateTime<Utc>,
     channel_state: HashMap<String, ChannelDeliveryState>,
@@ -204,6 +204,32 @@ pub struct DeadLetterEntry {
     pub dead_lettered_at: DateTime<Utc>,
 }
 
+struct RetryParams {
+    id: u64,
+    delay: Duration,
+    expected_generation: u64,
+    channels: Vec<RuntimeChannel>,
+    pending_queue: Arc<DashMap<u64, PendingNotification>>,
+    dead_letters: Arc<DashMap<u64, DeadLetterEntry>>,
+    circuit_breakers: Arc<DashMap<String, CircuitBreakerState>>,
+    notification_repo: Option<Arc<dyn NotificationRepository>>,
+    config: NotificationServiceConfig,
+    next_dead_letter_id: Arc<AtomicU64>,
+    cancellation_token: CancellationToken,
+}
+
+struct ProcessingParams {
+    id: u64,
+    channels: Vec<RuntimeChannel>,
+    pending_queue: Arc<DashMap<u64, PendingNotification>>,
+    dead_letters: Arc<DashMap<u64, DeadLetterEntry>>,
+    circuit_breakers: Arc<DashMap<String, CircuitBreakerState>>,
+    notification_repo: Option<Arc<dyn NotificationRepository>>,
+    config: NotificationServiceConfig,
+    next_dead_letter_id: Arc<AtomicU64>,
+    cancellation_token: CancellationToken,
+}
+
 /// The notification service.
 pub struct NotificationService {
     config: NotificationServiceConfig,
@@ -220,7 +246,7 @@ pub struct NotificationService {
 }
 
 /// Public view of a configured notification channel instance.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, utoipa::ToSchema)]
 pub struct NotificationChannelInstance {
     /// Unique channel instance key.
     pub key: String,
@@ -234,7 +260,7 @@ pub struct NotificationChannelInstance {
     pub source: NotificationChannelSource,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, utoipa::ToSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum NotificationChannelSource {
     Config,
@@ -696,7 +722,7 @@ impl NotificationService {
         }
 
         let pending = PendingNotification {
-            id,
+            _id: id,
             event,
             created_at: Utc::now(),
             channel_state,
@@ -768,7 +794,7 @@ impl NotificationService {
         }
 
         let pending = PendingNotification {
-            id,
+            _id: id,
             event: event.clone(),
             created_at: Utc::now(),
             channel_state,
@@ -798,22 +824,22 @@ impl NotificationService {
     /// Process a pending notification.
     async fn process_notification(&self, id: u64) {
         let channels = self.channels.read().clone();
-        Self::process_notification_detached(
+        Self::process_notification_detached(ProcessingParams {
             id,
             channels,
-            self.pending_queue.clone(),
-            self.dead_letters.clone(),
-            self.circuit_breakers.clone(),
-            self.notification_repo.clone(),
-            self.config.clone(),
-            self.next_dead_letter_id.clone(),
-            self.cancellation_token.clone(),
-        )
+            pending_queue: self.pending_queue.clone(),
+            dead_letters: self.dead_letters.clone(),
+            circuit_breakers: self.circuit_breakers.clone(),
+            notification_repo: self.notification_repo.clone(),
+            config: self.config.clone(),
+            next_dead_letter_id: self.next_dead_letter_id.clone(),
+            cancellation_token: self.cancellation_token.clone(),
+        })
         .await;
     }
 
     /// Calculate retry delay with exponential backoff and jitter.
-    fn calculate_retry_delay(&self, attempts: u32) -> Duration {
+    fn _calculate_retry_delay(&self, attempts: u32) -> Duration {
         let base_delay = self.config.initial_retry_delay_ms;
         let max_delay = self.config.max_retry_delay_ms;
 
@@ -832,19 +858,20 @@ impl NotificationService {
         Duration::from_millis(delay_ms.saturating_add(jitter))
     }
 
-    fn spawn_retry_detached(
-        id: u64,
-        delay: Duration,
-        expected_generation: u64,
-        channels: Vec<RuntimeChannel>,
-        pending_queue: Arc<DashMap<u64, PendingNotification>>,
-        dead_letters: Arc<DashMap<u64, DeadLetterEntry>>,
-        circuit_breakers: Arc<DashMap<String, CircuitBreakerState>>,
-        notification_repo: Option<Arc<dyn NotificationRepository>>,
-        config: NotificationServiceConfig,
-        next_dead_letter_id: Arc<AtomicU64>,
-        cancellation_token: CancellationToken,
-    ) {
+    fn spawn_retry_detached(params: RetryParams) {
+        let RetryParams {
+            id,
+            delay,
+            expected_generation,
+            channels,
+            pending_queue,
+            dead_letters,
+            circuit_breakers,
+            notification_repo,
+            config,
+            next_dead_letter_id,
+            cancellation_token,
+        } = params;
         debug!(
             "Scheduling retry for notification {} in {:?} (gen={})",
             id, delay, expected_generation
@@ -864,7 +891,7 @@ impl NotificationService {
                 return;
             }
 
-            Self::process_notification_detached(
+            Self::process_notification_detached(ProcessingParams {
                 id,
                 channels,
                 pending_queue,
@@ -874,7 +901,7 @@ impl NotificationService {
                 config,
                 next_dead_letter_id,
                 cancellation_token,
-            )
+            })
             .await;
         });
     }
@@ -899,17 +926,18 @@ impl NotificationService {
         Duration::from_millis(delay_ms.saturating_add(jitter))
     }
 
-    async fn process_notification_detached(
-        id: u64,
-        channels: Vec<RuntimeChannel>,
-        pending_queue: Arc<DashMap<u64, PendingNotification>>,
-        dead_letters: Arc<DashMap<u64, DeadLetterEntry>>,
-        circuit_breakers: Arc<DashMap<String, CircuitBreakerState>>,
-        notification_repo: Option<Arc<dyn NotificationRepository>>,
-        config: NotificationServiceConfig,
-        next_dead_letter_id: Arc<AtomicU64>,
-        cancellation_token: CancellationToken,
-    ) {
+    async fn process_notification_detached(params: ProcessingParams) {
+        let ProcessingParams {
+            id,
+            channels,
+            pending_queue,
+            dead_letters,
+            circuit_breakers,
+            notification_repo,
+            config,
+            next_dead_letter_id,
+            cancellation_token,
+        } = params;
         let pending_snapshot = match pending_queue.get(&id) {
             Some(p) => p.clone(),
             None => return,
@@ -943,12 +971,12 @@ impl NotificationService {
                     if let Some(mut cb) = circuit_breakers.get_mut(&channel_key) {
                         cb.record_success();
                     }
-                    if let Some(mut p) = pending_queue.get_mut(&id) {
-                        if let Some(cs) = p.channel_state.get_mut(&channel_key) {
-                            cs.status = DeliveryStatus::Delivered;
-                            cs.last_attempt = Some(Utc::now());
-                            cs.last_error = None;
-                        }
+                    if let Some(mut p) = pending_queue.get_mut(&id)
+                        && let Some(cs) = p.channel_state.get_mut(&channel_key)
+                    {
+                        cs.status = DeliveryStatus::Delivered;
+                        cs.last_attempt = Some(Utc::now());
+                        cs.last_error = None;
                     }
                     debug!("Notification {} sent via {}", id, channel.channel_type);
                 }
@@ -961,38 +989,37 @@ impl NotificationService {
                     let mut attempts = 0;
                     let mut dead_lettered = false;
 
-                    if let Some(mut p) = pending_queue.get_mut(&id) {
-                        if let Some(cs) = p.channel_state.get_mut(&channel_key) {
-                            cs.attempts += 1;
-                            cs.last_attempt = Some(now);
-                            cs.last_error = Some(e.to_string());
-                            attempts = cs.attempts;
-                            if cs.attempts >= config.max_retries {
-                                cs.status = DeliveryStatus::DeadLettered;
-                                dead_lettered = true;
-                            }
+                    if let Some(mut p) = pending_queue.get_mut(&id)
+                        && let Some(cs) = p.channel_state.get_mut(&channel_key)
+                    {
+                        cs.attempts += 1;
+                        cs.last_attempt = Some(now);
+                        cs.last_error = Some(e.to_string());
+                        attempts = cs.attempts;
+                        if cs.attempts >= config.max_retries {
+                            cs.status = DeliveryStatus::DeadLettered;
+                            dead_lettered = true;
                         }
                     }
 
-                    if dead_lettered {
-                        if let (Some(repo), Some(db_channel_id)) =
+                    if dead_lettered
+                        && let (Some(repo), Some(db_channel_id)) =
                             (notification_repo.clone(), channel.db_channel_id.clone())
-                        {
-                            if let Ok(payload) = serde_json::to_string(&pending_snapshot.event) {
-                                let db_entry = NotificationDeadLetterDbModel::new(
-                                    db_channel_id.clone(),
-                                    pending_snapshot.event.event_type(),
-                                    payload,
-                                    e.to_string(),
-                                    attempts as i32,
-                                    pending_snapshot.created_at.to_rfc3339(),
+                    {
+                        if let Ok(payload) = serde_json::to_string(&pending_snapshot.event) {
+                            let db_entry = NotificationDeadLetterDbModel::new(
+                                db_channel_id.clone(),
+                                pending_snapshot.event.event_type(),
+                                payload,
+                                e.to_string(),
+                                attempts as i32,
+                                pending_snapshot.created_at.to_rfc3339(),
+                            );
+                            if let Err(err) = repo.add_to_dead_letter(&db_entry).await {
+                                warn!(
+                                    "Failed to persist dead letter entry for channel {}: {}",
+                                    db_channel_id, err
                                 );
-                                if let Err(err) = repo.add_to_dead_letter(&db_entry).await {
-                                    warn!(
-                                        "Failed to persist dead letter entry for channel {}: {}",
-                                        db_channel_id, err
-                                    );
-                                }
                             }
                         }
 
@@ -1064,7 +1091,7 @@ impl NotificationService {
             None => return,
         };
 
-        Self::spawn_retry_detached(
+        Self::spawn_retry_detached(RetryParams {
             id,
             delay,
             expected_generation,
@@ -1076,7 +1103,7 @@ impl NotificationService {
             config,
             next_dead_letter_id,
             cancellation_token,
-        );
+        });
     }
 
     /// Get dead letter entries.
@@ -1592,9 +1619,9 @@ mod tests {
         };
         let service = NotificationService::with_config(config);
 
-        let delay1 = service.calculate_retry_delay(0);
-        let delay2 = service.calculate_retry_delay(1);
-        let delay3 = service.calculate_retry_delay(2);
+        let delay1 = service._calculate_retry_delay(0);
+        let delay2 = service._calculate_retry_delay(1);
+        let delay3 = service._calculate_retry_delay(2);
 
         // Delays should increase (approximately, due to jitter)
         assert!(delay1.as_millis() >= 750 && delay1.as_millis() <= 1250);
@@ -1970,15 +1997,17 @@ mod tests {
 
         service.reload_from_db().await.unwrap();
 
-        let subs = service.subscriptions_by_event.read();
-        assert_eq!(
-            subs.get("system_startup").cloned(),
-            Some(vec!["channel-1".to_string()])
-        );
-        assert_eq!(
-            subs.get("download_completed").cloned(),
-            Some(vec!["channel-1".to_string()])
-        );
+        {
+            let subs = service.subscriptions_by_event.read();
+            assert_eq!(
+                subs.get("system_startup").cloned(),
+                Some(vec!["channel-1".to_string()])
+            );
+            assert_eq!(
+                subs.get("download_completed").cloned(),
+                Some(vec!["channel-1".to_string()])
+            );
+        }
 
         let subscribe_calls = repo.subscribe_calls.lock().await.clone();
         assert!(

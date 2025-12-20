@@ -16,10 +16,11 @@ use tokio_util::sync::CancellationToken;
 use crate::Result;
 
 /// Type of download engine.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, Default)]
 #[serde(rename_all = "lowercase")]
 pub enum EngineType {
     /// FFmpeg-based download.
+    #[default]
     Ffmpeg,
     /// Streamlink-based download.
     Streamlink,
@@ -28,16 +29,6 @@ pub enum EngineType {
 }
 
 impl EngineType {
-    /// Get the engine type from a string.
-    pub fn from_str(s: &str) -> Option<Self> {
-        match s.to_lowercase().as_str() {
-            "ffmpeg" => Some(Self::Ffmpeg),
-            "streamlink" => Some(Self::Streamlink),
-            "mesio" => Some(Self::Mesio),
-            _ => None,
-        }
-    }
-
     /// Get the string representation.
     pub fn as_str(&self) -> &'static str {
         match self {
@@ -48,15 +39,22 @@ impl EngineType {
     }
 }
 
-impl std::fmt::Display for EngineType {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", self.as_str())
+impl std::str::FromStr for EngineType {
+    type Err = String;
+
+    fn from_str(s: &str) -> std::result::Result<Self, Self::Err> {
+        match s.to_lowercase().as_str() {
+            "ffmpeg" => Ok(Self::Ffmpeg),
+            "streamlink" => Ok(Self::Streamlink),
+            "mesio" => Ok(Self::Mesio),
+            _ => Err(format!("Unknown engine type: {}", s)),
+        }
     }
 }
 
-impl Default for EngineType {
-    fn default() -> Self {
-        Self::Ffmpeg
+impl std::fmt::Display for EngineType {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.as_str())
     }
 }
 
@@ -443,14 +441,20 @@ mod tests {
 
     #[test]
     fn test_engine_type_from_str() {
-        assert_eq!(EngineType::from_str("ffmpeg"), Some(EngineType::Ffmpeg));
-        assert_eq!(EngineType::from_str("FFMPEG"), Some(EngineType::Ffmpeg));
         assert_eq!(
-            EngineType::from_str("streamlink"),
+            "ffmpeg".parse::<EngineType>().ok(),
+            Some(EngineType::Ffmpeg)
+        );
+        assert_eq!(
+            "FFMPEG".parse::<EngineType>().ok(),
+            Some(EngineType::Ffmpeg)
+        );
+        assert_eq!(
+            "streamlink".parse::<EngineType>().ok(),
             Some(EngineType::Streamlink)
         );
-        assert_eq!(EngineType::from_str("mesio"), Some(EngineType::Mesio));
-        assert_eq!(EngineType::from_str("unknown"), None);
+        assert_eq!("mesio".parse::<EngineType>().ok(), Some(EngineType::Mesio));
+        assert_eq!("unknown".parse::<EngineType>().ok(), None);
     }
 
     #[test]

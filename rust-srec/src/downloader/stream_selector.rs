@@ -30,7 +30,7 @@ pub struct StreamSelectionConfig {
     /// Platform-specific examples:
     /// - Chinese: ["原画", "蓝光", "超清", "高清"]
     /// - Western: ["source", "1080p", "720p", "480p"]
-    /// Empty means accept any quality (falls back to bitrate/priority sorting).
+    ///   Empty means accept any quality (falls back to bitrate/priority sorting).
     pub preferred_qualities: Vec<String>,
     /// Preferred CDN providers in order of preference.
     /// Empty means accept any CDN.

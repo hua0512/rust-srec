@@ -10,6 +10,7 @@ pub use tars::*;
 
 // Re-export the danmu provider
 pub use danmu::HuyaDanmuProvider;
+pub use danmu::create_huya_danmu_provider;
 
 // Re-export danmu models for internal use
 pub(crate) use danmu_models::*;

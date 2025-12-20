@@ -5,11 +5,11 @@ use std::cell::RefCell;
 use super::context::JsContext;
 use super::error::JsError;
 
+#[cfg(feature = "douyu")]
+thread_local! {
 /// Thread-local runtime cache.
 /// Each thread gets its own cached runtime to avoid the overhead of creating
 /// a new runtime for each JS execution.
-#[cfg(feature = "douyu")]
-thread_local! {
     static THREAD_RUNTIME: RefCell<Option<rquickjs::Runtime>> = const { RefCell::new(None) };
 }
 
@@ -139,9 +139,13 @@ mod tests {
     fn test_basic_execution() {
         let manager = JsEngineManager::global();
 
-        let result = manager.execute(|ctx| ctx.eval_string("1 + 2"));
+        let result = manager.execute(|ctx| ctx.eval_string("String(1 + 2)"));
 
-        assert!(result.is_ok());
+        assert!(
+            result.is_ok(),
+            "Expected Ok but got error: {:?}",
+            result.err()
+        );
         assert_eq!(result.unwrap(), "3");
     }
 
@@ -150,11 +154,11 @@ mod tests {
         let manager = JsEngineManager::global();
 
         // First execution creates runtime
-        let result1 = manager.execute(|ctx| ctx.eval_string("1"));
+        let result1 = manager.execute(|ctx| ctx.eval_string("String(1)"));
         assert!(result1.is_ok());
 
         // Second execution reuses runtime (same thread)
-        let result2 = manager.execute(|ctx| ctx.eval_string("2"));
+        let result2 = manager.execute(|ctx| ctx.eval_string("String(2)"));
         assert!(result2.is_ok());
     }
 
@@ -173,13 +177,13 @@ mod tests {
         let manager = JsEngineManager::global();
 
         // Create runtime
-        let _ = manager.execute(|ctx| ctx.eval_string("1"));
+        let _ = manager.execute(|ctx| ctx.eval_string("String(1)"));
 
         // Clear cache
         JsEngineManager::clear_cache();
 
         // Should still work (creates new runtime)
-        let result = manager.execute(|ctx| ctx.eval_string("2"));
+        let result = manager.execute(|ctx| ctx.eval_string("String(2)"));
         assert!(result.is_ok());
     }
 }

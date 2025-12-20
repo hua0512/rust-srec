@@ -21,8 +21,11 @@ pub mod templates;
 
 use axum::Router;
 use std::sync::Arc;
+use utoipa::OpenApi;
+use utoipa_swagger_ui::SwaggerUi;
 
 use crate::api::middleware::JwtAuthLayer;
+use crate::api::openapi::ApiDoc;
 use crate::api::server::AppState;
 
 pub use auth::{LoginRequest, LoginResponse};
@@ -32,6 +35,7 @@ pub use auth::{LoginRequest, LoginResponse};
 /// Routes are organized as:
 /// - Public routes: `/api/auth/*` (login), `/api/health/live`
 /// - Protected routes: All other `/api/*` routes (require JWT authentication)
+/// - Documentation: `/api/docs` (Swagger UI), `/api/docs/openapi.json` (OpenAPI spec)
 pub fn create_router(state: AppState) -> Router {
     // Build protected routes with state first
     let protected_routes: Router<AppState> = Router::new()
@@ -58,6 +62,8 @@ pub fn create_router(state: AppState) -> Router {
 
     // Build the main router with public routes first, then merge protected routes
     Router::new()
+        // Swagger UI for API documentation
+        .merge(SwaggerUi::new("/api/docs").url("/api/docs/openapi.json", ApiDoc::openapi()))
         // Public routes (no authentication required)
         .nest("/api/health", health::router())
         .nest("/api/auth", auth::public_router())

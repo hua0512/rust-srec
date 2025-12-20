@@ -159,24 +159,24 @@ impl AudioExtractProcessor {
         }
 
         // Bitrate (only when transcoding)
-        if config.format.is_some() {
-            if let Some(ref bitrate) = config.bitrate {
-                args.extend(["-b:a".to_string(), bitrate.clone()]);
-            }
+        if config.format.is_some()
+            && let Some(ref bitrate) = config.bitrate
+        {
+            args.extend(["-b:a".to_string(), bitrate.clone()]);
         }
 
         // Sample rate (only when transcoding)
-        if config.format.is_some() {
-            if let Some(sample_rate) = config.sample_rate {
-                args.extend(["-ar".to_string(), sample_rate.to_string()]);
-            }
+        if config.format.is_some()
+            && let Some(sample_rate) = config.sample_rate
+        {
+            args.extend(["-ar".to_string(), sample_rate.to_string()]);
         }
 
         // Channels (only when transcoding)
-        if config.format.is_some() {
-            if let Some(channels) = config.channels {
-                args.extend(["-ac".to_string(), channels.to_string()]);
-            }
+        if config.format.is_some()
+            && let Some(channels) = config.channels
+        {
+            args.extend(["-ac".to_string(), channels.to_string()]);
         }
 
         // Output file
@@ -397,9 +397,6 @@ impl Processor for AudioExtractProcessor {
         let args = self.build_args(input_path, &output_path, &config);
         debug!("FFmpeg args: {:?}", args);
 
-        // Get input file size for metrics
-        let input_size_bytes = tokio::fs::metadata(input_path).await.ok().map(|m| m.len());
-
         // Build ffmpeg command
         let mut cmd = Command::new(&self.ffmpeg_path);
         cmd.args(&args).env("LC_ALL", "C");
@@ -453,8 +450,7 @@ impl Processor for AudioExtractProcessor {
             let error_msg = command_output
                 .logs
                 .iter()
-                .filter(|l| l.level == crate::pipeline::job_queue::LogLevel::Error)
-                .last()
+                .rfind(|l| l.level == crate::pipeline::job_queue::LogLevel::Error)
                 .map(|l| l.message.clone())
                 .unwrap_or_else(|| "Unknown ffmpeg error".to_string());
 

@@ -28,7 +28,7 @@ pub fn router() -> Router<AppState> {
 }
 
 /// Request model for creating a new engine configuration.
-#[derive(Debug, serde::Deserialize)]
+#[derive(Debug, serde::Deserialize, utoipa::ToSchema)]
 pub struct CreateEngineRequest {
     pub name: String,
     pub engine_type: EngineType,
@@ -36,7 +36,7 @@ pub struct CreateEngineRequest {
 }
 
 /// Request model for updating an engine configuration.
-#[derive(Debug, serde::Deserialize)]
+#[derive(Debug, serde::Deserialize, utoipa::ToSchema)]
 pub struct UpdateEngineRequest {
     pub name: Option<String>,
     pub engine_type: Option<EngineType>,
@@ -44,14 +44,22 @@ pub struct UpdateEngineRequest {
 }
 
 /// Response model for testing an engine.
-#[derive(Debug, serde::Serialize)]
+#[derive(Debug, serde::Serialize, utoipa::ToSchema)]
 pub struct EngineTestResponse {
     pub available: bool,
     pub version: Option<String>,
 }
 
-/// List all engine configurations.
-async fn list_engines(
+#[utoipa::path(
+    get,
+    path = "/api/engines",
+    tag = "engines",
+    responses(
+        (status = 200, description = "List of engine configurations", body = Vec<crate::database::models::EngineConfigurationDbModel>)
+    ),
+    security(("bearer_auth" = []))
+)]
+pub async fn list_engines(
     State(state): State<AppState>,
 ) -> ApiResult<Json<Vec<EngineConfigurationDbModel>>> {
     let config_service = state
@@ -67,8 +75,18 @@ async fn list_engines(
     Ok(Json(engines))
 }
 
-/// Get a specific engine configuration.
-async fn get_engine(
+#[utoipa::path(
+    get,
+    path = "/api/engines/{id}",
+    tag = "engines",
+    params(("id" = String, Path, description = "Engine config ID")),
+    responses(
+        (status = 200, description = "Engine configuration", body = crate::database::models::EngineConfigurationDbModel),
+        (status = 404, description = "Engine not found", body = crate::api::error::ApiErrorResponse)
+    ),
+    security(("bearer_auth" = []))
+)]
+pub async fn get_engine(
     State(state): State<AppState>,
     Path(id): Path<String>,
 ) -> ApiResult<Json<EngineConfigurationDbModel>> {
@@ -88,8 +106,17 @@ async fn get_engine(
     Ok(Json(engine))
 }
 
-/// Create a new engine configuration.
-async fn create_engine(
+#[utoipa::path(
+    post,
+    path = "/api/engines",
+    tag = "engines",
+    request_body = CreateEngineRequest,
+    responses(
+        (status = 201, description = "Engine created", body = crate::database::models::EngineConfigurationDbModel)
+    ),
+    security(("bearer_auth" = []))
+)]
+pub async fn create_engine(
     State(state): State<AppState>,
     Json(request): Json<CreateEngineRequest>,
 ) -> ApiResult<Json<EngineConfigurationDbModel>> {
@@ -111,8 +138,19 @@ async fn create_engine(
     Ok(Json(engine))
 }
 
-/// Update an engine configuration.
-async fn update_engine(
+#[utoipa::path(
+    patch,
+    path = "/api/engines/{id}",
+    tag = "engines",
+    params(("id" = String, Path, description = "Engine config ID")),
+    request_body = UpdateEngineRequest,
+    responses(
+        (status = 200, description = "Engine updated", body = crate::database::models::EngineConfigurationDbModel),
+        (status = 404, description = "Engine not found", body = crate::api::error::ApiErrorResponse)
+    ),
+    security(("bearer_auth" = []))
+)]
+pub async fn update_engine(
     State(state): State<AppState>,
     Path(id): Path<String>,
     Json(request): Json<UpdateEngineRequest>,
@@ -152,8 +190,18 @@ async fn update_engine(
     Ok(Json(engine))
 }
 
-/// Delete an engine configuration.
-async fn delete_engine(State(state): State<AppState>, Path(id): Path<String>) -> ApiResult<()> {
+#[utoipa::path(
+    delete,
+    path = "/api/engines/{id}",
+    tag = "engines",
+    params(("id" = String, Path, description = "Engine config ID")),
+    responses(
+        (status = 200, description = "Engine deleted"),
+        (status = 404, description = "Engine not found", body = crate::api::error::ApiErrorResponse)
+    ),
+    security(("bearer_auth" = []))
+)]
+pub async fn delete_engine(State(state): State<AppState>, Path(id): Path<String>) -> ApiResult<()> {
     let config_service = state
         .config_service
         .as_ref()
@@ -176,8 +224,18 @@ async fn delete_engine(State(state): State<AppState>, Path(id): Path<String>) ->
     Ok(())
 }
 
-/// Test an engine configuration.
-async fn test_engine(
+#[utoipa::path(
+    get,
+    path = "/api/engines/{id}/test",
+    tag = "engines",
+    params(("id" = String, Path, description = "Engine config ID")),
+    responses(
+        (status = 200, description = "Engine test result", body = EngineTestResponse),
+        (status = 404, description = "Engine not found", body = crate::api::error::ApiErrorResponse)
+    ),
+    security(("bearer_auth" = []))
+)]
+pub async fn test_engine(
     State(state): State<AppState>,
     Path(id): Path<String>,
 ) -> ApiResult<Json<EngineTestResponse>> {

@@ -26,3 +26,9 @@ updates:
     directory: "/"
     schedule:
       interval: "weekly"
+
+  # Enable version updates for frontend npm
+  - package-ecosystem: "npm"
+    directory: "/rust-srec/frontend"
+    schedule:
+      interval: "weekly"

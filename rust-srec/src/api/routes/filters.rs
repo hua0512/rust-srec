@@ -35,10 +35,17 @@ fn model_to_response(model: &FilterDbModel) -> ApiResult<FilterResponse> {
     })
 }
 
-/// List filters for a streamer.
-///
-/// GET /api/streamers/{streamer_id}/filters
-async fn list_filters(
+#[utoipa::path(
+    get,
+    path = "/api/streamers/{streamer_id}/filters",
+    tag = "filters",
+    params(("streamer_id" = String, Path, description = "Streamer ID")),
+    responses(
+        (status = 200, description = "List of filters", body = Vec<FilterResponse>)
+    ),
+    security(("bearer_auth" = []))
+)]
+pub async fn list_filters(
     State(state): State<AppState>,
     Path(streamer_id): Path<String>,
 ) -> ApiResult<Json<Vec<FilterResponse>>> {
@@ -56,10 +63,19 @@ async fn list_filters(
     Ok(Json(response?))
 }
 
-/// Create a new filter.
-///
-/// POST /api/streamers/{streamer_id}/filters
-async fn create_filter(
+#[utoipa::path(
+    post,
+    path = "/api/streamers/{streamer_id}/filters",
+    tag = "filters",
+    params(("streamer_id" = String, Path, description = "Streamer ID")),
+    request_body = CreateFilterRequest,
+    responses(
+        (status = 201, description = "Filter created", body = FilterResponse),
+        (status = 422, description = "Validation error", body = crate::api::error::ApiErrorResponse)
+    ),
+    security(("bearer_auth" = []))
+)]
+pub async fn create_filter(
     State(state): State<AppState>,
     Path(streamer_id): Path<String>,
     Json(request): Json<CreateFilterRequest>,
@@ -90,10 +106,21 @@ async fn create_filter(
     model_to_response(&filter).map(Json)
 }
 
-/// Get a specific filter.
-///
-/// GET /api/streamers/{streamer_id}/filters/{id}
-async fn get_filter(
+#[utoipa::path(
+    get,
+    path = "/api/streamers/{streamer_id}/filters/{id}",
+    tag = "filters",
+    params(
+        ("streamer_id" = String, Path, description = "Streamer ID"),
+        ("id" = String, Path, description = "Filter ID")
+    ),
+    responses(
+        (status = 200, description = "Filter details", body = FilterResponse),
+        (status = 404, description = "Filter not found", body = crate::api::error::ApiErrorResponse)
+    ),
+    security(("bearer_auth" = []))
+)]
+pub async fn get_filter(
     State(state): State<AppState>,
     Path((streamer_id, id)): Path<(String, String)>,
 ) -> ApiResult<Json<FilterResponse>> {
@@ -115,10 +142,22 @@ async fn get_filter(
     model_to_response(&filter).map(Json)
 }
 
-/// Update a filter.
-///
-/// PATCH /api/streamers/{streamer_id}/filters/{id}
-async fn update_filter(
+#[utoipa::path(
+    patch,
+    path = "/api/streamers/{streamer_id}/filters/{id}",
+    tag = "filters",
+    params(
+        ("streamer_id" = String, Path, description = "Streamer ID"),
+        ("id" = String, Path, description = "Filter ID")
+    ),
+    request_body = UpdateFilterRequest,
+    responses(
+        (status = 200, description = "Filter updated", body = FilterResponse),
+        (status = 404, description = "Filter not found", body = crate::api::error::ApiErrorResponse)
+    ),
+    security(("bearer_auth" = []))
+)]
+pub async fn update_filter(
     State(state): State<AppState>,
     Path((streamer_id, id)): Path<(String, String)>,
     Json(request): Json<UpdateFilterRequest>,
@@ -160,10 +199,21 @@ async fn update_filter(
     model_to_response(&filter).map(Json)
 }
 
-/// Delete a filter.
-///
-/// DELETE /api/streamers/{streamer_id}/filters/{id}
-async fn delete_filter(
+#[utoipa::path(
+    delete,
+    path = "/api/streamers/{streamer_id}/filters/{id}",
+    tag = "filters",
+    params(
+        ("streamer_id" = String, Path, description = "Streamer ID"),
+        ("id" = String, Path, description = "Filter ID")
+    ),
+    responses(
+        (status = 200, description = "Filter deleted", body = crate::api::openapi::MessageResponse),
+        (status = 404, description = "Filter not found", body = crate::api::error::ApiErrorResponse)
+    ),
+    security(("bearer_auth" = []))
+)]
+pub async fn delete_filter(
     State(state): State<AppState>,
     Path((streamer_id, id)): Path<(String, String)>,
 ) -> ApiResult<Json<serde_json::Value>> {

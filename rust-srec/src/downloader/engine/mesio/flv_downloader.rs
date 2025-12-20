@@ -290,10 +290,10 @@ impl FlvDownloader {
                 .map_err(|e| crate::Error::Other(format!("Pipeline task panicked: {}", e)))?;
 
             // Only report task errors if writer succeeded
-            if writer_result.is_ok() {
-                if let Err(e) = task_result {
-                    warn!("Pipeline processing task error: {}", e);
-                }
+            if writer_result.is_ok()
+                && let Err(e) = task_result
+            {
+                warn!("Pipeline processing task error: {}", e);
             }
         }
 

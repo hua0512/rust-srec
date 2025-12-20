@@ -5,7 +5,7 @@ use sqlx::FromRow;
 
 /// Engine configuration database model.
 /// Stores a named, reusable engine configuration.
-#[derive(Debug, Clone, FromRow, Serialize, Deserialize)]
+#[derive(Debug, Clone, FromRow, Serialize, Deserialize, utoipa::ToSchema)]
 pub struct EngineConfigurationDbModel {
     pub id: String,
     pub name: String,
@@ -32,7 +32,16 @@ impl EngineConfigurationDbModel {
 
 /// Engine types.
 #[derive(
-    Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, strum::Display, strum::EnumString,
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    Serialize,
+    Deserialize,
+    strum::Display,
+    strum::EnumString,
+    utoipa::ToSchema,
 )]
 #[strum(serialize_all = "SCREAMING_SNAKE_CASE")]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]

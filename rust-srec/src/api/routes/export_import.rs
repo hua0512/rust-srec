@@ -36,7 +36,7 @@ pub fn router() -> Router<AppState> {
 // ============================================================================
 
 /// Complete configuration export bundle.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, utoipa::ToSchema)]
 pub struct ConfigExport {
     /// Schema version for compatibility checking.
     pub version: String,
@@ -63,7 +63,7 @@ pub struct ConfigExport {
 }
 
 /// Global configuration for export (excludes internal ID).
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, utoipa::ToSchema)]
 pub struct GlobalConfigExport {
     pub output_folder: String,
     pub output_filename_template: String,
@@ -88,7 +88,7 @@ pub struct GlobalConfigExport {
 }
 
 /// Template for export (uses name as identifier).
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, utoipa::ToSchema)]
 pub struct TemplateExport {
     pub name: String,
     pub output_folder: Option<String>,
@@ -111,7 +111,7 @@ pub struct TemplateExport {
 }
 
 /// Streamer for export (uses URL as identifier).
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, utoipa::ToSchema)]
 pub struct StreamerExport {
     pub name: String,
     pub url: String,
@@ -126,14 +126,14 @@ pub struct StreamerExport {
 }
 
 /// Filter for export.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, utoipa::ToSchema)]
 pub struct FilterExport {
     pub filter_type: String,
     pub config: String,
 }
 
 /// Engine configuration for export (uses name as identifier).
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, utoipa::ToSchema)]
 pub struct EngineExport {
     pub name: String,
     pub engine_type: String,
@@ -141,7 +141,7 @@ pub struct EngineExport {
 }
 
 /// Platform configuration for export (uses platform_name as identifier).
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, utoipa::ToSchema)]
 pub struct PlatformExport {
     pub platform_name: String,
     pub fetch_delay_ms: Option<i64>,
@@ -164,7 +164,7 @@ pub struct PlatformExport {
 }
 
 /// Notification channel for export (uses name as identifier).
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, utoipa::ToSchema)]
 pub struct NotificationChannelExport {
     pub name: String,
     pub channel_type: String,
@@ -173,7 +173,7 @@ pub struct NotificationChannelExport {
 }
 
 /// Job preset configuration for export.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, utoipa::ToSchema)]
 pub struct JobPresetExport {
     pub name: String,
     pub description: Option<String>,
@@ -183,7 +183,7 @@ pub struct JobPresetExport {
 }
 
 /// Pipeline preset configuration for export.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, utoipa::ToSchema)]
 pub struct PipelinePresetExport {
     pub name: String,
     pub description: Option<String>,
@@ -196,7 +196,7 @@ pub struct PipelinePresetExport {
 // ============================================================================
 
 /// Import mode.
-#[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, PartialEq, Eq, utoipa::ToSchema)]
 #[serde(rename_all = "lowercase")]
 pub enum ImportMode {
     /// Merge: Update existing entities, add new ones, keep entities not in import.
@@ -207,7 +207,7 @@ pub enum ImportMode {
 }
 
 /// Import request with optional mode.
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, serde::Deserialize, utoipa::ToSchema)]
 pub struct ImportRequest {
     /// The configuration data to import.
     pub config: ConfigExport,
@@ -217,7 +217,7 @@ pub struct ImportRequest {
 }
 
 /// Import result.
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, serde::Serialize, utoipa::ToSchema)]
 pub struct ImportResult {
     pub success: bool,
     pub message: String,
@@ -225,7 +225,7 @@ pub struct ImportResult {
 }
 
 /// Statistics about what was imported.
-#[derive(Debug, Clone, Serialize, Default)]
+#[derive(Debug, Clone, serde::Serialize, Default, utoipa::ToSchema)]
 pub struct ImportStats {
     pub templates_created: u32,
     pub templates_updated: u32,
@@ -252,10 +252,16 @@ pub struct ImportStats {
 // Export Handler
 // ============================================================================
 
-/// Export the entire configuration.
-///
-/// GET /api/config/backup/export
-async fn export_config(State(state): State<AppState>) -> Result<impl IntoResponse, ApiError> {
+#[utoipa::path(
+    get,
+    path = "/api/config/backup/export",
+    tag = "export_import",
+    responses(
+        (status = 200, description = "Configuration export", body = ConfigExport)
+    ),
+    security(("bearer_auth" = []))
+)]
+pub async fn export_config(State(state): State<AppState>) -> Result<impl IntoResponse, ApiError> {
     let config_service = state
         .config_service
         .as_ref()
@@ -514,14 +520,18 @@ async fn export_config(State(state): State<AppState>) -> Result<impl IntoRespons
 // Import Handler
 // ============================================================================
 
-/// Import configuration with merge or replace mode.
-///
-/// POST /api/config/backup/import
-///
-/// Modes:
-/// - `merge` (default): Update existing entities, add new ones, keep entities not in import
-/// - `replace`: Delete all existing entities and import fresh
-async fn import_config(
+#[utoipa::path(
+    post,
+    path = "/api/config/backup/import",
+    tag = "export_import",
+    request_body = ImportRequest,
+    responses(
+        (status = 200, description = "Configuration imported", body = ImportResult),
+        (status = 400, description = "Invalid request", body = crate::api::error::ApiErrorResponse)
+    ),
+    security(("bearer_auth" = []))
+)]
+pub async fn import_config(
     State(state): State<AppState>,
     Json(request): Json<ImportRequest>,
 ) -> ApiResult<Json<ImportResult>> {
@@ -645,14 +655,13 @@ async fn import_config(
         let imported_engine_names: std::collections::HashSet<&str> =
             config.engines.iter().map(|e| e.name.as_str()).collect();
         for (name, engine) in &engine_name_map {
-            if !imported_engine_names.contains(name.as_str()) {
-                if config_service
+            if !imported_engine_names.contains(name.as_str())
+                && config_service
                     .delete_engine_config(&engine.id)
                     .await
                     .is_ok()
-                {
-                    stats.engines_deleted += 1;
-                }
+            {
+                stats.engines_deleted += 1;
             }
         }
     }
@@ -735,14 +744,13 @@ async fn import_config(
         let imported_template_names: std::collections::HashSet<&str> =
             config.templates.iter().map(|t| t.name.as_str()).collect();
         for (name, template) in &template_name_map {
-            if !imported_template_names.contains(name.as_str()) {
-                if config_service
+            if !imported_template_names.contains(name.as_str())
+                && config_service
                     .delete_template_config(&template.id)
                     .await
                     .is_ok()
-                {
-                    stats.templates_deleted += 1;
-                }
+            {
+                stats.templates_deleted += 1;
             }
         }
     }
@@ -1036,10 +1044,10 @@ async fn import_config(
         let imported_job_preset_names: std::collections::HashSet<&str> =
             config.job_presets.iter().map(|p| p.name.as_str()).collect();
         for (name, preset) in &job_preset_name_map {
-            if !imported_job_preset_names.contains(name.as_str()) {
-                if job_preset_repo.delete_preset(&preset.id).await.is_ok() {
-                    stats.job_presets_deleted += 1;
-                }
+            if !imported_job_preset_names.contains(name.as_str())
+                && job_preset_repo.delete_preset(&preset.id).await.is_ok()
+            {
+                stats.job_presets_deleted += 1;
             }
         }
     }
@@ -1106,14 +1114,13 @@ async fn import_config(
             .map(|p| p.name.as_str())
             .collect();
         for (name, preset) in &pipeline_preset_name_map {
-            if !imported_pipeline_preset_names.contains(name.as_str()) {
-                if pipeline_preset_repo
+            if !imported_pipeline_preset_names.contains(name.as_str())
+                && pipeline_preset_repo
                     .delete_pipeline_preset(&preset.id)
                     .await
                     .is_ok()
-                {
-                    stats.pipeline_presets_deleted += 1;
-                }
+            {
+                stats.pipeline_presets_deleted += 1;
             }
         }
     }

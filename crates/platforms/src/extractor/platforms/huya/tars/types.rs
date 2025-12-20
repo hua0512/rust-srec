@@ -451,21 +451,21 @@ impl TryFrom<TarsValue> for LiveUserBase {
 
 #[derive(Debug, Default, PartialEq, Clone)]
 pub struct LiveAppUAEx {
-    s_IMEI: String,
-    s_APN: String,
-    s_NetType: String,
-    s_DeviceId: String,
-    s_MId: String,
+    s_imei: String,
+    s_apn: String,
+    s_net_type: String,
+    s_device_id: String,
+    s_mid: String,
 }
 
 impl From<LiveAppUAEx> for TarsValue {
     fn from(ua: LiveAppUAEx) -> Self {
         let mut map = FxHashMap::default();
-        map.insert(1, TarsValue::String(ua.s_IMEI));
-        map.insert(2, TarsValue::String(ua.s_APN));
-        map.insert(3, TarsValue::String(ua.s_NetType));
-        map.insert(4, TarsValue::String(ua.s_DeviceId));
-        map.insert(5, TarsValue::String(ua.s_MId));
+        map.insert(1, TarsValue::String(ua.s_imei));
+        map.insert(2, TarsValue::String(ua.s_apn));
+        map.insert(3, TarsValue::String(ua.s_net_type));
+        map.insert(4, TarsValue::String(ua.s_device_id));
+        map.insert(5, TarsValue::String(ua.s_mid));
         TarsValue::Struct(map)
     }
 }
@@ -478,19 +478,19 @@ impl TryFrom<TarsValue> for LiveAppUAEx {
         let mut take = |tag: u8| map.remove(&tag);
 
         Ok(LiveAppUAEx {
-            s_IMEI: take(1)
+            s_imei: take(1)
                 .and_then(|v| v.try_into_string().ok())
                 .unwrap_or_default(),
-            s_APN: take(2)
+            s_apn: take(2)
                 .and_then(|v| v.try_into_string().ok())
                 .unwrap_or_default(),
-            s_NetType: take(3)
+            s_net_type: take(3)
                 .and_then(|v| v.try_into_string().ok())
                 .unwrap_or_default(),
-            s_DeviceId: take(4)
+            s_device_id: take(4)
                 .and_then(|v| v.try_into_string().ok())
                 .unwrap_or_default(),
-            s_MId: take(5)
+            s_mid: take(5)
                 .and_then(|v| v.try_into_string().ok())
                 .unwrap_or_default(),
         })
@@ -575,63 +575,61 @@ impl From<GetCdnTokenInfoReq> for TarsValue {
     }
 }
 
-//         this.lUid = 0,
-//         this.sGuid = "",
-//         this.sToken = "",
-//         this.sHuYaUA = "",
-//         this.sCookie = "",
-//         this.iTokenType = 0,
-//         this.sDeviceInfo = "",
-//         this.sQIMEI = ""
 #[derive(Default, Debug, Clone, PartialEq)]
-#[allow(non_snake_case)]
 pub struct HuyaUserId {
-    pub lUid: i64,
-    pub sGuid: String,
-    pub sToken: String,
-    pub sHuYaUA: String,
-    pub sCookie: String,
-    pub iTokenType: i32,
-    pub sDeviceInfo: String,
-    pub sQIMEI: String,
+    pub l_uid: i64,
+    pub s_guid: String,
+    pub s_token: String,
+    pub s_huya_ua: String,
+    pub s_cookie: String,
+    pub i_token_type: i32,
+    pub s_device_info: String,
+    pub s_qimei: String,
 }
 
 impl HuyaUserId {
-    #[allow(non_snake_case)]
-    pub fn new(
-        lUid: i64,
-        sGuid: String,
-        sToken: String,
-        sHuYaUA: String,
-        sCookie: String,
-        iTokenType: i32,
-        sDeviceInfo: String,
-        sQIMEI: String,
-    ) -> Self {
+    pub fn new(l_uid: i64, s_guid: String, s_token: String, s_huya_ua: String) -> Self {
         Self {
-            lUid,
-            sGuid,
-            sToken,
-            sHuYaUA,
-            sCookie,
-            iTokenType,
-            sDeviceInfo,
-            sQIMEI,
+            l_uid,
+            s_guid,
+            s_token,
+            s_huya_ua,
+            ..Default::default()
         }
+    }
+
+    pub fn with_cookie(mut self, s_cookie: String) -> Self {
+        self.s_cookie = s_cookie;
+        self
+    }
+
+    pub fn with_device_info(mut self, s_device_info: String) -> Self {
+        self.s_device_info = s_device_info;
+        self
+    }
+
+    pub fn with_qimei(mut self, s_qimei: String) -> Self {
+        self.s_qimei = s_qimei;
+        self
+    }
+
+    pub fn with_token_type(mut self, i_token_type: i32) -> Self {
+        self.i_token_type = i_token_type;
+        self
     }
 }
 
 impl From<HuyaUserId> for TarsValue {
     fn from(req: HuyaUserId) -> Self {
         let mut struct_map = FxHashMap::default();
-        struct_map.insert(0, TarsValue::Long(req.lUid));
-        struct_map.insert(1, TarsValue::String(req.sGuid));
-        struct_map.insert(2, TarsValue::String(req.sToken));
-        struct_map.insert(3, TarsValue::String(req.sHuYaUA));
-        struct_map.insert(4, TarsValue::String(req.sCookie));
-        struct_map.insert(5, TarsValue::Int(req.iTokenType));
-        struct_map.insert(6, TarsValue::String(req.sDeviceInfo));
-        struct_map.insert(7, TarsValue::String(req.sQIMEI));
+        struct_map.insert(0, TarsValue::Long(req.l_uid));
+        struct_map.insert(1, TarsValue::String(req.s_guid));
+        struct_map.insert(2, TarsValue::String(req.s_token));
+        struct_map.insert(3, TarsValue::String(req.s_huya_ua));
+        struct_map.insert(4, TarsValue::String(req.s_cookie));
+        struct_map.insert(5, TarsValue::Int(req.i_token_type));
+        struct_map.insert(6, TarsValue::String(req.s_device_info));
+        struct_map.insert(7, TarsValue::String(req.s_qimei));
         TarsValue::Struct(struct_map)
     }
 }
@@ -639,34 +637,33 @@ impl From<HuyaUserId> for TarsValue {
 impl TryFrom<TarsValue> for HuyaUserId {
     type Error = TarsError;
 
-    #[allow(non_snake_case)]
     fn try_from(value: TarsValue) -> Result<Self, Self::Error> {
         let mut map = value.try_into_struct()?;
         let mut take = |tag: u8| map.remove(&tag);
 
         Ok(HuyaUserId {
-            lUid: take(0)
+            l_uid: take(0)
                 .and_then(|v| v.try_into_i64().ok())
                 .unwrap_or_default(),
-            sGuid: take(1)
+            s_guid: take(1)
                 .and_then(|v| v.try_into_string().ok())
                 .unwrap_or_default(),
-            sToken: take(2)
+            s_token: take(2)
                 .and_then(|v| v.try_into_string().ok())
                 .unwrap_or_default(),
-            sHuYaUA: take(3)
+            s_huya_ua: take(3)
                 .and_then(|v| v.try_into_string().ok())
                 .unwrap_or_default(),
-            sCookie: take(4)
+            s_cookie: take(4)
                 .and_then(|v| v.try_into_string().ok())
                 .unwrap_or_default(),
-            iTokenType: take(5)
+            i_token_type: take(5)
                 .and_then(|v| v.try_into_i32().ok())
                 .unwrap_or_default(),
-            sDeviceInfo: take(6)
+            s_device_info: take(6)
                 .and_then(|v| v.try_into_string().ok())
                 .unwrap_or_default(),
-            sQIMEI: take(7)
+            s_qimei: take(7)
                 .and_then(|v| v.try_into_string().ok())
                 .unwrap_or_default(),
         })
@@ -698,28 +695,43 @@ pub struct GetLivingInfoReq {
 }
 
 impl GetLivingInfoReq {
-    pub fn new(
-        t_id: HuyaUserId,
-        l_top_sid: i64,
-        l_sub_sid: i64,
-        l_presenter_uid: i64,
-        s_trace_source: String,
-        s_password: String,
-        i_room_id: i64,
-        i_free_flow_flag: i32,
-        i_ip_stack: i32,
-    ) -> Self {
+    pub fn new(t_id: HuyaUserId, l_presenter_uid: i64) -> Self {
         Self {
             t_id,
-            l_top_sid,
-            l_sub_sid,
             l_presenter_uid,
-            s_trace_source,
-            s_password,
-            i_room_id,
-            i_free_flow_flag,
-            i_ip_stack,
+            ..Default::default()
         }
+    }
+
+    pub fn with_sid(mut self, l_top_sid: i64, l_sub_sid: i64) -> Self {
+        self.l_top_sid = l_top_sid;
+        self.l_sub_sid = l_sub_sid;
+        self
+    }
+
+    pub fn with_source(mut self, s_trace_source: String) -> Self {
+        self.s_trace_source = s_trace_source;
+        self
+    }
+
+    pub fn with_password(mut self, s_password: String) -> Self {
+        self.s_password = s_password;
+        self
+    }
+
+    pub fn with_room_id(mut self, i_room_id: i64) -> Self {
+        self.i_room_id = i_room_id;
+        self
+    }
+
+    pub fn with_free_flow(mut self, i_free_flow_flag: i32) -> Self {
+        self.i_free_flow_flag = i_free_flow_flag;
+        self
+    }
+
+    pub fn with_ip_stack(mut self, i_ip_stack: i32) -> Self {
+        self.i_ip_stack = i_ip_stack;
+        self
     }
 }
 
@@ -784,16 +796,11 @@ mod tests {
 
     #[test]
     fn test_huya_user_id_compatibility() {
-        let user_id = HuyaUserId::new(
-            123,
-            "guid".into(),
-            "token".into(),
-            "ua".into(),
-            "cookie".into(),
-            1,
-            "device".into(),
-            "qimei".into(),
-        );
+        let user_id = HuyaUserId::new(123, "guid".into(), "token".into(), "ua".into())
+            .with_cookie("cookie".into())
+            .with_token_type(1)
+            .with_device_info("device".into())
+            .with_qimei("qimei".into());
 
         let tars_val = TarsValue::from(user_id.clone());
         let decoded = HuyaUserId::try_from(tars_val).unwrap();
@@ -802,17 +809,13 @@ mod tests {
 
     #[test]
     fn test_get_living_info_req_compatibility() {
-        let req = GetLivingInfoReq::new(
-            HuyaUserId::default(),
-            100,
-            200,
-            300,
-            "source".into(),
-            "pass".into(),
-            400,
-            1,
-            2,
-        );
+        let req = GetLivingInfoReq::new(HuyaUserId::default(), 300)
+            .with_sid(100, 200)
+            .with_source("source".into())
+            .with_password("pass".into())
+            .with_room_id(400)
+            .with_free_flow(1)
+            .with_ip_stack(2);
 
         let tars_val = TarsValue::from(req.clone());
         let decoded = GetLivingInfoReq::try_from(tars_val).unwrap();

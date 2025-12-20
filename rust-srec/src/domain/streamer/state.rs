@@ -4,7 +4,9 @@ use crate::Error;
 use serde::{Deserialize, Serialize};
 
 /// Streamer operational states.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default, Serialize, Deserialize)]
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, Hash, Default, Serialize, Deserialize, utoipa::ToSchema,
+)]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
 pub enum StreamerState {
     /// The streamer is offline.

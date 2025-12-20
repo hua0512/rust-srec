@@ -180,7 +180,7 @@ impl MergedConfigBuilder {
         }
 
         // Apply platform-specific config overrides
-        if let Some(config) = platform_specific_config {
+        if let Some(_config) = platform_specific_config {
             debug!("Applying platform-specific config overrides");
         }
 
@@ -409,63 +409,62 @@ impl MergedConfigBuilder {
             }
 
             // Parse proxy config from streamer-specific config
-            if let Some(proxy_val) = config.get("proxy_config") {
-                if let Ok(v) = serde_json::from_value::<ProxyConfig>(proxy_val.clone()) {
-                    debug!("Streamer config override: proxy_config");
-                    self.proxy_config = Some(v);
-                }
+            if let Some(proxy_val) = config.get("proxy_config")
+                && let Ok(v) = serde_json::from_value::<ProxyConfig>(proxy_val.clone())
+            {
+                debug!("Streamer config override: proxy_config");
+                self.proxy_config = Some(v);
             }
 
             // Parse stream selection config from streamer-specific config
-            if let Some(stream_sel) = config.get("stream_selection_config") {
-                if let Ok(v) = serde_json::from_value::<StreamSelectionConfig>(stream_sel.clone()) {
-                    if let Some(existing) = &self.stream_selection {
-                        debug!("Streamer config override: merging stream_selection");
-                        self.stream_selection = Some(existing.merge(&v));
-                    } else {
-                        debug!("Streamer config override: stream_selection");
-                        self.stream_selection = Some(v);
-                    }
+            if let Some(stream_sel) = config.get("stream_selection_config")
+                && let Ok(v) = serde_json::from_value::<StreamSelectionConfig>(stream_sel.clone())
+            {
+                if let Some(existing) = &self.stream_selection {
+                    debug!("Streamer config override: merging stream_selection");
+                    self.stream_selection = Some(existing.merge(&v));
+                } else {
+                    debug!("Streamer config override: stream_selection");
+                    self.stream_selection = Some(v);
                 }
             }
 
             // Parse event hooks from streamer-specific config
-            if let Some(hooks_val) = config.get("event_hooks") {
-                if let Ok(v) = serde_json::from_value::<EventHooks>(hooks_val.clone()) {
-                    if let Some(existing) = &self.event_hooks {
-                        debug!("Streamer config override: merging event_hooks");
-                        self.event_hooks = Some(existing.merge(&v));
-                    } else {
-                        debug!("Streamer config override: event_hooks");
-                        self.event_hooks = Some(v);
-                    }
+            if let Some(hooks_val) = config.get("event_hooks")
+                && let Ok(v) = serde_json::from_value::<EventHooks>(hooks_val.clone())
+            {
+                if let Some(existing) = &self.event_hooks {
+                    debug!("Streamer config override: merging event_hooks");
+                    self.event_hooks = Some(existing.merge(&v));
+                } else {
+                    debug!("Streamer config override: event_hooks");
+                    self.event_hooks = Some(v);
                 }
             }
 
             // Parse pipeline config from streamer-specific config (Flexible: Enum untagged)
-            if let Some(pipeline_val) = config.get("pipeline") {
-                if let Ok(v) = serde_json::from_value::<DagPipelineDefinition>(pipeline_val.clone())
-                {
-                    debug!(
-                        "Streamer config override: pipeline ({} items/nodes)",
-                        v.steps.len()
-                    );
-                    self.pipeline = Some(v);
-                }
+            if let Some(pipeline_val) = config.get("pipeline")
+                && let Ok(v) = serde_json::from_value::<DagPipelineDefinition>(pipeline_val.clone())
+            {
+                debug!(
+                    "Streamer config override: pipeline ({} items/nodes)",
+                    v.steps.len()
+                );
+                self.pipeline = Some(v);
             }
 
-            if let Some(v) = config.get("download_retry_policy") {
-                if let Ok(v) = serde_json::from_value::<RetryPolicy>(v.clone()) {
-                    debug!("Streamer config override: download_retry_policy");
-                    self.download_retry_policy = Some(v);
-                }
+            if let Some(v) = config.get("download_retry_policy")
+                && let Ok(v) = serde_json::from_value::<RetryPolicy>(v.clone())
+            {
+                debug!("Streamer config override: download_retry_policy");
+                self.download_retry_policy = Some(v);
             }
 
-            if let Some(v) = config.get("danmu_sampling_config") {
-                if let Ok(v) = serde_json::from_value::<DanmuSamplingConfig>(v.clone()) {
-                    debug!("Streamer config override: danmu_sampling_config");
-                    self.danmu_sampling_config = Some(v);
-                }
+            if let Some(v) = config.get("danmu_sampling_config")
+                && let Ok(v) = serde_json::from_value::<DanmuSamplingConfig>(v.clone())
+            {
+                debug!("Streamer config override: danmu_sampling_config");
+                self.danmu_sampling_config = Some(v);
             }
         }
         self
@@ -632,12 +631,14 @@ mod tests {
     #[test]
     fn test_streamer_pipeline_override() {
         // Create a streamer-specific config with custom pipeline
-        // PipelineStep uses #[serde(tag = "type")], so Preset requires {"type": "preset", "name": "..."}
         let streamer_config = serde_json::json!({
-            "pipeline": [
-                {"type": "preset", "name": "fast_remux"},
-                {"type": "preset", "name": "s3_upload"}
-            ]
+            "pipeline": {
+                "name": "streamer_custom",
+                "steps": [
+                    {"id": "step1", "step": {"type": "preset", "name": "fast_remux"}, "depends_on": []},
+                    {"id": "step2", "step": {"type": "preset", "name": "s3_upload"}, "depends_on": ["step1"]}
+                ]
+            }
         });
 
         let config = MergedConfig::builder()
@@ -698,20 +699,20 @@ mod tests {
     #[test]
     fn test_streamer_inline_pipeline() {
         // Create a streamer-specific config with inline pipeline step
-        // PipelineStep uses #[serde(tag = "type")]:
-        // - Preset is {"type": "preset", "name": "..."}
-        // - Inline is {"type": "inline", "processor": "...", "config": {...}}
         let streamer_config = serde_json::json!({
-            "pipeline": [
-                {"type": "preset", "name": "remux"},
-                {
-                    "type": "inline",
-                    "processor": "execute",
-                    "config": {
-                        "command": "echo {input}"
-                    }
-                }
-            ]
+            "pipeline": {
+                "name": "inline_pipeline",
+                "steps": [
+                    {"id": "step1", "step": {"type": "preset", "name": "remux"}, "depends_on": []},
+                    {"id": "step2", "step": {
+                        "type": "inline",
+                        "processor": "execute",
+                        "config": {
+                            "command": "echo {input}"
+                        }
+                    }, "depends_on": ["step1"]}
+                ]
+            }
         });
 
         let config = MergedConfig::builder()

@@ -270,7 +270,7 @@ impl StatisticsAggregator {
 
         // Get word frequency
         let mut word_list: Vec<_> = self.word_counts.iter().collect();
-        word_list.sort_by(|a, b| b.1.cmp(&a.1));
+        word_list.sort_by(|a, b| b.1.cmp(a.1));
         let word_frequency: Vec<WordFrequency> = word_list
             .into_iter()
             .take(self.max_words)

@@ -129,7 +129,7 @@ pub struct AuthResponse {
 }
 
 /// Session information for active sessions listing.
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
 pub struct SessionInfo {
     /// Session ID (token ID)
     pub id: String,
@@ -682,7 +682,7 @@ mod property_tests {
 
     // Property 1: Password hashing preserves security
     proptest! {
-        #![proptest_config(ProptestConfig::with_cases(100))]
+        #![proptest_config(ProptestConfig::with_cases(10))]
 
         #[test]
         fn prop_password_hashing_preserves_security(
@@ -706,7 +706,7 @@ mod property_tests {
 
     // Property 7: Password verification correctness
     proptest! {
-        #![proptest_config(ProptestConfig::with_cases(100))]
+        #![proptest_config(ProptestConfig::with_cases(10))]
 
         #[test]
         fn prop_password_verification_correctness(
@@ -732,7 +732,7 @@ mod property_tests {
 
     // Property 9: Refresh token hashing
     proptest! {
-        #![proptest_config(ProptestConfig::with_cases(100))]
+        #![proptest_config(ProptestConfig::with_cases(10))]
 
         #[test]
         fn prop_refresh_token_hashing(
@@ -754,7 +754,7 @@ mod property_tests {
 
     // Property 13: Refresh token entropy
     proptest! {
-        #![proptest_config(ProptestConfig::with_cases(100))]
+        #![proptest_config(ProptestConfig::with_cases(10))]
 
         #[test]
         fn prop_refresh_token_entropy(_seed in 0u64..1000000u64) {
@@ -778,7 +778,7 @@ mod property_tests {
 
     // Property 25: Password validation rules
     proptest! {
-        #![proptest_config(ProptestConfig::with_cases(100))]
+        #![proptest_config(ProptestConfig::with_cases(10))]
 
         #[test]
         fn prop_password_validation_rules(

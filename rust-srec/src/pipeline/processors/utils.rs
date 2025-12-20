@@ -74,16 +74,15 @@ fn push_log_with_cap(
     }
 
     let is_important = matches!(entry.level, LogLevel::Warn | LogLevel::Error);
-    if is_important {
-        if let Some(index) = logs
+    if is_important
+        && let Some(index) = logs
             .iter()
             .position(|e| !matches!(e.level, LogLevel::Warn | LogLevel::Error))
-        {
-            let _ = logs.remove(index);
-            *truncated_count += 1;
-            logs.push_back(entry);
-            return;
-        }
+    {
+        let _ = logs.remove(index);
+        *truncated_count += 1;
+        logs.push_back(entry);
+        return;
     }
 
     logs.pop_front();

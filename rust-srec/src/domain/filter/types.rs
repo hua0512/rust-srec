@@ -526,10 +526,10 @@ mod tests {
 
     #[test]
     fn test_time_filter_normal_range() {
-        let filter = TimeBasedFilter::new(vec!["Saturday".to_string()], "09:00", "17:00");
+        let _filter = TimeBasedFilter::new(vec!["Saturday".to_string()], "09:00", "17:00");
 
         // Saturday 12:00 UTC
-        let time = chrono::Utc.with_ymd_and_hms(2024, 1, 6, 12, 0, 0).unwrap();
+        let _time = chrono::Utc.with_ymd_and_hms(2024, 1, 6, 12, 0, 0).unwrap();
         // Note: This test may fail depending on local timezone
         // In a real scenario, we'd mock the timezone
     }

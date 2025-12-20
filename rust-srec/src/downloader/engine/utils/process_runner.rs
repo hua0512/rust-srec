@@ -38,10 +38,10 @@ pub fn spawn_process_waiter(
                 match status {
                     Ok(exit_status) => {
                         let code = exit_status.code();
-                        if let Some(c) = code {
-                            if c != 0 {
-                                warn!("Process exited with code: {}", c);
-                            }
+                        if let Some(c) = code
+                            && c != 0
+                        {
+                            warn!("Process exited with code: {}", c);
                         }
                         code
                     }
@@ -94,10 +94,10 @@ pub fn spawn_piped_process_waiter(
                 match result {
                     Ok(exit_status) => {
                         let code = exit_status.code();
-                        if let Some(c) = code {
-                            if c != 0 {
-                                warn!("Process exited with code: {}", c);
-                            }
+                        if let Some(c) = code
+                            && c != 0
+                        {
+                            warn!("Process exited with code: {}", c);
                         }
                         code
                     }

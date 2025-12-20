@@ -1,6 +1,5 @@
 /// Huya message URI constants and packet structures.
 #[allow(dead_code)]
-
 /// Huya message URI constants for different message types.
 pub mod huya_uri {
     /// Chat message (弹幕消息)
@@ -18,6 +17,7 @@ pub mod huya_uri {
 /// Huya WebSocket command types
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(i32)]
+#[allow(dead_code)]
 pub enum HuyaWsCmd {
     /// Heartbeat request (client to server)
     HeartbeatReq = 1,

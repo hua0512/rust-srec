@@ -19,7 +19,6 @@ use axum::{
     extract::{Path, Query, State},
     routing::{get, post},
 };
-use serde::{Deserialize, Serialize};
 
 use crate::api::error::{ApiError, ApiResult};
 use crate::api::server::AppState;
@@ -45,7 +44,7 @@ pub fn router() -> Router<AppState> {
 }
 
 /// Request body for creating a new job preset.
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, serde::Deserialize, utoipa::ToSchema)]
 pub struct CreatePresetRequest {
     /// Unique ID for the preset.
     pub id: String,
@@ -62,7 +61,7 @@ pub struct CreatePresetRequest {
 }
 
 /// Request body for updating a job preset.
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, serde::Deserialize, utoipa::ToSchema)]
 pub struct UpdatePresetRequest {
     /// Human-readable name.
     pub name: String,
@@ -77,14 +76,14 @@ pub struct UpdatePresetRequest {
 }
 
 /// Request body for cloning a job preset.
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, serde::Deserialize, utoipa::ToSchema)]
 pub struct ClonePresetRequest {
     /// New name for the cloned preset.
     pub new_name: String,
 }
 
 /// Query parameters for filtering presets.
-#[derive(Debug, Clone, Deserialize, Default)]
+#[derive(Debug, Clone, serde::Deserialize, Default, utoipa::IntoParams)]
 pub struct PresetFilterParams {
     /// Filter by category.
     pub category: Option<String>,
@@ -95,7 +94,7 @@ pub struct PresetFilterParams {
 }
 
 /// Pagination parameters for preset list.
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, serde::Deserialize, utoipa::IntoParams)]
 pub struct PresetPaginationParams {
     /// Number of items to return (default: 20, max: 100).
     #[serde(default = "default_limit")]
@@ -119,7 +118,7 @@ impl Default for PresetPaginationParams {
 }
 
 /// Response for preset list with categories and pagination.
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, serde::Serialize, utoipa::ToSchema)]
 pub struct PresetListResponse {
     /// List of presets.
     pub presets: Vec<crate::database::models::JobPreset>,
@@ -133,24 +132,17 @@ pub struct PresetListResponse {
     pub offset: u32,
 }
 
-/// List available job presets.
-///
-/// # Endpoint
-///
-/// `GET /api/job/presets`
-///
-/// # Query Parameters
-///
-/// - `category` - Filter by category (optional)
-/// - `processor` - Filter by processor type (optional)
-/// - `search` - Search query for name or description (optional)
-/// - `limit` - Number of items to return (default: 20, max: 100)
-/// - `offset` - Number of items to skip (default: 0)
-///
-/// # Response
-///
-/// Returns a paginated list of available job presets and categories.
-async fn list_presets(
+#[utoipa::path(
+    get,
+    path = "/api/job/presets",
+    tag = "job",
+    params(PresetFilterParams, PresetPaginationParams),
+    responses(
+        (status = 200, description = "List of job presets", body = PresetListResponse)
+    ),
+    security(("bearer_auth" = []))
+)]
+pub async fn list_presets(
     State(state): State<AppState>,
     Query(filters): Query<PresetFilterParams>,
     Query(pagination): Query<PresetPaginationParams>,
@@ -189,12 +181,18 @@ async fn list_presets(
     }))
 }
 
-/// Get a job preset by ID.
-///
-/// # Endpoint
-///
-/// `GET /api/job/presets/{id}`
-async fn get_preset(
+#[utoipa::path(
+    get,
+    path = "/api/job/presets/{id}",
+    tag = "job",
+    params(("id" = String, Path, description = "Preset ID")),
+    responses(
+        (status = 200, description = "Job preset", body = crate::database::models::JobPreset),
+        (status = 404, description = "Preset not found", body = crate::api::error::ApiErrorResponse)
+    ),
+    security(("bearer_auth" = []))
+)]
+pub async fn get_preset(
     State(state): State<AppState>,
     Path(id): Path<String>,
 ) -> ApiResult<Json<crate::database::models::JobPreset>> {
@@ -212,18 +210,18 @@ async fn get_preset(
     Ok(Json(preset))
 }
 
-/// Create a new job preset.
-///
-/// # Endpoint
-///
-/// `POST /api/job/presets`
-///
-/// # Validation
-///
-/// - Name must be unique
-/// - Processor must be a valid type
-/// - Config must be valid JSON
-async fn create_preset(
+#[utoipa::path(
+    post,
+    path = "/api/job/presets",
+    tag = "job",
+    request_body = CreatePresetRequest,
+    responses(
+        (status = 201, description = "Preset created", body = crate::database::models::JobPreset),
+        (status = 409, description = "Preset name already exists", body = crate::api::error::ApiErrorResponse)
+    ),
+    security(("bearer_auth" = []))
+)]
+pub async fn create_preset(
     State(state): State<AppState>,
     Json(payload): Json<CreatePresetRequest>,
 ) -> ApiResult<Json<crate::database::models::JobPreset>> {
@@ -244,7 +242,7 @@ async fn create_preset(
     };
 
     // Validate the preset
-    preset.validate().map_err(|e| ApiError::bad_request(e))?;
+    preset.validate().map_err(ApiError::bad_request)?;
 
     // Check for duplicate name
     if pipeline_manager
@@ -266,18 +264,20 @@ async fn create_preset(
     Ok(Json(preset))
 }
 
-/// Update an existing job preset.
-///
-/// # Endpoint
-///
-/// `PUT /api/job/presets/{id}`
-///
-/// # Validation
-///
-/// - Name must be unique (excluding current preset)
-/// - Processor must be a valid type
-/// - Config must be valid JSON
-async fn update_preset(
+#[utoipa::path(
+    put,
+    path = "/api/job/presets/{id}",
+    tag = "job",
+    params(("id" = String, Path, description = "Preset ID")),
+    request_body = UpdatePresetRequest,
+    responses(
+        (status = 200, description = "Preset updated", body = crate::database::models::JobPreset),
+        (status = 404, description = "Preset not found", body = crate::api::error::ApiErrorResponse),
+        (status = 409, description = "Preset name already exists", body = crate::api::error::ApiErrorResponse)
+    ),
+    security(("bearer_auth" = []))
+)]
+pub async fn update_preset(
     State(state): State<AppState>,
     Path(id): Path<String>,
     Json(payload): Json<UpdatePresetRequest>,
@@ -306,7 +306,7 @@ async fn update_preset(
     };
 
     // Validate the preset
-    preset.validate().map_err(|e| ApiError::bad_request(e))?;
+    preset.validate().map_err(ApiError::bad_request)?;
 
     // Check for duplicate name (excluding current preset)
     if pipeline_manager
@@ -328,12 +328,17 @@ async fn update_preset(
     Ok(Json(preset))
 }
 
-/// Delete a job preset.
-///
-/// # Endpoint
-///
-/// `DELETE /api/job/presets/{id}`
-async fn delete_preset(
+#[utoipa::path(
+    delete,
+    path = "/api/job/presets/{id}",
+    tag = "job",
+    params(("id" = String, Path, description = "Preset ID")),
+    responses(
+        (status = 200, description = "Preset deleted")
+    ),
+    security(("bearer_auth" = []))
+)]
+pub async fn delete_preset(
     State(state): State<AppState>,
     Path(id): Path<String>,
 ) -> ApiResult<Json<()>> {
@@ -349,24 +354,19 @@ async fn delete_preset(
     Ok(Json(()))
 }
 
-/// Clone a job preset.
-///
-/// # Endpoint
-///
-/// `POST /api/job/presets/{id}/clone`
-///
-/// # Request Body
-///
-/// ```json
-/// {
-///     "new_name": "my_cloned_preset"
-/// }
-/// ```
-///
-/// # Response
-///
-/// Returns the newly created preset with a new ID.
-async fn clone_preset(
+#[utoipa::path(
+    post,
+    path = "/api/job/presets/{id}/clone",
+    tag = "job",
+    params(("id" = String, Path, description = "Preset ID to clone")),
+    request_body = ClonePresetRequest,
+    responses(
+        (status = 201, description = "Preset cloned", body = crate::database::models::JobPreset),
+        (status = 404, description = "Preset not found", body = crate::api::error::ApiErrorResponse)
+    ),
+    security(("bearer_auth" = []))
+)]
+pub async fn clone_preset(
     State(state): State<AppState>,
     Path(id): Path<String>,
     Json(payload): Json<ClonePresetRequest>,

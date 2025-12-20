@@ -43,6 +43,17 @@ where
     error_threshold: i32,
 }
 
+/// Parameters for partially updating a streamer.
+pub struct StreamerUpdateParams {
+    pub id: String,
+    pub name: Option<String>,
+    pub url: Option<String>,
+    pub template_config_id: Option<Option<String>>,
+    pub priority: Option<Priority>,
+    pub state: Option<StreamerState>,
+    pub streamer_specific_config: Option<Option<String>>,
+}
+
 impl<R> StreamerManager<R>
 where
     R: StreamerRepository + Send + Sync,
@@ -355,22 +366,25 @@ where
     /// for transactional DB sync via `reload_from_repo()`.
     pub async fn partial_update_streamer(
         &self,
-        id: &str,
-        name: Option<String>,
-        url: Option<String>,
-        template_config_id: Option<Option<String>>,
-        priority: Option<Priority>,
-        state: Option<StreamerState>,
-        streamer_specific_config: Option<Option<String>>,
+        params: StreamerUpdateParams,
     ) -> Result<StreamerMetadata> {
+        let StreamerUpdateParams {
+            id,
+            name,
+            url,
+            template_config_id,
+            priority,
+            state,
+            streamer_specific_config,
+        } = params;
         debug!("Partially updating streamer: {}", id);
 
         // Get current metadata
         let mut metadata = self
             .metadata
-            .get(id)
+            .get(&id)
             .map(|entry| entry.clone())
-            .ok_or_else(|| crate::Error::not_found("Streamer", id))?;
+            .ok_or_else(|| crate::Error::not_found("Streamer", id.clone()))?;
 
         // Apply updates
         if let Some(new_name) = name {
@@ -1113,15 +1127,15 @@ mod tests {
 
         // Partial update - only name and priority
         let updated = manager
-            .partial_update_streamer(
-                "s1",
-                Some("New Name".to_string()),
-                None, // Don't change URL
-                None, // Don't change template
-                Some(Priority::High),
-                None, // Don't change state
-                None,
-            )
+            .partial_update_streamer(StreamerUpdateParams {
+                id: "s1".to_string(),
+                name: Some("New Name".to_string()),
+                url: None,                // Don't change URL
+                template_config_id: None, // Don't change template
+                priority: Some(Priority::High),
+                state: None, // Don't change state
+                streamer_specific_config: None,
+            })
             .await
             .unwrap();
 
@@ -1147,15 +1161,15 @@ mod tests {
 
         // Update template to None
         let updated = manager
-            .partial_update_streamer(
-                "s1",
-                None,
-                None,       // Don't change URL
-                Some(None), // Set template to None
-                None,
-                None,
-                None,
-            )
+            .partial_update_streamer(StreamerUpdateParams {
+                id: "s1".to_string(),
+                name: None,
+                url: None,                      // Don't change URL
+                template_config_id: Some(None), // Set template to None
+                priority: None,
+                state: None,
+                streamer_specific_config: None,
+            })
             .await
             .unwrap();
 

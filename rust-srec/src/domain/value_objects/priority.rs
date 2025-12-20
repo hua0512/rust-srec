@@ -7,7 +7,9 @@ use std::cmp::Ordering;
 ///
 /// Higher priority streamers get preferential treatment for download slots
 /// and are the last to be paused during resource constraints.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize, Hash)]
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize, Hash, utoipa::ToSchema,
+)]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
 pub enum Priority {
     /// VIP streamers, never miss. First to get download slots, last to be paused.

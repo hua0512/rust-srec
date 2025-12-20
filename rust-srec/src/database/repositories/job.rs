@@ -341,8 +341,7 @@ impl JobRepository for SqlxJobRepository {
     async fn count_pending_jobs(&self, job_types: Option<&[String]>) -> Result<u64> {
         let (sql, bind_job_types) = match job_types {
             Some(types) if !types.is_empty() => {
-                let placeholders = std::iter::repeat("?")
-                    .take(types.len())
+                let placeholders = std::iter::repeat_n("?", types.len())
                     .collect::<Vec<_>>()
                     .join(", ");
                 (
@@ -360,11 +359,9 @@ impl JobRepository for SqlxJobRepository {
         };
 
         let mut query = sqlx::query_scalar::<_, i64>(&sql);
-        if bind_job_types {
-            if let Some(types) = job_types {
-                for jt in types {
-                    query = query.bind(jt);
-                }
+        if bind_job_types && let Some(types) = job_types {
+            for jt in types {
+                query = query.bind(jt);
             }
         }
 
@@ -469,11 +466,9 @@ impl JobRepository for SqlxJobRepository {
             };
 
             let mut query = sqlx::query_as::<_, JobDbModel>(&sql).bind(&now).bind(&now);
-            if bind_job_types {
-                if let Some(types) = job_types {
-                    for jt in types {
-                        query = query.bind(jt);
-                    }
+            if bind_job_types && let Some(types) = job_types {
+                for jt in types {
+                    query = query.bind(jt);
                 }
             }
 
@@ -834,12 +829,13 @@ impl JobRepository for SqlxJobRepository {
         if filters.job_type.is_some() {
             conditions.push("job_type = ?".to_string());
         }
-        if let Some(job_types) = &filters.job_types {
-            if !job_types.is_empty() {
-                let placeholders = job_types.iter().map(|_| "?").collect::<Vec<_>>().join(", ");
-                conditions.push(format!("job_type IN ({})", placeholders));
-            }
+        if let Some(job_types) = &filters.job_types
+            && !job_types.is_empty()
+        {
+            let placeholders = job_types.iter().map(|_| "?").collect::<Vec<_>>().join(", ");
+            conditions.push(format!("job_type IN ({})", placeholders));
         }
+
         if filters.search.is_some() {
             conditions.push(
                 "(id LIKE ? OR session_id LIKE ? OR streamer_id LIKE ? OR job_type LIKE ?)"
@@ -980,12 +976,13 @@ impl JobRepository for SqlxJobRepository {
         if filters.job_type.is_some() {
             conditions.push("job_type = ?".to_string());
         }
-        if let Some(job_types) = &filters.job_types {
-            if !job_types.is_empty() {
-                let placeholders = job_types.iter().map(|_| "?").collect::<Vec<_>>().join(", ");
-                conditions.push(format!("job_type IN ({})", placeholders));
-            }
+        if let Some(job_types) = &filters.job_types
+            && !job_types.is_empty()
+        {
+            let placeholders = job_types.iter().map(|_| "?").collect::<Vec<_>>().join(", ");
+            conditions.push(format!("job_type IN ({})", placeholders));
         }
+
         if filters.search.is_some() {
             conditions.push(
                 "(id LIKE ? OR session_id LIKE ? OR streamer_id LIKE ? OR job_type LIKE ?)"
@@ -1270,19 +1267,14 @@ mod stress_tests {
             let repo = repo.clone();
             let claimed_ids = claimed_ids.clone();
             join_set.spawn(async move {
-                loop {
-                    match repo.claim_next_pending_job(None).await.unwrap() {
-                        Some(mut job) => {
-                            assert!(
-                                claimed_ids.insert(job.id.clone()),
-                                "double-claim {}",
-                                job.id
-                            );
-                            job.mark_completed();
-                            repo.update_job(&job).await.unwrap();
-                        }
-                        None => break,
-                    }
+                while let Some(mut job) = repo.claim_next_pending_job(None).await.unwrap() {
+                    assert!(
+                        claimed_ids.insert(job.id.clone()),
+                        "double-claim {}",
+                        job.id
+                    );
+                    job.mark_completed();
+                    repo.update_job(&job).await.unwrap();
                 }
             });
         }

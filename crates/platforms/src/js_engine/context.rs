@@ -115,10 +115,10 @@ impl JsContext {
             CaughtError::Exception(exc) => {
                 let msg = exc.message().unwrap_or_default();
                 let stack = exc.stack();
-                if let Some(stack) = stack {
-                    if !stack.is_empty() {
-                        return JsError::eval_with_stack(msg, stack);
-                    }
+                if let Some(stack) = stack
+                    && !stack.is_empty()
+                {
+                    return JsError::eval_with_stack(msg, stack);
                 }
                 JsError::eval(msg)
             }

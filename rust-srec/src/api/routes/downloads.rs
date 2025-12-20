@@ -248,10 +248,10 @@ fn map_event_to_protobuf(
     };
 
     // Apply filter
-    if let Some(filter_id) = filter {
-        if event_streamer_id != filter_id {
-            return None;
-        }
+    if let Some(filter_id) = filter
+        && event_streamer_id != filter_id
+    {
+        return None;
     }
 
     // Map event to protobuf message

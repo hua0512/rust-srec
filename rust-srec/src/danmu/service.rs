@@ -10,7 +10,6 @@
 //! When segment closes → finalize that XML file, but keep collecting danmu
 //! When session ends → stop collection entirely
 
-use chrono::{DateTime, Utc};
 use dashmap::DashMap;
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -18,8 +17,8 @@ use tokio::sync::{Mutex, broadcast, mpsc};
 use tokio_util::sync::CancellationToken;
 
 use crate::danmu::{
-    DanmuProvider, DanmuSampler, DanmuSamplingConfig as SamplerConfig, DanmuStatistics, DanmuType,
-    ProviderRegistry, StatisticsAggregator, XmlDanmuWriter, create_sampler,
+    DanmuSampler, DanmuSamplingConfig as SamplerConfig, DanmuStatistics, ProviderRegistry,
+    StatisticsAggregator, create_sampler,
 };
 use crate::domain::DanmuSamplingConfig;
 use crate::error::{Error, Result};
@@ -116,18 +115,10 @@ impl CollectionHandle {
 struct CollectionState {
     /// Streamer ID
     streamer_id: String,
-    /// Platform
-    platform: String,
-    /// Room ID
-    room_id: String,
     /// Statistics aggregator (session-level)
     stats: Arc<Mutex<StatisticsAggregator>>,
-    /// Sampler
-    sampler: Arc<Mutex<Box<dyn DanmuSampler>>>,
     /// Cancellation token for this collection
     cancel_token: CancellationToken,
-    /// Start time
-    start_time: DateTime<Utc>,
     /// Command sender
     command_tx: mpsc::Sender<CollectionCommand>,
 }
@@ -258,7 +249,7 @@ impl DanmuService {
 
         // Build connection config
         let mut connection_config = ConnectionConfig::with_cookies(cookies.clone());
-        if let Some(mut e) = extras {
+        if let Some(e) = extras {
             // Remove common fields that are used for room ID extraction but might be useful as extras too
             // We keep them in extras for now as it's cleaner
             connection_config = connection_config.with_extras(e);
@@ -277,26 +268,21 @@ impl DanmuService {
 
         let state = CollectionState {
             streamer_id: streamer_id.to_string(),
-            platform: provider.platform().to_string(),
-            room_id: room_id.clone(),
             stats: Arc::clone(&stats),
-            sampler: Arc::clone(&sampler),
             cancel_token: cancel_token.clone(),
-            start_time: Utc::now(),
             command_tx: command_tx.clone(),
         };
 
         // Create runner
-        let runner = super::runner::CollectionRunner::new(
-            session_id.to_string(),
-            room_id.clone(),
-            Arc::clone(&provider),
-            connection_config,
-            Arc::clone(&stats),
-            Arc::clone(&sampler),
-            self.event_tx.clone(),
-            self.config.clone(),
-        )
+        let runner = super::runner::CollectionRunner::new(super::runner::RunnerParams {
+            session_id: session_id.to_string(),
+            room_id: room_id.clone(),
+            provider: Arc::clone(&provider),
+            conn_config: connection_config,
+            stats: Arc::clone(&stats),
+            sampler: Arc::clone(&sampler),
+            event_tx: self.event_tx.clone(),
+        })
         .await?;
 
         self.collections.insert(session_id.to_string(), state);

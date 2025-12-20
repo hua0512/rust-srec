@@ -238,7 +238,7 @@ impl Processor for MetadataProcessor {
         // Parse config or use defaults
         let config: MetadataConfig = if let Some(ref config_str) = input.config {
             serde_json::from_str(config_str).unwrap_or_else(|e| {
-                let _ = ctx.warn(&format!(
+                let _ = ctx.warn(format!(
                     "Failed to parse metadata config, using defaults: {}",
                     e
                 ));
@@ -267,7 +267,7 @@ impl Processor for MetadataProcessor {
         // If not supported, pass through the input file instead of failing
         if !self.supports_metadata(input_path) {
             let duration = start.elapsed().as_secs_f64();
-            let _ = ctx.info(&format!(
+            let _ = ctx.info(format!(
                 "Input file format does not support metadata embedding, passing through: {}",
                 input_path
             ));
@@ -293,7 +293,7 @@ impl Processor for MetadataProcessor {
         // Determine output path
         let output_path = self.determine_output_path(input_path, &config, input);
 
-        let _ = ctx.info(&format!(
+        let _ = ctx.info(format!(
             "Embedding metadata into {} -> {} (artist: {:?}, title: {:?}, date: {:?})",
             input_path, output_path, config.artist, config.title, config.date
         ));
@@ -342,8 +342,7 @@ impl Processor for MetadataProcessor {
                     command_output
                         .logs
                         .iter()
-                        .filter(|l| l.level == crate::pipeline::job_queue::LogLevel::Error)
-                        .last()
+                        .rfind(|l| l.level == crate::pipeline::job_queue::LogLevel::Error)
                         .map(|l| l.message.clone())
                         .unwrap_or_else(|| "Unknown error".to_string())
                 )
@@ -358,7 +357,7 @@ impl Processor for MetadataProcessor {
             .ok()
             .map(|m| m.len());
 
-        let _ = ctx.info(&format!(
+        let _ = ctx.info(format!(
             "Metadata embedding completed in {:.2}s: {}",
             command_output.duration, output_path
         ));

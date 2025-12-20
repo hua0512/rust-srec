@@ -15,7 +15,7 @@ use crate::api::jwt::Claims;
 use crate::api::server::AppState;
 
 /// Login request body.
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Deserialize, utoipa::ToSchema)]
 pub struct LoginRequest {
     /// Username for authentication
     pub username: String,
@@ -26,7 +26,7 @@ pub struct LoginRequest {
 }
 
 /// Login response body with refresh token.
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, utoipa::ToSchema)]
 pub struct LoginResponse {
     /// JWT access token
     pub access_token: String,
@@ -59,21 +59,21 @@ impl From<AuthResponse> for LoginResponse {
 }
 
 /// Refresh token request body.
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Deserialize, utoipa::ToSchema)]
 pub struct RefreshRequest {
     /// The refresh token to use
     pub refresh_token: String,
 }
 
 /// Logout request body.
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Deserialize, utoipa::ToSchema)]
 pub struct LogoutRequest {
     /// The refresh token to revoke
     pub refresh_token: String,
 }
 
 /// Change password request body.
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Deserialize, utoipa::ToSchema)]
 pub struct ChangePasswordRequest {
     /// Current password for verification
     pub current_password: String,
@@ -118,10 +118,18 @@ fn auth_error_to_api_error(err: AuthError) -> ApiError {
     }
 }
 
-/// POST /api/auth/login
-///
-/// Authenticate user and return JWT token with refresh token.
-async fn login(
+#[utoipa::path(
+    post,
+    path = "/api/auth/login",
+    tag = "auth",
+    request_body = LoginRequest,
+    responses(
+        (status = 200, description = "Login successful", body = LoginResponse),
+        (status = 401, description = "Invalid credentials", body = crate::api::error::ApiErrorResponse),
+        (status = 503, description = "Authentication service unavailable", body = crate::api::error::ApiErrorResponse)
+    )
+)]
+pub async fn login(
     State(state): State<AppState>,
     Json(request): Json<LoginRequest>,
 ) -> ApiResult<Json<LoginResponse>> {
@@ -138,10 +146,18 @@ async fn login(
     Ok(Json(response.into()))
 }
 
-/// POST /api/auth/refresh
-///
-/// Refresh access token using a valid refresh token.
-async fn refresh(
+#[utoipa::path(
+    post,
+    path = "/api/auth/refresh",
+    tag = "auth",
+    request_body = RefreshRequest,
+    responses(
+        (status = 200, description = "Token refreshed successfully", body = LoginResponse),
+        (status = 401, description = "Invalid or expired refresh token", body = crate::api::error::ApiErrorResponse),
+        (status = 503, description = "Refresh service unavailable", body = crate::api::error::ApiErrorResponse)
+    )
+)]
+pub async fn refresh(
     State(state): State<AppState>,
     Json(request): Json<RefreshRequest>,
 ) -> ApiResult<Json<LoginResponse>> {
@@ -158,10 +174,18 @@ async fn refresh(
     Ok(Json(response.into()))
 }
 
-/// POST /api/auth/logout
-///
-/// Revoke a specific refresh token.
-async fn logout(
+#[utoipa::path(
+    post,
+    path = "/api/auth/logout",
+    tag = "auth",
+    request_body = LogoutRequest,
+    responses(
+        (status = 200, description = "Logout successful", body = crate::api::openapi::MessageResponse),
+        (status = 401, description = "Invalid token", body = crate::api::error::ApiErrorResponse),
+        (status = 503, description = "Logout service unavailable", body = crate::api::error::ApiErrorResponse)
+    )
+)]
+pub async fn logout(
     State(state): State<AppState>,
     Json(request): Json<LogoutRequest>,
 ) -> ApiResult<Json<serde_json::Value>> {
@@ -180,11 +204,18 @@ async fn logout(
     ))
 }
 
-/// POST /api/auth/logout-all
-///
-/// Revoke all refresh tokens for the authenticated user.
-/// Requires JWT authentication.
-async fn logout_all(
+#[utoipa::path(
+    post,
+    path = "/api/auth/logout-all",
+    tag = "auth",
+    security(("bearer_auth" = [])),
+    responses(
+        (status = 200, description = "All sessions logged out", body = crate::api::openapi::MessageResponse),
+        (status = 401, description = "Unauthorized", body = crate::api::error::ApiErrorResponse),
+        (status = 503, description = "Logout service unavailable", body = crate::api::error::ApiErrorResponse)
+    )
+)]
+pub async fn logout_all(
     State(state): State<AppState>,
     axum::Extension(claims): axum::Extension<Claims>,
 ) -> ApiResult<Json<serde_json::Value>> {
@@ -203,11 +234,20 @@ async fn logout_all(
     ))
 }
 
-/// POST /api/auth/change-password
-///
-/// Change the authenticated user's password.
-/// Requires JWT authentication.
-async fn change_password(
+#[utoipa::path(
+    post,
+    path = "/api/auth/change-password",
+    tag = "auth",
+    security(("bearer_auth" = [])),
+    request_body = ChangePasswordRequest,
+    responses(
+        (status = 200, description = "Password changed successfully", body = crate::api::openapi::MessageResponse),
+        (status = 400, description = "Invalid password", body = crate::api::error::ApiErrorResponse),
+        (status = 401, description = "Unauthorized", body = crate::api::error::ApiErrorResponse),
+        (status = 503, description = "Password change service unavailable", body = crate::api::error::ApiErrorResponse)
+    )
+)]
+pub async fn change_password(
     State(state): State<AppState>,
     axum::Extension(claims): axum::Extension<Claims>,
     Json(request): Json<ChangePasswordRequest>,
@@ -231,11 +271,18 @@ async fn change_password(
     ))
 }
 
-/// GET /api/auth/sessions
-///
-/// List active sessions for the authenticated user.
-/// Requires JWT authentication.
-async fn list_sessions(
+#[utoipa::path(
+    get,
+    path = "/api/auth/sessions",
+    tag = "auth",
+    security(("bearer_auth" = [])),
+    responses(
+        (status = 200, description = "List of active sessions", body = Vec<crate::api::auth_service::SessionInfo>),
+        (status = 401, description = "Unauthorized", body = crate::api::error::ApiErrorResponse),
+        (status = 503, description = "Session listing unavailable", body = crate::api::error::ApiErrorResponse)
+    )
+)]
+pub async fn list_sessions(
     State(state): State<AppState>,
     axum::Extension(claims): axum::Extension<Claims>,
 ) -> ApiResult<Json<Vec<SessionInfo>>> {

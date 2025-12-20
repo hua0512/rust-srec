@@ -8,6 +8,7 @@ pub mod error;
 pub mod jwt;
 pub mod middleware;
 pub mod models;
+pub mod openapi;
 pub mod proto;
 pub mod routes;
 pub mod server;

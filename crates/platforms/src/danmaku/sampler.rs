@@ -210,11 +210,11 @@ impl DanmuSampler for VelocitySampler {
         // Add to velocity window (aggregate by second)
         let second_start = timestamp.with_nanosecond(0).unwrap_or(timestamp);
 
-        if let Some((last_ts, count)) = self.velocity_window.last_mut() {
-            if *last_ts == second_start {
-                *count += 1;
-                return;
-            }
+        if let Some((last_ts, count)) = self.velocity_window.last_mut()
+            && *last_ts == second_start
+        {
+            *count += 1;
+            return;
         }
 
         self.velocity_window.push((second_start, 1));

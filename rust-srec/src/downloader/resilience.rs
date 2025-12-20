@@ -262,14 +262,13 @@ impl CircuitBreaker {
     fn check_state_transition(&self) {
         let state = *self.state.read();
 
-        if state == CircuitState::Open {
-            if let Some(opened_at) = *self.opened_at.read() {
-                if opened_at.elapsed() >= self.cooldown_duration {
-                    *self.state.write() = CircuitState::HalfOpen;
-                    self.half_open_successes.store(0, Ordering::SeqCst);
-                    debug!("Circuit breaker transitioned to half-open state");
-                }
-            }
+        if state == CircuitState::Open
+            && let Some(opened_at) = *self.opened_at.read()
+            && opened_at.elapsed() >= self.cooldown_duration
+        {
+            *self.state.write() = CircuitState::HalfOpen;
+            self.half_open_successes.store(0, Ordering::SeqCst);
+            debug!("Circuit breaker transitioned to half-open state");
         }
     }
 }
@@ -327,11 +326,13 @@ impl CircuitBreakerManager {
     }
 
     /// Record success for an engine.
+    #[allow(dead_code)]
     pub fn record_success(&self, key: &EngineKey) {
         self.get(key).record_success();
     }
 
     /// Record failure for an engine.
+    #[allow(dead_code)]
     pub fn record_failure(&self, key: &EngineKey) {
         self.get(key).record_failure();
     }

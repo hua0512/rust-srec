@@ -261,7 +261,6 @@ impl JobDbModel {
         priority: i32,
         streamer_id: Option<String>,
         session_id: Option<String>,
-        pipeline_id: Option<String>,
     ) -> Self {
         let now = chrono::Utc::now().to_rfc3339();
         let id = uuid::Uuid::new_v4().to_string();
@@ -516,7 +515,7 @@ pub struct PipelineJobConfig {
 
 /// Pipeline step configuration.
 /// Uses internally tagged enum to disambiguate step types.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, utoipa::ToSchema)]
 #[serde(tag = "type", rename_all = "lowercase")]
 pub enum PipelineStep {
     /// Reference to a named job preset (e.g., "remux").
@@ -632,7 +631,7 @@ impl Default for PipelineDefinition {
 
 /// A step within a DAG pipeline with explicit dependencies.
 /// Each step has a unique ID and can depend on other steps.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, utoipa::ToSchema)]
 pub struct DagStep {
     /// Unique step identifier within the DAG (e.g., "remux", "upload", "notify").
     pub id: String,
@@ -674,7 +673,7 @@ impl DagStep {
 
 /// DAG pipeline definition with named steps and explicit dependencies.
 /// Supports fan-in (multiple inputs to one step) and fan-out (one step to multiple).
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, utoipa::ToSchema)]
 pub struct DagPipelineDefinition {
     /// Unique name for the DAG pipeline.
     pub name: String,
@@ -758,11 +757,9 @@ impl DagPipelineDefinition {
 
             if let Some(deps) = adj.get(node) {
                 for dep in deps {
-                    if !visited.contains(dep) {
-                        if has_cycle(dep, adj, visited, rec_stack) {
-                            return true;
-                        }
-                    } else if rec_stack.contains(dep) {
+                    if (!visited.contains(dep) && has_cycle(dep, adj, visited, rec_stack))
+                        || rec_stack.contains(dep)
+                    {
                         return true;
                     }
                 }
@@ -773,10 +770,10 @@ impl DagPipelineDefinition {
         }
 
         for step in &self.steps {
-            if !visited.contains(step.id.as_str()) {
-                if has_cycle(step.id.as_str(), &adj, &mut visited, &mut rec_stack) {
-                    return Err("DAG pipeline contains a cycle".to_string());
-                }
+            if !visited.contains(step.id.as_str())
+                && has_cycle(step.id.as_str(), &adj, &mut visited, &mut rec_stack)
+            {
+                return Err("DAG pipeline contains a cycle".to_string());
             }
         }
 
@@ -844,13 +841,12 @@ impl DagPipelineDefinition {
                 for step in &self.steps {
                     if step.depends_on.iter().any(|d| d == node)
                         && !processed.contains(step.id.as_str())
+                        && let Some(deg) = in_degree.get_mut(step.id.as_str())
+                        && *deg > 0
                     {
-                        let deg = in_degree.entry(step.id.as_str()).or_insert(0);
-                        if *deg > 0 {
-                            *deg -= 1;
-                            if *deg == 0 {
-                                queue.push_back(step.id.as_str());
-                            }
+                        *deg -= 1;
+                        if *deg == 0 {
+                            queue.push_back(step.id.as_str());
                         }
                     }
                 }

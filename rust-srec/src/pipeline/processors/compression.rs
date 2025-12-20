@@ -27,21 +27,16 @@ fn default_compression_level() -> u8 {
 }
 
 /// Archive format options.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
 #[serde(rename_all = "lowercase")]
 pub enum ArchiveFormat {
     /// ZIP archive format.
     /// Requirements: 3.2
+    #[default]
     Zip,
     /// Gzipped tar archive format.
     /// Requirements: 3.3
     TarGz,
-}
-
-impl Default for ArchiveFormat {
-    fn default() -> Self {
-        Self::Zip
-    }
 }
 
 impl ArchiveFormat {
@@ -347,7 +342,7 @@ impl Processor for CompressionProcessor {
     async fn process(
         &self,
         input: &ProcessorInput,
-        ctx: &ProcessorContext,
+        _ctx: &ProcessorContext,
     ) -> Result<ProcessorOutput> {
         let start = std::time::Instant::now();
 

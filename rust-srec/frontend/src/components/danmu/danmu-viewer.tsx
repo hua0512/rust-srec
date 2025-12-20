@@ -113,8 +113,12 @@ export function DanmuViewer({ url, title }: DanmuViewerProps) {
 
   const filteredComments = useMemo(() => {
     return comments.filter((c) => {
-      const contentMatch = c.content.toLowerCase().includes(searchQuery.toLowerCase());
-      const userMatch = c.username?.toLowerCase().includes(searchQuery.toLowerCase());
+      const contentMatch = c.content
+        .toLowerCase()
+        .includes(searchQuery.toLowerCase());
+      const userMatch = c.username
+        ?.toLowerCase()
+        .includes(searchQuery.toLowerCase());
       const matchesSearch = contentMatch || userMatch;
       if (!matchesSearch) return false;
 
@@ -160,7 +164,10 @@ export function DanmuViewer({ url, title }: DanmuViewerProps) {
           <MessageSquare className="h-5 w-5" />
         </div>
         <div className="min-w-0 flex-1">
-          <h3 className="font-bold text-sm tracking-tight truncate leading-tight" title={title}>
+          <h3
+            className="font-bold text-sm tracking-tight truncate leading-tight"
+            title={title}
+          >
             {title}
           </h3>
           <div className="flex items-center gap-2 mt-0.5">
@@ -186,22 +193,42 @@ export function DanmuViewer({ url, title }: DanmuViewerProps) {
 
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
-            <Button variant="ghost" size="sm" className="h-8 gap-2 text-xs font-medium text-muted-foreground hover:text-foreground">
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-8 gap-2 text-xs font-medium text-muted-foreground hover:text-foreground"
+            >
               <ListFilter className="h-3.5 w-3.5" />
-              <span>{filterMode === 'all' ? 'Filter' : filterMode.charAt(0).toUpperCase() + filterMode.slice(1)}</span>
+              <span>
+                {filterMode === 'all'
+                  ? 'Filter'
+                  : filterMode.charAt(0).toUpperCase() + filterMode.slice(1)}
+              </span>
             </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end" className="w-40">
-            <DropdownMenuItem onClick={() => setFilterMode('all')} className="text-xs">
+            <DropdownMenuItem
+              onClick={() => setFilterMode('all')}
+              className="text-xs"
+            >
               All Types {filterMode === 'all' && '✓'}
             </DropdownMenuItem>
-            <DropdownMenuItem onClick={() => setFilterMode('scrolling')} className="text-xs">
+            <DropdownMenuItem
+              onClick={() => setFilterMode('scrolling')}
+              className="text-xs"
+            >
               Scrolling {filterMode === 'scrolling' && '✓'}
             </DropdownMenuItem>
-            <DropdownMenuItem onClick={() => setFilterMode('top')} className="text-xs">
+            <DropdownMenuItem
+              onClick={() => setFilterMode('top')}
+              className="text-xs"
+            >
               Top Fixed {filterMode === 'top' && '✓'}
             </DropdownMenuItem>
-            <DropdownMenuItem onClick={() => setFilterMode('bottom')} className="text-xs">
+            <DropdownMenuItem
+              onClick={() => setFilterMode('bottom')}
+              className="text-xs"
+            >
               Bottom Fixed {filterMode === 'bottom' && '✓'}
             </DropdownMenuItem>
           </DropdownMenuContent>
@@ -223,7 +250,9 @@ export function DanmuViewer({ url, title }: DanmuViewerProps) {
               <AlertCircle className="h-8 w-8" />
             </div>
             <div className="space-y-1">
-              <p className="font-bold text-foreground">Failed to load content</p>
+              <p className="font-bold text-foreground">
+                Failed to load content
+              </p>
               <p className="text-xs text-muted-foreground max-w-[300px] leading-relaxed">
                 {error}
               </p>

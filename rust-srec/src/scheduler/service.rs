@@ -594,23 +594,23 @@ impl<R: StreamerRepository + Send + Sync + 'static> Scheduler<R> {
             if is_active {
                 // Streamer became active - spawn actor if missing
                 // Actors fetch metadata from shared store, so existing actors will see updates automatically
-                if let Some(metadata) = self.streamer_manager.get_streamer(streamer_id) {
-                    if !self.supervisor.registry().has_streamer(streamer_id) {
-                        // Actor doesn't exist - spawn it
-                        // Ensure platform actor exists for batch-capable platforms
-                        if self.is_batch_capable_platform(&metadata.platform_config_id) {
-                            let _ = self.spawn_platform_actor(&metadata.platform_config_id);
-                        }
-                        info!(
-                            "Spawning actor for newly active streamer: {} (state: {})",
-                            streamer_id, metadata.state
-                        );
-                        if let Err(e) = self.spawn_streamer_actor(metadata) {
-                            warn!("Failed to spawn actor for {}: {}", streamer_id, e);
-                        }
+                if let Some(metadata) = self.streamer_manager.get_streamer(streamer_id)
+                    && !self.supervisor.registry().has_streamer(streamer_id)
+                {
+                    // Actor doesn't exist - spawn it
+                    // Ensure platform actor exists for batch-capable platforms
+                    if self.is_batch_capable_platform(&metadata.platform_config_id) {
+                        let _ = self.spawn_platform_actor(&metadata.platform_config_id);
                     }
-                    // Note: Existing actors will fetch fresh metadata from shared store on next check
+                    info!(
+                        "Spawning actor for newly active streamer: {} (state: {})",
+                        streamer_id, metadata.state
+                    );
+                    if let Err(e) = self.spawn_streamer_actor(metadata) {
+                        warn!("Failed to spawn actor for {}: {}", streamer_id, e);
+                    }
                 }
+                // Note: Existing actors will fetch fresh metadata from shared store on next check
             } else {
                 // Streamer became inactive - remove actor if exists
                 if self.remove_streamer(streamer_id) {
@@ -630,13 +630,13 @@ impl<R: StreamerRepository + Send + Sync + 'static> Scheduler<R> {
                     .register(streamer_id, &metadata.platform_config_id);
 
                 // Ensure platform actor exists if the streamer is on a batch-capable platform.
-                if self.is_batch_capable_platform(&metadata.platform_config_id) {
-                    if let Err(e) = self.spawn_platform_actor(&metadata.platform_config_id) {
-                        warn!(
-                            "Failed to ensure platform actor for {}: {}",
-                            metadata.platform_config_id, e
-                        );
-                    }
+                if self.is_batch_capable_platform(&metadata.platform_config_id)
+                    && let Err(e) = self.spawn_platform_actor(&metadata.platform_config_id)
+                {
+                    warn!(
+                        "Failed to ensure platform actor for {}: {}",
+                        metadata.platform_config_id, e
+                    );
                 }
 
                 if metadata.is_active() {

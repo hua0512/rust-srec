@@ -395,11 +395,11 @@ impl DownloadManager {
 
             // Need to know the type first
             // Try to parse ID as type, or look up in DB to get type
-            let engine_type = if let Some(t) = EngineType::from_str(target_id) {
+            let engine_type = if let Ok(t) = target_id.parse::<EngineType>() {
                 t
             } else if let Some(repo) = &self.config_repo {
                 if let Ok(config) = repo.get_engine_config(target_id).await {
-                    EngineType::from_str(&config.engine_type).ok_or_else(|| {
+                    config.engine_type.parse::<EngineType>().map_err(|_| {
                         crate::Error::Other(format!("Unknown engine type: {}", config.engine_type))
                     })?
                 } else {
@@ -513,7 +513,7 @@ impl DownloadManager {
         // If explicit ID provided
         if let Some(id) = engine_id {
             // Check if it's a known type string
-            if let Some(known_type) = EngineType::from_str(id) {
+            if let Ok(known_type) = id.parse::<EngineType>() {
                 // Use default registered engine for this type
                 let engine = self.get_engine(known_type).ok_or_else(|| {
                     crate::Error::Other(format!("Default engine {} not registered", known_type))
@@ -527,7 +527,7 @@ impl DownloadManager {
             if let Some(repo) = &self.config_repo {
                 if let Ok(config) = repo.get_engine_config(id).await {
                     // Found valid config, instantiate specific engine
-                    if let Some(engine_type) = EngineType::from_str(&config.engine_type) {
+                    if let Ok(engine_type) = config.engine_type.parse::<EngineType>() {
                         return match engine_type {
                             EngineType::Ffmpeg => {
                                 let engine_config: FfmpegEngineConfig =
@@ -831,17 +831,15 @@ impl DownloadManager {
 
                         if let Some((_, pending_update)) =
                             pending_updates.remove(&download_id_clone)
+                            && let Some(mut download) = active_downloads.get_mut(&download_id_clone)
                         {
-                            if let Some(mut download) = active_downloads.get_mut(&download_id_clone)
-                            {
-                                DownloadManager::apply_pending_update_to_download(
-                                    &mut download,
-                                    pending_update,
-                                    &download_id_clone,
-                                    &streamer_id,
-                                    &event_tx,
-                                );
-                            }
+                            DownloadManager::apply_pending_update_to_download(
+                                &mut download,
+                                pending_update,
+                                &download_id_clone,
+                                &streamer_id,
+                                &event_tx,
+                            );
                         }
 
                         debug!(

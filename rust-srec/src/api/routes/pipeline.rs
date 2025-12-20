@@ -66,7 +66,6 @@ use axum::{
     routing::{delete, get, post},
 };
 use futures::future::join_all;
-use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 
 use crate::api::error::{ApiError, ApiResult};
@@ -76,7 +75,7 @@ use crate::api::models::{
     PaginationParams, PipelineStatsResponse, StepDurationInfo as ApiStepDurationInfo,
 };
 use crate::api::server::AppState;
-use crate::database::models::job::{DagPipelineDefinition, DagStep, PipelineStep};
+use crate::database::models::job::{DagPipelineDefinition, PipelineStep};
 use crate::database::models::{JobFilters, JobStatus as DbJobStatus, OutputFilters, Pagination};
 use crate::pipeline::JobProgressSnapshot;
 use crate::pipeline::{Job, JobStatus as QueueJobStatus};
@@ -166,7 +165,7 @@ pub fn router() -> Router<AppState> {
 /// - `streamer_id` - The streamer ID this pipeline belongs to
 /// - `input_path` - Path to the input file to process
 /// - `dag` - DAG pipeline definition with steps and dependencies
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, serde::Deserialize, utoipa::ToSchema)]
 pub struct CreatePipelineRequest {
     /// Session ID for the pipeline.
     pub session_id: String,
@@ -197,7 +196,7 @@ pub struct CreatePipelineRequest {
 ///     }
 /// }
 /// ```
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, serde::Serialize, utoipa::ToSchema)]
 pub struct CreatePipelineResponse {
     /// Pipeline ID (same as first job's ID).
     pub pipeline_id: String,
@@ -223,7 +222,7 @@ pub struct CreatePipelineResponse {
 ///     }
 /// }
 /// ```
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, serde::Deserialize, utoipa::ToSchema)]
 pub struct CreatePipelinePresetRequest {
     /// Human-readable name.
     pub name: String,
@@ -234,7 +233,7 @@ pub struct CreatePipelinePresetRequest {
 }
 
 /// Request body for updating a DAG pipeline preset.
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, serde::Deserialize, utoipa::ToSchema)]
 pub struct UpdatePipelinePresetRequest {
     /// Human-readable name.
     pub name: String,
@@ -245,14 +244,14 @@ pub struct UpdatePipelinePresetRequest {
 }
 
 /// Query parameters for filtering pipeline presets.
-#[derive(Debug, Clone, Deserialize, Default)]
+#[derive(Debug, Clone, serde::Deserialize, Default, utoipa::IntoParams)]
 pub struct PipelinePresetFilterParams {
     /// Search query (matches name or description).
     pub search: Option<String>,
 }
 
 /// Pagination parameters for pipeline preset list.
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, serde::Deserialize, utoipa::IntoParams)]
 pub struct PipelinePresetPaginationParams {
     /// Number of items to return (default: 20, max: 100).
     #[serde(default = "default_preset_limit")]
@@ -276,7 +275,7 @@ impl Default for PipelinePresetPaginationParams {
 }
 
 /// Response for pipeline preset list with pagination.
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, serde::Serialize, utoipa::ToSchema)]
 pub struct PipelinePresetListResponse {
     /// List of pipeline presets.
     pub presets: Vec<PipelinePresetResponse>,
@@ -289,7 +288,7 @@ pub struct PipelinePresetListResponse {
 }
 
 /// Response for a single DAG pipeline preset.
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, serde::Serialize, utoipa::ToSchema)]
 pub struct PipelinePresetResponse {
     pub id: String,
     pub name: String,
@@ -321,10 +320,10 @@ impl From<crate::database::models::PipelinePreset> for PipelinePresetResponse {
 ///
 /// # Example
 ///
-/// ```
+/// ```text
 /// GET /api/pipeline/outputs?session_id=session-123&streamer_id=streamer-456
 /// ```
-#[derive(Debug, Clone, Deserialize, Default)]
+#[derive(Debug, Clone, serde::Deserialize, Default, utoipa::IntoParams)]
 pub struct OutputFilterParams {
     /// Filter by session ID.
     pub session_id: Option<String>,
@@ -339,7 +338,7 @@ pub struct OutputFilterParams {
 // ============================================================================
 
 /// Response for DAG status with all steps.
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, serde::Serialize, utoipa::ToSchema)]
 pub struct DagStatusResponse {
     /// DAG execution ID.
     pub id: String,
@@ -372,7 +371,7 @@ pub struct DagStatusResponse {
 }
 
 /// Response for a single DAG step status.
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, serde::Serialize, utoipa::ToSchema)]
 pub struct DagStepStatusResponse {
     /// Step ID within the DAG.
     pub step_id: String,
@@ -389,7 +388,7 @@ pub struct DagStepStatusResponse {
 }
 
 /// Response for DAG graph visualization.
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, serde::Serialize, utoipa::ToSchema)]
 pub struct DagGraphResponse {
     /// DAG execution ID.
     pub dag_id: String,
@@ -402,7 +401,7 @@ pub struct DagGraphResponse {
 }
 
 /// A node in the DAG graph.
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, serde::Serialize, utoipa::ToSchema)]
 pub struct DagGraphNode {
     /// Step ID (unique within DAG).
     pub id: String,
@@ -417,7 +416,7 @@ pub struct DagGraphNode {
 }
 
 /// An edge in the DAG graph (dependency relationship).
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, serde::Serialize, utoipa::ToSchema)]
 pub struct DagGraphEdge {
     /// Source step ID (dependency).
     pub from: String,
@@ -426,7 +425,7 @@ pub struct DagGraphEdge {
 }
 
 /// Response for DAG retry operation.
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, serde::Serialize, utoipa::ToSchema)]
 pub struct DagRetryResponse {
     /// DAG execution ID.
     pub dag_id: String,
@@ -439,14 +438,14 @@ pub struct DagRetryResponse {
 }
 
 /// Request body for DAG validation.
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, serde::Deserialize, utoipa::ToSchema)]
 pub struct ValidateDagRequest {
     /// DAG definition to validate.
     pub dag: DagPipelineDefinition,
 }
 
 /// Response for DAG validation.
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, serde::Serialize, utoipa::ToSchema)]
 pub struct ValidateDagResponse {
     /// Whether the DAG is valid.
     pub valid: bool,
@@ -463,7 +462,7 @@ pub struct ValidateDagResponse {
 }
 
 /// Response for pipeline preset preview.
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, serde::Serialize, utoipa::ToSchema)]
 pub struct PresetPreviewResponse {
     /// Preset ID.
     pub preset_id: String,
@@ -476,7 +475,7 @@ pub struct PresetPreviewResponse {
 }
 
 /// A preview of a job that would be created from a preset.
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, serde::Serialize, utoipa::ToSchema)]
 pub struct PresetPreviewJob {
     /// Step ID.
     pub step_id: String,
@@ -491,7 +490,7 @@ pub struct PresetPreviewJob {
 }
 
 /// Query parameters for filtering DAG executions.
-#[derive(Debug, Clone, Deserialize, Default)]
+#[derive(Debug, Clone, serde::Deserialize, Default, utoipa::IntoParams)]
 pub struct DagFilterParams {
     /// Filter by DAG status (PENDING, PROCESSING, COMPLETED, FAILED, CANCELLED).
     pub status: Option<String>,
@@ -500,7 +499,7 @@ pub struct DagFilterParams {
 }
 
 /// Pagination parameters for DAG list.
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, serde::Deserialize, utoipa::IntoParams)]
 pub struct DagPaginationParams {
     /// Number of items to return (default: 20, max: 100).
     #[serde(default = "default_dag_limit")]
@@ -524,7 +523,7 @@ impl Default for DagPaginationParams {
 }
 
 /// Response for DAG list with pagination.
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, serde::Serialize, utoipa::ToSchema)]
 pub struct DagListResponse {
     /// List of DAG executions.
     pub dags: Vec<DagListItem>,
@@ -537,7 +536,7 @@ pub struct DagListResponse {
 }
 
 /// A single DAG execution in the list response.
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, serde::Serialize, utoipa::ToSchema)]
 pub struct DagListItem {
     /// DAG execution ID.
     pub id: String,
@@ -566,7 +565,7 @@ pub struct DagListItem {
 }
 
 /// Response for DAG cancellation.
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, serde::Serialize, utoipa::ToSchema)]
 pub struct DagCancelResponse {
     /// DAG execution ID.
     pub dag_id: String,
@@ -577,7 +576,7 @@ pub struct DagCancelResponse {
 }
 
 /// Response for DAG step statistics.
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, serde::Serialize, utoipa::ToSchema)]
 pub struct DagStatsResponse {
     /// DAG execution ID.
     pub dag_id: String,
@@ -637,7 +636,17 @@ pub struct DagStatsResponse {
 /// - 1.3: Filter by status
 /// - 1.4: Filter by streamer_id
 /// - 1.5: Filter by session_id
-async fn list_jobs(
+#[utoipa::path(
+    get,
+    path = "/api/pipeline/jobs",
+    tag = "pipeline",
+    params(PaginationParams, JobFilterParams),
+    responses(
+        (status = 200, description = "List of jobs", body = PaginatedResponse<JobResponse>)
+    ),
+    security(("bearer_auth" = []))
+)]
+pub async fn list_jobs(
     State(state): State<AppState>,
     Query(pagination): Query<PaginationParams>,
     Query(filters): Query<JobFilterParams>,
@@ -686,12 +695,17 @@ async fn list_jobs(
     Ok(Json(response))
 }
 
-/// List pipeline jobs without computing a total count.
-///
-/// # Endpoint
-///
-/// `GET /api/pipeline/jobs/page`
-async fn list_jobs_page(
+#[utoipa::path(
+    get,
+    path = "/api/pipeline/jobs/page",
+    tag = "pipeline",
+    params(PaginationParams, JobFilterParams),
+    responses(
+        (status = 200, description = "Page of jobs without total count", body = PageResponse<JobResponse>)
+    ),
+    security(("bearer_auth" = []))
+)]
+pub async fn list_jobs_page(
     State(state): State<AppState>,
     Query(pagination): Query<PaginationParams>,
     Query(filters): Query<JobFilterParams>,
@@ -738,12 +752,18 @@ async fn list_jobs_page(
     )))
 }
 
-/// List job execution logs (paged).
-///
-/// # Endpoint
-///
-/// `GET /api/pipeline/jobs/{id}/logs`
-async fn list_job_logs(
+#[utoipa::path(
+    get,
+    path = "/api/pipeline/jobs/{id}/logs",
+    tag = "pipeline",
+    params(("id" = String, Path, description = "Job ID"), PaginationParams),
+    responses(
+        (status = 200, description = "Job execution logs", body = PaginatedResponse<ApiJobLogEntry>),
+        (status = 404, description = "Job not found", body = crate::api::error::ApiErrorResponse)
+    ),
+    security(("bearer_auth" = []))
+)]
+pub async fn list_job_logs(
     State(state): State<AppState>,
     Path(id): Path<String>,
     Query(pagination): Query<PaginationParams>,
@@ -778,12 +798,18 @@ async fn list_job_logs(
     )))
 }
 
-/// Get latest job progress snapshot.
-///
-/// # Endpoint
-///
-/// `GET /api/pipeline/jobs/{id}/progress`
-async fn get_job_progress(
+#[utoipa::path(
+    get,
+    path = "/api/pipeline/jobs/{id}/progress",
+    tag = "pipeline",
+    params(("id" = String, Path, description = "Job ID")),
+    responses(
+        (status = 200, description = "Job progress snapshot", body = JobProgressSnapshot),
+        (status = 404, description = "Job or progress not found", body = crate::api::error::ApiErrorResponse)
+    ),
+    security(("bearer_auth" = []))
+)]
+pub async fn get_job_progress(
     State(state): State<AppState>,
     Path(id): Path<String>,
 ) -> ApiResult<Json<JobProgressSnapshot>> {
@@ -838,7 +864,18 @@ async fn get_job_progress(
 /// # Requirements
 ///
 /// - 1.2: Return job if exists or indicate not found
-async fn get_job(
+#[utoipa::path(
+    get,
+    path = "/api/pipeline/jobs/{id}",
+    tag = "pipeline",
+    params(("id" = String, Path, description = "Job ID")),
+    responses(
+        (status = 200, description = "Job details", body = JobResponse),
+        (status = 404, description = "Job not found", body = crate::api::error::ApiErrorResponse)
+    ),
+    security(("bearer_auth" = []))
+)]
+pub async fn get_job(
     State(state): State<AppState>,
     Path(id): Path<String>,
 ) -> ApiResult<Json<JobResponse>> {
@@ -897,7 +934,19 @@ async fn get_job(
 ///
 /// - 2.1: Reset failed job status to Pending and increment retry_count
 /// - 2.2: Reject retry for jobs not in Failed status
-async fn retry_job(
+#[utoipa::path(
+    post,
+    path = "/api/pipeline/jobs/{id}/retry",
+    tag = "pipeline",
+    params(("id" = String, Path, description = "Job ID")),
+    responses(
+        (status = 200, description = "Job retried", body = JobResponse),
+        (status = 400, description = "Job not in failed status", body = crate::api::error::ApiErrorResponse),
+        (status = 404, description = "Job not found", body = crate::api::error::ApiErrorResponse)
+    ),
+    security(("bearer_auth" = []))
+)]
+pub async fn retry_job(
     State(state): State<AppState>,
     Path(id): Path<String>,
 ) -> ApiResult<Json<JobResponse>> {
@@ -960,7 +1009,19 @@ async fn retry_job(
 /// - 2.3: Cancel pending jobs by removing from queue
 /// - 2.4: Cancel processing jobs by signaling cancellation
 /// - 2.5: Reject cancellation for completed/failed jobs
-async fn cancel_job(
+#[utoipa::path(
+    delete,
+    path = "/api/pipeline/jobs/{id}",
+    tag = "pipeline",
+    params(("id" = String, Path, description = "Job ID")),
+    responses(
+        (status = 200, description = "Job cancelled", body = crate::api::openapi::MessageResponse),
+        (status = 400, description = "Cannot cancel completed job", body = crate::api::error::ApiErrorResponse),
+        (status = 404, description = "Job not found", body = crate::api::error::ApiErrorResponse)
+    ),
+    security(("bearer_auth" = []))
+)]
+pub async fn cancel_job(
     State(state): State<AppState>,
     Path(id): Path<String>,
 ) -> ApiResult<Json<serde_json::Value>> {
@@ -993,35 +1054,17 @@ async fn cancel_job(
     }
 }
 
-/// Cancel all jobs in a pipeline.
-///
-/// # Endpoint
-///
-/// `DELETE /api/pipeline/{pipeline_id}`
-///
-/// # Path Parameters
-///
-/// - `pipeline_id` - The pipeline ID (UUID of the first job in the pipeline)
-///
-/// # Response
-///
-/// Returns a success message with the number of jobs cancelled.
-///
-/// ```json
-/// {
-///     "success": true,
-///     "message": "Cancelled 3 jobs in pipeline 'pipeline-uuid-123'",
-///     "cancelled_count": 3
-/// }
-/// ```
-///
-/// # Behavior
-///
-/// - Cancels all pending and processing jobs that belong to the pipeline
-/// - Already completed or failed jobs are not affected
-/// - Each cancelled job is marked as "interrupted"
-/// - Processing jobs receive a cancellation signal
-async fn cancel_pipeline(
+#[utoipa::path(
+    delete,
+    path = "/api/pipeline/{pipeline_id}",
+    tag = "pipeline",
+    params(("pipeline_id" = String, Path, description = "Pipeline ID")),
+    responses(
+        (status = 200, description = "Pipeline cancelled")
+    ),
+    security(("bearer_auth" = []))
+)]
+pub async fn cancel_pipeline(
     State(state): State<AppState>,
     Path(pipeline_id): Path<String>,
 ) -> ApiResult<Json<serde_json::Value>> {
@@ -1044,48 +1087,17 @@ async fn cancel_pipeline(
     })))
 }
 
-/// List media outputs with pagination and filtering.
-///
-/// # Endpoint
-///
-/// `GET /api/pipeline/outputs`
-///
-/// # Query Parameters
-///
-/// - `limit` - Maximum number of results (default: 20, max: 100)
-/// - `offset` - Number of results to skip (default: 0)
-/// - `session_id` - Filter by session ID
-/// - `streamer_id` - Filter by streamer ID
-///
-/// # Response
-///
-/// Returns a paginated list of media outputs.
-///
-/// ```json
-/// {
-///     "items": [
-///         {
-///             "id": "output-uuid-123",
-///             "session_id": "session-123",
-///             "file_path": "/recordings/stream.mp4",
-///             "file_size_bytes": 1073741824,
-///             "format": "mp4",
-///             "created_at": "2025-12-03T10:05:00Z"
-///         }
-///     ],
-///     "total": 50,
-///     "limit": 20,
-///     "offset": 0
-/// }
-/// ```
-///
-/// # Requirements
-///
-/// - 5.1: Return outputs with pagination support
-/// - 5.2: Include file path, size, duration, and format
-/// - 5.3: Filter by session_id
-/// - 5.4: Filter by streamer_id
-async fn list_outputs(
+#[utoipa::path(
+    get,
+    path = "/api/pipeline/outputs",
+    tag = "pipeline",
+    params(PaginationParams, OutputFilterParams),
+    responses(
+        (status = 200, description = "List of media outputs", body = PaginatedResponse<MediaOutputResponse>)
+    ),
+    security(("bearer_auth" = []))
+)]
+pub async fn list_outputs(
     State(state): State<AppState>,
     Query(pagination): Query<PaginationParams>,
     Query(filters): Query<OutputFilterParams>,
@@ -1203,7 +1215,16 @@ async fn list_outputs(
 /// - 3.1: Return counts of jobs by status
 /// - 3.2: Compute mean duration of completed jobs
 /// - 3.3: Maintain accurate counts across state transitions
-async fn get_stats(State(state): State<AppState>) -> ApiResult<Json<PipelineStatsResponse>> {
+#[utoipa::path(
+    get,
+    path = "/api/pipeline/stats",
+    tag = "pipeline",
+    responses(
+        (status = 200, description = "Pipeline statistics", body = PipelineStatsResponse)
+    ),
+    security(("bearer_auth" = []))
+)]
+pub async fn get_stats(State(state): State<AppState>) -> ApiResult<Json<PipelineStatsResponse>> {
     // Get pipeline manager from state
     let pipeline_manager = state
         .pipeline_manager
@@ -1224,48 +1245,18 @@ async fn get_stats(State(state): State<AppState>) -> ApiResult<Json<PipelineStat
     Ok(Json(response))
 }
 
-/// Create a new DAG pipeline.
-///
-/// # Endpoint
-///
-/// `POST /api/pipeline/create`
-///
-/// # Request Body
-///
-/// ```json
-/// {
-///     "session_id": "session-123",
-///     "streamer_id": "streamer-456",
-///     "input_path": "/recordings/stream.flv",
-///     "dag": {
-///         "name": "my_pipeline",
-///         "steps": [
-///             {"id": "remux", "step": {"type": "preset", "name": "remux"}, "depends_on": []},
-///             {"id": "thumbnail", "step": {"type": "preset", "name": "thumbnail"}, "depends_on": ["remux"]},
-///             {"id": "upload", "step": {"type": "preset", "name": "upload"}, "depends_on": ["remux", "thumbnail"]}
-///         ]
-///     }
-/// }
-/// ```
-///
-/// # Fields
-///
-/// - `session_id` (required) - The recording session ID
-/// - `streamer_id` (required) - The streamer ID
-/// - `input_path` (required) - Path to the input file
-/// - `dag` (required) - DAG pipeline definition with steps and dependencies
-///
-/// # Response
-///
-/// Returns the pipeline ID and first job details.
-///
-/// # DAG Pipeline Features
-///
-/// - Fan-out: One step can trigger multiple downstream steps
-/// - Fan-in: Multiple steps can merge their outputs before a downstream step
-/// - Parallel execution: Independent steps (no dependencies between them) run concurrently
-/// - Fail-fast: Any step failure cancels all pending/running jobs in the DAG
-async fn create_pipeline(
+#[utoipa::path(
+    post,
+    path = "/api/pipeline/create",
+    tag = "pipeline",
+    request_body = CreatePipelineRequest,
+    responses(
+        (status = 201, description = "Pipeline created", body = CreatePipelineResponse),
+        (status = 400, description = "Invalid request", body = crate::api::error::ApiErrorResponse)
+    ),
+    security(("bearer_auth" = []))
+)]
+pub async fn create_pipeline(
     State(state): State<AppState>,
     Json(request): Json<CreatePipelineRequest>,
 ) -> ApiResult<Json<CreatePipelineResponse>> {
@@ -1433,22 +1424,17 @@ async fn fetch_streamer_names(state: &AppState, jobs: &[Job]) -> HashMap<String,
 // Pipeline Preset Handlers (Workflow Sequences)
 // ============================================================================
 
-/// List available pipeline presets (workflow sequences).
-///
-/// # Endpoint
-///
-/// `GET /api/pipeline/presets`
-///
-/// # Query Parameters
-///
-/// - `search` - Search query for name or description (optional)
-/// - `limit` - Number of items to return (default: 20, max: 100)
-/// - `offset` - Number of items to skip (default: 0)
-///
-/// # Response
-///
-/// Returns a paginated list of available pipeline presets.
-async fn list_pipeline_presets(
+#[utoipa::path(
+    get,
+    path = "/api/pipeline/presets",
+    tag = "pipeline",
+    params(PipelinePresetFilterParams, PipelinePresetPaginationParams),
+    responses(
+        (status = 200, description = "List of pipeline presets", body = PipelinePresetListResponse)
+    ),
+    security(("bearer_auth" = []))
+)]
+pub async fn list_pipeline_presets(
     State(state): State<AppState>,
     Query(filters): Query<PipelinePresetFilterParams>,
     Query(pagination): Query<PipelinePresetPaginationParams>,
@@ -1483,12 +1469,18 @@ async fn list_pipeline_presets(
     }))
 }
 
-/// Get a pipeline preset by ID.
-///
-/// # Endpoint
-///
-/// `GET /api/pipeline/presets/{id}`
-async fn get_pipeline_preset_by_id(
+#[utoipa::path(
+    get,
+    path = "/api/pipeline/presets/{id}",
+    tag = "pipeline",
+    params(("id" = String, Path, description = "Preset ID")),
+    responses(
+        (status = 200, description = "Pipeline preset", body = PipelinePresetResponse),
+        (status = 404, description = "Preset not found", body = crate::api::error::ApiErrorResponse)
+    ),
+    security(("bearer_auth" = []))
+)]
+pub async fn get_pipeline_preset_by_id(
     State(state): State<AppState>,
     Path(id): Path<String>,
 ) -> ApiResult<Json<PipelinePresetResponse>> {
@@ -1506,14 +1498,18 @@ async fn get_pipeline_preset_by_id(
     Ok(Json(PipelinePresetResponse::from(preset)))
 }
 
-/// Create a new DAG pipeline preset.
-///
-/// # Endpoint
-///
-/// `POST /api/pipeline/presets`
-///
-/// Creates a new pipeline preset as a DAG (Directed Acyclic Graph).
-async fn create_pipeline_preset(
+#[utoipa::path(
+    post,
+    path = "/api/pipeline/presets",
+    tag = "pipeline",
+    request_body = CreatePipelinePresetRequest,
+    responses(
+        (status = 201, description = "Preset created", body = PipelinePresetResponse),
+        (status = 400, description = "Invalid request", body = crate::api::error::ApiErrorResponse)
+    ),
+    security(("bearer_auth" = []))
+)]
+pub async fn create_pipeline_preset(
     State(state): State<AppState>,
     Json(payload): Json<CreatePipelinePresetRequest>,
 ) -> ApiResult<Json<PipelinePresetResponse>> {
@@ -1543,12 +1539,19 @@ async fn create_pipeline_preset(
     Ok(Json(PipelinePresetResponse::from(preset)))
 }
 
-/// Update an existing DAG pipeline preset.
-///
-/// # Endpoint
-///
-/// `PUT /api/pipeline/presets/{id}`
-async fn update_pipeline_preset(
+#[utoipa::path(
+    put,
+    path = "/api/pipeline/presets/{id}",
+    tag = "pipeline",
+    params(("id" = String, Path, description = "Preset ID")),
+    request_body = UpdatePipelinePresetRequest,
+    responses(
+        (status = 200, description = "Preset updated", body = PipelinePresetResponse),
+        (status = 404, description = "Preset not found", body = crate::api::error::ApiErrorResponse)
+    ),
+    security(("bearer_auth" = []))
+)]
+pub async fn update_pipeline_preset(
     State(state): State<AppState>,
     Path(id): Path<String>,
     Json(payload): Json<UpdatePipelinePresetRequest>,
@@ -1593,12 +1596,17 @@ async fn update_pipeline_preset(
     Ok(Json(PipelinePresetResponse::from(preset)))
 }
 
-/// Delete a pipeline preset.
-///
-/// # Endpoint
-///
-/// `DELETE /api/pipeline/presets/{id}`
-async fn delete_pipeline_preset(
+#[utoipa::path(
+    delete,
+    path = "/api/pipeline/presets/{id}",
+    tag = "pipeline",
+    params(("id" = String, Path, description = "Preset ID")),
+    responses(
+        (status = 200, description = "Preset deleted")
+    ),
+    security(("bearer_auth" = []))
+)]
+pub async fn delete_pipeline_preset(
     State(state): State<AppState>,
     Path(id): Path<String>,
 ) -> ApiResult<Json<()>> {
@@ -1615,15 +1623,18 @@ async fn delete_pipeline_preset(
     Ok(Json(()))
 }
 
-/// Preview jobs that would be created from a pipeline preset.
-///
-/// # Endpoint
-///
-/// `GET /api/pipeline/presets/{id}/preview`
-///
-/// Shows what jobs would be created when using this preset, including
-/// the execution order and dependency relationships.
-async fn preview_pipeline_preset(
+#[utoipa::path(
+    get,
+    path = "/api/pipeline/presets/{id}/preview",
+    tag = "pipeline",
+    params(("id" = String, Path, description = "Preset ID")),
+    responses(
+        (status = 200, description = "Preset preview", body = PresetPreviewResponse),
+        (status = 404, description = "Preset not found", body = crate::api::error::ApiErrorResponse)
+    ),
+    security(("bearer_auth" = []))
+)]
+pub async fn preview_pipeline_preset(
     State(state): State<AppState>,
     Path(id): Path<String>,
 ) -> ApiResult<Json<PresetPreviewResponse>> {
@@ -1688,15 +1699,18 @@ async fn preview_pipeline_preset(
 // DAG Status, Graph, Retry, and Validation Handlers
 // ============================================================================
 
-/// Get full DAG status with all steps.
-///
-/// # Endpoint
-///
-/// `GET /api/pipeline/dag/{dag_id}`
-///
-/// Returns the complete status of a DAG pipeline including all steps,
-/// their current status, and progress information.
-async fn get_dag_status(
+#[utoipa::path(
+    get,
+    path = "/api/pipeline/dag/{dag_id}",
+    tag = "pipeline",
+    params(("dag_id" = String, Path, description = "DAG execution ID")),
+    responses(
+        (status = 200, description = "DAG status with all steps", body = DagStatusResponse),
+        (status = 404, description = "DAG not found", body = crate::api::error::ApiErrorResponse)
+    ),
+    security(("bearer_auth" = []))
+)]
+pub async fn get_dag_status(
     State(state): State<AppState>,
     Path(dag_id): Path<String>,
 ) -> ApiResult<Json<DagStatusResponse>> {
@@ -1773,14 +1787,18 @@ async fn get_dag_status(
     }))
 }
 
-/// Get DAG graph visualization data.
-///
-/// # Endpoint
-///
-/// `GET /api/pipeline/dag/{dag_id}/graph`
-///
-/// Returns nodes and edges for visualizing the DAG as a graph.
-async fn get_dag_graph(
+#[utoipa::path(
+    get,
+    path = "/api/pipeline/dag/{dag_id}/graph",
+    tag = "pipeline",
+    params(("dag_id" = String, Path, description = "DAG execution ID")),
+    responses(
+        (status = 200, description = "DAG graph visualization data", body = DagGraphResponse),
+        (status = 404, description = "DAG not found", body = crate::api::error::ApiErrorResponse)
+    ),
+    security(("bearer_auth" = []))
+)]
+pub async fn get_dag_graph(
     State(state): State<AppState>,
     Path(dag_id): Path<String>,
 ) -> ApiResult<Json<DagGraphResponse>> {
@@ -1858,17 +1876,18 @@ async fn get_dag_graph(
     }))
 }
 
-/// Retry failed steps in a DAG.
-///
-/// # Endpoint
-///
-/// `POST /api/pipeline/dag/{dag_id}/retry`
-///
-/// Retries all failed steps in the DAG. This will:
-/// 1. Reset failed steps to pending
-/// 2. Create new jobs for those steps
-/// 3. Resume DAG execution
-async fn retry_dag(
+#[utoipa::path(
+    post,
+    path = "/api/pipeline/dag/{dag_id}/retry",
+    tag = "pipeline",
+    params(("dag_id" = String, Path, description = "DAG execution ID")),
+    responses(
+        (status = 200, description = "DAG retry result", body = DagRetryResponse),
+        (status = 400, description = "No failed steps", body = crate::api::error::ApiErrorResponse)
+    ),
+    security(("bearer_auth" = []))
+)]
+pub async fn retry_dag(
     State(state): State<AppState>,
     Path(dag_id): Path<String>,
 ) -> ApiResult<Json<DagRetryResponse>> {
@@ -1939,22 +1958,17 @@ async fn retry_dag(
     }))
 }
 
-/// List all DAG executions with filtering and pagination.
-///
-/// # Endpoint
-///
-/// `GET /api/pipeline/dags`
-///
-/// # Query Parameters
-///
-/// - `status` - Filter by DAG status (PENDING, PROCESSING, COMPLETED, FAILED, CANCELLED)
-/// - `limit` - Maximum number of results (default: 20, max: 100)
-/// - `offset` - Number of results to skip (default: 0)
-///
-/// # Response
-///
-/// Returns a list of DAG executions matching the filter criteria.
-async fn list_dags(
+#[utoipa::path(
+    get,
+    path = "/api/pipeline/dags",
+    tag = "pipeline",
+    params(DagFilterParams, DagPaginationParams),
+    responses(
+        (status = 200, description = "List of DAG executions", body = DagListResponse)
+    ),
+    security(("bearer_auth" = []))
+)]
+pub async fn list_dags(
     State(state): State<AppState>,
     Query(filters): Query<DagFilterParams>,
     Query(pagination): Query<DagPaginationParams>,
@@ -2058,26 +2072,17 @@ async fn list_dags(
     }))
 }
 
-/// Cancel a DAG execution.
-///
-/// # Endpoint
-///
-/// `DELETE /api/pipeline/dag/{dag_id}`
-///
-/// # Path Parameters
-///
-/// - `dag_id` - The DAG execution ID
-///
-/// # Response
-///
-/// Returns the number of steps that were cancelled.
-///
-/// # Behavior
-///
-/// - Cancels all pending and processing steps in the DAG
-/// - Marks the DAG as CANCELLED
-/// - Already completed or failed steps are not affected
-async fn cancel_dag(
+#[utoipa::path(
+    delete,
+    path = "/api/pipeline/dag/{dag_id}",
+    tag = "pipeline",
+    params(("dag_id" = String, Path, description = "DAG execution ID")),
+    responses(
+        (status = 200, description = "DAG cancelled", body = DagCancelResponse)
+    ),
+    security(("bearer_auth" = []))
+)]
+pub async fn cancel_dag(
     State(state): State<AppState>,
     Path(dag_id): Path<String>,
 ) -> ApiResult<Json<DagCancelResponse>> {
@@ -2111,26 +2116,17 @@ async fn cancel_dag(
     }))
 }
 
-/// Permanently delete a DAG execution and all its steps.
-///
-/// # Endpoint
-///
-/// `DELETE /api/pipeline/dag/{dag_id}/delete`
-///
-/// # Path Parameters
-///
-/// - `dag_id` - The DAG execution ID
-///
-/// # Response
-///
-/// Returns a success message.
-///
-/// # Behavior
-///
-/// - Permanently deletes the DAG execution record
-/// - Deletes all associated step executions (via CASCADE)
-/// - Cannot be undone
-async fn delete_dag(
+#[utoipa::path(
+    delete,
+    path = "/api/pipeline/dag/{dag_id}/delete",
+    tag = "pipeline",
+    params(("dag_id" = String, Path, description = "DAG execution ID")),
+    responses(
+        (status = 200, description = "DAG deleted")
+    ),
+    security(("bearer_auth" = []))
+)]
+pub async fn delete_dag(
     State(state): State<AppState>,
     Path(dag_id): Path<String>,
 ) -> ApiResult<Json<serde_json::Value>> {
@@ -2155,20 +2151,18 @@ async fn delete_dag(
     })))
 }
 
-/// Get DAG step statistics.
-///
-/// # Endpoint
-///
-/// `GET /api/pipeline/dag/{dag_id}/stats`
-///
-/// # Path Parameters
-///
-/// - `dag_id` - The DAG execution ID
-///
-/// # Response
-///
-/// Returns statistics about the DAG's steps including counts by status.
-async fn get_dag_stats(
+#[utoipa::path(
+    get,
+    path = "/api/pipeline/dag/{dag_id}/stats",
+    tag = "pipeline",
+    params(("dag_id" = String, Path, description = "DAG execution ID")),
+    responses(
+        (status = 200, description = "DAG step statistics", body = DagStatsResponse),
+        (status = 404, description = "DAG not found", body = crate::api::error::ApiErrorResponse)
+    ),
+    security(("bearer_auth" = []))
+)]
+pub async fn get_dag_stats(
     State(state): State<AppState>,
     Path(dag_id): Path<String>,
 ) -> ApiResult<Json<DagStatsResponse>> {
@@ -2211,23 +2205,17 @@ async fn get_dag_stats(
     }))
 }
 
-/// Validate a DAG definition
-///
-/// # Endpoint
-///
-/// `POST /api/pipeline/validate`
-///
-/// Validates a DAG definition without creating it. Checks for:
-/// - Cycles in the dependency graph
-/// - Missing dependencies
-/// - Empty DAG
-/// - Duplicate step IDs
-///
-/// # Performance
-///
-/// Uses integer-indexed arrays instead of String-keyed HashMaps for O(1) lookups.
-/// All operations complete in O(V+E) time complexity.
-async fn validate_dag(
+#[utoipa::path(
+    post,
+    path = "/api/pipeline/validate",
+    tag = "pipeline",
+    request_body = ValidateDagRequest,
+    responses(
+        (status = 200, description = "DAG validation result", body = ValidateDagResponse)
+    ),
+    security(("bearer_auth" = []))
+)]
+pub async fn validate_dag(
     State(_state): State<AppState>,
     Json(request): Json<ValidateDagRequest>,
 ) -> ApiResult<Json<ValidateDagResponse>> {
@@ -2457,6 +2445,8 @@ fn topological_sort(dag: &DagPipelineDefinition) -> Vec<String> {
 
 #[cfg(test)]
 mod tests {
+    use crate::database::models::DagStep;
+
     use super::*;
 
     #[test]
@@ -2504,7 +2494,7 @@ mod tests {
         let json = r#"{
             "session_id": "session-123",
             "streamer_id": "streamer-456",
-            "input_path": "/recordings/stream.flv",
+            "input_paths": ["/recordings/stream.flv"],
             "dag": {
                 "name": "my_pipeline",
                 "steps": [

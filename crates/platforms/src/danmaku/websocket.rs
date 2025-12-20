@@ -70,6 +70,7 @@ pub trait DanmuProtocol: Send + Sync + 'static {
 }
 
 /// Internal state for a WebSocket connection
+#[allow(dead_code)]
 struct WsConnectionState {
     /// Connection ID
     id: String,
@@ -155,7 +156,7 @@ impl<P: DanmuProtocol + Clone> WebSocketDanmuProvider<P> {
 
             loop {
                 // Check shutdown
-                if let Ok(_) = shutdown_rx.try_recv() {
+                if shutdown_rx.try_recv().is_ok() {
                     break;
                 }
 

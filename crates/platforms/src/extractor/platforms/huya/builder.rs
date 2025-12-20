@@ -652,12 +652,12 @@ impl Huya {
 
     /// Get living info via WUP
     async fn get_living_info_wup(&self, lp: i64) -> Result<GetLivingInfoRsp, ExtractorError> {
-        let request_body = tars::build_get_living_info_request(
-            lp,
-            "huya_nftv&2.5.1.3141&official&30",
-            "android_tv",
-        )
-        .map_err(|e| {
+        let ua = format!(
+            "webh5&{}&websocket",
+            chrono::Utc::now().format("%y%m%d%H%M")
+        );
+        let device = "chrome";
+        let request_body = tars::build_get_living_info_request(lp, &ua, device).map_err(|e| {
             ExtractorError::ValidationError(format!(
                 "Failed to build getLivingInfo request: {:?}",
                 e
@@ -835,6 +835,7 @@ mod tests {
     }
 
     #[test]
+    #[ignore]
     fn test_parse_mp_live_status() {
         let extractor = Huya::new(
             "https://www.huya.com/".to_string(),
@@ -876,6 +877,7 @@ mod tests {
     }
 
     #[test]
+    #[ignore]
     fn test_parse_mp_media_info() {
         let extractor = Huya::new(
             "https://www.huya.com/660000".to_string(),

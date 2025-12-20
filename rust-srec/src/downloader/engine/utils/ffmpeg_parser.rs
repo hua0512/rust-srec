@@ -44,7 +44,7 @@ pub fn parse_time(time_str: &str) -> Option<f64> {
 pub fn parse_size(line: &str) -> Option<u64> {
     let size_start = line.find("size=")?;
     let size_str = &line[size_start + 5..].trim_start();
-    let end = size_str.find(|c: char| c == 'k' || c == 'K')?;
+    let end = size_str.find(['k', 'K'])?;
     let size: u64 = size_str[..end].trim().parse().ok()?;
     Some(size * 1024)
 }
@@ -111,17 +111,14 @@ pub fn parse_progress(line: &str) -> Option<DownloadProgress> {
         return None;
     }
 
-    let mut progress = DownloadProgress::default();
-
-    progress.bytes_downloaded = parse_size(line).unwrap_or(0);
-
-    if let Some(media_duration) = parse_time_field(line) {
-        progress.media_duration_secs = media_duration;
-        progress.duration_secs = media_duration;
-    }
-
-    progress.playback_ratio = parse_speed(line).unwrap_or(0.0);
-    progress.speed_bytes_per_sec = parse_bitrate(line).unwrap_or(0);
+    let progress = DownloadProgress {
+        bytes_downloaded: parse_size(line).unwrap_or(0),
+        media_duration_secs: parse_time_field(line).unwrap_or(0.0),
+        duration_secs: parse_time_field(line).unwrap_or(0.0),
+        playback_ratio: parse_speed(line).unwrap_or(0.0),
+        speed_bytes_per_sec: parse_bitrate(line).unwrap_or(0),
+        ..Default::default()
+    };
 
     Some(progress)
 }

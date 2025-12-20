@@ -82,7 +82,17 @@ pub fn router() -> Router<AppState> {
 /// }
 /// ```
 ///
-async fn list_sessions(
+#[utoipa::path(
+    get,
+    path = "/api/sessions",
+    tag = "sessions",
+    params(PaginationParams, SessionFilterParams),
+    responses(
+        (status = 200, description = "List of sessions", body = PaginatedResponse<SessionResponse>)
+    ),
+    security(("bearer_auth" = []))
+)]
+pub async fn list_sessions(
     State(state): State<AppState>,
     Query(pagination): Query<PaginationParams>,
     Query(filters): Query<SessionFilterParams>,
@@ -223,7 +233,18 @@ async fn list_sessions(
 /// # Requirements
 ///
 /// - 4.2: Return session with metadata and output count
-async fn get_session(
+#[utoipa::path(
+    get,
+    path = "/api/sessions/{id}",
+    tag = "sessions",
+    params(("id" = String, Path, description = "Session ID")),
+    responses(
+        (status = 200, description = "Session details", body = SessionResponse),
+        (status = 404, description = "Session not found", body = crate::api::error::ApiErrorResponse)
+    ),
+    security(("bearer_auth" = []))
+)]
+pub async fn get_session(
     State(state): State<AppState>,
     Path(id): Path<String>,
 ) -> ApiResult<Json<SessionResponse>> {
@@ -371,7 +392,21 @@ fn parse_titles(titles_json: &Option<String>) -> (Vec<TitleChange>, String) {
 ///
 /// - `404 Not Found` - Session with the specified ID does not exist
 /// - `500 Internal Server Error` - Database error
-async fn delete_session(State(state): State<AppState>, Path(id): Path<String>) -> ApiResult<()> {
+#[utoipa::path(
+    delete,
+    path = "/api/sessions/{id}",
+    tag = "sessions",
+    params(("id" = String, Path, description = "Session ID")),
+    responses(
+        (status = 200, description = "Session deleted"),
+        (status = 404, description = "Session not found", body = crate::api::error::ApiErrorResponse)
+    ),
+    security(("bearer_auth" = []))
+)]
+pub async fn delete_session(
+    State(state): State<AppState>,
+    Path(id): Path<String>,
+) -> ApiResult<()> {
     // Get session repository from state
     let session_repository = state
         .session_repository

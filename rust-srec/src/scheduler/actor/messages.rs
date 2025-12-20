@@ -21,7 +21,7 @@ pub enum StreamerMessage {
     /// Update configuration.
     ConfigUpdate(StreamerConfig),
     /// Receive batch detection result from PlatformActor.
-    BatchResult(BatchDetectionResult),
+    BatchResult(Box<BatchDetectionResult>),
     /// Notify that a download has started for this streamer.
     ///
     /// This allows external download orchestration to pause status checks
@@ -573,29 +573,29 @@ impl StreamerActorState {
         };
 
         // Check if we have a hint from the last result (e.g. smart wake for OutOfSchedule)
-        if let Some(ref last) = self.last_check {
-            if let Some(hint) = last.next_check_hint {
-                // Only use hint if we are in OutOfSchedule state
-                if self.streamer_state == StreamerState::OutOfSchedule {
-                    let now = Utc::now();
-                    if hint > now {
-                        let delay = hint
-                            .signed_duration_since(now)
-                            .to_std()
-                            .unwrap_or(std::time::Duration::from_secs(0));
-                        // Add a small buffer (5s) to ensure we wake up inside the window
-                        let buffer = std::time::Duration::from_secs(5);
-                        let total_delay = delay + buffer;
+        if let Some(ref last) = self.last_check
+            && let Some(hint) = last.next_check_hint
+        {
+            // Only use hint if we are in OutOfSchedule state
+            if self.streamer_state == StreamerState::OutOfSchedule {
+                let now = Utc::now();
+                if hint > now {
+                    let delay = hint
+                        .signed_duration_since(now)
+                        .to_std()
+                        .unwrap_or(std::time::Duration::from_secs(0));
+                    // Add a small buffer (5s) to ensure we wake up inside the window
+                    let buffer = std::time::Duration::from_secs(5);
+                    let total_delay = delay + buffer;
 
-                        tracing::debug!(
-                            "Smart wake: sleep for {:?} until {:?} (hint)",
-                            total_delay,
-                            hint
-                        );
+                    tracing::debug!(
+                        "Smart wake: sleep for {:?} until {:?} (hint)",
+                        total_delay,
+                        hint
+                    );
 
-                        self.next_check = Some(Instant::now() + total_delay);
-                        return;
-                    }
+                    self.next_check = Some(Instant::now() + total_delay);
+                    return;
                 }
             }
         }
@@ -757,22 +757,26 @@ mod tests {
 
     #[test]
     fn test_streamer_actor_state_no_check_when_live() {
-        let mut state = StreamerActorState::default();
+        let mut state = StreamerActorState {
+            streamer_state: StreamerState::Live,
+            ..Default::default()
+        };
         let config = StreamerConfig::default();
 
         // When streamer is live, no check should be scheduled
         // (we're downloading and know they're online)
-        state.streamer_state = StreamerState::Live;
         state.schedule_next_check(&config, 0);
         assert!(state.next_check.is_none());
     }
 
     #[test]
     fn test_streamer_actor_state_schedule_immediate_check() {
-        let mut state = StreamerActorState::default();
+        let mut state = StreamerActorState {
+            streamer_state: StreamerState::Live,
+            ..Default::default()
+        };
 
         // Even when live, schedule_immediate_check should work
-        state.streamer_state = StreamerState::Live;
         state.schedule_immediate_check();
         assert!(state.next_check.is_some());
 

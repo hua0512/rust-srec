@@ -18,27 +18,9 @@ pub(crate) fn build_get_living_info_request(
     ua: &str,
     device: &str,
 ) -> Result<Bytes, TarsError> {
-    let user_id = HuyaUserId::new(
-        0,
-        String::new(),
-        String::new(),
-        ua.to_string(),
-        String::new(),
-        0,
-        device.to_string(),
-        String::new(),
-    );
-    let req = GetLivingInfoReq::new(
-        user_id,
-        0,             // l_top_sid
-        0,             // l_sub_sid
-        presenter_uid, // l_presenter_uid
-        String::new(), // s_trace_source
-        String::new(), // s_password
-        0,             // i_room_id
-        0,             // i_free_flow_flag
-        0,             // i_ip_stack
-    );
+    let user_id = HuyaUserId::new(0, String::new(), String::new(), ua.to_string())
+        .with_device_info(device.to_string());
+    let req = GetLivingInfoReq::new(user_id, presenter_uid);
     let mut body = FxHashMap::default();
     body.insert(
         String::from("tReq"),

@@ -142,23 +142,18 @@ pub enum JobStatus {
 
 /// Log level for job execution logs.
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
 #[serde(rename_all = "lowercase")]
 pub enum LogLevel {
     /// Debug level log.
     Debug,
     /// Info level log.
+    #[default]
     Info,
     /// Warning level log.
     Warn,
     /// Error level log.
     Error,
-}
-
-impl Default for LogLevel {
-    fn default() -> Self {
-        Self::Info
-    }
 }
 
 /// A single log entry for job execution.
@@ -563,7 +558,7 @@ impl JobQueue {
     }
 
     /// Persist thumbnail output to media_outputs table.
-    async fn persist_thumbnail_output(&self, session_id: &str, output_path: &str) {
+    async fn _persist_thumbnail_output(&self, session_id: &str, output_path: &str) {
         let Some(repo) = self.session_repo.get() else {
             return;
         };
@@ -761,29 +756,29 @@ impl JobQueue {
                 if job.status != JobStatus::Pending {
                     continue;
                 }
-                if let Some(types) = job_types {
-                    if !types.iter().any(|t| t == &job.job_type) {
-                        continue;
-                    }
+                if let Some(types) = job_types
+                    && !types.iter().any(|t| t == &job.job_type)
+                {
+                    continue;
                 }
                 selected_id = Some(entry.key().clone());
                 break;
             }
 
-            if let Some(job_id) = selected_id {
-                if let Some(mut job_ref) = self.jobs_cache.get_mut(&job_id) {
-                    if job_ref.status != JobStatus::Pending {
-                        return Ok(None);
-                    }
-                    job_ref.status = JobStatus::Processing;
-                    job_ref.started_at = Some(Utc::now());
-                    let job = job_ref.clone();
-                    drop(job_ref);
-
-                    self.cancellation_tokens
-                        .insert(job_id, CancellationToken::new());
-                    return Ok(Some(job));
+            if let Some(job_id) = selected_id
+                && let Some(mut job_ref) = self.jobs_cache.get_mut(&job_id)
+            {
+                if job_ref.status != JobStatus::Pending {
+                    return Ok(None);
                 }
+                job_ref.status = JobStatus::Processing;
+                job_ref.started_at = Some(Utc::now());
+                let job = job_ref.clone();
+                drop(job_ref);
+
+                self.cancellation_tokens
+                    .insert(job_id, CancellationToken::new());
+                return Ok(Some(job));
             }
         }
 
@@ -802,10 +797,10 @@ impl JobQueue {
             if job.status != JobStatus::Pending {
                 continue;
             }
-            if let Some(types) = job_types {
-                if !types.iter().any(|t| t == &job.job_type) {
-                    continue;
-                }
+            if let Some(types) = job_types
+                && !types.iter().any(|t| t == &job.job_type)
+            {
+                continue;
             }
             count = count.saturating_add(1);
         }
@@ -845,14 +840,12 @@ impl JobQueue {
             }
 
             // Calculate queue wait time
-            if let (Some(created), Some(started)) = (
-                &db_job.created_at.parse::<chrono::DateTime<Utc>>().ok(),
-                &db_job.started_at,
-            ) {
-                if let Ok(started_dt) = started.parse::<chrono::DateTime<Utc>>() {
-                    let wait_secs = (started_dt - *created).num_milliseconds() as f64 / 1000.0;
-                    db_job.queue_wait_secs = Some(wait_secs.max(0.0));
-                }
+            if let Some(created) = db_job.created_at.parse::<chrono::DateTime<Utc>>().ok()
+                && let Some(started) = &db_job.started_at
+                && let Ok(started_dt) = started.parse::<chrono::DateTime<Utc>>()
+            {
+                let wait_secs = (started_dt - created).num_milliseconds() as f64 / 1000.0;
+                db_job.queue_wait_secs = Some(wait_secs.max(0.0));
             }
             repo.update_job(&db_job).await?;
         }
@@ -895,7 +888,7 @@ impl JobQueue {
 
             let log_entry = JobLogEntry::error(format!("Job failed: {}", error));
             let _ = self
-                .persist_logs_to_db(job_id, &[log_entry.clone()])
+                .persist_logs_to_db(job_id, std::slice::from_ref(&log_entry))
                 .await?;
 
             let exec_info_str = repo.get_job_execution_info(job_id).await?;
@@ -903,8 +896,8 @@ impl JobQueue {
                 .as_deref()
                 .and_then(|s| serde_json::from_str(s).ok())
                 .unwrap_or_default();
-            extend_logs_capped(&mut exec_info, &[log_entry.clone()]);
-            update_log_summary(&mut exec_info, &[log_entry.clone()]);
+            extend_logs_capped(&mut exec_info, std::slice::from_ref(&log_entry));
+            update_log_summary(&mut exec_info, std::slice::from_ref(&log_entry));
             let exec_info_json =
                 serde_json::to_string(&exec_info).unwrap_or_else(|_| "{}".to_string());
             repo.update_job_execution_info(job_id, &exec_info_json)
@@ -929,7 +922,6 @@ impl JobQueue {
 
     /// Mark a job as failed with step information for observability.
     /// Records the error message, failing step, and processor name in execution_info.
-
     pub async fn fail_with_step_info(
         &self,
         job_id: &str,
@@ -960,11 +952,11 @@ impl JobQueue {
             }
 
             let log_entry = JobLogEntry::error(format!("Job failed: {}", error));
-            extend_logs_capped(&mut exec_info, &[log_entry.clone()]);
-            update_log_summary(&mut exec_info, &[log_entry.clone()]);
+            extend_logs_capped(&mut exec_info, std::slice::from_ref(&log_entry));
+            update_log_summary(&mut exec_info, std::slice::from_ref(&log_entry));
 
             let _ = self
-                .persist_logs_to_db(job_id, &[log_entry.clone()])
+                .persist_logs_to_db(job_id, std::slice::from_ref(&log_entry))
                 .await?;
 
             let exec_info_json =
@@ -1098,18 +1090,18 @@ impl JobQueue {
 
             // Fallback for legacy rows that only stored logs in `job.execution_info`.
             let exec_info = repo.get_job_execution_info(job_id).await?;
-            if let Some(exec_info) = exec_info {
-                if let Ok(parsed) = serde_json::from_str::<JobExecutionInfo>(&exec_info) {
-                    let total = parsed.logs.len() as u64;
-                    let start = pagination.offset as usize;
-                    let end = std::cmp::min(start + pagination.limit as usize, parsed.logs.len());
-                    let page = if start < parsed.logs.len() {
-                        parsed.logs[start..end].to_vec()
-                    } else {
-                        vec![]
-                    };
-                    return Ok((page, total));
-                }
+            if let Some(exec_info) = exec_info
+                && let Ok(parsed) = serde_json::from_str::<JobExecutionInfo>(&exec_info)
+            {
+                let total = parsed.logs.len() as u64;
+                let start = pagination.offset as usize;
+                let end = std::cmp::min(start + pagination.limit as usize, parsed.logs.len());
+                let page = if start < parsed.logs.len() {
+                    parsed.logs[start..end].to_vec()
+                } else {
+                    vec![]
+                };
+                return Ok((page, total));
             }
 
             return Ok((vec![], 0));
@@ -1295,10 +1287,10 @@ impl JobQueue {
         }
 
         // Signal cancellation for processing jobs
-        if job.status == JobStatus::Processing {
-            if let Some(token) = self.cancellation_tokens.get(id) {
-                token.cancel();
-            }
+        if job.status == JobStatus::Processing
+            && let Some(token) = self.cancellation_tokens.get(id)
+        {
+            token.cancel();
         }
 
         // Update database if repository is available
@@ -1447,10 +1439,10 @@ impl JobQueue {
                     depth_reduction += 1;
                 }
 
-                if job.status == JobStatus::Processing {
-                    if let Some(token) = self.cancellation_tokens.get(id) {
-                        token.cancel();
-                    }
+                if job.status == JobStatus::Processing
+                    && let Some(token) = self.cancellation_tokens.get(id)
+                {
+                    token.cancel();
                 }
 
                 job.status = JobStatus::Interrupted;
@@ -1570,7 +1562,7 @@ impl JobQueue {
 
         let mut created_job_ids = Vec::new();
 
-        for (_idx, input) in job.inputs.iter().enumerate() {
+        for input in job.inputs.iter() {
             // Create a new job for each input
             let split_job = Job::new_pipeline_step(
                 job.job_type.clone(),
@@ -1616,7 +1608,6 @@ impl JobQueue {
 
     /// Track partial outputs for a job (used for cleanup on failure).
     /// Updates the job's execution_info with items_produced.
-
     pub async fn track_partial_outputs(&self, job_id: &str, outputs: &[String]) -> Result<()> {
         // Update database if repository is available
         if let Some(repo) = &self.job_repository {
@@ -1647,22 +1638,21 @@ impl JobQueue {
     }
 
     /// Get partial outputs for a job (for cleanup on failure).
-
     pub async fn get_partial_outputs(&self, job_id: &str) -> Result<Vec<String>> {
         // Try cache first
-        if let Some(job) = self.jobs_cache.get(job_id) {
-            if let Some(ref exec_info) = job.execution_info {
-                return Ok(exec_info.items_produced.clone());
-            }
+        if let Some(job) = self.jobs_cache.get(job_id)
+            && let Some(ref exec_info) = job.execution_info
+        {
+            return Ok(exec_info.items_produced.clone());
         }
 
         // Try database
         if let Some(repo) = &self.job_repository {
             let db_job = repo.get_job(job_id).await?;
-            if let Some(exec_info_str) = &db_job.execution_info {
-                if let Ok(exec_info) = serde_json::from_str::<JobExecutionInfo>(exec_info_str) {
-                    return Ok(exec_info.items_produced);
-                }
+            if let Some(exec_info_str) = &db_job.execution_info
+                && let Ok(exec_info) = serde_json::from_str::<JobExecutionInfo>(exec_info_str)
+            {
+                return Ok(exec_info.items_produced);
             }
         }
 
@@ -1670,7 +1660,6 @@ impl JobQueue {
     }
 
     /// Fail a job and clean up partial outputs.
-
     pub async fn fail_with_cleanup(&self, job_id: &str, error: &str) -> Result<Vec<String>> {
         self.fail_with_cleanup_and_step_info(job_id, error, None, None, None)
             .await
@@ -1678,7 +1667,6 @@ impl JobQueue {
 
     /// Fail a job with step info and clean up partial outputs.
     /// Records the error message, failing step, and processor name in execution_info.
-
     pub async fn fail_with_cleanup_and_step_info(
         &self,
         job_id: &str,
@@ -1699,7 +1687,6 @@ impl JobQueue {
     }
 
     /// Update execution info for a job.
-
     pub async fn update_execution_info(
         &self,
         job_id: &str,
@@ -1914,24 +1901,20 @@ fn db_model_to_job(db_job: &JobDbModel) -> Job {
                 vec![input_str]
             }
         })
+    } else if input_str.is_empty() {
+        vec![]
     } else {
-        if input_str.is_empty() {
-            vec![]
-        } else {
-            vec![input_str]
-        }
+        vec![input_str]
     };
 
     // Parse outputs JSON array
     let output_str = db_job.outputs.clone().unwrap_or_default();
     let outputs = if output_str.starts_with('[') {
         serde_json::from_str::<Vec<String>>(&output_str).unwrap_or_else(|_| vec![])
+    } else if output_str.is_empty() {
+        vec![]
     } else {
-        if output_str.is_empty() {
-            vec![]
-        } else {
-            vec![output_str]
-        }
+        vec![output_str]
     };
 
     Job {

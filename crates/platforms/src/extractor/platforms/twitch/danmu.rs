@@ -57,18 +57,18 @@ impl TwitchDanmuProtocol {
         let mut tags = std::collections::HashMap::new();
         let mut remaining = line;
 
-        if line.starts_with('@') {
-            if let Some(space_idx) = line.find(' ') {
-                let tag_str = &line[1..space_idx];
-                for tag in tag_str.split(';') {
-                    if let Some(eq_idx) = tag.find('=') {
-                        let key = &tag[..eq_idx];
-                        let value = &tag[eq_idx + 1..];
-                        tags.insert(key.to_string(), value.to_string());
-                    }
+        if line.starts_with('@')
+            && let Some(space_idx) = line.find(' ')
+        {
+            let tag_str = &line[1..space_idx];
+            for tag in tag_str.split(';') {
+                if let Some(eq_idx) = tag.find('=') {
+                    let key = &tag[..eq_idx];
+                    let value = &tag[eq_idx + 1..];
+                    tags.insert(key.to_string(), value.to_string());
                 }
-                remaining = &line[space_idx + 1..];
             }
+            remaining = &line[space_idx + 1..];
         }
 
         // Parse: :user!user@user.tmi.twitch.tv PRIVMSG #channel :message
@@ -108,17 +108,17 @@ impl TwitchDanmuProtocol {
         let mut msg = DanmuMessage::chat(message_id, user_id, display_name, content.trim());
 
         // Add color if present
-        if let Some(color) = tags.get("color") {
-            if !color.is_empty() {
-                msg = msg.with_color(color);
-            }
+        if let Some(color) = tags.get("color")
+            && !color.is_empty()
+        {
+            msg = msg.with_color(color);
         }
 
         // Add badges as metadata
-        if let Some(badges) = tags.get("badges") {
-            if !badges.is_empty() {
-                msg = msg.with_metadata("badges", serde_json::json!(badges));
-            }
+        if let Some(badges) = tags.get("badges")
+            && !badges.is_empty()
+        {
+            msg = msg.with_metadata("badges", serde_json::json!(badges));
         }
 
         // Check for bits (cheering) - change message type to Gift
@@ -276,33 +276,6 @@ mod tests {
     use crate::danmaku::ConnectionConfig;
 
     use super::*;
-
-    #[test]
-    fn test_supports_url() {
-        let protocol = TwitchDanmuProtocol::new();
-
-        assert!(protocol.supports_url("https://www.twitch.tv/streamer"));
-        assert!(protocol.supports_url("http://twitch.tv/another_streamer"));
-        assert!(protocol.supports_url("twitch.tv/test123"));
-
-        assert!(!protocol.supports_url("https://www.huya.com/12345"));
-        assert!(!protocol.supports_url("https://www.youtube.com/watch?v=xxx"));
-    }
-
-    #[test]
-    fn test_extract_room_id() {
-        let protocol = TwitchDanmuProtocol::new();
-
-        assert_eq!(
-            protocol.extract_room_id("https://www.twitch.tv/Streamer"),
-            Some("streamer".to_string()) // lowercase
-        );
-        assert_eq!(
-            protocol.extract_room_id("http://twitch.tv/another_streamer"),
-            Some("another_streamer".to_string())
-        );
-        assert_eq!(protocol.extract_room_id("https://www.huya.com/12345"), None);
-    }
 
     #[test]
     fn test_parse_irc_message() {

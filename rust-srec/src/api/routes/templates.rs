@@ -59,10 +59,18 @@ fn db_model_to_response(model: &TemplateConfigDbModel, usage_count: u32) -> Temp
     }
 }
 
-/// Create a new template.
-///
-/// POST /api/templates
-async fn create_template(
+#[utoipa::path(
+    post,
+    path = "/api/templates",
+    tag = "templates",
+    request_body = CreateTemplateRequest,
+    responses(
+        (status = 201, description = "Template created", body = TemplateResponse),
+        (status = 422, description = "Validation error", body = crate::api::error::ApiErrorResponse)
+    ),
+    security(("bearer_auth" = []))
+)]
+pub async fn create_template(
     State(state): State<AppState>,
     Json(request): Json<CreateTemplateRequest>,
 ) -> ApiResult<Json<TemplateResponse>> {
@@ -110,10 +118,17 @@ async fn create_template(
     Ok(Json(db_model_to_response(&template, 0)))
 }
 
-/// List all templates.
-///
-/// GET /api/templates
-async fn list_templates(
+#[utoipa::path(
+    get,
+    path = "/api/templates",
+    tag = "templates",
+    params(PaginationParams),
+    responses(
+        (status = 200, description = "List of templates", body = PaginatedResponse<TemplateResponse>)
+    ),
+    security(("bearer_auth" = []))
+)]
+pub async fn list_templates(
     State(state): State<AppState>,
     Query(pagination): Query<PaginationParams>,
 ) -> ApiResult<Json<PaginatedResponse<TemplateResponse>>> {
@@ -156,10 +171,18 @@ async fn list_templates(
     Ok(Json(response))
 }
 
-/// Get a single template by ID.
-///
-/// GET /api/templates/:id
-async fn get_template(
+#[utoipa::path(
+    get,
+    path = "/api/templates/{id}",
+    tag = "templates",
+    params(("id" = String, Path, description = "Template ID")),
+    responses(
+        (status = 200, description = "Template details", body = TemplateResponse),
+        (status = 404, description = "Template not found", body = crate::api::error::ApiErrorResponse)
+    ),
+    security(("bearer_auth" = []))
+)]
+pub async fn get_template(
     State(state): State<AppState>,
     Path(id): Path<String>,
 ) -> ApiResult<Json<TemplateResponse>> {
@@ -189,10 +212,19 @@ async fn get_template(
     Ok(Json(db_model_to_response(&template, usage_count)))
 }
 
-/// Update a template.
-///
-/// PUT /api/templates/:id
-async fn update_template(
+#[utoipa::path(
+    put,
+    path = "/api/templates/{id}",
+    tag = "templates",
+    params(("id" = String, Path, description = "Template ID")),
+    request_body = UpdateTemplateRequest,
+    responses(
+        (status = 200, description = "Template updated", body = TemplateResponse),
+        (status = 404, description = "Template not found", body = crate::api::error::ApiErrorResponse)
+    ),
+    security(("bearer_auth" = []))
+)]
+pub async fn update_template(
     State(state): State<AppState>,
     Path(id): Path<String>,
     Json(request): Json<UpdateTemplateRequest>,
@@ -262,10 +294,19 @@ async fn update_template(
     Ok(Json(db_model_to_response(&template, usage_count)))
 }
 
-/// Delete a template.
-///
-/// DELETE /api/templates/:id
-async fn delete_template(
+#[utoipa::path(
+    delete,
+    path = "/api/templates/{id}",
+    tag = "templates",
+    params(("id" = String, Path, description = "Template ID")),
+    responses(
+        (status = 200, description = "Template deleted", body = crate::api::openapi::MessageResponse),
+        (status = 404, description = "Template not found", body = crate::api::error::ApiErrorResponse),
+        (status = 409, description = "Template in use", body = crate::api::error::ApiErrorResponse)
+    ),
+    security(("bearer_auth" = []))
+)]
+pub async fn delete_template(
     State(state): State<AppState>,
     Path(id): Path<String>,
 ) -> ApiResult<Json<serde_json::Value>> {

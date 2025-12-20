@@ -181,7 +181,7 @@ impl XmlDanmuWriter {
             self.message_count += 1;
 
             // Flush periodically
-            if self.message_count % 100 == 0 {
+            if self.message_count.is_multiple_of(100) {
                 file.flush().await?;
             }
         }

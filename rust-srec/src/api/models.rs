@@ -34,10 +34,10 @@ use crate::domain::value_objects::Priority;
 ///
 /// # Example
 ///
-/// ```
+/// ```text
 /// GET /api/pipeline/jobs?limit=50&offset=100
 /// ```
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Deserialize, utoipa::IntoParams)]
 pub struct PaginationParams {
     /// Number of items to return (default: 20, max: 100)
     #[serde(default = "default_limit")]
@@ -79,7 +79,7 @@ impl Default for PaginationParams {
 /// - `total` - Total number of items matching the query (for calculating pages)
 /// - `limit` - Number of items requested per page
 /// - `offset` - Number of items skipped (for calculating current page)
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, utoipa::ToSchema)]
 pub struct PaginatedResponse<T> {
     /// Items in this page
     pub items: Vec<T>,
@@ -106,7 +106,7 @@ impl<T> PaginatedResponse<T> {
 /// Page response wrapper for list endpoints where computing a total count is expensive.
 ///
 /// This omits `total` and returns only the current page.
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, utoipa::ToSchema)]
 pub struct PageResponse<T> {
     /// Items in this page
     pub items: Vec<T>,
@@ -131,7 +131,7 @@ impl<T> PageResponse<T> {
 // ============================================================================
 
 /// Request to create a new streamer.
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Deserialize, utoipa::ToSchema)]
 pub struct CreateStreamerRequest {
     /// Streamer name
     pub name: String,
@@ -156,7 +156,7 @@ fn default_true() -> bool {
 }
 
 /// Request to update a streamer.
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Deserialize, utoipa::ToSchema)]
 pub struct UpdateStreamerRequest {
     /// Streamer name
     pub name: Option<String>,
@@ -173,13 +173,13 @@ pub struct UpdateStreamerRequest {
 }
 
 /// Request to update streamer priority.
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Deserialize, utoipa::ToSchema)]
 pub struct UpdatePriorityRequest {
     pub priority: Priority,
 }
 
 /// Streamer response.
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, utoipa::ToSchema)]
 pub struct StreamerResponse {
     pub id: String,
     pub name: String,
@@ -200,7 +200,7 @@ pub struct StreamerResponse {
 }
 
 /// Filter parameters for listing streamers.
-#[derive(Debug, Clone, Deserialize, Default)]
+#[derive(Debug, Clone, Deserialize, Default, utoipa::IntoParams)]
 pub struct StreamerFilterParams {
     /// Filter by platform
     pub platform: Option<String>,
@@ -223,7 +223,7 @@ pub struct StreamerFilterParams {
 // ============================================================================
 
 /// Global configuration response.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, utoipa::ToSchema)]
 pub struct GlobalConfigResponse {
     pub output_folder: String,
     pub output_filename_template: String,
@@ -249,7 +249,7 @@ pub struct GlobalConfigResponse {
 }
 
 /// Request to update global configuration.
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Deserialize, utoipa::ToSchema)]
 pub struct UpdateGlobalConfigRequest {
     pub output_folder: Option<serde_json::Value>,
     pub output_filename_template: Option<serde_json::Value>,
@@ -277,7 +277,7 @@ pub struct UpdateGlobalConfigRequest {
 }
 
 /// Platform configuration response.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, utoipa::ToSchema)]
 pub struct PlatformConfigResponse {
     pub id: String,
     pub name: String,
@@ -306,7 +306,7 @@ pub struct PlatformConfigResponse {
 // ============================================================================
 
 /// Request to create a template.
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Deserialize, utoipa::ToSchema)]
 pub struct CreateTemplateRequest {
     pub name: String,
     pub output_folder: Option<String>,
@@ -329,7 +329,7 @@ pub struct CreateTemplateRequest {
 }
 
 /// Request to update a template.
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Deserialize, utoipa::ToSchema)]
 pub struct UpdateTemplateRequest {
     pub name: Option<String>,
     pub output_folder: Option<String>,
@@ -352,7 +352,7 @@ pub struct UpdateTemplateRequest {
 }
 
 /// Template response.
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, utoipa::ToSchema)]
 pub struct TemplateResponse {
     pub id: String,
     pub name: String,
@@ -401,7 +401,7 @@ pub struct TemplateResponse {
 /// processing -> interrupted (via cancel)
 /// failed -> pending (via retry)
 /// ```
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, utoipa::ToSchema)]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
 pub enum JobStatus {
     Pending,
@@ -448,7 +448,7 @@ pub enum JobStatus {
 /// - `completed_at` - When processing finished
 /// - `duration_secs` - Processing duration in seconds
 /// - `queue_wait_secs` - Time spent waiting in queue before processing started
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, utoipa::ToSchema)]
 pub struct JobResponse {
     pub id: String,
     pub session_id: String,
@@ -473,7 +473,7 @@ pub struct JobResponse {
 }
 
 /// Execution details for a job.
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, utoipa::ToSchema)]
 pub struct JobExecutionInfo {
     /// Current processor name.
     pub current_processor: Option<String>,
@@ -500,7 +500,7 @@ pub struct JobExecutionInfo {
 }
 
 /// Per-step duration information for pipeline jobs.
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, utoipa::ToSchema)]
 pub struct StepDurationInfo {
     /// Step number (1-indexed).
     pub step: u32,
@@ -515,7 +515,7 @@ pub struct StepDurationInfo {
 }
 
 /// Log entry for job execution.
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, utoipa::ToSchema)]
 pub struct JobLogEntry {
     /// Log timestamp.
     pub timestamp: DateTime<Utc>,
@@ -537,10 +537,10 @@ pub struct JobLogEntry {
 ///
 /// # Example
 ///
-/// ```
+/// ```text
 /// GET /api/pipeline/jobs?status=failed&streamer_id=streamer-123&from_date=2025-01-01T00:00:00Z
 /// ```
-#[derive(Debug, Clone, Deserialize, Default)]
+#[derive(Debug, Clone, Deserialize, Default, utoipa::IntoParams)]
 pub struct JobFilterParams {
     /// Filter by status
     pub status: Option<JobStatus>,
@@ -579,7 +579,7 @@ pub struct JobFilterParams {
 /// - `completed_count` - Number of successfully completed jobs
 /// - `failed_count` - Number of failed jobs
 /// - `avg_processing_time_secs` - Average processing time in seconds (null if no completed jobs)
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, utoipa::ToSchema)]
 pub struct PipelineStatsResponse {
     pub pending_count: u64,
     pub processing_count: u64,
@@ -615,7 +615,7 @@ pub struct PipelineStatsResponse {
 /// - `duration_secs` - Duration in seconds (if applicable)
 /// - `format` - File format (mp4, flv, ts, etc.)
 /// - `created_at` - When the output was created
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, utoipa::ToSchema)]
 pub struct MediaOutputResponse {
     pub id: String,
     pub session_id: String,
@@ -667,7 +667,7 @@ pub struct MediaOutputResponse {
 /// - `output_count` - Number of output files produced
 /// - `total_size_bytes` - Total size of all output files
 /// - `danmu_count` - Number of danmu (chat) messages recorded
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, utoipa::ToSchema)]
 pub struct SessionResponse {
     pub id: String,
     pub streamer_id: String,
@@ -694,7 +694,7 @@ pub struct SessionResponse {
 ///     "timestamp": "2025-12-03T12:00:00Z"
 /// }
 /// ```
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, utoipa::ToSchema)]
 pub struct TitleChange {
     pub title: String,
     pub timestamp: DateTime<Utc>,
@@ -711,11 +711,11 @@ pub struct TitleChange {
 ///
 /// # Example
 ///
-/// ```
+/// ```text
 /// GET /api/sessions?streamer_id=streamer-123&active_only=true
 /// GET /api/sessions?from_date=2025-01-01T00:00:00Z&to_date=2025-12-31T23:59:59Z
 /// ```
-#[derive(Debug, Clone, Deserialize, Default)]
+#[derive(Debug, Clone, Deserialize, Default, utoipa::IntoParams)]
 pub struct SessionFilterParams {
     /// Filter by streamer ID
     pub streamer_id: Option<String>,
@@ -734,7 +734,7 @@ pub struct SessionFilterParams {
 // ============================================================================
 
 /// Health check response.
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, utoipa::ToSchema)]
 pub struct HealthResponse {
     pub status: String,
     pub version: String,
@@ -745,7 +745,7 @@ pub struct HealthResponse {
 }
 
 /// Component health status.
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, utoipa::ToSchema)]
 pub struct ComponentHealth {
     pub name: String,
     pub status: String,
@@ -761,13 +761,13 @@ pub struct ComponentHealth {
 // ============================================================================
 
 /// Request to extract metadata from a URL.
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Deserialize, utoipa::ToSchema)]
 pub struct ExtractMetadataRequest {
     pub url: String,
 }
 
 /// Response from metadata extraction.
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, utoipa::ToSchema)]
 pub struct ExtractMetadataResponse {
     /// Detected platform name (e.g., "Twitch", "YouTube")
     pub platform: Option<String>,
@@ -778,7 +778,7 @@ pub struct ExtractMetadataResponse {
 }
 
 /// Request to parse a URL and extract media info.
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Deserialize, utoipa::ToSchema)]
 pub struct ParseUrlRequest {
     /// URL to parse
     pub url: String,
@@ -789,7 +789,7 @@ pub struct ParseUrlRequest {
 /// Response from URL parsing with full media info.
 ///
 /// This returns the complete MediaInfo from platforms_parser crate as JSON.
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, utoipa::ToSchema)]
 pub struct ParseUrlResponse {
     /// Whether extraction was successful
     pub success: bool,
@@ -802,7 +802,7 @@ pub struct ParseUrlResponse {
 }
 
 /// Request to resolve the true URL for a stream.
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Deserialize, utoipa::ToSchema)]
 pub struct ResolveUrlRequest {
     /// The page URL (needed to create the extractor)
     pub url: String,
@@ -813,7 +813,7 @@ pub struct ResolveUrlRequest {
 }
 
 /// Response with the resolved stream info.
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, utoipa::ToSchema)]
 pub struct ResolveUrlResponse {
     /// Whether resolution was successful
     pub success: bool,
@@ -828,7 +828,7 @@ pub struct ResolveUrlResponse {
 // ============================================================================
 
 /// Filter response.
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, utoipa::ToSchema)]
 pub struct FilterResponse {
     pub id: String,
     pub streamer_id: String,
@@ -837,7 +837,7 @@ pub struct FilterResponse {
 }
 
 /// Request to create a new filter.
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Deserialize, utoipa::ToSchema)]
 pub struct CreateFilterRequest {
     pub streamer_id: String,
     pub filter_type: String,
@@ -845,7 +845,7 @@ pub struct CreateFilterRequest {
 }
 
 /// Request to update a filter.
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Deserialize, utoipa::ToSchema)]
 pub struct UpdateFilterRequest {
     pub filter_type: Option<String>,
     pub config: Option<serde_json::Value>,

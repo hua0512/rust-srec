@@ -6,7 +6,7 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
 /// Static metadata about a supported notification event type.
-#[derive(Debug, Clone, Copy, Serialize)]
+#[derive(Debug, Clone, Copy, serde::Serialize, utoipa::ToSchema)]
 pub struct NotificationEventTypeInfo {
     /// Canonical subscription key (snake_case).
     pub event_type: &'static str,
@@ -195,28 +195,36 @@ pub fn canonicalize_subscription_event_name(input: &str) -> Option<&'static str>
 
 fn normalize_subscription_key(input: &str) -> String {
     let lower = input.trim().to_ascii_lowercase();
-    let snakeish = lower.replace('.', "_").replace('-', "_").replace(' ', "_");
+    let snakeish = lower.replace(['.', '-', ' '], "_");
     let compact: String = snakeish.chars().filter(|c| *c != '_').collect();
     compact
 }
 
 /// Priority level for notifications.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    Serialize,
+    Deserialize,
+    Default,
+    utoipa::ToSchema,
+)]
 pub enum NotificationPriority {
     /// Low priority - informational only.
     Low,
     /// Normal priority - standard notifications.
+    #[default]
     Normal,
     /// High priority - important events.
     High,
     /// Critical priority - requires immediate attention.
     Critical,
-}
-
-impl Default for NotificationPriority {
-    fn default() -> Self {
-        Self::Normal
-    }
 }
 
 impl std::fmt::Display for NotificationPriority {

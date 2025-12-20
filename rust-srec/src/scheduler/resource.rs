@@ -221,7 +221,8 @@ mod tests {
     fn test_resource_monitor_creation() {
         let monitor = ResourceMonitor::new();
         // Just verify it can be created without panicking
-        assert!(monitor.disks.list().len() >= 0);
+        // The length of a vector is always >= 0, so we just check it exists
+        let _disk_count = monitor.disks.list().len();
     }
 
     #[test]

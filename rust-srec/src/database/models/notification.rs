@@ -5,7 +5,7 @@ use sqlx::FromRow;
 
 /// Notification channel database model.
 /// Represents a configured destination for system event notifications.
-#[derive(Debug, Clone, FromRow, Serialize, Deserialize)]
+#[derive(Debug, Clone, FromRow, Serialize, Deserialize, utoipa::ToSchema)]
 pub struct NotificationChannelDbModel {
     pub id: String,
     pub name: String,
@@ -32,7 +32,16 @@ impl NotificationChannelDbModel {
 
 /// Notification channel types.
 #[derive(
-    Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, strum::Display, strum::EnumString,
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    Serialize,
+    Deserialize,
+    strum::Display,
+    strum::EnumString,
+    utoipa::ToSchema,
 )]
 #[strum(serialize_all = "PascalCase")]
 #[serde(rename_all = "PascalCase")]

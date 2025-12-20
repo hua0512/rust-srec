@@ -3,7 +3,6 @@
 //! The StreamMonitor coordinates live status detection, filter evaluation,
 //! and state updates for streamers.
 
-use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -88,6 +87,17 @@ pub struct StreamMonitor<
     /// Configuration.
     #[allow(dead_code)]
     config: StreamMonitorConfig,
+}
+
+/// Details for a streamer going live.
+pub(crate) struct LiveStatusDetails {
+    pub title: String,
+    pub category: Option<String>,
+    pub avatar: Option<String>,
+    pub started_at: Option<chrono::DateTime<chrono::Utc>>,
+    pub streams: Vec<platforms_parser::media::StreamInfo>,
+    pub media_headers: Option<std::collections::HashMap<String, String>>,
+    pub media_extras: Option<std::collections::HashMap<String, String>>,
 }
 
 impl<
@@ -355,13 +365,15 @@ impl<
             } => {
                 self.handle_live(
                     streamer,
-                    title,
-                    category,
-                    avatar,
-                    started_at,
-                    streams,
-                    media_headers,
-                    media_extras,
+                    LiveStatusDetails {
+                        title,
+                        category,
+                        avatar,
+                        started_at,
+                        streams,
+                        media_headers,
+                        media_extras,
+                    },
                 )
                 .await?;
             }
@@ -430,14 +442,17 @@ impl<
     async fn handle_live(
         &self,
         streamer: &StreamerMetadata,
-        title: String,
-        category: Option<String>,
-        avatar: Option<String>,
-        started_at: Option<chrono::DateTime<chrono::Utc>>,
-        streams: Vec<platforms_parser::media::StreamInfo>,
-        media_headers: Option<HashMap<String, String>>,
-        media_extras: Option<HashMap<String, String>>,
+        details: LiveStatusDetails,
     ) -> Result<()> {
+        let LiveStatusDetails {
+            title,
+            category,
+            avatar,
+            started_at,
+            streams,
+            media_headers,
+            media_extras,
+        } = details;
         info!(
             "Streamer {} is LIVE: {} ({} streams available, {} media headers)",
             streamer.name,
@@ -541,10 +556,11 @@ impl<
         // Update streamer state and clear error backoff as part of the same transaction.
         StreamerTxOps::set_live(&mut tx, &streamer.id, now).await?;
 
-        if let Some(ref new_avatar_url) = avatar {
-            if !new_avatar_url.is_empty() && avatar != streamer.avatar_url {
-                StreamerTxOps::update_avatar(&mut tx, &streamer.id, new_avatar_url).await?;
-            }
+        if let Some(ref new_avatar_url) = avatar
+            && !new_avatar_url.is_empty()
+            && avatar != streamer.avatar_url
+        {
+            StreamerTxOps::update_avatar(&mut tx, &streamer.id, new_avatar_url).await?;
         }
 
         // Enqueue live event for notifications and download triggering.
@@ -680,6 +696,38 @@ impl<
         }
 
         Ok(())
+    }
+
+    /// Force end any active session for a streamer.
+    ///
+    /// This is used during streamer disable/delete operations where we need to
+    /// end sessions regardless of the streamer's current in-memory state.
+    /// Unlike `handle_offline_with_session`, this does not check state transitions
+    /// and directly ends any active session in the database.
+    ///
+    /// # Arguments
+    /// * `streamer_id` - The ID of the streamer whose session should be ended
+    ///
+    /// # Returns
+    /// * `Ok(Some(session_id))` if a session was ended
+    /// * `Ok(None)` if no active session existed
+    pub async fn force_end_active_session(&self, streamer_id: &str) -> Result<Option<String>> {
+        let now = chrono::Utc::now();
+
+        let mut tx = self.begin_immediate().await?;
+
+        let session_id = SessionTxOps::end_active_session(&mut tx, streamer_id, now).await?;
+
+        if let Some(ref id) = session_id {
+            info!(
+                "Force ended active session {} for streamer {}",
+                id, streamer_id
+            );
+        }
+
+        tx.commit().await?;
+
+        Ok(session_id)
     }
 
     /// Handle a filtered status (live but out of schedule, etc.).
