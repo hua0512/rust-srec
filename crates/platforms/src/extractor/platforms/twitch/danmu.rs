@@ -14,8 +14,8 @@ use tokio::sync::{Mutex, RwLock, mpsc};
 use tokio::task::JoinHandle;
 use tracing::{debug, error, info, warn};
 
-use crate::error::{DanmakuError, Result};
-use crate::{DanmuConnection, DanmuMessage, DanmuProvider, DanmuType};
+use crate::danmaku::error::{DanmakuError, Result};
+use crate::danmaku::{DanmuConnection, DanmuMessage, DanmuProvider, DanmuType};
 
 /// Twitch IRC server address (TLS)
 const TWITCH_IRC_HOST: &str = "irc.chat.twitch.tv";

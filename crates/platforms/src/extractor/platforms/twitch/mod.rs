@@ -1,4 +1,5 @@
 mod builder;
+pub mod danmu;
 mod models;
 
 pub use builder::Twitch;

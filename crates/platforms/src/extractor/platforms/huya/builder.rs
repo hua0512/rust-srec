@@ -53,7 +53,7 @@ impl Huya {
     const MP_URL: &'static str = "https://mp.huya.com/cache.php";
     // WUP User-Agent for Huya
     const WUP_UA: &'static str =
-        "HYSDK(Windows, 30000002)_APP(pc_exe&7060000&official)_SDK(trans&2.32.3.5646)";
+        "HYSDK(Windows,30000002)_APP(pc_exe&7030003&official)_SDK(trans&2.29.0.5493)";
 
     pub fn new(
         platform_url: String,
@@ -72,8 +72,8 @@ impl Huya {
 
         let force_origin_quality =
             parse_bool_from_extras(extras.as_ref(), "force_origin_quality", true);
-        let use_wup = parse_bool_from_extras(extras.as_ref(), "use_wup", false);
-        let use_wup_v2 = parse_bool_from_extras(extras.as_ref(), "use_wup_v2", true);
+        let use_wup = parse_bool_from_extras(extras.as_ref(), "use_wup", true);
+        let use_wup_v2 = parse_bool_from_extras(extras.as_ref(), "use_wup_v2", false);
 
         Self {
             extractor,
@@ -652,7 +652,12 @@ impl Huya {
 
     /// Get living info via WUP
     async fn get_living_info_wup(&self, lp: i64) -> Result<GetLivingInfoRsp, ExtractorError> {
-        let request_body = tars::build_get_living_info_request(lp, Self::WUP_UA).map_err(|e| {
+        let request_body = tars::build_get_living_info_request(
+            lp,
+            "huya_nftv&2.5.1.3141&official&30",
+            "android_tv",
+        )
+        .map_err(|e| {
             ExtractorError::ValidationError(format!(
                 "Failed to build getLivingInfo request: {:?}",
                 e
@@ -895,18 +900,18 @@ mod tests {
             .with_max_level(tracing::Level::DEBUG)
             .init();
         let extractor = Huya::new(
-            "https://www.huya.com/chuhe".to_string(),
+            "https://www.huya.com/660000".to_string(),
             default_client(),
             None,
             None,
         );
-        let media_info = extractor.extract().await.unwrap();
+        let mut media_info = extractor.extract().await.unwrap();
         assert!(media_info.is_live);
-        println!("{media_info:?}");
-        // let mut stream_info = media_info.streams.drain(0..1).next().unwrap();
-        // assert!(!stream_info.url.is_empty());
-        // extractor.get_url(&mut stream_info).await.unwrap();
-        // println!("{stream_info:?}");
+        // println!("{media_info:?}");
+        let mut stream_info = media_info.streams.drain(0..1).next().unwrap();
+        assert!(!stream_info.url.is_empty());
+        extractor.get_url(&mut stream_info).await.unwrap();
+        println!("{stream_info:?}");
     }
 
     #[tokio::test]

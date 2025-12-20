@@ -89,7 +89,7 @@ impl CollectionHandle {
             })
             .await
             .map_err(|_| {
-                Error::from(danmaku::DanmakuError::connection(
+                Error::from(platforms_parser::danmaku::DanmakuError::connection(
                     "Collection task not running",
                 ))
             })
@@ -103,7 +103,7 @@ impl CollectionHandle {
             })
             .await
             .map_err(|_| {
-                Error::from(danmaku::DanmakuError::connection(
+                Error::from(platforms_parser::danmaku::DanmakuError::connection(
                     "Collection task not running",
                 ))
             })
@@ -192,26 +192,26 @@ impl DanmuService {
     ) -> Result<CollectionHandle> {
         // Check if already collecting
         if self.collections.contains_key(session_id) {
-            return Err(Error::from(danmaku::DanmakuError::connection(format!(
-                "Collection already active for session {}",
-                session_id
-            ))));
+            return Err(Error::from(
+                platforms_parser::danmaku::DanmakuError::connection(format!(
+                    "Collection already active for session {}",
+                    session_id
+                )),
+            ));
         }
 
         // Find provider for URL
         let provider = self.providers.get_by_url(streamer_url).ok_or_else(|| {
-            Error::from(danmaku::DanmakuError::connection(format!(
-                "No danmu provider for URL: {}",
-                streamer_url
-            )))
+            Error::from(platforms_parser::danmaku::DanmakuError::connection(
+                format!("No danmu provider for URL: {}", streamer_url),
+            ))
         })?;
 
         // Extract room ID
         let room_id = provider.extract_room_id(streamer_url).ok_or_else(|| {
-            Error::from(danmaku::DanmakuError::connection(format!(
-                "Could not extract room ID from URL: {}",
-                streamer_url
-            )))
+            Error::from(platforms_parser::danmaku::DanmakuError::connection(
+                format!("Could not extract room ID from URL: {}", streamer_url),
+            ))
         })?;
 
         // Create command channel
@@ -281,10 +281,9 @@ impl DanmuService {
     pub async fn stop_collection(&self, session_id: &str) -> Result<DanmuStatistics> {
         // Get and remove state
         let (_, state) = self.collections.remove(session_id).ok_or_else(|| {
-            Error::from(danmaku::DanmakuError::connection(format!(
-                "No active collection for session {}",
-                session_id
-            )))
+            Error::from(platforms_parser::danmaku::DanmakuError::connection(
+                format!("No active collection for session {}", session_id),
+            ))
         })?;
 
         // Send stop command

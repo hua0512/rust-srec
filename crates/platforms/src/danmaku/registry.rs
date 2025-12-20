@@ -1,14 +1,8 @@
-//! Platform-specific danmu providers.
-//!
-//! Each provider implements the `DanmuProvider` trait for a specific streaming platform.
+//! Registry of available danmu providers.
 
-pub mod huya;
-pub mod twitch;
-
-pub use huya::HuyaDanmuProvider;
-pub use twitch::TwitchDanmuProvider;
-
-use crate::provider::DanmuProvider;
+use crate::danmaku::provider::DanmuProvider;
+use crate::extractor::platforms::huya::HuyaDanmuProvider;
+use crate::extractor::platforms::twitch::danmu::TwitchDanmuProvider;
 use std::sync::Arc;
 
 /// Registry of available danmu providers.
@@ -67,6 +61,7 @@ mod tests {
         let platforms = registry.platforms();
 
         assert!(platforms.contains(&"huya"));
+        assert!(platforms.contains(&"twitch"));
     }
 
     #[test]

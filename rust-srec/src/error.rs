@@ -45,7 +45,7 @@ pub enum Error {
     ApiError(String),
 
     #[error("Danmaku crate error: {0}")]
-    DanmakuError(#[from] danmaku::DanmakuError),
+    DanmakuError(#[from] platforms_parser::danmaku::DanmakuError),
 
     #[error("{0}")]
     Other(String),

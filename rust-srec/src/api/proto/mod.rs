@@ -10,11 +10,6 @@ pub mod download_progress {
     include!(concat!(env!("OUT_DIR"), "/download_progress.rs"));
 }
 
-// TODO: REXPORT DOUYIN PROTO
-pub mod douyin_proto {
-    include!(concat!(env!("OUT_DIR"), "/douyin.rs"));
-}
-
 // Log event protobuf types
 pub mod log_event {
     include!(concat!(env!("OUT_DIR"), "/log_event.rs"));

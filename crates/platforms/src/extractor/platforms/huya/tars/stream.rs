@@ -4,7 +4,7 @@ use rustc_hash::FxHashMap;
 use tars_codec::{error::TarsError, types::TarsValue};
 
 // StreamInfo struct from JavaScript x.StreamInfo
-#[derive(Default, Debug, Clone)]
+#[derive(Default, Debug, Clone, PartialEq)]
 #[allow(dead_code)]
 pub struct StreamInfo {
     pub s_cdn_type: String,                     // tag 0
@@ -37,143 +37,180 @@ pub struct StreamInfo {
     pub l_update_time: i64,                     // tag 27
 }
 
+impl From<StreamInfo> for TarsValue {
+    fn from(info: StreamInfo) -> Self {
+        let mut map = FxHashMap::default();
+        map.insert(0, TarsValue::String(info.s_cdn_type));
+        map.insert(1, TarsValue::Int(info.i_is_master));
+        map.insert(2, TarsValue::Long(info.l_channel_id));
+        map.insert(3, TarsValue::Long(info.l_sub_channel_id));
+        map.insert(4, TarsValue::Long(info.l_presenter_uid));
+        map.insert(5, TarsValue::String(info.s_stream_name));
+        map.insert(6, TarsValue::String(info.s_flv_url));
+        map.insert(7, TarsValue::String(info.s_flv_url_suffix));
+        map.insert(8, TarsValue::String(info.s_flv_anti_code));
+        map.insert(9, TarsValue::String(info.s_hls_url));
+        map.insert(10, TarsValue::String(info.s_hls_url_suffix));
+        map.insert(11, TarsValue::String(info.s_hls_anti_code));
+        map.insert(12, TarsValue::Int(info.i_line_index));
+        map.insert(13, TarsValue::Int(info.i_is_multi_stream));
+        map.insert(14, TarsValue::Int(info.i_pc_priority_rate));
+        map.insert(15, TarsValue::Int(info.i_web_priority_rate));
+        map.insert(16, TarsValue::Int(info.i_mobile_priority_rate));
+        map.insert(
+            17,
+            TarsValue::List(
+                info.v_flv_ip_list
+                    .into_iter()
+                    .map(|s| Box::new(TarsValue::String(s)))
+                    .collect(),
+            ),
+        );
+        map.insert(18, TarsValue::Int(info.i_is_p2p_support));
+        map.insert(19, TarsValue::String(info.s_p2p_url));
+        map.insert(20, TarsValue::String(info.s_p2p_url_suffix));
+        map.insert(21, TarsValue::String(info.s_p2p_anti_code));
+        map.insert(22, TarsValue::Long(info.l_free_flag));
+        map.insert(23, TarsValue::Int(info.i_is_hevc_support));
+        map.insert(
+            24,
+            TarsValue::List(
+                info.v_p2p_ip_list
+                    .into_iter()
+                    .map(|s| Box::new(TarsValue::String(s)))
+                    .collect(),
+            ),
+        );
+        map.insert(
+            25,
+            TarsValue::Map(
+                info.mp_ext_args
+                    .into_iter()
+                    .map(|(k, v)| (TarsValue::String(k), TarsValue::String(v)))
+                    .collect(),
+            ),
+        );
+        map.insert(26, TarsValue::Long(info.l_timespan));
+        map.insert(27, TarsValue::Long(info.l_update_time));
+        TarsValue::Struct(map)
+    }
+}
+
 impl TryFrom<TarsValue> for StreamInfo {
     type Error = TarsError;
 
     fn try_from(value: TarsValue) -> Result<Self, Self::Error> {
-        if let TarsValue::Struct(mut map) = value {
-            let take_optional_string = |map: &mut FxHashMap<u8, TarsValue>, tag: u8| -> String {
-                map.remove(&tag)
-                    .and_then(|v| v.try_into_string().ok())
-                    .unwrap_or_default()
-            };
-            let take_optional_i32 = |map: &mut FxHashMap<u8, TarsValue>, tag: u8| -> i32 {
-                map.remove(&tag)
-                    .and_then(|v| v.try_into_i32().ok())
-                    .unwrap_or_default()
-            };
-            let take_optional_i64 = |map: &mut FxHashMap<u8, TarsValue>, tag: u8| -> i64 {
-                map.remove(&tag)
-                    .and_then(|v| v.try_into_i64().ok())
-                    .unwrap_or_default()
-            };
+        let mut map = value.try_into_struct()?;
+        let mut take = |tag: u8| map.remove(&tag);
 
-            let s_cdn_type = take_optional_string(&mut map, 0);
-            let i_is_master = take_optional_i32(&mut map, 1);
-            let l_channel_id = take_optional_i64(&mut map, 2);
-            let l_sub_channel_id = take_optional_i64(&mut map, 3);
-            let l_presenter_uid = take_optional_i64(&mut map, 4);
-            let s_stream_name = take_optional_string(&mut map, 5);
-            let s_flv_url = take_optional_string(&mut map, 6);
-            let s_flv_url_suffix = take_optional_string(&mut map, 7);
-            let s_flv_anti_code = take_optional_string(&mut map, 8);
-            let s_hls_url = take_optional_string(&mut map, 9);
-            let s_hls_url_suffix = take_optional_string(&mut map, 10);
-            let s_hls_anti_code = take_optional_string(&mut map, 11);
-            let i_line_index = take_optional_i32(&mut map, 12);
-            let i_is_multi_stream = take_optional_i32(&mut map, 13);
-            let i_pc_priority_rate = take_optional_i32(&mut map, 14);
-            let i_web_priority_rate = take_optional_i32(&mut map, 15);
-            let i_mobile_priority_rate = take_optional_i32(&mut map, 16);
-
-            let v_flv_ip_list = map
-                .remove(&17)
-                .and_then(|v| {
-                    if let TarsValue::List(list) = v {
-                        Some(
-                            list.into_iter()
-                                .filter_map(|item| (*item).try_into_string().ok())
-                                .collect(),
-                        )
-                    } else {
-                        None
-                    }
+        Ok(StreamInfo {
+            s_cdn_type: take(0)
+                .and_then(|v| v.try_into_string().ok())
+                .unwrap_or_default(),
+            i_is_master: take(1)
+                .and_then(|v| v.try_into_i32().ok())
+                .unwrap_or_default(),
+            l_channel_id: take(2)
+                .and_then(|v| v.try_into_i64().ok())
+                .unwrap_or_default(),
+            l_sub_channel_id: take(3)
+                .and_then(|v| v.try_into_i64().ok())
+                .unwrap_or_default(),
+            l_presenter_uid: take(4)
+                .and_then(|v| v.try_into_i64().ok())
+                .unwrap_or_default(),
+            s_stream_name: take(5)
+                .and_then(|v| v.try_into_string().ok())
+                .unwrap_or_default(),
+            s_flv_url: take(6)
+                .and_then(|v| v.try_into_string().ok())
+                .unwrap_or_default(),
+            s_flv_url_suffix: take(7)
+                .and_then(|v| v.try_into_string().ok())
+                .unwrap_or_default(),
+            s_flv_anti_code: take(8)
+                .and_then(|v| v.try_into_string().ok())
+                .unwrap_or_default(),
+            s_hls_url: take(9)
+                .and_then(|v| v.try_into_string().ok())
+                .unwrap_or_default(),
+            s_hls_url_suffix: take(10)
+                .and_then(|v| v.try_into_string().ok())
+                .unwrap_or_default(),
+            s_hls_anti_code: take(11)
+                .and_then(|v| v.try_into_string().ok())
+                .unwrap_or_default(),
+            i_line_index: take(12)
+                .and_then(|v| v.try_into_i32().ok())
+                .unwrap_or_default(),
+            i_is_multi_stream: take(13)
+                .and_then(|v| v.try_into_i32().ok())
+                .unwrap_or_default(),
+            i_pc_priority_rate: take(14)
+                .and_then(|v| v.try_into_i32().ok())
+                .unwrap_or_default(),
+            i_web_priority_rate: take(15)
+                .and_then(|v| v.try_into_i32().ok())
+                .unwrap_or_default(),
+            i_mobile_priority_rate: take(16)
+                .and_then(|v| v.try_into_i32().ok())
+                .unwrap_or_default(),
+            v_flv_ip_list: take(17)
+                .and_then(|v| v.try_into_list().ok())
+                .map(|l| {
+                    l.into_iter()
+                        .filter_map(|x| x.try_into_string().ok())
+                        .collect()
                 })
-                .unwrap_or_default();
-
-            let i_is_p2p_support = take_optional_i32(&mut map, 18);
-            let s_p2p_url = take_optional_string(&mut map, 19);
-            let s_p2p_url_suffix = take_optional_string(&mut map, 20);
-            let s_p2p_anti_code = take_optional_string(&mut map, 21);
-            let l_free_flag = take_optional_i64(&mut map, 22);
-            let i_is_hevc_support = take_optional_i32(&mut map, 23);
-
-            let v_p2p_ip_list = map
-                .remove(&24)
-                .and_then(|v| {
-                    if let TarsValue::List(list) = v {
-                        Some(
-                            list.into_iter()
-                                .filter_map(|item| (*item).try_into_string().ok())
-                                .collect(),
-                        )
-                    } else {
-                        None
-                    }
+                .unwrap_or_default(),
+            i_is_p2p_support: take(18)
+                .and_then(|v| v.try_into_i32().ok())
+                .unwrap_or_default(),
+            s_p2p_url: take(19)
+                .and_then(|v| v.try_into_string().ok())
+                .unwrap_or_default(),
+            s_p2p_url_suffix: take(20)
+                .and_then(|v| v.try_into_string().ok())
+                .unwrap_or_default(),
+            s_p2p_anti_code: take(21)
+                .and_then(|v| v.try_into_string().ok())
+                .unwrap_or_default(),
+            l_free_flag: take(22)
+                .and_then(|v| v.try_into_i64().ok())
+                .unwrap_or_default(),
+            i_is_hevc_support: take(23)
+                .and_then(|v| v.try_into_i32().ok())
+                .unwrap_or_default(),
+            v_p2p_ip_list: take(24)
+                .and_then(|v| v.try_into_list().ok())
+                .map(|l| {
+                    l.into_iter()
+                        .filter_map(|x| x.try_into_string().ok())
+                        .collect()
                 })
-                .unwrap_or_default();
-
-            let mp_ext_args = map
-                .remove(&25)
-                .and_then(|v| {
-                    if let TarsValue::Map(map_val) = v {
-                        let mut result = FxHashMap::default();
-                        for (k, v) in map_val {
-                            if let (Ok(key), Ok(val)) = (k.try_into_string(), v.try_into_string()) {
-                                result.insert(key, val);
-                            }
-                        }
-                        Some(result)
-                    } else {
-                        None
-                    }
+                .unwrap_or_default(),
+            mp_ext_args: take(25)
+                .and_then(|v| v.try_into_map().ok())
+                .map(|m| {
+                    m.into_iter()
+                        .filter_map(|(k, v)| {
+                            Some((k.try_into_string().ok()?, v.try_into_string().ok()?))
+                        })
+                        .collect()
                 })
-                .unwrap_or_default();
-
-            let l_timespan = take_optional_i64(&mut map, 26);
-            let l_update_time = take_optional_i64(&mut map, 27);
-
-            Ok(StreamInfo {
-                s_cdn_type,
-                i_is_master,
-                l_channel_id,
-                l_sub_channel_id,
-                l_presenter_uid,
-                s_stream_name,
-                s_flv_url,
-                s_flv_url_suffix,
-                s_flv_anti_code,
-                s_hls_url,
-                s_hls_url_suffix,
-                s_hls_anti_code,
-                i_line_index,
-                i_is_multi_stream,
-                i_pc_priority_rate,
-                i_web_priority_rate,
-                i_mobile_priority_rate,
-                v_flv_ip_list,
-                i_is_p2p_support,
-                s_p2p_url,
-                s_p2p_url_suffix,
-                s_p2p_anti_code,
-                l_free_flag,
-                i_is_hevc_support,
-                v_p2p_ip_list,
-                mp_ext_args,
-                l_timespan,
-                l_update_time,
-            })
-        } else {
-            Err(TarsError::TypeMismatch {
-                expected: "Struct",
-                actual: "Other",
-            })
-        }
+                .unwrap_or_default(),
+            l_timespan: take(26)
+                .and_then(|v| v.try_into_i64().ok())
+                .unwrap_or_default(),
+            l_update_time: take(27)
+                .and_then(|v| v.try_into_i64().ok())
+                .unwrap_or_default(),
+        })
     }
 }
 
 // MultiStreamInfo struct from JavaScript x.MultiStreamInfo
-#[derive(Default, Debug, Clone)]
+#[derive(Default, Debug, Clone, PartialEq)]
 #[allow(dead_code)]
 pub struct MultiStreamInfo {
     pub s_display_name: String, // tag 0
@@ -191,68 +228,75 @@ pub struct MultiStreamInfo {
     pub i_sort_value: i32,      // tag 12
 }
 
+impl From<MultiStreamInfo> for TarsValue {
+    fn from(info: MultiStreamInfo) -> Self {
+        let mut map = FxHashMap::default();
+        map.insert(0, TarsValue::String(info.s_display_name));
+        map.insert(1, TarsValue::Int(info.i_bit_rate));
+        map.insert(2, TarsValue::Int(info.i_codec_type));
+        map.insert(3, TarsValue::Int(info.i_compatible_flag));
+        map.insert(4, TarsValue::Int(info.i_hevc_bit_rate));
+        map.insert(5, TarsValue::Int(info.i_enable));
+        map.insert(6, TarsValue::Int(info.i_enable_method));
+        map.insert(7, TarsValue::String(info.s_enable_url));
+        map.insert(8, TarsValue::String(info.s_tip_text));
+        map.insert(9, TarsValue::String(info.s_tag_text));
+        map.insert(10, TarsValue::String(info.s_tag_url));
+        map.insert(11, TarsValue::Int(info.i_frame_rate));
+        map.insert(12, TarsValue::Int(info.i_sort_value));
+        TarsValue::Struct(map)
+    }
+}
+
 impl TryFrom<TarsValue> for MultiStreamInfo {
     type Error = TarsError;
 
     fn try_from(value: TarsValue) -> Result<Self, Self::Error> {
-        if let TarsValue::Struct(mut map) = value {
-            let take_optional_string = |map: &mut FxHashMap<u8, TarsValue>, tag: u8| -> String {
-                map.remove(&tag)
-                    .and_then(|v| v.try_into_string().ok())
-                    .unwrap_or_default()
-            };
-            let take_optional_i32 = |map: &mut FxHashMap<u8, TarsValue>, tag: u8| -> i32 {
-                map.remove(&tag)
-                    .and_then(|v| v.try_into_i32().ok())
-                    .unwrap_or_default()
-            };
+        let mut map = value.try_into_struct()?;
+        let mut take = |tag: u8| map.remove(&tag);
 
-            let s_display_name = take_optional_string(&mut map, 0);
-            let i_bit_rate = take_optional_i32(&mut map, 1);
-            let i_codec_type = take_optional_i32(&mut map, 2);
-            let i_compatible_flag = take_optional_i32(&mut map, 3);
-            let i_hevc_bit_rate = map
-                .remove(&4)
+        Ok(MultiStreamInfo {
+            s_display_name: take(0)
+                .and_then(|v| v.try_into_string().ok())
+                .unwrap_or_default(),
+            i_bit_rate: take(1)
                 .and_then(|v| v.try_into_i32().ok())
-                .unwrap_or(-1);
-            let i_enable = map
-                .remove(&5)
+                .unwrap_or_default(),
+            i_codec_type: take(2)
                 .and_then(|v| v.try_into_i32().ok())
-                .unwrap_or(1);
-            let i_enable_method = take_optional_i32(&mut map, 6);
-            let s_enable_url = take_optional_string(&mut map, 7);
-            let s_tip_text = take_optional_string(&mut map, 8);
-            let s_tag_text = take_optional_string(&mut map, 9);
-            let s_tag_url = take_optional_string(&mut map, 10);
-            let i_frame_rate = take_optional_i32(&mut map, 11);
-            let i_sort_value = take_optional_i32(&mut map, 12);
-
-            Ok(MultiStreamInfo {
-                s_display_name,
-                i_bit_rate,
-                i_codec_type,
-                i_compatible_flag,
-                i_hevc_bit_rate,
-                i_enable,
-                i_enable_method,
-                s_enable_url,
-                s_tip_text,
-                s_tag_text,
-                s_tag_url,
-                i_frame_rate,
-                i_sort_value,
-            })
-        } else {
-            Err(TarsError::TypeMismatch {
-                expected: "Struct",
-                actual: "Other",
-            })
-        }
+                .unwrap_or_default(),
+            i_compatible_flag: take(3)
+                .and_then(|v| v.try_into_i32().ok())
+                .unwrap_or_default(),
+            i_hevc_bit_rate: take(4).and_then(|v| v.try_into_i32().ok()).unwrap_or(-1),
+            i_enable: take(5).and_then(|v| v.try_into_i32().ok()).unwrap_or(1),
+            i_enable_method: take(6)
+                .and_then(|v| v.try_into_i32().ok())
+                .unwrap_or_default(),
+            s_enable_url: take(7)
+                .and_then(|v| v.try_into_string().ok())
+                .unwrap_or_default(),
+            s_tip_text: take(8)
+                .and_then(|v| v.try_into_string().ok())
+                .unwrap_or_default(),
+            s_tag_text: take(9)
+                .and_then(|v| v.try_into_string().ok())
+                .unwrap_or_default(),
+            s_tag_url: take(10)
+                .and_then(|v| v.try_into_string().ok())
+                .unwrap_or_default(),
+            i_frame_rate: take(11)
+                .and_then(|v| v.try_into_i32().ok())
+                .unwrap_or_default(),
+            i_sort_value: take(12)
+                .and_then(|v| v.try_into_i32().ok())
+                .unwrap_or_default(),
+        })
     }
 }
 
 // BeginLiveNotice struct from JavaScript BeginLiveNotice
-#[derive(Default, Debug, Clone)]
+#[derive(Default, Debug, Clone, PartialEq)]
 #[allow(dead_code)]
 pub struct BeginLiveNotice {
     pub l_presenter_uid: i64,                      // tag 0
@@ -297,176 +341,294 @@ pub struct BeginLiveNotice {
     pub i_replay: i32,                             // tag 39
 }
 
+impl From<BeginLiveNotice> for TarsValue {
+    fn from(notice: BeginLiveNotice) -> Self {
+        let mut map = FxHashMap::default();
+        map.insert(0, TarsValue::Long(notice.l_presenter_uid));
+        map.insert(1, TarsValue::Int(notice.i_game_id));
+        map.insert(2, TarsValue::String(notice.s_game_name));
+        map.insert(3, TarsValue::Int(notice.i_random_range));
+        map.insert(4, TarsValue::Int(notice.i_stream_type));
+        map.insert(
+            5,
+            TarsValue::List(
+                notice
+                    .v_stream_info
+                    .into_iter()
+                    .map(|s| Box::new(TarsValue::from(s)))
+                    .collect(),
+            ),
+        );
+        map.insert(
+            6,
+            TarsValue::List(
+                notice
+                    .v_cdn_list
+                    .into_iter()
+                    .map(|s| Box::new(TarsValue::String(s)))
+                    .collect(),
+            ),
+        );
+        map.insert(7, TarsValue::Long(notice.l_live_id));
+        map.insert(8, TarsValue::Int(notice.i_pc_default_bit_rate));
+        map.insert(9, TarsValue::Int(notice.i_web_default_bit_rate));
+        map.insert(10, TarsValue::Int(notice.i_mobile_default_bit_rate));
+        map.insert(11, TarsValue::Long(notice.l_multi_stream_flag));
+        map.insert(12, TarsValue::String(notice.s_nick));
+        map.insert(13, TarsValue::Long(notice.l_yy_id));
+        map.insert(14, TarsValue::Long(notice.l_attendee_count));
+        map.insert(15, TarsValue::Int(notice.i_codec_type));
+        map.insert(16, TarsValue::Int(notice.i_screen_type));
+        map.insert(
+            17,
+            TarsValue::List(
+                notice
+                    .v_multi_stream_info
+                    .into_iter()
+                    .map(|s| Box::new(TarsValue::from(s)))
+                    .collect(),
+            ),
+        );
+        map.insert(18, TarsValue::String(notice.s_live_desc));
+        map.insert(19, TarsValue::Long(notice.l_live_compatible_flag));
+        map.insert(20, TarsValue::String(notice.s_avatar_url));
+        map.insert(21, TarsValue::Int(notice.i_source_type));
+        map.insert(22, TarsValue::String(notice.s_subchannel_name));
+        map.insert(23, TarsValue::String(notice.s_video_capture_url));
+        map.insert(24, TarsValue::Int(notice.i_start_time));
+        map.insert(25, TarsValue::Long(notice.l_channel_id));
+        map.insert(26, TarsValue::Long(notice.l_sub_channel_id));
+        map.insert(27, TarsValue::String(notice.s_location));
+        map.insert(28, TarsValue::Int(notice.i_cdn_policy_level));
+        map.insert(29, TarsValue::Int(notice.i_game_type));
+        map.insert(
+            30,
+            TarsValue::Map(
+                notice
+                    .m_misc_info
+                    .into_iter()
+                    .map(|(k, v)| (TarsValue::String(k), TarsValue::String(v)))
+                    .collect(),
+            ),
+        );
+        map.insert(31, TarsValue::Int(notice.i_short_channel));
+        map.insert(32, TarsValue::Int(notice.i_room_id));
+        map.insert(33, TarsValue::Int(notice.b_is_room_secret));
+        map.insert(34, TarsValue::Int(notice.i_hash_policy));
+        map.insert(35, TarsValue::Long(notice.l_sign_channel));
+        map.insert(36, TarsValue::Int(notice.i_mobile_wifi_default_bit_rate));
+        map.insert(37, TarsValue::Int(notice.i_enable_auto_bit_rate));
+        map.insert(38, TarsValue::Int(notice.i_template));
+        map.insert(39, TarsValue::Int(notice.i_replay));
+        TarsValue::Struct(map)
+    }
+}
+
 impl TryFrom<TarsValue> for BeginLiveNotice {
     type Error = TarsError;
 
     fn try_from(value: TarsValue) -> Result<Self, Self::Error> {
-        if let TarsValue::Struct(mut map) = value {
-            let take_optional_string = |map: &mut FxHashMap<u8, TarsValue>, tag: u8| -> String {
-                map.remove(&tag)
-                    .and_then(|v| v.try_into_string().ok())
-                    .unwrap_or_default()
-            };
-            let take_optional_i32 = |map: &mut FxHashMap<u8, TarsValue>, tag: u8| -> i32 {
-                map.remove(&tag)
-                    .and_then(|v| v.try_into_i32().ok())
-                    .unwrap_or_default()
-            };
-            let take_optional_i64 = |map: &mut FxHashMap<u8, TarsValue>, tag: u8| -> i64 {
-                map.remove(&tag)
-                    .and_then(|v| v.try_into_i64().ok())
-                    .unwrap_or_default()
-            };
+        let mut map = value.try_into_struct()?;
+        let mut take = |tag: u8| map.remove(&tag);
 
-            let l_presenter_uid = take_optional_i64(&mut map, 0);
-            let i_game_id = take_optional_i32(&mut map, 1);
-            let s_game_name = take_optional_string(&mut map, 2);
-            let i_random_range = take_optional_i32(&mut map, 3);
-            let i_stream_type = take_optional_i32(&mut map, 4);
-
-            let v_stream_info = map
-                .remove(&5)
-                .and_then(|v| {
-                    if let TarsValue::List(list) = v {
-                        Some(
-                            list.into_iter()
-                                .filter_map(|item| StreamInfo::try_from(*item).ok())
-                                .collect(),
-                        )
-                    } else {
-                        None
-                    }
+        Ok(BeginLiveNotice {
+            l_presenter_uid: take(0)
+                .and_then(|v| v.try_into_i64().ok())
+                .unwrap_or_default(),
+            i_game_id: take(1)
+                .and_then(|v| v.try_into_i32().ok())
+                .unwrap_or_default(),
+            s_game_name: take(2)
+                .and_then(|v| v.try_into_string().ok())
+                .unwrap_or_default(),
+            i_random_range: take(3)
+                .and_then(|v| v.try_into_i32().ok())
+                .unwrap_or_default(),
+            i_stream_type: take(4)
+                .and_then(|v| v.try_into_i32().ok())
+                .unwrap_or_default(),
+            v_stream_info: take(5)
+                .and_then(|v| v.try_into_list().ok())
+                .map(|l| {
+                    l.into_iter()
+                        .filter_map(|x| StreamInfo::try_from(*x).ok())
+                        .collect()
                 })
-                .unwrap_or_default();
-
-            let v_cdn_list = map
-                .remove(&6)
-                .and_then(|v| {
-                    if let TarsValue::List(list) = v {
-                        Some(
-                            list.into_iter()
-                                .filter_map(|item| (*item).try_into_string().ok())
-                                .collect(),
-                        )
-                    } else {
-                        None
-                    }
+                .unwrap_or_default(),
+            v_cdn_list: take(6)
+                .and_then(|v| v.try_into_list().ok())
+                .map(|l| {
+                    l.into_iter()
+                        .filter_map(|x| x.try_into_string().ok())
+                        .collect()
                 })
-                .unwrap_or_default();
-
-            let l_live_id = take_optional_i64(&mut map, 7);
-            let i_pc_default_bit_rate = take_optional_i32(&mut map, 8);
-            let i_web_default_bit_rate = take_optional_i32(&mut map, 9);
-            let i_mobile_default_bit_rate = take_optional_i32(&mut map, 10);
-            let l_multi_stream_flag = take_optional_i64(&mut map, 11);
-            let s_nick = take_optional_string(&mut map, 12);
-            let l_yy_id = take_optional_i64(&mut map, 13);
-            let l_attendee_count = take_optional_i64(&mut map, 14);
-            let i_codec_type = take_optional_i32(&mut map, 15);
-            let i_screen_type = take_optional_i32(&mut map, 16);
-
-            let v_multi_stream_info = map
-                .remove(&17)
-                .and_then(|v| {
-                    if let TarsValue::List(list) = v {
-                        Some(
-                            list.into_iter()
-                                .filter_map(|item| MultiStreamInfo::try_from(*item).ok())
-                                .collect(),
-                        )
-                    } else {
-                        None
-                    }
+                .unwrap_or_default(),
+            l_live_id: take(7)
+                .and_then(|v| v.try_into_i64().ok())
+                .unwrap_or_default(),
+            i_pc_default_bit_rate: take(8)
+                .and_then(|v| v.try_into_i32().ok())
+                .unwrap_or_default(),
+            i_web_default_bit_rate: take(9)
+                .and_then(|v| v.try_into_i32().ok())
+                .unwrap_or_default(),
+            i_mobile_default_bit_rate: take(10)
+                .and_then(|v| v.try_into_i32().ok())
+                .unwrap_or_default(),
+            l_multi_stream_flag: take(11)
+                .and_then(|v| v.try_into_i64().ok())
+                .unwrap_or_default(),
+            s_nick: take(12)
+                .and_then(|v| v.try_into_string().ok())
+                .unwrap_or_default(),
+            l_yy_id: take(13)
+                .and_then(|v| v.try_into_i64().ok())
+                .unwrap_or_default(),
+            l_attendee_count: take(14)
+                .and_then(|v| v.try_into_i64().ok())
+                .unwrap_or_default(),
+            i_codec_type: take(15)
+                .and_then(|v| v.try_into_i32().ok())
+                .unwrap_or_default(),
+            i_screen_type: take(16)
+                .and_then(|v| v.try_into_i32().ok())
+                .unwrap_or_default(),
+            v_multi_stream_info: take(17)
+                .and_then(|v| v.try_into_list().ok())
+                .map(|l| {
+                    l.into_iter()
+                        .filter_map(|x| MultiStreamInfo::try_from(*x).ok())
+                        .collect()
                 })
-                .unwrap_or_default();
-
-            let s_live_desc = take_optional_string(&mut map, 18);
-            let l_live_compatible_flag = take_optional_i64(&mut map, 19);
-            let s_avatar_url = take_optional_string(&mut map, 20);
-            let i_source_type = take_optional_i32(&mut map, 21);
-            let s_subchannel_name = take_optional_string(&mut map, 22);
-            let s_video_capture_url = take_optional_string(&mut map, 23);
-            let i_start_time = take_optional_i32(&mut map, 24);
-            let l_channel_id = take_optional_i64(&mut map, 25);
-            let l_sub_channel_id = take_optional_i64(&mut map, 26);
-            let s_location = take_optional_string(&mut map, 27);
-            let i_cdn_policy_level = take_optional_i32(&mut map, 28);
-            let i_game_type = take_optional_i32(&mut map, 29);
-
-            let m_misc_info = map
-                .remove(&30)
-                .and_then(|v| {
-                    if let TarsValue::Map(map_val) = v {
-                        let mut result = FxHashMap::default();
-                        for (k, v) in map_val {
-                            if let (Ok(key), Ok(val)) = (k.try_into_string(), v.try_into_string()) {
-                                result.insert(key, val);
-                            }
-                        }
-                        Some(result)
-                    } else {
-                        None
-                    }
+                .unwrap_or_default(),
+            s_live_desc: take(18)
+                .and_then(|v| v.try_into_string().ok())
+                .unwrap_or_default(),
+            l_live_compatible_flag: take(19)
+                .and_then(|v| v.try_into_i64().ok())
+                .unwrap_or_default(),
+            s_avatar_url: take(20)
+                .and_then(|v| v.try_into_string().ok())
+                .unwrap_or_default(),
+            i_source_type: take(21)
+                .and_then(|v| v.try_into_i32().ok())
+                .unwrap_or_default(),
+            s_subchannel_name: take(22)
+                .and_then(|v| v.try_into_string().ok())
+                .unwrap_or_default(),
+            s_video_capture_url: take(23)
+                .and_then(|v| v.try_into_string().ok())
+                .unwrap_or_default(),
+            i_start_time: take(24)
+                .and_then(|v| v.try_into_i32().ok())
+                .unwrap_or_default(),
+            l_channel_id: take(25)
+                .and_then(|v| v.try_into_i64().ok())
+                .unwrap_or_default(),
+            l_sub_channel_id: take(26)
+                .and_then(|v| v.try_into_i64().ok())
+                .unwrap_or_default(),
+            s_location: take(27)
+                .and_then(|v| v.try_into_string().ok())
+                .unwrap_or_default(),
+            i_cdn_policy_level: take(28)
+                .and_then(|v| v.try_into_i32().ok())
+                .unwrap_or_default(),
+            i_game_type: take(29)
+                .and_then(|v| v.try_into_i32().ok())
+                .unwrap_or_default(),
+            m_misc_info: take(30)
+                .and_then(|v| v.try_into_map().ok())
+                .map(|m| {
+                    m.into_iter()
+                        .filter_map(|(k, v)| {
+                            Some((k.try_into_string().ok()?, v.try_into_string().ok()?))
+                        })
+                        .collect()
                 })
-                .unwrap_or_default();
+                .unwrap_or_default(),
+            i_short_channel: take(31)
+                .and_then(|v| v.try_into_i32().ok())
+                .unwrap_or_default(),
+            i_room_id: take(32)
+                .and_then(|v| v.try_into_i32().ok())
+                .unwrap_or_default(),
+            b_is_room_secret: take(33)
+                .and_then(|v| v.try_into_i32().ok())
+                .unwrap_or_default(),
+            i_hash_policy: take(34)
+                .and_then(|v| v.try_into_i32().ok())
+                .unwrap_or_default(),
+            l_sign_channel: take(35)
+                .and_then(|v| v.try_into_i64().ok())
+                .unwrap_or_default(),
+            i_mobile_wifi_default_bit_rate: take(36)
+                .and_then(|v| v.try_into_i32().ok())
+                .unwrap_or_default(),
+            i_enable_auto_bit_rate: take(37)
+                .and_then(|v| v.try_into_i32().ok())
+                .unwrap_or_default(),
+            i_template: take(38)
+                .and_then(|v| v.try_into_i32().ok())
+                .unwrap_or_default(),
+            i_replay: take(39)
+                .and_then(|v| v.try_into_i32().ok())
+                .unwrap_or_default(),
+        })
+    }
+}
 
-            let i_short_channel = take_optional_i32(&mut map, 31);
-            let i_room_id = take_optional_i32(&mut map, 32);
-            let b_is_room_secret = take_optional_i32(&mut map, 33);
-            let i_hash_policy = take_optional_i32(&mut map, 34);
-            let l_sign_channel = take_optional_i64(&mut map, 35);
-            let i_mobile_wifi_default_bit_rate = take_optional_i32(&mut map, 36);
-            let i_enable_auto_bit_rate = take_optional_i32(&mut map, 37);
-            let i_template = take_optional_i32(&mut map, 38);
-            let i_replay = take_optional_i32(&mut map, 39);
+#[cfg(test)]
+mod tests {
+    use super::*;
 
-            Ok(BeginLiveNotice {
-                l_presenter_uid,
-                i_game_id,
-                s_game_name,
-                i_random_range,
-                i_stream_type,
-                v_stream_info,
-                v_cdn_list,
-                l_live_id,
-                i_pc_default_bit_rate,
-                i_web_default_bit_rate,
-                i_mobile_default_bit_rate,
-                l_multi_stream_flag,
-                s_nick,
-                l_yy_id,
-                l_attendee_count,
-                i_codec_type,
-                i_screen_type,
-                v_multi_stream_info,
-                s_live_desc,
-                l_live_compatible_flag,
-                s_avatar_url,
-                i_source_type,
-                s_subchannel_name,
-                s_video_capture_url,
-                i_start_time,
-                l_channel_id,
-                l_sub_channel_id,
-                s_location,
-                i_cdn_policy_level,
-                i_game_type,
-                m_misc_info,
-                i_short_channel,
-                i_room_id,
-                b_is_room_secret,
-                i_hash_policy,
-                l_sign_channel,
-                i_mobile_wifi_default_bit_rate,
-                i_enable_auto_bit_rate,
-                i_template,
-                i_replay,
-            })
-        } else {
-            Err(TarsError::TypeMismatch {
-                expected: "Struct",
-                actual: "Other",
-            })
-        }
+    #[test]
+    fn test_stream_info_compatibility() {
+        let info = StreamInfo {
+            s_cdn_type: "aliyun".into(),
+            i_is_master: 1,
+            l_channel_id: 123,
+            l_sub_channel_id: 456,
+            v_flv_ip_list: vec!["1.1.1.1".into(), "2.2.2.2".into()],
+            mp_ext_args: {
+                let mut m = FxHashMap::default();
+                m.insert("key".into(), "val".into());
+                m
+            },
+            ..Default::default()
+        };
+
+        let tars_val = TarsValue::from(info.clone());
+        let decoded = StreamInfo::try_from(tars_val).unwrap();
+        assert_eq!(info, decoded);
+    }
+
+    #[test]
+    fn test_multi_stream_info_compatibility() {
+        let info = MultiStreamInfo {
+            s_display_name: "1080P".into(),
+            i_bit_rate: 4000,
+            i_hevc_bit_rate: 3000,
+            ..Default::default()
+        };
+
+        let tars_val = TarsValue::from(info.clone());
+        let decoded = MultiStreamInfo::try_from(tars_val).unwrap();
+        assert_eq!(info, decoded);
+    }
+
+    #[test]
+    fn test_begin_live_notice_compatibility() {
+        let notice = BeginLiveNotice {
+            l_presenter_uid: 123,
+            s_nick: "tester".into(),
+            v_stream_info: vec![StreamInfo::default()],
+            v_multi_stream_info: vec![MultiStreamInfo::default()],
+            ..Default::default()
+        };
+
+        let tars_val = TarsValue::from(notice.clone());
+        let decoded = BeginLiveNotice::try_from(tars_val).unwrap();
+        assert_eq!(notice, decoded);
     }
 }

@@ -19,14 +19,14 @@ function LanguageSettings() {
       name: 'English',
       nativeName: 'English',
       flag: '🇺🇸',
-      description: 'Standard English (International)',
+      description: 'English (International)',
     },
     {
       code: 'zh-CN',
       name: 'Chinese',
       nativeName: '简体中文',
       flag: '🇨🇳',
-      description: 'Mandarin Chinese (Simplified)',
+      description: 'Chinese Simplified',
     },
   ];
 

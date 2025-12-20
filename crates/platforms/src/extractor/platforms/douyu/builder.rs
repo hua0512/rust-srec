@@ -1,7 +1,7 @@
 use std::sync::{Arc, LazyLock};
 
 use async_trait::async_trait;
-use boa_engine::{self, property::PropertyKey};
+
 use regex::Regex;
 use reqwest::Client;
 use rustc_hash::FxHashMap;
@@ -1204,6 +1204,7 @@ impl Douyu {
 
     const JS_DOM: &str = "
         encripted = {decryptedCodes: []};
+        if (!this.window) {window = {};}
         if (!this.document) {document = {}}
     ";
 
@@ -1220,10 +1221,20 @@ impl Douyu {
     ";
 
     fn get_js_token(response: &str, rid: u64) -> Result<DouyuTokenResult, ExtractorError> {
+        use rquickjs::CatchResultExt;
+
         let encoded_script = ENCODED_SCRIPT_REGEX
             .captures(response)
             .and_then(|c| c.get(1))
             .map_or("", |m| m.as_str());
+
+        // Check if we found the encoded script
+        if encoded_script.is_empty() {
+            return Err(ExtractorError::JsError(
+                "Failed to extract encoded script from page (ub98484234 function not found)"
+                    .to_string(),
+            ));
+        }
 
         let did = Uuid::new_v4().to_string().replace("-", "");
         // epoch seconds
@@ -1247,36 +1258,56 @@ impl Douyu {
             tt
         );
 
-        // debug!("final_js: {}", final_js);
+        debug!("final_js: {}", final_js);
 
-        let mut context = boa_engine::Context::default();
-        let eval_result = context
-            .eval(boa_engine::Source::from_bytes(final_js.as_bytes()))
+        let runtime =
+            rquickjs::Runtime::new().map_err(|e| ExtractorError::JsError(e.to_string()))?;
+        let context = rquickjs::Context::full(&runtime)
             .map_err(|e| ExtractorError::JsError(e.to_string()))?;
-        let res = eval_result.as_object();
 
-        if let Some(res) = res {
-            // something like "v=220120250706&did=10000000000000000000000000003306&tt=1751804526&sign=5b1ce0e5888977265b4b378d1b3dcd98"
-            let sign = res
-                .get(PropertyKey::String("sign".into()), &mut context)
-                .map_err(|e| ExtractorError::JsError(e.to_string()))?
-                .as_string()
-                .map_or("".to_string(), |m| m.to_std_string().unwrap());
-            debug!("sign: {}", sign);
+        let sign = context.with(|ctx| {
+            let result: Result<String, _> = ctx.eval(final_js.clone());
 
-            let sign_captures = SIGN_REGEX.captures(&sign);
-            if let Some(captures) = sign_captures {
-                let v = captures.get(1).unwrap().as_str();
-                let did = captures.get(2).unwrap().as_str();
-                let tt = captures.get(3).unwrap().as_str();
-                let sign = captures.get(4).unwrap().as_str();
+            // Use catch() to get detailed exception info
+            let res: String = result.catch(&ctx).map_err(|caught| {
+                use rquickjs::CaughtError;
+                // Pattern match on the CaughtError enum to get error details
+                let error_msg = match caught {
+                    CaughtError::Exception(exc) => {
+                        let msg = exc.message().unwrap_or_default();
+                        let stack = exc.stack().unwrap_or_default();
+                        if stack.is_empty() {
+                            format!("JS Exception: {}", msg)
+                        } else {
+                            format!("JS Exception: {}\nStack: {}", msg, stack)
+                        }
+                    }
+                    CaughtError::Value(val) => {
+                        format!(
+                            "JS Error value: {:?}",
+                            val.as_string().map(|s| s.to_string())
+                        )
+                    }
+                    CaughtError::Error(err) => {
+                        format!("JS execution error: {}", err)
+                    }
+                };
+                ExtractorError::JsError(error_msg)
+            })?;
 
-                Ok(DouyuTokenResult::new(v, did, tt, sign))
-            } else {
-                Err(ExtractorError::JsError(
-                    "Failed to get js token".to_string(),
-                ))
-            }
+            Ok::<_, ExtractorError>(res)
+        })?;
+
+        debug!("sign: {}", sign);
+
+        let sign_captures = SIGN_REGEX.captures(&sign);
+        if let Some(captures) = sign_captures {
+            let v = captures.get(1).unwrap().as_str();
+            let did = captures.get(2).unwrap().as_str();
+            let tt = captures.get(3).unwrap().as_str();
+            let sign = captures.get(4).unwrap().as_str();
+
+            Ok(DouyuTokenResult::new(v, did, tt, sign))
         } else {
             Err(ExtractorError::JsError(
                 "Failed to get js token".to_string(),

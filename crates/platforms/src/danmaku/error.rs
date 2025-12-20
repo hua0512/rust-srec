@@ -24,6 +24,14 @@ pub enum DanmakuError {
     #[error("TARS error: {0}")]
     Tars(#[from] tars_codec::TarsError),
 
+    /// Protobuf decode errors
+    #[error("Protobuf decode error: {0}")]
+    ProtobufDecode(#[from] prost::DecodeError),
+
+    /// Protobuf encode errors
+    #[error("Protobuf encode error: {0}")]
+    ProtobufEncode(#[from] prost::EncodeError),
+
     /// Generic error
     #[error("{0}")]
     Other(String),

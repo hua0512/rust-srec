@@ -11,7 +11,7 @@ pub use crate::{
     error::TarsError,
     pool::{PooledByteBuffer, PooledDeserializer, PooledSerializer, TarsCodecPool},
     simd::{bulk_ops, utf8_simd},
-    types::{TarsMessage, TarsRequestHeader, TarsValue, ValidatedBytes},
+    types::{TarsMessage, TarsRequestHeader, TarsValue, ValidatedBytes, next_request_id},
 };
 use bytes::{Bytes, BytesMut};
 use tokio_util::codec::Decoder;
@@ -106,4 +106,37 @@ pub fn decode_response_zero_copy(bytes: Bytes) -> Result<TarsMessage, TarsError>
 
     let mut de = de::TarsDeserializer::new_zero_copy(bytes.slice(4..));
     de.read_message()
+}
+
+/// Decode a TarsValue from bytes
+pub fn decode_tars_value(bytes: Bytes) -> Result<TarsValue, TarsError> {
+    let mut deserializer = de::TarsDeserializer::new(bytes);
+    let (_, value) = deserializer.read_value()?;
+    Ok(value)
+}
+
+/// Decode a TarsValue::Struct from naked bytes (no outer StructBegin/StructEnd).
+pub fn decode_tars_struct(bytes: Bytes) -> Result<TarsValue, TarsError> {
+    let mut deserializer = de::TarsDeserializer::new(bytes);
+    let fields = deserializer.read_struct_naked()?;
+    Ok(TarsValue::Struct(fields))
+}
+
+/// Encode a TarsValue to bytes without using serde.
+/// If it matches TarsValue::Struct, it will only encode its fields.
+pub fn encode_tars_value(value: &TarsValue) -> Result<BytesMut, TarsError> {
+    let mut serializer = ser::TarsSerializer::new();
+    if let TarsValue::Struct(fields) = value {
+        serializer.write_struct_fields(fields)?;
+    } else {
+        serializer.write_value(0, value)?;
+    }
+    Ok(serializer.into_inner())
+}
+
+/// Encode a TarsValue to bytes wrapped in StructBegin/StructEnd.
+pub fn encode_tars_value_wrapped(value: &TarsValue) -> Result<BytesMut, TarsError> {
+    let mut serializer = ser::TarsSerializer::new();
+    serializer.write_value(0, value)?;
+    Ok(serializer.into_inner())
 }

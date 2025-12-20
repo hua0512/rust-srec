@@ -6,22 +6,26 @@ use tars_codec::{
     de::from_bytes,
     decode_response_zero_copy,
     error::TarsError,
+    next_request_id,
     types::{TarsMessage, TarsRequestHeader, TarsValue},
 };
 
 use super::responses::{GetLivingInfoRsp, HuyaGetTokenResp};
 use super::types::{GetCdnTokenInfoReq, GetLivingInfoReq, HuyaUserId};
 
-pub fn build_get_living_info_request(presenter_uid: i64, _ua: &str) -> Result<Bytes, TarsError> {
-    // TODO: replace those
+pub(crate) fn build_get_living_info_request(
+    presenter_uid: i64,
+    ua: &str,
+    device: &str,
+) -> Result<Bytes, TarsError> {
     let user_id = HuyaUserId::new(
         0,
         String::new(),
         String::new(),
-        "huya_nftv&2.5.1.3141&official&30".to_string(),
+        ua.to_string(),
         String::new(),
         0,
-        "android_tv".to_string(),
+        device.to_string(),
         String::new(),
     );
     let req = GetLivingInfoReq::new(
@@ -36,10 +40,9 @@ pub fn build_get_living_info_request(presenter_uid: i64, _ua: &str) -> Result<By
         0,             // i_ip_stack
     );
     let mut body = FxHashMap::default();
-    let tars_value: TarsValue = req.into();
     body.insert(
         String::from("tReq"),
-        tars_codec::ser::to_bytes_mut(&tars_value)?,
+        tars_codec::ser::to_bytes_mut_wrapped(&TarsValue::from(req))?,
     );
 
     let message = TarsMessage {
@@ -47,8 +50,8 @@ pub fn build_get_living_info_request(presenter_uid: i64, _ua: &str) -> Result<By
             version: 3,
             packet_type: 0,
             message_type: 0,
-            request_id: 1,
-            servant_name: String::from("liveui"),
+            request_id: next_request_id(),
+            servant_name: String::from("huyaliveui"),
             func_name: String::from("getLivingInfo"),
             timeout: 0,
             context: FxHashMap::default(),
@@ -73,10 +76,9 @@ pub fn build_get_cdn_token_info_request(
         presenter_uid,
     );
     let mut body = FxHashMap::default();
-    let tars_value: TarsValue = req.into();
     body.insert(
         String::from("tReq"),
-        tars_codec::ser::to_bytes_mut(&tars_value)?,
+        tars_codec::ser::to_bytes_mut_wrapped(&TarsValue::from(req))?,
     );
 
     let message = TarsMessage {
@@ -84,7 +86,7 @@ pub fn build_get_cdn_token_info_request(
             version: 3,
             packet_type: 0,
             message_type: 0,
-            request_id: 1,
+            request_id: next_request_id(),
             servant_name: String::from("liveui"),
             func_name: String::from("getCdnTokenInfo"),
             timeout: 0,

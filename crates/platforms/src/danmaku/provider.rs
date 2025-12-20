@@ -5,8 +5,8 @@
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
 
-use crate::error::Result;
-use crate::message::DanmuMessage;
+use crate::danmaku::error::Result;
+use crate::danmaku::message::DanmuMessage;
 
 /// Connection handle for an active danmu stream.
 #[derive(Debug)]

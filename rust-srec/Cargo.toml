@@ -53,7 +53,7 @@ sysinfo = { version = "0.30" }
 tokio-tungstenite = { version = "0.23.1", features = ["rustls-tls-native-roots"] }
 
 # Workspace crates
-danmaku = { path = "../crates/danmaku" }
+
 pipeline-common = { path = "../crates/pipeline-common" }
 flv = { path = "../crates/flv" }
 flv-fix = { path = "../crates/flv-fix" }

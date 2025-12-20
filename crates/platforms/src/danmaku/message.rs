@@ -45,6 +45,9 @@ pub struct DanmuMessage {
     pub username: String,
     /// Message content
     pub content: String,
+    /// Color of the message (hex string, optional)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub color: Option<String>,
     /// Timestamp when the message was sent
     pub timestamp: DateTime<Utc>,
     /// Type of message
@@ -67,6 +70,7 @@ impl DanmuMessage {
             user_id: user_id.into(),
             username: username.into(),
             content: content.into(),
+            color: None,
             timestamp: Utc::now(),
             message_type: DanmuType::Chat,
             metadata: None,
@@ -90,10 +94,17 @@ impl DanmuMessage {
             user_id: user_id.into(),
             username: username.into(),
             content: String::new(),
+            color: None,
             timestamp: Utc::now(),
             message_type: DanmuType::Gift,
             metadata: Some(metadata),
         }
+    }
+
+    /// Set the color of the message.
+    pub fn with_color(mut self, color: impl Into<String>) -> Self {
+        self.color = Some(color.into());
+        self
     }
 
     /// Add metadata to the message.

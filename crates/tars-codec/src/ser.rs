@@ -98,6 +98,11 @@ impl TarsSerializer {
         &self.buffer
     }
 
+    /// Get a mutable reference to the internal buffer for direct writes
+    pub fn buffer_mut(&mut self) -> &mut BytesMut {
+        &mut self.buffer
+    }
+
     /// Get the current length of the serialized data
     pub fn len(&self) -> usize {
         self.buffer.len()
@@ -204,6 +209,7 @@ impl TarsSerializer {
 
     #[inline]
     pub fn write_i8(&mut self, tag: u8, value: i8) -> Result<(), TarsError> {
+        // TARS spec: Zero type is used for value 0 (more compact)
         if value == 0 {
             self.write_head(tag, TarsType::Zero);
             return Ok(());
@@ -270,6 +276,20 @@ impl TarsSerializer {
             self.buffer.put_u32(len as u32);
         }
         self.buffer.put_slice(value.as_bytes());
+        Ok(())
+    }
+
+    pub fn write_struct_fields(
+        &mut self,
+        value: &rustc_hash::FxHashMap<u8, TarsValue>,
+    ) -> Result<(), TarsError> {
+        // TARS protocol requires struct fields to be written in ascending tag order!!!
+        let mut pairs: smallvec::SmallVec<[(&u8, &TarsValue); 16]> = value.iter().collect();
+        pairs.sort_unstable_by_key(|(field_tag, _)| **field_tag);
+
+        for (&field_tag, field_value) in pairs {
+            self.write_value(field_tag, field_value)?;
+        }
         Ok(())
     }
 
@@ -399,6 +419,16 @@ impl TarsSerializable for &str {
 }
 
 pub fn to_bytes_mut(value: &TarsValue) -> Result<Bytes, TarsError> {
+    let mut serializer = TarsSerializer::new();
+    if let TarsValue::Struct(fields) = value {
+        serializer.write_struct_fields(fields)?;
+    } else {
+        serializer.write_value(0, value)?;
+    }
+    Ok(serializer.into_bytes())
+}
+
+pub fn to_bytes_mut_wrapped(value: &TarsValue) -> Result<Bytes, TarsError> {
     let mut serializer = TarsSerializer::new();
     serializer.write_value(0, value)?;
     Ok(serializer.into_bytes())

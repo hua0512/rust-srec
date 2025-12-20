@@ -6,8 +6,8 @@ use std::path::{Path, PathBuf};
 use tokio::fs::File;
 use tokio::io::AsyncWriteExt;
 
-use crate::error::Result;
-use crate::message::{DanmuMessage, DanmuType};
+use crate::danmaku::error::Result;
+use crate::danmaku::message::{DanmuMessage, DanmuType};
 
 /// XML writer for danmu messages.
 ///
@@ -17,7 +17,7 @@ use crate::message::{DanmuMessage, DanmuType};
 /// # Example
 ///
 /// ```ignore
-/// use danmaku::XmlDanmuWriter;
+/// use platforms_parser::danmaku::XmlDanmuWriter;
 /// use std::path::PathBuf;
 ///
 /// let mut writer = XmlDanmuWriter::new(&PathBuf::from("output.xml")).await?;

@@ -5,8 +5,8 @@
 //!
 //! Core types are re-exported from the `danmaku` crate for reusability.
 
-// Re-export core types from danmaku crate
-pub use danmaku::{
+// Re-export core types from platforms-parser
+pub use platforms_parser::danmaku::{
     DanmuConnection, DanmuMessage, DanmuProvider, DanmuSampler, DanmuSamplingConfig,
     DanmuStatistics, DanmuType, FixedIntervalSampler, HuyaDanmuProvider, ProviderRegistry,
     RateDataPoint, StatisticsAggregator, TopTalker, TwitchDanmuProvider, VelocitySampler,
