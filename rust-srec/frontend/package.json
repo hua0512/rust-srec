@@ -63,7 +63,7 @@
     "sonner": "^2.0.7",
     "tailwind-merge": "^3.4.0",
     "tailwindcss": "^4.0.6",
-    "vite-tsconfig-paths": "^5.1.4",
+    "vite-tsconfig-paths": "^6.0.3",
     "zod": "^4.2.1",
     "zustand": "^5.0.9"
   },
