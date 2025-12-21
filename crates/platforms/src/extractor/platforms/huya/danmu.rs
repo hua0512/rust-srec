@@ -6,9 +6,7 @@
 use async_trait::async_trait;
 use bytes::{Bytes, BytesMut};
 use chrono::Utc;
-use regex::Regex;
 use rustc_hash::FxHashMap;
-use std::sync::Arc;
 use std::time::Duration;
 use tars_codec::{
     decode_tars_struct, encode_tars_value, next_request_id,
@@ -26,6 +24,8 @@ use crate::extractor::platforms::huya::{
     HuyaUserId, LiveAppUAEx, LiveLaunchReq, LiveUserBase, MessageNotice, WebSocketCommand,
     WsPushMessage, WsRegisterGroupReq, build_get_living_info_request,
 };
+
+use super::URL_REGEX;
 
 /// Huya WebSocket server URL
 const HUYA_WS_URL: &str = "wss://cdnws.api.huya.com:443";
@@ -45,16 +45,22 @@ const HEARTBEAT: &[u8] = &[
 ];
 
 /// Huya Protocol Implementation
-#[derive(Clone)]
+#[derive(Clone, Default)]
 pub struct HuyaDanmuProtocol {
-    /// Regex for extracting room ID from URL
-    url_regex: Arc<Regex>,
+    /// Optional cookies for authenticated sessions
+    cookies: Option<String>,
 }
 
-impl Default for HuyaDanmuProtocol {
-    fn default() -> Self {
+impl HuyaDanmuProtocol {
+    /// Create a new HuyaDanmuProtocol instance.
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Create a new HuyaDanmuProtocol with cookies.
+    pub fn with_cookies(cookies: impl Into<String>) -> Self {
         Self {
-            url_regex: Arc::new(Regex::new(r"(?:https?://)?(?:www\.)?huya\.com/(\d+)").unwrap()),
+            cookies: Some(cookies.into()),
         }
     }
 }
@@ -66,11 +72,11 @@ impl DanmuProtocol for HuyaDanmuProtocol {
     }
 
     fn supports_url(&self, url: &str) -> bool {
-        self.url_regex.is_match(url)
+        URL_REGEX.is_match(url)
     }
 
     fn extract_room_id(&self, url: &str) -> Option<String> {
-        self.url_regex
+        URL_REGEX
             .captures(url)
             .and_then(|caps| caps.get(1))
             .map(|m| m.as_str().to_string())
@@ -78,6 +84,10 @@ impl DanmuProtocol for HuyaDanmuProtocol {
 
     async fn websocket_url(&self, _room_id: &str) -> Result<String> {
         Ok(HUYA_WS_URL.to_string())
+    }
+
+    fn cookies(&self) -> Option<String> {
+        self.cookies.clone()
     }
 
     async fn handshake_messages(&self, room_id: &str) -> Result<Vec<Message>> {
@@ -478,7 +488,7 @@ mod tests {
             .init();
 
         // Use a popular room that's likely to be live
-        let room_id = "294636272";
+        let room_id = "660000";
 
         let provider = HuyaDanmuProvider::new();
 

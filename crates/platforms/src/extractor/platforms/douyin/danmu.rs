@@ -8,10 +8,8 @@ use async_trait::async_trait;
 use bytes::Bytes;
 use flate2::read::GzDecoder;
 use prost::Message as ProstMessage;
-use regex::Regex;
 use rustc_hash::FxHashMap;
 use std::io::Read;
-use std::sync::{Arc, LazyLock};
 use std::time::Duration;
 
 use tokio::sync::mpsc;
@@ -24,8 +22,10 @@ use crate::danmaku::websocket::{DanmuProtocol, WebSocketDanmuProvider};
 use crate::extractor::default::DEFAULT_UA;
 use crate::extractor::platforms::douyin::apis::LIVE_DOUYIN_URL;
 use crate::extractor::platforms::douyin::douyin_proto;
-use crate::extractor::platforms::douyin::utils::get_common_params;
+use crate::extractor::platforms::douyin::utils::{DEFAULT_TTWID, get_common_params};
 use chrono::{TimeZone, Utc};
+
+use super::URL_REGEX;
 
 /// Douyin WebSocket server URL template
 const DOUYIN_WS_URL: &str = "wss://webcast100-ws-web-lq.douyin.com/webcast/im/push/v2/";
@@ -36,26 +36,26 @@ const HEARTBEAT_INTERVAL_SECS: u64 = 10;
 /// The webmssdk.js file content for signature generation
 const WEBMSSDK_JS: &str = include_str!("../../../resources/douyin-webmssdk.js");
 
-/// URL regex for Douyin live rooms
-static URL_REGEX: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"(?:https?://)?(?:www\.)?(?:live\.)?douyin\.com/(\d+)").unwrap());
-
 /// Douyin Protocol Implementation
-#[derive(Clone)]
+#[derive(Clone, Default)]
 pub struct DouyinDanmuProtocol {
-    /// Regex for extracting room ID from URL
-    url_regex: Arc<Regex>,
-}
-
-impl Default for DouyinDanmuProtocol {
-    fn default() -> Self {
-        Self {
-            url_regex: Arc::new(URL_REGEX.clone()),
-        }
-    }
+    /// Optional cookies for authenticated sessions
+    cookies: Option<String>,
 }
 
 impl DouyinDanmuProtocol {
+    /// Create a new DouyinDanmuProtocol instance.
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Create a new DouyinDanmuProtocol with cookies.
+    pub fn with_cookies(cookies: impl Into<String>) -> Self {
+        Self {
+            cookies: Some(cookies.into()),
+        }
+    }
+
     /// Generates the ac_signature (X-Bogus) using the webmssdk.js
     fn generate_signature(md5_hash: &str) -> Result<String> {
         use crate::js_engine::JsEngineManager;
@@ -254,11 +254,11 @@ impl DanmuProtocol for DouyinDanmuProtocol {
     }
 
     fn supports_url(&self, url: &str) -> bool {
-        self.url_regex.is_match(url)
+        URL_REGEX.is_match(url)
     }
 
     fn extract_room_id(&self, url: &str) -> Option<String> {
-        self.url_regex
+        URL_REGEX
             .captures(url)
             .and_then(|caps| caps.get(1))
             .map(|m| m.as_str().to_string())
@@ -268,6 +268,24 @@ impl DanmuProtocol for DouyinDanmuProtocol {
         // Generate a unique user ID for this session
         let user_id = Self::generate_user_unique_id();
         Self::build_websocket_url(room_id, &user_id)
+    }
+
+    fn headers(&self, _room_id: &str) -> Vec<(String, String)> {
+        vec![
+            ("User-Agent".to_string(), DEFAULT_UA.to_string()),
+            ("Origin".to_string(), "https://live.douyin.com".to_string()),
+        ]
+    }
+
+    fn cookies(&self) -> Option<String> {
+        let base_cookie = format!("ttwid={}", DEFAULT_TTWID);
+
+        // Merge with user-provided cookies
+        if let Some(ref user_cookies) = self.cookies {
+            Some(format!("{}; {}", base_cookie, user_cookies))
+        } else {
+            Some(base_cookie)
+        }
     }
 
     async fn handshake_messages(&self, _room_id: &str) -> Result<Vec<Message>> {
@@ -314,8 +332,11 @@ impl DanmuProtocol for DouyinDanmuProtocol {
     }
 }
 
-/// Creates a new Douyin danmu provider
-pub fn create_douyin_danmu_provider() -> WebSocketDanmuProvider<DouyinDanmuProtocol> {
+/// Douyin danmu provider type alias.
+pub type DouyinDanmuProvider = WebSocketDanmuProvider<DouyinDanmuProtocol>;
+
+/// Creates a new Douyin danmu provider.
+pub fn create_douyin_danmu_provider() -> DouyinDanmuProvider {
     WebSocketDanmuProvider::with_protocol(DouyinDanmuProtocol::default(), None)
 }
 

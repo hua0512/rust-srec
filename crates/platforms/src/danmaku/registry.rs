@@ -1,8 +1,12 @@
 //! Registry of available danmu providers.
 
 use crate::danmaku::provider::DanmuProvider;
+use crate::extractor::platforms::bilibili::danmu::create_bilibili_danmu_provider;
+use crate::extractor::platforms::douyin::create_douyin_danmu_provider;
+use crate::extractor::platforms::douyu::create_douyu_danmu_provider;
 use crate::extractor::platforms::huya::HuyaDanmuProvider;
-use crate::extractor::platforms::twitch::danmu::TwitchDanmuProvider;
+use crate::extractor::platforms::twitcasting::create_twitcasting_danmu_provider;
+use crate::extractor::platforms::twitch::create_twitch_danmu_provider;
 use std::sync::Arc;
 
 /// Registry of available danmu providers.
@@ -23,7 +27,11 @@ impl ProviderRegistry {
     pub fn with_defaults() -> Self {
         let mut registry = Self::new();
         registry.register(Arc::new(HuyaDanmuProvider::new()));
-        // registry.register(Arc::new(TwitchDanmuProvider::new()));
+        registry.register(Arc::new(create_bilibili_danmu_provider()));
+        registry.register(Arc::new(create_douyu_danmu_provider()));
+        registry.register(Arc::new(create_douyin_danmu_provider()));
+        registry.register(Arc::new(create_twitch_danmu_provider()));
+        registry.register(Arc::new(create_twitcasting_danmu_provider()));
         registry
     }
 
@@ -61,7 +69,11 @@ mod tests {
         let platforms = registry.platforms();
 
         assert!(platforms.contains(&"huya"));
+        assert!(platforms.contains(&"bilibili"));
+        assert!(platforms.contains(&"douyu"));
+        assert!(platforms.contains(&"douyin"));
         assert!(platforms.contains(&"twitch"));
+        assert!(platforms.contains(&"twitcasting"));
     }
 
     #[test]

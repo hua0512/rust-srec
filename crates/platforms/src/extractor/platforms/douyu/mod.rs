@@ -6,4 +6,4 @@ mod stt;
 
 pub use builder::Douyu;
 pub use builder::URL_REGEX;
-pub use danmu::{DouyuDanmuProtocol, create_douyu_danmu_provider};
+pub use danmu::{DouyuDanmuProtocol, DouyuDanmuProvider, create_douyu_danmu_provider};

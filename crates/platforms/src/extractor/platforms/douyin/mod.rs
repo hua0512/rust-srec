@@ -8,7 +8,7 @@ pub(crate) mod utils;
 
 pub use builder::URL_REGEX;
 pub use builder::{Douyin, DouyinExtractorConfig};
-pub use danmu::{DouyinDanmuProtocol, create_douyin_danmu_provider};
+pub use danmu::{DouyinDanmuProtocol, DouyinDanmuProvider, create_douyin_danmu_provider};
 
 // TODO: REXPORT DOUYIN PROTO
 pub mod douyin_proto {

@@ -6,8 +6,6 @@
 use async_trait::async_trait;
 use bytes::Bytes;
 use chrono::Utc;
-use regex::Regex;
-use std::sync::{Arc, LazyLock};
 use std::time::Duration;
 use tokio::sync::mpsc;
 use tokio_tungstenite::tungstenite::protocol::Message;
@@ -16,8 +14,10 @@ use tracing::debug;
 use crate::danmaku::DanmuMessage;
 use crate::danmaku::error::{DanmakuError, Result};
 use crate::danmaku::websocket::{DanmuProtocol, WebSocketDanmuProvider};
+use crate::extractor::default::DEFAULT_UA;
 use crate::extractor::platforms::douyu::stt;
 
+use super::URL_REGEX;
 use super::danmu_models::{
     DouyuChatMessage, DouyuGiftMessage, DouyuMessageType, create_join_group_message,
     create_login_message, parse_message,
@@ -33,29 +33,24 @@ const HEARTBEAT_INTERVAL_SECS: u64 = 45;
 /// Default group ID for joining the main danmu group
 const DEFAULT_GROUP_ID: i32 = -9999;
 
-/// URL regex for Douyu live rooms
-static URL_REGEX: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"(?:https?://)?(?:www\.)?douyu\.com/(\d+)").unwrap());
-
 /// Douyu Danmu Protocol Implementation
-#[derive(Clone)]
+#[derive(Clone, Default)]
 pub struct DouyuDanmuProtocol {
-    /// Regex for extracting room ID from URL
-    url_regex: Arc<Regex>,
-}
-
-impl Default for DouyuDanmuProtocol {
-    fn default() -> Self {
-        Self {
-            url_regex: Arc::new(URL_REGEX.clone()),
-        }
-    }
+    /// Optional cookies for authenticated sessions
+    cookies: Option<String>,
 }
 
 impl DouyuDanmuProtocol {
     /// Create a new DouyuDanmuProtocol instance.
     pub fn new() -> Self {
         Self::default()
+    }
+
+    /// Create a new DouyuDanmuProtocol with cookies.
+    pub fn with_cookies(cookies: impl Into<String>) -> Self {
+        Self {
+            cookies: Some(cookies.into()),
+        }
     }
 
     /// Parse chat messages from STT payload.
@@ -116,11 +111,11 @@ impl DanmuProtocol for DouyuDanmuProtocol {
     }
 
     fn supports_url(&self, url: &str) -> bool {
-        self.url_regex.is_match(url)
+        URL_REGEX.is_match(url)
     }
 
     fn extract_room_id(&self, url: &str) -> Option<String> {
-        self.url_regex
+        URL_REGEX
             .captures(url)
             .and_then(|caps| caps.get(1))
             .map(|m| m.as_str().to_string())
@@ -128,6 +123,18 @@ impl DanmuProtocol for DouyuDanmuProtocol {
 
     async fn websocket_url(&self, _room_id: &str) -> Result<String> {
         Ok(DOUYU_WS_URL.to_string())
+    }
+
+    fn headers(&self, _room_id: &str) -> Vec<(String, String)> {
+        vec![
+            ("Origin".to_string(), "https://www.douyu.com".to_string()),
+            ("Referer".to_string(), "https://www.douyu.com".to_string()),
+            ("User-Agent".to_string(), DEFAULT_UA.to_string()),
+        ]
+    }
+
+    fn cookies(&self) -> Option<String> {
+        self.cookies.clone()
     }
 
     async fn handshake_messages(&self, room_id: &str) -> Result<Vec<Message>> {
@@ -220,8 +227,11 @@ impl DanmuProtocol for DouyuDanmuProtocol {
     }
 }
 
+/// Douyu danmu provider type alias.
+pub type DouyuDanmuProvider = WebSocketDanmuProvider<DouyuDanmuProtocol>;
+
 /// Creates a new Douyu danmu provider.
-pub fn create_douyu_danmu_provider() -> WebSocketDanmuProvider<DouyuDanmuProtocol> {
+pub fn create_douyu_danmu_provider() -> DouyuDanmuProvider {
     WebSocketDanmuProvider::with_protocol(DouyuDanmuProtocol::default(), None)
 }
 

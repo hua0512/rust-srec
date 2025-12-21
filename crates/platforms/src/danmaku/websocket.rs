@@ -31,6 +31,18 @@ pub trait DanmuProtocol: Send + Sync + 'static {
     /// Get the WebSocket URL for the room
     async fn websocket_url(&self, room_id: &str) -> Result<String>;
 
+    /// Get custom headers for the WebSocket connection
+    /// Returns a list of (header_name, header_value) pairs
+    fn headers(&self, _room_id: &str) -> Vec<(String, String)> {
+        vec![]
+    }
+
+    /// Get cookies for the WebSocket connection
+    /// Returns an optional cookie string to be added to the Cookie header
+    fn cookies(&self) -> Option<String> {
+        None
+    }
+
     /// Generate handshake messages to send upon connection
     async fn handshake_messages(&self, _room_id: &str) -> Result<Vec<Message>> {
         Ok(vec![])
@@ -149,7 +161,66 @@ impl<P: DanmuProtocol + Clone> WebSocketDanmuProvider<P> {
                     match protocol.websocket_url(&room_id_owned).await {
                         Ok(url) => {
                             info!("Connecting to WebSocket: {}", url);
-                            match connect_async(&url).await {
+
+                            // Build request with custom headers
+                            let mut headers = protocol.headers(&room_id_owned);
+                            let cookies = protocol.cookies();
+
+                            // Add or merge cookies into headers
+                            if let Some(cookie_str) = cookies {
+                                // Check if Cookie header already exists
+                                let mut found = false;
+                                for (name, value) in headers.iter_mut() {
+                                    if name.eq_ignore_ascii_case("Cookie") {
+                                        // Merge with existing cookie
+                                        *value = format!("{}; {}", value, cookie_str);
+                                        found = true;
+                                        break;
+                                    }
+                                }
+                                if !found {
+                                    headers.push(("Cookie".to_string(), cookie_str));
+                                }
+                            }
+
+                            let connect_result = if headers.is_empty() {
+                                connect_async(&url).await
+                            } else {
+                                use tokio_tungstenite::tungstenite::handshake::client::generate_key;
+                                use tokio_tungstenite::tungstenite::http::Request;
+
+                                // Extract host from URL for Host header
+                                let uri: tokio_tungstenite::tungstenite::http::Uri =
+                                    url.parse().unwrap();
+                                let host = uri.host().unwrap_or("localhost");
+                                let port = uri.port_u16();
+                                let host_header = if let Some(p) = port {
+                                    format!("{}:{}", host, p)
+                                } else {
+                                    host.to_string()
+                                };
+
+                                let mut builder = Request::builder()
+                                    .uri(&url)
+                                    .header("Host", host_header)
+                                    .header("Connection", "Upgrade")
+                                    .header("Upgrade", "websocket")
+                                    .header("Sec-WebSocket-Version", "13")
+                                    .header("Sec-WebSocket-Key", generate_key());
+
+                                for (name, value) in headers {
+                                    builder = builder.header(name, value);
+                                }
+                                match builder.body(()) {
+                                    Ok(request) => connect_async(request).await,
+                                    Err(e) => {
+                                        error!("Failed to build request: {}", e);
+                                        continue;
+                                    }
+                                }
+                            };
+
+                            match connect_result {
                                 Ok((mut ws_stream, _)) => {
                                     info!("Connected to WebSocket for room {}", room_id_owned);
 
