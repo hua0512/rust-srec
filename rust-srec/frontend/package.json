@@ -14,7 +14,7 @@
   },
   "dependencies": {
     "@hookform/resolvers": "^5.2.2",
-    "@lingui/core": "^5.6.1",
+    "@lingui/core": "^5.7.0",
     "@lingui/react": "^5.6.1",
     "@radix-ui/react-accordion": "^1.2.12",
     "@radix-ui/react-alert-dialog": "^1.1.15",
