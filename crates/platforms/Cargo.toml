@@ -52,7 +52,7 @@ rand = "0.9.1"
 # JavaScript engine
 rquickjs = { version = "0.10.0", optional = true, features = ["full-async"] }
 
-uuid  = {version = "1.18.1", features = ["v4"]}
+uuid  = {version = "1.19.0", features = ["v4"]}
 m3u8-rs = "6.0.0"
 md-5 = "0.10.6"
 urlencoding = "2.1"
