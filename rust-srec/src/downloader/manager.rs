@@ -203,6 +203,7 @@ pub enum DownloadManagerEvent {
     DownloadFailed {
         download_id: String,
         streamer_id: String,
+        session_id: String,
         error: String,
         recoverable: bool,
     },
@@ -210,6 +211,7 @@ pub enum DownloadManagerEvent {
     DownloadCancelled {
         download_id: String,
         streamer_id: String,
+        session_id: String,
     },
     /// Configuration was updated for a download.
     ConfigUpdated {
@@ -808,6 +810,7 @@ impl DownloadManager {
                         let _ = event_tx.send(DownloadManagerEvent::DownloadFailed {
                             download_id: download_id_clone.clone(),
                             streamer_id: streamer_id.clone(),
+                            session_id: session_id.clone(),
                             error,
                             recoverable,
                         });
@@ -871,7 +874,8 @@ impl DownloadManager {
             // Broadcast send is synchronous, ignore if no receivers
             let _ = self.event_tx.send(DownloadManagerEvent::DownloadCancelled {
                 download_id: download_id.to_string(),
-                streamer_id,
+                streamer_id: streamer_id.clone(),
+                session_id: download.handle.config_snapshot().session_id,
             });
 
             info!("Stopped download {}", download_id);

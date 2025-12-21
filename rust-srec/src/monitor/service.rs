@@ -350,6 +350,7 @@ impl<
                 started_at,
                 streams,
                 media_headers,
+                media_extras,
                 ..
             } => {
                 self.handle_live(
@@ -360,6 +361,7 @@ impl<
                     started_at,
                     streams,
                     media_headers,
+                    media_extras,
                 )
                 .await?;
             }
@@ -434,6 +436,7 @@ impl<
         started_at: Option<chrono::DateTime<chrono::Utc>>,
         streams: Vec<platforms_parser::media::StreamInfo>,
         media_headers: Option<HashMap<String, String>>,
+        media_extras: Option<HashMap<String, String>>,
     ) -> Result<()> {
         info!(
             "Streamer {} is LIVE: {} ({} streams available, {} media headers)",
@@ -554,6 +557,7 @@ impl<
             category: category.clone(),
             streams,
             media_headers,
+            media_extras,
             timestamp: now,
         };
         MonitorOutboxTxOps::enqueue_event(&mut tx, &streamer.id, &event).await?;
@@ -925,6 +929,7 @@ mod tests {
                 is_headers_needed: false,
             }],
             media_headers: None,
+            media_extras: None,
         };
         assert_eq!(status_summary(&live_status), "Live");
 

@@ -5,6 +5,8 @@
 
 use std::path::PathBuf;
 
+use chrono::{DateTime, Utc};
+
 use crate::danmu::DanmuStatistics;
 
 /// Events emitted by the danmu service.
@@ -28,6 +30,8 @@ pub enum DanmuEvent {
         session_id: String,
         segment_id: String,
         output_path: PathBuf,
+        /// The start time of this segment (for danmu timestamp offset calculation).
+        start_time: DateTime<Utc>,
     },
     /// Segment file completed
     SegmentCompleted {
@@ -54,6 +58,8 @@ pub(crate) enum CollectionCommand {
     StartSegment {
         segment_id: String,
         output_path: PathBuf,
+        /// The start time of this segment (for danmu timestamp offset calculation).
+        start_time: DateTime<Utc>,
     },
     /// End the current segment file
     EndSegment { segment_id: String },

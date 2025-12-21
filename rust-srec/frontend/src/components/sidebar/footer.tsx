@@ -15,7 +15,7 @@ export function Footer() {
             >
               Rust-srec
             </a>
-            . WebUI version: 0.3.6
+            . WebUI version: 0.1.0
           </Trans>
         </p>
       </div>

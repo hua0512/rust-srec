@@ -100,14 +100,16 @@ message DownloadCompleted {
 message DownloadFailed {
   string download_id = 1;
   string streamer_id = 2;
-  string error = 3;
-  bool recoverable = 4;
+  string session_id = 3;
+  string error = 4;
+  bool recoverable = 5;
 }
 
 // Download cancelled event
 message DownloadCancelled {
   string download_id = 1;
   string streamer_id = 2;
+  string session_id = 3;
 }
 
 // Error payload for service errors

@@ -23,22 +23,15 @@ use crate::danmu::{
 };
 use crate::domain::DanmuSamplingConfig;
 use crate::error::{Error, Result};
+use platforms_parser::danmaku::ConnectionConfig;
 
 use super::events::{CollectionCommand, DanmuEvent};
 
 /// Configuration for the danmu service.
 #[derive(Debug, Clone)]
 pub struct DanmuServiceConfig {
-    /// Output directory for danmu XML files
-    pub output_dir: PathBuf,
     /// Default sampling configuration
     pub default_sampling: DanmuSamplingConfig,
-    /// Maximum reconnect attempts
-    pub max_reconnect_attempts: u32,
-    /// Initial reconnect delay in milliseconds
-    pub initial_reconnect_delay_ms: u64,
-    /// Maximum reconnect delay in milliseconds
-    pub max_reconnect_delay_ms: u64,
     /// Buffer size for statistics (number of recent messages to keep)
     pub stats_buffer_size: usize,
 }
@@ -46,11 +39,7 @@ pub struct DanmuServiceConfig {
 impl Default for DanmuServiceConfig {
     fn default() -> Self {
         Self {
-            output_dir: PathBuf::from("./danmu"),
             default_sampling: DanmuSamplingConfig::default(),
-            max_reconnect_attempts: 10,
-            initial_reconnect_delay_ms: 1000,
-            max_reconnect_delay_ms: 60000,
             stats_buffer_size: 100,
         }
     }
@@ -81,11 +70,19 @@ pub struct CollectionHandle {
 
 impl CollectionHandle {
     /// Start writing to a new segment file.
-    pub async fn start_segment(&self, segment_id: &str, output_path: PathBuf) -> Result<()> {
+    ///
+    /// The `start_time` is used to calculate danmu timestamp offsets.
+    pub async fn start_segment(
+        &self,
+        segment_id: &str,
+        output_path: PathBuf,
+        start_time: chrono::DateTime<chrono::Utc>,
+    ) -> Result<()> {
         self.command_tx
             .send(CollectionCommand::StartSegment {
                 segment_id: segment_id.to_string(),
                 output_path,
+                start_time,
             })
             .await
             .map_err(|_| {
@@ -147,6 +144,8 @@ pub struct DanmuService {
     event_tx: broadcast::Sender<DanmuEvent>,
     /// Global cancellation token
     cancel_token: CancellationToken,
+    /// Session repository for persistence
+    session_repo: Option<Arc<dyn crate::database::repositories::SessionRepository>>,
 }
 
 impl DanmuService {
@@ -160,6 +159,7 @@ impl DanmuService {
             collections: Arc::new(DashMap::new()),
             event_tx,
             cancel_token: CancellationToken::new(),
+            session_repo: None,
         }
     }
 
@@ -173,7 +173,24 @@ impl DanmuService {
             collections: Arc::new(DashMap::new()),
             event_tx,
             cancel_token: CancellationToken::new(),
+            session_repo: None,
         }
+    }
+
+    /// Set the session repository for persistence.
+    pub fn with_session_repository(
+        mut self,
+        repo: Arc<dyn crate::database::repositories::SessionRepository>,
+    ) -> Self {
+        self.session_repo = Some(repo);
+        self
+    }
+
+    /// Get the session repository (if set).
+    pub fn session_repo(
+        &self,
+    ) -> Option<&Arc<dyn crate::database::repositories::SessionRepository>> {
+        self.session_repo.as_ref()
     }
 
     /// Subscribe to danmu events.
@@ -189,6 +206,8 @@ impl DanmuService {
         streamer_id: &str,
         streamer_url: &str,
         sampling_config: Option<DanmuSamplingConfig>,
+        cookies: Option<String>,
+        extras: Option<std::collections::HashMap<String, String>>,
     ) -> Result<CollectionHandle> {
         // Check if already collecting
         if self.collections.contains_key(session_id) {
@@ -207,12 +226,43 @@ impl DanmuService {
             ))
         })?;
 
-        // Extract room ID
-        let room_id = provider.extract_room_id(streamer_url).ok_or_else(|| {
+        // Extract room ID - use platform-specific extras when available
+        // - Huya: uses "presenter_uid" from extras
+        // - Douyin: uses "id_str" from extras
+        // - Others: fallback to URL-based extraction
+        let platform = provider.platform();
+        let room_id = match platform {
+            "huya" => {
+                // Huya uses presenter_uid for danmu connection
+                extras
+                    .as_ref()
+                    .and_then(|e| e.get("presenter_uid"))
+                    .cloned()
+                    .or_else(|| provider.extract_room_id(streamer_url))
+            }
+            "douyin" => {
+                // Douyin uses id_str (room_id) for danmu connection
+                extras
+                    .as_ref()
+                    .and_then(|e| e.get("id_str"))
+                    .cloned()
+                    .or_else(|| provider.extract_room_id(streamer_url))
+            }
+            _ => provider.extract_room_id(streamer_url),
+        }
+        .ok_or_else(|| {
             Error::from(platforms_parser::danmaku::DanmakuError::connection(
                 format!("Could not extract room ID from URL: {}", streamer_url),
             ))
         })?;
+
+        // Build connection config
+        let mut connection_config = ConnectionConfig::with_cookies(cookies.clone());
+        if let Some(mut e) = extras {
+            // Remove common fields that are used for room ID extraction but might be useful as extras too
+            // We keep them in extras for now as it's cleaner
+            connection_config = connection_config.with_extras(e);
+        }
 
         // Create command channel
         let (command_tx, command_rx) = mpsc::channel(32);
@@ -236,7 +286,19 @@ impl DanmuService {
             command_tx: command_tx.clone(),
         };
 
-        // Store state
+        // Create runner
+        let runner = super::runner::CollectionRunner::new(
+            session_id.to_string(),
+            room_id.clone(),
+            Arc::clone(&provider),
+            connection_config,
+            Arc::clone(&stats),
+            Arc::clone(&sampler),
+            self.event_tx.clone(),
+            self.config.clone(),
+        )
+        .await?;
+
         self.collections.insert(session_id.to_string(), state);
 
         // Emit event
@@ -248,22 +310,9 @@ impl DanmuService {
         // Start collection task
         let session_id_clone = session_id.to_string();
         let event_tx = self.event_tx.clone();
-        let config = self.config.clone();
 
         tokio::spawn(async move {
-            if let Err(e) = run_collection(
-                &session_id_clone,
-                provider,
-                &room_id,
-                stats,
-                sampler,
-                command_rx,
-                &event_tx,
-                &config,
-                cancel_token,
-            )
-            .await
-            {
+            if let Err(e) = runner.run(command_rx, cancel_token).await {
                 let _ = event_tx.send(DanmuEvent::Error {
                     session_id: session_id_clone.clone(),
                     error: e.to_string(),
@@ -357,194 +406,6 @@ impl DanmuService {
             let _ = self.stop_collection(&session_id).await;
         }
     }
-}
-
-/// Run the collection loop for a session.
-#[allow(clippy::too_many_arguments)]
-async fn run_collection(
-    session_id: &str,
-    provider: Arc<dyn DanmuProvider>,
-    room_id: &str,
-    stats: Arc<Mutex<StatisticsAggregator>>,
-    sampler: Arc<Mutex<Box<dyn DanmuSampler>>>,
-    mut command_rx: mpsc::Receiver<CollectionCommand>,
-    event_tx: &broadcast::Sender<DanmuEvent>,
-    config: &DanmuServiceConfig,
-    cancel_token: CancellationToken,
-) -> Result<()> {
-    // Current segment writer (None if no segment is active)
-    let mut current_writer: Option<(String, XmlDanmuWriter)> = None;
-
-    // Connect to danmu stream
-    let mut connection = provider.connect(room_id).await?;
-    let mut reconnect_attempts = 0;
-    let mut reconnect_delay = config.initial_reconnect_delay_ms;
-
-    loop {
-        tokio::select! {
-            biased;
-
-            // Handle commands (highest priority)
-            cmd = command_rx.recv() => {
-                match cmd {
-                    Some(CollectionCommand::StartSegment { segment_id, output_path }) => {
-                        // Finalize previous segment if any
-                        if let Some((old_id, mut writer)) = current_writer.take() {
-                            let count = writer.message_count();
-                            let path = writer.output_path().to_path_buf();
-                            writer.finalize().await?;
-                            let _ = event_tx.send(DanmuEvent::SegmentCompleted {
-                                session_id: session_id.to_string(),
-                                segment_id: old_id,
-                                output_path: path,
-                                message_count: count,
-                            });
-                        }
-
-                        // Create output directory if needed
-                        if let Some(parent) = output_path.parent() {
-                            tokio::fs::create_dir_all(parent).await?;
-                        }
-
-                        // Start new segment
-                        let writer = XmlDanmuWriter::new(&output_path).await?;
-                        let _ = event_tx.send(DanmuEvent::SegmentStarted {
-                            session_id: session_id.to_string(),
-                            segment_id: segment_id.clone(),
-                            output_path: output_path.clone(),
-                        });
-                        current_writer = Some((segment_id, writer));
-                    }
-                    Some(CollectionCommand::EndSegment { segment_id }) => {
-                        // Finalize segment if it matches
-                        if let Some((current_id, mut writer)) = current_writer.take() {
-                            if current_id == segment_id {
-                                let count = writer.message_count();
-                                let path = writer.output_path().to_path_buf();
-                                writer.finalize().await?;
-                                let _ = event_tx.send(DanmuEvent::SegmentCompleted {
-                                    session_id: session_id.to_string(),
-                                    segment_id,
-                                    output_path: path,
-                                    message_count: count,
-                                });
-                            } else {
-                                // Put it back if segment_id doesn't match
-                                current_writer = Some((current_id, writer));
-                            }
-                        }
-                    }
-                    Some(CollectionCommand::Stop) | None => {
-                        // Finalize current segment and exit
-                        if let Some((segment_id, mut writer)) = current_writer.take() {
-                            let count = writer.message_count();
-                            let path = writer.output_path().to_path_buf();
-                            writer.finalize().await?;
-                            let _ = event_tx.send(DanmuEvent::SegmentCompleted {
-                                session_id: session_id.to_string(),
-                                segment_id,
-                                output_path: path,
-                                message_count: count,
-                            });
-                        }
-                        let _ = provider.disconnect(&mut connection).await;
-                        break;
-                    }
-                }
-            }
-
-            // Handle cancellation
-            _ = cancel_token.cancelled() => {
-                // Finalize current segment and exit
-                if let Some((segment_id, mut writer)) = current_writer.take() {
-                    let count = writer.message_count();
-                    let path = writer.output_path().to_path_buf();
-                    writer.finalize().await?;
-                    let _ = event_tx.send(DanmuEvent::SegmentCompleted {
-                        session_id: session_id.to_string(),
-                        segment_id,
-                        output_path: path,
-                        message_count: count,
-                    });
-                }
-                let _ = provider.disconnect(&mut connection).await;
-                break;
-            }
-
-            // Receive danmu messages
-            result = provider.receive(&connection) => {
-                match result {
-                    Ok(Some(message)) => {
-                        // Reset reconnect state on successful receive
-                        reconnect_attempts = 0;
-                        reconnect_delay = config.initial_reconnect_delay_ms;
-
-                        // Update session-level statistics
-                        {
-                            let is_gift = matches!(message.message_type, DanmuType::Gift | DanmuType::SuperChat);
-                            let mut stats_guard = stats.lock().await;
-                            stats_guard.record_message(
-                                &message.user_id,
-                                &message.username,
-                                &message.content,
-                                is_gift,
-                                message.timestamp,
-                            );
-                        }
-
-                        // Update sampler
-                        {
-                            let mut sampler_guard = sampler.lock().await;
-                            sampler_guard.record_message(message.timestamp);
-                        }
-
-                        // Write to current segment file (if any)
-                        if let Some((_, ref mut writer)) = current_writer {
-                            writer.write_message(&message).await?;
-                        }
-                    }
-                    Ok(None) => {
-                        // No message available, continue
-                        tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
-                    }
-                    Err(e) => {
-                        // Connection error, attempt reconnect
-                        tracing::warn!("Danmu connection error for {}: {}", session_id, e);
-
-                        if reconnect_attempts >= config.max_reconnect_attempts {
-                            let _ = event_tx.send(DanmuEvent::ReconnectFailed {
-                                session_id: session_id.to_string(),
-                                error: format!("Max reconnect attempts ({}) exceeded", config.max_reconnect_attempts),
-                            });
-                            return Err(Error::DanmakuError(e));
-                        }
-
-                        reconnect_attempts += 1;
-                        let _ = event_tx.send(DanmuEvent::Reconnecting {
-                            session_id: session_id.to_string(),
-                            attempt: reconnect_attempts,
-                        });
-
-                        // Exponential backoff
-                        tokio::time::sleep(tokio::time::Duration::from_millis(reconnect_delay)).await;
-                        reconnect_delay = (reconnect_delay * 2).min(config.max_reconnect_delay_ms);
-
-                        // Attempt reconnect
-                        match provider.connect(room_id).await {
-                            Ok(new_conn) => {
-                                connection = new_conn;
-                            }
-                            Err(e) => {
-                                tracing::error!("Reconnect failed for {}: {}", session_id, e);
-                            }
-                        }
-                    }
-                }
-            }
-        }
-    }
-
-    Ok(())
 }
 
 #[cfg(test)]

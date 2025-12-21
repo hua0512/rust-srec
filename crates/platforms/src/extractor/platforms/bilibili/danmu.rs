@@ -555,6 +555,8 @@ pub fn create_bilibili_danmu_provider() -> BilibiliDanmuProvider {
 
 #[cfg(test)]
 mod tests {
+    use crate::danmaku::ConnectionConfig;
+
     use super::*;
 
     #[test]
@@ -619,8 +621,17 @@ mod tests {
         let provider = create_bilibili_danmu_provider();
         let room_id = "1721766859";
 
-        let connection = provider.connect(room_id).await.expect("Failed to connect");
-        println!("Connected to Bilibili room {}", room_id);
+        println!("Connecting to Bilibili room: {}", room_id);
+        let connection = match provider
+            .connect(&room_id.to_string(), ConnectionConfig::default())
+            .await
+        {
+            Ok(conn) => conn,
+            Err(e) => {
+                eprintln!("Failed to connect: {}", e);
+                return;
+            }
+        };
 
         // Receive messages for 60 seconds
         let start = std::time::Instant::now();

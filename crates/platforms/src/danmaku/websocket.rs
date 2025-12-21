@@ -12,6 +12,7 @@ use tokio_tungstenite::{
 };
 use tracing::{debug, error, info, warn};
 
+use crate::danmaku::ConnectionConfig;
 use crate::danmaku::error::{DanmakuError, Result};
 use crate::danmaku::message::DanmuMessage;
 use crate::danmaku::provider::{DanmuConnection, DanmuProvider};
@@ -96,7 +97,7 @@ pub struct WebSocketDanmuProvider<P> {
     connections: RwLock<HashMap<String, Arc<Mutex<WsConnectionState>>>>,
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug)]
 pub struct WebSocketProviderConfig {
     pub max_reconnect_attempts: u32,
     pub base_reconnect_delay_ms: u64,
@@ -125,6 +126,7 @@ impl<P: DanmuProtocol + Clone> WebSocketDanmuProvider<P> {
     async fn connect_internal(
         &self,
         room_id: &str,
+        config: ConnectionConfig,
     ) -> Result<(
         Arc<AtomicBool>,
         Arc<AtomicU32>,
@@ -132,15 +134,16 @@ impl<P: DanmuProtocol + Clone> WebSocketDanmuProvider<P> {
         mpsc::Sender<()>,
         Vec<JoinHandle<()>>,
     )> {
-        let (message_tx, message_rx) = mpsc::channel(1000);
+        let is_connected = Arc::new(AtomicBool::new(false));
+        let reconnect_count = Arc::new(AtomicU32::new(0));
+        let (message_tx, message_rx) = mpsc::channel(100);
         let (response_tx, mut response_rx) = mpsc::channel::<Message>(100);
         let (shutdown_tx, mut shutdown_rx) = mpsc::channel(1);
-        let is_connected = Arc::new(AtomicBool::new(true));
-        let reconnect_count = Arc::new(AtomicU32::new(0));
 
         let protocol = self.protocol.clone();
-        let config = self.config;
+        let ws_config = config.websocket.unwrap_or(self.config);
         let room_id_owned = room_id.to_string();
+        let cookies = config.cookies;
         let is_connected_clone = is_connected.clone();
         let reconnect_count_clone = reconnect_count.clone();
 
@@ -148,7 +151,7 @@ impl<P: DanmuProtocol + Clone> WebSocketDanmuProvider<P> {
         let handle = tokio::spawn(async move {
             let mut current_stream: Option<WebSocketStream<MaybeTlsStream<TcpStream>>> = None;
             let mut attempt = 0;
-            let mut delay = config.base_reconnect_delay_ms;
+            let mut delay = ws_config.base_reconnect_delay_ms;
 
             loop {
                 // Check shutdown
@@ -164,7 +167,10 @@ impl<P: DanmuProtocol + Clone> WebSocketDanmuProvider<P> {
 
                             // Build request with custom headers
                             let mut headers = protocol.headers(&room_id_owned);
-                            let cookies = protocol.cookies();
+                            let protocol_cookies = protocol.cookies();
+
+                            // Use provided cookies if available, otherwise fallback to protocol cookies
+                            let cookies = cookies.clone().or(protocol_cookies);
 
                             // Add or merge cookies into headers
                             if let Some(cookie_str) = cookies {
@@ -245,7 +251,7 @@ impl<P: DanmuProtocol + Clone> WebSocketDanmuProvider<P> {
                                     is_connected_clone.store(true, Ordering::SeqCst);
                                     reconnect_count_clone.store(0, Ordering::SeqCst);
                                     attempt = 0;
-                                    delay = config.base_reconnect_delay_ms;
+                                    delay = ws_config.base_reconnect_delay_ms;
                                     current_stream = Some(ws_stream);
                                 }
                                 Err(e) => {
@@ -259,7 +265,7 @@ impl<P: DanmuProtocol + Clone> WebSocketDanmuProvider<P> {
                     }
 
                     if current_stream.is_none() {
-                        if attempt >= config.max_reconnect_attempts {
+                        if attempt >= ws_config.max_reconnect_attempts {
                             error!("Max reconnect attempts reached for {}", room_id_owned);
                             break;
                         }
@@ -271,7 +277,7 @@ impl<P: DanmuProtocol + Clone> WebSocketDanmuProvider<P> {
                             _ = shutdown_rx.recv() => break,
                         }
 
-                        delay = (delay * 2).min(config.max_reconnect_delay_ms);
+                        delay = (delay * 2).min(ws_config.max_reconnect_delay_ms);
                         continue;
                     }
                 }
@@ -364,11 +370,11 @@ impl<P: DanmuProtocol + Clone> DanmuProvider for WebSocketDanmuProvider<P> {
         self.protocol.platform()
     }
 
-    async fn connect(&self, room_id: &str) -> Result<DanmuConnection> {
+    async fn connect(&self, room_id: &str, config: ConnectionConfig) -> Result<DanmuConnection> {
         let connection_id = format!("{}-{}-{}", self.platform(), room_id, uuid::Uuid::new_v4());
 
         let (is_connected, reconnect_count, message_rx, shutdown_tx, tasks) =
-            self.connect_internal(room_id).await?;
+            self.connect_internal(room_id, config).await?;
 
         let state = WsConnectionState {
             id: connection_id.clone(),

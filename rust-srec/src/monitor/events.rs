@@ -32,6 +32,8 @@ pub enum MonitorEvent {
         /// HTTP headers extracted from MediaInfo.extras (user-agent, referer, etc.).
         /// These should be merged with StreamInfo headers and passed to download engines.
         media_headers: Option<HashMap<String, String>>,
+        /// Additional platform-specific metadata extracted from MediaInfo.extras.
+        media_extras: Option<HashMap<String, String>>,
         timestamp: DateTime<Utc>,
     },
     /// Streamer went offline.
@@ -229,6 +231,7 @@ mod tests {
             category: Some("Gaming".to_string()),
             streams: vec![create_test_stream()],
             media_headers: None,
+            media_extras: None,
             timestamp: Utc::now(),
         };
         assert!(event.description().contains("TestStreamer"));
@@ -246,6 +249,7 @@ mod tests {
             category: None,
             streams: vec![],
             media_headers: None,
+            media_extras: None,
             timestamp: Utc::now(),
         };
         assert!(live_event.should_notify());

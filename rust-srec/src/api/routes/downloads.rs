@@ -347,12 +347,14 @@ fn map_event_to_protobuf(
         DownloadManagerEvent::DownloadFailed {
             download_id,
             streamer_id,
+            session_id,
             error,
             recoverable,
         } => {
             let payload = DownloadFailed {
                 download_id: download_id.clone(),
                 streamer_id: streamer_id.clone(),
+                session_id: session_id.clone(),
                 error: error.clone(),
                 recoverable: *recoverable,
             };
@@ -364,10 +366,12 @@ fn map_event_to_protobuf(
         DownloadManagerEvent::DownloadCancelled {
             download_id,
             streamer_id,
+            session_id,
         } => {
             let payload = DownloadCancelled {
                 download_id: download_id.clone(),
                 streamer_id: streamer_id.clone(),
+                session_id: session_id.clone(),
             };
             Some(WsMessage {
                 event_type: EventType::DownloadCancelled as i32,
@@ -391,6 +395,7 @@ fn map_event_to_protobuf(
             let payload = DownloadFailed {
                 download_id: String::new(), // No download_id for rejected downloads
                 streamer_id: streamer_id.clone(),
+                session_id: session_id.clone(),
                 error: format!("{} (retry in {}s)", reason, retry_after_secs.unwrap_or(0)),
                 recoverable: true, // Circuit breaker rejections are always recoverable
             };
@@ -526,6 +531,7 @@ mod tests {
         let event = DownloadManagerEvent::DownloadFailed {
             download_id: "dl-1".to_string(),
             streamer_id: "streamer-123".to_string(),
+            session_id: "session-1".to_string(),
             error: "Connection timeout".to_string(),
             recoverable: true,
         };
@@ -547,6 +553,7 @@ mod tests {
         let event = DownloadManagerEvent::DownloadCancelled {
             download_id: "dl-1".to_string(),
             streamer_id: "streamer-123".to_string(),
+            session_id: "session-1".to_string(),
         };
 
         let msg = map_event_to_protobuf(&event, &None).unwrap();

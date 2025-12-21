@@ -357,9 +357,12 @@ mod tests {
             .ok();
 
         let provider = create_twitch_danmu_provider();
-        let channel = "mooda";
-
-        let connection = provider.connect(channel).await.expect("Failed to connect");
+        let channel = "dota2ti";
+        println!("Connecting to Twitch channel: {}", channel);
+        let connection = provider
+            .connect(channel, ConnectionConfig::default())
+            .await
+            .expect("Failed to connect");
         println!("Connected to Twitch channel #{}", channel);
 
         // Receive messages for 60 seconds

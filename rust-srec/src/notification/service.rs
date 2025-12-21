@@ -1323,11 +1323,12 @@ impl NotificationService {
                                     }),
                                     DownloadManagerEvent::DownloadCancelled {
                                         streamer_id,
+                                        session_id,
                                         ..
                                     } => Some(NotificationEvent::DownloadCancelled {
                                         streamer_id: streamer_id.clone(),
                                         streamer_name: streamer_id.clone(),
-                                        session_id: String::new(), // Not available in the event
+                                        session_id,
                                         timestamp: Utc::now(),
                                     }),
                                     DownloadManagerEvent::DownloadRejected {

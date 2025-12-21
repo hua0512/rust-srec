@@ -15,6 +15,7 @@ pub use platforms_parser::danmaku::{
 
 // Local modules (application-specific)
 pub mod events;
+mod runner;
 pub mod service;
 
 pub use events::DanmuEvent;

@@ -543,7 +543,7 @@ mod tests {
 
         println!("Connecting to TwitCasting user: {}", user_id);
 
-        match provider.connect(user_id).await {
+        match provider.connect(user_id, ConnectionConfig::default()).await {
             Ok(connection) => {
                 println!("Connected!");
 

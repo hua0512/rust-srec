@@ -9,7 +9,7 @@ pub mod writer;
 
 pub use error::{DanmakuError, Result};
 pub use message::{DanmuMessage, DanmuType};
-pub use provider::{DanmuConnection, DanmuProvider};
+pub use provider::{ConnectionConfig, DanmuConnection, DanmuProvider};
 pub use registry::ProviderRegistry;
 pub use sampler::{
     DanmuSampler, DanmuSamplingConfig, FixedIntervalSampler, VelocitySampler, create_sampler,

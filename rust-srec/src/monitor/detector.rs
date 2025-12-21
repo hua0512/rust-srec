@@ -39,6 +39,8 @@ pub enum LiveStatus {
         /// HTTP headers extracted from MediaInfo.headers (user-agent, referer, etc.).
         /// These should be passed to download engines for platforms that require specific headers.
         media_headers: Option<HashMap<String, String>>,
+        /// Additional platform-specific metadata extracted from MediaInfo.extras.
+        media_extras: Option<HashMap<String, String>>,
     },
     /// Streamer is offline.
     Offline,
@@ -273,6 +275,13 @@ impl StreamDetector {
                     .collect::<HashMap<_, _>>()
             });
 
+            // Extract additional extras from MediaInfo.extras
+            let media_extras = media_info.extras.as_ref().map(|e| {
+                e.iter()
+                    .map(|(k, v)| (k.clone(), v.clone()))
+                    .collect::<HashMap<_, _>>()
+            });
+
             if let Some(headers) = &media_headers {
                 debug!(
                     "Extracted {} media headers for {}: {:?}",
@@ -372,6 +381,7 @@ impl StreamDetector {
                 viewer_count,
                 streams,
                 media_headers,
+                media_extras,
             })
         } else {
             debug!("Streamer {} is OFFLINE", streamer.name);
@@ -467,6 +477,7 @@ mod tests {
             avatar: None,
             streams: vec![create_test_stream()],
             media_headers: None,
+            media_extras: None,
         };
         assert!(status.is_live());
         assert!(!status.is_offline());
@@ -505,6 +516,7 @@ mod tests {
             avatar: None,
             streams: vec![create_test_stream()],
             media_headers: None,
+            media_extras: None,
         };
         assert_eq!(live.title(), Some("Live Title"));
 
@@ -541,6 +553,7 @@ mod tests {
                 viewer_count: None,
                 streams: vec![create_test_stream()],
                 media_headers: None,
+                media_extras: None,
             }
             .is_fatal_error()
         );

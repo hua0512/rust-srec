@@ -167,7 +167,7 @@ impl ServiceContainer {
         // Create pipeline manager with job repository for database persistence
         let pipeline_manager = Arc::new(
             PipelineManager::with_repository(PipelineManagerConfig::default(), job_repo)
-                .with_session_repository(session_repo)
+                .with_session_repository(session_repo.clone())
                 .with_preset_repository(preset_repo)
                 .with_pipeline_preset_repository(pipeline_preset_repo)
                 .with_config_service(config_service.clone())
@@ -178,7 +178,10 @@ impl ServiceContainer {
         let monitor_event_broadcaster = stream_monitor.event_broadcaster().clone();
 
         // Create danmu service with default config
-        let danmu_service = Arc::new(DanmuService::new(DanmuServiceConfig::default()));
+        let danmu_service = Arc::new(
+            DanmuService::new(DanmuServiceConfig::default())
+                .with_session_repository(session_repo.clone()),
+        );
 
         // Create notification service with default config
         let notification_repository = Arc::new(SqlxNotificationRepository::new(pool.clone()));
@@ -669,6 +672,7 @@ impl ServiceContainer {
         let pipeline_manager = self.pipeline_manager.clone();
         let stream_monitor = self.stream_monitor.clone();
         let streamer_manager = self.streamer_manager.clone();
+        let danmu_service = self.danmu_service.clone();
         let mut receiver = self.download_manager.subscribe();
         let cancellation_token = self.cancellation_token.clone();
 
@@ -691,6 +695,97 @@ impl ServiceContainer {
                                         } else {
                                             debug!("Recorded download error for {}: {}", streamer_id, error);
                                         }
+                                    }
+                                }
+
+                                // Handle segment started - start danmu segment with matching output path
+                                if let DownloadManagerEvent::SegmentStarted {
+                                    ref session_id,
+                                    ref segment_path,
+                                    segment_index,
+                                    ..
+                                } = download_event {
+                                    // Create danmu XML path next to the video segment
+                                    // e.g., segment_001.ts -> segment_001.xml
+                                    let video_path = std::path::Path::new(segment_path);
+                                    let danmu_path = video_path.with_extension("xml");
+
+                                    // Get the danmu handle for this session and start the segment
+                                    if let Some(handle) = danmu_service.get_handle(session_id) {
+                                        let segment_id = format!("segment_{:04}", segment_index);
+                                        let start_time = chrono::Utc::now();
+
+                                        if let Err(e) = handle.start_segment(&segment_id, danmu_path.clone(), start_time).await {
+                                            warn!(
+                                                "Failed to start danmu segment for session {}: {}",
+                                                session_id, e
+                                            );
+                                        } else {
+                                            debug!(
+                                                "Started danmu segment {} at {:?} for session {}",
+                                                segment_id, danmu_path, session_id
+                                            );
+                                        }
+                                    }
+                                }
+
+                                // Handle segment completed - end danmu segment
+                                if let DownloadManagerEvent::SegmentCompleted {
+                                    ref session_id,
+                                    segment_index,
+                                    ..
+                                } = download_event {
+                                    if let Some(handle) = danmu_service.get_handle(session_id) {
+                                        let segment_id = format!("segment_{:04}", segment_index);
+                                        if let Err(e) = handle.end_segment(&segment_id).await {
+                                            warn!(
+                                                "Failed to end danmu segment {} for session {}: {}",
+                                                segment_id, session_id, e
+                                            );
+                                        }
+                                    }
+                                }
+
+                                // Handle download completed - stop danmu collection
+                                if let DownloadManagerEvent::DownloadCompleted {
+                                    ref session_id,
+                                    ..
+                                } = download_event {
+                                    if danmu_service.is_collecting(session_id) {
+                                        match danmu_service.stop_collection(session_id).await {
+                                            Ok(stats) => {
+                                                info!(
+                                                    "Stopped danmu collection on download complete for session {}: {} messages",
+                                                    session_id, stats.total_count
+                                                );
+                                            }
+                                            Err(e) => {
+                                                warn!(
+                                                    "Failed to stop danmu collection for session {}: {}",
+                                                    session_id, e
+                                                );
+                                            }
+                                        }
+                                    }
+                                }
+
+                                // Handle download failed - stop danmu collection
+                                if let DownloadManagerEvent::DownloadFailed {
+                                    ref session_id,
+                                    ..
+                                } = download_event {
+                                    if danmu_service.is_collecting(session_id) {
+                                        let _ = danmu_service.stop_collection(session_id).await;
+                                    }
+                                }
+
+                                // Handle download cancelled - stop danmu collection
+                                if let DownloadManagerEvent::DownloadCancelled {
+                                    ref session_id,
+                                    ..
+                                } = download_event {
+                                    if danmu_service.is_collecting(session_id) {
+                                        let _ = danmu_service.stop_collection(session_id).await;
                                     }
                                 }
 
@@ -750,6 +845,7 @@ impl ServiceContainer {
     fn setup_danmu_event_subscriptions(&self) {
         let mut receiver = self.danmu_service.subscribe();
         let cancellation_token = self.cancellation_token.clone();
+        let session_repo = self.danmu_service.session_repo().cloned();
 
         tokio::spawn(async move {
             loop {
@@ -773,18 +869,73 @@ impl ServiceContainer {
                                             "Danmu collection stopped for session {}: {} messages",
                                             session_id, statistics.total_count
                                         );
+
+                                        // Persist danmu statistics to database
+                                        if let Some(repo) = &session_repo {
+                                            use crate::database::models::DanmuStatisticsDbModel;
+                                            let stats_model = DanmuStatisticsDbModel {
+                                                id: uuid::Uuid::new_v4().to_string(),
+                                                session_id: session_id.clone(),
+                                                total_danmus: statistics.total_count as i64,
+                                                danmu_rate_timeseries: None, // TODO: implement rate tracking
+                                                top_talkers: None, // TODO: implement top talkers
+                                                word_frequency: None, // TODO: implement word frequency
+                                            };
+                                            if let Err(e) = repo.create_danmu_statistics(&stats_model).await {
+                                                warn!(
+                                                    "Failed to persist danmu statistics for session {}: {}",
+                                                    session_id, e
+                                                );
+                                            } else {
+                                                debug!(
+                                                    "Persisted danmu statistics for session {}: {} messages",
+                                                    session_id, statistics.total_count
+                                                );
+                                            }
+                                        }
                                     }
-                                    DanmuEvent::SegmentStarted { session_id, segment_id, output_path } => {
+                                    DanmuEvent::SegmentStarted { session_id, segment_id, output_path, start_time } => {
                                         debug!(
-                                            "Danmu segment started: session={}, segment={}, path={:?}",
-                                            session_id, segment_id, output_path
+                                            "Danmu segment started: session={}, segment={}, path={:?}, start_time={:?}",
+                                            session_id, segment_id, output_path, start_time
                                         );
                                     }
-                                    DanmuEvent::SegmentCompleted { session_id, segment_id, message_count, .. } => {
+                                    DanmuEvent::SegmentCompleted { session_id, segment_id, output_path, message_count } => {
                                         info!(
                                             "Danmu segment completed: session={}, segment={}, messages={}",
                                             session_id, segment_id, message_count
                                         );
+
+                                        // Persist danmu XML file as MediaOutput
+                                        if let Some(repo) = &session_repo {
+                                            use crate::database::models::{MediaFileType, MediaOutputDbModel};
+                                            use crate::database::repositories::SessionRepository;
+
+                                            // Get file size
+                                            let size_bytes = tokio::fs::metadata(&output_path)
+                                                .await
+                                                .map(|m| m.len() as i64)
+                                                .unwrap_or(0);
+
+                                            let output = MediaOutputDbModel::new(
+                                                &session_id,
+                                                output_path.to_string_lossy().as_ref(),
+                                                MediaFileType::DanmuXml,
+                                                size_bytes,
+                                            );
+
+                                            if let Err(e) = repo.create_media_output(&output).await {
+                                                warn!(
+                                                    "Failed to persist danmu XML for session {}: {}",
+                                                    session_id, e
+                                                );
+                                            } else {
+                                                debug!(
+                                                    "Persisted danmu XML for session {}: {:?}",
+                                                    session_id, output_path
+                                                );
+                                            }
+                                        }
                                     }
                                     DanmuEvent::Reconnecting { session_id, attempt } => {
                                         warn!(
@@ -1234,6 +1385,7 @@ impl ServiceContainer {
                 streams,
                 streamer_url,
                 media_headers,
+                media_extras,
                 ..
             } => {
                 info!(
@@ -1395,7 +1547,14 @@ impl ServiceContainer {
                 if merged_config.record_danmu {
                     let sampling_config = Some(merged_config.danmu_sampling_config.clone());
                     match danmu_service
-                        .start_collection(&session_id, &streamer_id, &streamer_url, sampling_config)
+                        .start_collection(
+                            &session_id,
+                            &streamer_id,
+                            &streamer_url,
+                            sampling_config,
+                            merged_config.cookies.clone(),
+                            media_extras,
+                        )
                         .await
                     {
                         Ok(handle) => {

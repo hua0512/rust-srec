@@ -15,6 +15,7 @@ use tars_codec::{
 use tokio_tungstenite::tungstenite::protocol::Message;
 use tracing::debug;
 
+use crate::danmaku::ConnectionConfig;
 use crate::danmaku::DanmuMessage;
 use crate::danmaku::error::{DanmakuError, Result};
 use crate::danmaku::websocket::{DanmuProtocol, WebSocketDanmuProvider};
@@ -493,7 +494,11 @@ mod tests {
         let provider = HuyaDanmuProvider::new();
 
         // Test connection with timeout
-        let connect_result = timeout(Duration::from_secs(10), provider.connect(room_id)).await;
+        let connect_result = timeout(
+            Duration::from_secs(10),
+            provider.connect(room_id, ConnectionConfig::default()),
+        )
+        .await;
 
         assert!(connect_result.is_ok(), "Connection timed out");
         let mut connection = connect_result.unwrap().expect("Failed to connect");

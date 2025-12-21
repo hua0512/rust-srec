@@ -4,9 +4,11 @@
 
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
+use std::collections::HashMap;
 
 use crate::danmaku::error::Result;
 use crate::danmaku::message::DanmuMessage;
+use crate::danmaku::websocket::WebSocketProviderConfig;
 
 /// Connection handle for an active danmu stream.
 #[derive(Debug)]
@@ -59,6 +61,40 @@ impl DanmuConnection {
     }
 }
 
+/// Configuration for establishing a danmu connection.
+#[derive(Debug, Clone, Default)]
+pub struct ConnectionConfig {
+    /// Authentication cookies
+    pub cookies: Option<String>,
+    /// WebSocket-specific configuration (reconnect settings, etc.)
+    pub websocket: Option<WebSocketProviderConfig>,
+    /// Platform-specific extras (e.g., presenter_uid for huya, id_str for douyin)
+    pub extras: Option<HashMap<String, String>>,
+}
+
+impl ConnectionConfig {
+    /// Create a new connection config with just cookies.
+    pub fn with_cookies(cookies: Option<String>) -> Self {
+        Self {
+            cookies,
+            websocket: None,
+            extras: None,
+        }
+    }
+
+    /// Set WebSocket configuration.
+    pub fn with_websocket(mut self, config: WebSocketProviderConfig) -> Self {
+        self.websocket = Some(config);
+        self
+    }
+
+    /// Set extras.
+    pub fn with_extras(mut self, extras: HashMap<String, String>) -> Self {
+        self.extras = Some(extras);
+        self
+    }
+}
+
 /// Trait for platform-specific danmu providers.
 #[async_trait]
 pub trait DanmuProvider: Send + Sync {
@@ -66,7 +102,7 @@ pub trait DanmuProvider: Send + Sync {
     fn platform(&self) -> &str;
 
     /// Connect to the danmu stream for a room.
-    async fn connect(&self, room_id: &str) -> Result<DanmuConnection>;
+    async fn connect(&self, room_id: &str, config: ConnectionConfig) -> Result<DanmuConnection>;
 
     /// Disconnect from the danmu stream.
     async fn disconnect(&self, connection: &mut DanmuConnection) -> Result<()>;
