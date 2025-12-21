@@ -137,31 +137,20 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           key: ${{ matrix.target }}
-      - name: Install musl-tools and OpenSSL on Linux
+      - name: Install musl-tools on Linux
         if: contains(matrix.os, 'ubuntu')
         run: |
           sudo apt-get update
           sudo apt-get install -y musl-tools musl-dev
-          sudo apt-get install -y pkg-config libssl-dev
-      - name: Set OpenSSL env for musl (Linux amd64)
-        if: matrix.target == 'x86_64-unknown-linux-musl'
+      - name: Set vendored OpenSSL for musl builds
+        if: contains(matrix.target, 'musl')
         run: |
-          echo "OPENSSL_DIR=/usr" >> $GITHUB_ENV
-          echo "OPENSSL_LIB_DIR=/usr/lib/x86_64-linux-gnu" >> $GITHUB_ENV
-          echo "OPENSSL_INCLUDE_DIR=/usr/include" >> $GITHUB_ENV
-          echo "OPENSSL_STATIC=1" >> $GITHUB_ENV
-      - name: Set OpenSSL env for musl (Linux arm64)
-        if: matrix.target == 'aarch64-unknown-linux-musl'
-        run: |
-          echo "OPENSSL_DIR=/usr" >> $GITHUB_ENV
-          echo "OPENSSL_LIB_DIR=/usr/lib/aarch64-linux-gnu" >> $GITHUB_ENV
-          echo "OPENSSL_INCLUDE_DIR=/usr/include" >> $GITHUB_ENV
           echo "OPENSSL_STATIC=1" >> $GITHUB_ENV
 
       - name: Build mesio and strev release
-        run: cargo build -p mesio -p strev --release --target ${{ matrix.target }}
+        run: cargo build -p mesio -p strev --release --target ${{ matrix.target }} --features openssl/vendored
       - name: Build rust-srec release
-        run: cargo build -p rust-srec --release --target ${{ matrix.target }}
+        run: cargo build -p rust-srec --release --target ${{ matrix.target }} --features openssl/vendored
         
       - name: Upload mesio binary
         uses: actions/upload-artifact@v6
