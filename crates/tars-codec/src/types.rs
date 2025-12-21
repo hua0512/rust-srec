@@ -1,7 +1,19 @@
 use bytes::Bytes;
 use rustc_hash::FxHashMap;
 use smallvec::SmallVec;
+use std::cmp::Ordering;
 use std::hash::{Hash, Hasher};
+use std::sync::atomic::AtomicI32;
+
+/// Atomic counter for generating unique request IDs across all TARS messages
+static REQUEST_ID_COUNTER: AtomicI32 = AtomicI32::new(0);
+
+/// Returns the next unique request ID for TARS messages.
+/// Thread-safe and monotonically increasing.
+#[inline]
+pub fn next_request_id() -> i32 {
+    REQUEST_ID_COUNTER.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+}
 
 /// Represents a full Tars message.
 #[derive(Debug)]
@@ -25,7 +37,6 @@ pub struct TarsRequestHeader {
 }
 
 /// An enum representing any valid Tars value.
-use std::cmp::Ordering;
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum TarsValue {

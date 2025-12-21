@@ -115,6 +115,7 @@ impl Weibo {
                 cover_url: None,
                 is_live: false,
                 streams: vec![],
+                headers: None,
                 extras: None,
             });
         }
@@ -142,6 +143,7 @@ impl Weibo {
                     cover_url: None,
                     is_live: false,
                     streams: vec![],
+                    headers: None,
                     extras: None,
                 });
             } else {
@@ -160,6 +162,7 @@ impl Weibo {
                 cover_url: None,
                 is_live: false,
                 streams: vec![],
+                headers: None,
                 extras: None,
             });
         }
@@ -185,6 +188,7 @@ impl Weibo {
                 cover_url: Some(cover_url),
                 is_live: false,
                 streams: vec![],
+                headers: None,
                 extras: None,
             });
         }
@@ -221,7 +225,7 @@ impl Weibo {
                 extras: None,
                 codec: "hvc1".to_string(),
                 fps: 0.0,
-                is_headers_needed: false,
+                is_headers_needed: true,
             });
         }
 
@@ -236,7 +240,7 @@ impl Weibo {
                 extras: None,
                 codec: "hvc1".to_string(),
                 fps: 0.0,
-                is_headers_needed: false,
+                is_headers_needed: true,
             });
         }
 
@@ -248,7 +252,8 @@ impl Weibo {
             cover_url: Some(cover_url),
             is_live: true,
             streams,
-            extras: Some(self.extractor.get_platform_headers_map()),
+            headers: Some(self.extractor.get_platform_headers_map()),
+            extras: None,
         })
     }
 }

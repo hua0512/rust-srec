@@ -3,8 +3,77 @@ use std::fs::{File, OpenOptions};
 use std::io::{self, BufWriter, Write};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
+use std::time::Instant;
 use thiserror::Error;
 use tracing::debug;
+
+/// Progress information from writer.
+/// Contains metrics about bytes written, items processed, media duration, and performance.
+#[derive(Debug, Clone)]
+pub struct WriterProgress {
+    /// Total bytes written across all files.
+    pub bytes_written_total: u64,
+    /// Total items (segments/tags) written.
+    pub items_written_total: usize,
+    /// Total media duration in seconds.
+    pub media_duration_secs_total: f64,
+    /// Current file sequence number.
+    pub current_file_sequence: u32,
+    /// Elapsed time since writer started in seconds.
+    pub elapsed_secs: f64,
+    /// Calculated speed in bytes per second.
+    pub speed_bytes_per_sec: u64,
+    /// Playback ratio (media_duration / elapsed_time).
+    pub playback_ratio: f64,
+}
+
+impl WriterProgress {
+    /// Creates a new WriterProgress from WriterState and start time.
+    pub fn from_state(state: &WriterState, start_time: Instant) -> Self {
+        let elapsed_secs = start_time.elapsed().as_secs_f64();
+        let speed_bytes_per_sec = if elapsed_secs > 0.0 {
+            (state.bytes_written_total as f64 / elapsed_secs) as u64
+        } else {
+            0
+        };
+        let playback_ratio = if elapsed_secs > 0.0 {
+            state.media_duration_secs_total / elapsed_secs
+        } else {
+            0.0
+        };
+
+        Self {
+            bytes_written_total: state.bytes_written_total,
+            items_written_total: state.items_written_total,
+            media_duration_secs_total: state.media_duration_secs_total,
+            current_file_sequence: state.file_sequence_number,
+            elapsed_secs,
+            speed_bytes_per_sec,
+            playback_ratio,
+        }
+    }
+}
+
+/// Configuration for progress emission intervals.
+#[derive(Debug, Clone)]
+pub struct ProgressConfig {
+    /// Emit progress every N bytes written (default: 1MB).
+    pub bytes_interval: u64,
+    /// Emit progress every N milliseconds (default: 1000ms).
+    pub time_interval_ms: u64,
+}
+
+impl Default for ProgressConfig {
+    fn default() -> Self {
+        Self {
+            bytes_interval: 1024 * 1024, // 1 MB
+            time_interval_ms: 1000,      // 1 second
+        }
+    }
+}
+
+/// Callback type for progress events.
+pub type ProgressCallback = Box<dyn Fn(WriterProgress) + Send + Sync>;
 
 /// Expands a filename template with optional sequence number.
 /// Replaces `%i` with the sequence number if provided.
@@ -71,6 +140,12 @@ pub struct WriterState {
     pub current_file_opened_at: Option<std::time::SystemTime>,
     /// Sequence number for file naming.
     pub file_sequence_number: u32,
+    /// Media duration in seconds for the current file.
+    /// For HLS: accumulated segment durations.
+    /// For FLV: calculated from max timestamp.
+    pub media_duration_secs_current_file: f64,
+    /// Total media duration in seconds across all files.
+    pub media_duration_secs_total: f64,
 }
 
 impl WriterState {
@@ -80,6 +155,21 @@ impl WriterState {
         self.items_written_current_file = 0;
         self.bytes_written_current_file = 0;
         self.current_file_opened_at = Some(std::time::SystemTime::now());
+        self.media_duration_secs_current_file = 0.0;
+    }
+
+    /// Add media duration to both current file and total counters.
+    pub fn add_media_duration(&mut self, duration_secs: f64) {
+        self.media_duration_secs_current_file += duration_secs;
+        self.media_duration_secs_total += duration_secs;
+    }
+
+    /// Set media duration for current file (used for FLV where duration is calculated from max timestamp).
+    pub fn set_current_media_duration(&mut self, duration_secs: f64) {
+        // Update total by removing old current and adding new
+        self.media_duration_secs_total -= self.media_duration_secs_current_file;
+        self.media_duration_secs_current_file = duration_secs;
+        self.media_duration_secs_total += duration_secs;
     }
 }
 
@@ -165,9 +255,21 @@ pub trait FormatStrategy<D>: Send + Sync + 'static {
     fn on_write_error(&mut self, _error: &Self::StrategyError, _item: &D) {
         // Default: do nothing
     }
+
+    /// Optional: Returns the current media duration in seconds for the current file.
+    /// This is used to track media duration separately from bytes written.
+    /// For HLS: accumulated segment durations.
+    /// For FLV: calculated from max timestamp.
+    fn current_media_duration_secs(&self) -> f64 {
+        0.0
+    }
 }
 
-pub type FileOpCallback = Box<dyn Fn(&Path, u32) + Send + Sync>;
+/// Callback type for file open events (path, sequence_number).
+pub type FileOpenCallback = Box<dyn Fn(&Path, u32) + Send + Sync>;
+
+/// Callback type for file close events (path, sequence_number, duration_secs, size_bytes).
+pub type FileCloseCallback = Box<dyn Fn(&Path, u32, f64, u64) + Send + Sync>;
 
 /// Generic writer task.
 pub struct WriterTask<D, S: FormatStrategy<D>> {
@@ -175,8 +277,13 @@ pub struct WriterTask<D, S: FormatStrategy<D>> {
     state: WriterState,
     strategy: S,
     writer: Option<S::Writer>,
-    on_file_open_callback: Option<FileOpCallback>,
-    on_file_close_callback: Option<FileOpCallback>,
+    on_file_open_callback: Option<FileOpenCallback>,
+    on_file_close_callback: Option<FileCloseCallback>,
+    on_progress_callback: Option<ProgressCallback>,
+    progress_config: ProgressConfig,
+    start_time: Instant,
+    last_progress_bytes: u64,
+    last_progress_time_ms: u64,
 }
 
 impl<D, S: FormatStrategy<D>> WriterTask<D, S> {
@@ -191,6 +298,11 @@ impl<D, S: FormatStrategy<D>> WriterTask<D, S> {
             writer: None,
             on_file_open_callback: None,
             on_file_close_callback: None,
+            on_progress_callback: None,
+            progress_config: ProgressConfig::default(),
+            start_time: Instant::now(),
+            last_progress_bytes: 0,
+            last_progress_time_ms: 0,
         }
     }
 
@@ -203,9 +315,33 @@ impl<D, S: FormatStrategy<D>> WriterTask<D, S> {
 
     pub fn set_on_file_close_callback<F>(&mut self, callback: F)
     where
-        F: Fn(&Path, u32) + Send + Sync + 'static,
+        F: Fn(&Path, u32, f64, u64) + Send + Sync + 'static,
     {
         self.on_file_close_callback = Some(Box::new(callback));
+    }
+
+    /// Set a progress callback with default intervals (1MB bytes, 1000ms time).
+    pub fn set_progress_callback<F>(&mut self, callback: F)
+    where
+        F: Fn(WriterProgress) + Send + Sync + 'static,
+    {
+        self.on_progress_callback = Some(Box::new(callback));
+        self.progress_config = ProgressConfig::default();
+        self.start_time = Instant::now();
+        self.last_progress_bytes = 0;
+        self.last_progress_time_ms = 0;
+    }
+
+    /// Set a progress callback with custom intervals.
+    pub fn set_progress_callback_with_config<F>(&mut self, callback: F, config: ProgressConfig)
+    where
+        F: Fn(WriterProgress) + Send + Sync + 'static,
+    {
+        self.on_progress_callback = Some(Box::new(callback));
+        self.progress_config = config;
+        self.start_time = Instant::now();
+        self.last_progress_bytes = 0;
+        self.last_progress_time_ms = 0;
     }
 
     fn ensure_writer_open(&mut self) -> Result<(), TaskError<S::StrategyError>> {
@@ -274,8 +410,17 @@ impl<D, S: FormatStrategy<D>> WriterTask<D, S> {
 
                 writer.flush().map_err(TaskError::Io)?;
 
+                // Capture duration before callback (current file duration)
+                let duration_secs = self.state.media_duration_secs_current_file;
+                let size_bytes = self.state.bytes_written_current_file;
+
                 if let Some(cb) = &self.on_file_close_callback {
-                    cb(path, self.state.file_sequence_number);
+                    cb(
+                        path,
+                        self.state.file_sequence_number,
+                        duration_secs,
+                        size_bytes,
+                    );
                 }
             }
         } else {
@@ -331,6 +476,14 @@ impl<D, S: FormatStrategy<D>> WriterTask<D, S> {
                     self.state.items_written_total += 1;
                     self.state.bytes_written_current_file += bytes_written;
                     self.state.bytes_written_total += bytes_written;
+
+                    // Update media duration from strategy
+                    let media_duration = self.strategy.current_media_duration_secs();
+                    self.state.set_current_media_duration(media_duration);
+
+                    // Check and emit progress if thresholds exceeded
+                    self.maybe_emit_progress();
+
                     let post_write_action = self
                         .strategy
                         .after_item_written(&item, bytes_written, &self.state)
@@ -358,6 +511,29 @@ impl<D, S: FormatStrategy<D>> WriterTask<D, S> {
         }
     }
 
+    /// Check if progress thresholds are exceeded and emit progress if so.
+    fn maybe_emit_progress(&mut self) {
+        if self.on_progress_callback.is_none() {
+            return;
+        }
+
+        let bytes_since_last = self.state.bytes_written_total - self.last_progress_bytes;
+        let elapsed_ms = self.start_time.elapsed().as_millis() as u64;
+        let time_since_last_ms = elapsed_ms.saturating_sub(self.last_progress_time_ms);
+
+        let byte_threshold_exceeded = bytes_since_last >= self.progress_config.bytes_interval;
+        let time_threshold_exceeded = time_since_last_ms >= self.progress_config.time_interval_ms;
+
+        if byte_threshold_exceeded || time_threshold_exceeded {
+            let progress = WriterProgress::from_state(&self.state, self.start_time);
+            if let Some(callback) = &self.on_progress_callback {
+                callback(progress);
+            }
+            self.last_progress_bytes = self.state.bytes_written_total;
+            self.last_progress_time_ms = elapsed_ms;
+        }
+    }
+
     pub fn flush(&mut self) -> Result<(), TaskError<S::StrategyError>> {
         if let Some(writer) = self.writer.as_mut() {
             writer.flush().map_err(TaskError::Io)?;
@@ -376,8 +552,18 @@ impl<D, S: FormatStrategy<D>> WriterTask<D, S> {
             self.state.bytes_written_current_file += bytes_closed;
             self.state.bytes_written_total += bytes_closed;
             writer.flush().map_err(TaskError::Io)?;
+
+            // Capture duration before callback (current file duration)
+            let duration_secs = self.state.media_duration_secs_current_file;
+            let size_bytes = self.state.bytes_written_current_file;
+
             if let Some(cb) = &self.on_file_close_callback {
-                cb(path, self.state.file_sequence_number);
+                cb(
+                    path,
+                    self.state.file_sequence_number,
+                    duration_secs,
+                    size_bytes,
+                );
             }
         }
 

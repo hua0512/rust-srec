@@ -30,7 +30,6 @@ impl TarsDeserializer {
     /// Reset the deserializer with new data for object pool reuse
     pub fn reset(&mut self, buffer: Bytes) {
         self.buffer = buffer;
-        // Keep the zero_copy_strings setting from original construction
     }
 
     pub fn read_message(&mut self) -> Result<TarsMessage, TarsError> {
@@ -98,11 +97,24 @@ impl TarsDeserializer {
 
     #[inline]
     pub fn read_head(&mut self) -> Result<(u8, TarsType), TarsError> {
+        if self.buffer.is_empty() {
+            return Err(TarsError::Io(std::io::Error::new(
+                std::io::ErrorKind::UnexpectedEof,
+                "Unexpected EOF reading head",
+            )));
+        }
+
         let head = self.buffer.get_u8();
         let type_id =
             TarsType::try_from(head & 0x0F).map_err(|()| TarsError::InvalidTypeId(head & 0x0F))?;
         let tag = (head & 0xF0) >> 4;
         if tag == 15 {
+            if self.buffer.is_empty() {
+                return Err(TarsError::Io(std::io::Error::new(
+                    std::io::ErrorKind::UnexpectedEof,
+                    "Unexpected EOF reading extended tag",
+                )));
+            }
             let extended_tag = self.buffer.get_u8();
             Ok((extended_tag, type_id))
         } else {
@@ -184,6 +196,16 @@ impl TarsDeserializer {
             if type_id == TarsType::StructEnd {
                 break;
             }
+            let value = self.read_value_by_type(type_id, tag)?;
+            map.insert(tag, value);
+        }
+        Ok(map)
+    }
+
+    pub fn read_struct_naked(&mut self) -> Result<FxHashMap<u8, TarsValue>, TarsError> {
+        let mut map = FxHashMap::default();
+        while !self.is_empty() {
+            let (tag, type_id) = self.read_head()?;
             let value = self.read_value_by_type(type_id, tag)?;
             map.insert(tag, value);
         }
@@ -350,6 +372,61 @@ impl TarsValue {
         } else {
             Err(TarsError::TypeMismatch {
                 expected: "SimpleList",
+                actual: "Other",
+            })
+        }
+    }
+
+    pub fn try_into_bool(self) -> Result<bool, TarsError> {
+        match self {
+            TarsValue::Bool(v) => Ok(v),
+            TarsValue::Byte(v) => Ok(v != 0),
+            _ => Err(TarsError::TypeMismatch {
+                expected: "Bool",
+                actual: "Other",
+            }),
+        }
+    }
+
+    pub fn try_into_f32(self) -> Result<f32, TarsError> {
+        if let TarsValue::Float(v) = self {
+            Ok(v)
+        } else {
+            Err(TarsError::TypeMismatch {
+                expected: "Float",
+                actual: "Other",
+            })
+        }
+    }
+
+    pub fn try_into_f64(self) -> Result<f64, TarsError> {
+        match self {
+            TarsValue::Double(v) => Ok(v),
+            TarsValue::Float(v) => Ok(v as f64),
+            _ => Err(TarsError::TypeMismatch {
+                expected: "Double",
+                actual: "Other",
+            }),
+        }
+    }
+
+    pub fn try_into_list(self) -> Result<smallvec::SmallVec<[Box<TarsValue>; 4]>, TarsError> {
+        if let TarsValue::List(v) = self {
+            Ok(v)
+        } else {
+            Err(TarsError::TypeMismatch {
+                expected: "List",
+                actual: "Other",
+            })
+        }
+    }
+
+    pub fn try_into_struct(self) -> Result<FxHashMap<u8, TarsValue>, TarsError> {
+        if let TarsValue::Struct(v) = self {
+            Ok(v)
+        } else {
+            Err(TarsError::TypeMismatch {
+                expected: "Struct",
                 actual: "Other",
             })
         }

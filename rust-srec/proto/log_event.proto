@@ -1,0 +1,43 @@
+syntax = "proto3";
+
+package log_event;
+
+// Log severity levels
+enum LogLevel {
+  LOG_LEVEL_UNSPECIFIED = 0;
+  LOG_LEVEL_TRACE = 1;
+  LOG_LEVEL_DEBUG = 2;
+  LOG_LEVEL_INFO = 3;
+  LOG_LEVEL_WARN = 4;
+  LOG_LEVEL_ERROR = 5;
+}
+
+// Event types for WebSocket messages
+enum EventType {
+  EVENT_TYPE_UNSPECIFIED = 0;
+  EVENT_TYPE_LOG = 1;
+  EVENT_TYPE_ERROR = 2;
+}
+
+// Server-to-client message envelope
+message WsMessage {
+  EventType event_type = 1;
+  oneof payload {
+    LogEvent log = 2;
+    ErrorPayload error = 3;
+  }
+}
+
+// A single log event
+message LogEvent {
+  int64 timestamp_ms = 1;  // Unix timestamp in milliseconds
+  LogLevel level = 2;
+  string target = 3;
+  string message = 4;
+}
+
+// Error payload for service errors
+message ErrorPayload {
+  string code = 1;
+  string message = 2;
+}

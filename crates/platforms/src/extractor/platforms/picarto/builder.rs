@@ -62,9 +62,6 @@ impl Picarto {
     }
 
     pub async fn get_live_info(&self, rid: &str) -> Result<MediaInfo, ExtractorError> {
-        // This function should implement the logic to get live info from Picarto
-        // For now, we return a placeholder value
-
         let api_url = format!("{}{}", Self::API_URL_LIVE, rid);
         let response = self.extractor.get(&api_url).send().await?;
 
@@ -93,6 +90,7 @@ impl Picarto {
                 artist_url: Some(avatar_url),
                 is_live,
                 streams: vec![],
+                headers: None,
                 extras: None,
             });
         }
@@ -156,7 +154,8 @@ impl Picarto {
             artist_url: Some(avatar_url),
             is_live,
             streams,
-            extras: Some(self.extractor.get_platform_headers_map()),
+            headers: Some(self.extractor.get_platform_headers_map()),
+            extras: None,
         })
     }
 }

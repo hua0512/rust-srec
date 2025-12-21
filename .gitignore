@@ -4,13 +4,15 @@
 rust-toolchain
 rust-toolchain.toml
 
-# Media output
-*.flv
-*.ts
-*.m3u8
-
 # Logs
 *.log
+*/logs/
+
+# Env
+.env
+.env.example
+*.env
+*.env.example
 
 # Editor / IDE
 .vscode/
@@ -30,3 +32,16 @@ desktop.ini
 *~
 *.swp
 *.swo
+
+# AI
+.kiro/
+.roo/
+.claude/
+.roomodes
+.cursorrules
+.rules
+
+# Local SQLite databases
+*.db
+*.db-wal
+*.db-shm

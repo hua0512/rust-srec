@@ -233,4 +233,8 @@ impl FormatStrategy<FlvData> for FlvFormatStrategy {
         }
         Ok(PostWriteAction::None)
     }
+
+    fn current_media_duration_secs(&self) -> f64 {
+        self.calculate_duration() as f64
+    }
 }

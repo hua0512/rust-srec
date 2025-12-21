@@ -51,6 +51,14 @@ async fn main() {
                 Ok(media_info) => {
                     println!("Title: {}", media_info.title);
                     println!("Uploader: {}", media_info.uploader);
+                    
+                    if let Some(headers) = &media_info.headers {
+                        println!("Headers:");
+                        for (key, value) in headers {
+                            println!("  {}: {}", key, value);
+                        }
+                    }
+
                     for (i, mut stream) in media_info.streams.into_iter().enumerate() {
                         // For some platforms, you need to call get_url to get the real stream url
                         extractor.get_url(&mut stream).await.unwrap();

@@ -1,0 +1,97 @@
+[package]
+name = "rust-srec"
+version = "0.1.0"
+edition = "2024"
+description = "An automatic online streaming recorder"
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/hua0512/rust-srec"
+
+[dependencies]
+axum = { version = "0.8.4", features = ["ws"] }
+serde = { version = "1.0", features = ["derive"] }
+uuid = { version = "1.18.1", features = ["v4", "serde"] }
+chrono = { version = "0.4", features = ["serde"] }
+chrono-tz = "0.10"
+cron = "0.15"
+bytes = "1"
+tokio = { version = "1", features = ["full"] }
+tokio-util = { version = "0.7", features = ["rt"] }
+futures = "0.3"
+anyhow = "1.0"
+serde_json = "1.0"
+json-patch = "1.0"
+async-trait = "0.1"
+strum = { version = "0.27.2", features = ["derive"] }
+reqwest = { version = "0.12.23", default-features = false, features = [
+    "json",
+    "stream",
+    "rustls-tls",
+] }
+sqlx = { version = "0.8.6", features = [
+    "runtime-tokio-rustls",
+    "sqlite",
+    "macros",
+    "uuid",
+    "chrono",
+    "json",
+] }
+
+# Caching
+dashmap = "5.5"
+parking_lot = "0.12"
+
+# Logging
+tracing = "0.1"
+tracing-appender = "0.2"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
+
+sysinfo = { version = "0.30" }
+
+# Workspace crates
+
+pipeline-common = { path = "../crates/pipeline-common" }
+flv = { path = "../crates/flv" }
+flv-fix = { path = "../crates/flv-fix" }
+hls = { path = "../crates/hls" }
+hls-fix = { path = "../crates/hls-fix" }
+mesio = { path = "../crates/mesio", package = "mesio-engine" }
+platforms-parser = { path = "../crates/platforms" }
+thiserror = "1.0"
+dotenvy = "0.15"
+rand = "0.9.2"
+regex = "1.10"
+tower = { version = "0.5", features = ["full"] }
+tower-http = { version = "0.6", features = ["cors", "trace", "request-id", "fs"] }
+
+# OpenAPI / Swagger
+utoipa = { version = "5", features = ["axum_extras", "chrono", "uuid"] }
+utoipa-swagger-ui = { version = "9", features = ["axum"] }
+jsonwebtoken = "9"
+mimalloc = "0.1.48"
+
+# Cryptography for password hashing and token generation
+argon2 = "0.5"
+sha2 = "0.10"
+hex = "0.4"
+
+# Protocol Buffers
+prost = "0.14"
+prost-types = "0.14"
+
+# Compression
+zip = { version = "2.2", default-features = false, features = ["deflate"] }
+flate2 = "1.0"
+tar = "0.4"
+
+[build-dependencies]
+prost-build = "0.14"
+
+[dev-dependencies]
+mockall = "0.12.1"
+proptest = "1.4"
+rstest = "0.26.1"
+tempfile = "3"
+
+
+[profile.dev.package.sqlx-macros]
+opt-level = 3

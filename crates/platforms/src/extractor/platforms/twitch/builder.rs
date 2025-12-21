@@ -151,6 +151,7 @@ impl Twitch {
         cover_url: Option<String>,
         is_live: bool,
         streams: Vec<StreamInfo>,
+        headers: Option<FxHashMap<String, String>>,
         extras: Option<FxHashMap<String, String>>,
     ) -> MediaInfo {
         MediaInfo {
@@ -161,6 +162,7 @@ impl Twitch {
             cover_url,
             is_live,
             streams,
+            headers,
             extras,
         }
     }
@@ -258,6 +260,7 @@ impl Twitch {
                 is_live,
                 vec![],
                 None,
+                None,
             ));
         }
 
@@ -271,6 +274,7 @@ impl Twitch {
             is_live,
             streams,
             Some(self.extractor.get_platform_headers_map()),
+            None,
         ))
     }
 

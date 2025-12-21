@@ -1,7 +1,7 @@
 use std::sync::{Arc, LazyLock};
 
 use async_trait::async_trait;
-use boa_engine::{self, property::PropertyKey};
+
 use regex::Regex;
 use reqwest::Client;
 use rustc_hash::FxHashMap;
@@ -49,6 +49,13 @@ static SIGN_REGEX: LazyLock<Regex> =
 /// Matches: sa, 3a, 1a, 3, 1 at the end of the host prefix
 static TX_HOST_SUFFIX_REGEX: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r".+(sa|3a|1a|3|1)").unwrap());
+
+/// Regex to extract 'v' value (12-char hex) from the ub98484234 intermediate result
+static V_REGEX: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"v=(\w{12})").unwrap());
+
+/// Regex to match eval(strc)(rid, did, tt); pattern - needs to be replaced with strc;
+static EVAL_STRC_REGEX: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"eval\(strc\)\(\w+,\w+,.\w+\);").unwrap());
 
 /// Default device ID for Douyu requests
 pub const DOUYU_DEFAULT_DID: &str = "10000000000000000000000000001501";
@@ -935,6 +942,7 @@ impl Douyu {
             is_live,
             streams,
             Some(self.extractor.get_platform_headers_map()),
+            None,
         )
     }
 
@@ -1192,7 +1200,7 @@ impl Douyu {
                     extras: Some(extras),
                     codec: codec.to_string(),
                     fps: 0.0,
-                    is_headers_needed: hs_host.is_some(),
+                    is_headers_needed: true,
                 };
                 stream_infos.push(stream);
             }
@@ -1202,84 +1210,108 @@ impl Douyu {
     }
 
     const JS_DOM: &str = "
-        encripted = {decryptedCodes: []};
-        if (!this.document) {document = {}}
-    ";
-
-    const JS_DEBUG: &str = "
-        var encripted_fun = ub98484234;
-        ub98484234 = function(p1, p2, p3) {
-            try {
-                encripted.sign = encripted_fun(p1, p2, p3);
-            } catch(e) {
-                encripted.sign = e.message;
-            }
-            return encripted;
-        }
+        var encripted = {decryptedCodes: [], sign: ''};
+        var window = window || {};
+        var document = document || {};
     ";
 
     fn get_js_token(response: &str, rid: u64) -> Result<DouyuTokenResult, ExtractorError> {
+        use crate::js_engine::JsEngineManager;
+        use md5::{Digest, Md5};
+
         let encoded_script = ENCODED_SCRIPT_REGEX
             .captures(response)
             .and_then(|c| c.get(1))
             .map_or("", |m| m.as_str());
 
+        // Check if we found the encoded script
+        if encoded_script.is_empty() {
+            return Err(ExtractorError::JsError(
+                "Failed to extract encoded script from page (ub98484234 function not found)"
+                    .to_string(),
+            ));
+        }
+
         let did = Uuid::new_v4().to_string().replace("-", "");
-        // epoch seconds
         let tt = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap()
-            .as_secs()
-            .to_string();
-        // debug!("tt: {}", tt);
+            .as_secs();
 
-        let md5_encoded_script = include_str!("../../../resources/crypto-js-md5.min.js");
+        // Step 1: Execute ub98484234 to get the intermediate JS code containing 'v' value
+        // The original pattern is: eval(strc)(rid, did, tt); - we replace it with: strc;
+        let modified_script = EVAL_STRC_REGEX.replace(encoded_script, "strc;");
 
-        let final_js = format!(
-            "{}\n{}\n{}\n{}\nub98484234('{}', '{}', '{}')",
-            md5_encoded_script,
-            Self::JS_DOM,
-            encoded_script,
-            Self::JS_DEBUG,
-            rid,
-            did,
-            tt
+        let step1_js = format!(
+            "{}\nub98484234({}, \"{}\", {})",
+            modified_script, rid, did, tt
         );
 
-        // debug!("final_js: {}", final_js);
+        // Use the centralized JS engine manager
+        let manager = JsEngineManager::global();
 
-        let mut context = boa_engine::Context::default();
-        let eval_result = context
-            .eval(boa_engine::Source::from_bytes(final_js.as_bytes()))
-            .map_err(|e| ExtractorError::JsError(e.to_string()))?;
-        let res = eval_result.as_object();
+        let intermediate_js = manager
+            .execute(|ctx| {
+                // Set up encripted variable needed by the script
+                ctx.load_script(Self::JS_DOM)?;
+                ctx.eval_string(&step1_js)
+            })
+            .map_err(|e| ExtractorError::JsError(format!("Step 1 failed: {}", e)))?;
 
-        if let Some(res) = res {
-            // something like "v=220120250706&did=10000000000000000000000000003306&tt=1751804526&sign=5b1ce0e5888977265b4b378d1b3dcd98"
-            let sign = res
-                .get(PropertyKey::String("sign".into()), &mut context)
-                .map_err(|e| ExtractorError::JsError(e.to_string()))?
-                .as_string()
-                .map_or("".to_string(), |m| m.to_std_string().unwrap());
-            debug!("sign: {}", sign);
+        // Step 2: Extract 'v' value from the intermediate JS
+        let v_value = V_REGEX
+            .captures(&intermediate_js)
+            .and_then(|c| c.get(1))
+            .map(|m| m.as_str())
+            .ok_or_else(|| {
+                ExtractorError::JsError("Failed to extract 'v' value from intermediate JS".into())
+            })?;
 
-            let sign_captures = SIGN_REGEX.captures(&sign);
-            if let Some(captures) = sign_captures {
-                let v = captures.get(1).unwrap().as_str();
-                let did = captures.get(2).unwrap().as_str();
-                let tt = captures.get(3).unwrap().as_str();
-                let sign = captures.get(4).unwrap().as_str();
+        // Step 3: Compute MD5(rid + did + tt + v) natively in Rust (this is 'rb' in the original code)
+        let cb = format!("{}{}{}{}", rid, did, tt, v_value);
+        let mut hasher = Md5::new();
+        hasher.update(cb.as_bytes());
+        let rb = format!("{:x}", hasher.finalize());
 
-                Ok(DouyuTokenResult::new(v, did, tt, sign))
-            } else {
-                Err(ExtractorError::JsError(
-                    "Failed to get js token".to_string(),
-                ))
-            }
+        debug!(
+            "Native MD5: rid={}, did={}, tt={}, v={}, rb={}",
+            rid, did, tt, v_value, rb
+        );
+
+        // Step 4: Replace CryptoJS.MD5(cb).toString() with our pre-computed hash
+        let patched_js =
+            intermediate_js.replace("CryptoJS.MD5(cb).toString()", &format!("\"{}\"", rb));
+
+        // Step 5: Transform the patched JS into a callable function and execute it
+        let final_patched_js = patched_js
+            .replace("return rt;});", "return rt;}")
+            .replace("(function (", "function sign(");
+
+        let step2_js = format!("{}\nsign({}, \"{}\", {})", final_patched_js, rid, did, tt);
+
+        let sign = manager
+            .execute(|ctx| {
+                ctx.load_script(Self::JS_DOM)?;
+                ctx.eval_string(&step2_js)
+            })
+            .map_err(|e| ExtractorError::JsError(format!("Step 2 failed: {}", e)))?;
+
+        debug!("sign result: {}", sign);
+
+        // Parse the sign result: v=XXX&did=XXX&tt=XXX&sign=XXX
+        let sign_captures = SIGN_REGEX.captures(&sign);
+        if let Some(captures) = sign_captures {
+            let v = captures.get(1).unwrap().as_str();
+            let did = captures.get(2).unwrap().as_str();
+            let tt = captures.get(3).unwrap().as_str();
+            let sign = captures.get(4).unwrap().as_str();
+
+            Ok(DouyuTokenResult::new(v, did, tt, sign))
         } else {
-            Err(ExtractorError::JsError(
-                "Failed to get js token".to_string(),
-            ))
+            Err(ExtractorError::JsError(format!(
+                "Failed to parse sign result: {}",
+                sign
+            )))
         }
     }
 
@@ -1461,7 +1493,7 @@ impl Douyu {
                     extras: Some(extras),
                     codec: codec.to_string(),
                     fps: 0.0,
-                    is_headers_needed: hs_host.is_some(),
+                    is_headers_needed: true,
                 };
                 stream_infos.push(stream);
             }

@@ -1,0 +1,920 @@
+//! Authentication service for user login, token management, and password operations.
+//!
+//! This module provides the core authentication functionality including:
+//! - User authentication with password verification
+//! - Refresh token generation and rotation
+//! - Password change with validation
+//! - Session management (logout, logout-all)
+
+use std::sync::Arc;
+
+use argon2::{
+    Argon2, Params,
+    password_hash::{PasswordHash, PasswordHasher, PasswordVerifier, SaltString, rand_core::OsRng},
+};
+use chrono::{Duration, Utc};
+use sha2::{Digest, Sha256};
+
+use crate::database::models::RefreshTokenDbModel;
+use crate::database::repositories::{RefreshTokenRepository, UserRepository};
+
+use super::jwt::JwtService;
+
+/// Authentication configuration.
+#[derive(Debug, Clone)]
+pub struct AuthConfig {
+    /// Access token expiration in seconds (default: 3600 = 1 hour)
+    pub access_token_expiration_secs: u64,
+    /// Refresh token expiration in seconds (default: 604800 = 7 days)
+    pub refresh_token_expiration_secs: u64,
+    /// Minimum password length
+    pub min_password_length: usize,
+}
+
+impl Default for AuthConfig {
+    fn default() -> Self {
+        Self {
+            access_token_expiration_secs: 3600,    // 1 hour
+            refresh_token_expiration_secs: 604800, // 7 days
+            min_password_length: 8,
+        }
+    }
+}
+
+impl AuthConfig {
+    /// Create AuthConfig from environment variables.
+    ///
+    /// Environment variables:
+    /// - `ACCESS_TOKEN_EXPIRATION_SECS`: Access token expiration in seconds (default: 3600 = 1 hour)
+    /// - `REFRESH_TOKEN_EXPIRATION_SECS`: Refresh token expiration in seconds (default: 604800 = 7 days)
+    /// - `MIN_PASSWORD_LENGTH`: Minimum password length (default: 8)
+    pub fn from_env() -> Self {
+        let access_token_expiration_secs = std::env::var("ACCESS_TOKEN_EXPIRATION_SECS")
+            .ok()
+            .and_then(|s| s.parse().ok())
+            .unwrap_or(3600);
+
+        let refresh_token_expiration_secs = std::env::var("REFRESH_TOKEN_EXPIRATION_SECS")
+            .ok()
+            .and_then(|s| s.parse().ok())
+            .unwrap_or(604800);
+
+        let min_password_length = std::env::var("MIN_PASSWORD_LENGTH")
+            .ok()
+            .and_then(|s| s.parse().ok())
+            .unwrap_or(8);
+
+        Self {
+            access_token_expiration_secs,
+            refresh_token_expiration_secs,
+            min_password_length,
+        }
+    }
+}
+
+/// Authentication errors.
+#[derive(Debug, thiserror::Error)]
+pub enum AuthError {
+    #[error("Invalid credentials")]
+    InvalidCredentials,
+
+    #[error("Account is disabled")]
+    AccountDisabled,
+
+    #[error("Token has expired")]
+    TokenExpired,
+
+    #[error("Token has been revoked")]
+    TokenRevoked,
+
+    #[error("Invalid token")]
+    InvalidToken,
+
+    #[error("Password change required")]
+    PasswordChangeRequired,
+
+    #[error("Password does not meet requirements: {0}")]
+    WeakPassword(String),
+
+    #[error("Current password is incorrect")]
+    IncorrectCurrentPassword,
+
+    #[error("User not found")]
+    UserNotFound,
+
+    #[error("Database error: {0}")]
+    Database(String),
+
+    #[error("Internal error: {0}")]
+    Internal(String),
+}
+
+/// Authentication response returned on successful login or token refresh.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct AuthResponse {
+    /// JWT access token
+    pub access_token: String,
+    /// Opaque refresh token
+    pub refresh_token: String,
+    /// Token type (always "Bearer")
+    pub token_type: String,
+    /// Access token expiration in seconds
+    pub expires_in: u64,
+    /// Refresh token expiration in seconds
+    pub refresh_expires_in: u64,
+    /// User's roles
+    pub roles: Vec<String>,
+    /// Whether the user must change their password
+    pub must_change_password: bool,
+}
+
+/// Session information for active sessions listing.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
+pub struct SessionInfo {
+    /// Session ID (token ID)
+    pub id: String,
+    /// Device information if available
+    pub device_info: Option<String>,
+    /// When the session was created
+    pub created_at: String,
+    /// When the session expires
+    pub expires_at: String,
+}
+
+/// Authentication service for managing user authentication and tokens.
+pub struct AuthService {
+    user_repo: Arc<dyn UserRepository>,
+    token_repo: Arc<dyn RefreshTokenRepository>,
+    jwt_service: Arc<JwtService>,
+    config: AuthConfig,
+}
+
+impl AuthService {
+    /// Create a new AuthService.
+    pub fn new(
+        user_repo: Arc<dyn UserRepository>,
+        token_repo: Arc<dyn RefreshTokenRepository>,
+        jwt_service: Arc<JwtService>,
+        config: AuthConfig,
+    ) -> Self {
+        Self {
+            user_repo,
+            token_repo,
+            jwt_service,
+            config,
+        }
+    }
+
+    /// Hash a password using Argon2id with OWASP recommended parameters.
+    pub fn hash_password(password: &str) -> Result<String, AuthError> {
+        // OWASP recommended parameters: m=19456 (19 MiB), t=2, p=1
+        let params = Params::new(19456, 2, 1, None)
+            .map_err(|e| AuthError::Internal(format!("Invalid Argon2 params: {}", e)))?;
+        let argon2 = Argon2::new(argon2::Algorithm::Argon2id, argon2::Version::V0x13, params);
+
+        let salt = SaltString::generate(&mut OsRng);
+        let password_hash = argon2
+            .hash_password(password.as_bytes(), &salt)
+            .map_err(|e| AuthError::Internal(format!("Password hashing failed: {}", e)))?
+            .to_string();
+
+        Ok(password_hash)
+    }
+
+    /// Verify a password against a stored hash.
+    pub fn verify_password(password: &str, hash: &str) -> Result<bool, AuthError> {
+        let parsed_hash = PasswordHash::new(hash)
+            .map_err(|e| AuthError::Internal(format!("Invalid password hash format: {}", e)))?;
+
+        // Use default Argon2 for verification (it reads params from the hash)
+        let argon2 = Argon2::default();
+        Ok(argon2
+            .verify_password(password.as_bytes(), &parsed_hash)
+            .is_ok())
+    }
+
+    /// Generate a cryptographically secure refresh token (256 bits).
+    fn generate_refresh_token() -> String {
+        use rand::Rng;
+        let bytes: [u8; 32] = rand::rng().random(); // 256 bits
+        hex::encode(bytes)
+    }
+
+    /// Hash a refresh token using SHA-256.
+    fn hash_refresh_token(token: &str) -> String {
+        let mut hasher = Sha256::new();
+        hasher.update(token.as_bytes());
+        hex::encode(hasher.finalize())
+    }
+
+    /// Validate password strength.
+    pub fn validate_password_strength(&self, password: &str) -> Result<(), AuthError> {
+        if password.len() < self.config.min_password_length {
+            return Err(AuthError::WeakPassword(format!(
+                "Password must be at least {} characters",
+                self.config.min_password_length
+            )));
+        }
+
+        let has_letter = password.chars().any(|c| c.is_alphabetic());
+        let has_number = password.chars().any(|c| c.is_numeric());
+
+        if !has_letter {
+            return Err(AuthError::WeakPassword(
+                "Password must contain at least one letter".to_string(),
+            ));
+        }
+
+        if !has_number {
+            return Err(AuthError::WeakPassword(
+                "Password must contain at least one number".to_string(),
+            ));
+        }
+
+        Ok(())
+    }
+}
+
+impl AuthService {
+    /// Authenticate a user with username and password.
+    pub async fn authenticate(
+        &self,
+        username: &str,
+        password: &str,
+        device_info: Option<String>,
+    ) -> Result<AuthResponse, AuthError> {
+        // Find user by username
+        let user = self
+            .user_repo
+            .find_by_username(username)
+            .await
+            .map_err(|e| AuthError::Database(e.to_string()))?
+            .ok_or(AuthError::InvalidCredentials)?;
+
+        // Check if account is active
+        if !user.is_active {
+            return Err(AuthError::AccountDisabled);
+        }
+
+        // Verify password
+        if !Self::verify_password(password, &user.password_hash)? {
+            return Err(AuthError::InvalidCredentials);
+        }
+
+        // Update last login timestamp
+        let now = Utc::now();
+        self.user_repo
+            .update_last_login(&user.id, now)
+            .await
+            .map_err(|e| AuthError::Database(e.to_string()))?;
+
+        // Generate tokens
+        let roles = user.get_roles();
+        let access_token = self
+            .jwt_service
+            .generate_token(&user.id, roles.clone())
+            .map_err(|e| AuthError::Internal(e.to_string()))?;
+
+        let refresh_token = Self::generate_refresh_token();
+        let refresh_token_hash = Self::hash_refresh_token(&refresh_token);
+        let refresh_expires_at =
+            now + Duration::seconds(self.config.refresh_token_expiration_secs as i64);
+
+        // Store refresh token
+        let token_model = RefreshTokenDbModel::new(
+            &user.id,
+            refresh_token_hash,
+            refresh_expires_at,
+            device_info,
+        );
+        self.token_repo
+            .create(&token_model)
+            .await
+            .map_err(|e| AuthError::Database(e.to_string()))?;
+
+        Ok(AuthResponse {
+            access_token,
+            refresh_token,
+            token_type: "Bearer".to_string(),
+            expires_in: self.config.access_token_expiration_secs,
+            refresh_expires_in: self.config.refresh_token_expiration_secs,
+            roles,
+            must_change_password: user.must_change_password,
+        })
+    }
+
+    /// Refresh tokens using a valid refresh token.
+    pub async fn refresh_tokens(&self, refresh_token: &str) -> Result<AuthResponse, AuthError> {
+        let token_hash = Self::hash_refresh_token(refresh_token);
+
+        // Find the token
+        let stored_token = self
+            .token_repo
+            .find_by_token_hash(&token_hash)
+            .await
+            .map_err(|e| AuthError::Database(e.to_string()))?
+            .ok_or(AuthError::InvalidToken)?;
+
+        // Check if token is revoked (potential reuse attack)
+        if stored_token.is_revoked() {
+            // Security breach detection: revoke all tokens for this user
+            self.token_repo
+                .revoke_all_for_user(&stored_token.user_id)
+                .await
+                .map_err(|e| AuthError::Database(e.to_string()))?;
+            return Err(AuthError::TokenRevoked);
+        }
+
+        // Check if token is expired
+        if stored_token.is_expired() {
+            return Err(AuthError::TokenExpired);
+        }
+
+        // Revoke the old token (token rotation)
+        self.token_repo
+            .revoke(&stored_token.id)
+            .await
+            .map_err(|e| AuthError::Database(e.to_string()))?;
+
+        // Get user for roles
+        let user = self
+            .user_repo
+            .find_by_id(&stored_token.user_id)
+            .await
+            .map_err(|e| AuthError::Database(e.to_string()))?
+            .ok_or(AuthError::UserNotFound)?;
+
+        if !user.is_active {
+            return Err(AuthError::AccountDisabled);
+        }
+
+        // Generate new tokens
+        let roles = user.get_roles();
+        let access_token = self
+            .jwt_service
+            .generate_token(&user.id, roles.clone())
+            .map_err(|e| AuthError::Internal(e.to_string()))?;
+
+        let new_refresh_token = Self::generate_refresh_token();
+        let new_refresh_token_hash = Self::hash_refresh_token(&new_refresh_token);
+        let now = Utc::now();
+        let refresh_expires_at =
+            now + Duration::seconds(self.config.refresh_token_expiration_secs as i64);
+
+        // Store new refresh token
+        let token_model = RefreshTokenDbModel::new(
+            &user.id,
+            new_refresh_token_hash,
+            refresh_expires_at,
+            stored_token.device_info,
+        );
+        self.token_repo
+            .create(&token_model)
+            .await
+            .map_err(|e| AuthError::Database(e.to_string()))?;
+
+        Ok(AuthResponse {
+            access_token,
+            refresh_token: new_refresh_token,
+            token_type: "Bearer".to_string(),
+            expires_in: self.config.access_token_expiration_secs,
+            refresh_expires_in: self.config.refresh_token_expiration_secs,
+            roles,
+            must_change_password: user.must_change_password,
+        })
+    }
+
+    /// Change a user's password.
+    pub async fn change_password(
+        &self,
+        user_id: &str,
+        current_password: &str,
+        new_password: &str,
+    ) -> Result<(), AuthError> {
+        // Get user
+        let user = self
+            .user_repo
+            .find_by_id(user_id)
+            .await
+            .map_err(|e| AuthError::Database(e.to_string()))?
+            .ok_or(AuthError::UserNotFound)?;
+
+        // Verify current password
+        if !Self::verify_password(current_password, &user.password_hash)? {
+            return Err(AuthError::IncorrectCurrentPassword);
+        }
+
+        // Validate new password strength
+        self.validate_password_strength(new_password)?;
+
+        // Hash new password
+        let new_hash = Self::hash_password(new_password)?;
+
+        // Update password and clear must_change_password flag
+        self.user_repo
+            .update_password(user_id, &new_hash, true)
+            .await
+            .map_err(|e| AuthError::Database(e.to_string()))?;
+
+        Ok(())
+    }
+
+    /// Logout by revoking a specific refresh token.
+    pub async fn logout(&self, refresh_token: &str) -> Result<(), AuthError> {
+        let token_hash = Self::hash_refresh_token(refresh_token);
+
+        let stored_token = self
+            .token_repo
+            .find_by_token_hash(&token_hash)
+            .await
+            .map_err(|e| AuthError::Database(e.to_string()))?
+            .ok_or(AuthError::InvalidToken)?;
+
+        self.token_repo
+            .revoke(&stored_token.id)
+            .await
+            .map_err(|e| AuthError::Database(e.to_string()))?;
+
+        Ok(())
+    }
+
+    /// Logout from all sessions by revoking all refresh tokens for a user.
+    pub async fn logout_all(&self, user_id: &str) -> Result<(), AuthError> {
+        self.token_repo
+            .revoke_all_for_user(user_id)
+            .await
+            .map_err(|e| AuthError::Database(e.to_string()))?;
+
+        Ok(())
+    }
+
+    /// List active sessions for a user.
+    pub async fn list_active_sessions(&self, user_id: &str) -> Result<Vec<SessionInfo>, AuthError> {
+        let tokens = self
+            .token_repo
+            .find_active_by_user(user_id)
+            .await
+            .map_err(|e| AuthError::Database(e.to_string()))?;
+
+        let sessions = tokens
+            .into_iter()
+            .map(|t| SessionInfo {
+                id: t.id,
+                device_info: t.device_info,
+                created_at: t.created_at,
+                expires_at: t.expires_at,
+            })
+            .collect();
+
+        Ok(sessions)
+    }
+
+    /// Get the authentication configuration.
+    pub fn config(&self) -> &AuthConfig {
+        &self.config
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::database::models::UserDbModel;
+
+    #[test]
+    fn test_auth_config_default() {
+        let config = AuthConfig::default();
+        assert_eq!(config.access_token_expiration_secs, 3600);
+        assert_eq!(config.refresh_token_expiration_secs, 604800);
+        assert_eq!(config.min_password_length, 8);
+    }
+
+    #[test]
+    fn test_hash_password() {
+        let password = "testpassword123";
+        let hash = AuthService::hash_password(password).expect("Hashing should succeed");
+
+        // Hash should be a valid Argon2id hash
+        assert!(hash.starts_with("$argon2id$"));
+        // Hash should not equal the original password
+        assert_ne!(hash, password);
+    }
+
+    #[test]
+    fn test_verify_password_correct() {
+        let password = "testpassword123";
+        let hash = AuthService::hash_password(password).expect("Hashing should succeed");
+
+        let result =
+            AuthService::verify_password(password, &hash).expect("Verification should succeed");
+        assert!(result);
+    }
+
+    #[test]
+    fn test_verify_password_incorrect() {
+        let password = "testpassword123";
+        let wrong_password = "wrongpassword456";
+        let hash = AuthService::hash_password(password).expect("Hashing should succeed");
+
+        let result = AuthService::verify_password(wrong_password, &hash)
+            .expect("Verification should succeed");
+        assert!(!result);
+    }
+
+    #[test]
+    fn test_generate_refresh_token() {
+        let token1 = AuthService::generate_refresh_token();
+        let token2 = AuthService::generate_refresh_token();
+
+        // Tokens should be 64 hex characters (32 bytes = 256 bits)
+        assert_eq!(token1.len(), 64);
+        assert_eq!(token2.len(), 64);
+        // Tokens should be unique
+        assert_ne!(token1, token2);
+    }
+
+    #[test]
+    fn test_hash_refresh_token() {
+        let token = "test_refresh_token";
+        let hash = AuthService::hash_refresh_token(token);
+
+        // SHA-256 produces 64 hex characters
+        assert_eq!(hash.len(), 64);
+        // Hash should not equal the original token
+        assert_ne!(hash, token);
+        // Same input should produce same hash
+        let hash2 = AuthService::hash_refresh_token(token);
+        assert_eq!(hash, hash2);
+    }
+
+    #[test]
+    fn test_validate_password_strength_valid() {
+        let config = AuthConfig::default();
+        let service = create_test_service_minimal(config);
+
+        assert!(service.validate_password_strength("password1").is_ok());
+        assert!(service.validate_password_strength("MyP@ssw0rd").is_ok());
+        assert!(service.validate_password_strength("12345678a").is_ok());
+    }
+
+    #[test]
+    fn test_validate_password_strength_too_short() {
+        let config = AuthConfig::default();
+        let service = create_test_service_minimal(config);
+
+        let result = service.validate_password_strength("pass1");
+        assert!(matches!(result, Err(AuthError::WeakPassword(_))));
+    }
+
+    #[test]
+    fn test_validate_password_strength_no_letter() {
+        let config = AuthConfig::default();
+        let service = create_test_service_minimal(config);
+
+        let result = service.validate_password_strength("12345678");
+        assert!(matches!(result, Err(AuthError::WeakPassword(_))));
+    }
+
+    #[test]
+    fn test_validate_password_strength_no_number() {
+        let config = AuthConfig::default();
+        let service = create_test_service_minimal(config);
+
+        let result = service.validate_password_strength("abcdefgh");
+        assert!(matches!(result, Err(AuthError::WeakPassword(_))));
+    }
+
+    // Helper to create a minimal AuthService for testing password validation
+    fn create_test_service_minimal(config: AuthConfig) -> AuthService {
+        use std::sync::Arc;
+
+        // Create mock repositories using a simple in-memory implementation
+        let user_repo = Arc::new(MockUserRepository);
+        let token_repo = Arc::new(MockRefreshTokenRepository);
+        let jwt_service = Arc::new(JwtService::new(
+            "test-secret-key-32-chars-long!!",
+            "test-issuer",
+            "test-audience",
+            Some(900),
+        ));
+
+        AuthService::new(user_repo, token_repo, jwt_service, config)
+    }
+
+    // Mock implementations for testing
+    struct MockUserRepository;
+
+    #[async_trait::async_trait]
+    impl UserRepository for MockUserRepository {
+        async fn create(&self, _user: &UserDbModel) -> crate::Result<()> {
+            Ok(())
+        }
+        async fn find_by_id(&self, _id: &str) -> crate::Result<Option<UserDbModel>> {
+            Ok(None)
+        }
+        async fn find_by_username(&self, _username: &str) -> crate::Result<Option<UserDbModel>> {
+            Ok(None)
+        }
+        async fn find_by_email(&self, _email: &str) -> crate::Result<Option<UserDbModel>> {
+            Ok(None)
+        }
+        async fn update(&self, _user: &UserDbModel) -> crate::Result<()> {
+            Ok(())
+        }
+        async fn delete(&self, _id: &str) -> crate::Result<()> {
+            Ok(())
+        }
+        async fn list(&self, _limit: i64, _offset: i64) -> crate::Result<Vec<UserDbModel>> {
+            Ok(vec![])
+        }
+        async fn update_last_login(
+            &self,
+            _id: &str,
+            _time: chrono::DateTime<chrono::Utc>,
+        ) -> crate::Result<()> {
+            Ok(())
+        }
+        async fn update_password(&self, _id: &str, _hash: &str, _clear: bool) -> crate::Result<()> {
+            Ok(())
+        }
+        async fn count(&self) -> crate::Result<i64> {
+            Ok(0)
+        }
+    }
+
+    struct MockRefreshTokenRepository;
+
+    #[async_trait::async_trait]
+    impl RefreshTokenRepository for MockRefreshTokenRepository {
+        async fn create(&self, _token: &RefreshTokenDbModel) -> crate::Result<()> {
+            Ok(())
+        }
+        async fn find_by_token_hash(
+            &self,
+            _hash: &str,
+        ) -> crate::Result<Option<RefreshTokenDbModel>> {
+            Ok(None)
+        }
+        async fn find_active_by_user(
+            &self,
+            _user_id: &str,
+        ) -> crate::Result<Vec<RefreshTokenDbModel>> {
+            Ok(vec![])
+        }
+        async fn revoke(&self, _id: &str) -> crate::Result<()> {
+            Ok(())
+        }
+        async fn revoke_all_for_user(&self, _user_id: &str) -> crate::Result<()> {
+            Ok(())
+        }
+        async fn cleanup_expired(&self) -> crate::Result<u64> {
+            Ok(0)
+        }
+        async fn count_active_by_user(&self, _user_id: &str) -> crate::Result<i64> {
+            Ok(0)
+        }
+    }
+}
+
+#[cfg(test)]
+mod property_tests {
+    use super::*;
+    use proptest::prelude::*;
+
+    // Property 1: Password hashing preserves security
+    proptest! {
+        #![proptest_config(ProptestConfig::with_cases(10))]
+
+        #[test]
+        fn prop_password_hashing_preserves_security(
+            password in "[a-zA-Z0-9!@#$%^&*]{8,64}"
+        ) {
+            let hash = AuthService::hash_password(&password)
+                .expect("Hashing should succeed");
+
+            // Property: Hash should be a valid Argon2id hash
+            prop_assert!(hash.starts_with("$argon2id$"), "Hash should be Argon2id format");
+
+            // Property: Hash should not equal the original password
+            prop_assert_ne!(&hash, &password, "Hash should not equal password");
+
+            // Property: Hash should be deterministically verifiable
+            let verified = AuthService::verify_password(&password, &hash)
+                .expect("Verification should succeed");
+            prop_assert!(verified, "Correct password should verify");
+        }
+    }
+
+    // Property 7: Password verification correctness
+    proptest! {
+        #![proptest_config(ProptestConfig::with_cases(10))]
+
+        #[test]
+        fn prop_password_verification_correctness(
+            password in "[a-zA-Z0-9!@#$%^&*]{8,32}",
+            wrong_password in "[a-zA-Z0-9!@#$%^&*]{8,32}"
+        ) {
+            let hash = AuthService::hash_password(&password)
+                .expect("Hashing should succeed");
+
+            // Property: Correct password should verify
+            let correct_result = AuthService::verify_password(&password, &hash)
+                .expect("Verification should succeed");
+            prop_assert!(correct_result, "Correct password should verify");
+
+            // Property: Wrong password should not verify (if different)
+            if password != wrong_password {
+                let wrong_result = AuthService::verify_password(&wrong_password, &hash)
+                    .expect("Verification should succeed");
+                prop_assert!(!wrong_result, "Wrong password should not verify");
+            }
+        }
+    }
+
+    // Property 9: Refresh token hashing
+    proptest! {
+        #![proptest_config(ProptestConfig::with_cases(10))]
+
+        #[test]
+        fn prop_refresh_token_hashing(
+            token in "[a-zA-Z0-9]{32,128}"
+        ) {
+            let hash = AuthService::hash_refresh_token(&token);
+
+            // Property: Hash should be SHA-256 (64 hex characters)
+            prop_assert_eq!(hash.len(), 64, "SHA-256 hash should be 64 hex chars");
+
+            // Property: Hash should not equal the original token
+            prop_assert_ne!(&hash, &token, "Hash should not equal token");
+
+            // Property: Same input should produce same hash (deterministic)
+            let hash2 = AuthService::hash_refresh_token(&token);
+            prop_assert_eq!(&hash, &hash2, "Hashing should be deterministic");
+        }
+    }
+
+    // Property 13: Refresh token entropy
+    proptest! {
+        #![proptest_config(ProptestConfig::with_cases(10))]
+
+        #[test]
+        fn prop_refresh_token_entropy(_seed in 0u64..1000000u64) {
+            let token1 = AuthService::generate_refresh_token();
+            let token2 = AuthService::generate_refresh_token();
+
+            // Property: Tokens should be 64 hex characters (256 bits)
+            prop_assert_eq!(token1.len(), 64, "Token should be 64 hex chars (256 bits)");
+            prop_assert_eq!(token2.len(), 64, "Token should be 64 hex chars (256 bits)");
+
+            // Property: Tokens should be unique (with overwhelming probability)
+            prop_assert_ne!(&token1, &token2, "Generated tokens should be unique");
+
+            // Property: Tokens should be valid hex
+            prop_assert!(
+                token1.chars().all(|c| c.is_ascii_hexdigit()),
+                "Token should be valid hex"
+            );
+        }
+    }
+
+    // Property 25: Password validation rules
+    proptest! {
+        #![proptest_config(ProptestConfig::with_cases(10))]
+
+        #[test]
+        fn prop_password_validation_rules(
+            // Valid passwords: 8+ chars with letter and number
+            valid_password in "[a-zA-Z]{4,8}[0-9]{4,8}",
+            // Too short passwords
+            short_password in "[a-zA-Z0-9]{1,7}",
+            // No letter passwords
+            no_letter in "[0-9]{8,16}",
+            // No number passwords
+            no_number in "[a-zA-Z]{8,16}"
+        ) {
+            let config = AuthConfig::default();
+            let service = create_test_service_for_props(config);
+
+            // Property: Valid passwords should be accepted
+            prop_assert!(
+                service.validate_password_strength(&valid_password).is_ok(),
+                "Valid password should be accepted: {}", valid_password
+            );
+
+            // Property: Too short passwords should be rejected
+            prop_assert!(
+                service.validate_password_strength(&short_password).is_err(),
+                "Short password should be rejected: {}", short_password
+            );
+
+            // Property: Passwords without letters should be rejected
+            prop_assert!(
+                service.validate_password_strength(&no_letter).is_err(),
+                "Password without letter should be rejected: {}", no_letter
+            );
+
+            // Property: Passwords without numbers should be rejected
+            prop_assert!(
+                service.validate_password_strength(&no_number).is_err(),
+                "Password without number should be rejected: {}", no_number
+            );
+        }
+    }
+
+    // Helper to create AuthService for property tests
+    fn create_test_service_for_props(config: AuthConfig) -> AuthService {
+        use crate::database::models::UserDbModel;
+        use std::sync::Arc;
+
+        struct MockUserRepo;
+
+        #[async_trait::async_trait]
+        impl UserRepository for MockUserRepo {
+            async fn create(&self, _user: &UserDbModel) -> crate::Result<()> {
+                Ok(())
+            }
+            async fn find_by_id(&self, _id: &str) -> crate::Result<Option<UserDbModel>> {
+                Ok(None)
+            }
+            async fn find_by_username(
+                &self,
+                _username: &str,
+            ) -> crate::Result<Option<UserDbModel>> {
+                Ok(None)
+            }
+            async fn find_by_email(&self, _email: &str) -> crate::Result<Option<UserDbModel>> {
+                Ok(None)
+            }
+            async fn update(&self, _user: &UserDbModel) -> crate::Result<()> {
+                Ok(())
+            }
+            async fn delete(&self, _id: &str) -> crate::Result<()> {
+                Ok(())
+            }
+            async fn list(&self, _limit: i64, _offset: i64) -> crate::Result<Vec<UserDbModel>> {
+                Ok(vec![])
+            }
+            async fn update_last_login(
+                &self,
+                _id: &str,
+                _time: chrono::DateTime<chrono::Utc>,
+            ) -> crate::Result<()> {
+                Ok(())
+            }
+            async fn update_password(
+                &self,
+                _id: &str,
+                _hash: &str,
+                _clear: bool,
+            ) -> crate::Result<()> {
+                Ok(())
+            }
+            async fn count(&self) -> crate::Result<i64> {
+                Ok(0)
+            }
+        }
+
+        struct MockTokenRepo;
+
+        #[async_trait::async_trait]
+        impl RefreshTokenRepository for MockTokenRepo {
+            async fn create(&self, _token: &RefreshTokenDbModel) -> crate::Result<()> {
+                Ok(())
+            }
+            async fn find_by_token_hash(
+                &self,
+                _hash: &str,
+            ) -> crate::Result<Option<RefreshTokenDbModel>> {
+                Ok(None)
+            }
+            async fn find_active_by_user(
+                &self,
+                _user_id: &str,
+            ) -> crate::Result<Vec<RefreshTokenDbModel>> {
+                Ok(vec![])
+            }
+            async fn revoke(&self, _id: &str) -> crate::Result<()> {
+                Ok(())
+            }
+            async fn revoke_all_for_user(&self, _user_id: &str) -> crate::Result<()> {
+                Ok(())
+            }
+            async fn cleanup_expired(&self) -> crate::Result<u64> {
+                Ok(0)
+            }
+            async fn count_active_by_user(&self, _user_id: &str) -> crate::Result<i64> {
+                Ok(0)
+            }
+        }
+
+        let user_repo = Arc::new(MockUserRepo);
+        let token_repo = Arc::new(MockTokenRepo);
+        let jwt_service = Arc::new(JwtService::new(
+            "test-secret-key-32-chars-long!!",
+            "test-issuer",
+            "test-audience",
+            Some(900),
+        ));
+
+        AuthService::new(user_repo, token_repo, jwt_service, config)
+    }
+}

@@ -1,0 +1,7 @@
+# Seeds for failure cases proptest has generated in the past. It is
+# automatically read and these particular cases re-run before any
+# novel cases are generated.
+#
+# It is recommended to check this file in to source control so that
+# everyone who runs the test benefits from these saved cases.
+cc 8787a23f45f4b43bfc55085968922e47e432cedb9db4af0e30a47d8dea1a765d # shrinks to output_folder = None, output_filename_template = None, output_file_format = None, max_concurrent_downloads = None, max_concurrent_uploads = None, max_concurrent_cpu_jobs = None, max_concurrent_io_jobs = None, streamer_check_delay_ms = None, offline_check_delay_ms = None, offline_check_count = None, default_download_engine = None, record_danmu = None, proxy_config = Some("{\"enabled\": true, \"use_system_proxy\": true}")

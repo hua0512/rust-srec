@@ -1,0 +1,1149 @@
+//! Streamer management routes.
+
+use axum::{
+    Json, Router,
+    extract::{Path, Query, State},
+    routing::{delete, get, patch, post, put},
+};
+
+use crate::api::error::{ApiError, ApiResult};
+use crate::api::models::{
+    CreateStreamerRequest, ExtractMetadataRequest, ExtractMetadataResponse, PaginatedResponse,
+    PaginationParams, PlatformConfigResponse, StreamerFilterParams, StreamerResponse,
+    UpdatePriorityRequest, UpdateStreamerRequest,
+};
+use crate::api::server::AppState;
+use crate::domain::Priority as DomainPriority;
+use crate::domain::streamer::StreamerState;
+use crate::domain::value_objects::Priority as ApiPriority;
+use crate::streamer::StreamerMetadata;
+
+/// Convert API Priority to Domain Priority.
+fn api_to_domain_priority(p: ApiPriority) -> DomainPriority {
+    match p {
+        ApiPriority::High => DomainPriority::High,
+        ApiPriority::Normal => DomainPriority::Normal,
+        ApiPriority::Low => DomainPriority::Low,
+    }
+}
+
+/// Convert Domain Priority to API Priority.
+fn domain_to_api_priority(p: DomainPriority) -> ApiPriority {
+    match p {
+        DomainPriority::High => ApiPriority::High,
+        DomainPriority::Normal => ApiPriority::Normal,
+        DomainPriority::Low => ApiPriority::Low,
+    }
+}
+
+/// Create the streamers router.
+pub fn router() -> Router<AppState> {
+    Router::new()
+        .route("/", post(create_streamer))
+        .route("/", get(list_streamers))
+        .route("/{id}", get(get_streamer))
+        .route("/{id}", put(update_streamer))
+        .route("/{id}", delete(delete_streamer))
+        .route("/{id}/clear-error", post(clear_error))
+        .route("/{id}/priority", patch(update_priority))
+        .route("/extract-metadata", post(extract_metadata))
+}
+
+/// Convert StreamerMetadata to StreamerResponse.
+fn metadata_to_response(metadata: &StreamerMetadata) -> StreamerResponse {
+    StreamerResponse {
+        id: metadata.id.clone(),
+        name: metadata.name.clone(),
+        url: metadata.url.clone(),
+        platform_config_id: metadata.platform_config_id.clone(),
+        template_id: metadata.template_config_id.clone(),
+        state: metadata.state,
+        priority: domain_to_api_priority(metadata.priority),
+        enabled: metadata.state != StreamerState::Disabled,
+        consecutive_error_count: metadata.consecutive_error_count,
+        disabled_until: metadata.disabled_until,
+        last_error: metadata.last_error.clone(),
+        avatar_url: metadata.avatar_url.clone(),
+        last_live_time: metadata.last_live_time,
+        created_at: metadata.created_at,
+        updated_at: metadata.updated_at,
+        streamer_specific_config: metadata
+            .streamer_specific_config
+            .as_ref()
+            .and_then(|s| serde_json::from_str(s).ok()),
+    }
+}
+
+#[utoipa::path(
+    post,
+    path = "/api/streamers",
+    tag = "streamers",
+    request_body = CreateStreamerRequest,
+    responses(
+        (status = 201, description = "Streamer created", body = StreamerResponse),
+        (status = 409, description = "Streamer URL already exists", body = crate::api::error::ApiErrorResponse),
+        (status = 422, description = "Validation error", body = crate::api::error::ApiErrorResponse)
+    ),
+    security(("bearer_auth" = []))
+)]
+pub async fn create_streamer(
+    State(state): State<AppState>,
+    Json(request): Json<CreateStreamerRequest>,
+) -> ApiResult<Json<StreamerResponse>> {
+    // Validate URL format
+    if request.url.is_empty() {
+        return Err(ApiError::validation("URL cannot be empty"));
+    }
+
+    // Get streamer manager from state
+    let streamer_manager = state
+        .streamer_manager
+        .as_ref()
+        .ok_or_else(|| ApiError::service_unavailable("Streamer service not available"))?;
+
+    // Check URL uniqueness (case-insensitive)
+    if streamer_manager.url_exists(&request.url) {
+        return Err(ApiError::conflict(
+            "A streamer with this URL already exists",
+        ));
+    }
+
+    // Generate a new ID for the streamer
+    let id = uuid::Uuid::new_v4().to_string();
+
+    // Create metadata from request
+    let metadata = StreamerMetadata {
+        id: id.clone(),
+        name: request.name.clone(),
+        url: request.url.clone(),
+        platform_config_id: request.platform_config_id.clone(),
+        template_config_id: request.template_id.clone(),
+        state: if request.enabled {
+            StreamerState::NotLive
+        } else {
+            StreamerState::Disabled
+        },
+        priority: api_to_domain_priority(request.priority),
+        consecutive_error_count: 0,
+        disabled_until: None,
+        last_error: None,
+        avatar_url: None,
+        last_live_time: None,
+        streamer_specific_config: request.streamer_specific_config.as_ref().and_then(|v| {
+            if v.is_null() {
+                None
+            } else {
+                Some(v.to_string())
+            }
+        }),
+        created_at: chrono::Utc::now(),
+        updated_at: chrono::Utc::now(),
+    };
+
+    // Create streamer using manager
+    streamer_manager
+        .create_streamer(metadata.clone())
+        .await
+        .map_err(ApiError::from)?;
+
+    Ok(Json(metadata_to_response(&metadata)))
+}
+
+#[utoipa::path(
+    get,
+    path = "/api/streamers",
+    tag = "streamers",
+    params(PaginationParams, StreamerFilterParams),
+    responses(
+        (status = 200, description = "List of streamers", body = PaginatedResponse<StreamerResponse>)
+    ),
+    security(("bearer_auth" = []))
+)]
+pub async fn list_streamers(
+    State(state): State<AppState>,
+    Query(pagination): Query<PaginationParams>,
+    Query(filters): Query<StreamerFilterParams>,
+) -> ApiResult<Json<PaginatedResponse<StreamerResponse>>> {
+    // Get streamer manager from state
+    let streamer_manager = state
+        .streamer_manager
+        .as_ref()
+        .ok_or_else(|| ApiError::service_unavailable("Streamer service not available"))?;
+
+    // Get all streamers from manager
+    let mut streamers = streamer_manager.get_all();
+
+    // Apply filters
+    if let Some(platform) = &filters.platform {
+        streamers.retain(|s| &s.platform_config_id == platform);
+    }
+    if let Some(state_str) = &filters.state
+        && !state_str.is_empty()
+    {
+        let states: Vec<StreamerState> = state_str
+            .split(',')
+            .filter_map(|s| StreamerState::parse(&s.trim().to_uppercase()))
+            .collect();
+        streamers.retain(|s| states.contains(&s.state));
+    }
+    if let Some(priority) = &filters.priority {
+        let domain_priority = api_to_domain_priority(*priority);
+        streamers.retain(|s| s.priority == domain_priority);
+    }
+    if let Some(enabled) = filters.enabled {
+        streamers.retain(|s| (s.state != StreamerState::Disabled) == enabled);
+    }
+    if let Some(search) = &filters.search
+        && !search.is_empty()
+    {
+        let search = search.to_lowercase();
+        streamers.retain(|s| {
+            s.name.to_lowercase().contains(&search) || s.url.to_lowercase().contains(&search)
+        });
+    }
+
+    // Sort for stable pagination
+    let sort_by = filters.sort_by.as_deref();
+    let desc = filters
+        .sort_dir
+        .as_deref()
+        .is_some_and(|dir| dir.eq_ignore_ascii_case("desc"));
+
+    match sort_by {
+        Some("name") => {
+            streamers.sort_by(|a, b| {
+                let ordering = if desc {
+                    b.name.cmp(&a.name)
+                } else {
+                    a.name.cmp(&b.name)
+                };
+                ordering.then_with(|| a.id.cmp(&b.id))
+            });
+        }
+        Some("priority") => {
+            streamers.sort_by(|a, b| {
+                let ordering = if desc {
+                    b.priority.cmp(&a.priority)
+                } else {
+                    a.priority.cmp(&b.priority)
+                };
+                ordering
+                    .then_with(|| a.name.cmp(&b.name))
+                    .then_with(|| a.id.cmp(&b.id))
+            });
+        }
+        Some("state") => {
+            streamers.sort_by(|a, b| {
+                let a_state = a.state.as_str();
+                let b_state = b.state.as_str();
+                let ordering = if desc {
+                    b_state.cmp(a_state)
+                } else {
+                    a_state.cmp(b_state)
+                };
+                ordering
+                    .then_with(|| a.name.cmp(&b.name))
+                    .then_with(|| a.id.cmp(&b.id))
+            });
+        }
+        _ => {
+            // Default: match DB ordering and keep pages stable.
+            streamers.sort_by(|a, b| {
+                b.priority
+                    .cmp(&a.priority)
+                    .then_with(|| a.name.cmp(&b.name))
+                    .then_with(|| a.id.cmp(&b.id))
+            });
+        }
+    }
+
+    // Calculate total before pagination
+    let total = streamers.len() as u64;
+
+    // Apply pagination
+    let offset = pagination.offset as usize;
+    let effective_limit = pagination.limit.min(100);
+    let limit = effective_limit as usize;
+    let streamers: Vec<_> = streamers
+        .into_iter()
+        .skip(offset)
+        .take(limit)
+        .map(|s| {
+            // tracing::debug!("Streamer {} state: {:?}", s.name, s.state);
+            metadata_to_response(&s)
+        })
+        .collect();
+
+    let response = PaginatedResponse::new(streamers, total, effective_limit, pagination.offset);
+    Ok(Json(response))
+}
+
+#[utoipa::path(
+    get,
+    path = "/api/streamers/{id}",
+    tag = "streamers",
+    params(("id" = String, Path, description = "Streamer ID")),
+    responses(
+        (status = 200, description = "Streamer details", body = StreamerResponse),
+        (status = 404, description = "Streamer not found", body = crate::api::error::ApiErrorResponse)
+    ),
+    security(("bearer_auth" = []))
+)]
+pub async fn get_streamer(
+    State(state): State<AppState>,
+    Path(id): Path<String>,
+) -> ApiResult<Json<StreamerResponse>> {
+    // Get streamer manager from state
+    let streamer_manager = state
+        .streamer_manager
+        .as_ref()
+        .ok_or_else(|| ApiError::service_unavailable("Streamer service not available"))?;
+
+    // Get streamer by ID
+    let metadata = streamer_manager
+        .get_streamer(&id)
+        .ok_or_else(|| ApiError::not_found(format!("Streamer with id '{}' not found", id)))?;
+
+    Ok(Json(metadata_to_response(&metadata)))
+}
+
+#[utoipa::path(
+    put,
+    path = "/api/streamers/{id}",
+    tag = "streamers",
+    params(("id" = String, Path, description = "Streamer ID")),
+    request_body = UpdateStreamerRequest,
+    responses(
+        (status = 200, description = "Streamer updated", body = StreamerResponse),
+        (status = 404, description = "Streamer not found", body = crate::api::error::ApiErrorResponse),
+        (status = 409, description = "URL already exists", body = crate::api::error::ApiErrorResponse)
+    ),
+    security(("bearer_auth" = []))
+)]
+pub async fn update_streamer(
+    State(state): State<AppState>,
+    Path(id): Path<String>,
+    Json(request): Json<UpdateStreamerRequest>,
+) -> ApiResult<Json<StreamerResponse>> {
+    // Get streamer manager from state
+    let streamer_manager = state
+        .streamer_manager
+        .as_ref()
+        .ok_or_else(|| ApiError::service_unavailable("Streamer service not available"))?;
+
+    // Check URL uniqueness if URL is being changed (case-insensitive)
+    if let Some(ref new_url) = request.url
+        && streamer_manager.url_exists_for_other(new_url, &id)
+    {
+        return Err(ApiError::conflict(
+            "A streamer with this URL already exists",
+        ));
+    }
+
+    // Convert enabled flag to state if provided
+    let new_state = request.enabled.map(|enabled| {
+        if enabled {
+            StreamerState::NotLive
+        } else {
+            StreamerState::Disabled
+        }
+    });
+
+    // Convert API priority to domain priority if provided
+    let new_priority = request.priority.map(api_to_domain_priority);
+
+    // Convert template_id: Some(value) -> Some(Some(value)), None -> None
+    // This allows distinguishing between "not updating" and "setting to None"
+    let template_config_id = request.template_id.map(Some);
+
+    // Use partial_update_streamer for atomic update
+    let metadata = streamer_manager
+        .partial_update_streamer(crate::streamer::manager::StreamerUpdateParams {
+            id: id.clone(),
+            name: request.name,
+            url: request.url,
+            template_config_id,
+            priority: new_priority,
+            state: new_state,
+            streamer_specific_config: request.streamer_specific_config.map(|v| {
+                if v.is_null() {
+                    None
+                } else {
+                    Some(v.to_string())
+                }
+            }),
+        })
+        .await
+        .map_err(ApiError::from)?;
+
+    Ok(Json(metadata_to_response(&metadata)))
+}
+
+#[utoipa::path(
+    delete,
+    path = "/api/streamers/{id}",
+    tag = "streamers",
+    params(("id" = String, Path, description = "Streamer ID")),
+    responses(
+        (status = 200, description = "Streamer deleted", body = crate::api::openapi::MessageResponse),
+        (status = 404, description = "Streamer not found", body = crate::api::error::ApiErrorResponse)
+    ),
+    security(("bearer_auth" = []))
+)]
+pub async fn delete_streamer(
+    State(state): State<AppState>,
+    Path(id): Path<String>,
+) -> ApiResult<Json<serde_json::Value>> {
+    // Get streamer manager from state
+    let streamer_manager = state
+        .streamer_manager
+        .as_ref()
+        .ok_or_else(|| ApiError::service_unavailable("Streamer service not available"))?;
+
+    // Check if streamer exists first
+    if streamer_manager.get_streamer(&id).is_none() {
+        return Err(ApiError::not_found(format!(
+            "Streamer with id '{}' not found",
+            id
+        )));
+    }
+
+    // Delete the streamer
+    streamer_manager
+        .delete_streamer(&id)
+        .await
+        .map_err(ApiError::from)?;
+
+    Ok(Json(serde_json::json!({
+        "success": true,
+        "message": format!("Streamer '{}' deleted successfully", id)
+    })))
+}
+
+#[utoipa::path(
+    post,
+    path = "/api/streamers/{id}/clear-error",
+    tag = "streamers",
+    params(("id" = String, Path, description = "Streamer ID")),
+    responses(
+        (status = 200, description = "Error cleared", body = StreamerResponse),
+        (status = 404, description = "Streamer not found", body = crate::api::error::ApiErrorResponse)
+    ),
+    security(("bearer_auth" = []))
+)]
+pub async fn clear_error(
+    State(state): State<AppState>,
+    Path(id): Path<String>,
+) -> ApiResult<Json<StreamerResponse>> {
+    // Get streamer manager from state
+    let streamer_manager = state
+        .streamer_manager
+        .as_ref()
+        .ok_or_else(|| ApiError::service_unavailable("Streamer service not available"))?;
+
+    // Check if streamer exists first
+    if streamer_manager.get_streamer(&id).is_none() {
+        return Err(ApiError::not_found(format!(
+            "Streamer with id '{}' not found",
+            id
+        )));
+    }
+
+    // Clear error state (resets consecutive_error_count and disabled_until)
+    streamer_manager
+        .clear_error_state(&id)
+        .await
+        .map_err(ApiError::from)?;
+
+    // Get updated metadata
+    let metadata = streamer_manager
+        .get_streamer(&id)
+        .ok_or_else(|| ApiError::internal("Failed to retrieve streamer after clearing error"))?;
+
+    Ok(Json(metadata_to_response(&metadata)))
+}
+
+#[utoipa::path(
+    patch,
+    path = "/api/streamers/{id}/priority",
+    tag = "streamers",
+    params(("id" = String, Path, description = "Streamer ID")),
+    request_body = UpdatePriorityRequest,
+    responses(
+        (status = 200, description = "Priority updated", body = StreamerResponse),
+        (status = 404, description = "Streamer not found", body = crate::api::error::ApiErrorResponse)
+    ),
+    security(("bearer_auth" = []))
+)]
+pub async fn update_priority(
+    State(state): State<AppState>,
+    Path(id): Path<String>,
+    Json(request): Json<UpdatePriorityRequest>,
+) -> ApiResult<Json<StreamerResponse>> {
+    // Get streamer manager from state
+    let streamer_manager = state
+        .streamer_manager
+        .as_ref()
+        .ok_or_else(|| ApiError::service_unavailable("Streamer service not available"))?;
+
+    // Check if streamer exists first
+    if streamer_manager.get_streamer(&id).is_none() {
+        return Err(ApiError::not_found(format!(
+            "Streamer with id '{}' not found",
+            id
+        )));
+    }
+
+    // Update priority
+    let domain_priority = api_to_domain_priority(request.priority);
+    streamer_manager
+        .update_priority(&id, domain_priority)
+        .await
+        .map_err(ApiError::from)?;
+
+    // Get updated metadata
+    let metadata = streamer_manager
+        .get_streamer(&id)
+        .ok_or_else(|| ApiError::internal("Failed to retrieve streamer after priority update"))?;
+
+    Ok(Json(metadata_to_response(&metadata)))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_create_streamer_request_validation() {
+        let request = CreateStreamerRequest {
+            name: "Test".to_string(),
+            url: "".to_string(),
+            platform_config_id: "platform1".to_string(),
+            template_id: None,
+            priority: ApiPriority::Normal,
+            enabled: true,
+            streamer_specific_config: None,
+        };
+
+        // URL is empty, should fail validation
+        assert!(request.url.is_empty());
+    }
+
+    #[test]
+    fn test_metadata_to_response() {
+        let metadata = StreamerMetadata {
+            id: "test-id".to_string(),
+            name: "Test Streamer".to_string(),
+            url: "https://twitch.tv/test".to_string(),
+            avatar_url: None,
+            platform_config_id: "twitch".to_string(),
+            template_config_id: Some("template1".to_string()),
+            state: StreamerState::Live,
+            priority: DomainPriority::High,
+            consecutive_error_count: 2,
+            disabled_until: None,
+            last_error: Some("test error".to_string()),
+            last_live_time: Some(chrono::Utc::now()),
+            streamer_specific_config: None,
+            created_at: chrono::Utc::now(),
+            updated_at: chrono::Utc::now(),
+        };
+
+        let response = metadata_to_response(&metadata);
+
+        assert_eq!(response.id, "test-id");
+        assert_eq!(response.name, "Test Streamer");
+        assert_eq!(response.url, "https://twitch.tv/test");
+        assert_eq!(response.platform_config_id, "twitch");
+        assert_eq!(response.template_id, Some("template1".to_string()));
+        assert_eq!(response.state, StreamerState::Live);
+        assert!(response.enabled); // Live state means enabled
+        assert_eq!(response.consecutive_error_count, 2);
+        assert_eq!(response.last_error, Some("test error".to_string()));
+    }
+
+    #[test]
+    fn test_disabled_state_means_not_enabled() {
+        let metadata = StreamerMetadata {
+            id: "test-id".to_string(),
+            name: "Test".to_string(),
+            url: "https://example.com".to_string(),
+            avatar_url: None,
+            platform_config_id: "platform".to_string(),
+            template_config_id: None,
+            state: StreamerState::Disabled,
+            priority: DomainPriority::Normal,
+            consecutive_error_count: 0,
+            disabled_until: None,
+            last_error: None,
+            last_live_time: None,
+            streamer_specific_config: None,
+            created_at: chrono::Utc::now(),
+            updated_at: chrono::Utc::now(),
+        };
+
+        let response = metadata_to_response(&metadata);
+        assert!(!response.enabled);
+    }
+
+    #[test]
+    fn test_priority_conversion() {
+        // API to Domain
+        assert_eq!(
+            api_to_domain_priority(ApiPriority::High),
+            DomainPriority::High
+        );
+        assert_eq!(
+            api_to_domain_priority(ApiPriority::Normal),
+            DomainPriority::Normal
+        );
+        assert_eq!(
+            api_to_domain_priority(ApiPriority::Low),
+            DomainPriority::Low
+        );
+
+        // Domain to API
+        assert_eq!(
+            domain_to_api_priority(DomainPriority::High),
+            ApiPriority::High
+        );
+        assert_eq!(
+            domain_to_api_priority(DomainPriority::Normal),
+            ApiPriority::Normal
+        );
+        assert_eq!(
+            domain_to_api_priority(DomainPriority::Low),
+            ApiPriority::Low
+        );
+    }
+}
+
+#[cfg(test)]
+mod property_tests {
+    use super::*;
+    use crate::config::ConfigEventBroadcaster;
+    use crate::database::models::StreamerDbModel;
+    use crate::database::repositories::streamer::StreamerRepository;
+    use crate::streamer::StreamerManager;
+    use async_trait::async_trait;
+    use chrono::{DateTime, Utc};
+    use proptest::prelude::*;
+    use std::sync::{Arc, Mutex};
+
+    /// Mock streamer repository for property testing.
+    struct MockStreamerRepository {
+        streamers: Mutex<Vec<StreamerDbModel>>,
+    }
+
+    impl MockStreamerRepository {
+        fn new() -> Self {
+            Self {
+                streamers: Mutex::new(Vec::new()),
+            }
+        }
+    }
+
+    #[async_trait]
+    impl StreamerRepository for MockStreamerRepository {
+        async fn list_all_streamers(&self) -> crate::Result<Vec<StreamerDbModel>> {
+            Ok(self.streamers.lock().unwrap().clone())
+        }
+
+        async fn get_streamer(&self, id: &str) -> crate::Result<StreamerDbModel> {
+            self.streamers
+                .lock()
+                .unwrap()
+                .iter()
+                .find(|s| s.id == id)
+                .cloned()
+                .ok_or_else(|| crate::Error::not_found("Streamer", id))
+        }
+
+        async fn get_streamer_by_url(&self, url: &str) -> crate::Result<StreamerDbModel> {
+            self.streamers
+                .lock()
+                .unwrap()
+                .iter()
+                .find(|s| s.url == url)
+                .cloned()
+                .ok_or_else(|| crate::Error::not_found("Streamer", url))
+        }
+
+        async fn list_streamers(&self) -> crate::Result<Vec<StreamerDbModel>> {
+            Ok(self.streamers.lock().unwrap().clone())
+        }
+
+        async fn list_streamers_by_state(
+            &self,
+            state: &str,
+        ) -> crate::Result<Vec<StreamerDbModel>> {
+            Ok(self
+                .streamers
+                .lock()
+                .unwrap()
+                .iter()
+                .filter(|s| s.state == state)
+                .cloned()
+                .collect())
+        }
+
+        async fn list_streamers_by_priority(
+            &self,
+            priority: &str,
+        ) -> crate::Result<Vec<StreamerDbModel>> {
+            Ok(self
+                .streamers
+                .lock()
+                .unwrap()
+                .iter()
+                .filter(|s| s.priority == priority)
+                .cloned()
+                .collect())
+        }
+
+        async fn list_active_streamers(&self) -> crate::Result<Vec<StreamerDbModel>> {
+            Ok(self.streamers.lock().unwrap().clone())
+        }
+
+        async fn create_streamer(&self, streamer: &StreamerDbModel) -> crate::Result<()> {
+            self.streamers.lock().unwrap().push(streamer.clone());
+            Ok(())
+        }
+
+        async fn update_streamer(&self, _streamer: &StreamerDbModel) -> crate::Result<()> {
+            Ok(())
+        }
+
+        async fn delete_streamer(&self, id: &str) -> crate::Result<()> {
+            self.streamers.lock().unwrap().retain(|s| s.id != id);
+            Ok(())
+        }
+
+        async fn update_avatar(&self, id: &str, avatar_url: Option<&str>) -> crate::Result<()> {
+            let mut streamers = self.streamers.lock().unwrap();
+            if let Some(s) = streamers.iter_mut().find(|s| s.id == id) {
+                s.avatar = avatar_url.map(|s| s.to_string());
+                Ok(())
+            } else {
+                Err(crate::Error::not_found("Streamer", id))
+            }
+        }
+
+        async fn update_streamer_state(&self, id: &str, state: &str) -> crate::Result<()> {
+            if let Some(s) = self
+                .streamers
+                .lock()
+                .unwrap()
+                .iter_mut()
+                .find(|s| s.id == id)
+            {
+                s.state = state.to_string();
+            }
+            Ok(())
+        }
+
+        async fn update_streamer_priority(&self, id: &str, priority: &str) -> crate::Result<()> {
+            if let Some(s) = self
+                .streamers
+                .lock()
+                .unwrap()
+                .iter_mut()
+                .find(|s| s.id == id)
+            {
+                s.priority = priority.to_string();
+            }
+            Ok(())
+        }
+
+        async fn increment_error_count(&self, _id: &str) -> crate::Result<i32> {
+            Ok(1)
+        }
+
+        async fn reset_error_count(&self, _id: &str) -> crate::Result<()> {
+            Ok(())
+        }
+
+        async fn set_disabled_until(&self, _id: &str, _until: Option<&str>) -> crate::Result<()> {
+            Ok(())
+        }
+
+        async fn update_last_live_time(&self, _id: &str, _time: &str) -> crate::Result<()> {
+            Ok(())
+        }
+
+        async fn clear_streamer_error_state(&self, id: &str) -> crate::Result<()> {
+            if let Some(s) = self
+                .streamers
+                .lock()
+                .unwrap()
+                .iter_mut()
+                .find(|s| s.id == id)
+            {
+                s.consecutive_error_count = Some(0);
+                s.disabled_until = None;
+                s.state = "NOT_LIVE".to_string();
+            }
+            Ok(())
+        }
+
+        async fn record_streamer_error(
+            &self,
+            id: &str,
+            error_count: i32,
+            disabled_until: Option<DateTime<Utc>>,
+            _error: Option<&str>,
+        ) -> crate::Result<()> {
+            if let Some(s) = self
+                .streamers
+                .lock()
+                .unwrap()
+                .iter_mut()
+                .find(|s| s.id == id)
+            {
+                s.consecutive_error_count = Some(error_count);
+                s.disabled_until = disabled_until.map(|dt| dt.to_rfc3339());
+            }
+            Ok(())
+        }
+
+        async fn record_streamer_success(
+            &self,
+            id: &str,
+            last_live_time: Option<DateTime<Utc>>,
+        ) -> crate::Result<()> {
+            if let Some(s) = self
+                .streamers
+                .lock()
+                .unwrap()
+                .iter_mut()
+                .find(|s| s.id == id)
+            {
+                s.consecutive_error_count = Some(0);
+                s.disabled_until = None;
+                if let Some(time) = last_live_time {
+                    s.last_live_time = Some(time.to_rfc3339());
+                }
+            }
+            Ok(())
+        }
+
+        async fn list_streamers_by_platform(
+            &self,
+            platform_id: &str,
+        ) -> crate::Result<Vec<StreamerDbModel>> {
+            Ok(self
+                .streamers
+                .lock()
+                .unwrap()
+                .iter()
+                .filter(|s| s.platform_config_id == platform_id)
+                .cloned()
+                .collect())
+        }
+
+        async fn list_streamers_by_template(
+            &self,
+            template_id: &str,
+        ) -> crate::Result<Vec<StreamerDbModel>> {
+            Ok(self
+                .streamers
+                .lock()
+                .unwrap()
+                .iter()
+                .filter(|s| s.template_config_id.as_deref() == Some(template_id))
+                .cloned()
+                .collect())
+        }
+    }
+
+    fn create_test_manager() -> StreamerManager<MockStreamerRepository> {
+        let repo = Arc::new(MockStreamerRepository::new());
+        let broadcaster = ConfigEventBroadcaster::new();
+        StreamerManager::new(repo, broadcaster)
+    }
+
+    // Strategy for generating valid streamer names
+    fn streamer_name_strategy() -> impl Strategy<Value = String> {
+        "[a-zA-Z][a-zA-Z0-9_ ]{0,49}"
+            .prop_map(|s| s.trim().to_string())
+            .prop_filter("Name must not be empty", |s| !s.is_empty())
+    }
+
+    // Strategy for generating valid URLs
+    fn url_strategy() -> impl Strategy<Value = String> {
+        prop::string::string_regex("https://[a-z]+\\.[a-z]+/[a-zA-Z0-9_]+")
+            .unwrap()
+            .prop_filter("URL must not be empty", |s| !s.is_empty())
+    }
+
+    // Strategy for generating platform IDs
+    fn platform_id_strategy() -> impl Strategy<Value = String> {
+        prop_oneof![
+            Just("twitch".to_string()),
+            Just("youtube".to_string()),
+            Just("huya".to_string()),
+            Just("douyu".to_string()),
+        ]
+    }
+
+    // Strategy for generating priorities
+    fn priority_strategy() -> impl Strategy<Value = DomainPriority> {
+        prop_oneof![
+            Just(DomainPriority::High),
+            Just(DomainPriority::Normal),
+            Just(DomainPriority::Low),
+        ]
+    }
+
+    // **Feature: jwt-auth-and-api-implementation, Property 5: Streamer CRUD Round-Trip**
+    // **Validates: Requirements 2.1, 2.3**
+    proptest! {
+        #![proptest_config(ProptestConfig::with_cases(100))]
+
+        #[test]
+        fn prop_streamer_crud_round_trip(
+            name in streamer_name_strategy(),
+            url in url_strategy(),
+            platform_id in platform_id_strategy(),
+            priority in priority_strategy(),
+        ) {
+            let rt = tokio::runtime::Runtime::new().unwrap();
+            rt.block_on(async {
+                let manager = create_test_manager();
+                let id = uuid::Uuid::new_v4().to_string();
+
+                // Create streamer metadata
+                let metadata = StreamerMetadata {
+                    id: id.clone(),
+                    name: name.clone(),
+                    url: url.clone(),
+                     avatar_url: None,
+                    platform_config_id: platform_id.clone(),
+                    template_config_id: None,
+                    state: StreamerState::NotLive,
+                    priority,
+                    consecutive_error_count: 0,
+                    disabled_until: None,
+                    last_error: None,
+                    last_live_time: None,
+                    streamer_specific_config: None,
+                    created_at: Utc::now(),
+                    updated_at: Utc::now(),
+                };
+
+                // Create the streamer
+                manager.create_streamer(metadata.clone()).await.expect("Create should succeed");
+
+                // Retrieve the streamer
+                let retrieved = manager.get_streamer(&id);
+                prop_assert!(retrieved.is_some(), "Streamer should exist after creation");
+
+                let retrieved = retrieved.unwrap();
+
+                // Property: Retrieved data should match created data
+                prop_assert_eq!(&retrieved.id, &id, "ID should match");
+                prop_assert_eq!(&retrieved.name, &name, "Name should match");
+                prop_assert_eq!(&retrieved.url, &url, "URL should match");
+                prop_assert_eq!(&retrieved.platform_config_id, &platform_id, "Platform ID should match");
+                prop_assert_eq!(retrieved.priority, priority, "Priority should match");
+                prop_assert_eq!(retrieved.state, StreamerState::NotLive, "State should be NotLive");
+                prop_assert_eq!(retrieved.consecutive_error_count, 0, "Error count should be 0");
+
+                Ok(())
+            })?;
+        }
+    }
+
+    // **Feature: jwt-auth-and-api-implementation, Property 6: Streamer Update Persistence**
+    // **Validates: Requirements 2.4**
+    proptest! {
+        #![proptest_config(ProptestConfig::with_cases(100))]
+
+        #[test]
+        fn prop_streamer_update_persistence(
+            name in streamer_name_strategy(),
+            url in url_strategy(),
+            platform_id in platform_id_strategy(),
+            initial_priority in priority_strategy(),
+            new_priority in priority_strategy(),
+        ) {
+            let rt = tokio::runtime::Runtime::new().unwrap();
+            rt.block_on(async {
+                let manager = create_test_manager();
+                let id = uuid::Uuid::new_v4().to_string();
+
+                // Create initial streamer
+                let metadata = StreamerMetadata {
+                    id: id.clone(),
+                    name: name.clone(),
+                    url: url.clone(),
+                     avatar_url: None,
+                    platform_config_id: platform_id.clone(),
+                    template_config_id: None,
+                    state: StreamerState::NotLive,
+                    priority: initial_priority,
+                    consecutive_error_count: 0,
+                    disabled_until: None,
+                    last_error: None,
+                    last_live_time: None,
+                    streamer_specific_config: None,
+                    created_at: Utc::now(),
+                    updated_at: Utc::now(),
+                };
+
+                manager.create_streamer(metadata).await.expect("Create should succeed");
+
+                // Update priority
+                manager.update_priority(&id, new_priority).await.expect("Update should succeed");
+
+                // Retrieve and verify
+                let retrieved = manager.get_streamer(&id);
+                prop_assert!(retrieved.is_some(), "Streamer should exist after update");
+
+                let retrieved = retrieved.unwrap();
+
+                // Property: Updated values should be persisted
+                prop_assert_eq!(retrieved.priority, new_priority, "Priority should be updated");
+
+                // Other fields should remain unchanged
+                prop_assert_eq!(&retrieved.name, &name, "Name should remain unchanged");
+                prop_assert_eq!(&retrieved.url, &url, "URL should remain unchanged");
+
+                Ok(())
+            })?;
+        }
+    }
+
+    // **Feature: jwt-auth-and-api-implementation, Property 7: Streamer Delete Removes Resource**
+    // **Validates: Requirements 2.5**
+    proptest! {
+        #![proptest_config(ProptestConfig::with_cases(100))]
+
+        #[test]
+        fn prop_streamer_delete_removes_resource(
+            name in streamer_name_strategy(),
+            url in url_strategy(),
+            platform_id in platform_id_strategy(),
+            priority in priority_strategy(),
+        ) {
+            let rt = tokio::runtime::Runtime::new().unwrap();
+            rt.block_on(async {
+                let manager = create_test_manager();
+                let id = uuid::Uuid::new_v4().to_string();
+
+                // Create streamer
+                let metadata = StreamerMetadata {
+                    id: id.clone(),
+                    name,
+                    url,
+                    avatar_url: None,
+                    platform_config_id: platform_id,
+                    template_config_id: None,
+                    state: StreamerState::NotLive,
+                    priority,
+                    consecutive_error_count: 0,
+                    disabled_until: None,
+                    last_error: None,
+                    last_live_time: None,
+                    streamer_specific_config: None,
+                    created_at: Utc::now(),
+                    updated_at: Utc::now(),
+                };
+
+                manager.create_streamer(metadata).await.expect("Create should succeed");
+
+                // Verify it exists
+                prop_assert!(manager.get_streamer(&id).is_some(), "Streamer should exist before deletion");
+
+                // Delete the streamer
+                manager.delete_streamer(&id).await.expect("Delete should succeed");
+
+                // Property: Streamer should not exist after deletion
+                prop_assert!(manager.get_streamer(&id).is_none(), "Streamer should not exist after deletion");
+
+                Ok(())
+            })?;
+        }
+    }
+}
+#[utoipa::path(
+    post,
+    path = "/api/streamers/extract-metadata",
+    tag = "streamers",
+    request_body = ExtractMetadataRequest,
+    responses(
+        (status = 200, description = "Metadata extracted", body = ExtractMetadataResponse),
+        (status = 422, description = "Invalid URL", body = crate::api::error::ApiErrorResponse)
+    ),
+    security(("bearer_auth" = []))
+)]
+pub async fn extract_metadata(
+    State(state): State<AppState>,
+    Json(request): Json<ExtractMetadataRequest>,
+) -> ApiResult<Json<ExtractMetadataResponse>> {
+    use crate::domain::value_objects::StreamerUrl;
+
+    // Validate URL format
+    let url = match StreamerUrl::new(&request.url) {
+        Ok(u) => u,
+        Err(e) => return Err(ApiError::validation(e.to_string())),
+    };
+
+    // Extract platform info
+    let platform_name = url.platform();
+    let channel_id = url.channel_id();
+
+    // Get config service
+    let config_service = state
+        .config_service
+        .as_ref()
+        .ok_or_else(|| ApiError::service_unavailable("Config service not available"))?;
+
+    // Get all platform configs
+    let all_configs = config_service
+        .list_platform_configs()
+        .await
+        .map_err(ApiError::from)?;
+
+    // Filter configs based on detected platform
+    // If platform is detected, only return configs for that platform
+    // If not detected, return all configs (user must choose)
+    // We treat platform names case-insensitively
+    let valid_configs: Vec<_> = all_configs
+        .into_iter()
+        .filter(|c| {
+            if let Some(detected) = platform_name {
+                c.platform_name.eq_ignore_ascii_case(detected)
+            } else {
+                true
+            }
+        })
+        .map(|c| PlatformConfigResponse {
+            id: c.id,
+            name: c.platform_name,
+            fetch_delay_ms: c.fetch_delay_ms.map(|v| v as u64),
+            download_delay_ms: c.download_delay_ms.map(|v| v as u64),
+            record_danmu: c.record_danmu,
+            cookies: c.cookies,
+            platform_specific_config: c.platform_specific_config,
+            proxy_config: c.proxy_config,
+            output_folder: c.output_folder,
+            output_filename_template: c.output_filename_template,
+            download_engine: c.download_engine,
+            stream_selection_config: c.stream_selection_config,
+            output_file_format: c.output_file_format,
+            min_segment_size_bytes: c.min_segment_size_bytes.map(|v| v as u64),
+            max_download_duration_secs: c.max_download_duration_secs.map(|v| v as u64),
+            max_part_size_bytes: c.max_part_size_bytes.map(|v| v as u64),
+            download_retry_policy: c.download_retry_policy,
+            event_hooks: c.event_hooks,
+            pipeline: c.pipeline,
+        })
+        .collect();
+
+    Ok(Json(ExtractMetadataResponse {
+        platform: platform_name.map(|s| s.to_string()),
+        valid_platform_configs: valid_configs,
+        channel_id,
+    }))
+}

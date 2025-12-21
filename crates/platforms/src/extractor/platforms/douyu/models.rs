@@ -142,6 +142,48 @@ where
     deserializer.deserialize_any(StringOrAnyVisitor)
 }
 
+/// Custom deserializer that handles both boolean and integer (0/1) values
+/// Returns false for 0, true for any non-zero integer
+fn deserialize_bool_or_int<'de, D>(deserializer: D) -> Result<bool, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    use serde::de::Visitor;
+
+    struct BoolOrIntVisitor;
+
+    impl<'de> Visitor<'de> for BoolOrIntVisitor {
+        type Value = bool;
+
+        fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
+            formatter.write_str("a boolean or integer (0/1)")
+        }
+
+        fn visit_bool<E>(self, v: bool) -> Result<Self::Value, E>
+        where
+            E: serde::de::Error,
+        {
+            Ok(v)
+        }
+
+        fn visit_i64<E>(self, v: i64) -> Result<Self::Value, E>
+        where
+            E: serde::de::Error,
+        {
+            Ok(v != 0)
+        }
+
+        fn visit_u64<E>(self, v: u64) -> Result<Self::Value, E>
+        where
+            E: serde::de::Error,
+        {
+            Ok(v != 0)
+        }
+    }
+
+    deserializer.deserialize_any(BoolOrIntVisitor)
+}
+
 /// Response from the interactive game API (www.douyu.com/api/interactive/web/v2/list)
 /// Used to detect if a room is running an interactive game
 #[derive(Debug, Deserialize)]
@@ -297,6 +339,7 @@ pub struct DouyuEncryptionData {
     /// Encryption key
     pub key: String,
     /// Whether this is a special key (affects salt generation)
+    #[serde(deserialize_with = "deserialize_bool_or_int")]
     pub is_special: bool,
     /// Additional encrypted data to include in requests
     pub enc_data: String,

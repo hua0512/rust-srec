@@ -1,7 +1,40 @@
 use std::time::{SystemTime, UNIX_EPOCH};
 
+/// Expand path template with placeholders similar to FFmpeg.
+///
+/// Unlike `expand_filename_template`, this function does NOT sanitize the result,
+/// making it suitable for directory paths that may contain `:` (Windows drive letters)
+/// or `\`/`/` path separators.
+///
+/// Supported placeholders:
+/// - `%Y` - Year (YYYY)
+/// - `%m` - Month (01-12)
+/// - `%d` - Day (01-31)
+/// - `%H` - Hour (00-23)
+/// - `%M` - Minute (00-59)
+/// - `%S` - Second (00-59)
+/// - `%t` - Unix timestamp
+/// - `%%` - Literal percent sign
+pub fn expand_path_template(template: &str) -> String {
+    expand_template_internal(template, None, false)
+}
+
 /// Expand filename template with placeholders similar to FFmpeg
 pub fn expand_filename_template(template: &str, sequence_number: Option<u32>) -> String {
+    expand_template_internal(template, sequence_number, true)
+}
+
+/// Internal implementation for expanding templates.
+///
+/// # Arguments
+/// * `template` - The template string to expand
+/// * `sequence_number` - Optional sequence number for `%i` placeholder
+/// * `sanitize` - Whether to sanitize the result for use as a filename
+fn expand_template_internal(
+    template: &str,
+    sequence_number: Option<u32>,
+    sanitize: bool,
+) -> String {
     let now = time::OffsetDateTime::now_local().unwrap_or_else(|_| time::OffsetDateTime::now_utc());
     let mut result = String::with_capacity(template.len() * 2);
     let mut chars = template.chars().peekable();
@@ -73,8 +106,12 @@ pub fn expand_filename_template(template: &str, sequence_number: Option<u32>) ->
         }
     }
 
-    // Sanitize the entire filename to ensure it's valid
-    sanitize_filename(&result)
+    // Sanitize the result only if requested (for filenames, not paths)
+    if sanitize {
+        sanitize_filename(&result)
+    } else {
+        result
+    }
 }
 
 const DEFAULT_FILENAME: &str = "output";

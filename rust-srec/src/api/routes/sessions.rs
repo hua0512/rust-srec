@@ -1,0 +1,464 @@
+//! Session management routes.
+//!
+//! This module provides REST API endpoints for querying recording sessions
+//! and their associated metadata.
+//!
+//! # Endpoints
+//!
+//! | Method | Path | Description |
+//! |--------|------|-------------|
+//! | GET | `/api/sessions` | List sessions with filtering and pagination |
+//! | GET | `/api/sessions/:id` | Get a single session by ID |
+
+use axum::{
+    Json, Router,
+    extract::{Path, Query, State},
+    routing::get,
+};
+
+use crate::api::error::{ApiError, ApiResult};
+use crate::api::models::{
+    PaginatedResponse, PaginationParams, SessionFilterParams, SessionResponse, TitleChange,
+};
+use crate::api::server::AppState;
+use crate::database::models::{Pagination, SessionFilters, TitleEntry};
+
+/// Create the sessions router.
+///
+/// # Routes
+///
+/// - `GET /` - List sessions with filtering and pagination
+/// - `GET /:id` - Get a single session by ID
+pub fn router() -> Router<AppState> {
+    Router::new()
+        .route("/", get(list_sessions))
+        .route("/{id}", get(get_session).delete(delete_session))
+}
+
+/// List recording sessions with pagination and filtering.
+///
+/// # Endpoint
+///
+/// `GET /api/sessions`
+///
+/// # Query Parameters
+///
+/// - `limit` - Maximum number of results (default: 20, max: 100)
+/// - `offset` - Number of results to skip (default: 0)
+/// - `streamer_id` - Filter by streamer ID
+/// - `from_date` - Filter sessions started after this date (ISO 8601)
+/// - `to_date` - Filter sessions started before this date (ISO 8601)
+/// - `active_only` - If true, return only sessions without an end_time
+///
+/// # Response
+///
+/// Returns a paginated list of sessions matching the filter criteria.
+///
+/// ```json
+/// {
+///     "items": [
+///         {
+///             "id": "session-123",
+///             "streamer_id": "streamer-456",
+///             "streamer_name": "StreamerName",
+///             "streamer_avatar": "https://example.com/avatar.jpg",
+///             "title": "Stream Title",
+///             "titles": [
+///                 {"title": "Initial Title", "timestamp": "2025-12-03T10:00:00Z"},
+///                 {"title": "Current Stream Title", "timestamp": "2025-12-03T12:00:00Z"}
+///             ],
+///             "start_time": "2025-12-03T10:00:00Z",
+///             "end_time": "2025-12-03T14:00:00Z",
+///             "duration_secs": 14400,
+///             "output_count": 3,
+///             "total_size_bytes": 5368709120,
+///             "danmu_count": 15000,
+///             "thumbnail_url": "https://example.com/thumbnail.jpg"
+///         }
+///     ],
+///     "total": 50,
+///     "limit": 20,
+///     "offset": 0
+/// }
+/// ```
+///
+#[utoipa::path(
+    get,
+    path = "/api/sessions",
+    tag = "sessions",
+    params(PaginationParams, SessionFilterParams),
+    responses(
+        (status = 200, description = "List of sessions", body = PaginatedResponse<SessionResponse>)
+    ),
+    security(("bearer_auth" = []))
+)]
+pub async fn list_sessions(
+    State(state): State<AppState>,
+    Query(pagination): Query<PaginationParams>,
+    Query(filters): Query<SessionFilterParams>,
+) -> ApiResult<Json<PaginatedResponse<SessionResponse>>> {
+    // Get session repository from state
+    let session_repository = state
+        .session_repository
+        .as_ref()
+        .ok_or_else(|| ApiError::service_unavailable("Session service not available"))?;
+
+    let streamer_repository = state
+        .streamer_repository
+        .as_ref()
+        .ok_or_else(|| ApiError::service_unavailable("Streamer service not available"))?;
+
+    // Convert API filter params to database filter types
+    let db_filters = SessionFilters {
+        streamer_id: filters.streamer_id,
+        from_date: filters.from_date,
+        to_date: filters.to_date,
+        active_only: filters.active_only,
+        search: filters.search,
+    };
+
+    let effective_limit = pagination.limit.min(100);
+    let db_pagination = Pagination::new(effective_limit, pagination.offset);
+
+    // Call SessionRepository.list_sessions_filtered
+    let (sessions, total) = session_repository
+        .list_sessions_filtered(&db_filters, &db_pagination)
+        .await
+        .map_err(ApiError::from)?;
+
+    // Fetch all streamers for mapping details
+    let streamers = streamer_repository
+        .list_all_streamers()
+        .await
+        .map_err(ApiError::from)?;
+
+    let streamer_map: std::collections::HashMap<_, _> =
+        streamers.into_iter().map(|s| (s.id.clone(), s)).collect();
+
+    // Convert sessions to API response format
+    let mut session_responses: Vec<SessionResponse> = Vec::with_capacity(sessions.len());
+
+    for session in &sessions {
+        // Get output count for each session
+        let output_count = session_repository
+            .get_output_count(&session.id)
+            .await
+            .unwrap_or(0);
+
+        // Parse start_time
+        let start_time = chrono::DateTime::parse_from_rfc3339(&session.start_time)
+            .map(|dt| dt.with_timezone(&chrono::Utc))
+            .unwrap_or_else(|_| chrono::Utc::now());
+
+        // Parse end_time
+        let end_time = session.end_time.as_ref().and_then(|s| {
+            chrono::DateTime::parse_from_rfc3339(s)
+                .map(|dt| dt.with_timezone(&chrono::Utc))
+                .ok()
+        });
+
+        // Calculate duration
+        let duration_secs = end_time.map(|end| (end - start_time).num_seconds() as u64);
+
+        // Parse titles JSON
+        let (titles, title) = parse_titles(&session.titles);
+
+        // Get streamer details
+        let (streamer_name, streamer_avatar) =
+            if let Some(s) = streamer_map.get(&session.streamer_id) {
+                (s.name.clone(), s.avatar.clone())
+            } else {
+                (String::new(), None)
+            };
+
+        session_responses.push(SessionResponse {
+            id: session.id.clone(),
+            streamer_id: session.streamer_id.clone(),
+            streamer_name,
+            title,
+            titles,
+            start_time,
+            end_time,
+            duration_secs,
+            output_count,
+            total_size_bytes: session.total_size_bytes as u64,
+            danmu_count: None,
+            thumbnail_url: get_thumbnail_url(&session.id, session_repository.as_ref()).await,
+            streamer_avatar,
+        });
+    }
+
+    let response =
+        PaginatedResponse::new(session_responses, total, effective_limit, pagination.offset);
+    Ok(Json(response))
+}
+
+/// Get a single session by ID.
+///
+/// # Endpoint
+///
+/// `GET /api/sessions/:id`
+///
+/// # Path Parameters
+///
+/// - `id` - The session ID (UUID)
+///
+/// # Response
+///
+/// Returns the session details including metadata and output count.
+///
+/// ```json
+/// {
+///     "id": "session-123",
+///     "streamer_id": "streamer-456",
+///     "streamer_name": "StreamerName",
+///     "title": "Current Stream Title",
+///     "titles": [
+///         {"title": "Initial Title", "timestamp": "2025-12-03T10:00:00Z"},
+///         {"title": "Current Stream Title", "timestamp": "2025-12-03T12:00:00Z"}
+///     ],
+///     "start_time": "2025-12-03T10:00:00Z",
+///     "end_time": "2025-12-03T14:00:00Z",
+///     "duration_secs": 14400,
+///     "output_count": 3,
+///     "total_size_bytes": 5368709120,
+///     "danmu_count": 15000
+/// }
+/// ```
+///
+/// # Errors
+///
+/// - `404 Not Found` - Session with the specified ID does not exist
+///
+/// # Requirements
+///
+/// - 4.2: Return session with metadata and output count
+#[utoipa::path(
+    get,
+    path = "/api/sessions/{id}",
+    tag = "sessions",
+    params(("id" = String, Path, description = "Session ID")),
+    responses(
+        (status = 200, description = "Session details", body = SessionResponse),
+        (status = 404, description = "Session not found", body = crate::api::error::ApiErrorResponse)
+    ),
+    security(("bearer_auth" = []))
+)]
+pub async fn get_session(
+    State(state): State<AppState>,
+    Path(id): Path<String>,
+) -> ApiResult<Json<SessionResponse>> {
+    // Get session repository from state
+    let session_repository = state
+        .session_repository
+        .as_ref()
+        .ok_or_else(|| ApiError::service_unavailable("Session service not available"))?;
+
+    let streamer_repository = state
+        .streamer_repository
+        .as_ref()
+        .ok_or_else(|| ApiError::service_unavailable("Streamer service not available"))?;
+
+    // Get session by ID
+    let session = session_repository
+        .get_session(&id)
+        .await
+        .map_err(ApiError::from)?;
+
+    // Get output count
+    let output_count = session_repository.get_output_count(&id).await.unwrap_or(0);
+
+    // Parse start_time
+    let start_time = chrono::DateTime::parse_from_rfc3339(&session.start_time)
+        .map(|dt| dt.with_timezone(&chrono::Utc))
+        .unwrap_or_else(|_| chrono::Utc::now());
+
+    // Parse end_time
+    let end_time = session.end_time.as_ref().and_then(|s| {
+        chrono::DateTime::parse_from_rfc3339(s)
+            .map(|dt| dt.with_timezone(&chrono::Utc))
+            .ok()
+    });
+
+    // Calculate duration
+    let duration_secs = end_time.map(|end| (end - start_time).num_seconds() as u64);
+
+    // Parse titles JSON
+    let (titles, title) = parse_titles(&session.titles);
+
+    // Get streamer details
+    let streamer = streamer_repository
+        .get_streamer(&session.streamer_id)
+        .await
+        .ok();
+    let (streamer_name, streamer_avatar) = if let Some(s) = streamer {
+        (s.name, s.avatar)
+    } else {
+        (String::new(), None)
+    };
+
+    // Get danmu statistics if available
+    let danmu_count = if let Some(danmu_stats_id) = &session.danmu_statistics_id {
+        session_repository
+            .get_danmu_statistics(danmu_stats_id)
+            .await
+            .ok()
+            .flatten()
+            .map(|stats| stats.total_danmus as u64)
+    } else {
+        None
+    };
+
+    // Get thumbnail URL
+    let thumbnail_url = get_thumbnail_url(&session.id, session_repository.as_ref()).await;
+
+    let response = SessionResponse {
+        id: session.id.clone(),
+        streamer_id: session.streamer_id,
+        streamer_name,
+        title,
+        titles,
+        start_time,
+        end_time,
+        duration_secs,
+        output_count,
+        total_size_bytes: session.total_size_bytes as u64,
+        danmu_count,
+        thumbnail_url,
+        streamer_avatar,
+    };
+
+    Ok(Json(response))
+}
+
+/// Helper to get the thumbnail URL for a session
+async fn get_thumbnail_url(
+    session_id: &str,
+    repo: &dyn crate::database::repositories::session::SessionRepository,
+) -> Option<String> {
+    use crate::database::models::MediaFileType;
+    // We assume the repository method returns outputs ordered by creation, taking the first thumbnail found
+    // Optimally we'd have a specific query for this, but filtering in app is acceptable for now given low volume per session
+    let outputs = repo.get_media_outputs_for_session(session_id).await.ok()?;
+    outputs
+        .into_iter()
+        .find(|o| o.file_type == MediaFileType::Thumbnail.as_str())
+        .map(|o| format!("/api/media/{}/content", o.id))
+}
+
+/// Parse titles JSON and extract and current title.
+fn parse_titles(titles_json: &Option<String>) -> (Vec<TitleChange>, String) {
+    let titles_json = match titles_json {
+        Some(json) => json,
+        None => return (Vec::new(), String::new()),
+    };
+
+    let title_entries: Vec<TitleEntry> = serde_json::from_str(titles_json).unwrap_or_default();
+
+    let titles: Vec<TitleChange> = title_entries
+        .iter()
+        .filter_map(|entry| {
+            let timestamp = chrono::DateTime::parse_from_rfc3339(&entry.ts)
+                .map(|dt| dt.with_timezone(&chrono::Utc))
+                .ok()?;
+            Some(TitleChange {
+                title: entry.title.clone(),
+                timestamp,
+            })
+        })
+        .collect();
+
+    // Get the most recent title as the current title
+    let title = titles.last().map(|t| t.title.clone()).unwrap_or_default();
+
+    (titles, title)
+}
+
+/// Delete a session by ID.
+///
+/// # Endpoint
+///
+/// `DELETE /api/sessions/:id`
+///
+/// # Path Parameters
+///
+/// - `id` - The session ID (UUID)
+///
+/// # Response
+///
+/// Returns 200 OK on success.
+///
+/// # Errors
+///
+/// - `404 Not Found` - Session with the specified ID does not exist
+/// - `500 Internal Server Error` - Database error
+#[utoipa::path(
+    delete,
+    path = "/api/sessions/{id}",
+    tag = "sessions",
+    params(("id" = String, Path, description = "Session ID")),
+    responses(
+        (status = 200, description = "Session deleted"),
+        (status = 404, description = "Session not found", body = crate::api::error::ApiErrorResponse)
+    ),
+    security(("bearer_auth" = []))
+)]
+pub async fn delete_session(
+    State(state): State<AppState>,
+    Path(id): Path<String>,
+) -> ApiResult<()> {
+    // Get session repository from state
+    let session_repository = state
+        .session_repository
+        .as_ref()
+        .ok_or_else(|| ApiError::service_unavailable("Session service not available"))?;
+
+    // Check if session exists
+    let _ = session_repository
+        .get_session(&id)
+        .await
+        .map_err(ApiError::from)?;
+
+    // Delete session
+    // Note: ON DELETE CASCADE on DB tables should handle media_outputs
+    // danmu_statistics might need manual deletion if not set to CASCADE, but let's assume it handles or we catch error
+    session_repository
+        .delete_session(&id)
+        .await
+        .map_err(ApiError::from)?;
+
+    Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_session_filter_params_default() {
+        let params = SessionFilterParams::default();
+        assert!(params.streamer_id.is_none());
+        assert!(params.from_date.is_none());
+        assert!(params.to_date.is_none());
+        assert!(params.active_only.is_none());
+    }
+
+    #[test]
+    fn test_parse_titles_empty() {
+        let (titles, title) = parse_titles(&None);
+        assert!(titles.is_empty());
+        assert!(title.is_empty());
+    }
+
+    #[test]
+    fn test_parse_titles_with_entries() {
+        let json = r#"[
+            {"ts": "2025-01-01T10:00:00Z", "title": "First Stream"},
+            {"ts": "2025-01-01T12:00:00Z", "title": "Updated Title"}
+        ]"#;
+
+        let (titles, title) = parse_titles(&Some(json.to_string()));
+        assert_eq!(titles.len(), 2);
+        assert_eq!(title, "Updated Title");
+    }
+}

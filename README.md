@@ -17,3 +17,10 @@ Please read the [README](https://github.com/hua0512/rust-srec/blob/main/strev-cl
 Please read the [README](https://github.com/hua0512/rust-srec/blob/main/mesio-cli/README.md)
 
 ---
+
+## Examples
+
+Webhook receiver (Axum):
+
+- `cargo run -p rust-srec --example webhook_receiver`
+- `cargo run -p rust-srec --example webhook_sender`

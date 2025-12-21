@@ -5,6 +5,8 @@ pub mod platform_extractor;
 pub mod platforms;
 pub mod utils;
 
-pub use default::{ProxyConfig, default_factory, factory_with_proxy};
+pub use default::{
+    ProxyConfig, create_client, create_client_builder, default_factory, factory_with_proxy,
+};
 
 pub mod hls_extractor;

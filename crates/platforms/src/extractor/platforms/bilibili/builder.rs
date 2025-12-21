@@ -1,7 +1,6 @@
 use std::{fmt::Display, sync::LazyLock};
 
 use async_trait::async_trait;
-use num_enum::TryFromPrimitive;
 use regex::Regex;
 use reqwest::{Client, header::HeaderValue};
 use tracing::debug;
@@ -22,7 +21,7 @@ use rustc_hash::FxHashMap;
 pub static URL_REGEX: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"https?:\/\/(?:www\.)?(?:live\.)?bilibili\.com\/(\d+)").unwrap());
 
-#[derive(Debug, PartialEq, Eq, Copy, Clone, TryFromPrimitive)]
+#[derive(Debug, PartialEq, Eq, Copy, Clone)]
 #[repr(u32)]
 pub enum BilibiliQuality {
     // 最低画质
@@ -43,6 +42,28 @@ pub enum BilibiliQuality {
     FourK = 20000,
     // 杜比视界
     DolbyVision = 30000,
+}
+
+impl TryFrom<u32> for BilibiliQuality {
+    type Error = ExtractorError;
+
+    fn try_from(value: u32) -> Result<Self, Self::Error> {
+        match value {
+            0 => Ok(BilibiliQuality::Lowest),
+            80 => Ok(BilibiliQuality::Low),
+            150 => Ok(BilibiliQuality::Medium),
+            250 => Ok(BilibiliQuality::Ultra),
+            400 => Ok(BilibiliQuality::Blue),
+            401 => Ok(BilibiliQuality::BlueDolby),
+            10000 => Ok(BilibiliQuality::Original),
+            20000 => Ok(BilibiliQuality::FourK),
+            30000 => Ok(BilibiliQuality::DolbyVision),
+            _ => Err(ExtractorError::ValidationError(format!(
+                "Invalid quality: {}",
+                value
+            ))),
+        }
+    }
 }
 
 impl Display for BilibiliQuality {
@@ -85,7 +106,7 @@ impl Bilibili {
             .as_ref()
             .and_then(|extras| extras.get("quality"))
             .and_then(|v| v.as_u64())
-            .and_then(|num| BilibiliQuality::try_from_primitive(num as u32).ok())
+            .and_then(|num| BilibiliQuality::try_from(num as u32).ok())
             .unwrap_or(BilibiliQuality::DolbyVision);
 
         Self { extractor, quality }
@@ -230,7 +251,7 @@ impl Bilibili {
                                 })),
                                 codec: c.codec_name.to_string(),
                                 fps: 0.0,
-                                is_headers_needed: false,
+                                is_headers_needed: true,
                             });
                         }
                     }
@@ -256,7 +277,7 @@ impl Bilibili {
             Vec::new()
         };
 
-        let extras = Some(self.extractor.get_platform_headers_map());
+        let headers = Some(self.extractor.get_platform_headers_map());
 
         Ok(MediaInfo::new(
             self.extractor.url.clone(),
@@ -266,7 +287,8 @@ impl Bilibili {
             artist_url,
             is_live,
             streams,
-            extras,
+            headers,
+            None,
         ))
     }
 }

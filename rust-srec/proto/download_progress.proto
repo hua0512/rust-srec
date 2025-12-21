@@ -1,0 +1,119 @@
+syntax = "proto3";
+
+package download_progress;
+
+// Event types for WebSocket messages
+enum EventType {
+  EVENT_TYPE_UNSPECIFIED = 0;
+  EVENT_TYPE_SNAPSHOT = 1;
+  EVENT_TYPE_DOWNLOAD_STARTED = 2;
+  EVENT_TYPE_PROGRESS = 3;
+  EVENT_TYPE_SEGMENT_COMPLETED = 4;
+  EVENT_TYPE_DOWNLOAD_COMPLETED = 5;
+  EVENT_TYPE_DOWNLOAD_FAILED = 6;
+  EVENT_TYPE_DOWNLOAD_CANCELLED = 7;
+  EVENT_TYPE_ERROR = 8;
+}
+
+// Server-to-client message envelope
+message WsMessage {
+  EventType event_type = 1;
+  oneof payload {
+    DownloadSnapshot snapshot = 2;
+    DownloadStarted download_started = 3;
+    DownloadProgress progress = 4;
+    SegmentCompleted segment_completed = 5;
+    DownloadCompleted download_completed = 6;
+    DownloadFailed download_failed = 7;
+    DownloadCancelled download_cancelled = 8;
+    ErrorPayload error = 9;
+  }
+}
+
+// Client-to-server message for filtering
+message ClientMessage {
+  oneof action {
+    SubscribeRequest subscribe = 1;
+    UnsubscribeRequest unsubscribe = 2;
+  }
+}
+
+message SubscribeRequest {
+  string streamer_id = 1;
+}
+
+message UnsubscribeRequest {}
+
+// Initial snapshot of all active downloads
+message DownloadSnapshot {
+  repeated DownloadProgress downloads = 1;
+}
+
+
+// Progress information for a single download
+message DownloadProgress {
+  string download_id = 1;
+  string streamer_id = 2;
+  string session_id = 3;
+  string engine_type = 4;
+  string status = 5;
+  uint64 bytes_downloaded = 6;
+  double duration_secs = 7;
+  uint64 speed_bytes_per_sec = 8;
+  uint32 segments_completed = 9;
+  double media_duration_secs = 10;
+  double playback_ratio = 11;
+  int64 started_at_ms = 12;  // Unix timestamp in milliseconds
+}
+
+// Download started event
+message DownloadStarted {
+  string download_id = 1;
+  string streamer_id = 2;
+  string session_id = 3;
+  string engine_type = 4;
+  int64 started_at_ms = 5;
+}
+
+// Segment completed event
+message SegmentCompleted {
+  string download_id = 1;
+  string streamer_id = 2;
+  string segment_path = 3;
+  uint32 segment_index = 4;
+  double duration_secs = 5;
+  uint64 size_bytes = 6;
+  string session_id = 7;
+}
+
+// Download completed event
+message DownloadCompleted {
+  string download_id = 1;
+  string streamer_id = 2;
+  string session_id = 3;
+  uint64 total_bytes = 4;
+  double total_duration_secs = 5;
+  uint32 total_segments = 6;
+}
+
+// Download failed event
+message DownloadFailed {
+  string download_id = 1;
+  string streamer_id = 2;
+  string session_id = 3;
+  string error = 4;
+  bool recoverable = 5;
+}
+
+// Download cancelled event
+message DownloadCancelled {
+  string download_id = 1;
+  string streamer_id = 2;
+  string session_id = 3;
+}
+
+// Error payload for service errors
+message ErrorPayload {
+  string code = 1;
+  string message = 2;
+}

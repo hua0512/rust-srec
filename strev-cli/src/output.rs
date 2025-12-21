@@ -373,6 +373,22 @@ impl OutputManager {
             }
         }
 
+        // Headers
+        if let Some(headers) = &media_info.headers
+            && !headers.is_empty()
+        {
+            output.push('\n');
+            output.push_str(&self.colorize("Headers:", &Color::Green, true));
+            output.push('\n');
+            for (key, value) in headers {
+                output.push_str(&format!(
+                    "  {}: {}\n",
+                    self.colorize(key, &Color::Yellow, false),
+                    self.colorize(value, &Color::Cyan, false)
+                ));
+            }
+        }
+
         Ok(output)
     }
 
@@ -427,6 +443,15 @@ impl OutputManager {
                 property: "Artist URL",
                 value: Cow::Borrowed(artist_url),
             });
+        }
+
+        if let Some(headers) = &media_info.headers {
+            for (key, value) in headers {
+                rows.push(TableRow {
+                    property: key,
+                    value: Cow::Borrowed(value),
+                });
+            }
         }
 
         if let Some(stream) = stream_info {
@@ -494,6 +519,16 @@ impl OutputManager {
                 ));
             }
 
+            if let Some(headers) = &media_info.headers {
+                if let Some(ua) = headers.get("User-Agent") {
+                    output.push_str(&format!("user_agent,\"{}\"\n", Self::escape_csv(ua)));
+                } else {
+                    output.push_str("user_agent,\"\"\n");
+                }
+            } else {
+                output.push_str("user_agent,\"\"\n");
+            }
+
             output.push_str(&format!("stream_format,\"{}\"\n", stream.stream_format));
             output.push_str(&format!(
                 "quality,\"{}\"\n",
@@ -521,6 +556,7 @@ impl OutputManager {
                 "is_live",
                 "cover_url",
                 "artist_url",
+                "user_agent",
                 "stream_format",
                 "quality",
                 "url",
@@ -534,12 +570,19 @@ impl OutputManager {
             output.push('\n');
 
             if media_info.streams.is_empty() {
-                let row: [Cow<str>; 13] = [
+                let row: [Cow<str>; 14] = [
                     Self::escape_csv(&media_info.artist),
                     Self::escape_csv(&media_info.title),
                     Cow::Owned(media_info.is_live.to_string()),
                     Self::escape_csv(media_info.cover_url.as_deref().unwrap_or("")),
                     Self::escape_csv(media_info.artist_url.as_deref().unwrap_or("")),
+                    Cow::Borrowed(
+                        media_info
+                            .headers
+                            .as_ref()
+                            .and_then(|h| h.get("User-Agent").map(|s| s.as_str()))
+                            .unwrap_or(""),
+                    ),
                     Cow::Borrowed(""),
                     Cow::Borrowed(""),
                     Cow::Borrowed(""),
@@ -561,6 +604,13 @@ impl OutputManager {
                         Cow::Owned(media_info.is_live.to_string()),
                         Self::escape_csv(media_info.cover_url.as_deref().unwrap_or("")),
                         Self::escape_csv(media_info.artist_url.as_deref().unwrap_or("")),
+                        Cow::Borrowed(
+                            media_info
+                                .headers
+                                .as_ref()
+                                .and_then(|h| h.get("User-Agent").map(|s| s.as_str()))
+                                .unwrap_or(""),
+                        ),
                         Self::escape_csv(stream_format_str),
                         Self::escape_csv(&stream.quality),
                         Self::escape_csv(stream.url.as_str()),

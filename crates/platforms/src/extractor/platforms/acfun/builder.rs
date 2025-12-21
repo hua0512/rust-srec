@@ -110,6 +110,7 @@ impl PlatformExtractor for Acfun {
                 artist: "".to_string(),
                 artist_url: None,
                 cover_url: None,
+                headers: None,
                 extras: None,
             });
         }
@@ -150,6 +151,7 @@ impl PlatformExtractor for Acfun {
             artist: "".to_string(),
             artist_url: None,
             cover_url: None,
+            headers: None,
             extras: None,
         })
     }

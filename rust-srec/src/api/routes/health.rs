@@ -1,0 +1,177 @@
+//! Health check routes.
+
+use axum::{
+    Json, Router,
+    extract::State,
+    http::{HeaderMap, StatusCode, header::AUTHORIZATION},
+    response::IntoResponse,
+    routing::get,
+};
+
+use crate::api::error::ApiResult;
+use crate::api::models::{ComponentHealth, HealthResponse};
+use crate::api::server::AppState;
+
+/// Create the health router.
+pub fn router() -> Router<AppState> {
+    Router::new()
+        .route("/", get(health_check))
+        .route("/ready", get(readiness_check))
+        .route("/live", get(liveness_check))
+}
+
+fn validate_health_auth(
+    headers: &HeaderMap,
+    state: &AppState,
+) -> Result<(), crate::api::error::ApiError> {
+    let jwt_service = state.jwt_service.as_ref().ok_or_else(|| {
+        crate::api::error::ApiError::unauthorized("Authentication not configured")
+    })?;
+
+    let token = headers
+        .get(AUTHORIZATION)
+        .and_then(|h| h.to_str().ok())
+        .and_then(|s| s.strip_prefix("Bearer "))
+        .ok_or_else(|| {
+            crate::api::error::ApiError::unauthorized("Missing or invalid Authorization header")
+        })?;
+
+    jwt_service
+        .validate_token(token)
+        .map_err(|_| crate::api::error::ApiError::unauthorized("Invalid or expired token"))?;
+
+    Ok(())
+}
+
+#[utoipa::path(
+    get,
+    path = "/api/health",
+    tag = "health",
+    security(("bearer_auth" = [])),
+    responses(
+        (status = 200, description = "Full health check response", body = HealthResponse),
+        (status = 401, description = "Unauthorized", body = crate::api::error::ApiErrorResponse)
+    )
+)]
+pub async fn health_check(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+) -> ApiResult<Json<HealthResponse>> {
+    validate_health_auth(&headers, &state)?;
+    let uptime = state.start_time.elapsed().as_secs();
+
+    // Use HealthChecker if available, otherwise return fallback response
+    if let Some(health_checker) = &state.health_checker {
+        let system_health = health_checker.check_all().await;
+
+        let components: Vec<ComponentHealth> = system_health
+            .components
+            .into_iter()
+            .map(|(name, health)| ComponentHealth {
+                name,
+                status: health.status.to_string(),
+                message: health.message,
+                last_check: health.last_check,
+                check_duration_ms: health.check_duration_ms,
+            })
+            .collect();
+
+        let response = HealthResponse {
+            status: system_health.status.to_string(),
+            version: env!("CARGO_PKG_VERSION").to_string(),
+            uptime_secs: uptime,
+            components,
+            cpu_usage: system_health.cpu_usage,
+            memory_usage: system_health.memory_usage,
+        };
+
+        Ok(Json(response))
+    } else {
+        // Fallback for testing without full service setup
+        Ok(Json(HealthResponse {
+            status: "healthy".to_string(),
+            version: env!("CARGO_PKG_VERSION").to_string(),
+            uptime_secs: uptime,
+            components: vec![],
+            cpu_usage: 0.0,
+            memory_usage: 0.0,
+        }))
+    }
+}
+
+#[utoipa::path(
+    get,
+    path = "/api/health/ready",
+    tag = "health",
+    security(("bearer_auth" = [])),
+    responses(
+        (status = 200, description = "Service is ready"),
+        (status = 401, description = "Unauthorized", body = crate::api::error::ApiErrorResponse),
+        (status = 503, description = "Service not ready")
+    )
+)]
+pub async fn readiness_check(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+) -> impl IntoResponse {
+    if let Err(err) = validate_health_auth(&headers, &state) {
+        return err.into_response();
+    }
+
+    if let Some(health_checker) = &state.health_checker {
+        let is_ready = health_checker.check_ready().await;
+        if is_ready {
+            (StatusCode::OK, "ready").into_response()
+        } else {
+            (StatusCode::SERVICE_UNAVAILABLE, "not ready").into_response()
+        }
+    } else {
+        (StatusCode::SERVICE_UNAVAILABLE, "not ready").into_response()
+    }
+}
+
+#[utoipa::path(
+    get,
+    path = "/api/health/live",
+    tag = "health",
+    responses(
+        (status = 200, description = "Service is alive", body = crate::api::openapi::LivenessResponse)
+    )
+)]
+pub async fn liveness_check(State(state): State<AppState>) -> impl IntoResponse {
+    let uptime = state.start_time.elapsed().as_secs();
+    (
+        StatusCode::OK,
+        Json(serde_json::json!({
+            "status": "alive",
+            "uptime_secs": uptime
+        })),
+    )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_health_response_serialization() {
+        let response = HealthResponse {
+            status: "healthy".to_string(),
+            version: "0.1.0".to_string(),
+            uptime_secs: 3600,
+            components: vec![ComponentHealth {
+                name: "database".to_string(),
+                status: "healthy".to_string(),
+                message: None,
+                last_check: None,
+                check_duration_ms: None,
+            }],
+            cpu_usage: 10.5,
+            memory_usage: 45.2,
+        };
+
+        let json = serde_json::to_string(&response).unwrap();
+        assert!(json.contains("healthy"));
+        assert!(json.contains("database"));
+    }
+}

@@ -1,6 +1,6 @@
 [package]
 name = "tars-codec"
-version = "0.1.1"
+version = "0.1.2"
 edition = "2024"
 
 [dependencies]
@@ -9,4 +9,3 @@ tokio-util = { version = "0.7", features = ["codec"] }
 thiserror = "2.0"
 smallvec = "1.15.1"
 rustc-hash = { version = "2.1" }
-
