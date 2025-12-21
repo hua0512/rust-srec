@@ -56,7 +56,7 @@ impl ResourceMonitor {
 
     /// Refresh disk information.
     pub fn refresh(&mut self) {
-        self.disks.refresh_list();
+        self.disks.refresh(true);
     }
 
     /// Check if there is sufficient disk space for a download.

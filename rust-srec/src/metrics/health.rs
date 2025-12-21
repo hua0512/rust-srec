@@ -155,7 +155,7 @@ impl HealthChecker {
             disk_warning_threshold: 0.80,
             disk_critical_threshold: 0.95,
             system: Mutex::new(System::new_with_specifics(
-                RefreshKind::new()
+                RefreshKind::nothing()
                     .with_cpu(CpuRefreshKind::everything())
                     .with_memory(MemoryRefreshKind::everything()),
             )),
@@ -171,7 +171,7 @@ impl HealthChecker {
             disk_warning_threshold: disk_warning,
             disk_critical_threshold: disk_critical,
             system: Mutex::new(System::new_with_specifics(
-                RefreshKind::new()
+                RefreshKind::nothing()
                     .with_cpu(CpuRefreshKind::everything())
                     .with_memory(MemoryRefreshKind::everything()),
             )),
@@ -192,10 +192,10 @@ impl HealthChecker {
         // Collect system metrics
         let (cpu_usage, memory_usage) = {
             let mut system = self.system.lock().await;
-            system.refresh_cpu();
+            system.refresh_cpu_all();
             system.refresh_memory();
 
-            let cpu = system.global_cpu_info().cpu_usage();
+            let cpu = system.global_cpu_usage();
             let total_mem = system.total_memory();
             let used_mem = system.used_memory();
             let mem_usage = if total_mem > 0 {

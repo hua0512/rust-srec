@@ -972,14 +972,14 @@ impl ServiceContainer {
 
                     let (cpu_usage, mem_usage) = {
                         let mut system = sysinfo::System::new_with_specifics(
-                            sysinfo::RefreshKind::new()
+                            sysinfo::RefreshKind::nothing()
                                 .with_cpu(sysinfo::CpuRefreshKind::everything())
                                 .with_memory(sysinfo::MemoryRefreshKind::everything()),
                         );
-                        system.refresh_cpu();
+                        system.refresh_cpu_all();
                         system.refresh_memory();
 
-                        let cpu = system.global_cpu_info().cpu_usage();
+                        let cpu = system.global_cpu_usage();
                         let total_mem = system.total_memory();
                         let used_mem = system.used_memory();
                         let mem = if total_mem > 0 {
