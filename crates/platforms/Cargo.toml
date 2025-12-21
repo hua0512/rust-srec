@@ -65,7 +65,7 @@ futures = "0.3"
 flate2 = "1.0"
 parking_lot = "0.12"
 byteorder = "1.5"
-brotli = "6.0"
+brotli = "8.0"
 
 # Protocol Buffers
 prost = "0.14"
