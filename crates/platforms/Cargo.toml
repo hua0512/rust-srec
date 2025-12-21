@@ -57,7 +57,7 @@ m3u8-rs = "6.0.0"
 md-5 = "0.10.6"
 urlencoding = "2.1"
 base64 = "0.22.1"
-tokio-tungstenite = { version = "0.26.1", features = ["native-tls"] }
+tokio-tungstenite = { version = "0.28.0", features = ["native-tls"] }
 chrono = { version = "0.4", features = ["serde"] }
 futures = "0.3"
 # tokio-rustls = { version = "0.26", default-features = false, features = ["aws-lc-rs", "logging", "tls12"] }
