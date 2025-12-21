@@ -1,53 +1,24 @@
 import {
-  createContext,
-  useContext,
   useEffect,
   useRef,
   useCallback,
   ReactNode,
 } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { sessionQueryOptions } from '../api/session';
-import { useDownloadStore } from '../store/downloads';
+import { sessionQueryOptions } from '@/api/session';
+import { useDownloadStore } from '@/store/downloads';
 import {
   decodeWsMessage,
   encodeClientMessage,
   EventType,
   type DownloadProgress,
-} from '../api/proto/download_progress';
+} from '@/api/proto/download_progress';
+import { buildWebSocketUrl } from '@/lib/url';
+import { WebSocketContext } from './WebSocketContext';
 
 // Reconnection constants
 const WS_RECONNECT_BASE_DELAY = 1000;
 const WS_RECONNECT_MAX_DELAY = 30000;
-
-interface WebSocketContextType {
-  isConnected: boolean;
-  subscribe: (streamerId: string) => void;
-  unsubscribe: (streamerId: string) => void;
-}
-
-const WebSocketContext = createContext<WebSocketContextType | null>(null);
-
-/**
- * Build the WebSocket URL with JWT token as query parameter.
- */
-export function buildWebSocketUrl(accessToken: string): string {
-  const apiBaseUrl = import.meta.env.VITE_API_BASE_URL || '/api';
-
-  let wsUrl: string;
-
-  if (apiBaseUrl.startsWith('http://') || apiBaseUrl.startsWith('https://')) {
-    const url = new URL(apiBaseUrl);
-    const wsProtocol = url.protocol === 'https:' ? 'wss:' : 'ws:';
-    wsUrl = `${wsProtocol}//${url.host}${url.pathname}`;
-  } else {
-    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    wsUrl = `${protocol}//${window.location.host}${apiBaseUrl}`;
-  }
-
-  const basePath = wsUrl.replace(/\/$/, '');
-  return `${basePath}/downloads/ws?token=${accessToken}`;
-}
 
 export function WebSocketProvider({ children }: { children: ReactNode }) {
   const wsRef = useRef<WebSocket | null>(null);
@@ -246,8 +217,8 @@ export function WebSocketProvider({ children }: { children: ReactNode }) {
   }, [isAuthenticated, accessToken, connect, disconnect]);
 
   // No-op for now as we use global subscription
-  const subscribe = useCallback((_streamerId: string) => {}, []);
-  const unsubscribe = useCallback((_streamerId: string) => {}, []);
+  const subscribe = useCallback((_streamerId: string) => { }, []);
+  const unsubscribe = useCallback((_streamerId: string) => { }, []);
 
   return (
     <WebSocketContext.Provider
@@ -256,12 +227,4 @@ export function WebSocketProvider({ children }: { children: ReactNode }) {
       {children}
     </WebSocketContext.Provider>
   );
-}
-
-export function useWebSocket() {
-  const context = useContext(WebSocketContext);
-  if (!context) {
-    throw new Error('useWebSocket must be used within a WebSocketProvider');
-  }
-  return context;
 }

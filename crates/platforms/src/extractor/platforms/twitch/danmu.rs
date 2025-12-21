@@ -273,6 +273,8 @@ pub fn create_twitch_danmu_provider() -> TwitchDanmuProvider {
 
 #[cfg(test)]
 mod tests {
+    use crate::danmaku::ConnectionConfig;
+
     use super::*;
 
     #[test]

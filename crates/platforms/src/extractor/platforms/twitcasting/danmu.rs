@@ -451,6 +451,8 @@ pub fn create_twitcasting_danmu_provider() -> TwitcastingDanmuProvider {
 
 #[cfg(test)]
 mod tests {
+    use crate::danmaku::ConnectionConfig;
+
     use super::*;
 
     #[test]

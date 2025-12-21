@@ -1,5 +1,5 @@
 import { useEffect, useRef } from 'react';
-import { useWebSocket } from '../providers/WebSocketProvider';
+import { useWebSocket } from '@/providers/WebSocketContext';
 
 interface UseDownloadProgressOptions {
   /** Optional streamer ID to subscribe to for filtered updates */

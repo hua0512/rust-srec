@@ -34,7 +34,7 @@ import { SessionHeader } from '@/components/sessions/session-header';
 import { OverviewTab } from '@/components/sessions/overview-tab';
 import { RecordingsTab } from '@/components/sessions/recordings-tab';
 import { JobsTab } from '@/components/sessions/jobs-tab';
-import { DanmuViewer } from '@/components/danmu/DanmuViewer';
+import { DanmuViewer } from '@/components/danmu/danmu-viewer';
 
 import { TimelineTab } from '@/components/sessions/timeline-tab';
 
@@ -170,9 +170,9 @@ function SessionDetailPage() {
     ? formatDuration(session.duration_secs)
     : session.start_time
       ? formatDuration(
-          (new Date().getTime() - new Date(session.start_time).getTime()) /
-            1000,
-        )
+        (new Date().getTime() - new Date(session.start_time).getTime()) /
+        1000,
+      )
       : '-';
 
   return (
@@ -295,14 +295,14 @@ function SessionDetailPage() {
         <DialogContent
           className={
             playingOutput?.format === 'DANMU_XML'
-              ? 'max-w-4xl p-0 overflow-hidden bg-transparent border-0 shadow-none focus:outline-none'
+              ? 'w-full max-w-5xl p-0 overflow-hidden bg-transparent border-0 shadow-none focus:outline-none'
               : 'max-w-4xl p-0 overflow-hidden bg-black/95 border-border/20'
           }
         >
           <DialogHeader className="sr-only">
             <DialogTitle>Media Player</DialogTitle>
           </DialogHeader>
-          <div className="aspect-video w-full flex items-center justify-center">
+          <div className={playingOutput?.format === 'DANMU_XML' ? 'w-full flex items-center justify-center' : 'aspect-video w-full flex items-center justify-center'}>
             {playingOutput &&
               (playingOutput.format === 'DANMU_XML' ? (
                 <DanmuViewer

@@ -16,6 +16,8 @@ export function CountUp({
 }: CountUpProps) {
   const nodeRef = useRef<HTMLSpanElement>(null);
   const prevValueString = useRef(value.toString());
+  // Track the current animated value to support smooth interruptions
+  const currentAnimatedValue = useRef(Number(value));
 
   useEffect(() => {
     const node = nodeRef.current;
@@ -24,21 +26,20 @@ export function CountUp({
     // If value hasn't changed effectively, do nothing (handling bigint/number comparison via string)
     if (value.toString() === prevValueString.current) return;
 
-    const start = parseFloat(prevValueString.current); // Limitation: animates as number, so very large bigints might lose precision in animation but end value is text set manually?
-    // Actually animate function updates text content usually?
-    // Let's use 'animate' helper to drive the value.
+    // Start from the current animated value to avoid jumps
+    const start = currentAnimatedValue.current;
+    const target = Number(value);
 
-    const target = Number(value); // We have to animate as number. BigInt animation is tricky. Assuming values fit in double for animation purposes (stats usually do).
-
-    // If it's the first render, maybe we don't want to animate from 0? or yes?
-    // Let's animate from previous value.
-
+    // Update tracking ref for next comparison
     prevValueString.current = value.toString();
 
     const controls = animate(start, target, {
       duration,
       ease: 'easeOut',
       onUpdate: (latest) => {
+        // Track the current value so we can resume from here if interrupted
+        currentAnimatedValue.current = latest;
+
         if (nodeRef.current) {
           nodeRef.current.textContent = formatter
             ? formatter(latest)

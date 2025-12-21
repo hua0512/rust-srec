@@ -6,8 +6,9 @@ import {
   checkStreamer,
   updateStreamer,
 } from '@/server/functions';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
+import { DashboardCard } from '@/components/dashboard/dashboard-card';
 import { StreamerCard } from '@/components/streamers/streamer-card';
 import {
   Activity,
@@ -152,14 +153,13 @@ function Dashboard() {
               >
                 {/* Summary Card */}
                 <motion.div variants={item} className="h-full">
-                  <Card className="bg-white/60 dark:bg-card/40 backdrop-blur-xl border-black/5 dark:border-white/5 shadow-sm dark:shadow-2xl dark:shadow-black/5 hover:shadow-md dark:hover:shadow-black/10 transition-all duration-300 h-full overflow-hidden relative group">
-                    <div className="absolute inset-0 bg-gradient-to-br from-primary/5 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-500" />
-                    <CardHeader className="pb-2 relative z-10">
+                  <DashboardCard className="h-full">
+                    <CardHeader className="pb-2">
                       <CardTitle className="text-sm font-medium text-muted-foreground uppercase tracking-wider">
                         <Trans>Overall Health</Trans>
                       </CardTitle>
                     </CardHeader>
-                    <CardContent className="relative z-10">
+                    <CardContent>
                       <div className="flex items-center gap-4">
                         <div className="relative">
                           <div
@@ -195,7 +195,7 @@ function Dashboard() {
                         uptime
                       </p>
                     </CardContent>
-                  </Card>
+                  </DashboardCard>
                 </motion.div>
 
                 {/* Key Components */}
@@ -243,7 +243,6 @@ function Dashboard() {
               loading={isStatsLoading}
               color="text-yellow-500"
               bg="bg-yellow-500/10"
-              borderColor="group-hover:border-yellow-500/30"
             />
             <StatCard
               title={<Trans>Processing</Trans>}
@@ -252,7 +251,6 @@ function Dashboard() {
               loading={isStatsLoading}
               color="text-blue-500"
               bg="bg-blue-500/10"
-              borderColor="group-hover:border-blue-500/30"
             />
             <StatCard
               title={<Trans>Completed</Trans>}
@@ -261,7 +259,6 @@ function Dashboard() {
               loading={isStatsLoading}
               color="text-green-500"
               bg="bg-green-500/10"
-              borderColor="group-hover:border-green-500/30"
             />
             <StatCard
               title={<Trans>Failed</Trans>}
@@ -270,7 +267,6 @@ function Dashboard() {
               loading={isStatsLoading}
               color="text-red-500"
               bg="bg-red-500/10"
-              borderColor="group-hover:border-red-500/30"
             />
           </div>
         </section>
@@ -371,7 +367,7 @@ function ComponentStatusCard({
         variants={{ hidden: { opacity: 0, y: 20 }, show: { opacity: 1, y: 0 } }}
         className="h-full"
       >
-        <Card className="bg-card/30 backdrop-blur-md border-white/5 shadow-lg h-full opacity-60">
+        <DashboardCard className="h-full opacity-60">
           <CardHeader className="pb-2">
             <CardTitle className="text-sm font-medium text-muted-foreground uppercase tracking-wider">
               {name}
@@ -382,7 +378,7 @@ function ComponentStatusCard({
               <Trans>Not available</Trans>
             </div>
           </CardContent>
-        </Card>
+        </DashboardCard>
       </motion.div>
     );
 
@@ -393,21 +389,10 @@ function ComponentStatusCard({
       variants={{ hidden: { opacity: 0, y: 20 }, show: { opacity: 1, y: 0 } }}
       className="h-full"
     >
-      <Card
-        className={cn(
-          'bg-white/60 dark:bg-card/40 backdrop-blur-xl border-black/5 dark:border-white/5 shadow-sm dark:shadow-2xl dark:shadow-black/5 hover:shadow-md dark:hover:shadow-black/10 transition-all duration-300 h-full group overflow-hidden relative',
-          !isHealthy && 'border-red-500/30 bg-red-500/5',
-        )}
+      <DashboardCard
+        className={cn('h-full', !isHealthy && 'border-red-500/30 bg-red-500/5')}
       >
-        <div
-          className={cn(
-            'absolute inset-0 bg-gradient-to-br opacity-0 group-hover:opacity-100 transition-opacity duration-500',
-            isHealthy
-              ? 'from-primary/5 via-transparent'
-              : 'from-red-500/10 via-transparent',
-          )}
-        />
-        <CardHeader className="pb-2 flex flex-row items-center justify-between space-y-0 relative z-10">
+        <CardHeader className="pb-2 flex flex-row items-center justify-between space-y-0">
           <CardTitle className="text-sm font-medium text-muted-foreground uppercase tracking-wider">
             {name}
           </CardTitle>
@@ -422,7 +407,7 @@ function ComponentStatusCard({
             <Icon className="h-4 w-4" />
           </div>
         </CardHeader>
-        <CardContent className="relative z-10">
+        <CardContent>
           <div className="flex items-center gap-3">
             <div className="relative flex h-3 w-3">
               {!isHealthy && (
@@ -458,7 +443,7 @@ function ComponentStatusCard({
             </p>
           )}
         </CardContent>
-      </Card>
+      </DashboardCard>
     </motion.div>
   );
 }
@@ -470,7 +455,6 @@ function StatCard({
   loading,
   color,
   bg,
-  borderColor,
 }: {
   title: React.ReactNode;
   icon: any;
@@ -478,26 +462,14 @@ function StatCard({
   loading: boolean;
   color?: string;
   bg?: string;
-  borderColor?: string;
 }) {
   return (
     <motion.div
       variants={{ hidden: { opacity: 0, y: 20 }, show: { opacity: 1, y: 0 } }}
     >
-      <Card
-        className={cn(
-          'overflow-hidden bg-white/60 dark:bg-card/40 backdrop-blur-xl border-black/5 dark:border-white/5 shadow-sm dark:shadow-2xl dark:shadow-black/5 hover:shadow-md dark:hover:shadow-black/10 transition-all duration-300 group relative',
-          borderColor,
-        )}
-      >
-        <div
-          className={cn(
-            'absolute inset-0 bg-gradient-to-br opacity-0 group-hover:opacity-100 transition-opacity duration-500',
-            bg ? bg.replace('/10', '/5') : 'from-primary/5',
-          )}
-        />
+      <DashboardCard>
 
-        <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 relative z-10">
+        <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
           <CardTitle className="text-sm font-medium text-muted-foreground uppercase tracking-wider">
             {title}
           </CardTitle>
@@ -519,7 +491,7 @@ function StatCard({
             </div>
           )}
         </CardContent>
-      </Card>
+      </DashboardCard>
     </motion.div>
   );
 }

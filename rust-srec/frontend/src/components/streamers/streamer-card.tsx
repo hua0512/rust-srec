@@ -1,6 +1,6 @@
 import { StreamerSchema } from '../../api/schemas';
 import { z } from 'zod';
-import { Card, CardHeader } from '../ui/card';
+import { CardHeader } from '../ui/card';
 import { cn } from '../../lib/utils';
 import { useDownloadStore } from '../../store/downloads';
 import { useShallow } from 'zustand/react/shallow';
@@ -9,6 +9,8 @@ import { StatusBadge } from './card/stream-status-badge';
 import { useStreamerStatus } from './card/use-streamer-status';
 import { StreamActionsMenu } from './card/stream-actions-menu';
 import { StreamAvatarInfo } from './card/stream-avatar-info';
+
+import { DashboardCard } from '../dashboard/dashboard-card';
 
 interface StreamerCardProps {
   streamer: z.infer<typeof StreamerSchema>;
@@ -32,15 +34,14 @@ export function StreamerCard({
   const status = useStreamerStatus(streamer);
 
   return (
-    <Card
+    <DashboardCard
       className={cn(
-        'group overflow-hidden transition-all duration-300 hover:shadow-md dark:hover:shadow-2xl dark:hover:shadow-black/5 hover:-translate-y-1 h-full flex flex-col bg-white/60 dark:bg-card/40 backdrop-blur-xl border-black/5 dark:border-white/5 shadow-sm relative',
+        'flex flex-col h-full',
         !streamer.enabled
           ? 'opacity-60 grayscale-[0.8] hover:grayscale-0 hover:opacity-100'
           : '',
       )}
     >
-      <div className="absolute inset-x-0 top-0 h-1 bg-gradient-to-r from-transparent via-primary/20 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300" />
       <CardHeader className="px-5 py-4">
         <div className="flex justify-between items-start">
           <div className="space-y-3 w-full">
@@ -66,6 +67,6 @@ export function StreamerCard({
           </div>
         </div>
       </CardHeader>
-    </Card>
+    </DashboardCard>
   );
 }

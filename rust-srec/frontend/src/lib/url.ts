@@ -41,3 +41,24 @@ export function getMediaUrl(
 
   return fullUrl;
 }
+
+/**
+ * Build the WebSocket URL with JWT token as query parameter.
+ */
+export function buildWebSocketUrl(accessToken: string): string {
+  const apiBaseUrl = import.meta.env.VITE_API_BASE_URL || '/api';
+
+  let wsUrl: string;
+
+  if (apiBaseUrl.startsWith('http://') || apiBaseUrl.startsWith('https://')) {
+    const url = new URL(apiBaseUrl);
+    const wsProtocol = url.protocol === 'https:' ? 'wss:' : 'ws:';
+    wsUrl = `${wsProtocol}//${url.host}${url.pathname}`;
+  } else {
+    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+    wsUrl = `${protocol}//${window.location.host}${apiBaseUrl}`;
+  }
+
+  const basePath = wsUrl.replace(/\/$/, '');
+  return `${basePath}/downloads/ws?token=${accessToken}`;
+}

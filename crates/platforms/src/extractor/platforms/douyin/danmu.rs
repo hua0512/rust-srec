@@ -497,16 +497,13 @@ mod tests {
             .expect("Failed to generate WebSocket URL");
         println!("Connecting to: {}", ws_url);
 
-        // Build cookie string with required ttwid
-        let cookie = format!("ttwid={}", DEFAULT_TTWID);
-
         // Build request with required headers
-        let request = Request::builder()
+        let request = tokio_tungstenite::tungstenite::http::Request::builder()
             .uri(&ws_url)
             .header("Host", "webcast100-ws-web-lq.douyin.com")
             .header("User-Agent", DEFAULT_UA)
             .header("Origin", "https://live.douyin.com")
-            .header("Cookie", &cookie)
+            .header("Cookie", format!("ttwid={}", DEFAULT_TTWID))
             .header("Sec-WebSocket-Version", "13")
             .header(
                 "Sec-WebSocket-Key",
