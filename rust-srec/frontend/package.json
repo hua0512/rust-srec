@@ -15,7 +15,7 @@
   "dependencies": {
     "@hookform/resolvers": "^5.2.2",
     "@lingui/core": "^5.7.0",
-    "@lingui/react": "^5.6.1",
+    "@lingui/react": "^5.7.0",
     "@radix-ui/react-accordion": "^1.2.12",
     "@radix-ui/react-alert-dialog": "^1.1.15",
     "@radix-ui/react-avatar": "^1.1.11",
@@ -68,9 +68,9 @@
     "zustand": "^5.0.9"
   },
   "devDependencies": {
-    "@lingui/cli": "^5.6.1",
-    "@lingui/macro": "^5.6.1",
-    "@lingui/vite-plugin": "^5.6.1",
+    "@lingui/cli": "^5.7.0",
+    "@lingui/macro": "^5.7.0",
+    "@lingui/vite-plugin": "^5.7.0",
     "@tanstack/devtools-vite": "^0.3.11",
     "@testing-library/dom": "^10.4.0",
     "@testing-library/react": "^16.3.1",
