@@ -1,0 +1,127 @@
+name: strev Release
+
+on:
+  push:
+    tags:
+      - "strev-v[0-9]+.[0-9]+.[0-9]+"
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version to release (e.g., 1.0.0)'
+        required: true
+        type: string
+
+env:
+  CARGO_TERM_COLOR: always
+  PROTOC_VERSION: "33.2"
+
+jobs:
+  check-and-test:
+    name: Check and Test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+      - name: Install protoc
+        run: |
+          curl -LO https://github.com/protocolbuffers/protobuf/releases/download/v${{ env.PROTOC_VERSION }}/protoc-${{ env.PROTOC_VERSION }}-linux-x86_64.zip
+          unzip protoc-${{ env.PROTOC_VERSION }}-linux-x86_64.zip -d $HOME/.local
+          echo "$HOME/.local/bin" >> $GITHUB_PATH
+      - uses: Swatinem/rust-cache@v2
+      - name: Check
+        run: cargo check -p strev
+      - name: Clippy
+        run: cargo clippy -p strev -- -D warnings
+      - name: Test
+        run: cargo test -p strev
+
+  build:
+    name: Build
+    needs: check-and-test
+    strategy:
+      matrix:
+        include:
+          - os: ubuntu-latest
+            target: x86_64-unknown-linux-musl
+            protoc_arch: linux-x86_64
+            artifact_name: strev
+            asset_name: strev-linux-amd64
+          - os: ubuntu-22.04-arm
+            target: aarch64-unknown-linux-musl
+            protoc_arch: linux-aarch_64
+            artifact_name: strev
+            asset_name: strev-linux-arm64
+          - os: windows-latest
+            target: x86_64-pc-windows-msvc
+            protoc_arch: win64
+            artifact_name: strev.exe
+            asset_name: strev-windows-amd64.exe
+          - os: macos-15-intel
+            target: x86_64-apple-darwin
+            protoc_arch: osx-x86_64
+            artifact_name: strev
+            asset_name: strev-macos-amd64
+          - os: macos-latest
+            target: aarch64-apple-darwin
+            protoc_arch: osx-aarch_64
+            artifact_name: strev
+            asset_name: strev-macos-arm64
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v6
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+      - name: Install protoc (Unix)
+        if: runner.os != 'Windows'
+        run: |
+          curl -LO https://github.com/protocolbuffers/protobuf/releases/download/v${{ env.PROTOC_VERSION }}/protoc-${{ env.PROTOC_VERSION }}-${{ matrix.protoc_arch }}.zip
+          unzip protoc-${{ env.PROTOC_VERSION }}-${{ matrix.protoc_arch }}.zip -d $HOME/.local
+          echo "$HOME/.local/bin" >> $GITHUB_PATH
+      - name: Install protoc (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          Invoke-WebRequest -Uri "https://github.com/protocolbuffers/protobuf/releases/download/v${{ env.PROTOC_VERSION }}/protoc-${{ env.PROTOC_VERSION }}-${{ matrix.protoc_arch }}.zip" -OutFile protoc.zip
+          Expand-Archive -Path protoc.zip -DestinationPath "$env:USERPROFILE\.local"
+          echo "$env:USERPROFILE\.local\bin" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: ${{ matrix.target }}
+      - name: Install musl-tools on Linux
+        if: contains(matrix.os, 'ubuntu')
+        run: sudo apt-get update && sudo apt-get install -y musl-tools
+      - name: Build
+        run: cargo build -p strev --release --target ${{ matrix.target }}
+      - name: Upload binary
+        uses: actions/upload-artifact@v6
+        with:
+          name: ${{ matrix.asset_name }}
+          path: target/${{ matrix.target }}/release/${{ matrix.artifact_name }}
+          if-no-files-found: error
+
+  release:
+    name: Release
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v7
+        with:
+          path: artifacts
+      - name: Prepare release files
+        run: |
+          mkdir -p release-files
+          cp artifacts/strev-linux-amd64/strev release-files/strev-linux-amd64
+          cp artifacts/strev-linux-arm64/strev release-files/strev-linux-arm64
+          cp artifacts/strev-windows-amd64.exe/strev.exe release-files/strev-windows-amd64.exe
+          cp artifacts/strev-macos-amd64/strev release-files/strev-macos-amd64
+          cp artifacts/strev-macos-arm64/strev release-files/strev-macos-arm64
+      - name: Create release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: release-files/*
+          generate_release_notes: true

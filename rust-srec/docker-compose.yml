@@ -1,8 +1,6 @@
 services:
   rust-srec:
-    build:
-      context: ..
-      dockerfile: rust-srec/Dockerfile
+    image: ghcr.io/hua0512/rust-srec:${VERSION:-latest}
     container_name: rust-srec
     restart: unless-stopped
     ports:
@@ -47,9 +45,7 @@ services:
         max-file: "5"
 
   frontend:
-    build:
-      context: ./frontend
-      dockerfile: Dockerfile
+    image: ghcr.io/hua0512/rust-srec-frontend:${VERSION:-latest}
     container_name: rust-srec-frontend
     restart: unless-stopped
     ports:
