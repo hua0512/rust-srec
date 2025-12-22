@@ -276,6 +276,7 @@ impl DanmuService {
         // Create runner
         let runner = super::runner::CollectionRunner::new(super::runner::RunnerParams {
             session_id: session_id.to_string(),
+            streamer_id: streamer_id.to_string(),
             room_id: room_id.clone(),
             provider: Arc::clone(&provider),
             conn_config: connection_config,

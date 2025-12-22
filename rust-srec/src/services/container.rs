@@ -745,6 +745,7 @@ impl ServiceContainer {
     /// Set up danmu event subscriptions for segment coordination.
     fn setup_danmu_event_subscriptions(&self) {
         let mut receiver = self.danmu_service.subscribe();
+        let pipeline_manager = self.pipeline_manager.clone();
         let cancellation_token = self.cancellation_token.clone();
 
         tokio::spawn(async move {
@@ -757,7 +758,7 @@ impl ServiceContainer {
                     result = receiver.recv() => {
                         match result {
                             Ok(event) => {
-                                match event {
+                                match &event {
                                     DanmuEvent::CollectionStarted { session_id, streamer_id } => {
                                         info!(
                                             "Danmu collection started for session {} (streamer: {})",
@@ -770,7 +771,7 @@ impl ServiceContainer {
                                             session_id, statistics.total_count
                                         );
                                     }
-                                    DanmuEvent::SegmentStarted { session_id, segment_id, output_path, start_time} => {
+                                    DanmuEvent::SegmentStarted { session_id, segment_id, output_path, start_time, .. } => {
                                         debug!(
                                             "Danmu segment started: session={}, segment={}, path={:?}, start_time={}",
                                             session_id, segment_id, output_path, start_time
@@ -781,6 +782,8 @@ impl ServiceContainer {
                                             "Danmu segment completed: session={}, segment={}, messages={}",
                                             session_id, segment_id, message_count
                                         );
+                                        // Forward to pipeline manager for processing
+                                        pipeline_manager.handle_danmu_event(event.clone()).await;
                                     }
                                     DanmuEvent::Reconnecting { session_id, attempt } => {
                                         warn!(

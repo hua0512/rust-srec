@@ -46,6 +46,7 @@ pub(crate) enum CommandResult {
 pub(crate) struct CollectionRunner {
     // Identity
     session_id: String,
+    streamer_id: String,
     room_id: String,
 
     // Provider and connection
@@ -68,6 +69,7 @@ pub(crate) struct CollectionRunner {
 /// Parameters for creating a new collection runner.
 pub(crate) struct RunnerParams {
     pub session_id: String,
+    pub streamer_id: String,
     pub room_id: String,
     pub provider: Arc<dyn DanmuProvider>,
     pub conn_config: ConnectionConfig,
@@ -81,6 +83,7 @@ impl CollectionRunner {
     pub async fn new(params: RunnerParams) -> Result<Self> {
         let RunnerParams {
             session_id,
+            streamer_id,
             room_id,
             provider,
             conn_config,
@@ -93,6 +96,7 @@ impl CollectionRunner {
 
         Ok(Self {
             session_id,
+            streamer_id,
             room_id,
             provider,
             connection,
@@ -206,6 +210,7 @@ impl CollectionRunner {
                 .await?;
         let _ = self.event_tx.send(DanmuEvent::SegmentStarted {
             session_id: self.session_id.clone(),
+            streamer_id: self.streamer_id.clone(),
             segment_id: segment_id.clone(),
             output_path,
             start_time,
@@ -243,6 +248,7 @@ impl CollectionRunner {
             writer.finalize().await?;
             let _ = self.event_tx.send(DanmuEvent::SegmentCompleted {
                 session_id: self.session_id.clone(),
+                streamer_id: self.streamer_id.clone(),
                 segment_id,
                 output_path: path,
                 message_count: count,

@@ -877,6 +877,68 @@ where
         }
     }
 
+    /// Handle danmu service events.
+    ///
+    /// Processes `DanmuEvent::SegmentCompleted` events by:
+    /// 1. Persisting the danmu segment to the database as a media output
+    /// 2. Creating pipeline jobs if a pipeline is configured for the streamer
+    pub async fn handle_danmu_event(&self, event: crate::danmu::DanmuEvent) {
+        use crate::danmu::DanmuEvent;
+
+        match event {
+            DanmuEvent::SegmentCompleted {
+                streamer_id,
+                session_id,
+                output_path,
+                message_count,
+                ..
+            } => {
+                let segment_path = output_path.to_string_lossy().to_string();
+
+                debug!(
+                    "Danmu segment completed for {} (session: {}): {} ({} messages)",
+                    streamer_id, session_id, segment_path, message_count
+                );
+
+                // Persist danmu segment to database as a media output
+                self.persist_danmu_segment(&session_id, &segment_path, message_count)
+                    .await;
+
+                // Get pipeline config for this streamer (if available)
+                let pipeline_config = if let Some(config_service) = &self.config_service {
+                    config_service
+                        .get_config_for_streamer(&streamer_id)
+                        .await
+                        .map(|c| c.pipeline)
+                        .ok()
+                        .flatten()
+                } else {
+                    None
+                };
+
+                // Create pipeline jobs if pipeline is configured
+                if let Some(dag) = pipeline_config {
+                    if let Err(e) = self
+                        .create_dag_pipeline(&session_id, &streamer_id, vec![segment_path], dag)
+                        .await
+                    {
+                        tracing::error!(
+                            "Failed to create pipeline for danmu segment (session {}): {}",
+                            session_id,
+                            e
+                        );
+                    }
+                } else {
+                    debug!(
+                        "No pipeline steps configured for {} (session: {}), skipping danmu pipeline creation",
+                        streamer_id, session_id
+                    );
+                }
+            }
+            _ => {}
+        }
+    }
+
     /// Check if session already has a thumbnail by querying media outputs.
     async fn session_has_thumbnail(&self, session_id: &str) -> bool {
         if let Some(repo) = &self.session_repo
@@ -1302,6 +1364,40 @@ where
                 );
             } else {
                 debug!("Persisted segment for session {}", session_id);
+            }
+        }
+    }
+
+    /// Persist a danmu segment to the database.
+    async fn persist_danmu_segment(&self, session_id: &str, path: &str, message_count: u64) {
+        if let Some(repo) = &self.session_repo {
+            // Get actual file size from disk
+            let size_bytes = match tokio::fs::metadata(path).await {
+                Ok(metadata) => metadata.len() as i64,
+                Err(e) => {
+                    tracing::warn!(
+                        "Failed to get file size for danmu segment {}: {}, using 0",
+                        path,
+                        e
+                    );
+                    0
+                }
+            };
+
+            let output =
+                MediaOutputDbModel::new(session_id, path, MediaFileType::DanmuXml, size_bytes);
+
+            if let Err(e) = repo.create_media_output(&output).await {
+                tracing::error!(
+                    "Failed to persist danmu segment for session {}: {}",
+                    session_id,
+                    e
+                );
+            } else {
+                debug!(
+                    "Persisted danmu segment for session {} ({} messages, {} bytes)",
+                    session_id, message_count, size_bytes
+                );
             }
         }
     }
