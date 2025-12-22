@@ -885,57 +885,55 @@ where
     pub async fn handle_danmu_event(&self, event: crate::danmu::DanmuEvent) {
         use crate::danmu::DanmuEvent;
 
-        match event {
-            DanmuEvent::SegmentCompleted {
-                streamer_id,
-                session_id,
-                output_path,
-                message_count,
-                ..
-            } => {
-                let segment_path = output_path.to_string_lossy().to_string();
+        if let DanmuEvent::SegmentCompleted {
+            streamer_id,
+            session_id,
+            output_path,
+            message_count,
+            ..
+        } = event
+        {
+            let segment_path = output_path.to_string_lossy().to_string();
 
-                debug!(
-                    "Danmu segment completed for {} (session: {}): {} ({} messages)",
-                    streamer_id, session_id, segment_path, message_count
-                );
+            debug!(
+                "Danmu segment completed for {} (session: {}): {} ({} messages)",
+                streamer_id, session_id, segment_path, message_count
+            );
 
-                // Persist danmu segment to database as a media output
-                self.persist_danmu_segment(&session_id, &segment_path, message_count)
-                    .await;
+            // Persist danmu segment to database as a media output
+            self.persist_danmu_segment(&session_id, &segment_path, message_count)
+                .await;
 
-                // Get pipeline config for this streamer (if available)
-                let pipeline_config = if let Some(config_service) = &self.config_service {
-                    config_service
-                        .get_config_for_streamer(&streamer_id)
-                        .await
-                        .map(|c| c.pipeline)
-                        .ok()
-                        .flatten()
-                } else {
-                    None
-                };
+            // Get pipeline config for this streamer (if available)
+            let pipeline_config = if let Some(config_service) = &self.config_service {
+                config_service
+                    .get_config_for_streamer(&streamer_id)
+                    .await
+                    .map(|c| c.pipeline)
+                    .ok()
+                    .flatten()
+            } else {
+                None
+            };
 
-                // Create pipeline jobs if pipeline is configured
-                if let Some(dag) = pipeline_config {
-                    if let Err(e) = self
-                        .create_dag_pipeline(&session_id, &streamer_id, vec![segment_path], dag)
-                        .await
-                    {
-                        tracing::error!(
-                            "Failed to create pipeline for danmu segment (session {}): {}",
-                            session_id,
-                            e
-                        );
-                    }
-                } else {
-                    debug!(
-                        "No pipeline steps configured for {} (session: {}), skipping danmu pipeline creation",
-                        streamer_id, session_id
+            // Create pipeline jobs if pipeline is configured
+            if let Some(dag) = pipeline_config {
+                if let Err(e) = self
+                    .create_dag_pipeline(&session_id, &streamer_id, vec![segment_path], dag)
+                    .await
+                {
+                    tracing::error!(
+                        "Failed to create pipeline for danmu segment (session {}): {}",
+                        session_id,
+                        e
                     );
                 }
+            } else {
+                debug!(
+                    "No pipeline steps configured for {} (session: {}), skipping danmu pipeline creation",
+                    streamer_id, session_id
+                );
             }
-            _ => {}
         }
     }
 
