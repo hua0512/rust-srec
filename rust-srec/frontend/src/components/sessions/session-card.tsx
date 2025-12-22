@@ -1,10 +1,11 @@
 import { Link, useRouter } from '@tanstack/react-router';
-import { deleteSession } from '../../server/functions/sessions';
+import { useQueryClient } from '@tanstack/react-query';
+import { deleteSession } from '@/server/functions/sessions';
 import { toast } from 'sonner';
 import { MoreHorizontal, Film, Clock, HardDrive, Calendar } from 'lucide-react';
-import { Badge } from '../ui/badge';
-import { Button } from '../ui/button';
-import { Card, CardContent, CardFooter, CardHeader } from '../ui/card';
+import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
+import { Card, CardContent, CardFooter, CardHeader } from '@/components/ui/card';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -12,9 +13,9 @@ import {
   DropdownMenuLabel,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
-} from '../ui/dropdown-menu';
-import { Avatar, AvatarFallback, AvatarImage } from '../ui/avatar';
-import { SessionSchema } from '../../api/schemas';
+} from '@/components/ui/dropdown-menu';
+import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
+import { SessionSchema } from '@/api/schemas';
 import { z } from 'zod';
 import { useLingui } from '@lingui/react';
 import { Trans } from '@lingui/react/macro';
@@ -32,6 +33,7 @@ interface SessionCardProps {
 
 export function SessionCard({ session, token }: SessionCardProps) {
   const router = useRouter();
+  const queryClient = useQueryClient();
   const { i18n } = useLingui();
   const isLive = !session.end_time;
 
@@ -49,6 +51,7 @@ export function SessionCard({ session, token }: SessionCardProps) {
     try {
       await deleteSession({ data: session.id });
       toast.success(t`Session deleted successfully`);
+      queryClient.invalidateQueries({ queryKey: ['sessions'] });
       router.invalidate();
     } catch (error) {
       console.error('Failed to delete session:', error);
