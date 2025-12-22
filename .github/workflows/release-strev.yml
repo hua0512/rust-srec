@@ -131,16 +131,8 @@ jobs:
       - uses: actions/download-artifact@v7
         with:
           path: artifacts
-      - name: Prepare release files
-        run: |
-          mkdir -p release-files
-          cp artifacts/strev-linux-amd64/strev release-files/strev-linux-amd64
-          cp artifacts/strev-linux-arm64/strev release-files/strev-linux-arm64
-          cp artifacts/strev-windows-amd64.exe/strev.exe release-files/strev-windows-amd64.exe
-          cp artifacts/strev-macos-amd64/strev release-files/strev-macos-amd64
-          cp artifacts/strev-macos-arm64/strev release-files/strev-macos-arm64
       - name: Create release
         uses: softprops/action-gh-release@v2
         with:
-          files: release-files/*
+          files: artifacts/**/*
           generate_release_notes: true
