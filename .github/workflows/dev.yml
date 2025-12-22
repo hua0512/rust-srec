@@ -259,8 +259,8 @@ jobs:
           file: rust-srec/Dockerfile
           platforms: ${{ matrix.platform }}
           outputs: type=image,name=ghcr.io/${{ github.repository_owner }}/rust-srec,push-by-digest=true,name-canonical=true,push=true
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          cache-from: type=gha,scope=${{ env.PLATFORM_PAIR }}-backend
+          cache-to: type=gha,mode=max,scope=${{ env.PLATFORM_PAIR }}-backend
       
       - name: Export digest backend
         run: |
@@ -276,8 +276,8 @@ jobs:
           file: rust-srec/frontend/Dockerfile
           platforms: ${{ matrix.platform }}
           outputs: type=image,name=ghcr.io/${{ github.repository_owner }}/rust-srec-frontend,push-by-digest=true,name-canonical=true,push=true
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          cache-from: type=gha,scope=${{ env.PLATFORM_PAIR }}-frontend
+          cache-to: type=gha,mode=max,scope=${{ env.PLATFORM_PAIR }}-frontend
 
       - name: Export digest frontend
         run: |
