@@ -15,19 +15,21 @@ COPY . .
 # Build the application
 RUN npm run build
 
-# Runtime stage - serve with nginx
-FROM nginx:alpine
+# Runtime stage
+FROM node:22-alpine
 
-# Copy built assets to nginx
-COPY --from=builder /app/.output/public /usr/share/nginx/html
+WORKDIR /app
 
-# Copy nginx configuration template
-COPY nginx.conf.template /etc/nginx/templates/default.conf.template
+# Copy built assets
+COPY --from=builder /app/.output ./.output
 
-# Default backend URL (can be overridden via environment variable)
-ENV BACKEND_URL=http://rust-srec:8080
+# Default env vars
+ENV PORT=80
+ENV HOST=0.0.0.0
+ENV NODE_ENV=production
 
+# Expose port
 EXPOSE 80
 
-# nginx:alpine automatically runs envsubst on templates in /etc/nginx/templates/
-CMD ["nginx", "-g", "daemon off;"]
+# Start the server
+CMD ["node", ".output/server/index.mjs"]
