@@ -1,12 +1,12 @@
-name: 'Setup Protoc'
-description: 'Install protoc compiler for cross-platform builds'
+name: "Setup Protoc"
+description: "Install protoc compiler for cross-platform builds"
 inputs:
   version:
-    description: 'Protoc version to install'
+    description: "Protoc version to install"
     required: false
-    default: '33.2'
+    default: "33.2"
 runs:
-  using: 'composite'
+  using: "composite"
   steps:
     - name: Install protoc (Unix)
       if: runner.os != 'Windows'
@@ -19,7 +19,7 @@ runs:
           "macOS-ARM64") ARCH="osx-aarch_64" ;;
           *) echo "Unsupported platform: ${{ runner.os }}-${{ runner.arch }}" && exit 1 ;;
         esac
-        curl -LO "https://github.com/protocolbuffers/protobuf/releases/download/v${{ inputs.version }}/protoc-${{ inputs.version }}-${ARCH}.zip"
+        curl -LO --retry 5 --retry-delay 5 --retry-all-errors --connect-timeout 30 --max-time 120 "https://github.com/protocolbuffers/protobuf/releases/download/v${{ inputs.version }}/protoc-${{ inputs.version }}-${ARCH}.zip"
         unzip protoc-${{ inputs.version }}-${ARCH}.zip -d $HOME/.local
         echo "$HOME/.local/bin" >> $GITHUB_PATH
 
