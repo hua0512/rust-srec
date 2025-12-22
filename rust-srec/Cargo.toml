@@ -87,7 +87,7 @@ tar = "0.4"
 prost-build = "0.14"
 
 [dev-dependencies]
-mockall = "0.12.1"
+mockall = "0.14.0"
 proptest = "1.4"
 rstest = "0.26.1"
 tempfile = "3"
