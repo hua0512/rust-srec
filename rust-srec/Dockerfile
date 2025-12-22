@@ -30,12 +30,15 @@ RUN apt-get update && apt-get install -y \
     ffmpeg \
     python3 \
     python3-pip \
+    unzip \
     && rm -rf /var/lib/apt/lists/*
 
-# Install Streamlink and ttvlol plugin
-RUN pip3 install --break-system-packages \
-    streamlink \
-    streamlink-ttvlol
+# Install Streamlink, ttvlol plugin, and rclone
+RUN pip3 install --break-system-packages streamlink \
+    && mkdir -p /root/.local/share/streamlink/plugins \
+    && curl -L -o /root/.local/share/streamlink/plugins/twitch.py \
+        'https://github.com/2bc4/streamlink-ttvlol/releases/latest/download/twitch.py' \
+    && curl https://rclone.org/install.sh | bash
 
 WORKDIR /app
 
