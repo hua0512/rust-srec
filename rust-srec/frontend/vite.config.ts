@@ -12,15 +12,7 @@ import oxlintPlugin from 'vite-plugin-oxlint';
 export default defineConfig(() => ({
   plugins: [
     devtools(),
-    nitro({
-      routeRules: {
-        '/api/**': {
-          proxy: process.env.BACKEND_URL
-            ? `${process.env.BACKEND_URL}/api/**`
-            : 'http://rust-srec:8080/api/**',
-        },
-      },
-    }),
+    nitro(),
     // this is the plugin that enables path aliases
     viteTsConfigPaths({
       projects: ['./tsconfig.json'],

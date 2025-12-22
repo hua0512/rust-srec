@@ -9,6 +9,7 @@ services:
       - ${DATA_DIR:-./data}:/app/data
       - ${CONFIG_DIR:-./config}:/app/config
       - ${OUTPUT_DIR:-./output}:/app/output
+      - ${LOG_DIR:-./logs}:/app/logs
     environment:
       - RUST_LOG=${RUST_LOG:-info}
       - DATABASE_URL=${DATABASE_URL:-sqlite:///app/data/rust-srec.db}

@@ -4,8 +4,9 @@
 // 2. import.meta.env.VITE_API_BASE_URL (Build time env var)
 // 3. Fallback to localhost default
 export const getBaseUrl = () => {
-  if (typeof process !== 'undefined' && process.env.API_BASE_URL) {
-    return process.env.API_BASE_URL;
+  if (typeof process !== 'undefined') {
+    if (process.env.API_BASE_URL) return process.env.API_BASE_URL;
+    if (process.env.BACKEND_URL) return `${process.env.BACKEND_URL}/api`;
   }
   return import.meta.env.VITE_API_BASE_URL || 'http://127.0.0.1:12555/api';
 };
