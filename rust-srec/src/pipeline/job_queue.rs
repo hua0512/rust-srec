@@ -4,6 +4,7 @@ use chrono::{DateTime, Utc};
 use dashmap::DashMap;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+use std::collections::VecDeque;
 use std::collections::hash_map::DefaultHasher;
 use std::hash::{Hash, Hasher};
 use std::sync::Arc;
@@ -17,9 +18,9 @@ use crate::database::models::JobExecutionProgressDbModel;
 use crate::database::models::job::LogEntry as DbLogEntry;
 use crate::database::models::{
     JobDbModel, JobExecutionLogDbModel, JobFilters, JobStatus as DbJobStatus, MediaFileType,
-    MediaOutputDbModel, Pagination,
+    MediaOutputDbModel, Pagination, TitleEntry,
 };
-use crate::database::repositories::{JobRepository, SessionRepository};
+use crate::database::repositories::{JobRepository, SessionRepository, StreamerRepository};
 use crate::{Error, Result};
 
 const EXECUTION_INFO_MAX_LOGS: usize = 200;
@@ -60,19 +61,16 @@ fn extend_logs_capped(exec_info: &mut JobExecutionInfo, new_logs: &[JobLogEntry]
     };
 
     exec_info.logs.extend(tail.iter().cloned());
-    if exec_info.logs.len() > EXECUTION_INFO_MAX_LOGS {
-        let drain = exec_info.logs.len() - EXECUTION_INFO_MAX_LOGS;
-        exec_info.logs.drain(0..drain);
+    while exec_info.logs.len() > EXECUTION_INFO_MAX_LOGS {
+        exec_info.logs.pop_front();
     }
 }
 
-fn cap_logs_in_place(logs: &mut Vec<JobLogEntry>, cap: usize) {
-    if logs.len() <= cap {
-        return;
+fn cap_logs_in_place(logs: &mut VecDeque<JobLogEntry>, cap: usize) {
+    // VecDeque::pop_front is O(1) vs Vec::drain which is O(n)
+    while logs.len() > cap {
+        logs.pop_front();
     }
-
-    let start = logs.len() - cap;
-    logs.drain(0..start);
 }
 
 fn update_log_summary(exec_info: &mut JobExecutionInfo, new_logs: &[JobLogEntry]) {
@@ -230,8 +228,8 @@ pub struct JobExecutionInfo {
     pub input_size_bytes: Option<u64>,
     /// Output file size in bytes.
     pub output_size_bytes: Option<u64>,
-    /// Detailed execution logs.
-    pub logs: Vec<JobLogEntry>,
+    /// Detailed execution logs (VecDeque for O(1) pop_front when capping).
+    pub logs: VecDeque<JobLogEntry>,
     /// Total number of log lines captured for this job (across all steps).
     #[serde(default)]
     pub log_lines_total: u64,
@@ -267,7 +265,7 @@ impl JobExecutionInfo {
 
     /// Add a log entry.
     pub fn add_log(&mut self, entry: JobLogEntry) {
-        self.logs.push(entry);
+        self.logs.push_back(entry);
     }
 
     /// Add an info log.
@@ -504,6 +502,8 @@ pub struct JobQueue {
     job_repository: Option<Arc<dyn JobRepository>>,
     /// Session repository for persisting media outputs (e.g., thumbnails).
     session_repo: std::sync::OnceLock<Arc<dyn SessionRepository>>,
+    /// Streamer repository for looking up streamer metadata (e.g., name).
+    streamer_repo: std::sync::OnceLock<Arc<dyn StreamerRepository>>,
     /// In-memory cache of jobs (for quick lookups).
     jobs_cache: DashMap<String, Job>,
     /// Cancellation tokens for processing jobs.
@@ -534,6 +534,7 @@ impl JobQueue {
             notify: Arc::new(Notify::new()),
             job_repository: None,
             session_repo: std::sync::OnceLock::new(),
+            streamer_repo: std::sync::OnceLock::new(),
             jobs_cache: DashMap::new(),
             cancellation_tokens: DashMap::new(),
             progress_cache,
@@ -558,6 +559,7 @@ impl JobQueue {
             notify: Arc::new(Notify::new()),
             job_repository: Some(repository),
             session_repo: std::sync::OnceLock::new(),
+            streamer_repo: std::sync::OnceLock::new(),
             jobs_cache: DashMap::new(),
             cancellation_tokens: DashMap::new(),
             progress_cache,
@@ -575,6 +577,12 @@ impl JobQueue {
     /// This can only be called once.
     pub fn set_session_repo(&self, repo: Arc<dyn SessionRepository>) {
         let _ = self.session_repo.set(repo);
+    }
+
+    /// Set the streamer repository for looking up streamer metadata.
+    /// This can only be called once.
+    pub fn set_streamer_repo(&self, repo: Arc<dyn StreamerRepository>) {
+        let _ = self.streamer_repo.set(repo);
     }
 
     /// Persist thumbnail output to media_outputs table.
@@ -703,6 +711,70 @@ impl JobQueue {
         Ok(Some(snapshot))
     }
 
+    /// Resolve missing metadata (streamer_name, session_title) for a job.
+    ///
+    /// This is useful for jobs recovered from the database where metadata
+    /// is not persisted. It looks up the streamer and session repositories.
+    pub async fn resolve_job_metadata(&self, job: &mut Job) {
+        // Only resolve if we have a streamer_id and name is missing
+        if job.streamer_name.is_none()
+            && !job.streamer_id.is_empty()
+            && let Some(streamer_repo) = self.streamer_repo.get()
+        {
+            match streamer_repo.get_streamer(&job.streamer_id).await {
+                Ok(streamer) => {
+                    tracing::debug!(
+                        job_id = %job.id,
+                        streamer_id = %job.streamer_id,
+                        streamer_name = %streamer.name,
+                        "Resolved streamer_name from repository"
+                    );
+                    job.streamer_name = Some(streamer.name);
+                }
+                Err(e) => {
+                    tracing::debug!(
+                        job_id = %job.id,
+                        streamer_id = %job.streamer_id,
+                        error = %e,
+                        "Failed to lookup streamer_name"
+                    );
+                }
+            }
+        }
+
+        // Only resolve if we have a session_id and title is missing
+        if job.session_title.is_none()
+            && !job.session_id.is_empty()
+            && let Some(session_repo) = self.session_repo.get()
+        {
+            match session_repo.get_session(&job.session_id).await {
+                Ok(session) => {
+                    // Parse titles JSON and get the most recent one
+                    if let Some(titles_json) = session.titles
+                        && let Ok(entries) = serde_json::from_str::<Vec<TitleEntry>>(&titles_json)
+                        && let Some(last_entry) = entries.last()
+                    {
+                        tracing::debug!(
+                            job_id = %job.id,
+                            session_id = %job.session_id,
+                            session_title = %last_entry.title,
+                            "Resolved session_title from repository"
+                        );
+                        job.session_title = Some(last_entry.title.clone());
+                    }
+                }
+                Err(e) => {
+                    tracing::debug!(
+                        job_id = %job.id,
+                        session_id = %job.session_id,
+                        error = %e,
+                        "Failed to lookup session_title"
+                    );
+                }
+            }
+        }
+    }
+
     /// Enqueue a new job.
     pub async fn enqueue(&self, job: Job) -> Result<String> {
         let job_id = job.id.clone();
@@ -758,6 +830,10 @@ impl JobQueue {
                 if job.started_at.is_none() {
                     job.started_at = Some(Utc::now());
                 }
+
+                // Resolve missing metadata (streamer_name, session_title)
+                // These are not stored in the database, so we look them up from repositories
+                self.resolve_job_metadata(&mut job).await;
 
                 // Update cache
                 self.jobs_cache.insert(job.id.clone(), job.clone());
@@ -1115,12 +1191,14 @@ impl JobQueue {
             {
                 let total = parsed.logs.len() as u64;
                 let start = pagination.offset as usize;
-                let end = std::cmp::min(start + pagination.limit as usize, parsed.logs.len());
-                let page = if start < parsed.logs.len() {
-                    parsed.logs[start..end].to_vec()
-                } else {
-                    vec![]
-                };
+                let limit = pagination.limit as usize;
+                let page: Vec<_> = parsed
+                    .logs
+                    .iter()
+                    .skip(start)
+                    .take(limit)
+                    .cloned()
+                    .collect();
                 return Ok((page, total));
             }
 
@@ -1136,12 +1214,8 @@ impl JobQueue {
 
         let total = logs.len() as u64;
         let start = pagination.offset as usize;
-        let end = std::cmp::min(start + pagination.limit as usize, logs.len());
-        let page = if start < logs.len() {
-            logs[start..end].to_vec()
-        } else {
-            vec![]
-        };
+        let limit = pagination.limit as usize;
+        let page: Vec<_> = logs.iter().skip(start).take(limit).cloned().collect();
 
         Ok((page, total))
     }
@@ -1717,7 +1791,10 @@ impl JobQueue {
         // Update database if repository is available
         if let Some(repo) = &self.job_repository {
             if !exec_info.logs.is_empty() {
-                let new_logs = self.persist_logs_to_db(job_id, &exec_info.logs).await?;
+                // make_contiguous() allows VecDeque to be used as a slice
+                let new_logs = self
+                    .persist_logs_to_db(job_id, exec_info.logs.make_contiguous())
+                    .await?;
                 update_log_summary(&mut exec_info, &new_logs);
                 cap_logs_in_place(&mut exec_info.logs, EXECUTION_INFO_MAX_LOGS);
             }
@@ -2268,7 +2345,7 @@ mod tests {
 
         // Verify error log was added
         assert!(!exec_info.logs.is_empty());
-        let last_log = exec_info.logs.last().unwrap();
+        let last_log = exec_info.logs.back().unwrap();
         assert_eq!(last_log.level, LogLevel::Error);
         assert!(last_log.message.contains("FFmpeg error"));
     }

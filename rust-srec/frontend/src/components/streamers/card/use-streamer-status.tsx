@@ -13,11 +13,18 @@ import {
 import { Badge } from '@/components/ui/badge';
 import { StreamerSchema } from '@/api/schemas';
 import { z } from 'zod';
-import { useMemo } from 'react';
+import { useMemo, useState, useEffect } from 'react';
 import { StatusInfoTooltip } from './status-info-tooltip';
 
 export function useStreamerStatus(streamer: z.infer<typeof StreamerSchema>) {
   const { i18n } = useLingui();
+
+  // Client-side time to avoid hydration mismatch
+  const [now, setNow] = useState<Date | null>(null);
+  useEffect(() => {
+    setNow(new Date());
+  }, []);
+
   return useMemo(() => {
     const formatState = (state: string) => {
       if (state === 'NOT_LIVE') return <Trans>Offline</Trans>;
@@ -30,14 +37,15 @@ export function useStreamerStatus(streamer: z.infer<typeof StreamerSchema>) {
       );
     };
 
-    // Basic checks
-    const now = new Date();
+    // Basic checks - during SSR use null for now
     const disabledUntil = streamer.disabled_until
       ? new Date(streamer.disabled_until)
       : null;
-    const isTemporarilyPaused =
-      (disabledUntil && disabledUntil > now) ||
-      streamer.state === 'TEMPORAL_DISABLED';
+    // During SSR (now === null), rely only on state field
+    const isTemporarilyPaused = now
+      ? (disabledUntil && disabledUntil > now) ||
+        streamer.state === 'TEMPORAL_DISABLED'
+      : streamer.state === 'TEMPORAL_DISABLED';
 
     const stopStates = [
       'FATAL_ERROR',
@@ -253,5 +261,5 @@ export function useStreamerStatus(streamer: z.infer<typeof StreamerSchema>) {
       pulsing: false,
       tooltip: null,
     };
-  }, [streamer, i18n]);
+  }, [streamer, i18n, now]);
 }

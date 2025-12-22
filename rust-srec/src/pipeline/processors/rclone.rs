@@ -426,14 +426,32 @@ impl RcloneProcessor {
             String::new()
         };
 
+        // Debug: Log all placeholder-related values before expansion
+        tracing::debug!(
+            template = %remote_destination_raw,
+            streamer_id = %input.streamer_id,
+            session_id = %input.session_id,
+            streamer_name = ?input.streamer_name,
+            session_title = ?input.session_title,
+            "Rclone: Expanding placeholders"
+        );
+
         // Expand placeholders in destination path
-        expand_placeholders(
+        let expanded = expand_placeholders(
             &remote_destination_raw,
             &input.streamer_id,
             &input.session_id,
             input.streamer_name.as_deref(),
             input.session_title.as_deref(),
-        )
+        );
+
+        tracing::debug!(
+            template = %remote_destination_raw,
+            expanded = %expanded,
+            "Rclone: Placeholder expansion result"
+        );
+
+        expanded
     }
 }
 

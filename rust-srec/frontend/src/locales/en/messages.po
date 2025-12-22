@@ -18,8 +18,8 @@ msgstr ""
 msgid " - Session: {0}"
 msgstr " - Session: {0}"
 
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:741
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:761
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:742
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:762
 msgid "--flag value"
 msgstr "--flag value"
 
@@ -35,7 +35,7 @@ msgstr "-c copy"
 msgid "-reconnect 1"
 msgstr "-reconnect 1"
 
-#: src/components/pipeline/presets/processors/rclone-config-form.tsx:117
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:115
 msgid "(Delete source)"
 msgstr "(Delete source)"
 
@@ -43,11 +43,11 @@ msgstr "(Delete source)"
 msgid "(empty)"
 msgstr "(empty)"
 
-#: src/components/pipeline/presets/processors/rclone-config-form.tsx:128
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:126
 msgid "(Mirror source)"
 msgstr "(Mirror source)"
 
-#: src/components/pipeline/presets/processors/rclone-config-form.tsx:106
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:104
 msgid "(Preserve source)"
 msgstr "(Preserve source)"
 
@@ -128,7 +128,7 @@ msgstr "{stepName}"
 msgid "{val} channel support is coming soon!"
 msgstr "{val} channel support is coming soon!"
 
-#: src/components/pipeline/presets/processors/rclone-config-form.tsx:194
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:189
 msgid "/path/to/rclone.conf"
 msgstr "/path/to/rclone.conf"
 
@@ -156,7 +156,7 @@ msgstr "404"
 msgid "A unique and descriptive name for this configuration."
 msgstr "A unique and descriptive name for this configuration."
 
-#: src/components/pipeline/workflows/step-config-dialog.tsx:460
+#: src/components/pipeline/workflows/step-config-dialog.tsx:476
 msgid "A unique ID used by other steps to reference this one."
 msgstr "A unique ID used by other steps to reference this one."
 
@@ -185,7 +185,7 @@ msgstr "Accent Color"
 msgid "Actions"
 msgstr "Actions"
 
-#: src/components/notifications/forms/webhook-form.tsx:115
+#: src/components/notifications/forms/webhook-form.tsx:113
 #: src/components/streamers/edit/streamer-meta-form.tsx:178
 #: src/routes/_authed/_dashboard/config/language.tsx:108
 msgid "Active"
@@ -203,7 +203,7 @@ msgstr "Active Download"
 msgid "Active Recordings"
 msgstr "Active Recordings"
 
-#: src/components/notifications/forms/webhook-form.tsx:447
+#: src/components/notifications/forms/webhook-form.tsx:409
 msgid "Add"
 msgstr "Add"
 
@@ -276,11 +276,11 @@ msgstr "Add Override"
 msgid "Add Pipeline Step"
 msgstr "Add Pipeline Step"
 
-#: src/components/config/shared/retry-policy-form.tsx:171
+#: src/components/config/shared/retry-policy-form.tsx:136
 msgid "Add randomness to retry delays to prevent thundering herd."
 msgstr "Add randomness to retry delays to prevent thundering herd."
 
-#: src/components/pipeline/presets/processors/rclone-config-form.tsx:290
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:279
 msgid "Add rclone argument"
 msgstr "Add rclone argument"
 
@@ -306,15 +306,15 @@ msgid "Adjust the roundness of UI elements."
 msgstr "Adjust the roundness of UI elements."
 
 #: src/components/pipeline/presets/processors/audio-extract-config-form.tsx:63
-#: src/components/pipeline/presets/processors/rclone-config-form.tsx:58
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:107
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:59
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:108
 #: src/components/streamers/edit/streamer-config-form.tsx:74
-#: src/routes/_authed/_dashboard/streamers/$id.edit.tsx:293
+#: src/routes/_authed/_dashboard/streamers/$id.edit.tsx:291
 msgid "Advanced"
 msgstr "Advanced"
 
 #: src/components/streamers/edit/streamer-config-form.tsx:121
-#: src/routes/_authed/_dashboard/streamers/$id.edit.tsx:359
+#: src/routes/_authed/_dashboard/streamers/$id.edit.tsx:357
 msgid "Advanced Configuration"
 msgstr "Advanced Configuration"
 
@@ -353,7 +353,7 @@ msgstr "Alerts when disk space is running low."
 msgid "All"
 msgstr "All"
 
-#: src/components/logging/log-viewer.tsx:403
+#: src/components/logging/log-viewer.tsx:405
 msgid "All Levels"
 msgstr "All Levels"
 
@@ -377,7 +377,7 @@ msgstr "Appearance"
 msgid "Appearance & style"
 msgstr "Appearance & style"
 
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:765
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:766
 msgid "Appended before output filename"
 msgstr "Appended before output filename"
 
@@ -393,6 +393,7 @@ msgstr "Apply a blur effect to the background of cards and sidebars."
 msgid "Apply template settings."
 msgstr "Apply template settings."
 
+#: src/components/pipeline/presets/editor/preset-meta-form.tsx:73
 #: src/components/pipeline/presets/preset-card.tsx:90
 #: src/routes/_authed/_dashboard/pipeline/presets/index.tsx:65
 msgid "Archive"
@@ -448,17 +449,18 @@ msgstr "At least one input path is required"
 msgid "Attempt to repair timestamps in FLV streams"
 msgstr "Attempt to repair timestamps in FLV streams"
 
+#: src/components/pipeline/presets/editor/preset-meta-form.tsx:72
 #: src/components/pipeline/presets/preset-card.tsx:89
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:98
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:99
 #: src/routes/_authed/_dashboard/pipeline/presets/index.tsx:64
 msgid "Audio"
 msgstr "Audio"
 
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:364
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:365
 msgid "Audio Bitrate"
 msgstr "Audio Bitrate"
 
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:214
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:215
 msgid "Audio Codec"
 msgstr "Audio Codec"
 
@@ -467,11 +469,11 @@ msgstr "Audio Codec"
 msgid "Audio Extract"
 msgstr "Audio Extract"
 
-#: src/components/pipeline/presets/processors/registry.ts:53
+#: src/components/pipeline/presets/processors/registry.ts:61
 msgid "Audio Extraction"
 msgstr "Audio Extraction"
 
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:573
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:574
 msgid "Audio Processing"
 msgstr "Audio Processing"
 
@@ -479,24 +481,24 @@ msgstr "Audio Processing"
 msgid "Audio Properties"
 msgstr "Audio Properties"
 
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:205
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:206
 msgid "Audio Settings"
 msgstr "Audio Settings"
 
-#: src/components/notifications/forms/webhook-form.tsx:223
+#: src/components/notifications/forms/webhook-form.tsx:206
 msgid "Auth Type"
 msgstr "Auth Type"
 
 #: src/components/config/shared/network-settings-card.tsx:40
-#: src/components/notifications/forms/webhook-form.tsx:212
+#: src/components/notifications/forms/webhook-form.tsx:195
 msgid "Authentication"
 msgstr "Authentication"
 
-#: src/components/logging/log-viewer.tsx:417
+#: src/components/logging/log-viewer.tsx:419
 msgid "Auto-scroll disabled"
 msgstr "Auto-scroll disabled"
 
-#: src/components/logging/log-viewer.tsx:417
+#: src/components/logging/log-viewer.tsx:419
 msgid "Auto-scroll enabled"
 msgstr "Auto-scroll enabled"
 
@@ -508,7 +510,7 @@ msgstr "available"
 msgid "Available Variables"
 msgstr "Available Variables"
 
-#: src/components/notifications/forms/discord-form.tsx:77
+#: src/components/notifications/forms/discord-form.tsx:74
 msgid "Avatar URL (Optional)"
 msgstr "Avatar URL (Optional)"
 
@@ -539,7 +541,7 @@ msgstr "Back to Pipeline Jobs"
 msgid "Back to Sessions"
 msgstr "Back to Sessions"
 
-#: src/components/config/shared/retry-policy-form.tsx:108
+#: src/components/config/shared/retry-policy-form.tsx:76
 msgid "Backoff Multiplier"
 msgstr "Backoff Multiplier"
 
@@ -557,11 +559,11 @@ msgstr "Backup & Restore"
 msgid "Base delay between retries"
 msgstr "Base delay between retries"
 
-#: src/components/pipeline/presets/processors/rclone-config-form.tsx:176
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:171
 msgid "Base path for remote storage."
 msgstr "Base path for remote storage."
 
-#: src/components/notifications/forms/webhook-form.tsx:264
+#: src/components/notifications/forms/webhook-form.tsx:247
 msgid "Basic Auth"
 msgstr "Basic Auth"
 
@@ -578,7 +580,7 @@ msgid "Basic post-processing: Remux FLV to MP4 and generate a thumbnail preview.
 msgstr "Basic post-processing: Remux FLV to MP4 and generate a thumbnail preview."
 
 #: src/components/streamers/edit/streamer-config-form.tsx:94
-#: src/routes/_authed/_dashboard/streamers/$id.edit.tsx:332
+#: src/routes/_authed/_dashboard/streamers/$id.edit.tsx:330
 msgid "Basic settings for the streamer."
 msgstr "Basic settings for the streamer."
 
@@ -586,7 +588,7 @@ msgstr "Basic settings for the streamer."
 msgid "Batch URLs"
 msgstr "Batch URLs"
 
-#: src/components/notifications/forms/webhook-form.tsx:261
+#: src/components/notifications/forms/webhook-form.tsx:244
 msgid "Bearer Token"
 msgstr "Bearer Token"
 
@@ -638,7 +640,7 @@ msgstr "C:path1.flv,C:path2.flv"
 #: src/components/pipeline/jobs/pipeline-summary-card.tsx:219
 #: src/components/pipeline/jobs/pipeline-summary-card.tsx:256
 #: src/components/pipeline/presets/preset-card.tsx:204
-#: src/components/pipeline/workflows/step-config-dialog.tsx:554
+#: src/components/pipeline/workflows/step-config-dialog.tsx:570
 #: src/components/pipeline/workflows/workflow-card.tsx:199
 #: src/components/streamers/streamer-form.tsx:161
 #: src/routes/_authed/_dashboard/pipeline/jobs/new.tsx:158
@@ -693,6 +695,7 @@ msgid "Categories"
 msgstr "Categories"
 
 #: src/components/filters/forms/FilterTypeSelector.tsx:34
+#: src/components/pipeline/presets/editor/preset-meta-form.tsx:236
 msgid "Category"
 msgstr "Category"
 
@@ -754,7 +757,7 @@ msgstr "Check triggered"
 msgid "Checking"
 msgstr "Checking"
 
-#: src/components/streamers/card/use-streamer-status.tsx:176
+#: src/components/streamers/card/use-streamer-status.tsx:184
 msgid "Checking stream status..."
 msgstr "Checking stream status..."
 
@@ -762,7 +765,7 @@ msgstr "Checking stream status..."
 msgid "Checking..."
 msgstr "Checking..."
 
-#: src/components/pipeline/presets/processors/rclone-config-form.tsx:135
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:133
 msgid "Choose how files are transferred to the remote."
 msgstr "Choose how files are transferred to the remote."
 
@@ -774,12 +777,13 @@ msgstr "Choose how this streamer handles proxy connections."
 msgid "Choose your display language"
 msgstr "Choose your display language"
 
+#: src/components/pipeline/presets/editor/preset-meta-form.tsx:75
 #: src/components/pipeline/presets/preset-card.tsx:92
 #: src/routes/_authed/_dashboard/pipeline/presets/index.tsx:67
 msgid "Cleanup"
 msgstr "Cleanup"
 
-#: src/components/logging/log-viewer.tsx:378
+#: src/components/logging/log-viewer.tsx:380
 msgid "Clear"
 msgstr "Clear"
 
@@ -841,6 +845,7 @@ msgid "Compress video for storage, upload to cloud, then delete local file to sa
 msgstr "Compress video for storage, upload to cloud, then delete local file to save space."
 
 #: src/components/pipeline/presets/editor/preset-meta-form.tsx:56
+#: src/components/pipeline/presets/editor/preset-meta-form.tsx:70
 #: src/components/pipeline/presets/preset-card.tsx:87
 #: src/routes/_authed/_dashboard/pipeline/presets/index.tsx:62
 msgid "Compression"
@@ -850,7 +855,7 @@ msgstr "Compression"
 msgid "Compression (Zip)"
 msgstr "Compression (Zip)"
 
-#: src/components/pipeline/presets/processors/registry.ts:58
+#: src/components/pipeline/presets/processors/registry.ts:66
 msgid "Compression / Archive"
 msgstr "Compression / Archive"
 
@@ -866,7 +871,7 @@ msgstr "Concurrency & Performance"
 msgid "Config"
 msgstr "Config"
 
-#: src/components/pipeline/presets/processors/rclone-config-form.tsx:190
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:185
 msgid "Config Path (Optional)"
 msgstr "Config Path (Optional)"
 
@@ -943,20 +948,20 @@ msgstr "Confirm new password"
 msgid "Confirm Password"
 msgstr "Confirm Password"
 
-#: src/components/connection-status-indicator.tsx:23
-#: src/components/logging/log-viewer.tsx:339
+#: src/components/connection-status-indicator.tsx:24
+#: src/components/logging/log-viewer.tsx:341
 msgid "Connected"
 msgstr "Connected"
 
-#: src/components/connection-status-indicator.tsx:28
+#: src/components/connection-status-indicator.tsx:29
 msgid "Connecting..."
 msgstr "Connecting..."
 
-#: src/components/connection-status-indicator.tsx:38
+#: src/components/connection-status-indicator.tsx:39
 msgid "Connection Error"
 msgstr "Connection Error"
 
-#: src/components/streamers/card/stream-avatar-info.tsx:109
+#: src/components/streamers/card/stream-avatar-info.tsx:118
 msgid "Connection Instability"
 msgstr "Connection Instability"
 
@@ -964,11 +969,11 @@ msgstr "Connection Instability"
 msgid "Connection/activity timeout"
 msgstr "Connection/activity timeout"
 
-#: src/components/streamers/card/stream-avatar-info.tsx:116
+#: src/components/streamers/card/stream-avatar-info.tsx:125
 msgid "Consecutive Failures"
 msgstr "Consecutive Failures"
 
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:245
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:246
 msgid "Container"
 msgstr "Container"
 
@@ -989,18 +994,18 @@ msgid "Copied!"
 msgstr "Copied!"
 
 #: src/components/pipeline/presets/editor/preset-config-form.tsx:62
-#: src/components/pipeline/presets/processors/rclone-config-form.tsx:103
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:101
 msgid "Copy"
 msgstr "Copy"
 
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:146
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:227
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:147
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:228
 msgid "Copy (Passthrough)"
 msgstr "Copy (Passthrough)"
 
 #: src/components/pipeline/presets/editor/preset-meta-form.tsx:57
-#: src/components/pipeline/presets/processors/registry.ts:63
-#: src/components/pipeline/presets/processors/registry.ts:68
+#: src/components/pipeline/presets/processors/registry.ts:71
+#: src/components/pipeline/presets/processors/registry.ts:76
 msgid "Copy / Move"
 msgstr "Copy / Move"
 
@@ -1145,7 +1150,7 @@ msgstr "Creating..."
 msgid "Creation Mode"
 msgstr "Creation Mode"
 
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:293
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:294
 msgid "CRF (Constant Rate Factor)"
 msgstr "CRF (Constant Rate Factor)"
 
@@ -1177,6 +1182,7 @@ msgstr "Current password"
 msgid "Current Password"
 msgstr "Current Password"
 
+#: src/components/pipeline/presets/editor/preset-meta-form.tsx:77
 #: src/components/pipeline/presets/preset-card.tsx:94
 #: src/routes/_authed/_dashboard/pipeline/presets/index.tsx:69
 #: src/routes/_authed/_dashboard/sessions/index.tsx:312
@@ -1199,15 +1205,15 @@ msgstr "Custom Configuration"
 msgid "Custom FFmpeg"
 msgstr "Custom FFmpeg"
 
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:726
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:727
 msgid "Custom Flags"
 msgstr "Custom Flags"
 
-#: src/components/notifications/forms/webhook-form.tsx:267
+#: src/components/notifications/forms/webhook-form.tsx:250
 msgid "Custom Header"
 msgstr "Custom Header"
 
-#: src/components/notifications/forms/webhook-form.tsx:433
+#: src/components/notifications/forms/webhook-form.tsx:393
 msgid "Custom Headers"
 msgstr "Custom Headers"
 
@@ -1235,7 +1241,7 @@ msgstr "Customize specific engine settings for this template."
 msgid "Customize the look and feel of your dashboard."
 msgstr "Customize the look and feel of your dashboard."
 
-#: src/components/pipeline/workflows/step-config-dialog.tsx:426
+#: src/components/pipeline/workflows/step-config-dialog.tsx:442
 msgid "DAG Configuration"
 msgstr "DAG Configuration"
 
@@ -1299,7 +1305,7 @@ msgstr "Default workflow: Remux to MP4 (deletes original), generate native-resol
 msgid "Default: 8388608 (8 MiB)"
 msgstr "Default: 8388608 (8 MiB)"
 
-#: src/components/pipeline/workflows/step-config-dialog.tsx:429
+#: src/components/pipeline/workflows/step-config-dialog.tsx:445
 msgid "Define how this step identifies itself and connects to others."
 msgstr "Define how this step identifies itself and connects to others."
 
@@ -1346,7 +1352,7 @@ msgstr "Delete Channel?"
 msgid "Delete Engine?"
 msgstr "Delete Engine?"
 
-#: src/components/pipeline/presets/processors/registry.ts:73
+#: src/components/pipeline/presets/processors/registry.ts:81
 msgid "Delete File"
 msgstr "Delete File"
 
@@ -1354,7 +1360,7 @@ msgstr "Delete File"
 msgid "Delete Job"
 msgstr "Delete Job"
 
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:704
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:705
 msgid "Delete original file after successful remux"
 msgstr "Delete original file after successful remux"
 
@@ -1394,11 +1400,11 @@ msgstr "Deleted"
 msgid "Deletes all existing configurations before importing. This action cannot be undone."
 msgstr "Deletes all existing configurations before importing. This action cannot be undone."
 
-#: src/components/notifications/forms/webhook-form.tsx:142
+#: src/components/notifications/forms/webhook-form.tsx:129
 msgid "Delivery Policy"
 msgstr "Delivery Policy"
 
-#: src/components/pipeline/workflows/step-config-dialog.tsx:469
+#: src/components/pipeline/workflows/step-config-dialog.tsx:485
 msgid "Depends On (Ancestors)"
 msgstr "Depends On (Ancestors)"
 
@@ -1406,12 +1412,12 @@ msgstr "Depends On (Ancestors)"
 msgid "Describe what this workflow does..."
 msgstr "Describe what this workflow does..."
 
-#: src/components/pipeline/presets/editor/preset-meta-form.tsx:219
+#: src/components/pipeline/presets/editor/preset-meta-form.tsx:274
 #: src/components/pipeline/workflows/workflow-editor.tsx:295
 msgid "Description"
 msgstr "Description"
 
-#: src/components/pipeline/presets/editor/preset-meta-form.tsx:228
+#: src/components/pipeline/presets/editor/preset-meta-form.tsx:283
 msgid "Description is managed by the system"
 msgstr "Description is managed by the system"
 
@@ -1427,11 +1433,11 @@ msgstr "Design your automation pipeline step by step"
 msgid "Destination Path (Optional)"
 msgstr "Destination Path (Optional)"
 
-#: src/components/pipeline/presets/processors/rclone-config-form.tsx:165
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:160
 msgid "Destination Root"
 msgstr "Destination Root"
 
-#: src/components/pipeline/workflows/step-config-dialog.tsx:567
+#: src/components/pipeline/workflows/step-config-dialog.tsx:583
 msgid "Detach & Edit"
 msgstr "Detach & Edit"
 
@@ -1443,7 +1449,7 @@ msgstr "Detailed health checks for internal services and resources."
 msgid "Detailed processor settings"
 msgstr "Detailed processor settings"
 
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:391
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:392
 msgid "Dimensions & Filters"
 msgstr "Dimensions & Filters"
 
@@ -1459,8 +1465,8 @@ msgstr "Disable"
 msgid "Disabled"
 msgstr "Disabled"
 
-#: src/components/connection-status-indicator.tsx:33
-#: src/components/logging/log-viewer.tsx:344
+#: src/components/connection-status-indicator.tsx:34
+#: src/components/logging/log-viewer.tsx:346
 msgid "Disconnected"
 msgstr "Disconnected"
 
@@ -1480,7 +1486,7 @@ msgstr "Disk Space"
 msgid "Done"
 msgstr "Done"
 
-#: src/components/pipeline/presets/processors/rclone-config-form.tsx:294
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:283
 msgid "Double click to edit items."
 msgstr "Double click to edit items."
 
@@ -1525,7 +1531,7 @@ msgstr "Downloading"
 msgid "Dual Format"
 msgstr "Dual Format"
 
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:513
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:514
 #: src/components/streamers/edit/active-download-card.tsx:68
 #: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.tsx:561
 msgid "Duration"
@@ -1547,7 +1553,7 @@ msgstr "e.g. 128k, 320k"
 msgid "e.g. echo {input} > {output}"
 msgstr "e.g. echo {input} > {output}"
 
-#: src/components/pipeline/presets/processors/rclone-config-form.tsx:169
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:164
 msgid "e.g. gdrive:/videos"
 msgstr "e.g. gdrive:/videos"
 
@@ -1564,11 +1570,11 @@ msgstr "e.g. mp4"
 msgid "e.g. My Favorite Streamer"
 msgstr "e.g. My Favorite Streamer"
 
-#: src/components/pipeline/presets/editor/preset-meta-form.tsx:204
+#: src/components/pipeline/presets/editor/preset-meta-form.tsx:217
 msgid "e.g. Remux to H.264"
 msgstr "e.g. Remux to H.264"
 
-#: src/components/pipeline/workflows/step-config-dialog.tsx:455
+#: src/components/pipeline/workflows/step-config-dialog.tsx:471
 msgid "e.g., process-video"
 msgstr "e.g., process-video"
 
@@ -1641,7 +1647,7 @@ msgstr "Enable"
 msgid "Enable Monitoring"
 msgstr "Enable Monitoring"
 
-#: src/components/notifications/forms/webhook-form.tsx:118
+#: src/components/notifications/forms/webhook-form.tsx:114
 msgid "Enable or disable this webhook"
 msgstr "Enable or disable this webhook"
 
@@ -1657,12 +1663,12 @@ msgstr "Enable recording of danmu/chat messages along with the video."
 msgid "Enable translucent background blur effects."
 msgstr "Enable translucent background blur effects."
 
-#: src/components/notifications/forms/discord-form.tsx:124
-#: src/components/notifications/forms/email-form.tsx:222
+#: src/components/notifications/forms/discord-form.tsx:119
+#: src/components/notifications/forms/email-form.tsx:206
 msgid "Enabled"
 msgstr "Enabled"
 
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:166
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:167
 msgid "Encoding Preset"
 msgstr "Encoding Preset"
 
@@ -1671,7 +1677,7 @@ msgid "End of History"
 msgstr "End of History"
 
 #: src/components/filters/forms/TimeBasedFilterForm.tsx:104
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:543
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:544
 msgid "End Time"
 msgstr "End Time"
 
@@ -1679,7 +1685,7 @@ msgstr "End Time"
 msgid "Ended"
 msgstr "Ended"
 
-#: src/components/notifications/forms/webhook-form.tsx:53
+#: src/components/notifications/forms/webhook-form.tsx:58
 msgid "Endpoint Configuration"
 msgstr "Endpoint Configuration"
 
@@ -1745,7 +1751,7 @@ msgstr "Enter keywords to match against the stream title."
 msgid "Enter your credentials to access your account"
 msgstr "Enter your credentials to access your account"
 
-#: src/components/logging/log-viewer.tsx:482
+#: src/components/logging/log-viewer.tsx:484
 msgid "entries"
 msgstr "entries"
 
@@ -1762,7 +1768,7 @@ msgstr "entries"
 msgid "Error"
 msgstr "Error"
 
-#: src/components/streamers/card/use-streamer-status.tsx:136
+#: src/components/streamers/card/use-streamer-status.tsx:144
 #: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.tsx:635
 msgid "Error Details"
 msgstr "Error Details"
@@ -1804,7 +1810,7 @@ msgstr "Error loading workflow"
 #~ msgid "Error Output"
 #~ msgstr "Error Output"
 
-#: src/components/pipeline/workflows/step-config-dialog.tsx:387
+#: src/components/pipeline/workflows/step-config-dialog.tsx:395
 msgid "Error: Could not load preset details."
 msgstr "Error: Could not load preset details."
 
@@ -1822,7 +1828,7 @@ msgid "Exclude"
 msgstr "Exclude"
 
 #: src/components/pipeline/presets/editor/preset-meta-form.tsx:65
-#: src/components/pipeline/presets/processors/registry.ts:83
+#: src/components/pipeline/presets/processors/registry.ts:91
 msgid "Execute Command"
 msgstr "Execute Command"
 
@@ -1852,7 +1858,7 @@ msgid "Exports include all global settings, platforms, templates, streamers, eng
 msgstr "Exports include all global settings, platforms, templates, streamers, engines, and notification channels. Sensitive data like passwords might be redacted or encrypted depending on platform settings."
 
 #: src/components/config/engines/forms/streamlink-form.tsx:85
-#: src/components/pipeline/presets/processors/rclone-config-form.tsx:276
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:264
 msgid "Extra Arguments"
 msgstr "Extra Arguments"
 
@@ -1951,7 +1957,7 @@ msgstr "Failed to create workflow: {0}"
 msgid "Failed to delete channel"
 msgstr "Failed to delete channel"
 
-#: src/routes/_authed/_dashboard/streamers/$id.edit.tsx:236
+#: src/routes/_authed/_dashboard/streamers/$id.edit.tsx:234
 msgid "Failed to delete filter"
 msgstr "Failed to delete filter"
 
@@ -2078,7 +2084,7 @@ msgid "Failed to update settings"
 msgstr "Failed to update settings"
 
 #: src/routes/_authed/_dashboard/dashboard.tsx:86
-#: src/routes/_authed/_dashboard/streamers/$id.edit.tsx:206
+#: src/routes/_authed/_dashboard/streamers/$id.edit.tsx:204
 #: src/routes/_authed/_dashboard/streamers/index.tsx:194
 msgid "Failed to update streamer"
 msgstr "Failed to update streamer"
@@ -2117,11 +2123,11 @@ msgstr "Fetch"
 msgid "Fetch Delay"
 msgstr "Fetch Delay"
 
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:582
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:583
 msgid "FFmpeg Audio Filter (-af)"
 msgstr "FFmpeg Audio Filter (-af)"
 
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:447
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:448
 msgid "FFmpeg Video Filter"
 msgstr "FFmpeg Video Filter"
 
@@ -2137,6 +2143,7 @@ msgstr "File Extension Filter"
 msgid "File Operations"
 msgstr "File Operations"
 
+#: src/components/pipeline/presets/editor/preset-meta-form.tsx:76
 #: src/components/pipeline/presets/preset-card.tsx:93
 #: src/routes/_authed/_dashboard/pipeline/presets/index.tsx:68
 msgid "File Ops"
@@ -2171,11 +2178,11 @@ msgstr "Filter by title keywords"
 msgid "Filter created successfully"
 msgstr "Filter created successfully"
 
-#: src/routes/_authed/_dashboard/streamers/$id.edit.tsx:232
+#: src/routes/_authed/_dashboard/streamers/$id.edit.tsx:230
 msgid "Filter deleted successfully"
 msgstr "Filter deleted successfully"
 
-#: src/components/notifications/forms/webhook-form.tsx:172
+#: src/components/notifications/forms/webhook-form.tsx:159
 msgid "Filter events below this priority"
 msgstr "Filter events below this priority"
 
@@ -2219,7 +2226,7 @@ msgstr "FLV parser"
 msgid "FLV stream fixing pipeline"
 msgstr "FLV stream fixing pipeline"
 
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:682
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:683
 msgid "Force overwrite if output exists"
 msgstr "Force overwrite if output exists"
 
@@ -2230,15 +2237,15 @@ msgstr "Force specific output format."
 #: src/components/config/global/file-config-card.tsx:89
 #: src/components/config/templates/template-card.tsx:143
 #: src/components/pipeline/presets/processors/audio-extract-config-form.tsx:88
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:80
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:81
 msgid "Format"
 msgstr "Format"
 
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:422
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:423
 msgid "Framerate (FPS)"
 msgstr "Framerate (FPS)"
 
-#: src/components/notifications/forms/email-form.tsx:128
+#: src/components/notifications/forms/email-form.tsx:123
 msgid "From Address"
 msgstr "From Address"
 
@@ -2258,15 +2265,15 @@ msgstr "Full Processing"
 #: src/components/config/templates/tabs/platform-override-card.tsx:62
 #: src/components/config/templates/template-editor.tsx:187
 #: src/components/pipeline/presets/processors/audio-extract-config-form.tsx:54
-#: src/components/pipeline/presets/processors/rclone-config-form.tsx:52
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:71
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:53
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:72
 #: src/components/streamers/edit/streamer-config-form.tsx:67
-#: src/routes/_authed/_dashboard/streamers/$id.edit.tsx:286
+#: src/routes/_authed/_dashboard/streamers/$id.edit.tsx:284
 msgid "General"
 msgstr "General"
 
 #: src/components/streamers/edit/streamer-config-form.tsx:91
-#: src/routes/_authed/_dashboard/streamers/$id.edit.tsx:329
+#: src/routes/_authed/_dashboard/streamers/$id.edit.tsx:327
 msgid "General Configuration"
 msgstr "General Configuration"
 
@@ -2349,7 +2356,7 @@ msgstr "H.264 medium compression (CRF 23) optimized for long-term storage."
 msgid "Handle discontinuities in HLS streams"
 msgstr "Handle discontinuities in HLS streams"
 
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:619
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:620
 msgid "Hardware Acceleration"
 msgstr "Hardware Acceleration"
 
@@ -2357,7 +2364,7 @@ msgstr "Hardware Acceleration"
 msgid "HD Thumbnail"
 msgstr "HD Thumbnail"
 
-#: src/components/notifications/forms/webhook-form.tsx:379
+#: src/components/notifications/forms/webhook-form.tsx:349
 msgid "Header Key"
 msgstr "Header Key"
 
@@ -2365,7 +2372,7 @@ msgstr "Header Key"
 #~ msgid "Header Name"
 #~ msgstr "Header Name"
 
-#: src/components/notifications/forms/webhook-form.tsx:401
+#: src/components/notifications/forms/webhook-form.tsx:368
 msgid "Header Value"
 msgstr "Header Value"
 
@@ -2447,7 +2454,7 @@ msgstr "i"
 msgid "IANA Timezone (e.g. Asia/Shanghai, UTC)."
 msgstr "IANA Timezone (e.g. Asia/Shanghai, UTC)."
 
-#: src/components/pipeline/presets/editor/preset-meta-form.tsx:173
+#: src/components/pipeline/presets/editor/preset-meta-form.tsx:186
 msgid "ID"
 msgstr "ID"
 
@@ -2522,7 +2529,7 @@ msgstr "Inherited / Default"
 msgid "INITIAL"
 msgstr "INITIAL"
 
-#: src/components/config/shared/retry-policy-form.tsx:132
+#: src/components/config/shared/retry-policy-form.tsx:100
 msgid "Initial Delay (ms)"
 msgstr "Initial Delay (ms)"
 
@@ -2530,7 +2537,7 @@ msgstr "Initial Delay (ms)"
 msgid "Input Arguments"
 msgstr "Input Arguments"
 
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:735
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:736
 msgid "Input Options (-i flags)"
 msgstr "Input Options (-i flags)"
 
@@ -2542,9 +2549,9 @@ msgstr "Input Path"
 msgid "Input Paths (comma separated)"
 msgstr "Input Paths (comma separated)"
 
-#: src/components/streamers/card/use-streamer-status.tsx:25
-#: src/components/streamers/card/use-streamer-status.tsx:164
-#: src/components/streamers/card/use-streamer-status.tsx:173
+#: src/components/streamers/card/use-streamer-status.tsx:32
+#: src/components/streamers/card/use-streamer-status.tsx:172
+#: src/components/streamers/card/use-streamer-status.tsx:181
 msgid "Inspecting"
 msgstr "Inspecting"
 
@@ -2556,7 +2563,7 @@ msgstr "Interval (seconds)"
 msgid "Interval between checks."
 msgstr "Interval between checks."
 
-#: src/components/config/shared/retry-policy-form.tsx:168
+#: src/components/config/shared/retry-policy-form.tsx:134
 msgid "Jitter"
 msgstr "Jitter"
 
@@ -2634,7 +2641,7 @@ msgstr "Language"
 msgid "Language Settings"
 msgstr "Language Settings"
 
-#: src/components/streamers/card/use-streamer-status.tsx:234
+#: src/components/streamers/card/use-streamer-status.tsx:242
 msgid "Last Activity"
 msgstr "Last Activity"
 
@@ -2642,11 +2649,11 @@ msgstr "Last Activity"
 msgid "Last Check"
 msgstr "Last Check"
 
-#: src/components/streamers/card/use-streamer-status.tsx:96
+#: src/components/streamers/card/use-streamer-status.tsx:104
 msgid "Last Error"
 msgstr "Last Error"
 
-#: src/components/streamers/card/stream-avatar-info.tsx:129
+#: src/components/streamers/card/stream-avatar-info.tsx:138
 msgid "Last Error Log"
 msgstr "Last Error Log"
 
@@ -2680,8 +2687,8 @@ msgstr "Limits & Validation"
 msgid "List"
 msgstr "List"
 
-#: src/components/streamers/card/use-streamer-status.tsx:24
-#: src/components/streamers/card/use-streamer-status.tsx:151
+#: src/components/streamers/card/use-streamer-status.tsx:31
+#: src/components/streamers/card/use-streamer-status.tsx:159
 #: src/components/streamers/edit/recent-sessions-list.tsx:65
 #: src/components/streamers/edit/streamer-header.tsx:62
 #: src/routes/_authed/_dashboard/sessions/index.tsx:171
@@ -2746,7 +2753,7 @@ msgstr "Logging Configuration"
 msgid "Logging configuration updated"
 msgstr "Logging configuration updated"
 
-#: src/components/logging/log-viewer.tsx:491
+#: src/components/logging/log-viewer.tsx:493
 msgid "Logging paused"
 msgstr "Logging paused"
 
@@ -2759,7 +2766,7 @@ msgstr "Logs"
 msgid "Low"
 msgstr "Low"
 
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:320
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:321
 msgid "Lower value = Higher Quality"
 msgstr "Lower value = Higher Quality"
 
@@ -2799,7 +2806,7 @@ msgstr "Max Bitrate (bps)"
 msgid "Max CPU Jobs"
 msgstr "Max CPU Jobs"
 
-#: src/components/config/shared/retry-policy-form.tsx:149
+#: src/components/config/shared/retry-policy-form.tsx:117
 msgid "Max Delay (ms)"
 msgstr "Max Delay (ms)"
 
@@ -2833,9 +2840,9 @@ msgstr "Max Part Size"
 msgid "Max Quality Thumbnail"
 msgstr "Max Quality Thumbnail"
 
-#: src/components/config/shared/retry-policy-form.tsx:88
+#: src/components/config/shared/retry-policy-form.tsx:56
 #: src/components/pipeline/presets/processors/delete-config-form.tsx:53
-#: src/components/pipeline/presets/processors/rclone-config-form.tsx:248
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:240
 msgid "Max Retries"
 msgstr "Max Retries"
 
@@ -2851,7 +2858,7 @@ msgstr "Maximum compression to minimize storage usage, then delete original."
 msgid "Maximum HEVC/H.265 compression (CRF 28) for minimal file size."
 msgstr "Maximum HEVC/H.265 compression (CRF 28) for minimal file size."
 
-#: src/components/config/shared/retry-policy-form.tsx:102
+#: src/components/config/shared/retry-policy-form.tsx:70
 msgid "Maximum number of retry attempts."
 msgstr "Maximum number of retry attempts."
 
@@ -2881,13 +2888,14 @@ msgid "Message"
 msgstr "Message"
 
 #: src/components/pipeline/presets/editor/preset-meta-form.tsx:59
+#: src/components/pipeline/presets/editor/preset-meta-form.tsx:78
 #: src/components/pipeline/presets/preset-card.tsx:95
 #: src/components/pipeline/presets/preset-templates.ts:72
 #: src/routes/_authed/_dashboard/pipeline/presets/index.tsx:70
 msgid "Metadata"
 msgstr "Metadata"
 
-#: src/components/pipeline/presets/processors/registry.ts:78
+#: src/components/pipeline/presets/processors/registry.ts:86
 msgid "Metadata Editor"
 msgstr "Metadata Editor"
 
@@ -2903,8 +2911,8 @@ msgstr "Min Bitrate (bps)"
 msgid "Min Interval (s)"
 msgstr "Min Interval (s)"
 
-#: src/components/notifications/forms/discord-form.tsx:98
-#: src/components/notifications/forms/email-form.tsx:177
+#: src/components/notifications/forms/discord-form.tsx:95
+#: src/components/notifications/forms/email-form.tsx:170
 msgid "Min Priority"
 msgstr "Min Priority"
 
@@ -2917,7 +2925,7 @@ msgstr "Min Segment Size"
 msgid "Min size to keep."
 msgstr "Min size to keep."
 
-#: src/components/notifications/forms/webhook-form.tsx:153
+#: src/components/notifications/forms/webhook-form.tsx:140
 msgid "Minimum Priority"
 msgstr "Minimum Priority"
 
@@ -2937,8 +2945,8 @@ msgstr "Monitor and manage processing jobs"
 msgid "Monitor this streamer"
 msgstr "Monitor this streamer"
 
-#: src/components/streamers/card/use-streamer-status.tsx:110
-#: src/components/streamers/card/use-streamer-status.tsx:119
+#: src/components/streamers/card/use-streamer-status.tsx:118
+#: src/components/streamers/card/use-streamer-status.tsx:127
 msgid "Monitoring Stopped"
 msgstr "Monitoring Stopped"
 
@@ -2946,7 +2954,7 @@ msgstr "Monitoring Stopped"
 msgid "Month"
 msgstr "Month"
 
-#: src/components/pipeline/presets/processors/rclone-config-form.tsx:114
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:112
 msgid "Move"
 msgstr "Move"
 
@@ -2970,7 +2978,7 @@ msgstr "Mozilla/5.0..."
 msgid "Multimedia Archive"
 msgstr "Multimedia Archive"
 
-#: src/components/config/shared/retry-policy-form.tsx:126
+#: src/components/config/shared/retry-policy-form.tsx:94
 msgid "Multiplier for exponential backoff."
 msgstr "Multiplier for exponential backoff."
 
@@ -2979,7 +2987,7 @@ msgid "My Archiving Workflow"
 msgstr "My Archiving Workflow"
 
 #: src/components/notifications/channel-form.tsx:275
-#: src/components/pipeline/presets/editor/preset-meta-form.tsx:199
+#: src/components/pipeline/presets/editor/preset-meta-form.tsx:212
 #: src/components/pipeline/workflows/workflow-editor.tsx:275
 #: src/components/streamers/config/streamer-general-settings.tsx:74
 #: src/components/streamers/edit/streamer-meta-form.tsx:123
@@ -3042,7 +3050,7 @@ msgstr "No changes detected"
 msgid "No configuration available for this processor."
 msgstr "No configuration available for this processor."
 
-#: src/components/pipeline/workflows/step-config-dialog.tsx:405
+#: src/components/pipeline/workflows/step-config-dialog.tsx:421
 msgid "No configuration form available for this processor."
 msgstr "No configuration form available for this processor."
 
@@ -3050,7 +3058,7 @@ msgstr "No configuration form available for this processor."
 msgid "No configuration."
 msgstr "No configuration."
 
-#: src/components/notifications/forms/webhook-form.tsx:457
+#: src/components/notifications/forms/webhook-form.tsx:416
 msgid "No custom headers configured"
 msgstr "No custom headers configured"
 
@@ -3062,7 +3070,7 @@ msgstr "No custom tags added"
 msgid "No description."
 msgstr "No description."
 
-#: src/components/streamers/card/stream-avatar-info.tsx:134
+#: src/components/streamers/card/stream-avatar-info.tsx:143
 msgid "No detailed error message available"
 msgstr "No detailed error message available"
 
@@ -3104,7 +3112,7 @@ msgstr "No keywords set"
 msgid "No limit"
 msgstr "No limit"
 
-#: src/components/logging/log-viewer.tsx:435
+#: src/components/logging/log-viewer.tsx:437
 msgid "No logs to display"
 msgstr "No logs to display"
 
@@ -3128,7 +3136,7 @@ msgstr "No modules configured"
 msgid "No notification channels"
 msgstr "No notification channels"
 
-#: src/components/pipeline/workflows/step-config-dialog.tsx:527
+#: src/components/pipeline/workflows/step-config-dialog.tsx:543
 msgid "No other steps available to depend on."
 msgstr "No other steps available to depend on."
 
@@ -3230,7 +3238,7 @@ msgstr "No workflows found"
 msgid "No workflows yet"
 msgstr "No workflows yet"
 
-#: src/components/notifications/forms/webhook-form.tsx:258
+#: src/components/notifications/forms/webhook-form.tsx:241
 msgid "None"
 msgstr "None"
 
@@ -3258,14 +3266,14 @@ msgstr "Notification Service"
 msgid "Notifications"
 msgstr "Notifications"
 
-#: src/components/pipeline/presets/processors/rclone-config-form.tsx:259
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:251
 msgid "Number of attempts before failing the upload."
 msgstr "Number of attempts before failing the upload."
 
 #: src/components/sessions/session-card.tsx:104
-#: src/components/streamers/card/use-streamer-status.tsx:23
-#: src/components/streamers/card/use-streamer-status.tsx:221
-#: src/components/streamers/card/use-streamer-status.tsx:230
+#: src/components/streamers/card/use-streamer-status.tsx:30
+#: src/components/streamers/card/use-streamer-status.tsx:229
+#: src/components/streamers/card/use-streamer-status.tsx:238
 #: src/components/streamers/edit/recent-sessions-list.tsx:63
 #: src/components/streamers/edit/streamer-header.tsx:64
 #: src/routes/_authed/_dashboard/streamers/index.tsx:63
@@ -3327,11 +3335,11 @@ msgid "Open menu"
 msgstr "Open menu"
 
 #: src/components/pipeline/presets/processors/copy-move-config-form.tsx:50
-#: src/components/pipeline/presets/processors/rclone-config-form.tsx:82
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:80
 msgid "Operation"
 msgstr "Operation"
 
-#: src/components/pipeline/presets/processors/rclone-config-form.tsx:71
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:68
 msgid "Operation Mode"
 msgstr "Operation Mode"
 
@@ -3345,7 +3353,7 @@ msgstr "Operation Type"
 msgid "Optional"
 msgstr "Optional"
 
-#: src/components/pipeline/presets/editor/preset-meta-form.tsx:229
+#: src/components/pipeline/presets/editor/preset-meta-form.tsx:284
 msgid "Optional description for this preset"
 msgstr "Optional description for this preset"
 
@@ -3379,11 +3387,11 @@ msgid "Output Folder"
 msgstr "Output Folder"
 
 #: src/components/config/shared/output-settings-card.tsx:118
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:254
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:255
 msgid "Output Format"
 msgstr "Output Format"
 
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:755
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:756
 msgid "Output Options"
 msgstr "Output Options"
 
@@ -3410,7 +3418,7 @@ msgstr "Output Settings"
 msgid "Outputs"
 msgstr "Outputs"
 
-#: src/components/streamers/card/use-streamer-status.tsx:194
+#: src/components/streamers/card/use-streamer-status.tsx:202
 msgid "Outside Schedule"
 msgstr "Outside Schedule"
 
@@ -3439,7 +3447,7 @@ msgid "Override global default."
 msgstr "Override global default."
 
 #: src/components/streamers/edit/streamer-config-form.tsx:124
-#: src/routes/_authed/_dashboard/streamers/$id.edit.tsx:362
+#: src/routes/_authed/_dashboard/streamers/$id.edit.tsx:360
 msgid "Override global defaults for this streamer."
 msgstr "Override global defaults for this streamer."
 
@@ -3465,7 +3473,7 @@ msgid "Overwrite existing files"
 msgstr "Overwrite existing files"
 
 #: src/components/pipeline/presets/processors/audio-extract-config-form.tsx:221
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:679
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:680
 msgid "Overwrite Files"
 msgstr "Overwrite Files"
 
@@ -3491,8 +3499,8 @@ msgid "Parsing..."
 msgstr "Parsing..."
 
 #: src/components/config/shared/proxy-settings-card.tsx:189
-#: src/components/notifications/forms/email-form.tsx:104
-#: src/components/notifications/forms/webhook-form.tsx:344
+#: src/components/notifications/forms/email-form.tsx:101
+#: src/components/notifications/forms/webhook-form.tsx:321
 #: src/routes/_public/login.tsx:176
 msgid "Password"
 msgstr "Password"
@@ -3509,11 +3517,11 @@ msgstr "Password changed successfully. Please login with your new password."
 #~ msgid "Paste your exported CSS variables here."
 #~ msgstr "Paste your exported CSS variables here."
 
-#: src/components/logging/log-viewer.tsx:372
+#: src/components/logging/log-viewer.tsx:374
 msgid "Pause"
 msgstr "Pause"
 
-#: src/components/logging/log-viewer.tsx:485
+#: src/components/logging/log-viewer.tsx:487
 msgid "paused"
 msgstr "paused"
 
@@ -3533,7 +3541,7 @@ msgstr "Pending Jobs"
 msgid "Per page:"
 msgstr "Per page:"
 
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:610
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:611
 #: src/components/sessions/overview-tab.tsx:195
 #: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.tsx:554
 msgid "Performance"
@@ -3696,7 +3704,7 @@ msgstr "Please enter at least one URL"
 msgid "Please enter your new password details"
 msgstr "Please enter your new password details"
 
-#: src/routes/_authed/_dashboard/streamers/$id.edit.tsx:225
+#: src/routes/_authed/_dashboard/streamers/$id.edit.tsx:223
 msgid "Please fix validation errors"
 msgstr "Please fix validation errors"
 
@@ -3712,7 +3720,7 @@ msgstr "Please wait while we resolve the stream URL."
 msgid "Podcast Extraction"
 msgstr "Podcast Extraction"
 
-#: src/components/notifications/forms/email-form.tsx:59
+#: src/components/notifications/forms/email-form.tsx:57
 msgid "Port"
 msgstr "Port"
 
@@ -3756,7 +3764,7 @@ msgstr "Preset created successfully"
 msgid "Preset deleted successfully"
 msgstr "Preset deleted successfully"
 
-#: src/components/pipeline/presets/editor/preset-meta-form.tsx:108
+#: src/components/pipeline/presets/editor/preset-meta-form.tsx:121
 msgid "Preset Details"
 msgstr "Preset Details"
 
@@ -3786,7 +3794,7 @@ msgstr "Presets"
 msgid "Presets Available"
 msgstr "Presets Available"
 
-#: src/components/notifications/forms/email-form.tsx:163
+#: src/components/notifications/forms/email-form.tsx:156
 msgid "Press Enter to add recipient"
 msgstr "Press Enter to add recipient"
 
@@ -3845,11 +3853,11 @@ msgstr "Processing"
 msgid "Processing nodes"
 msgstr "Processing nodes"
 
-#: src/components/pipeline/presets/editor/preset-meta-form.tsx:127
+#: src/components/pipeline/presets/editor/preset-meta-form.tsx:140
 msgid "Processor"
 msgstr "Processor"
 
-#: src/components/pipeline/presets/preset-editor.tsx:16
+#: src/components/pipeline/presets/preset-editor.tsx:17
 msgid "Processor is required"
 msgstr "Processor is required"
 
@@ -3890,7 +3898,7 @@ msgstr "Quality"
 msgid "Quality (qscale)"
 msgstr "Quality (qscale)"
 
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:282
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:283
 msgid "Quality Control"
 msgstr "Quality Control"
 
@@ -3922,11 +3930,11 @@ msgstr "Rclone"
 msgid "Rclone (Upload / Move / Sync)"
 msgstr "Rclone (Upload / Move / Sync)"
 
-#: src/components/pipeline/presets/processors/rclone-config-form.tsx:210
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:205
 msgid "Rclone Executable"
 msgstr "Rclone Executable"
 
-#: src/components/pipeline/presets/processors/registry.ts:43
+#: src/components/pipeline/presets/processors/registry.ts:51
 msgid "Rclone Transfer"
 msgstr "Rclone Transfer"
 
@@ -3938,7 +3946,7 @@ msgstr "Ready"
 msgid "Ready to Watch"
 msgstr "Ready to Watch"
 
-#: src/components/logging/log-viewer.tsx:326
+#: src/components/logging/log-viewer.tsx:328
 msgid "Real-Time Logs"
 msgstr "Real-Time Logs"
 
@@ -3946,7 +3954,7 @@ msgstr "Real-Time Logs"
 msgid "Real-time status of all system components and resources."
 msgstr "Real-time status of all system components and resources."
 
-#: src/components/streamers/card/use-streamer-status.tsx:123
+#: src/components/streamers/card/use-streamer-status.tsx:131
 msgid "Reason"
 msgstr "Reason"
 
@@ -3976,11 +3984,11 @@ msgid "Recording"
 msgstr "Recording"
 
 #: src/components/streamers/edit/streamer-filters-tab.tsx:30
-#: src/routes/_authed/_dashboard/streamers/$id.edit.tsx:300
+#: src/routes/_authed/_dashboard/streamers/$id.edit.tsx:298
 msgid "Recording Filters"
 msgstr "Recording Filters"
 
-#: src/components/streamers/card/use-streamer-status.tsx:204
+#: src/components/streamers/card/use-streamer-status.tsx:212
 msgid "Recording will start when schedule allows"
 msgstr "Recording will start when schedule allows"
 
@@ -4005,11 +4013,12 @@ msgstr "Regex Pattern"
 msgid "Remove"
 msgstr "Remove"
 
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:701
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:702
 msgid "Remove Input on Success"
 msgstr "Remove Input on Success"
 
 #: src/components/pipeline/presets/default-presets-i18n.ts:4
+#: src/components/pipeline/presets/editor/preset-meta-form.tsx:69
 #: src/components/pipeline/presets/preset-card.tsx:86
 #: src/routes/_authed/_dashboard/pipeline/presets/index.tsx:61
 msgid "Remux"
@@ -4017,7 +4026,7 @@ msgstr "Remux"
 
 #: src/components/pipeline/presets/editor/preset-meta-form.tsx:53
 #: src/components/pipeline/presets/preset-templates.ts:5
-#: src/components/pipeline/presets/processors/registry.ts:38
+#: src/components/pipeline/presets/processors/registry.ts:46
 msgid "Remux / Transcode"
 msgstr "Remux / Transcode"
 
@@ -4061,7 +4070,7 @@ msgstr "Replace output files"
 msgid "Replace output files if they already exist"
 msgstr "Replace output files if they already exist"
 
-#: src/components/notifications/forms/webhook-form.tsx:195
+#: src/components/notifications/forms/webhook-form.tsx:182
 msgid "Request timeout duration"
 msgstr "Request timeout duration"
 
@@ -4069,7 +4078,7 @@ msgstr "Request timeout duration"
 msgid "Reset"
 msgstr "Reset"
 
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:401
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:402
 msgid "Resolution (Scale)"
 msgstr "Resolution (Scale)"
 
@@ -4089,11 +4098,11 @@ msgstr "Restore from a backup file"
 msgid "Restore password"
 msgstr "Restore password"
 
-#: src/components/logging/log-viewer.tsx:367
+#: src/components/logging/log-viewer.tsx:369
 msgid "Resume"
 msgstr "Resume"
 
-#: src/components/streamers/card/use-streamer-status.tsx:70
+#: src/components/streamers/card/use-streamer-status.tsx:78
 msgid "Resuming in"
 msgstr "Resuming in"
 
@@ -4114,7 +4123,7 @@ msgid "Retry Job"
 msgstr "Retry Job"
 
 #: src/components/pipeline/presets/processors/delete-config-form.tsx:42
-#: src/components/pipeline/presets/processors/rclone-config-form.tsx:237
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:228
 msgid "Retry Policy"
 msgstr "Retry Policy"
 
@@ -4193,7 +4202,7 @@ msgstr "Sampling Strategy"
 #: src/components/filters/FilterDialog.tsx:281
 #: src/components/notifications/subscription-manager.tsx:446
 #: src/components/pipeline/presets/editor/preset-save-fab.tsx:37
-#: src/components/pipeline/workflows/step-config-dialog.tsx:571
+#: src/components/pipeline/workflows/step-config-dialog.tsx:587
 #: src/components/streamers/edit/streamer-save-fab.tsx:45
 #: src/routes/_authed/_dashboard/config/global.tsx:183
 #: src/routes/_authed/_dashboard/config/logging.tsx:376
@@ -4230,8 +4239,8 @@ msgstr "Scan Directory"
 msgid "Schedule recording times"
 msgstr "Schedule recording times"
 
-#: src/components/streamers/card/use-streamer-status.tsx:26
-#: src/components/streamers/card/use-streamer-status.tsx:185
+#: src/components/streamers/card/use-streamer-status.tsx:33
+#: src/components/streamers/card/use-streamer-status.tsx:193
 msgid "Scheduled"
 msgstr "Scheduled"
 
@@ -4259,7 +4268,7 @@ msgstr "Search events..."
 msgid "Search jobs..."
 msgstr "Search jobs..."
 
-#: src/components/logging/log-viewer.tsx:388
+#: src/components/logging/log-viewer.tsx:390
 msgid "Search logs..."
 msgstr "Search logs..."
 
@@ -4335,6 +4344,10 @@ msgstr "Select an engine"
 msgid "Select behavior"
 msgstr "Select behavior"
 
+#: src/components/pipeline/presets/editor/preset-meta-form.tsx:250
+msgid "Select category"
+msgstr "Select category"
+
 #: src/components/streamers/config/streamer-general-settings.tsx:109
 msgid "Select config"
 msgstr "Select config"
@@ -4343,7 +4356,7 @@ msgstr "Select config"
 msgid "Select File"
 msgstr "Select File"
 
-#: src/components/pipeline/presets/processors/rclone-config-form.tsx:93
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:91
 msgid "Select operation"
 msgstr "Select operation"
 
@@ -4369,12 +4382,12 @@ msgstr "Select the days required for this filter to apply."
 msgid "Select the events that should trigger notifications for <0>{0}</0>."
 msgstr "Select the events that should trigger notifications for <0>{0}</0>."
 
-#: src/components/pipeline/workflows/step-config-dialog.tsx:535
+#: src/components/pipeline/workflows/step-config-dialog.tsx:551
 msgid "Select the steps that must complete successfully before this step runs."
 msgstr "Select the steps that must complete successfully before this step runs."
 
 #: src/components/config/engines/engine-editor.tsx:246
-#: src/components/pipeline/presets/editor/preset-meta-form.tsx:145
+#: src/components/pipeline/presets/editor/preset-meta-form.tsx:158
 msgid "Select type"
 msgstr "Select type"
 
@@ -4561,7 +4574,7 @@ msgid "Start Over"
 msgstr "Start Over"
 
 #: src/components/filters/forms/TimeBasedFilterForm.tsx:81
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:483
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:484
 msgid "Start Time"
 msgstr "Start Time"
 
@@ -4590,7 +4603,7 @@ msgstr "Status"
 msgid "Step Configuration"
 msgstr "Step Configuration"
 
-#: src/components/pipeline/workflows/step-config-dialog.tsx:443
+#: src/components/pipeline/workflows/step-config-dialog.tsx:459
 msgid "Step Identifier (Unique)"
 msgstr "Step Identifier (Unique)"
 
@@ -4618,7 +4631,7 @@ msgstr "Stream Archive"
 msgid "Stream Details"
 msgstr "Stream Details"
 
-#: src/components/streamers/card/stream-avatar-info.tsx:111
+#: src/components/streamers/card/stream-avatar-info.tsx:120
 msgid "Stream monitoring encountered issues"
 msgstr "Stream monitoring encountered issues"
 
@@ -4664,7 +4677,7 @@ msgstr "Streamer ID"
 msgid "Streamer ID is required"
 msgstr "Streamer ID is required"
 
-#: src/components/streamers/card/use-streamer-status.tsx:64
+#: src/components/streamers/card/use-streamer-status.tsx:72
 msgid "Streamer is on cooldown"
 msgstr "Streamer is on cooldown"
 
@@ -4673,7 +4686,7 @@ msgstr "Streamer is on cooldown"
 msgid "Streamer updated"
 msgstr "Streamer updated"
 
-#: src/routes/_authed/_dashboard/streamers/$id.edit.tsx:200
+#: src/routes/_authed/_dashboard/streamers/$id.edit.tsx:198
 msgid "Streamer updated successfully"
 msgstr "Streamer updated successfully"
 
@@ -4720,7 +4733,7 @@ msgstr "Switch language"
 msgid "Switch Theme"
 msgstr "Switch Theme"
 
-#: src/components/pipeline/presets/processors/rclone-config-form.tsx:125
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:123
 msgid "Sync"
 msgstr "Sync"
 
@@ -4743,11 +4756,11 @@ msgstr "System Status"
 msgid "System-wide preferences"
 msgstr "System-wide preferences"
 
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:333
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:334
 msgid "Target Bitrate"
 msgstr "Target Bitrate"
 
-#: src/components/pipeline/presets/processors/rclone-config-form.tsx:154
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:148
 msgid "Target Configuration"
 msgstr "Target Configuration"
 
@@ -4795,8 +4808,8 @@ msgstr "templates"
 msgid "Templates"
 msgstr "Templates"
 
-#: src/components/streamers/card/use-streamer-status.tsx:54
-#: src/components/streamers/card/use-streamer-status.tsx:63
+#: src/components/streamers/card/use-streamer-status.tsx:62
+#: src/components/streamers/card/use-streamer-status.tsx:71
 msgid "Temporarily Paused"
 msgstr "Temporarily Paused"
 
@@ -4845,7 +4858,7 @@ msgstr "Theme Mode"
 msgid "There are no recorded sessions matching your criteria."
 msgstr "There are no recorded sessions matching your criteria."
 
-#: src/components/pipeline/presets/editor/preset-meta-form.tsx:238
+#: src/components/pipeline/presets/editor/preset-meta-form.tsx:293
 msgid "This is a default preset. Description cannot be modified."
 msgstr "This is a default preset. Description cannot be modified."
 
@@ -4861,7 +4874,7 @@ msgstr "This step is a sub-workflow: <0>{workflowName}</0>."
 msgid "This step is linked to the preset <0>{presetName}</0>."
 msgstr "This step is linked to the preset <0>{presetName}</0>."
 
-#: src/components/streamers/card/use-streamer-status.tsx:197
+#: src/components/streamers/card/use-streamer-status.tsx:205
 msgid "This streamer is currently live, but outside your configured recording schedule."
 msgstr "This streamer is currently live, but outside your configured recording schedule."
 
@@ -4895,6 +4908,7 @@ msgstr "This will permanently remove the \"{0}\" configuration. This action cann
 
 #: src/components/pipeline/presets/default-presets-i18n.ts:8
 #: src/components/pipeline/presets/editor/preset-meta-form.tsx:54
+#: src/components/pipeline/presets/editor/preset-meta-form.tsx:71
 #: src/components/pipeline/presets/preset-card.tsx:88
 #: src/components/pipeline/presets/preset-templates.ts:24
 #: src/routes/_authed/_dashboard/pipeline/presets/index.tsx:63
@@ -4906,7 +4920,7 @@ msgstr "Thumbnail"
 msgid "Thumbnail for {0}"
 msgstr "Thumbnail for {0}"
 
-#: src/components/pipeline/presets/processors/registry.ts:48
+#: src/components/pipeline/presets/processors/registry.ts:56
 msgid "Thumbnail Generator"
 msgstr "Thumbnail Generator"
 
@@ -4930,7 +4944,7 @@ msgstr "Timeline"
 msgid "Timeout"
 msgstr "Timeout"
 
-#: src/components/notifications/forms/webhook-form.tsx:184
+#: src/components/notifications/forms/webhook-form.tsx:171
 msgid "Timeout (seconds)"
 msgstr "Timeout (seconds)"
 
@@ -4954,7 +4968,7 @@ msgstr "Title"
 msgid "To"
 msgstr "To"
 
-#: src/components/notifications/forms/email-form.tsx:151
+#: src/components/notifications/forms/email-form.tsx:144
 msgid "To Addresses"
 msgstr "To Addresses"
 
@@ -4962,7 +4976,7 @@ msgstr "To Addresses"
 msgid "Today"
 msgstr "Today"
 
-#: src/components/notifications/forms/webhook-form.tsx:291
+#: src/components/notifications/forms/webhook-form.tsx:274
 msgid "Token"
 msgstr "Token"
 
@@ -5054,7 +5068,7 @@ msgstr "Triggered when the application shuts down."
 msgid "Triggered when the application starts up."
 msgstr "Triggered when the application starts up."
 
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:469
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:470
 msgid "Trimming & Time"
 msgstr "Trimming & Time"
 
@@ -5109,7 +5123,7 @@ msgstr "Unknown"
 msgid "Unknown Engine ID: {engineId}"
 msgstr "Unknown Engine ID: {engineId}"
 
-#: src/components/streamers/card/use-streamer-status.tsx:85
+#: src/components/streamers/card/use-streamer-status.tsx:93
 msgid "Until"
 msgstr "Until"
 
@@ -5138,6 +5152,7 @@ msgstr "Updated"
 msgid "Updates existing items and creates new ones. Nothing is deleted."
 msgstr "Updates existing items and creates new ones. Nothing is deleted."
 
+#: src/components/pipeline/presets/editor/preset-meta-form.tsx:74
 #: src/components/pipeline/presets/preset-card.tsx:91
 #: src/routes/_authed/_dashboard/pipeline/presets/index.tsx:66
 msgid "Upload"
@@ -5173,7 +5188,7 @@ msgstr "URL"
 msgid "URL is required"
 msgstr "URL is required"
 
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:658
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:659
 msgid "Use <0>-movflags +faststart</0>"
 msgstr "Use <0>-movflags +faststart</0>"
 
@@ -5181,7 +5196,7 @@ msgstr "Use <0>-movflags +faststart</0>"
 msgid "Use System Proxy"
 msgstr "Use System Proxy"
 
-#: src/components/notifications/forms/email-form.tsx:203
+#: src/components/notifications/forms/email-form.tsx:194
 msgid "Use TLS"
 msgstr "Use TLS"
 
@@ -5194,13 +5209,13 @@ msgid "User Agent"
 msgstr "User Agent"
 
 #: src/components/config/shared/proxy-settings-card.tsx:171
-#: src/components/notifications/forms/email-form.tsx:86
-#: src/components/notifications/forms/webhook-form.tsx:326
+#: src/components/notifications/forms/email-form.tsx:82
+#: src/components/notifications/forms/webhook-form.tsx:306
 #: src/routes/_public/login.tsx:157
 msgid "Username"
 msgstr "Username"
 
-#: src/components/notifications/forms/discord-form.tsx:55
+#: src/components/notifications/forms/discord-form.tsx:54
 msgid "Username (Optional)"
 msgstr "Username (Optional)"
 
@@ -5236,19 +5251,19 @@ msgstr "Verify Integrity"
 msgid "Version"
 msgstr "Version"
 
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:89
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:90
 msgid "Video"
 msgstr "Video"
 
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:343
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:344
 msgid "Video Bitrate"
 msgstr "Video Bitrate"
 
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:133
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:134
 msgid "Video Codec"
 msgstr "Video Codec"
 
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:123
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:124
 msgid "Video Settings"
 msgstr "Video Settings"
 
@@ -5256,7 +5271,7 @@ msgstr "Video Settings"
 msgid "View All"
 msgstr "View All"
 
-#: src/components/logging/log-viewer.tsx:350
+#: src/components/logging/log-viewer.tsx:352
 msgid "View application logs in real-time. Logs are limited to the last {MAX_LOG_ENTRIES} entries."
 msgstr "View application logs in real-time. Logs are limited to the last {MAX_LOG_ENTRIES} entries."
 
@@ -5287,7 +5302,7 @@ msgstr "Wait"
 msgid "Wait time before starting."
 msgstr "Wait time before starting."
 
-#: src/components/logging/log-viewer.tsx:439
+#: src/components/logging/log-viewer.tsx:441
 msgid "Waiting for connection..."
 msgstr "Waiting for connection..."
 
@@ -5303,13 +5318,13 @@ msgstr "Watch"
 #~ msgid "Watch Replay"
 #~ msgstr "Watch Replay"
 
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:655
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:656
 msgid "Web Optimize"
 msgstr "Web Optimize"
 
 #: src/components/notifications/channel-card.tsx:80
-#: src/components/notifications/forms/discord-form.tsx:32
-#: src/components/notifications/forms/webhook-form.tsx:64
+#: src/components/notifications/forms/discord-form.tsx:33
+#: src/components/notifications/forms/webhook-form.tsx:67
 msgid "Webhook URL"
 msgstr "Webhook URL"
 

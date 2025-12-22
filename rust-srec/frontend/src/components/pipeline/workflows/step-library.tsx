@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, memo } from 'react';
 import { useInfiniteQuery } from '@tanstack/react-query';
 import {
   Search,
@@ -40,7 +40,7 @@ interface StepLibraryProps {
   trigger?: React.ReactNode;
 }
 
-export function StepLibrary({
+export const StepLibrary = memo(function StepLibrary({
   onAddStep,
   currentSteps,
   trigger,
@@ -576,4 +576,4 @@ export function StepLibrary({
       </SheetContent>
     </Sheet>
   );
-}
+});

@@ -286,6 +286,9 @@ where
 
     /// Set the streamer repository for metadata lookup.
     pub fn with_streamer_repository(mut self, streamer_repository: Arc<SR>) -> Self {
+        // Also set streamer repo on job queue for metadata resolution during dequeue
+        self.job_queue
+            .set_streamer_repo(streamer_repository.clone() as Arc<dyn StreamerRepository>);
         self.streamer_repo = Some(streamer_repository);
         self
     }

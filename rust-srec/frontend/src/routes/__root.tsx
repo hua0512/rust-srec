@@ -67,7 +67,7 @@ export const Route = createRootRoute({
 });
 
 import { I18nProvider } from '@lingui/react';
-import { i18n } from '../i18n';
+import { i18n, useInitLocale } from '../i18n';
 import { ThemeProvider } from '../components/theme-provider';
 import { Toaster } from '../components/ui/sonner';
 
@@ -77,6 +77,9 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 export const queryClient = new QueryClient();
 
 function RootDocument({ children }: { children: React.ReactNode }) {
+  // Initialize user's preferred locale after hydration
+  useInitLocale();
+
   return (
     <html lang={i18n.locale} suppressHydrationWarning>
       <head>

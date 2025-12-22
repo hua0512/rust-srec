@@ -6,8 +6,6 @@ import {
   FormMessage,
   FormDescription,
 } from '@/components/ui/form';
-import { Input } from '@/components/ui/input';
-import { Switch } from '@/components/ui/switch';
 import { TagInput } from '@/components/ui/tag-input';
 import { Trans } from '@lingui/react/macro';
 import { Globe, Hash, User, Shield, Mail } from 'lucide-react';
@@ -19,6 +17,8 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { useFormContext } from 'react-hook-form';
+import { IconInput } from '@/components/ui/icon-input';
+import { SwitchCard } from '@/components/ui/switch-card';
 
 export function EmailForm() {
   const form = useFormContext();
@@ -36,14 +36,12 @@ export function EmailForm() {
                   <Trans>SMTP Host</Trans>
                 </FormLabel>
                 <FormControl>
-                  <div className="relative">
-                    <Globe className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
-                    <Input
-                      placeholder="smtp.gmail.com"
-                      {...field}
-                      className="pl-9 bg-background/50"
-                    />
-                  </div>
+                  <IconInput
+                    icon={Globe}
+                    placeholder="smtp.gmail.com"
+                    className="bg-background/50"
+                    {...field}
+                  />
                 </FormControl>
                 <FormMessage />
               </FormItem>
@@ -59,16 +57,14 @@ export function EmailForm() {
                 <Trans>Port</Trans>
               </FormLabel>
               <FormControl>
-                <div className="relative">
-                  <Hash className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
-                  <Input
-                    type="number"
-                    placeholder="587"
-                    {...field}
-                    onChange={(e) => field.onChange(e.target.valueAsNumber)}
-                    className="pl-9 bg-background/50"
-                  />
-                </div>
+                <IconInput
+                  icon={Hash}
+                  type="number"
+                  placeholder="587"
+                  className="bg-background/50"
+                  {...field}
+                  onChange={(e) => field.onChange(e.target.valueAsNumber)}
+                />
               </FormControl>
               <FormMessage />
             </FormItem>
@@ -86,10 +82,11 @@ export function EmailForm() {
                 <Trans>Username</Trans>
               </FormLabel>
               <FormControl>
-                <div className="relative">
-                  <User className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
-                  <Input {...field} className="pl-9 bg-background/50" />
-                </div>
+                <IconInput
+                  icon={User}
+                  className="bg-background/50"
+                  {...field}
+                />
               </FormControl>
               <FormMessage />
             </FormItem>
@@ -104,14 +101,12 @@ export function EmailForm() {
                 <Trans>Password</Trans>
               </FormLabel>
               <FormControl>
-                <div className="relative">
-                  <Shield className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
-                  <Input
-                    type="password"
-                    {...field}
-                    className="pl-9 bg-background/50"
-                  />
-                </div>
+                <IconInput
+                  icon={Shield}
+                  type="password"
+                  className="bg-background/50"
+                  {...field}
+                />
               </FormControl>
               <FormMessage />
             </FormItem>
@@ -128,14 +123,12 @@ export function EmailForm() {
               <Trans>From Address</Trans>
             </FormLabel>
             <FormControl>
-              <div className="relative">
-                <Mail className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
-                <Input
-                  placeholder="notifier@example.com"
-                  {...field}
-                  className="pl-9 bg-background/50"
-                />
-              </div>
+              <IconInput
+                icon={Mail}
+                placeholder="notifier@example.com"
+                className="bg-background/50"
+                {...field}
+              />
             </FormControl>
             <FormMessage />
           </FormItem>
@@ -197,38 +190,24 @@ export function EmailForm() {
           control={form.control}
           name="settings.use_tls"
           render={({ field }) => (
-            <FormItem className="flex flex-row items-center justify-between rounded-lg border border-primary/10 bg-background/50 p-3 shadow-sm h-full">
-              <div className="space-y-0.5">
-                <FormLabel>
-                  <Trans>Use TLS</Trans>
-                </FormLabel>
-              </div>
-              <FormControl>
-                <Switch
-                  checked={field.value}
-                  onCheckedChange={field.onChange}
-                />
-              </FormControl>
-            </FormItem>
+            <SwitchCard
+              label={<Trans>Use TLS</Trans>}
+              checked={field.value}
+              onCheckedChange={field.onChange}
+              className="border-primary/10 bg-background/50 h-full"
+            />
           )}
         />
         <FormField
           control={form.control}
           name="settings.enabled"
           render={({ field }) => (
-            <FormItem className="flex flex-row items-center justify-between rounded-lg border border-primary/10 bg-background/50 p-3 shadow-sm h-full">
-              <div className="space-y-0.5">
-                <FormLabel>
-                  <Trans>Enabled</Trans>
-                </FormLabel>
-              </div>
-              <FormControl>
-                <Switch
-                  checked={field.value}
-                  onCheckedChange={field.onChange}
-                />
-              </FormControl>
-            </FormItem>
+            <SwitchCard
+              label={<Trans>Enabled</Trans>}
+              checked={field.value}
+              onCheckedChange={field.onChange}
+              className="border-primary/10 bg-background/50 h-full"
+            />
           )}
         />
       </div>

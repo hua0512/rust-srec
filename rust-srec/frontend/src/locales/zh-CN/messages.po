@@ -18,8 +18,8 @@ msgstr ""
 msgid " - Session: {0}"
 msgstr " - 会话：{0}"
 
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:741
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:761
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:742
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:762
 msgid "--flag value"
 msgstr "--flag value"
 
@@ -35,7 +35,7 @@ msgstr "-c copy"
 msgid "-reconnect 1"
 msgstr "-reconnect 1"
 
-#: src/components/pipeline/presets/processors/rclone-config-form.tsx:117
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:115
 msgid "(Delete source)"
 msgstr "（删除源文件）"
 
@@ -43,11 +43,11 @@ msgstr "（删除源文件）"
 msgid "(empty)"
 msgstr "（空）"
 
-#: src/components/pipeline/presets/processors/rclone-config-form.tsx:128
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:126
 msgid "(Mirror source)"
 msgstr "（镜像源端）"
 
-#: src/components/pipeline/presets/processors/rclone-config-form.tsx:106
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:104
 msgid "(Preserve source)"
 msgstr "（保留源文件）"
 
@@ -128,7 +128,7 @@ msgstr "{stepName}"
 msgid "{val} channel support is coming soon!"
 msgstr "即将支持 {val} 渠道！"
 
-#: src/components/pipeline/presets/processors/rclone-config-form.tsx:194
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:189
 msgid "/path/to/rclone.conf"
 msgstr "/path/to/rclone.conf"
 
@@ -156,7 +156,7 @@ msgstr "404"
 msgid "A unique and descriptive name for this configuration."
 msgstr "为此配置提供一个唯一且易于识别的名称。"
 
-#: src/components/pipeline/workflows/step-config-dialog.tsx:460
+#: src/components/pipeline/workflows/step-config-dialog.tsx:476
 msgid "A unique ID used by other steps to reference this one."
 msgstr "一个唯一的 ID，用于供其他步骤引用此步骤。"
 
@@ -185,7 +185,7 @@ msgstr "强调色"
 msgid "Actions"
 msgstr "操作"
 
-#: src/components/notifications/forms/webhook-form.tsx:115
+#: src/components/notifications/forms/webhook-form.tsx:113
 #: src/components/streamers/edit/streamer-meta-form.tsx:178
 #: src/routes/_authed/_dashboard/config/language.tsx:108
 msgid "Active"
@@ -203,7 +203,7 @@ msgstr "正在录制"
 msgid "Active Recordings"
 msgstr "正在录制"
 
-#: src/components/notifications/forms/webhook-form.tsx:447
+#: src/components/notifications/forms/webhook-form.tsx:409
 msgid "Add"
 msgstr "添加"
 
@@ -276,11 +276,11 @@ msgstr "添加覆盖项"
 msgid "Add Pipeline Step"
 msgstr "添加处理管道步骤"
 
-#: src/components/config/shared/retry-policy-form.tsx:171
+#: src/components/config/shared/retry-policy-form.tsx:136
 msgid "Add randomness to retry delays to prevent thundering herd."
 msgstr "为重试延迟添加随机性，避免“惊群”。"
 
-#: src/components/pipeline/presets/processors/rclone-config-form.tsx:290
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:279
 msgid "Add rclone argument"
 msgstr "添加 rclone 参数"
 
@@ -306,15 +306,15 @@ msgid "Adjust the roundness of UI elements."
 msgstr "调整 UI 元素的圆角程度。"
 
 #: src/components/pipeline/presets/processors/audio-extract-config-form.tsx:63
-#: src/components/pipeline/presets/processors/rclone-config-form.tsx:58
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:107
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:59
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:108
 #: src/components/streamers/edit/streamer-config-form.tsx:74
-#: src/routes/_authed/_dashboard/streamers/$id.edit.tsx:293
+#: src/routes/_authed/_dashboard/streamers/$id.edit.tsx:291
 msgid "Advanced"
 msgstr "高级"
 
 #: src/components/streamers/edit/streamer-config-form.tsx:121
-#: src/routes/_authed/_dashboard/streamers/$id.edit.tsx:359
+#: src/routes/_authed/_dashboard/streamers/$id.edit.tsx:357
 msgid "Advanced Configuration"
 msgstr "高级配置"
 
@@ -353,7 +353,7 @@ msgstr "磁盘空间不足时发出警报。"
 msgid "All"
 msgstr "全部"
 
-#: src/components/logging/log-viewer.tsx:403
+#: src/components/logging/log-viewer.tsx:405
 msgid "All Levels"
 msgstr "所有级别"
 
@@ -377,7 +377,7 @@ msgstr "外观"
 msgid "Appearance & style"
 msgstr "外观与样式"
 
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:765
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:766
 msgid "Appended before output filename"
 msgstr "追加到输出文件名之前"
 
@@ -393,6 +393,7 @@ msgstr "为卡片和侧边栏的背景应用模糊效果。"
 msgid "Apply template settings."
 msgstr "应用模板设置。"
 
+#: src/components/pipeline/presets/editor/preset-meta-form.tsx:73
 #: src/components/pipeline/presets/preset-card.tsx:90
 #: src/routes/_authed/_dashboard/pipeline/presets/index.tsx:65
 msgid "Archive"
@@ -448,17 +449,18 @@ msgstr "至少需要一个输入路径"
 msgid "Attempt to repair timestamps in FLV streams"
 msgstr "尝试修复 FLV 流中的时间戳"
 
+#: src/components/pipeline/presets/editor/preset-meta-form.tsx:72
 #: src/components/pipeline/presets/preset-card.tsx:89
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:98
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:99
 #: src/routes/_authed/_dashboard/pipeline/presets/index.tsx:64
 msgid "Audio"
 msgstr "音频"
 
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:364
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:365
 msgid "Audio Bitrate"
 msgstr "音频比特率"
 
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:214
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:215
 msgid "Audio Codec"
 msgstr "音频编码"
 
@@ -467,11 +469,11 @@ msgstr "音频编码"
 msgid "Audio Extract"
 msgstr "提取音频"
 
-#: src/components/pipeline/presets/processors/registry.ts:53
+#: src/components/pipeline/presets/processors/registry.ts:61
 msgid "Audio Extraction"
 msgstr "音频提取"
 
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:573
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:574
 msgid "Audio Processing"
 msgstr "音频处理"
 
@@ -479,24 +481,24 @@ msgstr "音频处理"
 msgid "Audio Properties"
 msgstr "音频属性"
 
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:205
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:206
 msgid "Audio Settings"
 msgstr "音频设置"
 
-#: src/components/notifications/forms/webhook-form.tsx:223
+#: src/components/notifications/forms/webhook-form.tsx:206
 msgid "Auth Type"
 msgstr "认证类型"
 
 #: src/components/config/shared/network-settings-card.tsx:40
-#: src/components/notifications/forms/webhook-form.tsx:212
+#: src/components/notifications/forms/webhook-form.tsx:195
 msgid "Authentication"
 msgstr "认证"
 
-#: src/components/logging/log-viewer.tsx:417
+#: src/components/logging/log-viewer.tsx:419
 msgid "Auto-scroll disabled"
 msgstr "已关闭自动滚动"
 
-#: src/components/logging/log-viewer.tsx:417
+#: src/components/logging/log-viewer.tsx:419
 msgid "Auto-scroll enabled"
 msgstr "已开启自动滚动"
 
@@ -508,7 +510,7 @@ msgstr "可选"
 msgid "Available Variables"
 msgstr "可用变量"
 
-#: src/components/notifications/forms/discord-form.tsx:77
+#: src/components/notifications/forms/discord-form.tsx:74
 msgid "Avatar URL (Optional)"
 msgstr "头像 URL（可选）"
 
@@ -539,7 +541,7 @@ msgstr "返回处理任务列表"
 msgid "Back to Sessions"
 msgstr "返回录制会话"
 
-#: src/components/config/shared/retry-policy-form.tsx:108
+#: src/components/config/shared/retry-policy-form.tsx:76
 msgid "Backoff Multiplier"
 msgstr "退避倍率"
 
@@ -557,11 +559,11 @@ msgstr "备份与恢复"
 msgid "Base delay between retries"
 msgstr "重试之间的基础延迟"
 
-#: src/components/pipeline/presets/processors/rclone-config-form.tsx:176
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:171
 msgid "Base path for remote storage."
 msgstr "远程存储的基础路径。"
 
-#: src/components/notifications/forms/webhook-form.tsx:264
+#: src/components/notifications/forms/webhook-form.tsx:247
 msgid "Basic Auth"
 msgstr "Basic Auth"
 
@@ -578,7 +580,7 @@ msgid "Basic post-processing: Remux FLV to MP4 and generate a thumbnail preview.
 msgstr "基础后处理：将 FLV 重封装为 MP4，并生成缩略图预览。"
 
 #: src/components/streamers/edit/streamer-config-form.tsx:94
-#: src/routes/_authed/_dashboard/streamers/$id.edit.tsx:332
+#: src/routes/_authed/_dashboard/streamers/$id.edit.tsx:330
 msgid "Basic settings for the streamer."
 msgstr "主播的基本设置。"
 
@@ -586,7 +588,7 @@ msgstr "主播的基本设置。"
 msgid "Batch URLs"
 msgstr "批量 URL"
 
-#: src/components/notifications/forms/webhook-form.tsx:261
+#: src/components/notifications/forms/webhook-form.tsx:244
 msgid "Bearer Token"
 msgstr "Bearer Token"
 
@@ -638,7 +640,7 @@ msgstr "C:path1.flv,C:path2.flv"
 #: src/components/pipeline/jobs/pipeline-summary-card.tsx:219
 #: src/components/pipeline/jobs/pipeline-summary-card.tsx:256
 #: src/components/pipeline/presets/preset-card.tsx:204
-#: src/components/pipeline/workflows/step-config-dialog.tsx:554
+#: src/components/pipeline/workflows/step-config-dialog.tsx:570
 #: src/components/pipeline/workflows/workflow-card.tsx:199
 #: src/components/streamers/streamer-form.tsx:161
 #: src/routes/_authed/_dashboard/pipeline/jobs/new.tsx:158
@@ -693,6 +695,7 @@ msgid "Categories"
 msgstr "分类"
 
 #: src/components/filters/forms/FilterTypeSelector.tsx:34
+#: src/components/pipeline/presets/editor/preset-meta-form.tsx:236
 msgid "Category"
 msgstr "分类"
 
@@ -754,7 +757,7 @@ msgstr "已触发检查"
 msgid "Checking"
 msgstr "检查中"
 
-#: src/components/streamers/card/use-streamer-status.tsx:176
+#: src/components/streamers/card/use-streamer-status.tsx:184
 msgid "Checking stream status..."
 msgstr "正在检查流状态..."
 
@@ -762,7 +765,7 @@ msgstr "正在检查流状态..."
 msgid "Checking..."
 msgstr "检查中..."
 
-#: src/components/pipeline/presets/processors/rclone-config-form.tsx:135
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:133
 msgid "Choose how files are transferred to the remote."
 msgstr "选择将文件传输到远程的方式。"
 
@@ -774,12 +777,13 @@ msgstr "选择此主播如何处理代理连接。"
 msgid "Choose your display language"
 msgstr "选择你的显示语言"
 
+#: src/components/pipeline/presets/editor/preset-meta-form.tsx:75
 #: src/components/pipeline/presets/preset-card.tsx:92
 #: src/routes/_authed/_dashboard/pipeline/presets/index.tsx:67
 msgid "Cleanup"
 msgstr "清理"
 
-#: src/components/logging/log-viewer.tsx:378
+#: src/components/logging/log-viewer.tsx:380
 msgid "Clear"
 msgstr "清空"
 
@@ -841,6 +845,7 @@ msgid "Compress video for storage, upload to cloud, then delete local file to sa
 msgstr "压缩视频用于存档，上传到云端，然后删除本地文件以节省空间。"
 
 #: src/components/pipeline/presets/editor/preset-meta-form.tsx:56
+#: src/components/pipeline/presets/editor/preset-meta-form.tsx:70
 #: src/components/pipeline/presets/preset-card.tsx:87
 #: src/routes/_authed/_dashboard/pipeline/presets/index.tsx:62
 msgid "Compression"
@@ -850,7 +855,7 @@ msgstr "压缩"
 msgid "Compression (Zip)"
 msgstr "压缩（Zip）"
 
-#: src/components/pipeline/presets/processors/registry.ts:58
+#: src/components/pipeline/presets/processors/registry.ts:66
 msgid "Compression / Archive"
 msgstr "压缩/归档"
 
@@ -866,7 +871,7 @@ msgstr "并发与性能"
 msgid "Config"
 msgstr "配置"
 
-#: src/components/pipeline/presets/processors/rclone-config-form.tsx:190
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:185
 msgid "Config Path (Optional)"
 msgstr "配置路径（可选）"
 
@@ -943,20 +948,20 @@ msgstr "确认新密码"
 msgid "Confirm Password"
 msgstr "确认密码"
 
-#: src/components/connection-status-indicator.tsx:23
-#: src/components/logging/log-viewer.tsx:339
+#: src/components/connection-status-indicator.tsx:24
+#: src/components/logging/log-viewer.tsx:341
 msgid "Connected"
 msgstr "已连接"
 
-#: src/components/connection-status-indicator.tsx:28
+#: src/components/connection-status-indicator.tsx:29
 msgid "Connecting..."
 msgstr "连接中..."
 
-#: src/components/connection-status-indicator.tsx:38
+#: src/components/connection-status-indicator.tsx:39
 msgid "Connection Error"
 msgstr "连接错误"
 
-#: src/components/streamers/card/stream-avatar-info.tsx:109
+#: src/components/streamers/card/stream-avatar-info.tsx:118
 msgid "Connection Instability"
 msgstr "连接不稳定"
 
@@ -964,11 +969,11 @@ msgstr "连接不稳定"
 msgid "Connection/activity timeout"
 msgstr "连接/活动超时"
 
-#: src/components/streamers/card/stream-avatar-info.tsx:116
+#: src/components/streamers/card/stream-avatar-info.tsx:125
 msgid "Consecutive Failures"
 msgstr "连续失败"
 
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:245
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:246
 msgid "Container"
 msgstr "容器"
 
@@ -989,18 +994,18 @@ msgid "Copied!"
 msgstr "已复制！"
 
 #: src/components/pipeline/presets/editor/preset-config-form.tsx:62
-#: src/components/pipeline/presets/processors/rclone-config-form.tsx:103
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:101
 msgid "Copy"
 msgstr "复制"
 
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:146
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:227
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:147
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:228
 msgid "Copy (Passthrough)"
 msgstr "复制（直通）"
 
 #: src/components/pipeline/presets/editor/preset-meta-form.tsx:57
-#: src/components/pipeline/presets/processors/registry.ts:63
-#: src/components/pipeline/presets/processors/registry.ts:68
+#: src/components/pipeline/presets/processors/registry.ts:71
+#: src/components/pipeline/presets/processors/registry.ts:76
 msgid "Copy / Move"
 msgstr "复制/移动"
 
@@ -1145,7 +1150,7 @@ msgstr "创建中..."
 msgid "Creation Mode"
 msgstr "创建模式"
 
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:293
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:294
 msgid "CRF (Constant Rate Factor)"
 msgstr "CRF（恒定码率因子）"
 
@@ -1177,6 +1182,7 @@ msgstr "当前密码"
 msgid "Current Password"
 msgstr "当前密码"
 
+#: src/components/pipeline/presets/editor/preset-meta-form.tsx:77
 #: src/components/pipeline/presets/preset-card.tsx:94
 #: src/routes/_authed/_dashboard/pipeline/presets/index.tsx:69
 #: src/routes/_authed/_dashboard/sessions/index.tsx:312
@@ -1199,15 +1205,15 @@ msgstr "自定义配置"
 msgid "Custom FFmpeg"
 msgstr "自定义 FFmpeg"
 
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:726
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:727
 msgid "Custom Flags"
 msgstr "自定义标志"
 
-#: src/components/notifications/forms/webhook-form.tsx:267
+#: src/components/notifications/forms/webhook-form.tsx:250
 msgid "Custom Header"
 msgstr "自定义 Header"
 
-#: src/components/notifications/forms/webhook-form.tsx:433
+#: src/components/notifications/forms/webhook-form.tsx:393
 msgid "Custom Headers"
 msgstr "自定义请求头"
 
@@ -1235,7 +1241,7 @@ msgstr "为此模板自定义特定的引擎设置。"
 msgid "Customize the look and feel of your dashboard."
 msgstr "自定义仪表盘的外观与体验。"
 
-#: src/components/pipeline/workflows/step-config-dialog.tsx:426
+#: src/components/pipeline/workflows/step-config-dialog.tsx:442
 msgid "DAG Configuration"
 msgstr "DAG 配置"
 
@@ -1299,7 +1305,7 @@ msgstr "默认工作流：重封装为 MP4（删除原始文件），生成原�
 msgid "Default: 8388608 (8 MiB)"
 msgstr "默认：8388608（8 MiB）"
 
-#: src/components/pipeline/workflows/step-config-dialog.tsx:429
+#: src/components/pipeline/workflows/step-config-dialog.tsx:445
 msgid "Define how this step identifies itself and connects to others."
 msgstr "定义此步骤如何标识自身以及如何连接到其他步骤。"
 
@@ -1346,7 +1352,7 @@ msgstr "删除渠道？"
 msgid "Delete Engine?"
 msgstr "删除引擎？"
 
-#: src/components/pipeline/presets/processors/registry.ts:73
+#: src/components/pipeline/presets/processors/registry.ts:81
 msgid "Delete File"
 msgstr "删除文件"
 
@@ -1354,7 +1360,7 @@ msgstr "删除文件"
 msgid "Delete Job"
 msgstr "删除处理任务"
 
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:704
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:705
 msgid "Delete original file after successful remux"
 msgstr "成功重封装后删除原始文件"
 
@@ -1394,11 +1400,11 @@ msgstr "已删除"
 msgid "Deletes all existing configurations before importing. This action cannot be undone."
 msgstr "导入前删除所有现有配置。此操作无法撤销。"
 
-#: src/components/notifications/forms/webhook-form.tsx:142
+#: src/components/notifications/forms/webhook-form.tsx:129
 msgid "Delivery Policy"
 msgstr "投递策略"
 
-#: src/components/pipeline/workflows/step-config-dialog.tsx:469
+#: src/components/pipeline/workflows/step-config-dialog.tsx:485
 msgid "Depends On (Ancestors)"
 msgstr "依赖于（前辈节点）"
 
@@ -1406,12 +1412,12 @@ msgstr "依赖于（前辈节点）"
 msgid "Describe what this workflow does..."
 msgstr "描述此工作流的用途..."
 
-#: src/components/pipeline/presets/editor/preset-meta-form.tsx:219
+#: src/components/pipeline/presets/editor/preset-meta-form.tsx:274
 #: src/components/pipeline/workflows/workflow-editor.tsx:295
 msgid "Description"
 msgstr "描述"
 
-#: src/components/pipeline/presets/editor/preset-meta-form.tsx:228
+#: src/components/pipeline/presets/editor/preset-meta-form.tsx:283
 msgid "Description is managed by the system"
 msgstr "描述由系统管理"
 
@@ -1427,11 +1433,11 @@ msgstr "逐步设计你的自动化处理管道"
 msgid "Destination Path (Optional)"
 msgstr "目标路径（可选）"
 
-#: src/components/pipeline/presets/processors/rclone-config-form.tsx:165
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:160
 msgid "Destination Root"
 msgstr "目标根目录"
 
-#: src/components/pipeline/workflows/step-config-dialog.tsx:567
+#: src/components/pipeline/workflows/step-config-dialog.tsx:583
 msgid "Detach & Edit"
 msgstr "分离并编辑"
 
@@ -1443,7 +1449,7 @@ msgstr "内部服务与资源的详细健康检查。"
 msgid "Detailed processor settings"
 msgstr "处理器详细设置"
 
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:391
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:392
 msgid "Dimensions & Filters"
 msgstr "尺寸与滤镜"
 
@@ -1459,8 +1465,8 @@ msgstr "禁用"
 msgid "Disabled"
 msgstr "已禁用"
 
-#: src/components/connection-status-indicator.tsx:33
-#: src/components/logging/log-viewer.tsx:344
+#: src/components/connection-status-indicator.tsx:34
+#: src/components/logging/log-viewer.tsx:346
 msgid "Disconnected"
 msgstr "已断开"
 
@@ -1480,7 +1486,7 @@ msgstr "磁盘空间"
 msgid "Done"
 msgstr "已完成"
 
-#: src/components/pipeline/presets/processors/rclone-config-form.tsx:294
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:283
 msgid "Double click to edit items."
 msgstr "双击以编辑项目。"
 
@@ -1525,7 +1531,7 @@ msgstr "下载中"
 msgid "Dual Format"
 msgstr "双格式输出"
 
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:513
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:514
 #: src/components/streamers/edit/active-download-card.tsx:68
 #: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.tsx:561
 msgid "Duration"
@@ -1547,7 +1553,7 @@ msgstr "例如 128k、320k"
 msgid "e.g. echo {input} > {output}"
 msgstr "例如 echo {input} > {output}"
 
-#: src/components/pipeline/presets/processors/rclone-config-form.tsx:169
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:164
 msgid "e.g. gdrive:/videos"
 msgstr "例如 gdrive:/videos"
 
@@ -1564,11 +1570,11 @@ msgstr "例如 mp4"
 msgid "e.g. My Favorite Streamer"
 msgstr "例如 我喜欢的主播"
 
-#: src/components/pipeline/presets/editor/preset-meta-form.tsx:204
+#: src/components/pipeline/presets/editor/preset-meta-form.tsx:217
 msgid "e.g. Remux to H.264"
 msgstr "例如：重封装为 H.264"
 
-#: src/components/pipeline/workflows/step-config-dialog.tsx:455
+#: src/components/pipeline/workflows/step-config-dialog.tsx:471
 msgid "e.g., process-video"
 msgstr "例如：process-video"
 
@@ -1641,7 +1647,7 @@ msgstr "启用"
 msgid "Enable Monitoring"
 msgstr "启用监控"
 
-#: src/components/notifications/forms/webhook-form.tsx:118
+#: src/components/notifications/forms/webhook-form.tsx:114
 msgid "Enable or disable this webhook"
 msgstr "启用或禁用此 Webhook"
 
@@ -1657,12 +1663,12 @@ msgstr "启用弹幕/聊天消息与视频一起录制。"
 msgid "Enable translucent background blur effects."
 msgstr "启用半透明背景模糊效果。"
 
-#: src/components/notifications/forms/discord-form.tsx:124
-#: src/components/notifications/forms/email-form.tsx:222
+#: src/components/notifications/forms/discord-form.tsx:119
+#: src/components/notifications/forms/email-form.tsx:206
 msgid "Enabled"
 msgstr "启用"
 
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:166
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:167
 msgid "Encoding Preset"
 msgstr "编码预设"
 
@@ -1671,7 +1677,7 @@ msgid "End of History"
 msgstr "历史结束"
 
 #: src/components/filters/forms/TimeBasedFilterForm.tsx:104
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:543
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:544
 msgid "End Time"
 msgstr "结束时间"
 
@@ -1679,7 +1685,7 @@ msgstr "结束时间"
 msgid "Ended"
 msgstr "已结束"
 
-#: src/components/notifications/forms/webhook-form.tsx:53
+#: src/components/notifications/forms/webhook-form.tsx:58
 msgid "Endpoint Configuration"
 msgstr "端点配置"
 
@@ -1745,7 +1751,7 @@ msgstr "输入要匹配的直播标题关键字。"
 msgid "Enter your credentials to access your account"
 msgstr "输入你的凭据以登录账户"
 
-#: src/components/logging/log-viewer.tsx:482
+#: src/components/logging/log-viewer.tsx:484
 msgid "entries"
 msgstr "条"
 
@@ -1762,7 +1768,7 @@ msgstr "条"
 msgid "Error"
 msgstr "错误"
 
-#: src/components/streamers/card/use-streamer-status.tsx:136
+#: src/components/streamers/card/use-streamer-status.tsx:144
 #: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.tsx:635
 msgid "Error Details"
 msgstr "错误详情"
@@ -1804,7 +1810,7 @@ msgstr "加载工作流失败"
 #~ msgid "Error Output"
 #~ msgstr "错误输出"
 
-#: src/components/pipeline/workflows/step-config-dialog.tsx:387
+#: src/components/pipeline/workflows/step-config-dialog.tsx:395
 msgid "Error: Could not load preset details."
 msgstr "错误：无法加载预设详情。"
 
@@ -1822,7 +1828,7 @@ msgid "Exclude"
 msgstr "排除"
 
 #: src/components/pipeline/presets/editor/preset-meta-form.tsx:65
-#: src/components/pipeline/presets/processors/registry.ts:83
+#: src/components/pipeline/presets/processors/registry.ts:91
 msgid "Execute Command"
 msgstr "执行命令"
 
@@ -1852,7 +1858,7 @@ msgid "Exports include all global settings, platforms, templates, streamers, eng
 msgstr "导出内容包含所有全局设置、平台、模板、主播、引擎和通知渠道。敏感数据（如密码）可能会根据平台设置被脱敏或加密。"
 
 #: src/components/config/engines/forms/streamlink-form.tsx:85
-#: src/components/pipeline/presets/processors/rclone-config-form.tsx:276
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:264
 msgid "Extra Arguments"
 msgstr "额外参数"
 
@@ -1951,7 +1957,7 @@ msgstr "创建工作流失败：{0}"
 msgid "Failed to delete channel"
 msgstr "删除渠道失败"
 
-#: src/routes/_authed/_dashboard/streamers/$id.edit.tsx:236
+#: src/routes/_authed/_dashboard/streamers/$id.edit.tsx:234
 msgid "Failed to delete filter"
 msgstr "删除过滤器失败"
 
@@ -2078,7 +2084,7 @@ msgid "Failed to update settings"
 msgstr "更新设置失败"
 
 #: src/routes/_authed/_dashboard/dashboard.tsx:86
-#: src/routes/_authed/_dashboard/streamers/$id.edit.tsx:206
+#: src/routes/_authed/_dashboard/streamers/$id.edit.tsx:204
 #: src/routes/_authed/_dashboard/streamers/index.tsx:194
 msgid "Failed to update streamer"
 msgstr "更新主播失败"
@@ -2117,11 +2123,11 @@ msgstr "获取"
 msgid "Fetch Delay"
 msgstr "获取延迟"
 
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:582
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:583
 msgid "FFmpeg Audio Filter (-af)"
 msgstr "FFmpeg 音频滤镜（-af）"
 
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:447
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:448
 msgid "FFmpeg Video Filter"
 msgstr "FFmpeg 视频滤镜"
 
@@ -2137,6 +2143,7 @@ msgstr "文件扩展名过滤"
 msgid "File Operations"
 msgstr "文件操作"
 
+#: src/components/pipeline/presets/editor/preset-meta-form.tsx:76
 #: src/components/pipeline/presets/preset-card.tsx:93
 #: src/routes/_authed/_dashboard/pipeline/presets/index.tsx:68
 msgid "File Ops"
@@ -2171,11 +2178,11 @@ msgstr "按标题关键字过滤"
 msgid "Filter created successfully"
 msgstr "过滤器创建成功"
 
-#: src/routes/_authed/_dashboard/streamers/$id.edit.tsx:232
+#: src/routes/_authed/_dashboard/streamers/$id.edit.tsx:230
 msgid "Filter deleted successfully"
 msgstr "过滤器删除成功"
 
-#: src/components/notifications/forms/webhook-form.tsx:172
+#: src/components/notifications/forms/webhook-form.tsx:159
 msgid "Filter events below this priority"
 msgstr "过滤低于此优先级的事件"
 
@@ -2219,7 +2226,7 @@ msgstr "FLV 解析器"
 msgid "FLV stream fixing pipeline"
 msgstr "FLV 流修复管道"
 
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:682
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:683
 msgid "Force overwrite if output exists"
 msgstr "若输出已存在则强制覆盖"
 
@@ -2230,15 +2237,15 @@ msgstr "强制指定输出格式。"
 #: src/components/config/global/file-config-card.tsx:89
 #: src/components/config/templates/template-card.tsx:143
 #: src/components/pipeline/presets/processors/audio-extract-config-form.tsx:88
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:80
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:81
 msgid "Format"
 msgstr "格式"
 
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:422
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:423
 msgid "Framerate (FPS)"
 msgstr "帧率（FPS）"
 
-#: src/components/notifications/forms/email-form.tsx:128
+#: src/components/notifications/forms/email-form.tsx:123
 msgid "From Address"
 msgstr "发件人地址"
 
@@ -2258,15 +2265,15 @@ msgstr "全流程处理"
 #: src/components/config/templates/tabs/platform-override-card.tsx:62
 #: src/components/config/templates/template-editor.tsx:187
 #: src/components/pipeline/presets/processors/audio-extract-config-form.tsx:54
-#: src/components/pipeline/presets/processors/rclone-config-form.tsx:52
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:71
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:53
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:72
 #: src/components/streamers/edit/streamer-config-form.tsx:67
-#: src/routes/_authed/_dashboard/streamers/$id.edit.tsx:286
+#: src/routes/_authed/_dashboard/streamers/$id.edit.tsx:284
 msgid "General"
 msgstr "常规"
 
 #: src/components/streamers/edit/streamer-config-form.tsx:91
-#: src/routes/_authed/_dashboard/streamers/$id.edit.tsx:329
+#: src/routes/_authed/_dashboard/streamers/$id.edit.tsx:327
 msgid "General Configuration"
 msgstr "常规配置"
 
@@ -2349,7 +2356,7 @@ msgstr "面向长期存储优化的 H.264 中等压缩（CRF 23）。"
 msgid "Handle discontinuities in HLS streams"
 msgstr "处理 HLS 流中的不连续段"
 
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:619
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:620
 msgid "Hardware Acceleration"
 msgstr "硬件加速"
 
@@ -2357,7 +2364,7 @@ msgstr "硬件加速"
 msgid "HD Thumbnail"
 msgstr "高清缩略图"
 
-#: src/components/notifications/forms/webhook-form.tsx:379
+#: src/components/notifications/forms/webhook-form.tsx:349
 msgid "Header Key"
 msgstr "Header 键"
 
@@ -2365,7 +2372,7 @@ msgstr "Header 键"
 #~ msgid "Header Name"
 #~ msgstr "Header 名称"
 
-#: src/components/notifications/forms/webhook-form.tsx:401
+#: src/components/notifications/forms/webhook-form.tsx:368
 msgid "Header Value"
 msgstr "Header 值"
 
@@ -2447,7 +2454,7 @@ msgstr "i"
 msgid "IANA Timezone (e.g. Asia/Shanghai, UTC)."
 msgstr "IANA 时区（例如 Asia/Shanghai、UTC）。"
 
-#: src/components/pipeline/presets/editor/preset-meta-form.tsx:173
+#: src/components/pipeline/presets/editor/preset-meta-form.tsx:186
 msgid "ID"
 msgstr "ID"
 
@@ -2522,7 +2529,7 @@ msgstr "继承/默认"
 msgid "INITIAL"
 msgstr "初始"
 
-#: src/components/config/shared/retry-policy-form.tsx:132
+#: src/components/config/shared/retry-policy-form.tsx:100
 msgid "Initial Delay (ms)"
 msgstr "初始延迟（ms）"
 
@@ -2530,7 +2537,7 @@ msgstr "初始延迟（ms）"
 msgid "Input Arguments"
 msgstr "输入参数"
 
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:735
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:736
 msgid "Input Options (-i flags)"
 msgstr "输入选项（-i 参数）"
 
@@ -2542,9 +2549,9 @@ msgstr "输入路径"
 msgid "Input Paths (comma separated)"
 msgstr "输入路径（逗号分隔）"
 
-#: src/components/streamers/card/use-streamer-status.tsx:25
-#: src/components/streamers/card/use-streamer-status.tsx:164
-#: src/components/streamers/card/use-streamer-status.tsx:173
+#: src/components/streamers/card/use-streamer-status.tsx:32
+#: src/components/streamers/card/use-streamer-status.tsx:172
+#: src/components/streamers/card/use-streamer-status.tsx:181
 msgid "Inspecting"
 msgstr "检查中"
 
@@ -2556,7 +2563,7 @@ msgstr "间隔（秒）"
 msgid "Interval between checks."
 msgstr "检查间隔。"
 
-#: src/components/config/shared/retry-policy-form.tsx:168
+#: src/components/config/shared/retry-policy-form.tsx:134
 msgid "Jitter"
 msgstr "抖动"
 
@@ -2634,7 +2641,7 @@ msgstr "语言"
 msgid "Language Settings"
 msgstr "语言设置"
 
-#: src/components/streamers/card/use-streamer-status.tsx:234
+#: src/components/streamers/card/use-streamer-status.tsx:242
 msgid "Last Activity"
 msgstr "最后活动"
 
@@ -2642,11 +2649,11 @@ msgstr "最后活动"
 msgid "Last Check"
 msgstr "最后检查"
 
-#: src/components/streamers/card/use-streamer-status.tsx:96
+#: src/components/streamers/card/use-streamer-status.tsx:104
 msgid "Last Error"
 msgstr "最后错误"
 
-#: src/components/streamers/card/stream-avatar-info.tsx:129
+#: src/components/streamers/card/stream-avatar-info.tsx:138
 msgid "Last Error Log"
 msgstr "最后错误日志"
 
@@ -2680,8 +2687,8 @@ msgstr "限制与校验"
 msgid "List"
 msgstr "列表"
 
-#: src/components/streamers/card/use-streamer-status.tsx:24
-#: src/components/streamers/card/use-streamer-status.tsx:151
+#: src/components/streamers/card/use-streamer-status.tsx:31
+#: src/components/streamers/card/use-streamer-status.tsx:159
 #: src/components/streamers/edit/recent-sessions-list.tsx:65
 #: src/components/streamers/edit/streamer-header.tsx:62
 #: src/routes/_authed/_dashboard/sessions/index.tsx:171
@@ -2746,7 +2753,7 @@ msgstr "日志配置"
 msgid "Logging configuration updated"
 msgstr "日志配置已更新"
 
-#: src/components/logging/log-viewer.tsx:491
+#: src/components/logging/log-viewer.tsx:493
 msgid "Logging paused"
 msgstr "日志已暂停"
 
@@ -2759,7 +2766,7 @@ msgstr "日志"
 msgid "Low"
 msgstr "低"
 
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:320
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:321
 msgid "Lower value = Higher Quality"
 msgstr "数值越低 = 质量越高"
 
@@ -2799,7 +2806,7 @@ msgstr "最大比特率（bps）"
 msgid "Max CPU Jobs"
 msgstr "最大 CPU 任务数"
 
-#: src/components/config/shared/retry-policy-form.tsx:149
+#: src/components/config/shared/retry-policy-form.tsx:117
 msgid "Max Delay (ms)"
 msgstr "最大延迟（ms）"
 
@@ -2833,9 +2840,9 @@ msgstr "最大分片大小"
 msgid "Max Quality Thumbnail"
 msgstr "最高质量缩略图"
 
-#: src/components/config/shared/retry-policy-form.tsx:88
+#: src/components/config/shared/retry-policy-form.tsx:56
 #: src/components/pipeline/presets/processors/delete-config-form.tsx:53
-#: src/components/pipeline/presets/processors/rclone-config-form.tsx:248
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:240
 msgid "Max Retries"
 msgstr "最大重试次数"
 
@@ -2851,7 +2858,7 @@ msgstr "最大程度压缩以尽量降低存储占用，然后删除原始文件
 msgid "Maximum HEVC/H.265 compression (CRF 28) for minimal file size."
 msgstr "最大 HEVC/H.265 压缩（CRF 28），以获得最小文件体积。"
 
-#: src/components/config/shared/retry-policy-form.tsx:102
+#: src/components/config/shared/retry-policy-form.tsx:70
 msgid "Maximum number of retry attempts."
 msgstr "最大重试尝试次数。"
 
@@ -2881,13 +2888,14 @@ msgid "Message"
 msgstr "消息"
 
 #: src/components/pipeline/presets/editor/preset-meta-form.tsx:59
+#: src/components/pipeline/presets/editor/preset-meta-form.tsx:78
 #: src/components/pipeline/presets/preset-card.tsx:95
 #: src/components/pipeline/presets/preset-templates.ts:72
 #: src/routes/_authed/_dashboard/pipeline/presets/index.tsx:70
 msgid "Metadata"
 msgstr "元数据"
 
-#: src/components/pipeline/presets/processors/registry.ts:78
+#: src/components/pipeline/presets/processors/registry.ts:86
 msgid "Metadata Editor"
 msgstr "元数据编辑器"
 
@@ -2903,8 +2911,8 @@ msgstr "最小比特率（bps）"
 msgid "Min Interval (s)"
 msgstr "最小间隔（s）"
 
-#: src/components/notifications/forms/discord-form.tsx:98
-#: src/components/notifications/forms/email-form.tsx:177
+#: src/components/notifications/forms/discord-form.tsx:95
+#: src/components/notifications/forms/email-form.tsx:170
 msgid "Min Priority"
 msgstr "最低优先级"
 
@@ -2917,7 +2925,7 @@ msgstr "最小分段大小"
 msgid "Min size to keep."
 msgstr "保留的最小大小。"
 
-#: src/components/notifications/forms/webhook-form.tsx:153
+#: src/components/notifications/forms/webhook-form.tsx:140
 msgid "Minimum Priority"
 msgstr "最低优先级"
 
@@ -2937,8 +2945,8 @@ msgstr "监控并管理处理任务"
 msgid "Monitor this streamer"
 msgstr "监控此主播"
 
-#: src/components/streamers/card/use-streamer-status.tsx:110
-#: src/components/streamers/card/use-streamer-status.tsx:119
+#: src/components/streamers/card/use-streamer-status.tsx:118
+#: src/components/streamers/card/use-streamer-status.tsx:127
 msgid "Monitoring Stopped"
 msgstr "已停止监控"
 
@@ -2946,7 +2954,7 @@ msgstr "已停止监控"
 msgid "Month"
 msgstr "本月"
 
-#: src/components/pipeline/presets/processors/rclone-config-form.tsx:114
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:112
 msgid "Move"
 msgstr "移动"
 
@@ -2970,7 +2978,7 @@ msgstr "Mozilla/5.0..."
 msgid "Multimedia Archive"
 msgstr "多媒体归档"
 
-#: src/components/config/shared/retry-policy-form.tsx:126
+#: src/components/config/shared/retry-policy-form.tsx:94
 msgid "Multiplier for exponential backoff."
 msgstr "指数退避的倍率。"
 
@@ -2979,7 +2987,7 @@ msgid "My Archiving Workflow"
 msgstr "我的归档工作流"
 
 #: src/components/notifications/channel-form.tsx:275
-#: src/components/pipeline/presets/editor/preset-meta-form.tsx:199
+#: src/components/pipeline/presets/editor/preset-meta-form.tsx:212
 #: src/components/pipeline/workflows/workflow-editor.tsx:275
 #: src/components/streamers/config/streamer-general-settings.tsx:74
 #: src/components/streamers/edit/streamer-meta-form.tsx:123
@@ -3042,7 +3050,7 @@ msgstr "未检测到更改"
 msgid "No configuration available for this processor."
 msgstr "此处理器没有可用配置。"
 
-#: src/components/pipeline/workflows/step-config-dialog.tsx:405
+#: src/components/pipeline/workflows/step-config-dialog.tsx:421
 msgid "No configuration form available for this processor."
 msgstr "此处理器没有可用的配置表单。"
 
@@ -3050,7 +3058,7 @@ msgstr "此处理器没有可用的配置表单。"
 msgid "No configuration."
 msgstr "无配置。"
 
-#: src/components/notifications/forms/webhook-form.tsx:457
+#: src/components/notifications/forms/webhook-form.tsx:416
 msgid "No custom headers configured"
 msgstr "未配置自定义请求头"
 
@@ -3062,7 +3070,7 @@ msgstr "未添加自定义标签"
 msgid "No description."
 msgstr "暂无描述。"
 
-#: src/components/streamers/card/stream-avatar-info.tsx:134
+#: src/components/streamers/card/stream-avatar-info.tsx:143
 msgid "No detailed error message available"
 msgstr "没有可用的详细错误信息"
 
@@ -3104,7 +3112,7 @@ msgstr "未设置关键字"
 msgid "No limit"
 msgstr "不限"
 
-#: src/components/logging/log-viewer.tsx:435
+#: src/components/logging/log-viewer.tsx:437
 msgid "No logs to display"
 msgstr "暂无日志可显示"
 
@@ -3128,7 +3136,7 @@ msgstr "未配置模块"
 msgid "No notification channels"
 msgstr "暂无通知渠道"
 
-#: src/components/pipeline/workflows/step-config-dialog.tsx:527
+#: src/components/pipeline/workflows/step-config-dialog.tsx:543
 msgid "No other steps available to depend on."
 msgstr "没有其他可依赖的步骤。"
 
@@ -3230,7 +3238,7 @@ msgstr "未找到工作流"
 msgid "No workflows yet"
 msgstr "暂无工作流"
 
-#: src/components/notifications/forms/webhook-form.tsx:258
+#: src/components/notifications/forms/webhook-form.tsx:241
 msgid "None"
 msgstr "无"
 
@@ -3258,14 +3266,14 @@ msgstr "通知服务"
 msgid "Notifications"
 msgstr "通知"
 
-#: src/components/pipeline/presets/processors/rclone-config-form.tsx:259
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:251
 msgid "Number of attempts before failing the upload."
 msgstr "上传失败前的尝试次数。"
 
 #: src/components/sessions/session-card.tsx:104
-#: src/components/streamers/card/use-streamer-status.tsx:23
-#: src/components/streamers/card/use-streamer-status.tsx:221
-#: src/components/streamers/card/use-streamer-status.tsx:230
+#: src/components/streamers/card/use-streamer-status.tsx:30
+#: src/components/streamers/card/use-streamer-status.tsx:229
+#: src/components/streamers/card/use-streamer-status.tsx:238
 #: src/components/streamers/edit/recent-sessions-list.tsx:63
 #: src/components/streamers/edit/streamer-header.tsx:64
 #: src/routes/_authed/_dashboard/streamers/index.tsx:63
@@ -3327,11 +3335,11 @@ msgid "Open menu"
 msgstr "打开菜单"
 
 #: src/components/pipeline/presets/processors/copy-move-config-form.tsx:50
-#: src/components/pipeline/presets/processors/rclone-config-form.tsx:82
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:80
 msgid "Operation"
 msgstr "操作"
 
-#: src/components/pipeline/presets/processors/rclone-config-form.tsx:71
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:68
 msgid "Operation Mode"
 msgstr "操作模式"
 
@@ -3345,7 +3353,7 @@ msgstr "操作类型"
 msgid "Optional"
 msgstr "可选"
 
-#: src/components/pipeline/presets/editor/preset-meta-form.tsx:229
+#: src/components/pipeline/presets/editor/preset-meta-form.tsx:284
 msgid "Optional description for this preset"
 msgstr "此预设的可选描述"
 
@@ -3379,11 +3387,11 @@ msgid "Output Folder"
 msgstr "输出文件夹"
 
 #: src/components/config/shared/output-settings-card.tsx:118
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:254
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:255
 msgid "Output Format"
 msgstr "输出格式"
 
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:755
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:756
 msgid "Output Options"
 msgstr "输出选项"
 
@@ -3410,7 +3418,7 @@ msgstr "输出设置"
 msgid "Outputs"
 msgstr "输出"
 
-#: src/components/streamers/card/use-streamer-status.tsx:194
+#: src/components/streamers/card/use-streamer-status.tsx:202
 msgid "Outside Schedule"
 msgstr "不在计划时间内"
 
@@ -3439,7 +3447,7 @@ msgid "Override global default."
 msgstr "覆盖全局默认值。"
 
 #: src/components/streamers/edit/streamer-config-form.tsx:124
-#: src/routes/_authed/_dashboard/streamers/$id.edit.tsx:362
+#: src/routes/_authed/_dashboard/streamers/$id.edit.tsx:360
 msgid "Override global defaults for this streamer."
 msgstr "为此主播覆盖全局默认值。"
 
@@ -3465,7 +3473,7 @@ msgid "Overwrite existing files"
 msgstr "覆盖现有文件"
 
 #: src/components/pipeline/presets/processors/audio-extract-config-form.tsx:221
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:679
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:680
 msgid "Overwrite Files"
 msgstr "覆盖文件"
 
@@ -3491,8 +3499,8 @@ msgid "Parsing..."
 msgstr "解析中..."
 
 #: src/components/config/shared/proxy-settings-card.tsx:189
-#: src/components/notifications/forms/email-form.tsx:104
-#: src/components/notifications/forms/webhook-form.tsx:344
+#: src/components/notifications/forms/email-form.tsx:101
+#: src/components/notifications/forms/webhook-form.tsx:321
 #: src/routes/_public/login.tsx:176
 msgid "Password"
 msgstr "密码"
@@ -3509,11 +3517,11 @@ msgstr "密码修改成功。请使用新密码登录。"
 #~ msgid "Paste your exported CSS variables here."
 #~ msgstr "在此粘贴你导出的 CSS 变量。"
 
-#: src/components/logging/log-viewer.tsx:372
+#: src/components/logging/log-viewer.tsx:374
 msgid "Pause"
 msgstr "暂停"
 
-#: src/components/logging/log-viewer.tsx:485
+#: src/components/logging/log-viewer.tsx:487
 msgid "paused"
 msgstr "条已暂停"
 
@@ -3533,7 +3541,7 @@ msgstr "待处理任务"
 msgid "Per page:"
 msgstr "每页："
 
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:610
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:611
 #: src/components/sessions/overview-tab.tsx:195
 #: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.tsx:554
 msgid "Performance"
@@ -3696,7 +3704,7 @@ msgstr "请至少输入一个 URL"
 msgid "Please enter your new password details"
 msgstr "请输入你的新密码信息"
 
-#: src/routes/_authed/_dashboard/streamers/$id.edit.tsx:225
+#: src/routes/_authed/_dashboard/streamers/$id.edit.tsx:223
 msgid "Please fix validation errors"
 msgstr "请修正校验错误"
 
@@ -3712,7 +3720,7 @@ msgstr "正在解析流 URL，请稍候。"
 msgid "Podcast Extraction"
 msgstr "播客提取"
 
-#: src/components/notifications/forms/email-form.tsx:59
+#: src/components/notifications/forms/email-form.tsx:57
 msgid "Port"
 msgstr "端口"
 
@@ -3756,7 +3764,7 @@ msgstr "预设创建成功"
 msgid "Preset deleted successfully"
 msgstr "预设删除成功"
 
-#: src/components/pipeline/presets/editor/preset-meta-form.tsx:108
+#: src/components/pipeline/presets/editor/preset-meta-form.tsx:121
 msgid "Preset Details"
 msgstr "预设详情"
 
@@ -3786,7 +3794,7 @@ msgstr "预设"
 msgid "Presets Available"
 msgstr "可用预设"
 
-#: src/components/notifications/forms/email-form.tsx:163
+#: src/components/notifications/forms/email-form.tsx:156
 msgid "Press Enter to add recipient"
 msgstr "按 Enter 添加收件人"
 
@@ -3845,11 +3853,11 @@ msgstr "处理中"
 msgid "Processing nodes"
 msgstr "处理节点"
 
-#: src/components/pipeline/presets/editor/preset-meta-form.tsx:127
+#: src/components/pipeline/presets/editor/preset-meta-form.tsx:140
 msgid "Processor"
 msgstr "处理器"
 
-#: src/components/pipeline/presets/preset-editor.tsx:16
+#: src/components/pipeline/presets/preset-editor.tsx:17
 msgid "Processor is required"
 msgstr "必须选择处理器"
 
@@ -3890,7 +3898,7 @@ msgstr "质量"
 msgid "Quality (qscale)"
 msgstr "质量（qscale）"
 
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:282
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:283
 msgid "Quality Control"
 msgstr "质量控制"
 
@@ -3922,11 +3930,11 @@ msgstr "Rclone"
 msgid "Rclone (Upload / Move / Sync)"
 msgstr "Rclone（上传/移动/同步）"
 
-#: src/components/pipeline/presets/processors/rclone-config-form.tsx:210
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:205
 msgid "Rclone Executable"
 msgstr "Rclone 可执行文件"
 
-#: src/components/pipeline/presets/processors/registry.ts:43
+#: src/components/pipeline/presets/processors/registry.ts:51
 msgid "Rclone Transfer"
 msgstr "Rclone 传输"
 
@@ -3938,7 +3946,7 @@ msgstr "就绪"
 msgid "Ready to Watch"
 msgstr "准备观看"
 
-#: src/components/logging/log-viewer.tsx:326
+#: src/components/logging/log-viewer.tsx:328
 msgid "Real-Time Logs"
 msgstr "实时日志"
 
@@ -3946,7 +3954,7 @@ msgstr "实时日志"
 msgid "Real-time status of all system components and resources."
 msgstr "所有系统组件与资源的实时状态。"
 
-#: src/components/streamers/card/use-streamer-status.tsx:123
+#: src/components/streamers/card/use-streamer-status.tsx:131
 msgid "Reason"
 msgstr "原因"
 
@@ -3976,11 +3984,11 @@ msgid "Recording"
 msgstr "录制"
 
 #: src/components/streamers/edit/streamer-filters-tab.tsx:30
-#: src/routes/_authed/_dashboard/streamers/$id.edit.tsx:300
+#: src/routes/_authed/_dashboard/streamers/$id.edit.tsx:298
 msgid "Recording Filters"
 msgstr "录制过滤器"
 
-#: src/components/streamers/card/use-streamer-status.tsx:204
+#: src/components/streamers/card/use-streamer-status.tsx:212
 msgid "Recording will start when schedule allows"
 msgstr "录制将在计划允许时开始"
 
@@ -4005,11 +4013,12 @@ msgstr "正则模式"
 msgid "Remove"
 msgstr "移除"
 
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:701
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:702
 msgid "Remove Input on Success"
 msgstr "成功后移除输入"
 
 #: src/components/pipeline/presets/default-presets-i18n.ts:4
+#: src/components/pipeline/presets/editor/preset-meta-form.tsx:69
 #: src/components/pipeline/presets/preset-card.tsx:86
 #: src/routes/_authed/_dashboard/pipeline/presets/index.tsx:61
 msgid "Remux"
@@ -4017,7 +4026,7 @@ msgstr "重封装"
 
 #: src/components/pipeline/presets/editor/preset-meta-form.tsx:53
 #: src/components/pipeline/presets/preset-templates.ts:5
-#: src/components/pipeline/presets/processors/registry.ts:38
+#: src/components/pipeline/presets/processors/registry.ts:46
 msgid "Remux / Transcode"
 msgstr "重封装/转码"
 
@@ -4061,7 +4070,7 @@ msgstr "替换输出文件"
 msgid "Replace output files if they already exist"
 msgstr "若输出文件已存在则替换"
 
-#: src/components/notifications/forms/webhook-form.tsx:195
+#: src/components/notifications/forms/webhook-form.tsx:182
 msgid "Request timeout duration"
 msgstr "请求超时时长"
 
@@ -4069,7 +4078,7 @@ msgstr "请求超时时长"
 msgid "Reset"
 msgstr "重置"
 
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:401
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:402
 msgid "Resolution (Scale)"
 msgstr "分辨率（缩放）"
 
@@ -4089,11 +4098,11 @@ msgstr "从备份文件恢复"
 msgid "Restore password"
 msgstr "重置密码"
 
-#: src/components/logging/log-viewer.tsx:367
+#: src/components/logging/log-viewer.tsx:369
 msgid "Resume"
 msgstr "继续"
 
-#: src/components/streamers/card/use-streamer-status.tsx:70
+#: src/components/streamers/card/use-streamer-status.tsx:78
 msgid "Resuming in"
 msgstr "将在…后恢复"
 
@@ -4114,7 +4123,7 @@ msgid "Retry Job"
 msgstr "重试处理任务"
 
 #: src/components/pipeline/presets/processors/delete-config-form.tsx:42
-#: src/components/pipeline/presets/processors/rclone-config-form.tsx:237
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:228
 msgid "Retry Policy"
 msgstr "重试策略"
 
@@ -4193,7 +4202,7 @@ msgstr "采样策略"
 #: src/components/filters/FilterDialog.tsx:281
 #: src/components/notifications/subscription-manager.tsx:446
 #: src/components/pipeline/presets/editor/preset-save-fab.tsx:37
-#: src/components/pipeline/workflows/step-config-dialog.tsx:571
+#: src/components/pipeline/workflows/step-config-dialog.tsx:587
 #: src/components/streamers/edit/streamer-save-fab.tsx:45
 #: src/routes/_authed/_dashboard/config/global.tsx:183
 #: src/routes/_authed/_dashboard/config/logging.tsx:376
@@ -4230,8 +4239,8 @@ msgstr "扫描目录"
 msgid "Schedule recording times"
 msgstr "安排录制时间"
 
-#: src/components/streamers/card/use-streamer-status.tsx:26
-#: src/components/streamers/card/use-streamer-status.tsx:185
+#: src/components/streamers/card/use-streamer-status.tsx:33
+#: src/components/streamers/card/use-streamer-status.tsx:193
 msgid "Scheduled"
 msgstr "已计划"
 
@@ -4259,7 +4268,7 @@ msgstr "搜索事件..."
 msgid "Search jobs..."
 msgstr "搜索处理任务..."
 
-#: src/components/logging/log-viewer.tsx:388
+#: src/components/logging/log-viewer.tsx:390
 msgid "Search logs..."
 msgstr "搜索日志..."
 
@@ -4335,6 +4344,10 @@ msgstr "选择引擎"
 msgid "Select behavior"
 msgstr "选择行为"
 
+#: src/components/pipeline/presets/editor/preset-meta-form.tsx:250
+msgid "Select category"
+msgstr "选择类别"
+
 #: src/components/streamers/config/streamer-general-settings.tsx:109
 msgid "Select config"
 msgstr "选择配置"
@@ -4343,7 +4356,7 @@ msgstr "选择配置"
 msgid "Select File"
 msgstr "选择文件"
 
-#: src/components/pipeline/presets/processors/rclone-config-form.tsx:93
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:91
 msgid "Select operation"
 msgstr "选择操作"
 
@@ -4369,12 +4382,12 @@ msgstr "选择此过滤器生效的日期。"
 msgid "Select the events that should trigger notifications for <0>{0}</0>."
 msgstr "选择会为 <0>{0}</0> 触发通知的事件。"
 
-#: src/components/pipeline/workflows/step-config-dialog.tsx:535
+#: src/components/pipeline/workflows/step-config-dialog.tsx:551
 msgid "Select the steps that must complete successfully before this step runs."
 msgstr "选择必须在此步骤运行前成功完成的步骤。"
 
 #: src/components/config/engines/engine-editor.tsx:246
-#: src/components/pipeline/presets/editor/preset-meta-form.tsx:145
+#: src/components/pipeline/presets/editor/preset-meta-form.tsx:158
 msgid "Select type"
 msgstr "选择类型"
 
@@ -4561,7 +4574,7 @@ msgid "Start Over"
 msgstr "重新开始"
 
 #: src/components/filters/forms/TimeBasedFilterForm.tsx:81
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:483
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:484
 msgid "Start Time"
 msgstr "开始时间"
 
@@ -4590,7 +4603,7 @@ msgstr "状态"
 msgid "Step Configuration"
 msgstr "步骤配置"
 
-#: src/components/pipeline/workflows/step-config-dialog.tsx:443
+#: src/components/pipeline/workflows/step-config-dialog.tsx:459
 msgid "Step Identifier (Unique)"
 msgstr "步骤标识符（唯一）"
 
@@ -4618,7 +4631,7 @@ msgstr "直播归档"
 msgid "Stream Details"
 msgstr "流详情"
 
-#: src/components/streamers/card/stream-avatar-info.tsx:111
+#: src/components/streamers/card/stream-avatar-info.tsx:120
 msgid "Stream monitoring encountered issues"
 msgstr "流监控遇到问题"
 
@@ -4664,7 +4677,7 @@ msgstr "主播 ID"
 msgid "Streamer ID is required"
 msgstr "主播 ID 是必需的"
 
-#: src/components/streamers/card/use-streamer-status.tsx:64
+#: src/components/streamers/card/use-streamer-status.tsx:72
 msgid "Streamer is on cooldown"
 msgstr "主播处于冷却期"
 
@@ -4673,7 +4686,7 @@ msgstr "主播处于冷却期"
 msgid "Streamer updated"
 msgstr "主播已更新"
 
-#: src/routes/_authed/_dashboard/streamers/$id.edit.tsx:200
+#: src/routes/_authed/_dashboard/streamers/$id.edit.tsx:198
 msgid "Streamer updated successfully"
 msgstr "主播更新成功"
 
@@ -4720,7 +4733,7 @@ msgstr "切换语言"
 msgid "Switch Theme"
 msgstr "切换主题"
 
-#: src/components/pipeline/presets/processors/rclone-config-form.tsx:125
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:123
 msgid "Sync"
 msgstr "同步"
 
@@ -4743,11 +4756,11 @@ msgstr "系统状态"
 msgid "System-wide preferences"
 msgstr "系统级偏好设置"
 
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:333
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:334
 msgid "Target Bitrate"
 msgstr "目标比特率"
 
-#: src/components/pipeline/presets/processors/rclone-config-form.tsx:154
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:148
 msgid "Target Configuration"
 msgstr "目标配置"
 
@@ -4795,8 +4808,8 @@ msgstr "模板"
 msgid "Templates"
 msgstr "模板"
 
-#: src/components/streamers/card/use-streamer-status.tsx:54
-#: src/components/streamers/card/use-streamer-status.tsx:63
+#: src/components/streamers/card/use-streamer-status.tsx:62
+#: src/components/streamers/card/use-streamer-status.tsx:71
 msgid "Temporarily Paused"
 msgstr "暂时暂停"
 
@@ -4845,7 +4858,7 @@ msgstr "主题模式"
 msgid "There are no recorded sessions matching your criteria."
 msgstr "没有符合条件的录制会话。"
 
-#: src/components/pipeline/presets/editor/preset-meta-form.tsx:238
+#: src/components/pipeline/presets/editor/preset-meta-form.tsx:293
 msgid "This is a default preset. Description cannot be modified."
 msgstr "这是默认预设，描述无法修改。"
 
@@ -4861,7 +4874,7 @@ msgstr "此步骤是一个子工作流：<0>{workflowName}</0>。"
 msgid "This step is linked to the preset <0>{presetName}</0>."
 msgstr "此步骤已关联到预设 <0>{presetName}</0>。"
 
-#: src/components/streamers/card/use-streamer-status.tsx:197
+#: src/components/streamers/card/use-streamer-status.tsx:205
 msgid "This streamer is currently live, but outside your configured recording schedule."
 msgstr "该主播当前正在直播，但不在你配置的录制时间表内。"
 
@@ -4895,6 +4908,7 @@ msgstr "这将永久移除“{0}”配置。此操作无法撤销。"
 
 #: src/components/pipeline/presets/default-presets-i18n.ts:8
 #: src/components/pipeline/presets/editor/preset-meta-form.tsx:54
+#: src/components/pipeline/presets/editor/preset-meta-form.tsx:71
 #: src/components/pipeline/presets/preset-card.tsx:88
 #: src/components/pipeline/presets/preset-templates.ts:24
 #: src/routes/_authed/_dashboard/pipeline/presets/index.tsx:63
@@ -4906,7 +4920,7 @@ msgstr "缩略图"
 msgid "Thumbnail for {0}"
 msgstr "{0} 的缩略图"
 
-#: src/components/pipeline/presets/processors/registry.ts:48
+#: src/components/pipeline/presets/processors/registry.ts:56
 msgid "Thumbnail Generator"
 msgstr "缩略图生成器"
 
@@ -4930,7 +4944,7 @@ msgstr "时间线"
 msgid "Timeout"
 msgstr "超时"
 
-#: src/components/notifications/forms/webhook-form.tsx:184
+#: src/components/notifications/forms/webhook-form.tsx:171
 msgid "Timeout (seconds)"
 msgstr "超时（秒）"
 
@@ -4954,7 +4968,7 @@ msgstr "标题"
 msgid "To"
 msgstr "收件人"
 
-#: src/components/notifications/forms/email-form.tsx:151
+#: src/components/notifications/forms/email-form.tsx:144
 msgid "To Addresses"
 msgstr "收件人地址"
 
@@ -4962,7 +4976,7 @@ msgstr "收件人地址"
 msgid "Today"
 msgstr "今天"
 
-#: src/components/notifications/forms/webhook-form.tsx:291
+#: src/components/notifications/forms/webhook-form.tsx:274
 msgid "Token"
 msgstr "令牌"
 
@@ -5054,7 +5068,7 @@ msgstr "应用关闭时触发。"
 msgid "Triggered when the application starts up."
 msgstr "应用启动时触发。"
 
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:469
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:470
 msgid "Trimming & Time"
 msgstr "裁剪与时间"
 
@@ -5109,7 +5123,7 @@ msgstr "未知"
 msgid "Unknown Engine ID: {engineId}"
 msgstr "未知引擎 ID：{engineId}"
 
-#: src/components/streamers/card/use-streamer-status.tsx:85
+#: src/components/streamers/card/use-streamer-status.tsx:93
 msgid "Until"
 msgstr "直到"
 
@@ -5138,6 +5152,7 @@ msgstr "已更新"
 msgid "Updates existing items and creates new ones. Nothing is deleted."
 msgstr "更新现有项目并创建新项目，不会删除任何内容。"
 
+#: src/components/pipeline/presets/editor/preset-meta-form.tsx:74
 #: src/components/pipeline/presets/preset-card.tsx:91
 #: src/routes/_authed/_dashboard/pipeline/presets/index.tsx:66
 msgid "Upload"
@@ -5173,7 +5188,7 @@ msgstr "URL"
 msgid "URL is required"
 msgstr "必须填写 URL"
 
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:658
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:659
 msgid "Use <0>-movflags +faststart</0>"
 msgstr "使用 <0>-movflags +faststart</0>"
 
@@ -5181,7 +5196,7 @@ msgstr "使用 <0>-movflags +faststart</0>"
 msgid "Use System Proxy"
 msgstr "使用系统代理"
 
-#: src/components/notifications/forms/email-form.tsx:203
+#: src/components/notifications/forms/email-form.tsx:194
 msgid "Use TLS"
 msgstr "启用 TLS"
 
@@ -5194,13 +5209,13 @@ msgid "User Agent"
 msgstr "User-Agent"
 
 #: src/components/config/shared/proxy-settings-card.tsx:171
-#: src/components/notifications/forms/email-form.tsx:86
-#: src/components/notifications/forms/webhook-form.tsx:326
+#: src/components/notifications/forms/email-form.tsx:82
+#: src/components/notifications/forms/webhook-form.tsx:306
 #: src/routes/_public/login.tsx:157
 msgid "Username"
 msgstr "用户名"
 
-#: src/components/notifications/forms/discord-form.tsx:55
+#: src/components/notifications/forms/discord-form.tsx:54
 msgid "Username (Optional)"
 msgstr "用户名（可选）"
 
@@ -5236,19 +5251,19 @@ msgstr "校验完整性"
 msgid "Version"
 msgstr "版本"
 
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:89
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:90
 msgid "Video"
 msgstr "视频"
 
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:343
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:344
 msgid "Video Bitrate"
 msgstr "视频比特率"
 
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:133
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:134
 msgid "Video Codec"
 msgstr "视频编码"
 
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:123
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:124
 msgid "Video Settings"
 msgstr "视频设置"
 
@@ -5256,7 +5271,7 @@ msgstr "视频设置"
 msgid "View All"
 msgstr "查看全部"
 
-#: src/components/logging/log-viewer.tsx:350
+#: src/components/logging/log-viewer.tsx:352
 msgid "View application logs in real-time. Logs are limited to the last {MAX_LOG_ENTRIES} entries."
 msgstr "实时查看应用日志。日志仅保留最近 {MAX_LOG_ENTRIES} 条。"
 
@@ -5287,7 +5302,7 @@ msgstr "等待"
 msgid "Wait time before starting."
 msgstr "开始前等待时间。"
 
-#: src/components/logging/log-viewer.tsx:439
+#: src/components/logging/log-viewer.tsx:441
 msgid "Waiting for connection..."
 msgstr "正在等待连接..."
 
@@ -5303,13 +5318,13 @@ msgstr "观看"
 #~ msgid "Watch Replay"
 #~ msgstr "观看回放"
 
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:655
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:656
 msgid "Web Optimize"
 msgstr "网页优化"
 
 #: src/components/notifications/channel-card.tsx:80
-#: src/components/notifications/forms/discord-form.tsx:32
-#: src/components/notifications/forms/webhook-form.tsx:64
+#: src/components/notifications/forms/discord-form.tsx:33
+#: src/components/notifications/forms/webhook-form.tsx:67
 msgid "Webhook URL"
 msgstr "Webhook URL"
 

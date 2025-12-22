@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { lazy, ComponentType } from 'react';
 import {
   RemuxConfigSchema,
   RcloneConfigSchema,
@@ -10,8 +11,16 @@ import {
   MetadataConfigSchema,
   ExecuteConfigSchema,
 } from '../processor-schemas';
-import { RemuxConfigForm } from './remux-config-form';
-import { RcloneConfigForm } from './rclone-config-form';
+
+// Lazy load large form components for code splitting
+const RemuxConfigForm = lazy(() =>
+  import('./remux-config-form').then((m) => ({ default: m.RemuxConfigForm })),
+);
+const RcloneConfigForm = lazy(() =>
+  import('./rclone-config-form').then((m) => ({ default: m.RcloneConfigForm })),
+);
+
+// Smaller forms can be imported directly
 import { ThumbnailConfigForm } from './thumbnail-config-form';
 import { AudioExtractConfigForm } from './audio-extract-config-form';
 import { CompressionConfigForm } from './compression-config-form';
@@ -20,7 +29,6 @@ import { DeleteConfigForm } from './delete-config-form';
 import { MetadataConfigForm } from './metadata-config-form';
 import { ExecuteConfigForm } from './execute-config-form';
 
-import { ComponentType } from 'react';
 import { ProcessorConfigFormProps } from './common-props';
 import { msg } from '@lingui/core/macro';
 import { type MessageDescriptor } from '@lingui/core';

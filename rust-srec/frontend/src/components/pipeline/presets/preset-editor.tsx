@@ -13,6 +13,7 @@ const PresetFormSchema = z.object({
   id: z.string().min(1, t`ID is required`),
   name: z.string().min(1, t`Name is required`),
   description: z.string().optional(),
+  category: z.string().optional(),
   processor: z.string().min(1, t`Processor is required`),
   config: z.any(),
 });
@@ -38,10 +39,12 @@ export function PresetEditor({
       id: '',
       name: '',
       description: '',
+      category: '',
       processor: 'remux',
       config: {},
     },
   });
+  console.log('initialData', initialData);
 
   useEffect(() => {
     if (initialData) {
@@ -49,6 +52,7 @@ export function PresetEditor({
         id: initialData.id,
         name: initialData.name,
         description: initialData.description || '',
+        category: initialData.category || '',
         processor: initialData.processor,
         config: initialData.config,
       });

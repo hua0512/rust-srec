@@ -16,7 +16,8 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { useFormContext } from 'react-hook-form';
-import { Switch } from '@/components/ui/switch';
+import { IconInput } from '@/components/ui/icon-input';
+import { SwitchCard } from '@/components/ui/switch-card';
 
 export function DiscordForm() {
   const form = useFormContext();
@@ -32,14 +33,12 @@ export function DiscordForm() {
               <Trans>Webhook URL</Trans>
             </FormLabel>
             <FormControl>
-              <div className="relative">
-                <Globe className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
-                <Input
-                  placeholder="https://discord.com/api/webhooks/..."
-                  {...field}
-                  className="pl-9 bg-background/50"
-                />
-              </div>
+              <IconInput
+                icon={Globe}
+                placeholder="https://discord.com/api/webhooks/..."
+                className="bg-background/50"
+                {...field}
+              />
             </FormControl>
             <FormMessage />
           </FormItem>
@@ -55,14 +54,12 @@ export function DiscordForm() {
                 <Trans>Username (Optional)</Trans>
               </FormLabel>
               <FormControl>
-                <div className="relative">
-                  <User className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
-                  <Input
-                    placeholder="Bot Name"
-                    {...field}
-                    className="pl-9 bg-background/50"
-                  />
-                </div>
+                <IconInput
+                  icon={User}
+                  placeholder="Bot Name"
+                  className="bg-background/50"
+                  {...field}
+                />
               </FormControl>
               <FormMessage />
             </FormItem>
@@ -118,19 +115,12 @@ export function DiscordForm() {
           control={form.control}
           name="settings.enabled"
           render={({ field }) => (
-            <FormItem className="flex flex-row items-center justify-between rounded-lg border border-primary/10 bg-background/50 p-3 shadow-sm h-full">
-              <div className="space-y-0.5">
-                <FormLabel>
-                  <Trans>Enabled</Trans>
-                </FormLabel>
-              </div>
-              <FormControl>
-                <Switch
-                  checked={field.value}
-                  onCheckedChange={field.onChange}
-                />
-              </FormControl>
-            </FormItem>
+            <SwitchCard
+              label={<Trans>Enabled</Trans>}
+              checked={field.value}
+              onCheckedChange={field.onChange}
+              className="border-primary/10 bg-background/50 h-full"
+            />
           )}
         />
       </div>

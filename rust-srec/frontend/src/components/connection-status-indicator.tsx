@@ -6,6 +6,7 @@ import {
   TooltipTrigger,
 } from '@/components/ui/tooltip';
 import { useDownloadStore, type ConnectionStatus } from '@/store/downloads';
+import { useStore } from '@/hooks/use-store';
 import { cn } from '@/lib/utils';
 import { useLingui } from '@lingui/react';
 import { msg } from '@lingui/core/macro';
@@ -41,7 +42,10 @@ const STATUS_CONFIG: Record<ConnectionStatus, StatusConfig> = {
 
 export function ConnectionStatusIndicator() {
   const { i18n } = useLingui();
-  const connectionStatus = useDownloadStore((state) => state.connectionStatus);
+  // Use hydration-safe wrapper - returns undefined during SSR
+  const connectionStatus =
+    useStore(useDownloadStore, (state) => state.connectionStatus) ??
+    'disconnected';
   const config = STATUS_CONFIG[connectionStatus];
 
   return (

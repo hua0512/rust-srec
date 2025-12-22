@@ -1,3 +1,4 @@
+import { useState, useEffect } from 'react';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { CardTitle } from '@/components/ui/card';
 import {
@@ -26,13 +27,21 @@ interface StreamAvatarInfoProps {
 
 export const StreamAvatarInfo = ({ streamer }: StreamAvatarInfoProps) => {
   const platform = getPlatformFromUrl(streamer.url);
-  const now = new Date();
+
+  // Use client-side state to avoid hydration mismatch from time differences
+  const [now, setNow] = useState<Date | null>(null);
+  useEffect(() => {
+    setNow(new Date());
+  }, []);
+
   const disabledUntil = streamer.disabled_until
     ? new Date(streamer.disabled_until)
     : null;
-  const isTemporarilyPaused =
-    (disabledUntil && disabledUntil > now) ||
-    streamer.state === 'TEMPORAL_DISABLED';
+  // During SSR (now === null), default to false to avoid hydration mismatch
+  const isTemporarilyPaused = now
+    ? (disabledUntil && disabledUntil > now) ||
+      streamer.state === 'TEMPORAL_DISABLED'
+    : streamer.state === 'TEMPORAL_DISABLED';
 
   const stopStates = [
     'FATAL_ERROR',

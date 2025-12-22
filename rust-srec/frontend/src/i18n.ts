@@ -1,4 +1,5 @@
 import { i18n } from '@lingui/core';
+import { useEffect, useState } from 'react';
 import { messages as enMessages } from './locales/en/messages';
 import { messages as zhCNMessages } from './locales/zh-CN/messages';
 
@@ -39,7 +40,35 @@ function detectLocale(): string {
   return defaultLocale;
 }
 
-// Set initial locale
-i18n.activate(detectLocale());
+// Activate default locale at module level (SSR-safe)
+// Client-side locale detection happens via useInitLocale hook
+i18n.activate(defaultLocale);
+
+/**
+ * Initialize locale on the client side.
+ * Call this early in the app to switch to the user's preferred locale.
+ */
+export function initializeLocale(): void {
+  if (typeof window === 'undefined') return;
+  const locale = detectLocale();
+  if (i18n.locale !== locale) {
+    i18n.activate(locale);
+  }
+}
+
+/**
+ * Hook to initialize locale on client hydration.
+ * Returns true once locale is initialized.
+ */
+export function useInitLocale(): boolean {
+  const [isInitialized, setIsInitialized] = useState(false);
+
+  useEffect(() => {
+    initializeLocale();
+    setIsInitialized(true);
+  }, []);
+
+  return isInitialized;
+}
 
 export { i18n };

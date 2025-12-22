@@ -15,7 +15,7 @@ import {
 } from '@/api/schemas';
 import { z } from 'zod';
 import { useDownloadProgress } from '@/hooks/use-download-progress';
-import { useDownloadStore } from '@/store/downloads';
+import { useDownloadStore, type Download } from '@/store/downloads';
 import { useShallow } from 'zustand/react/shallow';
 
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
@@ -183,9 +183,7 @@ function EditStreamerForm({
   sessions: Awaited<ReturnType<typeof listSessions>> | undefined;
   isLoadingSessions: boolean;
   isFiltersLoading: boolean;
-  downloads: ReturnType<
-    ReturnType<typeof useDownloadStore>['getDownloadsByStreamer']
-  >;
+  downloads: Download[];
   queryClient: ReturnType<typeof useQueryClient>;
 }) {
   const navigate = useNavigate();

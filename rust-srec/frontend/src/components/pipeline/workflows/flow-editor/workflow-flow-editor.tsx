@@ -54,6 +54,14 @@ function WorkflowFlowEditorInner({
   const nodesInitialized = useNodesInitialized();
   const { fitView } = useReactFlow();
 
+  // Memoized remove handler to avoid creating new functions on every render
+  const handleRemoveStep = useCallback(
+    (id: string) => {
+      onUpdateSteps(steps.filter((st) => st.id !== id));
+    },
+    [steps, onUpdateSteps],
+  );
+
   // Sync from props
   useEffect(() => {
     // 1. Generate Edges from steps (Always fresh)
@@ -80,9 +88,7 @@ function WorkflowFlowEditorInner({
           step: s.step,
           id: s.id,
           onEdit: onEditStep,
-          onRemove: (id: string) => {
-            onUpdateSteps(steps.filter((st) => st.id !== id));
-          },
+          onRemove: handleRemoveStep,
         };
 
         if (existing) {
@@ -113,7 +119,7 @@ function WorkflowFlowEditorInner({
     });
 
     setEdges(newEdges);
-  }, [steps, onEditStep, onUpdateSteps, setNodes, setEdges]);
+  }, [steps, onEditStep, handleRemoveStep, setNodes, setEdges]);
 
   // Separate effect to handle Auto-Layout logic
   // We want to re-layout when the structure changes (e.g. loading a preset)

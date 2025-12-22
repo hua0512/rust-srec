@@ -227,7 +227,7 @@ export type DagListResponse = z.infer<typeof DagListResponseSchema>;
 export const DagStepDefinitionSchema = z.object({
   id: z.string(),
   step: PipelineStepSchema,
-  depends_on: z.array(z.string()).default([]),
+  depends_on: z.array(z.string()).optional(),
 });
 export type DagStepDefinition = z.infer<typeof DagStepDefinitionSchema>;
 

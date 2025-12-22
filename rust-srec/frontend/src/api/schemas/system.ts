@@ -25,21 +25,18 @@ export const GlobalConfigSchema = z.object({
   max_concurrent_io_jobs: z.number(),
   job_history_retention_days: z.number(),
   session_gap_time_secs: z.number(),
-  // Handle pipeline as either string (from backend) or object (from form)
+  // Handle pipeline - backend sends JSON string, form sends object
   pipeline: z
     .preprocess((val) => {
-      // If it's a string, parse it
-      if (typeof val === 'string') {
+      if (typeof val === 'string' && val) {
         try {
           return JSON.parse(val);
         } catch {
           return null;
         }
       }
-      // If it's already an object, pass through
       return val;
-    }, DagPipelineDefinitionSchema.nullable().optional())
-    .nullable()
+    }, DagPipelineDefinitionSchema.nullable())
     .optional(),
 });
 

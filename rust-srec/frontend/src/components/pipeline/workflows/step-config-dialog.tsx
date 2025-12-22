@@ -7,7 +7,7 @@ import { Trans } from '@lingui/react/macro';
 import { useLingui } from '@lingui/react';
 import { useQuery } from '@tanstack/react-query';
 import { Loader2, Unlink, X } from 'lucide-react';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState, memo, Suspense } from 'react';
 import { useForm } from 'react-hook-form';
 import { z } from 'zod';
 import { DagStepDefinition, PipelineStep } from '@/api/schemas';
@@ -29,7 +29,7 @@ interface StepConfigDialogProps {
   currentStepIndex?: number;
 }
 
-export function StepConfigDialog({
+export const StepConfigDialog = memo(function StepConfigDialog({
   open,
   onOpenChange,
   dagStep,
@@ -372,9 +372,17 @@ export function StepConfigDialog({
                                     presetDetail.processor,
                                   );
                                   return Def ? (
-                                    <Def.component
-                                      control={presetForm.control}
-                                    />
+                                    <Suspense
+                                      fallback={
+                                        <div className="flex items-center justify-center py-8">
+                                          <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+                                        </div>
+                                      }
+                                    >
+                                      <Def.component
+                                        control={presetForm.control}
+                                      />
+                                    </Suspense>
                                   ) : null;
                                 })()}
                               </form>
@@ -397,7 +405,15 @@ export function StepConfigDialog({
                             onSubmit={form.handleSubmit(handleSubmit)}
                             className="contents"
                           >
-                            <processorDef.component control={form.control} />
+                            <Suspense
+                              fallback={
+                                <div className="flex items-center justify-center py-8">
+                                  <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+                                </div>
+                              }
+                            >
+                              <processorDef.component control={form.control} />
+                            </Suspense>
                           </form>
                         </Form>
                       ) : (
@@ -578,4 +594,4 @@ export function StepConfigDialog({
     </AnimatePresence>,
     document.body,
   );
-}
+});
