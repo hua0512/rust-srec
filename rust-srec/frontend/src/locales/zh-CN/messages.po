@@ -309,12 +309,12 @@ msgstr "调整 UI 元素的圆角程度。"
 #: src/components/pipeline/presets/processors/rclone-config-form.tsx:58
 #: src/components/pipeline/presets/processors/remux-config-form.tsx:107
 #: src/components/streamers/edit/streamer-config-form.tsx:74
-#: src/routes/_authed/_dashboard/streamers/$id.edit.tsx:261
+#: src/routes/_authed/_dashboard/streamers/$id.edit.tsx:293
 msgid "Advanced"
 msgstr "高级"
 
 #: src/components/streamers/edit/streamer-config-form.tsx:121
-#: src/routes/_authed/_dashboard/streamers/$id.edit.tsx:327
+#: src/routes/_authed/_dashboard/streamers/$id.edit.tsx:359
 msgid "Advanced Configuration"
 msgstr "高级配置"
 
@@ -578,7 +578,7 @@ msgid "Basic post-processing: Remux FLV to MP4 and generate a thumbnail preview.
 msgstr "基础后处理：将 FLV 重封装为 MP4，并生成缩略图预览。"
 
 #: src/components/streamers/edit/streamer-config-form.tsx:94
-#: src/routes/_authed/_dashboard/streamers/$id.edit.tsx:300
+#: src/routes/_authed/_dashboard/streamers/$id.edit.tsx:332
 msgid "Basic settings for the streamer."
 msgstr "主播的基本设置。"
 
@@ -697,16 +697,16 @@ msgid "Category"
 msgstr "分类"
 
 #: src/components/sidebar/navbar.tsx:28
-#: src/routes/_authed/change-password.tsx:130
-#: src/routes/_authed/change-password.tsx:277
+#: src/routes/_authed/change-password.tsx:135
+#: src/routes/_authed/change-password.tsx:282
 msgid "Change Password"
 msgstr "修改密码"
 
-#: src/routes/_authed/change-password.tsx:128
+#: src/routes/_authed/change-password.tsx:133
 msgid "Change Password Required"
 msgstr "需要修改密码"
 
-#: src/routes/_authed/change-password.tsx:275
+#: src/routes/_authed/change-password.tsx:280
 msgid "Changing Password..."
 msgstr "正在修改密码..."
 
@@ -935,11 +935,11 @@ msgstr "配置接收通知的位置和方式。"
 msgid "Confirm Import"
 msgstr "确认导入"
 
-#: src/routes/_authed/change-password.tsx:237
+#: src/routes/_authed/change-password.tsx:242
 msgid "Confirm new password"
 msgstr "确认新密码"
 
-#: src/routes/_authed/change-password.tsx:231
+#: src/routes/_authed/change-password.tsx:236
 msgid "Confirm Password"
 msgstr "确认密码"
 
@@ -1169,11 +1169,11 @@ msgstr "Cron 表达式"
 msgid "Current Filter Directive"
 msgstr "当前过滤指令"
 
-#: src/routes/_authed/change-password.tsx:151
+#: src/routes/_authed/change-password.tsx:156
 msgid "Current password"
 msgstr "当前密码"
 
-#: src/routes/_authed/change-password.tsx:145
+#: src/routes/_authed/change-password.tsx:150
 msgid "Current Password"
 msgstr "当前密码"
 
@@ -1741,7 +1741,7 @@ msgstr "输入要匹配的分类（例如 Just Chatting、Gaming）。"
 msgid "Enter keywords to match against the stream title."
 msgstr "输入要匹配的直播标题关键字。"
 
-#: src/routes/_public/login.tsx:139
+#: src/routes/_public/login.tsx:146
 msgid "Enter your credentials to access your account"
 msgstr "输入你的凭据以登录账户"
 
@@ -1903,7 +1903,7 @@ msgstr "取消处理任务失败"
 msgid "Failed to cancel pipeline"
 msgstr "取消处理管道失败"
 
-#: src/routes/_authed/change-password.tsx:81
+#: src/routes/_authed/change-password.tsx:86
 msgid "Failed to change password"
 msgstr "修改密码失败"
 
@@ -1951,7 +1951,7 @@ msgstr "创建工作流失败：{0}"
 msgid "Failed to delete channel"
 msgstr "删除渠道失败"
 
-#: src/routes/_authed/_dashboard/streamers/$id.edit.tsx:156
+#: src/routes/_authed/_dashboard/streamers/$id.edit.tsx:236
 msgid "Failed to delete filter"
 msgstr "删除过滤器失败"
 
@@ -2078,7 +2078,7 @@ msgid "Failed to update settings"
 msgstr "更新设置失败"
 
 #: src/routes/_authed/_dashboard/dashboard.tsx:86
-#: src/routes/_authed/_dashboard/streamers/$id.edit.tsx:118
+#: src/routes/_authed/_dashboard/streamers/$id.edit.tsx:206
 #: src/routes/_authed/_dashboard/streamers/index.tsx:194
 msgid "Failed to update streamer"
 msgstr "更新主播失败"
@@ -2171,7 +2171,7 @@ msgstr "按标题关键字过滤"
 msgid "Filter created successfully"
 msgstr "过滤器创建成功"
 
-#: src/routes/_authed/_dashboard/streamers/$id.edit.tsx:152
+#: src/routes/_authed/_dashboard/streamers/$id.edit.tsx:232
 msgid "Filter deleted successfully"
 msgstr "过滤器删除成功"
 
@@ -2261,12 +2261,12 @@ msgstr "全流程处理"
 #: src/components/pipeline/presets/processors/rclone-config-form.tsx:52
 #: src/components/pipeline/presets/processors/remux-config-form.tsx:71
 #: src/components/streamers/edit/streamer-config-form.tsx:67
-#: src/routes/_authed/_dashboard/streamers/$id.edit.tsx:254
+#: src/routes/_authed/_dashboard/streamers/$id.edit.tsx:286
 msgid "General"
 msgstr "常规"
 
 #: src/components/streamers/edit/streamer-config-form.tsx:91
-#: src/routes/_authed/_dashboard/streamers/$id.edit.tsx:297
+#: src/routes/_authed/_dashboard/streamers/$id.edit.tsx:329
 msgid "General Configuration"
 msgstr "常规配置"
 
@@ -2378,10 +2378,10 @@ msgstr "健康"
 msgid "Healthy"
 msgstr "正常"
 
-#: src/routes/_authed/change-password.tsx:171
-#: src/routes/_authed/change-password.tsx:213
-#: src/routes/_authed/change-password.tsx:257
-#: src/routes/_public/login.tsx:193
+#: src/routes/_authed/change-password.tsx:176
+#: src/routes/_authed/change-password.tsx:218
+#: src/routes/_authed/change-password.tsx:262
+#: src/routes/_public/login.tsx:200
 msgid "Hide password"
 msgstr "隐藏密码"
 
@@ -2990,7 +2990,7 @@ msgstr "名称"
 msgid "Name is required"
 msgstr "必须填写名称"
 
-#: src/routes/_public/login.tsx:154
+#: src/routes/_public/login.tsx:161
 msgid "name@example.com"
 msgstr "name@example.com"
 
@@ -3010,11 +3010,11 @@ msgstr "网络与系统"
 msgid "New"
 msgstr "新建"
 
-#: src/routes/_authed/change-password.tsx:189
+#: src/routes/_authed/change-password.tsx:194
 msgid "New Password"
 msgstr "新密码"
 
-#: src/routes/_authed/change-password.tsx:195
+#: src/routes/_authed/change-password.tsx:200
 msgid "New password (min 8 chars)"
 msgstr "新密码（至少 8 个字符）"
 
@@ -3439,7 +3439,7 @@ msgid "Override global default."
 msgstr "覆盖全局默认值。"
 
 #: src/components/streamers/edit/streamer-config-form.tsx:124
-#: src/routes/_authed/_dashboard/streamers/$id.edit.tsx:330
+#: src/routes/_authed/_dashboard/streamers/$id.edit.tsx:362
 msgid "Override global defaults for this streamer."
 msgstr "为此主播覆盖全局默认值。"
 
@@ -3493,13 +3493,17 @@ msgstr "解析中..."
 #: src/components/config/shared/proxy-settings-card.tsx:189
 #: src/components/notifications/forms/email-form.tsx:104
 #: src/components/notifications/forms/webhook-form.tsx:344
-#: src/routes/_public/login.tsx:169
+#: src/routes/_public/login.tsx:176
 msgid "Password"
 msgstr "密码"
 
 #: src/routes/_authed/change-password.tsx:76
-msgid "Password changed successfully"
-msgstr "密码修改成功"
+#~ msgid "Password changed successfully"
+#~ msgstr "密码修改成功"
+
+#: src/routes/_authed/change-password.tsx:80
+msgid "Password changed successfully. Please login with your new password."
+msgstr "密码修改成功。请使用新密码登录。"
 
 #: src/routes/_authed/_dashboard/config/theme.tsx:383
 #~ msgid "Paste your exported CSS variables here."
@@ -3688,11 +3692,11 @@ msgstr "请输入有效的 URL"
 msgid "Please enter at least one URL"
 msgstr "请至少输入一个 URL"
 
-#: src/routes/_authed/change-password.tsx:134
+#: src/routes/_authed/change-password.tsx:139
 msgid "Please enter your new password details"
 msgstr "请输入你的新密码信息"
 
-#: src/routes/_authed/_dashboard/streamers/$id.edit.tsx:139
+#: src/routes/_authed/_dashboard/streamers/$id.edit.tsx:225
 msgid "Please fix validation errors"
 msgstr "请修正校验错误"
 
@@ -3972,7 +3976,7 @@ msgid "Recording"
 msgstr "录制"
 
 #: src/components/streamers/edit/streamer-filters-tab.tsx:30
-#: src/routes/_authed/_dashboard/streamers/$id.edit.tsx:268
+#: src/routes/_authed/_dashboard/streamers/$id.edit.tsx:300
 msgid "Recording Filters"
 msgstr "录制过滤器"
 
@@ -4081,7 +4085,7 @@ msgstr "资源"
 msgid "Restore from a backup file"
 msgstr "从备份文件恢复"
 
-#: src/routes/_public/login.tsx:210
+#: src/routes/_public/login.tsx:217
 msgid "Restore password"
 msgstr "重置密码"
 
@@ -4464,14 +4468,14 @@ msgstr "设置更新成功"
 msgid "Shared pipeline utilities"
 msgstr "共享的处理管道工具"
 
-#: src/routes/_authed/change-password.tsx:173
-#: src/routes/_authed/change-password.tsx:215
-#: src/routes/_authed/change-password.tsx:259
-#: src/routes/_public/login.tsx:195
+#: src/routes/_authed/change-password.tsx:178
+#: src/routes/_authed/change-password.tsx:220
+#: src/routes/_authed/change-password.tsx:264
+#: src/routes/_public/login.tsx:202
 msgid "Show password"
 msgstr "显示密码"
 
-#: src/routes/_public/login.tsx:221
+#: src/routes/_public/login.tsx:228
 msgid "Sign In"
 msgstr "登录"
 
@@ -4480,7 +4484,7 @@ msgstr "登录"
 msgid "Sign out"
 msgstr "退出登录"
 
-#: src/routes/_public/login.tsx:219
+#: src/routes/_public/login.tsx:226
 msgid "Signing in..."
 msgstr "正在登录..."
 
@@ -4669,7 +4673,7 @@ msgstr "主播处于冷却期"
 msgid "Streamer updated"
 msgstr "主播已更新"
 
-#: src/routes/_authed/_dashboard/streamers/$id.edit.tsx:112
+#: src/routes/_authed/_dashboard/streamers/$id.edit.tsx:200
 msgid "Streamer updated successfully"
 msgstr "主播更新成功"
 
@@ -5192,7 +5196,7 @@ msgstr "User-Agent"
 #: src/components/config/shared/proxy-settings-card.tsx:171
 #: src/components/notifications/forms/email-form.tsx:86
 #: src/components/notifications/forms/webhook-form.tsx:326
-#: src/routes/_public/login.tsx:150
+#: src/routes/_public/login.tsx:157
 msgid "Username"
 msgstr "用户名"
 
@@ -5313,7 +5317,7 @@ msgstr "Webhook URL"
 msgid "Week"
 msgstr "本周"
 
-#: src/routes/_public/login.tsx:136
+#: src/routes/_public/login.tsx:143
 msgid "Welcome back"
 msgstr "欢迎回来"
 

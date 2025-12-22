@@ -121,7 +121,8 @@ function EditStreamerPage() {
   );
 
   // Wait for all required data before rendering the form
-  const isLoading = isStreamerLoading || isPlatformsLoading || isTemplatesLoading;
+  const isLoading =
+    isStreamerLoading || isPlatformsLoading || isTemplatesLoading;
 
   if (isLoading || !streamer) {
     return (
@@ -182,7 +183,9 @@ function EditStreamerForm({
   sessions: Awaited<ReturnType<typeof listSessions>> | undefined;
   isLoadingSessions: boolean;
   isFiltersLoading: boolean;
-  downloads: ReturnType<ReturnType<typeof useDownloadStore>['getDownloadsByStreamer']>;
+  downloads: ReturnType<
+    ReturnType<typeof useDownloadStore>['getDownloadsByStreamer']
+  >;
   queryClient: ReturnType<typeof useQueryClient>;
 }) {
   const navigate = useNavigate();

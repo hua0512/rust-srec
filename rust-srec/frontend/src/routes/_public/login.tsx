@@ -81,8 +81,15 @@ function LoginPage() {
         toast.success('Logged in successfully');
         // Invalidate router to re-run guards with new auth state
         await router.invalidate();
+        // Validate redirect is a safe internal path (starts with / and no protocol)
+        const isValidRedirect =
+          search.redirect &&
+          search.redirect.startsWith('/') &&
+          !search.redirect.startsWith('//') &&
+          !search.redirect.includes(':');
+        const safeRedirect = isValidRedirect ? search.redirect : '/dashboard';
         // Navigate to the redirect target
-        router.navigate({ to: search.redirect || '/dashboard', replace: true });
+        router.navigate({ to: safeRedirect, replace: true });
       }
     } catch (error: unknown) {
       const errorMessage =

@@ -1,20 +1,25 @@
 import { HeadContent, Scripts, createRootRoute } from '@tanstack/react-router';
-import { TanStackRouterDevtools } from '@tanstack/react-router-devtools';
+import { lazy, Suspense } from 'react';
 
 import appCss from '../styles.css?url';
 import { NotFound } from '@/components/not-found';
 import { createServerFn } from '@tanstack/react-start';
 
+// Lazy load devtools to prevent hydration mismatch (client-only component)
+const TanStackRouterDevtools =
+  process.env.NODE_ENV === 'production'
+    ? () => null
+    : lazy(() =>
+        import('@tanstack/react-router-devtools').then((res) => ({
+          default: res.TanStackRouterDevtools,
+        })),
+      );
+
 const fetchUser = createServerFn({ method: 'GET' }).handler(async () => {
-  // We need to auth on the server so we have access to secure cookies
-  const { useAppSession } = await import('@/utils/session');
-  const session = await useAppSession();
-
-  if (!session.data.username || !session.data.roles) {
-    return null;
-  }
-
-  return session.data;
+  // Use ensureValidToken to validate the session and refresh if needed
+  // This prevents users with expired tokens from appearing authenticated
+  const { ensureValidToken } = await import('@/server/tokenRefresh');
+  return await ensureValidToken();
 });
 
 export const Route = createRootRoute({
@@ -73,18 +78,20 @@ export const queryClient = new QueryClient();
 
 function RootDocument({ children }: { children: React.ReactNode }) {
   return (
-    <html lang={i18n.locale}>
+    <html lang={i18n.locale} suppressHydrationWarning>
       <head>
         <link rel="icon" type="image/svg+xml" href="/stream-rec.svg"></link>
         <HeadContent />
       </head>
-      <body>
+      <body suppressHydrationWarning>
         <QueryClientProvider client={queryClient}>
           <I18nProvider i18n={i18n}>
             <ThemeProvider defaultTheme="system" storageKey="vite-ui-theme">
               {children}
               <Toaster />
-              <TanStackRouterDevtools position="bottom-right" />
+              <Suspense>
+                <TanStackRouterDevtools position="bottom-right" />
+              </Suspense>
               <Scripts />
             </ThemeProvider>
           </I18nProvider>

@@ -85,17 +85,11 @@ export const changePassword = createServerFn({ method: 'POST' })
       body: JSON.stringify(data),
     });
 
-    // Update the server session to clear mustChangePassword flag
-    // This ensures the _authed layout check uses the updated value
-    // This ensures the _authed layout check uses the updated value
+    // Clear the session since the backend revokes all tokens on password change
+    // This forces the user to re-login with their new password
     const { useAppSession } = await import('../../utils/session');
     const session = await useAppSession();
-    if (session.data) {
-      await session.update({
-        ...session.data,
-        mustChangePassword: false,
-      });
-    }
+    await session.clear();
   });
 
 export const checkAuthFn = createServerFn({ method: 'POST' }).handler(

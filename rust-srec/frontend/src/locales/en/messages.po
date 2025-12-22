@@ -309,12 +309,12 @@ msgstr "Adjust the roundness of UI elements."
 #: src/components/pipeline/presets/processors/rclone-config-form.tsx:58
 #: src/components/pipeline/presets/processors/remux-config-form.tsx:107
 #: src/components/streamers/edit/streamer-config-form.tsx:74
-#: src/routes/_authed/_dashboard/streamers/$id.edit.tsx:261
+#: src/routes/_authed/_dashboard/streamers/$id.edit.tsx:293
 msgid "Advanced"
 msgstr "Advanced"
 
 #: src/components/streamers/edit/streamer-config-form.tsx:121
-#: src/routes/_authed/_dashboard/streamers/$id.edit.tsx:327
+#: src/routes/_authed/_dashboard/streamers/$id.edit.tsx:359
 msgid "Advanced Configuration"
 msgstr "Advanced Configuration"
 
@@ -578,7 +578,7 @@ msgid "Basic post-processing: Remux FLV to MP4 and generate a thumbnail preview.
 msgstr "Basic post-processing: Remux FLV to MP4 and generate a thumbnail preview."
 
 #: src/components/streamers/edit/streamer-config-form.tsx:94
-#: src/routes/_authed/_dashboard/streamers/$id.edit.tsx:300
+#: src/routes/_authed/_dashboard/streamers/$id.edit.tsx:332
 msgid "Basic settings for the streamer."
 msgstr "Basic settings for the streamer."
 
@@ -697,16 +697,16 @@ msgid "Category"
 msgstr "Category"
 
 #: src/components/sidebar/navbar.tsx:28
-#: src/routes/_authed/change-password.tsx:130
-#: src/routes/_authed/change-password.tsx:277
+#: src/routes/_authed/change-password.tsx:135
+#: src/routes/_authed/change-password.tsx:282
 msgid "Change Password"
 msgstr "Change Password"
 
-#: src/routes/_authed/change-password.tsx:128
+#: src/routes/_authed/change-password.tsx:133
 msgid "Change Password Required"
 msgstr "Change Password Required"
 
-#: src/routes/_authed/change-password.tsx:275
+#: src/routes/_authed/change-password.tsx:280
 msgid "Changing Password..."
 msgstr "Changing Password..."
 
@@ -935,11 +935,11 @@ msgstr "Configure where and how you receive notifications."
 msgid "Confirm Import"
 msgstr "Confirm Import"
 
-#: src/routes/_authed/change-password.tsx:237
+#: src/routes/_authed/change-password.tsx:242
 msgid "Confirm new password"
 msgstr "Confirm new password"
 
-#: src/routes/_authed/change-password.tsx:231
+#: src/routes/_authed/change-password.tsx:236
 msgid "Confirm Password"
 msgstr "Confirm Password"
 
@@ -1169,11 +1169,11 @@ msgstr "Cron Expression"
 msgid "Current Filter Directive"
 msgstr "Current Filter Directive"
 
-#: src/routes/_authed/change-password.tsx:151
+#: src/routes/_authed/change-password.tsx:156
 msgid "Current password"
 msgstr "Current password"
 
-#: src/routes/_authed/change-password.tsx:145
+#: src/routes/_authed/change-password.tsx:150
 msgid "Current Password"
 msgstr "Current Password"
 
@@ -1741,7 +1741,7 @@ msgstr "Enter categories to match against (e.g. Just Chatting, Gaming)."
 msgid "Enter keywords to match against the stream title."
 msgstr "Enter keywords to match against the stream title."
 
-#: src/routes/_public/login.tsx:139
+#: src/routes/_public/login.tsx:146
 msgid "Enter your credentials to access your account"
 msgstr "Enter your credentials to access your account"
 
@@ -1903,7 +1903,7 @@ msgstr "Failed to cancel job"
 msgid "Failed to cancel pipeline"
 msgstr "Failed to cancel pipeline"
 
-#: src/routes/_authed/change-password.tsx:81
+#: src/routes/_authed/change-password.tsx:86
 msgid "Failed to change password"
 msgstr "Failed to change password"
 
@@ -1951,7 +1951,7 @@ msgstr "Failed to create workflow: {0}"
 msgid "Failed to delete channel"
 msgstr "Failed to delete channel"
 
-#: src/routes/_authed/_dashboard/streamers/$id.edit.tsx:156
+#: src/routes/_authed/_dashboard/streamers/$id.edit.tsx:236
 msgid "Failed to delete filter"
 msgstr "Failed to delete filter"
 
@@ -2078,7 +2078,7 @@ msgid "Failed to update settings"
 msgstr "Failed to update settings"
 
 #: src/routes/_authed/_dashboard/dashboard.tsx:86
-#: src/routes/_authed/_dashboard/streamers/$id.edit.tsx:118
+#: src/routes/_authed/_dashboard/streamers/$id.edit.tsx:206
 #: src/routes/_authed/_dashboard/streamers/index.tsx:194
 msgid "Failed to update streamer"
 msgstr "Failed to update streamer"
@@ -2171,7 +2171,7 @@ msgstr "Filter by title keywords"
 msgid "Filter created successfully"
 msgstr "Filter created successfully"
 
-#: src/routes/_authed/_dashboard/streamers/$id.edit.tsx:152
+#: src/routes/_authed/_dashboard/streamers/$id.edit.tsx:232
 msgid "Filter deleted successfully"
 msgstr "Filter deleted successfully"
 
@@ -2261,12 +2261,12 @@ msgstr "Full Processing"
 #: src/components/pipeline/presets/processors/rclone-config-form.tsx:52
 #: src/components/pipeline/presets/processors/remux-config-form.tsx:71
 #: src/components/streamers/edit/streamer-config-form.tsx:67
-#: src/routes/_authed/_dashboard/streamers/$id.edit.tsx:254
+#: src/routes/_authed/_dashboard/streamers/$id.edit.tsx:286
 msgid "General"
 msgstr "General"
 
 #: src/components/streamers/edit/streamer-config-form.tsx:91
-#: src/routes/_authed/_dashboard/streamers/$id.edit.tsx:297
+#: src/routes/_authed/_dashboard/streamers/$id.edit.tsx:329
 msgid "General Configuration"
 msgstr "General Configuration"
 
@@ -2378,10 +2378,10 @@ msgstr "Health"
 msgid "Healthy"
 msgstr "Healthy"
 
-#: src/routes/_authed/change-password.tsx:171
-#: src/routes/_authed/change-password.tsx:213
-#: src/routes/_authed/change-password.tsx:257
-#: src/routes/_public/login.tsx:193
+#: src/routes/_authed/change-password.tsx:176
+#: src/routes/_authed/change-password.tsx:218
+#: src/routes/_authed/change-password.tsx:262
+#: src/routes/_public/login.tsx:200
 msgid "Hide password"
 msgstr "Hide password"
 
@@ -2990,7 +2990,7 @@ msgstr "Name"
 msgid "Name is required"
 msgstr "Name is required"
 
-#: src/routes/_public/login.tsx:154
+#: src/routes/_public/login.tsx:161
 msgid "name@example.com"
 msgstr "name@example.com"
 
@@ -3010,11 +3010,11 @@ msgstr "Network & System"
 msgid "New"
 msgstr "New"
 
-#: src/routes/_authed/change-password.tsx:189
+#: src/routes/_authed/change-password.tsx:194
 msgid "New Password"
 msgstr "New Password"
 
-#: src/routes/_authed/change-password.tsx:195
+#: src/routes/_authed/change-password.tsx:200
 msgid "New password (min 8 chars)"
 msgstr "New password (min 8 chars)"
 
@@ -3439,7 +3439,7 @@ msgid "Override global default."
 msgstr "Override global default."
 
 #: src/components/streamers/edit/streamer-config-form.tsx:124
-#: src/routes/_authed/_dashboard/streamers/$id.edit.tsx:330
+#: src/routes/_authed/_dashboard/streamers/$id.edit.tsx:362
 msgid "Override global defaults for this streamer."
 msgstr "Override global defaults for this streamer."
 
@@ -3493,13 +3493,17 @@ msgstr "Parsing..."
 #: src/components/config/shared/proxy-settings-card.tsx:189
 #: src/components/notifications/forms/email-form.tsx:104
 #: src/components/notifications/forms/webhook-form.tsx:344
-#: src/routes/_public/login.tsx:169
+#: src/routes/_public/login.tsx:176
 msgid "Password"
 msgstr "Password"
 
 #: src/routes/_authed/change-password.tsx:76
-msgid "Password changed successfully"
-msgstr "Password changed successfully"
+#~ msgid "Password changed successfully"
+#~ msgstr "Password changed successfully"
+
+#: src/routes/_authed/change-password.tsx:80
+msgid "Password changed successfully. Please login with your new password."
+msgstr "Password changed successfully. Please login with your new password."
 
 #: src/routes/_authed/_dashboard/config/theme.tsx:383
 #~ msgid "Paste your exported CSS variables here."
@@ -3688,11 +3692,11 @@ msgstr "Please enter a valid URL"
 msgid "Please enter at least one URL"
 msgstr "Please enter at least one URL"
 
-#: src/routes/_authed/change-password.tsx:134
+#: src/routes/_authed/change-password.tsx:139
 msgid "Please enter your new password details"
 msgstr "Please enter your new password details"
 
-#: src/routes/_authed/_dashboard/streamers/$id.edit.tsx:139
+#: src/routes/_authed/_dashboard/streamers/$id.edit.tsx:225
 msgid "Please fix validation errors"
 msgstr "Please fix validation errors"
 
@@ -3972,7 +3976,7 @@ msgid "Recording"
 msgstr "Recording"
 
 #: src/components/streamers/edit/streamer-filters-tab.tsx:30
-#: src/routes/_authed/_dashboard/streamers/$id.edit.tsx:268
+#: src/routes/_authed/_dashboard/streamers/$id.edit.tsx:300
 msgid "Recording Filters"
 msgstr "Recording Filters"
 
@@ -4081,7 +4085,7 @@ msgstr "Resources"
 msgid "Restore from a backup file"
 msgstr "Restore from a backup file"
 
-#: src/routes/_public/login.tsx:210
+#: src/routes/_public/login.tsx:217
 msgid "Restore password"
 msgstr "Restore password"
 
@@ -4464,14 +4468,14 @@ msgstr "Settings updated successfully"
 msgid "Shared pipeline utilities"
 msgstr "Shared pipeline utilities"
 
-#: src/routes/_authed/change-password.tsx:173
-#: src/routes/_authed/change-password.tsx:215
-#: src/routes/_authed/change-password.tsx:259
-#: src/routes/_public/login.tsx:195
+#: src/routes/_authed/change-password.tsx:178
+#: src/routes/_authed/change-password.tsx:220
+#: src/routes/_authed/change-password.tsx:264
+#: src/routes/_public/login.tsx:202
 msgid "Show password"
 msgstr "Show password"
 
-#: src/routes/_public/login.tsx:221
+#: src/routes/_public/login.tsx:228
 msgid "Sign In"
 msgstr "Sign In"
 
@@ -4480,7 +4484,7 @@ msgstr "Sign In"
 msgid "Sign out"
 msgstr "Sign out"
 
-#: src/routes/_public/login.tsx:219
+#: src/routes/_public/login.tsx:226
 msgid "Signing in..."
 msgstr "Signing in..."
 
@@ -4669,7 +4673,7 @@ msgstr "Streamer is on cooldown"
 msgid "Streamer updated"
 msgstr "Streamer updated"
 
-#: src/routes/_authed/_dashboard/streamers/$id.edit.tsx:112
+#: src/routes/_authed/_dashboard/streamers/$id.edit.tsx:200
 msgid "Streamer updated successfully"
 msgstr "Streamer updated successfully"
 
@@ -5192,7 +5196,7 @@ msgstr "User Agent"
 #: src/components/config/shared/proxy-settings-card.tsx:171
 #: src/components/notifications/forms/email-form.tsx:86
 #: src/components/notifications/forms/webhook-form.tsx:326
-#: src/routes/_public/login.tsx:150
+#: src/routes/_public/login.tsx:157
 msgid "Username"
 msgstr "Username"
 
@@ -5313,7 +5317,7 @@ msgstr "Webhook URL"
 msgid "Week"
 msgstr "Week"
 
-#: src/routes/_public/login.tsx:136
+#: src/routes/_public/login.tsx:143
 msgid "Welcome back"
 msgstr "Welcome back"
 
