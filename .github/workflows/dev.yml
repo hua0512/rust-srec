@@ -5,27 +5,24 @@ on:
     branches: [dev]
   workflow_dispatch:
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 env:
   CARGO_TERM_COLOR: always
-  PROTOC_VERSION: "33.2"
 
 jobs:
-  check-and-clippy:
-    name: Check and Clippy
+  clippy:
+    name: Clippy
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: clippy
-      - name: Install protoc (Linux)
-        run: |
-          curl -LO https://github.com/protocolbuffers/protobuf/releases/download/v${{ env.PROTOC_VERSION }}/protoc-${{ env.PROTOC_VERSION }}-linux-x86_64.zip
-          unzip protoc-${{ env.PROTOC_VERSION }}-linux-x86_64.zip -d $HOME/.local
-          echo "$HOME/.local/bin" >> $GITHUB_PATH
+      - uses: ./.github/actions/setup-protoc
       - uses: Swatinem/rust-cache@v2
-      - name: Check
-        run: cargo check --workspace
       - name: Clippy check
         run: cargo clippy --all-targets --all-features -- -D warnings
 
@@ -35,44 +32,27 @@ jobs:
       matrix:
         include:
           - os: ubuntu-latest
-            protoc_arch: linux-x86_64
           - os: ubuntu-22.04-arm
-            protoc_arch: linux-aarch_64
           - os: windows-latest
-            protoc_arch: win64
           - os: macos-15-intel
-            protoc_arch: osx-x86_64
           - os: macos-latest
-            protoc_arch: osx-aarch_64
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v6
       - uses: dtolnay/rust-toolchain@stable
-      - name: Install protoc (Unix)
-        if: runner.os != 'Windows'
-        run: |
-          curl -LO https://github.com/protocolbuffers/protobuf/releases/download/v${{ env.PROTOC_VERSION }}/protoc-${{ env.PROTOC_VERSION }}-${{ matrix.protoc_arch }}.zip
-          unzip protoc-${{ env.PROTOC_VERSION }}-${{ matrix.protoc_arch }}.zip -d $HOME/.local
-          echo "$HOME/.local/bin" >> $GITHUB_PATH
-      - name: Install protoc (Windows)
-        if: runner.os == 'Windows'
-        shell: pwsh
-        run: |
-          Invoke-WebRequest -Uri "https://github.com/protocolbuffers/protobuf/releases/download/v${{ env.PROTOC_VERSION }}/protoc-${{ env.PROTOC_VERSION }}-${{ matrix.protoc_arch }}.zip" -OutFile protoc.zip
-          Expand-Archive -Path protoc.zip -DestinationPath "$env:USERPROFILE\.local"
-          echo "$env:USERPROFILE\.local\bin" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+      - uses: ./.github/actions/setup-protoc
       - uses: Swatinem/rust-cache@v2
       - name: Run tests
         run: cargo test --workspace
 
   build:
     name: Build
+    needs: clippy
     strategy:
       matrix:
         include:
           - os: ubuntu-latest
             target: x86_64-unknown-linux-musl
-            protoc_arch: linux-x86_64
             mesio_artifact_name: mesio
             mesio_asset_name: mesio-linux-musl-amd64
             strev_artifact_name: strev
@@ -81,7 +61,6 @@ jobs:
             srec_asset_name: rust-srec-linux-musl-amd64
           - os: ubuntu-latest
             target: x86_64-unknown-linux-gnu
-            protoc_arch: linux-x86_64
             mesio_artifact_name: mesio
             mesio_asset_name: mesio-linux-amd64
             strev_artifact_name: strev
@@ -90,7 +69,6 @@ jobs:
             srec_asset_name: rust-srec-linux-amd64
           - os: ubuntu-22.04-arm
             target: aarch64-unknown-linux-musl
-            protoc_arch: linux-aarch_64
             mesio_artifact_name: mesio
             mesio_asset_name: mesio-linux-musl-arm64
             strev_artifact_name: strev
@@ -99,7 +77,6 @@ jobs:
             srec_asset_name: rust-srec-linux-musl-arm64
           - os: ubuntu-22.04-arm
             target: aarch64-unknown-linux-gnu
-            protoc_arch: linux-aarch_64
             mesio_artifact_name: mesio
             mesio_asset_name: mesio-linux-arm64
             strev_artifact_name: strev
@@ -108,7 +85,6 @@ jobs:
             srec_asset_name: rust-srec-linux-arm64
           - os: windows-latest
             target: x86_64-pc-windows-msvc
-            protoc_arch: win64
             mesio_artifact_name: mesio.exe
             mesio_asset_name: mesio-windows-amd64.exe
             strev_artifact_name: strev.exe
@@ -117,7 +93,6 @@ jobs:
             srec_asset_name: rust-srec-windows-amd64.exe
           - os: macos-15-intel
             target: x86_64-apple-darwin
-            protoc_arch: osx-x86_64
             mesio_artifact_name: mesio
             mesio_asset_name: mesio-macos-amd64
             strev_artifact_name: strev
@@ -126,7 +101,6 @@ jobs:
             srec_asset_name: rust-srec-macos-amd64
           - os: macos-latest
             target: aarch64-apple-darwin
-            protoc_arch: osx-aarch_64
             mesio_artifact_name: mesio
             mesio_asset_name: mesio-macos-arm64
             strev_artifact_name: strev
@@ -139,19 +113,7 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: ${{ matrix.target }}
-      - name: Install protoc (Unix)
-        if: runner.os != 'Windows'
-        run: |
-          curl -LO https://github.com/protocolbuffers/protobuf/releases/download/v${{ env.PROTOC_VERSION }}/protoc-${{ env.PROTOC_VERSION }}-${{ matrix.protoc_arch }}.zip
-          unzip protoc-${{ env.PROTOC_VERSION }}-${{ matrix.protoc_arch }}.zip -d $HOME/.local
-          echo "$HOME/.local/bin" >> $GITHUB_PATH
-      - name: Install protoc (Windows)
-        if: runner.os == 'Windows'
-        shell: pwsh
-        run: |
-          Invoke-WebRequest -Uri "https://github.com/protocolbuffers/protobuf/releases/download/v${{ env.PROTOC_VERSION }}/protoc-${{ env.PROTOC_VERSION }}-${{ matrix.protoc_arch }}.zip" -OutFile protoc.zip
-          Expand-Archive -Path protoc.zip -DestinationPath "$env:USERPROFILE\.local"
-          echo "$env:USERPROFILE\.local\bin" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+      - uses: ./.github/actions/setup-protoc
       - uses: Swatinem/rust-cache@v2
         with:
           key: ${{ matrix.target }}
@@ -223,7 +185,7 @@ jobs:
 
   docker-build:
     name: Build Docker
-    needs: check-and-clippy
+    needs: clippy
     runs-on: ${{ matrix.runner }}
     strategy:
       fail-fast: false
