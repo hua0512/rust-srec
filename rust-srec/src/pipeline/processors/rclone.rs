@@ -641,7 +641,6 @@ mod tests {
             streamer_name: Some("StreamerName".to_string()),
             session_title: Some("Live Title".to_string()),
             config: Some(r#"{"destination_root": "remote:/{streamer}/{title}/"}"#.to_string()),
-            ..Default::default()
         };
 
         let config_json =
