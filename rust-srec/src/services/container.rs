@@ -668,6 +668,8 @@ impl ServiceContainer {
         let pipeline_manager = self.pipeline_manager.clone();
         let stream_monitor = self.stream_monitor.clone();
         let streamer_manager = self.streamer_manager.clone();
+        let danmu_service = self.danmu_service.clone();
+        let config_service = self.config_service.clone();
         let mut receiver = self.download_manager.subscribe();
         let cancellation_token = self.cancellation_token.clone();
 
@@ -691,6 +693,86 @@ impl ServiceContainer {
                                             debug!("Recorded download error for {}: {}", streamer_id, error);
                                         }
                                     }
+                                }
+
+                                // Handle danmu segmentation
+                                match &download_event {
+                                    DownloadManagerEvent::SegmentStarted { session_id, segment_path, .. } => {
+                                        if let Some(handle) = danmu_service.get_handle(session_id) {
+                                            // Use filename as segment ID
+                                            let path = std::path::Path::new(segment_path);
+                                            let segment_id = path.file_name()
+                                                .map(|s| s.to_string_lossy().to_string())
+                                                .unwrap_or_else(|| "unknown".to_string());
+
+                                            // Start danmu segment
+                                            // We change extension to .xml for danmu file
+                                            let mut danmu_path = path.to_path_buf();
+                                            danmu_path.set_extension("xml");
+
+                                            if let Err(e) = handle.start_segment(
+                                                &segment_id,
+                                                danmu_path,
+                                                chrono::Utc::now()
+                                            ).await {
+                                                warn!("Failed to start danmu segment: {}", e);
+                                            }
+                                        }
+                                    }
+                                    DownloadManagerEvent::SegmentCompleted { session_id, streamer_id, segment_path, size_bytes, .. } => {
+                                        // Always finish the danmu segment first (Flush/Close XML)
+                                        if let Some(handle) = danmu_service.get_handle(session_id) {
+                                             let path = std::path::Path::new(segment_path);
+                                             let segment_id = path.file_name()
+                                                .map(|s| s.to_string_lossy().to_string())
+                                                .unwrap_or_else(|| "unknown".to_string());
+
+                                            if let Err(e) = handle.end_segment(&segment_id).await {
+                                                warn!("Failed to end danmu segment: {}", e);
+                                            }
+                                        }
+
+                                        let mut discard = false;
+                                        // Resolve config to check min_size
+                                        match config_service.get_config_for_streamer(streamer_id).await {
+                                            Ok(config) => {
+                                                if config.min_segment_size_bytes > 0 && (*size_bytes as i64) < config.min_segment_size_bytes {
+                                                     info!("Segment {} is too small ({} bytes < min {}), discarding",
+                                                         segment_path, size_bytes, config.min_segment_size_bytes);
+
+                                                     let path = std::path::Path::new(segment_path);
+                                                     // Delete video file
+                                                     if let Err(e) = tokio::fs::remove_file(path).await {
+                                                         warn!("Failed to delete small segment {}: {}", segment_path, e);
+                                                     } else {
+                                                         debug!("Deleted small segment: {}", segment_path);
+                                                     }
+
+                                                     // Delete danmu file if it exists
+                                                     // Note: We called end_segment above, so the file usage should be released.
+                                                     let mut danmu_path = path.to_path_buf();
+                                                     danmu_path.set_extension("xml");
+                                                     if danmu_path.exists() {
+                                                         if let Err(e) = tokio::fs::remove_file(&danmu_path).await {
+                                                            warn!("Failed to delete small segment danmu {}: {}", danmu_path.display(), e);
+                                                         } else {
+                                                            debug!("Deleted small segment danmu: {}", danmu_path.display());
+                                                         }
+                                                     }
+
+                                                     discard = true;
+                                                }
+                                            }
+                                            Err(e) => {
+                                                warn!("Failed to resolve config for streamer {} during segment completion: {}", streamer_id, e);
+                                            }
+                                        }
+
+                                        if discard {
+                                            continue;
+                                        }
+                                    }
+                                    _ => {}
                                 }
 
                                 // Forward to pipeline manager
