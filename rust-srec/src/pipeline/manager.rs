@@ -627,17 +627,20 @@ where
                 &input_paths,
                 Some(streamer_id.to_string()),
                 Some(session_id.to_string()),
-                streamer_name,
-                session_title,
+                streamer_name.clone(),
+                session_title.clone(),
             )
             .await?;
 
         info!(
-            "Created DAG pipeline {} with {} steps ({} root jobs) for session {}",
+            "Created DAG pipeline {} with {} steps ({} root jobs) for session {}, streamer {}, streamer name {}, session title {}",
             result.dag_id,
             result.total_steps,
             result.root_job_ids.len(),
-            session_id
+            session_id,
+            streamer_id,
+            streamer_name.unwrap_or_default(),
+            session_title.unwrap_or_default(),
         );
 
         // Emit events for root jobs

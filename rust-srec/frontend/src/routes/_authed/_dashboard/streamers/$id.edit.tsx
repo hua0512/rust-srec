@@ -1,5 +1,4 @@
 import { createFileRoute, useNavigate } from '@tanstack/react-router';
-import { useMemo } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { t } from '@lingui/core/macro';
@@ -81,7 +80,6 @@ const tabContentVariants: any = {
 
 function EditStreamerPage() {
   const { id } = Route.useParams();
-  const navigate = useNavigate();
   const queryClient = useQueryClient();
 
   // Subscribe to download progress updates for this specific streamer
@@ -98,12 +96,99 @@ function EditStreamerPage() {
     enabled: !!id,
   });
 
+  const { data: platforms, isLoading: isPlatformsLoading } = useQuery({
+    queryKey: ['platform-configs'],
+    queryFn: () => listPlatformConfigs(),
+  });
+
+  const { data: templates, isLoading: isTemplatesLoading } = useQuery({
+    queryKey: ['templates'],
+    queryFn: () => listTemplates(),
+  });
+
+  const { data: engines } = useQuery({
+    queryKey: ['engines'],
+    queryFn: () => listEngines(),
+  });
+
+  const { data: filters, isLoading: isFiltersLoading } = useQuery({
+    queryKey: ['streamers', id, 'filters'],
+    queryFn: () => listFilters({ data: id }),
+  });
+
   const downloads = useDownloadStore(
     useShallow((state) => state.getDownloadsByStreamer(id)),
   );
+
+  // Wait for all required data before rendering the form
+  const isLoading = isStreamerLoading || isPlatformsLoading || isTemplatesLoading;
+
+  if (isLoading || !streamer) {
+    return (
+      <div className="max-w-4xl mx-auto space-y-8 p-6 animate-pulse">
+        <div className="flex items-center gap-4">
+          <Skeleton className="h-10 w-10 rounded-full" />
+          <div className="space-y-2">
+            <Skeleton className="h-8 w-48" />
+            <Skeleton className="h-4 w-24" />
+          </div>
+        </div>
+        <div className="space-y-6">
+          <Skeleton className="h-10 w-full rounded-xl" />
+          <Skeleton className="h-[400px] w-full rounded-xl" />
+        </div>
+      </div>
+    );
+  }
+
+  // Render the form component only when all data is ready
+  return (
+    <EditStreamerForm
+      id={id}
+      streamer={streamer}
+      platforms={platforms || []}
+      templates={templates || []}
+      engines={engines}
+      filters={filters || []}
+      sessions={sessions}
+      isLoadingSessions={isLoadingSessions}
+      isFiltersLoading={isFiltersLoading}
+      downloads={downloads}
+      queryClient={queryClient}
+    />
+  );
+}
+
+// Inner form component - only mounts when all data is ready
+function EditStreamerForm({
+  id,
+  streamer,
+  platforms,
+  templates,
+  engines,
+  filters,
+  sessions,
+  isLoadingSessions,
+  isFiltersLoading,
+  downloads,
+  queryClient,
+}: {
+  id: string;
+  streamer: NonNullable<Awaited<ReturnType<typeof getStreamer>>>;
+  platforms: Awaited<ReturnType<typeof listPlatformConfigs>>;
+  templates: Awaited<ReturnType<typeof listTemplates>>;
+  engines: Awaited<ReturnType<typeof listEngines>> | undefined;
+  filters: Awaited<ReturnType<typeof listFilters>>;
+  sessions: Awaited<ReturnType<typeof listSessions>> | undefined;
+  isLoadingSessions: boolean;
+  isFiltersLoading: boolean;
+  downloads: ReturnType<ReturnType<typeof useDownloadStore>['getDownloadsByStreamer']>;
+  queryClient: ReturnType<typeof useQueryClient>;
+}) {
+  const navigate = useNavigate();
   const isRecording = downloads.length > 0;
-  const isLive = streamer?.state === 'LIVE';
-  const platform = streamer ? getPlatformFromUrl(streamer.url) : 'Unknown';
+  const isLive = streamer.state === 'LIVE';
+  const platform = getPlatformFromUrl(streamer.url);
 
   const updateMutation = useMutation({
     mutationFn: (data: z.infer<typeof UpdateStreamerSchema>) =>
@@ -120,8 +205,6 @@ function EditStreamerPage() {
   });
 
   const onSubmit = (data: StreamerFormValues) => {
-    console.log(data);
-
     const payload: z.infer<typeof UpdateStreamerSchema> = {
       ...data,
       platform_config_id:
@@ -139,12 +222,6 @@ function EditStreamerPage() {
     toast.error(t`Please fix validation errors`);
   };
 
-  // Filters state
-  const { data: filters, isLoading: isFiltersLoading } = useQuery({
-    queryKey: ['streamers', id, 'filters'],
-    queryFn: () => listFilters({ data: id }),
-  });
-
   const deleteFilterMutation = useMutation({
     mutationFn: (filterId: string) =>
       deleteFilter({ data: { streamerId: id, filterId } }),
@@ -157,73 +234,25 @@ function EditStreamerPage() {
     },
   });
 
-  const defaultValues = useMemo(() => {
-    if (!streamer) return undefined;
-    // Parse the specific config if it's a string
-    const specificConfig =
-      typeof streamer.streamer_specific_config === 'string'
-        ? JSON.parse(streamer.streamer_specific_config)
-        : (streamer.streamer_specific_config ?? {});
+  // Parse the specific config
+  const specificConfig =
+    typeof streamer.streamer_specific_config === 'string'
+      ? JSON.parse(streamer.streamer_specific_config)
+      : (streamer.streamer_specific_config ?? {});
 
-    return {
-      ...streamer,
-      platform_config_id: streamer.platform_config_id || '',
-      template_id: streamer.template_id || undefined,
-      streamer_specific_config: specificConfig,
-      // Extract these from the nested config for the form
-      download_retry_policy: specificConfig?.download_retry_policy ?? undefined,
-      danmu_sampling_config: specificConfig?.danmu_sampling_config ?? undefined,
-    };
-  }, [streamer]);
-
+  // Initialize form with correct values from the start
   const form = useForm<StreamerFormValues>({
     resolver: zodResolver(StreamerFormSchema) as any,
     defaultValues: {
-      name: '',
-      url: '',
-      enabled: true,
-      priority: 'NORMAL',
-      platform_config_id: 'none',
-      template_id: 'none',
-      streamer_specific_config: {},
-    },
-    values: defaultValues,
-    resetOptions: {
-      keepDirtyValues: true,
+      name: streamer.name,
+      url: streamer.url,
+      enabled: streamer.enabled,
+      priority: streamer.priority,
+      platform_config_id: streamer.platform_config_id || '',
+      template_id: streamer.template_id ?? undefined,
+      streamer_specific_config: specificConfig,
     },
   });
-
-  // Queries for selectors
-  const { data: platforms } = useQuery({
-    queryKey: ['platform-configs'],
-    queryFn: () => listPlatformConfigs(),
-  });
-  const { data: templates } = useQuery({
-    queryKey: ['templates'],
-    queryFn: () => listTemplates(),
-  });
-  const { data: engines } = useQuery({
-    queryKey: ['engines'],
-    queryFn: () => listEngines(),
-  });
-
-  if (isStreamerLoading) {
-    return (
-      <div className="max-w-4xl mx-auto space-y-8 p-6 animate-pulse">
-        <div className="flex items-center gap-4">
-          <Skeleton className="h-10 w-10 rounded-full" />
-          <div className="space-y-2">
-            <Skeleton className="h-8 w-48" />
-            <Skeleton className="h-4 w-24" />
-          </div>
-        </div>
-        <div className="space-y-6">
-          <Skeleton className="h-10 w-full rounded-xl" />
-          <Skeleton className="h-[400px] w-full rounded-xl" />
-        </div>
-      </div>
-    );
-  }
 
   return (
     <motion.div

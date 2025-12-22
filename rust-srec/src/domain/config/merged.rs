@@ -479,7 +479,9 @@ impl MergedConfigBuilder {
             .output_filename_template
             .unwrap_or_else(|| "{streamer}-{title}-%Y%m%d-%H%M%S".to_string());
         let output_file_format = self.output_file_format.unwrap_or_else(|| "flv".to_string());
-        let download_engine = self.download_engine.unwrap_or_else(|| "mesio".to_string());
+        let download_engine = self
+            .download_engine
+            .unwrap_or_else(|| "default-mesio".to_string());
         let record_danmu = self.record_danmu.unwrap_or(false);
         let stream_selection = self.stream_selection.unwrap_or_default();
         let pipeline = self.pipeline;
