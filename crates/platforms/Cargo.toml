@@ -66,6 +66,7 @@ flate2 = "1.0"
 parking_lot = "0.12"
 byteorder = "1.5"
 brotli = "8.0"
+openssl = { version = "0.10", optional = true, features = ["vendored"] }
 
 # Protocol Buffers
 prost = "0.14"
@@ -75,6 +76,9 @@ prost-types = "0.14"
 prost-build = "0.14"
 
 
+
+
 [features]
 default = ["douyu"]
 douyu = ["rquickjs"]
+static-ssl = ["openssl"]

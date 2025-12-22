@@ -74,6 +74,15 @@ jobs:
             target: x86_64-unknown-linux-musl
             protoc_arch: linux-x86_64
             mesio_artifact_name: mesio
+            mesio_asset_name: mesio-linux-musl-amd64
+            strev_artifact_name: strev
+            strev_asset_name: strev-linux-musl-amd64
+            srec_artifact_name: rust-srec
+            srec_asset_name: rust-srec-linux-musl-amd64
+          - os: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+            protoc_arch: linux-x86_64
+            mesio_artifact_name: mesio
             mesio_asset_name: mesio-linux-amd64
             strev_artifact_name: strev
             strev_asset_name: strev-linux-amd64
@@ -81,6 +90,15 @@ jobs:
             srec_asset_name: rust-srec-linux-amd64
           - os: ubuntu-22.04-arm
             target: aarch64-unknown-linux-musl
+            protoc_arch: linux-aarch_64
+            mesio_artifact_name: mesio
+            mesio_asset_name: mesio-linux-musl-arm64
+            strev_artifact_name: strev
+            strev_asset_name: strev-linux-musl-arm64
+            srec_artifact_name: rust-srec
+            srec_asset_name: rust-srec-linux-musl-arm64
+          - os: ubuntu-22.04-arm
+            target: aarch64-unknown-linux-gnu
             protoc_arch: linux-aarch_64
             mesio_artifact_name: mesio
             mesio_asset_name: mesio-linux-arm64
@@ -137,44 +155,68 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           key: ${{ matrix.target }}
-      - name: Install musl-tools and OpenSSL for musl on Linux
-        if: contains(matrix.os, 'ubuntu')
+      - name: Install build dependencies on Linux
+        if: contains(matrix.os, 'ubuntu') && !contains(matrix.target, 'musl')
         run: |
           sudo apt-get update
-          sudo apt-get install -y musl-tools musl-dev libssl-dev pkg-config
-      - name: Set OpenSSL for musl (Linux amd64)
-        if: matrix.target == 'x86_64-unknown-linux-musl'
+          sudo apt-get install -y libssl-dev pkg-config
+      - name: Install musl-tools
+        if: contains(matrix.target, 'musl')
         run: |
-          echo "OPENSSL_STATIC=1" >> $GITHUB_ENV
-          echo "PKG_CONFIG_ALLOW_CROSS=1" >> $GITHUB_ENV
-          echo "OPENSSL_DIR=/usr" >> $GITHUB_ENV
-      - name: Set OpenSSL for musl (Linux arm64)
-        if: matrix.target == 'aarch64-unknown-linux-musl'
-        run: |
-          echo "OPENSSL_STATIC=1" >> $GITHUB_ENV
-          echo "PKG_CONFIG_ALLOW_CROSS=1" >> $GITHUB_ENV
-          echo "OPENSSL_DIR=/usr" >> $GITHUB_ENV
+          sudo apt-get update
+          sudo apt-get install -y musl-tools musl-dev
 
-      - name: Build mesio and strev release
-        run: cargo build -p mesio -p strev --release --target ${{ matrix.target }}
+      - name: Build mesio release
+        if: "!contains(matrix.target, 'musl')"
+        run: cargo build -p mesio --release --target ${{ matrix.target }}
+      - name: Build mesio release (musl)
+        if: contains(matrix.target, 'musl')
+        env:
+          CC: musl-gcc
+        run: cargo build -p mesio --release --target ${{ matrix.target }}
+
+      - name: Build strev release
+        if: "!contains(matrix.target, 'musl')"
+        run: cargo build -p strev --release --target ${{ matrix.target }}
+      - name: Build strev release (static)
+        if: contains(matrix.target, 'musl')
+        env:
+          CC: musl-gcc
+        run: cargo build -p strev --release --target ${{ matrix.target }} --features static-ssl
+
       - name: Build rust-srec release
+        if: "!contains(matrix.target, 'musl')"
         run: cargo build -p rust-srec --release --target ${{ matrix.target }}
+      - name: Build rust-srec release (static)
+        if: contains(matrix.target, 'musl')
+        env:
+          CC: musl-gcc
+        run: cargo build -p rust-srec --release --target ${{ matrix.target }} --features static-ssl
         
+      - name: Rename mesio binary
+        shell: bash
+        run: cp "target/${{ matrix.target }}/release/${{ matrix.mesio_artifact_name }}" "${{ matrix.mesio_asset_name }}"
       - name: Upload mesio binary
         uses: actions/upload-artifact@v6
         with:
           name: ${{ matrix.mesio_asset_name }}
-          path: target/${{ matrix.target }}/release/${{ matrix.mesio_artifact_name }}
+          path: ${{ matrix.mesio_asset_name }}
           if-no-files-found: error
+      - name: Rename strev binary
+        shell: bash
+        run: cp "target/${{ matrix.target }}/release/${{ matrix.strev_artifact_name }}" "${{ matrix.strev_asset_name }}"
       - name: Upload strev binary
         uses: actions/upload-artifact@v6
         with:
           name: ${{ matrix.strev_asset_name }}
-          path: target/${{ matrix.target }}/release/${{ matrix.strev_artifact_name }}
+          path: ${{ matrix.strev_asset_name }}
           if-no-files-found: error
+      - name: Rename rust-srec binary
+        shell: bash
+        run: cp "target/${{ matrix.target }}/release/${{ matrix.srec_artifact_name }}" "${{ matrix.srec_asset_name }}"
       - name: Upload rust-srec binary
         uses: actions/upload-artifact@v6
         with:
           name: ${{ matrix.srec_asset_name }}
-          path: target/${{ matrix.target }}/release/${{ matrix.srec_artifact_name }}
+          path: ${{ matrix.srec_asset_name }}
           if-no-files-found: error

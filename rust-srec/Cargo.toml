@@ -95,3 +95,7 @@ tempfile = "3"
 
 [profile.dev.package.sqlx-macros]
 opt-level = 3
+
+[features]
+default = []
+static-ssl = ["platforms-parser/static-ssl"]

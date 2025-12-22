@@ -47,9 +47,19 @@ jobs:
             target: x86_64-unknown-linux-musl
             protoc_arch: linux-x86_64
             artifact_name: strev
+            asset_name: strev-linux-musl-amd64
+          - os: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+            protoc_arch: linux-x86_64
+            artifact_name: strev
             asset_name: strev-linux-amd64
           - os: ubuntu-22.04-arm
             target: aarch64-unknown-linux-musl
+            protoc_arch: linux-aarch_64
+            artifact_name: strev
+            asset_name: strev-linux-musl-arm64
+          - os: ubuntu-22.04-arm
+            target: aarch64-unknown-linux-gnu
             protoc_arch: linux-aarch_64
             artifact_name: strev
             asset_name: strev-linux-arm64
@@ -74,14 +84,7 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: ${{ matrix.target }}
-      - name: Install protoc (Unix)
-        if: runner.os != 'Windows'
-        run: |
-          curl -LO https://github.com/protocolbuffers/protobuf/releases/download/v${{ env.PROTOC_VERSION }}/protoc-${{ env.PROTOC_VERSION }}-${{ matrix.protoc_arch }}.zip
-          unzip protoc-${{ env.PROTOC_VERSION }}-${{ matrix.protoc_arch }}.zip -d $HOME/.local
-          echo "$HOME/.local/bin" >> $GITHUB_PATH
-      - name: Install protoc (Windows)
-        if: runner.os == 'Windows'
+      - name: Install protoc
         shell: pwsh
         run: |
           Invoke-WebRequest -Uri "https://github.com/protocolbuffers/protobuf/releases/download/v${{ env.PROTOC_VERSION }}/protoc-${{ env.PROTOC_VERSION }}-${{ matrix.protoc_arch }}.zip" -OutFile protoc.zip
@@ -90,30 +93,32 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           key: ${{ matrix.target }}
-      - name: Install musl-tools and OpenSSL for musl on Linux
+      - name: Install build dependencies on Linux
         if: contains(matrix.os, 'ubuntu')
         run: |
           sudo apt-get update
-          sudo apt-get install -y musl-tools musl-dev libssl-dev pkg-config
-      - name: Set OpenSSL for musl (Linux amd64)
-        if: matrix.target == 'x86_64-unknown-linux-musl'
+          sudo apt-get install -y libssl-dev pkg-config
+      - name: Install musl-tools
+        if: contains(matrix.target, 'musl')
         run: |
-          echo "OPENSSL_STATIC=1" >> $GITHUB_ENV
-          echo "PKG_CONFIG_ALLOW_CROSS=1" >> $GITHUB_ENV
-          echo "OPENSSL_DIR=/usr" >> $GITHUB_ENV
-      - name: Set OpenSSL for musl (Linux arm64)
-        if: matrix.target == 'aarch64-unknown-linux-musl'
-        run: |
-          echo "OPENSSL_STATIC=1" >> $GITHUB_ENV
-          echo "PKG_CONFIG_ALLOW_CROSS=1" >> $GITHUB_ENV
-          echo "OPENSSL_DIR=/usr" >> $GITHUB_ENV
+          sudo apt-get update
+          sudo apt-get install -y musl-tools musl-dev
       - name: Build
+        if: "!contains(matrix.target, 'musl')"
         run: cargo build -p strev --release --target ${{ matrix.target }}
+      - name: Build (musl static)
+        if: contains(matrix.target, 'musl')
+        env:
+          CC: musl-gcc
+        run: cargo build -p strev --release --target ${{ matrix.target }} --features static-ssl
+      - name: Rename binary
+        shell: bash
+        run: cp "target/${{ matrix.target }}/release/${{ matrix.artifact_name }}" "${{ matrix.asset_name }}"
       - name: Upload binary
         uses: actions/upload-artifact@v6
         with:
           name: ${{ matrix.asset_name }}
-          path: target/${{ matrix.target }}/release/${{ matrix.artifact_name }}
+          path: ${{ matrix.asset_name }}
           if-no-files-found: error
 
   release:
