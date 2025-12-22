@@ -61,6 +61,8 @@ impl DagScheduler {
         input_paths: &[String],
         streamer_id: Option<String>,
         session_id: Option<String>,
+        streamer_name: Option<String>,
+        session_title: Option<String>,
     ) -> Result<DagCreationResult> {
         // 1. Validate DAG structure
         dag_definition.validate().map_err(Error::Validation)?;
@@ -107,6 +109,8 @@ impl DagScheduler {
                     input_paths.to_vec(),
                     streamer_id.clone(),
                     session_id.clone(),
+                    streamer_name.clone(),
+                    session_title.clone(),
                 )
                 .await?;
 
@@ -133,6 +137,8 @@ impl DagScheduler {
         &self,
         dag_step_execution_id: &str,
         outputs: Vec<String>,
+        streamer_name: Option<String>,
+        session_title: Option<String>,
     ) -> Result<Vec<String>> {
         // Get step info for logging
         let step = self.dag_repository.get_step(dag_step_execution_id).await?;
@@ -195,6 +201,8 @@ impl DagScheduler {
                     merged_inputs,
                     dag.streamer_id.clone(),
                     dag.session_id.clone(),
+                    streamer_name.clone(),
+                    session_title.clone(),
                 )
                 .await?;
 
@@ -286,6 +294,7 @@ impl DagScheduler {
     }
 
     /// Create a job for a DAG step.
+    #[allow(clippy::too_many_arguments)]
     async fn create_step_job(
         &self,
         dag_id: &str,
@@ -294,6 +303,8 @@ impl DagScheduler {
         inputs: Vec<String>,
         streamer_id: Option<String>,
         session_id: Option<String>,
+        streamer_name: Option<String>,
+        session_title: Option<String>,
     ) -> Result<String> {
         // Get processor and config from the step
         let (processor, config) = match &dag_step.step {
@@ -319,8 +330,8 @@ impl DagScheduler {
             inputs_json,
             "[]".to_string(),
             0, // priority
-            streamer_id,
-            session_id,
+            streamer_id.clone(),
+            session_id.clone(),
         );
         job_db.config = config;
         job_db.dag_step_execution_id = Some(step_execution_id.to_string());
@@ -349,6 +360,8 @@ impl DagScheduler {
             status: JobStatus::Pending,
             streamer_id: job_db.streamer_id.clone().unwrap_or_default(),
             session_id: job_db.session_id.clone().unwrap_or_default(),
+            streamer_name,
+            session_title,
             config: Some(job_db.config.clone()),
             created_at: chrono::Utc::now(),
             started_at: None,

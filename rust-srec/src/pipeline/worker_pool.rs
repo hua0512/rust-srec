@@ -388,6 +388,8 @@ impl WorkerPool {
                                 config: job.config.clone(),
                                 streamer_id: job.streamer_id.clone(),
                                 session_id: job.session_id.clone(),
+                                streamer_name: job.streamer_name.clone(),
+                                session_title: job.session_title.clone(),
                             };
 
                             let (log_tx, mut log_rx) = tokio::sync::mpsc::channel(100);
@@ -463,7 +465,12 @@ impl WorkerPool {
 
                                             // Then notify DAG scheduler to create next jobs
                                             match scheduler
-                                                .on_job_completed(dag_step_id, output.outputs)
+                                                .on_job_completed(
+                                                    dag_step_id,
+                                                    output.outputs,
+                                                    job.streamer_name.clone(),
+                                                    job.session_title.clone(),
+                                                )
                                                 .await
                                             {
                                                 Ok(new_jobs) => {

@@ -689,6 +689,7 @@ mod tests {
             config: None,
             streamer_id: "test".to_string(),
             session_id: "test".to_string(),
+            ..Default::default()
         };
         let config = RemuxConfig::default();
 
@@ -711,6 +712,7 @@ mod tests {
             config: None,
             streamer_id: "test".to_string(),
             session_id: "test".to_string(),
+            ..Default::default()
         };
         let config = RemuxConfig {
             video_codec: VideoCodec::H264,

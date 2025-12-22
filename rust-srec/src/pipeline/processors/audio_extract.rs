@@ -765,6 +765,7 @@ mod tests {
             config: None,
             streamer_id: "test".to_string(),
             session_id: "test".to_string(),
+            ..Default::default()
         };
 
         let output = processor.determine_output_path("/input.mp4", &config, &input);
@@ -781,6 +782,7 @@ mod tests {
             config: None,
             streamer_id: "test".to_string(),
             session_id: "test".to_string(),
+            ..Default::default()
         };
 
         let output = processor.determine_output_path("/input.mp4", &config, &input);
@@ -800,6 +802,7 @@ mod tests {
             config: None,
             streamer_id: "test".to_string(),
             session_id: "test".to_string(),
+            ..Default::default()
         };
 
         let output = processor.determine_output_path("/path/to/video.mp4", &config, &input);
@@ -816,6 +819,7 @@ mod tests {
             config: None,
             streamer_id: "test".to_string(),
             session_id: "test".to_string(),
+            ..Default::default()
         };
 
         let result = processor.process(&input, &ctx).await;
@@ -834,6 +838,7 @@ mod tests {
             config: None,
             streamer_id: "test".to_string(),
             session_id: "test".to_string(),
+            ..Default::default()
         };
 
         let result = processor.process(&input, &ctx).await;

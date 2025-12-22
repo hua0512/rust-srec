@@ -340,6 +340,10 @@ pub struct Job {
     pub streamer_id: String,
     /// Session ID this job belongs to.
     pub session_id: String,
+    /// Human-readable streamer name.
+    pub streamer_name: Option<String>,
+    /// Session/stream title.
+    pub session_title: Option<String>,
     /// Additional configuration as JSON.
     pub config: Option<String>,
     /// When the job was created.
@@ -383,6 +387,8 @@ impl Job {
             status: JobStatus::Pending,
             streamer_id: streamer_id.into(),
             session_id: session_id.into(),
+            streamer_name: None,
+            session_title: None,
             config: None,
             created_at: Utc::now(),
             started_at: None,
@@ -415,6 +421,8 @@ impl Job {
             status: JobStatus::Pending,
             streamer_id: streamer_id.into(),
             session_id: session_id.into(),
+            streamer_name: None,
+            session_title: None,
             config: None,
             created_at: Utc::now(),
             started_at: None,
@@ -450,6 +458,18 @@ impl Job {
     /// Set the DAG step execution ID.
     pub fn with_dag_step_execution_id(mut self, dag_step_execution_id: impl Into<String>) -> Self {
         self.dag_step_execution_id = Some(dag_step_execution_id.into());
+        self
+    }
+
+    /// Set the streamer name.
+    pub fn with_streamer_name(mut self, name: impl Into<String>) -> Self {
+        self.streamer_name = Some(name.into());
+        self
+    }
+
+    /// Set the session title.
+    pub fn with_session_title(mut self, title: impl Into<String>) -> Self {
+        self.session_title = Some(title.into());
         self
     }
 
@@ -1945,6 +1965,8 @@ fn db_model_to_job(db_job: &JobDbModel) -> Job {
         duration_secs: db_job.duration_secs,
         queue_wait_secs: db_job.queue_wait_secs,
         dag_step_execution_id: db_job.dag_step_execution_id.clone(),
+        streamer_name: None,
+        session_title: None,
     }
 }
 

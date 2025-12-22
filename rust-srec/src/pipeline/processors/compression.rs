@@ -597,6 +597,7 @@ mod tests {
             config: Some(serde_json::json!({"format": "zip"}).to_string()),
             streamer_id: "test".to_string(),
             session_id: "test".to_string(),
+            ..Default::default()
         };
 
         let output = processor.process(&input, &ctx).await.unwrap();
@@ -628,6 +629,7 @@ mod tests {
             config: Some(serde_json::json!({"format": "targz"}).to_string()),
             streamer_id: "test".to_string(),
             session_id: "test".to_string(),
+            ..Default::default()
         };
 
         let output = processor.process(&input, &ctx).await.unwrap();
@@ -663,6 +665,7 @@ mod tests {
             config: Some(serde_json::json!({"format": "zip"}).to_string()),
             streamer_id: "test".to_string(),
             session_id: "test".to_string(),
+            ..Default::default()
         };
 
         let output = processor.process(&input, &ctx).await.unwrap();
@@ -699,6 +702,7 @@ mod tests {
             config: Some(serde_json::json!({"format": "targz"}).to_string()),
             streamer_id: "test".to_string(),
             session_id: "test".to_string(),
+            ..Default::default()
         };
 
         let output = processor.process(&input, &ctx).await.unwrap();
@@ -731,6 +735,7 @@ mod tests {
             config: Some(serde_json::json!({"format": "zip", "compression_level": 9}).to_string()),
             streamer_id: "test".to_string(),
             session_id: "test".to_string(),
+            ..Default::default()
         };
 
         let output = processor.process(&input, &ctx).await.unwrap();
@@ -753,6 +758,7 @@ mod tests {
             config: None,
             streamer_id: "test".to_string(),
             session_id: "test".to_string(),
+            ..Default::default()
         };
 
         let result = processor.process(&input, &ctx).await;
@@ -774,6 +780,7 @@ mod tests {
             config: None,
             streamer_id: "test".to_string(),
             session_id: "test".to_string(),
+            ..Default::default()
         };
 
         let result = processor.process(&input, &ctx).await;
@@ -800,6 +807,7 @@ mod tests {
             config: Some(serde_json::json!({"overwrite": false}).to_string()),
             streamer_id: "test".to_string(),
             session_id: "test".to_string(),
+            ..Default::default()
         };
 
         let result = processor.process(&input, &ctx).await;
@@ -825,6 +833,7 @@ mod tests {
             config: Some(serde_json::json!({"compression_level": 0}).to_string()),
             streamer_id: "test".to_string(),
             session_id: "test".to_string(),
+            ..Default::default()
         };
 
         let _output = processor.process(&input, &ctx).await.unwrap();
@@ -844,6 +853,7 @@ mod tests {
             config: None,
             streamer_id: "test".to_string(),
             session_id: "test".to_string(),
+            ..Default::default()
         };
 
         let output = processor.determine_output_path(&input.inputs, &config, &input);
@@ -860,6 +870,7 @@ mod tests {
             config: None,
             streamer_id: "test".to_string(),
             session_id: "test".to_string(),
+            ..Default::default()
         };
 
         let output = processor.determine_output_path(&input.inputs, &config, &input);
@@ -879,6 +890,7 @@ mod tests {
             config: None,
             streamer_id: "test".to_string(),
             session_id: "test".to_string(),
+            ..Default::default()
         };
 
         let output = processor.determine_output_path(&input.inputs, &config, &input);

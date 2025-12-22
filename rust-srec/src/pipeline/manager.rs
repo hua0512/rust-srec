@@ -21,7 +21,9 @@ use super::worker_pool::{WorkerPool, WorkerPoolConfig, WorkerType};
 use crate::Result;
 use crate::config::ConfigService;
 use crate::database::models::job::{DagPipelineDefinition, DagStep, PipelineStep};
-use crate::database::models::{JobFilters, MediaFileType, MediaOutputDbModel, Pagination};
+use crate::database::models::{
+    JobFilters, MediaFileType, MediaOutputDbModel, Pagination, TitleEntry,
+};
 use crate::database::repositories::config::{ConfigRepository, SqlxConfigRepository};
 use crate::database::repositories::streamer::{SqlxStreamerRepository, StreamerRepository};
 use crate::database::repositories::{
@@ -116,6 +118,8 @@ pub struct PipelineManager<
     event_tx: broadcast::Sender<PipelineEvent>,
     /// Session repository for persistence (optional).
     session_repo: Option<Arc<dyn SessionRepository>>,
+    /// Streamer repository for metadata lookup (optional).
+    streamer_repo: Option<Arc<SR>>,
     /// Cancellation token.
     cancellation_token: CancellationToken,
     /// Throttle controller for download backpressure management.
@@ -186,6 +190,7 @@ where
             processors,
             event_tx,
             session_repo: None,
+            streamer_repo: None,
             cancellation_token: CancellationToken::new(),
             throttle_controller,
             download_adjuster: None,
@@ -253,6 +258,7 @@ where
             processors,
             event_tx,
             session_repo: None,
+            streamer_repo: None,
             cancellation_token: CancellationToken::new(),
             throttle_controller,
             download_adjuster: None,
@@ -275,6 +281,12 @@ where
         self.session_repo = Some(session_repository.clone());
         // Also set session repo on job queue
         self.job_queue.set_session_repo(session_repository);
+        self
+    }
+
+    /// Set the streamer repository for metadata lookup.
+    pub fn with_streamer_repository(mut self, streamer_repository: Arc<SR>) -> Self {
+        self.streamer_repo = Some(streamer_repository);
         self
     }
 
@@ -313,11 +325,10 @@ where
 
         // Create DAG scheduler if we have both repositories
         if let Some(job_repo) = &self.job_repository {
-            self.dag_scheduler = Some(Arc::new(DagScheduler::new(
-                self.job_queue.clone(),
-                dag_repository,
-                job_repo.clone(),
-            )));
+            let scheduler =
+                DagScheduler::new(self.job_queue.clone(), dag_repository, job_repo.clone());
+
+            self.dag_scheduler = Some(Arc::new(scheduler));
         }
 
         self
@@ -529,6 +540,51 @@ where
         self.enqueue(job).await
     }
 
+    /// Look up the streamer name from the repository.
+    async fn lookup_streamer_name(&self, streamer_id: &str) -> Option<String> {
+        let repo = self.streamer_repo.as_ref()?;
+
+        match repo.get_streamer(streamer_id).await {
+            Ok(streamer) => Some(streamer.name),
+            Err(e) => {
+                debug!(
+                    streamer_id = %streamer_id,
+                    error = %e,
+                    "Failed to look up streamer name"
+                );
+                None
+            }
+        }
+    }
+
+    /// Look up the session title from the repository.
+    /// Returns the most recent title from the titles JSON array.
+    async fn lookup_session_title(&self, session_id: &str) -> Option<String> {
+        let repo = self.session_repo.as_ref()?;
+
+        match repo.get_session(session_id).await {
+            Ok(session) => {
+                // Parse the titles JSON array and get the most recent title
+                if let Some(titles_json) = session.titles
+                    && let Ok(entries) = serde_json::from_str::<Vec<TitleEntry>>(&titles_json)
+                {
+                    // Return the last (most recent) title
+                    return entries.last().map(|e| e.title.clone());
+                }
+
+                None
+            }
+            Err(e) => {
+                debug!(
+                    session_id = %session_id,
+                    error = %e,
+                    "Failed to look up session title"
+                );
+                None
+            }
+        }
+    }
+
     /// Create a DAG pipeline with fan-in/fan-out support.
     ///
     /// Unlike sequential pipelines, DAG pipelines support:
@@ -560,6 +616,10 @@ where
             dag_step.step = resolved;
         }
 
+        // Look up metadata for placeholder support
+        let streamer_name = self.lookup_streamer_name(streamer_id).await;
+        let session_title = self.lookup_session_title(session_id).await;
+
         // Delegate to DAG scheduler
         let result = dag_scheduler
             .create_dag_pipeline(
@@ -567,6 +627,8 @@ where
                 &input_paths,
                 Some(streamer_id.to_string()),
                 Some(session_id.to_string()),
+                streamer_name,
+                session_title,
             )
             .await?;
 

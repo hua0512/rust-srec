@@ -473,6 +473,7 @@ mod tests {
             ),
             streamer_id: "test".to_string(),
             session_id: "test".to_string(),
+            ..Default::default()
         };
 
         let output = processor.process(&input, &ctx).await.unwrap();
@@ -511,6 +512,7 @@ mod tests {
             ),
             streamer_id: "test".to_string(),
             session_id: "test".to_string(),
+            ..Default::default()
         };
 
         let output = processor.process(&input, &ctx).await.unwrap();
@@ -547,6 +549,7 @@ mod tests {
             ),
             streamer_id: "test".to_string(),
             session_id: "test".to_string(),
+            ..Default::default()
         };
 
         let output = processor.process(&input, &ctx).await.unwrap();
@@ -584,6 +587,7 @@ mod tests {
             ),
             streamer_id: "test".to_string(),
             session_id: "test".to_string(),
+            ..Default::default()
         };
 
         let result = processor.process(&input, &ctx).await;
@@ -618,6 +622,7 @@ mod tests {
             ),
             streamer_id: "test".to_string(),
             session_id: "test".to_string(),
+            ..Default::default()
         };
 
         let output = processor.process(&input, &ctx).await.unwrap();
@@ -646,6 +651,7 @@ mod tests {
             config: None,
             streamer_id: "test".to_string(),
             session_id: "test".to_string(),
+            ..Default::default()
         };
 
         let result = processor.process(&input, &ctx).await;
@@ -666,6 +672,7 @@ mod tests {
             config: None,
             streamer_id: "test".to_string(),
             session_id: "test".to_string(),
+            ..Default::default()
         };
 
         let result = processor.process(&input, &ctx).await;
@@ -690,6 +697,7 @@ mod tests {
             config: None,
             streamer_id: "test".to_string(),
             session_id: "test".to_string(),
+            ..Default::default()
         };
 
         let result = processor.process(&input, &ctx).await;

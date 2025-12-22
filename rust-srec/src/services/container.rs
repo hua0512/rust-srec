@@ -302,6 +302,7 @@ impl ServiceContainer {
         let pipeline_manager = Arc::new(
             PipelineManager::with_repository(pipeline_config, job_repo)
                 .with_session_repository(session_repo.clone())
+                .with_streamer_repository(streamer_repo.clone())
                 .with_preset_repository(preset_repo)
                 .with_pipeline_preset_repository(pipeline_preset_repo)
                 .with_dag_repository(Arc::new(SqlxDagRepository::new(pool.clone()))),

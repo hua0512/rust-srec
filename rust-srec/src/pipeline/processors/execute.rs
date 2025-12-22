@@ -340,6 +340,7 @@ mod tests {
             config: None,
             streamer_id: "streamer-1".to_string(),
             session_id: "session-1".to_string(),
+            ..Default::default()
         };
 
         let command = "echo {input} {output} {streamer_id}";
@@ -373,6 +374,7 @@ mod tests {
             config: Some(config.to_string()),
             streamer_id: "streamer-1".to_string(),
             session_id: "session-1".to_string(),
+            ..Default::default()
         };
 
         let result = processor.process(&input, &ctx).await.unwrap();
@@ -397,6 +399,7 @@ mod tests {
             config: Some(config.to_string()),
             streamer_id: "streamer-1".to_string(),
             session_id: "session-1".to_string(),
+            ..Default::default()
         };
 
         let result = processor.process(&input, &ctx).await.unwrap();
@@ -515,6 +518,7 @@ mod tests {
             config: Some(config.to_string()),
             streamer_id: "test".to_string(),
             session_id: "test".to_string(),
+            ..Default::default()
         };
 
         // Simulate: create a file after taking snapshot but before checking
@@ -539,6 +543,7 @@ mod tests {
             config: Some("echo hello world".to_string()),
             streamer_id: "test".to_string(),
             session_id: "test".to_string(),
+            ..Default::default()
         };
 
         let result = processor.process(&input, &ctx).await.unwrap();
@@ -559,6 +564,7 @@ mod tests {
             config: None,
             streamer_id: "test".to_string(),
             session_id: "test".to_string(),
+            ..Default::default()
         };
 
         let result = processor.process(&input, &ctx).await;
