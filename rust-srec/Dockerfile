@@ -14,6 +14,8 @@ COPY Cargo.toml Cargo.lock ./
 # Copy required workspace members only
 COPY rust-srec ./rust-srec
 COPY crates ./crates
+COPY mesio-cli ./mesio-cli
+COPY strev-cli ./strev-cli
 
 # Build the release binary
 RUN cargo build --release --bin rust-srec
