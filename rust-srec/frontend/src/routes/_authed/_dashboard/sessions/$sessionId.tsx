@@ -1,4 +1,4 @@
-import React, { useState, Suspense } from 'react';
+import React, { useState, useEffect, Suspense } from 'react';
 import { createFileRoute } from '@tanstack/react-router';
 import { useQuery } from '@tanstack/react-query';
 import { getSession } from '@/server/functions/sessions';
@@ -55,6 +55,12 @@ function SessionDetailPage() {
   const { sessionId } = Route.useParams();
   const { user } = Route.useRouteContext();
   const [playingOutput, setPlayingOutput] = useState<any | null>(null);
+
+  // Client-side time to avoid hydration mismatch
+  const [now, setNow] = useState<Date | null>(null);
+  useEffect(() => {
+    setNow(new Date());
+  }, []);
 
   const {
     data: session,
@@ -168,11 +174,11 @@ function SessionDetailPage() {
 
   const duration = session.duration_secs
     ? formatDuration(session.duration_secs)
-    : session.start_time
+    : session.start_time && now
       ? formatDuration(
-          (new Date().getTime() - new Date(session.start_time).getTime()) /
-            1000,
-        )
+        (now.getTime() - new Date(session.start_time).getTime()) /
+        1000,
+      )
       : '-';
 
   return (

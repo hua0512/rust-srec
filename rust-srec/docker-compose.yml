@@ -53,6 +53,10 @@ services:
       - "${FRONTEND_PORT:-80}:80"
     environment:
       - BACKEND_URL=${BACKEND_URL:-http://rust-srec:8080}
+      # Session cookie configuration
+      - SESSION_SECRET=${SESSION_SECRET:?SESSION_SECRET is required (min 32 chars)}
+      # Cookie secure flag: 'true' = always, 'false' = never, omit for auto-detection via X-Forwarded-Proto
+      - COOKIE_SECURE=${COOKIE_SECURE:-}
     depends_on:
       rust-srec:
         condition: service_healthy

@@ -57,7 +57,7 @@ m3u8-rs = "6.0.0"
 md-5 = "0.10.6"
 urlencoding = "2.1"
 base64 = "0.22.1"
-tokio-tungstenite = { version = "0.28.0", features = ["native-tls"] }
+tokio-tungstenite = { version = "0.28.0", default-features = false }
 chrono = { version = "0.4", features = ["serde"] }
 futures = "0.3"
 # tokio-rustls = { version = "0.26", default-features = false, features = ["aws-lc-rs", "logging", "tls12"] }
@@ -76,9 +76,12 @@ prost-types = "0.14"
 prost-build = "0.14"
 
 
-
-
 [features]
-default = ["douyu"]
+default = ["douyu", "native-tls"]
 douyu = ["rquickjs"]
 static-ssl = ["openssl"]
+# TLS backend for WebSocket connections (tokio-tungstenite)
+# native-tls: Uses platform native TLS (SChannel on Windows, Security.framework on macOS, OpenSSL on Linux)
+# rustls-tls: Uses rustls (pure Rust, works everywhere without system dependencies)
+native-tls = ["tokio-tungstenite/native-tls"]
+rustls-tls = ["tokio-tungstenite/rustls-tls-native-roots"]

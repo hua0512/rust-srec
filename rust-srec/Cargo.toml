@@ -38,6 +38,7 @@ sqlx = { version = "0.8.6", features = [
 
 # Caching
 dashmap = "5.5"
+indexmap = "2"
 parking_lot = "0.12"
 
 # Logging

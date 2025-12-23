@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import {
   Card,
   CardContent,
@@ -58,6 +58,12 @@ import { formatBytes } from '@/lib/format';
 export function OutputCard({ output }: OutputCardProps) {
   const [copied, setCopied] = useState(false);
 
+  // Client-side time for hydration-safe relative time
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => {
+    setMounted(true);
+  }, []);
+
   const handleCopyPath = () => {
     navigator.clipboard.writeText(output.file_path);
     setCopied(true);
@@ -93,9 +99,11 @@ export function OutputCard({ output }: OutputCardProps) {
           </CardTitle>
           <div className="flex items-center gap-2">
             <span className="text-[10px] uppercase tracking-wider font-semibold text-muted-foreground/60">
-              {formatDistanceToNow(new Date(output.created_at), {
-                addSuffix: true,
-              })}
+              {mounted
+                ? formatDistanceToNow(new Date(output.created_at), {
+                  addSuffix: true,
+                })
+                : format(new Date(output.created_at), 'PP')}
             </span>
           </div>
         </div>

@@ -18,7 +18,8 @@ import {
 } from '@/components/ui/table';
 import { HealthStatusBadge } from '@/components/health/health-status-badge';
 import { Skeleton } from '@/components/ui/skeleton';
-import { formatDistanceToNow } from 'date-fns';
+import { format, formatDistanceToNow } from 'date-fns';
+import { useState, useEffect } from 'react';
 import {
   Activity,
   Cpu,
@@ -40,6 +41,13 @@ export const Route = createFileRoute('/_authed/_dashboard/system/health')({
 
 function SystemHealthPage() {
   const { i18n } = useLingui();
+
+  // Client-side time to avoid hydration mismatch
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => {
+    setMounted(true);
+  }, []);
+
   const {
     data: health,
     isLoading,
@@ -162,12 +170,16 @@ function SystemHealthPage() {
             icon={Clock}
             content={formatUptime(health.uptime_secs)}
             description={
-              <Trans>
-                Since{' '}
-                {i18n.date(new Date(Date.now() - health.uptime_secs * 1000), {
-                  timeStyle: 'medium',
-                })}
-              </Trans>
+              mounted ? (
+                <Trans>
+                  Since{' '}
+                  {i18n.date(new Date(Date.now() - health.uptime_secs * 1000), {
+                    timeStyle: 'medium',
+                  })}
+                </Trans>
+              ) : (
+                <span>-</span>
+              )
             }
             color="text-green-500"
           />
@@ -251,21 +263,23 @@ function SystemHealthPage() {
                         </TableCell>
                         <TableCell className="text-right font-mono text-xs">
                           {component.check_duration_ms !== null &&
-                          component.check_duration_ms !== undefined ? (
+                            component.check_duration_ms !== undefined ? (
                             <span>{component.check_duration_ms}ms</span>
                           ) : (
                             <span className="text-muted-foreground/30">-</span>
                           )}
                         </TableCell>
                         <TableCell className="text-right text-xs text-muted-foreground">
-                          {component.last_check
+                          {component.last_check && mounted
                             ? formatDistanceToNow(
-                                new Date(component.last_check),
-                                {
-                                  addSuffix: true,
-                                },
-                              )
-                            : '-'}
+                              new Date(component.last_check),
+                              {
+                                addSuffix: true,
+                              },
+                            )
+                            : component.last_check
+                              ? format(new Date(component.last_check), 'PP p')
+                              : '-'}
                         </TableCell>
                       </TableRow>
                     ))}

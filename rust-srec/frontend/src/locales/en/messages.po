@@ -85,7 +85,7 @@ msgstr "{0} Danmu"
 #. placeholder {0}: outputs.length
 #. placeholder {0}: session.output_count
 #: src/components/sessions/recordings-tab.tsx:40
-#: src/components/sessions/session-card.tsx:163
+#: src/components/sessions/session-card.tsx:166
 msgid "{0} Files"
 msgstr "{0} Files"
 
@@ -180,7 +180,7 @@ msgstr "Absolute path or 'streamlink' in PATH"
 msgid "Accent Color"
 msgstr "Accent Color"
 
-#: src/components/sessions/session-card.tsx:185
+#: src/components/sessions/session-card.tsx:188
 #: src/components/streamers/card/stream-actions-menu.tsx:42
 msgid "Actions"
 msgstr "Actions"
@@ -420,7 +420,7 @@ msgstr "Archive to Cloud"
 msgid "Are you sure you want to delete the template \"{0}\"? This action cannot be undone."
 msgstr "Are you sure you want to delete the template \"{0}\"? This action cannot be undone."
 
-#: src/components/sessions/session-card.tsx:42
+#: src/components/sessions/session-card.tsx:44
 msgid "Are you sure you want to delete this session? This action cannot be undone."
 msgstr "Are you sure you want to delete this session? This action cannot be undone."
 
@@ -832,11 +832,11 @@ msgstr "Completed"
 msgid "Complex patterns"
 msgstr "Complex patterns"
 
-#: src/routes/_authed/_dashboard/system/health.tsx:208
+#: src/routes/_authed/_dashboard/system/health.tsx:220
 msgid "Component"
 msgstr "Component"
 
-#: src/routes/_authed/_dashboard/system/health.tsx:195
+#: src/routes/_authed/_dashboard/system/health.tsx:207
 msgid "Component Status"
 msgstr "Component Status"
 
@@ -989,7 +989,7 @@ msgstr "Control verbosity for each module. Lower levels include higher ones."
 msgid "Cookies"
 msgstr "Cookies"
 
-#: src/components/pipeline/outputs/output-card.tsx:127
+#: src/components/pipeline/outputs/output-card.tsx:135
 msgid "Copied!"
 msgstr "Copied!"
 
@@ -1009,7 +1009,7 @@ msgstr "Copy (Passthrough)"
 msgid "Copy / Move"
 msgstr "Copy / Move"
 
-#: src/components/pipeline/outputs/output-card.tsx:146
+#: src/components/pipeline/outputs/output-card.tsx:154
 msgid "Copy Directory"
 msgstr "Copy Directory"
 
@@ -1021,7 +1021,7 @@ msgstr "Copy File"
 msgid "Copy Files"
 msgstr "Copy Files"
 
-#: src/components/pipeline/outputs/output-card.tsx:127
+#: src/components/pipeline/outputs/output-card.tsx:135
 msgid "Copy Path"
 msgstr "Copy Path"
 
@@ -1033,11 +1033,11 @@ msgstr "Copy the file to another location. Keeps the original file."
 msgid "Copy/Move"
 msgstr "Copy/Move"
 
-#: src/routes/_authed/_dashboard/system/health.tsx:97
+#: src/routes/_authed/_dashboard/system/health.tsx:105
 msgid "Could not connect to the server. Please check your connection."
 msgstr "Could not connect to the server. Please check your connection."
 
-#: src/routes/_authed/_dashboard/system/health.tsx:175
+#: src/routes/_authed/_dashboard/system/health.tsx:187
 msgid "CPU Usage"
 msgstr "CPU Usage"
 
@@ -1137,7 +1137,7 @@ msgid "Create your first workflow to define a sequence of processing steps for y
 msgstr "Create your first workflow to define a sequence of processing steps for your recordings."
 
 #: src/components/config/global/backup-restore-card.tsx:176
-#: src/components/pipeline/outputs/output-card.tsx:177
+#: src/components/pipeline/outputs/output-card.tsx:185
 #: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.tsx:603
 msgid "Created"
 msgstr "Created"
@@ -1253,7 +1253,7 @@ msgstr "DAG Graph"
 msgid "Danmu"
 msgstr "Danmu"
 
-#: src/routes/_authed/_dashboard/system/health.tsx:314
+#: src/routes/_authed/_dashboard/system/health.tsx:328
 msgid "Danmu Service"
 msgstr "Danmu Service"
 
@@ -1267,7 +1267,7 @@ msgid "Dashboard"
 msgstr "Dashboard"
 
 #: src/routes/_authed/_dashboard/dashboard.tsx:203
-#: src/routes/_authed/_dashboard/system/health.tsx:311
+#: src/routes/_authed/_dashboard/system/health.tsx:325
 msgid "Database"
 msgstr "Database"
 
@@ -1372,7 +1372,7 @@ msgstr "Delete Pipeline?"
 msgid "Delete Preset?"
 msgstr "Delete Preset?"
 
-#: src/components/sessions/session-card.tsx:201
+#: src/components/sessions/session-card.tsx:204
 msgid "Delete Session"
 msgstr "Delete Session"
 
@@ -1441,7 +1441,7 @@ msgstr "Destination Root"
 msgid "Detach & Edit"
 msgstr "Detach & Edit"
 
-#: src/routes/_authed/_dashboard/system/health.tsx:198
+#: src/routes/_authed/_dashboard/system/health.tsx:210
 msgid "Detailed health checks for internal services and resources."
 msgstr "Detailed health checks for internal services and resources."
 
@@ -1474,7 +1474,7 @@ msgstr "Disconnected"
 msgid "Disk"
 msgstr "Disk"
 
-#: src/routes/_authed/_dashboard/system/health.tsx:310
+#: src/routes/_authed/_dashboard/system/health.tsx:324
 msgid "Disk Space"
 msgstr "Disk Space"
 
@@ -1515,7 +1515,7 @@ msgid "Download engine (mesio)"
 msgstr "Download engine (mesio)"
 
 #: src/routes/_authed/_dashboard/dashboard.tsx:210
-#: src/routes/_authed/_dashboard/system/health.tsx:312
+#: src/routes/_authed/_dashboard/system/health.tsx:326
 msgid "Download Manager"
 msgstr "Download Manager"
 
@@ -1789,7 +1789,7 @@ msgstr "Error loading platform"
 msgid "Error loading preset"
 msgstr "Error loading preset"
 
-#: src/routes/_authed/_dashboard/sessions/$sessionId.tsx:153
+#: src/routes/_authed/_dashboard/sessions/$sessionId.tsx:159
 msgid "Error Loading Session"
 msgstr "Error Loading Session"
 
@@ -1974,7 +1974,7 @@ msgstr "Failed to delete pipeline"
 msgid "Failed to delete preset: {0}"
 msgstr "Failed to delete preset: {0}"
 
-#: src/components/sessions/session-card.tsx:55
+#: src/components/sessions/session-card.tsx:58
 msgid "Failed to delete session"
 msgstr "Failed to delete session"
 
@@ -2026,7 +2026,7 @@ msgstr "Failed to load platforms: {0}"
 msgid "Failed to load presets: {0}"
 msgstr "Failed to load presets: {0}"
 
-#: src/routes/_authed/_dashboard/system/health.tsx:94
+#: src/routes/_authed/_dashboard/system/health.tsx:102
 msgid "Failed to load system health"
 msgstr "Failed to load system health"
 
@@ -2334,7 +2334,7 @@ msgstr "Go back"
 
 #: src/components/default-catch-boundary.tsx:58
 #: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.tsx:248
-#: src/routes/_authed/_dashboard/sessions/$sessionId.tsx:161
+#: src/routes/_authed/_dashboard/sessions/$sessionId.tsx:167
 msgid "Go Back"
 msgstr "Go Back"
 
@@ -2609,7 +2609,7 @@ msgstr "Job retry initiated"
 
 #: src/components/sidebar/navbar.tsx:41
 #: src/lib/menu-list.ts:84
-#: src/routes/_authed/_dashboard/sessions/$sessionId.tsx:242
+#: src/routes/_authed/_dashboard/sessions/$sessionId.tsx:248
 msgid "Jobs"
 msgstr "Jobs"
 
@@ -2645,7 +2645,7 @@ msgstr "Language Settings"
 msgid "Last Activity"
 msgstr "Last Activity"
 
-#: src/routes/_authed/_dashboard/system/health.tsx:220
+#: src/routes/_authed/_dashboard/system/health.tsx:232
 msgid "Last Check"
 msgstr "Last Check"
 
@@ -2657,7 +2657,7 @@ msgstr "Last Error"
 msgid "Last Error Log"
 msgstr "Last Error Log"
 
-#: src/routes/_authed/_dashboard/system/health.tsx:217
+#: src/routes/_authed/_dashboard/system/health.tsx:229
 msgid "Latency"
 msgstr "Latency"
 
@@ -2698,7 +2698,7 @@ msgstr "Live"
 
 #: src/components/player/stream-info-card.tsx:81
 #: src/components/player/stream-info-card.tsx:101
-#: src/components/sessions/session-card.tsx:97
+#: src/components/sessions/session-card.tsx:100
 #: src/components/sessions/session-header.tsx:29
 msgid "LIVE"
 msgstr "LIVE"
@@ -2774,7 +2774,7 @@ msgstr "Lower value = Higher Quality"
 msgid "Main application"
 msgstr "Main application"
 
-#: src/routes/_authed/_dashboard/system/health.tsx:317
+#: src/routes/_authed/_dashboard/system/health.tsx:331
 msgid "Maintenance"
 msgstr "Maintenance"
 
@@ -2875,7 +2875,7 @@ msgstr "Media Outputs"
 msgid "Media outputs will appear here when pipeline jobs complete."
 msgstr "Media outputs will appear here when pipeline jobs complete."
 
-#: src/routes/_authed/_dashboard/system/health.tsx:182
+#: src/routes/_authed/_dashboard/system/health.tsx:194
 msgid "Memory Usage"
 msgstr "Memory Usage"
 
@@ -2883,7 +2883,7 @@ msgstr "Memory Usage"
 msgid "Merge Changes"
 msgstr "Merge Changes"
 
-#: src/routes/_authed/_dashboard/system/health.tsx:214
+#: src/routes/_authed/_dashboard/system/health.tsx:226
 msgid "Message"
 msgstr "Message"
 
@@ -3091,7 +3091,7 @@ msgstr "No filters yet"
 msgid "No input paths"
 msgstr "No input paths"
 
-#: src/routes/_authed/_dashboard/system/health.tsx:248
+#: src/routes/_authed/_dashboard/system/health.tsx:260
 msgid "No issues detected"
 msgstr "No issues detected"
 
@@ -3256,7 +3256,7 @@ msgstr "Normal"
 msgid "Not available"
 msgstr "Not available"
 
-#: src/routes/_authed/_dashboard/system/health.tsx:316
+#: src/routes/_authed/_dashboard/system/health.tsx:330
 msgid "Notification Service"
 msgstr "Notification Service"
 
@@ -3270,7 +3270,7 @@ msgstr "Notifications"
 msgid "Number of attempts before failing the upload."
 msgstr "Number of attempts before failing the upload."
 
-#: src/components/sessions/session-card.tsx:104
+#: src/components/sessions/session-card.tsx:107
 #: src/components/streamers/card/use-streamer-status.tsx:30
 #: src/components/streamers/card/use-streamer-status.tsx:229
 #: src/components/streamers/card/use-streamer-status.tsx:238
@@ -3316,7 +3316,7 @@ msgstr "On Online"
 msgid "On Pipeline Complete"
 msgstr "On Pipeline Complete"
 
-#: src/components/sessions/session-card.tsx:62
+#: src/components/sessions/session-card.tsx:65
 msgid "Ongoing"
 msgstr "Ongoing"
 
@@ -3328,7 +3328,7 @@ msgstr "Only include files with this extension (without dot)"
 #: src/components/config/templates/template-card.tsx:108
 #: src/components/notifications/channel-card.tsx:148
 #: src/components/pipeline/jobs/pipeline-summary-card.tsx:172
-#: src/components/pipeline/outputs/output-card.tsx:116
+#: src/components/pipeline/outputs/output-card.tsx:124
 #: src/components/pipeline/presets/preset-card.tsx:168
 #: src/components/pipeline/workflows/workflow-card.tsx:168
 msgid "Open menu"
@@ -3426,7 +3426,7 @@ msgstr "Outside Schedule"
 msgid "Overall Health"
 msgstr "Overall Health"
 
-#: src/routes/_authed/_dashboard/system/health.tsx:157
+#: src/routes/_authed/_dashboard/system/health.tsx:165
 msgid "Overall system status"
 msgstr "Overall system status"
 
@@ -3459,7 +3459,7 @@ msgstr "Override output folder."
 #~ msgid "Override system colors with your own CSS variables."
 #~ msgstr "Override system colors with your own CSS variables."
 
-#: src/routes/_authed/_dashboard/sessions/$sessionId.tsx:212
+#: src/routes/_authed/_dashboard/sessions/$sessionId.tsx:218
 msgid "Overview"
 msgstr "Overview"
 
@@ -3595,7 +3595,7 @@ msgstr "Pipeline job created successfully"
 msgid "Pipeline Jobs"
 msgstr "Pipeline Jobs"
 
-#: src/routes/_authed/_dashboard/system/health.tsx:313
+#: src/routes/_authed/_dashboard/system/health.tsx:327
 msgid "Pipeline Manager"
 msgstr "Pipeline Manager"
 
@@ -3910,7 +3910,7 @@ msgstr "Queue"
 msgid "Quick Share"
 msgstr "Quick Share"
 
-#: src/routes/_authed/_dashboard/system/health.tsx:185
+#: src/routes/_authed/_dashboard/system/health.tsx:197
 msgid "RAM utilization"
 msgstr "RAM utilization"
 
@@ -3950,7 +3950,7 @@ msgstr "Ready to Watch"
 msgid "Real-Time Logs"
 msgstr "Real-Time Logs"
 
-#: src/routes/_authed/_dashboard/system/health.tsx:124
+#: src/routes/_authed/_dashboard/system/health.tsx:132
 msgid "Real-time status of all system components and resources."
 msgstr "Real-time status of all system components and resources."
 
@@ -3992,12 +3992,12 @@ msgstr "Recording Filters"
 msgid "Recording will start when schedule allows"
 msgstr "Recording will start when schedule allows"
 
-#: src/routes/_authed/_dashboard/sessions/$sessionId.tsx:230
+#: src/routes/_authed/_dashboard/sessions/$sessionId.tsx:236
 msgid "Recordings"
 msgstr "Recordings"
 
 #: src/components/sessions/session-list.tsx:72
-#: src/routes/_authed/_dashboard/system/health.tsx:139
+#: src/routes/_authed/_dashboard/system/health.tsx:147
 msgid "Refresh"
 msgstr "Refresh"
 
@@ -4244,7 +4244,7 @@ msgstr "Schedule recording times"
 msgid "Scheduled"
 msgstr "Scheduled"
 
-#: src/routes/_authed/_dashboard/system/health.tsx:315
+#: src/routes/_authed/_dashboard/system/health.tsx:329
 msgid "Scheduler"
 msgstr "Scheduler"
 
@@ -4407,12 +4407,12 @@ msgstr "selected"
 msgid "Separate multiple paths with commas."
 msgstr "Separate multiple paths with commas."
 
-#: src/components/pipeline/outputs/output-card.tsx:189
+#: src/components/pipeline/outputs/output-card.tsx:197
 #: src/routes/_authed/_dashboard/pipeline/jobs/new.tsx:254
 msgid "Session"
 msgstr "Session"
 
-#: src/components/sessions/session-card.tsx:51
+#: src/components/sessions/session-card.tsx:53
 msgid "Session deleted successfully"
 msgstr "Session deleted successfully"
 
@@ -4436,7 +4436,7 @@ msgstr "Session ID"
 msgid "Session ID is required"
 msgstr "Session ID is required"
 
-#: src/routes/_authed/_dashboard/sessions/$sessionId.tsx:156
+#: src/routes/_authed/_dashboard/sessions/$sessionId.tsx:162
 msgid "Session not found"
 msgstr "Session not found"
 
@@ -4502,7 +4502,7 @@ msgid "Signing in..."
 msgstr "Signing in..."
 
 #. placeholder {0}: i18n.date(new Date(Date.now() - health.uptime_secs * 1000), { timeStyle: 'medium', })
-#: src/routes/_authed/_dashboard/system/health.tsx:165
+#: src/routes/_authed/_dashboard/system/health.tsx:174
 msgid "Since {0}"
 msgstr "Since {0}"
 
@@ -4510,7 +4510,7 @@ msgstr "Since {0}"
 msgid "Single URL"
 msgstr "Single URL"
 
-#: src/components/pipeline/outputs/output-card.tsx:166
+#: src/components/pipeline/outputs/output-card.tsx:174
 #: src/components/streamers/edit/active-download-card.tsx:57
 msgid "Size"
 msgstr "Size"
@@ -4586,8 +4586,8 @@ msgid "Started"
 msgstr "Started"
 
 #: src/routes/_authed/_dashboard/pipeline/executions.$pipelineId.tsx:463
-#: src/routes/_authed/_dashboard/system/health.tsx:149
-#: src/routes/_authed/_dashboard/system/health.tsx:211
+#: src/routes/_authed/_dashboard/system/health.tsx:157
+#: src/routes/_authed/_dashboard/system/health.tsx:223
 msgid "Status"
 msgstr "Status"
 
@@ -4743,7 +4743,7 @@ msgid "System"
 msgstr "System"
 
 #: src/lib/menu-list.ts:108
-#: src/routes/_authed/_dashboard/system/health.tsx:121
+#: src/routes/_authed/_dashboard/system/health.tsx:129
 msgid "System Health"
 msgstr "System Health"
 
@@ -4916,7 +4916,7 @@ msgid "Thumbnail"
 msgstr "Thumbnail"
 
 #. placeholder {0}: session.title
-#: src/components/sessions/session-card.tsx:122
+#: src/components/sessions/session-card.tsx:125
 msgid "Thumbnail for {0}"
 msgstr "Thumbnail for {0}"
 
@@ -4936,7 +4936,7 @@ msgstr "Time between sampling attempts."
 msgid "Time offset to take screenshot from"
 msgstr "Time offset to take screenshot from"
 
-#: src/routes/_authed/_dashboard/sessions/$sessionId.tsx:218
+#: src/routes/_authed/_dashboard/sessions/$sessionId.tsx:224
 msgid "Timeline"
 msgstr "Timeline"
 
@@ -4996,7 +4996,7 @@ msgstr "Total Size"
 msgid "Total Steps"
 msgstr "Total Steps"
 
-#: src/routes/_authed/_dashboard/system/health.tsx:178
+#: src/routes/_authed/_dashboard/system/health.tsx:190
 msgid "Total system load"
 msgstr "Total system load"
 
@@ -5094,7 +5094,7 @@ msgid "Try adjusting your search."
 msgstr "Try adjusting your search."
 
 #: src/components/default-catch-boundary.tsx:42
-#: src/routes/_authed/_dashboard/system/health.tsx:102
+#: src/routes/_authed/_dashboard/system/health.tsx:110
 msgid "Try Again"
 msgstr "Try Again"
 
@@ -5131,7 +5131,7 @@ msgstr "Until"
 msgid "Untitled Session"
 msgstr "Untitled Session"
 
-#: src/components/sessions/session-card.tsx:112
+#: src/components/sessions/session-card.tsx:115
 msgid "Untitled Stream"
 msgstr "Untitled Stream"
 
@@ -5174,7 +5174,7 @@ msgstr "Upload file to cloud storage and delete local copy after successful uplo
 msgid "Upload file to cloud storage using rclone. Configure remote in rclone config."
 msgstr "Upload file to cloud storage using rclone. Configure remote in rclone config."
 
-#: src/routes/_authed/_dashboard/system/health.tsx:161
+#: src/routes/_authed/_dashboard/system/health.tsx:169
 msgid "Uptime"
 msgstr "Uptime"
 
@@ -5284,8 +5284,8 @@ msgid "View Detailed Logs & Outputs"
 msgstr "View Detailed Logs & Outputs"
 
 #: src/components/pipeline/jobs/pipeline-summary-card.tsx:184
-#: src/components/sessions/session-card.tsx:174
-#: src/components/sessions/session-card.tsx:193
+#: src/components/sessions/session-card.tsx:177
+#: src/components/sessions/session-card.tsx:196
 #: src/routes/_authed/_dashboard/dashboard.tsx:137
 msgid "View Details"
 msgstr "View Details"

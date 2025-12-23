@@ -607,12 +607,17 @@ impl DagRepository for SqlxDagRepository {
                     .fetch_all(&mut *tx)
                     .await?;
 
+                    // Deduplicate merged inputs to handle passthrough jobs in fan-in scenarios
+                    // where multiple dependency steps may output the same file.
+                    // Using IndexSet to preserve order while removing duplicates.
                     let merged_inputs: Vec<String> = outputs_rows
                         .into_iter()
                         .flatten()
                         .flat_map(|s| {
                             serde_json::from_str::<Vec<String>>(&s).unwrap_or_default()
                         })
+                        .collect::<indexmap::IndexSet<_>>()
+                        .into_iter()
                         .collect();
 
                     // Update the step record with PENDING status

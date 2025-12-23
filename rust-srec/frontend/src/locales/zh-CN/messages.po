@@ -85,7 +85,7 @@ msgstr "{0} 条弹幕"
 #. placeholder {0}: outputs.length
 #. placeholder {0}: session.output_count
 #: src/components/sessions/recordings-tab.tsx:40
-#: src/components/sessions/session-card.tsx:163
+#: src/components/sessions/session-card.tsx:166
 msgid "{0} Files"
 msgstr "{0} 个文件"
 
@@ -180,7 +180,7 @@ msgstr "绝对路径，或在 PATH 中时填写“streamlink”"
 msgid "Accent Color"
 msgstr "强调色"
 
-#: src/components/sessions/session-card.tsx:185
+#: src/components/sessions/session-card.tsx:188
 #: src/components/streamers/card/stream-actions-menu.tsx:42
 msgid "Actions"
 msgstr "操作"
@@ -420,7 +420,7 @@ msgstr "云端归档"
 msgid "Are you sure you want to delete the template \"{0}\"? This action cannot be undone."
 msgstr "确定要删除模板“{0}”吗？此操作无法撤销。"
 
-#: src/components/sessions/session-card.tsx:42
+#: src/components/sessions/session-card.tsx:44
 msgid "Are you sure you want to delete this session? This action cannot be undone."
 msgstr "确定要删除此会话吗？此操作无法撤销。"
 
@@ -832,11 +832,11 @@ msgstr "已完成"
 msgid "Complex patterns"
 msgstr "复杂模式"
 
-#: src/routes/_authed/_dashboard/system/health.tsx:208
+#: src/routes/_authed/_dashboard/system/health.tsx:220
 msgid "Component"
 msgstr "组件"
 
-#: src/routes/_authed/_dashboard/system/health.tsx:195
+#: src/routes/_authed/_dashboard/system/health.tsx:207
 msgid "Component Status"
 msgstr "组件状态"
 
@@ -989,7 +989,7 @@ msgstr "控制各模块的日志详细程度。较低级别包含较高级别。
 msgid "Cookies"
 msgstr "Cookie"
 
-#: src/components/pipeline/outputs/output-card.tsx:127
+#: src/components/pipeline/outputs/output-card.tsx:135
 msgid "Copied!"
 msgstr "已复制！"
 
@@ -1009,7 +1009,7 @@ msgstr "复制（直通）"
 msgid "Copy / Move"
 msgstr "复制/移动"
 
-#: src/components/pipeline/outputs/output-card.tsx:146
+#: src/components/pipeline/outputs/output-card.tsx:154
 msgid "Copy Directory"
 msgstr "复制目录"
 
@@ -1021,7 +1021,7 @@ msgstr "复制文件"
 msgid "Copy Files"
 msgstr "复制文件"
 
-#: src/components/pipeline/outputs/output-card.tsx:127
+#: src/components/pipeline/outputs/output-card.tsx:135
 msgid "Copy Path"
 msgstr "复制路径"
 
@@ -1033,11 +1033,11 @@ msgstr "将文件复制到其他位置，保留原始文件。"
 msgid "Copy/Move"
 msgstr "复制/移动"
 
-#: src/routes/_authed/_dashboard/system/health.tsx:97
+#: src/routes/_authed/_dashboard/system/health.tsx:105
 msgid "Could not connect to the server. Please check your connection."
 msgstr "无法连接到服务器，请检查网络连接。"
 
-#: src/routes/_authed/_dashboard/system/health.tsx:175
+#: src/routes/_authed/_dashboard/system/health.tsx:187
 msgid "CPU Usage"
 msgstr "CPU 使用率"
 
@@ -1137,7 +1137,7 @@ msgid "Create your first workflow to define a sequence of processing steps for y
 msgstr "创建你的第一个工作流，用于定义录制内容的处理步骤序列。"
 
 #: src/components/config/global/backup-restore-card.tsx:176
-#: src/components/pipeline/outputs/output-card.tsx:177
+#: src/components/pipeline/outputs/output-card.tsx:185
 #: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.tsx:603
 msgid "Created"
 msgstr "已创建"
@@ -1253,7 +1253,7 @@ msgstr "DAG 图"
 msgid "Danmu"
 msgstr "弹幕"
 
-#: src/routes/_authed/_dashboard/system/health.tsx:314
+#: src/routes/_authed/_dashboard/system/health.tsx:328
 msgid "Danmu Service"
 msgstr "弹幕服务"
 
@@ -1267,7 +1267,7 @@ msgid "Dashboard"
 msgstr "仪表盘"
 
 #: src/routes/_authed/_dashboard/dashboard.tsx:203
-#: src/routes/_authed/_dashboard/system/health.tsx:311
+#: src/routes/_authed/_dashboard/system/health.tsx:325
 msgid "Database"
 msgstr "数据库"
 
@@ -1372,7 +1372,7 @@ msgstr "删除处理管道？"
 msgid "Delete Preset?"
 msgstr "删除预设？"
 
-#: src/components/sessions/session-card.tsx:201
+#: src/components/sessions/session-card.tsx:204
 msgid "Delete Session"
 msgstr "删除会话"
 
@@ -1441,7 +1441,7 @@ msgstr "目标根目录"
 msgid "Detach & Edit"
 msgstr "分离并编辑"
 
-#: src/routes/_authed/_dashboard/system/health.tsx:198
+#: src/routes/_authed/_dashboard/system/health.tsx:210
 msgid "Detailed health checks for internal services and resources."
 msgstr "内部服务与资源的详细健康检查。"
 
@@ -1474,7 +1474,7 @@ msgstr "已断开"
 msgid "Disk"
 msgstr "磁盘"
 
-#: src/routes/_authed/_dashboard/system/health.tsx:310
+#: src/routes/_authed/_dashboard/system/health.tsx:324
 msgid "Disk Space"
 msgstr "磁盘空间"
 
@@ -1515,7 +1515,7 @@ msgid "Download engine (mesio)"
 msgstr "下载引擎（mesio）"
 
 #: src/routes/_authed/_dashboard/dashboard.tsx:210
-#: src/routes/_authed/_dashboard/system/health.tsx:312
+#: src/routes/_authed/_dashboard/system/health.tsx:326
 msgid "Download Manager"
 msgstr "下载管理"
 
@@ -1789,7 +1789,7 @@ msgstr "加载平台失败"
 msgid "Error loading preset"
 msgstr "加载预设失败"
 
-#: src/routes/_authed/_dashboard/sessions/$sessionId.tsx:153
+#: src/routes/_authed/_dashboard/sessions/$sessionId.tsx:159
 msgid "Error Loading Session"
 msgstr "加载录制会话失败"
 
@@ -1974,7 +1974,7 @@ msgstr "删除处理管道失败"
 msgid "Failed to delete preset: {0}"
 msgstr "删除预设失败：{0}"
 
-#: src/components/sessions/session-card.tsx:55
+#: src/components/sessions/session-card.tsx:58
 msgid "Failed to delete session"
 msgstr "删除会话失败"
 
@@ -2026,7 +2026,7 @@ msgstr "加载平台列表失败：{0}"
 msgid "Failed to load presets: {0}"
 msgstr "加载预设失败：{0}"
 
-#: src/routes/_authed/_dashboard/system/health.tsx:94
+#: src/routes/_authed/_dashboard/system/health.tsx:102
 msgid "Failed to load system health"
 msgstr "加载系统健康状态失败"
 
@@ -2334,7 +2334,7 @@ msgstr "返回"
 
 #: src/components/default-catch-boundary.tsx:58
 #: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.tsx:248
-#: src/routes/_authed/_dashboard/sessions/$sessionId.tsx:161
+#: src/routes/_authed/_dashboard/sessions/$sessionId.tsx:167
 msgid "Go Back"
 msgstr "返回"
 
@@ -2609,7 +2609,7 @@ msgstr "已开始重试处理任务"
 
 #: src/components/sidebar/navbar.tsx:41
 #: src/lib/menu-list.ts:84
-#: src/routes/_authed/_dashboard/sessions/$sessionId.tsx:242
+#: src/routes/_authed/_dashboard/sessions/$sessionId.tsx:248
 msgid "Jobs"
 msgstr "处理任务"
 
@@ -2645,7 +2645,7 @@ msgstr "语言设置"
 msgid "Last Activity"
 msgstr "最后活动"
 
-#: src/routes/_authed/_dashboard/system/health.tsx:220
+#: src/routes/_authed/_dashboard/system/health.tsx:232
 msgid "Last Check"
 msgstr "最后检查"
 
@@ -2657,7 +2657,7 @@ msgstr "最后错误"
 msgid "Last Error Log"
 msgstr "最后错误日志"
 
-#: src/routes/_authed/_dashboard/system/health.tsx:217
+#: src/routes/_authed/_dashboard/system/health.tsx:229
 msgid "Latency"
 msgstr "延迟"
 
@@ -2698,7 +2698,7 @@ msgstr "直播"
 
 #: src/components/player/stream-info-card.tsx:81
 #: src/components/player/stream-info-card.tsx:101
-#: src/components/sessions/session-card.tsx:97
+#: src/components/sessions/session-card.tsx:100
 #: src/components/sessions/session-header.tsx:29
 msgid "LIVE"
 msgstr "直播中"
@@ -2774,7 +2774,7 @@ msgstr "数值越低 = 质量越高"
 msgid "Main application"
 msgstr "主程序"
 
-#: src/routes/_authed/_dashboard/system/health.tsx:317
+#: src/routes/_authed/_dashboard/system/health.tsx:331
 msgid "Maintenance"
 msgstr "维护"
 
@@ -2875,7 +2875,7 @@ msgstr "媒体文件"
 msgid "Media outputs will appear here when pipeline jobs complete."
 msgstr "处理任务完成后，媒体文件将显示在此处。"
 
-#: src/routes/_authed/_dashboard/system/health.tsx:182
+#: src/routes/_authed/_dashboard/system/health.tsx:194
 msgid "Memory Usage"
 msgstr "内存使用率"
 
@@ -2883,7 +2883,7 @@ msgstr "内存使用率"
 msgid "Merge Changes"
 msgstr "合并更改"
 
-#: src/routes/_authed/_dashboard/system/health.tsx:214
+#: src/routes/_authed/_dashboard/system/health.tsx:226
 msgid "Message"
 msgstr "消息"
 
@@ -3091,7 +3091,7 @@ msgstr "暂无过滤器"
 msgid "No input paths"
 msgstr "没有输入路径"
 
-#: src/routes/_authed/_dashboard/system/health.tsx:248
+#: src/routes/_authed/_dashboard/system/health.tsx:260
 msgid "No issues detected"
 msgstr "未检测到问题"
 
@@ -3256,7 +3256,7 @@ msgstr "正常"
 msgid "Not available"
 msgstr "不可用"
 
-#: src/routes/_authed/_dashboard/system/health.tsx:316
+#: src/routes/_authed/_dashboard/system/health.tsx:330
 msgid "Notification Service"
 msgstr "通知服务"
 
@@ -3270,7 +3270,7 @@ msgstr "通知"
 msgid "Number of attempts before failing the upload."
 msgstr "上传失败前的尝试次数。"
 
-#: src/components/sessions/session-card.tsx:104
+#: src/components/sessions/session-card.tsx:107
 #: src/components/streamers/card/use-streamer-status.tsx:30
 #: src/components/streamers/card/use-streamer-status.tsx:229
 #: src/components/streamers/card/use-streamer-status.tsx:238
@@ -3316,7 +3316,7 @@ msgstr "上线时"
 msgid "On Pipeline Complete"
 msgstr "处理管道完成时"
 
-#: src/components/sessions/session-card.tsx:62
+#: src/components/sessions/session-card.tsx:65
 msgid "Ongoing"
 msgstr "进行中"
 
@@ -3328,7 +3328,7 @@ msgstr "仅包含具有该扩展名的文件（不含点号）"
 #: src/components/config/templates/template-card.tsx:108
 #: src/components/notifications/channel-card.tsx:148
 #: src/components/pipeline/jobs/pipeline-summary-card.tsx:172
-#: src/components/pipeline/outputs/output-card.tsx:116
+#: src/components/pipeline/outputs/output-card.tsx:124
 #: src/components/pipeline/presets/preset-card.tsx:168
 #: src/components/pipeline/workflows/workflow-card.tsx:168
 msgid "Open menu"
@@ -3426,7 +3426,7 @@ msgstr "不在计划时间内"
 msgid "Overall Health"
 msgstr "总体健康"
 
-#: src/routes/_authed/_dashboard/system/health.tsx:157
+#: src/routes/_authed/_dashboard/system/health.tsx:165
 msgid "Overall system status"
 msgstr "整体系统状态"
 
@@ -3459,7 +3459,7 @@ msgstr "覆盖输出文件夹。"
 #~ msgid "Override system colors with your own CSS variables."
 #~ msgstr "使用你的 CSS 变量覆盖系统颜色。"
 
-#: src/routes/_authed/_dashboard/sessions/$sessionId.tsx:212
+#: src/routes/_authed/_dashboard/sessions/$sessionId.tsx:218
 msgid "Overview"
 msgstr "概览"
 
@@ -3595,7 +3595,7 @@ msgstr "处理任务创建成功"
 msgid "Pipeline Jobs"
 msgstr "处理任务"
 
-#: src/routes/_authed/_dashboard/system/health.tsx:313
+#: src/routes/_authed/_dashboard/system/health.tsx:327
 msgid "Pipeline Manager"
 msgstr "处理管道管理器"
 
@@ -3910,7 +3910,7 @@ msgstr "队列"
 msgid "Quick Share"
 msgstr "快速分享"
 
-#: src/routes/_authed/_dashboard/system/health.tsx:185
+#: src/routes/_authed/_dashboard/system/health.tsx:197
 msgid "RAM utilization"
 msgstr "内存使用率"
 
@@ -3950,7 +3950,7 @@ msgstr "准备观看"
 msgid "Real-Time Logs"
 msgstr "实时日志"
 
-#: src/routes/_authed/_dashboard/system/health.tsx:124
+#: src/routes/_authed/_dashboard/system/health.tsx:132
 msgid "Real-time status of all system components and resources."
 msgstr "所有系统组件与资源的实时状态。"
 
@@ -3992,12 +3992,12 @@ msgstr "录制过滤器"
 msgid "Recording will start when schedule allows"
 msgstr "录制将在计划允许时开始"
 
-#: src/routes/_authed/_dashboard/sessions/$sessionId.tsx:230
+#: src/routes/_authed/_dashboard/sessions/$sessionId.tsx:236
 msgid "Recordings"
 msgstr "录制内容"
 
 #: src/components/sessions/session-list.tsx:72
-#: src/routes/_authed/_dashboard/system/health.tsx:139
+#: src/routes/_authed/_dashboard/system/health.tsx:147
 msgid "Refresh"
 msgstr "刷新"
 
@@ -4244,7 +4244,7 @@ msgstr "安排录制时间"
 msgid "Scheduled"
 msgstr "已计划"
 
-#: src/routes/_authed/_dashboard/system/health.tsx:315
+#: src/routes/_authed/_dashboard/system/health.tsx:329
 msgid "Scheduler"
 msgstr "调度器"
 
@@ -4407,12 +4407,12 @@ msgstr "已选"
 msgid "Separate multiple paths with commas."
 msgstr "用英文逗号分隔多个路径。"
 
-#: src/components/pipeline/outputs/output-card.tsx:189
+#: src/components/pipeline/outputs/output-card.tsx:197
 #: src/routes/_authed/_dashboard/pipeline/jobs/new.tsx:254
 msgid "Session"
 msgstr "会话"
 
-#: src/components/sessions/session-card.tsx:51
+#: src/components/sessions/session-card.tsx:53
 msgid "Session deleted successfully"
 msgstr "会话已删除"
 
@@ -4436,7 +4436,7 @@ msgstr "录制会话 ID"
 msgid "Session ID is required"
 msgstr "会话 ID 是必需的"
 
-#: src/routes/_authed/_dashboard/sessions/$sessionId.tsx:156
+#: src/routes/_authed/_dashboard/sessions/$sessionId.tsx:162
 msgid "Session not found"
 msgstr "未找到录制会话"
 
@@ -4502,7 +4502,7 @@ msgid "Signing in..."
 msgstr "正在登录..."
 
 #. placeholder {0}: i18n.date(new Date(Date.now() - health.uptime_secs * 1000), { timeStyle: 'medium', })
-#: src/routes/_authed/_dashboard/system/health.tsx:165
+#: src/routes/_authed/_dashboard/system/health.tsx:174
 msgid "Since {0}"
 msgstr "自 {0} 起"
 
@@ -4510,7 +4510,7 @@ msgstr "自 {0} 起"
 msgid "Single URL"
 msgstr "单个 URL"
 
-#: src/components/pipeline/outputs/output-card.tsx:166
+#: src/components/pipeline/outputs/output-card.tsx:174
 #: src/components/streamers/edit/active-download-card.tsx:57
 msgid "Size"
 msgstr "大小"
@@ -4586,8 +4586,8 @@ msgid "Started"
 msgstr "已开始"
 
 #: src/routes/_authed/_dashboard/pipeline/executions.$pipelineId.tsx:463
-#: src/routes/_authed/_dashboard/system/health.tsx:149
-#: src/routes/_authed/_dashboard/system/health.tsx:211
+#: src/routes/_authed/_dashboard/system/health.tsx:157
+#: src/routes/_authed/_dashboard/system/health.tsx:223
 msgid "Status"
 msgstr "状态"
 
@@ -4743,7 +4743,7 @@ msgid "System"
 msgstr "系统"
 
 #: src/lib/menu-list.ts:108
-#: src/routes/_authed/_dashboard/system/health.tsx:121
+#: src/routes/_authed/_dashboard/system/health.tsx:129
 msgid "System Health"
 msgstr "系统健康"
 
@@ -4916,7 +4916,7 @@ msgid "Thumbnail"
 msgstr "缩略图"
 
 #. placeholder {0}: session.title
-#: src/components/sessions/session-card.tsx:122
+#: src/components/sessions/session-card.tsx:125
 msgid "Thumbnail for {0}"
 msgstr "{0} 的缩略图"
 
@@ -4936,7 +4936,7 @@ msgstr "采样尝试之间的时间间隔。"
 msgid "Time offset to take screenshot from"
 msgstr "截图时间偏移"
 
-#: src/routes/_authed/_dashboard/sessions/$sessionId.tsx:218
+#: src/routes/_authed/_dashboard/sessions/$sessionId.tsx:224
 msgid "Timeline"
 msgstr "时间线"
 
@@ -4996,7 +4996,7 @@ msgstr "总大小"
 msgid "Total Steps"
 msgstr "总步骤数"
 
-#: src/routes/_authed/_dashboard/system/health.tsx:178
+#: src/routes/_authed/_dashboard/system/health.tsx:190
 msgid "Total system load"
 msgstr "系统总负载"
 
@@ -5094,7 +5094,7 @@ msgid "Try adjusting your search."
 msgstr "尝试调整搜索。"
 
 #: src/components/default-catch-boundary.tsx:42
-#: src/routes/_authed/_dashboard/system/health.tsx:102
+#: src/routes/_authed/_dashboard/system/health.tsx:110
 msgid "Try Again"
 msgstr "重试"
 
@@ -5131,7 +5131,7 @@ msgstr "直到"
 msgid "Untitled Session"
 msgstr "无标题会话"
 
-#: src/components/sessions/session-card.tsx:112
+#: src/components/sessions/session-card.tsx:115
 msgid "Untitled Stream"
 msgstr "无标题直播"
 
@@ -5174,7 +5174,7 @@ msgstr "将文件上传到云存储，上传成功后删除本地副本。"
 msgid "Upload file to cloud storage using rclone. Configure remote in rclone config."
 msgstr "使用 rclone 将文件上传到云存储。在 rclone 配置中设置远端。"
 
-#: src/routes/_authed/_dashboard/system/health.tsx:161
+#: src/routes/_authed/_dashboard/system/health.tsx:169
 msgid "Uptime"
 msgstr "运行时间"
 
@@ -5284,8 +5284,8 @@ msgid "View Detailed Logs & Outputs"
 msgstr "查看详细日志与输出"
 
 #: src/components/pipeline/jobs/pipeline-summary-card.tsx:184
-#: src/components/sessions/session-card.tsx:174
-#: src/components/sessions/session-card.tsx:193
+#: src/components/sessions/session-card.tsx:177
+#: src/components/sessions/session-card.tsx:196
 #: src/routes/_authed/_dashboard/dashboard.tsx:137
 msgid "View Details"
 msgstr "查看详情"
