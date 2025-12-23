@@ -17,6 +17,7 @@ use rand::seq::IndexedRandom;
 use regex::Regex;
 use reqwest::Client;
 use reqwest::header::HeaderValue;
+use rustc_hash::FxHashMap;
 use std::collections::HashMap;
 use std::time::{SystemTime, UNIX_EPOCH};
 use url::{Url, form_urlencoded};
@@ -348,6 +349,9 @@ impl Huya {
             presenter_uid,
         )?;
 
+        let mut extras = FxHashMap::default();
+        extras.insert("presenter_uid".to_string(), presenter_uid.to_string());
+
         Ok(MediaInfo::new(
             self.extractor.url.clone(),
             title,
@@ -357,7 +361,7 @@ impl Huya {
             is_live,
             streams,
             Some(self.extractor.get_platform_headers_map()),
-            Some(self.extractor.get_platform_headers_map()),
+            Some(extras),
         ))
     }
 
@@ -480,6 +484,9 @@ impl Huya {
             )?
         };
 
+        let mut extras = FxHashMap::default();
+        extras.insert("presenter_uid".to_string(), presenter_uid.to_string());
+
         Ok(MediaInfo::new(
             self.extractor.url.clone(),
             title.to_string(),
@@ -489,7 +496,7 @@ impl Huya {
             true,
             streams,
             Some(self.extractor.get_platform_headers_map()),
-            Some(self.extractor.get_platform_headers_map()),
+            Some(extras),
         ))
     }
 

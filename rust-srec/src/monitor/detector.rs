@@ -364,13 +364,14 @@ impl StreamDetector {
             let streams = vec![selected_stream];
 
             debug!(
-                "Streamer {} is LIVE: {} (category: {:?}, viewers: {:?}, streams: {}, media_headers: {})",
+                "Streamer {} is LIVE: {} (category: {:?}, viewers: {:?}, streams: {}, media_headers: {}, extras: {:?})",
                 streamer.name,
                 media_info.title,
                 category,
                 viewer_count,
                 streams.len(),
-                media_headers.as_ref().map(|h| h.len()).unwrap_or(0)
+                media_headers.as_ref().map(|h| h.len()).unwrap_or(0),
+                media_extras.as_ref().map(|e| e.len()).unwrap_or(0)
             );
 
             Ok(LiveStatus::Live {
