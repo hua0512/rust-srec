@@ -144,24 +144,6 @@ impl StreamSelector {
             return false;
         }
 
-        // Check format constraints (if specified)
-        if let Some(formats) = &self.config.preferred_formats
-            && !formats.is_empty()
-            && !formats.contains(&stream.stream_format)
-        {
-            return false;
-        }
-
-        // Check media format constraints (if specified)
-        if !self.config.preferred_media_formats.is_empty()
-            && !self
-                .config
-                .preferred_media_formats
-                .contains(&stream.media_format)
-        {
-            return false;
-        }
-
         true
     }
 
@@ -172,8 +154,9 @@ impl StreamSelector {
         // 1. Quality Preference
         // 2. CDN Preference
         // 3. Format Preference
-        // 4. Priority Field (lower value = higher priority)
-        // 5. Bitrate (higher value = better)
+        // 4. Media Format Preference
+        // 5. Priority Field (lower value = higher priority)
+        // 6. Bitrate (higher value = better)
 
         // 1. Compare by quality preference
         let quality_score_a = self.quality_score(a);
@@ -196,12 +179,19 @@ impl StreamSelector {
             return format_score_a.cmp(&format_score_b);
         }
 
-        // 4. Compare by priority (lower priority value = higher priority)
+        // 4. Compare by media format preference
+        let media_format_score_a = self.media_format_score(a);
+        let media_format_score_b = self.media_format_score(b);
+        if media_format_score_a != media_format_score_b {
+            return media_format_score_a.cmp(&media_format_score_b);
+        }
+
+        // 5. Compare by priority (lower priority value = higher priority)
         if a.priority != b.priority {
             return a.priority.cmp(&b.priority);
         }
 
-        // 5. Compare by bitrate (higher is better)
+        // 6. Compare by bitrate (higher is better)
         b.bitrate.cmp(&a.bitrate)
     }
 
@@ -215,6 +205,19 @@ impl StreamSelector {
             // No preference or empty list -> equal score
             _ => 0,
         }
+    }
+
+    /// Get the media format preference score (lower is better).
+    fn media_format_score(&self, stream: &StreamInfo) -> usize {
+        if self.config.preferred_media_formats.is_empty() {
+            return 0;
+        }
+
+        self.config
+            .preferred_media_formats
+            .iter()
+            .position(|f| f == &stream.media_format)
+            .unwrap_or(usize::MAX)
     }
 
     /// Get the quality preference score (lower is better).
