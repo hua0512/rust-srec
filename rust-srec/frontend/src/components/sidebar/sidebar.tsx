@@ -40,13 +40,13 @@ export function Sidebar() {
       >
         <Button
           className={cn(
-            'transition-all ease-in-out duration-300 mb-6 bg-transparent hover:bg-transparent px-2',
-            !isOpen ? 'justify-center' : 'justify-start',
+            'w-full transition-all ease-in-out duration-300 mb-6 bg-transparent hover:bg-transparent',
+            !isOpen ? 'justify-center' : 'justify-start px-4',
           )}
           variant="link"
           asChild
         >
-          <Link to="/dashboard" className="flex items-center gap-3">
+          <Link to="/dashboard" className={cn('flex items-center', isOpen ? 'gap-4' : 'gap-0')}>
             <div className="w-10 h-10 bg-primary rounded-xl flex items-center justify-center shrink-0 shadow-lg shadow-primary/20 transition-all duration-300 group-hover:scale-105">
               <div className="w-6 h-6 bg-primary-foreground [mask-image:url(/stream-rec-white.svg)] [mask-size:contain] [mask-repeat:no-repeat] [mask-position:center]" />
             </div>

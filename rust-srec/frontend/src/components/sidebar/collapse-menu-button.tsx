@@ -68,7 +68,7 @@ export function CollapseMenuButton({
         <Button
           variant="ghost"
           className={cn(
-            'w-full justify-start h-11 transition-all duration-200 group relative overflow-hidden px-4',
+            'w-full justify-start h-11 transition-all duration-200 group relative overflow-hidden px-4 mb-1',
             isSubmenuActive
               ? 'bg-primary/10 text-primary hover:bg-primary/15 hover:text-primary shadow-sm shadow-primary/5'
               : 'text-muted-foreground hover:bg-muted/50 hover:text-foreground',
@@ -77,22 +77,24 @@ export function CollapseMenuButton({
           {isSubmenuActive && (
             <div className="absolute left-0 top-1/2 -translate-y-1/2 w-1.5 h-6 bg-primary rounded-r-full" />
           )}
-          <div className="w-full items-center flex justify-between">
-            <div className="flex items-center">
-              <span className="transition-transform duration-200 group-hover:scale-110 shrink-0 mr-4">
-                <Icon size={18} strokeWidth={isSubmenuActive ? 2.5 : 2} />
-              </span>
-              <p className="truncate font-medium transition-all duration-300 translate-x-0 opacity-100 w-auto">
-                {label}
-              </p>
-            </div>
-            <div className="transition-all duration-300 translate-x-0 opacity-100">
+          <span
+            className="transition-transform duration-200 group-hover:scale-110 shrink-0 mr-4"
+          >
+            <Icon size={18} strokeWidth={isSubmenuActive ? 2.5 : 2} />
+          </span>
+          <p
+            className="truncate font-medium transition-all duration-300 opacity-100 translate-x-0 w-auto"
+          >
+            {label}
+          </p>
+          {isOpen && (
+            <div className="ml-auto transition-all duration-300 translate-x-0 opacity-100">
               <ChevronDown
                 size={16}
                 className="transition-transform duration-200 opacity-60"
               />
             </div>
-          </div>
+          )}
         </Button>
       </CollapsibleTrigger>
       <CollapsibleContent className="overflow-hidden data-[state=closed]:animate-collapsible-up data-[state=open]:animate-collapsible-down">
@@ -140,7 +142,7 @@ export function CollapseMenuButton({
               <Button
                 variant="ghost"
                 className={cn(
-                  'w-full justify-start h-11 mb-1 transition-all duration-200 group relative overflow-hidden justify-center',
+                  'w-full h-11 mb-1 transition-all duration-200 group relative overflow-hidden justify-center',
                   isSubmenuActive
                     ? 'bg-primary/10 text-primary hover:bg-primary/15 hover:text-primary shadow-sm shadow-primary/5'
                     : 'text-muted-foreground hover:bg-muted/50 hover:text-foreground',
@@ -149,14 +151,10 @@ export function CollapseMenuButton({
                 {isSubmenuActive && (
                   <div className="absolute left-0 top-1/2 -translate-y-1/2 w-1.5 h-6 bg-primary rounded-r-full" />
                 )}
-                <div className="w-full items-center flex justify-center">
-                  <div className="flex items-center">
-                    <span className="transition-transform duration-200 group-hover:scale-110 shrink-0">
-                      <Icon size={18} strokeWidth={isSubmenuActive ? 2.5 : 2} />
-                    </span>
-                    <p className="opacity-0 w-0 pointer-events-none">{label}</p>
-                  </div>
-                </div>
+                <span className="transition-transform duration-200 group-hover:scale-110 shrink-0">
+                  <Icon size={18} strokeWidth={isSubmenuActive ? 2.5 : 2} />
+                </span>
+                <p className="opacity-0 w-0 pointer-events-none">{label}</p>
               </Button>
             </DropdownMenuTrigger>
           </TooltipTrigger>

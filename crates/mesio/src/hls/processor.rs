@@ -14,7 +14,7 @@ use bytes::Bytes;
 use hls::HlsData;
 use std::sync::Arc;
 use std::time::Instant;
-use tracing::{debug, error};
+use tracing::{error, trace};
 
 #[async_trait]
 pub trait SegmentTransformer: Send + Sync {
@@ -86,14 +86,7 @@ impl SegmentTransformer for SegmentProcessor {
         // Process data: either zero-copy forward or decrypt
         let current_data = if requires_decryption {
             // Decryption required - cannot use zero-copy
-            let key_info = job.key.as_ref().unwrap(); // Safe: we checked above
-
-            if zero_copy_enabled {
-                debug!(
-                    uri = %job.segment_uri,
-                    "Zero-copy disabled for segment: decryption required"
-                );
-            }
+            let key_info = job.key.as_ref().unwrap(); // Safe: we checked 
 
             let iv_override = if key_info.iv.is_none() {
                 Some(Self::u64_to_iv_bytes(job.media_sequence_number))
@@ -128,7 +121,7 @@ impl SegmentTransformer for SegmentProcessor {
             }
             // KeyMethod::None - no decryption needed, use zero-copy if enabled
             if zero_copy_enabled {
-                debug!(
+                trace!(
                     uri = %job.segment_uri,
                     "Zero-copy forwarding: unencrypted segment (KeyMethod::None)"
                 );
@@ -137,7 +130,7 @@ impl SegmentTransformer for SegmentProcessor {
         } else {
             // No key at all - unencrypted segment, use zero-copy if enabled
             if zero_copy_enabled {
-                debug!(
+                trace!(
                     uri = %job.segment_uri,
                     "Zero-copy forwarding: unencrypted segment (no key)"
                 );

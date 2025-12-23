@@ -223,7 +223,7 @@ mod tests {
     fn create_test_config() -> MergedConfig {
         MergedConfig::builder()
             .with_global(
-                "./downloads".to_string(),
+                "/app/output".to_string(),
                 "{streamer}-{title}".to_string(),
                 "flv".to_string(),
                 1024,

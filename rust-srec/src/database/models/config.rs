@@ -39,7 +39,7 @@ impl Default for GlobalConfigDbModel {
     fn default() -> Self {
         Self {
             id: uuid::Uuid::new_v4().to_string(),
-            output_folder: "./downloads".to_string(),
+            output_folder: "/app/output".to_string(),
             output_filename_template: "{streamer}-{title}-%Y%m%d-%H%M%S".to_string(),
             output_file_format: "flv".to_string(),
             min_segment_size_bytes: 1048576, // 1MB
@@ -168,7 +168,7 @@ mod tests {
     #[test]
     fn test_global_config_default() {
         let config = GlobalConfigDbModel::default();
-        assert_eq!(config.output_folder, "./downloads");
+        assert_eq!(config.output_folder, "/app/output");
         assert_eq!(config.max_concurrent_downloads, 6);
         assert!(!config.record_danmu);
     }

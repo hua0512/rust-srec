@@ -10,7 +10,7 @@ use tokio::task::JoinHandle;
 use tokio_tungstenite::{
     MaybeTlsStream, WebSocketStream, connect_async, tungstenite::protocol::Message,
 };
-use tracing::{debug, error, info, warn};
+use tracing::{debug, error, info, trace, warn};
 
 use crate::danmaku::ConnectionConfig;
 use crate::danmaku::error::{DanmakuError, Result};
@@ -300,7 +300,7 @@ impl<P: DanmuProtocol + Clone> WebSocketDanmuProvider<P> {
                                         error!("Failed to send heartbeat: {}", e);
                                         break; // Reconnect
                                     }
-                                    debug!("Sent heartbeat for {}", room_id_owned);
+                                    trace!("Sent heartbeat for {}", room_id_owned);
                                 }
                             }
 

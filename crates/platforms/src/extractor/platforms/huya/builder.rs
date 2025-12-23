@@ -20,6 +20,7 @@ use reqwest::header::HeaderValue;
 use rustc_hash::FxHashMap;
 use std::collections::HashMap;
 use std::time::{SystemTime, UNIX_EPOCH};
+use tracing::debug;
 use url::{Url, form_urlencoded};
 
 use super::models::*;
@@ -194,7 +195,8 @@ impl Huya {
     fn extract_presenter_uid_from_extras(extras: &serde_json::Value) -> i64 {
         extras
             .get("presenter_uid")
-            .and_then(|v| v.as_i64())
+            .and_then(|v| v.as_str())
+            .and_then(|s| s.parse::<i64>().ok())
             .unwrap_or(0)
     }
 
@@ -202,7 +204,8 @@ impl Huya {
     fn extract_default_bitrate_from_extras(extras: &serde_json::Value) -> u64 {
         extras
             .get("default_bitrate")
-            .and_then(|v| v.as_u64())
+            .and_then(|v| v.as_str())
+            .and_then(|s| s.parse::<u64>().ok())
             .unwrap_or(10000)
     }
 
@@ -536,8 +539,8 @@ impl Huya {
             let extras = serde_json::json!({
                 "cdn": stream_info.s_cdn_type,
                 "stream_name": stream_name,
-                "presenter_uid": presenter_uid,
-                "default_bitrate": default_bitrate,
+                "presenter_uid": presenter_uid.to_string(),
+                "default_bitrate": default_bitrate.to_string(),
             });
 
             let priority = stream_info.i_web_priority_rate as u32;
@@ -614,8 +617,8 @@ impl Huya {
             let extras = serde_json::json!({
                 "cdn": stream_info.s_cdn_type,
                 "stream_name": stream_name,
-                "presenter_uid": presenter_uid,
-                "default_bitrate": default_bitrate,
+                "presenter_uid": presenter_uid.to_string(),
+                "default_bitrate": default_bitrate.to_string(),
             });
 
             let priority = stream_info.i_web_priority_rate as u32;
@@ -771,6 +774,8 @@ impl Huya {
             base_url
         };
 
+        debug!("Final URL: {}", stream_info.url);
+
         Ok(())
     }
 }
@@ -810,6 +815,8 @@ impl PlatformExtractor for Huya {
         if !self.use_wup || self.use_wup_v2 {
             return Ok(());
         }
+
+        debug!("Getting WUP URL for stream: {}", stream_info.url);
 
         // Extract WUP request parameters from stream extras
         let extras = stream_info.extras.as_ref().ok_or_else(|| {

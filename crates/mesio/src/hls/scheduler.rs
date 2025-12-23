@@ -10,12 +10,12 @@ use futures::StreamExt;
 use futures::stream::FuturesUnordered;
 use hls::HlsData;
 use m3u8_rs::{ByteRange as M3u8ByteRange, Key as M3u8Key, MediaSegment};
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashSet};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tokio::sync::mpsc;
 use tokio_util::sync::CancellationToken;
-use tracing::{debug, error, info, warn};
+use tracing::{debug, error, info, trace, warn};
 
 #[derive(Debug, Clone)]
 pub struct ScheduledSegmentJob {
@@ -154,6 +154,8 @@ pub struct SegmentScheduler {
     known_segments: BTreeMap<u64, ScheduledSegmentJob>,
     /// Current buffer size estimate (number of segments in flight + pending)
     buffer_size: usize,
+    /// Segments currently in-flight (being downloaded), used to prevent duplicate prefetch
+    in_flight_segments: HashSet<u64>,
     /// Performance metrics for tracking prefetch operations
     metrics: Option<Arc<PerformanceMetrics>>,
 }
@@ -181,6 +183,7 @@ impl SegmentScheduler {
             prefetch_manager,
             known_segments: BTreeMap::new(),
             buffer_size: 0,
+            in_flight_segments: HashSet::new(),
             metrics: None,
         }
     }
@@ -209,6 +212,7 @@ impl SegmentScheduler {
             prefetch_manager,
             known_segments: BTreeMap::new(),
             buffer_size: 0,
+            in_flight_segments: HashSet::new(),
             metrics: Some(metrics),
         }
     }
@@ -248,7 +252,7 @@ impl SegmentScheduler {
                     media_sequence_number: job.media_sequence_number,
                     discontinuity: job.discontinuity,
                 };
-                debug!(uri = %job.segment_uri, msn = %job.media_sequence_number, is_prefetch = is_prefetch, "Segment processing successful");
+                trace!(uri = %job.segment_uri, msn = %job.media_sequence_number, is_prefetch = is_prefetch, "Segment processing successful");
                 Ok(output)
             }
             Err(e) => {
@@ -290,11 +294,12 @@ impl SegmentScheduler {
         // Get known segment MSNs
         let known_msns: Vec<u64> = self.known_segments.keys().copied().collect();
 
-        // Get prefetch targets
+        // Get prefetch targets, excluding segments already in-flight
         let targets = self.prefetch_manager.get_prefetch_targets(
             completed_msn,
             self.buffer_size,
             &known_msns,
+            &self.in_flight_segments,
         );
 
         if targets.is_empty() {
@@ -361,6 +366,7 @@ impl SegmentScheduler {
                         let batch = self.batch_scheduler.take_batch();
                         for job in batch {
                             self.buffer_size += 1;
+                            self.in_flight_segments.insert(job.media_sequence_number);
                             let fetcher_clone = Arc::clone(&self.segment_fetcher);
                             let processor_clone = Arc::clone(&self.segment_processor);
                             futures.push(Self::perform_segment_processing(
@@ -376,9 +382,10 @@ impl SegmentScheduler {
                 _ = tokio::time::sleep(batch_timeout.unwrap_or(Duration::MAX)), if batch_enabled && batch_timeout.is_some() && !draining => {
                     if self.batch_scheduler.is_ready() {
                         let batch = self.batch_scheduler.take_batch();
-                        debug!(batch_size = batch.len(), "Batch window expired, dispatching partial batch");
+                        trace!(batch_size = batch.len(), "Batch window expired, dispatching partial batch");
                         for job in batch {
                             self.buffer_size += 1;
+                            self.in_flight_segments.insert(job.media_sequence_number);
                             let fetcher_clone = Arc::clone(&self.segment_fetcher);
                             let processor_clone = Arc::clone(&self.segment_processor);
                             futures.push(Self::perform_segment_processing(
@@ -394,7 +401,7 @@ impl SegmentScheduler {
                 // This branch is disabled when `draining` is true.
                 maybe_job_request = self.segment_request_rx.recv(), if !draining && can_accept_more => {
                     if let Some(job_request) = maybe_job_request {
-                        debug!(uri = %job_request.segment_uri, msn = %job_request.media_sequence_number, "Received new segment job.");
+                        trace!(uri = %job_request.segment_uri, msn = %job_request.media_sequence_number, "Received new segment job.");
 
                         // Track segment for potential prefetching
                         if prefetch_enabled {
@@ -408,9 +415,10 @@ impl SegmentScheduler {
                             // Check if batch is ready (max size reached)
                             if self.batch_scheduler.is_ready() {
                                 let batch = self.batch_scheduler.take_batch();
-                                debug!(batch_size = batch.len(), "Batch ready (max size), dispatching");
+                                trace!(batch_size = batch.len(), "Batch ready (max size), dispatching");
                                 for job in batch {
                                     self.buffer_size += 1;
+                                    self.in_flight_segments.insert(job.media_sequence_number);
                                     let fetcher_clone = Arc::clone(&self.segment_fetcher);
                                     let processor_clone = Arc::clone(&self.segment_processor);
                                     futures.push(Self::perform_segment_processing(
@@ -423,6 +431,7 @@ impl SegmentScheduler {
                         } else {
                             // Direct dispatch without batching
                             self.buffer_size += 1;
+                            self.in_flight_segments.insert(job_request.media_sequence_number);
                             let fetcher_clone = Arc::clone(&self.segment_fetcher);
                             let processor_clone = Arc::clone(&self.segment_processor);
                             futures.push(Self::perform_segment_processing(
@@ -443,6 +452,7 @@ impl SegmentScheduler {
                             debug!(batch_size = batch.len(), "Dispatching remaining batch on channel close");
                             for job in batch {
                                 self.buffer_size += 1;
+                                self.in_flight_segments.insert(job.media_sequence_number);
                                 let fetcher_clone = Arc::clone(&self.segment_fetcher);
                                 let processor_clone = Arc::clone(&self.segment_processor);
                                 futures.push(Self::perform_segment_processing(
@@ -462,6 +472,9 @@ impl SegmentScheduler {
                     if self.buffer_size > 0 {
                         self.buffer_size -= 1;
                     }
+
+                    // Remove segment from in-flight tracking
+                    self.in_flight_segments.remove(&completed_msn);
 
                     // Mark segment as completed in prefetch manager
                     if prefetch_enabled {
@@ -485,6 +498,7 @@ impl SegmentScheduler {
                                     // Only dispatch if we have capacity
                                     if futures.len() < self.config.scheduler_config.download_concurrency {
                                         self.buffer_size += 1;
+                                        self.in_flight_segments.insert(prefetch_job.media_sequence_number);
                                         let fetcher_clone = Arc::clone(&self.segment_fetcher);
                                         let processor_clone = Arc::clone(&self.segment_processor);
                                         futures.push(Self::perform_segment_processing(
@@ -502,14 +516,25 @@ impl SegmentScheduler {
                             }
                         }
                         Err(e) => {
-                            warn!(error = %e, msn = completed_msn, is_prefetch = is_prefetch, "Segment processing task failed.");
-                            // Don't propagate prefetch errors - they're opportunistic
-                            if !is_prefetch
-                                && self.output_tx.send(Err(e)).await.is_err()
-                            {
-                                error!("Output channel closed while trying to send segment processing error. Shutting down scheduler.");
-                                break;
-                            }
+                            // Check if the error is a SegmentFetchError (e.g. 404)
+                            // We should not abort the stream for a single missing segment
+                            let should_ignore = matches!(e, HlsDownloaderError::SegmentFetchError(_));
+
+                            warn!(
+                                error = %e,
+                                msn = completed_msn,
+                                is_prefetch = is_prefetch,
+                                ignored = should_ignore,
+                                "Segment processing task failed."
+                            );
+
+                            // Don't propagate prefetch errors - they're opportunistic.
+                            // Also don't propagate SegmentFetchErrors - treat them as gaps.
+                            if !is_prefetch && !should_ignore
+                                && self.output_tx.send(Err(e)).await.is_err() {
+                                    error!("Output channel closed while trying to send segment processing error. Shutting down scheduler.");
+                                    break;
+                                }
                         }
                     }
                 }

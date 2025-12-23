@@ -12,7 +12,7 @@ use pipeline_common::{
     WriterState, WriterTask, expand_filename_template,
 };
 
-use tracing::{Span, debug, info};
+use tracing::{Span, debug, info, trace};
 use tracing_indicatif::span_ext::IndicatifSpanExt;
 
 use crate::analyzer::HlsAnalyzer;
@@ -298,7 +298,7 @@ impl ProtocolWriter for HlsWriter {
         while let Some(result) = receiver.blocking_recv() {
             match result {
                 Ok(hls_data) => {
-                    debug!("Received HLS data: {:?}", hls_data.tag_type());
+                    trace!("Received HLS data: {:?}", hls_data.tag_type());
                     self.writer_task.process_item(hls_data)?;
                 }
                 Err(e) => {

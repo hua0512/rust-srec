@@ -20,6 +20,7 @@ export interface StreamOption {
   format?: string;
   bitrate?: number;
   headers?: Record<string, string>;
+  extras?: Record<string, string>;
 }
 
 export interface StreamInfoCardProps {
@@ -39,10 +40,17 @@ export function StreamInfoCard({
 }: StreamInfoCardProps) {
   const streams = extractStreams(mediaInfo);
 
+  const getSourceKey = (stream: StreamOption | null | undefined) => {
+    if (!stream) return 'default';
+    return stream.cdn && stream.cdn !== stream.format
+      ? `${stream.cdn} (${stream.format})`
+      : stream.cdn || stream.format || 'default';
+  };
+
   // Group streams by source/CDN first
   const sourceGroups = streams.reduce(
     (acc, stream) => {
-      const source = stream.cdn || stream.format || 'default';
+      const source = getSourceKey(stream);
       if (!acc[source]) {
         acc[source] = [];
       }
@@ -53,8 +61,7 @@ export function StreamInfoCard({
   );
 
   const sources = Object.keys(sourceGroups);
-  const selectedSource =
-    selectedStream?.cdn || selectedStream?.format || sources[0];
+  const selectedSource = getSourceKey(selectedStream);
   const streamsForSource = sourceGroups[selectedSource] || [];
 
   // Get unique qualities for the selected source
@@ -176,9 +183,9 @@ export function StreamInfoCard({
                     className={cn(
                       'justify-start h-9 transition-all duration-300',
                       isSelected &&
-                        'shadow-md shadow-primary/20 ring-1 ring-primary/20',
+                      'shadow-md shadow-primary/20 ring-1 ring-primary/20',
                       !isSelected &&
-                        'hover:bg-primary/5 hover:text-primary hover:border-primary/20',
+                      'hover:bg-primary/5 hover:text-primary hover:border-primary/20',
                     )}
                     onClick={() =>
                       streamForQuality && onStreamSelect(streamForQuality)
@@ -251,24 +258,28 @@ function extractStreams(mediaInfo: any): StreamOption[] {
   // Handle different possible structures
   if (Array.isArray(mediaInfo.streams)) {
     mediaInfo.streams.forEach((stream: any) => {
+      const extras = stringifyValues({ ...mediaInfo.extras, ...stream.extras });
       streams.push({
         url: stream.url || stream.src || '',
         quality: stream.quality || stream.resolution || 'unknown',
-        cdn: stream.cdn || stream.server,
+        cdn: stream.cdn || stream.server || extras.cdn,
         format: stream.format || detectFormat(stream.url),
         bitrate: stream.bitrate || stream.bandwidth,
         headers: { ...mediaInfo.headers, ...stream.headers },
+        extras,
       });
     });
   } else if (mediaInfo.url) {
     // Single stream
+    const extras = stringifyValues(mediaInfo.extras || {});
     streams.push({
       url: mediaInfo.url,
       quality: mediaInfo.quality || 'default',
-      cdn: mediaInfo.cdn,
+      cdn: mediaInfo.cdn || extras.cdn,
       format: mediaInfo.format || detectFormat(mediaInfo.url),
       bitrate: mediaInfo.bitrate,
       headers: mediaInfo.headers || {},
+      extras,
     });
   }
 
@@ -283,4 +294,14 @@ function detectFormat(url: string): string {
   if (url.includes('.ts')) return 'mpegts';
   if (url.includes('.mp4')) return 'mp4';
   return 'unknown';
+}
+
+function stringifyValues(obj: Record<string, any>): Record<string, string> {
+  const result: Record<string, string> = {};
+  for (const key in obj) {
+    if (obj[key] !== undefined && obj[key] !== null) {
+      result[key] = String(obj[key]);
+    }
+  }
+  return result;
 }

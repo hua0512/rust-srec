@@ -28,10 +28,18 @@ RUN apt-get update && apt-get install -y \
     ca-certificates \
     curl \
     ffmpeg \
+    locales \
     python3 \
     python3-pip \
     unzip \
-    && rm -rf /var/lib/apt/lists/*
+    && rm -rf /var/lib/apt/lists/* \
+    && sed -i '/en_US.UTF-8/s/^# //g' /etc/locale.gen \
+    && locale-gen
+
+# Set UTF-8 locale
+ENV LANG=en_US.UTF-8
+ENV LANGUAGE=en_US:en
+ENV LC_ALL=en_US.UTF-8
 
 # Install Streamlink, ttvlol plugin, and rclone
 RUN pip3 install --break-system-packages streamlink \

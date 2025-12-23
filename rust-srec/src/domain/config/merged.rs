@@ -474,7 +474,7 @@ impl MergedConfigBuilder {
     pub fn build(self) -> MergedConfig {
         let output_folder = self
             .output_folder
-            .unwrap_or_else(|| "./downloads".to_string());
+            .unwrap_or_else(|| "/app/output".to_string());
         let output_filename_template = self
             .output_filename_template
             .unwrap_or_else(|| "{streamer}-{title}-%Y%m%d-%H%M%S".to_string());
@@ -530,7 +530,7 @@ mod tests {
     fn test_merged_config_builder() {
         let config = MergedConfig::builder()
             .with_global(
-                "./downloads".to_string(),
+                "/app/output".to_string(),
                 "{streamer}-{title}".to_string(),
                 "flv".to_string(),
                 1024,
@@ -563,7 +563,7 @@ mod tests {
             )
             .build();
 
-        assert_eq!(config.output_folder, "./downloads");
+        assert_eq!(config.output_folder, "/app/output");
         assert_eq!(config.download_engine, "mesio");
         assert!(!config.record_danmu);
     }
@@ -572,7 +572,7 @@ mod tests {
     fn test_layer_override() {
         let config = MergedConfig::builder()
             .with_global(
-                "./downloads".to_string(),
+                "/app/output".to_string(),
                 "{streamer}".to_string(),
                 "flv".to_string(),
                 1024,
@@ -645,7 +645,7 @@ mod tests {
 
         let config = MergedConfig::builder()
             .with_global(
-                "./downloads".to_string(),
+                "/app/output".to_string(),
                 "{streamer}".to_string(),
                 "flv".to_string(),
                 1024,
@@ -719,7 +719,7 @@ mod tests {
 
         let config = MergedConfig::builder()
             .with_global(
-                "./downloads".to_string(),
+                "/app/output".to_string(),
                 "{streamer}".to_string(),
                 "flv".to_string(),
                 1024,

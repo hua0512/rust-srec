@@ -42,6 +42,7 @@ export function PlayerCard({
   const [resolving, setResolving] = useState(false);
   const [currentUrl, setCurrentUrl] = useState(url);
   const [currentHeaders, setCurrentHeaders] = useState(headers);
+  const [resolvedStream, setResolvedStream] = useState<any>(null);
   const [refreshKey, setRefreshKey] = useState(0);
 
   const handleRefresh = () => {
@@ -55,24 +56,37 @@ export function PlayerCard({
       if (!streamData || !title) {
         setCurrentUrl(url);
         setCurrentHeaders(headers);
+        setResolvedStream(null);
         return;
       }
+
+      // Use the previously resolved stream info as base ONLY if it matches the current selection
+      // This prevents using resolved info from one quality for another
+      const baseStreamInfo =
+        resolvedStream &&
+          resolvedStream.quality === streamData?.quality &&
+          resolvedStream.cdn === streamData?.cdn
+          ? resolvedStream
+          : streamData;
 
       setResolving(true);
       try {
         const response = await resolveUrl({
           data: {
             url: title,
-            stream_info: streamData,
+            stream_info: baseStreamInfo,
           },
         });
+        console.log('[PlayerCard] Headers:', headers);
+        console.log('[PlayerCard] Resolve Response:', response);
 
         if (response.success && response.stream_info) {
           console.log('[PlayerCard] Resolved URL:', response.stream_info.url);
           setCurrentUrl(response.stream_info.url || url);
           // Merge headers if any new ones are returned (though backend usually updates headers in stream_info)
           // Ensuring we use headers from resolved stream info if available
-          setCurrentHeaders(response.stream_info.headers || headers);
+          // setCurrentHeaders(response.stream_info.headers || headers);
+          setResolvedStream(response.stream_info);
         } else {
           console.warn(
             '[PlayerCard] URL resolution failed, using original:',

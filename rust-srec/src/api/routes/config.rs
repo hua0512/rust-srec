@@ -388,7 +388,7 @@ mod tests {
     #[test]
     fn test_global_config_response_serialization() {
         let response = GlobalConfigResponse {
-            output_folder: "./downloads".to_string(),
+            output_folder: "/app/output".to_string(),
             output_filename_template: "{name}".to_string(),
             output_file_format: "flv".to_string(),
             min_segment_size_bytes: 1048576,

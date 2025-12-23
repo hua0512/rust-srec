@@ -16,12 +16,12 @@ use tracing::debug;
 ///
 /// Configure platform-specific quality preferences at the platform or template level.
 /// The matching uses substring matching, so "1080" will match "1080p", "1080p60", etc.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 #[serde(default)]
 pub struct StreamSelectionConfig {
     /// Preferred stream formats in order of preference.
-    /// Empty means accept any format.
-    pub preferred_formats: Vec<StreamFormat>,
+    /// None or empty means accept any format.
+    pub preferred_formats: Option<Vec<StreamFormat>>,
     /// Preferred media formats in order of preference.
     /// Empty means accept any format.
     pub preferred_media_formats: Vec<MediaFormat>,
@@ -41,25 +41,6 @@ pub struct StreamSelectionConfig {
     pub max_bitrate: u64,
 }
 
-impl Default for StreamSelectionConfig {
-    fn default() -> Self {
-        Self {
-            // Prefer FLV for live streams (lower latency), then HLS
-            preferred_formats: vec![StreamFormat::Flv, StreamFormat::Hls],
-            preferred_media_formats: vec![],
-            // Empty by default - falls back to bitrate/priority sorting (highest bitrate wins)
-            // This means "best" = maximum bitrate when no specific config is provided
-            // Configure platform-specific quality names at platform/template level:
-            // - Chinese platforms: ["原画", "蓝光", "超清", "高清"]
-            // - Western platforms: ["source", "1080p", "720p", "480p"]
-            preferred_qualities: vec![],
-            preferred_cdns: vec![],
-            min_bitrate: 0,
-            max_bitrate: 0,
-        }
-    }
-}
-
 impl StreamSelectionConfig {
     /// Merge another config into this one, with the other config taking precedence.
     ///
@@ -67,11 +48,11 @@ impl StreamSelectionConfig {
     /// This supports the layered config hierarchy (global → platform → template → streamer).
     pub fn merge(&self, other: &Self) -> Self {
         Self {
-            // Use other's formats if specified, otherwise keep self's
-            preferred_formats: if other.preferred_formats.is_empty() {
-                self.preferred_formats.clone()
-            } else {
+            // Use other's formats if specified (Some), otherwise keep self's
+            preferred_formats: if other.preferred_formats.is_some() {
                 other.preferred_formats.clone()
+            } else {
+                self.preferred_formats.clone()
             },
             preferred_media_formats: if other.preferred_media_formats.is_empty() {
                 self.preferred_media_formats.clone()
@@ -164,11 +145,9 @@ impl StreamSelector {
         }
 
         // Check format constraints (if specified)
-        if !self.config.preferred_formats.is_empty()
-            && !self
-                .config
-                .preferred_formats
-                .contains(&stream.stream_format)
+        if let Some(formats) = &self.config.preferred_formats
+            && !formats.is_empty()
+            && !formats.contains(&stream.stream_format)
         {
             return false;
         }
@@ -189,46 +168,53 @@ impl StreamSelector {
     /// Compare two streams for sorting (returns Ordering).
     /// Lower is better (will be sorted first).
     fn compare_streams(&self, a: &StreamInfo, b: &StreamInfo) -> std::cmp::Ordering {
-        // Compare by format preference
-        let format_score_a = self.format_score(a);
-        let format_score_b = self.format_score(b);
-        if format_score_a != format_score_b {
-            return format_score_a.cmp(&format_score_b);
-        }
+        // Priority Order:
+        // 1. Quality Preference
+        // 2. CDN Preference
+        // 3. Format Preference
+        // 4. Priority Field (lower value = higher priority)
+        // 5. Bitrate (higher value = better)
 
-        // Compare by quality preference
+        // 1. Compare by quality preference
         let quality_score_a = self.quality_score(a);
         let quality_score_b = self.quality_score(b);
         if quality_score_a != quality_score_b {
             return quality_score_a.cmp(&quality_score_b);
         }
 
-        // Compare by CDN preference
+        // 2. Compare by CDN preference
         let cdn_score_a = self.cdn_score(a);
         let cdn_score_b = self.cdn_score(b);
         if cdn_score_a != cdn_score_b {
             return cdn_score_a.cmp(&cdn_score_b);
         }
 
-        // Compare by priority (lower priority value = higher priority)
+        // 3. Compare by format preference
+        let format_score_a = self.format_score(a);
+        let format_score_b = self.format_score(b);
+        if format_score_a != format_score_b {
+            return format_score_a.cmp(&format_score_b);
+        }
+
+        // 4. Compare by priority (lower priority value = higher priority)
         if a.priority != b.priority {
             return a.priority.cmp(&b.priority);
         }
 
-        // Compare by bitrate (higher is better)
+        // 5. Compare by bitrate (higher is better)
         b.bitrate.cmp(&a.bitrate)
     }
 
     /// Get the format preference score (lower is better).
     fn format_score(&self, stream: &StreamInfo) -> usize {
-        if self.config.preferred_formats.is_empty() {
-            return 0;
+        match &self.config.preferred_formats {
+            Some(formats) if !formats.is_empty() => formats
+                .iter()
+                .position(|f| f == &stream.stream_format)
+                .unwrap_or(usize::MAX),
+            // No preference or empty list -> equal score
+            _ => 0,
         }
-        self.config
-            .preferred_formats
-            .iter()
-            .position(|f| f == &stream.stream_format)
-            .unwrap_or(usize::MAX)
     }
 
     /// Get the quality preference score (lower is better).
@@ -256,6 +242,9 @@ impl StreamSelector {
     /// Get the CDN preference score (lower is better).
     fn cdn_score(&self, stream: &StreamInfo) -> usize {
         if self.config.preferred_cdns.is_empty() {
+            // If no CDN preference, return 0 (neutral) so it doesn't affect sorting
+            // unless we want to prioritize based on something else?
+            // Actually, existing implementation returned 0 which is correct.
             return 0;
         }
 
@@ -314,7 +303,7 @@ mod tests {
     #[test]
     fn test_merge_empty_other_keeps_self() {
         let base = StreamSelectionConfig {
-            preferred_formats: vec![StreamFormat::Flv],
+            preferred_formats: Some(vec![StreamFormat::Flv]),
             preferred_qualities: vec!["1080p".to_string()],
             preferred_cdns: vec!["cdn1".to_string()],
             min_bitrate: 1000,
@@ -322,7 +311,7 @@ mod tests {
             ..Default::default()
         };
         let other = StreamSelectionConfig {
-            preferred_formats: vec![],
+            preferred_formats: None,
             preferred_qualities: vec![],
             preferred_cdns: vec![],
             min_bitrate: 0,
@@ -332,7 +321,7 @@ mod tests {
 
         let merged = base.merge(&other);
 
-        assert_eq!(merged.preferred_formats, vec![StreamFormat::Flv]);
+        assert_eq!(merged.preferred_formats, Some(vec![StreamFormat::Flv]));
         assert_eq!(merged.preferred_qualities, vec!["1080p".to_string()]);
         assert_eq!(merged.preferred_cdns, vec!["cdn1".to_string()]);
         assert_eq!(merged.min_bitrate, 1000);
@@ -342,13 +331,13 @@ mod tests {
     #[test]
     fn test_merge_other_overrides_self() {
         let base = StreamSelectionConfig {
-            preferred_formats: vec![StreamFormat::Flv],
+            preferred_formats: Some(vec![StreamFormat::Flv]),
             preferred_qualities: vec!["1080p".to_string()],
             min_bitrate: 1000,
             ..Default::default()
         };
         let other = StreamSelectionConfig {
-            preferred_formats: vec![StreamFormat::Hls],
+            preferred_formats: Some(vec![StreamFormat::Hls]),
             preferred_qualities: vec!["720p".to_string()],
             min_bitrate: 2000,
             ..Default::default()
@@ -356,7 +345,7 @@ mod tests {
 
         let merged = base.merge(&other);
 
-        assert_eq!(merged.preferred_formats, vec![StreamFormat::Hls]);
+        assert_eq!(merged.preferred_formats, Some(vec![StreamFormat::Hls]));
         assert_eq!(merged.preferred_qualities, vec!["720p".to_string()]);
         assert_eq!(merged.min_bitrate, 2000);
     }
@@ -364,7 +353,7 @@ mod tests {
     #[test]
     fn test_merge_partial_override() {
         let base = StreamSelectionConfig {
-            preferred_formats: vec![StreamFormat::Flv],
+            preferred_formats: Some(vec![StreamFormat::Flv]),
             preferred_qualities: vec!["1080p".to_string()],
             preferred_cdns: vec!["cdn1".to_string()],
             min_bitrate: 1000,
@@ -372,17 +361,17 @@ mod tests {
             ..Default::default()
         };
         let other = StreamSelectionConfig {
-            preferred_formats: vec![StreamFormat::Hls], // Override
-            preferred_qualities: vec![],                // Keep base
-            preferred_cdns: vec![],                     // Keep base
-            min_bitrate: 0,                             // Keep base
-            max_bitrate: 8000,                          // Override
+            preferred_formats: Some(vec![StreamFormat::Hls]), // Override
+            preferred_qualities: vec![],                      // Keep base
+            preferred_cdns: vec![],                           // Keep base
+            min_bitrate: 0,                                   // Keep base
+            max_bitrate: 8000,                                // Override
             ..Default::default()
         };
 
         let merged = base.merge(&other);
 
-        assert_eq!(merged.preferred_formats, vec![StreamFormat::Hls]); // Overridden
+        assert_eq!(merged.preferred_formats, Some(vec![StreamFormat::Hls])); // Overridden
         assert_eq!(merged.preferred_qualities, vec!["1080p".to_string()]); // Kept
         assert_eq!(merged.preferred_cdns, vec!["cdn1".to_string()]); // Kept
         assert_eq!(merged.min_bitrate, 1000); // Kept
@@ -415,7 +404,7 @@ mod tests {
     #[test]
     fn test_select_best_by_format() {
         let config = StreamSelectionConfig {
-            preferred_formats: vec![StreamFormat::Flv],
+            preferred_formats: Some(vec![StreamFormat::Flv]),
             ..Default::default()
         };
         let selector = StreamSelector::with_config(config);
@@ -620,5 +609,54 @@ mod tests {
         assert!(best.is_some());
         // Should pick higher bitrate when quality doesn't match
         assert_eq!(best.unwrap().bitrate, 5000000);
+    }
+
+    #[test]
+    fn test_select_best_cdn_priority_over_format() {
+        // Test that preferred CDN is selected even if it's not the preferred format
+        // Default config should have no preference for format, but we set one here to test priority
+        let config = StreamSelectionConfig {
+            preferred_cdns: vec!["akm".to_string()],
+            preferred_formats: Some(vec![StreamFormat::Flv]), // FLV preferred
+            ..Default::default()
+        };
+        let selector = StreamSelector::with_config(config);
+
+        let mut stream_hls_preferred_cdn = create_test_stream(
+            "http://example.com/hls.m3u8",
+            StreamFormat::Hls,
+            "1080p",
+            10000,
+            1,
+        );
+        let mut extras = serde_json::Map::new();
+        extras.insert(
+            "cdn".to_string(),
+            serde_json::Value::String("akm".to_string()),
+        );
+        stream_hls_preferred_cdn.extras = Some(serde_json::Value::Object(extras));
+
+        let mut stream_flv_other_cdn = create_test_stream(
+            "http://example.com/flv.flv",
+            StreamFormat::Flv,
+            "1080p",
+            10000,
+            1,
+        );
+        let mut extras_flv = serde_json::Map::new();
+        extras_flv.insert(
+            "cdn".to_string(),
+            serde_json::Value::String("other".to_string()),
+        );
+        stream_flv_other_cdn.extras = Some(serde_json::Value::Object(extras_flv));
+
+        let streams = vec![stream_hls_preferred_cdn, stream_flv_other_cdn];
+
+        let best = selector.select_best(&streams);
+        assert!(best.is_some());
+
+        // With Quality > CDN > Format priority, CDN should win even if Format prefers FLV
+        assert_eq!(best.unwrap().stream_format, StreamFormat::Hls);
+        assert_eq!(best.unwrap().url, "http://example.com/hls.m3u8");
     }
 }

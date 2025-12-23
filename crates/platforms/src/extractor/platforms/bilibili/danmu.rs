@@ -45,6 +45,7 @@ const HEARTBEAT: &[u8] = &[
 ];
 
 /// Operation codes
+#[allow(dead_code)]
 mod op {
     pub const HEARTBEAT_REPLY: u32 = 3;
     pub const NOTIFICATION: u32 = 5;
@@ -490,14 +491,14 @@ impl DanmuProtocol for BilibiliDanmuProtocol {
                                 danmus.push(danmu);
                             }
                         }
-                        op::HEARTBEAT_REPLY => {
-                            debug!("Bilibili heartbeat reply received");
-                        }
+                        // op::HEARTBEAT_REPLY => {
+                        //     debug!("Bilibili heartbeat reply received");
+                        // }
                         op::AUTH_REPLY => {
                             debug!("Bilibili auth reply received");
                         }
                         _ => {
-                            debug!("Unknown operation: {}", packet.operation);
+                            // debug!("Unknown operation: {}", packet.operation);
                         }
                     }
                 }

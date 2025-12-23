@@ -444,25 +444,29 @@ function extractFirstStream(mediaInfo: any): StreamOption | null {
   // Handle array of streams
   if (Array.isArray(mediaInfo.streams) && mediaInfo.streams.length > 0) {
     const stream = mediaInfo.streams[0];
+    const extras = stringifyValues({ ...mediaInfo.extras, ...stream.extras });
     return {
       url: stream.url || stream.src || '',
       quality: stream.quality || stream.resolution || 'default',
-      cdn: stream.cdn || stream.server,
+      cdn: stream.cdn || stream.server || extras.cdn,
       format: stream.format || detectFormat(stream.url),
       bitrate: stream.bitrate || stream.bandwidth,
       headers: { ...mediaInfo.headers, ...stream.headers },
+      extras,
     };
   }
 
   // Handle single stream object
   if (mediaInfo.url) {
+    const extras = stringifyValues(mediaInfo.extras || {});
     return {
       url: mediaInfo.url,
       quality: mediaInfo.quality || 'default',
-      cdn: mediaInfo.cdn,
+      cdn: mediaInfo.cdn || extras.cdn,
       format: mediaInfo.format || detectFormat(mediaInfo.url),
       bitrate: mediaInfo.bitrate,
       headers: mediaInfo.headers || {},
+      extras,
     };
   }
 
@@ -472,6 +476,7 @@ function extractFirstStream(mediaInfo: any): StreamOption | null {
       url: mediaInfo,
       quality: 'default',
       format: detectFormat(mediaInfo),
+      extras: {},
     };
   }
 
@@ -487,4 +492,14 @@ function detectFormat(url: string): string {
   if (url.includes('.ts')) return 'mpegts';
   if (url.includes('.mp4')) return 'mp4';
   return 'unknown';
+}
+
+function stringifyValues(obj: Record<string, any>): Record<string, string> {
+  const result: Record<string, string> = {};
+  for (const key in obj) {
+    if (obj[key] !== undefined && obj[key] !== null) {
+      result[key] = String(obj[key]);
+    }
+  }
+  return result;
 }

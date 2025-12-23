@@ -425,6 +425,7 @@ impl PlaylistProvider for PlaylistEngine {
                             &seen_segment_uris,
                             &mut last_map_uri,
                             &mut twitch_processor,
+                            playlist_url.query(),
                         )
                         .await?;
 
@@ -556,10 +557,10 @@ impl PlaylistEngine {
         {
             // Same length, do full byte comparison
             if last_bytes == &playlist_bytes {
-                debug!(
-                    "Playlist content for {} has not changed. Skipping parsing.",
-                    playlist_url
-                );
+                // debug!(
+                //     "Playlist content for {} has not changed. Skipping parsing.",
+                //     playlist_url
+                // );
                 return Ok(None);
             }
         }
@@ -594,6 +595,7 @@ impl PlaylistEngine {
         seen_segment_uris: &Cache<String, ()>,
         last_map_uri: &mut Option<String>,
         twitch_processor: &mut Option<TwitchPlaylistProcessor>,
+        parent_query: Option<&str>,
     ) -> Result<Vec<ScheduledSegmentJob>, HlsDownloaderError> {
         let mut jobs_to_send = Vec::new();
         let processed_segments = if let Some(processor) = twitch_processor {
@@ -607,6 +609,25 @@ impl PlaylistEngine {
                     is_ad: false,
                 })
                 .collect()
+        };
+
+        // Helper to merge query params from parent if missing in child
+        let merge_params = |uri_str: &str| -> String {
+            if let Some(parent_q) = parent_query
+                && let Ok(mut url) = Url::parse(uri_str)
+            {
+                // Collect existing keys to avoid overriding
+                let existing_keys: std::collections::HashSet<String> =
+                    url.query_pairs().map(|(k, _)| k.to_string()).collect();
+
+                for (k, v) in url::form_urlencoded::parse(parent_q.as_bytes()) {
+                    if !existing_keys.contains(&k.to_string()) {
+                        url.query_pairs_mut().append_pair(&k, &v);
+                    }
+                }
+                return url.to_string();
+            }
+            uri_str.to_string()
         };
 
         for (idx, processed_segment) in processed_segments.into_iter().enumerate() {
@@ -623,10 +644,12 @@ impl PlaylistEngine {
                         map_info.uri.clone()
                     });
 
-                if last_map_uri.as_ref() != Some(&absolute_map_uri) {
-                    debug!("New init segment detected: {}", absolute_map_uri);
+                let final_map_uri = merge_params(&absolute_map_uri);
+
+                if last_map_uri.as_ref() != Some(&final_map_uri) {
+                    debug!("New init segment detected: {}", final_map_uri);
                     let init_job = ScheduledSegmentJob {
-                        segment_uri: absolute_map_uri.clone(),
+                        segment_uri: final_map_uri.clone(),
                         base_url: base_url.to_string(),
                         media_sequence_number: new_playlist.media_sequence + idx as u64,
                         duration: 0.0,
@@ -638,7 +661,7 @@ impl PlaylistEngine {
                         is_prefetch: false,
                     };
                     jobs_to_send.push(init_job);
-                    *last_map_uri = Some(absolute_map_uri);
+                    *last_map_uri = Some(final_map_uri);
                 }
             }
 
@@ -653,18 +676,20 @@ impl PlaylistEngine {
                     segment.uri.clone()
                 });
 
-            if !seen_segment_uris.contains_key(&absolute_segment_uri) {
+            let final_segment_uri = merge_params(&absolute_segment_uri);
+
+            if !seen_segment_uris.contains_key(&final_segment_uri) {
                 if processed_segment.is_ad {
                     debug!("Skipping Twitch ad segment: {}", segment.uri);
                     continue;
                 }
 
                 seen_segment_uris
-                    .insert(absolute_segment_uri.clone(), ())
+                    .insert(final_segment_uri.clone(), ())
                     .await;
-                debug!("New segment detected: {}", absolute_segment_uri);
+                trace!("New segment detected: {}", final_segment_uri);
                 let job = ScheduledSegmentJob {
-                    segment_uri: absolute_segment_uri,
+                    segment_uri: final_segment_uri,
                     base_url: base_url.to_string(),
                     media_sequence_number: new_playlist.media_sequence + idx as u64,
                     duration: segment.duration,
@@ -677,7 +702,7 @@ impl PlaylistEngine {
                 };
                 jobs_to_send.push(job);
             } else {
-                trace!("Segment {} already seen, skipping.", absolute_segment_uri);
+                trace!("Segment {} already seen, skipping.", final_segment_uri);
             }
         }
         Ok(jobs_to_send)
@@ -694,7 +719,7 @@ impl PlaylistEngine {
             return Ok(());
         }
         for job in jobs {
-            debug!("Sending segment job: {:?}", job.segment_uri);
+            trace!("Sending segment job: {:?}", job.segment_uri);
             if segment_request_tx.send(job).await.is_err() {
                 error!(
                     "SegmentScheduler request channel closed for {}.",
