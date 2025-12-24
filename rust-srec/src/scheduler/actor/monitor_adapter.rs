@@ -44,6 +44,21 @@ pub trait StatusChecker: Send + Sync + 'static {
         streamer: &StreamerMetadata,
         error: &str,
     ) -> Result<(), CheckError>;
+
+    /// Set the streamer to temporarily disabled due to circuit breaker block.
+    ///
+    /// This sets the state to `TemporalDisabled` and stores the retry time
+    /// without incrementing the error count (since it's an infrastructure issue,
+    /// not a streamer issue).
+    ///
+    /// # Arguments
+    /// * `streamer` - The streamer metadata
+    /// * `retry_after_secs` - Seconds until the circuit breaker allows retries
+    async fn set_circuit_breaker_blocked(
+        &self,
+        streamer: &StreamerMetadata,
+        retry_after_secs: u64,
+    ) -> Result<(), CheckError>;
 }
 
 /// Trait for batch status checking.
@@ -168,6 +183,17 @@ where
         error: &str,
     ) -> Result<(), CheckError> {
         self.monitor.handle_error(streamer, error).await?;
+        Ok(())
+    }
+
+    async fn set_circuit_breaker_blocked(
+        &self,
+        streamer: &StreamerMetadata,
+        retry_after_secs: u64,
+    ) -> Result<(), CheckError> {
+        self.monitor
+            .set_circuit_breaker_blocked(streamer, retry_after_secs)
+            .await?;
         Ok(())
     }
 }
@@ -359,6 +385,14 @@ impl StatusChecker for NoOpStatusChecker {
         &self,
         _streamer: &StreamerMetadata,
         _error: &str,
+    ) -> Result<(), CheckError> {
+        Ok(())
+    }
+
+    async fn set_circuit_breaker_blocked(
+        &self,
+        _streamer: &StreamerMetadata,
+        _retry_after_secs: u64,
     ) -> Result<(), CheckError> {
         Ok(())
     }

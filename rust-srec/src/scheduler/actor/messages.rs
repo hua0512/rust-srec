@@ -95,6 +95,20 @@ pub enum DownloadEndReason {
     /// immediately to verify status and potentially resume quickly.
     SegmentFailed(String),
 
+    /// Download was blocked by circuit breaker.
+    ///
+    /// The engine's circuit breaker prevented the download from starting.
+    /// The actor should schedule the next check after `retry_after_secs` to
+    /// avoid busy-looping while the circuit cools down.
+    CircuitBreakerBlocked {
+        /// Reason for the block (e.g., which engine was blocked).
+        reason: String,
+        /// Seconds to wait before retrying (circuit breaker cooldown).
+        retry_after_secs: u64,
+        /// Session ID of the download that was blocked.
+        session_id: String,
+    },
+
     /// Other error (unexpected/unknown reason).
     ///
     /// The actor preserves hysteresis and uses normal scheduling, allowing the

@@ -887,6 +887,47 @@ impl<
 
         Ok(())
     }
+
+    /// Set a streamer to temporarily disabled due to circuit breaker block.
+    ///
+    /// This sets the state to `TemporalDisabled` and stores the disabled_until timestamp
+    /// without incrementing the error count (since it's an infrastructure issue,
+    /// not a streamer issue).
+    ///
+    /// # Arguments
+    /// * `streamer` - The streamer metadata
+    /// * `retry_after_secs` - Seconds until the circuit breaker allows retries
+    pub async fn set_circuit_breaker_blocked(
+        &self,
+        streamer: &StreamerMetadata,
+        retry_after_secs: u64,
+    ) -> Result<()> {
+        let now = chrono::Utc::now();
+        let disabled_until = now + chrono::Duration::seconds(retry_after_secs as i64);
+
+        info!(
+            "Streamer {} blocked by circuit breaker, disabled until {} ({}s)",
+            streamer.name, disabled_until, retry_after_secs
+        );
+
+        let mut tx = self.begin_immediate().await?;
+
+        // Set state to TEMPORAL_DISABLED with disabled_until timestamp
+        // Note: We don't increment error count since this is infrastructure-level, not streamer-level
+        StreamerTxOps::set_disabled_until(&mut tx, &streamer.id, Some(disabled_until)).await?;
+
+        tx.commit().await?;
+
+        // Reload metadata from DB to sync in-memory cache.
+        if let Err(e) = self.streamer_manager.reload_from_repo(&streamer.id).await {
+            warn!(
+                "Failed to reload streamer {} after circuit breaker block: {}. Cache may be stale.",
+                streamer.id, e
+            );
+        }
+
+        Ok(())
+    }
 }
 
 async fn flush_outbox_once(pool: &SqlitePool, broadcaster: &MonitorEventBroadcaster) -> Result<()> {

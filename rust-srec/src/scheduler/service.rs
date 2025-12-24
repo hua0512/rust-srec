@@ -826,6 +826,23 @@ impl<R: StreamerRepository + Send + Sync + 'static> Scheduler<R> {
                 streamer_id,
                 StreamerMessage::DownloadEnded(DownloadEndReason::Cancelled),
             ),
+            DownloadManagerEvent::DownloadRejected {
+                streamer_id,
+                reason,
+                retry_after_secs,
+                session_id,
+            } => {
+                // Circuit breaker blocked the download - schedule delayed retry
+                let retry_secs = retry_after_secs.unwrap_or(60);
+                (
+                    streamer_id,
+                    StreamerMessage::DownloadEnded(DownloadEndReason::CircuitBreakerBlocked {
+                        reason,
+                        retry_after_secs: retry_secs,
+                        session_id,
+                    }),
+                )
+            }
             _ => return, // Ignore other events
         };
 
