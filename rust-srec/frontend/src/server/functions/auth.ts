@@ -3,6 +3,11 @@ import { fetchBackend } from '../api';
 import { BASE_URL } from '../../utils/env';
 import { ensureValidToken } from '../tokenRefresh';
 import {
+  sanitizeClientSession,
+  SessionData,
+  isValidSession,
+} from '../../utils/session';
+import {
   LoginRequestSchema,
   LoginResponseSchema,
   ChangePasswordRequestSchema,
@@ -47,7 +52,11 @@ export const loginFn = createServerFn({ method: 'POST' })
       };
       await session.update(userData);
 
-      return userData;
+      // Do not leak refresh token back to the browser; return a sanitized view.
+      if (!isValidSession(session.data)) {
+        throw new Error('Session update failed or incomplete');
+      }
+      return sanitizeClientSession(session.data);
     } catch (error) {
       console.error('Login failed:', error);
       // Re-throw so the UI knows it failed

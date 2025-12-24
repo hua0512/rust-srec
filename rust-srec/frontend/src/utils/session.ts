@@ -13,6 +13,41 @@ export type SessionData = {
   mustChangePassword: boolean;
 };
 
+// Type guard to check if session data is complete
+export function isValidSession(
+  data: Partial<SessionData>,
+): data is SessionData {
+  return !!(
+    data.username &&
+    data.token?.access_token &&
+    data.token?.refresh_token &&
+    Array.isArray(data.roles)
+  );
+}
+
+// Client-visible shape that omits the refresh token to avoid exposing it to the browser
+export type ClientSessionData = Omit<SessionData, 'token'> & {
+  token: {
+    access_token: string;
+    expires_in: number;
+    refresh_expires_in: number;
+  };
+};
+
+// Strip refresh token before returning session data to the client
+export function sanitizeClientSession(data: SessionData): ClientSessionData {
+  return {
+    username: data.username,
+    token: {
+      access_token: data.token.access_token,
+      expires_in: data.token.expires_in,
+      refresh_expires_in: data.token.refresh_expires_in,
+    },
+    roles: data.roles,
+    mustChangePassword: data.mustChangePassword ?? false,
+  };
+}
+
 // Determine if cookies should use the secure flag
 // Priority:
 // 1. COOKIE_SECURE env var: 'true' = always secure, 'false' = never secure
