@@ -1,4 +1,5 @@
 use crate::{Result, TsError};
+use bytes::Bytes;
 
 /// PAT PID (always 0x0000)
 pub const PID_PAT: u16 = 0x0000;
@@ -26,14 +27,14 @@ pub struct TsPacket {
     /// Continuity Counter
     pub continuity_counter: u8,
     /// Adaptation field data (if present)
-    pub adaptation_field: Option<Vec<u8>>,
+    pub adaptation_field: Option<Bytes>,
     /// Payload data (if present)
-    pub payload: Option<Vec<u8>>,
+    pub payload: Option<Bytes>,
 }
 
 impl TsPacket {
     /// Parse a TS packet from 188 bytes
-    pub fn parse(data: &[u8]) -> Result<Self> {
+    pub fn parse(data: Bytes) -> Result<Self> {
         if data.len() != 188 {
             return Err(TsError::InvalidPacketSize(data.len()));
         }
@@ -80,7 +81,7 @@ impl TsPacket {
                     });
                 }
 
-                adaptation_field = Some(data[offset..offset + adaptation_field_length].to_vec());
+                adaptation_field = Some(data.slice(offset..offset + adaptation_field_length));
                 offset += adaptation_field_length;
             }
         }
@@ -89,7 +90,7 @@ impl TsPacket {
         if (adaptation_field_control == 0x01 || adaptation_field_control == 0x03)
             && offset < data.len()
         {
-            payload = Some(data[offset..].to_vec());
+            payload = Some(data.slice(offset..));
         }
 
         Ok(TsPacket {
@@ -128,13 +129,13 @@ impl TsPacket {
     }
 
     /// Get the PSI payload (removes pointer field if PUSI is set)
-    pub fn get_psi_payload(&self) -> Option<Vec<u8>> {
+    pub fn get_psi_payload(&self) -> Option<Bytes> {
         if let Some(payload) = &self.payload {
             if self.payload_unit_start_indicator && !payload.is_empty() {
                 // Skip pointer field
                 let pointer_field = payload[0] as usize;
                 if 1 + pointer_field < payload.len() {
-                    return Some(payload[1 + pointer_field..].to_vec());
+                    return Some(payload.slice(1 + pointer_field..));
                 }
             } else if !self.payload_unit_start_indicator {
                 // Continuation packet, return payload as-is
@@ -153,7 +154,7 @@ mod tests {
     fn test_invalid_sync_byte() {
         let mut data = vec![0u8; 188];
         data[0] = 0x46; // Wrong sync byte
-        assert!(TsPacket::parse(&data).is_err());
+        assert!(TsPacket::parse(data.into()).is_err());
     }
 
     #[test]
@@ -164,7 +165,7 @@ mod tests {
         data[2] = 0x00; // PID low = 0 (PAT)
         data[3] = 0x10; // No scrambling, payload only, continuity = 0
 
-        let packet = TsPacket::parse(&data).unwrap();
+        let packet = TsPacket::parse(data.into()).unwrap();
         assert_eq!(packet.sync_byte, 0x47);
         assert_eq!(packet.pid, 0);
         assert!(!packet.transport_error_indicator);

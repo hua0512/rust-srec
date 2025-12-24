@@ -13,7 +13,9 @@ fn benchmark_parsers(c: &mut Criterion) {
     let mut parser = OwnedTsParser::new();
     group.bench_function("Original Parser", |b| {
         b.iter(|| {
-            parser.parse_packets(black_box(&ts_data)).unwrap();
+            parser
+                .parse_packets(black_box(ts_data_bytes.clone()))
+                .unwrap();
         })
     });
     let mut parser = TsParser::new();

@@ -85,7 +85,7 @@ msgstr "{0} 条弹幕"
 #. placeholder {0}: outputs.length
 #. placeholder {0}: session.output_count
 #: src/components/sessions/recordings-tab.tsx:40
-#: src/components/sessions/session-card.tsx:166
+#: src/components/sessions/session-card.tsx:171
 msgid "{0} Files"
 msgstr "{0} 个文件"
 
@@ -180,7 +180,7 @@ msgstr "绝对路径，或在 PATH 中时填写“streamlink”"
 msgid "Accent Color"
 msgstr "强调色"
 
-#: src/components/sessions/session-card.tsx:188
+#: src/components/sessions/session-card.tsx:193
 #: src/components/streamers/card/stream-actions-menu.tsx:42
 msgid "Actions"
 msgstr "操作"
@@ -293,7 +293,7 @@ msgstr "添加步骤"
 msgid "Add Stream"
 msgstr "添加流"
 
-#: src/routes/_authed/_dashboard/streamers/index.tsx:408
+#: src/routes/_authed/_dashboard/streamers/index.tsx:415
 msgid "Add Streamer"
 msgstr "添加主播"
 
@@ -357,7 +357,7 @@ msgstr "全部"
 msgid "All Levels"
 msgstr "所有级别"
 
-#: src/routes/_authed/_dashboard/streamers/index.tsx:282
+#: src/routes/_authed/_dashboard/streamers/index.tsx:289
 msgid "All Platforms"
 msgstr "所有平台"
 
@@ -420,12 +420,12 @@ msgstr "云端归档"
 msgid "Are you sure you want to delete the template \"{0}\"? This action cannot be undone."
 msgstr "确定要删除模板“{0}”吗？此操作无法撤销。"
 
-#: src/components/sessions/session-card.tsx:44
+#: src/components/sessions/session-card.tsx:49
 msgid "Are you sure you want to delete this session? This action cannot be undone."
 msgstr "确定要删除此会话吗？此操作无法撤销。"
 
 #: src/routes/_authed/_dashboard/dashboard.tsx:90
-#: src/routes/_authed/_dashboard/streamers/index.tsx:198
+#: src/routes/_authed/_dashboard/streamers/index.tsx:205
 msgid "Are you sure you want to delete this streamer?"
 msgstr "确定要删除此主播吗？"
 
@@ -745,7 +745,7 @@ msgid "Check size after copy"
 msgstr "复制后检查大小"
 
 #: src/routes/_authed/_dashboard/dashboard.tsx:73
-#: src/routes/_authed/_dashboard/streamers/index.tsx:181
+#: src/routes/_authed/_dashboard/streamers/index.tsx:188
 msgid "Check triggered"
 msgstr "已触发检查"
 
@@ -1372,7 +1372,7 @@ msgstr "删除处理管道？"
 msgid "Delete Preset?"
 msgstr "删除预设？"
 
-#: src/components/sessions/session-card.tsx:204
+#: src/components/sessions/session-card.tsx:209
 msgid "Delete Session"
 msgstr "删除会话"
 
@@ -1681,7 +1681,7 @@ msgstr "历史结束"
 msgid "End Time"
 msgstr "结束时间"
 
-#: src/components/sessions/overview-tab.tsx:223
+#: src/components/sessions/overview-tab.tsx:224
 msgid "Ended"
 msgstr "已结束"
 
@@ -1794,7 +1794,7 @@ msgid "Error Loading Session"
 msgstr "加载录制会话失败"
 
 #. placeholder {0}: (error as any).message
-#: src/routes/_authed/_dashboard/streamers/index.tsx:223
+#: src/routes/_authed/_dashboard/streamers/index.tsx:230
 msgid "Error loading streamers: {0}"
 msgstr "加载主播失败：{0}"
 
@@ -1974,12 +1974,12 @@ msgstr "删除处理管道失败"
 msgid "Failed to delete preset: {0}"
 msgstr "删除预设失败：{0}"
 
-#: src/components/sessions/session-card.tsx:58
+#: src/components/sessions/session-card.tsx:63
 msgid "Failed to delete session"
 msgstr "删除会话失败"
 
 #: src/routes/_authed/_dashboard/dashboard.tsx:67
-#: src/routes/_authed/_dashboard/streamers/index.tsx:176
+#: src/routes/_authed/_dashboard/streamers/index.tsx:183
 msgid "Failed to delete streamer"
 msgstr "删除主播失败"
 
@@ -2053,7 +2053,7 @@ msgid "Failed to send test notification"
 msgstr "发送测试通知失败"
 
 #: src/routes/_authed/_dashboard/dashboard.tsx:75
-#: src/routes/_authed/_dashboard/streamers/index.tsx:183
+#: src/routes/_authed/_dashboard/streamers/index.tsx:190
 msgid "Failed to trigger check"
 msgstr "触发检查失败"
 
@@ -2085,7 +2085,7 @@ msgstr "更新设置失败"
 
 #: src/routes/_authed/_dashboard/dashboard.tsx:86
 #: src/routes/_authed/_dashboard/streamers/$id.edit.tsx:204
-#: src/routes/_authed/_dashboard/streamers/index.tsx:194
+#: src/routes/_authed/_dashboard/streamers/index.tsx:201
 msgid "Failed to update streamer"
 msgstr "更新主播失败"
 
@@ -2338,6 +2338,18 @@ msgstr "返回"
 msgid "Go Back"
 msgstr "返回"
 
+#: src/routes/_authed/_dashboard/streamers/index.tsx:488
+msgid "Go to next page"
+msgstr "下一页"
+
+#: src/routes/_authed/_dashboard/streamers/index.tsx:476
+msgid "Go to page {p}"
+msgstr "跳转到第 {p} 页"
+
+#: src/routes/_authed/_dashboard/streamers/index.tsx:456
+msgid "Go to previous page"
+msgstr "上一页"
+
 #: src/components/pipeline/workflows/pipeline-workflow-editor.tsx:88
 #: src/components/pipeline/workflows/pipeline-workflow-editor.tsx:91
 #: src/components/pipeline/workflows/workflow-editor.tsx:346
@@ -2511,7 +2523,7 @@ msgstr "导入成功"
 msgid "Importing..."
 msgstr "正在导入..."
 
-#: src/components/sessions/overview-tab.tsx:289
+#: src/components/sessions/overview-tab.tsx:290
 msgid "In active"
 msgstr "进行中"
 
@@ -2609,7 +2621,7 @@ msgstr "已开始重试处理任务"
 
 #: src/components/sidebar/navbar.tsx:41
 #: src/lib/menu-list.ts:84
-#: src/routes/_authed/_dashboard/sessions/$sessionId.tsx:248
+#: src/routes/_authed/_dashboard/sessions/$sessionId.tsx:247
 msgid "Jobs"
 msgstr "处理任务"
 
@@ -2696,9 +2708,9 @@ msgstr "列表"
 msgid "Live"
 msgstr "直播"
 
-#: src/components/player/stream-info-card.tsx:81
-#: src/components/player/stream-info-card.tsx:101
-#: src/components/sessions/session-card.tsx:100
+#: src/components/player/stream-info-card.tsx:88
+#: src/components/player/stream-info-card.tsx:108
+#: src/components/sessions/session-card.tsx:105
 #: src/components/sessions/session-header.tsx:29
 msgid "LIVE"
 msgstr "直播中"
@@ -2794,7 +2806,7 @@ msgstr "管理系统通知发送到哪里"
 msgid "Manage your application configuration."
 msgstr "管理应用配置。"
 
-#: src/routes/_authed/_dashboard/streamers/index.tsx:250
+#: src/routes/_authed/_dashboard/streamers/index.tsx:257
 msgid "Manage your monitored channels and downloads"
 msgstr "管理你监控的主播及录制"
 
@@ -3189,7 +3201,7 @@ msgstr "未找到预设"
 msgid "No presets yet"
 msgstr "暂无预设"
 
-#: src/components/sessions/overview-tab.tsx:178
+#: src/components/sessions/overview-tab.tsx:179
 msgid "No preview generated"
 msgstr "未生成预览"
 
@@ -3213,7 +3225,7 @@ msgstr "未定义步骤"
 #~ msgid "No steps selected yet"
 #~ msgstr "尚未选择步骤"
 
-#: src/routes/_authed/_dashboard/streamers/index.tsx:394
+#: src/routes/_authed/_dashboard/streamers/index.tsx:401
 msgid "No streamers found"
 msgstr "未找到主播"
 
@@ -3270,7 +3282,7 @@ msgstr "通知"
 msgid "Number of attempts before failing the upload."
 msgstr "上传失败前的尝试次数。"
 
-#: src/components/sessions/session-card.tsx:107
+#: src/components/sessions/session-card.tsx:112
 #: src/components/streamers/card/use-streamer-status.tsx:30
 #: src/components/streamers/card/use-streamer-status.tsx:229
 #: src/components/streamers/card/use-streamer-status.tsx:238
@@ -3316,7 +3328,7 @@ msgstr "上线时"
 msgid "On Pipeline Complete"
 msgstr "处理管道完成时"
 
-#: src/components/sessions/session-card.tsx:65
+#: src/components/sessions/session-card.tsx:70
 msgid "Ongoing"
 msgstr "进行中"
 
@@ -3459,7 +3471,7 @@ msgstr "覆盖输出文件夹。"
 #~ msgid "Override system colors with your own CSS variables."
 #~ msgstr "使用你的 CSS 变量覆盖系统颜色。"
 
-#: src/routes/_authed/_dashboard/sessions/$sessionId.tsx:218
+#: src/routes/_authed/_dashboard/sessions/$sessionId.tsx:217
 msgid "Overview"
 msgstr "概览"
 
@@ -3542,7 +3554,7 @@ msgid "Per page:"
 msgstr "每页："
 
 #: src/components/pipeline/presets/processors/remux-config-form.tsx:611
-#: src/components/sessions/overview-tab.tsx:195
+#: src/components/sessions/overview-tab.tsx:196
 #: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.tsx:554
 msgid "Performance"
 msgstr "性能"
@@ -3632,7 +3644,7 @@ msgstr "处理管道结构"
 msgid "pipelines"
 msgstr "处理管道"
 
-#: src/routes/_authed/_dashboard/streamers/index.tsx:276
+#: src/routes/_authed/_dashboard/streamers/index.tsx:283
 msgid "Platform"
 msgstr "平台"
 
@@ -3806,7 +3818,7 @@ msgstr "预览图库"
 msgid "Preview Thumbnail"
 msgstr "预览缩略图"
 
-#: src/components/sessions/overview-tab.tsx:169
+#: src/components/sessions/overview-tab.tsx:170
 msgid "Preview Unavailable"
 msgstr "预览不可用"
 
@@ -3890,7 +3902,7 @@ msgid "Proxy URL"
 msgstr "代理 URL"
 
 #: src/components/config/engines/forms/streamlink-form.tsx:61
-#: src/components/player/stream-info-card.tsx:163
+#: src/components/player/stream-info-card.tsx:170
 msgid "Quality"
 msgstr "质量"
 
@@ -3992,7 +4004,7 @@ msgstr "录制过滤器"
 msgid "Recording will start when schedule allows"
 msgstr "录制将在计划允许时开始"
 
-#: src/routes/_authed/_dashboard/sessions/$sessionId.tsx:236
+#: src/routes/_authed/_dashboard/sessions/$sessionId.tsx:235
 msgid "Recordings"
 msgstr "录制内容"
 
@@ -4143,7 +4155,7 @@ msgstr "查看录制内容并管理归档"
 msgid "Route traffic through an intermediate server"
 msgstr "通过中间服务器转发流量"
 
-#: src/routes/_authed/_dashboard/streamers/index.tsx:419
+#: src/routes/_authed/_dashboard/streamers/index.tsx:426
 msgid "Rows per page"
 msgstr "每页行数"
 
@@ -4180,7 +4192,7 @@ msgid "Rust regex syntax supported."
 msgstr "支持 Rust 正则语法。"
 
 #: src/components/sidebar/sheet-menu.tsx:33
-#: src/components/sidebar/sidebar.tsx:61
+#: src/components/sidebar/sidebar.tsx:64
 msgid "Rust-Srec"
 msgstr "Rust-Srec"
 
@@ -4288,7 +4300,7 @@ msgstr "搜索预设..."
 msgid "Search sessions..."
 msgstr "搜索录制会话..."
 
-#: src/routes/_authed/_dashboard/streamers/index.tsx:260
+#: src/routes/_authed/_dashboard/streamers/index.tsx:267
 msgid "Search streamers..."
 msgstr "搜索主播..."
 
@@ -4412,7 +4424,7 @@ msgstr "用英文逗号分隔多个路径。"
 msgid "Session"
 msgstr "会话"
 
-#: src/components/sessions/session-card.tsx:53
+#: src/components/sessions/session-card.tsx:58
 msgid "Session deleted successfully"
 msgstr "会话已删除"
 
@@ -4420,7 +4432,7 @@ msgstr "会话已删除"
 msgid "Session Details"
 msgstr "录制会话详情"
 
-#: src/components/sessions/overview-tab.tsx:203
+#: src/components/sessions/overview-tab.tsx:204
 msgid "Session Duration"
 msgstr "录制时长"
 
@@ -4440,11 +4452,11 @@ msgstr "会话 ID 是必需的"
 msgid "Session not found"
 msgstr "未找到录制会话"
 
-#: src/components/sessions/overview-tab.tsx:142
+#: src/components/sessions/overview-tab.tsx:143
 msgid "Session Preview"
 msgstr "录制预览"
 
-#: src/components/sessions/overview-tab.tsx:151
+#: src/components/sessions/overview-tab.tsx:152
 msgid "Session thumbnail"
 msgstr "会话缩略图"
 
@@ -4527,7 +4539,7 @@ msgstr "SMTP 主机"
 msgid "Something went wrong!"
 msgstr "发生错误！"
 
-#: src/components/player/stream-info-card.tsx:119
+#: src/components/player/stream-info-card.tsx:126
 msgid "Source"
 msgstr "来源"
 
@@ -4579,7 +4591,7 @@ msgid "Start Time"
 msgstr "开始时间"
 
 #: src/components/pipeline/jobs/pipeline-summary-card.tsx:275
-#: src/components/sessions/overview-tab.tsx:217
+#: src/components/sessions/overview-tab.tsx:218
 #: src/routes/_authed/_dashboard/pipeline/executions.$pipelineId.tsx:332
 #: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.tsx:608
 msgid "Started"
@@ -4635,8 +4647,8 @@ msgstr "流详情"
 msgid "Stream monitoring encountered issues"
 msgstr "流监控遇到问题"
 
-#: src/components/player/stream-info-card.tsx:75
-#: src/components/player/stream-info-card.tsx:95
+#: src/components/player/stream-info-card.tsx:82
+#: src/components/player/stream-info-card.tsx:102
 msgid "Stream Options"
 msgstr "流选项"
 
@@ -4661,7 +4673,7 @@ msgid "Streamer created successfully"
 msgstr "主播创建成功"
 
 #: src/routes/_authed/_dashboard/dashboard.tsx:63
-#: src/routes/_authed/_dashboard/streamers/index.tsx:172
+#: src/routes/_authed/_dashboard/streamers/index.tsx:179
 msgid "Streamer deleted"
 msgstr "主播已删除"
 
@@ -4681,8 +4693,12 @@ msgstr "主播 ID 是必需的"
 msgid "Streamer is on cooldown"
 msgstr "主播处于冷却期"
 
+#: src/routes/_authed/_dashboard/streamers/index.tsx:450
+msgid "Streamer pagination"
+msgstr "主播分页"
+
 #: src/routes/_authed/_dashboard/dashboard.tsx:82
-#: src/routes/_authed/_dashboard/streamers/index.tsx:190
+#: src/routes/_authed/_dashboard/streamers/index.tsx:197
 msgid "Streamer updated"
 msgstr "主播已更新"
 
@@ -4695,7 +4711,7 @@ msgstr "主播更新成功"
 #: src/components/config/global/backup-restore-card.tsx:364
 #: src/components/sidebar/navbar.tsx:25
 #: src/lib/menu-list.ts:57
-#: src/routes/_authed/_dashboard/streamers/index.tsx:247
+#: src/routes/_authed/_dashboard/streamers/index.tsx:254
 msgid "Streamers"
 msgstr "主播"
 
@@ -4916,7 +4932,7 @@ msgid "Thumbnail"
 msgstr "缩略图"
 
 #. placeholder {0}: session.title
-#: src/components/sessions/session-card.tsx:125
+#: src/components/sessions/session-card.tsx:130
 msgid "Thumbnail for {0}"
 msgstr "{0} 的缩略图"
 
@@ -4936,7 +4952,7 @@ msgstr "采样尝试之间的时间间隔。"
 msgid "Time offset to take screenshot from"
 msgstr "截图时间偏移"
 
-#: src/routes/_authed/_dashboard/sessions/$sessionId.tsx:224
+#: src/routes/_authed/_dashboard/sessions/$sessionId.tsx:223
 msgid "Timeline"
 msgstr "时间线"
 
@@ -4980,7 +4996,7 @@ msgstr "今天"
 msgid "Token"
 msgstr "令牌"
 
-#: src/routes/_authed/_dashboard/streamers/index.tsx:296
+#: src/routes/_authed/_dashboard/streamers/index.tsx:303
 msgid "total"
 msgstr "总计"
 
@@ -5077,7 +5093,7 @@ msgstr "裁剪与时间"
 msgid "Try adjusting your search or filters"
 msgstr "尝试调整搜索或过滤器"
 
-#: src/routes/_authed/_dashboard/streamers/index.tsx:397
+#: src/routes/_authed/_dashboard/streamers/index.tsx:404
 msgid "Try adjusting your search or filters, or add a new streamer to start monitoring."
 msgstr "尝试调整搜索或过滤器，或添加新主播以开始监控。"
 
@@ -5131,7 +5147,7 @@ msgstr "直到"
 msgid "Untitled Session"
 msgstr "无标题会话"
 
-#: src/components/sessions/session-card.tsx:115
+#: src/components/sessions/session-card.tsx:120
 msgid "Untitled Stream"
 msgstr "无标题直播"
 
@@ -5284,8 +5300,8 @@ msgid "View Detailed Logs & Outputs"
 msgstr "查看详细日志与输出"
 
 #: src/components/pipeline/jobs/pipeline-summary-card.tsx:184
-#: src/components/sessions/session-card.tsx:177
-#: src/components/sessions/session-card.tsx:196
+#: src/components/sessions/session-card.tsx:182
+#: src/components/sessions/session-card.tsx:201
 #: src/routes/_authed/_dashboard/dashboard.tsx:137
 msgid "View Details"
 msgstr "查看详情"

@@ -158,7 +158,7 @@ export const StreamAvatarInfo = ({ streamer }: StreamAvatarInfoProps) => {
                   href={streamer.url}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="ml-auto opacity-0 group-hover:opacity-100 transition-opacity p-1 hover:bg-muted rounded-full"
+                  className="ml-auto opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-opacity p-1 hover:bg-muted rounded-full"
                 >
                   <ExternalLink className="h-3 w-3 hover:text-primary transition-colors" />
                 </a>

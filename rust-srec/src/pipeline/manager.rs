@@ -968,9 +968,33 @@ where
                 streamer_id, session_id, segment_path, message_count
             );
 
+            // Check if the danmu file still exists before processing.
+            // The file may have been deleted if the corresponding video segment was too small.
+            if !output_path.exists() {
+                debug!("Danmu segment file no longer exists: {}", segment_path);
+                return;
+            }
+
+            // Get file size for persistence
+            let file_size = match tokio::fs::metadata(&output_path).await {
+                Ok(meta) => meta.len(),
+                Err(e) => {
+                    warn!(
+                        "Failed to get file size for danmu segment {}: {}, using 0",
+                        segment_path, e
+                    );
+                    0
+                }
+            };
+
             // Persist danmu segment to database as a media output
             self.persist_danmu_segment(&session_id, &segment_path, message_count)
                 .await;
+
+            debug!(
+                "Persisted danmu segment for session {} ({} messages, {} bytes)",
+                session_id, message_count, file_size
+            );
 
             // Get pipeline config for this streamer (if available)
             let pipeline_config = if let Some(config_service) = &self.config_service {

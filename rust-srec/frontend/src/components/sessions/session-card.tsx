@@ -5,7 +5,12 @@ import { toast } from 'sonner';
 import { MoreHorizontal, Film, Clock, HardDrive, Calendar } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardFooter, CardHeader } from '@/components/ui/card';
+import {
+  Card,
+  CardContent,
+  CardFooter,
+  CardHeader,
+} from '@/components/ui/card';
 import {
   DropdownMenu,
   DropdownMenuContent,

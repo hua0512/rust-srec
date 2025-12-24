@@ -64,8 +64,8 @@ export function PlayerCard({
       // This prevents using resolved info from one quality for another
       const baseStreamInfo =
         resolvedStream &&
-          resolvedStream.quality === streamData?.quality &&
-          resolvedStream.cdn === streamData?.cdn
+        resolvedStream.quality === streamData?.quality &&
+        resolvedStream.cdn === streamData?.cdn
           ? resolvedStream
           : streamData;
 

@@ -183,9 +183,9 @@ export function StreamInfoCard({
                     className={cn(
                       'justify-start h-9 transition-all duration-300',
                       isSelected &&
-                      'shadow-md shadow-primary/20 ring-1 ring-primary/20',
+                        'shadow-md shadow-primary/20 ring-1 ring-primary/20',
                       !isSelected &&
-                      'hover:bg-primary/5 hover:text-primary hover:border-primary/20',
+                        'hover:bg-primary/5 hover:text-primary hover:border-primary/20',
                     )}
                     onClick={() =>
                       streamForQuality && onStreamSelect(streamForQuality)

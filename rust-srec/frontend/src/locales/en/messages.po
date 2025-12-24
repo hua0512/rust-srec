@@ -85,7 +85,7 @@ msgstr "{0} Danmu"
 #. placeholder {0}: outputs.length
 #. placeholder {0}: session.output_count
 #: src/components/sessions/recordings-tab.tsx:40
-#: src/components/sessions/session-card.tsx:166
+#: src/components/sessions/session-card.tsx:171
 msgid "{0} Files"
 msgstr "{0} Files"
 
@@ -180,7 +180,7 @@ msgstr "Absolute path or 'streamlink' in PATH"
 msgid "Accent Color"
 msgstr "Accent Color"
 
-#: src/components/sessions/session-card.tsx:188
+#: src/components/sessions/session-card.tsx:193
 #: src/components/streamers/card/stream-actions-menu.tsx:42
 msgid "Actions"
 msgstr "Actions"
@@ -293,7 +293,7 @@ msgstr "Add Step"
 msgid "Add Stream"
 msgstr "Add Stream"
 
-#: src/routes/_authed/_dashboard/streamers/index.tsx:408
+#: src/routes/_authed/_dashboard/streamers/index.tsx:415
 msgid "Add Streamer"
 msgstr "Add Streamer"
 
@@ -357,7 +357,7 @@ msgstr "All"
 msgid "All Levels"
 msgstr "All Levels"
 
-#: src/routes/_authed/_dashboard/streamers/index.tsx:282
+#: src/routes/_authed/_dashboard/streamers/index.tsx:289
 msgid "All Platforms"
 msgstr "All Platforms"
 
@@ -420,12 +420,12 @@ msgstr "Archive to Cloud"
 msgid "Are you sure you want to delete the template \"{0}\"? This action cannot be undone."
 msgstr "Are you sure you want to delete the template \"{0}\"? This action cannot be undone."
 
-#: src/components/sessions/session-card.tsx:44
+#: src/components/sessions/session-card.tsx:49
 msgid "Are you sure you want to delete this session? This action cannot be undone."
 msgstr "Are you sure you want to delete this session? This action cannot be undone."
 
 #: src/routes/_authed/_dashboard/dashboard.tsx:90
-#: src/routes/_authed/_dashboard/streamers/index.tsx:198
+#: src/routes/_authed/_dashboard/streamers/index.tsx:205
 msgid "Are you sure you want to delete this streamer?"
 msgstr "Are you sure you want to delete this streamer?"
 
@@ -745,7 +745,7 @@ msgid "Check size after copy"
 msgstr "Check size after copy"
 
 #: src/routes/_authed/_dashboard/dashboard.tsx:73
-#: src/routes/_authed/_dashboard/streamers/index.tsx:181
+#: src/routes/_authed/_dashboard/streamers/index.tsx:188
 msgid "Check triggered"
 msgstr "Check triggered"
 
@@ -1372,7 +1372,7 @@ msgstr "Delete Pipeline?"
 msgid "Delete Preset?"
 msgstr "Delete Preset?"
 
-#: src/components/sessions/session-card.tsx:204
+#: src/components/sessions/session-card.tsx:209
 msgid "Delete Session"
 msgstr "Delete Session"
 
@@ -1681,7 +1681,7 @@ msgstr "End of History"
 msgid "End Time"
 msgstr "End Time"
 
-#: src/components/sessions/overview-tab.tsx:223
+#: src/components/sessions/overview-tab.tsx:224
 msgid "Ended"
 msgstr "Ended"
 
@@ -1794,7 +1794,7 @@ msgid "Error Loading Session"
 msgstr "Error Loading Session"
 
 #. placeholder {0}: (error as any).message
-#: src/routes/_authed/_dashboard/streamers/index.tsx:223
+#: src/routes/_authed/_dashboard/streamers/index.tsx:230
 msgid "Error loading streamers: {0}"
 msgstr "Error loading streamers: {0}"
 
@@ -1974,12 +1974,12 @@ msgstr "Failed to delete pipeline"
 msgid "Failed to delete preset: {0}"
 msgstr "Failed to delete preset: {0}"
 
-#: src/components/sessions/session-card.tsx:58
+#: src/components/sessions/session-card.tsx:63
 msgid "Failed to delete session"
 msgstr "Failed to delete session"
 
 #: src/routes/_authed/_dashboard/dashboard.tsx:67
-#: src/routes/_authed/_dashboard/streamers/index.tsx:176
+#: src/routes/_authed/_dashboard/streamers/index.tsx:183
 msgid "Failed to delete streamer"
 msgstr "Failed to delete streamer"
 
@@ -2053,7 +2053,7 @@ msgid "Failed to send test notification"
 msgstr "Failed to send test notification"
 
 #: src/routes/_authed/_dashboard/dashboard.tsx:75
-#: src/routes/_authed/_dashboard/streamers/index.tsx:183
+#: src/routes/_authed/_dashboard/streamers/index.tsx:190
 msgid "Failed to trigger check"
 msgstr "Failed to trigger check"
 
@@ -2085,7 +2085,7 @@ msgstr "Failed to update settings"
 
 #: src/routes/_authed/_dashboard/dashboard.tsx:86
 #: src/routes/_authed/_dashboard/streamers/$id.edit.tsx:204
-#: src/routes/_authed/_dashboard/streamers/index.tsx:194
+#: src/routes/_authed/_dashboard/streamers/index.tsx:201
 msgid "Failed to update streamer"
 msgstr "Failed to update streamer"
 
@@ -2338,6 +2338,18 @@ msgstr "Go back"
 msgid "Go Back"
 msgstr "Go Back"
 
+#: src/routes/_authed/_dashboard/streamers/index.tsx:488
+msgid "Go to next page"
+msgstr "Go to next page"
+
+#: src/routes/_authed/_dashboard/streamers/index.tsx:476
+msgid "Go to page {p}"
+msgstr "Go to page {p}"
+
+#: src/routes/_authed/_dashboard/streamers/index.tsx:456
+msgid "Go to previous page"
+msgstr "Go to previous page"
+
 #: src/components/pipeline/workflows/pipeline-workflow-editor.tsx:88
 #: src/components/pipeline/workflows/pipeline-workflow-editor.tsx:91
 #: src/components/pipeline/workflows/workflow-editor.tsx:346
@@ -2511,7 +2523,7 @@ msgstr "Import Successful"
 msgid "Importing..."
 msgstr "Importing..."
 
-#: src/components/sessions/overview-tab.tsx:289
+#: src/components/sessions/overview-tab.tsx:290
 msgid "In active"
 msgstr "In active"
 
@@ -2609,7 +2621,7 @@ msgstr "Job retry initiated"
 
 #: src/components/sidebar/navbar.tsx:41
 #: src/lib/menu-list.ts:84
-#: src/routes/_authed/_dashboard/sessions/$sessionId.tsx:248
+#: src/routes/_authed/_dashboard/sessions/$sessionId.tsx:247
 msgid "Jobs"
 msgstr "Jobs"
 
@@ -2696,9 +2708,9 @@ msgstr "List"
 msgid "Live"
 msgstr "Live"
 
-#: src/components/player/stream-info-card.tsx:81
-#: src/components/player/stream-info-card.tsx:101
-#: src/components/sessions/session-card.tsx:100
+#: src/components/player/stream-info-card.tsx:88
+#: src/components/player/stream-info-card.tsx:108
+#: src/components/sessions/session-card.tsx:105
 #: src/components/sessions/session-header.tsx:29
 msgid "LIVE"
 msgstr "LIVE"
@@ -2794,7 +2806,7 @@ msgstr "Manage where system notifications are sent"
 msgid "Manage your application configuration."
 msgstr "Manage your application configuration."
 
-#: src/routes/_authed/_dashboard/streamers/index.tsx:250
+#: src/routes/_authed/_dashboard/streamers/index.tsx:257
 msgid "Manage your monitored channels and downloads"
 msgstr "Manage your monitored channels and downloads"
 
@@ -3189,7 +3201,7 @@ msgstr "No presets found"
 msgid "No presets yet"
 msgstr "No presets yet"
 
-#: src/components/sessions/overview-tab.tsx:178
+#: src/components/sessions/overview-tab.tsx:179
 msgid "No preview generated"
 msgstr "No preview generated"
 
@@ -3213,7 +3225,7 @@ msgstr "No steps defined"
 #~ msgid "No steps selected yet"
 #~ msgstr "No steps selected yet"
 
-#: src/routes/_authed/_dashboard/streamers/index.tsx:394
+#: src/routes/_authed/_dashboard/streamers/index.tsx:401
 msgid "No streamers found"
 msgstr "No streamers found"
 
@@ -3270,7 +3282,7 @@ msgstr "Notifications"
 msgid "Number of attempts before failing the upload."
 msgstr "Number of attempts before failing the upload."
 
-#: src/components/sessions/session-card.tsx:107
+#: src/components/sessions/session-card.tsx:112
 #: src/components/streamers/card/use-streamer-status.tsx:30
 #: src/components/streamers/card/use-streamer-status.tsx:229
 #: src/components/streamers/card/use-streamer-status.tsx:238
@@ -3316,7 +3328,7 @@ msgstr "On Online"
 msgid "On Pipeline Complete"
 msgstr "On Pipeline Complete"
 
-#: src/components/sessions/session-card.tsx:65
+#: src/components/sessions/session-card.tsx:70
 msgid "Ongoing"
 msgstr "Ongoing"
 
@@ -3459,7 +3471,7 @@ msgstr "Override output folder."
 #~ msgid "Override system colors with your own CSS variables."
 #~ msgstr "Override system colors with your own CSS variables."
 
-#: src/routes/_authed/_dashboard/sessions/$sessionId.tsx:218
+#: src/routes/_authed/_dashboard/sessions/$sessionId.tsx:217
 msgid "Overview"
 msgstr "Overview"
 
@@ -3542,7 +3554,7 @@ msgid "Per page:"
 msgstr "Per page:"
 
 #: src/components/pipeline/presets/processors/remux-config-form.tsx:611
-#: src/components/sessions/overview-tab.tsx:195
+#: src/components/sessions/overview-tab.tsx:196
 #: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.tsx:554
 msgid "Performance"
 msgstr "Performance"
@@ -3632,7 +3644,7 @@ msgstr "Pipeline Structure"
 msgid "pipelines"
 msgstr "pipelines"
 
-#: src/routes/_authed/_dashboard/streamers/index.tsx:276
+#: src/routes/_authed/_dashboard/streamers/index.tsx:283
 msgid "Platform"
 msgstr "Platform"
 
@@ -3806,7 +3818,7 @@ msgstr "Preview Gallery"
 msgid "Preview Thumbnail"
 msgstr "Preview Thumbnail"
 
-#: src/components/sessions/overview-tab.tsx:169
+#: src/components/sessions/overview-tab.tsx:170
 msgid "Preview Unavailable"
 msgstr "Preview Unavailable"
 
@@ -3890,7 +3902,7 @@ msgid "Proxy URL"
 msgstr "Proxy URL"
 
 #: src/components/config/engines/forms/streamlink-form.tsx:61
-#: src/components/player/stream-info-card.tsx:163
+#: src/components/player/stream-info-card.tsx:170
 msgid "Quality"
 msgstr "Quality"
 
@@ -3992,7 +4004,7 @@ msgstr "Recording Filters"
 msgid "Recording will start when schedule allows"
 msgstr "Recording will start when schedule allows"
 
-#: src/routes/_authed/_dashboard/sessions/$sessionId.tsx:236
+#: src/routes/_authed/_dashboard/sessions/$sessionId.tsx:235
 msgid "Recordings"
 msgstr "Recordings"
 
@@ -4143,7 +4155,7 @@ msgstr "Review recorded streams and manage archives"
 msgid "Route traffic through an intermediate server"
 msgstr "Route traffic through an intermediate server"
 
-#: src/routes/_authed/_dashboard/streamers/index.tsx:419
+#: src/routes/_authed/_dashboard/streamers/index.tsx:426
 msgid "Rows per page"
 msgstr "Rows per page"
 
@@ -4180,7 +4192,7 @@ msgid "Rust regex syntax supported."
 msgstr "Rust regex syntax supported."
 
 #: src/components/sidebar/sheet-menu.tsx:33
-#: src/components/sidebar/sidebar.tsx:61
+#: src/components/sidebar/sidebar.tsx:64
 msgid "Rust-Srec"
 msgstr "Rust-Srec"
 
@@ -4288,7 +4300,7 @@ msgstr "Search presets..."
 msgid "Search sessions..."
 msgstr "Search sessions..."
 
-#: src/routes/_authed/_dashboard/streamers/index.tsx:260
+#: src/routes/_authed/_dashboard/streamers/index.tsx:267
 msgid "Search streamers..."
 msgstr "Search streamers..."
 
@@ -4412,7 +4424,7 @@ msgstr "Separate multiple paths with commas."
 msgid "Session"
 msgstr "Session"
 
-#: src/components/sessions/session-card.tsx:53
+#: src/components/sessions/session-card.tsx:58
 msgid "Session deleted successfully"
 msgstr "Session deleted successfully"
 
@@ -4420,7 +4432,7 @@ msgstr "Session deleted successfully"
 msgid "Session Details"
 msgstr "Session Details"
 
-#: src/components/sessions/overview-tab.tsx:203
+#: src/components/sessions/overview-tab.tsx:204
 msgid "Session Duration"
 msgstr "Session Duration"
 
@@ -4440,11 +4452,11 @@ msgstr "Session ID is required"
 msgid "Session not found"
 msgstr "Session not found"
 
-#: src/components/sessions/overview-tab.tsx:142
+#: src/components/sessions/overview-tab.tsx:143
 msgid "Session Preview"
 msgstr "Session Preview"
 
-#: src/components/sessions/overview-tab.tsx:151
+#: src/components/sessions/overview-tab.tsx:152
 msgid "Session thumbnail"
 msgstr "Session thumbnail"
 
@@ -4527,7 +4539,7 @@ msgstr "SMTP Host"
 msgid "Something went wrong!"
 msgstr "Something went wrong!"
 
-#: src/components/player/stream-info-card.tsx:119
+#: src/components/player/stream-info-card.tsx:126
 msgid "Source"
 msgstr "Source"
 
@@ -4579,7 +4591,7 @@ msgid "Start Time"
 msgstr "Start Time"
 
 #: src/components/pipeline/jobs/pipeline-summary-card.tsx:275
-#: src/components/sessions/overview-tab.tsx:217
+#: src/components/sessions/overview-tab.tsx:218
 #: src/routes/_authed/_dashboard/pipeline/executions.$pipelineId.tsx:332
 #: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.tsx:608
 msgid "Started"
@@ -4635,8 +4647,8 @@ msgstr "Stream Details"
 msgid "Stream monitoring encountered issues"
 msgstr "Stream monitoring encountered issues"
 
-#: src/components/player/stream-info-card.tsx:75
-#: src/components/player/stream-info-card.tsx:95
+#: src/components/player/stream-info-card.tsx:82
+#: src/components/player/stream-info-card.tsx:102
 msgid "Stream Options"
 msgstr "Stream Options"
 
@@ -4661,7 +4673,7 @@ msgid "Streamer created successfully"
 msgstr "Streamer created successfully"
 
 #: src/routes/_authed/_dashboard/dashboard.tsx:63
-#: src/routes/_authed/_dashboard/streamers/index.tsx:172
+#: src/routes/_authed/_dashboard/streamers/index.tsx:179
 msgid "Streamer deleted"
 msgstr "Streamer deleted"
 
@@ -4681,8 +4693,12 @@ msgstr "Streamer ID is required"
 msgid "Streamer is on cooldown"
 msgstr "Streamer is on cooldown"
 
+#: src/routes/_authed/_dashboard/streamers/index.tsx:450
+msgid "Streamer pagination"
+msgstr "Streamer pagination"
+
 #: src/routes/_authed/_dashboard/dashboard.tsx:82
-#: src/routes/_authed/_dashboard/streamers/index.tsx:190
+#: src/routes/_authed/_dashboard/streamers/index.tsx:197
 msgid "Streamer updated"
 msgstr "Streamer updated"
 
@@ -4695,7 +4711,7 @@ msgstr "Streamer updated successfully"
 #: src/components/config/global/backup-restore-card.tsx:364
 #: src/components/sidebar/navbar.tsx:25
 #: src/lib/menu-list.ts:57
-#: src/routes/_authed/_dashboard/streamers/index.tsx:247
+#: src/routes/_authed/_dashboard/streamers/index.tsx:254
 msgid "Streamers"
 msgstr "Streamers"
 
@@ -4916,7 +4932,7 @@ msgid "Thumbnail"
 msgstr "Thumbnail"
 
 #. placeholder {0}: session.title
-#: src/components/sessions/session-card.tsx:125
+#: src/components/sessions/session-card.tsx:130
 msgid "Thumbnail for {0}"
 msgstr "Thumbnail for {0}"
 
@@ -4936,7 +4952,7 @@ msgstr "Time between sampling attempts."
 msgid "Time offset to take screenshot from"
 msgstr "Time offset to take screenshot from"
 
-#: src/routes/_authed/_dashboard/sessions/$sessionId.tsx:224
+#: src/routes/_authed/_dashboard/sessions/$sessionId.tsx:223
 msgid "Timeline"
 msgstr "Timeline"
 
@@ -4980,7 +4996,7 @@ msgstr "Today"
 msgid "Token"
 msgstr "Token"
 
-#: src/routes/_authed/_dashboard/streamers/index.tsx:296
+#: src/routes/_authed/_dashboard/streamers/index.tsx:303
 msgid "total"
 msgstr "total"
 
@@ -5077,7 +5093,7 @@ msgstr "Trimming & Time"
 msgid "Try adjusting your search or filters"
 msgstr "Try adjusting your search or filters"
 
-#: src/routes/_authed/_dashboard/streamers/index.tsx:397
+#: src/routes/_authed/_dashboard/streamers/index.tsx:404
 msgid "Try adjusting your search or filters, or add a new streamer to start monitoring."
 msgstr "Try adjusting your search or filters, or add a new streamer to start monitoring."
 
@@ -5131,7 +5147,7 @@ msgstr "Until"
 msgid "Untitled Session"
 msgstr "Untitled Session"
 
-#: src/components/sessions/session-card.tsx:115
+#: src/components/sessions/session-card.tsx:120
 msgid "Untitled Stream"
 msgstr "Untitled Stream"
 
@@ -5284,8 +5300,8 @@ msgid "View Detailed Logs & Outputs"
 msgstr "View Detailed Logs & Outputs"
 
 #: src/components/pipeline/jobs/pipeline-summary-card.tsx:184
-#: src/components/sessions/session-card.tsx:177
-#: src/components/sessions/session-card.tsx:196
+#: src/components/sessions/session-card.tsx:182
+#: src/components/sessions/session-card.tsx:201
 #: src/routes/_authed/_dashboard/dashboard.tsx:137
 msgid "View Details"
 msgstr "View Details"

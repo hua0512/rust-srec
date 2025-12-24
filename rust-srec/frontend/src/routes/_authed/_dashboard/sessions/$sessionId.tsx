@@ -130,8 +130,8 @@ function SessionDetailPage() {
 
   if (isSessionLoading) {
     return (
-      <div className="min-h-screen p-6 md:p-10 max-w-7xl mx-auto space-y-8 bg-background">
-        <div className="flex items-center gap-6">
+      <div className="min-h-screen p-4 md:p-10 max-w-7xl mx-auto space-y-8 bg-background">
+        <div className="flex flex-col md:flex-row items-center gap-6">
           <Skeleton className="h-16 w-16 rounded-xl" />
           <div className="space-y-2">
             <Skeleton className="h-8 w-64" />
@@ -139,10 +139,10 @@ function SessionDetailPage() {
           </div>
         </div>
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-          <Skeleton className="h-[200px] md:col-span-2 rounded-2xl" />
-          <Skeleton className="h-[200px] rounded-2xl" />
+          <Skeleton className="h-[200px] md:col-span-2 rounded-xl md:rounded-2xl" />
+          <Skeleton className="h-[200px] rounded-xl md:rounded-2xl" />
         </div>
-        <Skeleton className="h-[400px] rounded-2xl" />
+        <Skeleton className="h-[400px] rounded-xl md:rounded-2xl" />
       </div>
     );
   }
@@ -176,9 +176,8 @@ function SessionDetailPage() {
     ? formatDuration(session.duration_secs)
     : session.start_time && now
       ? formatDuration(
-        (now.getTime() - new Date(session.start_time).getTime()) /
-        1000,
-      )
+          (now.getTime() - new Date(session.start_time).getTime()) / 1000,
+        )
       : '-';
 
   return (
@@ -204,22 +203,22 @@ function SessionDetailPage() {
         />
       </div>
 
-      <div className="relative z-10 w-full px-6 py-8 pb-32 md:px-12 lg:px-16 xl:px-24">
+      <div className="relative z-10 w-full px-4 py-6 pb-32 md:px-12 lg:px-16 xl:px-24">
         <SessionHeader session={session} />
 
         {/* Content Grid */}
-        <Tabs defaultValue="overview" className="space-y-8">
-          <div className="flex items-center justify-between">
-            <TabsList className="bg-secondary/50 backdrop-blur-sm border border-border/10 p-1.5 h-12 rounded-full gap-2">
+        <Tabs defaultValue="overview" className="space-y-6 md:space-y-8">
+          <div className="flex items-center justify-between -mx-4 px-4 md:mx-0 md:px-0 overflow-x-auto scrollbar-hide">
+            <TabsList className="bg-secondary/50 backdrop-blur-sm border border-border/10 p-1 h-11 md:h-12 rounded-full gap-1 md:gap-2 min-w-max flex-nowrap">
               <TabsTrigger
                 value="overview"
-                className="rounded-full px-6 h-9 transition-all data-[state=active]:bg-background data-[state=active]:text-primary data-[state=active]:shadow-sm hover:text-foreground/80"
+                className="rounded-full px-4 md:px-6 h-8 md:h-9 transition-all data-[state=active]:bg-background data-[state=active]:text-primary data-[state=active]:shadow-sm hover:text-foreground/80"
               >
                 <Trans>Overview</Trans>
               </TabsTrigger>
               <TabsTrigger
                 value="timeline"
-                className="rounded-full px-6 h-9 transition-all data-[state=active]:bg-background data-[state=active]:text-primary data-[state=active]:shadow-sm hover:text-foreground/80 gap-2"
+                className="rounded-full px-4 md:px-6 h-8 md:h-9 transition-all data-[state=active]:bg-background data-[state=active]:text-primary data-[state=active]:shadow-sm hover:text-foreground/80 gap-2"
               >
                 <Trans>Timeline</Trans>
                 <Badge
@@ -231,7 +230,7 @@ function SessionDetailPage() {
               </TabsTrigger>
               <TabsTrigger
                 value="recordings"
-                className="rounded-full px-6 h-9 transition-all data-[state=active]:bg-background data-[state=active]:text-primary data-[state=active]:shadow-sm hover:text-foreground/80 gap-2"
+                className="rounded-full px-4 md:px-6 h-8 md:h-9 transition-all data-[state=active]:bg-background data-[state=active]:text-primary data-[state=active]:shadow-sm hover:text-foreground/80 gap-2"
               >
                 <Trans>Recordings</Trans>
                 <Badge
@@ -243,7 +242,7 @@ function SessionDetailPage() {
               </TabsTrigger>
               <TabsTrigger
                 value="jobs"
-                className="rounded-full px-6 h-9 transition-all data-[state=active]:bg-background data-[state=active]:text-primary data-[state=active]:shadow-sm hover:text-foreground/80 gap-2"
+                className="rounded-full px-4 md:px-6 h-8 md:h-9 transition-all data-[state=active]:bg-background data-[state=active]:text-primary data-[state=active]:shadow-sm hover:text-foreground/80 gap-2"
               >
                 <Trans>Jobs</Trans>
                 <Badge
@@ -301,8 +300,8 @@ function SessionDetailPage() {
         <DialogContent
           className={
             playingOutput?.format === 'DANMU_XML'
-              ? 'w-full max-w-5xl p-0 overflow-hidden bg-transparent border-0 shadow-none focus:outline-none'
-              : 'max-w-4xl p-0 overflow-hidden bg-black/95 border-border/20'
+              ? 'w-[95vw] sm:w-full max-w-5xl p-0 overflow-hidden bg-transparent border-0 shadow-none focus:outline-none'
+              : 'w-[95vw] sm:w-full max-w-4xl p-0 overflow-hidden bg-black/95 border-border/20'
           }
         >
           <DialogHeader className="sr-only">

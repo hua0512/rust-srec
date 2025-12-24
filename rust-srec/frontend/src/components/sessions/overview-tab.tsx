@@ -50,12 +50,12 @@ export function OverviewTab({
       {/* Top Section: Context (Streamer) */}
       <Card className="overflow-hidden border-border/50 shadow-lg bg-card/40 backdrop-blur-xl">
         <div className="absolute top-0 right-0 p-32 bg-primary/5 rounded-full blur-3xl -mr-16 -mt-16 pointer-events-none" />
-        <CardContent className="p-8">
-          <div className="flex flex-col md:flex-row gap-8 items-start md:items-center justify-between">
-            <div className="flex items-center gap-6">
+        <CardContent className="p-4 md:p-8">
+          <div className="flex flex-col lg:flex-row gap-6 md:gap-8 items-start lg:items-center justify-between">
+            <div className="flex items-center gap-4 md:gap-6">
               <div className="relative group">
                 <div className="absolute -inset-1 bg-gradient-to-br from-primary to-blue-600 rounded-full opacity-20 group-hover:opacity-40 transition-opacity blur-md" />
-                <Avatar className="h-24 w-24 border-4 border-background shadow-xl relative">
+                <Avatar className="h-16 w-16 md:h-24 md:w-24 border-2 md:border-4 border-background shadow-xl relative">
                   {getProxiedUrl(session.streamer_avatar) && (
                     <AvatarImage
                       src={getProxiedUrl(session.streamer_avatar)}
@@ -63,12 +63,12 @@ export function OverviewTab({
                       className="object-cover"
                     />
                   )}
-                  <AvatarFallback className="text-3xl font-bold bg-muted text-muted-foreground">
+                  <AvatarFallback className="text-xl md:text-3xl font-bold bg-muted text-muted-foreground">
                     {session.streamer_name?.substring(0, 2).toUpperCase() ||
                       '??'}
                   </AvatarFallback>
                 </Avatar>
-                <div className="absolute bottom-1 right-1 h-5 w-5 bg-green-500 border-4 border-white dark:border-zinc-900 rounded-full" />
+                <div className="absolute bottom-1 right-1 h-4 w-4 md:h-5 md:w-5 bg-green-500 border-2 md:border-4 border-white dark:border-zinc-900 rounded-full" />
               </div>
 
               <div className="space-y-2">
@@ -83,7 +83,7 @@ export function OverviewTab({
                     ID: {session.streamer_id}
                   </p>
                 </div>
-                <h2 className="text-3xl md:text-4xl font-bold tracking-tight text-foreground">
+                <h2 className="text-2xl md:text-3xl lg:text-4xl font-bold tracking-tight text-foreground truncate max-w-[200px] sm:max-w-none">
                   {session.streamer_name}
                 </h2>
                 <div className="flex items-center gap-6 text-sm text-muted-foreground font-medium pt-1">
@@ -105,7 +105,7 @@ export function OverviewTab({
               </div>
             </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 w-full md:w-auto min-w-[300px]">
+            <div className="grid grid-cols-2 md:grid-cols-2 lg:grid-cols-3 gap-3 md:gap-4 w-full lg:w-auto min-w-0 md:min-w-[300px]">
               <StatBox
                 icon={HardDrive}
                 label={<Trans>Total Size</Trans>}
@@ -126,6 +126,7 @@ export function OverviewTab({
                 value={session.danmu_count?.toLocaleString() || '0'}
                 color="text-orange-500"
                 bg="bg-orange-500/10"
+                className="col-span-2 lg:col-span-1"
               />
             </div>
           </div>
@@ -160,8 +161,8 @@ export function OverviewTab({
                       {playableOutput ? (
                         <button className="relative group/play cursor-pointer">
                           <div className="absolute inset-0 bg-white/30 rounded-full blur-xl group-hover/play:bg-white/50 transition-colors" />
-                          <div className="relative h-20 w-20 rounded-full bg-white/10 backdrop-blur-md border border-white/20 flex items-center justify-center shadow-2xl group-hover/play:scale-105 transition-transform">
-                            <Play className="h-8 w-8 text-white fill-white translate-x-1" />
+                          <div className="relative h-14 w-14 md:h-20 md:w-20 rounded-full bg-white/10 backdrop-blur-md border border-white/20 flex items-center justify-center shadow-2xl group-hover/play:scale-105 transition-transform">
+                            <Play className="h-6 w-6 md:h-8 md:w-8 text-white fill-white translate-x-1" />
                           </div>
                         </button>
                       ) : (
@@ -247,10 +248,10 @@ function StatBox({ icon: Icon, label, value, color, bg }: any) {
         <Icon className={cn('h-5 w-5', color)} />
       </div>
       <div>
-        <p className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
+        <p className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground truncate">
           {label}
         </p>
-        <p className="text-sm font-bold">{value}</p>
+        <p className="text-xs md:text-sm font-bold">{value}</p>
       </div>
     </div>
   );

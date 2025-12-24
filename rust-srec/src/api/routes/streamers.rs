@@ -247,10 +247,28 @@ pub async fn list_streamers(
             });
         }
         _ => {
-            // Default: match DB ordering and keep pages stable.
+            // Default: LIVE streamers first, then by priority desc, name asc, id asc.
+            // This ensures active streamers are always visible at the top.
             streamers.sort_by(|a, b| {
-                b.priority
-                    .cmp(&a.priority)
+                // State priority: Active states first, then offline, then errors, then disabled
+                let state_order = |s: &StreamerState| -> u8 {
+                    match s {
+                        StreamerState::Live => 0,
+                        StreamerState::InspectingLive => 1,
+                        StreamerState::NotLive => 2,
+                        StreamerState::OutOfSchedule => 3,
+                        StreamerState::Error => 4,
+                        StreamerState::FatalError => 5,
+                        StreamerState::OutOfSpace => 6,
+                        StreamerState::NotFound => 7,
+                        StreamerState::TemporalDisabled => 8,
+                        StreamerState::Cancelled => 9,
+                        StreamerState::Disabled => 10,
+                    }
+                };
+                state_order(&a.state)
+                    .cmp(&state_order(&b.state))
+                    .then_with(|| b.priority.cmp(&a.priority))
                     .then_with(|| a.name.cmp(&b.name))
                     .then_with(|| a.id.cmp(&b.id))
             });

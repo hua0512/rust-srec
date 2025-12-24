@@ -77,14 +77,10 @@ export function CollapseMenuButton({
           {isSubmenuActive && (
             <div className="absolute left-0 top-1/2 -translate-y-1/2 w-1.5 h-6 bg-primary rounded-r-full" />
           )}
-          <span
-            className="transition-transform duration-200 group-hover:scale-110 shrink-0 mr-4"
-          >
+          <span className="transition-transform duration-200 group-hover:scale-110 shrink-0 mr-4">
             <Icon size={18} strokeWidth={isSubmenuActive ? 2.5 : 2} />
           </span>
-          <p
-            className="truncate font-medium transition-all duration-300 opacity-100 translate-x-0 w-auto"
-          >
+          <p className="truncate font-medium transition-all duration-300 opacity-100 translate-x-0 w-auto">
             {label}
           </p>
           {isOpen && (

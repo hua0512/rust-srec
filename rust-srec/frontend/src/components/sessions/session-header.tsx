@@ -55,7 +55,7 @@ export function SessionHeader({ session }: SessionHeaderProps) {
   const StatusIcon = statusConfig.icon;
 
   return (
-    <div className="flex flex-col gap-8 mb-10">
+    <div className="flex flex-col gap-6 md:gap-8 mb-8 md:mb-10">
       <motion.div
         initial={{ opacity: 0, x: -20 }}
         animate={{ opacity: 1, x: 0 }}
@@ -82,7 +82,7 @@ export function SessionHeader({ session }: SessionHeaderProps) {
         >
           <div
             className={cn(
-              'flex items-center justify-center w-16 h-16 rounded-2xl shadow-lg ring-1 ring-white/10 backdrop-blur-md bg-gradient-to-br shrink-0',
+              'flex items-center justify-center w-14 h-14 md:w-16 md:h-16 rounded-xl md:rounded-2xl shadow-lg ring-1 ring-white/10 backdrop-blur-md bg-gradient-to-br shrink-0',
               statusConfig.gradient,
             )}
           >
@@ -96,13 +96,13 @@ export function SessionHeader({ session }: SessionHeaderProps) {
           </div>
           <div>
             <div className="flex items-center gap-3 mb-1.5">
-              <h1 className="text-3xl font-bold tracking-tight text-foreground">
+              <h1 className="text-2xl md:text-3xl font-bold tracking-tight text-foreground">
                 <Trans>Session Details</Trans>
               </h1>
               <Badge
                 variant="outline"
                 className={cn(
-                  'border bg-background/50 backdrop-blur font-mono text-xs uppercase tracking-wider h-6',
+                  'border bg-background/50 backdrop-blur font-mono text-[10px] md:text-xs uppercase tracking-wider h-5 md:h-6',
                   statusConfig.borderColor,
                   statusConfig.color,
                 )}

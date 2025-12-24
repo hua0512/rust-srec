@@ -101,8 +101,8 @@ export function OutputCard({ output }: OutputCardProps) {
             <span className="text-[10px] uppercase tracking-wider font-semibold text-muted-foreground/60">
               {mounted
                 ? formatDistanceToNow(new Date(output.created_at), {
-                  addSuffix: true,
-                })
+                    addSuffix: true,
+                  })
                 : format(new Date(output.created_at), 'PP')}
             </span>
           </div>

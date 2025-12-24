@@ -51,17 +51,22 @@ function detectClientLocale(): Locale {
 /**
  * Parse Accept-Language header and return the best matching locale.
  */
-export function parseAcceptLanguage(acceptLanguage: string | null | undefined): Locale {
+export function parseAcceptLanguage(
+  acceptLanguage: string | null | undefined,
+): Locale {
   if (!acceptLanguage) return defaultLocale;
 
   // Parse Accept-Language header (e.g., "zh-CN,zh;q=0.9,en;q=0.8")
-  const languages = acceptLanguage.split(',').map(lang => {
-    const [code, qValue] = lang.trim().split(';q=');
-    return {
-      code: code?.trim().toLowerCase() || '',
-      q: qValue ? parseFloat(qValue) : 1.0
-    };
-  }).sort((a, b) => b.q - a.q);
+  const languages = acceptLanguage
+    .split(',')
+    .map((lang) => {
+      const [code, qValue] = lang.trim().split(';q=');
+      return {
+        code: code?.trim().toLowerCase() || '',
+        q: qValue ? parseFloat(qValue) : 1.0,
+      };
+    })
+    .sort((a, b) => b.q - a.q);
 
   for (const { code } of languages) {
     // Exact match
@@ -110,7 +115,7 @@ export function initializeLocale(): Locale {
 /**
  * Hook to initialize locale on client hydration.
  * Returns true once locale is initialized.
- * 
+ *
  * IMPORTANT: During SSR and initial hydration, returns false so that
  * components can choose not to render i18n-dependent content until
  * the locale is properly set up on the client.

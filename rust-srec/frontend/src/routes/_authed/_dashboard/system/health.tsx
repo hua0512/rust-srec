@@ -263,7 +263,7 @@ function SystemHealthPage() {
                         </TableCell>
                         <TableCell className="text-right font-mono text-xs">
                           {component.check_duration_ms !== null &&
-                            component.check_duration_ms !== undefined ? (
+                          component.check_duration_ms !== undefined ? (
                             <span>{component.check_duration_ms}ms</span>
                           ) : (
                             <span className="text-muted-foreground/30">-</span>
@@ -272,11 +272,11 @@ function SystemHealthPage() {
                         <TableCell className="text-right text-xs text-muted-foreground">
                           {component.last_check && mounted
                             ? formatDistanceToNow(
-                              new Date(component.last_check),
-                              {
-                                addSuffix: true,
-                              },
-                            )
+                                new Date(component.last_check),
+                                {
+                                  addSuffix: true,
+                                },
+                              )
                             : component.last_check
                               ? format(new Date(component.last_check), 'PP p')
                               : '-'}

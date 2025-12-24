@@ -8,8 +8,8 @@ use std::time::Duration;
 
 use dashmap::DashMap;
 use sqlx::SqlitePool;
-use tokio::sync::Notify;
 use tokio::sync::OnceCell;
+use tokio::sync::{Notify, mpsc};
 use tokio_util::sync::CancellationToken;
 use tracing::{debug, info, warn};
 
@@ -76,14 +76,16 @@ pub struct StreamMonitor<
     rate_limiter: RateLimiterManager,
     /// In-flight request deduplication.
     in_flight: Arc<DashMap<String, Arc<OnceCell<LiveStatus>>>>,
+    /// Sender for in-flight cleanup requests (single worker processes these).
+    cleanup_tx: mpsc::Sender<String>,
     /// Event broadcaster for notifications.
     event_broadcaster: MonitorEventBroadcaster,
     /// Database pool for transactional updates + outbox.
     pool: SqlitePool,
     /// Notifies the outbox publisher that new events are available.
     outbox_notify: Arc<Notify>,
-    /// Cancellation token for the outbox publisher task.
-    outbox_cancellation: CancellationToken,
+    /// Cancellation token for background tasks (outbox publisher and cleanup worker).
+    cancellation: CancellationToken,
     /// Configuration.
     #[allow(dead_code)]
     config: StreamMonitorConfig,
@@ -161,7 +163,12 @@ impl<
         let batch_detector = BatchDetector::with_client(client, rate_limiter.clone());
 
         let outbox_notify = Arc::new(Notify::new());
-        let outbox_cancellation = CancellationToken::new();
+        let cancellation = CancellationToken::new();
+
+        // Create bounded channel for cleanup requests (single worker pattern)
+        // Buffer size of 1024 should be plenty for typical concurrent request counts
+        let (cleanup_tx, cleanup_rx) = mpsc::channel::<String>(1024);
+        let in_flight = Arc::new(DashMap::new());
 
         let monitor = Self {
             streamer_manager,
@@ -171,15 +178,17 @@ impl<
             detector,
             batch_detector,
             rate_limiter,
-            in_flight: Arc::new(DashMap::new()),
+            in_flight: in_flight.clone(),
+            cleanup_tx,
             event_broadcaster: MonitorEventBroadcaster::new(),
             pool,
             outbox_notify: outbox_notify.clone(),
-            outbox_cancellation: outbox_cancellation.clone(),
+            cancellation: cancellation.clone(),
             config,
         };
 
-        monitor.spawn_outbox_publisher(outbox_notify, outbox_cancellation);
+        monitor.spawn_outbox_publisher(outbox_notify, cancellation.clone());
+        Self::spawn_cleanup_worker(in_flight, cleanup_rx, cancellation);
 
         monitor
     }
@@ -196,11 +205,37 @@ impl<
 
     /// Stop the stream monitor's background tasks.
     ///
-    /// This cancels the outbox publisher task. Should be called during
-    /// graceful shutdown to ensure clean task termination.
+    /// This cancels the outbox publisher and cleanup worker tasks. Should be called
+    /// during graceful shutdown to ensure clean task termination.
     pub fn stop(&self) {
-        info!("Stopping StreamMonitor outbox publisher");
-        self.outbox_cancellation.cancel();
+        info!("Stopping StreamMonitor background tasks");
+        self.cancellation.cancel();
+    }
+
+    /// Spawn a single cleanup worker that processes delayed removal requests.
+    fn spawn_cleanup_worker(
+        in_flight: Arc<DashMap<String, Arc<OnceCell<LiveStatus>>>>,
+        mut cleanup_rx: mpsc::Receiver<String>,
+        cancellation_token: CancellationToken,
+    ) {
+        tokio::spawn(async move {
+            loop {
+                tokio::select! {
+                    biased;
+
+                    _ = cancellation_token.cancelled() => {
+                        debug!("In-flight cleanup worker shutting down");
+                        break;
+                    }
+                    Some(id) = cleanup_rx.recv() => {
+                        // Delay cleanup to preserve the deduplication window
+                        tokio::time::sleep(Duration::from_millis(100)).await;
+                        in_flight.remove(&id);
+                    }
+                }
+            }
+            debug!("In-flight cleanup worker stopped");
+        });
     }
 
     fn spawn_outbox_publisher(
@@ -305,12 +340,8 @@ impl<
         // Schedule delayed cleanup BEFORE checking result to ensure cleanup
         // happens regardless of success or error. This prevents in_flight map
         // from leaking entries when errors occur.
-        let in_flight = self.in_flight.clone();
-        let id = streamer.id.clone();
-        tokio::spawn(async move {
-            tokio::time::sleep(Duration::from_millis(100)).await;
-            in_flight.remove(&id);
-        });
+        // Use the cleanup channel instead of spawning a task per entry.
+        let _ = self.cleanup_tx.try_send(streamer.id.clone());
 
         // Now check result - cleanup is already scheduled
         let status = result?.clone();

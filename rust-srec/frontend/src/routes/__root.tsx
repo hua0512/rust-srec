@@ -11,10 +11,10 @@ const TanStackRouterDevtools =
   process.env.NODE_ENV === 'production'
     ? () => null
     : lazy(() =>
-      import('@tanstack/react-router-devtools').then((res) => ({
-        default: res.TanStackRouterDevtools,
-      })),
-    );
+        import('@tanstack/react-router-devtools').then((res) => ({
+          default: res.TanStackRouterDevtools,
+        })),
+      );
 
 const fetchUser = createServerFn({ method: 'GET' }).handler(async () => {
   // Use ensureValidToken to validate the session and refresh if needed
@@ -24,15 +24,17 @@ const fetchUser = createServerFn({ method: 'GET' }).handler(async () => {
 });
 
 // Detect locale on the server from Accept-Language header
-const detectServerLocale = createServerFn({ method: 'GET' }).handler(async () => {
-  const { parseAcceptLanguage, defaultLocale } = await import('../i18n');
-  try {
-    const acceptLanguage = getRequestHeader('accept-language');
-    return parseAcceptLanguage(acceptLanguage);
-  } catch {
-    return defaultLocale;
-  }
-});
+const detectServerLocale = createServerFn({ method: 'GET' }).handler(
+  async () => {
+    const { parseAcceptLanguage, defaultLocale } = await import('../i18n');
+    try {
+      const acceptLanguage = getRequestHeader('accept-language');
+      return parseAcceptLanguage(acceptLanguage);
+    } catch {
+      return defaultLocale;
+    }
+  },
+);
 
 export const Route = createRootRoute({
   beforeLoad: async () => {
@@ -95,7 +97,9 @@ export const queryClient = new QueryClient();
 
 function RootDocument({ children }: { children: React.ReactNode }) {
   // Get the server-detected locale from route context
-  const { serverLocale } = useRouteContext({ from: '__root__' }) as { serverLocale?: Locale };
+  const { serverLocale } = useRouteContext({ from: '__root__' }) as {
+    serverLocale?: Locale;
+  };
 
   // Track if we've done initial activation
   const initializedRef = useRef(false);

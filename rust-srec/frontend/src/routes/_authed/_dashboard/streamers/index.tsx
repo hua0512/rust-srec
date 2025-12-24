@@ -140,6 +140,13 @@ function StreamersPage() {
   const totalCount = streamersData?.total || 0;
   const totalPages = Math.ceil(totalCount / pageSize);
 
+  // Page overflow protection: reset to last valid page when filters reduce results
+  useEffect(() => {
+    if (page > totalPages && totalPages > 0) {
+      setPage(totalPages);
+    }
+  }, [totalPages, page]);
+
   // Pagination logic
   const paginationPages = useMemo(() => {
     const pages: (number | 'ellipsis')[] = [];
@@ -438,21 +445,27 @@ function StreamersPage() {
               </Select>
             </div>
 
-            <Pagination className="w-auto mx-0">
+            <Pagination
+              className="w-auto mx-0"
+              aria-label={t`Streamer pagination`}
+            >
               <PaginationContent>
                 <PaginationItem>
                   <PaginationPrevious
-                    onClick={() => setPage((p) => Math.max(1, p - 1))}
+                    onClick={() => page > 1 && setPage((p) => p - 1)}
+                    aria-label={t`Go to previous page`}
+                    aria-disabled={page === 1}
+                    tabIndex={page === 1 ? -1 : 0}
                     className={
                       page === 1
-                        ? 'pointer-events-none opacity-50'
+                        ? 'pointer-events-none opacity-50 cursor-not-allowed'
                         : 'cursor-pointer'
                     }
                   />
                 </PaginationItem>
                 {paginationPages.map((p, i) =>
                   p === 'ellipsis' ? (
-                    <PaginationItem key={`ellipsis-${i}`}>
+                    <PaginationItem key={`ellipsis-${i}`} aria-hidden="true">
                       <PaginationEllipsis />
                     </PaginationItem>
                   ) : (
@@ -460,6 +473,8 @@ function StreamersPage() {
                       <PaginationLink
                         isActive={page === p}
                         onClick={() => setPage(p)}
+                        aria-label={t`Go to page ${p}`}
+                        aria-current={page === p ? 'page' : undefined}
                         className="cursor-pointer"
                       >
                         {p}
@@ -469,10 +484,13 @@ function StreamersPage() {
                 )}
                 <PaginationItem>
                   <PaginationNext
-                    onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+                    onClick={() => page < totalPages && setPage((p) => p + 1)}
+                    aria-label={t`Go to next page`}
+                    aria-disabled={page === totalPages}
+                    tabIndex={page === totalPages ? -1 : 0}
                     className={
                       page === totalPages
-                        ? 'pointer-events-none opacity-50'
+                        ? 'pointer-events-none opacity-50 cursor-not-allowed'
                         : 'cursor-pointer'
                     }
                   />
