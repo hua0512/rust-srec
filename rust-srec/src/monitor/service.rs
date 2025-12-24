@@ -137,11 +137,26 @@ impl<
         config: StreamMonitorConfig,
     ) -> Self {
         // Create rate limiter with platform-specific configs
-        let mut rate_limiter =
-            RateLimiterManager::with_config(RateLimiterConfig::with_rps(config.default_rate_limit));
+        let default_rate_config = RateLimiterConfig::with_rps(config.default_rate_limit)
+            .unwrap_or_else(|e| {
+                warn!(
+                    "Invalid default rate limit {}: {}. Falling back to defaults.",
+                    config.default_rate_limit, e
+                );
+                RateLimiterConfig::default()
+            });
+        let mut rate_limiter = RateLimiterManager::with_config(default_rate_config);
 
         for (platform, rps) in &config.platform_rate_limits {
-            rate_limiter.set_platform_config(platform, RateLimiterConfig::with_rps(*rps));
+            match RateLimiterConfig::with_rps(*rps) {
+                Ok(cfg) => rate_limiter.set_platform_config(platform, cfg),
+                Err(e) => {
+                    warn!(
+                        "Invalid rate limit for platform {} ({}): {}. Skipping override.",
+                        platform, rps, e
+                    );
+                }
+            }
         }
 
         // Create HTTP client
@@ -301,34 +316,33 @@ impl<
         let filter_repo = self.filter_repo.clone();
         let config_service = self.config_service.clone();
         let detector = self.detector.clone();
-        let streamer_id = streamer.id.clone();
-        let platform_config_id = streamer.platform_config_id.clone();
-        let streamer_clone = streamer.clone();
+        let streamer_id = streamer.id.as_str();
+        let platform_config_id = streamer.platform_config_id.as_str();
 
         // get_or_try_init ensures only ONE caller executes the closure,
         // all other concurrent callers wait for the result
         let result = cell
             .get_or_try_init(|| async move {
                 // Acquire rate limit token
-                let wait_time = rate_limiter.acquire(&platform_config_id).await;
+                let wait_time = rate_limiter.acquire(platform_config_id).await;
                 if !wait_time.is_zero() {
                     debug!("Rate limited for {:?}", wait_time);
                 }
 
                 // Load filters for this streamer
-                let filter_models = filter_repo.get_by_streamer(&streamer_id).await?;
+                let filter_models = filter_repo.get_by_streamer(streamer_id).await?;
                 let filters: Vec<Filter> = filter_models
                     .into_iter()
                     .filter_map(|model| Filter::from_db_model(&model).ok())
                     .collect();
 
                 // Get merged configuration to access stream selection preference and cookies
-                let config = config_service.get_config_for_streamer(&streamer_id).await?;
+                let config = config_service.get_config_for_streamer(streamer_id).await?;
 
                 // Check status with filters, cookies, and selection config
                 detector
                     .check_status_with_filters(
-                        &streamer_clone,
+                        streamer,
                         &filters,
                         config.cookies.clone(),
                         Some(&config.stream_selection),
@@ -961,6 +975,9 @@ impl<
     }
 }
 
+const OUTBOX_NO_RECEIVER_MAX_ATTEMPTS: i64 = 5;
+const OUTBOX_NO_RECEIVER_MAX_AGE_SECS: i64 = 30;
+
 async fn flush_outbox_once(pool: &SqlitePool, broadcaster: &MonitorEventBroadcaster) -> Result<()> {
     let entries = MonitorOutboxOps::fetch_undelivered(pool, 100).await?;
 
@@ -979,14 +996,39 @@ async fn flush_outbox_once(pool: &SqlitePool, broadcaster: &MonitorEventBroadcas
                         MonitorOutboxOps::mark_delivered(pool, entry.id).await?;
                     }
                     Err(e) => {
-                        // No receivers available - this is not a permanent failure
-                        // Log the condition but still mark as delivered to avoid infinite retry
-                        // The event will be lost if no receivers exist (expected during shutdown)
-                        warn!(
-                            "Monitor outbox event id={} has no receivers, discarding: {:?}",
-                            entry.id, e.0
-                        );
-                        MonitorOutboxOps::mark_delivered(pool, entry.id).await?;
+                        // No receivers available - keep events briefly to handle listener startup.
+                        let now = chrono::Utc::now();
+                        let age_secs = match chrono::DateTime::parse_from_rfc3339(&entry.created_at)
+                        {
+                            Ok(dt) => now
+                                .signed_duration_since(dt.with_timezone(&chrono::Utc))
+                                .num_seconds(),
+                            Err(err) => {
+                                warn!(
+                                    "Monitor outbox event id={} has invalid created_at '{}': {}",
+                                    entry.id, entry.created_at, err
+                                );
+                                0
+                            }
+                        };
+
+                        let should_drop = entry.attempts >= OUTBOX_NO_RECEIVER_MAX_ATTEMPTS
+                            || age_secs >= OUTBOX_NO_RECEIVER_MAX_AGE_SECS;
+
+                        if should_drop {
+                            warn!(
+                                "Monitor outbox event id={} has no receivers after {} attempts or {}s, discarding: {:?}",
+                                entry.id, entry.attempts, age_secs, e.0
+                            );
+                            MonitorOutboxOps::mark_delivered(pool, entry.id).await?;
+                        } else {
+                            debug!(
+                                "Monitor outbox event id={} has no receivers, retrying later",
+                                entry.id
+                            );
+                            MonitorOutboxOps::record_failure(pool, entry.id, "no receivers")
+                                .await?;
+                        }
                     }
                 }
             }

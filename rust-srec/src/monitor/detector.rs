@@ -302,7 +302,7 @@ impl StreamDetector {
             };
 
             let candidates = selector.sort_candidates(&media_info.streams);
-            let mut selected_stream = if let Some(stream) = candidates.first() {
+            let selected_stream = if let Some(stream) = candidates.first() {
                 debug!(
                     "Selected best stream candidate: {} ({})",
                     stream.quality, stream.url
@@ -327,10 +327,18 @@ impl StreamDetector {
             // Resolve final URL for the selected stream
             // Some platforms (Huya, Douyu, Bilibili) require get_url() to get the real stream URL
             // We iterate through candidates until we successfully resolve one
-            let mut resolve_success = false;
+            // Build a slice of references to iterate over
+            let fallback_candidates;
+            let resolution_slice: &[&StreamInfo] = if candidates.is_empty() {
+                fallback_candidates = [&selected_stream];
+                &fallback_candidates
+            } else {
+                &candidates
+            };
 
-            for candidate in candidates {
-                let mut stream = candidate.clone();
+            let mut resolved_stream = None;
+            for candidate in resolution_slice {
+                let mut stream = (*candidate).clone();
                 debug!(
                     "Resolving true stream URL for candidate: {} ({})",
                     stream.quality, stream.url
@@ -338,28 +346,30 @@ impl StreamDetector {
 
                 match extractor.get_url(&mut stream).await {
                     Ok(_) => {
-                        selected_stream = stream;
-                        resolve_success = true;
-                        debug!("Successfully resolved stream URL: {}", selected_stream.url);
+                        debug!("Successfully resolved stream URL: {}", stream.url);
+                        resolved_stream = Some(stream);
                         break;
                     }
                     Err(e) => {
                         warn!(
                             "Failed to resolve stream URL for candidate {} ({}): {}",
-                            stream.quality, streamer.name, e
+                            candidate.quality, streamer.name, e
                         );
                         // Continue to next candidate
                     }
                 }
             }
 
-            if !resolve_success {
-                warn!(
-                    "All stream candidates failed resolution for {}. Treating as OFFLINE.",
-                    streamer.name
-                );
-                return Ok(LiveStatus::Offline);
-            }
+            let selected_stream = match resolved_stream {
+                Some(stream) => stream,
+                None => {
+                    warn!(
+                        "All stream candidates failed resolution for {}. Treating as OFFLINE.",
+                        streamer.name
+                    );
+                    return Ok(LiveStatus::Offline);
+                }
+            };
 
             let streams = vec![selected_stream];
 

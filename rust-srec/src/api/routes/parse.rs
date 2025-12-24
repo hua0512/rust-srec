@@ -1,6 +1,7 @@
 //! URL parsing routes for extracting media info.
 
 use axum::{Json, Router, extract::State, routing::post};
+use platforms_parser::extractor::create_client_builder;
 use platforms_parser::extractor::factory::ExtractorFactory;
 use tracing::{debug, warn};
 
@@ -31,7 +32,8 @@ pub async fn parse_url(
     Json(request): Json<ParseUrlRequest>,
 ) -> ApiResult<Json<ParseUrlResponse>> {
     let cookies = resolve_cookies_for_url(&state, &request.url, request.cookies.clone()).await;
-    let response = process_parse_request(request.url, cookies).await;
+    let extractor_factory = extractor_factory(&state);
+    let response = process_parse_request(&extractor_factory, request.url, cookies).await;
     Ok(Json(response))
 }
 
@@ -50,9 +52,10 @@ pub async fn parse_url_batch(
     Json(requests): Json<Vec<ParseUrlRequest>>,
 ) -> ApiResult<Json<Vec<ParseUrlResponse>>> {
     let mut responses = Vec::new();
+    let extractor_factory = extractor_factory(&state);
     for request in requests {
         let cookies = resolve_cookies_for_url(&state, &request.url, request.cookies.clone()).await;
-        responses.push(process_parse_request(request.url, cookies).await);
+        responses.push(process_parse_request(&extractor_factory, request.url, cookies).await);
     }
     Ok(Json(responses))
 }
@@ -76,28 +79,22 @@ async fn resolve_cookies_for_url(
     let config_service = state.config_service.as_ref()?;
 
     // Try to find a matching streamer by URL
-    if let Some(streamer_manager) = state.streamer_manager.as_ref() {
-        // Look up streamer by URL (case-insensitive match)
-        let url_lower = url.to_lowercase();
-        if let Some(streamer) = streamer_manager
-            .get_all()
-            .into_iter()
-            .find(|s| s.url.to_lowercase() == url_lower)
-        {
-            // Get the merged config for this streamer to get cookies
-            match config_service.get_config_for_streamer(&streamer.id).await {
-                Ok(config) => {
-                    if config.cookies.is_some() {
-                        debug!(
-                            "Using cookies from streamer config for URL: {} (streamer: {})",
-                            url, streamer.name
-                        );
-                        return config.cookies;
-                    }
+    if let Some(streamer_manager) = state.streamer_manager.as_ref()
+        && let Some(streamer) = streamer_manager.get_streamer_by_url(url)
+    {
+        // Get the merged config for this streamer to get cookies
+        match config_service.get_config_for_streamer(&streamer.id).await {
+            Ok(config) => {
+                if config.cookies.is_some() {
+                    debug!(
+                        "Using cookies from streamer config for URL: {} (streamer: {})",
+                        url, streamer.name
+                    );
+                    return config.cookies.clone();
                 }
-                Err(e) => {
-                    warn!("Failed to get config for streamer {}: {}", streamer.id, e);
-                }
+            }
+            Err(e) => {
+                warn!("Failed to get config for streamer {}: {}", streamer.id, e);
             }
         }
     }
@@ -137,6 +134,7 @@ async fn resolve_cookies_for_url(
     security(("bearer_auth" = []))
 )]
 pub async fn resolve_url(
+    State(state): State<AppState>,
     Json(request): Json<crate::api::models::ResolveUrlRequest>,
 ) -> ApiResult<Json<crate::api::models::ResolveUrlResponse>> {
     if request.url.is_empty() {
@@ -161,10 +159,7 @@ pub async fn resolve_url(
         };
 
     // Create extractor
-    let client = platforms_parser::extractor::create_client_builder(None)
-        .build()
-        .expect("Failed to create HTTP client");
-    let extractor_factory = ExtractorFactory::new(client);
+    let extractor_factory = extractor_factory(&state);
 
     let extractor = match extractor_factory.create_extractor(&request.url, request.cookies, None) {
         Ok(ext) => ext,
@@ -200,7 +195,11 @@ pub async fn resolve_url(
 }
 
 /// Helper to process a single parse request
-async fn process_parse_request(url: String, cookies: Option<String>) -> ParseUrlResponse {
+async fn process_parse_request(
+    extractor_factory: &ExtractorFactory,
+    url: String,
+    cookies: Option<String>,
+) -> ParseUrlResponse {
     // Validate URL
     if url.is_empty() {
         return ParseUrlResponse {
@@ -212,12 +211,6 @@ async fn process_parse_request(url: String, cookies: Option<String>) -> ParseUrl
     }
 
     debug!("Parsing URL: {}", url);
-
-    // Create HTTP client and extractor factory
-    let client = platforms_parser::extractor::create_client_builder(None)
-        .build()
-        .expect("Failed to create HTTP client");
-    let extractor_factory = ExtractorFactory::new(client);
 
     // Create extractor for the URL
     let extractor = match extractor_factory.create_extractor(&url, cookies.clone(), None) {
@@ -307,4 +300,13 @@ async fn process_parse_request(url: String, cookies: Option<String>) -> ParseUrl
             }
         }
     }
+}
+
+fn extractor_factory(state: &AppState) -> ExtractorFactory {
+    let client = state.http_client.clone().unwrap_or_else(|| {
+        create_client_builder(None)
+            .build()
+            .expect("Failed to create HTTP client")
+    });
+    ExtractorFactory::new(client)
 }

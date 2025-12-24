@@ -2,7 +2,7 @@ import { createFileRoute } from '@tanstack/react-router';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { motion } from 'motion/react';
-import { GlobalConfigSchema } from '@/api/schemas';
+import { GlobalConfigFormSchema } from '@/api/schemas';
 import {
   getGlobalConfig,
   updateGlobalConfig,
@@ -27,8 +27,6 @@ export const Route = createFileRoute('/_authed/_dashboard/config/global')({
 });
 
 function GlobalConfigPage() {
-  const queryClient = useQueryClient();
-
   const { data: config, isLoading } = useQuery({
     queryKey: ['config', 'global'],
     queryFn: () => getGlobalConfig(),
@@ -39,61 +37,7 @@ function GlobalConfigPage() {
     queryFn: () => listEngines(),
   });
 
-  const form = useForm<z.infer<typeof GlobalConfigSchema>>({
-    resolver: zodResolver(GlobalConfigSchema),
-    defaultValues: config
-      ? {
-          ...config,
-          proxy_config: config.proxy_config ?? null,
-          pipeline: config.pipeline ?? null,
-        }
-      : {
-          output_folder: '',
-          output_filename_template: '',
-          output_file_format: 'flv',
-          min_segment_size_bytes: 0,
-          max_download_duration_secs: 0,
-          max_part_size_bytes: 0,
-          record_danmu: false,
-          max_concurrent_downloads: 0,
-          max_concurrent_uploads: 0,
-          max_concurrent_cpu_jobs: 0,
-          max_concurrent_io_jobs: 0,
-          streamer_check_delay_ms: 0,
-          proxy_config: null,
-          offline_check_delay_ms: 0,
-          offline_check_count: 0,
-          default_download_engine: 'default-mesio',
-          job_history_retention_days: 30,
-          session_gap_time_secs: 3600,
-          pipeline: null,
-        },
-    values: config
-      ? {
-          ...config,
-          proxy_config: config.proxy_config ?? null,
-          pipeline: config.pipeline ?? null,
-        }
-      : undefined,
-  });
-
-  const updateMutation = useMutation({
-    mutationFn: (data: z.infer<typeof GlobalConfigSchema>) =>
-      updateGlobalConfig({ data }),
-    onSuccess: () => {
-      toast.success(t`Settings updated successfully`);
-      queryClient.invalidateQueries({ queryKey: ['config', 'global'] });
-    },
-    onError: (error: any) => {
-      toast.error(error.message || t`Failed to update settings`);
-    },
-  });
-
-  const onSubmit = (data: z.infer<typeof GlobalConfigSchema>) => {
-    updateMutation.mutate(data);
-  };
-
-  if (isLoading || enginesLoading) {
+  if (isLoading || enginesLoading || !config) {
     return (
       <div className="space-y-6 form-container">
         <div className="flex items-center justify-between">
@@ -110,6 +54,48 @@ function GlobalConfigPage() {
       </div>
     );
   }
+
+  return <GlobalConfigForm config={config} engines={engines} />;
+}
+
+function GlobalConfigForm({
+  config,
+  engines,
+}: {
+  config: z.infer<typeof GlobalConfigFormSchema>;
+  engines: any;
+}) {
+  const queryClient = useQueryClient();
+
+  const form = useForm<z.infer<typeof GlobalConfigFormSchema>>({
+    resolver: zodResolver(GlobalConfigFormSchema),
+    defaultValues: {
+      ...config,
+      proxy_config: config.proxy_config ?? null,
+      pipeline: config.pipeline ?? null,
+    },
+    values: {
+      ...config,
+      proxy_config: config.proxy_config ?? null,
+      pipeline: config.pipeline ?? null,
+    },
+  });
+
+  const updateMutation = useMutation({
+    mutationFn: (data: z.infer<typeof GlobalConfigFormSchema>) =>
+      updateGlobalConfig({ data }),
+    onSuccess: () => {
+      toast.success(t`Settings updated successfully`);
+      queryClient.invalidateQueries({ queryKey: ['config', 'global'] });
+    },
+    onError: (error: any) => {
+      toast.error(error.message || t`Failed to update settings`);
+    },
+  });
+
+  const onSubmit = (data: z.infer<typeof GlobalConfigFormSchema>) => {
+    updateMutation.mutate(data);
+  };
 
   return (
     <Form {...form}>
@@ -147,7 +133,7 @@ function GlobalConfigPage() {
             <ConcurrencyCard
               control={form.control}
               engines={engines}
-              enginesLoading={enginesLoading}
+              enginesLoading={false}
             />
           </motion.div>
 

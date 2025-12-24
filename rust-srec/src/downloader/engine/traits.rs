@@ -75,6 +75,8 @@ pub struct DownloadConfig {
     pub max_segment_size_bytes: u64,
     /// Proxy URL (if any).
     pub proxy_url: Option<String>,
+    /// Whether to use system proxy settings (ignored if proxy_url is set).
+    pub use_system_proxy: bool,
     /// Cookies for authentication.
     pub cookies: Option<String>,
     /// Additional headers.
@@ -123,6 +125,7 @@ impl DownloadConfig {
             max_segment_duration_secs: 0,
             max_segment_size_bytes: 0,
             proxy_url: None,
+            use_system_proxy: false,
             cookies: None,
             headers: Vec::new(),
             streamer_id: streamer_id.into(),
@@ -159,9 +162,17 @@ impl DownloadConfig {
         self
     }
 
-    /// Set the proxy URL.
+    /// Set the proxy URL (disables system proxy).
     pub fn with_proxy(mut self, url: impl Into<String>) -> Self {
         self.proxy_url = Some(url.into());
+        self.use_system_proxy = false;
+        self
+    }
+
+    /// Set whether to use system proxy settings.
+    /// Note: If a proxy URL is set, system proxy is ignored.
+    pub fn with_system_proxy(mut self, use_system: bool) -> Self {
+        self.use_system_proxy = use_system;
         self
     }
 
@@ -475,6 +486,7 @@ mod tests {
         assert_eq!(config.max_segment_duration_secs, 3600);
         assert_eq!(config.max_segment_size_bytes, 1024 * 1024);
         assert_eq!(config.proxy_url, Some("http://proxy:8080".to_string()));
+        assert!(!config.use_system_proxy); // Explicit proxy disables system proxy
     }
 
     #[test]

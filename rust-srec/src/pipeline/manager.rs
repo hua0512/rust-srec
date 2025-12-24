@@ -884,7 +884,7 @@ where
                     config_service
                         .get_config_for_streamer(&streamer_id)
                         .await
-                        .map(|c| c.pipeline)
+                        .map(|c| c.pipeline.clone())
                         .ok()
                         .flatten()
                 } else {
@@ -1001,7 +1001,7 @@ where
                 config_service
                     .get_config_for_streamer(&streamer_id)
                     .await
-                    .map(|c| c.pipeline)
+                    .map(|c| c.pipeline.clone())
                     .ok()
                     .flatten()
             } else {

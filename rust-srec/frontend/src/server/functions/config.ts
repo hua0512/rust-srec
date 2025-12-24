@@ -183,6 +183,17 @@ export const deleteTemplate = createServerFn({ method: 'POST' })
     await fetchBackend(`/templates/${id}`, { method: 'DELETE' });
   });
 
+export const cloneTemplate = createServerFn({ method: 'POST' })
+  .inputValidator((d: { id: string; new_name: string }) => d)
+  .handler(async ({ data }) => {
+    const { id, new_name } = data;
+    const json = await fetchBackend(`/templates/${id}/clone`, {
+      method: 'POST',
+      body: JSON.stringify({ new_name }),
+    });
+    return TemplateSchema.parse(json);
+  });
+
 // --- Backup & Restore ---
 export const exportConfig = createServerFn({ method: 'GET' }).handler(
   async () => {

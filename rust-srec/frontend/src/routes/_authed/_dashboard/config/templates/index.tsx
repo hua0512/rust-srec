@@ -1,7 +1,7 @@
 import { createFileRoute, useNavigate } from '@tanstack/react-router';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { motion, AnimatePresence } from 'motion/react';
-import { listTemplates } from '@/server/functions';
+import { listTemplates, cloneTemplate } from '@/server/functions';
 import { Trans } from '@lingui/react/macro';
 import { t } from '@lingui/core/macro';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -13,6 +13,18 @@ import { AlertCircle, Plus, LayoutTemplate, Search } from 'lucide-react';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { useState, useEffect, useMemo } from 'react';
 import { Link } from '@tanstack/react-router';
+import { toast } from 'sonner';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
+import { Label } from '@/components/ui/label';
+import { TemplateSchema } from '@/api/schemas';
+import { z } from 'zod';
 
 export const Route = createFileRoute('/_authed/_dashboard/config/templates/')({
   component: TemplatesConfigPage,
@@ -20,8 +32,14 @@ export const Route = createFileRoute('/_authed/_dashboard/config/templates/')({
 
 function TemplatesConfigPage() {
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
   const [searchQuery, setSearchQuery] = useState('');
   const [debouncedSearch, setDebouncedSearch] = useState('');
+  const [cloneDialogOpen, setCloneDialogOpen] = useState(false);
+  const [templateToClone, setTemplateToClone] = useState<z.infer<
+    typeof TemplateSchema
+  > | null>(null);
+  const [cloneName, setCloneName] = useState('');
 
   useEffect(() => {
     const timer = setTimeout(() => {
@@ -39,6 +57,23 @@ function TemplatesConfigPage() {
     queryFn: () => listTemplates(),
   });
 
+  const cloneMutation = useMutation({
+    mutationFn: cloneTemplate,
+    onSuccess: (cloned) => {
+      toast.success(t`Template cloned successfully`);
+      queryClient.invalidateQueries({ queryKey: ['templates'] });
+      setCloneDialogOpen(false);
+      setTemplateToClone(null);
+      setCloneName('');
+      navigate({
+        to: '/config/templates/$templateId',
+        params: { templateId: cloned.id },
+      });
+    },
+    onError: (error) =>
+      toast.error(t`Failed to clone template: ${error.message}`),
+  });
+
   const filteredTemplates = useMemo(() => {
     if (!templates) return [];
     if (!debouncedSearch) return templates;
@@ -48,6 +83,20 @@ function TemplatesConfigPage() {
 
   const handleEdit = (templateId: string) => {
     navigate({ to: '/config/templates/$templateId', params: { templateId } });
+  };
+
+  const handleClone = (template: z.infer<typeof TemplateSchema>) => {
+    setTemplateToClone(template);
+    setCloneName(`${template.name}_copy`);
+    setCloneDialogOpen(true);
+  };
+
+  const handleCloneConfirm = () => {
+    if (templateToClone && cloneName.trim()) {
+      cloneMutation.mutate({
+        data: { id: templateToClone.id, new_name: cloneName.trim() },
+      });
+    }
   };
 
   if (error) {
@@ -140,6 +189,7 @@ function TemplatesConfigPage() {
                 <TemplateCard
                   template={template}
                   onEdit={() => handleEdit(template.id)}
+                  onClone={() => handleClone(template)}
                 />
               </motion.div>
             ))}
@@ -184,6 +234,53 @@ function TemplatesConfigPage() {
           </motion.div>
         )}
       </AnimatePresence>
+
+      {/* Clone Dialog */}
+      <Dialog open={cloneDialogOpen} onOpenChange={setCloneDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>
+              <Trans>Clone Template</Trans>
+            </DialogTitle>
+            <DialogDescription>
+              <Trans>
+                Create a copy of "{templateToClone?.name}" with a new name.
+              </Trans>
+            </DialogDescription>
+          </DialogHeader>
+          <div className="grid gap-4 py-4">
+            <div className="grid gap-2">
+              <Label htmlFor="clone-name">
+                <Trans>New Template Name</Trans>
+              </Label>
+              <Input
+                id="clone-name"
+                value={cloneName}
+                onChange={(e) => setCloneName(e.target.value)}
+                placeholder={t`Enter a unique name`}
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => setCloneDialogOpen(false)}
+            >
+              <Trans>Cancel</Trans>
+            </Button>
+            <Button
+              onClick={handleCloneConfirm}
+              disabled={!cloneName.trim() || cloneMutation.isPending}
+            >
+              {cloneMutation.isPending ? (
+                <Trans>Cloning...</Trans>
+              ) : (
+                <Trans>Clone</Trans>
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

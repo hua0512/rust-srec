@@ -208,7 +208,7 @@ struct RetryParams {
     id: u64,
     delay: Duration,
     expected_generation: u64,
-    channels: Vec<RuntimeChannel>,
+    channels: Vec<Arc<RuntimeChannel>>,
     pending_queue: Arc<DashMap<u64, PendingNotification>>,
     dead_letters: Arc<DashMap<u64, DeadLetterEntry>>,
     circuit_breakers: Arc<DashMap<String, CircuitBreakerState>>,
@@ -220,7 +220,7 @@ struct RetryParams {
 
 struct ProcessingParams {
     id: u64,
-    channels: Vec<RuntimeChannel>,
+    channels: Vec<Arc<RuntimeChannel>>,
     pending_queue: Arc<DashMap<u64, PendingNotification>>,
     dead_letters: Arc<DashMap<u64, DeadLetterEntry>>,
     circuit_breakers: Arc<DashMap<String, CircuitBreakerState>>,
@@ -235,7 +235,8 @@ pub struct NotificationService {
     config: NotificationServiceConfig,
     notification_repo: Option<Arc<dyn NotificationRepository>>,
     subscriptions_by_event: RwLock<HashMap<String, Vec<String>>>,
-    channels: RwLock<Vec<RuntimeChannel>>,
+    channels: RwLock<Vec<Arc<RuntimeChannel>>>,
+    channels_by_key: DashMap<String, Arc<RuntimeChannel>>,
     circuit_breakers: Arc<DashMap<String, CircuitBreakerState>>,
     pending_queue: Arc<DashMap<u64, PendingNotification>>,
     dead_letters: Arc<DashMap<u64, DeadLetterEntry>>,
@@ -291,6 +292,7 @@ impl NotificationService {
             notification_repo: None,
             subscriptions_by_event: RwLock::new(HashMap::new()),
             channels: RwLock::new(Vec::new()),
+            channels_by_key: DashMap::new(),
             circuit_breakers: Arc::new(DashMap::new()),
             pending_queue: Arc::new(DashMap::new()),
             dead_letters: Arc::new(DashMap::new()),
@@ -311,6 +313,7 @@ impl NotificationService {
     fn init_channels(&self) {
         let mut channels = self.channels.write();
         channels.clear();
+        self.channels_by_key.clear();
         let mut used_keys: HashSet<String> = HashSet::new();
 
         for (idx, channel_config) in self.config.channels.iter().enumerate() {
@@ -350,13 +353,16 @@ impl NotificationService {
                     CircuitBreakerState::new(self.config.circuit_breaker_cooldown_secs),
                 );
 
-                channels.push(RuntimeChannel {
+                let runtime = Arc::new(RuntimeChannel {
                     key,
                     db_channel_id: None,
                     display_name,
                     channel_type: channel.channel_type().to_string(),
                     channel,
                 });
+                self.channels_by_key
+                    .insert(runtime.key.clone(), runtime.clone());
+                channels.push(runtime);
                 info!(
                     "Initialized notification channel: {}",
                     channel_config.channel_type()
@@ -388,13 +394,16 @@ impl NotificationService {
                 key.clone(),
                 CircuitBreakerState::new(self.config.circuit_breaker_cooldown_secs),
             );
-            self.channels.write().push(RuntimeChannel {
+            let runtime = Arc::new(RuntimeChannel {
                 key,
                 db_channel_id: None,
                 display_name,
                 channel_type: channel.channel_type().to_string(),
                 channel,
             });
+            self.channels_by_key
+                .insert(runtime.key.clone(), runtime.clone());
+            self.channels.write().push(runtime);
             info!("Added notification channel: {}", config.channel_type());
         }
     }
@@ -406,7 +415,7 @@ impl NotificationService {
 
         let db_channels = repo.list_channels().await?;
 
-        let existing_config_channels: Vec<RuntimeChannel> = self
+        let existing_config_channels: Vec<Arc<RuntimeChannel>> = self
             .channels
             .read()
             .iter()
@@ -478,6 +487,11 @@ impl NotificationService {
 
         *self.subscriptions_by_event.write() = subscriptions_by_event;
         *self.channels.write() = combined_channels;
+        self.channels_by_key.clear();
+        for channel in self.channels.read().iter() {
+            self.channels_by_key
+                .insert(channel.key.clone(), channel.clone());
+        }
 
         // Prevent stuck pending notifications if channels were removed/renamed.
         // Any pending delivery state keyed to a non-existent channel is dropped.
@@ -504,7 +518,7 @@ impl NotificationService {
     fn build_runtime_channel_from_db(
         &self,
         db_channel: &NotificationChannelDbModel,
-    ) -> Result<Option<RuntimeChannel>> {
+    ) -> Result<Option<Arc<RuntimeChannel>>> {
         let settings_json: Value = serde_json::from_str(&db_channel.settings)?;
         let enabled = settings_json
             .get("enabled")
@@ -614,13 +628,13 @@ impl NotificationService {
             return Ok(None);
         }
 
-        Ok(Some(RuntimeChannel {
+        Ok(Some(Arc::new(RuntimeChannel {
             key: db_channel.id.clone(),
             db_channel_id: Some(db_channel.id.clone()),
             display_name: db_channel.name.clone(),
             channel_type: db_channel.channel_type.clone(),
             channel: runtime_channel,
-        }))
+        })))
     }
 
     /// Subscribe to notification events.
@@ -652,11 +666,9 @@ impl NotificationService {
     /// Run a connectivity/config test for a specific channel instance.
     pub async fn test_channel_instance(&self, key: &str) -> Result<()> {
         let channel = self
-            .channels
-            .read()
-            .iter()
-            .find(|c| c.key == key)
-            .cloned()
+            .channels_by_key
+            .get(key)
+            .map(|c| c.clone())
             .ok_or_else(|| crate::Error::NotFound {
                 entity_type: "NotificationChannelInstance".to_string(),
                 id: key.to_string(),
@@ -682,14 +694,9 @@ impl NotificationService {
         let _ = self.event_tx.send(event.clone());
 
         let id = self.next_id.fetch_add(1, Ordering::SeqCst);
-        let channels = self.channels.read().clone();
-
-        let channels_by_key: HashMap<String, RuntimeChannel> =
-            channels.into_iter().map(|c| (c.key.clone(), c)).collect();
-
         let mut missing_keys = Vec::new();
         for key in &keys {
-            if !channels_by_key.contains_key(key) {
+            if !self.channels_by_key.contains_key(key) {
                 missing_keys.push(key.clone());
             }
         }
@@ -700,9 +707,9 @@ impl NotificationService {
             });
         }
 
-        let target_channels: Vec<RuntimeChannel> = keys
+        let target_channels: Vec<Arc<RuntimeChannel>> = keys
             .iter()
-            .filter_map(|k| channels_by_key.get(k).cloned())
+            .filter_map(|k| self.channels_by_key.get(k).map(|c| c.clone()))
             .collect();
 
         if target_channels.is_empty() {
@@ -769,7 +776,7 @@ impl NotificationService {
             ids
         };
 
-        let target_channels: Vec<RuntimeChannel> = channels
+        let target_channels: Vec<Arc<RuntimeChannel>> = channels
             .into_iter()
             .filter(|c| match &c.db_channel_id {
                 None => true, // config/dynamic channels always receive events
@@ -1707,7 +1714,7 @@ mod tests {
         let ok_attempts = Arc::new(std::sync::atomic::AtomicU32::new(0));
         let flaky_attempts = Arc::new(std::sync::atomic::AtomicU32::new(0));
 
-        service.channels.write().push(RuntimeChannel {
+        let ok_channel = Arc::new(RuntimeChannel {
             key: "ok".to_string(),
             db_channel_id: None,
             display_name: "ok".to_string(),
@@ -1719,10 +1726,14 @@ mod tests {
             }),
         });
         service
+            .channels_by_key
+            .insert(ok_channel.key.clone(), ok_channel.clone());
+        service.channels.write().push(ok_channel);
+        service
             .circuit_breakers
             .insert("ok".to_string(), CircuitBreakerState::new(1));
 
-        service.channels.write().push(RuntimeChannel {
+        let flaky_channel = Arc::new(RuntimeChannel {
             key: "flaky".to_string(),
             db_channel_id: None,
             display_name: "flaky".to_string(),
@@ -1733,6 +1744,10 @@ mod tests {
                 attempts: flaky_attempts.clone(),
             }),
         });
+        service
+            .channels_by_key
+            .insert(flaky_channel.key.clone(), flaky_channel.clone());
+        service.channels.write().push(flaky_channel);
         service
             .circuit_breakers
             .insert("flaky".to_string(), CircuitBreakerState::new(1));
@@ -1876,7 +1891,7 @@ mod tests {
         let subscribed_attempts = Arc::new(std::sync::atomic::AtomicU32::new(0));
         let unsubscribed_attempts = Arc::new(std::sync::atomic::AtomicU32::new(0));
 
-        service.channels.write().push(RuntimeChannel {
+        let channel_1 = Arc::new(RuntimeChannel {
             key: "channel-1".to_string(),
             db_channel_id: Some("channel-1".to_string()),
             display_name: "Channel 1".to_string(),
@@ -1888,10 +1903,14 @@ mod tests {
             }),
         });
         service
+            .channels_by_key
+            .insert(channel_1.key.clone(), channel_1.clone());
+        service.channels.write().push(channel_1);
+        service
             .circuit_breakers
             .insert("channel-1".to_string(), CircuitBreakerState::new(1));
 
-        service.channels.write().push(RuntimeChannel {
+        let channel_2 = Arc::new(RuntimeChannel {
             key: "channel-2".to_string(),
             db_channel_id: Some("channel-2".to_string()),
             display_name: "Channel 2".to_string(),
@@ -1902,6 +1921,10 @@ mod tests {
                 attempts: unsubscribed_attempts.clone(),
             }),
         });
+        service
+            .channels_by_key
+            .insert(channel_2.key.clone(), channel_2.clone());
+        service.channels.write().push(channel_2);
         service
             .circuit_breakers
             .insert("channel-2".to_string(), CircuitBreakerState::new(1));
@@ -1936,7 +1959,7 @@ mod tests {
         let service = NotificationService::with_repository(config, repo.clone());
 
         let attempts = Arc::new(std::sync::atomic::AtomicU32::new(0));
-        service.channels.write().push(RuntimeChannel {
+        let fail_channel = Arc::new(RuntimeChannel {
             key: "channel-1".to_string(),
             db_channel_id: Some("channel-1".to_string()),
             display_name: "Channel 1".to_string(),
@@ -1947,6 +1970,10 @@ mod tests {
                 attempts: attempts.clone(),
             }),
         });
+        service
+            .channels_by_key
+            .insert(fail_channel.key.clone(), fail_channel.clone());
+        service.channels.write().push(fail_channel);
         service
             .circuit_breakers
             .insert("channel-1".to_string(), CircuitBreakerState::new(1));

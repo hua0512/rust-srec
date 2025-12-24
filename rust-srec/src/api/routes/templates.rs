@@ -15,6 +15,13 @@ use crate::api::server::AppState;
 use crate::database::models::TemplateConfigDbModel;
 use tracing::info;
 
+/// Request to clone a template.
+#[derive(Debug, Clone, serde::Deserialize, utoipa::ToSchema)]
+pub struct CloneTemplateRequest {
+    /// New name for the cloned template.
+    pub new_name: String,
+}
+
 /// Create the templates router.
 pub fn router() -> Router<AppState> {
     Router::new()
@@ -23,6 +30,7 @@ pub fn router() -> Router<AppState> {
         .route("/{id}", get(get_template))
         .route("/{id}", put(update_template))
         .route("/{id}", delete(delete_template))
+        .route("/{id}/clone", post(clone_template))
 }
 
 /// Convert TemplateConfigDbModel to TemplateResponse.
@@ -350,6 +358,90 @@ pub async fn delete_template(
         "success": true,
         "message": format!("Template '{}' deleted successfully", id)
     })))
+}
+
+#[utoipa::path(
+    post,
+    path = "/api/templates/{id}/clone",
+    tag = "templates",
+    params(("id" = String, Path, description = "Template ID to clone")),
+    request_body = CloneTemplateRequest,
+    responses(
+        (status = 201, description = "Template cloned", body = TemplateResponse),
+        (status = 404, description = "Template not found", body = crate::api::error::ApiErrorResponse),
+        (status = 409, description = "Template name already exists", body = crate::api::error::ApiErrorResponse)
+    ),
+    security(("bearer_auth" = []))
+)]
+pub async fn clone_template(
+    State(state): State<AppState>,
+    Path(id): Path<String>,
+    Json(request): Json<CloneTemplateRequest>,
+) -> ApiResult<Json<TemplateResponse>> {
+    // Validate new name
+    if request.new_name.is_empty() {
+        return Err(ApiError::validation("Template name cannot be empty"));
+    }
+
+    // Get config service from state
+    let config_service = state
+        .config_service
+        .as_ref()
+        .ok_or_else(|| ApiError::service_unavailable("Config service not available"))?;
+
+    // Get the existing template
+    let existing = config_service.get_template_config(&id).await.map_err(|e| {
+        if e.to_string().contains("not found") {
+            ApiError::not_found(format!("Template with id '{}' not found", id))
+        } else {
+            ApiError::internal(format!("Failed to get template: {}", e))
+        }
+    })?;
+
+    // Check if a template with the new name already exists
+    if config_service
+        .get_template_config_by_name(&request.new_name)
+        .await
+        .is_ok()
+    {
+        return Err(ApiError::conflict(format!(
+            "A template with name '{}' already exists",
+            request.new_name
+        )));
+    }
+
+    // Create the cloned template with a new ID and name
+    let mut cloned = TemplateConfigDbModel::new(&request.new_name);
+    cloned.output_folder = existing.output_folder;
+    cloned.output_filename_template = existing.output_filename_template;
+    cloned.output_file_format = existing.output_file_format;
+    cloned.download_engine = existing.download_engine;
+    cloned.record_danmu = existing.record_danmu;
+    cloned.platform_overrides = existing.platform_overrides;
+    cloned.engines_override = existing.engines_override;
+    cloned.stream_selection_config = existing.stream_selection_config;
+    cloned.cookies = existing.cookies;
+    cloned.min_segment_size_bytes = existing.min_segment_size_bytes;
+    cloned.max_download_duration_secs = existing.max_download_duration_secs;
+    cloned.max_part_size_bytes = existing.max_part_size_bytes;
+    cloned.download_retry_policy = existing.download_retry_policy;
+    cloned.danmu_sampling_config = existing.danmu_sampling_config;
+    cloned.proxy_config = existing.proxy_config;
+    cloned.event_hooks = existing.event_hooks;
+    cloned.pipeline = existing.pipeline;
+
+    // Create the cloned template
+    config_service
+        .create_template_config(&cloned)
+        .await
+        .map_err(|e| ApiError::internal(format!("Failed to create cloned template: {}", e)))?;
+
+    info!(
+        "Cloned template '{}' (id: {}) to '{}' (id: {})",
+        existing.name, id, cloned.name, cloned.id
+    );
+
+    Ok(Json(db_model_to_response(&cloned, 0)))
 }
 
 #[cfg(test)]

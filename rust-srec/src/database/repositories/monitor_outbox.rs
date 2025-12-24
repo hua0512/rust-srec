@@ -58,7 +58,7 @@ impl MonitorOutboxOps {
     pub async fn fetch_undelivered(pool: &SqlitePool, limit: i32) -> Result<Vec<OutboxEntry>> {
         let rows = sqlx::query(
             r#"
-            SELECT id, payload
+            SELECT id, payload, created_at, attempts
             FROM monitor_event_outbox
             WHERE delivered_at IS NULL
             ORDER BY id
@@ -74,6 +74,8 @@ impl MonitorOutboxOps {
             .map(|row| OutboxEntry {
                 id: row.get("id"),
                 payload: row.get("payload"),
+                created_at: row.get("created_at"),
+                attempts: row.get("attempts"),
             })
             .collect();
 
@@ -113,6 +115,8 @@ impl MonitorOutboxOps {
 pub struct OutboxEntry {
     pub id: i64,
     pub payload: String,
+    pub created_at: String,
+    pub attempts: i64,
 }
 
 #[cfg(test)]

@@ -19,7 +19,9 @@ use crate::api::{
 use crate::config::{ConfigCache, ConfigEventBroadcaster, ConfigService};
 use crate::danmu::{DanmuEvent, DanmuService, service::DanmuServiceConfig};
 use crate::database::maintenance::{MaintenanceConfig, MaintenanceScheduler};
-use crate::database::repositories::{NotificationRepository, SqlxNotificationRepository};
+use crate::database::repositories::{
+    ConfigRepository, NotificationRepository, SqlxNotificationRepository,
+};
 use crate::database::repositories::{
     config::SqlxConfigRepository,
     dag::SqlxDagRepository,
@@ -203,13 +205,22 @@ impl ServiceContainer {
         // Create cancellation token for graceful shutdown (before scheduler so it can be shared)
         let cancellation_token = CancellationToken::new();
 
+        // Load global config for scheduler timing settings
+        let global_config = config_repo.get_global_config().await?;
+        let scheduler_config = crate::scheduler::SchedulerConfig {
+            check_interval_ms: global_config.streamer_check_delay_ms as u64,
+            offline_check_interval_ms: global_config.offline_check_delay_ms as u64,
+            offline_check_count: global_config.offline_check_count as u32,
+            supervisor_config: crate::scheduler::actor::SupervisorConfig::default(),
+        };
+
         // Create scheduler with StreamMonitor for real status checking
         let scheduler = Arc::new(tokio::sync::RwLock::new(
             Scheduler::with_monitor_and_config(
                 streamer_manager.clone(),
                 event_broadcaster.clone(),
                 stream_monitor.clone(),
-                crate::scheduler::SchedulerConfig::default(),
+                scheduler_config,
                 cancellation_token.child_token(),
             ),
         ));
@@ -338,13 +349,22 @@ impl ServiceContainer {
         // Create cancellation token for graceful shutdown (before scheduler so it can be shared)
         let cancellation_token = CancellationToken::new();
 
+        // Load global config for scheduler timing settings
+        let global_config = config_repo.get_global_config().await?;
+        let scheduler_config = crate::scheduler::SchedulerConfig {
+            check_interval_ms: global_config.streamer_check_delay_ms as u64,
+            offline_check_interval_ms: global_config.offline_check_delay_ms as u64,
+            offline_check_count: global_config.offline_check_count as u32,
+            supervisor_config: crate::scheduler::actor::SupervisorConfig::default(),
+        };
+
         // Create scheduler with StreamMonitor for real status checking
         let scheduler = Arc::new(tokio::sync::RwLock::new(
             Scheduler::with_monitor_and_config(
                 streamer_manager.clone(),
                 event_broadcaster.clone(),
                 stream_monitor.clone(),
-                crate::scheduler::SchedulerConfig::default(),
+                scheduler_config,
                 cancellation_token.child_token(),
             ),
         ));
@@ -1368,7 +1388,7 @@ impl ServiceContainer {
                             streamer_id, e
                         );
                         // Use default config if we can't load the merged config
-                        crate::domain::config::MergedConfig::builder().build()
+                        Arc::new(crate::domain::config::MergedConfig::builder().build())
                     }
                 };
 
@@ -1426,6 +1446,26 @@ impl ServiceContainer {
                     config = config.with_cookies(cookies);
                 }
 
+                // Apply proxy settings from merged config
+                // Priority: 1) Explicit proxy URL (with auth), 2) System proxy, 3) No proxy
+                let proxy_config = &merged_config.proxy_config;
+                if proxy_config.enabled {
+                    if let Some(effective_proxy_url) = proxy_config.effective_url() {
+                        // Explicit proxy URL configured
+                        debug!(
+                            "Applying explicit proxy from merged config to download: {}",
+                            effective_proxy_url
+                        );
+                        config = config.with_proxy(effective_proxy_url);
+                    } else if proxy_config.use_system_proxy {
+                        // Use system proxy settings
+                        debug!("Enabling system proxy for download");
+                        config = config.with_system_proxy(true);
+                    }
+                    // else: enabled but no URL and no system proxy -> no proxy
+                }
+                // else: proxy disabled -> use_system_proxy remains false (default)
+
                 // Add headers if needed
                 for (key, value) in headers {
                     config = config.with_header(key, value);
@@ -1441,12 +1481,12 @@ impl ServiceContainer {
                     merged_config.output_folder
                 );
 
-                let cookies = merged_config.cookies;
+                let cookies = merged_config.cookies.clone();
                 // Start download
                 match download_manager
                     .start_download(
                         config,
-                        Some(merged_config.download_engine),
+                        Some(merged_config.download_engine.clone()),
                         is_high_priority,
                     )
                     .await

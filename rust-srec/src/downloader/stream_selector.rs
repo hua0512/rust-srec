@@ -48,11 +48,10 @@ impl StreamSelectionConfig {
     /// This supports the layered config hierarchy (global → platform → template → streamer).
     pub fn merge(&self, other: &Self) -> Self {
         Self {
-            // Use other's formats if specified (Some), otherwise keep self's
-            preferred_formats: if other.preferred_formats.is_some() {
-                other.preferred_formats.clone()
-            } else {
-                self.preferred_formats.clone()
+            // Use other's formats if specified AND non-empty, otherwise keep self's
+            preferred_formats: match &other.preferred_formats {
+                Some(formats) if !formats.is_empty() => other.preferred_formats.clone(),
+                _ => self.preferred_formats.clone(),
             },
             preferred_media_formats: if other.preferred_media_formats.is_empty() {
                 self.preferred_media_formats.clone()
@@ -379,6 +378,35 @@ mod tests {
         assert_eq!(merged.preferred_cdns, vec!["cdn1".to_string()]); // Kept
         assert_eq!(merged.min_bitrate, 1000); // Kept
         assert_eq!(merged.max_bitrate, 8000); // Overridden
+    }
+
+    #[test]
+    fn test_merge_empty_vec_preserves_base() {
+        // This test verifies that Some(vec![]) (from JSON "preferred_formats": [])
+        // is treated the same as None and preserves the base config
+        let base = StreamSelectionConfig {
+            preferred_formats: Some(vec![StreamFormat::Flv, StreamFormat::Hls]),
+            preferred_qualities: vec!["1080p".to_string(), "720p".to_string()],
+            ..Default::default()
+        };
+        let other = StreamSelectionConfig {
+            // Simulates deserializing {"preferred_formats": []} from JSON
+            preferred_formats: Some(vec![]),
+            preferred_qualities: vec![],
+            ..Default::default()
+        };
+
+        let merged = base.merge(&other);
+
+        // Empty array should NOT override - base config should be preserved
+        assert_eq!(
+            merged.preferred_formats,
+            Some(vec![StreamFormat::Flv, StreamFormat::Hls])
+        );
+        assert_eq!(
+            merged.preferred_qualities,
+            vec!["1080p".to_string(), "720p".to_string()]
+        );
     }
 
     // ========== StreamSelector tests ==========

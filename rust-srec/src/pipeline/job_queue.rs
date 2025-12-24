@@ -978,40 +978,8 @@ impl JobQueue {
     }
     /// Mark a job as failed.
     pub async fn fail(&self, job_id: &str, error: &str) -> Result<()> {
-        // Update database if repository is available
-        if let Some(repo) = &self.job_repository {
-            repo.mark_job_failed(job_id, error).await?;
-
-            let log_entry = JobLogEntry::error(format!("Job failed: {}", error));
-            let _ = self
-                .persist_logs_to_db(job_id, std::slice::from_ref(&log_entry))
-                .await?;
-
-            let exec_info_str = repo.get_job_execution_info(job_id).await?;
-            let mut exec_info: JobExecutionInfo = exec_info_str
-                .as_deref()
-                .and_then(|s| serde_json::from_str(s).ok())
-                .unwrap_or_default();
-            extend_logs_capped(&mut exec_info, std::slice::from_ref(&log_entry));
-            update_log_summary(&mut exec_info, std::slice::from_ref(&log_entry));
-            let exec_info_json =
-                serde_json::to_string(&exec_info).unwrap_or_else(|_| "{}".to_string());
-            repo.update_job_execution_info(job_id, &exec_info_json)
-                .await?;
-        }
-
-        // Update cache
-        if let Some(mut job) = self.jobs_cache.get_mut(job_id) {
-            job.status = JobStatus::Failed;
-            job.completed_at = Some(Utc::now());
-            job.error = Some(error.to_string());
-        }
-
-        // Remove cancellation token
-        let _ = self.cancellation_tokens.remove(job_id);
-        let _ = self.persisted_log_cursor.remove(job_id);
-
-        self.depth.fetch_sub(1, Ordering::SeqCst);
+        self.fail_internal(job_id, error, None, None, None, false)
+            .await?;
         warn!("Job {} failed: {}", job_id, error);
         Ok(())
     }
@@ -1026,75 +994,15 @@ impl JobQueue {
         step_number: Option<u32>,
         total_steps: Option<u32>,
     ) -> Result<()> {
-        // Update database if repository is available
-        if let Some(repo) = &self.job_repository {
-            repo.mark_job_failed(job_id, error).await?;
-
-            let exec_info_str = repo.get_job_execution_info(job_id).await?;
-            let mut exec_info: JobExecutionInfo = exec_info_str
-                .as_deref()
-                .and_then(|s| serde_json::from_str(s).ok())
-                .unwrap_or_default();
-
-            // Record the failing step info
-            if let Some(name) = processor_name {
-                exec_info.current_processor = Some(name.to_string());
-            }
-            if let Some(step) = step_number {
-                exec_info.current_step = Some(step);
-            }
-            if let Some(total) = total_steps {
-                exec_info.total_steps = Some(total);
-            }
-
-            let log_entry = JobLogEntry::error(format!("Job failed: {}", error));
-            extend_logs_capped(&mut exec_info, std::slice::from_ref(&log_entry));
-            update_log_summary(&mut exec_info, std::slice::from_ref(&log_entry));
-
-            let _ = self
-                .persist_logs_to_db(job_id, std::slice::from_ref(&log_entry))
-                .await?;
-
-            let exec_info_json =
-                serde_json::to_string(&exec_info).unwrap_or_else(|_| "{}".to_string());
-            repo.update_job_execution_info(job_id, &exec_info_json)
-                .await?;
-        }
-
-        // Update cache
-        if let Some(mut job) = self.jobs_cache.get_mut(job_id) {
-            job.status = JobStatus::Failed;
-            job.completed_at = Some(Utc::now());
-            job.error = Some(error.to_string());
-
-            // Update execution_info in cache
-            let exec_info = job
-                .execution_info
-                .get_or_insert_with(JobExecutionInfo::default);
-            if let Some(name) = processor_name {
-                exec_info.current_processor = Some(name.to_string());
-            }
-            if let Some(step) = step_number {
-                exec_info.current_step = Some(step);
-            }
-            if let Some(total) = total_steps {
-                exec_info.total_steps = Some(total);
-            }
-            extend_logs_capped(
-                exec_info,
-                &[JobLogEntry::error(format!("Job failed: {}", error))],
-            );
-            update_log_summary(
-                exec_info,
-                &[JobLogEntry::error(format!("Job failed: {}", error))],
-            );
-        }
-
-        // Remove cancellation token
-        let _ = self.cancellation_tokens.remove(job_id);
-        let _ = self.persisted_log_cursor.remove(job_id);
-
-        self.depth.fetch_sub(1, Ordering::SeqCst);
+        self.fail_internal(
+            job_id,
+            error,
+            processor_name,
+            step_number,
+            total_steps,
+            true,
+        )
+        .await?;
         warn!(
             "Job {} failed at step {:?}/{:?} (processor: {:?}): {}",
             job_id, step_number, total_steps, processor_name, error
@@ -1233,33 +1141,17 @@ impl JobQueue {
         }
 
         // Fallback to cache (basic filtering)
-        let mut jobs: Vec<Job> = self.jobs_cache.iter().map(|e| e.value().clone()).collect();
-
-        // Apply filters
-        if let Some(status) = &filters.status {
-            let status_enum = match status {
-                DbJobStatus::Pending => JobStatus::Pending,
-                DbJobStatus::Processing => JobStatus::Processing,
-                DbJobStatus::Completed => JobStatus::Completed,
-                DbJobStatus::Failed => JobStatus::Failed,
-                DbJobStatus::Interrupted => JobStatus::Interrupted,
-            };
-            jobs.retain(|j| j.status == status_enum);
-        }
-        if let Some(streamer_id) = &filters.streamer_id {
-            jobs.retain(|j| &j.streamer_id == streamer_id);
-        }
-        if let Some(session_id) = &filters.session_id {
-            jobs.retain(|j| &j.session_id == session_id);
-        }
-
-        let total = jobs.len() as u64;
+        let ids = self.filter_cached_job_ids(filters);
+        let total = ids.len() as u64;
 
         // Apply pagination
         let start = pagination.offset as usize;
-        let end = std::cmp::min(start + pagination.limit as usize, jobs.len());
-        let jobs = if start < jobs.len() {
-            jobs[start..end].to_vec()
+        let end = std::cmp::min(start + pagination.limit as usize, ids.len());
+        let jobs = if start < ids.len() {
+            ids[start..end]
+                .iter()
+                .filter_map(|id| self.jobs_cache.get(id).map(|job| job.clone()))
+                .collect()
         } else {
             vec![]
         };
@@ -1280,29 +1172,14 @@ impl JobQueue {
         }
 
         // Fallback to cache (basic filtering)
-        let mut jobs: Vec<Job> = self.jobs_cache.iter().map(|e| e.value().clone()).collect();
-
-        if let Some(status) = &filters.status {
-            let status_enum = match status {
-                DbJobStatus::Pending => JobStatus::Pending,
-                DbJobStatus::Processing => JobStatus::Processing,
-                DbJobStatus::Completed => JobStatus::Completed,
-                DbJobStatus::Failed => JobStatus::Failed,
-                DbJobStatus::Interrupted => JobStatus::Interrupted,
-            };
-            jobs.retain(|j| j.status == status_enum);
-        }
-        if let Some(streamer_id) = &filters.streamer_id {
-            jobs.retain(|j| &j.streamer_id == streamer_id);
-        }
-        if let Some(session_id) = &filters.session_id {
-            jobs.retain(|j| &j.session_id == session_id);
-        }
-
+        let ids = self.filter_cached_job_ids(filters);
         let start = pagination.offset as usize;
-        let end = std::cmp::min(start + pagination.limit as usize, jobs.len());
-        let jobs = if start < jobs.len() {
-            jobs[start..end].to_vec()
+        let end = std::cmp::min(start + pagination.limit as usize, ids.len());
+        let jobs = if start < ids.len() {
+            ids[start..end]
+                .iter()
+                .filter_map(|id| self.jobs_cache.get(id).map(|job| job.clone()))
+                .collect()
         } else {
             vec![]
         };
@@ -1442,9 +1319,10 @@ impl JobQueue {
                     let status = match job.get_status() {
                         Some(s) => s,
                         None => {
-                            // Should parse, but if not, assume it's weird and let's try to delete anyway?
-                            // Or be safe and error. Let's error if we can't parse status.
-                            DbJobStatus::Failed // Fallback
+                            return Err(Error::Other(format!(
+                                "Invalid job status for job {}: {}",
+                                id, job.status
+                            )));
                         }
                     };
 
@@ -1597,6 +1475,9 @@ impl JobQueue {
         let (db_jobs, total) = repo.list_jobs_filtered(&filters, &pagination).await?;
 
         self.jobs_cache.clear();
+        self.cancellation_tokens.clear();
+        self.persisted_log_cursor.clear();
+        self.progress_cache.clear();
         for db_job in &db_jobs {
             let job = db_model_to_job(db_job);
             self.jobs_cache.insert(job.id.clone(), job);
@@ -1690,6 +1571,10 @@ impl JobQueue {
         // Remove cancellation token for original job
         let _ = self.cancellation_tokens.remove(&job.id);
         let _ = self.persisted_log_cursor.remove(&job.id);
+
+        // Adjust queue depth to account for the original job completing.
+        // The split jobs are enqueued and already increment depth.
+        self.depth.fetch_sub(1, Ordering::SeqCst);
 
         info!(
             "Split job {} into {} jobs for single-input processing",
@@ -1846,6 +1731,125 @@ impl JobQueue {
     /// Get a notifier for new jobs.
     pub fn notifier(&self) -> Arc<Notify> {
         self.notify.clone()
+    }
+
+    async fn fail_internal(
+        &self,
+        job_id: &str,
+        error: &str,
+        processor_name: Option<&str>,
+        step_number: Option<u32>,
+        total_steps: Option<u32>,
+        update_cache_logs: bool,
+    ) -> Result<()> {
+        let log_entry = JobLogEntry::error(format!("Job failed: {}", error));
+
+        // Update database if repository is available
+        if let Some(repo) = &self.job_repository {
+            repo.mark_job_failed(job_id, error).await?;
+
+            let exec_info_str = repo.get_job_execution_info(job_id).await?;
+            let mut exec_info: JobExecutionInfo = exec_info_str
+                .as_deref()
+                .and_then(|s| serde_json::from_str(s).ok())
+                .unwrap_or_default();
+
+            if let Some(name) = processor_name {
+                exec_info.current_processor = Some(name.to_string());
+            }
+            if let Some(step) = step_number {
+                exec_info.current_step = Some(step);
+            }
+            if let Some(total) = total_steps {
+                exec_info.total_steps = Some(total);
+            }
+
+            extend_logs_capped(&mut exec_info, std::slice::from_ref(&log_entry));
+            update_log_summary(&mut exec_info, std::slice::from_ref(&log_entry));
+
+            let _ = self
+                .persist_logs_to_db(job_id, std::slice::from_ref(&log_entry))
+                .await?;
+
+            let exec_info_json =
+                serde_json::to_string(&exec_info).unwrap_or_else(|_| "{}".to_string());
+            repo.update_job_execution_info(job_id, &exec_info_json)
+                .await?;
+        }
+
+        // Update cache
+        if let Some(mut job) = self.jobs_cache.get_mut(job_id) {
+            job.status = JobStatus::Failed;
+            job.completed_at = Some(Utc::now());
+            job.error = Some(error.to_string());
+
+            if update_cache_logs {
+                let exec_info = job
+                    .execution_info
+                    .get_or_insert_with(JobExecutionInfo::default);
+                if let Some(name) = processor_name {
+                    exec_info.current_processor = Some(name.to_string());
+                }
+                if let Some(step) = step_number {
+                    exec_info.current_step = Some(step);
+                }
+                if let Some(total) = total_steps {
+                    exec_info.total_steps = Some(total);
+                }
+                extend_logs_capped(exec_info, std::slice::from_ref(&log_entry));
+                update_log_summary(exec_info, std::slice::from_ref(&log_entry));
+            }
+        }
+
+        // Remove cancellation token
+        let _ = self.cancellation_tokens.remove(job_id);
+        let _ = self.persisted_log_cursor.remove(job_id);
+
+        self.depth.fetch_sub(1, Ordering::SeqCst);
+        Ok(())
+    }
+
+    fn filter_cached_job_ids(&self, filters: &JobFilters) -> Vec<String> {
+        let mut items: Vec<(i32, chrono::DateTime<Utc>, String)> = Vec::new();
+
+        for entry in self.jobs_cache.iter() {
+            let job = entry.value();
+
+            if let Some(status) = &filters.status {
+                let status_enum = match status {
+                    DbJobStatus::Pending => JobStatus::Pending,
+                    DbJobStatus::Processing => JobStatus::Processing,
+                    DbJobStatus::Completed => JobStatus::Completed,
+                    DbJobStatus::Failed => JobStatus::Failed,
+                    DbJobStatus::Interrupted => JobStatus::Interrupted,
+                };
+                if job.status != status_enum {
+                    continue;
+                }
+            }
+            if let Some(streamer_id) = &filters.streamer_id
+                && &job.streamer_id != streamer_id
+            {
+                continue;
+            }
+
+            if let Some(session_id) = &filters.session_id
+                && &job.session_id != session_id
+            {
+                continue;
+            }
+
+            items.push((job.priority, job.created_at, job.id.clone()));
+        }
+
+        // Match DB ordering: priority DESC, created_at DESC, id ASC for stability.
+        items.sort_by(|a, b| {
+            b.0.cmp(&a.0)
+                .then_with(|| b.1.cmp(&a.1))
+                .then_with(|| a.2.cmp(&b.2))
+        });
+
+        items.into_iter().map(|(_, _, id)| id).collect()
     }
 }
 

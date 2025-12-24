@@ -16,12 +16,12 @@ const DEFAULT_TTL: Duration = Duration::from_secs(3600);
 /// A cached configuration entry with expiration time.
 #[derive(Debug, Clone)]
 struct CacheEntry {
-    config: MergedConfig,
+    config: Arc<MergedConfig>,
     expires_at: Instant,
 }
 
 impl CacheEntry {
-    fn new(config: MergedConfig, ttl: Duration) -> Self {
+    fn new(config: Arc<MergedConfig>, ttl: Duration) -> Self {
         Self {
             config,
             expires_at: Instant::now() + ttl,
@@ -37,7 +37,7 @@ impl CacheEntry {
 ///
 /// When multiple requests come in for the same streamer config simultaneously,
 /// only one will actually resolve the config while others wait for the result.
-type InFlightRequest = Arc<OnceCell<MergedConfig>>;
+type InFlightRequest = Arc<OnceCell<Arc<MergedConfig>>>;
 
 /// Thread-safe cache for merged configurations.
 ///
@@ -71,7 +71,7 @@ impl ConfigCache {
     /// Get a cached configuration for a streamer.
     ///
     /// Returns None if not cached or expired.
-    pub fn get(&self, streamer_id: &str) -> Option<MergedConfig> {
+    pub fn get(&self, streamer_id: &str) -> Option<Arc<MergedConfig>> {
         let entry = self.streamer_configs.get(streamer_id)?;
 
         if entry.is_expired() {
@@ -84,7 +84,7 @@ impl ConfigCache {
     }
 
     /// Insert a configuration into the cache.
-    pub fn insert(&self, streamer_id: String, config: MergedConfig) {
+    pub fn insert(&self, streamer_id: String, config: Arc<MergedConfig>) {
         let entry = CacheEntry::new(config, self.ttl);
         self.streamer_configs.insert(streamer_id, entry);
     }
@@ -167,7 +167,7 @@ impl ConfigCache {
     /// Complete an in-flight request by setting its result.
     ///
     /// This will also cache the result and remove the in-flight entry.
-    pub fn complete_in_flight(&self, streamer_id: &str, config: MergedConfig) {
+    pub fn complete_in_flight(&self, streamer_id: &str, config: Arc<MergedConfig>) {
         // Cache the result
         self.insert(streamer_id.to_string(), config.clone());
 
@@ -181,7 +181,7 @@ impl ConfigCache {
     /// Wait for an in-flight request to complete.
     ///
     /// Returns the config once it's available.
-    pub async fn wait_for_in_flight(&self, cell: &InFlightRequest) -> MergedConfig {
+    pub async fn wait_for_in_flight(&self, cell: &InFlightRequest) -> Arc<MergedConfig> {
         cell.get()
             .cloned()
             .expect("In-flight request should be completed")
@@ -262,7 +262,7 @@ mod tests {
         let cache = ConfigCache::new();
         let config = create_test_config();
 
-        cache.insert("streamer-1".to_string(), config.clone());
+        cache.insert("streamer-1".to_string(), Arc::new(config.clone()));
 
         let cached = cache.get("streamer-1");
         assert!(cached.is_some());
@@ -278,7 +278,7 @@ mod tests {
     #[test]
     fn test_cache_invalidate() {
         let cache = ConfigCache::new();
-        cache.insert("streamer-1".to_string(), create_test_config());
+        cache.insert("streamer-1".to_string(), Arc::new(create_test_config()));
 
         assert!(cache.get("streamer-1").is_some());
 
@@ -290,8 +290,8 @@ mod tests {
     #[test]
     fn test_cache_invalidate_all() {
         let cache = ConfigCache::new();
-        cache.insert("streamer-1".to_string(), create_test_config());
-        cache.insert("streamer-2".to_string(), create_test_config());
+        cache.insert("streamer-1".to_string(), Arc::new(create_test_config()));
+        cache.insert("streamer-2".to_string(), Arc::new(create_test_config()));
 
         assert_eq!(cache.len(), 2);
 
@@ -303,7 +303,7 @@ mod tests {
     #[test]
     fn test_cache_ttl_expiration() {
         let cache = ConfigCache::with_ttl(Duration::from_millis(10));
-        cache.insert("streamer-1".to_string(), create_test_config());
+        cache.insert("streamer-1".to_string(), Arc::new(create_test_config()));
 
         // Should be present immediately
         assert!(cache.get("streamer-1").is_some());
@@ -318,9 +318,18 @@ mod tests {
     #[test]
     fn test_cache_invalidate_where() {
         let cache = ConfigCache::new();
-        cache.insert("platform-a-streamer-1".to_string(), create_test_config());
-        cache.insert("platform-a-streamer-2".to_string(), create_test_config());
-        cache.insert("platform-b-streamer-1".to_string(), create_test_config());
+        cache.insert(
+            "platform-a-streamer-1".to_string(),
+            Arc::new(create_test_config()),
+        );
+        cache.insert(
+            "platform-a-streamer-2".to_string(),
+            Arc::new(create_test_config()),
+        );
+        cache.insert(
+            "platform-b-streamer-1".to_string(),
+            Arc::new(create_test_config()),
+        );
 
         assert_eq!(cache.len(), 3);
 
@@ -334,8 +343,8 @@ mod tests {
     #[test]
     fn test_cache_cleanup_expired() {
         let cache = ConfigCache::with_ttl(Duration::from_millis(10));
-        cache.insert("streamer-1".to_string(), create_test_config());
-        cache.insert("streamer-2".to_string(), create_test_config());
+        cache.insert("streamer-1".to_string(), Arc::new(create_test_config()));
+        cache.insert("streamer-2".to_string(), Arc::new(create_test_config()));
 
         std::thread::sleep(Duration::from_millis(20));
 

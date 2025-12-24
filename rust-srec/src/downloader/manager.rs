@@ -381,12 +381,7 @@ impl DownloadManager {
         let specific_override = overrides.and_then(|o| o.get(target_id));
 
         // Compute override hash for circuit breaker key (if needed)
-        let override_hash = specific_override.map(|v| {
-            use std::hash::{Hash, Hasher};
-            let mut hasher = std::collections::hash_map::DefaultHasher::new();
-            v.to_string().hash(&mut hasher);
-            hasher.finish()
-        });
+        let override_hash = specific_override.map(Self::hash_override);
 
         // If we have an override, we MUST create a new engine instance
         // We cannot reuse the shared engine because it has different config
@@ -605,6 +600,36 @@ impl DownloadManager {
             serde_json::to_value(base).map_err(|e| crate::Error::Other(e.to_string()))?;
         json_patch::merge(&mut base_val, override_val);
         Ok(base_val)
+    }
+
+    fn hash_override(override_val: &serde_json::Value) -> u64 {
+        use std::hash::{Hash, Hasher};
+
+        let canonical = Self::canonicalize_json(override_val);
+        let mut hasher = std::collections::hash_map::DefaultHasher::new();
+        canonical.to_string().hash(&mut hasher);
+        hasher.finish()
+    }
+
+    fn canonicalize_json(value: &serde_json::Value) -> serde_json::Value {
+        match value {
+            serde_json::Value::Object(map) => {
+                let mut keys: Vec<&String> = map.keys().collect();
+                keys.sort();
+                let mut canonical = serde_json::Map::with_capacity(map.len());
+                for key in keys {
+                    if let Some(child) = map.get(key) {
+                        canonical.insert(key.clone(), Self::canonicalize_json(child));
+                    }
+                }
+                serde_json::Value::Object(canonical)
+            }
+            serde_json::Value::Array(items) => {
+                let canonical_items: Vec<_> = items.iter().map(Self::canonicalize_json).collect();
+                serde_json::Value::Array(canonical_items)
+            }
+            _ => value.clone(),
+        }
     }
 
     /// Start a download with a specific engine.

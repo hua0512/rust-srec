@@ -148,6 +148,11 @@ where
         self.config_repo.get_template_config(id).await
     }
 
+    /// Get a template configuration by name.
+    pub async fn get_template_config_by_name(&self, name: &str) -> Result<TemplateConfigDbModel> {
+        self.config_repo.get_template_config_by_name(name).await
+    }
+
     /// List all template configurations.
     pub async fn list_template_configs(&self) -> Result<Vec<TemplateConfigDbModel>> {
         self.config_repo.list_template_configs().await
@@ -255,7 +260,7 @@ where
     /// - Returns cached config if available
     /// - Deduplicates concurrent requests for the same streamer
     /// - Only one request will resolve the config while others wait
-    pub async fn get_config_for_streamer(&self, streamer_id: &str) -> Result<MergedConfig> {
+    pub async fn get_config_for_streamer(&self, streamer_id: &str) -> Result<Arc<MergedConfig>> {
         // Check cache first
         if let Some(config) = self.cache.get(streamer_id) {
             trace!("Cache hit for streamer {}", streamer_id);
@@ -289,6 +294,7 @@ where
         match self.resolve_config_for_streamer(streamer_id).await {
             Ok(config) => {
                 // Complete the in-flight request (caches and notifies waiters)
+                let config = Arc::new(config);
                 self.cache.complete_in_flight(streamer_id, config.clone());
                 Ok(config)
             }
