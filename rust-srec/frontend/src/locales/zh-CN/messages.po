@@ -152,7 +152,7 @@ msgstr "1（最佳）- 31（最差）"
 msgid "404"
 msgstr "404"
 
-#: src/components/config/engines/engine-editor.tsx:205
+#: src/components/config/engines/engine-editor.tsx:153
 msgid "A unique and descriptive name for this configuration."
 msgstr "为此配置提供一个唯一且易于识别的名称。"
 
@@ -416,7 +416,7 @@ msgid "Archive to Cloud"
 msgstr "云端归档"
 
 #. placeholder {0}: template.name
-#: src/components/config/templates/template-card.tsx:181
+#: src/components/config/templates/template-card.tsx:188
 msgid "Are you sure you want to delete the template \"{0}\"? This action cannot be undone."
 msgstr "确定要删除模板“{0}”吗？此操作无法撤销。"
 
@@ -571,7 +571,7 @@ msgstr "Basic Auth"
 msgid "Basic details for this configuration template."
 msgstr "此配置模板的基本信息。"
 
-#: src/components/config/engines/engine-editor.tsx:180
+#: src/components/config/engines/engine-editor.tsx:128
 msgid "Basic Information"
 msgstr "基本信息"
 
@@ -631,7 +631,7 @@ msgstr "C:path1.flv,C:path2.flv"
 
 #: src/components/config/engines/engine-card.tsx:238
 #: src/components/config/global/backup-restore-card.tsx:561
-#: src/components/config/templates/template-card.tsx:189
+#: src/components/config/templates/template-card.tsx:196
 #: src/components/filters/FilterDialog.tsx:268
 #: src/components/notifications/channel-card.tsx:186
 #: src/components/notifications/channel-form.tsx:358
@@ -643,6 +643,7 @@ msgstr "C:path1.flv,C:path2.flv"
 #: src/components/pipeline/workflows/step-config-dialog.tsx:570
 #: src/components/pipeline/workflows/workflow-card.tsx:199
 #: src/components/streamers/streamer-form.tsx:161
+#: src/routes/_authed/_dashboard/config/templates/index.tsx:266
 #: src/routes/_authed/_dashboard/pipeline/jobs/new.tsx:158
 #: src/routes/_authed/_dashboard/pipeline/presets/index.tsx:515
 msgid "Cancel"
@@ -791,7 +792,9 @@ msgstr "清空"
 msgid "Click to add. You can reorder steps in the editor."
 msgstr "点击添加。你可以在编辑器中重新排序步骤。"
 
+#: src/components/config/templates/template-card.tsx:120
 #: src/components/pipeline/presets/preset-card.tsx:178
+#: src/routes/_authed/_dashboard/config/templates/index.tsx:275
 #: src/routes/_authed/_dashboard/pipeline/presets/index.tsx:524
 msgid "Clone"
 msgstr "克隆"
@@ -800,6 +803,11 @@ msgstr "克隆"
 msgid "Clone Preset"
 msgstr "克隆预设"
 
+#: src/routes/_authed/_dashboard/config/templates/index.tsx:243
+msgid "Clone Template"
+msgstr "克隆模板"
+
+#: src/routes/_authed/_dashboard/config/templates/index.tsx:273
 #: src/routes/_authed/_dashboard/pipeline/presets/index.tsx:522
 msgid "Cloning..."
 msgstr "正在克隆..."
@@ -908,11 +916,11 @@ msgstr "配置一个新的主播以进行监控和录制。"
 msgid "Configure and launch a manual processing pipeline."
 msgstr "配置并启动手动处理管道。"
 
-#: src/components/config/engines/engine-editor.tsx:146
+#: src/components/config/engines/engine-editor.tsx:341
 msgid "Configure download engine parameters"
 msgstr "配置录制引擎参数"
 
-#: src/components/config/engines/engine-editor.tsx:299
+#: src/components/config/engines/engine-editor.tsx:247
 msgid "Configure granular options for the selected engine."
 msgstr "配置所选引擎的详细选项。"
 
@@ -1042,7 +1050,7 @@ msgid "CPU Usage"
 msgstr "CPU 使用率"
 
 #: src/components/config/templates/template-editor.tsx:158
-#: src/routes/_authed/_dashboard/config/templates/index.tsx:89
+#: src/routes/_authed/_dashboard/config/templates/index.tsx:138
 #: src/routes/_authed/_dashboard/pipeline/jobs/index.tsx:253
 msgid "Create"
 msgstr "创建"
@@ -1052,6 +1060,8 @@ msgid "Create a channel to receive alerts about downloads, errors, and system ev
 msgstr "创建一个渠道以接收下载、错误和系统事件的警报。"
 
 #. placeholder {0}: presetToClone?.name
+#. placeholder {0}: templateToClone?.name
+#: src/routes/_authed/_dashboard/config/templates/index.tsx:246
 #: src/routes/_authed/_dashboard/pipeline/presets/index.tsx:492
 msgid "Create a copy of \"{0}\" with a new name."
 msgstr "创建“{0}”的副本并使用新名称。"
@@ -1060,7 +1070,7 @@ msgstr "创建“{0}”的副本并使用新名称。"
 msgid "Create a filter to control when this streamer is recorded. You can filter by time, keywords, categories, and more."
 msgstr "创建过滤器以控制何时录制该主播。你可以按时间、关键字、分类等进行过滤。"
 
-#: src/routes/_authed/_dashboard/config/templates/index.tsx:169
+#: src/routes/_authed/_dashboard/config/templates/index.tsx:219
 msgid "Create a template to define reusable download configurations."
 msgstr "创建模板以定义可复用的录制配置。"
 
@@ -1078,8 +1088,8 @@ msgstr "创建渠道"
 msgid "Create Directories"
 msgstr "创建目录"
 
-#: src/components/config/engines/engine-editor.tsx:142
-#: src/components/config/engines/engine-editor.tsx:340
+#: src/components/config/engines/engine-editor.tsx:288
+#: src/components/config/engines/engine-editor.tsx:337
 msgid "Create Engine"
 msgstr "创建引擎"
 
@@ -1120,7 +1130,7 @@ msgid "Create Streamer"
 msgstr "创建主播"
 
 #: src/components/config/templates/template-editor.tsx:110
-#: src/routes/_authed/_dashboard/config/templates/index.tsx:180
+#: src/routes/_authed/_dashboard/config/templates/index.tsx:230
 msgid "Create Template"
 msgstr "创建模板"
 
@@ -1146,7 +1156,7 @@ msgstr "已创建"
 msgid "Creating..."
 msgstr "创建中..."
 
-#: src/components/config/engines/engine-editor.tsx:163
+#: src/components/config/engines/engine-editor.tsx:358
 msgid "Creation Mode"
 msgstr "创建模式"
 
@@ -1322,13 +1332,13 @@ msgstr "为录制内容定义处理步骤序列"
 msgid "Degraded"
 msgstr "降级"
 
-#: src/components/config/global/network-system-card.tsx:24
+#: src/components/config/global/network-system-card.tsx:41
 msgid "Delays, proxy, and retention policies."
 msgstr "延迟、代理与保留策略。"
 
 #: src/components/config/engines/engine-card.tsx:244
-#: src/components/config/templates/template-card.tsx:121
-#: src/components/config/templates/template-card.tsx:195
+#: src/components/config/templates/template-card.tsx:128
+#: src/components/config/templates/template-card.tsx:202
 #: src/components/filters/FilterCard.tsx:285
 #: src/components/notifications/channel-card.tsx:169
 #: src/components/notifications/channel-card.tsx:192
@@ -1380,7 +1390,7 @@ msgstr "删除会话"
 msgid "Delete Source"
 msgstr "删除源文件"
 
-#: src/components/config/templates/template-card.tsx:178
+#: src/components/config/templates/template-card.tsx:185
 msgid "Delete Template"
 msgstr "删除模板"
 
@@ -1557,7 +1567,7 @@ msgstr "例如 echo {input} > {output}"
 msgid "e.g. gdrive:/videos"
 msgstr "例如 gdrive:/videos"
 
-#: src/components/config/engines/engine-editor.tsx:200
+#: src/components/config/engines/engine-editor.tsx:148
 msgid "e.g. High Quality Streamlink"
 msgstr "例如 高质量 Streamlink"
 
@@ -1583,7 +1593,7 @@ msgid "e.g., Standard Processing"
 msgstr "例如：标准处理"
 
 #: src/components/config/platforms/platform-card.tsx:89
-#: src/components/config/templates/template-card.tsx:114
+#: src/components/config/templates/template-card.tsx:116
 #: src/components/filters/FilterCard.tsx:274
 #: src/components/notifications/channel-card.tsx:154
 #: src/components/pipeline/presets/preset-card.tsx:174
@@ -1609,7 +1619,7 @@ msgstr "编辑渠道"
 #~ msgid "Edit Custom Theme"
 #~ msgstr "编辑自定义主题"
 
-#: src/components/config/engines/engine-editor.tsx:142
+#: src/components/config/engines/engine-editor.tsx:337
 msgid "Edit Engine"
 msgstr "编辑引擎"
 
@@ -1627,7 +1637,7 @@ msgstr "编辑预设：{0}"
 msgid "Edit Workflow: {0}"
 msgstr "编辑工作流：{0}"
 
-#: src/components/config/engines/engine-editor.tsx:161
+#: src/components/config/engines/engine-editor.tsx:356
 msgid "Editing Mode"
 msgstr "编辑模式"
 
@@ -1694,7 +1704,7 @@ msgid "Engagement"
 msgstr "互动"
 
 #: src/components/config/platforms/platform-card.tsx:143
-#: src/components/config/templates/template-card.tsx:132
+#: src/components/config/templates/template-card.tsx:139
 msgid "Engine"
 msgstr "引擎"
 
@@ -1702,7 +1712,7 @@ msgstr "引擎"
 msgid "Engine created successfully"
 msgstr "引擎创建成功"
 
-#: src/components/config/engines/engine-editor.tsx:195
+#: src/components/config/engines/engine-editor.tsx:143
 msgid "Engine Name"
 msgstr "引擎名称"
 
@@ -1710,7 +1720,7 @@ msgstr "引擎名称"
 msgid "Engine Overrides"
 msgstr "引擎覆盖项"
 
-#: src/components/config/engines/engine-editor.tsx:220
+#: src/components/config/engines/engine-editor.tsx:168
 msgid "Engine Type"
 msgstr "引擎类型"
 
@@ -1731,6 +1741,7 @@ msgstr "未在平台/主播中指定时使用的录制引擎。"
 msgid "Engines"
 msgstr "引擎列表"
 
+#: src/routes/_authed/_dashboard/config/templates/index.tsx:260
 #: src/routes/_authed/_dashboard/pipeline/presets/index.tsx:506
 msgid "Enter a unique name"
 msgstr "输入唯一名称"
@@ -1759,7 +1770,7 @@ msgstr "条"
 #: src/routes/_authed/_dashboard/config/engines/$engineId.tsx:47
 #: src/routes/_authed/_dashboard/config/engines/index.tsx:34
 #: src/routes/_authed/_dashboard/config/platforms/index.tsx:58
-#: src/routes/_authed/_dashboard/config/templates/index.tsx:58
+#: src/routes/_authed/_dashboard/config/templates/index.tsx:107
 #: src/routes/_authed/_dashboard/pipeline/jobs/index.tsx:195
 #: src/routes/_authed/_dashboard/pipeline/outputs.tsx:141
 #: src/routes/_authed/_dashboard/pipeline/presets/index.tsx:226
@@ -1918,6 +1929,11 @@ msgstr "修改密码失败"
 msgid "Failed to clone preset: {0}"
 msgstr "克隆预设失败：{0}"
 
+#. placeholder {0}: error.message
+#: src/routes/_authed/_dashboard/config/templates/index.tsx:74
+msgid "Failed to clone template: {0}"
+msgstr "克隆模板失败：{0}"
+
 #: src/components/notifications/channel-form.tsx:191
 msgid "Failed to create channel"
 msgstr "创建渠道失败"
@@ -2031,7 +2047,7 @@ msgid "Failed to load system health"
 msgstr "加载系统健康状态失败"
 
 #. placeholder {0}: (error as Error).message
-#: src/routes/_authed/_dashboard/config/templates/index.tsx:61
+#: src/routes/_authed/_dashboard/config/templates/index.tsx:110
 msgid "Failed to load templates: {0}"
 msgstr "加载模板列表失败：{0}"
 
@@ -2079,7 +2095,7 @@ msgstr "更新平台失败：{0}"
 msgid "Failed to update preset: {0}"
 msgstr "更新预设失败：{0}"
 
-#: src/routes/_authed/_dashboard/config/global.tsx:88
+#: src/routes/_authed/_dashboard/config/global.tsx:92
 msgid "Failed to update settings"
 msgstr "更新设置失败"
 
@@ -2235,7 +2251,7 @@ msgid "Force specific output format."
 msgstr "强制指定输出格式。"
 
 #: src/components/config/global/file-config-card.tsx:89
-#: src/components/config/templates/template-card.tsx:143
+#: src/components/config/templates/template-card.tsx:150
 #: src/components/pipeline/presets/processors/audio-extract-config-form.tsx:88
 #: src/components/pipeline/presets/processors/remux-config-form.tsx:81
 msgid "Format"
@@ -2425,9 +2441,13 @@ msgstr "高质量 H.265/HEVC 压缩（CRF 22）。文件更小，但编码更慢
 msgid "High Quality MP3"
 msgstr "高质量 MP3"
 
+#: src/components/config/global/network-system-card.tsx:195
+msgid "History Retention"
+msgstr "历史保留"
+
 #: src/components/config/global/network-system-card.tsx:56
-msgid "History Retention (Days)"
-msgstr "历史保留（天）"
+#~ msgid "History Retention (Days)"
+#~ msgstr "历史保留（天）"
 
 #: src/routes/_authed/_dashboard/config/logging.tsx:60
 msgid "HLS parser"
@@ -2474,7 +2494,7 @@ msgstr "ID"
 msgid "ID is required"
 msgstr "必须填写 ID"
 
-#: src/components/config/engines/engine-editor.tsx:183
+#: src/components/config/engines/engine-editor.tsx:131
 msgid "Identity and type of the engine."
 msgstr "引擎的身份与类型。"
 
@@ -2571,6 +2591,14 @@ msgstr "检查中"
 msgid "Interval (seconds)"
 msgstr "间隔（秒）"
 
+#: src/components/config/global/network-system-card.tsx:68
+msgid "Interval between checks to see if a streamer is currently live. Slower intervals reduce API usage but might delay recording starts."
+msgstr "检查主播是否在线的间隔。较慢的间隔可以减少 API 使用，但可能会延迟录制开始。"
+
+#: src/components/config/global/network-system-card.tsx:111
+msgid "Interval between checks when a streamer is live to detect when the stream ends."
+msgstr "主播直播时检测流结束的检查间隔。"
+
 #: src/components/config/platforms/tabs/general-tab.tsx:62
 msgid "Interval between checks."
 msgstr "检查间隔。"
@@ -2653,7 +2681,7 @@ msgstr "语言"
 msgid "Language Settings"
 msgstr "语言设置"
 
-#: src/components/streamers/card/use-streamer-status.tsx:242
+#: src/components/streamers/card/use-streamer-status.tsx:243
 msgid "Last Activity"
 msgstr "最后活动"
 
@@ -2870,6 +2898,10 @@ msgstr "最大程度压缩以尽量降低存储占用，然后删除原始文件
 msgid "Maximum HEVC/H.265 compression (CRF 28) for minimal file size."
 msgstr "最大 HEVC/H.265 压缩（CRF 28），以获得最小文件体积。"
 
+#: src/components/config/global/network-system-card.tsx:241
+msgid "Maximum idle time between segments before the system starts a new recording session instead of continuing the current one."
+msgstr "片段之间的最大空闲时间，超过此时间系统将开始新的录制会话，而不是继续当前会话。"
+
 #: src/components/config/shared/retry-policy-form.tsx:70
 msgid "Maximum number of retry attempts."
 msgstr "最大重试尝试次数。"
@@ -3022,7 +3054,7 @@ msgstr "原始分辨率缩略图"
 msgid "Network"
 msgstr "网络"
 
-#: src/components/config/global/network-system-card.tsx:23
+#: src/components/config/global/network-system-card.tsx:40
 msgid "Network & System"
 msgstr "网络与系统"
 
@@ -3041,6 +3073,10 @@ msgstr "新密码（至少 8 个字符）"
 #: src/routes/_authed/_dashboard/pipeline/presets/index.tsx:500
 msgid "New Preset Name"
 msgstr "新预设名称"
+
+#: src/routes/_authed/_dashboard/config/templates/index.tsx:254
+msgid "New Template Name"
+msgstr "新模板名称"
 
 #: src/components/streamers/streamer-form.tsx:176
 msgid "Next"
@@ -3229,11 +3265,11 @@ msgstr "未定义步骤"
 msgid "No streamers found"
 msgstr "未找到主播"
 
-#: src/routes/_authed/_dashboard/config/templates/index.tsx:160
+#: src/routes/_authed/_dashboard/config/templates/index.tsx:210
 msgid "No templates found"
 msgstr "未找到模板"
 
-#: src/routes/_authed/_dashboard/config/templates/index.tsx:162
+#: src/routes/_authed/_dashboard/config/templates/index.tsx:212
 msgid "No templates yet"
 msgstr "暂无模板"
 
@@ -3282,6 +3318,14 @@ msgstr "通知"
 msgid "Number of attempts before failing the upload."
 msgstr "上传失败前的尝试次数。"
 
+#: src/components/config/global/network-system-card.tsx:153
+msgid "Number of consecutive failed checks required to definitively confirm a streamer has gone offline. Higher values prevent \"fake\" offline detection."
+msgstr "确认主播离线所需的连续失败检查次数。较高的值可以防止\"假\"离线检测。"
+
+#: src/components/config/global/network-system-card.tsx:199
+msgid "Number of days to keep the history of completed, failed, or interrupted jobs in the database."
+msgstr "在数据库中保留已完成、失败或中断任务历史记录的天数。"
+
 #: src/components/sessions/session-card.tsx:112
 #: src/components/streamers/card/use-streamer-status.tsx:30
 #: src/components/streamers/card/use-streamer-status.tsx:229
@@ -3296,13 +3340,26 @@ msgstr "离线"
 msgid "OFFLINE"
 msgstr "离线"
 
+#: src/components/config/global/network-system-card.tsx:99
+#: src/components/config/global/network-system-card.tsx:107
+msgid "Offline Check"
+msgstr "离线检查"
+
 #: src/components/config/global/network-system-card.tsx:96
-msgid "Offline Check (ms)"
-msgstr "离线检查（ms）"
+#~ msgid "Offline Check (ms)"
+#~ msgstr "离线检查（ms）"
 
 #: src/components/config/global/network-system-card.tsx:115
-msgid "Offline Check Count"
-msgstr "离线检查次数"
+#~ msgid "Offline Check Count"
+#~ msgstr "离线检查次数"
+
+#: src/components/config/global/network-system-card.tsx:149
+msgid "Offline Detection"
+msgstr "离线检测"
+
+#: src/components/config/global/network-system-card.tsx:141
+msgid "Offline Detection Count"
+msgstr "离线检测次数"
 
 #: src/components/config/shared/event-hooks-form.tsx:137
 msgid "On Download Complete"
@@ -3337,7 +3394,7 @@ msgid "Only include files with this extension (without dot)"
 msgstr "仅包含具有该扩展名的文件（不含点号）"
 
 #: src/components/config/platforms/platform-card.tsx:83
-#: src/components/config/templates/template-card.tsx:108
+#: src/components/config/templates/template-card.tsx:110
 #: src/components/notifications/channel-card.tsx:148
 #: src/components/pipeline/jobs/pipeline-summary-card.tsx:172
 #: src/components/pipeline/outputs/output-card.tsx:124
@@ -3376,7 +3433,7 @@ msgstr "选项"
 
 #: src/components/config/platforms/platform-card.tsx:130
 #: src/components/config/shared-config-editor.tsx:141
-#: src/components/config/templates/template-card.tsx:154
+#: src/components/config/templates/template-card.tsx:161
 #: src/components/pipeline/presets/processors/thumbnail-config-form.tsx:134
 msgid "Output"
 msgstr "输出"
@@ -3889,7 +3946,7 @@ msgstr "进度："
 msgid "Proxy"
 msgstr "代理"
 
-#: src/components/config/global/network-system-card.tsx:136
+#: src/components/config/global/network-system-card.tsx:273
 msgid "Proxy Configuration"
 msgstr "代理配置"
 
@@ -4118,6 +4175,10 @@ msgstr "继续"
 msgid "Resuming in"
 msgstr "将在…后恢复"
 
+#: src/components/config/global/network-system-card.tsx:187
+msgid "Retention Period"
+msgstr "保留期限"
+
 #: src/components/pipeline/presets/processors/delete-config-form.tsx:65
 msgid "Retries for locked files"
 msgstr "锁定文件重试次数"
@@ -4208,7 +4269,7 @@ msgstr "采样率（Hz）"
 msgid "Sampling Strategy"
 msgstr "采样策略"
 
-#: src/components/config/engines/engine-editor.tsx:340
+#: src/components/config/engines/engine-editor.tsx:288
 #: src/components/config/platforms/platform-editor.tsx:121
 #: src/components/config/templates/template-editor.tsx:160
 #: src/components/filters/FilterDialog.tsx:281
@@ -4216,7 +4277,7 @@ msgstr "采样策略"
 #: src/components/pipeline/presets/editor/preset-save-fab.tsx:37
 #: src/components/pipeline/workflows/step-config-dialog.tsx:587
 #: src/components/streamers/edit/streamer-save-fab.tsx:45
-#: src/routes/_authed/_dashboard/config/global.tsx:183
+#: src/routes/_authed/_dashboard/config/global.tsx:169
 #: src/routes/_authed/_dashboard/config/logging.tsx:376
 msgid "Save Changes"
 msgstr "保存更改"
@@ -4234,7 +4295,7 @@ msgstr "保存工作流"
 #: src/components/filters/FilterDialog.tsx:278
 #: src/components/pipeline/workflows/workflow-editor.tsx:238
 #: src/components/streamers/edit/streamer-save-fab.tsx:40
-#: src/routes/_authed/_dashboard/config/global.tsx:183
+#: src/routes/_authed/_dashboard/config/global.tsx:169
 #: src/routes/_authed/_dashboard/config/logging.tsx:376
 msgid "Saving..."
 msgstr "保存中..."
@@ -4304,7 +4365,7 @@ msgstr "搜索录制会话..."
 msgid "Search streamers..."
 msgstr "搜索主播..."
 
-#: src/routes/_authed/_dashboard/config/templates/index.tsx:74
+#: src/routes/_authed/_dashboard/config/templates/index.tsx:123
 msgid "Search templates..."
 msgstr "搜索模板..."
 
@@ -4398,7 +4459,7 @@ msgstr "选择会为 <0>{0}</0> 触发通知的事件。"
 msgid "Select the steps that must complete successfully before this step runs."
 msgstr "选择必须在此步骤运行前成功完成的步骤。"
 
-#: src/components/config/engines/engine-editor.tsx:246
+#: src/components/config/engines/engine-editor.tsx:194
 #: src/components/pipeline/presets/editor/preset-meta-form.tsx:158
 msgid "Select type"
 msgstr "选择类型"
@@ -4436,9 +4497,13 @@ msgstr "录制会话详情"
 msgid "Session Duration"
 msgstr "录制时长"
 
+#: src/components/config/global/network-system-card.tsx:237
+msgid "Session Gap"
+msgstr "会话间隔"
+
 #: src/components/config/global/network-system-card.tsx:75
-msgid "Session Gap (seconds)"
-msgstr "录制会话间隔（秒）"
+#~ msgid "Session Gap (seconds)"
+#~ msgstr "录制会话间隔（秒）"
 
 #: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.tsx:404
 msgid "Session ID"
@@ -4447,6 +4512,10 @@ msgstr "录制会话 ID"
 #: src/routes/_authed/_dashboard/pipeline/jobs/new.tsx:48
 msgid "Session ID is required"
 msgstr "会话 ID 是必需的"
+
+#: src/components/config/global/network-system-card.tsx:229
+msgid "Session Merging Gap"
+msgstr "会话合并间隔"
 
 #: src/routes/_authed/_dashboard/sessions/$sessionId.tsx:162
 msgid "Session not found"
@@ -4470,11 +4539,11 @@ msgstr "录制会话"
 msgid "Set constraints on downloads."
 msgstr "设置录制限制。"
 
-#: src/components/config/engines/engine-editor.tsx:148
+#: src/components/config/engines/engine-editor.tsx:343
 msgid "Set up a new download tool configuration"
 msgstr "设置新的录制工具配置"
 
-#: src/components/config/engines/engine-editor.tsx:296
+#: src/components/config/engines/engine-editor.tsx:244
 #: src/components/sidebar/navbar.tsx:24
 #: src/lib/menu-list.ts:104
 #: src/routes/_authed/_dashboard/config/route.tsx:106
@@ -4485,7 +4554,7 @@ msgstr "设置"
 msgid "Settings have been optimized for this platform."
 msgstr "设置已针对该平台优化。"
 
-#: src/routes/_authed/_dashboard/config/global.tsx:84
+#: src/routes/_authed/_dashboard/config/global.tsx:88
 msgid "Settings updated successfully"
 msgstr "设置更新成功"
 
@@ -4664,9 +4733,14 @@ msgstr "主播"
 msgid "STREAMER"
 msgstr "主播"
 
+#: src/components/config/global/network-system-card.tsx:56
+#: src/components/config/global/network-system-card.tsx:64
+msgid "Streamer Check"
+msgstr "主播检查"
+
 #: src/components/config/global/network-system-card.tsx:37
-msgid "Streamer Check (ms)"
-msgstr "主播检查（ms）"
+#~ msgid "Streamer Check (ms)"
+#~ msgstr "主播检查（ms）"
 
 #: src/routes/_authed/_dashboard/streamers/new.tsx:20
 msgid "Streamer created successfully"
@@ -4792,6 +4866,10 @@ msgstr "每个采样周期捕获的目标消息数量。"
 msgid "Template"
 msgstr "模板"
 
+#: src/routes/_authed/_dashboard/config/templates/index.tsx:63
+msgid "Template cloned successfully"
+msgstr "模板克隆成功"
+
 #: src/routes/_authed/_dashboard/config/templates/create.tsx:27
 msgid "Template created successfully"
 msgstr "模板创建成功"
@@ -4812,7 +4890,7 @@ msgstr "未找到模板"
 msgid "Template updated successfully"
 msgstr "模板更新成功"
 
-#: src/routes/_authed/_dashboard/config/templates/index.tsx:84
+#: src/routes/_authed/_dashboard/config/templates/index.tsx:133
 msgid "templates"
 msgstr "模板"
 
@@ -4857,7 +4935,7 @@ msgstr "你要访问的页面不存在。"
 msgid "The stream title remained constant throughout the session."
 msgstr "本次会话期间直播标题始终未变化。"
 
-#: src/components/config/engines/engine-editor.tsx:271
+#: src/components/config/engines/engine-editor.tsx:219
 msgid "The underlying tool used for downloading."
 msgstr "用于录制的底层工具。"
 
@@ -5104,7 +5182,7 @@ msgid "Try adjusting your search or filters."
 msgstr "尝试调整搜索或过滤器。"
 
 #: src/routes/_authed/_dashboard/config/platforms/index.tsx:161
-#: src/routes/_authed/_dashboard/config/templates/index.tsx:167
+#: src/routes/_authed/_dashboard/config/templates/index.tsx:217
 #: src/routes/_authed/_dashboard/pipeline/workflows/index.tsx:267
 msgid "Try adjusting your search."
 msgstr "尝试调整搜索。"

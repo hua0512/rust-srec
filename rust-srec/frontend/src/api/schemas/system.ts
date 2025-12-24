@@ -31,14 +31,16 @@ export const GlobalConfigSchema = z.object({
     .string()
     .nullable()
     .optional()
-    .transform((val): z.infer<typeof DagPipelineDefinitionSchema> | null | undefined => {
-      if (!val) return null;
-      try {
-        return JSON.parse(val);
-      } catch {
-        return null;
-      }
-    }),
+    .transform(
+      (val): z.infer<typeof DagPipelineDefinitionSchema> | null | undefined => {
+        if (!val) return null;
+        try {
+          return JSON.parse(val);
+        } catch {
+          return null;
+        }
+      },
+    ),
 });
 
 // Schema for form validation - pipeline is already parsed as object

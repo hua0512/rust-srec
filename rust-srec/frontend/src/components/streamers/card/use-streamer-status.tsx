@@ -44,7 +44,7 @@ export function useStreamerStatus(streamer: z.infer<typeof StreamerSchema>) {
     // During SSR (now === null), rely only on state field
     const isTemporarilyPaused = now
       ? (disabledUntil && disabledUntil > now) ||
-      streamer.state === 'TEMPORAL_DISABLED'
+        streamer.state === 'TEMPORAL_DISABLED'
       : streamer.state === 'TEMPORAL_DISABLED';
 
     const stopStates = [

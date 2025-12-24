@@ -302,15 +302,15 @@ export function EngineEditor({ engine, onSuccess }: EngineEditorProps) {
 
   const defaultValues = isEdit
     ? {
-      name: engine.name,
-      engine_type: engine.engine_type,
-      config: engine.config as Record<string, unknown>,
-    }
+        name: engine.name,
+        engine_type: engine.engine_type,
+        config: engine.config as Record<string, unknown>,
+      }
     : {
-      name: '',
-      engine_type: 'FFMPEG' as const,
-      config: FfmpegConfigSchema.parse({}),
-    };
+        name: '',
+        engine_type: 'FFMPEG' as const,
+        config: FfmpegConfigSchema.parse({}),
+      };
 
   return (
     <motion.div

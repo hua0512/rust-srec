@@ -50,7 +50,7 @@ export const StatusBadge = ({ status }: StatusBadgeProps) => (
                 'h-1.5 w-1.5 rounded-full min-w-[6px]',
                 status.iconColor,
                 status.pulsing &&
-                'animate-pulse shadow-[0_0_8px_rgba(239,68,68,0.6)]',
+                  'animate-pulse shadow-[0_0_8px_rgba(239,68,68,0.6)]',
               )}
             />
           )}

@@ -152,7 +152,7 @@ msgstr "1 (best) - 31 (worst)"
 msgid "404"
 msgstr "404"
 
-#: src/components/config/engines/engine-editor.tsx:205
+#: src/components/config/engines/engine-editor.tsx:153
 msgid "A unique and descriptive name for this configuration."
 msgstr "A unique and descriptive name for this configuration."
 
@@ -416,7 +416,7 @@ msgid "Archive to Cloud"
 msgstr "Archive to Cloud"
 
 #. placeholder {0}: template.name
-#: src/components/config/templates/template-card.tsx:181
+#: src/components/config/templates/template-card.tsx:188
 msgid "Are you sure you want to delete the template \"{0}\"? This action cannot be undone."
 msgstr "Are you sure you want to delete the template \"{0}\"? This action cannot be undone."
 
@@ -571,7 +571,7 @@ msgstr "Basic Auth"
 msgid "Basic details for this configuration template."
 msgstr "Basic details for this configuration template."
 
-#: src/components/config/engines/engine-editor.tsx:180
+#: src/components/config/engines/engine-editor.tsx:128
 msgid "Basic Information"
 msgstr "Basic Information"
 
@@ -631,7 +631,7 @@ msgstr "C:path1.flv,C:path2.flv"
 
 #: src/components/config/engines/engine-card.tsx:238
 #: src/components/config/global/backup-restore-card.tsx:561
-#: src/components/config/templates/template-card.tsx:189
+#: src/components/config/templates/template-card.tsx:196
 #: src/components/filters/FilterDialog.tsx:268
 #: src/components/notifications/channel-card.tsx:186
 #: src/components/notifications/channel-form.tsx:358
@@ -643,6 +643,7 @@ msgstr "C:path1.flv,C:path2.flv"
 #: src/components/pipeline/workflows/step-config-dialog.tsx:570
 #: src/components/pipeline/workflows/workflow-card.tsx:199
 #: src/components/streamers/streamer-form.tsx:161
+#: src/routes/_authed/_dashboard/config/templates/index.tsx:266
 #: src/routes/_authed/_dashboard/pipeline/jobs/new.tsx:158
 #: src/routes/_authed/_dashboard/pipeline/presets/index.tsx:515
 msgid "Cancel"
@@ -791,7 +792,9 @@ msgstr "Clear"
 msgid "Click to add. You can reorder steps in the editor."
 msgstr "Click to add. You can reorder steps in the editor."
 
+#: src/components/config/templates/template-card.tsx:120
 #: src/components/pipeline/presets/preset-card.tsx:178
+#: src/routes/_authed/_dashboard/config/templates/index.tsx:275
 #: src/routes/_authed/_dashboard/pipeline/presets/index.tsx:524
 msgid "Clone"
 msgstr "Clone"
@@ -800,6 +803,11 @@ msgstr "Clone"
 msgid "Clone Preset"
 msgstr "Clone Preset"
 
+#: src/routes/_authed/_dashboard/config/templates/index.tsx:243
+msgid "Clone Template"
+msgstr "Clone Template"
+
+#: src/routes/_authed/_dashboard/config/templates/index.tsx:273
 #: src/routes/_authed/_dashboard/pipeline/presets/index.tsx:522
 msgid "Cloning..."
 msgstr "Cloning..."
@@ -908,11 +916,11 @@ msgstr "Configure a new streamer to monitor and record."
 msgid "Configure and launch a manual processing pipeline."
 msgstr "Configure and launch a manual processing pipeline."
 
-#: src/components/config/engines/engine-editor.tsx:146
+#: src/components/config/engines/engine-editor.tsx:341
 msgid "Configure download engine parameters"
 msgstr "Configure download engine parameters"
 
-#: src/components/config/engines/engine-editor.tsx:299
+#: src/components/config/engines/engine-editor.tsx:247
 msgid "Configure granular options for the selected engine."
 msgstr "Configure granular options for the selected engine."
 
@@ -1042,7 +1050,7 @@ msgid "CPU Usage"
 msgstr "CPU Usage"
 
 #: src/components/config/templates/template-editor.tsx:158
-#: src/routes/_authed/_dashboard/config/templates/index.tsx:89
+#: src/routes/_authed/_dashboard/config/templates/index.tsx:138
 #: src/routes/_authed/_dashboard/pipeline/jobs/index.tsx:253
 msgid "Create"
 msgstr "Create"
@@ -1052,6 +1060,8 @@ msgid "Create a channel to receive alerts about downloads, errors, and system ev
 msgstr "Create a channel to receive alerts about downloads, errors, and system events."
 
 #. placeholder {0}: presetToClone?.name
+#. placeholder {0}: templateToClone?.name
+#: src/routes/_authed/_dashboard/config/templates/index.tsx:246
 #: src/routes/_authed/_dashboard/pipeline/presets/index.tsx:492
 msgid "Create a copy of \"{0}\" with a new name."
 msgstr "Create a copy of \"{0}\" with a new name."
@@ -1060,7 +1070,7 @@ msgstr "Create a copy of \"{0}\" with a new name."
 msgid "Create a filter to control when this streamer is recorded. You can filter by time, keywords, categories, and more."
 msgstr "Create a filter to control when this streamer is recorded. You can filter by time, keywords, categories, and more."
 
-#: src/routes/_authed/_dashboard/config/templates/index.tsx:169
+#: src/routes/_authed/_dashboard/config/templates/index.tsx:219
 msgid "Create a template to define reusable download configurations."
 msgstr "Create a template to define reusable download configurations."
 
@@ -1078,8 +1088,8 @@ msgstr "Create Channel"
 msgid "Create Directories"
 msgstr "Create Directories"
 
-#: src/components/config/engines/engine-editor.tsx:142
-#: src/components/config/engines/engine-editor.tsx:340
+#: src/components/config/engines/engine-editor.tsx:288
+#: src/components/config/engines/engine-editor.tsx:337
 msgid "Create Engine"
 msgstr "Create Engine"
 
@@ -1120,7 +1130,7 @@ msgid "Create Streamer"
 msgstr "Create Streamer"
 
 #: src/components/config/templates/template-editor.tsx:110
-#: src/routes/_authed/_dashboard/config/templates/index.tsx:180
+#: src/routes/_authed/_dashboard/config/templates/index.tsx:230
 msgid "Create Template"
 msgstr "Create Template"
 
@@ -1146,7 +1156,7 @@ msgstr "Created"
 msgid "Creating..."
 msgstr "Creating..."
 
-#: src/components/config/engines/engine-editor.tsx:163
+#: src/components/config/engines/engine-editor.tsx:358
 msgid "Creation Mode"
 msgstr "Creation Mode"
 
@@ -1322,13 +1332,13 @@ msgstr "Define sequences of processing steps for your recordings"
 msgid "Degraded"
 msgstr "Degraded"
 
-#: src/components/config/global/network-system-card.tsx:24
+#: src/components/config/global/network-system-card.tsx:41
 msgid "Delays, proxy, and retention policies."
 msgstr "Delays, proxy, and retention policies."
 
 #: src/components/config/engines/engine-card.tsx:244
-#: src/components/config/templates/template-card.tsx:121
-#: src/components/config/templates/template-card.tsx:195
+#: src/components/config/templates/template-card.tsx:128
+#: src/components/config/templates/template-card.tsx:202
 #: src/components/filters/FilterCard.tsx:285
 #: src/components/notifications/channel-card.tsx:169
 #: src/components/notifications/channel-card.tsx:192
@@ -1380,7 +1390,7 @@ msgstr "Delete Session"
 msgid "Delete Source"
 msgstr "Delete Source"
 
-#: src/components/config/templates/template-card.tsx:178
+#: src/components/config/templates/template-card.tsx:185
 msgid "Delete Template"
 msgstr "Delete Template"
 
@@ -1557,7 +1567,7 @@ msgstr "e.g. echo {input} > {output}"
 msgid "e.g. gdrive:/videos"
 msgstr "e.g. gdrive:/videos"
 
-#: src/components/config/engines/engine-editor.tsx:200
+#: src/components/config/engines/engine-editor.tsx:148
 msgid "e.g. High Quality Streamlink"
 msgstr "e.g. High Quality Streamlink"
 
@@ -1583,7 +1593,7 @@ msgid "e.g., Standard Processing"
 msgstr "e.g., Standard Processing"
 
 #: src/components/config/platforms/platform-card.tsx:89
-#: src/components/config/templates/template-card.tsx:114
+#: src/components/config/templates/template-card.tsx:116
 #: src/components/filters/FilterCard.tsx:274
 #: src/components/notifications/channel-card.tsx:154
 #: src/components/pipeline/presets/preset-card.tsx:174
@@ -1609,7 +1619,7 @@ msgstr "Edit Channel"
 #~ msgid "Edit Custom Theme"
 #~ msgstr "Edit Custom Theme"
 
-#: src/components/config/engines/engine-editor.tsx:142
+#: src/components/config/engines/engine-editor.tsx:337
 msgid "Edit Engine"
 msgstr "Edit Engine"
 
@@ -1627,7 +1637,7 @@ msgstr "Edit Preset: {0}"
 msgid "Edit Workflow: {0}"
 msgstr "Edit Workflow: {0}"
 
-#: src/components/config/engines/engine-editor.tsx:161
+#: src/components/config/engines/engine-editor.tsx:356
 msgid "Editing Mode"
 msgstr "Editing Mode"
 
@@ -1694,7 +1704,7 @@ msgid "Engagement"
 msgstr "Engagement"
 
 #: src/components/config/platforms/platform-card.tsx:143
-#: src/components/config/templates/template-card.tsx:132
+#: src/components/config/templates/template-card.tsx:139
 msgid "Engine"
 msgstr "Engine"
 
@@ -1702,7 +1712,7 @@ msgstr "Engine"
 msgid "Engine created successfully"
 msgstr "Engine created successfully"
 
-#: src/components/config/engines/engine-editor.tsx:195
+#: src/components/config/engines/engine-editor.tsx:143
 msgid "Engine Name"
 msgstr "Engine Name"
 
@@ -1710,7 +1720,7 @@ msgstr "Engine Name"
 msgid "Engine Overrides"
 msgstr "Engine Overrides"
 
-#: src/components/config/engines/engine-editor.tsx:220
+#: src/components/config/engines/engine-editor.tsx:168
 msgid "Engine Type"
 msgstr "Engine Type"
 
@@ -1731,6 +1741,7 @@ msgstr "Engine used for downloads when not specified by platform/streamer."
 msgid "Engines"
 msgstr "Engines"
 
+#: src/routes/_authed/_dashboard/config/templates/index.tsx:260
 #: src/routes/_authed/_dashboard/pipeline/presets/index.tsx:506
 msgid "Enter a unique name"
 msgstr "Enter a unique name"
@@ -1759,7 +1770,7 @@ msgstr "entries"
 #: src/routes/_authed/_dashboard/config/engines/$engineId.tsx:47
 #: src/routes/_authed/_dashboard/config/engines/index.tsx:34
 #: src/routes/_authed/_dashboard/config/platforms/index.tsx:58
-#: src/routes/_authed/_dashboard/config/templates/index.tsx:58
+#: src/routes/_authed/_dashboard/config/templates/index.tsx:107
 #: src/routes/_authed/_dashboard/pipeline/jobs/index.tsx:195
 #: src/routes/_authed/_dashboard/pipeline/outputs.tsx:141
 #: src/routes/_authed/_dashboard/pipeline/presets/index.tsx:226
@@ -1918,6 +1929,11 @@ msgstr "Failed to change password"
 msgid "Failed to clone preset: {0}"
 msgstr "Failed to clone preset: {0}"
 
+#. placeholder {0}: error.message
+#: src/routes/_authed/_dashboard/config/templates/index.tsx:74
+msgid "Failed to clone template: {0}"
+msgstr "Failed to clone template: {0}"
+
 #: src/components/notifications/channel-form.tsx:191
 msgid "Failed to create channel"
 msgstr "Failed to create channel"
@@ -2031,7 +2047,7 @@ msgid "Failed to load system health"
 msgstr "Failed to load system health"
 
 #. placeholder {0}: (error as Error).message
-#: src/routes/_authed/_dashboard/config/templates/index.tsx:61
+#: src/routes/_authed/_dashboard/config/templates/index.tsx:110
 msgid "Failed to load templates: {0}"
 msgstr "Failed to load templates: {0}"
 
@@ -2079,7 +2095,7 @@ msgstr "Failed to update platform: {0}"
 msgid "Failed to update preset: {0}"
 msgstr "Failed to update preset: {0}"
 
-#: src/routes/_authed/_dashboard/config/global.tsx:88
+#: src/routes/_authed/_dashboard/config/global.tsx:92
 msgid "Failed to update settings"
 msgstr "Failed to update settings"
 
@@ -2235,7 +2251,7 @@ msgid "Force specific output format."
 msgstr "Force specific output format."
 
 #: src/components/config/global/file-config-card.tsx:89
-#: src/components/config/templates/template-card.tsx:143
+#: src/components/config/templates/template-card.tsx:150
 #: src/components/pipeline/presets/processors/audio-extract-config-form.tsx:88
 #: src/components/pipeline/presets/processors/remux-config-form.tsx:81
 msgid "Format"
@@ -2425,9 +2441,13 @@ msgstr "High quality H.265/HEVC compression (CRF 22). Smaller files but slower e
 msgid "High Quality MP3"
 msgstr "High Quality MP3"
 
+#: src/components/config/global/network-system-card.tsx:195
+msgid "History Retention"
+msgstr "History Retention"
+
 #: src/components/config/global/network-system-card.tsx:56
-msgid "History Retention (Days)"
-msgstr "History Retention (Days)"
+#~ msgid "History Retention (Days)"
+#~ msgstr "History Retention (Days)"
 
 #: src/routes/_authed/_dashboard/config/logging.tsx:60
 msgid "HLS parser"
@@ -2474,7 +2494,7 @@ msgstr "ID"
 msgid "ID is required"
 msgstr "ID is required"
 
-#: src/components/config/engines/engine-editor.tsx:183
+#: src/components/config/engines/engine-editor.tsx:131
 msgid "Identity and type of the engine."
 msgstr "Identity and type of the engine."
 
@@ -2571,6 +2591,14 @@ msgstr "Inspecting"
 msgid "Interval (seconds)"
 msgstr "Interval (seconds)"
 
+#: src/components/config/global/network-system-card.tsx:68
+msgid "Interval between checks to see if a streamer is currently live. Slower intervals reduce API usage but might delay recording starts."
+msgstr "Interval between checks to see if a streamer is currently live. Slower intervals reduce API usage but might delay recording starts."
+
+#: src/components/config/global/network-system-card.tsx:111
+msgid "Interval between checks when a streamer is live to detect when the stream ends."
+msgstr "Interval between checks when a streamer is live to detect when the stream ends."
+
 #: src/components/config/platforms/tabs/general-tab.tsx:62
 msgid "Interval between checks."
 msgstr "Interval between checks."
@@ -2653,7 +2681,7 @@ msgstr "Language"
 msgid "Language Settings"
 msgstr "Language Settings"
 
-#: src/components/streamers/card/use-streamer-status.tsx:242
+#: src/components/streamers/card/use-streamer-status.tsx:243
 msgid "Last Activity"
 msgstr "Last Activity"
 
@@ -2870,6 +2898,10 @@ msgstr "Maximum compression to minimize storage usage, then delete original."
 msgid "Maximum HEVC/H.265 compression (CRF 28) for minimal file size."
 msgstr "Maximum HEVC/H.265 compression (CRF 28) for minimal file size."
 
+#: src/components/config/global/network-system-card.tsx:241
+msgid "Maximum idle time between segments before the system starts a new recording session instead of continuing the current one."
+msgstr "Maximum idle time between segments before the system starts a new recording session instead of continuing the current one."
+
 #: src/components/config/shared/retry-policy-form.tsx:70
 msgid "Maximum number of retry attempts."
 msgstr "Maximum number of retry attempts."
@@ -3022,7 +3054,7 @@ msgstr "Native Resolution Thumbnail"
 msgid "Network"
 msgstr "Network"
 
-#: src/components/config/global/network-system-card.tsx:23
+#: src/components/config/global/network-system-card.tsx:40
 msgid "Network & System"
 msgstr "Network & System"
 
@@ -3041,6 +3073,10 @@ msgstr "New password (min 8 chars)"
 #: src/routes/_authed/_dashboard/pipeline/presets/index.tsx:500
 msgid "New Preset Name"
 msgstr "New Preset Name"
+
+#: src/routes/_authed/_dashboard/config/templates/index.tsx:254
+msgid "New Template Name"
+msgstr "New Template Name"
 
 #: src/components/streamers/streamer-form.tsx:176
 msgid "Next"
@@ -3229,11 +3265,11 @@ msgstr "No steps defined"
 msgid "No streamers found"
 msgstr "No streamers found"
 
-#: src/routes/_authed/_dashboard/config/templates/index.tsx:160
+#: src/routes/_authed/_dashboard/config/templates/index.tsx:210
 msgid "No templates found"
 msgstr "No templates found"
 
-#: src/routes/_authed/_dashboard/config/templates/index.tsx:162
+#: src/routes/_authed/_dashboard/config/templates/index.tsx:212
 msgid "No templates yet"
 msgstr "No templates yet"
 
@@ -3282,6 +3318,14 @@ msgstr "Notifications"
 msgid "Number of attempts before failing the upload."
 msgstr "Number of attempts before failing the upload."
 
+#: src/components/config/global/network-system-card.tsx:153
+msgid "Number of consecutive failed checks required to definitively confirm a streamer has gone offline. Higher values prevent \"fake\" offline detection."
+msgstr "Number of consecutive failed checks required to definitively confirm a streamer has gone offline. Higher values prevent \"fake\" offline detection."
+
+#: src/components/config/global/network-system-card.tsx:199
+msgid "Number of days to keep the history of completed, failed, or interrupted jobs in the database."
+msgstr "Number of days to keep the history of completed, failed, or interrupted jobs in the database."
+
 #: src/components/sessions/session-card.tsx:112
 #: src/components/streamers/card/use-streamer-status.tsx:30
 #: src/components/streamers/card/use-streamer-status.tsx:229
@@ -3296,13 +3340,26 @@ msgstr "Offline"
 msgid "OFFLINE"
 msgstr "OFFLINE"
 
+#: src/components/config/global/network-system-card.tsx:99
+#: src/components/config/global/network-system-card.tsx:107
+msgid "Offline Check"
+msgstr "Offline Check"
+
 #: src/components/config/global/network-system-card.tsx:96
-msgid "Offline Check (ms)"
-msgstr "Offline Check (ms)"
+#~ msgid "Offline Check (ms)"
+#~ msgstr "Offline Check (ms)"
 
 #: src/components/config/global/network-system-card.tsx:115
-msgid "Offline Check Count"
-msgstr "Offline Check Count"
+#~ msgid "Offline Check Count"
+#~ msgstr "Offline Check Count"
+
+#: src/components/config/global/network-system-card.tsx:149
+msgid "Offline Detection"
+msgstr "Offline Detection"
+
+#: src/components/config/global/network-system-card.tsx:141
+msgid "Offline Detection Count"
+msgstr "Offline Detection Count"
 
 #: src/components/config/shared/event-hooks-form.tsx:137
 msgid "On Download Complete"
@@ -3337,7 +3394,7 @@ msgid "Only include files with this extension (without dot)"
 msgstr "Only include files with this extension (without dot)"
 
 #: src/components/config/platforms/platform-card.tsx:83
-#: src/components/config/templates/template-card.tsx:108
+#: src/components/config/templates/template-card.tsx:110
 #: src/components/notifications/channel-card.tsx:148
 #: src/components/pipeline/jobs/pipeline-summary-card.tsx:172
 #: src/components/pipeline/outputs/output-card.tsx:124
@@ -3376,7 +3433,7 @@ msgstr "Options"
 
 #: src/components/config/platforms/platform-card.tsx:130
 #: src/components/config/shared-config-editor.tsx:141
-#: src/components/config/templates/template-card.tsx:154
+#: src/components/config/templates/template-card.tsx:161
 #: src/components/pipeline/presets/processors/thumbnail-config-form.tsx:134
 msgid "Output"
 msgstr "Output"
@@ -3889,7 +3946,7 @@ msgstr "Progress:"
 msgid "Proxy"
 msgstr "Proxy"
 
-#: src/components/config/global/network-system-card.tsx:136
+#: src/components/config/global/network-system-card.tsx:273
 msgid "Proxy Configuration"
 msgstr "Proxy Configuration"
 
@@ -4118,6 +4175,10 @@ msgstr "Resume"
 msgid "Resuming in"
 msgstr "Resuming in"
 
+#: src/components/config/global/network-system-card.tsx:187
+msgid "Retention Period"
+msgstr "Retention Period"
+
 #: src/components/pipeline/presets/processors/delete-config-form.tsx:65
 msgid "Retries for locked files"
 msgstr "Retries for locked files"
@@ -4208,7 +4269,7 @@ msgstr "Sample Rate (Hz)"
 msgid "Sampling Strategy"
 msgstr "Sampling Strategy"
 
-#: src/components/config/engines/engine-editor.tsx:340
+#: src/components/config/engines/engine-editor.tsx:288
 #: src/components/config/platforms/platform-editor.tsx:121
 #: src/components/config/templates/template-editor.tsx:160
 #: src/components/filters/FilterDialog.tsx:281
@@ -4216,7 +4277,7 @@ msgstr "Sampling Strategy"
 #: src/components/pipeline/presets/editor/preset-save-fab.tsx:37
 #: src/components/pipeline/workflows/step-config-dialog.tsx:587
 #: src/components/streamers/edit/streamer-save-fab.tsx:45
-#: src/routes/_authed/_dashboard/config/global.tsx:183
+#: src/routes/_authed/_dashboard/config/global.tsx:169
 #: src/routes/_authed/_dashboard/config/logging.tsx:376
 msgid "Save Changes"
 msgstr "Save Changes"
@@ -4234,7 +4295,7 @@ msgstr "Save Workflow"
 #: src/components/filters/FilterDialog.tsx:278
 #: src/components/pipeline/workflows/workflow-editor.tsx:238
 #: src/components/streamers/edit/streamer-save-fab.tsx:40
-#: src/routes/_authed/_dashboard/config/global.tsx:183
+#: src/routes/_authed/_dashboard/config/global.tsx:169
 #: src/routes/_authed/_dashboard/config/logging.tsx:376
 msgid "Saving..."
 msgstr "Saving..."
@@ -4304,7 +4365,7 @@ msgstr "Search sessions..."
 msgid "Search streamers..."
 msgstr "Search streamers..."
 
-#: src/routes/_authed/_dashboard/config/templates/index.tsx:74
+#: src/routes/_authed/_dashboard/config/templates/index.tsx:123
 msgid "Search templates..."
 msgstr "Search templates..."
 
@@ -4398,7 +4459,7 @@ msgstr "Select the events that should trigger notifications for <0>{0}</0>."
 msgid "Select the steps that must complete successfully before this step runs."
 msgstr "Select the steps that must complete successfully before this step runs."
 
-#: src/components/config/engines/engine-editor.tsx:246
+#: src/components/config/engines/engine-editor.tsx:194
 #: src/components/pipeline/presets/editor/preset-meta-form.tsx:158
 msgid "Select type"
 msgstr "Select type"
@@ -4436,9 +4497,13 @@ msgstr "Session Details"
 msgid "Session Duration"
 msgstr "Session Duration"
 
+#: src/components/config/global/network-system-card.tsx:237
+msgid "Session Gap"
+msgstr "Session Gap"
+
 #: src/components/config/global/network-system-card.tsx:75
-msgid "Session Gap (seconds)"
-msgstr "Session Gap (seconds)"
+#~ msgid "Session Gap (seconds)"
+#~ msgstr "Session Gap (seconds)"
 
 #: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.tsx:404
 msgid "Session ID"
@@ -4447,6 +4512,10 @@ msgstr "Session ID"
 #: src/routes/_authed/_dashboard/pipeline/jobs/new.tsx:48
 msgid "Session ID is required"
 msgstr "Session ID is required"
+
+#: src/components/config/global/network-system-card.tsx:229
+msgid "Session Merging Gap"
+msgstr "Session Merging Gap"
 
 #: src/routes/_authed/_dashboard/sessions/$sessionId.tsx:162
 msgid "Session not found"
@@ -4470,11 +4539,11 @@ msgstr "Sessions"
 msgid "Set constraints on downloads."
 msgstr "Set constraints on downloads."
 
-#: src/components/config/engines/engine-editor.tsx:148
+#: src/components/config/engines/engine-editor.tsx:343
 msgid "Set up a new download tool configuration"
 msgstr "Set up a new download tool configuration"
 
-#: src/components/config/engines/engine-editor.tsx:296
+#: src/components/config/engines/engine-editor.tsx:244
 #: src/components/sidebar/navbar.tsx:24
 #: src/lib/menu-list.ts:104
 #: src/routes/_authed/_dashboard/config/route.tsx:106
@@ -4485,7 +4554,7 @@ msgstr "Settings"
 msgid "Settings have been optimized for this platform."
 msgstr "Settings have been optimized for this platform."
 
-#: src/routes/_authed/_dashboard/config/global.tsx:84
+#: src/routes/_authed/_dashboard/config/global.tsx:88
 msgid "Settings updated successfully"
 msgstr "Settings updated successfully"
 
@@ -4664,9 +4733,14 @@ msgstr "Streamer"
 msgid "STREAMER"
 msgstr "STREAMER"
 
+#: src/components/config/global/network-system-card.tsx:56
+#: src/components/config/global/network-system-card.tsx:64
+msgid "Streamer Check"
+msgstr "Streamer Check"
+
 #: src/components/config/global/network-system-card.tsx:37
-msgid "Streamer Check (ms)"
-msgstr "Streamer Check (ms)"
+#~ msgid "Streamer Check (ms)"
+#~ msgstr "Streamer Check (ms)"
 
 #: src/routes/_authed/_dashboard/streamers/new.tsx:20
 msgid "Streamer created successfully"
@@ -4792,6 +4866,10 @@ msgstr "Target number of messages to capture per sample period."
 msgid "Template"
 msgstr "Template"
 
+#: src/routes/_authed/_dashboard/config/templates/index.tsx:63
+msgid "Template cloned successfully"
+msgstr "Template cloned successfully"
+
 #: src/routes/_authed/_dashboard/config/templates/create.tsx:27
 msgid "Template created successfully"
 msgstr "Template created successfully"
@@ -4812,7 +4890,7 @@ msgstr "Template not found"
 msgid "Template updated successfully"
 msgstr "Template updated successfully"
 
-#: src/routes/_authed/_dashboard/config/templates/index.tsx:84
+#: src/routes/_authed/_dashboard/config/templates/index.tsx:133
 msgid "templates"
 msgstr "templates"
 
@@ -4857,7 +4935,7 @@ msgstr "The page you are looking for does not exist."
 msgid "The stream title remained constant throughout the session."
 msgstr "The stream title remained constant throughout the session."
 
-#: src/components/config/engines/engine-editor.tsx:271
+#: src/components/config/engines/engine-editor.tsx:219
 msgid "The underlying tool used for downloading."
 msgstr "The underlying tool used for downloading."
 
@@ -5104,7 +5182,7 @@ msgid "Try adjusting your search or filters."
 msgstr "Try adjusting your search or filters."
 
 #: src/routes/_authed/_dashboard/config/platforms/index.tsx:161
-#: src/routes/_authed/_dashboard/config/templates/index.tsx:167
+#: src/routes/_authed/_dashboard/config/templates/index.tsx:217
 #: src/routes/_authed/_dashboard/pipeline/workflows/index.tsx:267
 msgid "Try adjusting your search."
 msgstr "Try adjusting your search."

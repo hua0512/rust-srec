@@ -262,10 +262,7 @@ function TemplatesConfigPage() {
             </div>
           </div>
           <DialogFooter>
-            <Button
-              variant="outline"
-              onClick={() => setCloneDialogOpen(false)}
-            >
+            <Button variant="outline" onClick={() => setCloneDialogOpen(false)}>
               <Trans>Cancel</Trans>
             </Button>
             <Button

@@ -40,7 +40,7 @@ export const StreamAvatarInfo = ({ streamer }: StreamAvatarInfoProps) => {
   // During SSR (now === null), default to false to avoid hydration mismatch
   const isTemporarilyPaused = now
     ? (disabledUntil && disabledUntil > now) ||
-    streamer.state === 'TEMPORAL_DISABLED'
+      streamer.state === 'TEMPORAL_DISABLED'
     : streamer.state === 'TEMPORAL_DISABLED';
 
   const stopStates = [

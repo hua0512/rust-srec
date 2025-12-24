@@ -210,9 +210,7 @@ export function NetworkSystemCard({ control }: NetworkSystemCardProps) {
                     unitType="duration"
                     value={(field.value ?? 0) * 86400}
                     onChange={(val) =>
-                      field.onChange(
-                        val !== null ? Math.round(val / 86400) : 0,
-                      )
+                      field.onChange(val !== null ? Math.round(val / 86400) : 0)
                     }
                     placeholder="0"
                   />
@@ -241,9 +239,9 @@ export function NetworkSystemCard({ control }: NetworkSystemCardProps) {
                       >
                         <p className="text-xs leading-relaxed text-muted-foreground">
                           <Trans>
-                            Maximum idle time between segments before the
-                            system starts a new recording session instead of
-                            continuing the current one.
+                            Maximum idle time between segments before the system
+                            starts a new recording session instead of continuing
+                            the current one.
                           </Trans>
                         </p>
                       </StatusInfoTooltip>
@@ -263,7 +261,6 @@ export function NetworkSystemCard({ control }: NetworkSystemCardProps) {
             )}
           />
         </div>
-
 
         <Separator className="bg-white/5" />
 
