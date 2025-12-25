@@ -13,12 +13,12 @@ use std::fs::File;
 use std::io::{Read, Write};
 use std::path::Path;
 use tar::Builder as TarBuilder;
-use tracing::{debug, error, info, warn};
+use tracing::{debug, error, info};
 use zip::ZipWriter;
 use zip::write::SimpleFileOptions;
 
 use super::traits::{Processor, ProcessorContext, ProcessorInput, ProcessorOutput, ProcessorType};
-use super::utils::create_log_entry;
+use super::utils::{create_log_entry, parse_config_or_default};
 use crate::Result;
 
 /// Default compression level (6 is a good balance between speed and compression).
@@ -342,27 +342,15 @@ impl Processor for CompressionProcessor {
     async fn process(
         &self,
         input: &ProcessorInput,
-        _ctx: &ProcessorContext,
+        ctx: &ProcessorContext,
     ) -> Result<ProcessorOutput> {
         let start = std::time::Instant::now();
 
         // Initialize logs
         let mut logs = Vec::new();
 
-        // Parse config or use defaults
-        let config: CompressionConfig = if let Some(ref config_str) = input.config {
-            serde_json::from_str(config_str).unwrap_or_else(|e| {
-                let msg = format!("Failed to parse compression config, using defaults: {}", e);
-                warn!("{}", msg);
-                logs.push(create_log_entry(
-                    crate::pipeline::job_queue::LogLevel::Warn,
-                    msg,
-                ));
-                CompressionConfig::default()
-            })
-        } else {
-            CompressionConfig::default()
-        };
+        let config: CompressionConfig =
+            parse_config_or_default(input.config.as_deref(), ctx, "compression", Some(&mut logs));
 
         // Validate inputs
         if input.inputs.is_empty() {

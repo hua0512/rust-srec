@@ -446,7 +446,7 @@ impl DagRepository for SqlxDagRepository {
         retry_on_sqlite_busy("complete_step_and_check_dependents", || async {
             let mut tx = self.pool.begin().await?;
             let now = chrono::Utc::now().to_rfc3339();
-            let outputs_json = serde_json::to_string(outputs).unwrap_or_else(|_| "[]".to_string());
+            let outputs_json = serde_json::to_string(outputs)?;
 
             // 1. Mark step as completed with outputs
             sqlx::query(
@@ -661,7 +661,7 @@ impl DagRepository for SqlxDagRepository {
             return Ok(Vec::new());
         }
 
-        let step_ids_json = serde_json::to_string(step_ids).unwrap_or_else(|_| "[]".to_string());
+        let step_ids_json = serde_json::to_string(step_ids)?;
 
         let outputs_rows: Vec<Option<String>> = sqlx::query_scalar(
             r#"

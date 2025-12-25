@@ -13,7 +13,7 @@ use tokio::process::Command;
 use tracing::{debug, error, info, warn};
 
 use super::traits::{Processor, ProcessorContext, ProcessorInput, ProcessorOutput, ProcessorType};
-use super::utils::{get_extension, is_image, is_media};
+use super::utils::{get_extension, is_image, is_media, parse_config_or_default};
 use crate::Result;
 
 /// Audio output format options.
@@ -273,18 +273,8 @@ impl Processor for AudioExtractProcessor {
     ) -> Result<ProcessorOutput> {
         let start = std::time::Instant::now();
 
-        // Parse config or use defaults
-        let config: AudioExtractConfig = if let Some(ref config_str) = input.config {
-            serde_json::from_str(config_str).unwrap_or_else(|e| {
-                warn!(
-                    "Failed to parse audio extract config, using defaults: {}",
-                    e
-                );
-                AudioExtractConfig::default()
-            })
-        } else {
-            AudioExtractConfig::default()
-        };
+        let config: AudioExtractConfig =
+            parse_config_or_default(input.config.as_deref(), ctx, "audio_extract", None);
 
         // Get input path
         let input_path = input.inputs.first().ok_or_else(|| {

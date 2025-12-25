@@ -6,6 +6,7 @@ use std::sync::Arc;
 use chrono::{DateTime, Utc};
 use dashmap::DashMap;
 use parking_lot::RwLock;
+use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 use tokio::sync::{OwnedSemaphorePermit, Semaphore, broadcast, mpsc};
 use tracing::{debug, error, info, warn};
@@ -21,6 +22,11 @@ use crate::database::models::engine::{
 };
 use crate::database::repositories::config::ConfigRepository;
 use crate::downloader::SegmentInfo;
+
+fn parse_engine_config<T: DeserializeOwned>(engine: &'static str, raw: &str) -> Result<T> {
+    serde_json::from_str(raw)
+        .map_err(|e| crate::Error::Other(format!("Failed to parse {} config: {}", engine, e)))
+}
 
 /// Pending configuration update for an active download.
 ///
@@ -380,13 +386,11 @@ impl DownloadManager {
         // 1. Check for overrides first
         let specific_override = overrides.and_then(|o| o.get(target_id));
 
-        // Compute override hash for circuit breaker key (if needed)
-        let override_hash = specific_override.map(Self::hash_override);
-
         // If we have an override, we MUST create a new engine instance
         // We cannot reuse the shared engine because it has different config
         if let Some(override_config) = specific_override {
             debug!("Applying engine override for {}", target_id);
+            let override_hash = Self::hash_override(override_config);
 
             // Need to know the type first
             // Try to parse ID as type, or look up in DB to get type
@@ -435,11 +439,8 @@ impl DownloadManager {
                         base_config = serde_json::from_value(merged).unwrap_or(base_config);
                     }
 
-                    let key = EngineKey::with_override(
-                        EngineType::Ffmpeg,
-                        engine_id,
-                        override_hash.unwrap(),
-                    );
+                    let key =
+                        EngineKey::with_override(EngineType::Ffmpeg, engine_id, override_hash);
                     return Ok((
                         Arc::new(FfmpegEngine::with_config(base_config)),
                         EngineType::Ffmpeg,
@@ -463,11 +464,8 @@ impl DownloadManager {
                         base_config = serde_json::from_value(merged).unwrap_or(base_config);
                     }
 
-                    let key = EngineKey::with_override(
-                        EngineType::Streamlink,
-                        engine_id,
-                        override_hash.unwrap(),
-                    );
+                    let key =
+                        EngineKey::with_override(EngineType::Streamlink, engine_id, override_hash);
                     return Ok((
                         Arc::new(StreamlinkEngine::with_config(base_config)),
                         EngineType::Streamlink,
@@ -490,11 +488,7 @@ impl DownloadManager {
                         base_config = serde_json::from_value(merged).unwrap_or(base_config);
                     }
 
-                    let key = EngineKey::with_override(
-                        EngineType::Mesio,
-                        engine_id,
-                        override_hash.unwrap(),
-                    );
+                    let key = EngineKey::with_override(EngineType::Mesio, engine_id, override_hash);
                     return Ok((
                         Arc::new(MesioEngine::with_config(base_config)),
                         EngineType::Mesio,
@@ -526,12 +520,7 @@ impl DownloadManager {
                         return match engine_type {
                             EngineType::Ffmpeg => {
                                 let engine_config: FfmpegEngineConfig =
-                                    serde_json::from_str(&config.config).map_err(|e| {
-                                        crate::Error::Other(format!(
-                                            "Failed to parse ffmpeg config: {}",
-                                            e
-                                        ))
-                                    })?;
+                                    parse_engine_config("ffmpeg", &config.config)?;
                                 Ok((
                                     Arc::new(FfmpegEngine::with_config(engine_config))
                                         as Arc<dyn DownloadEngine>,
@@ -541,12 +530,7 @@ impl DownloadManager {
                             }
                             EngineType::Streamlink => {
                                 let engine_config: StreamlinkEngineConfig =
-                                    serde_json::from_str(&config.config).map_err(|e| {
-                                        crate::Error::Other(format!(
-                                            "Failed to parse streamlink config: {}",
-                                            e
-                                        ))
-                                    })?;
+                                    parse_engine_config("streamlink", &config.config)?;
                                 Ok((
                                     Arc::new(StreamlinkEngine::with_config(engine_config))
                                         as Arc<dyn DownloadEngine>,
@@ -556,12 +540,7 @@ impl DownloadManager {
                             }
                             EngineType::Mesio => {
                                 let engine_config: MesioEngineConfig =
-                                    serde_json::from_str(&config.config).map_err(|e| {
-                                        crate::Error::Other(format!(
-                                            "Failed to parse mesio config: {}",
-                                            e
-                                        ))
-                                    })?;
+                                    parse_engine_config("mesio", &config.config)?;
                                 Ok((
                                     Arc::new(MesioEngine::with_config(engine_config))
                                         as Arc<dyn DownloadEngine>,

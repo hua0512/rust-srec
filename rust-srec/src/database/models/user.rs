@@ -4,6 +4,8 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use sqlx::FromRow;
 
+use crate::utils::json::{self, JsonContext};
+
 /// User database model.
 /// Represents a user account for authentication.
 #[derive(Debug, Clone, FromRow, Serialize, Deserialize)]
@@ -39,12 +41,21 @@ impl UserDbModel {
         roles: Vec<String>,
     ) -> Self {
         let now = Utc::now().to_rfc3339();
+        let id = uuid::Uuid::new_v4().to_string();
         Self {
-            id: uuid::Uuid::new_v4().to_string(),
+            id: id.clone(),
             username: username.into(),
             password_hash: password_hash.into(),
             email: None,
-            roles: serde_json::to_string(&roles).unwrap_or_else(|_| r#"["user"]"#.to_string()),
+            roles: json::to_string_or_fallback(
+                &roles,
+                r#"["user"]"#,
+                JsonContext::UserField {
+                    user_id: &id,
+                    field: "roles",
+                },
+                "Failed to serialize user roles; storing default",
+            ),
             is_active: true,
             must_change_password: true,
             last_login_at: None,
@@ -55,12 +66,27 @@ impl UserDbModel {
 
     /// Get the roles as a Vec<String>.
     pub fn get_roles(&self) -> Vec<String> {
-        serde_json::from_str(&self.roles).unwrap_or_default()
+        json::parse_or_default(
+            &self.roles,
+            JsonContext::UserField {
+                user_id: &self.id,
+                field: "roles",
+            },
+            "Invalid user roles JSON; treating as empty",
+        )
     }
 
     /// Set the roles from a Vec<String>.
     pub fn set_roles(&mut self, roles: Vec<String>) {
-        self.roles = serde_json::to_string(&roles).unwrap_or_else(|_| r#"["user"]"#.to_string());
+        self.roles = json::to_string_or_fallback(
+            &roles,
+            r#"["user"]"#,
+            JsonContext::UserField {
+                user_id: &self.id,
+                field: "roles",
+            },
+            "Failed to serialize user roles; storing default",
+        );
     }
 
     /// Check if the user has a specific role.

@@ -4,6 +4,8 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use sqlx::FromRow;
 
+use crate::utils::json::{self, JsonContext};
+
 /// Filter criteria for querying jobs.
 #[derive(Debug, Clone, Default)]
 pub struct JobFilters {
@@ -292,15 +294,31 @@ impl JobDbModel {
 
     /// Get the list of output paths produced by this job.
     pub fn get_outputs(&self) -> Vec<String> {
-        self.outputs
-            .as_ref()
-            .and_then(|s| serde_json::from_str(s).ok())
-            .unwrap_or_default()
+        let Some(raw) = self.outputs.as_deref() else {
+            return Vec::new();
+        };
+
+        json::parse_or_default(
+            raw,
+            JsonContext::JobField {
+                job_id: &self.id,
+                field: "outputs",
+            },
+            "Invalid job outputs JSON; treating as empty",
+        )
     }
 
     /// Set the output paths for this job.
     pub fn set_outputs(&mut self, outputs: &[String]) {
-        self.outputs = Some(serde_json::to_string(outputs).unwrap_or_else(|_| "[]".to_string()));
+        self.outputs = Some(json::to_string_or_fallback(
+            outputs,
+            "[]",
+            JsonContext::JobField {
+                job_id: &self.id,
+                field: "outputs",
+            },
+            "Failed to serialize job outputs; storing empty list",
+        ));
         self.updated_at = chrono::Utc::now().to_rfc3339();
     }
 

@@ -1,7 +1,6 @@
 //! URL parsing routes for extracting media info.
 
 use axum::{Json, Router, extract::State, routing::post};
-use platforms_parser::extractor::create_client_builder;
 use platforms_parser::extractor::factory::ExtractorFactory;
 use tracing::{debug, warn};
 
@@ -303,10 +302,9 @@ async fn process_parse_request(
 }
 
 fn extractor_factory(state: &AppState) -> ExtractorFactory {
-    let client = state.http_client.clone().unwrap_or_else(|| {
-        create_client_builder(None)
-            .build()
-            .expect("Failed to create HTTP client")
-    });
+    let client = state
+        .http_client
+        .clone()
+        .unwrap_or_else(AppState::build_http_client);
     ExtractorFactory::new(client)
 }

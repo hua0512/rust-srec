@@ -6,7 +6,7 @@
 use dashmap::DashMap;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
-use tokio::sync::OnceCell;
+use tokio::sync::{Notify, OnceCell};
 
 use crate::domain::config::MergedConfig;
 
@@ -37,7 +37,43 @@ impl CacheEntry {
 ///
 /// When multiple requests come in for the same streamer config simultaneously,
 /// only one will actually resolve the config while others wait for the result.
-type InFlightRequest = Arc<OnceCell<Arc<MergedConfig>>>;
+pub(super) type InFlightResult = std::result::Result<Arc<MergedConfig>, String>;
+
+pub(super) struct InFlightState {
+    result: OnceCell<InFlightResult>,
+    notify: Notify,
+}
+
+impl InFlightState {
+    fn new() -> Self {
+        Self {
+            result: OnceCell::new(),
+            notify: Notify::new(),
+        }
+    }
+
+    fn set_result(&self, result: InFlightResult) {
+        let _ = self.result.set(result);
+        self.notify.notify_waiters();
+    }
+
+    async fn wait(&self) -> InFlightResult {
+        loop {
+            if let Some(result) = self.result.get() {
+                return result.clone();
+            }
+
+            let notified = self.notify.notified();
+            if let Some(result) = self.result.get() {
+                return result.clone();
+            }
+
+            notified.await;
+        }
+    }
+}
+
+pub(super) type InFlightRequest = Arc<InFlightState>;
 
 /// Thread-safe cache for merged configurations.
 ///
@@ -92,11 +128,18 @@ impl ConfigCache {
     /// Remove a specific streamer's configuration from the cache.
     pub fn invalidate(&self, streamer_id: &str) {
         self.streamer_configs.remove(streamer_id);
-        self.in_flight.remove(streamer_id);
+        self.cancel_in_flight(
+            streamer_id,
+            format!("Configuration invalidated for streamer {streamer_id}"),
+        );
     }
 
     /// Invalidate all cached configurations.
     pub fn invalidate_all(&self) {
+        let reason = "Configuration cache invalidated".to_string();
+        for entry in self.in_flight.iter() {
+            entry.value().set_result(Err(reason.clone()));
+        }
         self.streamer_configs.clear();
         self.in_flight.clear();
     }
@@ -107,7 +150,15 @@ impl ConfigCache {
         F: Fn(&str) -> bool,
     {
         self.streamer_configs.retain(|key, _| !predicate(key));
-        self.in_flight.retain(|key, _| !predicate(key));
+        let reason = "Configuration cache invalidated".to_string();
+        self.in_flight.retain(|key, request| {
+            if predicate(key) {
+                request.set_result(Err(reason.clone()));
+                false
+            } else {
+                true
+            }
+        });
     }
 
     /// Get the number of cached entries.
@@ -142,14 +193,14 @@ impl ConfigCache {
     ///
     /// This is used to deduplicate concurrent requests for the same streamer's config.
     /// Returns (OnceCell, is_new) where is_new indicates if this is a new request.
-    pub fn get_or_create_in_flight(&self, streamer_id: &str) -> (InFlightRequest, bool) {
+    pub(super) fn get_or_create_in_flight(&self, streamer_id: &str) -> (InFlightRequest, bool) {
         // Try to get existing in-flight request
         if let Some(existing) = self.in_flight.get(streamer_id) {
             return (existing.clone(), false);
         }
 
         // Create new in-flight request
-        let cell = Arc::new(OnceCell::new());
+        let request = Arc::new(InFlightState::new());
 
         // Use entry API to handle race condition
         match self.in_flight.entry(streamer_id.to_string()) {
@@ -158,8 +209,8 @@ impl ConfigCache {
                 (entry.get().clone(), false)
             }
             dashmap::mapref::entry::Entry::Vacant(entry) => {
-                entry.insert(cell.clone());
-                (cell, true)
+                entry.insert(request.clone());
+                (request, true)
             }
         }
     }
@@ -167,24 +218,66 @@ impl ConfigCache {
     /// Complete an in-flight request by setting its result.
     ///
     /// This will also cache the result and remove the in-flight entry.
-    pub fn complete_in_flight(&self, streamer_id: &str, config: Arc<MergedConfig>) {
-        // Cache the result
-        self.insert(streamer_id.to_string(), config.clone());
+    pub(super) fn complete_in_flight(
+        &self,
+        streamer_id: &str,
+        request: &InFlightRequest,
+        config: Arc<MergedConfig>,
+    ) {
+        if let Some(current) = self.in_flight.get(streamer_id) {
+            if !Arc::ptr_eq(&current, request) {
+                return;
+            }
+        } else {
+            return;
+        }
 
-        // Set the OnceCell value for any waiting requests
-        if let Some((_, cell)) = self.in_flight.remove(streamer_id) {
-            // Ignore error if already set (shouldn't happen)
-            let _ = cell.set(config);
+        if let Some((_, current)) = self.in_flight.remove(streamer_id) {
+            if Arc::ptr_eq(&current, request) {
+                current.set_result(Ok(config.clone()));
+                self.insert(streamer_id.to_string(), config);
+            } else {
+                self.in_flight.insert(streamer_id.to_string(), current);
+            }
+        }
+    }
+
+    /// Fail an in-flight request, waking any waiters with an error message.
+    pub(super) fn fail_in_flight(
+        &self,
+        streamer_id: &str,
+        request: &InFlightRequest,
+        reason: String,
+    ) {
+        if let Some(current) = self.in_flight.get(streamer_id) {
+            if !Arc::ptr_eq(&current, request) {
+                return;
+            }
+        } else {
+            return;
+        }
+
+        if let Some((_, current)) = self.in_flight.remove(streamer_id) {
+            if Arc::ptr_eq(&current, request) {
+                current.set_result(Err(reason));
+            } else {
+                self.in_flight.insert(streamer_id.to_string(), current);
+            }
+        }
+    }
+
+    /// Cancel an in-flight request, waking any waiters with an error message.
+    fn cancel_in_flight(&self, streamer_id: &str, reason: String) {
+        if let Some((_, request)) = self.in_flight.remove(streamer_id) {
+            request.set_result(Err(reason));
         }
     }
 
     /// Wait for an in-flight request to complete.
     ///
     /// Returns the config once it's available.
-    pub async fn wait_for_in_flight(&self, cell: &InFlightRequest) -> Arc<MergedConfig> {
-        cell.get()
-            .cloned()
-            .expect("In-flight request should be completed")
+    pub(super) async fn wait_for_in_flight(&self, cell: &InFlightRequest) -> InFlightResult {
+        cell.wait().await
     }
 
     /// Check if there's an in-flight request for a streamer.

@@ -21,6 +21,7 @@ use crate::database::models::{
     MediaOutputDbModel, Pagination, TitleEntry,
 };
 use crate::database::repositories::{JobRepository, SessionRepository, StreamerRepository};
+use crate::utils::json::{self, JsonContext};
 use crate::{Error, Result};
 
 const EXECUTION_INFO_MAX_LOGS: usize = 200;
@@ -670,9 +671,15 @@ impl JobQueue {
                 .map(|entry| JobExecutionLogDbModel {
                     id: uuid::Uuid::new_v4().to_string(),
                     job_id: job_id.to_string(),
-                    entry: serde_json::to_string(entry).unwrap_or_else(|_| {
-                        "{\"level\":\"error\",\"message\":\"log serialize failed\"}".to_string()
-                    }),
+                    entry: json::to_string_or_fallback(
+                        entry,
+                        r#"{"level":"error","message":"log serialize failed"}"#,
+                        JsonContext::JobField {
+                            job_id,
+                            field: "execution_log_entry",
+                        },
+                        "Failed to serialize execution log entry; using fallback",
+                    ),
                     created_at: entry.timestamp.to_rfc3339(),
                     level: Some(log_level_to_db(entry.level).to_string()),
                     message: Some(entry.message.clone()),
@@ -788,6 +795,7 @@ impl JobQueue {
     /// Enqueue a new job.
     pub async fn enqueue(&self, job: Job) -> Result<String> {
         let job_id = job.id.clone();
+        let job_type = job.job_type.clone();
 
         // Persist to database if repository is available
         if let Some(repo) = &self.job_repository {
@@ -796,11 +804,11 @@ impl JobQueue {
         }
 
         // Add to in-memory cache
-        self.jobs_cache.insert(job_id.clone(), job.clone());
+        self.jobs_cache.insert(job_id.clone(), job);
 
         self.depth.fetch_add(1, Ordering::SeqCst);
 
-        info!("Enqueued job {} of type {}", job_id, job.job_type);
+        info!("Enqueued job {} of type {}", job_id, job_type);
 
         // Notify waiting workers
         self.notify.notify_one();
@@ -813,13 +821,14 @@ impl JobQueue {
     /// Used by DagScheduler when creating jobs for DAG steps.
     pub async fn enqueue_existing(&self, job: Job) -> Result<String> {
         let job_id = job.id.clone();
+        let job_type = job.job_type.clone();
 
         // Add to in-memory cache (job is already in database)
-        self.jobs_cache.insert(job_id.clone(), job.clone());
+        self.jobs_cache.insert(job_id.clone(), job);
 
         self.depth.fetch_add(1, Ordering::SeqCst);
 
-        info!("Enqueued existing job {} of type {}", job_id, job.job_type);
+        info!("Enqueued existing job {} of type {}", job_id, job_type);
 
         // Notify waiting workers
         self.notify.notify_one();
@@ -934,11 +943,14 @@ impl JobQueue {
             if !result.logs.is_empty() {
                 let new_logs = self.persist_logs_to_db(job_id, &result.logs).await?;
 
-                let mut exec_info: JobExecutionInfo = db_job
-                    .execution_info
-                    .as_ref()
-                    .and_then(|s| serde_json::from_str(s).ok())
-                    .unwrap_or_default();
+                let mut exec_info: JobExecutionInfo = json::parse_optional_or_default(
+                    db_job.execution_info.as_deref(),
+                    JsonContext::JobField {
+                        job_id: &db_job.id,
+                        field: "execution_info",
+                    },
+                    "Invalid execution_info JSON; resetting to defaults",
+                );
 
                 update_log_summary(&mut exec_info, &new_logs);
                 extend_logs_capped(&mut exec_info, &new_logs);
@@ -1601,16 +1613,19 @@ impl JobQueue {
         // Update database if repository is available
         if let Some(repo) = &self.job_repository {
             let exec_info_str = repo.get_job_execution_info(job_id).await?;
-            let mut exec_info: JobExecutionInfo = exec_info_str
-                .as_deref()
-                .and_then(|s| serde_json::from_str(s).ok())
-                .unwrap_or_default();
+            let mut exec_info: JobExecutionInfo = json::parse_optional_or_default(
+                exec_info_str.as_deref(),
+                JsonContext::JobField {
+                    job_id,
+                    field: "execution_info",
+                },
+                "Invalid execution_info JSON; resetting to defaults",
+            );
 
             // Add the partial outputs
             exec_info.items_produced.extend(outputs.iter().cloned());
 
-            let exec_info_json =
-                serde_json::to_string(&exec_info).unwrap_or_else(|_| "{}".to_string());
+            let exec_info_json = serde_json::to_string(&exec_info)?;
             repo.update_job_execution_info(job_id, &exec_info_json)
                 .await?;
         }
@@ -1694,8 +1709,7 @@ impl JobQueue {
                 cap_logs_in_place(&mut exec_info.logs, EXECUTION_INFO_MAX_LOGS);
             }
 
-            let exec_info_json =
-                serde_json::to_string(&exec_info).unwrap_or_else(|_| "{}".to_string());
+            let exec_info_json = serde_json::to_string(&exec_info)?;
             repo.update_job_execution_info(job_id, &exec_info_json)
                 .await?;
         }
@@ -1759,10 +1773,14 @@ impl JobQueue {
             repo.mark_job_failed(job_id, error).await?;
 
             let exec_info_str = repo.get_job_execution_info(job_id).await?;
-            let mut exec_info: JobExecutionInfo = exec_info_str
-                .as_deref()
-                .and_then(|s| serde_json::from_str(s).ok())
-                .unwrap_or_default();
+            let mut exec_info: JobExecutionInfo = json::parse_optional_or_default(
+                exec_info_str.as_deref(),
+                JsonContext::JobField {
+                    job_id,
+                    field: "execution_info",
+                },
+                "Invalid execution_info JSON; resetting to defaults",
+            );
 
             if let Some(name) = processor_name {
                 exec_info.current_processor = Some(name.to_string());
@@ -1781,8 +1799,7 @@ impl JobQueue {
                 .persist_logs_to_db(job_id, std::slice::from_ref(&log_entry))
                 .await?;
 
-            let exec_info_json =
-                serde_json::to_string(&exec_info).unwrap_or_else(|_| "{}".to_string());
+            let exec_info_json = serde_json::to_string(&exec_info)?;
             repo.update_job_execution_info(job_id, &exec_info_json)
                 .await?;
         }
@@ -1940,14 +1957,36 @@ fn job_to_db_model(job: &Job) -> JobDbModel {
         JobStatus::Interrupted => DbJobStatus::Interrupted,
     };
 
-    let inputs_json = serde_json::to_string(&job.inputs).unwrap_or_else(|_| "[]".to_string());
-    let outputs_json = serde_json::to_string(&job.outputs).unwrap_or_else(|_| "[]".to_string());
+    let inputs_json = json::to_string_or_fallback(
+        &job.inputs,
+        "[]",
+        JsonContext::JobField {
+            job_id: &job.id,
+            field: "inputs",
+        },
+        "Failed to serialize job inputs; storing empty list",
+    );
+    let outputs_json = json::to_string_or_fallback(
+        &job.outputs,
+        "[]",
+        JsonContext::JobField {
+            job_id: &job.id,
+            field: "outputs",
+        },
+        "Failed to serialize job outputs; storing empty list",
+    );
 
     // Serialize execution_info to JSON
-    let execution_info_json = job
-        .execution_info
-        .as_ref()
-        .and_then(|info| serde_json::to_string(info).ok());
+    let execution_info_json = job.execution_info.as_ref().and_then(|info| {
+        json::to_string_option_or_warn(
+            info,
+            JsonContext::JobField {
+                job_id: &job.id,
+                field: "execution_info",
+            },
+            "Failed to serialize job execution_info; omitting",
+        )
+    });
 
     JobDbModel {
         id: job.id.clone(),

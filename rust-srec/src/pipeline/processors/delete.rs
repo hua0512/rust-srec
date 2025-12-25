@@ -12,7 +12,7 @@ use tokio::time::{Duration, sleep};
 use tracing::{debug, error, info, warn};
 
 use super::traits::{Processor, ProcessorContext, ProcessorInput, ProcessorOutput, ProcessorType};
-use super::utils::create_log_entry;
+use super::utils::{create_log_entry, parse_config_or_default};
 use crate::Result;
 
 /// Default maximum retry attempts for locked files.
@@ -159,25 +159,13 @@ impl Processor for DeleteProcessor {
     async fn process(
         &self,
         input: &ProcessorInput,
-        _ctx: &ProcessorContext,
+        ctx: &ProcessorContext,
     ) -> Result<ProcessorOutput> {
         let start = std::time::Instant::now();
         let mut logs = Vec::new();
 
-        // Parse config or use defaults
-        let config: DeleteConfig = if let Some(ref config_str) = input.config {
-            serde_json::from_str(config_str).unwrap_or_else(|e| {
-                let msg = format!("Failed to parse delete config, using defaults: {}", e);
-                warn!("{}", msg);
-                logs.push(create_log_entry(
-                    crate::pipeline::job_queue::LogLevel::Warn,
-                    msg,
-                ));
-                DeleteConfig::default()
-            })
-        } else {
-            DeleteConfig::default()
-        };
+        let config: DeleteConfig =
+            parse_config_or_default(input.config.as_deref(), ctx, "delete", Some(&mut logs));
 
         // Get file path to delete
         let file_path = input.inputs.first().ok_or_else(|| {

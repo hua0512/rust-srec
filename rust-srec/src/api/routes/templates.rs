@@ -13,6 +13,7 @@ use crate::api::models::{
 };
 use crate::api::server::AppState;
 use crate::database::models::TemplateConfigDbModel;
+use crate::utils::json::{self, JsonContext};
 use tracing::info;
 
 /// Request to clone a template.
@@ -43,14 +44,22 @@ fn db_model_to_response(model: &TemplateConfigDbModel, usage_count: u32) -> Temp
         output_file_format: model.output_file_format.clone(),
         download_engine: model.download_engine.clone(),
         record_danmu: model.record_danmu,
-        platform_overrides: model
-            .platform_overrides
-            .as_ref()
-            .and_then(|s| serde_json::from_str(s).ok()),
-        engines_override: model
-            .engines_override
-            .as_ref()
-            .and_then(|s| serde_json::from_str(s).ok()),
+        platform_overrides: json::parse_optional_value_non_null(
+            model.platform_overrides.as_deref(),
+            JsonContext::TemplateField {
+                template_id: &model.id,
+                field: "platform_overrides",
+            },
+            "Invalid template JSON field; omitting from response",
+        ),
+        engines_override: json::parse_optional_value_non_null(
+            model.engines_override.as_deref(),
+            JsonContext::TemplateField {
+                template_id: &model.id,
+                field: "engines_override",
+            },
+            "Invalid template JSON field; omitting from response",
+        ),
         stream_selection_config: model.stream_selection_config.clone(),
         cookies: model.cookies.clone(),
         min_segment_size_bytes: model.min_segment_size_bytes,
@@ -100,12 +109,21 @@ pub async fn create_template(
     template.output_file_format = request.output_file_format;
     template.download_engine = request.download_engine;
     template.record_danmu = request.record_danmu;
-    template.platform_overrides = request
-        .platform_overrides
-        .map(|v| serde_json::to_string(&v).unwrap_or_default());
-    template.engines_override = request
-        .engines_override
-        .map(|v| serde_json::to_string(&v).unwrap_or_default());
+
+    template.platform_overrides = match request.platform_overrides {
+        Some(v) if v.is_null() => None,
+        Some(v) => Some(serde_json::to_string(&v).map_err(|e| {
+            ApiError::internal(format!("Failed to serialize platform_overrides: {e}"))
+        })?),
+        None => None,
+    };
+    template.engines_override = match request.engines_override {
+        Some(v) if v.is_null() => None,
+        Some(v) => Some(serde_json::to_string(&v).map_err(|e| {
+            ApiError::internal(format!("Failed to serialize engines_override: {e}"))
+        })?),
+        None => None,
+    };
     template.stream_selection_config = request.stream_selection_config;
     template.cookies = request.cookies;
     template.min_segment_size_bytes = request.min_segment_size_bytes;
@@ -269,12 +287,20 @@ pub async fn update_template(
     template.output_file_format = request.output_file_format;
     template.download_engine = request.download_engine;
     template.record_danmu = request.record_danmu;
-    template.platform_overrides = request
-        .platform_overrides
-        .map(|v| serde_json::to_string(&v).unwrap_or_default());
-    template.engines_override = request
-        .engines_override
-        .map(|v| serde_json::to_string(&v).unwrap_or_default());
+    template.platform_overrides = match request.platform_overrides {
+        Some(v) if v.is_null() => None,
+        Some(v) => Some(serde_json::to_string(&v).map_err(|e| {
+            ApiError::internal(format!("Failed to serialize platform_overrides: {e}"))
+        })?),
+        None => None,
+    };
+    template.engines_override = match request.engines_override {
+        Some(v) if v.is_null() => None,
+        Some(v) => Some(serde_json::to_string(&v).map_err(|e| {
+            ApiError::internal(format!("Failed to serialize engines_override: {e}"))
+        })?),
+        None => None,
+    };
     template.stream_selection_config = request.stream_selection_config;
     template.cookies = request.cookies;
     template.min_segment_size_bytes = request.min_segment_size_bytes;

@@ -597,7 +597,7 @@ impl StreamerActorState {
                     let delay = hint
                         .signed_duration_since(now)
                         .to_std()
-                        .unwrap_or(std::time::Duration::from_secs(0));
+                        .unwrap_or(std::time::Duration::ZERO);
                     // Add a small buffer (5s) to ensure we wake up inside the window
                     let buffer = std::time::Duration::from_secs(5);
                     let total_delay = delay + buffer;

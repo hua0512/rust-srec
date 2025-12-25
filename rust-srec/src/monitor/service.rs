@@ -46,7 +46,7 @@ impl Default for StreamMonitorConfig {
         Self {
             default_rate_limit: 1.0,
             platform_rate_limits: vec![("twitch".to_string(), 2.0), ("youtube".to_string(), 1.0)],
-            request_timeout: Duration::from_secs(0),
+            request_timeout: Duration::ZERO,
             max_concurrent_requests: 10,
         }
     }
@@ -162,7 +162,7 @@ impl<
         // Create HTTP client
         let mut client_builder = platforms_parser::extractor::create_client_builder(None);
 
-        if config.request_timeout > Duration::from_secs(0) {
+        if config.request_timeout > Duration::ZERO {
             client_builder = client_builder.timeout(config.request_timeout);
         }
 
@@ -170,9 +170,13 @@ impl<
             client_builder = client_builder.pool_max_idle_per_host(config.max_concurrent_requests);
         }
 
-        let client = client_builder
-            .build()
-            .expect("Failed to create HTTP client");
+        let client = client_builder.build().unwrap_or_else(|error| {
+            warn!(
+                "Failed to create HTTP client via platforms-parser: {}. Falling back to reqwest defaults.",
+                error
+            );
+            reqwest::Client::new()
+        });
 
         let detector = Arc::new(StreamDetector::with_client(client.clone()));
         let batch_detector = BatchDetector::with_client(client, rate_limiter.clone());
@@ -333,7 +337,18 @@ impl<
                 let filter_models = filter_repo.get_by_streamer(streamer_id).await?;
                 let filters: Vec<Filter> = filter_models
                     .into_iter()
-                    .filter_map(|model| Filter::from_db_model(&model).ok())
+                    .filter_map(|model| match Filter::from_db_model(&model) {
+                        Ok(filter) => Some(filter),
+                        Err(error) => {
+                            warn!(
+                                filter_id = %model.id,
+                                filter_type = %model.filter_type,
+                                error = %error,
+                                "Skipping invalid streamer filter"
+                            );
+                            None
+                        }
+                    })
                     .collect();
 
                 // Get merged configuration to access stream selection preference and cookies
@@ -356,7 +371,14 @@ impl<
         // happens regardless of success or error. This prevents in_flight map
         // from leaking entries when errors occur.
         // Use the cleanup channel instead of spawning a task per entry.
-        let _ = self.cleanup_tx.try_send(streamer.id.clone());
+        if self.cleanup_tx.try_send(streamer.id.clone()).is_err() {
+            let in_flight = self.in_flight.clone();
+            let streamer_id = streamer.id.clone();
+            tokio::spawn(async move {
+                tokio::time::sleep(Duration::from_millis(100)).await;
+                in_flight.remove(&streamer_id);
+            });
+        }
 
         // Now check result - cleanup is already scheduled
         let status = result?.clone();
@@ -525,70 +547,76 @@ impl<
         let last_session = SessionTxOps::get_last_session(&mut tx, &streamer.id).await?;
 
         let session_id = if let Some(session) = last_session {
-            // Check if active or recently ended
-            if session.end_time.is_none() {
-                // Already active, reuse
-                debug!("Reusing active session {}", session.id);
-                SessionTxOps::update_titles(
-                    &mut tx,
-                    &session.id,
-                    session.titles.as_deref(),
-                    &title,
-                    now,
-                )
-                .await?;
-                session.id.clone()
-            } else {
-                let end_time_str = session.end_time.as_ref().unwrap();
-                let end_time = chrono::DateTime::parse_from_rfc3339(end_time_str)
-                    .map(|dt| dt.with_timezone(&chrono::Utc))
-                    .unwrap_or_else(|_| chrono::Utc::now());
+            match session.end_time.as_deref() {
+                None => {
+                    debug!("Reusing active session {}", session.id);
+                    SessionTxOps::update_titles(
+                        &mut tx,
+                        &session.id,
+                        session.titles.as_deref(),
+                        &title,
+                        now,
+                    )
+                    .await?;
+                    session.id.clone()
+                }
+                Some(end_time_str) => {
+                    let end_time = chrono::DateTime::parse_from_rfc3339(end_time_str)
+                        .map(|dt| dt.with_timezone(&chrono::Utc))
+                        .unwrap_or_else(|error| {
+                            warn!(
+                                "Failed to parse session end_time '{}' for session {}: {}; using now as fallback",
+                                end_time_str, session.id, error
+                            );
+                            chrono::Utc::now()
+                        });
 
-                // Check if the stream is a continuation (monitoring gap)
-                if SessionTxOps::should_resume_by_continuation(end_time, started_at) {
-                    info!(
-                        "Resuming session {} (stream started at {:?}, before session end at {})",
-                        session.id, started_at, end_time_str
-                    );
-                    SessionTxOps::resume_session(&mut tx, &session.id).await?;
-                    SessionTxOps::update_titles(
-                        &mut tx,
-                        &session.id,
-                        session.titles.as_deref(),
-                        &title,
-                        now,
-                    )
-                    .await?;
-                    session.id.clone()
-                } else if SessionTxOps::should_resume_by_gap(end_time, now, gap_secs) {
-                    // Resume within gap threshold
-                    let offline_duration_secs = (now - end_time).num_seconds();
-                    info!(
-                        "Resuming session {} (offline for {}s, threshold: {}s)",
-                        session.id, offline_duration_secs, gap_secs
-                    );
-                    SessionTxOps::resume_session(&mut tx, &session.id).await?;
-                    SessionTxOps::update_titles(
-                        &mut tx,
-                        &session.id,
-                        session.titles.as_deref(),
-                        &title,
-                        now,
-                    )
-                    .await?;
-                    session.id.clone()
-                } else {
-                    // Create new session
-                    let offline_duration_secs = (now - end_time).num_seconds();
-                    info!(
-                        "Creating new session for {} (offline for {}s exceeded threshold of {}s)",
-                        streamer.name, offline_duration_secs, gap_secs
-                    );
-                    let new_id = uuid::Uuid::new_v4().to_string();
-                    SessionTxOps::create_session(&mut tx, &new_id, &streamer.id, now, &title)
+                    // Check if the stream is a continuation (monitoring gap)
+                    if SessionTxOps::should_resume_by_continuation(end_time, started_at) {
+                        info!(
+                            "Resuming session {} (stream started at {:?}, before session end at {})",
+                            session.id, started_at, end_time_str
+                        );
+                        SessionTxOps::resume_session(&mut tx, &session.id).await?;
+                        SessionTxOps::update_titles(
+                            &mut tx,
+                            &session.id,
+                            session.titles.as_deref(),
+                            &title,
+                            now,
+                        )
                         .await?;
-                    info!("Created new session {}", new_id);
-                    new_id
+                        session.id.clone()
+                    } else if SessionTxOps::should_resume_by_gap(end_time, now, gap_secs) {
+                        // Resume within gap threshold
+                        let offline_duration_secs = (now - end_time).num_seconds();
+                        info!(
+                            "Resuming session {} (offline for {}s, threshold: {}s)",
+                            session.id, offline_duration_secs, gap_secs
+                        );
+                        SessionTxOps::resume_session(&mut tx, &session.id).await?;
+                        SessionTxOps::update_titles(
+                            &mut tx,
+                            &session.id,
+                            session.titles.as_deref(),
+                            &title,
+                            now,
+                        )
+                        .await?;
+                        session.id.clone()
+                    } else {
+                        // Create new session
+                        let offline_duration_secs = (now - end_time).num_seconds();
+                        info!(
+                            "Creating new session for {} (offline for {}s exceeded threshold of {}s)",
+                            streamer.name, offline_duration_secs, gap_secs
+                        );
+                        let new_id = uuid::Uuid::new_v4().to_string();
+                        SessionTxOps::create_session(&mut tx, &new_id, &streamer.id, now, &title)
+                            .await?;
+                        info!("Created new session {}", new_id);
+                        new_id
+                    }
                 }
             }
         } else {
@@ -1066,7 +1094,7 @@ mod tests {
     fn test_stream_monitor_config_default() {
         let config = StreamMonitorConfig::default();
         assert_eq!(config.default_rate_limit, 1.0);
-        assert_eq!(config.request_timeout, Duration::from_secs(0));
+        assert_eq!(config.request_timeout, Duration::ZERO);
     }
 
     #[test]

@@ -235,18 +235,8 @@ impl Processor for MetadataProcessor {
     ) -> Result<ProcessorOutput> {
         let start = std::time::Instant::now();
 
-        // Parse config or use defaults
-        let config: MetadataConfig = if let Some(ref config_str) = input.config {
-            serde_json::from_str(config_str).unwrap_or_else(|e| {
-                let _ = ctx.warn(format!(
-                    "Failed to parse metadata config, using defaults: {}",
-                    e
-                ));
-                MetadataConfig::default()
-            })
-        } else {
-            MetadataConfig::default()
-        };
+        let config: MetadataConfig =
+            super::utils::parse_config_or_default(input.config.as_deref(), ctx, "metadata", None);
 
         // Get input path
         let input_path = input.inputs.first().ok_or_else(|| {

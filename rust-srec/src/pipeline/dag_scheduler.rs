@@ -136,10 +136,13 @@ impl DagScheduler {
     pub async fn on_job_completed(
         &self,
         dag_step_execution_id: &str,
-        outputs: Vec<String>,
-        streamer_name: Option<String>,
-        session_title: Option<String>,
+        outputs: &[String],
+        streamer_name: Option<&str>,
+        session_title: Option<&str>,
     ) -> Result<Vec<String>> {
+        let streamer_name = streamer_name.map(ToString::to_string);
+        let session_title = session_title.map(ToString::to_string);
+
         // Get step info for logging
         let step = self.dag_repository.get_step(dag_step_execution_id).await?;
 
@@ -153,7 +156,7 @@ impl DagScheduler {
         // Atomically complete step and find ready dependents
         let ready_steps = self
             .dag_repository
-            .complete_step_and_check_dependents(dag_step_execution_id, &outputs)
+            .complete_step_and_check_dependents(dag_step_execution_id, outputs)
             .await?;
 
         if ready_steps.is_empty() {
@@ -323,7 +326,7 @@ impl DagScheduler {
         };
 
         // Create the job
-        let inputs_json = serde_json::to_string(&inputs).unwrap_or_else(|_| "[]".to_string());
+        let inputs_json = serde_json::to_string(&inputs)?;
 
         let mut job_db = JobDbModel::new_pipeline_step(
             &processor,

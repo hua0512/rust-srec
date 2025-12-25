@@ -12,6 +12,8 @@ use crate::database::repositories::config::ConfigRepository;
 use crate::domain::config::merged::MergedConfig;
 use crate::domain::streamer::Streamer;
 use crate::domain::{DanmuSamplingConfig, EventHooks, ProxyConfig, RetryPolicy};
+use crate::downloader::StreamSelectionConfig;
+use crate::utils::json::{self, JsonContext};
 use std::sync::Arc;
 
 /// Service for resolving configuration for streamers.
@@ -45,6 +47,16 @@ impl<R: ConfigRepository> ConfigResolver<R> {
 
         // Layer 1: Global config
         let global_config = self.config_repo.get_global_config().await?;
+        let global_pipeline: Option<DagPipelineDefinition> = json::parse_optional(
+            global_config.pipeline.as_deref(),
+            JsonContext::StreamerConfig {
+                streamer_id: &streamer.id,
+                scope: "global",
+                scope_id: None,
+                field: "pipeline",
+            },
+            "Invalid JSON config; ignoring",
+        );
 
         builder = builder.with_global(
             global_config.output_folder.clone(),
@@ -54,22 +66,19 @@ impl<R: ConfigRepository> ConfigResolver<R> {
             global_config.max_download_duration_secs,
             global_config.max_part_size_bytes,
             global_config.record_danmu,
-            serde_json::from_str(&global_config.proxy_config).unwrap_or_default(),
+            json::parse_or_default(
+                &global_config.proxy_config,
+                JsonContext::StreamerConfig {
+                    streamer_id: &streamer.id,
+                    scope: "global",
+                    scope_id: None,
+                    field: "proxy_config",
+                },
+                "Invalid JSON config; using defaults",
+            ),
             global_config.default_download_engine.clone(),
             global_config.session_gap_time_secs,
-            global_config.pipeline.as_ref().and_then(|p| {
-                match serde_json::from_str::<DagPipelineDefinition>(p) {
-                    Ok(pipe) => Some(pipe),
-                    Err(e) => {
-                        tracing::error!(
-                            "Failed to parse global pipeline config: {} (JSON: {})",
-                            e,
-                            p
-                        );
-                        None
-                    }
-                }
-            }),
+            global_pipeline,
         );
 
         // Layer 2: Platform config
@@ -77,23 +86,67 @@ impl<R: ConfigRepository> ConfigResolver<R> {
             .config_repo
             .get_platform_config(&streamer.platform_config_id)
             .await?;
-        let platform_proxy: Option<ProxyConfig> = platform_config
-            .proxy_config
-            .as_ref()
-            .and_then(|s| serde_json::from_str(s).ok());
+        let platform_proxy: Option<ProxyConfig> = json::parse_optional(
+            platform_config.proxy_config.as_deref(),
+            JsonContext::StreamerConfig {
+                streamer_id: &streamer.id,
+                scope: "platform",
+                scope_id: Some(&streamer.platform_config_id),
+                field: "proxy_config",
+            },
+            "Invalid JSON config; ignoring",
+        );
 
-        let platform_stream_selection = platform_config
-            .stream_selection_config
-            .as_ref()
-            .and_then(|s| serde_json::from_str(s).ok());
-        let platform_download_retry_policy = platform_config
-            .download_retry_policy
-            .as_ref()
-            .and_then(|s| serde_json::from_str(s).ok());
-        let platform_event_hooks = platform_config
-            .event_hooks
-            .as_ref()
-            .and_then(|s| serde_json::from_str(s).ok());
+        let platform_stream_selection: Option<StreamSelectionConfig> = json::parse_optional(
+            platform_config.stream_selection_config.as_deref(),
+            JsonContext::StreamerConfig {
+                streamer_id: &streamer.id,
+                scope: "platform",
+                scope_id: Some(&streamer.platform_config_id),
+                field: "stream_selection_config",
+            },
+            "Invalid JSON config; ignoring",
+        );
+        let platform_download_retry_policy: Option<RetryPolicy> = json::parse_optional(
+            platform_config.download_retry_policy.as_deref(),
+            JsonContext::StreamerConfig {
+                streamer_id: &streamer.id,
+                scope: "platform",
+                scope_id: Some(&streamer.platform_config_id),
+                field: "download_retry_policy",
+            },
+            "Invalid JSON config; ignoring",
+        );
+        let platform_event_hooks: Option<EventHooks> = json::parse_optional(
+            platform_config.event_hooks.as_deref(),
+            JsonContext::StreamerConfig {
+                streamer_id: &streamer.id,
+                scope: "platform",
+                scope_id: Some(&streamer.platform_config_id),
+                field: "event_hooks",
+            },
+            "Invalid JSON config; ignoring",
+        );
+        let platform_extras: Option<serde_json::Value> = json::parse_optional(
+            platform_config.platform_specific_config.as_deref(),
+            JsonContext::StreamerConfig {
+                streamer_id: &streamer.id,
+                scope: "platform",
+                scope_id: Some(&streamer.platform_config_id),
+                field: "platform_specific_config",
+            },
+            "Invalid JSON config; ignoring",
+        );
+        let platform_pipeline: Option<DagPipelineDefinition> = json::parse_optional(
+            platform_config.pipeline.as_deref(),
+            JsonContext::StreamerConfig {
+                streamer_id: &streamer.id,
+                scope: "platform",
+                scope_id: Some(&streamer.platform_config_id),
+                field: "pipeline",
+            },
+            "Invalid JSON config; ignoring",
+        );
 
         builder = builder.with_platform(
             platform_config.fetch_delay_ms,
@@ -101,11 +154,7 @@ impl<R: ConfigRepository> ConfigResolver<R> {
             platform_config.cookies.clone(),
             platform_proxy,
             platform_config.record_danmu,
-            platform_config
-                .platform_specific_config
-                .as_ref()
-                .and_then(|s| serde_json::from_str(s).ok())
-                .as_ref(), // Pass as Option<&Value>
+            platform_extras.as_ref(), // Pass as Option<&Value>
             platform_config.output_folder.clone(),
             platform_config.output_filename_template.clone(),
             platform_config.download_engine.clone(),
@@ -116,19 +165,7 @@ impl<R: ConfigRepository> ConfigResolver<R> {
             platform_config.max_part_size_bytes,
             platform_download_retry_policy,
             platform_event_hooks,
-            platform_config.pipeline.as_ref().and_then(|p| {
-                match serde_json::from_str::<DagPipelineDefinition>(p) {
-                    Ok(pipe) => Some(pipe),
-                    Err(e) => {
-                        tracing::error!(
-                            "Failed to parse platform pipeline config: {} (JSON: {})",
-                            e,
-                            p
-                        );
-                        None
-                    }
-                }
-            }),
+            platform_pipeline,
         );
 
         // Layer 3: Template config (if assigned)
@@ -136,43 +173,93 @@ impl<R: ConfigRepository> ConfigResolver<R> {
             let template_config = self.config_repo.get_template_config(template_id).await?;
 
             // Parse JSON fields
-            let template_proxy: Option<ProxyConfig> = template_config
-                .proxy_config
-                .as_ref()
-                .and_then(|s| serde_json::from_str(s).ok());
-            let template_retry: Option<RetryPolicy> = template_config
-                .download_retry_policy
-                .as_ref()
-                .and_then(|s| serde_json::from_str(s).ok());
-            let template_danmu: Option<DanmuSamplingConfig> = template_config
-                .danmu_sampling_config
-                .as_ref()
-                .and_then(|s| serde_json::from_str(s).ok());
-            let template_hooks: Option<EventHooks> = template_config
-                .event_hooks
-                .as_ref()
-                .and_then(|s| serde_json::from_str(s).ok());
+            let template_proxy: Option<ProxyConfig> = json::parse_optional(
+                template_config.proxy_config.as_deref(),
+                JsonContext::StreamerConfig {
+                    streamer_id: &streamer.id,
+                    scope: "template",
+                    scope_id: Some(template_id),
+                    field: "proxy_config",
+                },
+                "Invalid JSON config; ignoring",
+            );
+            let template_retry: Option<RetryPolicy> = json::parse_optional(
+                template_config.download_retry_policy.as_deref(),
+                JsonContext::StreamerConfig {
+                    streamer_id: &streamer.id,
+                    scope: "template",
+                    scope_id: Some(template_id),
+                    field: "download_retry_policy",
+                },
+                "Invalid JSON config; ignoring",
+            );
+            let template_danmu: Option<DanmuSamplingConfig> = json::parse_optional(
+                template_config.danmu_sampling_config.as_deref(),
+                JsonContext::StreamerConfig {
+                    streamer_id: &streamer.id,
+                    scope: "template",
+                    scope_id: Some(template_id),
+                    field: "danmu_sampling_config",
+                },
+                "Invalid JSON config; ignoring",
+            );
+            let template_hooks: Option<EventHooks> = json::parse_optional(
+                template_config.event_hooks.as_deref(),
+                JsonContext::StreamerConfig {
+                    streamer_id: &streamer.id,
+                    scope: "template",
+                    scope_id: Some(template_id),
+                    field: "event_hooks",
+                },
+                "Invalid JSON config; ignoring",
+            );
 
-            let template_stream_selection = template_config
-                .stream_selection_config
-                .as_ref()
-                .and_then(|s| serde_json::from_str(s).ok());
+            let template_stream_selection: Option<StreamSelectionConfig> = json::parse_optional(
+                template_config.stream_selection_config.as_deref(),
+                JsonContext::StreamerConfig {
+                    streamer_id: &streamer.id,
+                    scope: "template",
+                    scope_id: Some(template_id),
+                    field: "stream_selection_config",
+                },
+                "Invalid JSON config; ignoring",
+            );
 
-            let template_engines_override = template_config
-                .engines_override
-                .as_ref()
-                .and_then(|s| serde_json::from_str(s).ok());
+            let template_engines_override: Option<serde_json::Value> = json::parse_optional(
+                template_config.engines_override.as_deref(),
+                JsonContext::StreamerConfig {
+                    streamer_id: &streamer.id,
+                    scope: "template",
+                    scope_id: Some(template_id),
+                    field: "engines_override",
+                },
+                "Invalid JSON config; ignoring",
+            );
 
             // Parse platform_overrides to get platform-specific extras for this streamer's platform
             // platform_overrides is a JSON map: { "huya": {...}, "douyin": {...}, ... }
-            let template_platform_extras: Option<serde_json::Value> = template_config
-                .platform_overrides
-                .as_ref()
-                .and_then(|s| serde_json::from_str::<serde_json::Value>(s).ok())
-                .and_then(|map| {
-                    // Look up the current platform's overrides
-                    map.get(&platform_config.platform_name).cloned()
-                });
+            let template_platform_overrides: Option<serde_json::Value> = json::parse_optional(
+                template_config.platform_overrides.as_deref(),
+                JsonContext::StreamerConfig {
+                    streamer_id: &streamer.id,
+                    scope: "template",
+                    scope_id: Some(template_id),
+                    field: "platform_overrides",
+                },
+                "Invalid JSON config; ignoring",
+            );
+            let template_platform_extras: Option<serde_json::Value> = template_platform_overrides
+                .and_then(|map| map.get(&platform_config.platform_name).cloned());
+            let template_pipeline: Option<DagPipelineDefinition> = json::parse_optional(
+                template_config.pipeline.as_deref(),
+                JsonContext::StreamerConfig {
+                    streamer_id: &streamer.id,
+                    scope: "template",
+                    scope_id: Some(template_id),
+                    field: "pipeline",
+                },
+                "Invalid JSON config; ignoring",
+            );
 
             builder = builder.with_template(
                 template_config.output_folder,
@@ -190,10 +277,7 @@ impl<R: ConfigRepository> ConfigResolver<R> {
                 template_hooks,
                 template_stream_selection,
                 template_engines_override,
-                template_config
-                    .pipeline
-                    .as_ref()
-                    .and_then(|p| serde_json::from_str::<DagPipelineDefinition>(p).ok()),
+                template_pipeline,
                 template_platform_extras, // platform_extras from platform_overrides
             );
         }

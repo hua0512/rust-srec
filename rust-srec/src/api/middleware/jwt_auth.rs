@@ -3,12 +3,14 @@
 //! Provides JWT token-based authentication for protected endpoints.
 
 use axum::{
-    body::Body,
     extract::Request,
     http::{StatusCode, header::AUTHORIZATION},
     middleware::Next,
     response::{IntoResponse, Response},
 };
+
+#[cfg(test)]
+use axum::body::Body;
 use std::sync::Arc;
 
 use crate::api::jwt::{Claims, JwtError, JwtService};
@@ -34,11 +36,7 @@ impl IntoResponse for JwtAuthError {
             }
             JwtAuthError::InvalidToken(_) => (StatusCode::UNAUTHORIZED, "Invalid token"),
         };
-
-        Response::builder()
-            .status(status)
-            .body(Body::from(message))
-            .unwrap()
+        (status, message).into_response()
     }
 }
 
@@ -53,11 +51,9 @@ fn extract_bearer_token(request: &Request) -> Result<&str, JwtAuthError> {
         .to_str()
         .map_err(|_| JwtAuthError::InvalidFormat)?;
 
-    if !auth_str.starts_with("Bearer ") {
-        return Err(JwtAuthError::InvalidFormat);
-    }
-
-    Ok(&auth_str[7..])
+    auth_str
+        .strip_prefix("Bearer ")
+        .ok_or(JwtAuthError::InvalidFormat)
 }
 
 /// JWT authentication middleware.

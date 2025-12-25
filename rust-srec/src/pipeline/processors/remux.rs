@@ -7,7 +7,7 @@ use tokio::process::Command;
 use tracing::{debug, info};
 
 use super::traits::{Processor, ProcessorContext, ProcessorInput, ProcessorOutput, ProcessorType};
-use super::utils::{create_log_entry, get_extension, is_media};
+use super::utils::{create_log_entry, get_extension, is_media, parse_config_or_default};
 use crate::Result;
 
 /// Helper to ensure path is absolute.
@@ -437,18 +437,8 @@ impl Processor for RemuxProcessor {
     ) -> Result<ProcessorOutput> {
         let start = std::time::Instant::now();
 
-        // Parse config or use defaults
-        let config: RemuxConfig = if let Some(ref config_str) = input.config {
-            serde_json::from_str(config_str).unwrap_or_else(|e| {
-                let _ = ctx.warn(format!(
-                    "Failed to parse remux config, using defaults: {}",
-                    e
-                ));
-                RemuxConfig::default()
-            })
-        } else {
-            RemuxConfig::default()
-        };
+        let config: RemuxConfig =
+            parse_config_or_default(input.config.as_deref(), ctx, "remux", None);
 
         let raw_input_path = input.inputs.first().map(|s| s.as_str()).unwrap_or("");
         let input_path_string = make_absolute(raw_input_path);

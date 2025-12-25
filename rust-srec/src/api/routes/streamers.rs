@@ -17,6 +17,7 @@ use crate::domain::Priority as DomainPriority;
 use crate::domain::streamer::StreamerState;
 use crate::domain::value_objects::Priority as ApiPriority;
 use crate::streamer::StreamerMetadata;
+use crate::utils::json::{self, JsonContext};
 
 /// Convert API Priority to Domain Priority.
 fn api_to_domain_priority(p: ApiPriority) -> DomainPriority {
@@ -67,10 +68,14 @@ fn metadata_to_response(metadata: &StreamerMetadata) -> StreamerResponse {
         last_live_time: metadata.last_live_time,
         created_at: metadata.created_at,
         updated_at: metadata.updated_at,
-        streamer_specific_config: metadata
-            .streamer_specific_config
-            .as_ref()
-            .and_then(|s| serde_json::from_str(s).ok()),
+        streamer_specific_config: json::parse_optional_value_non_null(
+            metadata.streamer_specific_config.as_deref(),
+            JsonContext::StreamerField {
+                streamer_id: &metadata.id,
+                field: "streamer_specific_config",
+            },
+            "Invalid JSON field; omitting from response",
+        ),
     }
 }
 

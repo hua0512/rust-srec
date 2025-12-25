@@ -461,7 +461,7 @@ impl StreamerActor {
             let remaining = metadata
                 .remaining_backoff()
                 .and_then(|d| d.to_std().ok())
-                .unwrap_or(Duration::from_secs(0));
+                .unwrap_or(Duration::ZERO);
 
             self.state.next_check = Some(Instant::now() + remaining);
             debug!(

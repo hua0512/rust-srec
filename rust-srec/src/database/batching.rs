@@ -237,8 +237,16 @@ mod tests {
         writer.add(1).await.unwrap();
         writer.add(2).await.unwrap();
 
-        tokio::time::sleep(Duration::from_millis(300)).await;
+        let result = tokio::time::timeout(Duration::from_secs(2), async {
+            loop {
+                if attempts.load(Ordering::SeqCst) >= 2 {
+                    break;
+                }
+                tokio::time::sleep(Duration::from_millis(20)).await;
+            }
+        })
+        .await;
 
-        assert!(attempts.load(Ordering::SeqCst) >= 2);
+        assert!(result.is_ok(), "Expected at least 2 flush attempts");
     }
 }

@@ -127,10 +127,17 @@ pub struct AppState {
 }
 
 impl AppState {
-    fn build_http_client() -> reqwest::Client {
-        create_client_builder(None)
-            .build()
-            .expect("Failed to create HTTP client")
+    pub(crate) fn build_http_client() -> reqwest::Client {
+        match create_client_builder(None).build() {
+            Ok(client) => client,
+            Err(error) => {
+                tracing::warn!(
+                    error = %error,
+                    "Failed to create HTTP client via platforms-parser; falling back to reqwest defaults"
+                );
+                reqwest::Client::new()
+            }
+        }
     }
 
     /// Create a new application state without services (for testing).

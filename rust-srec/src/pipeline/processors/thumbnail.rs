@@ -6,7 +6,7 @@ use tokio::process::Command;
 use tracing::debug;
 
 use super::traits::{Processor, ProcessorContext, ProcessorInput, ProcessorOutput, ProcessorType};
-use super::utils::{get_extension, is_image, is_video};
+use super::utils::{get_extension, is_image, is_video, parse_config_or_default};
 use crate::Result;
 
 /// Configuration for thumbnail extraction.
@@ -99,21 +99,8 @@ impl Processor for ThumbnailProcessor {
     ) -> Result<ProcessorOutput> {
         let start = std::time::Instant::now();
 
-        // Parse config or use defaults
-        let config: ThumbnailConfig = if let Some(ref config_str) = input.config {
-            match serde_json::from_str(config_str) {
-                Ok(c) => c,
-                Err(e) => {
-                    let _ = ctx.error(format!(
-                        "Failed to parse thumbnail config: {} (config: '{}'). Using defaults.",
-                        e, config_str
-                    ));
-                    ThumbnailConfig::default()
-                }
-            }
-        } else {
-            ThumbnailConfig::default()
-        };
+        let config: ThumbnailConfig =
+            parse_config_or_default(input.config.as_deref(), ctx, "thumbnail", None);
 
         let input_path = input.inputs.first().map(|s| s.as_str()).unwrap_or("");
 

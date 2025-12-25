@@ -4,6 +4,8 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use sqlx::FromRow;
 
+use crate::utils::json::{self, JsonContext};
+
 /// Valid processor types for presets.
 pub const VALID_PROCESSORS: &[&str] = &[
     "remux",
@@ -185,11 +187,20 @@ use crate::database::models::job::DagPipelineDefinition;
 impl PipelinePreset {
     /// Create a new DAG Pipeline Preset.
     pub fn new(name: impl Into<String>, dag: DagPipelineDefinition) -> Self {
+        let id = uuid::Uuid::new_v4().to_string();
         Self {
-            id: uuid::Uuid::new_v4().to_string(),
+            id: id.clone(),
             name: name.into(),
             description: None,
-            dag_definition: Some(serde_json::to_string(&dag).unwrap_or_else(|_| "{}".to_string())),
+            dag_definition: Some(json::to_string_or_fallback(
+                &dag,
+                "{}",
+                JsonContext::PipelinePresetField {
+                    pipeline_preset_id: &id,
+                    field: "dag_definition",
+                },
+                "Failed to serialize dag_definition; storing empty object",
+            )),
             pipeline_type: Some("dag".to_string()),
             created_at: Utc::now(),
             updated_at: Utc::now(),
@@ -217,9 +228,15 @@ impl PipelinePreset {
 
     /// Get the DAG definition if this is a DAG pipeline.
     pub fn get_dag_definition(&self) -> Option<DagPipelineDefinition> {
-        self.dag_definition
-            .as_ref()
-            .and_then(|s| serde_json::from_str(s).ok())
+        let raw = self.dag_definition.as_deref()?;
+        json::parse_optional(
+            Some(raw),
+            JsonContext::PipelinePresetField {
+                pipeline_preset_id: &self.id,
+                field: "dag_definition",
+            },
+            "Invalid dag_definition JSON; returning None",
+        )
     }
 
     /// Validate the preset configuration.

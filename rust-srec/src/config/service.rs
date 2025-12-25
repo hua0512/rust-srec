@@ -19,6 +19,7 @@ use crate::database::models::{
 use crate::database::repositories::{config::ConfigRepository, streamer::StreamerRepository};
 use crate::domain::config::{ConfigResolver, MergedConfig};
 use crate::domain::streamer::Streamer;
+use crate::utils::json::{self, JsonContext};
 
 use super::cache::ConfigCache;
 use super::events::{ConfigEventBroadcaster, ConfigUpdateEvent};
@@ -273,19 +274,10 @@ where
         if !is_new {
             // Another request is already resolving this config, wait for it
             trace!("Waiting for in-flight request for streamer {}", streamer_id);
-
-            // Wait for the OnceCell to be populated
-            loop {
-                if let Some(config) = cell.get() {
-                    return Ok(config.clone());
-                }
-                // Also check cache in case it was populated
-                if let Some(config) = self.cache.get(streamer_id) {
-                    return Ok(config);
-                }
-                // Small yield to avoid busy-waiting
-                tokio::task::yield_now().await;
-            }
+            return match self.cache.wait_for_in_flight(&cell).await {
+                Ok(config) => Ok(config),
+                Err(message) => Err(crate::Error::Configuration(message)),
+            };
         }
 
         trace!("Cache miss for streamer {}, resolving config", streamer_id);
@@ -295,12 +287,16 @@ where
             Ok(config) => {
                 // Complete the in-flight request (caches and notifies waiters)
                 let config = Arc::new(config);
-                self.cache.complete_in_flight(streamer_id, config.clone());
+                self.cache
+                    .complete_in_flight(streamer_id, &cell, config.clone());
                 Ok(config)
             }
             Err(e) => {
-                // Remove the in-flight entry on error
-                self.cache.invalidate(streamer_id);
+                self.cache.fail_in_flight(
+                    streamer_id,
+                    &cell,
+                    format!("Failed to resolve config for streamer {streamer_id}: {e}"),
+                );
                 Err(e)
             }
         }
@@ -332,11 +328,14 @@ where
         streamer.id = db_model.id.clone();
         streamer.template_config_id = db_model.template_config_id.clone();
 
-        // Parse JSON fields
-        streamer.streamer_specific_config = db_model
-            .streamer_specific_config
-            .as_ref()
-            .and_then(|s| serde_json::from_str(s).ok());
+        streamer.streamer_specific_config = json::parse_optional(
+            db_model.streamer_specific_config.as_deref(),
+            JsonContext::StreamerField {
+                streamer_id: &db_model.id,
+                field: "streamer_specific_config",
+            },
+            "Invalid streamer_specific_config JSON; ignoring",
+        );
 
         Ok(streamer)
     }

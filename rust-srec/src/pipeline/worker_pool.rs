@@ -382,17 +382,24 @@ impl WorkerPool {
                             }
 
                             // Process the job with timeout
-                            let input = ProcessorInput {
-                                inputs: job.inputs.clone(),
-                                outputs: job.outputs.clone(),
-                                config: job.config.clone(),
-                                streamer_id: job.streamer_id.clone(),
-                                session_id: job.session_id.clone(),
-                                streamer_name: job.streamer_name.clone(),
-                                session_title: job.session_title.clone(),
-                                platform: job.platform.clone(),
-                            };
+                            let mut job = job;
+                            let dag_step_execution_id = job.dag_step_execution_id.take();
+                            let current_step = job
+                                .execution_info
+                                .as_ref()
+                                .and_then(|i| i.current_step);
+                            let total_steps = job.execution_info.as_ref().and_then(|i| i.total_steps);
 
+                            let input = ProcessorInput {
+                                inputs: std::mem::take(&mut job.inputs),
+                                outputs: std::mem::take(&mut job.outputs),
+                                config: job.config.take(),
+                                streamer_id: std::mem::take(&mut job.streamer_id),
+                                session_id: std::mem::take(&mut job.session_id),
+                                streamer_name: job.streamer_name.take(),
+                                session_title: job.session_title.take(),
+                                platform: job.platform.take(),
+                            };
 
                             let (log_tx, mut log_rx) = tokio::sync::mpsc::channel(100);
                             let job_queue_clone = job_queue.clone();
@@ -447,93 +454,64 @@ impl WorkerPool {
                                     // Check if this is a DAG job
                                     debug!(
                                         "Job {} completed, dag_step_execution_id={:?}",
-                                        job_id, job.dag_step_execution_id
+                                        job_id, dag_step_execution_id
                                     );
-                                    if let Some(dag_step_id) = &job.dag_step_execution_id {
-                                        // Handle DAG job completion via scheduler
-                                        if let Some(scheduler) = &dag_scheduler {
-                                            // First complete the job normally
-                                            let _ = job_queue
-                                                .complete(
-                                                    &job_id,
-                                                    JobResult {
-                                                        outputs: output.outputs.clone(),
-                                                        duration_secs: output.duration_secs,
-                                                        metadata: output.metadata.clone(),
-                                                        logs: output.logs.clone(),
-                                                    },
-                                                )
-                                                .await;
-
-                                            // Then notify DAG scheduler to create next jobs
-                                            match scheduler
-                                                .on_job_completed(
-                                                    dag_step_id,
-                                                    output.outputs,
-                                                    job.streamer_name.clone(),
-                                                    job.session_title.clone(),
-                                                )
-                                                .await
-                                            {
-                                                Ok(new_jobs) => {
-                                                    if !new_jobs.is_empty() {
-                                                        info!(
-                                                            "DAG step {} completed, created {} downstream jobs",
-                                                            dag_step_id,
-                                                            new_jobs.len()
-                                                        );
-                                                    }
-                                                }
-                                                Err(e) => {
-                                                    error!(
-                                                        "Failed to handle DAG job completion for {}: {}",
-                                                        dag_step_id, e
+                                    if let Some(dag_step_id) = dag_step_execution_id.as_deref()
+                                        && let Some(scheduler) = &dag_scheduler
+                                    {
+                                        // Notify DAG scheduler to create next jobs before moving outputs into completion.
+                                        match scheduler
+                                            .on_job_completed(
+                                                dag_step_id,
+                                                &output.outputs,
+                                                input.streamer_name.as_deref(),
+                                                input.session_title.as_deref(),
+                                            )
+                                            .await
+                                        {
+                                            Ok(new_jobs) => {
+                                                if !new_jobs.is_empty() {
+                                                    info!(
+                                                        "DAG step {} completed, created {} downstream jobs",
+                                                        dag_step_id,
+                                                        new_jobs.len()
                                                     );
                                                 }
                                             }
-                                        } else {
-                                            // No DAG scheduler, just complete normally
-                                            let _ = job_queue
-                                                .complete(
-                                                    &job_id,
-                                                    JobResult {
-                                                        outputs: output.outputs,
-                                                        duration_secs: output.duration_secs,
-                                                        metadata: output.metadata,
-                                                        logs: output.logs,
-                                                    },
-                                                )
-                                                .await;
+                                            Err(e) => {
+                                                error!(
+                                                    "Failed to handle DAG job completion for {}: {}",
+                                                    dag_step_id, e
+                                                );
+                                            }
                                         }
-                                    } else {
-                                        // Non-DAG job (manual job or legacy)
-                                        // Just complete the job normally
-                                        let _ = job_queue
-                                            .complete(
-                                                &job_id,
-                                                JobResult {
-                                                    outputs: output.outputs,
-                                                    duration_secs: output.duration_secs,
-                                                    metadata: output.metadata,
-                                                    logs: output.logs,
-                                                },
-                                            )
-                                            .await;
                                     }
+
+                                    // Complete the job normally.
+                                    let _ = job_queue
+                                        .complete(
+                                            &job_id,
+                                            JobResult {
+                                                outputs: output.outputs,
+                                                duration_secs: output.duration_secs,
+                                                metadata: output.metadata,
+                                                logs: output.logs,
+                                            },
+                                        )
+                                        .await;
                                 }
                                 Ok(Err(e)) => {
                                     // Check if this is a DAG job for fail-fast handling
-                                    if let Some(dag_step_id) = &job.dag_step_execution_id {
+                                    let error = e.to_string();
+                                    if let Some(dag_step_id) = dag_step_execution_id.as_deref() {
                                         // First mark job as failed
                                         let partial_outputs = job_queue
                                             .fail_with_cleanup_and_step_info(
                                                 &job_id,
-                                                &e.to_string(),
+                                                &error,
                                                 Some(processor.name()),
-                                                job.execution_info
-                                                    .as_ref()
-                                                    .and_then(|i| i.current_step),
-                                                job.execution_info.as_ref().and_then(|i| i.total_steps),
+                                                current_step,
+                                                total_steps,
                                             )
                                             .await;
                                         if let Ok(outputs) = partial_outputs
@@ -544,7 +522,7 @@ impl WorkerPool {
                                         // Then notify DAG scheduler for fail-fast
                                         if let Some(scheduler) = &dag_scheduler {
                                             match scheduler
-                                                .on_job_failed(dag_step_id, &e.to_string())
+                                                .on_job_failed(dag_step_id, &error)
                                                 .await
                                             {
                                                 Ok(cancelled) => {
@@ -569,12 +547,10 @@ impl WorkerPool {
                                         let partial_outputs = job_queue
                                             .fail_with_cleanup_and_step_info(
                                                 &job_id,
-                                                &e.to_string(),
+                                                &error,
                                                 Some(processor.name()),
-                                                job.execution_info
-                                                    .as_ref()
-                                                    .and_then(|i| i.current_step),
-                                                job.execution_info.as_ref().and_then(|i| i.total_steps),
+                                                current_step,
+                                                total_steps,
                                             )
                                             .await;
                                         if let Ok(outputs) = partial_outputs
@@ -585,17 +561,15 @@ impl WorkerPool {
                                 }
                                 Err(_) => {
                                     // Check if this is a DAG job for fail-fast handling
-                                    if let Some(dag_step_id) = &job.dag_step_execution_id {
+                                    if let Some(dag_step_id) = dag_step_execution_id.as_deref() {
                                         // First mark job as failed
                                         let partial_outputs = job_queue
                                             .fail_with_cleanup_and_step_info(
                                                 &job_id,
                                                 "Job timed out",
                                                 Some(processor.name()),
-                                                job.execution_info
-                                                    .as_ref()
-                                                    .and_then(|i| i.current_step),
-                                                job.execution_info.as_ref().and_then(|i| i.total_steps),
+                                                current_step,
+                                                total_steps,
                                             )
                                             .await;
                                         if let Ok(outputs) = partial_outputs
@@ -633,10 +607,8 @@ impl WorkerPool {
                                                 &job_id,
                                                 "Job timed out",
                                                 Some(processor.name()),
-                                                job.execution_info
-                                                    .as_ref()
-                                                    .and_then(|i| i.current_step),
-                                                job.execution_info.as_ref().and_then(|i| i.total_steps),
+                                                current_step,
+                                                total_steps,
                                             )
                                             .await;
                                         if let Ok(outputs) = partial_outputs

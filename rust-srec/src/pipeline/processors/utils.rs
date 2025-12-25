@@ -2,6 +2,7 @@
 
 use crate::pipeline::job_queue::{JobLogEntry, LogLevel};
 use crate::pipeline::{JobProgressSnapshot, ProgressKind, ProgressReporter};
+use serde::de::DeserializeOwned;
 use std::collections::VecDeque;
 use std::path::Path;
 use std::process::Stdio;
@@ -10,6 +11,8 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use tokio::io::{AsyncBufReadExt, BufReader};
 use tokio::process::Command;
 use tracing::{debug, warn};
+
+use super::traits::ProcessorContext;
 
 const LOG_CHANNEL_CAPACITY: usize = 1024;
 const MAX_LOG_ENTRIES: usize = 2000;
@@ -26,6 +29,42 @@ pub const AUDIO_EXTENSIONS: &[&str] = &["mp3", "aac", "m4a", "ogg", "opus", "fla
 pub const IMAGE_EXTENSIONS: &[&str] = &[
     "jpg", "jpeg", "png", "gif", "bmp", "webp", "tiff", "tif", "ico", "avif",
 ];
+
+pub fn parse_config_or_default<T: DeserializeOwned + Default>(
+    raw: Option<&str>,
+    ctx: &ProcessorContext,
+    processor: &'static str,
+    logs: Option<&mut Vec<JobLogEntry>>,
+) -> T {
+    let Some(raw) = raw else {
+        return T::default();
+    };
+
+    match serde_json::from_str(raw) {
+        Ok(parsed) => parsed,
+        Err(error) => {
+            warn!(
+                job_id = %ctx.job_id,
+                processor,
+                raw_len = raw.len(),
+                error = %error,
+                "Failed to parse processor config; using defaults"
+            );
+
+            let msg = format!(
+                "Failed to parse {} config; using defaults: {}",
+                processor, error
+            );
+            if let Some(logs) = logs {
+                logs.push(JobLogEntry::warn(msg));
+            } else {
+                ctx.warn(msg);
+            }
+
+            T::default()
+        }
+    }
+}
 
 /// Get the lowercase extension from a path.
 pub fn get_extension(path: &str) -> Option<String> {
@@ -215,7 +254,8 @@ pub async fn run_command_with_logs(
     }
 
     let duration = start.elapsed().as_secs_f64();
-    let status = status.expect("process exit status should be set");
+    let status =
+        status.ok_or_else(|| crate::Error::Other("process exit status missing".to_string()))?;
 
     let dropped = dropped_count.load(Ordering::Relaxed);
     if dropped > 0 {
@@ -498,7 +538,8 @@ pub async fn run_ffmpeg_with_progress(
     }
 
     let duration = start.elapsed().as_secs_f64();
-    let status = status.expect("process exit status should be set");
+    let status =
+        status.ok_or_else(|| crate::Error::Other("process exit status missing".to_string()))?;
 
     let dropped = dropped_count.load(Ordering::Relaxed);
     if dropped > 0 {
@@ -598,7 +639,8 @@ pub async fn run_rclone_with_progress(
     }
 
     let duration = start.elapsed().as_secs_f64();
-    let status = status.expect("process exit status should be set");
+    let status =
+        status.ok_or_else(|| crate::Error::Other("process exit status missing".to_string()))?;
 
     let dropped = dropped_count.load(Ordering::Relaxed);
     if dropped > 0 {
