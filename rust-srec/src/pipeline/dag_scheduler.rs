@@ -427,19 +427,22 @@ impl DagScheduler {
         Ok(cancelled.len() as u64)
     }
 
-    /// List DAG executions with optional status filter.
+    /// List DAG executions with optional status and session_id filters.
     pub async fn list_dags(
         &self,
         status: Option<&str>,
+        session_id: Option<&str>,
         limit: u32,
         offset: u32,
     ) -> Result<Vec<DagExecutionDbModel>> {
-        self.dag_repository.list_dags(status, limit, offset).await
+        self.dag_repository
+            .list_dags(status, session_id, limit, offset)
+            .await
     }
 
-    /// Count DAG executions with optional status filter.
-    pub async fn count_dags(&self, status: Option<&str>) -> Result<u64> {
-        self.dag_repository.count_dags(status).await
+    /// Count DAG executions with optional status and session_id filters.
+    pub async fn count_dags(&self, status: Option<&str>, session_id: Option<&str>) -> Result<u64> {
+        self.dag_repository.count_dags(status, session_id).await
     }
 
     /// Get statistics for a DAG execution.

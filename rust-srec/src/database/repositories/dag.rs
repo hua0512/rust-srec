@@ -31,16 +31,17 @@ pub trait DagRepository: Send + Sync {
     /// Increment failed steps counter for a DAG.
     async fn increment_dag_failed(&self, dag_id: &str) -> Result<()>;
 
-    /// List DAG executions with optional status filter.
+    /// List DAG executions with optional status and session_id filters.
     async fn list_dags(
         &self,
         status: Option<&str>,
+        session_id: Option<&str>,
         limit: u32,
         offset: u32,
     ) -> Result<Vec<DagExecutionDbModel>>;
 
-    /// Count DAG executions with optional status filter.
-    async fn count_dags(&self, status: Option<&str>) -> Result<u64>;
+    /// Count DAG executions with optional status and session_id filters.
+    async fn count_dags(&self, status: Option<&str>, session_id: Option<&str>) -> Result<u64>;
 
     /// Delete a DAG execution and all its steps.
     async fn delete_dag(&self, id: &str) -> Result<()>;
@@ -232,41 +233,70 @@ impl DagRepository for SqlxDagRepository {
     async fn list_dags(
         &self,
         status: Option<&str>,
+        session_id: Option<&str>,
         limit: u32,
         offset: u32,
     ) -> Result<Vec<DagExecutionDbModel>> {
-        let dags = if let Some(status) = status {
-            sqlx::query_as::<_, DagExecutionDbModel>(
-                "SELECT * FROM dag_execution WHERE status = ? ORDER BY created_at DESC LIMIT ? OFFSET ?",
-            )
-            .bind(status)
-            .bind(limit)
-            .bind(offset)
-            .fetch_all(&self.pool)
-            .await?
+        // Build dynamic WHERE clause
+        let mut conditions: Vec<String> = Vec::new();
+        if status.is_some() {
+            conditions.push("status = ?".to_string());
+        }
+        if session_id.is_some() {
+            conditions.push("session_id = ?".to_string());
+        }
+
+        let where_clause = if conditions.is_empty() {
+            String::new()
         } else {
-            sqlx::query_as::<_, DagExecutionDbModel>(
-                "SELECT * FROM dag_execution ORDER BY created_at DESC LIMIT ? OFFSET ?",
-            )
-            .bind(limit)
-            .bind(offset)
-            .fetch_all(&self.pool)
-            .await?
+            format!("WHERE {}", conditions.join(" AND "))
         };
+
+        let sql = format!(
+            "SELECT * FROM dag_execution {} ORDER BY created_at DESC LIMIT ? OFFSET ?",
+            where_clause
+        );
+
+        let mut query = sqlx::query_as::<_, DagExecutionDbModel>(&sql);
+        if let Some(status) = status {
+            query = query.bind(status);
+        }
+        if let Some(session_id) = session_id {
+            query = query.bind(session_id);
+        }
+        query = query.bind(limit).bind(offset);
+
+        let dags = query.fetch_all(&self.pool).await?;
         Ok(dags)
     }
 
-    async fn count_dags(&self, status: Option<&str>) -> Result<u64> {
-        let count: i64 = if let Some(status) = status {
-            sqlx::query_scalar("SELECT COUNT(*) FROM dag_execution WHERE status = ?")
-                .bind(status)
-                .fetch_one(&self.pool)
-                .await?
+    async fn count_dags(&self, status: Option<&str>, session_id: Option<&str>) -> Result<u64> {
+        // Build dynamic WHERE clause
+        let mut conditions: Vec<String> = Vec::new();
+        if status.is_some() {
+            conditions.push("status = ?".to_string());
+        }
+        if session_id.is_some() {
+            conditions.push("session_id = ?".to_string());
+        }
+
+        let where_clause = if conditions.is_empty() {
+            String::new()
         } else {
-            sqlx::query_scalar("SELECT COUNT(*) FROM dag_execution")
-                .fetch_one(&self.pool)
-                .await?
+            format!("WHERE {}", conditions.join(" AND "))
         };
+
+        let sql = format!("SELECT COUNT(*) FROM dag_execution {}", where_clause);
+
+        let mut query = sqlx::query_scalar::<_, i64>(&sql);
+        if let Some(status) = status {
+            query = query.bind(status);
+        }
+        if let Some(session_id) = session_id {
+            query = query.bind(session_id);
+        }
+
+        let count = query.fetch_one(&self.pool).await?;
         Ok(count as u64)
     }
 
