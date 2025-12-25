@@ -143,47 +143,35 @@ impl GopSortOperator {
             }
         }
 
-        let mut sorted_tags = Vec::with_capacity(audio_tags.len() + video_tags.len());
-        let mut a_idx = 0;
-        let mut v_idx = 0;
-
-        // Two-pointer merge process
-        while a_idx < audio_tags.len() && v_idx < video_tags.len() {
-            let audio_tag = &audio_tags[a_idx];
-            let video_tag = &video_tags[v_idx];
-
-            // Core comparison logic:
-            // If video timestamp <= audio timestamp, prioritize video tag.
-            // This ensures audio tags appear after the last video tag with timestamp less than or equal to it.
-            if video_tag.timestamp_ms <= audio_tag.timestamp_ms {
-                sorted_tags.push(video_tag.clone());
-                v_idx += 1;
-            } else {
-                // Otherwise (audio timestamp < video timestamp), add the audio tag
-                sorted_tags.push(audio_tag.clone());
-                a_idx += 1;
-            }
-        }
-
-        // Add remaining audio tags (if video list was processed first)
-        while a_idx < audio_tags.len() {
-            sorted_tags.push(audio_tags[a_idx].clone());
-            a_idx += 1;
-        }
-
-        // Add remaining video tags (if audio list was processed first)
-        while v_idx < video_tags.len() {
-            sorted_tags.push(video_tags[v_idx].clone());
-            v_idx += 1;
-        }
-
         // Emit script tags in original order (no sorting)
         for tag in script_tags {
             output(FlvData::Tag(tag))?;
         }
 
-        // Emit the sorted tags
-        for tag in sorted_tags {
+        // Interleave audio and video without cloning.
+        let mut audio_iter = audio_tags.into_iter().peekable();
+        let mut video_iter = video_tags.into_iter().peekable();
+
+        // Two-pointer merge process (iterators are already ordered by per-stream timestamp).
+        while audio_iter.peek().is_some() && video_iter.peek().is_some() {
+            let audio_ts = audio_iter.peek().unwrap().timestamp_ms;
+            let video_ts = video_iter.peek().unwrap().timestamp_ms;
+
+            // Core comparison logic:
+            // If video timestamp <= audio timestamp, prioritize video tag.
+            // This ensures audio tags appear after the last video tag with timestamp less than or equal to it.
+            if video_ts <= audio_ts {
+                output(FlvData::Tag(video_iter.next().unwrap()))?;
+            } else {
+                output(FlvData::Tag(audio_iter.next().unwrap()))?;
+            }
+        }
+
+        // Emit remaining tags in the same relative order.
+        for tag in audio_iter {
+            output(FlvData::Tag(tag))?;
+        }
+        for tag in video_iter {
             output(FlvData::Tag(tag))?;
         }
 
