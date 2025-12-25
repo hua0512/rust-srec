@@ -358,6 +358,7 @@ mod tests {
             name: format!("Test Streamer {}", id),
             url: format!("https://twitch.tv/{}", id),
             platform_config_id: "twitch".to_string(),
+
             template_config_id: None,
             state: StreamerState::NotLive,
             priority: Priority::Normal,

@@ -165,6 +165,54 @@ impl StreamDetector {
         }
     }
 
+    /// Merge stream selection preferences into platform_extras.
+    ///
+    /// This allows platforms like Douyu to use the user's preferred CDN during extraction.
+    /// Only values that aren't already set in platform_extras will be added.
+    fn merge_selection_config_into_extras(
+        platform_extras: Option<serde_json::Value>,
+        selection_config: Option<&StreamSelectionConfig>,
+    ) -> Option<serde_json::Value> {
+        let Some(config) = selection_config else {
+            return platform_extras;
+        };
+
+        // Start with existing extras or create an empty object
+        let mut extras = match platform_extras {
+            Some(serde_json::Value::Object(map)) => map,
+            Some(other) => return Some(other), // Non-object, can't merge
+            None => serde_json::Map::new(),
+        };
+
+        // Inject preferred CDN if configured and not already set
+        // This is used by platforms like Douyu that need CDN during extraction
+        if !config.preferred_cdns.is_empty() && !extras.contains_key("cdn") {
+            extras.insert(
+                "cdn".to_string(),
+                serde_json::Value::String(config.preferred_cdns[0].clone()),
+            );
+            debug!(
+                "Injecting preferred CDN '{}' into platform extras",
+                config.preferred_cdns[0]
+            );
+        }
+
+        // Inject preferred quality if configured and not already set
+        // This is used by platforms like Bilibili that need quality during extraction
+        if !config.preferred_qualities.is_empty() && !extras.contains_key("quality") {
+            extras.insert(
+                "quality".to_string(),
+                serde_json::Value::String(config.preferred_qualities[0].clone()),
+            );
+        }
+
+        if extras.is_empty() {
+            None
+        } else {
+            Some(serde_json::Value::Object(extras))
+        }
+    }
+
     /// Check the live status of a streamer.
     ///
     /// Uses the platforms crate to extract media information from the streamer's URL.
@@ -173,39 +221,54 @@ impl StreamDetector {
         streamer: &StreamerMetadata,
         selection_config: Option<&StreamSelectionConfig>,
     ) -> Result<LiveStatus> {
-        self.check_status_with_cookies(streamer, None, selection_config)
+        self.check_status_with_cookies(streamer, None, selection_config, None)
             .await
     }
 
-    /// Check the live status of a streamer with optional cookies and selection config.
+    /// Check the live status of a streamer with optional cookies, selection config, and platform extras.
+    ///
+    /// # Arguments
+    /// * `streamer` - The streamer to check
+    /// * `cookies` - Optional cookies to use for the request
+    /// * `selection_config` - Optional stream selection configuration
+    /// * `platform_extras` - Optional platform-specific extractor configuration (merged from all config layers)
     pub async fn check_status_with_cookies(
         &self,
         streamer: &StreamerMetadata,
         cookies: Option<String>,
         selection_config: Option<&StreamSelectionConfig>,
+        platform_extras: Option<serde_json::Value>,
     ) -> Result<LiveStatus> {
         debug!(
-            "Checking status for streamer: {} ({})",
-            streamer.name, streamer.url
+            "Checking status for streamer: {} ({}) with platform_extras: {}",
+            streamer.name,
+            streamer.url,
+            platform_extras.is_some()
         );
 
+        // Merge CDN preference from selection_config into platform_extras
+        // This allows platforms like Douyu to use the preferred CDN during extraction
+        let merged_extras =
+            Self::merge_selection_config_into_extras(platform_extras, selection_config);
+
         // Create platform extractor for this streamer's URL
-        let extractor = match self
-            .extractor_factory
-            .create_extractor(&streamer.url, cookies, None)
-        {
-            Ok(ext) => ext,
-            Err(ExtractorError::UnsupportedExtractor) => {
-                warn!("Unsupported platform for URL: {}", streamer.url);
-                return Ok(LiveStatus::UnsupportedPlatform);
-            }
-            Err(e) => {
-                return Err(crate::Error::Monitor(format!(
-                    "Failed to create extractor: {}",
-                    e
-                )));
-            }
-        };
+        let extractor =
+            match self
+                .extractor_factory
+                .create_extractor(&streamer.url, cookies, merged_extras)
+            {
+                Ok(ext) => ext,
+                Err(ExtractorError::UnsupportedExtractor) => {
+                    warn!("Unsupported platform for URL: {}", streamer.url);
+                    return Ok(LiveStatus::UnsupportedPlatform);
+                }
+                Err(e) => {
+                    return Err(crate::Error::Monitor(format!(
+                        "Failed to create extractor: {}",
+                        e
+                    )));
+                }
+            };
 
         // Extract media information
         let media_info = match extractor.extract().await {
@@ -401,15 +464,23 @@ impl StreamDetector {
     }
 
     /// Check status and apply filters.
+    ///
+    /// # Arguments
+    /// * `streamer` - The streamer to check
+    /// * `filters` - Filters to apply to the live status
+    /// * `cookies` - Optional cookies to use for the request
+    /// * `selection_config` - Optional stream selection configuration
+    /// * `platform_extras` - Optional platform-specific extractor configuration
     pub async fn check_status_with_filters(
         &self,
         streamer: &StreamerMetadata,
         filters: &[Filter],
         cookies: Option<String>,
         selection_config: Option<&StreamSelectionConfig>,
+        platform_extras: Option<serde_json::Value>,
     ) -> Result<LiveStatus> {
         let status = self
-            .check_status_with_cookies(streamer, cookies, selection_config)
+            .check_status_with_cookies(streamer, cookies, selection_config, platform_extras)
             .await?;
 
         // If offline, no need to filter

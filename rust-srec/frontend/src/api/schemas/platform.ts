@@ -6,6 +6,7 @@ import {
   EventHooksSchema,
 } from './common';
 import { DagPipelineDefinitionSchema } from './pipeline';
+import { AllPlatformConfigsSchema } from './platform-configs';
 
 // --- Platform Config ---
 export const PlatformConfigSchema = z.object({
@@ -15,7 +16,19 @@ export const PlatformConfigSchema = z.object({
   download_delay_ms: z.number().nullable().optional(),
   record_danmu: z.boolean().nullable().optional(),
   cookies: z.string().nullable().optional(),
-  platform_specific_config: z.any().nullable().optional(), // usually JSON string or object
+  platform_specific_config: z
+    .preprocess((val) => {
+      if (typeof val === 'string' && val.trim() !== '') {
+        try {
+          return JSON.parse(val);
+        } catch (e) {
+          return val;
+        }
+      }
+      return val;
+    }, AllPlatformConfigsSchema.nullable().optional())
+    .nullable()
+    .optional(),
   output_folder: z.string().nullable().optional(),
   output_filename_template: z.string().nullable().optional(),
   download_engine: z.string().nullable().optional(),

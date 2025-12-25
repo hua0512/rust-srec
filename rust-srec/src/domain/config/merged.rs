@@ -3,6 +3,7 @@
 use crate::database::models::job::DagPipelineDefinition;
 use crate::domain::{DanmuSamplingConfig, EventHooks, ProxyConfig, RetryPolicy};
 use crate::downloader::StreamSelectionConfig;
+use platforms_parser::extractor::platform_configs::merge_platform_extras;
 use serde::{Deserialize, Serialize};
 use tracing::debug;
 
@@ -50,6 +51,9 @@ pub struct MergedConfig {
 
     // Pipeline configuration
     pub pipeline: Option<DagPipelineDefinition>,
+
+    // Platform-specific extractor options (merged from all layers)
+    pub platform_extras: Option<serde_json::Value>,
 }
 
 impl MergedConfig {
@@ -81,6 +85,7 @@ pub struct MergedConfigBuilder {
     stream_selection: Option<StreamSelectionConfig>,
     engines_override: Option<serde_json::Value>,
     pipeline: Option<DagPipelineDefinition>,
+    platform_extras: Option<serde_json::Value>,
 }
 
 impl MergedConfigBuilder {
@@ -180,8 +185,10 @@ impl MergedConfigBuilder {
         }
 
         // Apply platform-specific config overrides
-        if let Some(_config) = platform_specific_config {
+        if let Some(config) = platform_specific_config {
             debug!("Applying platform-specific config overrides");
+            self.platform_extras =
+                merge_platform_extras(self.platform_extras.take(), Some(config.clone()));
         }
 
         // Apply explicit overrides
@@ -259,16 +266,18 @@ impl MergedConfigBuilder {
         stream_selection: Option<StreamSelectionConfig>,
         engines_override: Option<serde_json::Value>,
         pipeline: Option<DagPipelineDefinition>,
+        platform_extras: Option<serde_json::Value>,
     ) -> Self {
         debug!(
-            "[Layer 3: Template] Applying overrides: output_folder={:?}, engine={:?}, record_danmu={:?}, cookies={}, stream_selection={}, engines_override={}, pipeline_steps={}",
+            "[Layer 3: Template] Applying overrides: output_folder={:?}, engine={:?}, record_danmu={:?}, cookies={}, stream_selection={}, engines_override={}, pipeline_steps={}, platform_extras={}",
             output_folder,
             download_engine,
             record_danmu,
             cookies.is_some(),
             stream_selection.is_some(),
             engines_override.is_some(),
-            pipeline.as_ref().map(|p| p.steps.len()).unwrap_or(0)
+            pipeline.as_ref().map(|p| p.steps.len()).unwrap_or(0),
+            platform_extras.is_some()
         );
         if let Some(v) = output_folder {
             debug!("Template override: output_folder = {}", v);
@@ -345,6 +354,11 @@ impl MergedConfigBuilder {
         if let Some(pipe) = pipeline {
             debug!("Template override: pipeline");
             self.pipeline = Some(pipe);
+        }
+        // Merge platform extras from template layer
+        if let Some(extras) = platform_extras {
+            debug!("Template override: platform_extras");
+            self.platform_extras = merge_platform_extras(self.platform_extras.take(), Some(extras));
         }
         self
     }
@@ -466,6 +480,13 @@ impl MergedConfigBuilder {
                 debug!("Streamer config override: danmu_sampling_config");
                 self.danmu_sampling_config = Some(v);
             }
+
+            // Merge platform extras from streamer layer
+            if let Some(extras) = config.get("platform_extras").cloned() {
+                debug!("Streamer config override: platform_extras");
+                self.platform_extras =
+                    merge_platform_extras(self.platform_extras.take(), Some(extras));
+            }
         }
         self
     }
@@ -516,6 +537,7 @@ impl MergedConfigBuilder {
             stream_selection,
             engines_override: self.engines_override,
             pipeline,
+            platform_extras: self.platform_extras,
         }
     }
 }
@@ -620,6 +642,7 @@ mod tests {
                 None, // stream_selection
                 None, // engines_override
                 None, // pipeline
+                None, // platform_extras
             )
             .build();
 

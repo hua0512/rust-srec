@@ -33,6 +33,8 @@ pub struct ProcessorInput {
     pub streamer_name: Option<String>,
     /// Session/stream title.
     pub session_title: Option<String>,
+    /// Platform name (e.g., "Twitch", "Huya").
+    pub platform: Option<String>,
 }
 
 impl ProcessorInput {
@@ -51,6 +53,7 @@ impl ProcessorInput {
             session_id: session_id.into(),
             streamer_name: None,
             session_title: None,
+            platform: None,
         }
     }
 
@@ -69,6 +72,12 @@ impl ProcessorInput {
     /// Set the session title.
     pub fn with_session_title(mut self, title: impl Into<String>) -> Self {
         self.session_title = Some(title.into());
+        self
+    }
+
+    /// Set the platform.
+    pub fn with_platform(mut self, platform: impl Into<String>) -> Self {
+        self.platform = Some(platform.into());
         self
     }
 }
@@ -226,6 +235,7 @@ mod tests {
             session_id: "session-1".to_string(),
             streamer_name: Some("Test Streamer".to_string()),
             session_title: Some("Test Title".to_string()),
+            platform: None,
         };
 
         assert_eq!(input.inputs[0], "/input.flv");

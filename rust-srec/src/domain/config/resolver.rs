@@ -163,6 +163,17 @@ impl<R: ConfigRepository> ConfigResolver<R> {
                 .as_ref()
                 .and_then(|s| serde_json::from_str(s).ok());
 
+            // Parse platform_overrides to get platform-specific extras for this streamer's platform
+            // platform_overrides is a JSON map: { "huya": {...}, "douyin": {...}, ... }
+            let template_platform_extras: Option<serde_json::Value> = template_config
+                .platform_overrides
+                .as_ref()
+                .and_then(|s| serde_json::from_str::<serde_json::Value>(s).ok())
+                .and_then(|map| {
+                    // Look up the current platform's overrides
+                    map.get(&platform_config.platform_name).cloned()
+                });
+
             builder = builder.with_template(
                 template_config.output_folder,
                 template_config.output_filename_template,
@@ -183,6 +194,7 @@ impl<R: ConfigRepository> ConfigResolver<R> {
                     .pipeline
                     .as_ref()
                     .and_then(|p| serde_json::from_str::<DagPipelineDefinition>(p).ok()),
+                template_platform_extras, // platform_extras from platform_overrides
             );
         }
 

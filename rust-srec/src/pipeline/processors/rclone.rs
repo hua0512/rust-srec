@@ -443,6 +443,7 @@ impl RcloneProcessor {
             &input.session_id,
             input.streamer_name.as_deref(),
             input.session_title.as_deref(),
+            input.platform.as_deref(),
         );
 
         tracing::debug!(
@@ -658,6 +659,7 @@ mod tests {
             session_id: "456".to_string(),
             streamer_name: Some("StreamerName".to_string()),
             session_title: Some("Live Title".to_string()),
+            platform: None,
             config: Some(r#"{"destination_root": "remote:/{streamer}/{title}/"}"#.to_string()),
         };
 

@@ -17,7 +17,19 @@ export const TemplateSchema = z.object({
   output_file_format: z.string().nullable().optional(),
   download_engine: z.string().nullable().optional(),
   record_danmu: z.boolean().nullable().optional(),
-  platform_overrides: z.any().nullable().optional(),
+  platform_overrides: z
+    .preprocess((val) => {
+      if (typeof val === 'string' && val.trim() !== '') {
+        try {
+          return JSON.parse(val);
+        } catch (e) {
+          return val;
+        }
+      }
+      return val;
+    }, z.any())
+    .nullable()
+    .optional(),
   engines_override: z.any().nullable().optional(),
   min_segment_size_bytes: z.number().nullable().optional(),
   max_download_duration_secs: z.number().nullable().optional(),

@@ -34,6 +34,7 @@ import { StreamerCard } from '@/components/streamers/streamer-card';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
+import { DashboardHeader } from '@/components/shared/dashboard-header';
 import {
   Select,
   SelectContent,
@@ -241,95 +242,75 @@ function StreamersPage() {
       animate="show"
     >
       {/* Header */}
-      <motion.div className="border-b border-border/40" variants={item}>
-        <div className="w-full">
-          {/* Title Row */}
-          <div className="flex flex-col md:flex-row gap-4 items-start md:items-center justify-between p-4 md:px-8">
-            <div className="flex items-center gap-4">
-              <div className="p-2.5 rounded-xl bg-gradient-to-br from-primary/20 to-primary/5 ring-1 ring-primary/10">
-                <Video className="h-6 w-6 text-primary" />
-              </div>
-              <div>
-                <h1 className="text-xl font-semibold tracking-tight">
-                  <Trans>Streamers</Trans>
-                </h1>
-                <p className="text-sm text-muted-foreground">
-                  <Trans>Manage your monitored channels and downloads</Trans>
-                </p>
-              </div>
+      <DashboardHeader
+        icon={Video}
+        title={<Trans>Streamers</Trans>}
+        subtitle={<Trans>Manage your monitored channels and downloads</Trans>}
+        actions={
+          <>
+            {/* Search */}
+            <div className="relative flex-1 md:w-56 min-w-[200px]">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+              <Input
+                placeholder={t`Search streamers...`}
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                className="pl-9 h-9"
+              />
             </div>
 
-            <div className="flex items-center gap-2 w-full md:w-auto overflow-x-auto">
-              {/* Search */}
-              <div className="relative flex-1 md:w-56 min-w-[200px]">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                <Input
-                  placeholder={t`Search streamers...`}
-                  value={search}
-                  onChange={(e) => setSearch(e.target.value)}
-                  className="pl-9 h-9"
-                />
-              </div>
-
-              {/* Platform Select */}
-              <Select
-                value={platformFilter}
-                onValueChange={handlePlatformChange}
-              >
-                <SelectTrigger className="w-[200px] h-9 bg-background/50 border-input/60 hover:bg-accent/50 transition-colors">
-                  <div className="flex items-center gap-2 truncate">
-                    <Radio className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
-                    <span className="truncate">
-                      <SelectValue placeholder={t`Platform`} />
-                    </span>
-                  </div>
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">
-                    <Trans>All Platforms</Trans>
+            {/* Platform Select */}
+            <Select value={platformFilter} onValueChange={handlePlatformChange}>
+              <SelectTrigger className="w-[200px] h-9 bg-background/50 border-input/60 hover:bg-accent/50 transition-colors">
+                <div className="flex items-center gap-2 truncate">
+                  <Radio className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+                  <span className="truncate">
+                    <SelectValue placeholder={t`Platform`} />
+                  </span>
+                </div>
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">
+                  <Trans>All Platforms</Trans>
+                </SelectItem>
+                {platforms.map((p) => (
+                  <SelectItem key={p.id} value={p.id}>
+                    {p.name}
                   </SelectItem>
-                  {platforms.map((p) => (
-                    <SelectItem key={p.id} value={p.id}>
-                      {p.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+                ))}
+              </SelectContent>
+            </Select>
 
-              <Badge
-                variant="secondary"
-                className="h-9 px-3 text-sm whitespace-nowrap"
+            <Badge
+              variant="secondary"
+              className="h-9 px-3 text-sm whitespace-nowrap"
+            >
+              {totalCount} <Trans>total</Trans>
+            </Badge>
+          </>
+        }
+      >
+        <nav className="flex items-center gap-1">
+          {STATE_FILTERS.map((filter) => {
+            const Icon = filter.icon;
+            const isActive = stateFilter === filter.value;
+            return (
+              <button
+                key={filter.value}
+                onClick={() => handleStateChange(filter.value)}
+                className={`relative px-3 py-1.5 text-sm font-medium rounded-full transition-all duration-200 flex items-center gap-2 ${
+                  isActive
+                    ? 'bg-primary text-primary-foreground shadow-sm'
+                    : 'text-muted-foreground hover:text-foreground hover:bg-muted'
+                }`}
               >
-                {totalCount} <Trans>total</Trans>
-              </Badge>
-            </div>
-          </div>
-
-          {/* State Filters (Pills) */}
-          <div className="px-4 md:px-8 pb-3 overflow-x-auto no-scrollbar">
-            <nav className="flex items-center gap-1">
-              {STATE_FILTERS.map((filter) => {
-                const Icon = filter.icon;
-                const isActive = stateFilter === filter.value;
-                return (
-                  <button
-                    key={filter.value}
-                    onClick={() => handleStateChange(filter.value)}
-                    className={`relative px-3 py-1.5 text-sm font-medium rounded-full transition-all duration-200 flex items-center gap-2 ${
-                      isActive
-                        ? 'bg-primary text-primary-foreground shadow-sm'
-                        : 'text-muted-foreground hover:text-foreground hover:bg-muted'
-                    }`}
-                  >
-                    <Icon className="h-3.5 w-3.5" />
-                    <span className="relative z-10">{filter.label}</span>
-                  </button>
-                );
-              })}
-            </nav>
-          </div>
-        </div>
-      </motion.div>
+                <Icon className="h-3.5 w-3.5" />
+                <span className="relative z-10">{filter.label}</span>
+              </button>
+            );
+          })}
+        </nav>
+      </DashboardHeader>
 
       {/* Content Content */}
       <div className="p-4 md:px-8 pb-20">

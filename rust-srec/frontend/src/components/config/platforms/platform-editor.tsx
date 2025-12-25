@@ -158,7 +158,12 @@ export function PlatformEditor({
                   </span>
                 ),
                 icon: Settings,
-                content: <PlatformSpecificTab form={form} />,
+                content: (
+                  <PlatformSpecificTab
+                    form={form}
+                    platformName={platform.name}
+                  />
+                ),
               },
             ]}
             defaultTab="general"

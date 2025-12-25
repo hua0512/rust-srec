@@ -342,6 +342,8 @@ pub struct Job {
     pub streamer_name: Option<String>,
     /// Session/stream title.
     pub session_title: Option<String>,
+    /// Platform name (e.g., "Twitch", "Huya").
+    pub platform: Option<String>,
     /// Additional configuration as JSON.
     pub config: Option<String>,
     /// When the job was created.
@@ -387,6 +389,7 @@ impl Job {
             session_id: session_id.into(),
             streamer_name: None,
             session_title: None,
+            platform: None,
             config: None,
             created_at: Utc::now(),
             started_at: None,
@@ -421,6 +424,7 @@ impl Job {
             session_id: session_id.into(),
             streamer_name: None,
             session_title: None,
+            platform: None,
             config: None,
             created_at: Utc::now(),
             started_at: None,
@@ -468,6 +472,12 @@ impl Job {
     /// Set the session title.
     pub fn with_session_title(mut self, title: impl Into<String>) -> Self {
         self.session_title = Some(title.into());
+        self
+    }
+
+    /// Set the platform.
+    pub fn with_platform(mut self, platform: impl Into<String>) -> Self {
+        self.platform = Some(platform.into());
         self
     }
 
@@ -2048,6 +2058,7 @@ fn db_model_to_job(db_job: &JobDbModel) -> Job {
         dag_step_execution_id: db_job.dag_step_execution_id.clone(),
         streamer_name: None,
         session_title: None,
+        platform: None,
     }
 }
 

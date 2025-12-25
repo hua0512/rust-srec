@@ -35,6 +35,7 @@ import {
 import { Calendar } from '@/components/ui/calendar';
 import { Button } from '@/components/ui/button';
 import { motion } from 'motion/react';
+import { DashboardHeader } from '@/components/shared/dashboard-header';
 
 const searchSchema = z.object({
   page: z.number().optional().catch(1),
@@ -218,179 +219,166 @@ function SessionsPage() {
       animate="show"
     >
       {/* Header */}
-      <motion.div className="border-b border-border/40" variants={item}>
-        <div className="w-full">
-          <div className="flex flex-col md:flex-row gap-4 items-start md:items-center justify-between p-4 md:px-8">
-            <div className="flex items-center gap-4">
-              <div className="p-2.5 rounded-xl bg-gradient-to-br from-primary/20 to-primary/5 ring-1 ring-primary/10">
-                <Film className="h-6 w-6 text-primary" />
-              </div>
-              <div>
-                <h1 className="text-xl font-semibold tracking-tight">
-                  <Trans>Sessions</Trans>
-                </h1>
-                <p className="text-sm text-muted-foreground">
-                  <Trans>Review recorded streams and manage archives</Trans>
-                </p>
-              </div>
+      <DashboardHeader
+        icon={Film}
+        title={<Trans>Sessions</Trans>}
+        subtitle={<Trans>Review recorded streams and manage archives</Trans>}
+        actions={
+          <>
+            {/* Search */}
+            <div className="relative w-full md:w-56 min-w-[200px]">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+              <Input
+                placeholder={t`Search sessions...`}
+                value={search.search || ''}
+                onChange={(e) =>
+                  updateSearch({
+                    search: e.target.value || undefined,
+                    page: 1,
+                  })
+                }
+                className="pl-9 h-9 bg-muted/40 border-border/50 focus:bg-background transition-colors"
+              />
             </div>
 
-            <div className="flex items-center gap-2 w-full md:w-auto overflow-x-auto no-scrollbar">
-              {/* Search */}
-              <div className="relative w-full md:w-56 min-w-[200px]">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                <Input
-                  placeholder={t`Search sessions...`}
-                  value={search.search || ''}
-                  onChange={(e) =>
-                    updateSearch({
-                      search: e.target.value || undefined,
-                      page: 1,
-                    })
-                  }
-                  className="pl-9 h-9 bg-muted/40 border-border/50 focus:bg-background transition-colors"
-                />
-              </div>
+            <div className="h-6 w-px bg-border/50 mx-1 shrink-0" />
 
-              <div className="h-6 w-px bg-border/50 mx-1 shrink-0" />
-
-              {/* Status Pills */}
-              <div className="flex items-center bg-muted/30 p-1 rounded-full border border-border/50 shrink-0">
-                {statusFilters.map((filter) => {
-                  const Icon = filter.icon;
-                  const isActive = currentStatus === filter.value;
-                  return (
-                    <button
-                      key={filter.value}
-                      onClick={() =>
-                        updateSearch({ status: filter.value as any, page: 1 })
-                      }
+            {/* Status Pills */}
+            <div className="flex items-center bg-muted/30 p-1 rounded-full border border-border/50 shrink-0">
+              {statusFilters.map((filter) => {
+                const Icon = filter.icon;
+                const isActive = currentStatus === filter.value;
+                return (
+                  <button
+                    key={filter.value}
+                    onClick={() =>
+                      updateSearch({ status: filter.value as any, page: 1 })
+                    }
+                    className={cn(
+                      'flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium transition-all duration-200',
+                      isActive
+                        ? 'bg-background text-foreground shadow-sm ring-1 ring-border/50'
+                        : 'text-muted-foreground hover:text-foreground hover:bg-muted/50',
+                    )}
+                  >
+                    <Icon
                       className={cn(
-                        'flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium transition-all duration-200',
-                        isActive
-                          ? 'bg-background text-foreground shadow-sm ring-1 ring-border/50'
-                          : 'text-muted-foreground hover:text-foreground hover:bg-muted/50',
+                        'h-3 w-3',
+                        isActive ? 'text-primary' : 'text-muted-foreground',
                       )}
-                    >
-                      <Icon
-                        className={cn(
-                          'h-3 w-3',
-                          isActive ? 'text-primary' : 'text-muted-foreground',
-                        )}
-                      />
-                      <span>{filter.label}</span>
-                    </button>
-                  );
-                })}
-              </div>
-
-              {/* Time Range */}
-              <div className="flex items-center bg-muted/30 p-1 rounded-full border border-border/50 shrink-0">
-                <Popover open={isCalendarOpen} onOpenChange={setIsCalendarOpen}>
-                  <PopoverTrigger asChild>
-                    <button
-                      className={cn(
-                        'flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium transition-all duration-200',
-                        currentTimeRange === 'custom' || dateRange?.from
-                          ? 'bg-background text-foreground shadow-sm ring-1 ring-border/50'
-                          : 'text-muted-foreground hover:text-foreground hover:bg-muted/50',
-                      )}
-                    >
-                      <CalendarDays
-                        className={cn(
-                          'h-3 w-3',
-                          currentTimeRange === 'custom' || dateRange?.from
-                            ? 'text-primary'
-                            : 'text-muted-foreground',
-                        )}
-                      />
-                      <span>
-                        {dateRange?.from
-                          ? dateRange.to
-                            ? `${format(dateRange.from, 'MMM dd')} - ${format(dateRange.to, 'MMM dd')} `
-                            : format(dateRange.from, 'MMM dd')
-                          : t`Custom`}
-                      </span>
-                    </button>
-                  </PopoverTrigger>
-                  <PopoverContent className="w-auto p-0" align="end">
-                    <Calendar
-                      mode="range"
-                      selected={dateRange}
-                      onSelect={(range) => {
-                        if (range?.from) {
-                          updateSearch({
-                            timeRange: 'custom',
-                            from: range.from.toISOString(),
-                            to: range.to?.toISOString(),
-                            page: 1,
-                          });
-                        } else {
-                          updateSearch({
-                            timeRange: 'all',
-                            from: undefined,
-                            to: undefined,
-                            page: 1,
-                          });
-                        }
-                      }}
-                      disabled={(date) =>
-                        date > new Date() || date < new Date('1900-01-01')
-                      }
-                      numberOfMonths={2}
-                      initialFocus
-                      className="rounded-md border shadow-xs"
                     />
-                  </PopoverContent>
-                </Popover>
-
-                {timeFilters.map((filter) => {
-                  const isActive = currentTimeRange === filter.value;
-                  return (
-                    <button
-                      key={filter.value}
-                      onClick={() => {
-                        if (filter.value !== 'custom') {
-                          updateSearch({
-                            timeRange: filter.value as any,
-                            from: undefined,
-                            to: undefined,
-                            page: 1,
-                          });
-                        } else {
-                          updateSearch({
-                            timeRange: filter.value as any,
-                            page: 1,
-                          });
-                        }
-                      }}
-                      className={cn(
-                        'flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium transition-all duration-200 whitespace-nowrap',
-                        isActive
-                          ? 'bg-background text-foreground shadow-sm ring-1 ring-border/50'
-                          : 'text-muted-foreground hover:text-foreground hover:bg-muted/50',
-                      )}
-                    >
-                      <span>{filter.label}</span>
-                    </button>
-                  );
-                })}
-              </div>
-
-              {hasActiveFilters && (
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  onClick={() => navigate({ search: {}, replace: true })}
-                  className="h-8 w-8 rounded-full hover:bg-destructive/10 hover:text-destructive shrink-0"
-                >
-                  <X className="h-4 w-4" />
-                </Button>
-              )}
+                    <span>{filter.label}</span>
+                  </button>
+                );
+              })}
             </div>
-          </div>
-        </div>
-      </motion.div>
+
+            {/* Time Range */}
+            <div className="flex items-center bg-muted/30 p-1 rounded-full border border-border/50 shrink-0">
+              <Popover open={isCalendarOpen} onOpenChange={setIsCalendarOpen}>
+                <PopoverTrigger asChild>
+                  <button
+                    className={cn(
+                      'flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium transition-all duration-200',
+                      currentTimeRange === 'custom' || dateRange?.from
+                        ? 'bg-background text-foreground shadow-sm ring-1 ring-border/50'
+                        : 'text-muted-foreground hover:text-foreground hover:bg-muted/50',
+                    )}
+                  >
+                    <CalendarDays
+                      className={cn(
+                        'h-3 w-3',
+                        currentTimeRange === 'custom' || dateRange?.from
+                          ? 'text-primary'
+                          : 'text-muted-foreground',
+                      )}
+                    />
+                    <span>
+                      {dateRange?.from
+                        ? dateRange.to
+                          ? `${format(dateRange.from, 'MMM dd')} - ${format(dateRange.to, 'MMM dd')} `
+                          : format(dateRange.from, 'MMM dd')
+                        : t`Custom`}
+                    </span>
+                  </button>
+                </PopoverTrigger>
+                <PopoverContent className="w-auto p-0" align="end">
+                  <Calendar
+                    mode="range"
+                    selected={dateRange}
+                    onSelect={(range) => {
+                      if (range?.from) {
+                        updateSearch({
+                          timeRange: 'custom',
+                          from: range.from.toISOString(),
+                          to: range.to?.toISOString(),
+                          page: 1,
+                        });
+                      } else {
+                        updateSearch({
+                          timeRange: 'all',
+                          from: undefined,
+                          to: undefined,
+                          page: 1,
+                        });
+                      }
+                    }}
+                    disabled={(date) =>
+                      date > new Date() || date < new Date('1900-01-01')
+                    }
+                    numberOfMonths={2}
+                    initialFocus
+                    className="rounded-md border shadow-xs"
+                  />
+                </PopoverContent>
+              </Popover>
+
+              {timeFilters.map((filter) => {
+                const isActive = currentTimeRange === filter.value;
+                return (
+                  <button
+                    key={filter.value}
+                    onClick={() => {
+                      if (filter.value !== 'custom') {
+                        updateSearch({
+                          timeRange: filter.value as any,
+                          from: undefined,
+                          to: undefined,
+                          page: 1,
+                        });
+                      } else {
+                        updateSearch({
+                          timeRange: filter.value as any,
+                          page: 1,
+                        });
+                      }
+                    }}
+                    className={cn(
+                      'flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium transition-all duration-200 whitespace-nowrap',
+                      isActive
+                        ? 'bg-background text-foreground shadow-sm ring-1 ring-border/50'
+                        : 'text-muted-foreground hover:text-foreground hover:bg-muted/50',
+                    )}
+                  >
+                    <span>{filter.label}</span>
+                  </button>
+                );
+              })}
+            </div>
+
+            {hasActiveFilters && (
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={() => navigate({ search: {}, replace: true })}
+                className="h-8 w-8 rounded-full hover:bg-destructive/10 hover:text-destructive shrink-0"
+              >
+                <X className="h-4 w-4" />
+              </Button>
+            )}
+          </>
+        }
+      />
 
       <div className="p-4 md:px-8 space-y-6 pb-20">
         <SessionList

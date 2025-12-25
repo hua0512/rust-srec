@@ -362,6 +362,7 @@ impl DagScheduler {
             session_id: job_db.session_id.clone().unwrap_or_default(),
             streamer_name,
             session_title,
+            platform: None,
             config: Some(job_db.config.clone()),
             created_at: chrono::Utc::now(),
             started_at: None,

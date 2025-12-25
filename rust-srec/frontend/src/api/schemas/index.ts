@@ -5,6 +5,7 @@ export * from './session';
 export * from './pipeline';
 export * from './streamer';
 export * from './platform';
+export * from './platform-configs';
 export * from './template';
 export * from './engine';
 export * from './system';

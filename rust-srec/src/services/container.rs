@@ -1408,15 +1408,22 @@ impl ServiceContainer {
                     );
                 }
 
-                // Sanitize streamer name and title for safe filename usage (Requirements 1.1, 2.1, 3.1)
+                // Sanitize streamer name and title for safe filename usage
                 let sanitized_streamer = sanitize_filename(&streamer_name);
                 let sanitized_title = sanitize_filename(&title);
+
+                // Extract platform from streamer metadata
+                let platform = streamer_metadata
+                    .as_ref()
+                    .map(|s| s.platform())
+                    .unwrap_or("unknown");
 
                 let dir = merged_config
                     .output_folder
                     .replace("{streamer}", &sanitized_streamer)
                     .replace("{title}", &sanitized_title)
-                    .replace("{session_id}", &session_id);
+                    .replace("{session_id}", &session_id)
+                    .replace("{platform}", platform);
 
                 let output_dir = expand_path_template(&dir);
 
@@ -1430,7 +1437,8 @@ impl ServiceContainer {
                     merged_config
                         .output_filename_template
                         .replace("{streamer}", &sanitized_streamer)
-                        .replace("{title}", &sanitized_title),
+                        .replace("{title}", &sanitized_title)
+                        .replace("{platform}", platform),
                 )
                 .with_output_format(&merged_config.output_file_format)
                 .with_max_segment_duration(merged_config.max_download_duration_secs as u64)

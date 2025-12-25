@@ -2,11 +2,7 @@ import { createServerFn } from '@tanstack/react-start';
 import { fetchBackend } from '../api';
 import { BASE_URL } from '../../utils/env';
 import { ensureValidToken } from '../tokenRefresh';
-import {
-  sanitizeClientSession,
-  SessionData,
-  isValidSession,
-} from '../../utils/session';
+import { sanitizeClientSession, isValidSession } from '../../utils/session';
 import {
   LoginRequestSchema,
   LoginResponseSchema,

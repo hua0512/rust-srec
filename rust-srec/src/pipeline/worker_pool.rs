@@ -390,7 +390,9 @@ impl WorkerPool {
                                 session_id: job.session_id.clone(),
                                 streamer_name: job.streamer_name.clone(),
                                 session_title: job.session_title.clone(),
+                                platform: job.platform.clone(),
                             };
+
 
                             let (log_tx, mut log_rx) = tokio::sync::mpsc::channel(100);
                             let job_queue_clone = job_queue.clone();

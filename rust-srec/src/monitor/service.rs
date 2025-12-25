@@ -339,13 +339,14 @@ impl<
                 // Get merged configuration to access stream selection preference and cookies
                 let config = config_service.get_config_for_streamer(streamer_id).await?;
 
-                // Check status with filters, cookies, and selection config
+                // Check status with filters, cookies, selection config, and platform extras
                 detector
                     .check_status_with_filters(
                         streamer,
                         &filters,
                         config.cookies.clone(),
                         Some(&config.stream_selection),
+                        config.platform_extras.clone(),
                     )
                     .await
             })

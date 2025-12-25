@@ -136,18 +136,21 @@ pub fn expand_placeholders(
     session_id: &str,
     streamer_name: Option<&str>,
     session_title: Option<&str>,
+    platform: Option<&str>,
 ) -> String {
     // First, expand curly-brace placeholders
     let streamer_display = streamer_name
         .map(sanitize_filename)
         .unwrap_or_else(|| streamer_id.to_string());
     let title_display = session_title.map(sanitize_filename).unwrap_or_default();
+    let platform_display = platform.unwrap_or_default();
 
     let result = template
         .replace("{streamer}", &streamer_display)
         .replace("{title}", &title_display)
         .replace("{streamer_id}", streamer_id)
-        .replace("{session_id}", session_id);
+        .replace("{session_id}", session_id)
+        .replace("{platform}", platform_display);
 
     // Then expand time-based placeholders using pipeline_common's expand_path_template
     pipeline_common::expand_path_template(&result)
@@ -251,6 +254,7 @@ mod tests {
             "session-456",
             Some("TestStreamer"),
             None,
+            None,
         );
         assert_eq!(result, "remote:/TestStreamer/videos");
     }
@@ -262,6 +266,7 @@ mod tests {
             "remote:/{streamer}/videos",
             "streamer-123",
             "session-456",
+            None,
             None,
             None,
         );
@@ -276,6 +281,7 @@ mod tests {
             "session-456",
             Some("Streamer"),
             Some("Live Stream?"),
+            None,
         );
         // The ? character is sanitized to _
         assert_eq!(result, "remote:/Streamer/Live Stream_");
@@ -289,6 +295,7 @@ mod tests {
             "session-456",
             Some("Streamer"),
             None,
+            None,
         );
         assert_eq!(result, "remote:/streamer-123/session-456");
     }
@@ -300,6 +307,7 @@ mod tests {
             "streamer-123",
             "session-456",
             Some("Streamer"),
+            None,
             None,
         );
         assert_eq!(result, "remote:/fixed/path");
@@ -313,8 +321,36 @@ mod tests {
             "session-456",
             Some("Streamer<Name>"),
             Some("Title:With:Colons"),
+            None,
         );
         // Characters are sanitized
         assert_eq!(result, "remote:/Streamer_Name_/Title_With_Colons");
+    }
+
+    #[test]
+    fn test_expand_placeholders_platform() {
+        let result = expand_placeholders(
+            "remote:/{platform}/{streamer}/videos",
+            "streamer-123",
+            "session-456",
+            Some("TestStreamer"),
+            None,
+            Some("Twitch"),
+        );
+        assert_eq!(result, "remote:/Twitch/TestStreamer/videos");
+    }
+
+    #[test]
+    fn test_expand_placeholders_platform_none() {
+        // When platform is None, should expand to empty string
+        let result = expand_placeholders(
+            "remote:/{platform}/{streamer}/videos",
+            "streamer-123",
+            "session-456",
+            Some("TestStreamer"),
+            None,
+            None,
+        );
+        assert_eq!(result, "remote://TestStreamer/videos");
     }
 }
