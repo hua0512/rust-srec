@@ -139,9 +139,12 @@ impl RcloneProcessor {
     ) -> Result<ProcessorOutput> {
         let start = std::time::Instant::now();
 
+        // Use 'copyto' and 'moveto' for single-file operations.
+        // Unlike 'copy' and 'move', these commands are designed for file-to-file transfer
+        // and won't create a directory with the destination filename.
         let cmd_op = match operation {
-            RcloneOperation::Copy => "copy",
-            RcloneOperation::Move => "move",
+            RcloneOperation::Copy => "copyto",
+            RcloneOperation::Move => "moveto",
             RcloneOperation::Sync => unreachable!(),
         };
 
