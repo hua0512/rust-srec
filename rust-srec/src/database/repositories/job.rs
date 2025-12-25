@@ -1007,20 +1007,23 @@ impl JobRepository for SqlxJobRepository {
 
     async fn get_avg_processing_time(&self) -> Result<Option<f64>> {
         // Calculate average processing time for completed jobs
-        // Processing time is the difference between completed_at and started_at
-        // Falls back to updated_at - created_at for jobs without started_at/completed_at
+        // Prefers the processor-reported duration_secs (most accurate),
+        // falls back to timestamp difference (started_at to completed_at) if unavailable
         let result: Option<f64> = sqlx::query_scalar(
             r#"
             SELECT AVG(
-                CASE 
-                    WHEN started_at IS NOT NULL AND completed_at IS NOT NULL THEN
-                        (julianday(completed_at) - julianday(started_at)) * 86400.0
-                    ELSE
-                        (julianday(updated_at) - julianday(created_at)) * 86400.0
-                END
+                COALESCE(
+                    duration_secs,
+                    CASE 
+                        WHEN started_at IS NOT NULL AND completed_at IS NOT NULL THEN
+                            (julianday(completed_at) - julianday(started_at)) * 86400.0
+                        ELSE NULL
+                    END
+                )
             ) as avg_time
             FROM job
             WHERE status = 'COMPLETED'
+              AND (duration_secs IS NOT NULL OR (started_at IS NOT NULL AND completed_at IS NOT NULL))
             "#,
         )
         .fetch_one(&self.pool)

@@ -127,6 +127,7 @@ pub fn sanitize_filename(input: &str) -> String {
 ///     "session-456",
 ///     Some("StreamerName"),
 ///     Some("Live Stream?"),
+///     None, // platform
 /// );
 /// assert!(path.starts_with("remote:/StreamerName/Live Stream_"));
 /// ```
