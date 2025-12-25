@@ -1,5 +1,8 @@
 use crc32fast::Hasher;
-use hls::{HlsData, M4sData, M4sInitSegmentData, Resolution, StreamProfile, TsStreamInfo};
+use hls::{
+    HlsData, M4sData, M4sInitSegmentData, Resolution, ResolutionDetector, StreamProfile,
+    TsStreamInfo,
+};
 use pipeline_common::{PipelineError, Processor, StreamerContext};
 use std::sync::Arc;
 use tracing::{debug, info, warn};
@@ -126,8 +129,23 @@ impl SegmentSplitOperator {
     // Handle TS segment
     // Returns true if a split is needed
     fn handle_ts_segment(&mut self, input: &HlsData) -> Result<bool, PipelineError> {
-        // Quick check if segment has PSI tables
-        if !input.ts_has_psi_tables() {
+        let (current_stream_info, packets) = match input {
+            HlsData::TsData(ts_data) => match ts_data.parse_stream_and_packets_zero_copy() {
+                Ok((info, packets)) => (info, packets),
+                Err(e) => {
+                    warn!("{} Failed to parse TS packets: {}", self.context.name, e);
+                    return Ok(false);
+                }
+            },
+            _ => {
+                debug!("{} Not a TS segment", self.context.name);
+                return Ok(false);
+            }
+        };
+
+        let has_psi =
+            current_stream_info.program_count > 0 || !current_stream_info.programs.is_empty();
+        if !has_psi {
             debug!(
                 "{} TS segment has no PSI tables, skipping analysis",
                 self.context.name
@@ -135,21 +153,72 @@ impl SegmentSplitOperator {
             return Ok(false);
         }
 
-        // Parse stream information
-        let current_stream_info = match input.parse_ts_psi_tables_zero_copy() {
-            Some(Ok(info)) => info,
-            Some(Err(e)) => {
-                warn!("{} Failed to parse TS PSI tables: {}", self.context.name, e);
-                return Ok(false);
+        // Compute a StreamProfile without re-parsing the TS data.
+        let mut has_video = false;
+        let mut has_audio = false;
+        let mut has_h264 = false;
+        let mut has_h265 = false;
+        let mut has_aac = false;
+        let mut has_ac3 = false;
+        let mut video_count = 0usize;
+        let mut audio_count = 0usize;
+
+        let mut video_streams = Vec::new();
+        for program in &current_stream_info.programs {
+            if !program.video_streams.is_empty() {
+                has_video = true;
+                video_count += program.video_streams.len();
+                for stream in &program.video_streams {
+                    video_streams.push((stream.pid, stream.stream_type));
+                    match stream.stream_type {
+                        ts::StreamType::H264 => has_h264 = true,
+                        ts::StreamType::H265 => has_h265 = true,
+                        _ => {}
+                    }
+                }
             }
-            None => {
-                debug!("{} Not a TS segment", self.context.name);
-                return Ok(false);
+            if !program.audio_streams.is_empty() {
+                has_audio = true;
+                audio_count += program.audio_streams.len();
+                for stream in &program.audio_streams {
+                    match stream.stream_type {
+                        ts::StreamType::AdtsAac | ts::StreamType::LatmAac => has_aac = true,
+                        ts::StreamType::Ac3 | ts::StreamType::EAc3 => has_ac3 = true,
+                        _ => {}
+                    }
+                }
             }
+        }
+
+        let resolution = if has_video {
+            ResolutionDetector::extract_from_ts_packets(packets.iter(), &video_streams)
+        } else {
+            None
         };
 
-        // Get current stream profile for comparison
-        let current_profile = input.get_stream_profile();
+        let mut summary_parts = Vec::new();
+        if video_count > 0 {
+            summary_parts.push(format!("{video_count} video stream(s)"));
+        }
+        if audio_count > 0 {
+            summary_parts.push(format!("{audio_count} audio stream(s)"));
+        }
+        let summary = if summary_parts.is_empty() {
+            "No recognized streams".to_string()
+        } else {
+            summary_parts.join(", ")
+        };
+
+        let current_profile = Some(StreamProfile {
+            has_video,
+            has_audio,
+            has_h264,
+            has_h265,
+            has_aac,
+            has_ac3,
+            resolution,
+            summary,
+        });
 
         let mut needs_split = false;
 

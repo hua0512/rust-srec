@@ -1560,7 +1560,7 @@ dependencies = [
 
 [[package]]
 name = "hls-fix"
-version = "0.1.4"
+version = "0.1.5"
 dependencies = [
  "bytes",
  "crc32fast",
@@ -1573,6 +1573,7 @@ dependencies = [
  "tracing",
  "tracing-indicatif",
  "tracing-subscriber",
+ "ts",
 ]
 
 [[package]]
