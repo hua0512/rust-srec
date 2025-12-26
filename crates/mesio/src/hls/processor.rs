@@ -79,6 +79,7 @@ impl SegmentTransformer for SegmentProcessor {
 
         // Check if segment requires decryption
         let requires_decryption = job
+            .media_segment
             .key
             .as_ref()
             .is_some_and(|key_info| key_info.method == m3u8_rs::KeyMethod::AES128);
@@ -86,7 +87,7 @@ impl SegmentTransformer for SegmentProcessor {
         // Process data: either zero-copy forward or decrypt
         let current_data = if requires_decryption {
             // Decryption required - cannot use zero-copy
-            let key_info = job.key.as_ref().unwrap(); // Safe: we checked 
+            let key_info = job.media_segment.key.as_ref().unwrap(); // Safe: we checked
 
             let iv_override = if key_info.iv.is_none() {
                 Some(Self::u64_to_iv_bytes(job.media_sequence_number))
@@ -101,7 +102,7 @@ impl SegmentTransformer for SegmentProcessor {
             let decryption_start = Instant::now();
             let decrypted_data = self
                 .decryption_service
-                .decrypt(raw_data_input, key_info, iv_override, &job.base_url)
+                .decrypt(raw_data_input, key_info, iv_override, job.base_url.as_ref())
                 .await?;
             let decryption_duration_ms = decryption_start.elapsed().as_millis() as u64;
 
@@ -111,7 +112,7 @@ impl SegmentTransformer for SegmentProcessor {
             }
 
             decrypted_data
-        } else if let Some(key_info) = &job.key {
+        } else if let Some(key_info) = &job.media_segment.key {
             // Key exists but method is not AES128
             if key_info.method != m3u8_rs::KeyMethod::None {
                 return Err(HlsDownloaderError::DecryptionError(format!(
@@ -122,7 +123,7 @@ impl SegmentTransformer for SegmentProcessor {
             // KeyMethod::None - no decryption needed, use zero-copy if enabled
             if zero_copy_enabled {
                 trace!(
-                    uri = %job.segment_uri,
+                    uri = %job.media_segment.uri,
                     "Zero-copy forwarding: unencrypted segment (KeyMethod::None)"
                 );
             }
@@ -131,7 +132,7 @@ impl SegmentTransformer for SegmentProcessor {
             // No key at all - unencrypted segment, use zero-copy if enabled
             if zero_copy_enabled {
                 trace!(
-                    uri = %job.segment_uri,
+                    uri = %job.media_segment.uri,
                     "Zero-copy forwarding: unencrypted segment (no key)"
                 );
             }
@@ -139,12 +140,12 @@ impl SegmentTransformer for SegmentProcessor {
         };
 
         // Construct HlsData
-        let segment_url = url::Url::parse(&job.segment_uri)
+        let segment_url = url::Url::parse(&job.media_segment.uri)
             .map_err(|e| HlsDownloaderError::SegmentProcessError(format!("Invalid URL: {e}")))?;
         let len = current_data.len();
         let current_data_clone = current_data.clone();
         let hls_data = create_hls_data(
-            job.media_segment.clone(),
+            job.media_segment.as_ref().clone(),
             current_data,
             &segment_url,
             job.is_init_segment,
@@ -152,8 +153,11 @@ impl SegmentTransformer for SegmentProcessor {
 
         if let Some(cache_service) = &self.cache_service {
             // Cache the decrypted raw segment
-            let cache_key =
-                CacheKey::new(CacheResourceType::Segment, job.segment_uri.clone(), None);
+            let cache_key = CacheKey::new(
+                CacheResourceType::Segment,
+                job.media_segment.uri.clone(),
+                None,
+            );
             let metadata = CacheMetadata::new(len as u64)
                 .with_expiration(self.config.processor_config.processed_segment_ttl);
 
@@ -163,7 +167,7 @@ impl SegmentTransformer for SegmentProcessor {
             {
                 error!(
                     "Warning: Failed to cache decrypted segment {}: {}",
-                    job.segment_uri, e
+                    job.media_segment.uri, e
                 );
             }
         }
@@ -192,14 +196,12 @@ mod tests {
     /// Helper to create a test ScheduledSegmentJob without encryption
     fn create_unencrypted_job(uri: &str, msn: u64) -> ScheduledSegmentJob {
         ScheduledSegmentJob {
-            segment_uri: uri.to_string(),
-            base_url: "https://example.com/".to_string(),
+            base_url: Arc::<str>::from("https://example.com/"),
             media_sequence_number: msn,
-            duration: 6.0,
-            key: None,
-            byte_range: None,
-            discontinuity: false,
-            media_segment: MediaSegment::default(),
+            media_segment: Arc::new(MediaSegment {
+                uri: uri.to_string(),
+                ..Default::default()
+            }),
             is_init_segment: false,
             is_prefetch: false,
         }
@@ -208,20 +210,19 @@ mod tests {
     /// Helper to create a test ScheduledSegmentJob with KeyMethod::None
     fn create_job_with_none_key(uri: &str, msn: u64) -> ScheduledSegmentJob {
         ScheduledSegmentJob {
-            segment_uri: uri.to_string(),
-            base_url: "https://example.com/".to_string(),
+            base_url: Arc::<str>::from("https://example.com/"),
             media_sequence_number: msn,
-            duration: 6.0,
-            key: Some(m3u8_rs::Key {
-                method: m3u8_rs::KeyMethod::None,
-                uri: None,
-                iv: None,
-                keyformat: None,
-                keyformatversions: None,
+            media_segment: Arc::new(MediaSegment {
+                uri: uri.to_string(),
+                key: Some(m3u8_rs::Key {
+                    method: m3u8_rs::KeyMethod::None,
+                    uri: None,
+                    iv: None,
+                    keyformat: None,
+                    keyformatversions: None,
+                }),
+                ..Default::default()
             }),
-            byte_range: None,
-            discontinuity: false,
-            media_segment: MediaSegment::default(),
             is_init_segment: false,
             is_prefetch: false,
         }

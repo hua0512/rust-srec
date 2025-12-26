@@ -536,8 +536,14 @@ impl JobQueue {
     /// Create a new job queue with custom configuration.
     pub fn with_config(config: JobQueueConfig) -> Self {
         let (progress_tx, progress_rx) = tokio::sync::mpsc::channel::<JobProgressUpdate>(1024);
+        let cancellation_tokens: DashMap<String, CancellationToken> = DashMap::new();
         let progress_cache: DashMap<String, JobProgressSnapshot> = DashMap::new();
-        spawn_progress_aggregator(None, progress_rx, progress_cache.clone());
+        spawn_progress_aggregator(
+            None,
+            progress_rx,
+            cancellation_tokens.clone(),
+            progress_cache.clone(),
+        );
 
         Self {
             config,
@@ -547,7 +553,7 @@ impl JobQueue {
             session_repo: std::sync::OnceLock::new(),
             streamer_repo: std::sync::OnceLock::new(),
             jobs_cache: DashMap::new(),
-            cancellation_tokens: DashMap::new(),
+            cancellation_tokens,
             progress_cache,
             progress_tx,
             persisted_log_cursor: DashMap::new(),
@@ -557,10 +563,12 @@ impl JobQueue {
     /// Create a new job queue with a job repository for database persistence.
     pub fn with_repository(config: JobQueueConfig, repository: Arc<dyn JobRepository>) -> Self {
         let (progress_tx, progress_rx) = tokio::sync::mpsc::channel::<JobProgressUpdate>(1024);
+        let cancellation_tokens: DashMap<String, CancellationToken> = DashMap::new();
         let progress_cache: DashMap<String, JobProgressSnapshot> = DashMap::new();
         spawn_progress_aggregator(
             Some(repository.clone()),
             progress_rx,
+            cancellation_tokens.clone(),
             progress_cache.clone(),
         );
 
@@ -572,7 +580,7 @@ impl JobQueue {
             session_repo: std::sync::OnceLock::new(),
             streamer_repo: std::sync::OnceLock::new(),
             jobs_cache: DashMap::new(),
-            cancellation_tokens: DashMap::new(),
+            cancellation_tokens,
             progress_cache,
             progress_tx,
             persisted_log_cursor: DashMap::new(),
@@ -723,8 +731,12 @@ impl JobQueue {
         let snapshot = serde_json::from_str::<JobProgressSnapshot>(&row.progress)
             .map_err(|e| Error::Other(format!("Failed to parse job progress JSON: {}", e)))?;
 
-        self.progress_cache
-            .insert(job_id.to_string(), snapshot.clone());
+        // Only cache progress for actively-processing jobs. This avoids unbounded memory growth
+        // from clients requesting progress for historical (already completed) jobs.
+        if self.cancellation_tokens.contains_key(job_id) {
+            self.progress_cache
+                .insert(job_id.to_string(), snapshot.clone());
+        }
         Ok(Some(snapshot))
     }
 
@@ -993,6 +1005,13 @@ impl JobQueue {
         // Remove cancellation token
         let _ = self.cancellation_tokens.remove(job_id);
         let _ = self.persisted_log_cursor.remove(job_id);
+        self.progress_cache.remove(job_id);
+
+        // In DB-backed mode, completed jobs can always be queried from the repository, so keeping
+        // terminal jobs in the in-memory cache only risks unbounded growth.
+        if self.job_repository.is_some() {
+            self.jobs_cache.remove(job_id);
+        }
 
         self.depth.fetch_sub(1, Ordering::SeqCst);
         info!("Job {} completed in {:.2}s", job_id, result.duration_secs);
@@ -1309,6 +1328,11 @@ impl JobQueue {
         // Remove cancellation token
         let _ = self.cancellation_tokens.remove(id);
         let _ = self.persisted_log_cursor.remove(id);
+        self.progress_cache.remove(id);
+
+        if self.job_repository.is_some() {
+            self.jobs_cache.remove(id);
+        }
 
         // Decrement depth only for pending jobs (processing jobs already counted)
         if job.status == JobStatus::Pending {
@@ -1449,6 +1473,11 @@ impl JobQueue {
 
             let _ = self.cancellation_tokens.remove(id);
             let _ = self.persisted_log_cursor.remove(id);
+            self.progress_cache.remove(id);
+
+            if self.job_repository.is_some() {
+                self.jobs_cache.remove(id);
+            }
         }
 
         if depth_reduction > 0 {
@@ -1593,6 +1622,11 @@ impl JobQueue {
         // Remove cancellation token for original job
         let _ = self.cancellation_tokens.remove(&job.id);
         let _ = self.persisted_log_cursor.remove(&job.id);
+        self.progress_cache.remove(&job.id);
+
+        if self.job_repository.is_some() {
+            self.jobs_cache.remove(&job.id);
+        }
 
         // Adjust queue depth to account for the original job completing.
         // The split jobs are enqueued and already increment depth.
@@ -1831,6 +1865,11 @@ impl JobQueue {
         // Remove cancellation token
         let _ = self.cancellation_tokens.remove(job_id);
         let _ = self.persisted_log_cursor.remove(job_id);
+        self.progress_cache.remove(job_id);
+
+        if self.job_repository.is_some() {
+            self.jobs_cache.remove(job_id);
+        }
 
         self.depth.fetch_sub(1, Ordering::SeqCst);
         Ok(())
@@ -1883,6 +1922,7 @@ impl JobQueue {
 fn spawn_progress_aggregator(
     repo: Option<Arc<dyn JobRepository>>,
     mut rx: tokio::sync::mpsc::Receiver<JobProgressUpdate>,
+    cancellation_tokens: DashMap<String, CancellationToken>,
     progress_cache: DashMap<String, JobProgressSnapshot>,
 ) {
     if tokio::runtime::Handle::try_current().is_err() {
@@ -1922,6 +1962,12 @@ fn spawn_progress_aggregator(
                 }
                 update = rx.recv() => {
                     let Some(update) = update else { break; };
+                    // Only retain/persist progress for actively-processing jobs. This prevents
+                    // late progress messages (after completion/cancellation) from reintroducing
+                    // entries into the in-memory cache.
+                    if !cancellation_tokens.contains_key(&update.job_id) {
+                        continue;
+                    }
                     progress_cache.insert(update.job_id.clone(), update.snapshot.clone());
                     pending.insert(update.job_id, update.snapshot);
                 }

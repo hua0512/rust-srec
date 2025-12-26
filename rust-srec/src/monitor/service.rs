@@ -13,7 +13,6 @@ use tokio::sync::{Notify, mpsc};
 use tokio_util::sync::CancellationToken;
 use tracing::{debug, info, warn};
 
-use crate::Result;
 use crate::database::ImmediateTransaction;
 use crate::database::repositories::{
     FilterRepository, MonitorOutboxOps, MonitorOutboxTxOps, SessionRepository, SessionTxOps,
@@ -22,11 +21,16 @@ use crate::database::repositories::{
 use crate::domain::StreamerState;
 use crate::domain::filter::Filter;
 use crate::streamer::{StreamerManager, StreamerMetadata};
+use crate::{Error, Result};
 
 use super::batch_detector::{BatchDetector, BatchResult};
 use super::detector::{FilterReason, LiveStatus, StreamDetector};
 use super::events::{FatalErrorType, MonitorEvent, MonitorEventBroadcaster};
 use super::rate_limiter::{RateLimiterConfig, RateLimiterManager};
+
+/// Hard upper bound for a single streamer status check to avoid indefinitely-stuck in-flight
+/// deduplication entries when upstream requests hang.
+const STREAM_CHECK_HARD_TIMEOUT: Duration = Duration::from_secs(300);
 
 /// Configuration for the stream monitor.
 #[derive(Debug, Clone)]
@@ -308,6 +312,12 @@ impl<
     pub async fn check_streamer(&self, streamer: &StreamerMetadata) -> Result<LiveStatus> {
         debug!("Checking status for streamer: {}", streamer.id);
 
+        let hard_timeout = if self.config.request_timeout > Duration::ZERO {
+            self.config.request_timeout
+        } else {
+            STREAM_CHECK_HARD_TIMEOUT
+        };
+
         // Get or create the deduplication cell for this streamer
         let cell = self
             .in_flight
@@ -320,6 +330,7 @@ impl<
         let filter_repo = self.filter_repo.clone();
         let config_service = self.config_service.clone();
         let detector = self.detector.clone();
+        let streamer_id_owned = streamer.id.clone();
         let streamer_id = streamer.id.as_str();
         let platform_config_id = streamer.platform_config_id.as_str();
 
@@ -333,37 +344,48 @@ impl<
                     debug!("Rate limited for {:?}", wait_time);
                 }
 
-                // Load filters for this streamer
-                let filter_models = filter_repo.get_by_streamer(streamer_id).await?;
-                let filters: Vec<Filter> = filter_models
-                    .into_iter()
-                    .filter_map(|model| match Filter::from_db_model(&model) {
-                        Ok(filter) => Some(filter),
-                        Err(error) => {
-                            warn!(
-                                filter_id = %model.id,
-                                filter_type = %model.filter_type,
-                                error = %error,
-                                "Skipping invalid streamer filter"
-                            );
-                            None
-                        }
-                    })
-                    .collect();
+                let check = async {
+                    // Load filters for this streamer
+                    let filter_models = filter_repo.get_by_streamer(streamer_id).await?;
+                    let filters: Vec<Filter> = filter_models
+                        .into_iter()
+                        .filter_map(|model| match Filter::from_db_model(&model) {
+                            Ok(filter) => Some(filter),
+                            Err(error) => {
+                                warn!(
+                                    filter_id = %model.id,
+                                    filter_type = %model.filter_type,
+                                    error = %error,
+                                    "Skipping invalid streamer filter"
+                                );
+                                None
+                            }
+                        })
+                        .collect();
 
-                // Get merged configuration to access stream selection preference and cookies
-                let config = config_service.get_config_for_streamer(streamer_id).await?;
+                    // Get merged configuration to access stream selection preference and cookies
+                    let config = config_service.get_config_for_streamer(streamer_id).await?;
 
-                // Check status with filters, cookies, selection config, and platform extras
-                detector
-                    .check_status_with_filters(
-                        streamer,
-                        &filters,
-                        config.cookies.clone(),
-                        Some(&config.stream_selection),
-                        config.platform_extras.clone(),
-                    )
+                    // Check status with filters, cookies, selection config, and platform extras
+                    detector
+                        .check_status_with_filters(
+                            streamer,
+                            &filters,
+                            config.cookies.clone(),
+                            Some(&config.stream_selection),
+                            config.platform_extras.clone(),
+                        )
+                        .await
+                };
+
+                tokio::time::timeout(hard_timeout, check)
                     .await
+                    .map_err(|_| {
+                        Error::Monitor(format!(
+                            "Stream monitor check timed out after {:?} (streamer_id={})",
+                            hard_timeout, streamer_id_owned
+                        ))
+                    })?
             })
             .await;
 

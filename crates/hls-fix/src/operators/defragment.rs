@@ -93,6 +93,8 @@ impl DefragmentOperator {
         // especially around join points or due to how segment boundaries are cut.
         //
         // Correctness policy: never drop those segments just because PSI is missing.
+        // We also deliberately do not emit `HlsData::EndMarker` purely because PSI is missing:
+        // absence of PSI is not a reliable boundary signal on live streams.
         //
         // Future option (not implemented): optionally split at the first PSI segment or inject PSI
         // so that each output file starts with PAT/PMT for maximal standalone playability.

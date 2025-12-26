@@ -80,7 +80,7 @@ impl MesioDownloaderFactory {
 
         // Check for HLS indicators first
         let path = url.path().to_lowercase();
-        if path.ends_with(".m3u8") || path.ends_with(".m3u") || url.path().contains("playlist") {
+        if path.ends_with(".m3u8") || path.ends_with(".m3u") || path.contains("playlist") {
             return Ok(ProtocolType::Hls);
         }
 

@@ -9,6 +9,7 @@
 //! - ConfigService: Uses resolver + adds caching and event broadcasting
 
 use std::sync::Arc;
+use std::time::Duration;
 use tokio::sync::broadcast;
 use tracing::trace;
 
@@ -23,6 +24,10 @@ use crate::utils::json::{self, JsonContext};
 
 use super::cache::ConfigCache;
 use super::events::{ConfigEventBroadcaster, ConfigUpdateEvent};
+
+/// Hard upper bound for a single streamer config resolution. This prevents `in_flight` entries
+/// from getting stuck forever if an upstream call hangs.
+const CONFIG_RESOLVE_HARD_TIMEOUT: Duration = Duration::from_secs(30);
 
 /// Configuration service providing cached access to all configuration data.
 ///
@@ -283,21 +288,36 @@ where
         trace!("Cache miss for streamer {}, resolving config", streamer_id);
 
         // Resolve the config
-        match self.resolve_config_for_streamer(streamer_id).await {
-            Ok(config) => {
+        let resolve = tokio::time::timeout(
+            CONFIG_RESOLVE_HARD_TIMEOUT,
+            self.resolve_config_for_streamer(streamer_id),
+        )
+        .await;
+
+        match resolve {
+            Ok(Ok(config)) => {
                 // Complete the in-flight request (caches and notifies waiters)
                 let config = Arc::new(config);
                 self.cache
                     .complete_in_flight(streamer_id, &cell, config.clone());
                 Ok(config)
             }
-            Err(e) => {
+            Ok(Err(e)) => {
                 self.cache.fail_in_flight(
                     streamer_id,
                     &cell,
                     format!("Failed to resolve config for streamer {streamer_id}: {e}"),
                 );
                 Err(e)
+            }
+            Err(_) => {
+                let message = format!(
+                    "Timed out resolving config for streamer {streamer_id} after {:?}",
+                    CONFIG_RESOLVE_HARD_TIMEOUT
+                );
+                self.cache
+                    .fail_in_flight(streamer_id, &cell, message.clone());
+                Err(crate::Error::Configuration(message))
             }
         }
     }

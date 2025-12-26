@@ -51,7 +51,7 @@ pub struct MergedConfig {
 
     // Pipeline configuration
     pub pipeline: Option<DagPipelineDefinition>,
-
+    pub session_complete_pipeline: Option<DagPipelineDefinition>,
     // Platform-specific extractor options (merged from all layers)
     pub platform_extras: Option<serde_json::Value>,
 }
@@ -85,6 +85,7 @@ pub struct MergedConfigBuilder {
     stream_selection: Option<StreamSelectionConfig>,
     engines_override: Option<serde_json::Value>,
     pipeline: Option<DagPipelineDefinition>,
+    session_complete_pipeline: Option<DagPipelineDefinition>,
     platform_extras: Option<serde_json::Value>,
 }
 
@@ -537,6 +538,7 @@ impl MergedConfigBuilder {
             stream_selection,
             engines_override: self.engines_override,
             pipeline,
+            session_complete_pipeline: self.session_complete_pipeline,
             platform_extras: self.platform_extras,
         }
     }

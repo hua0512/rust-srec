@@ -29,6 +29,15 @@ use super::events::{CollectionCommand, DanmuEvent};
 /// Configuration for the danmu service.
 #[derive(Debug, Clone)]
 pub struct DanmuServiceConfig {
+    /// Whether statistics aggregation is enabled.
+    ///
+    /// When disabled, the service still records danmu to segment files, but does not compute
+    /// per-session statistics (top talkers, word frequency, rate timeseries, etc.).
+    pub statistics_enabled: bool,
+    /// Whether sampling is enabled.
+    ///
+    /// Sampling is an optimization hint for statistics. When disabled, the sampler is not updated.
+    pub sampling_enabled: bool,
     /// Default sampling configuration
     pub default_sampling: DanmuSamplingConfig,
     /// Buffer size for statistics (number of recent messages to keep)
@@ -38,6 +47,8 @@ pub struct DanmuServiceConfig {
 impl Default for DanmuServiceConfig {
     fn default() -> Self {
         Self {
+            statistics_enabled: false,
+            sampling_enabled: false,
             default_sampling: DanmuSamplingConfig::default(),
             stats_buffer_size: 100,
         }
@@ -121,6 +132,25 @@ struct CollectionState {
     cancel_token: CancellationToken,
     /// Command sender
     command_tx: mpsc::Sender<CollectionCommand>,
+}
+
+#[derive(Debug, Default)]
+struct NoopSampler;
+
+impl DanmuSampler for NoopSampler {
+    fn record_message(&mut self, _timestamp: chrono::DateTime<chrono::Utc>) {}
+
+    fn should_sample(&self, _now: chrono::DateTime<chrono::Utc>) -> bool {
+        false
+    }
+
+    fn mark_sampled(&mut self, _timestamp: chrono::DateTime<chrono::Utc>) {}
+
+    fn current_interval(&self) -> std::time::Duration {
+        std::time::Duration::from_secs(u64::MAX / 2)
+    }
+
+    fn reset(&mut self) {}
 }
 
 /// Danmu collection service.
@@ -259,11 +289,14 @@ impl DanmuService {
         let (command_tx, command_rx) = mpsc::channel(32);
 
         // Create state
-        let sampling = sampling_config.unwrap_or_else(|| self.config.default_sampling.clone());
-        let sampler_config = to_sampler_config(&sampling);
         let stats = Arc::new(Mutex::new(StatisticsAggregator::new()));
-        let sampler: Arc<Mutex<Box<dyn DanmuSampler>>> =
-            Arc::new(Mutex::new(create_sampler(&sampler_config)));
+        let sampler: Arc<Mutex<Box<dyn DanmuSampler>>> = if self.config.sampling_enabled {
+            let sampling = sampling_config.unwrap_or_else(|| self.config.default_sampling.clone());
+            let sampler_config = to_sampler_config(&sampling);
+            Arc::new(Mutex::new(create_sampler(&sampler_config)))
+        } else {
+            Arc::new(Mutex::new(Box::new(NoopSampler)))
+        };
         let cancel_token = self.cancel_token.child_token();
 
         let state = CollectionState {
@@ -281,7 +314,9 @@ impl DanmuService {
             provider: Arc::clone(&provider),
             conn_config: connection_config,
             stats: Arc::clone(&stats),
+            statistics_enabled: self.config.statistics_enabled,
             sampler: Arc::clone(&sampler),
+            sampling_enabled: self.config.sampling_enabled,
             event_tx: self.event_tx.clone(),
         })
         .await?;
@@ -297,12 +332,28 @@ impl DanmuService {
         // Start collection task
         let session_id_clone = session_id.to_string();
         let event_tx = self.event_tx.clone();
+        let collections = self.collections.clone();
 
         tokio::spawn(async move {
-            if let Err(e) = runner.run(command_rx, cancel_token).await {
+            let result = runner.run(command_rx, cancel_token).await;
+            if let Err(e) = &result {
                 let _ = event_tx.send(DanmuEvent::Error {
                     session_id: session_id_clone.clone(),
                     error: e.to_string(),
+                });
+            }
+
+            // Ensure the in-memory collection state is cleaned up even if the runner exits due to
+            // an error (or external cancellation) without an explicit `stop_collection()` call.
+            //
+            // If `stop_collection()` already removed the entry, `remove()` returns None and we
+            // avoid emitting a duplicate stop event.
+            if let Some((_, state)) = collections.remove(&session_id_clone) {
+                let stats = state.stats.lock().await;
+                let statistics = stats.current_stats();
+                let _ = event_tx.send(DanmuEvent::CollectionStopped {
+                    session_id: session_id_clone,
+                    statistics,
                 });
             }
         });

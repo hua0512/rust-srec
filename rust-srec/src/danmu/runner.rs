@@ -62,6 +62,8 @@ pub(crate) struct CollectionRunner {
     // Shared state
     stats: Arc<Mutex<StatisticsAggregator>>,
     sampler: Arc<Mutex<Box<dyn DanmuSampler>>>,
+    statistics_enabled: bool,
+    sampling_enabled: bool,
 
     event_tx: broadcast::Sender<DanmuEvent>,
 }
@@ -74,7 +76,9 @@ pub(crate) struct RunnerParams {
     pub provider: Arc<dyn DanmuProvider>,
     pub conn_config: ConnectionConfig,
     pub stats: Arc<Mutex<StatisticsAggregator>>,
+    pub statistics_enabled: bool,
     pub sampler: Arc<Mutex<Box<dyn DanmuSampler>>>,
+    pub sampling_enabled: bool,
     pub event_tx: broadcast::Sender<DanmuEvent>,
 }
 
@@ -88,7 +92,9 @@ impl CollectionRunner {
             provider,
             conn_config,
             stats,
+            statistics_enabled,
             sampler,
+            sampling_enabled,
             event_tx,
         } = params;
         // Connect to danmu stream
@@ -104,6 +110,8 @@ impl CollectionRunner {
             message_buffer: Vec::with_capacity(config::MAX_BUFFER_SIZE),
             stats,
             sampler,
+            statistics_enabled,
+            sampling_enabled,
             event_tx,
         })
     }
@@ -312,8 +320,8 @@ impl CollectionRunner {
 
     /// Handle a received danmu message.
     async fn handle_message(&mut self, message: DanmuMessage) -> Result<()> {
-        // Update session-level statistics
-        {
+        if self.statistics_enabled {
+            // Update session-level statistics
             let is_gift = matches!(message.message_type, DanmuType::Gift | DanmuType::SuperChat);
             let mut stats_guard = self.stats.lock().await;
             stats_guard.record_message(
@@ -325,8 +333,8 @@ impl CollectionRunner {
             );
         }
 
-        // Update sampler
-        {
+        if self.sampling_enabled {
+            // Update sampler (best-effort; used only when sampling is enabled)
             let mut sampler_guard = self.sampler.lock().await;
             sampler_guard.record_message(message.timestamp);
         }

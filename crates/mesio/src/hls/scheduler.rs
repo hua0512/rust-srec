@@ -9,7 +9,7 @@ use crate::hls::processor::SegmentTransformer;
 use futures::StreamExt;
 use futures::stream::FuturesUnordered;
 use hls::HlsData;
-use m3u8_rs::{ByteRange as M3u8ByteRange, Key as M3u8Key, MediaSegment};
+use m3u8_rs::MediaSegment;
 use std::collections::{BTreeMap, HashSet};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -19,14 +19,9 @@ use tracing::{debug, error, info, trace, warn};
 
 #[derive(Debug, Clone)]
 pub struct ScheduledSegmentJob {
-    pub segment_uri: String,
-    pub base_url: String,
+    pub base_url: Arc<str>,
     pub media_sequence_number: u64,
-    pub duration: f32,
-    pub key: Option<M3u8Key>,
-    pub byte_range: Option<M3u8ByteRange>,
-    pub discontinuity: bool,
-    pub media_segment: MediaSegment,
+    pub media_segment: Arc<MediaSegment>,
     pub is_init_segment: bool,
     /// Whether this job is a prefetch request (lower priority)
     pub is_prefetch: bool,
@@ -235,7 +230,7 @@ impl SegmentScheduler {
         let raw_data = match raw_data_result {
             Ok(data) => data,
             Err(e) => {
-                error!(uri = %job.segment_uri, error = %e, "Segment download failed");
+                error!(uri = %job.media_segment.uri, error = %e, "Segment download failed");
                 return (msn, is_prefetch, Err(e));
             }
         };
@@ -247,16 +242,16 @@ impl SegmentScheduler {
         let result = match processed_result {
             Ok(hls_data) => {
                 let output = ProcessedSegmentOutput {
-                    original_segment_uri: job.segment_uri.clone(),
+                    original_segment_uri: job.media_segment.uri.clone(),
                     data: hls_data,
                     media_sequence_number: job.media_sequence_number,
-                    discontinuity: job.discontinuity,
+                    discontinuity: job.media_segment.discontinuity,
                 };
-                trace!(uri = %job.segment_uri, msn = %job.media_sequence_number, is_prefetch = is_prefetch, "Segment processing successful");
+                trace!(uri = %job.media_segment.uri, msn = %job.media_sequence_number, is_prefetch = is_prefetch, "Segment processing successful");
                 Ok(output)
             }
             Err(e) => {
-                warn!(uri = %job.segment_uri, error = %e, "Segment transformation failed");
+                warn!(uri = %job.media_segment.uri, error = %e, "Segment transformation failed");
                 Err(e)
             }
         };
@@ -401,7 +396,7 @@ impl SegmentScheduler {
                 // This branch is disabled when `draining` is true.
                 maybe_job_request = self.segment_request_rx.recv(), if !draining && can_accept_more => {
                     if let Some(job_request) = maybe_job_request {
-                        trace!(uri = %job_request.segment_uri, msn = %job_request.media_sequence_number, "Received new segment job.");
+                        trace!(uri = %job_request.media_segment.uri, msn = %job_request.media_sequence_number, "Received new segment job.");
 
                         // Track segment for potential prefetching
                         if prefetch_enabled {
@@ -571,14 +566,12 @@ mod tests {
     /// Helper function to create a test ScheduledSegmentJob with a given MSN
     fn create_test_job(msn: u64) -> ScheduledSegmentJob {
         ScheduledSegmentJob {
-            segment_uri: format!("segment_{}.ts", msn),
-            base_url: "https://example.com/".to_string(),
+            base_url: Arc::<str>::from("https://example.com/"),
             media_sequence_number: msn,
-            duration: 6.0,
-            key: None,
-            byte_range: None,
-            discontinuity: false,
-            media_segment: MediaSegment::default(),
+            media_segment: Arc::new(MediaSegment {
+                uri: format!("segment_{}.ts", msn),
+                ..Default::default()
+            }),
             is_init_segment: false,
             is_prefetch: false,
         }

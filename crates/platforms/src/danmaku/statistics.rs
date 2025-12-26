@@ -4,7 +4,10 @@
 
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
+use std::cmp::Reverse;
+use std::collections::HashSet;
+use std::collections::{BinaryHeap, HashMap};
+use std::sync::LazyLock;
 
 /// Statistics for a danmu collection session.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
@@ -77,8 +80,10 @@ pub struct StatisticsAggregator {
     /// Maximum number of words to track
     max_words: usize,
     /// Stop words to filter out
-    stop_words: std::collections::HashSet<String>,
+    stop_words: &'static HashSet<&'static str>,
 }
+
+static STOP_WORDS: LazyLock<HashSet<&'static str>> = LazyLock::new(default_stop_words);
 
 impl StatisticsAggregator {
     /// Create a new statistics aggregator.
@@ -104,7 +109,7 @@ impl StatisticsAggregator {
             start_time: None,
             max_top_talkers,
             max_words,
-            stop_words: default_stop_words(),
+            stop_words: &STOP_WORDS,
         }
     }
 
@@ -147,11 +152,14 @@ impl StatisticsAggregator {
 
     /// Process words from a message.
     fn process_words(&mut self, content: &str) {
-        for word in tokenize(content) {
+        for word in content
+            .split(|c: char| c.is_whitespace() || c.is_ascii_punctuation())
+            .filter(|s| !s.is_empty())
+        {
             let word_lower = word.to_lowercase();
 
             // Skip stop words and very short words
-            if word_lower.len() < 2 || self.stop_words.contains(&word_lower) {
+            if word_lower.len() < 2 || self.stop_words.contains(word_lower.as_str()) {
                 continue;
             }
 
@@ -255,30 +263,58 @@ impl StatisticsAggregator {
 
     /// Get current statistics without finalizing.
     pub fn current_stats(&self) -> DanmuStatistics {
-        // Get top talkers
-        let mut user_list: Vec<_> = self.user_counts.iter().collect();
-        user_list.sort_by(|a, b| b.1.1.cmp(&a.1.1));
-        let top_talkers: Vec<TopTalker> = user_list
-            .into_iter()
-            .take(self.max_top_talkers)
-            .map(|(user_id, (username, count))| TopTalker {
-                user_id: user_id.clone(),
-                username: username.clone(),
-                message_count: *count,
-            })
-            .collect();
+        let mut top_talkers = Vec::new();
+        if self.max_top_talkers > 0 && !self.user_counts.is_empty() {
+            let mut heap: BinaryHeap<Reverse<(u64, Reverse<&str>, &str)>> = BinaryHeap::new();
+            for (user_id, (username, count)) in &self.user_counts {
+                heap.push(Reverse((
+                    *count,
+                    Reverse(user_id.as_str()),
+                    username.as_str(),
+                )));
+                if heap.len() > self.max_top_talkers {
+                    let _ = heap.pop();
+                }
+            }
 
-        // Get word frequency
-        let mut word_list: Vec<_> = self.word_counts.iter().collect();
-        word_list.sort_by(|a, b| b.1.cmp(a.1));
-        let word_frequency: Vec<WordFrequency> = word_list
-            .into_iter()
-            .take(self.max_words)
-            .map(|(word, count)| WordFrequency {
-                word: word.clone(),
-                count: *count,
-            })
-            .collect();
+            let mut entries: Vec<(u64, &str, &str)> = heap
+                .into_iter()
+                .map(|Reverse((count, Reverse(user_id), username))| (count, user_id, username))
+                .collect();
+            entries.sort_by(|a, b| b.0.cmp(&a.0).then_with(|| a.1.cmp(b.1)));
+            top_talkers = entries
+                .into_iter()
+                .map(|(count, user_id, username)| TopTalker {
+                    user_id: user_id.to_string(),
+                    username: username.to_string(),
+                    message_count: count,
+                })
+                .collect();
+        }
+
+        let mut word_frequency = Vec::new();
+        if self.max_words > 0 && !self.word_counts.is_empty() {
+            let mut heap: BinaryHeap<Reverse<(u64, Reverse<&str>)>> = BinaryHeap::new();
+            for (word, count) in &self.word_counts {
+                heap.push(Reverse((*count, Reverse(word.as_str()))));
+                if heap.len() > self.max_words {
+                    let _ = heap.pop();
+                }
+            }
+
+            let mut entries: Vec<(u64, &str)> = heap
+                .into_iter()
+                .map(|Reverse((count, Reverse(word)))| (count, word))
+                .collect();
+            entries.sort_by(|a, b| b.0.cmp(&a.0).then_with(|| a.1.cmp(b.1)));
+            word_frequency = entries
+                .into_iter()
+                .map(|(count, word)| WordFrequency {
+                    word: word.to_string(),
+                    count,
+                })
+                .collect();
+        }
 
         let mut rate_data = self.rate_data.clone();
         if let Some((start, count)) = &self.current_bucket {
@@ -300,6 +336,31 @@ impl StatisticsAggregator {
             duration_secs: 0,
         }
     }
+
+    /// Finalize a snapshot up to `end_time` and reset internal state.
+    ///
+    /// This is useful for long-running sessions to avoid unbounded memory growth
+    /// from per-user/per-word tracking over time.
+    pub fn checkpoint(&mut self, end_time: DateTime<Utc>) -> DanmuStatistics {
+        let prev = std::mem::replace(
+            self,
+            Self::with_config(
+                self.max_top_talkers,
+                self.max_words,
+                self.bucket_duration_secs,
+            ),
+        );
+        prev.finalize(end_time)
+    }
+
+    /// Reset all counters and tracked state.
+    pub fn reset(&mut self) {
+        *self = Self::with_config(
+            self.max_top_talkers,
+            self.max_words,
+            self.bucket_duration_secs,
+        );
+    }
 }
 
 impl Default for StatisticsAggregator {
@@ -308,17 +369,8 @@ impl Default for StatisticsAggregator {
     }
 }
 
-/// Tokenize a message into words.
-fn tokenize(content: &str) -> Vec<&str> {
-    // Simple tokenization that handles both CJK and Western text
-    content
-        .split(|c: char| c.is_whitespace() || c.is_ascii_punctuation())
-        .filter(|s| !s.is_empty())
-        .collect()
-}
-
 /// Default stop words for filtering.
-fn default_stop_words() -> std::collections::HashSet<String> {
+fn default_stop_words() -> HashSet<&'static str> {
     let words = [
         // English
         "the", "a", "an", "is", "are", "was", "were", "be", "been", "being", "have", "has", "had",
@@ -336,7 +388,7 @@ fn default_stop_words() -> std::collections::HashSet<String> {
         "lol", "lmao", "haha", "hehe", "xd", "gg", "ez", "wp", "666", "233", "哈哈", "呵呵", "嘿嘿",
     ];
 
-    words.iter().map(|s| s.to_string()).collect()
+    words.into_iter().collect()
 }
 
 #[cfg(test)]
@@ -457,14 +509,5 @@ mod tests {
         assert_eq!(stats.total_count, 3);
         assert_eq!(stats.chat_count, 1);
         assert_eq!(stats.gift_count, 2);
-    }
-
-    #[test]
-    fn test_tokenize() {
-        let tokens = tokenize("Hello, world! How are you?");
-        assert_eq!(tokens, vec!["Hello", "world", "How", "are", "you"]);
-
-        let cjk_tokens = tokenize("你好 世界");
-        assert_eq!(cjk_tokens, vec!["你好", "世界"]);
     }
 }

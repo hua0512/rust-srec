@@ -146,6 +146,7 @@ impl SegmentSplitOperator {
         let has_psi =
             current_stream_info.program_count > 0 || !current_stream_info.programs.is_empty();
         if !has_psi {
+            // Not all live TS segments begin with PSI (PAT/PMT); absence alone is not a split trigger.
             debug!(
                 "{} TS segment has no PSI tables, skipping analysis",
                 self.context.name
