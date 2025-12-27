@@ -112,6 +112,16 @@ export const PROCESSOR_REGISTRY: Record<string, ProcessorDefinition> = {
     component: AssBurninConfigForm,
     label: msg`ASS Burn-in`,
   },
+  upload: {
+    schema: RcloneConfigSchema,
+    component: RcloneConfigForm,
+    label: msg`Rclone Transfer`,
+  },
+  copy_move: {
+    schema: CopyMoveConfigSchema,
+    component: CopyMoveConfigForm,
+    label: msg`Copy / Move`,
+  },
 };
 
 export const getProcessorDefinition = (

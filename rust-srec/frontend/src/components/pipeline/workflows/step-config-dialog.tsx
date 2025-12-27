@@ -497,10 +497,11 @@ export const StepConfigDialog = memo(function StepConfigDialog({
                                     return (
                                       <div
                                         key={otherId}
-                                        className={`flex items-center space-x-3 p-3 rounded-md transition-colors ${isDep
+                                        className={`flex items-center space-x-3 p-3 rounded-md transition-colors ${
+                                          isDep
                                             ? 'bg-primary/10 border border-primary/20'
                                             : 'hover:bg-muted/50 border border-transparent'
-                                          }`}
+                                        }`}
                                       >
                                         <Checkbox
                                           id={`dep-${otherId}`}

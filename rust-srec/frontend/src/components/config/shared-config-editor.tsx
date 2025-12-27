@@ -411,13 +411,19 @@ export function SharedConfigEditor<T extends FieldValues>({
                               theme="blue"
                               icon={<Layers className="w-4 h-4" />}
                               title={<Trans>Per-segment Pipeline</Trans>}
-                              subtitle={<Trans>Triggered after each segment recording</Trans>}
+                              subtitle={
+                                <Trans>
+                                  Triggered after each segment recording
+                                </Trans>
+                              }
                             >
                               <p className="text-xs text-muted-foreground leading-relaxed">
                                 <Trans>
-                                  This pipeline runs immediately after a recording segment is finished.
-                                  Use it for tasks that only require the individual video segment,
-                                  such as remuxing, thumbnail generation, or per-segment uploads.
+                                  This pipeline runs immediately after a
+                                  recording segment is finished. Use it for
+                                  tasks that only require the individual video
+                                  segment, such as remuxing, thumbnail
+                                  generation, or per-segment uploads.
                                 </Trans>
                               </p>
                             </StatusInfoTooltip>
@@ -444,12 +450,17 @@ export function SharedConfigEditor<T extends FieldValues>({
                               theme="orange"
                               icon={<Combine className="w-4 h-4" />}
                               title={<Trans>Paired Segment Pipeline</Trans>}
-                              subtitle={<Trans>Triggered when video and danmu are available</Trans>}
+                              subtitle={
+                                <Trans>
+                                  Triggered when video and danmu are available
+                                </Trans>
+                              }
                             >
                               <div className="space-y-2">
                                 <p className="text-xs text-muted-foreground leading-relaxed">
                                   <Trans>
-                                    Runs when both the video segment and its corresponding danmu segment are available.
+                                    Runs when both the video segment and its
+                                    corresponding danmu segment are available.
                                   </Trans>
                                 </p>
                                 <p className="text-xs font-medium text-orange-500/80">
@@ -482,12 +493,19 @@ export function SharedConfigEditor<T extends FieldValues>({
                               theme="violet"
                               icon={<Clock className="w-4 h-4" />}
                               title={<Trans>Session Complete Pipeline</Trans>}
-                              subtitle={<Trans>Triggered after the entire session ends</Trans>}
+                              subtitle={
+                                <Trans>
+                                  Triggered after the entire session ends
+                                </Trans>
+                              }
                             >
                               <p className="text-xs text-muted-foreground leading-relaxed">
                                 <Trans>
-                                  Runs once after the recording session concludes and all individual segment pipelines have finished.
-                                  Ideal for session-wide actions like merging all segments, final notifications, or cleanup.
+                                  Runs once after the recording session
+                                  concludes and all individual segment pipelines
+                                  have finished. Ideal for session-wide actions
+                                  like merging all segments, final
+                                  notifications, or cleanup.
                                 </Trans>
                               </p>
                             </StatusInfoTooltip>
@@ -495,7 +513,10 @@ export function SharedConfigEditor<T extends FieldValues>({
                         </Tooltip>
                       </TabsList>
 
-                      <TabsContent value="per-segment" className="focus-visible:outline-none">
+                      <TabsContent
+                        value="per-segment"
+                        className="focus-visible:outline-none"
+                      >
                         <div className="space-y-4">
                           <Alert className="bg-blue-500/5 border-blue-500/20 text-blue-600 dark:text-blue-400">
                             <Layers className="h-4 w-4" />
@@ -504,7 +525,8 @@ export function SharedConfigEditor<T extends FieldValues>({
                             </AlertTitle>
                             <AlertDescription className="text-xs">
                               <Trans>
-                                Runs for each recorded segment immediately after it's finished.
+                                Runs for each recorded segment immediately after
+                                it's finished.
                               </Trans>
                             </AlertDescription>
                           </Alert>
@@ -516,7 +538,10 @@ export function SharedConfigEditor<T extends FieldValues>({
                         </div>
                       </TabsContent>
 
-                      <TabsContent value="paired" className="focus-visible:outline-none">
+                      <TabsContent
+                        value="paired"
+                        className="focus-visible:outline-none"
+                      >
                         <div className="space-y-4">
                           <Alert className="bg-orange-500/5 border-orange-500/20 text-orange-600 dark:text-orange-400">
                             <Combine className="h-4 w-4" />
@@ -526,7 +551,8 @@ export function SharedConfigEditor<T extends FieldValues>({
                             <AlertDescription className="text-xs space-y-1">
                               <p>
                                 <Trans>
-                                  Runs when both video and danmu segments are available.
+                                  Runs when both video and danmu segments are
+                                  available.
                                 </Trans>
                               </p>
                               <p className="font-semibold">
@@ -544,13 +570,19 @@ export function SharedConfigEditor<T extends FieldValues>({
                             />
                           ) : (
                             <div className="p-8 text-center text-muted-foreground border rounded-lg border-dashed">
-                              <Trans>Paired pipeline is not supported for this entity.</Trans>
+                              <Trans>
+                                Paired pipeline is not supported for this
+                                entity.
+                              </Trans>
                             </div>
                           )}
                         </div>
                       </TabsContent>
 
-                      <TabsContent value="session" className="focus-visible:outline-none">
+                      <TabsContent
+                        value="session"
+                        className="focus-visible:outline-none"
+                      >
                         <div className="space-y-4">
                           <Alert className="bg-indigo-500/5 border-indigo-500/20 text-indigo-600 dark:text-indigo-400">
                             <Clock className="h-4 w-4" />
@@ -559,7 +591,8 @@ export function SharedConfigEditor<T extends FieldValues>({
                             </AlertTitle>
                             <AlertDescription className="text-xs">
                               <Trans>
-                                Runs once after the entire session ends and all segment pipelines have completed.
+                                Runs once after the entire session ends and all
+                                segment pipelines have completed.
                               </Trans>
                             </AlertDescription>
                           </Alert>
@@ -571,7 +604,10 @@ export function SharedConfigEditor<T extends FieldValues>({
                             />
                           ) : (
                             <div className="p-8 text-center text-muted-foreground border rounded-lg border-dashed">
-                              <Trans>Session complete pipeline is not supported for this entity.</Trans>
+                              <Trans>
+                                Session complete pipeline is not supported for
+                                this entity.
+                              </Trans>
                             </div>
                           )}
                         </div>
@@ -584,6 +620,6 @@ export function SharedConfigEditor<T extends FieldValues>({
           </TabsContent>
         )}
       </div>
-    </Tabs >
+    </Tabs>
   );
 }

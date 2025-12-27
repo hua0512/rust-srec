@@ -36,6 +36,8 @@ import {
   Upload,
   Terminal,
   Settings2,
+  FileText,
+  Type,
 } from 'lucide-react';
 import { Trans } from '@lingui/react/macro';
 import { t } from '@lingui/core/macro';
@@ -63,6 +65,12 @@ const PROCESSOR_OPTIONS = [
     icon: Upload,
   },
   { id: 'execute', label: <Trans>Execute Command</Trans>, icon: Terminal },
+  {
+    id: 'danmaku_factory',
+    label: <Trans>Danmaku to ASS</Trans>,
+    icon: FileText,
+  },
+  { id: 'ass_burnin', label: <Trans>ASS Burn-in</Trans>, icon: Type },
 ];
 
 const CATEGORY_OPTIONS = [

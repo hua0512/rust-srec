@@ -5,11 +5,7 @@ import { Trans } from '@lingui/react/macro';
 import { DagStepDefinition, DagPipelineDefinition } from '@/api/schemas';
 import { useState, useEffect } from 'react';
 import { useWatch } from 'react-hook-form';
-import {
-  Combine,
-  Clock,
-  Layers,
-} from 'lucide-react';
+import { Combine, Clock, Layers } from 'lucide-react';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { PipelineWorkflowEditor } from '@/components/pipeline/workflows/pipeline-workflow-editor';
@@ -73,7 +69,11 @@ function PipelineSection({
       } else if (typeof fieldValue === 'string') {
         try {
           const parsed = JSON.parse(fieldValue);
-          if (parsed && typeof parsed === 'object' && Array.isArray(parsed.steps)) {
+          if (
+            parsed &&
+            typeof parsed === 'object' &&
+            Array.isArray(parsed.steps)
+          ) {
             loadedSteps = parsed.steps;
           }
         } catch (e) {
@@ -107,7 +107,10 @@ function PipelineSection({
           };
 
           return initialized ? (
-            <PipelineWorkflowEditor steps={currentSteps} onChange={updateSteps} />
+            <PipelineWorkflowEditor
+              steps={currentSteps}
+              onChange={updateSteps}
+            />
           ) : (
             <div className="flex items-center justify-center min-h-[500px] text-muted-foreground bg-background/20 backdrop-blur-sm border-white/5 rounded-lg">
               <Trans>Loading pipeline editor...</Trans>
@@ -126,8 +129,8 @@ export function PipelineConfigCard({ control }: PipelineConfigCardProps) {
         title={<Trans>Pipeline Configuration</Trans>}
         description={
           <Trans>
-            Default pipeline flow. Configure the sequence of processors
-            for new jobs.
+            Default pipeline flow. Configure the sequence of processors for new
+            jobs.
           </Trans>
         }
         icon={Layers}
@@ -158,13 +161,17 @@ export function PipelineConfigCard({ control }: PipelineConfigCardProps) {
                       theme="blue"
                       icon={<Layers className="w-4 h-4" />}
                       title={<Trans>Per-segment Pipeline</Trans>}
-                      subtitle={<Trans>Triggered after each segment recording</Trans>}
+                      subtitle={
+                        <Trans>Triggered after each segment recording</Trans>
+                      }
                     >
                       <p className="text-xs text-muted-foreground leading-relaxed">
                         <Trans>
-                          This pipeline runs immediately after a recording segment is finished.
-                          Use it for tasks that only require the individual video segment,
-                          such as remuxing, thumbnail generation, or per-segment uploads.
+                          This pipeline runs immediately after a recording
+                          segment is finished. Use it for tasks that only
+                          require the individual video segment, such as
+                          remuxing, thumbnail generation, or per-segment
+                          uploads.
                         </Trans>
                       </p>
                     </StatusInfoTooltip>
@@ -191,18 +198,21 @@ export function PipelineConfigCard({ control }: PipelineConfigCardProps) {
                       theme="orange"
                       icon={<Combine className="w-4 h-4" />}
                       title={<Trans>Paired Segment Pipeline</Trans>}
-                      subtitle={<Trans>Triggered when video and danmu are available</Trans>}
+                      subtitle={
+                        <Trans>
+                          Triggered when video and danmu are available
+                        </Trans>
+                      }
                     >
                       <div className="space-y-2">
                         <p className="text-xs text-muted-foreground leading-relaxed">
                           <Trans>
-                            Runs when both the video segment and its corresponding danmu segment are available.
+                            Runs when both the video segment and its
+                            corresponding danmu segment are available.
                           </Trans>
                         </p>
                         <p className="text-xs font-medium text-orange-500/80">
-                          <Trans>
-                            Requires "Record Danmu" to be enabled.
-                          </Trans>
+                          <Trans>Requires "Record Danmu" to be enabled.</Trans>
                         </p>
                       </div>
                     </StatusInfoTooltip>
@@ -229,12 +239,16 @@ export function PipelineConfigCard({ control }: PipelineConfigCardProps) {
                       theme="violet"
                       icon={<Clock className="w-4 h-4" />}
                       title={<Trans>Session Complete Pipeline</Trans>}
-                      subtitle={<Trans>Triggered after the entire session ends</Trans>}
+                      subtitle={
+                        <Trans>Triggered after the entire session ends</Trans>
+                      }
                     >
                       <p className="text-xs text-muted-foreground leading-relaxed">
                         <Trans>
-                          Runs once after the recording session concludes and all individual segment pipelines have finished.
-                          Ideal for session-wide actions like merging all segments, final notifications, or cleanup.
+                          Runs once after the recording session concludes and
+                          all individual segment pipelines have finished. Ideal
+                          for session-wide actions like merging all segments,
+                          final notifications, or cleanup.
                         </Trans>
                       </p>
                     </StatusInfoTooltip>
@@ -242,7 +256,10 @@ export function PipelineConfigCard({ control }: PipelineConfigCardProps) {
                 </Tooltip>
               </TabsList>
 
-              <TabsContent value="per-segment" className="focus-visible:outline-none">
+              <TabsContent
+                value="per-segment"
+                className="focus-visible:outline-none"
+              >
                 <PipelineSection
                   control={control}
                   name="pipeline"
@@ -254,7 +271,10 @@ export function PipelineConfigCard({ control }: PipelineConfigCardProps) {
                 />
               </TabsContent>
 
-              <TabsContent value="paired" className="focus-visible:outline-none">
+              <TabsContent
+                value="paired"
+                className="focus-visible:outline-none"
+              >
                 <PipelineSection
                   control={control}
                   name="paired_segment_pipeline"
@@ -266,7 +286,10 @@ export function PipelineConfigCard({ control }: PipelineConfigCardProps) {
                 />
               </TabsContent>
 
-              <TabsContent value="session" className="focus-visible:outline-none">
+              <TabsContent
+                value="session"
+                className="focus-visible:outline-none"
+              >
                 <PipelineSection
                   control={control}
                   name="session_complete_pipeline"
@@ -281,7 +304,7 @@ export function PipelineConfigCard({ control }: PipelineConfigCardProps) {
           </TooltipProvider>
           <FormMessage />
         </div>
-      </SettingsCard >
-    </div >
+      </SettingsCard>
+    </div>
   );
 }

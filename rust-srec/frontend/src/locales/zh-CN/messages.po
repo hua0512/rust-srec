@@ -23,7 +23,7 @@ msgstr " - 会话：{0}"
 msgid "--flag value"
 msgstr "--flag value"
 
-#: src/components/config/engines/forms/streamlink-form.tsx:98
+#: src/components/config/engines/forms/streamlink-form.tsx:154
 msgid "--hls-live-edge 3"
 msgstr "--hls-live-edge 3"
 
@@ -176,7 +176,7 @@ msgstr "Aa"
 msgid "Absolute path or 'ffmpeg' if in PATH"
 msgstr "绝对路径，或在 PATH 中时填写“ffmpeg”"
 
-#: src/components/config/engines/forms/streamlink-form.tsx:48
+#: src/components/config/engines/forms/streamlink-form.tsx:47
 msgid "Absolute path or 'streamlink' in PATH"
 msgstr "绝对路径，或在 PATH 中时填写“streamlink”"
 
@@ -331,6 +331,10 @@ msgstr "高级选项"
 msgid "Advanced scheduling"
 msgstr "高级排程"
 
+#: src/components/pipeline/presets/processors/ass-burnin-config-form.tsx:226
+msgid "Advanced Settings"
+msgstr "高级设置"
+
 #: src/routes/_authed/_dashboard/config/theme.tsx:90
 #~ msgid "Advanced theming options."
 #~ msgstr "高级主题选项。"
@@ -369,7 +373,7 @@ msgstr "所有平台"
 msgid "All Time"
 msgstr "全部时间"
 
-#: src/components/config/engines/forms/streamlink-form.tsx:103
+#: src/components/config/engines/forms/streamlink-form.tsx:159
 msgid "Any additional command line arguments to pass to Streamlink"
 msgstr "传递给 Streamlink 的其他命令行参数"
 
@@ -401,7 +405,7 @@ msgstr "为卡片和侧边栏的背景应用模糊效果。"
 msgid "Apply template settings."
 msgstr "应用模板设置。"
 
-#: src/components/pipeline/presets/editor/preset-meta-form.tsx:73
+#: src/components/pipeline/presets/editor/preset-meta-form.tsx:81
 #: src/components/pipeline/presets/preset-card.tsx:90
 #: src/routes/_authed/_dashboard/pipeline/presets/index.tsx:66
 msgid "Archive"
@@ -449,6 +453,12 @@ msgstr "用于处理/编码的参数"
 msgid "Artist"
 msgstr "艺术家"
 
+#: src/components/pipeline/presets/editor/preset-meta-form.tsx:73
+#: src/components/pipeline/presets/preset-templates.ts:89
+#: src/components/pipeline/presets/processors/registry.ts:113
+msgid "ASS Burn-in"
+msgstr "ASS 硬字幕"
+
 #: src/routes/_authed/_dashboard/pipeline/jobs/new.tsx:52
 msgid "At least one input path is required"
 msgstr "至少需要一个输入路径"
@@ -457,7 +467,7 @@ msgstr "至少需要一个输入路径"
 msgid "Attempt to repair timestamps in FLV streams"
 msgstr "尝试修复 FLV 流中的时间戳"
 
-#: src/components/pipeline/presets/editor/preset-meta-form.tsx:72
+#: src/components/pipeline/presets/editor/preset-meta-form.tsx:80
 #: src/components/pipeline/presets/preset-card.tsx:89
 #: src/components/pipeline/presets/processors/remux-config-form.tsx:99
 #: src/routes/_authed/_dashboard/pipeline/presets/index.tsx:65
@@ -468,16 +478,17 @@ msgstr "音频"
 msgid "Audio Bitrate"
 msgstr "音频比特率"
 
+#: src/components/pipeline/presets/processors/ass-burnin-config-form.tsx:82
 #: src/components/pipeline/presets/processors/remux-config-form.tsx:215
 msgid "Audio Codec"
 msgstr "音频编码"
 
-#: src/components/pipeline/presets/editor/preset-meta-form.tsx:55
+#: src/components/pipeline/presets/editor/preset-meta-form.tsx:57
 #: src/components/pipeline/presets/preset-templates.ts:41
 msgid "Audio Extract"
 msgstr "提取音频"
 
-#: src/components/pipeline/presets/processors/registry.ts:61
+#: src/components/pipeline/presets/processors/registry.ts:73
 msgid "Audio Extraction"
 msgstr "音频提取"
 
@@ -526,9 +537,9 @@ msgstr "头像 URL（可选）"
 msgid "Avg. Duration"
 msgstr "平均时长"
 
-#: src/components/config/platforms/platform-editor.tsx:103
-#: src/components/config/templates/template-editor.tsx:136
-#: src/components/config/templates/template-editor.tsx:139
+#: src/components/config/platforms/platform-editor.tsx:105
+#: src/components/config/templates/template-editor.tsx:140
+#: src/components/config/templates/template-editor.tsx:143
 msgid "Back"
 msgstr "返回"
 
@@ -600,7 +611,7 @@ msgstr "批量 URL"
 msgid "Bearer Token"
 msgstr "Bearer Token"
 
-#: src/components/config/engines/forms/streamlink-form.tsx:66
+#: src/components/config/engines/forms/streamlink-form.tsx:65
 msgid "best"
 msgstr "最佳"
 
@@ -609,7 +620,8 @@ msgid "Bilibili quality identification (QN)."
 msgstr "B站画质标识 (QN)。"
 
 #: src/components/config/engines/forms/ffmpeg-form.tsx:41
-#: src/components/config/engines/forms/streamlink-form.tsx:38
+#: src/components/config/engines/forms/streamlink-form.tsx:37
+#: src/components/pipeline/presets/processors/danmaku-factory-config-form.tsx:55
 msgid "Binary Path"
 msgstr "可执行文件路径"
 
@@ -708,7 +720,7 @@ msgid "Categories"
 msgstr "分类"
 
 #: src/components/filters/forms/FilterTypeSelector.tsx:34
-#: src/components/pipeline/presets/editor/preset-meta-form.tsx:236
+#: src/components/pipeline/presets/editor/preset-meta-form.tsx:244
 msgid "Category"
 msgstr "分类"
 
@@ -738,6 +750,10 @@ msgstr "渠道已删除"
 msgid "Channel updated"
 msgstr "渠道已更新"
 
+#: src/components/config/engines/forms/streamlink-form.tsx:121
+msgid "channel1,channel2"
+msgstr "频道1,频道2"
+
 #: src/routes/_authed/_dashboard/notifications/index.tsx:126
 msgid "channels"
 msgstr "个渠道"
@@ -748,6 +764,10 @@ msgstr "个渠道"
 #: src/components/pipeline/presets/processors/audio-extract-config-form.tsx:187
 msgid "Channels"
 msgstr "声道"
+
+#: src/components/pipeline/presets/processors/danmaku-factory-config-form.tsx:120
+msgid "Check if file exists after conversion"
+msgstr "转换后检查文件是否存在"
 
 #: src/components/streamers/card/stream-actions-menu.tsx:58
 #~ msgid "Check Now"
@@ -790,8 +810,10 @@ msgstr "选择此主播如何处理代理连接。"
 msgid "Choose your display language"
 msgstr "选择你的显示语言"
 
-#: src/components/pipeline/presets/editor/preset-meta-form.tsx:75
+#: src/components/pipeline/presets/editor/preset-meta-form.tsx:83
 #: src/components/pipeline/presets/preset-card.tsx:92
+#: src/components/pipeline/presets/processors/ass-burnin-config-form.tsx:320
+#: src/components/pipeline/presets/processors/danmaku-factory-config-form.tsx:186
 #: src/routes/_authed/_dashboard/pipeline/presets/index.tsx:68
 msgid "Cleanup"
 msgstr "清理"
@@ -827,6 +849,10 @@ msgstr "正在克隆..."
 #: src/components/config/global/backup-restore-card.tsx:552
 msgid "Close"
 msgstr "关闭"
+
+#: src/components/config/engines/forms/streamlink-form.tsx:126
+msgid "Comma-separated list of channels to exclude from proxy"
+msgstr "用于排除代理的频道列表（逗号分隔）"
 
 #: src/components/pipeline/presets/processors/execute-config-form.tsx:58
 msgid "Command"
@@ -864,8 +890,8 @@ msgstr "组件状态"
 msgid "Compress video for storage, upload to cloud, then delete local file to save space."
 msgstr "压缩视频用于存档，上传到云端，然后删除本地文件以节省空间。"
 
-#: src/components/pipeline/presets/editor/preset-meta-form.tsx:56
-#: src/components/pipeline/presets/editor/preset-meta-form.tsx:70
+#: src/components/pipeline/presets/editor/preset-meta-form.tsx:58
+#: src/components/pipeline/presets/editor/preset-meta-form.tsx:78
 #: src/components/pipeline/presets/preset-card.tsx:87
 #: src/routes/_authed/_dashboard/pipeline/presets/index.tsx:63
 msgid "Compression"
@@ -875,7 +901,7 @@ msgstr "压缩"
 msgid "Compression (Zip)"
 msgstr "压缩（Zip）"
 
-#: src/components/pipeline/presets/processors/registry.ts:66
+#: src/components/pipeline/presets/processors/registry.ts:78
 msgid "Compression / Archive"
 msgstr "压缩/归档"
 
@@ -1023,9 +1049,10 @@ msgstr "复制"
 msgid "Copy (Passthrough)"
 msgstr "复制（直通）"
 
-#: src/components/pipeline/presets/editor/preset-meta-form.tsx:57
-#: src/components/pipeline/presets/processors/registry.ts:71
-#: src/components/pipeline/presets/processors/registry.ts:76
+#: src/components/pipeline/presets/editor/preset-meta-form.tsx:59
+#: src/components/pipeline/presets/processors/registry.ts:83
+#: src/components/pipeline/presets/processors/registry.ts:88
+#: src/components/pipeline/presets/processors/registry.ts:123
 msgid "Copy / Move"
 msgstr "复制/移动"
 
@@ -1061,7 +1088,7 @@ msgstr "无法连接到服务器，请检查网络连接。"
 msgid "CPU Usage"
 msgstr "CPU 使用率"
 
-#: src/components/config/templates/template-editor.tsx:158
+#: src/components/config/templates/template-editor.tsx:162
 #: src/routes/_authed/_dashboard/config/templates/index.tsx:138
 #: src/routes/_authed/_dashboard/pipeline/jobs/index.tsx:253
 msgid "Create"
@@ -1141,7 +1168,7 @@ msgstr "创建预设"
 msgid "Create Streamer"
 msgstr "创建主播"
 
-#: src/components/config/templates/template-editor.tsx:110
+#: src/components/config/templates/template-editor.tsx:114
 #: src/routes/_authed/_dashboard/config/templates/index.tsx:230
 msgid "Create Template"
 msgstr "创建模板"
@@ -1171,6 +1198,10 @@ msgstr "创建中..."
 #: src/components/config/engines/engine-editor.tsx:358
 msgid "Creation Mode"
 msgstr "创建模式"
+
+#: src/components/pipeline/presets/processors/ass-burnin-config-form.tsx:102
+msgid "CRF (0-51)"
+msgstr "CRF (0-51)"
 
 #: src/components/pipeline/presets/processors/remux-config-form.tsx:294
 msgid "CRF (Constant Rate Factor)"
@@ -1204,7 +1235,7 @@ msgstr "当前密码"
 msgid "Current Password"
 msgstr "当前密码"
 
-#: src/components/pipeline/presets/editor/preset-meta-form.tsx:77
+#: src/components/pipeline/presets/editor/preset-meta-form.tsx:85
 #: src/components/pipeline/presets/preset-card.tsx:94
 #: src/routes/_authed/_dashboard/pipeline/presets/index.tsx:70
 #: src/routes/_authed/_dashboard/sessions/index.tsx:301
@@ -1239,6 +1270,10 @@ msgstr "自定义 Header"
 msgid "Custom Headers"
 msgstr "自定义请求头"
 
+#: src/components/config/engines/forms/streamlink-form.tsx:104
+msgid "Custom proxy URL for Twitch playlists"
+msgstr "Twitch 播放列表的自定义代理 URL"
+
 #: src/components/pipeline/presets/processors/metadata-config-form.tsx:240
 msgid "Custom Tags"
 msgstr "自定义标签"
@@ -1271,7 +1306,13 @@ msgstr "DAG 配置"
 msgid "DAG Graph"
 msgstr "DAG 图"
 
-#: src/components/config/shared-config-editor.tsx:185
+#: src/components/pipeline/presets/editor/preset-meta-form.tsx:70
+#: src/components/pipeline/presets/preset-templates.ts:79
+#: src/components/pipeline/presets/processors/registry.ts:108
+msgid "Danmaku to ASS"
+msgstr "弹幕转 ASS"
+
+#: src/components/config/shared-config-editor.tsx:198
 msgid "Danmu"
 msgstr "弹幕"
 
@@ -1315,7 +1356,7 @@ msgstr "默认"
 msgid "Default Engine"
 msgstr "默认引擎"
 
-#: src/components/config/global/pipeline-config-card.tsx:95
+#: src/components/config/global/pipeline-config-card.tsx:131
 msgid "Default pipeline flow. Configure the sequence of processors for new jobs."
 msgstr "默认处理管道流程。为新的处理任务配置处理器顺序。"
 
@@ -1356,7 +1397,7 @@ msgstr "延迟、代理与保留策略。"
 #: src/components/notifications/channel-card.tsx:192
 #: src/components/pipeline/jobs/pipeline-summary-card.tsx:238
 #: src/components/pipeline/jobs/pipeline-summary-card.tsx:262
-#: src/components/pipeline/presets/editor/preset-meta-form.tsx:58
+#: src/components/pipeline/presets/editor/preset-meta-form.tsx:60
 #: src/components/pipeline/presets/preset-card.tsx:187
 #: src/components/pipeline/presets/preset-card.tsx:210
 #: src/components/pipeline/presets/preset-templates.ts:65
@@ -1374,7 +1415,7 @@ msgstr "删除渠道？"
 msgid "Delete Engine?"
 msgstr "删除引擎？"
 
-#: src/components/pipeline/presets/processors/registry.ts:81
+#: src/components/pipeline/presets/processors/registry.ts:93
 msgid "Delete File"
 msgstr "删除文件"
 
@@ -1402,6 +1443,18 @@ msgstr "删除会话"
 msgid "Delete Source"
 msgstr "删除源文件"
 
+#: src/components/pipeline/presets/processors/ass-burnin-config-form.tsx:352
+msgid "Delete Source ASS"
+msgstr "删除源 ASS 文件"
+
+#: src/components/pipeline/presets/processors/ass-burnin-config-form.tsx:332
+msgid "Delete Source Videos"
+msgstr "删除源视频文件"
+
+#: src/components/pipeline/presets/processors/danmaku-factory-config-form.tsx:198
+msgid "Delete Source XML"
+msgstr "删除源 XML 文件"
+
 #: src/components/config/templates/template-card.tsx:185
 msgid "Delete Template"
 msgstr "删除模板"
@@ -1413,6 +1466,10 @@ msgstr "删除源文件。可作为处理管道最后一步用于清理。"
 #: src/components/pipeline/workflows/workflow-card.tsx:188
 msgid "Delete Workflow?"
 msgstr "删除工作流？"
+
+#: src/components/pipeline/presets/processors/danmaku-factory-config-form.tsx:201
+msgid "Delete XML files after successful conversion"
+msgstr "转换成功后删除 XML 文件"
 
 #: src/components/config/global/backup-restore-card.tsx:178
 msgid "Deleted"
@@ -1434,12 +1491,12 @@ msgstr "依赖于（前辈节点）"
 msgid "Describe what this workflow does..."
 msgstr "描述此工作流的用途..."
 
-#: src/components/pipeline/presets/editor/preset-meta-form.tsx:274
+#: src/components/pipeline/presets/editor/preset-meta-form.tsx:282
 #: src/components/pipeline/workflows/workflow-editor.tsx:295
 msgid "Description"
 msgstr "描述"
 
-#: src/components/pipeline/presets/editor/preset-meta-form.tsx:283
+#: src/components/pipeline/presets/editor/preset-meta-form.tsx:291
 msgid "Description is managed by the system"
 msgstr "描述由系统管理"
 
@@ -1567,7 +1624,7 @@ msgstr "双格式输出"
 msgid "Duration"
 msgstr "时长"
 
-#: src/components/config/engines/forms/streamlink-form.tsx:71
+#: src/components/config/engines/forms/streamlink-form.tsx:70
 msgid "e.g. 'best', 'worst', '720p', 'audio_only'"
 msgstr "例如 'best'、'worst'、'720p'、'audio_only'"
 
@@ -1600,7 +1657,7 @@ msgstr "例如 mp4"
 msgid "e.g. My Favorite Streamer"
 msgstr "例如 我喜欢的主播"
 
-#: src/components/pipeline/presets/editor/preset-meta-form.tsx:217
+#: src/components/pipeline/presets/editor/preset-meta-form.tsx:225
 msgid "e.g. Remux to H.264"
 msgstr "例如：重封装为 H.264"
 
@@ -1698,9 +1755,17 @@ msgstr "启用半透明背景模糊效果。"
 msgid "Enabled"
 msgstr "启用"
 
+#: src/components/pipeline/presets/processors/ass-burnin-config-form.tsx:125
+msgid "Encoder Preset"
+msgstr "编码器预设"
+
 #: src/components/pipeline/presets/processors/remux-config-form.tsx:167
 msgid "Encoding Preset"
 msgstr "编码预设"
+
+#: src/components/pipeline/presets/processors/ass-burnin-config-form.tsx:51
+msgid "Encoding Settings"
+msgstr "编码设置"
 
 #: src/components/sessions/timeline-tab.tsx:147
 msgid "End of History"
@@ -1755,7 +1820,7 @@ msgstr "未在平台/主播中指定时使用的录制引擎。"
 #: src/components/config/global/backup-restore-card.tsx:371
 #: src/components/config/global/backup-restore-card.tsx:376
 #: src/components/config/global/backup-restore-card.tsx:381
-#: src/components/config/templates/template-editor.tsx:197
+#: src/components/config/templates/template-editor.tsx:203
 #: src/components/sidebar/navbar.tsx:35
 #: src/routes/_authed/_dashboard/config/route.tsx:66
 msgid "Engines"
@@ -1858,14 +1923,22 @@ msgstr "预计剩余时间"
 msgid "Exclude"
 msgstr "排除"
 
-#: src/components/pipeline/presets/editor/preset-meta-form.tsx:65
-#: src/components/pipeline/presets/processors/registry.ts:91
+#: src/components/pipeline/presets/processors/ass-burnin-config-form.tsx:300
+msgid "Exclude ASS from Passthrough"
+msgstr "从透传中排除 ASS"
+
+#: src/components/pipeline/presets/editor/preset-meta-form.tsx:67
+#: src/components/pipeline/presets/processors/registry.ts:103
 msgid "Execute Command"
 msgstr "执行命令"
 
 #: src/components/config/shared/event-hooks-form.tsx:111
 msgid "Execute shell commands on lifecycle events. Commands run in the system shell."
 msgstr "在生命周期事件上执行 Shell 命令。命令在系统 Shell 中运行。"
+
+#: src/components/pipeline/presets/processors/danmaku-factory-config-form.tsx:44
+msgid "Execution Settings"
+msgstr "执行设置"
 
 #: src/components/sidebar/navbar.tsx:40
 msgid "Executions"
@@ -1888,7 +1961,7 @@ msgstr "导出配置"
 msgid "Exports include all global settings, platforms, templates, streamers, engines, and notification channels. Sensitive data like passwords might be redacted or encrypted depending on platform settings."
 msgstr "导出内容包含所有全局设置、平台、模板、主播、引擎和通知渠道。敏感数据（如密码）可能会根据平台设置被脱敏或加密。"
 
-#: src/components/config/engines/forms/streamlink-form.tsx:85
+#: src/components/config/engines/forms/streamlink-form.tsx:141
 #: src/components/pipeline/presets/processors/rclone-config-form.tsx:264
 msgid "Extra Arguments"
 msgstr "额外参数"
@@ -2115,7 +2188,7 @@ msgstr "更新平台失败：{0}"
 msgid "Failed to update preset: {0}"
 msgstr "更新预设失败：{0}"
 
-#: src/routes/_authed/_dashboard/config/global.tsx:92
+#: src/routes/_authed/_dashboard/config/global.tsx:96
 msgid "Failed to update settings"
 msgstr "更新设置失败"
 
@@ -2163,6 +2236,10 @@ msgstr "获取延迟"
 msgid "FFmpeg Audio Filter (-af)"
 msgstr "FFmpeg 音频滤镜（-af）"
 
+#: src/components/pipeline/presets/processors/ass-burnin-config-form.tsx:237
+msgid "FFmpeg Path"
+msgstr "FFmpeg 路径"
+
 #: src/components/pipeline/presets/processors/remux-config-form.tsx:448
 msgid "FFmpeg Video Filter"
 msgstr "FFmpeg 视频滤镜"
@@ -2179,7 +2256,7 @@ msgstr "文件扩展名过滤"
 msgid "File Operations"
 msgstr "文件操作"
 
-#: src/components/pipeline/presets/editor/preset-meta-form.tsx:76
+#: src/components/pipeline/presets/editor/preset-meta-form.tsx:84
 #: src/components/pipeline/presets/preset-card.tsx:93
 #: src/routes/_authed/_dashboard/pipeline/presets/index.tsx:69
 msgid "File Ops"
@@ -2230,7 +2307,7 @@ msgstr "过滤器类型"
 msgid "Filter updated successfully"
 msgstr "过滤器更新成功"
 
-#: src/components/config/shared-config-editor.tsx:130
+#: src/components/config/shared-config-editor.tsx:143
 msgid "Filters"
 msgstr "过滤器"
 
@@ -2261,6 +2338,10 @@ msgstr "FLV 解析器"
 #: src/routes/_authed/_dashboard/config/logging.tsx:59
 msgid "FLV stream fixing pipeline"
 msgstr "FLV 流修复管道"
+
+#: src/components/pipeline/presets/processors/ass-burnin-config-form.tsx:257
+msgid "Fonts Directory"
+msgstr "字体目录"
 
 #: src/components/config/platforms/tabs/specific-configs/DouyuConfigFields.tsx:93
 msgid "Force Huoshan CDN"
@@ -2315,9 +2396,9 @@ msgstr "完整的多媒体处理：并行进行视频重封装、音频提取和
 msgid "Full Processing"
 msgstr "全流程处理"
 
-#: src/components/config/platforms/platform-editor.tsx:147
+#: src/components/config/platforms/platform-editor.tsx:151
 #: src/components/config/templates/tabs/platform-override-card.tsx:62
-#: src/components/config/templates/template-editor.tsx:187
+#: src/components/config/templates/template-editor.tsx:193
 #: src/components/pipeline/presets/processors/audio-extract-config-form.tsx:54
 #: src/components/pipeline/presets/processors/rclone-config-form.tsx:53
 #: src/components/pipeline/presets/processors/remux-config-form.tsx:72
@@ -2505,9 +2586,13 @@ msgstr "HLS 流修复管道"
 msgid "Home"
 msgstr "主页"
 
-#: src/components/config/shared-config-editor.tsx:174
+#: src/components/config/shared-config-editor.tsx:187
 msgid "Hooks"
 msgstr "钩子"
+
+#: src/components/pipeline/presets/processors/ass-burnin-config-form.tsx:192
+msgid "How to pair video files with .ass subtitles"
+msgstr "如何将视频文件与 .ass 字幕配对"
 
 #: src/components/config/platforms/tabs/specific-configs/DouyinConfigFields.tsx:99
 msgid "How TTWID cookies are managed."
@@ -2525,6 +2610,10 @@ msgstr "HTTP 中间件"
 msgid "HTTP requests"
 msgstr "HTTP 请求"
 
+#: src/components/config/engines/forms/streamlink-form.tsx:99
+msgid "https://lb-eu.cdn-perfprod.com"
+msgstr "https://lb-eu.cdn-perfprod.com"
+
 #: src/components/filters/FilterCard.tsx:216
 msgid "i"
 msgstr "i"
@@ -2533,7 +2622,7 @@ msgstr "i"
 msgid "IANA Timezone (e.g. Asia/Shanghai, UTC)."
 msgstr "IANA 时区（例如 Asia/Shanghai、UTC）。"
 
-#: src/components/pipeline/presets/editor/preset-meta-form.tsx:186
+#: src/components/pipeline/presets/editor/preset-meta-form.tsx:194
 msgid "ID"
 msgstr "ID"
 
@@ -2599,6 +2688,10 @@ msgstr "进行中"
 #: src/components/filters/FilterCard.tsx:208
 msgid "Include"
 msgstr "包含"
+
+#: src/components/pipeline/presets/processors/danmaku-factory-config-form.tsx:166
+msgid "Include original files in outputs"
+msgstr "在输出中包含原始文件"
 
 #: src/components/config/shared/output-settings-card.tsx:170
 msgid "Inherited / Default"
@@ -2808,7 +2901,7 @@ msgstr "已加载模板：{0}"
 msgid "Loading more..."
 msgstr "正在加载更多..."
 
-#: src/components/config/global/pipeline-config-card.tsx:112
+#: src/components/config/global/pipeline-config-card.tsx:116
 msgid "Loading pipeline editor..."
 msgstr "正在加载处理管道编辑器..."
 
@@ -2888,6 +2981,14 @@ msgstr "管理应用配置。"
 #: src/routes/_authed/_dashboard/streamers/index.tsx:248
 msgid "Manage your monitored channels and downloads"
 msgstr "管理你监控的主播及录制"
+
+#: src/components/pipeline/presets/processors/ass-burnin-config-form.tsx:184
+msgid "Manifest (Pair by Order)"
+msgstr "清单（按顺序配对）"
+
+#: src/components/pipeline/presets/processors/ass-burnin-config-form.tsx:171
+msgid "Match Strategy"
+msgstr "匹配策略"
 
 #: src/components/streamers/config/stream-selection-input.tsx:163
 msgid "Max Bitrate (bps)"
@@ -2982,15 +3083,15 @@ msgstr "合并更改"
 msgid "Message"
 msgstr "消息"
 
-#: src/components/pipeline/presets/editor/preset-meta-form.tsx:59
-#: src/components/pipeline/presets/editor/preset-meta-form.tsx:78
+#: src/components/pipeline/presets/editor/preset-meta-form.tsx:61
+#: src/components/pipeline/presets/editor/preset-meta-form.tsx:86
 #: src/components/pipeline/presets/preset-card.tsx:95
 #: src/components/pipeline/presets/preset-templates.ts:72
 #: src/routes/_authed/_dashboard/pipeline/presets/index.tsx:71
 msgid "Metadata"
 msgstr "元数据"
 
-#: src/components/pipeline/presets/processors/registry.ts:86
+#: src/components/pipeline/presets/processors/registry.ts:98
 msgid "Metadata Editor"
 msgstr "元数据编辑器"
 
@@ -3082,7 +3183,7 @@ msgid "My Archiving Workflow"
 msgstr "我的归档工作流"
 
 #: src/components/notifications/channel-form.tsx:275
-#: src/components/pipeline/presets/editor/preset-meta-form.tsx:212
+#: src/components/pipeline/presets/editor/preset-meta-form.tsx:220
 #: src/components/pipeline/workflows/workflow-editor.tsx:275
 #: src/components/streamers/config/streamer-general-settings.tsx:74
 #: src/components/streamers/edit/streamer-meta-form.tsx:123
@@ -3101,7 +3202,7 @@ msgstr "name@example.com"
 msgid "Native Resolution Thumbnail"
 msgstr "原始分辨率缩略图"
 
-#: src/components/config/shared-config-editor.tsx:152
+#: src/components/config/shared-config-editor.tsx:165
 msgid "Network"
 msgstr "网络"
 
@@ -3145,7 +3246,7 @@ msgstr "未设置分类"
 msgid "No changes detected"
 msgstr "未检测到更改"
 
-#: src/components/pipeline/presets/processors/processor-config-manager.tsx:62
+#: src/components/pipeline/presets/processors/processor-config-manager.tsx:24
 msgid "No configuration available for this processor."
 msgstr "此处理器没有可用配置。"
 
@@ -3485,7 +3586,7 @@ msgstr "操作类型"
 msgid "Optional"
 msgstr "可选"
 
-#: src/components/pipeline/presets/editor/preset-meta-form.tsx:284
+#: src/components/pipeline/presets/editor/preset-meta-form.tsx:292
 msgid "Optional description for this preset"
 msgstr "此预设的可选描述"
 
@@ -3499,7 +3600,7 @@ msgid "Options for {platformName}"
 msgstr "{platformName} 选项"
 
 #: src/components/config/platforms/platform-card.tsx:130
-#: src/components/config/shared-config-editor.tsx:141
+#: src/components/config/shared-config-editor.tsx:154
 #: src/components/config/templates/template-card.tsx:161
 #: src/components/pipeline/presets/processors/thumbnail-config-form.tsx:134
 msgid "Output"
@@ -3604,6 +3705,10 @@ msgstr "概览"
 msgid "Overwrite"
 msgstr "覆盖"
 
+#: src/components/pipeline/presets/processors/danmaku-factory-config-form.tsx:97
+msgid "Overwrite existing .ass files"
+msgstr "覆盖现有的 .ass 文件"
+
 #: src/components/pipeline/presets/processors/metadata-config-form.tsx:265
 msgid "Overwrite existing files"
 msgstr "覆盖现有文件"
@@ -3612,6 +3717,31 @@ msgstr "覆盖现有文件"
 #: src/components/pipeline/presets/processors/remux-config-form.tsx:680
 msgid "Overwrite Files"
 msgstr "覆盖文件"
+
+#: src/components/pipeline/presets/processors/danmaku-factory-config-form.tsx:94
+msgid "Overwrite Output"
+msgstr "覆盖输出"
+
+#: src/components/config/global/pipeline-config-card.tsx:192
+#: src/components/config/shared-config-editor.tsx:444
+msgid "Paired"
+msgstr "已配对"
+
+#: src/components/config/shared-config-editor.tsx:573
+msgid "Paired pipeline is not supported for this entity."
+msgstr "该实体不支持配对分段处理管道。"
+
+#: src/components/config/global/pipeline-config-card.tsx:189
+#: src/components/config/shared-config-editor.tsx:441
+msgid "Paired Segment"
+msgstr "配对分段"
+
+#: src/components/config/global/pipeline-config-card.tsx:200
+#: src/components/config/global/pipeline-config-card.tsx:281
+#: src/components/config/shared-config-editor.tsx:452
+#: src/components/config/shared-config-editor.tsx:549
+msgid "Paired Segment Pipeline"
+msgstr "配对分段处理管道"
 
 #: src/routes/_authed/_dashboard/player/index.tsx:299
 msgid "Parse and play live streams"
@@ -3633,6 +3763,11 @@ msgstr "正在解析流..."
 #: src/components/player/url-input-form.tsx:312
 msgid "Parsing..."
 msgstr "解析中..."
+
+#: src/components/pipeline/presets/processors/ass-burnin-config-form.tsx:280
+#: src/components/pipeline/presets/processors/danmaku-factory-config-form.tsx:163
+msgid "Passthrough Inputs"
+msgstr "透传输入"
 
 #: src/components/config/platforms/tabs/specific-configs/TwitcastingConfigFields.tsx:29
 #: src/components/config/shared/proxy-settings-card.tsx:189
@@ -3657,6 +3792,10 @@ msgstr "受保护流的密码。"
 #: src/routes/_authed/_dashboard/config/theme.tsx:383
 #~ msgid "Paste your exported CSS variables here."
 #~ msgstr "在此粘贴你导出的 CSS 变量。"
+
+#: src/components/pipeline/presets/processors/danmaku-factory-config-form.tsx:65
+msgid "Path to DanmakuFactory binary. If empty, uses environment variable or PATH."
+msgstr "DanmakuFactory 可执行文件路径。如果为空，则使用环境变量或 PATH。"
 
 #: src/components/logging/log-viewer.tsx:374
 msgid "Pause"
@@ -3686,20 +3825,32 @@ msgstr "按提取器"
 msgid "Per page:"
 msgstr "每页："
 
+#: src/components/config/global/pipeline-config-card.tsx:152
+#: src/components/config/shared-config-editor.tsx:402
+msgid "Per-segment"
+msgstr "逐段"
+
+#: src/components/config/global/pipeline-config-card.tsx:163
+#: src/components/config/global/pipeline-config-card.tsx:266
+#: src/components/config/shared-config-editor.tsx:413
+#: src/components/config/shared-config-editor.tsx:524
+msgid "Per-segment Pipeline"
+msgstr "逐段处理管道"
+
 #: src/components/pipeline/presets/processors/remux-config-form.tsx:611
 #: src/components/sessions/overview-tab.tsx:196
 #: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.tsx:554
 msgid "Performance"
 msgstr "性能"
 
-#: src/components/config/shared-config-editor.tsx:196
+#: src/components/config/shared-config-editor.tsx:209
 #: src/components/sidebar/navbar.tsx:30
 #: src/lib/menu-list.ts:69
 #: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.tsx:417
 msgid "Pipeline"
 msgstr "处理管道"
 
-#: src/components/config/global/pipeline-config-card.tsx:93
+#: src/components/config/global/pipeline-config-card.tsx:129
 msgid "Pipeline Configuration"
 msgstr "处理管道配置"
 
@@ -3822,7 +3973,7 @@ msgid "platforms"
 msgstr "平台"
 
 #: src/components/config/global/backup-restore-card.tsx:388
-#: src/components/config/templates/template-editor.tsx:207
+#: src/components/config/templates/template-editor.tsx:213
 #: src/components/sidebar/navbar.tsx:36
 #: src/routes/_authed/_dashboard/config/route.tsx:54
 msgid "Platforms"
@@ -3877,6 +4028,10 @@ msgstr "由 <0>Rust-srec</0> 提供支持。WebUI 版本：0.1.0"
 #~ msgid "Powered by <0>Rust-srec</0>. WebUI version: 0.3.6"
 #~ msgstr "由 <0>Rust-srec</0> 提供支持。WebUI 版本：0.3.6"
 
+#: src/components/pipeline/presets/processors/danmaku-factory-config-form.tsx:140
+msgid "Prefer Manifest"
+msgstr "优先使用清单"
+
 #: src/components/streamers/config/stream-selection-input.tsx:58
 msgid "Preferences"
 msgstr "偏好设置"
@@ -3917,7 +4072,7 @@ msgstr "预设创建成功"
 msgid "Preset deleted successfully"
 msgstr "预设删除成功"
 
-#: src/components/pipeline/presets/editor/preset-meta-form.tsx:121
+#: src/components/pipeline/presets/editor/preset-meta-form.tsx:129
 msgid "Preset Details"
 msgstr "预设详情"
 
@@ -4002,11 +4157,15 @@ msgstr "并行处理视频并提取播客音频，然后同时上传两者。"
 msgid "Processing"
 msgstr "处理中"
 
+#: src/components/pipeline/presets/processors/danmaku-factory-config-form.tsx:82
+msgid "Processing Behavior"
+msgstr "处理行为"
+
 #: src/routes/_authed/_dashboard/config/route.tsx:69
 msgid "Processing nodes"
 msgstr "处理节点"
 
-#: src/components/pipeline/presets/editor/preset-meta-form.tsx:140
+#: src/components/pipeline/presets/editor/preset-meta-form.tsx:148
 msgid "Processor"
 msgstr "处理器"
 
@@ -4026,7 +4185,7 @@ msgstr "进度："
 #~ msgid "Provide session details and choose the processing steps to launch a manual pipeline."
 #~ msgstr "填写录制会话信息并选择处理步骤，以启动手动处理管道。"
 
-#: src/components/config/shared-config-editor.tsx:163
+#: src/components/config/shared-config-editor.tsx:176
 msgid "Proxy"
 msgstr "代理"
 
@@ -4042,7 +4201,7 @@ msgstr "代理策略"
 msgid "Proxy URL"
 msgstr "代理 URL"
 
-#: src/components/config/engines/forms/streamlink-form.tsx:61
+#: src/components/config/engines/forms/streamlink-form.tsx:60
 #: src/components/player/stream-info-card.tsx:170
 msgid "Quality"
 msgstr "质量"
@@ -4083,7 +4242,7 @@ msgstr "此平台专用的原始 JSON 配置。"
 msgid "Rclone"
 msgstr "Rclone"
 
-#: src/components/pipeline/presets/editor/preset-meta-form.tsx:62
+#: src/components/pipeline/presets/editor/preset-meta-form.tsx:64
 msgid "Rclone (Upload / Move / Sync)"
 msgstr "Rclone（上传/移动/同步）"
 
@@ -4091,7 +4250,8 @@ msgstr "Rclone（上传/移动/同步）"
 msgid "Rclone Executable"
 msgstr "Rclone 可执行文件"
 
-#: src/components/pipeline/presets/processors/registry.ts:51
+#: src/components/pipeline/presets/processors/registry.ts:63
+#: src/components/pipeline/presets/processors/registry.ts:118
 msgid "Rclone Transfer"
 msgstr "Rclone 传输"
 
@@ -4175,15 +4335,15 @@ msgid "Remove Input on Success"
 msgstr "成功后移除输入"
 
 #: src/components/pipeline/presets/default-presets-i18n.ts:4
-#: src/components/pipeline/presets/editor/preset-meta-form.tsx:69
+#: src/components/pipeline/presets/editor/preset-meta-form.tsx:77
 #: src/components/pipeline/presets/preset-card.tsx:86
 #: src/routes/_authed/_dashboard/pipeline/presets/index.tsx:62
 msgid "Remux"
 msgstr "重封装"
 
-#: src/components/pipeline/presets/editor/preset-meta-form.tsx:53
+#: src/components/pipeline/presets/editor/preset-meta-form.tsx:55
 #: src/components/pipeline/presets/preset-templates.ts:5
-#: src/components/pipeline/presets/processors/registry.ts:46
+#: src/components/pipeline/presets/processors/registry.ts:58
 msgid "Remux / Transcode"
 msgstr "重封装/转码"
 
@@ -4230,6 +4390,16 @@ msgstr "若输出文件已存在则替换"
 #: src/components/notifications/forms/webhook-form.tsx:182
 msgid "Request timeout duration"
 msgstr "请求超时时长"
+
+#: src/components/pipeline/presets/processors/ass-burnin-config-form.tsx:206
+msgid "Require Subtitles"
+msgstr "需要字幕"
+
+#: src/components/config/global/pipeline-config-card.tsx:215
+#: src/components/config/shared-config-editor.tsx:467
+#: src/components/config/shared-config-editor.tsx:559
+msgid "Requires \"Record Danmu\" to be enabled."
+msgstr "需要启用“录制弹幕”。"
 
 #: src/routes/_authed/_dashboard/config/logging.tsx:367
 msgid "Reset"
@@ -4312,6 +4482,21 @@ msgstr "每页行数"
 msgid "Run a custom FFmpeg command. Edit the args to customize."
 msgstr "运行自定义 FFmpeg 命令。编辑参数以自定义。"
 
+#: src/components/config/global/pipeline-config-card.tsx:267
+#: src/components/config/shared-config-editor.tsx:527
+msgid "Runs for each recorded segment immediately after it's finished."
+msgstr "在每个录制分段完成后立即运行。"
+
+#: src/components/config/global/pipeline-config-card.tsx:297
+#: src/components/config/shared-config-editor.tsx:593
+msgid "Runs once after the entire session ends and all segment pipelines have completed."
+msgstr "在整个会话结束且所有分段管道均已完成后运行一次。"
+
+#: src/components/config/global/pipeline-config-card.tsx:247
+#: src/components/config/shared-config-editor.tsx:503
+msgid "Runs once after the recording session concludes and all individual segment pipelines have finished. Ideal for session-wide actions like merging all segments, final notifications, or cleanup."
+msgstr "在录制会话结束且所有单个分段管道均已完成后运行一次。适用于合并所有分段、最终通知或清理等全局操作。"
+
 #: src/components/config/shared/event-hooks-form.tsx:133
 msgid "Runs when a download begins."
 msgstr "录制开始时运行。"
@@ -4323,6 +4508,19 @@ msgstr "录制成功完成时运行。"
 #: src/components/config/shared/event-hooks-form.tsx:145
 msgid "Runs when a download encounters an error."
 msgstr "录制发生错误时运行。"
+
+#: src/components/config/global/pipeline-config-card.tsx:209
+#: src/components/config/shared-config-editor.tsx:461
+msgid "Runs when both the video segment and its corresponding danmu segment are available."
+msgstr "当视频分段及其对应的弹幕分段都可用时运行。"
+
+#: src/components/config/shared-config-editor.tsx:553
+msgid "Runs when both video and danmu segments are available."
+msgstr "当视频和弹幕分段都可用时运行。"
+
+#: src/components/config/global/pipeline-config-card.tsx:282
+msgid "Runs when both video and danmu segments are available. Requires \"Record Danmu\" to be enabled."
+msgstr "当视频和弹幕分段都可用时运行。需要启用“录制弹幕”。"
 
 #: src/components/config/shared/event-hooks-form.tsx:151
 msgid "Runs when the post-processing pipeline completes."
@@ -4358,14 +4556,14 @@ msgid "Sampling Strategy"
 msgstr "采样策略"
 
 #: src/components/config/engines/engine-editor.tsx:288
-#: src/components/config/platforms/platform-editor.tsx:121
-#: src/components/config/templates/template-editor.tsx:160
+#: src/components/config/platforms/platform-editor.tsx:123
+#: src/components/config/templates/template-editor.tsx:164
 #: src/components/filters/FilterDialog.tsx:281
 #: src/components/notifications/subscription-manager.tsx:446
 #: src/components/pipeline/presets/editor/preset-save-fab.tsx:37
 #: src/components/pipeline/workflows/step-config-dialog.tsx:587
 #: src/components/streamers/edit/streamer-save-fab.tsx:45
-#: src/routes/_authed/_dashboard/config/global.tsx:169
+#: src/routes/_authed/_dashboard/config/global.tsx:173
 #: src/routes/_authed/_dashboard/config/logging.tsx:376
 msgid "Save Changes"
 msgstr "保存更改"
@@ -4378,12 +4576,12 @@ msgstr "将设置保存为 JSON 文件"
 msgid "Save Workflow"
 msgstr "保存工作流"
 
-#: src/components/config/platforms/platform-editor.tsx:119
-#: src/components/config/templates/template-editor.tsx:156
+#: src/components/config/platforms/platform-editor.tsx:121
+#: src/components/config/templates/template-editor.tsx:160
 #: src/components/filters/FilterDialog.tsx:278
 #: src/components/pipeline/workflows/workflow-editor.tsx:238
 #: src/components/streamers/edit/streamer-save-fab.tsx:40
-#: src/routes/_authed/_dashboard/config/global.tsx:169
+#: src/routes/_authed/_dashboard/config/global.tsx:173
 #: src/routes/_authed/_dashboard/config/logging.tsx:376
 msgid "Saving..."
 msgstr "保存中..."
@@ -4465,6 +4663,11 @@ msgstr "搜索工作流..."
 msgid "secs"
 msgstr "秒"
 
+#: src/components/config/global/pipeline-config-card.tsx:155
+#: src/components/config/shared-config-editor.tsx:405
+msgid "Segment"
+msgstr "分段"
+
 #: src/components/streamers/edit/active-download-card.tsx:76
 msgid "Segments"
 msgstr "分段"
@@ -4505,7 +4708,7 @@ msgstr "选择引擎"
 msgid "Select behavior"
 msgstr "选择行为"
 
-#: src/components/pipeline/presets/editor/preset-meta-form.tsx:250
+#: src/components/pipeline/presets/editor/preset-meta-form.tsx:258
 msgid "Select category"
 msgstr "选择类别"
 
@@ -4548,7 +4751,7 @@ msgid "Select the steps that must complete successfully before this step runs."
 msgstr "选择必须在此步骤运行前成功完成的步骤。"
 
 #: src/components/config/engines/engine-editor.tsx:194
-#: src/components/pipeline/presets/editor/preset-meta-form.tsx:158
+#: src/components/pipeline/presets/editor/preset-meta-form.tsx:166
 msgid "Select type"
 msgstr "选择类型"
 
@@ -4568,10 +4771,28 @@ msgstr "已选"
 msgid "Separate multiple paths with commas."
 msgstr "用英文逗号分隔多个路径。"
 
+#: src/components/config/global/pipeline-config-card.tsx:233
+#: src/components/config/shared-config-editor.tsx:487
 #: src/components/pipeline/outputs/output-card.tsx:197
 #: src/routes/_authed/_dashboard/pipeline/jobs/new.tsx:254
 msgid "Session"
 msgstr "会话"
+
+#: src/components/config/global/pipeline-config-card.tsx:230
+#: src/components/config/shared-config-editor.tsx:484
+msgid "Session Complete"
+msgstr "会话完成"
+
+#: src/components/config/global/pipeline-config-card.tsx:241
+#: src/components/config/global/pipeline-config-card.tsx:296
+#: src/components/config/shared-config-editor.tsx:495
+#: src/components/config/shared-config-editor.tsx:590
+msgid "Session Complete Pipeline"
+msgstr "会话完成处理管道"
+
+#: src/components/config/shared-config-editor.tsx:607
+msgid "Session complete pipeline is not supported for this entity."
+msgstr "该实体不支持会话完成处理管道。"
 
 #: src/components/sessions/session-card.tsx:58
 msgid "Session deleted successfully"
@@ -4642,7 +4863,7 @@ msgstr "设置"
 msgid "Settings have been optimized for this platform."
 msgstr "设置已针对该平台优化。"
 
-#: src/routes/_authed/_dashboard/config/global.tsx:88
+#: src/routes/_authed/_dashboard/config/global.tsx:92
 msgid "Settings updated successfully"
 msgstr "设置更新成功"
 
@@ -4704,7 +4925,7 @@ msgstr "来源"
 msgid "Space Saver"
 msgstr "空间节省"
 
-#: src/components/config/platforms/platform-editor.tsx:157
+#: src/components/config/platforms/platform-editor.tsx:161
 #: src/components/config/templates/tabs/platform-override-card.tsx:68
 msgid "Specific"
 msgstr "特定"
@@ -4763,6 +4984,10 @@ msgstr "已开始"
 #: src/routes/_authed/_dashboard/system/health.tsx:223
 msgid "Status"
 msgstr "状态"
+
+#: src/components/pipeline/presets/processors/ass-burnin-config-form.tsx:187
+msgid "Stem (Filename Match)"
+msgstr "主文件名（文件名匹配）"
 
 #: src/components/pipeline/workflows/workflow-card.tsx:142
 #~ msgid "step"
@@ -4889,7 +5114,7 @@ msgstr "当前正在直播的主播会显示在这里。"
 msgid "Streaming services"
 msgstr "流媒体服务"
 
-#: src/components/config/engines/forms/streamlink-form.tsx:43
+#: src/components/config/engines/forms/streamlink-form.tsx:42
 msgid "streamlink"
 msgstr "streamlink"
 
@@ -4900,6 +5125,10 @@ msgstr "订阅"
 #: src/components/notifications/subscription-manager.tsx:217
 msgid "Subscriptions updated"
 msgstr "订阅已更新"
+
+#: src/components/pipeline/presets/processors/ass-burnin-config-form.tsx:160
+msgid "Subtitle Matching"
+msgstr "字幕匹配"
 
 #: src/components/config/platforms/supported-platforms.tsx:27
 msgid "Supported Platforms"
@@ -5044,9 +5273,14 @@ msgstr "主题模式"
 msgid "There are no recorded sessions matching your criteria."
 msgstr "没有符合条件的录制会话。"
 
-#: src/components/pipeline/presets/editor/preset-meta-form.tsx:293
+#: src/components/pipeline/presets/editor/preset-meta-form.tsx:301
 msgid "This is a default preset. Description cannot be modified."
 msgstr "这是默认预设，描述无法修改。"
+
+#: src/components/config/global/pipeline-config-card.tsx:169
+#: src/components/config/shared-config-editor.tsx:421
+msgid "This pipeline runs immediately after a recording segment is finished. Use it for tasks that only require the individual video segment, such as remuxing, thumbnail generation, or per-segment uploads."
+msgstr "此处理管道在录制分段完成后立即运行。适用于仅需要单个视频分段的任务，例如重封装、缩略图生成或逐段上传。"
 
 #: src/routes/_authed/_dashboard/pipeline/executions.$pipelineId.tsx:186
 #~ msgid "This pipeline sequence appears to be empty."
@@ -5093,8 +5327,8 @@ msgid "This will permanently remove the \"{0}\" configuration. This action canno
 msgstr "这将永久移除“{0}”配置。此操作无法撤销。"
 
 #: src/components/pipeline/presets/default-presets-i18n.ts:8
-#: src/components/pipeline/presets/editor/preset-meta-form.tsx:54
-#: src/components/pipeline/presets/editor/preset-meta-form.tsx:71
+#: src/components/pipeline/presets/editor/preset-meta-form.tsx:56
+#: src/components/pipeline/presets/editor/preset-meta-form.tsx:79
 #: src/components/pipeline/presets/preset-card.tsx:88
 #: src/components/pipeline/presets/preset-templates.ts:24
 #: src/routes/_authed/_dashboard/pipeline/presets/index.tsx:64
@@ -5106,7 +5340,7 @@ msgstr "缩略图"
 msgid "Thumbnail for {0}"
 msgstr "{0} 的缩略图"
 
-#: src/components/pipeline/presets/processors/registry.ts:56
+#: src/components/pipeline/presets/processors/registry.ts:68
 msgid "Thumbnail Generator"
 msgstr "缩略图生成器"
 
@@ -5202,6 +5436,16 @@ msgstr "转码 H.264"
 msgid "Treat interactive games as offline to avoid recording if not desired."
 msgstr "将互动游戏视为离线，以避免录制不需要的内容。"
 
+#: src/components/config/global/pipeline-config-card.tsx:165
+#: src/components/config/shared-config-editor.tsx:415
+msgid "Triggered after each segment recording"
+msgstr "每个分段录制后触发"
+
+#: src/components/config/global/pipeline-config-card.tsx:243
+#: src/components/config/shared-config-editor.tsx:497
+msgid "Triggered after the entire session ends"
+msgstr "整个会话结束后触发"
+
 #: src/components/notifications/subscription-manager.tsx:142
 msgid "Triggered when a download fails with an error."
 msgstr "当下载因错误失败时触发。"
@@ -5258,6 +5502,11 @@ msgstr "应用关闭时触发。"
 msgid "Triggered when the application starts up."
 msgstr "应用启动时触发。"
 
+#: src/components/config/global/pipeline-config-card.tsx:202
+#: src/components/config/shared-config-editor.tsx:454
+msgid "Triggered when video and danmu are available"
+msgstr "当视频和弹幕可用时触发"
+
 #: src/components/pipeline/presets/processors/remux-config-form.tsx:470
 msgid "Trimming & Time"
 msgstr "裁剪与时间"
@@ -5296,9 +5545,21 @@ msgstr "TTWID Cookie"
 msgid "TTWID Management Mode"
 msgstr "TTWID 管理模式"
 
+#: src/components/config/engines/forms/streamlink-form.tsx:84
+msgid "Twitch (ttv-lol)"
+msgstr "Twitch (ttv-lol)"
+
 #: src/components/config/platforms/tabs/specific-configs/TwitchConfigFields.tsx:40
 msgid "Twitch OAuth token for subscriber-only streams."
 msgstr "用于订阅者专属流的 Twitch OAuth 令牌。"
+
+#: src/components/config/engines/forms/streamlink-form.tsx:94
+msgid "Twitch Proxy Playlist"
+msgstr "Twitch 代理播放列表"
+
+#: src/components/config/engines/forms/streamlink-form.tsx:116
+msgid "Twitch Proxy Playlist Exclude"
+msgstr "Twitch 代理播放列表排除"
 
 #: src/components/notifications/channel-form.tsx:298
 msgid "Type"
@@ -5354,7 +5615,7 @@ msgstr "已更新"
 msgid "Updates existing items and creates new ones. Nothing is deleted."
 msgstr "更新现有项目并创建新项目，不会删除任何内容。"
 
-#: src/components/pipeline/presets/editor/preset-meta-form.tsx:74
+#: src/components/pipeline/presets/editor/preset-meta-form.tsx:82
 #: src/components/pipeline/presets/preset-card.tsx:91
 #: src/routes/_authed/_dashboard/pipeline/presets/index.tsx:67
 msgid "Upload"
@@ -5397,6 +5658,10 @@ msgstr "使用 <0>-movflags +faststart</0>"
 #: src/components/config/platforms/tabs/specific-configs/HuyaConfigFields.tsx:54
 msgid "Use computed query parameters (WUP v2)."
 msgstr "使用计算出的查询参数 (WUP v2)。"
+
+#: src/components/pipeline/presets/processors/danmaku-factory-config-form.tsx:143
+msgid "Use danmu_inputs from job manifest"
+msgstr "使用任务清单中的 danmu_inputs"
 
 #: src/components/config/platforms/tabs/specific-configs/DouyinConfigFields.tsx:60
 msgid "Use separate stream data for double screen."
@@ -5473,6 +5738,10 @@ msgstr "基于速度（动态）"
 msgid "Verify Integrity"
 msgstr "校验完整性"
 
+#: src/components/pipeline/presets/processors/danmaku-factory-config-form.tsx:117
+msgid "Verify Output"
+msgstr "验证输出"
+
 #: src/components/config/engines/engine-card.tsx:194
 msgid "Version"
 msgstr "版本"
@@ -5485,6 +5754,7 @@ msgstr "视频"
 msgid "Video Bitrate"
 msgstr "视频比特率"
 
+#: src/components/pipeline/presets/processors/ass-burnin-config-form.tsx:62
 #: src/components/pipeline/presets/processors/remux-config-form.tsx:134
 msgid "Video Codec"
 msgstr "视频编码"

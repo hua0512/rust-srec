@@ -98,6 +98,8 @@ export const VALID_PROCESSORS = [
   'copy_move',
   'delete',
   'metadata',
+  'danmaku_factory',
+  'ass_burnin',
 ] as const;
 export type ProcessorType = (typeof VALID_PROCESSORS)[number];
 

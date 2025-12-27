@@ -84,6 +84,18 @@ impl StreamlinkEngine {
         // Add extra arguments from config
         args.extend(self.config.extra_args.clone());
 
+        // Add Twitch-specific arguments (ttv-lol)
+        if let Some(ref proxy) = self.config.twitch_proxy_playlist {
+            args.extend(["--twitch-proxy-playlist".to_string(), proxy.clone()]);
+        }
+
+        if let Some(ref exclude) = self.config.twitch_proxy_playlist_exclude {
+            args.extend([
+                "--twitch-proxy-playlist-exclude".to_string(),
+                exclude.clone(),
+            ]);
+        }
+
         // Stream URL must be the first positional argument followed by quality
         args.push(config.url.clone());
 
