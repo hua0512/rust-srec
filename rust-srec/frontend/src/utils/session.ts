@@ -1,4 +1,4 @@
-import { useSession } from '@tanstack/react-start/server';
+import { useSession, getRequestHeader } from '@tanstack/react-start/server';
 
 export type SessionData = {
   username: string;
@@ -13,6 +13,66 @@ export type SessionData = {
   mustChangePassword: boolean;
 };
 
+// Type guard to check if session data is complete
+export function isValidSession(
+  data: Partial<SessionData>,
+): data is SessionData {
+  return !!(
+    data.username &&
+    data.token?.access_token &&
+    data.token?.refresh_token &&
+    Array.isArray(data.roles)
+  );
+}
+
+// Client-visible shape that omits the refresh token to avoid exposing it to the browser
+export type ClientSessionData = Omit<SessionData, 'token'> & {
+  token: {
+    access_token: string;
+    expires_in: number;
+    refresh_expires_in: number;
+  };
+};
+
+// Strip refresh token before returning session data to the client
+export function sanitizeClientSession(data: SessionData): ClientSessionData {
+  return {
+    username: data.username,
+    token: {
+      access_token: data.token.access_token,
+      expires_in: data.token.expires_in,
+      refresh_expires_in: data.token.refresh_expires_in,
+    },
+    roles: data.roles,
+    mustChangePassword: data.mustChangePassword ?? false,
+  };
+}
+
+// Determine if cookies should use the secure flag
+// Priority:
+// 1. COOKIE_SECURE env var: 'true' = always secure, 'false' = never secure
+// 2. X-Forwarded-Proto header (when behind a reverse proxy)
+// 3. Default: secure only in production
+function isSecureCookie(): boolean {
+  const cookieSecure = process.env.COOKIE_SECURE?.toLowerCase();
+  if (cookieSecure === 'true') return true;
+  if (cookieSecure === 'false') return false;
+
+  // Check X-Forwarded-Proto header for reverse proxy HTTPS detection
+  try {
+    const forwardedProto = getRequestHeader('x-forwarded-proto');
+    if (forwardedProto) {
+      return forwardedProto.toLowerCase() === 'https';
+    }
+  } catch {
+    // getRequestHeader may throw if called outside of a request context
+    // Fall through to default behavior
+  }
+
+  // Default: secure only in production
+  return process.env.NODE_ENV === 'production';
+}
+
 export function useAppSession() {
   return useSession<SessionData>({
     name: 'srec_session',
@@ -20,7 +80,7 @@ export function useAppSession() {
       process.env.SESSION_SECRET ||
       'dev_secret_must_be_at_least_32_chars_long_and_random',
     cookie: {
-      secure: process.env.NODE_ENV === 'production',
+      secure: isSecureCookie(),
       sameSite: 'lax',
       httpOnly: true,
       maxAge: 30 * 24 * 60 * 60, // 30 days

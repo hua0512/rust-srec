@@ -6,6 +6,7 @@
 //! - Dead letter queue cleanup
 
 use crate::database::DbPool;
+use crate::database::repositories::MonitorOutboxOps;
 use chrono::{DateTime, NaiveTime, Utc};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -29,6 +30,8 @@ pub struct MaintenanceConfig {
     pub job_retention_days: i32,
     /// Dead letter retention period in days (default: 7).
     pub dead_letter_retention_days: i32,
+    /// Monitor outbox delivered-row retention period in days (default: 1).
+    pub monitor_outbox_delivered_retention_days: i32,
     /// Interval between `PRAGMA optimize` runs (default: 7 days).
     pub optimize_interval: Duration,
     /// Interval between WAL checkpoints (default: 1 hour).
@@ -45,6 +48,7 @@ impl Default for MaintenanceConfig {
             max_active_downloads_for_vacuum: 0,
             job_retention_days: 30,
             dead_letter_retention_days: 7,
+            monitor_outbox_delivered_retention_days: 1,
             optimize_interval: Duration::from_secs(7 * 24 * 60 * 60), // weekly
             wal_checkpoint_interval: Duration::from_secs(60 * 60),    // hourly
         }
@@ -147,8 +151,29 @@ impl MaintenanceScheduler {
             tracing::info!("Cleaned up {} dead letter entries", dead_letters_deleted);
         }
 
+        // Cleanup delivered monitor outbox rows (bounded retention; prevents unbounded growth).
+        let outbox_deleted = self.cleanup_monitor_outbox_delivered().await?;
+        if outbox_deleted > 0 {
+            tracing::info!(
+                "Cleaned up {} delivered monitor outbox entries",
+                outbox_deleted
+            );
+        }
+
         tracing::info!("Database maintenance completed");
         Ok(())
+    }
+
+    async fn cleanup_monitor_outbox_delivered(&self) -> Result<u64, crate::Error> {
+        if self.config.monitor_outbox_delivered_retention_days <= 0 {
+            return Ok(0);
+        }
+
+        let cutoff = (Utc::now()
+            - chrono::Duration::days(self.config.monitor_outbox_delivered_retention_days as i64))
+        .to_rfc3339();
+
+        MonitorOutboxOps::prune_delivered_before(&self.pool, &cutoff).await
     }
 
     async fn should_optimize(&self) -> Result<bool, crate::Error> {

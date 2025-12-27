@@ -32,14 +32,15 @@ pub struct MemoryCache {
 impl MemoryCache {
     /// Create a new memory cache with the specified size limit
     pub fn new(max_size_bytes: u64, ttl_seconds: u64) -> Self {
-        if max_size_bytes == 0 {
-            panic!("Memory cache size must be greater than zero");
-        }
-
         // Size based eviction
         let mut builder = MokaCache::builder()
-            .weigher(|_k, v: &CacheEntry| v.data.len().try_into().unwrap_or(u32::MAX))
-            .max_capacity(max_size_bytes);
+            .weigher(|_k, v: &CacheEntry| v.data.len().try_into().unwrap_or(u32::MAX));
+
+        if max_size_bytes == 0 {
+            warn!("Memory cache disabled (max_size_bytes = 0)");
+        } else {
+            builder = builder.max_capacity(max_size_bytes);
+        }
 
         // Only add TTL if it's non-zero
         if ttl_seconds > 0 {
@@ -116,10 +117,7 @@ impl CacheProvider for MemoryCache {
         }
 
         // Add the new entry
-        let entry = CacheEntry {
-            data,
-            metadata: metadata.clone(),
-        };
+        let entry = CacheEntry { data, metadata };
 
         // Insert the entry into the cache
         // Note: Moka handles TTL expiration internally based on the expires_at field in metadata
@@ -224,9 +222,19 @@ mod tests {
     }
 
     #[tokio::test]
-    #[should_panic(expected = "Memory cache size must be greater than zero")]
-    async fn test_new_cache_zero_size_panics() {
-        MemoryCache::new(0, 60);
+    async fn test_new_cache_zero_size_disables_cache() {
+        let cache = MemoryCache::new(0, 60);
+        assert_eq!(cache.max_size, 0);
+
+        let k = key("disabled_item");
+        let d = data("hello");
+        let m = metadata(d.len() as u64, Some(60));
+
+        cache.put(k.clone(), d, m).await.unwrap();
+        cache.cache.run_pending_tasks().await;
+
+        // With max_size=0, puts are always skipped.
+        assert!(cache.get(&k).await.unwrap().is_none());
     }
 
     #[tokio::test]

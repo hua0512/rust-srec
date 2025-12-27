@@ -4,10 +4,11 @@
 //! protected resources. Returns 403 Forbidden if the user has must_change_password=true.
 
 use axum::{
-    body::Body,
+    Json,
     http::StatusCode,
     response::{IntoResponse, Response},
 };
+use serde_json::json;
 use std::sync::Arc;
 
 use crate::api::jwt::Claims;
@@ -19,13 +20,14 @@ pub struct PasswordChangeRequiredError;
 
 impl IntoResponse for PasswordChangeRequiredError {
     fn into_response(self) -> Response {
-        Response::builder()
-            .status(StatusCode::FORBIDDEN)
-            .header("Content-Type", "application/json")
-            .body(Body::from(
-                r#"{"error":"password_change_required","message":"You must change your password before accessing this resource"}"#,
-            ))
-            .unwrap()
+        (
+            StatusCode::FORBIDDEN,
+            Json(json!({
+                "error": "password_change_required",
+                "message": "You must change your password before accessing this resource"
+            })),
+        )
+            .into_response()
     }
 }
 

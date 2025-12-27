@@ -1,84 +1,19 @@
 //! Job repository.
 
-use async_trait::async_trait;
-use rand::random;
-use sqlx::SqlitePool;
-use std::borrow::Cow;
-use std::future::Future;
-use std::time::Duration;
-use tokio::time::sleep;
-use tracing::debug;
-
 use crate::database::models::{
     JobCounts, JobDbModel, JobExecutionLogDbModel, JobExecutionProgressDbModel, JobFilters,
     Pagination,
 };
+use crate::database::retry::retry_on_sqlite_busy;
 use crate::{Error, Result};
-
-const SQLITE_BUSY_MAX_RETRIES: usize = 8;
-const SQLITE_BUSY_BASE_DELAY_MS: u64 = 10;
-const SQLITE_BUSY_MAX_DELAY_MS: u64 = 250;
-
-fn is_sqlite_busy_error(err: &Error) -> bool {
-    let Error::DatabaseSqlx(sqlx_err) = err else {
-        return false;
-    };
-
-    let sqlx::Error::Database(db_err) = sqlx_err else {
-        let msg = sqlx_err.to_string().to_ascii_lowercase();
-        return msg.contains("database is locked") || msg.contains("database is busy");
-    };
-
-    let code = db_err.code().map(Cow::into_owned);
-    if matches!(code.as_deref(), Some("5") | Some("6")) {
-        return true;
-    }
-
-    let msg = db_err.message().to_ascii_lowercase();
-    msg.contains("database is locked") || msg.contains("database is busy")
-}
+use async_trait::async_trait;
+use sqlx::SqlitePool;
 
 fn is_missing_execution_log_columns_error(err: &Error) -> bool {
     let msg = err.to_string().to_ascii_lowercase();
     msg.contains("no such column") && (msg.contains("level") || msg.contains("message"))
         || msg.contains("has no column named level")
         || msg.contains("has no column named message")
-}
-
-async fn retry_on_sqlite_busy<T, F, Fut>(op_name: &'static str, mut op: F) -> Result<T>
-where
-    F: FnMut() -> Fut,
-    Fut: Future<Output = Result<T>>,
-{
-    let mut attempt = 0usize;
-    loop {
-        match op().await {
-            Ok(value) => return Ok(value),
-            Err(err) => {
-                if !is_sqlite_busy_error(&err) || attempt >= SQLITE_BUSY_MAX_RETRIES {
-                    return Err(err);
-                }
-
-                let exp_backoff_ms = SQLITE_BUSY_BASE_DELAY_MS.saturating_mul(1u64 << attempt);
-                let capped_ms = exp_backoff_ms.min(SQLITE_BUSY_MAX_DELAY_MS);
-                let jitter_ms =
-                    (random::<u64>() % (capped_ms / 4 + 1)).min(SQLITE_BUSY_MAX_DELAY_MS);
-                let delay =
-                    Duration::from_millis((capped_ms + jitter_ms).min(SQLITE_BUSY_MAX_DELAY_MS));
-
-                debug!(
-                    "SQLite busy during {}, retrying in {:?} (attempt {}/{})",
-                    op_name,
-                    delay,
-                    attempt + 1,
-                    SQLITE_BUSY_MAX_RETRIES
-                );
-
-                sleep(delay).await;
-                attempt += 1;
-            }
-        }
-    }
 }
 
 /// Job repository trait.
@@ -1072,20 +1007,23 @@ impl JobRepository for SqlxJobRepository {
 
     async fn get_avg_processing_time(&self) -> Result<Option<f64>> {
         // Calculate average processing time for completed jobs
-        // Processing time is the difference between completed_at and started_at
-        // Falls back to updated_at - created_at for jobs without started_at/completed_at
+        // Prefers the processor-reported duration_secs (most accurate),
+        // falls back to timestamp difference (started_at to completed_at) if unavailable
         let result: Option<f64> = sqlx::query_scalar(
             r#"
             SELECT AVG(
-                CASE 
-                    WHEN started_at IS NOT NULL AND completed_at IS NOT NULL THEN
-                        (julianday(completed_at) - julianday(started_at)) * 86400.0
-                    ELSE
-                        (julianday(updated_at) - julianday(created_at)) * 86400.0
-                END
+                COALESCE(
+                    duration_secs,
+                    CASE 
+                        WHEN started_at IS NOT NULL AND completed_at IS NOT NULL THEN
+                            (julianday(completed_at) - julianday(started_at)) * 86400.0
+                        ELSE NULL
+                    END
+                )
             ) as avg_time
             FROM job
             WHERE status = 'COMPLETED'
+              AND (duration_secs IS NOT NULL OR (started_at IS NOT NULL AND completed_at IS NOT NULL))
             "#,
         )
         .fetch_one(&self.pool)

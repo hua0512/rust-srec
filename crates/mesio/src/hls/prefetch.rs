@@ -52,12 +52,13 @@ impl PrefetchManager {
     ///
     /// This method analyzes the current state and returns a list of segment MSNs
     /// that should be prefetched. It respects buffer limits and avoids prefetching
-    /// segments that are already pending or completed.
+    /// segments that are already pending, completed, or in-flight.
     ///
     /// # Arguments
     /// * `completed_msn` - The media sequence number of the segment that just completed
     /// * `buffer_size` - Current number of segments in the buffer
     /// * `known_segments` - List of known segment MSNs from the playlist
+    /// * `in_flight` - Set of segment MSNs currently being downloaded
     ///
     /// # Returns
     /// A vector of segment MSNs to prefetch, sorted in ascending order
@@ -71,6 +72,7 @@ impl PrefetchManager {
         completed_msn: u64,
         buffer_size: usize,
         known_segments: &[u64],
+        in_flight: &HashSet<u64>,
     ) -> Vec<u64> {
         // If prefetching is disabled, return empty
         if !self.config.enabled {
@@ -96,8 +98,11 @@ impl PrefetchManager {
                 continue;
             }
 
-            // Skip if already pending or completed
-            if self.pending_prefetch.contains(&msn) || self.completed.contains(&msn) {
+            // Skip if already in-flight, pending, or completed
+            if in_flight.contains(&msn)
+                || self.pending_prefetch.contains(&msn)
+                || self.completed.contains(&msn)
+            {
                 continue;
             }
 
@@ -204,7 +209,7 @@ mod tests {
         assert!(!manager.is_enabled());
 
         // Should return empty when disabled
-        let targets = manager.get_prefetch_targets(1, 0, &[1, 2, 3, 4, 5]);
+        let targets = manager.get_prefetch_targets(1, 0, &[1, 2, 3, 4, 5], &HashSet::new());
         assert!(targets.is_empty());
     }
 
@@ -214,7 +219,7 @@ mod tests {
         let mut manager = PrefetchManager::new(config);
 
         let known_segments = vec![1, 2, 3, 4, 5];
-        let targets = manager.get_prefetch_targets(1, 5, &known_segments);
+        let targets = manager.get_prefetch_targets(1, 5, &known_segments, &HashSet::new());
 
         // Should return next 2 segments after MSN 1
         assert_eq!(targets, vec![2, 3]);
@@ -232,11 +237,11 @@ mod tests {
         let known_segments = vec![1, 2, 3, 4, 5];
 
         // Buffer at limit - should skip prefetch
-        let targets = manager.get_prefetch_targets(1, 10, &known_segments);
+        let targets = manager.get_prefetch_targets(1, 10, &known_segments, &HashSet::new());
         assert!(targets.is_empty());
 
         // Buffer over limit - should skip prefetch
-        let targets = manager.get_prefetch_targets(1, 15, &known_segments);
+        let targets = manager.get_prefetch_targets(1, 15, &known_segments, &HashSet::new());
         assert!(targets.is_empty());
     }
 
@@ -248,11 +253,11 @@ mod tests {
         let known_segments = vec![1, 2, 3, 4, 5];
 
         // First call - should get 2, 3
-        let targets1 = manager.get_prefetch_targets(1, 5, &known_segments);
+        let targets1 = manager.get_prefetch_targets(1, 5, &known_segments, &HashSet::new());
         assert_eq!(targets1, vec![2, 3]);
 
         // Second call with same completed_msn - should get 4, 5 (2, 3 are pending)
-        let targets2 = manager.get_prefetch_targets(1, 5, &known_segments);
+        let targets2 = manager.get_prefetch_targets(1, 5, &known_segments, &HashSet::new());
         assert_eq!(targets2, vec![4, 5]);
     }
 
@@ -267,7 +272,7 @@ mod tests {
         manager.mark_completed(2);
 
         // Should skip 2 and return 3, 4
-        let targets = manager.get_prefetch_targets(1, 5, &known_segments);
+        let targets = manager.get_prefetch_targets(1, 5, &known_segments, &HashSet::new());
         assert_eq!(targets, vec![3, 4]);
     }
 
@@ -279,7 +284,7 @@ mod tests {
         let known_segments = vec![1, 2, 3, 4, 5];
 
         // Get prefetch targets (marks 2, 3 as pending)
-        let targets = manager.get_prefetch_targets(1, 5, &known_segments);
+        let targets = manager.get_prefetch_targets(1, 5, &known_segments, &HashSet::new());
         assert_eq!(targets, vec![2, 3]);
         assert!(manager.is_pending(2));
         assert!(manager.is_pending(3));
@@ -306,7 +311,7 @@ mod tests {
 
         // 1 and 2 should be removed, 3 and 4 should remain
         let known_segments = vec![1, 2, 3, 4, 5, 6];
-        let targets = manager.get_prefetch_targets(4, 5, &known_segments);
+        let targets = manager.get_prefetch_targets(4, 5, &known_segments, &HashSet::new());
 
         // Should return 5, 6 (3 and 4 are still marked as completed)
         assert_eq!(targets, vec![5, 6]);
@@ -320,7 +325,7 @@ mod tests {
         let known_segments = vec![1, 2, 3, 4, 5];
 
         // Get prefetch targets and mark some completed
-        manager.get_prefetch_targets(1, 5, &known_segments);
+        manager.get_prefetch_targets(1, 5, &known_segments, &HashSet::new());
         manager.mark_completed(2);
 
         // Clear all state
@@ -329,7 +334,7 @@ mod tests {
         assert_eq!(manager.pending_count(), 0);
 
         // Should be able to get same targets again
-        let targets = manager.get_prefetch_targets(1, 5, &known_segments);
+        let targets = manager.get_prefetch_targets(1, 5, &known_segments, &HashSet::new());
         assert_eq!(targets, vec![2, 3]);
     }
 
@@ -341,7 +346,7 @@ mod tests {
         // Known segments with gaps
         let known_segments = vec![1, 3, 5, 7, 9];
 
-        let targets = manager.get_prefetch_targets(1, 5, &known_segments);
+        let targets = manager.get_prefetch_targets(1, 5, &known_segments, &HashSet::new());
 
         // Should return next 2 known segments after 1
         assert_eq!(targets, vec![3, 5]);
@@ -359,7 +364,21 @@ mod tests {
         let known_segments = vec![1, 2, 3];
 
         // Only 2 segments available after MSN 1
-        let targets = manager.get_prefetch_targets(1, 5, &known_segments);
+        let targets = manager.get_prefetch_targets(1, 5, &known_segments, &HashSet::new());
         assert_eq!(targets, vec![2, 3]);
+    }
+
+    #[test]
+    fn test_get_prefetch_targets_skips_in_flight() {
+        let config = default_config();
+        let mut manager = PrefetchManager::new(config);
+
+        let known_segments = vec![1, 2, 3, 4, 5];
+        let mut in_flight = HashSet::new();
+        in_flight.insert(2); // Segment 2 is already being downloaded
+
+        // Should skip 2 (in-flight) and return 3, 4
+        let targets = manager.get_prefetch_targets(1, 5, &known_segments, &in_flight);
+        assert_eq!(targets, vec![3, 4]);
     }
 }

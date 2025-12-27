@@ -1,0 +1,32 @@
+name: "Setup Protoc"
+description: "Install protoc compiler for cross-platform builds"
+inputs:
+  version:
+    description: "Protoc version to install"
+    required: false
+    default: "33.2"
+runs:
+  using: "composite"
+  steps:
+    - name: Install protoc (Unix)
+      if: runner.os != 'Windows'
+      shell: bash
+      run: |
+        case "${{ runner.os }}-${{ runner.arch }}" in
+          "Linux-X64") ARCH="linux-x86_64" ;;
+          "Linux-ARM64") ARCH="linux-aarch_64" ;;
+          "macOS-X64") ARCH="osx-x86_64" ;;
+          "macOS-ARM64") ARCH="osx-aarch_64" ;;
+          *) echo "Unsupported platform: ${{ runner.os }}-${{ runner.arch }}" && exit 1 ;;
+        esac
+        curl -LO --retry 5 --retry-delay 5 --retry-all-errors --connect-timeout 30 --max-time 120 "https://github.com/protocolbuffers/protobuf/releases/download/v${{ inputs.version }}/protoc-${{ inputs.version }}-${ARCH}.zip"
+        unzip protoc-${{ inputs.version }}-${ARCH}.zip -d $HOME/.local
+        echo "$HOME/.local/bin" >> $GITHUB_PATH
+
+    - name: Install protoc (Windows)
+      if: runner.os == 'Windows'
+      shell: pwsh
+      run: |
+        Invoke-WebRequest -Uri "https://github.com/protocolbuffers/protobuf/releases/download/v${{ inputs.version }}/protoc-${{ inputs.version }}-win64.zip" -OutFile protoc.zip
+        Expand-Archive -Path protoc.zip -DestinationPath "$env:USERPROFILE\.local"
+        "$env:USERPROFILE\.local\bin" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append

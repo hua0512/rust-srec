@@ -15,7 +15,7 @@ chrono-tz = "0.10"
 cron = "0.15"
 bytes = "1"
 tokio = { version = "1", features = ["full"] }
-tokio-util = { version = "0.7", features = ["rt"] }
+tokio-util = { version = "0.7", features = ["rt", "time"] }
 futures = "0.3"
 anyhow = "1.0"
 serde_json = "1.0"
@@ -38,6 +38,7 @@ sqlx = { version = "0.8.6", features = [
 
 # Caching
 dashmap = "5.5"
+indexmap = "2"
 parking_lot = "0.12"
 
 # Logging
@@ -95,3 +96,7 @@ tempfile = "3"
 
 [profile.dev.package.sqlx-macros]
 opt-level = 3
+
+[features]
+default = []
+static-ssl = ["platforms-parser/static-ssl"]

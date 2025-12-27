@@ -25,6 +25,7 @@ const SIZE_UNITS: UnitOption[] = [
 ];
 
 const DURATION_UNITS: UnitOption[] = [
+  { label: 'ms', value: 0.001 },
   { label: 'Secs', value: 1 },
   { label: 'Mins', value: 60 },
   { label: 'Hours', value: 3600 },

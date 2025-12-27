@@ -16,6 +16,7 @@ export enum EventType {
   EVENT_TYPE_DOWNLOAD_FAILED = 6,
   EVENT_TYPE_DOWNLOAD_CANCELLED = 7,
   EVENT_TYPE_ERROR = 8,
+  EVENT_TYPE_DOWNLOAD_REJECTED = 9,
 }
 
 // Progress information for a single download
@@ -82,6 +83,15 @@ export interface DownloadCancelled {
   streamerId: string;
 }
 
+// Download rejected event
+export interface DownloadRejected {
+  streamerId: string;
+  sessionId: string;
+  reason: string;
+  retryAfterSecs: bigint;
+  recoverable: boolean;
+}
+
 // Error payload for service errors
 export interface ErrorPayload {
   code: string;
@@ -97,6 +107,7 @@ export type WsMessagePayload =
   | { downloadCompleted: DownloadCompleted }
   | { downloadFailed: DownloadFailed }
   | { downloadCancelled: DownloadCancelled }
+  | { downloadRejected: DownloadRejected }
   | { error: ErrorPayload };
 
 // Server-to-client message envelope
@@ -134,6 +145,7 @@ enum EventType {
   EVENT_TYPE_DOWNLOAD_FAILED = 6;
   EVENT_TYPE_DOWNLOAD_CANCELLED = 7;
   EVENT_TYPE_ERROR = 8;
+  EVENT_TYPE_DOWNLOAD_REJECTED = 9;
 }
 
 message WsMessage {
@@ -147,6 +159,7 @@ message WsMessage {
     DownloadFailed download_failed = 7;
     DownloadCancelled download_cancelled = 8;
     ErrorPayload error = 9;
+    DownloadRejected download_rejected = 10;
   }
 }
 
@@ -218,6 +231,14 @@ message DownloadFailed {
 message DownloadCancelled {
   string download_id = 1;
   string streamer_id = 2;
+}
+
+message DownloadRejected {
+  string streamer_id = 1;
+  string session_id = 2;
+  string reason = 3;
+  uint64 retry_after_secs = 4;
+  bool recoverable = 5;
 }
 
 message ErrorPayload {
@@ -349,6 +370,17 @@ export function decodeWsMessage(data: Uint8Array): WsMessage {
       downloadCancelled: {
         downloadId: (raw.downloadId as string) || '',
         streamerId: (raw.streamerId as string) || '',
+      },
+    };
+  } else if (decoded.downloadRejected) {
+    const raw = decoded.downloadRejected as Record<string, unknown>;
+    payload = {
+      downloadRejected: {
+        streamerId: (raw.streamerId as string) || '',
+        sessionId: (raw.sessionId as string) || '',
+        reason: (raw.reason as string) || '',
+        retryAfterSecs: toBigInt(raw.retryAfterSecs),
+        recoverable: (raw.recoverable as boolean) || false,
       },
     };
   } else if (decoded.error) {

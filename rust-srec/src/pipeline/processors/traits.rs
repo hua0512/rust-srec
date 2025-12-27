@@ -17,7 +17,7 @@ pub enum ProcessorType {
 }
 
 /// Input for a processor.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct ProcessorInput {
     /// Input file paths.
     pub inputs: Vec<String>,
@@ -29,6 +29,57 @@ pub struct ProcessorInput {
     pub streamer_id: String,
     /// Session ID.
     pub session_id: String,
+    /// Human-readable streamer name.
+    pub streamer_name: Option<String>,
+    /// Session/stream title.
+    pub session_title: Option<String>,
+    /// Platform name (e.g., "Twitch", "Huya").
+    pub platform: Option<String>,
+}
+
+impl ProcessorInput {
+    /// Create a new ProcessorInput with required fields.
+    pub fn new(
+        inputs: Vec<String>,
+        outputs: Vec<String>,
+        streamer_id: impl Into<String>,
+        session_id: impl Into<String>,
+    ) -> Self {
+        Self {
+            inputs,
+            outputs,
+            config: None,
+            streamer_id: streamer_id.into(),
+            session_id: session_id.into(),
+            streamer_name: None,
+            session_title: None,
+            platform: None,
+        }
+    }
+
+    /// Set the configuration.
+    pub fn with_config(mut self, config: impl Into<String>) -> Self {
+        self.config = Some(config.into());
+        self
+    }
+
+    /// Set the streamer name.
+    pub fn with_streamer_name(mut self, name: impl Into<String>) -> Self {
+        self.streamer_name = Some(name.into());
+        self
+    }
+
+    /// Set the session title.
+    pub fn with_session_title(mut self, title: impl Into<String>) -> Self {
+        self.session_title = Some(title.into());
+        self
+    }
+
+    /// Set the platform.
+    pub fn with_platform(mut self, platform: impl Into<String>) -> Self {
+        self.platform = Some(platform.into());
+        self
+    }
 }
 
 /// Processor context for emitting progress and other side-channel data.
@@ -182,9 +233,13 @@ mod tests {
             config: None,
             streamer_id: "streamer-1".to_string(),
             session_id: "session-1".to_string(),
+            streamer_name: Some("Test Streamer".to_string()),
+            session_title: Some("Test Title".to_string()),
+            platform: None,
         };
 
         assert_eq!(input.inputs[0], "/input.flv");
+        assert_eq!(input.streamer_name, Some("Test Streamer".to_string()));
     }
 
     #[test]

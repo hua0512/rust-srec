@@ -71,12 +71,17 @@ function ChangePasswordPage() {
     try {
       await changePassword({ data: values });
 
-      // Invalidate session query to refresh UI with updated session data
-      queryClient.invalidateQueries({ queryKey: sessionQueryOptions.queryKey });
-      toast.success(t`Password changed successfully`);
+      // Session is cleared after password change (all tokens revoked)
+      // Invalidate queries and redirect to login
+      await queryClient.invalidateQueries({
+        queryKey: sessionQueryOptions.queryKey,
+      });
+      toast.success(
+        t`Password changed successfully. Please login with your new password.`,
+      );
 
       await router.invalidate();
-      router.navigate({ to: '/dashboard' });
+      router.navigate({ to: '/login', replace: true });
     } catch (error: any) {
       toast.error(error?.message || t`Failed to change password`);
     }

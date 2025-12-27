@@ -1,20 +1,41 @@
 use crc32fast::Hasher;
-use hls::{HlsData, M4sData, M4sInitSegmentData, Resolution, StreamProfile, TsStreamInfo};
+use hls::{
+    HlsData, M4sData, M4sInitSegmentData, Resolution, ResolutionDetector, StreamProfile,
+    TsStreamInfo,
+};
 use pipeline_common::{PipelineError, Processor, StreamerContext};
 use std::sync::Arc;
 use tracing::{debug, info, warn};
 
-/// An operator that splits HLS segments when parameters change.
+/// An operator that splits HLS segments when meaningful stream parameters change.
 ///
-/// The SegmentSplitOperator performs deep inspection of stream metadata:
+/// The SegmentSplitOperator performs deep inspection of stream metadata and splits
+/// the output when it detects changes that would cause playback issues if concatenated.
 ///
-/// - MP4 initialization segment changes (different codecs, resolutions, etc.)
-/// - TS segment stream changes (codec changes, program changes, stream layout changes)
-/// - Stream parameter changes detected through stream profiles
-/// - Video resolution changes detected through SPS parsing
+/// # Split Triggers (will cause a new output file)
 ///
-/// When meaningful changes are detected, the operator inserts an end marker
-/// to properly split the HLS stream.
+/// - **MP4 init segment changes**: Different CRC indicates codec/resolution changes
+/// - **Video resolution changes**: Detected via SPS parsing or stream profile
+/// - **Program number changes**: Indicates a different broadcast program
+/// - **Transport Stream ID changes**: Indicates a different stream source
+/// - **Elementary stream codec type changes**: e.g., H.264 → H.265 at PMT level
+///
+/// # Ignored Changes (normal in live HLS, no split)
+///
+/// The following are NOT split triggers because they occur normally in live streams:
+///
+/// - **PCR PID changes**: Only indicates which PID carries timing reference
+/// - **Stream count fluctuations**: Segments between keyframes may only have audio
+/// - **Stream profile fluctuations**: Audio-only segments show `has_video: false`
+/// - **Codec presence fluctuations**: Profile-level detection varies per segment
+///
+/// # Design Rationale
+///
+/// In live HLS with MPEG-TS segments, not every segment contains all elementary
+/// streams. Segments between video keyframes often contain only audio data, causing
+/// the PMT and stream profile to temporarily show fewer streams. This is normal
+/// behavior, not a stream discontinuity. Only changes that would cause decoder
+/// errors or visual artifacts should trigger a split.
 pub struct SegmentSplitOperator {
     context: Arc<StreamerContext>,
     last_init_segment_crc: Option<u32>,
@@ -108,8 +129,24 @@ impl SegmentSplitOperator {
     // Handle TS segment
     // Returns true if a split is needed
     fn handle_ts_segment(&mut self, input: &HlsData) -> Result<bool, PipelineError> {
-        // Quick check if segment has PSI tables
-        if !input.ts_has_psi_tables() {
+        let (current_stream_info, packets) = match input {
+            HlsData::TsData(ts_data) => match ts_data.parse_stream_and_packets_zero_copy() {
+                Ok((info, packets)) => (info, packets),
+                Err(e) => {
+                    warn!("{} Failed to parse TS packets: {}", self.context.name, e);
+                    return Ok(false);
+                }
+            },
+            _ => {
+                debug!("{} Not a TS segment", self.context.name);
+                return Ok(false);
+            }
+        };
+
+        let has_psi =
+            current_stream_info.program_count > 0 || !current_stream_info.programs.is_empty();
+        if !has_psi {
+            // Not all live TS segments begin with PSI (PAT/PMT); absence alone is not a split trigger.
             debug!(
                 "{} TS segment has no PSI tables, skipping analysis",
                 self.context.name
@@ -117,21 +154,72 @@ impl SegmentSplitOperator {
             return Ok(false);
         }
 
-        // Parse stream information
-        let current_stream_info = match input.parse_ts_psi_tables_zero_copy() {
-            Some(Ok(info)) => info,
-            Some(Err(e)) => {
-                warn!("{} Failed to parse TS PSI tables: {}", self.context.name, e);
-                return Ok(false);
+        // Compute a StreamProfile without re-parsing the TS data.
+        let mut has_video = false;
+        let mut has_audio = false;
+        let mut has_h264 = false;
+        let mut has_h265 = false;
+        let mut has_aac = false;
+        let mut has_ac3 = false;
+        let mut video_count = 0usize;
+        let mut audio_count = 0usize;
+
+        let mut video_streams = Vec::new();
+        for program in &current_stream_info.programs {
+            if !program.video_streams.is_empty() {
+                has_video = true;
+                video_count += program.video_streams.len();
+                for stream in &program.video_streams {
+                    video_streams.push((stream.pid, stream.stream_type));
+                    match stream.stream_type {
+                        ts::StreamType::H264 => has_h264 = true,
+                        ts::StreamType::H265 => has_h265 = true,
+                        _ => {}
+                    }
+                }
             }
-            None => {
-                debug!("{} Not a TS segment", self.context.name);
-                return Ok(false);
+            if !program.audio_streams.is_empty() {
+                has_audio = true;
+                audio_count += program.audio_streams.len();
+                for stream in &program.audio_streams {
+                    match stream.stream_type {
+                        ts::StreamType::AdtsAac | ts::StreamType::LatmAac => has_aac = true,
+                        ts::StreamType::Ac3 | ts::StreamType::EAc3 => has_ac3 = true,
+                        _ => {}
+                    }
+                }
             }
+        }
+
+        let resolution = if has_video {
+            ResolutionDetector::extract_from_ts_packets(packets.iter(), &video_streams)
+        } else {
+            None
         };
 
-        // Get current stream profile for comparison
-        let current_profile = input.get_stream_profile();
+        let mut summary_parts = Vec::new();
+        if video_count > 0 {
+            summary_parts.push(format!("{video_count} video stream(s)"));
+        }
+        if audio_count > 0 {
+            summary_parts.push(format!("{audio_count} audio stream(s)"));
+        }
+        let summary = if summary_parts.is_empty() {
+            "No recognized streams".to_string()
+        } else {
+            summary_parts.join(", ")
+        };
+
+        let current_profile = Some(StreamProfile {
+            has_video,
+            has_audio,
+            has_h264,
+            has_h265,
+            has_aac,
+            has_ac3,
+            resolution,
+            summary,
+        });
 
         let mut needs_split = false;
 
@@ -186,19 +274,28 @@ impl SegmentSplitOperator {
                         break;
                     }
 
+                    // Note: PCR PID changes are NOT a reason to split.
+                    // Per MPEG-TS spec (ISO/IEC 13818-1), PCR PID changes simply indicate
+                    // which elementary stream carries the timing reference. The decoder
+                    // handles this transparently via the discontinuity_indicator flag.
+                    // Common in live streams when encoder/CDN reassigns timing source.
                     if prev_prog.pcr_pid != curr_prog.pcr_pid {
-                        info!(
+                        debug!(
                             "{} PCR PID changed for program {}: 0x{:04X} -> 0x{:04X}",
                             self.context.name,
                             curr_prog.program_number,
                             prev_prog.pcr_pid,
                             curr_prog.pcr_pid
                         );
-                        needs_split = true;
-                        break;
                     }
 
-                    // Check stream count changes
+                    // Note: Stream count changes are NOT a reliable indicator for splitting.
+                    // In live HLS, not every TS segment contains all streams:
+                    // - Some segments may only have audio (between video keyframes)
+                    // - PMT reflects what's in that specific segment, not the overall stream
+                    // This causes normal fluctuations like 2->1->2->1 that aren't real changes.
+                    // Actual codec and stream type changes are checked separately via
+                    // the stream profile comparison which handles additions/removals properly.
                     let prev_stream_count = prev_prog.video_streams.len()
                         + prev_prog.audio_streams.len()
                         + prev_prog.other_streams.len();
@@ -206,16 +303,15 @@ impl SegmentSplitOperator {
                         + curr_prog.audio_streams.len()
                         + curr_prog.other_streams.len();
 
-                    if prev_stream_count != curr_stream_count {
-                        info!(
-                            "{} Stream count changed for program {}: {} -> {}",
+                    if curr_stream_count != prev_stream_count {
+                        debug!(
+                            "{} Stream count changed for program {}: {} -> {} (normal fluctuation, no split)",
                             self.context.name,
                             curr_prog.program_number,
                             prev_stream_count,
                             curr_stream_count
                         );
-                        needs_split = true;
-                        break;
+                        // Do NOT split - this is normal in live HLS
                     }
 
                     // Check for codec changes in video streams
@@ -264,29 +360,57 @@ impl SegmentSplitOperator {
             (&current_profile, &self.last_stream_profile)
             && !needs_split
         {
-            // Check for codec changes
-            if current_profile.has_h264 != previous_profile.has_h264
+            // Note: Profile-level codec and stream type checks are NOT reliable for splitting.
+            // In live HLS, individual TS segments may only contain audio data (between video
+            // keyframes), causing the profile to temporarily show has_video: false.
+            // This is the same fluctuation pattern as stream count changes.
+            // Real codec changes are already detected at the PMT level above.
+
+            // Check for codec changes (log only, no split)
+            let h264_removed = previous_profile.has_h264 && !current_profile.has_h264;
+            let h265_removed = previous_profile.has_h265 && !current_profile.has_h265;
+            let aac_removed = previous_profile.has_aac && !current_profile.has_aac;
+            let ac3_removed = previous_profile.has_ac3 && !current_profile.has_ac3;
+
+            if h264_removed || h265_removed || aac_removed || ac3_removed {
+                debug!(
+                    "{} Stream codec not present in segment (normal fluctuation)",
+                    self.context.name
+                );
+                // Do NOT split - this is normal segment-level fluctuation
+            } else if current_profile.has_h264 != previous_profile.has_h264
                 || current_profile.has_h265 != previous_profile.has_h265
                 || current_profile.has_aac != previous_profile.has_aac
                 || current_profile.has_ac3 != previous_profile.has_ac3
             {
-                info!("{} Stream codec availability changed", self.context.name);
-                needs_split = true;
+                debug!("{} Stream codec added (late detection)", self.context.name);
             }
 
-            // Check for stream type changes
-            if current_profile.has_video != previous_profile.has_video
-                || current_profile.has_audio != previous_profile.has_audio
-            {
-                info!(
-                    "{} Stream type availability changed (video: {} -> {}, audio: {} -> {})",
+            // Check for stream type changes (log only, no split)
+            let video_removed = previous_profile.has_video && !current_profile.has_video;
+            let audio_removed = previous_profile.has_audio && !current_profile.has_audio;
+
+            if video_removed || audio_removed {
+                debug!(
+                    "{} Stream type not present in segment (normal fluctuation): video: {} -> {}, audio: {} -> {}",
                     self.context.name,
                     previous_profile.has_video,
                     current_profile.has_video,
                     previous_profile.has_audio,
                     current_profile.has_audio
                 );
-                needs_split = true;
+                // Do NOT split - segments between keyframes may only contain audio
+            } else if current_profile.has_video != previous_profile.has_video
+                || current_profile.has_audio != previous_profile.has_audio
+            {
+                debug!(
+                    "{} Stream type added (late arrival): video: {} -> {}, audio: {} -> {}",
+                    self.context.name,
+                    previous_profile.has_video,
+                    current_profile.has_video,
+                    previous_profile.has_audio,
+                    current_profile.has_audio
+                );
             }
 
             // Check for resolution changes using StreamProfile

@@ -494,6 +494,8 @@ pub struct PresetPreviewJob {
 pub struct DagFilterParams {
     /// Filter by DAG status (PENDING, PROCESSING, COMPLETED, FAILED, CANCELLED).
     pub status: Option<String>,
+    /// Filter by session ID.
+    pub session_id: Option<String>,
     /// Search query
     pub search: Option<String>,
 }
@@ -1997,15 +1999,22 @@ pub async fn list_dags(
             _ => s.as_str(),
         });
 
+    let session_id_filter = filters.session_id.as_deref();
+
     // List DAG executions from dag_execution table
     let dags = dag_scheduler
-        .list_dags(status_filter, effective_limit, pagination.offset)
+        .list_dags(
+            status_filter,
+            session_id_filter,
+            effective_limit,
+            pagination.offset,
+        )
         .await
         .map_err(ApiError::from)?;
 
     // Count total matching DAGs
     let total = dag_scheduler
-        .count_dags(status_filter)
+        .count_dags(status_filter, session_id_filter)
         .await
         .map_err(ApiError::from)?;
 

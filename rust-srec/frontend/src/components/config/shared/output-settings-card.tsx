@@ -64,7 +64,7 @@ export function OutputSettingsCard({
                     {...field}
                     value={field.value ?? ''}
                     onChange={field.onChange}
-                    placeholder="./downloads"
+                    placeholder="/app/output"
                     className="bg-background"
                   />
                 </FormControl>

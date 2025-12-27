@@ -165,6 +165,54 @@ impl StreamDetector {
         }
     }
 
+    /// Merge stream selection preferences into platform_extras.
+    ///
+    /// This allows platforms like Douyu to use the user's preferred CDN during extraction.
+    /// Only values that aren't already set in platform_extras will be added.
+    fn merge_selection_config_into_extras(
+        platform_extras: Option<serde_json::Value>,
+        selection_config: Option<&StreamSelectionConfig>,
+    ) -> Option<serde_json::Value> {
+        let Some(config) = selection_config else {
+            return platform_extras;
+        };
+
+        // Start with existing extras or create an empty object
+        let mut extras = match platform_extras {
+            Some(serde_json::Value::Object(map)) => map,
+            Some(other) => return Some(other), // Non-object, can't merge
+            None => serde_json::Map::new(),
+        };
+
+        // Inject preferred CDN if configured and not already set
+        // This is used by platforms like Douyu that need CDN during extraction
+        if !config.preferred_cdns.is_empty() && !extras.contains_key("cdn") {
+            extras.insert(
+                "cdn".to_string(),
+                serde_json::Value::String(config.preferred_cdns[0].clone()),
+            );
+            debug!(
+                "Injecting preferred CDN '{}' into platform extras",
+                config.preferred_cdns[0]
+            );
+        }
+
+        // Inject preferred quality if configured and not already set
+        // This is used by platforms like Bilibili that need quality during extraction
+        if !config.preferred_qualities.is_empty() && !extras.contains_key("quality") {
+            extras.insert(
+                "quality".to_string(),
+                serde_json::Value::String(config.preferred_qualities[0].clone()),
+            );
+        }
+
+        if extras.is_empty() {
+            None
+        } else {
+            Some(serde_json::Value::Object(extras))
+        }
+    }
+
     /// Check the live status of a streamer.
     ///
     /// Uses the platforms crate to extract media information from the streamer's URL.
@@ -173,39 +221,54 @@ impl StreamDetector {
         streamer: &StreamerMetadata,
         selection_config: Option<&StreamSelectionConfig>,
     ) -> Result<LiveStatus> {
-        self.check_status_with_cookies(streamer, None, selection_config)
+        self.check_status_with_cookies(streamer, None, selection_config, None)
             .await
     }
 
-    /// Check the live status of a streamer with optional cookies and selection config.
+    /// Check the live status of a streamer with optional cookies, selection config, and platform extras.
+    ///
+    /// # Arguments
+    /// * `streamer` - The streamer to check
+    /// * `cookies` - Optional cookies to use for the request
+    /// * `selection_config` - Optional stream selection configuration
+    /// * `platform_extras` - Optional platform-specific extractor configuration (merged from all config layers)
     pub async fn check_status_with_cookies(
         &self,
         streamer: &StreamerMetadata,
         cookies: Option<String>,
         selection_config: Option<&StreamSelectionConfig>,
+        platform_extras: Option<serde_json::Value>,
     ) -> Result<LiveStatus> {
         debug!(
-            "Checking status for streamer: {} ({})",
-            streamer.name, streamer.url
+            "Checking status for streamer: {} ({}) with platform_extras: {}",
+            streamer.name,
+            streamer.url,
+            platform_extras.is_some()
         );
 
+        // Merge CDN preference from selection_config into platform_extras
+        // This allows platforms like Douyu to use the preferred CDN during extraction
+        let merged_extras =
+            Self::merge_selection_config_into_extras(platform_extras, selection_config);
+
         // Create platform extractor for this streamer's URL
-        let extractor = match self
-            .extractor_factory
-            .create_extractor(&streamer.url, cookies, None)
-        {
-            Ok(ext) => ext,
-            Err(ExtractorError::UnsupportedExtractor) => {
-                warn!("Unsupported platform for URL: {}", streamer.url);
-                return Ok(LiveStatus::UnsupportedPlatform);
-            }
-            Err(e) => {
-                return Err(crate::Error::Monitor(format!(
-                    "Failed to create extractor: {}",
-                    e
-                )));
-            }
-        };
+        let extractor =
+            match self
+                .extractor_factory
+                .create_extractor(&streamer.url, cookies, merged_extras)
+            {
+                Ok(ext) => ext,
+                Err(ExtractorError::UnsupportedExtractor) => {
+                    warn!("Unsupported platform for URL: {}", streamer.url);
+                    return Ok(LiveStatus::UnsupportedPlatform);
+                }
+                Err(e) => {
+                    return Err(crate::Error::Monitor(format!(
+                        "Failed to create extractor: {}",
+                        e
+                    )));
+                }
+            };
 
         // Extract media information
         let media_info = match extractor.extract().await {
@@ -254,6 +317,8 @@ impl StreamDetector {
             media_info.headers.is_some()
         );
 
+        // debug!("Media info: {:#?}", media_info);
+
         if media_info.is_live {
             // Extract additional metadata from extras if available
             let category = media_info
@@ -270,16 +335,16 @@ impl StreamDetector {
 
             // Extract HTTP headers from MediaInfo.headers for download engines
             let media_headers = media_info.headers.as_ref().map(|h| {
-                h.iter()
-                    .map(|(k, v)| (k.clone(), v.clone()))
-                    .collect::<HashMap<_, _>>()
+                let mut out = HashMap::with_capacity(h.len());
+                out.extend(h.iter().map(|(k, v)| (k.clone(), v.clone())));
+                out
             });
 
             // Extract additional extras from MediaInfo.extras
             let media_extras = media_info.extras.as_ref().map(|e| {
-                e.iter()
-                    .map(|(k, v)| (k.clone(), v.clone()))
-                    .collect::<HashMap<_, _>>()
+                let mut out = HashMap::with_capacity(e.len());
+                out.extend(e.iter().map(|(k, v)| (k.clone(), v.clone())));
+                out
             });
 
             if let Some(headers) = &media_headers {
@@ -302,7 +367,7 @@ impl StreamDetector {
             };
 
             let candidates = selector.sort_candidates(&media_info.streams);
-            let mut selected_stream = if let Some(stream) = candidates.first() {
+            let selected_stream = if let Some(stream) = candidates.first() {
                 debug!(
                     "Selected best stream candidate: {} ({})",
                     stream.quality, stream.url
@@ -327,10 +392,18 @@ impl StreamDetector {
             // Resolve final URL for the selected stream
             // Some platforms (Huya, Douyu, Bilibili) require get_url() to get the real stream URL
             // We iterate through candidates until we successfully resolve one
-            let mut resolve_success = false;
+            // Build a slice of references to iterate over
+            let fallback_candidates;
+            let resolution_slice: &[&StreamInfo] = if candidates.is_empty() {
+                fallback_candidates = [&selected_stream];
+                &fallback_candidates
+            } else {
+                &candidates
+            };
 
-            for candidate in candidates {
-                let mut stream = candidate.clone();
+            let mut resolved_stream = None;
+            for candidate in resolution_slice {
+                let mut stream = (*candidate).clone();
                 debug!(
                     "Resolving true stream URL for candidate: {} ({})",
                     stream.quality, stream.url
@@ -338,39 +411,42 @@ impl StreamDetector {
 
                 match extractor.get_url(&mut stream).await {
                     Ok(_) => {
-                        selected_stream = stream;
-                        resolve_success = true;
-                        debug!("Successfully resolved stream URL: {}", selected_stream.url);
+                        debug!("Successfully resolved stream URL: {}", stream.url);
+                        resolved_stream = Some(stream);
                         break;
                     }
                     Err(e) => {
                         warn!(
                             "Failed to resolve stream URL for candidate {} ({}): {}",
-                            stream.quality, streamer.name, e
+                            candidate.quality, streamer.name, e
                         );
                         // Continue to next candidate
                     }
                 }
             }
 
-            if !resolve_success {
-                warn!(
-                    "All stream candidates failed resolution for {}. Treating as OFFLINE.",
-                    streamer.name
-                );
-                return Ok(LiveStatus::Offline);
-            }
+            let selected_stream = match resolved_stream {
+                Some(stream) => stream,
+                None => {
+                    warn!(
+                        "All stream candidates failed resolution for {}. Treating as OFFLINE.",
+                        streamer.name
+                    );
+                    return Ok(LiveStatus::Offline);
+                }
+            };
 
             let streams = vec![selected_stream];
 
             debug!(
-                "Streamer {} is LIVE: {} (category: {:?}, viewers: {:?}, streams: {}, media_headers: {})",
+                "Streamer {} is LIVE: {} (category: {:?}, viewers: {:?}, streams: {}, media_headers: {}, extras: {:?})",
                 streamer.name,
                 media_info.title,
                 category,
                 viewer_count,
                 streams.len(),
-                media_headers.as_ref().map(|h| h.len()).unwrap_or(0)
+                media_headers.as_ref().map(|h| h.len()).unwrap_or(0),
+                media_extras.as_ref().map(|e| e.len()).unwrap_or(0)
             );
 
             Ok(LiveStatus::Live {
@@ -390,15 +466,23 @@ impl StreamDetector {
     }
 
     /// Check status and apply filters.
+    ///
+    /// # Arguments
+    /// * `streamer` - The streamer to check
+    /// * `filters` - Filters to apply to the live status
+    /// * `cookies` - Optional cookies to use for the request
+    /// * `selection_config` - Optional stream selection configuration
+    /// * `platform_extras` - Optional platform-specific extractor configuration
     pub async fn check_status_with_filters(
         &self,
         streamer: &StreamerMetadata,
         filters: &[Filter],
         cookies: Option<String>,
         selection_config: Option<&StreamSelectionConfig>,
+        platform_extras: Option<serde_json::Value>,
     ) -> Result<LiveStatus> {
         let status = self
-            .check_status_with_cookies(streamer, cookies, selection_config)
+            .check_status_with_cookies(streamer, cookies, selection_config, platform_extras)
             .await?;
 
         // If offline, no need to filter

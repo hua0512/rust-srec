@@ -98,6 +98,15 @@ export function WebSocketProvider({ children }: { children: ReactNode }) {
             }
             break;
 
+          case EventType.EVENT_TYPE_DOWNLOAD_REJECTED:
+            if ('downloadRejected' in message.payload) {
+              console.warn(
+                'Download rejected:',
+                message.payload.downloadRejected,
+              );
+            }
+            break;
+
           case EventType.EVENT_TYPE_SEGMENT_COMPLETED:
             break;
 

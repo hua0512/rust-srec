@@ -160,8 +160,13 @@ pub struct CircuitBreaker {
     cooldown_duration: Duration,
     /// Success count in half-open state.
     half_open_successes: AtomicU32,
+    /// Failure count in half-open state.
+    half_open_failures: AtomicU32,
     /// Required successes to close circuit.
     success_threshold: u32,
+    /// Required failures in half-open state to reopen circuit.
+    /// This allows for transient errors without immediately reopening.
+    half_open_failure_threshold: u32,
 }
 
 impl CircuitBreaker {
@@ -174,7 +179,11 @@ impl CircuitBreaker {
             opened_at: RwLock::new(None),
             cooldown_duration: Duration::from_secs(cooldown_secs),
             half_open_successes: AtomicU32::new(0),
+            half_open_failures: AtomicU32::new(0),
             success_threshold: 2,
+            // Allow 2 failures in half-open state before reopening
+            // This prevents transient network errors from immediately blocking recovery
+            half_open_failure_threshold: 2,
         }
     }
 
@@ -237,11 +246,24 @@ impl CircuitBreaker {
                 }
             }
             CircuitState::HalfOpen => {
-                // Any failure in half-open state reopens the circuit
-                *self.state.write() = CircuitState::Open;
-                *self.opened_at.write() = Some(Instant::now());
-                self.half_open_successes.store(0, Ordering::SeqCst);
-                warn!("Circuit breaker reopened after failure in half-open state");
+                // Count failures in half-open state and only reopen after threshold
+                let failures = self.half_open_failures.fetch_add(1, Ordering::SeqCst) + 1;
+                if failures >= self.half_open_failure_threshold {
+                    // Exceeded half-open failure threshold, reopen the circuit
+                    *self.state.write() = CircuitState::Open;
+                    *self.opened_at.write() = Some(Instant::now());
+                    self.half_open_successes.store(0, Ordering::SeqCst);
+                    self.half_open_failures.store(0, Ordering::SeqCst);
+                    warn!(
+                        "Circuit breaker reopened after {} failures in half-open state",
+                        failures
+                    );
+                } else {
+                    debug!(
+                        "Circuit breaker half-open failure {}/{}, staying half-open",
+                        failures, self.half_open_failure_threshold
+                    );
+                }
             }
             CircuitState::Open => {
                 // Already open, nothing to do
@@ -254,6 +276,7 @@ impl CircuitBreaker {
         *self.state.write() = CircuitState::Closed;
         self.failure_count.store(0, Ordering::SeqCst);
         self.half_open_successes.store(0, Ordering::SeqCst);
+        self.half_open_failures.store(0, Ordering::SeqCst);
         *self.opened_at.write() = None;
         debug!("Circuit breaker reset to closed state");
     }
@@ -268,6 +291,7 @@ impl CircuitBreaker {
         {
             *self.state.write() = CircuitState::HalfOpen;
             self.half_open_successes.store(0, Ordering::SeqCst);
+            self.half_open_failures.store(0, Ordering::SeqCst);
             debug!("Circuit breaker transitioned to half-open state");
         }
     }

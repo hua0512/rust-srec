@@ -7,7 +7,7 @@ import { Trans } from '@lingui/react/macro';
 import { useLingui } from '@lingui/react';
 import { useQuery } from '@tanstack/react-query';
 import { Loader2, Unlink, X } from 'lucide-react';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState, memo, Suspense } from 'react';
 import { useForm } from 'react-hook-form';
 import { z } from 'zod';
 import { DagStepDefinition, PipelineStep } from '@/api/schemas';
@@ -29,7 +29,7 @@ interface StepConfigDialogProps {
   currentStepIndex?: number;
 }
 
-export function StepConfigDialog({
+export const StepConfigDialog = memo(function StepConfigDialog({
   open,
   onOpenChange,
   dagStep,
@@ -342,9 +342,9 @@ export function StepConfigDialog({
               {/* TAB 1: CONFIGURATION */}
               <TabsContent
                 value="config"
-                className="flex-1 min-h-0 mt-0 flex flex-col data-[state=inactive]:hidden"
+                className="flex-1 min-h-0 mt-0 data-[state=inactive]:hidden"
               >
-                <ScrollArea className="flex-1 bg-background/50">
+                <ScrollArea className="h-full bg-background/50">
                   {isPreset && !isDetached ? (
                     // PRESET VIEW
                     <div className="p-6">
@@ -372,9 +372,17 @@ export function StepConfigDialog({
                                     presetDetail.processor,
                                   );
                                   return Def ? (
-                                    <Def.component
-                                      control={presetForm.control}
-                                    />
+                                    <Suspense
+                                      fallback={
+                                        <div className="flex items-center justify-center py-8">
+                                          <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+                                        </div>
+                                      }
+                                    >
+                                      <Def.component
+                                        control={presetForm.control}
+                                      />
+                                    </Suspense>
                                   ) : null;
                                 })()}
                               </form>
@@ -397,7 +405,15 @@ export function StepConfigDialog({
                             onSubmit={form.handleSubmit(handleSubmit)}
                             className="contents"
                           >
-                            <processorDef.component control={form.control} />
+                            <Suspense
+                              fallback={
+                                <div className="flex items-center justify-center py-8">
+                                  <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+                                </div>
+                              }
+                            >
+                              <processorDef.component control={form.control} />
+                            </Suspense>
                           </form>
                         </Form>
                       ) : (
@@ -415,9 +431,9 @@ export function StepConfigDialog({
               {/* TAB 2: FLOW & DEPENDENCIES */}
               <TabsContent
                 value="flow"
-                className="flex-1 min-h-0 mt-0 flex flex-col data-[state=inactive]:hidden"
+                className="flex-1 min-h-0 mt-0 data-[state=inactive]:hidden"
               >
-                <ScrollArea className="flex-1 bg-background/50">
+                <ScrollArea className="h-full bg-background/50">
                   <div className="p-6 max-w-2xl mx-auto space-y-6">
                     <div className="flex items-center gap-2 mb-6">
                       <div className="h-8 w-1 rounded bg-blue-500/50" />
@@ -578,4 +594,4 @@ export function StepConfigDialog({
     </AnimatePresence>,
     document.body,
   );
-}
+});

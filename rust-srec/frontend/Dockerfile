@@ -15,19 +15,33 @@ COPY . .
 # Build the application
 RUN npm run build
 
-# Runtime stage - serve with nginx
-FROM nginx:alpine
+# Runtime stage
+FROM node:22-alpine
 
-# Copy built assets to nginx
-COPY --from=builder /app/.output/public /usr/share/nginx/html
+WORKDIR /app
+
+# Install Nginx and gettext (for envsubst)
+RUN apk add --no-cache nginx gettext
+
+# Copy built assets
+COPY --from=builder /app/.output ./.output
 
 # Copy nginx configuration template
 COPY nginx.conf.template /etc/nginx/templates/default.conf.template
 
-# Default backend URL (can be overridden via environment variable)
+# Copy entrypoint script
+COPY entrypoint.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh
+
+# Default env vars
+ENV PORT=3000
+ENV HOST=0.0.0.0
+ENV NODE_ENV=production
+# Default backend if not set
 ENV BACKEND_URL=http://rust-srec:8080
 
+# Expose port 80 (Nginx)
 EXPOSE 80
 
-# nginx:alpine automatically runs envsubst on templates in /etc/nginx/templates/
-CMD ["nginx", "-g", "daemon off;"]
+# Start the server via entrypoint
+CMD ["/entrypoint.sh"]

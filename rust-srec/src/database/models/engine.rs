@@ -122,6 +122,12 @@ pub struct StreamlinkEngineConfig {
     /// Additional arguments
     #[serde(default)]
     pub extra_args: Vec<String>,
+    /// Twitch proxy playlist (ttv-lol)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub twitch_proxy_playlist: Option<String>,
+    /// Twitch proxy playlist exclude (ttv-lol)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub twitch_proxy_playlist_exclude: Option<String>,
 }
 
 fn default_streamlink_path() -> String {
@@ -138,6 +144,8 @@ impl Default for StreamlinkEngineConfig {
             binary_path: default_streamlink_path(),
             quality: default_quality(),
             extra_args: Vec::new(),
+            twitch_proxy_playlist: None,
+            twitch_proxy_playlist_exclude: None,
         }
     }
 }

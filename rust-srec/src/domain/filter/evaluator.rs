@@ -6,9 +6,34 @@ use crate::database::models::filter::{
 };
 use chrono::{DateTime, Datelike, TimeZone, Timelike, Utc};
 use chrono_tz::Tz;
+use dashmap::DashMap;
 use regex::RegexBuilder;
 use std::str::FromStr;
+use std::sync::OnceLock;
 use tracing::warn;
+
+#[derive(Debug)]
+enum CachedFilterConfig {
+    Cron { schedule: cron::Schedule, tz: Tz },
+    Regex { regex: regex::Regex, exclude: bool },
+    TimeBased(TimeBasedFilterConfig),
+    Keyword(KeywordFilterConfig),
+    Category(CategoryFilterConfig),
+}
+
+#[derive(Debug)]
+struct CachedFilterEntry {
+    signature: u64,
+    config: CachedFilterConfig,
+}
+
+static FILTER_CONFIG_CACHE: OnceLock<DashMap<String, CachedFilterEntry>> = OnceLock::new();
+
+fn filter_config_cache() -> &'static DashMap<String, CachedFilterEntry> {
+    FILTER_CONFIG_CACHE.get_or_init(DashMap::new)
+}
+
+const FILTER_CONFIG_CACHE_CAPACITY: usize = 2048;
 
 /// Error type for filter evaluation failures.
 #[derive(Debug, thiserror::Error)]
@@ -96,6 +121,15 @@ impl Default for EvalContext {
 pub struct FilterEvaluator;
 
 impl FilterEvaluator {
+    fn filter_signature(filter: &FilterDbModel) -> u64 {
+        use std::hash::{Hash as _, Hasher as _};
+
+        let mut hasher = std::collections::hash_map::DefaultHasher::new();
+        filter.filter_type.hash(&mut hasher);
+        filter.config.hash(&mut hasher);
+        hasher.finish()
+    }
+
     /// Evaluates a cron filter against the given time.
     ///
     /// Returns `true` if the current time matches the cron schedule.
@@ -240,6 +274,20 @@ impl FilterEvaluator {
         Ok(matches ^ config.exclude)
     }
 
+    fn evaluate_cached_cron(
+        schedule: &cron::Schedule,
+        tz: &Tz,
+        now: DateTime<Utc>,
+    ) -> Result<bool, FilterEvalError> {
+        let now_in_tz = now.with_timezone(tz);
+        Self::time_matches_schedule(schedule, now_in_tz)
+    }
+
+    fn evaluate_cached_regex(regex: &regex::Regex, exclude: bool, title: &str) -> bool {
+        let matches = regex.is_match(title);
+        matches ^ exclude
+    }
+
     /// Evaluates all filters for a streamer, combining results with AND logic.
     ///
     /// Returns `true` if ALL filters pass (AND logic), or if the filter list is empty.
@@ -303,7 +351,36 @@ impl FilterEvaluator {
             ))
         })?;
 
-        match filter_type {
+        let signature = Self::filter_signature(filter);
+        if let Some(entry) = filter_config_cache().get(&filter.id)
+            && entry.signature == signature
+        {
+            let config = &entry.value().config;
+            return match config {
+                CachedFilterConfig::Cron { schedule, tz } => {
+                    let config_result =
+                        Self::evaluate_cached_cron(schedule, tz, context.current_time)?;
+                    Ok(config_result)
+                }
+                CachedFilterConfig::Regex { regex, exclude } => match &context.stream_title {
+                    Some(title) => Ok(Self::evaluate_cached_regex(regex, *exclude, title)),
+                    None => Ok(true),
+                },
+                CachedFilterConfig::TimeBased(config) => {
+                    Ok(Self::evaluate_time_based(config, context.current_time))
+                }
+                CachedFilterConfig::Keyword(config) => match &context.stream_title {
+                    Some(title) => Ok(Self::evaluate_keyword(config, title)),
+                    None => Ok(true),
+                },
+                CachedFilterConfig::Category(config) => match &context.stream_category {
+                    Some(category) => Ok(Self::evaluate_category(config, category)),
+                    None => Ok(true),
+                },
+            };
+        }
+
+        let cached_config = match filter_type {
             FilterType::Cron => {
                 let config: CronFilterConfig =
                     serde_json::from_str(&filter.config).map_err(|e| {
@@ -312,7 +389,21 @@ impl FilterEvaluator {
                             e
                         ))
                     })?;
-                Self::evaluate_cron(&config, context.current_time)
+
+                let schedule = cron::Schedule::from_str(&config.expression)
+                    .map_err(|e| FilterEvalError::InvalidCronExpression(e.to_string()))?;
+
+                let tz: Tz = match &config.timezone {
+                    Some(tz_str) => tz_str.parse().map_err(|_| {
+                        FilterEvalError::InvalidTimezone(format!(
+                            "'{}' is not a valid IANA timezone",
+                            tz_str
+                        ))
+                    })?,
+                    None => chrono_tz::UTC,
+                };
+
+                CachedFilterConfig::Cron { schedule, tz }
             }
             FilterType::Regex => {
                 let config: RegexFilterConfig =
@@ -322,10 +413,15 @@ impl FilterEvaluator {
                             e
                         ))
                     })?;
-                // If no title provided, regex filter passes (similar to existing behavior)
-                match &context.stream_title {
-                    Some(title) => Self::evaluate_regex(&config, title),
-                    None => Ok(true),
+
+                let regex = RegexBuilder::new(&config.pattern)
+                    .case_insensitive(config.case_insensitive)
+                    .build()
+                    .map_err(|e| FilterEvalError::InvalidRegexPattern(e.to_string()))?;
+
+                CachedFilterConfig::Regex {
+                    regex,
+                    exclude: config.exclude,
                 }
             }
             FilterType::TimeBased => {
@@ -336,7 +432,7 @@ impl FilterEvaluator {
                             e
                         ))
                     })?;
-                Ok(Self::evaluate_time_based(&config, context.current_time))
+                CachedFilterConfig::TimeBased(config)
             }
             FilterType::Keyword => {
                 let config: KeywordFilterConfig =
@@ -346,11 +442,7 @@ impl FilterEvaluator {
                             e
                         ))
                     })?;
-                // If no title provided, keyword filter passes
-                match &context.stream_title {
-                    Some(title) => Ok(Self::evaluate_keyword(&config, title)),
-                    None => Ok(true),
-                }
+                CachedFilterConfig::Keyword(config)
             }
             FilterType::Category => {
                 let config: CategoryFilterConfig =
@@ -360,13 +452,43 @@ impl FilterEvaluator {
                             e
                         ))
                     })?;
-                // If no category provided, category filter passes
-                match &context.stream_category {
-                    Some(category) => Ok(Self::evaluate_category(&config, category)),
-                    None => Ok(true),
-                }
+                CachedFilterConfig::Category(config)
             }
+        };
+
+        let evaluation = match &cached_config {
+            CachedFilterConfig::Cron { schedule, tz } => {
+                Self::evaluate_cached_cron(schedule, tz, context.current_time)
+            }
+            CachedFilterConfig::Regex { regex, exclude } => match &context.stream_title {
+                Some(title) => Ok(Self::evaluate_cached_regex(regex, *exclude, title)),
+                None => Ok(true),
+            },
+            CachedFilterConfig::TimeBased(config) => {
+                Ok(Self::evaluate_time_based(config, context.current_time))
+            }
+            CachedFilterConfig::Keyword(config) => match &context.stream_title {
+                Some(title) => Ok(Self::evaluate_keyword(config, title)),
+                None => Ok(true),
+            },
+            CachedFilterConfig::Category(config) => match &context.stream_category {
+                Some(category) => Ok(Self::evaluate_category(config, category)),
+                None => Ok(true),
+            },
+        };
+
+        if filter_config_cache().len() >= FILTER_CONFIG_CACHE_CAPACITY {
+            filter_config_cache().clear();
         }
+        filter_config_cache().insert(
+            filter.id.clone(),
+            CachedFilterEntry {
+                signature,
+                config: cached_config,
+            },
+        );
+
+        evaluation
     }
 
     /// Evaluates a time-based filter.

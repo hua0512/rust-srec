@@ -272,6 +272,7 @@ impl Douyu {
 
         let body = response.text().await.map_err(ExtractorError::from)?;
         // debug!("betard body : {}", body);
+        // std::fs::write("betard.json", body.clone()).unwrap();
         let betard_info: DouyuBetardResponse = serde_json::from_str(&body).map_err(|e| {
             ExtractorError::ValidationError(format!("Failed to parse betard response: {}", e))
         })?;
@@ -875,13 +876,15 @@ impl Douyu {
             .unwrap_or("tc-tct.douyucdn2.cn");
 
         // Build Huoshan host from app name
-        // dyliveflv1 -> huosa.douyucdn2.cn
-        // dyliveflv3 -> huos3.douyucdn2.cn
-        let hs_host = stream_info
-            .tx_app_name
-            .replace("dyliveflv", "huos")
-            .replace("huos1", "huosa");
-        let hs_host = format!("{}.douyucdn2.cn", hs_host);
+
+        // 1. Replace dyliveflv with huos in app name
+        let app_part = stream_info.tx_app_name.replace("dyliveflv", "huos");
+
+        // 2. Construct initial host string
+        let hs_host_initial = format!("{}.douyucdn2.cn", app_part);
+
+        // 3. Perform final replacement on the full host string
+        let hs_host = hs_host_initial.replace("huos1.", "huosa.");
 
         // Build query params for Huoshan URL
         let mut query = stream_info.query_params.clone();
@@ -975,6 +978,7 @@ impl Douyu {
 
         // Use betard API for more reliable room info including VIP status
         let betard_info = self.get_betard_room_info(rid).await;
+        // debug!("betard_info: {:#?}", betard_info);
 
         // Determine live status - prefer betard API, fallback to HTML parsing
         let (is_live, is_vip, title, artist, cover_url, avatar_url) = match betard_info {
@@ -997,11 +1001,7 @@ impl Douyu {
                     } else {
                         Some(room.room_thumb.clone())
                     },
-                    if room.avatar.is_empty() {
-                        None
-                    } else {
-                        Some(room.avatar.clone())
-                    },
+                    room.avatar.get_best(),
                 )
             }
             Err(e) => {
@@ -1106,59 +1106,82 @@ impl Douyu {
             .get_play_info_fallback(rid, &self.cdn, self.rate, None)
             .await?;
 
-        // Check if we need to build hs-h5 URL
-        let needs_hs_build = self.cdn == "hs-h5" && (self.force_hs || data.rtmp_cdn != "hs-h5");
-
         // Build the base stream URL
         let base_stream_url = format!("{}/{}", data.rtmp_url, data.rtmp_live);
 
-        // If hs-h5 is requested and we need to build it, construct the URL
-        let (final_stream_url, hs_host) = if needs_hs_build {
-            debug!(
-                "Building hs-h5 URL with fallback auth (force_hs={}, rtmp_cdn={})",
-                self.force_hs, data.rtmp_cdn
-            );
-
-            match Self::parse_stream_url(&base_stream_url) {
-                Ok(stream_info) => {
-                    // First build Tencent URL if not already tct
-                    let is_tct = data.rtmp_cdn == "tct-h5";
-                    let tct_url = if is_tct {
-                        base_stream_url.clone()
-                    } else {
-                        match Self::build_tencent_url(&stream_info, None) {
-                            Ok(url) => url,
-                            Err(e) => {
-                                debug!("Failed to build Tencent URL: {}, using original", e);
-                                base_stream_url.clone()
-                            }
+        // Attempt to build hs-h5 URL details regardless of selection
+        // This allows us to inject it as an option or use it if selected
+        let hs_url_details = match Self::parse_stream_url(&base_stream_url) {
+            Ok(stream_info) => {
+                // First build Tencent URL if not already tct
+                let is_tct = data.rtmp_cdn == "tct-h5";
+                let tct_url = if is_tct {
+                    Some(base_stream_url.clone())
+                } else {
+                    match Self::build_tencent_url(&stream_info, None) {
+                        Ok(url) => Some(url),
+                        Err(e) => {
+                            debug!("Failed to build Tencent URL: {}, using original", e);
+                            None
                         }
-                    };
+                    }
+                };
 
+                if let Some(tct_url) = tct_url {
                     // Then build Huoshan URL
                     match Self::build_huoshan_url(&stream_info, &tct_url) {
                         Ok((host, url)) => {
                             debug!("Built hs-h5 URL: {} (Host: {})", url, host);
-                            (url, Some(host))
+                            Some((url, host))
                         }
                         Err(e) => {
-                            debug!("Failed to build Huoshan URL: {}, using original", e);
-                            (base_stream_url.clone(), None)
+                            debug!("Failed to build Huoshan URL: {}", e);
+                            None
                         }
                     }
-                }
-                Err(e) => {
-                    debug!("Failed to parse stream URL: {}, using original", e);
-                    (base_stream_url.clone(), None)
+                } else {
+                    None
                 }
             }
+            Err(e) => {
+                debug!("Failed to parse stream URL: {}", e);
+                None
+            }
+        };
+
+        // Prepare the list of CDNs to process
+        let mut cdns_to_process = data.cdns.clone();
+
+        // Check if we need to inject hs-h5
+        let has_hs = cdns_to_process.iter().any(|c| c.cdn == "hs-h5");
+        if !has_hs && hs_url_details.is_some() {
+            debug!("Injecting 'hs-h5' into available CDNs (fallback auth)");
+            // Create a synthetic hs-h5 entry
+            let is_h265 = cdns_to_process
+                .iter()
+                .find(|c| c.cdn == "tct-h5")
+                .map(|c| c.is_h265)
+                .unwrap_or(false);
+
+            cdns_to_process.push(crate::extractor::platforms::douyu::models::CdnsWithName {
+                name: "火山".to_string(),
+                cdn: "hs-h5".to_string(),
+                is_h265,
+                re_weight: None,
+            });
+        }
+
+        let (final_stream_url, hs_host) = if let Some((url, host)) = hs_url_details {
+            (url, Some(host))
         } else {
             (base_stream_url.clone(), None)
         };
 
-        for cdn in &data.cdns {
+        for cdn in cdns_to_process {
             for rate in &data.multirates {
-                let stream_url = if cdn.cdn == self.cdn && rate.rate == self.rate as u64 {
+                let stream_url = if (cdn.cdn == "hs-h5" && hs_host.is_some())
+                    || (cdn.cdn == self.cdn && rate.rate == self.rate as u64)
+                {
                     final_stream_url.clone()
                 } else {
                     "".to_string()
@@ -1179,14 +1202,16 @@ impl Douyu {
 
                 let mut extras = serde_json::json!({
                     "cdn": cdn.cdn,
-                    "rate": rate.rate,
-                    "rid": rid,
-                    "is_vip": is_vip,
+                    "rate": rate.rate.to_string(),
+                    "rid": rid.to_string(),
+                    "is_vip": is_vip.to_string(),
                     "auth_method": "fallback",
                 });
 
                 // Add host header if hs-h5 URL was built
-                if let Some(ref host) = hs_host {
+                if let Some(host) = hs_host.as_ref()
+                    && cdn.cdn == "hs-h5"
+                {
                     extras["host_header"] = serde_json::Value::String(host.clone());
                 }
 
@@ -1372,83 +1397,115 @@ impl Douyu {
             .get_play_info_with_scdn_avoidance(token_result, rid)
             .await?;
 
-        // Check if we need to build hs-h5 URL
-        let needs_hs_build = self.cdn == "hs-h5" && (self.force_hs || data.rtmp_cdn != "hs-h5");
-
         // Build the base stream URL
         let base_stream_url = format!("{}/{}", data.rtmp_url, data.rtmp_live);
 
-        // If hs-h5 is requested and we need to build it, construct the URL
-        let (final_stream_url, hs_host) = if needs_hs_build {
-            debug!(
-                "Building hs-h5 URL (force_hs={}, rtmp_cdn={})",
-                self.force_hs, data.rtmp_cdn
-            );
-
-            match Self::parse_stream_url(&base_stream_url) {
-                Ok(stream_info) => {
-                    // First build Tencent URL if not already tct
-                    let is_tct = data.rtmp_cdn == "tct-h5";
-                    let tct_url = if is_tct {
-                        base_stream_url.clone()
-                    } else {
-                        // Try mobile API first for looser token validation (matches Python)
-                        match self
-                            .build_tencent_url_with_mobile_api(&stream_info, token_result, rid)
-                            .await
-                        {
-                            Ok(url) => {
-                                debug!("Built Tencent URL using mobile API");
-                                url
-                            }
-                            Err(e) => {
-                                debug!(
-                                    "Mobile API failed: {}, falling back to direct conversion",
-                                    e
-                                );
-                                match Self::build_tencent_url(&stream_info, None) {
-                                    Ok(url) => url,
-                                    Err(e) => {
-                                        debug!(
-                                            "Failed to build Tencent URL: {}, using original",
-                                            e
-                                        );
-                                        base_stream_url.clone()
-                                    }
+        // Attempt to build hs-h5 URL details regardless of selection
+        // This allows us to inject it as an option or use it if selected
+        let hs_url_details = match Self::parse_stream_url(&base_stream_url) {
+            Ok(stream_info) => {
+                // First build Tencent URL if not already tct
+                let is_tct = data.rtmp_cdn == "tct-h5";
+                let tct_url = if is_tct {
+                    Some(base_stream_url.clone())
+                } else {
+                    // Try mobile API first for looser token validation
+                    match self
+                        .build_tencent_url_with_mobile_api(&stream_info, token_result, rid)
+                        .await
+                    {
+                        Ok(url) => {
+                            debug!("Built Tencent URL using mobile API");
+                            Some(url)
+                        }
+                        Err(e) => {
+                            debug!(
+                                "Mobile API failed: {}, falling back to direct conversion",
+                                e
+                            );
+                            match Self::build_tencent_url(&stream_info, None) {
+                                Ok(url) => Some(url),
+                                Err(e) => {
+                                    debug!("Failed to build Tencent URL: {}, using original", e);
+                                    None
                                 }
                             }
                         }
-                    };
+                    }
+                };
 
+                if let Some(tct_url) = tct_url {
                     // Then build Huoshan URL
                     match Self::build_huoshan_url(&stream_info, &tct_url) {
                         Ok((host, url)) => {
                             debug!("Built hs-h5 URL: {} (Host: {})", url, host);
-                            (url, Some(host))
+                            Some((url, host))
                         }
                         Err(e) => {
-                            debug!("Failed to build Huoshan URL: {}, using original", e);
-                            (base_stream_url.clone(), None)
+                            debug!("Failed to build Huoshan URL: {}", e);
+                            None
                         }
                     }
-                }
-                Err(e) => {
-                    debug!("Failed to parse stream URL: {}, using original", e);
-                    (base_stream_url.clone(), None)
+                } else {
+                    None
                 }
             }
+            Err(e) => {
+                debug!("Failed to parse stream URL: {}", e);
+                None
+            }
+        };
+
+        // Prepare the list of CDNs to process
+        let mut cdns_to_process = data.cdns.clone();
+
+        // Check if we need to inject hs-h5
+        let has_hs = cdns_to_process.iter().any(|c| c.cdn == "hs-h5");
+        if !has_hs && hs_url_details.is_some() {
+            debug!("Injecting 'hs-h5' into available CDNs");
+            // Create a synthetic hs-h5 entry
+            // We use tct-h5 properties if available, or defaults
+            let is_h265 = cdns_to_process
+                .iter()
+                .find(|c| c.cdn == "tct-h5")
+                .map(|c| c.is_h265)
+                .unwrap_or(false);
+
+            cdns_to_process.push(crate::extractor::platforms::douyu::models::CdnsWithName {
+                name: "火山".to_string(),
+                cdn: "hs-h5".to_string(),
+                is_h265,
+                re_weight: None, // priority unknown
+            });
+        }
+
+        // If hs-h5 was selected but we failed to build it (and it wasn't returned natively),
+        // we might have an issue, but we proceed with what we have.
+        // If hs-h5 WAS built:
+        // - If it matches actual_cdn (API returned hs-h5), we use the built URL if force_hs is true.
+        // - If we injected it, we use the built URL.
+
+        let (final_stream_url, hs_host) = if let Some((url, host)) = hs_url_details {
+            (url, Some(host))
         } else {
             (base_stream_url.clone(), None)
         };
 
-        for cdn in &data.cdns {
+        for cdn in cdns_to_process {
             debug!("cdn: {:?}", cdn);
             for rate in &data.multirates {
                 debug!("rate: {:?}", rate);
-                // Use configured rate for matching, compute URL only for matching cdn/rate
-                let stream_url = if cdn.cdn == actual_cdn && rate.rate == self.rate as u64 {
+
+                // Determine the URL for this specific stream variant
+                let stream_url = if cdn.cdn == "hs-h5" && hs_host.is_some() {
+                    // If this is hs-h5 and we successfully built an HS URL, use it
+                    // regardless of whether it's the 'active' stream or injected
                     final_stream_url.clone()
+                } else if cdn.cdn == actual_cdn && rate.rate == self.rate as u64 {
+                    // Otherwise, use the base stream URL if it matches the active selection
+                    base_stream_url.clone()
                 } else {
+                    // Empty URL for other variants (resolved later via get_url, though hs-h5 needs manual handling if not injected here)
                     "".to_string()
                 };
 
@@ -1467,19 +1524,21 @@ impl Douyu {
 
                 let mut extras = serde_json::json!({
                     "cdn": cdn.cdn,
-                    "rate": rate.rate,
-                    "rid": rid,
+                    "rate": rate.rate.to_string(),
+                    "rid": rid.to_string(),
                     "sign" : token_result.sign,
                     "v" : token_result.v,
                     "did" : token_result.did,
                     "tt" : token_result.tt,
-                    "is_vip": is_vip,
+                    "is_vip": is_vip.to_string(),
                     "actual_cdn": actual_cdn,
                     "auth_method": "js",
                 });
 
-                // Add host header if hs-h5 URL was built
-                if let Some(ref host) = hs_host {
+                // Only add host header if this IS an hs-h5 stream and we have the host
+                if cdn.cdn == "hs-h5"
+                    && let Some(ref host) = hs_host
+                {
                     extras["host_header"] = serde_json::Value::String(host.clone());
                 }
 
@@ -1548,7 +1607,7 @@ impl Douyu {
     }
 
     /// Finds a non-scdn fallback CDN from the available CDN list
-    /// Prefers the last CDN in the list (as per Python implementation)
+    /// Prefers the last CDN in the list
     fn find_non_scdn_fallback(
         cdns: &[crate::extractor::platforms::douyu::models::CdnsWithName],
     ) -> Option<String> {
@@ -1586,31 +1645,44 @@ impl PlatformExtractor for Douyu {
         })?;
 
         let rid = extras["rid"]
-            .as_u64()
+            .as_str()
+            .and_then(|s| s.parse::<u64>().ok())
             .ok_or_else(|| ExtractorError::ValidationError("Missing rid in extras".to_string()))?;
-
-        let tt = extras["tt"]
-            .as_str()
-            .ok_or_else(|| ExtractorError::ValidationError("Missing tt in extras".to_string()))?;
-        let v = extras["v"]
-            .as_str()
-            .ok_or_else(|| ExtractorError::ValidationError("Missing v in extras".to_string()))?;
-        let did = extras["did"]
-            .as_str()
-            .ok_or_else(|| ExtractorError::ValidationError("Missing did in extras".to_string()))?;
-        let sign = extras["sign"]
-            .as_str()
-            .ok_or_else(|| ExtractorError::ValidationError("Missing sign in extras".to_string()))?;
-
-        let token_result = DouyuTokenResult::new(v, did, tt, sign);
 
         let cdn = extras["cdn"]
             .as_str()
             .ok_or_else(|| ExtractorError::ValidationError("Missing cdn in extras".to_string()))?;
 
         let rate = extras["rate"]
-            .as_i64()
+            .as_str()
+            .and_then(|s| s.parse::<i64>().ok())
             .ok_or_else(|| ExtractorError::ValidationError("Missing rate in extras".to_string()))?;
+
+        let auth_method = extras["auth_method"].as_str().unwrap_or("js");
+        if auth_method == "fallback" {
+            debug!(
+                "Resolving Douyu stream URL using fallback method for rid: {}",
+                rid
+            );
+            let resp = self.get_play_info_fallback(rid, cdn, rate, None).await?;
+            stream_info.url = format!("{}/{}", resp.rtmp_url, resp.rtmp_live);
+            return Ok(());
+        }
+
+        let tt = extras["tt"].as_str().ok_or_else(|| {
+            ExtractorError::ValidationError("Missing tt in extras (JS auth)".to_string())
+        })?;
+        let v = extras["v"].as_str().ok_or_else(|| {
+            ExtractorError::ValidationError("Missing v in extras (JS auth)".to_string())
+        })?;
+        let did = extras["did"].as_str().ok_or_else(|| {
+            ExtractorError::ValidationError("Missing did in extras (JS auth)".to_string())
+        })?;
+        let sign = extras["sign"].as_str().ok_or_else(|| {
+            ExtractorError::ValidationError("Missing sign in extras (JS auth)".to_string())
+        })?;
+
+        let token_result = DouyuTokenResult::new(v, did, tt, sign);
 
         let resp = self.call_get_h5_play(&token_result, rid, cdn, rate).await?;
 
@@ -1636,7 +1708,7 @@ mod tests {
             .try_init()
             .unwrap();
 
-        let url = "https://www.douyu.com/8440385";
+        let url = "https://www.douyu.com/4767111";
 
         let extractor = Douyu::new(url.to_string(), default_client(), None, None);
         let media_info = extractor.extract().await.unwrap();

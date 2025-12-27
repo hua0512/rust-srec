@@ -35,6 +35,8 @@ where
 {
     /// In-memory metadata store.
     metadata: Arc<DashMap<String, StreamerMetadata>>,
+    /// Lowercased URL index for fast lookups.
+    url_index: Arc<DashMap<String, String>>,
     /// Streamer repository for persistence.
     repo: Arc<R>,
     /// Event broadcaster for config updates.
@@ -62,6 +64,7 @@ where
     pub fn new(repo: Arc<R>, broadcaster: ConfigEventBroadcaster) -> Self {
         Self {
             metadata: Arc::new(DashMap::new()),
+            url_index: Arc::new(DashMap::new()),
             repo,
             broadcaster,
             error_threshold: DEFAULT_ERROR_THRESHOLD,
@@ -76,6 +79,7 @@ where
     ) -> Self {
         Self {
             metadata: Arc::new(DashMap::new()),
+            url_index: Arc::new(DashMap::new()),
             repo,
             broadcaster,
             error_threshold,
@@ -132,6 +136,12 @@ where
             self.metadata.insert(metadata.id.clone(), metadata);
         }
 
+        self.url_index.clear();
+        for entry in self.metadata.iter() {
+            self.url_index
+                .insert(entry.url.to_lowercase(), entry.id.clone());
+        }
+
         if live_reset_count > 0 {
             info!(
                 "Restart recovery: reset {} streamers from Live to NotLive",
@@ -157,6 +167,8 @@ where
 
         // Update in-memory cache
         self.metadata.insert(metadata.id.clone(), metadata.clone());
+        self.url_index
+            .insert(metadata.url.to_lowercase(), metadata.id.clone());
 
         // Broadcast event
         self.broadcaster
@@ -344,6 +356,14 @@ where
         self.repo.update_streamer(&db_model).await?;
 
         // Update in-memory cache
+        if let Some(old) = self.metadata.get(&metadata.id) {
+            let old_url = old.url.to_lowercase();
+            let new_url = metadata.url.to_lowercase();
+            if old_url != new_url {
+                self.url_index.remove(&old_url);
+            }
+            self.url_index.insert(new_url, metadata.id.clone());
+        }
         self.metadata.insert(metadata.id.clone(), metadata.clone());
 
         // Broadcast event
@@ -391,6 +411,12 @@ where
             metadata.name = new_name;
         }
         if let Some(new_url) = url {
+            let old_url = metadata.url.to_lowercase();
+            let new_url_lower = new_url.to_lowercase();
+            if old_url != new_url_lower {
+                self.url_index.remove(&old_url);
+                self.url_index.insert(new_url_lower, id.clone());
+            }
             metadata.url = new_url;
         }
         if let Some(new_template) = template_config_id {
@@ -433,7 +459,9 @@ where
         self.repo.delete_streamer(id).await?;
 
         // Remove from in-memory cache
-        self.metadata.remove(id);
+        if let Some((_, entry)) = self.metadata.remove(id) {
+            self.url_index.remove(&entry.url.to_lowercase());
+        }
 
         // Broadcast deletion event to trigger cleanup of active resources
         self.broadcaster
@@ -449,6 +477,13 @@ where
     /// Get streamer metadata by ID.
     pub fn get_streamer(&self, id: &str) -> Option<StreamerMetadata> {
         self.metadata.get(id).map(|entry| entry.clone())
+    }
+
+    /// Get streamer metadata by URL (case-insensitive).
+    pub fn get_streamer_by_url(&self, url: &str) -> Option<StreamerMetadata> {
+        let url_lower = url.to_lowercase();
+        let id = self.url_index.get(&url_lower)?;
+        self.get_streamer(id.value())
     }
 
     /// Get all streamers.
@@ -658,9 +693,7 @@ where
     /// Performs case-insensitive comparison.
     pub fn url_exists(&self, url: &str) -> bool {
         let url_lower = url.to_lowercase();
-        self.metadata
-            .iter()
-            .any(|entry| entry.url.to_lowercase() == url_lower)
+        self.url_index.contains_key(&url_lower)
     }
 
     /// Check if a URL exists for any streamer other than the specified one.
@@ -669,9 +702,10 @@ where
     /// Performs case-insensitive comparison.
     pub fn url_exists_for_other(&self, url: &str, exclude_id: &str) -> bool {
         let url_lower = url.to_lowercase();
-        self.metadata
-            .iter()
-            .any(|entry| entry.url.to_lowercase() == url_lower && entry.id != exclude_id)
+        self.url_index
+            .get(&url_lower)
+            .map(|entry| entry.value() != exclude_id)
+            .unwrap_or(false)
     }
 
     // ========== Private Helpers ==========
@@ -908,6 +942,77 @@ mod tests {
         }
     }
 
+    fn create_test_manager() -> StreamerManager<MockStreamerRepository> {
+        let repo = Arc::new(MockStreamerRepository::new());
+        let broadcaster = ConfigEventBroadcaster::new();
+        StreamerManager::new(repo, broadcaster)
+    }
+
+    fn create_test_streamer(id: &str, url: &str) -> StreamerMetadata {
+        StreamerMetadata {
+            id: id.to_string(),
+            name: format!("Streamer {}", id),
+            url: url.to_string(),
+            platform_config_id: "test".to_string(),
+            template_config_id: None,
+            state: StreamerState::NotLive,
+            priority: Priority::Normal,
+            avatar_url: None,
+            consecutive_error_count: 0,
+            disabled_until: None,
+            last_live_time: None,
+            last_error: None,
+            streamer_specific_config: None,
+            created_at: Utc::now(),
+            updated_at: Utc::now(),
+        }
+    }
+
+    #[tokio::test]
+    async fn test_get_streamer_by_url_updates_on_change() {
+        let manager = create_test_manager();
+
+        let mut metadata = create_test_streamer("s1", "https://example.com/one");
+        manager.create_streamer(metadata.clone()).await.unwrap();
+
+        let by_url = manager.get_streamer_by_url("https://example.com/one");
+        assert!(by_url.is_some());
+
+        metadata.url = "https://example.com/two".to_string();
+        manager.update_streamer(metadata.clone()).await.unwrap();
+
+        assert!(
+            manager
+                .get_streamer_by_url("https://example.com/one")
+                .is_none()
+        );
+        assert!(
+            manager
+                .get_streamer_by_url("https://example.com/two")
+                .is_some()
+        );
+    }
+
+    #[tokio::test]
+    async fn test_get_streamer_by_url_removed_on_delete() {
+        let manager = create_test_manager();
+
+        let metadata = create_test_streamer("s1", "https://example.com/one");
+        manager.create_streamer(metadata).await.unwrap();
+
+        assert!(
+            manager
+                .get_streamer_by_url("https://example.com/one")
+                .is_some()
+        );
+
+        manager.delete_streamer("s1").await.unwrap();
+        assert!(
+            manager
+                .get_streamer_by_url("https://example.com/one")
+                .is_none()
+        );
+    }
     fn create_test_db_model(id: &str, platform: &str) -> StreamerDbModel {
         StreamerDbModel {
             id: id.to_string(),

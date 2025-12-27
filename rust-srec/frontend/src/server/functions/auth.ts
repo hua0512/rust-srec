@@ -2,6 +2,7 @@ import { createServerFn } from '@tanstack/react-start';
 import { fetchBackend } from '../api';
 import { BASE_URL } from '../../utils/env';
 import { ensureValidToken } from '../tokenRefresh';
+import { sanitizeClientSession, isValidSession } from '../../utils/session';
 import {
   LoginRequestSchema,
   LoginResponseSchema,
@@ -47,7 +48,11 @@ export const loginFn = createServerFn({ method: 'POST' })
       };
       await session.update(userData);
 
-      return userData;
+      // Do not leak refresh token back to the browser; return a sanitized view.
+      if (!isValidSession(session.data)) {
+        throw new Error('Session update failed or incomplete');
+      }
+      return sanitizeClientSession(session.data);
     } catch (error) {
       console.error('Login failed:', error);
       // Re-throw so the UI knows it failed
@@ -85,17 +90,11 @@ export const changePassword = createServerFn({ method: 'POST' })
       body: JSON.stringify(data),
     });
 
-    // Update the server session to clear mustChangePassword flag
-    // This ensures the _authed layout check uses the updated value
-    // This ensures the _authed layout check uses the updated value
+    // Clear the session since the backend revokes all tokens on password change
+    // This forces the user to re-login with their new password
     const { useAppSession } = await import('../../utils/session');
     const session = await useAppSession();
-    if (session.data) {
-      await session.update({
-        ...session.data,
-        mustChangePassword: false,
-      });
-    }
+    await session.clear();
   });
 
 export const checkAuthFn = createServerFn({ method: 'POST' }).handler(

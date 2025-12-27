@@ -59,6 +59,8 @@ export function TemplateEditor({
           event_hooks: template.event_hooks,
           stream_selection_config: template.stream_selection_config,
           pipeline: template.pipeline,
+          session_complete_pipeline: template.session_complete_pipeline,
+          paired_segment_pipeline: template.paired_segment_pipeline,
         }
       : {
           name: '',
@@ -79,6 +81,8 @@ export function TemplateEditor({
           event_hooks: null,
           stream_selection_config: null,
           pipeline: null,
+          session_complete_pipeline: null,
+          paired_segment_pipeline: null,
         },
   });
 
@@ -176,6 +180,8 @@ export function TemplateEditor({
               danmuSampling: 'danmu_sampling_config',
               hooks: 'event_hooks',
               pipeline: 'pipeline',
+              sessionCompletePipeline: 'session_complete_pipeline',
+              pairedSegmentPipeline: 'paired_segment_pipeline',
             }}
             proxyMode="object"
             configMode="object"

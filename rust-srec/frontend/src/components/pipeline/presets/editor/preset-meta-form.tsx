@@ -36,6 +36,8 @@ import {
   Upload,
   Terminal,
   Settings2,
+  FileText,
+  Type,
 } from 'lucide-react';
 import { Trans } from '@lingui/react/macro';
 import { t } from '@lingui/core/macro';
@@ -63,6 +65,25 @@ const PROCESSOR_OPTIONS = [
     icon: Upload,
   },
   { id: 'execute', label: <Trans>Execute Command</Trans>, icon: Terminal },
+  {
+    id: 'danmaku_factory',
+    label: <Trans>Danmaku to ASS</Trans>,
+    icon: FileText,
+  },
+  { id: 'ass_burnin', label: <Trans>ASS Burn-in</Trans>, icon: Type },
+];
+
+const CATEGORY_OPTIONS = [
+  { id: 'remux', label: <Trans>Remux</Trans> },
+  { id: 'compression', label: <Trans>Compression</Trans> },
+  { id: 'thumbnail', label: <Trans>Thumbnail</Trans> },
+  { id: 'audio', label: <Trans>Audio</Trans> },
+  { id: 'archive', label: <Trans>Archive</Trans> },
+  { id: 'upload', label: <Trans>Upload</Trans> },
+  { id: 'cleanup', label: <Trans>Cleanup</Trans> },
+  { id: 'file_ops', label: <Trans>File Ops</Trans> },
+  { id: 'custom', label: <Trans>Custom</Trans> },
+  { id: 'metadata', label: <Trans>Metadata</Trans> },
 ];
 
 export function PresetMetaForm({
@@ -208,6 +229,48 @@ export function PresetMetaForm({
                   <FormMessage />
                 </FormItem>
               )}
+            />
+
+            <FormField
+              control={form.control}
+              name="category"
+              render={({ field }) => {
+                const selectedCategory = CATEGORY_OPTIONS.find(
+                  (opt) => opt.id === field.value,
+                );
+                return (
+                  <FormItem>
+                    <FormLabel className="text-xs uppercase tracking-wider text-muted-foreground font-medium ml-1">
+                      <Trans>Category</Trans>
+                    </FormLabel>
+                    <Select
+                      onValueChange={field.onChange}
+                      value={field.value || ''}
+                      key={field.value || 'empty'}
+                    >
+                      <FormControl>
+                        <SelectTrigger className="h-11 bg-muted/30 border-muted-foreground/20 focus:ring-primary/20 transition-all">
+                          {selectedCategory ? (
+                            <span className="text-sm">
+                              {selectedCategory.label}
+                            </span>
+                          ) : (
+                            <SelectValue placeholder={t`Select category`} />
+                          )}
+                        </SelectTrigger>
+                      </FormControl>
+                      <SelectContent>
+                        {CATEGORY_OPTIONS.map((option) => (
+                          <SelectItem key={option.id} value={option.id}>
+                            {option.label}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    <FormMessage />
+                  </FormItem>
+                );
+              }}
             />
 
             <FormField

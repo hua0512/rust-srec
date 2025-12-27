@@ -36,6 +36,7 @@ import { Label } from '@/components/ui/label';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { AlertCircle } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
+import { DashboardHeader } from '@/components/shared/dashboard-header';
 import {
   Select,
   SelectContent,
@@ -236,80 +237,64 @@ function PresetsPage() {
   return (
     <div className="min-h-screen space-y-6">
       {/* Header */}
-      <div className="border-b border-border/40">
-        <div className="w-full">
-          {/* Title Row */}
-          <div className="flex flex-col md:flex-row gap-4 items-start md:items-center justify-between p-4 md:px-8">
-            <div className="flex items-center gap-4">
-              <div className="p-2.5 rounded-xl bg-gradient-to-br from-primary/20 to-primary/5 ring-1 ring-primary/10">
-                <Settings2 className="h-6 w-6 text-primary" />
-              </div>
-              <div>
-                <h1 className="text-xl font-semibold tracking-tight">
-                  <Trans>Presets</Trans>
-                </h1>
-                <p className="text-sm text-muted-foreground">
-                  <Trans>
-                    Reusable processor configurations for pipeline steps
-                  </Trans>
-                </p>
-              </div>
+      <DashboardHeader
+        icon={Settings2}
+        title={<Trans>Presets</Trans>}
+        subtitle={
+          <Trans>Reusable processor configurations for pipeline steps</Trans>
+        }
+        actions={
+          <>
+            {/* Search Input */}
+            <div className="relative flex-1 md:w-64">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+              <Input
+                placeholder={t`Search presets...`}
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="pl-9 h-9"
+              />
             </div>
-            <div className="flex items-center gap-2 w-full md:w-auto">
-              {/* Search Input */}
-              <div className="relative flex-1 md:w-64">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                <Input
-                  placeholder={t`Search presets...`}
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  className="pl-9 h-9"
-                />
-              </div>
-              <Badge
-                variant="secondary"
-                className="h-9 px-3 text-sm whitespace-nowrap"
-              >
-                {totalCount} <Trans>presets</Trans>
-              </Badge>
-            </div>
-          </div>
+            <Badge
+              variant="secondary"
+              className="h-9 px-3 text-sm whitespace-nowrap"
+            >
+              {totalCount} <Trans>presets</Trans>
+            </Badge>
+          </>
+        }
+      >
+        <nav className="flex items-center gap-1">
+          <button
+            onClick={() => handleCategoryChange(null)}
+            className={`relative px-3 py-1.5 text-sm font-medium rounded-full transition-all duration-200 ${
+              selectedCategory === null
+                ? 'bg-primary text-primary-foreground shadow-sm'
+                : 'text-muted-foreground hover:text-foreground hover:bg-muted'
+            }`}
+          >
+            <span className="relative z-10 flex items-center gap-1.5">
+              <Trans>All</Trans>
+            </span>
+          </button>
 
-          {/* Category Filter */}
-          <div className="px-4 md:px-8 pb-3 overflow-x-auto no-scrollbar">
-            <nav className="flex items-center gap-1">
-              <button
-                onClick={() => handleCategoryChange(null)}
-                className={`relative px-3 py-1.5 text-sm font-medium rounded-full transition-all duration-200 ${
-                  selectedCategory === null
-                    ? 'bg-primary text-primary-foreground shadow-sm'
-                    : 'text-muted-foreground hover:text-foreground hover:bg-muted'
-                }`}
-              >
-                <span className="relative z-10 flex items-center gap-1.5">
-                  <Trans>All</Trans>
-                </span>
-              </button>
-
-              {categories.map((cat) => (
-                <button
-                  key={cat}
-                  onClick={() => handleCategoryChange(cat)}
-                  className={`relative px-3 py-1.5 text-sm font-medium rounded-full transition-all duration-200 ${
-                    selectedCategory === cat
-                      ? 'bg-primary text-primary-foreground shadow-sm'
-                      : 'text-muted-foreground hover:text-foreground hover:bg-muted'
-                  }`}
-                >
-                  <span className="relative z-10 capitalize">
-                    {i18n._(CATEGORY_LABELS[cat] || cat)}
-                  </span>
-                </button>
-              ))}
-            </nav>
-          </div>
-        </div>
-      </div>
+          {categories.map((cat) => (
+            <button
+              key={cat}
+              onClick={() => handleCategoryChange(cat)}
+              className={`relative px-3 py-1.5 text-sm font-medium rounded-full transition-all duration-200 ${
+                selectedCategory === cat
+                  ? 'bg-primary text-primary-foreground shadow-sm'
+                  : 'text-muted-foreground hover:text-foreground hover:bg-muted'
+              }`}
+            >
+              <span className="relative z-10 capitalize">
+                {i18n._(CATEGORY_LABELS[cat] || cat)}
+              </span>
+            </button>
+          ))}
+        </nav>
+      </DashboardHeader>
 
       <div className="p-4 md:px-8 pb-20 w-full">
         <AnimatePresence mode="wait">

@@ -15,6 +15,54 @@ use crate::{
 use reqwest::header::{HeaderMap, HeaderName, HeaderValue};
 use std::{str::FromStr, time::Duration};
 
+macro_rules! impl_base_downloader_config_methods {
+    ($($base:ident).+) => {
+        /// Set user agent for HTTP requests
+        pub fn user_agent(mut self, user_agent: impl Into<String>) -> Self {
+            self.$($base).+.user_agent = user_agent.into();
+            self
+        }
+
+        /// Set overall HTTP timeout
+        pub fn timeout(mut self, timeout: Duration) -> Self {
+            self.$($base).+.timeout = timeout;
+            self
+        }
+
+        /// Set connection timeout
+        pub fn connect_timeout(mut self, timeout: Duration) -> Self {
+            self.$($base).+.connect_timeout = timeout;
+            self
+        }
+
+        /// Set read timeout
+        pub fn read_timeout(mut self, timeout: Duration) -> Self {
+            self.$($base).+.read_timeout = timeout;
+            self
+        }
+
+        /// Set whether to follow HTTP redirects
+        pub fn follow_redirects(mut self, follow: bool) -> Self {
+            self.$($base).+.follow_redirects = follow;
+            self
+        }
+
+        /// Set HTTP headers
+        pub fn headers(mut self, headers: HeaderMap) -> Self {
+            self.$($base).+.headers = headers;
+            self
+        }
+
+        /// Add a single HTTP header
+        pub fn add_header(mut self, name: &str, value: &str) -> Self {
+            if let (Ok(name), Ok(value)) = (HeaderName::from_str(name), HeaderValue::from_str(value)) {
+                self.$($base).+.headers.insert(name, value);
+            }
+            self
+        }
+    };
+}
+
 /// Generic protocol builder trait
 pub trait ProtocolBuilder {
     /// The protocol implementation type being built
@@ -43,49 +91,7 @@ impl FlvProtocolBuilder {
         self
     }
 
-    /// Set user agent for HTTP requests
-    pub fn user_agent(mut self, user_agent: impl Into<String>) -> Self {
-        self.config.base.user_agent = user_agent.into();
-        self
-    }
-
-    /// Set HTTP timeout
-    pub fn timeout(mut self, timeout: Duration) -> Self {
-        self.config.base.timeout = timeout;
-        self
-    }
-
-    /// Set connection timeout
-    pub fn connect_timeout(mut self, timeout: Duration) -> Self {
-        self.config.base.connect_timeout = timeout;
-        self
-    }
-
-    /// Set read timeout
-    pub fn read_timeout(mut self, timeout: Duration) -> Self {
-        self.config.base.read_timeout = timeout;
-        self
-    }
-
-    /// Set whether to follow HTTP redirects
-    pub fn follow_redirects(mut self, follow: bool) -> Self {
-        self.config.base.follow_redirects = follow;
-        self
-    }
-
-    /// Set HTTP headers
-    pub fn headers(mut self, headers: HeaderMap) -> Self {
-        self.config.base.headers = headers;
-        self
-    }
-
-    /// Add a single HTTP header
-    pub fn add_header(mut self, name: &str, value: &str) -> Self {
-        if let (Ok(name), Ok(value)) = (HeaderName::from_str(name), HeaderValue::from_str(value)) {
-            self.config.base.headers.insert(name, value);
-        }
-        self
-    }
+    impl_base_downloader_config_methods!(config.base);
 
     /// Access the raw configuration for more advanced customization
     pub fn with_config<F>(mut self, f: F) -> Self
@@ -136,53 +142,11 @@ impl HlsProtocolBuilder {
 
     // --- Base DownloaderConfig methods ---
 
-    /// Set user agent for HTTP requests
-    pub fn user_agent(mut self, user_agent: impl Into<String>) -> Self {
-        self.config.base.user_agent = user_agent.into();
-        self
-    }
-
-    /// Set overall HTTP timeout
-    pub fn timeout(mut self, timeout: Duration) -> Self {
-        self.config.base.timeout = timeout;
-        self
-    }
-
-    /// Set connection timeout
-    pub fn connect_timeout(mut self, timeout: Duration) -> Self {
-        self.config.base.connect_timeout = timeout;
-        self
-    }
-
-    /// Set read timeout
-    pub fn read_timeout(mut self, timeout: Duration) -> Self {
-        self.config.base.read_timeout = timeout;
-        self
-    }
+    impl_base_downloader_config_methods!(config.base);
 
     /// Set write timeout
     pub fn write_timeout(mut self, timeout: Duration) -> Self {
         self.config.base.write_timeout = timeout;
-        self
-    }
-
-    /// Set whether to follow HTTP redirects
-    pub fn follow_redirects(mut self, follow: bool) -> Self {
-        self.config.base.follow_redirects = follow;
-        self
-    }
-
-    /// Set HTTP headers
-    pub fn headers(mut self, headers: HeaderMap) -> Self {
-        self.config.base.headers = headers;
-        self
-    }
-
-    /// Add a single HTTP header
-    pub fn add_header(mut self, name: &str, value: &str) -> Self {
-        if let (Ok(name), Ok(value)) = (HeaderName::from_str(name), HeaderValue::from_str(value)) {
-            self.config.base.headers.insert(name, value);
-        }
         self
     }
 

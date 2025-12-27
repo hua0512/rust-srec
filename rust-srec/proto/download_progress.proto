@@ -13,6 +13,7 @@ enum EventType {
   EVENT_TYPE_DOWNLOAD_FAILED = 6;
   EVENT_TYPE_DOWNLOAD_CANCELLED = 7;
   EVENT_TYPE_ERROR = 8;
+  EVENT_TYPE_DOWNLOAD_REJECTED = 9;
 }
 
 // Server-to-client message envelope
@@ -27,6 +28,7 @@ message WsMessage {
     DownloadFailed download_failed = 7;
     DownloadCancelled download_cancelled = 8;
     ErrorPayload error = 9;
+    DownloadRejected download_rejected = 10;
   }
 }
 
@@ -110,6 +112,15 @@ message DownloadCancelled {
   string download_id = 1;
   string streamer_id = 2;
   string session_id = 3;
+}
+
+// Download rejected event (rejected before starting).
+message DownloadRejected {
+  string streamer_id = 1;
+  string session_id = 2;
+  string reason = 3;
+  uint64 retry_after_secs = 4;
+  bool recoverable = 5;
 }
 
 // Error payload for service errors

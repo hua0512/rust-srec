@@ -1,6 +1,7 @@
 //! Streamlink download engine implementation.
 
 use async_trait::async_trait;
+use pipeline_common::expand_filename_template;
 use std::process::Stdio;
 use std::sync::Arc;
 use tokio::io::{AsyncBufReadExt, BufReader};
@@ -83,6 +84,18 @@ impl StreamlinkEngine {
         // Add extra arguments from config
         args.extend(self.config.extra_args.clone());
 
+        // Add Twitch-specific arguments (ttv-lol)
+        if let Some(ref proxy) = self.config.twitch_proxy_playlist {
+            args.extend(["--twitch-proxy-playlist".to_string(), proxy.clone()]);
+        }
+
+        if let Some(ref exclude) = self.config.twitch_proxy_playlist_exclude {
+            args.extend([
+                "--twitch-proxy-playlist-exclude".to_string(),
+                exclude.clone(),
+            ]);
+        }
+
         // Stream URL must be the first positional argument followed by quality
         args.push(config.url.clone());
 
@@ -116,21 +129,32 @@ impl StreamlinkEngine {
                 config.max_segment_duration_secs.to_string(),
                 "-reset_timestamps".to_string(),
                 "1".to_string(),
+                "-strftime".to_string(),
+                "1".to_string(), // Enable strftime expansion for %Y, %m, %d, etc. in filename
             ]);
+        }
 
-            // Use segment pattern
-            let pattern = config.output_dir.join(format!(
-                "{}_%03d.{}",
-                config.filename_template, config.output_format
-            ));
-            args.push(pattern.to_string_lossy().to_string());
+        // Output path (same logic as FFmpeg engine)
+        let output_path = config.output_dir.join(format!(
+            "{}.{}",
+            config.filename_template, config.output_format
+        ));
+
+        if config.max_segment_duration_secs > 0 {
+            // Use segment pattern with strftime enabled by -strftime 1 flag
+            // Convert backslashes to forward slashes for FFmpeg compatibility on Windows
+            let pattern_str = output_path.to_string_lossy().replace('\\', "/");
+            args.push(pattern_str);
         } else {
-            // Single output file
-            let output_path = config.output_dir.join(format!(
-                "{}.{}",
-                config.filename_template, config.output_format
-            ));
-            args.push(output_path.to_string_lossy().to_string());
+            // Non-segment mode: manually expand strftime patterns
+            // FFmpeg doesn't support -strftime flag in non-segment mode
+            let expanded_template = expand_filename_template(&config.filename_template, None);
+            let final_path = config
+                .output_dir
+                .join(format!("{}.{}", expanded_template, config.output_format));
+            // Convert backslashes to forward slashes for FFmpeg compatibility on Windows
+            let path_str = final_path.to_string_lossy().replace('\\', "/");
+            args.push(path_str);
         }
 
         args

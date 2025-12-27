@@ -24,6 +24,7 @@
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::mpsc;
+use tokio::time::Instant;
 use tokio::time::interval;
 
 /// Configuration for the batch writer.
@@ -50,7 +51,7 @@ pub struct BatchWriter<T> {
     _handle: tokio::task::JoinHandle<()>,
 }
 
-impl<T: Send + 'static> BatchWriter<T> {
+impl<T: Send + Clone + 'static> BatchWriter<T> {
     /// Create a new batch writer with the given configuration and flush function.
     pub fn new<F, Fut>(config: BatchWriterConfig, flush_fn: F) -> Self
     where
@@ -81,12 +82,15 @@ impl<T: Send + 'static> BatchWriter<T> {
         config: BatchWriterConfig,
         flush_fn: Arc<F>,
     ) where
+        T: Clone,
         F: Fn(Vec<T>) -> Fut + Send + Sync + 'static,
         Fut: std::future::Future<Output = Result<(), crate::Error>> + Send + 'static,
     {
         let mut buffer = Vec::with_capacity(config.max_buffer_size);
         let mut flush_timer = interval(config.flush_interval);
         flush_timer.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+        let mut backoff = Duration::ZERO;
+        let mut next_flush_allowed = Instant::now();
 
         loop {
             tokio::select! {
@@ -98,10 +102,25 @@ impl<T: Send + 'static> BatchWriter<T> {
 
                             // Flush if buffer is full
                             if buffer.len() >= config.max_buffer_size {
-                                if let Err(e) = flush_fn(std::mem::take(&mut buffer)).await {
-                                    tracing::error!("Batch flush error: {}", e);
+                                if Instant::now() >= next_flush_allowed {
+                                    let mut batch = std::mem::take(&mut buffer);
+                                    if let Err(e) = flush_fn(batch.clone()).await {
+                                        tracing::error!("Batch flush error: {}", e);
+                                        buffer.append(&mut batch);
+                                        backoff = if backoff.is_zero() {
+                                            Duration::from_millis(200)
+                                        } else {
+                                            (backoff * 2).min(Duration::from_secs(5))
+                                        };
+                                        next_flush_allowed = Instant::now() + backoff;
+                                    } else {
+                                        backoff = Duration::ZERO;
+                                        next_flush_allowed = Instant::now();
+                                    }
                                 }
-                                buffer = Vec::with_capacity(config.max_buffer_size);
+                                if buffer.capacity() < config.max_buffer_size {
+                                    buffer = Vec::with_capacity(config.max_buffer_size);
+                                }
                             }
                         }
                         None => {
@@ -116,11 +135,24 @@ impl<T: Send + 'static> BatchWriter<T> {
 
                 // Periodic flush
                 _ = flush_timer.tick() => {
-                    if !buffer.is_empty() {
-                        if let Err(e) = flush_fn(std::mem::take(&mut buffer)).await {
+                    if !buffer.is_empty() && Instant::now() >= next_flush_allowed {
+                        let mut batch = std::mem::take(&mut buffer);
+                        if let Err(e) = flush_fn(batch.clone()).await {
                             tracing::error!("Periodic batch flush error: {}", e);
+                            buffer.append(&mut batch);
+                            backoff = if backoff.is_zero() {
+                                Duration::from_millis(200)
+                            } else {
+                                (backoff * 2).min(Duration::from_secs(5))
+                            };
+                            next_flush_allowed = Instant::now() + backoff;
+                        } else {
+                            backoff = Duration::ZERO;
+                            next_flush_allowed = Instant::now();
                         }
-                        buffer = Vec::with_capacity(config.max_buffer_size);
+                        if buffer.capacity() < config.max_buffer_size {
+                            buffer = Vec::with_capacity(config.max_buffer_size);
+                        }
                     }
                 }
             }
@@ -176,5 +208,45 @@ mod tests {
         tokio::time::sleep(Duration::from_millis(100)).await;
 
         assert_eq!(flush_count.load(Ordering::SeqCst), 3);
+    }
+
+    #[tokio::test]
+    async fn test_batch_writer_requeues_on_error() {
+        let attempts = Arc::new(AtomicUsize::new(0));
+        let attempts_clone = attempts.clone();
+
+        let config = BatchWriterConfig {
+            max_buffer_size: 2,
+            flush_interval: Duration::from_millis(50),
+        };
+
+        let writer = BatchWriter::new(config, move |items: Vec<i32>| {
+            let attempts = attempts_clone.clone();
+            async move {
+                let attempt = attempts.fetch_add(1, Ordering::SeqCst);
+                if attempt == 0 {
+                    // Fail first flush, items should be requeued.
+                    Err(crate::Error::Other("flush failed".to_string()))
+                } else {
+                    assert_eq!(items.len(), 2);
+                    Ok(())
+                }
+            }
+        });
+
+        writer.add(1).await.unwrap();
+        writer.add(2).await.unwrap();
+
+        let result = tokio::time::timeout(Duration::from_secs(2), async {
+            loop {
+                if attempts.load(Ordering::SeqCst) >= 2 {
+                    break;
+                }
+                tokio::time::sleep(Duration::from_millis(20)).await;
+            }
+        })
+        .await;
+
+        assert!(result.is_ok(), "Expected at least 2 flush attempts");
     }
 }

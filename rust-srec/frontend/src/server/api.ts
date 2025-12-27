@@ -73,12 +73,10 @@ export const fetchBackend = async <T = any>(
         const newToken = await refreshAuthTokenGlobal();
         if (newToken) {
           console.log(`[API] Token refreshed. Retrying ${url}...`);
-          // Retry original request with new token
-          const retryHeaders = new Headers(init?.headers);
-          retryHeaders.set('Authorization', `Bearer ${newToken}`);
+          headers.set('Authorization', `Bearer ${newToken}`);
           const retryResponse = await fetch(url, {
             ...init,
-            headers: retryHeaders,
+            headers,
           });
 
           if (retryResponse.ok) {

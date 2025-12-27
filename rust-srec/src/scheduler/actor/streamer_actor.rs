@@ -461,7 +461,7 @@ impl StreamerActor {
             let remaining = metadata
                 .remaining_backoff()
                 .and_then(|d| d.to_std().ok())
-                .unwrap_or(Duration::from_secs(0));
+                .unwrap_or(Duration::ZERO);
 
             self.state.next_check = Some(Instant::now() + remaining);
             debug!(
@@ -905,6 +905,41 @@ impl StreamerActor {
                 // If streamer is truly offline, grace period will confirm it through multiple checks
                 self.state.streamer_state = StreamerState::NotLive;
                 self.state.schedule_next_check(&self.config, error_count);
+            }
+            DownloadEndReason::CircuitBreakerBlocked {
+                reason,
+                retry_after_secs,
+                ..
+            } => {
+                // Circuit breaker blocked the download - this is a temporal error.
+                // Set state to TemporalDisabled for visibility (user can see something is wrong)
+                // and schedule check after cooldown.
+                info!(
+                    "StreamerActor {} download blocked by circuit breaker: {}, retry in {}s",
+                    self.id, reason, retry_after_secs
+                );
+
+                // Persist to DB so UI shows correct state
+                let metadata = self
+                    .get_metadata()
+                    .ok_or_else(|| ActorError::fatal("Streamer removed from metadata store"))?;
+                if let Err(e) = self
+                    .status_checker
+                    .set_circuit_breaker_blocked(&metadata, retry_after_secs)
+                    .await
+                {
+                    warn!(
+                        "StreamerActor {} failed to persist circuit breaker blocked state: {}",
+                        self.id, e
+                    );
+                }
+
+                self.state.streamer_state = StreamerState::TemporalDisabled;
+                // Schedule check after the circuit breaker cooldown period
+                // The next check will re-detect Live and try to start download again
+                self.state.next_check = Some(
+                    std::time::Instant::now() + std::time::Duration::from_secs(retry_after_secs),
+                );
             }
         }
 

@@ -5,17 +5,19 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::time::Duration;
 use tokio::net::TcpStream;
-use tokio::sync::{Mutex, RwLock, mpsc};
+use tokio::sync::{Mutex, OwnedSemaphorePermit, RwLock, Semaphore, mpsc};
 use tokio::task::JoinHandle;
 use tokio_tungstenite::{
     MaybeTlsStream, WebSocketStream, connect_async, tungstenite::protocol::Message,
 };
-use tracing::{debug, error, info, warn};
+use tracing::{debug, error, info, trace, warn};
 
 use crate::danmaku::ConnectionConfig;
 use crate::danmaku::error::{DanmakuError, Result};
 use crate::danmaku::message::DanmuMessage;
 use crate::danmaku::provider::{DanmuConnection, DanmuProvider};
+
+const MAX_ACTIVE_CONNECTIONS: usize = 1024;
 
 /// Protocol definitions for a specific platform.
 #[async_trait]
@@ -70,22 +72,42 @@ pub trait DanmuProtocol: Send + Sync + 'static {
 }
 
 /// Internal state for a WebSocket connection
-#[allow(dead_code)]
 struct WsConnectionState {
     /// Connection ID
+    #[allow(dead_code)]
     id: String,
     /// Room ID
+    #[allow(dead_code)]
     room_id: String,
     /// Connected status
+    #[allow(dead_code)]
     is_connected: Arc<AtomicBool>,
     /// Reconnect count
+    #[allow(dead_code)]
     reconnect_count: Arc<AtomicU32>,
     /// Message receiver
     message_rx: mpsc::Receiver<DanmuMessage>,
     /// Task handles
-    _tasks: Vec<JoinHandle<()>>,
+    tasks: Vec<JoinHandle<()>>,
     /// Shutdown sender
     shutdown_tx: Option<mpsc::Sender<()>>,
+    /// Limits total active connections to prevent unbounded growth if callers forget to disconnect.
+    #[allow(dead_code)]
+    connection_permit: OwnedSemaphorePermit,
+}
+
+impl WsConnectionState {
+    fn abort_tasks(&mut self) {
+        for task in self.tasks.drain(..) {
+            task.abort();
+        }
+    }
+}
+
+impl Drop for WsConnectionState {
+    fn drop(&mut self) {
+        self.abort_tasks();
+    }
 }
 
 /// A generic WebSocket-based Danmu Provider.
@@ -96,6 +118,7 @@ pub struct WebSocketDanmuProvider<P> {
     config: WebSocketProviderConfig,
     /// Active connections
     connections: RwLock<HashMap<String, Arc<Mutex<WsConnectionState>>>>,
+    connection_semaphore: Arc<Semaphore>,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -121,6 +144,7 @@ impl<P: DanmuProtocol + Clone> WebSocketDanmuProvider<P> {
             protocol,
             config: config.unwrap_or_default(),
             connections: RwLock::new(HashMap::new()),
+            connection_semaphore: Arc::new(Semaphore::new(MAX_ACTIVE_CONNECTIONS)),
         }
     }
 
@@ -300,7 +324,7 @@ impl<P: DanmuProtocol + Clone> WebSocketDanmuProvider<P> {
                                         error!("Failed to send heartbeat: {}", e);
                                         break; // Reconnect
                                     }
-                                    debug!("Sent heartbeat for {}", room_id_owned);
+                                    trace!("Sent heartbeat for {}", room_id_owned);
                                 }
                             }
 
@@ -372,6 +396,17 @@ impl<P: DanmuProtocol + Clone> DanmuProvider for WebSocketDanmuProvider<P> {
     }
 
     async fn connect(&self, room_id: &str, config: ConnectionConfig) -> Result<DanmuConnection> {
+        let connection_permit = self
+            .connection_semaphore
+            .clone()
+            .try_acquire_owned()
+            .map_err(|_| {
+                DanmakuError::connection(format!(
+                    "Too many active connections (max {})",
+                    MAX_ACTIVE_CONNECTIONS
+                ))
+            })?;
+
         let connection_id = format!("{}-{}-{}", self.platform(), room_id, uuid::Uuid::new_v4());
 
         let (is_connected, reconnect_count, message_rx, shutdown_tx, tasks) =
@@ -383,8 +418,9 @@ impl<P: DanmuProtocol + Clone> DanmuProvider for WebSocketDanmuProvider<P> {
             is_connected,
             reconnect_count,
             message_rx,
-            _tasks: tasks,
+            tasks,
             shutdown_tx: Some(shutdown_tx),
+            connection_permit,
         };
 
         self.connections
@@ -404,26 +440,33 @@ impl<P: DanmuProtocol + Clone> DanmuProvider for WebSocketDanmuProvider<P> {
         if let Some(state_arc) = self.connections.write().await.remove(&connection.id) {
             let mut state = state_arc.lock().await;
             if let Some(tx) = state.shutdown_tx.take() {
-                let _ = tx.send(()).await;
+                let _ = tx.try_send(());
             }
+            state.abort_tasks();
         }
         connection.set_disconnected();
         Ok(())
     }
 
     async fn receive(&self, connection: &DanmuConnection) -> Result<Option<DanmuMessage>> {
-        let map = self.connections.read().await;
-        if let Some(state_arc) = map.get(&connection.id) {
-            let mut state = state_arc.lock().await;
+        let state_arc = {
+            let map = self.connections.read().await;
+            map.get(&connection.id).cloned()
+        };
 
-            // Simple check
-            match tokio::time::timeout(Duration::from_millis(100), state.message_rx.recv()).await {
-                Ok(Some(msg)) => Ok(Some(msg)),
-                Ok(None) => Err(DanmakuError::connection("Channel closed")),
-                Err(_) => Ok(None), // Timeout
+        let Some(state_arc) = state_arc else {
+            return Err(DanmakuError::connection("Connection not found"));
+        };
+
+        let mut state = state_arc.lock().await;
+        match tokio::time::timeout(Duration::from_millis(100), state.message_rx.recv()).await {
+            Ok(Some(msg)) => Ok(Some(msg)),
+            Ok(None) => {
+                drop(state);
+                let _ = self.connections.write().await.remove(&connection.id);
+                Err(DanmakuError::connection("Channel closed"))
             }
-        } else {
-            Err(DanmakuError::connection("Connection not found"))
+            Err(_) => Ok(None), // Timeout
         }
     }
 

@@ -20,12 +20,12 @@
 
 use std::{
     fs,
-    io::{self, BufReader, Seek, Write},
+    io::{self, BufReader, Read, Seek, Write},
     path::Path,
 };
 
 use amf0::Amf0Value;
-use flv::tag::{FlvTagData, FlvTagType::ScriptData};
+use flv::tag::FlvTagType;
 use tracing::{debug, info, trace, warn};
 
 use crate::{
@@ -60,66 +60,58 @@ pub fn inject_stats_into_script_data(
     // Create a backup of the file
     // create_backup(file_path)?;
 
-    // Parse the script data section and inject stats
+    // Find the first onMetaData script tag (not all FLVs place it immediately after the header).
     let mut reader = BufReader::new(fs::File::open(file_path)?);
+    reader.seek(io::SeekFrom::Start(13))?; // 9-byte header + 4-byte PreviousTagSize0
 
-    // Seek to the script data section (9 bytes header + 4 bytes PreviousTagSize)
-    reader.seek(io::SeekFrom::Start(13))?;
+    let (start_pos, next_tag_pos, script_timestamp, script_data, original_payload_data) = loop {
+        let tag_start_pos = reader.stream_position()?;
 
-    let start_pos = reader.stream_position()?;
+        // Use the non-owned parser to avoid fully demuxing audio/video payloads while scanning.
+        // Some upstream streams can have non-standard codec headers; we only need raw bytes until
+        // we hit the script tag.
+        let parsed = match flv::parser::FlvParserRef::parse_tag(&mut reader)? {
+            Some(v) => v,
+            None => {
+                warn!("No onMetaData script tag found in file, skipping stats injection.");
+                return Ok(());
+            }
+        };
 
-    debug!(
-        "Seeking to script data section. Start position: {}",
-        start_pos
-    );
+        let (tag, tag_type) = parsed;
 
-    // Read the script data tag
-    let script_tag = match flv::parser::FlvParser::parse_tag(&mut reader)? {
-        Some((tag, _)) => tag,
-        None => {
-            warn!("No script tag found in file, skipping stats injection.");
+        // Skip PreviousTagSize for the tag we just parsed (4 bytes).
+        let mut prev_size_buf = [0u8; 4];
+        if let Err(e) = reader.read_exact(&mut prev_size_buf) {
+            warn!(error = ?e, "Failed to read PreviousTagSize while scanning tags; skipping stats injection.");
             return Ok(());
         }
+        let after_prev_size_pos = reader.stream_position()?;
+
+        if tag_type != FlvTagType::ScriptData {
+            continue;
+        }
+
+        let mut cursor = std::io::Cursor::new(tag.data.clone());
+        let data = flv::script::ScriptData::demux(&mut cursor)?;
+        trace!("Script data: {:?}", data);
+
+        if data.name != crate::AMF0_ON_METADATA {
+            continue;
+        }
+
+        let original_payload_data = tag.data.len() as u32;
+        debug!("Found onMetaData at position: {tag_start_pos}");
+        debug!("Original script data payload size: {original_payload_data}");
+
+        break (
+            tag_start_pos,
+            after_prev_size_pos,
+            tag.timestamp_ms,
+            data,
+            original_payload_data,
+        );
     };
-
-    let script_data = match script_tag.data {
-        FlvTagData::ScriptData(data) => data,
-        FlvTagData::Audio(_) => {
-            return Err(ScriptModifierError::ScriptData(
-                "Expected script data tag but found audio data tag instead",
-            ));
-        }
-        FlvTagData::Video(_) => {
-            return Err(ScriptModifierError::ScriptData(
-                "Expected script data tag but found video data tag instead",
-            ));
-        }
-        FlvTagData::Unknown {
-            tag_type: _,
-            data: _,
-        } => {
-            return Err(ScriptModifierError::ScriptData(
-                "Expected script data tag but found unknown tag type instead",
-            ));
-        }
-    };
-
-    trace!("Script data: {:?}", script_data);
-
-    // Get the size of the payload of the script data tag
-    // After reading the tag entirely, we are at the end of the payload
-    // The script data size is the size of the tag minus the header (11 bytes)
-    let end_script_pos = reader.stream_position()?;
-
-    let original_payload_data = (end_script_pos - start_pos - 11) as u32;
-    debug!("Original script data payload size: {original_payload_data}");
-    debug!("End of original script data position: {end_script_pos}");
-
-    if script_data.name != crate::AMF0_ON_METADATA {
-        return Err(ScriptModifierError::ScriptData(
-            "First script tag is not onMetaData",
-        ));
-    }
 
     let amf_data = script_data.data;
     if amf_data.is_empty() {
@@ -140,7 +132,7 @@ pub fn inject_stats_into_script_data(
             let (times, filepositions): (Vec<f64>, Vec<u64>) = video_stats
                 .keyframes
                 .iter()
-                .map(|k| (k.timestamp_s as f64, k.file_position))
+                .map(|k| (k.timestamp_s, k.file_position))
                 .unzip();
             builder = builder.with_final_keyframes(times, filepositions);
         }
@@ -167,9 +159,6 @@ pub fn inject_stats_into_script_data(
                 "Script data size changed (original: {original_payload_data}, new: {new_payload_size})."
             );
 
-            // This position is where the next tag starts after the script data tag
-            let next_tag_pos = end_script_pos + 4; // +4 for PreviousTagSize
-
             // Get the file size
             let total_file_size = fs::metadata(file_path)?.len();
 
@@ -181,10 +170,22 @@ pub fn inject_stats_into_script_data(
 
             if size_diff > 0 {
                 // New data is larger - need to shift content forward
+                // Ensure the file is extended up-front so read/write operations during shifting
+                // never observe a transient EOF while moving the tail.
+                file.set_len(total_file_size + size_diff as u64)?;
+                debug!(
+                    "Shifting tail forward: start_pos={start_pos}, next_tag_pos={next_tag_pos}, total_file_size={total_file_size}, size_diff={size_diff}"
+                );
                 shift_content_forward(&mut file, next_tag_pos, total_file_size, size_diff)?;
 
                 // Write the new script tag header and data
-                write_flv_tag(&mut file, start_pos, ScriptData, &buffer, 0)?;
+                write_flv_tag(
+                    &mut file,
+                    start_pos,
+                    FlvTagType::ScriptData,
+                    &buffer,
+                    script_timestamp,
+                )?;
 
                 info!(
                     "Successfully rewrote file with expanded script data. New file size: {}",
@@ -194,7 +195,13 @@ pub fn inject_stats_into_script_data(
                 // New data is smaller - need to shift content backward
 
                 // Write the new script tag header and data
-                write_flv_tag(&mut file, start_pos, ScriptData, &buffer, 0)?;
+                write_flv_tag(
+                    &mut file,
+                    start_pos,
+                    FlvTagType::ScriptData,
+                    &buffer,
+                    script_timestamp,
+                )?;
 
                 // Calculate new position for the next tag
                 let new_next_tag_pos = start_pos
@@ -233,6 +240,111 @@ mod tests {
     use crate::{FlvAnalyzer, analyzer::Keyframe, operators::MIN_INTERVAL_BETWEEN_KEYFRAMES_MS};
 
     use super::*;
+
+    #[test]
+    fn inject_stats_finds_onmetadata_not_first_tag() {
+        use pipeline_common::init_test_tracing;
+        init_test_tracing!();
+        use crate::analyzer::VideoStats;
+        use crate::test_utils;
+        use flv::{FlvData, FlvHeader, FlvWriter, tag::FlvTagType as RawTagType};
+        use std::io::BufWriter;
+        use std::time::{SystemTime, UNIX_EPOCH};
+
+        let mut path = std::env::temp_dir();
+        let unique = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        path.push(format!("flv_fix_script_modifier_{unique}.flv"));
+
+        // Build a tiny FLV where the first tag after the header is NOT onMetaData.
+        {
+            let file = File::create(&path).unwrap();
+            let mut writer = FlvWriter::new(BufWriter::new(file)).unwrap();
+            writer.write_header(&FlvHeader::new(true, true)).unwrap();
+
+            // First tag: video sequence header
+            if let FlvData::Tag(tag) = test_utils::create_video_sequence_header(0, 1) {
+                writer.write_tag_f(&tag).unwrap();
+            } else {
+                panic!("Expected video sequence header tag");
+            }
+
+            // Second tag: onMetaData script tag
+            if let FlvData::Tag(tag) = test_utils::create_script_tag(0, false) {
+                writer.write_tag_f(&tag).unwrap();
+            } else {
+                panic!("Expected script tag");
+            }
+
+            // A content tag to ensure there's data after the script tag (exercise shifting).
+            if let FlvData::Tag(tag) = test_utils::create_video_tag(100, true) {
+                writer.write_tag_f(&tag).unwrap();
+            } else {
+                panic!("Expected video tag");
+            }
+
+            writer.close().unwrap();
+        }
+
+        // Minimal stats payload to inject.
+        let file_size = std::fs::metadata(&path).unwrap().len();
+        let stats = FlvStats {
+            file_size,
+            duration: 1,
+            has_video: true,
+            last_timestamp: 100,
+            video_stats: Some(VideoStats {
+                first_video_timestamp: Some(0),
+                last_video_timestamp: 100,
+                keyframes: vec![Keyframe {
+                    timestamp_s: 0.1,
+                    file_position: 13,
+                }],
+                ..Default::default()
+            }),
+            ..Default::default()
+        };
+
+        inject_stats_into_script_data(&path, &stats, false).unwrap();
+
+        // Re-parse file and validate that onMetaData exists and duration was updated.
+        let file = File::open(&path).unwrap();
+        let mut reader = std::io::BufReader::new(file);
+        let _header = FlvParserRef::parse_header(&mut reader).unwrap();
+
+        let mut found = None;
+        FlvParserRef::parse_tags(
+            &mut reader,
+            |tag, tag_type, _position| {
+                if tag_type == RawTagType::ScriptData && found.is_none() {
+                    found = Some(tag.clone());
+                }
+            },
+            9,
+        )
+        .unwrap();
+
+        let script_tag = found.expect("Expected onMetaData script tag");
+        let mut cursor = Cursor::new(script_tag.data.clone());
+        let script = ScriptData::demux(&mut cursor).unwrap();
+        assert_eq!(script.name, crate::AMF0_ON_METADATA);
+
+        let Amf0Value::Object(props) = &script.data[0] else {
+            panic!("Expected AMF object for onMetaData");
+        };
+
+        let duration = props
+            .iter()
+            .find(|(k, _)| k.as_ref() == "duration")
+            .map(|(_, v)| v)
+            .expect("Expected duration field");
+
+        assert_eq!(*duration, Amf0Value::Number(stats.duration as f64));
+
+        std::fs::remove_file(&path).ok();
+    }
 
     #[tokio::test]
     #[ignore]
@@ -294,7 +406,7 @@ mod tests {
                     );
                     if add_keyframe {
                         let keyframe = Keyframe {
-                            timestamp_s: timestamp as f32 / 1000.0,
+                            timestamp_s: timestamp as f64 / 1000.0,
                             file_position: position,
                         };
                         keyframes.push(keyframe);

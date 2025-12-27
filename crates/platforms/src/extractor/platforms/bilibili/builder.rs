@@ -441,7 +441,7 @@ mod tests {
             .with_max_level(Level::DEBUG)
             .init();
         let bilibili = Bilibili::new(
-            "https://live.bilibili.com/6".to_string(),
+            "https://live.bilibili.com/27708284".to_string(),
             default_client(),
             None,
             None,

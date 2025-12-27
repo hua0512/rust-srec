@@ -8,7 +8,8 @@
  * refresh token, so we must ensure only ONE refresh attempt happens at a time globally.
  */
 
-import type { SessionData } from '../utils/session';
+import type { ClientSessionData, SessionData } from '../utils/session';
+import { sanitizeClientSession, isValidSession } from '../utils/session';
 import { BASE_URL } from '../utils/env';
 
 type RefreshOutcome = {
@@ -47,27 +48,22 @@ async function applyOutcomeToSession({
   outcome,
 }: {
   session: any;
-  currentSessionData: Partial<SessionData>;
+  currentSessionData: SessionData;
   oldRefreshToken: string;
   outcome: RefreshOutcome;
 }) {
-  const userData: Partial<SessionData> = {
-    ...currentSessionData,
+  const userData: SessionData = {
+    username: currentSessionData.username,
     token: {
       access_token: outcome.accessToken,
       refresh_token: outcome.refreshToken,
       expires_in: outcome.accessExpiry,
       refresh_expires_in: outcome.refreshExpiry,
     },
+    roles: outcome.roles ?? currentSessionData.roles,
+    mustChangePassword:
+      outcome.mustChangePassword ?? currentSessionData.mustChangePassword,
   };
-
-  if (outcome.roles !== undefined) {
-    userData.roles = outcome.roles;
-  }
-
-  if (outcome.mustChangePassword !== undefined) {
-    userData.mustChangePassword = outcome.mustChangePassword;
-  }
 
   await session.update(userData);
 
@@ -93,6 +89,10 @@ export async function refreshAuthTokenGlobal(): Promise<string | null> {
   const { useAppSession } = await import('../utils/session');
   const session = await useAppSession();
   const currentData = session.data;
+  if (!isValidSession(currentData)) {
+    await session.clear();
+    return null;
+  }
   const currentRefreshToken = currentData.token?.refresh_token;
 
   if (!currentRefreshToken) {
@@ -225,9 +225,9 @@ async function performRefresh({
  * Check if a valid access token exists and is not expired.
  * If expired, attempt to refresh.
  *
- * @returns SessionData if authenticated, null if not authenticated
+ * @returns ClientSessionData if authenticated, null if not authenticated
  */
-export async function ensureValidToken(): Promise<SessionData | null> {
+export async function ensureValidToken(): Promise<ClientSessionData | null> {
   const { useAppSession } = await import('../utils/session');
   const session = await useAppSession();
   const token = session.data.token;
@@ -266,27 +266,17 @@ export async function ensureValidToken(): Promise<SessionData | null> {
     const updatedData = updatedSession.data;
 
     // Type guard: ensure we have all required fields
-    if (!updatedData.username || !updatedData.token || !updatedData.roles) {
+    if (!isValidSession(updatedData)) {
       return null;
     }
 
-    return {
-      username: updatedData.username,
-      token: updatedData.token,
-      roles: updatedData.roles,
-      mustChangePassword: updatedData.mustChangePassword ?? false,
-    };
+    return sanitizeClientSession(updatedData);
   }
 
   // Type guard: ensure we have all required fields
-  if (!session.data.roles) {
+  if (!isValidSession(session.data)) {
     return null;
   }
 
-  return {
-    username: username,
-    token: token,
-    roles: session.data.roles,
-    mustChangePassword: session.data.mustChangePassword ?? false,
-  };
+  return sanitizeClientSession(session.data);
 }

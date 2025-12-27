@@ -15,7 +15,11 @@ use crate::Result;
 pub struct ExecuteConfig {
     /// The command to execute. Supports variable substitution:
     /// - `{input}` - first input file path
+    /// - `{input0}`, `{input1}`, ... - Nth input file path
+    /// - `{inputs_json}` - JSON array of all inputs
     /// - `{output}` - first output file path
+    /// - `{output0}`, `{output1}`, ... - Nth output file path
+    /// - `{outputs_json}` - JSON array of all outputs
     /// - `{streamer_id}` - streamer ID
     /// - `{session_id}` - session ID
     pub command: String,
@@ -58,11 +62,26 @@ impl ExecuteCommandProcessor {
         let input_path = input.inputs.first().map(|s| s.as_str()).unwrap_or("");
         let output_path = input.outputs.first().map(|s| s.as_str()).unwrap_or("");
 
-        command
+        let inputs_json = serde_json::to_string(&input.inputs).unwrap_or_else(|_| "[]".to_string());
+        let outputs_json =
+            serde_json::to_string(&input.outputs).unwrap_or_else(|_| "[]".to_string());
+
+        let mut expanded = command
             .replace("{input}", input_path)
             .replace("{output}", output_path)
+            .replace("{inputs_json}", &inputs_json)
+            .replace("{outputs_json}", &outputs_json)
             .replace("{streamer_id}", &input.streamer_id)
-            .replace("{session_id}", &input.session_id)
+            .replace("{session_id}", &input.session_id);
+
+        for (i, v) in input.inputs.iter().enumerate() {
+            expanded = expanded.replace(&format!("{{input{i}}}"), v);
+        }
+        for (i, v) in input.outputs.iter().enumerate() {
+            expanded = expanded.replace(&format!("{{output{i}}}"), v);
+        }
+
+        expanded
     }
 
     /// Scan a directory and return all file paths.
@@ -124,6 +143,12 @@ impl Processor for ExecuteCommandProcessor {
 
     fn name(&self) -> &'static str {
         "ExecuteCommandProcessor"
+    }
+
+    fn supports_batch_input(&self) -> bool {
+        // Execute is an arbitrary command runner and can consume many inputs in a single job.
+        // This is important for session/paired pipelines where inputs are provided as a list.
+        true
     }
 
     async fn process(
@@ -340,6 +365,7 @@ mod tests {
             config: None,
             streamer_id: "streamer-1".to_string(),
             session_id: "session-1".to_string(),
+            ..Default::default()
         };
 
         let command = "echo {input} {output} {streamer_id}";
@@ -373,6 +399,7 @@ mod tests {
             config: Some(config.to_string()),
             streamer_id: "streamer-1".to_string(),
             session_id: "session-1".to_string(),
+            ..Default::default()
         };
 
         let result = processor.process(&input, &ctx).await.unwrap();
@@ -397,6 +424,7 @@ mod tests {
             config: Some(config.to_string()),
             streamer_id: "streamer-1".to_string(),
             session_id: "session-1".to_string(),
+            ..Default::default()
         };
 
         let result = processor.process(&input, &ctx).await.unwrap();
@@ -515,6 +543,7 @@ mod tests {
             config: Some(config.to_string()),
             streamer_id: "test".to_string(),
             session_id: "test".to_string(),
+            ..Default::default()
         };
 
         // Simulate: create a file after taking snapshot but before checking
@@ -539,12 +568,36 @@ mod tests {
             config: Some("echo hello world".to_string()),
             streamer_id: "test".to_string(),
             session_id: "test".to_string(),
+            ..Default::default()
         };
 
         let result = processor.process(&input, &ctx).await.unwrap();
 
         // Should work and pass through inputs
         assert_eq!(result.outputs, vec!["/input.mp4".to_string()]);
+    }
+
+    #[test]
+    fn test_substitute_variables_multiple_inputs() {
+        let input = ProcessorInput {
+            inputs: vec!["/in0.mp4".to_string(), "/in1.json".to_string()],
+            outputs: vec!["/out0.mp4".to_string(), "/out1.json".to_string()],
+            streamer_id: "s".to_string(),
+            session_id: "sess".to_string(),
+            ..Default::default()
+        };
+
+        let cmd = "echo {input} {input0} {input1} {output} {output1} {inputs_json} {outputs_json} {streamer_id} {session_id}";
+        let out = ExecuteCommandProcessor::substitute_variables(cmd, &input);
+
+        assert!(out.contains("/in0.mp4"));
+        assert!(out.contains("/in1.json"));
+        assert!(out.contains("/out0.mp4"));
+        assert!(out.contains("/out1.json"));
+        assert!(out.contains("[\"/in0.mp4\",\"/in1.json\"]"));
+        assert!(out.contains("[\"/out0.mp4\",\"/out1.json\"]"));
+        assert!(out.contains(" s "));
+        assert!(out.contains(" sess"));
     }
 
     /// Test missing config returns an error.
@@ -559,6 +612,7 @@ mod tests {
             config: None,
             streamer_id: "test".to_string(),
             session_id: "test".to_string(),
+            ..Default::default()
         };
 
         let result = processor.process(&input, &ctx).await;

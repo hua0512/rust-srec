@@ -6,16 +6,42 @@
 //! - Implementing fail-fast behavior on job failure
 //! - Tracking DAG execution progress
 
+use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 use tracing::{debug, error, info, warn};
 
 use crate::database::models::{
-    DagExecutionDbModel, DagPipelineDefinition, DagStepExecutionDbModel, DagStepStatus, JobDbModel,
-    PipelineStep, ReadyStep,
+    DagExecutionDbModel, DagExecutionStatus, DagPipelineDefinition, DagStepExecutionDbModel,
+    DagStepStatus, JobDbModel, PipelineStep, ReadyStep,
 };
 use crate::database::repositories::{DagRepository, JobRepository};
 use crate::pipeline::{Job, JobQueue, JobStatus};
 use crate::{Error, Result};
+
+type BeforeRootJobsHook = Box<dyn FnOnce(&str) + Send>;
+
+/// Notification emitted when a DAG reaches a terminal state.
+#[derive(Debug, Clone)]
+pub struct DagCompletionInfo {
+    pub dag_id: String,
+    pub streamer_id: Option<String>,
+    pub session_id: Option<String>,
+    pub succeeded: bool,
+    /// Outputs from leaf steps (best-effort; may be empty for delete/move DAGs).
+    pub leaf_outputs: Vec<String>,
+}
+
+#[derive(Debug, Clone)]
+pub struct DagJobCompletedUpdate {
+    pub new_job_ids: Vec<String>,
+    pub completion: Option<DagCompletionInfo>,
+}
+
+#[derive(Debug, Clone)]
+pub struct DagJobFailedUpdate {
+    pub cancelled_count: u64,
+    pub completion: Option<DagCompletionInfo>,
+}
 
 /// Result of creating a DAG pipeline.
 #[derive(Debug, Clone)]
@@ -49,6 +75,60 @@ impl DagScheduler {
         }
     }
 
+    fn output_dedup_key(output: &str) -> String {
+        if cfg!(windows) {
+            output.to_lowercase()
+        } else {
+            output.to_string()
+        }
+    }
+
+    fn collect_leaf_outputs_from_step_executions(
+        def: &DagPipelineDefinition,
+        step_execs: &[DagStepExecutionDbModel],
+    ) -> Vec<String> {
+        // `get_steps_by_dag` does not guarantee ordering, but output order matters for
+        // downstream uses (e.g. concat). Collect leaf outputs in the leaf-step order
+        // defined by the DAG definition and de-duplicate while preserving order.
+        let mut exec_by_step_id: HashMap<&str, &DagStepExecutionDbModel> =
+            HashMap::with_capacity(step_execs.len());
+        for exec in step_execs {
+            exec_by_step_id.insert(exec.step_id.as_str(), exec);
+        }
+
+        let mut seen = HashSet::<String>::new();
+        let mut outputs = Vec::new();
+
+        for leaf in def.leaf_steps() {
+            let Some(exec) = exec_by_step_id.get(leaf.id.as_str()) else {
+                continue;
+            };
+            for output in exec.get_outputs() {
+                if seen.insert(Self::output_dedup_key(&output)) {
+                    outputs.push(output);
+                }
+            }
+        }
+
+        outputs
+    }
+
+    async fn collect_leaf_outputs(&self, dag: &DagExecutionDbModel) -> Result<Vec<String>> {
+        let Some(def) = dag.get_dag_definition() else {
+            return Ok(Vec::new());
+        };
+
+        if def.leaf_steps().is_empty() {
+            return Ok(Vec::new());
+        }
+
+        let step_execs = self.dag_repository.get_steps_by_dag(&dag.id).await?;
+        Ok(Self::collect_leaf_outputs_from_step_executions(
+            &def,
+            &step_execs,
+        ))
+    }
+
     /// Create a new DAG pipeline execution.
     ///
     /// This creates:
@@ -61,6 +141,33 @@ impl DagScheduler {
         input_paths: &[String],
         streamer_id: Option<String>,
         session_id: Option<String>,
+        streamer_name: Option<String>,
+        session_title: Option<String>,
+    ) -> Result<DagCreationResult> {
+        self.create_dag_pipeline_with_hook(
+            dag_definition,
+            input_paths,
+            streamer_id,
+            session_id,
+            streamer_name,
+            session_title,
+            None,
+        )
+        .await
+    }
+
+    /// Create a new DAG pipeline execution with an optional hook called after step execution
+    /// records are created but before any root jobs are enqueued.
+    #[allow(clippy::too_many_arguments)]
+    pub async fn create_dag_pipeline_with_hook(
+        &self,
+        dag_definition: DagPipelineDefinition,
+        input_paths: &[String],
+        streamer_id: Option<String>,
+        session_id: Option<String>,
+        streamer_name: Option<String>,
+        session_title: Option<String>,
+        before_root_jobs: Option<BeforeRootJobsHook>,
     ) -> Result<DagCreationResult> {
         // 1. Validate DAG structure
         dag_definition.validate().map_err(Error::Validation)?;
@@ -89,6 +196,10 @@ impl DagScheduler {
 
         self.dag_repository.create_steps(&step_executions).await?;
 
+        if let Some(hook) = before_root_jobs {
+            hook(&dag_id);
+        }
+
         // 4. Create jobs for root steps
         let root_steps = dag_definition.root_steps();
         let mut root_job_ids = Vec::with_capacity(root_steps.len());
@@ -107,6 +218,8 @@ impl DagScheduler {
                     input_paths.to_vec(),
                     streamer_id.clone(),
                     session_id.clone(),
+                    streamer_name.clone(),
+                    session_title.clone(),
                 )
                 .await?;
 
@@ -118,6 +231,47 @@ impl DagScheduler {
             root_job_ids,
             total_steps: dag_definition.steps.len(),
         })
+    }
+
+    async fn fail_dag_internal(
+        &self,
+        dag_id: &str,
+        error: &str,
+    ) -> Result<Option<DagCompletionInfo>> {
+        let cancelled = self
+            .dag_repository
+            .fail_dag_and_cancel_steps(dag_id, error)
+            .await?;
+        for job_id in &cancelled {
+            let _ = self.job_queue.cancel_job(job_id).await;
+        }
+
+        let dag = self.dag_repository.get_dag(dag_id).await?;
+        let status = dag.get_status();
+        if !status.map(|s| s.is_terminal()).unwrap_or(false) {
+            return Ok(None);
+        }
+
+        let leaf_outputs = self.collect_leaf_outputs(&dag).await.unwrap_or_default();
+        let succeeded = status == Some(DagExecutionStatus::Completed);
+
+        Ok(Some(DagCompletionInfo {
+            dag_id: dag.id.clone(),
+            streamer_id: dag.streamer_id.clone(),
+            session_id: dag.session_id.clone(),
+            succeeded,
+            leaf_outputs,
+        }))
+    }
+
+    /// Fail the DAG execution for a given step execution ID (used when the scheduler can't advance).
+    pub async fn fail_dag_for_step(
+        &self,
+        dag_step_execution_id: &str,
+        error: &str,
+    ) -> Result<Option<DagCompletionInfo>> {
+        let step = self.dag_repository.get_step(dag_step_execution_id).await?;
+        self.fail_dag_internal(&step.dag_id, error).await
     }
 
     /// Handle job completion for a DAG step.
@@ -132,8 +286,13 @@ impl DagScheduler {
     pub async fn on_job_completed(
         &self,
         dag_step_execution_id: &str,
-        outputs: Vec<String>,
-    ) -> Result<Vec<String>> {
+        outputs: &[String],
+        streamer_name: Option<&str>,
+        session_title: Option<&str>,
+    ) -> Result<DagJobCompletedUpdate> {
+        let streamer_name = streamer_name.map(ToString::to_string);
+        let session_title = session_title.map(ToString::to_string);
+
         // Get step info for logging
         let step = self.dag_repository.get_step(dag_step_execution_id).await?;
 
@@ -147,80 +306,109 @@ impl DagScheduler {
         // Atomically complete step and find ready dependents
         let ready_steps = self
             .dag_repository
-            .complete_step_and_check_dependents(dag_step_execution_id, &outputs)
+            .complete_step_and_check_dependents(dag_step_execution_id, outputs)
             .await?;
 
-        if ready_steps.is_empty() {
+        let mut new_job_ids = Vec::new();
+
+        if !ready_steps.is_empty() {
+            // Get DAG definition to resolve step configs
+            let dag = self.dag_repository.get_dag(&step.dag_id).await?;
+            let dag_def = dag
+                .get_dag_definition()
+                .ok_or_else(|| Error::Validation("Failed to parse DAG definition".into()))?;
+
+            new_job_ids = Vec::with_capacity(ready_steps.len());
+
+            // Create jobs for ready steps
+            for ReadyStep {
+                step: ready_step,
+                merged_inputs,
+            } in ready_steps
+            {
+                let dag_step = dag_def.get_step(&ready_step.step_id).ok_or_else(|| {
+                    Error::Validation(format!(
+                        "Step '{}' not found in DAG definition",
+                        ready_step.step_id
+                    ))
+                })?;
+
+                info!(
+                    dag_id = %step.dag_id,
+                    step_id = %ready_step.step_id,
+                    inputs_count = %merged_inputs.len(),
+                    "Creating job for ready step (fan-in merge)"
+                );
+
+                let job_id = match self
+                    .create_step_job(
+                        &step.dag_id,
+                        &ready_step.id,
+                        dag_step,
+                        merged_inputs,
+                        dag.streamer_id.clone(),
+                        dag.session_id.clone(),
+                        streamer_name.clone(),
+                        session_title.clone(),
+                    )
+                    .await
+                {
+                    Ok(job_id) => job_id,
+                    Err(e) => {
+                        let err_msg = format!(
+                            "Failed to create downstream DAG job for step {}: {}",
+                            ready_step.step_id, e
+                        );
+                        warn!(
+                            dag_id = %step.dag_id,
+                            error = %err_msg,
+                            "Failing DAG due to scheduler error"
+                        );
+                        let completion = self.fail_dag_internal(&step.dag_id, &err_msg).await?;
+                        return Ok(DagJobCompletedUpdate {
+                            new_job_ids,
+                            completion,
+                        });
+                    }
+                };
+
+                new_job_ids.push(job_id);
+            }
+        } else {
             debug!(
                 dag_id = %step.dag_id,
                 step_id = %step.step_id,
                 "No dependent steps are ready yet"
             );
-            return Ok(Vec::new());
         }
 
-        // Get DAG definition to resolve step configs
-        let dag = self.dag_repository.get_dag(&step.dag_id).await?;
-        let dag_def = dag
-            .get_dag_definition()
-            .ok_or_else(|| Error::Validation("Failed to parse DAG definition".into()))?;
-
-        // Create jobs for ready steps
-        let mut new_job_ids = Vec::with_capacity(ready_steps.len());
-
-        for ReadyStep {
-            step: ready_step,
-            merged_inputs,
-        } in ready_steps
-        {
-            let dag_step = dag_def.get_step(&ready_step.step_id).ok_or_else(|| {
-                Error::Validation(format!(
-                    "Step '{}' not found in DAG definition",
-                    ready_step.step_id
-                ))
-            })?;
-
-            info!(
-                dag_id = %step.dag_id,
-                step_id = %ready_step.step_id,
-                inputs_count = %merged_inputs.len(),
-                "Creating job for ready step (fan-in merge)"
-            );
-
-            let job_id = self
-                .create_step_job(
-                    &step.dag_id,
-                    &ready_step.id,
-                    dag_step,
-                    merged_inputs,
-                    dag.streamer_id.clone(),
-                    dag.session_id.clone(),
-                )
-                .await?;
-
-            new_job_ids.push(job_id);
-        }
-
-        // Check if DAG is complete
+        // Check if DAG reached a terminal state.
         let updated_dag = self.dag_repository.get_dag(&step.dag_id).await?;
-        if updated_dag.is_complete() {
-            if updated_dag.is_failed() {
-                info!(
-                    dag_id = %step.dag_id,
-                    completed = %updated_dag.completed_steps,
-                    failed = %updated_dag.failed_steps,
-                    "DAG execution completed with failures"
-                );
-            } else {
-                info!(
-                    dag_id = %step.dag_id,
-                    completed = %updated_dag.completed_steps,
-                    "DAG execution completed successfully"
-                );
-            }
-        }
+        let completion = if updated_dag
+            .get_status()
+            .map(|s| s.is_terminal())
+            .unwrap_or(false)
+        {
+            let leaf_outputs = self
+                .collect_leaf_outputs(&updated_dag)
+                .await
+                .unwrap_or_default();
+            let succeeded = updated_dag.get_status() == Some(DagExecutionStatus::Completed);
+            Some(DagCompletionInfo {
+                dag_id: updated_dag.id.clone(),
+                streamer_id: updated_dag.streamer_id.clone(),
+                session_id: updated_dag.session_id.clone(),
+                succeeded,
+                leaf_outputs,
+            })
+        } else {
+            None
+        };
 
-        Ok(new_job_ids)
+        Ok(DagJobCompletedUpdate {
+            new_job_ids,
+            completion,
+        })
     }
 
     /// Handle job failure for a DAG step.
@@ -232,7 +420,11 @@ impl DagScheduler {
     /// 4. Marks the DAG as failed
     ///
     /// Returns the count of cancelled items.
-    pub async fn on_job_failed(&self, dag_step_execution_id: &str, error: &str) -> Result<u64> {
+    pub async fn on_job_failed(
+        &self,
+        dag_step_execution_id: &str,
+        error: &str,
+    ) -> Result<DagJobFailedUpdate> {
         // Get step info
         let step = self.dag_repository.get_step(dag_step_execution_id).await?;
 
@@ -282,10 +474,30 @@ impl DagScheduler {
             "DAG failed, cancelled pending work"
         );
 
-        Ok(cancelled_count)
+        let updated_dag = self.dag_repository.get_dag(&step.dag_id).await.ok();
+        let completion = if let Some(dag) = updated_dag
+            && dag.get_status().map(|s| s.is_terminal()).unwrap_or(false)
+        {
+            let leaf_outputs = self.collect_leaf_outputs(&dag).await.unwrap_or_default();
+            Some(DagCompletionInfo {
+                dag_id: dag.id.clone(),
+                streamer_id: dag.streamer_id.clone(),
+                session_id: dag.session_id.clone(),
+                succeeded: false,
+                leaf_outputs,
+            })
+        } else {
+            None
+        };
+
+        Ok(DagJobFailedUpdate {
+            cancelled_count,
+            completion,
+        })
     }
 
     /// Create a job for a DAG step.
+    #[allow(clippy::too_many_arguments)]
     async fn create_step_job(
         &self,
         dag_id: &str,
@@ -294,6 +506,8 @@ impl DagScheduler {
         inputs: Vec<String>,
         streamer_id: Option<String>,
         session_id: Option<String>,
+        streamer_name: Option<String>,
+        session_title: Option<String>,
     ) -> Result<String> {
         // Get processor and config from the step
         let (processor, config) = match &dag_step.step {
@@ -312,15 +526,15 @@ impl DagScheduler {
         };
 
         // Create the job
-        let inputs_json = serde_json::to_string(&inputs).unwrap_or_else(|_| "[]".to_string());
+        let inputs_json = serde_json::to_string(&inputs)?;
 
         let mut job_db = JobDbModel::new_pipeline_step(
             &processor,
             inputs_json,
             "[]".to_string(),
             0, // priority
-            streamer_id,
-            session_id,
+            streamer_id.clone(),
+            session_id.clone(),
         );
         job_db.config = config;
         job_db.dag_step_execution_id = Some(step_execution_id.to_string());
@@ -349,6 +563,9 @@ impl DagScheduler {
             status: JobStatus::Pending,
             streamer_id: job_db.streamer_id.clone().unwrap_or_default(),
             session_id: job_db.session_id.clone().unwrap_or_default(),
+            streamer_name,
+            session_title,
+            platform: None,
             config: Some(job_db.config.clone()),
             created_at: chrono::Utc::now(),
             started_at: None,
@@ -410,19 +627,22 @@ impl DagScheduler {
         Ok(cancelled.len() as u64)
     }
 
-    /// List DAG executions with optional status filter.
+    /// List DAG executions with optional status and session_id filters.
     pub async fn list_dags(
         &self,
         status: Option<&str>,
+        session_id: Option<&str>,
         limit: u32,
         offset: u32,
     ) -> Result<Vec<DagExecutionDbModel>> {
-        self.dag_repository.list_dags(status, limit, offset).await
+        self.dag_repository
+            .list_dags(status, session_id, limit, offset)
+            .await
     }
 
-    /// Count DAG executions with optional status filter.
-    pub async fn count_dags(&self, status: Option<&str>) -> Result<u64> {
-        self.dag_repository.count_dags(status).await
+    /// Count DAG executions with optional status and session_id filters.
+    pub async fn count_dags(&self, status: Option<&str>, session_id: Option<&str>) -> Result<u64> {
+        self.dag_repository.count_dags(status, session_id).await
     }
 
     /// Get statistics for a DAG execution.
@@ -448,6 +668,44 @@ impl DagScheduler {
 
 #[cfg(test)]
 mod tests {
-    // Tests would go here but require mocking the repositories and job queue
-    // which is complex. Integration tests would be more appropriate.
+    use super::*;
+    use crate::database::models::dag::DagStepExecutionDbModel;
+    use crate::database::models::{DagPipelineDefinition, DagStep, PipelineStep};
+
+    #[test]
+    fn test_collect_leaf_outputs_is_deterministic_and_deduped() {
+        // Graph: A -> B, A -> C (leaves are B, C)
+        // Definition order is A, B, C so outputs should be B then C, regardless of DB row order.
+        let def = DagPipelineDefinition::new(
+            "test",
+            vec![
+                DagStep {
+                    id: "A".to_string(),
+                    step: PipelineStep::inline("noop", serde_json::json!({})),
+                    depends_on: vec![],
+                },
+                DagStep {
+                    id: "B".to_string(),
+                    step: PipelineStep::inline("noop", serde_json::json!({})),
+                    depends_on: vec!["A".to_string()],
+                },
+                DagStep {
+                    id: "C".to_string(),
+                    step: PipelineStep::inline("noop", serde_json::json!({})),
+                    depends_on: vec!["A".to_string()],
+                },
+            ],
+        );
+
+        let mut exec_b = DagStepExecutionDbModel::new("dag1", "B", &["A".to_string()]);
+        exec_b.set_outputs(&["x".to_string(), "y".to_string()]);
+        let mut exec_c = DagStepExecutionDbModel::new("dag1", "C", &["A".to_string()]);
+        exec_c.set_outputs(&["y".to_string(), "z".to_string()]);
+
+        // Simulate non-deterministic row order from DB (C then B).
+        let step_execs = vec![exec_c, exec_b];
+
+        let out = DagScheduler::collect_leaf_outputs_from_step_executions(&def, &step_execs);
+        assert_eq!(out, vec!["x".to_string(), "y".to_string(), "z".to_string()]);
+    }
 }

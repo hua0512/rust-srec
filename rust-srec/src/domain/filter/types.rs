@@ -1,7 +1,15 @@
 //! Filter types.
 
 use chrono::{Datelike, NaiveTime, Weekday};
+use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
+
+fn parse_db_filter_config<T: DeserializeOwned>(
+    raw: &str,
+    label: &'static str,
+) -> Result<T, String> {
+    serde_json::from_str(raw).map_err(|e| format!("Failed to parse {label} filter config: {e}"))
+}
 
 /// Filter type enum.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -84,8 +92,7 @@ impl Filter {
         match filter_type {
             DbFilterType::TimeBased => {
                 let config: crate::database::models::filter::TimeBasedFilterConfig =
-                    serde_json::from_str(&model.config)
-                        .map_err(|e| format!("Failed to parse time-based filter config: {}", e))?;
+                    parse_db_filter_config(&model.config, "time-based")?;
                 Ok(Filter::TimeBased(TimeBasedFilter {
                     days_of_week: config.days_of_week,
                     start_time: config.start_time,
@@ -94,8 +101,7 @@ impl Filter {
             }
             DbFilterType::Keyword => {
                 let config: crate::database::models::filter::KeywordFilterConfig =
-                    serde_json::from_str(&model.config)
-                        .map_err(|e| format!("Failed to parse keyword filter config: {}", e))?;
+                    parse_db_filter_config(&model.config, "keyword")?;
                 Ok(Filter::Keyword(KeywordFilter {
                     include: config.include,
                     exclude: config.exclude,
@@ -103,16 +109,14 @@ impl Filter {
             }
             DbFilterType::Category => {
                 let config: crate::database::models::filter::CategoryFilterConfig =
-                    serde_json::from_str(&model.config)
-                        .map_err(|e| format!("Failed to parse category filter config: {}", e))?;
+                    parse_db_filter_config(&model.config, "category")?;
                 Ok(Filter::Category(CategoryFilter {
                     categories: config.categories,
                 }))
             }
             DbFilterType::Cron => {
                 let config: crate::database::models::filter::CronFilterConfig =
-                    serde_json::from_str(&model.config)
-                        .map_err(|e| format!("Failed to parse cron filter config: {}", e))?;
+                    parse_db_filter_config(&model.config, "cron")?;
                 Ok(Filter::Cron(CronFilter {
                     expression: config.expression,
                     timezone: config.timezone,
@@ -120,8 +124,7 @@ impl Filter {
             }
             DbFilterType::Regex => {
                 let config: crate::database::models::filter::RegexFilterConfig =
-                    serde_json::from_str(&model.config)
-                        .map_err(|e| format!("Failed to parse regex filter config: {}", e))?;
+                    parse_db_filter_config(&model.config, "regex")?;
                 Ok(Filter::Regex(RegexFilter {
                     pattern: config.pattern,
                     case_insensitive: config.case_insensitive,

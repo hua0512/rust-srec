@@ -574,7 +574,7 @@ INSERT INTO global_config (
     log_filter_directive
 ) VALUES (
     'global-configuration',
-    './downloads',
+    '/app/output',
     '{streamer}-{title}-%Y%m%d-%H%M%S',
     'flv',
     1048576,                 -- 1MB

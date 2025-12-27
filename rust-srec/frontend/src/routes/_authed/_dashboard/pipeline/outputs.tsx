@@ -8,6 +8,7 @@ import { Trans, useLingui } from '@lingui/react/macro';
 import { t } from '@lingui/core/macro';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
+import { DashboardHeader } from '@/components/shared/dashboard-header';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import {
   Select,
@@ -151,84 +152,68 @@ function PipelineOutputsPage() {
   return (
     <div className="min-h-screen space-y-6">
       {/* Header */}
-      <div className="border-b border-border/40">
-        <div className="w-full">
-          {/* Title Row */}
-          <div className="flex flex-col md:flex-row gap-4 items-start md:items-center justify-between p-4 md:px-8">
-            <div className="flex items-center gap-4">
-              <div className="p-2.5 rounded-xl bg-gradient-to-br from-primary/20 to-primary/5 ring-1 ring-primary/10">
-                <Film className="h-6 w-6 text-primary" />
-              </div>
-              <div>
-                <h1 className="text-xl font-semibold tracking-tight">
-                  <Trans>Media Outputs</Trans>
-                </h1>
-                <p className="text-sm text-muted-foreground">
-                  <Trans>
-                    Browse generated media artifacts from pipeline jobs
-                  </Trans>
-                </p>
-              </div>
+      <DashboardHeader
+        icon={Film}
+        title={<Trans>Media Outputs</Trans>}
+        subtitle={
+          <Trans>Browse generated media artifacts from pipeline jobs</Trans>
+        }
+        actions={
+          <>
+            {/* Search Input */}
+            <div className="relative flex-1 md:w-64">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+              <Input
+                placeholder={t`Search outputs...`}
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="pl-9 h-9"
+              />
             </div>
-            <div className="flex items-center gap-2 w-full md:w-auto">
-              {/* Search Input */}
-              <div className="relative flex-1 md:w-64">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                <Input
-                  placeholder={t`Search outputs...`}
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  className="pl-9 h-9"
-                />
-              </div>
-              <Badge
-                variant="secondary"
-                className="h-9 px-3 text-sm whitespace-nowrap"
-              >
-                {i18n.number(totalOutputs)} <Trans>files</Trans>
-              </Badge>
-              <Badge
-                variant="outline"
-                className="h-9 px-3 text-sm whitespace-nowrap"
-              >
-                {formatBytes(totalSize)}
-              </Badge>
-            </div>
-          </div>
+            <Badge
+              variant="secondary"
+              className="h-9 px-3 text-sm whitespace-nowrap"
+            >
+              {i18n.number(totalOutputs)} <Trans>files</Trans>
+            </Badge>
+            <Badge
+              variant="outline"
+              className="h-9 px-3 text-sm whitespace-nowrap"
+            >
+              {formatBytes(totalSize)}
+            </Badge>
+          </>
+        }
+      >
+        <nav className="flex items-center gap-1">
+          <button
+            onClick={() => handleFormatChange(null)}
+            className={`relative px-3 py-1.5 text-sm font-medium rounded-full transition-all duration-200 ${
+              selectedFormat === null
+                ? 'bg-primary text-primary-foreground shadow-sm'
+                : 'text-muted-foreground hover:text-foreground hover:bg-muted'
+            }`}
+          >
+            <span className="relative z-10 flex items-center gap-1.5">
+              <Trans>All</Trans>
+            </span>
+          </button>
 
-          {/* Format Filter */}
-          <div className="px-4 md:px-8 pb-3 overflow-x-auto no-scrollbar">
-            <nav className="flex items-center gap-1">
-              <button
-                onClick={() => handleFormatChange(null)}
-                className={`relative px-3 py-1.5 text-sm font-medium rounded-full transition-all duration-200 ${
-                  selectedFormat === null
-                    ? 'bg-primary text-primary-foreground shadow-sm'
-                    : 'text-muted-foreground hover:text-foreground hover:bg-muted'
-                }`}
-              >
-                <span className="relative z-10 flex items-center gap-1.5">
-                  <Trans>All</Trans>
-                </span>
-              </button>
-
-              {availableFormats.map((format) => (
-                <button
-                  key={format}
-                  onClick={() => handleFormatChange(format)}
-                  className={`relative px-3 py-1.5 text-sm font-medium rounded-full transition-all duration-200 ${
-                    selectedFormat === format
-                      ? 'bg-primary text-primary-foreground shadow-sm'
-                      : 'text-muted-foreground hover:text-foreground hover:bg-muted'
-                  }`}
-                >
-                  <span className="relative z-10 uppercase">{format}</span>
-                </button>
-              ))}
-            </nav>
-          </div>
-        </div>
-      </div>
+          {availableFormats.map((format) => (
+            <button
+              key={format}
+              onClick={() => handleFormatChange(format)}
+              className={`relative px-3 py-1.5 text-sm font-medium rounded-full transition-all duration-200 ${
+                selectedFormat === format
+                  ? 'bg-primary text-primary-foreground shadow-sm'
+                  : 'text-muted-foreground hover:text-foreground hover:bg-muted'
+              }`}
+            >
+              <span className="relative z-10 uppercase">{format}</span>
+            </button>
+          ))}
+        </nav>
+      </DashboardHeader>
 
       <div className="p-4 md:px-8 pb-20 w-full">
         <AnimatePresence mode="wait">

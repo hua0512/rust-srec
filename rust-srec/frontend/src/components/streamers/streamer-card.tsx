@@ -4,6 +4,7 @@ import { CardHeader } from '../ui/card';
 import { cn } from '../../lib/utils';
 import { useDownloadStore } from '../../store/downloads';
 import { useShallow } from 'zustand/react/shallow';
+import { useStore } from '@/hooks/use-store';
 import { ProgressIndicator } from './progress-indicator';
 import { StatusBadge } from './card/stream-status-badge';
 import { useStreamerStatus } from './card/use-streamer-status';
@@ -25,11 +26,12 @@ export function StreamerCard({
   onToggle,
   onCheck,
 }: StreamerCardProps) {
-  // Query downloads for this streamer
-  const downloads = useDownloadStore(
+  // Query downloads for this streamer - using useStore for hydration safety
+  const downloads = useStore(
+    useDownloadStore,
     useShallow((state) => state.getDownloadsByStreamer(streamer.id)),
   );
-  const activeDownload = downloads[0]; // Show first active download
+  const activeDownload = downloads?.[0]; // Show first active download
 
   const status = useStreamerStatus(streamer);
 

@@ -3,7 +3,7 @@ use std::fs::{File, OpenOptions};
 use std::io::{self, BufWriter, Write};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
-use std::time::Instant;
+use std::time::{Instant, SystemTime, UNIX_EPOCH};
 use thiserror::Error;
 use tracing::debug;
 
@@ -287,6 +287,54 @@ pub struct WriterTask<D, S: FormatStrategy<D>> {
 }
 
 impl<D, S: FormatStrategy<D>> WriterTask<D, S> {
+    fn ensure_unique_output_path(&self, candidate: PathBuf) -> PathBuf {
+        if !candidate.exists() {
+            return candidate;
+        }
+
+        let has_sequence_placeholder = self.config.file_name_template.contains("%i");
+        let sequence_number = self.state.file_sequence_number;
+
+        let Some(parent) = candidate.parent() else {
+            return candidate;
+        };
+        let Some(stem) = candidate.file_stem().map(|s| s.to_string_lossy().to_string()) else {
+            return candidate;
+        };
+        let ext = candidate
+            .extension()
+            .map(|e| format!(".{}", e.to_string_lossy()))
+            .unwrap_or_default();
+
+        let base_with_sequence = format!("{stem}-{sequence_number:03}");
+        let base_for_dups = if has_sequence_placeholder {
+            stem.as_str()
+        } else {
+            base_with_sequence.as_str()
+        };
+
+        if !has_sequence_placeholder
+            && let Some(sequence_candidate) =
+                Some(parent.join(format!("{base_with_sequence}{ext}")))
+            && !sequence_candidate.exists()
+        {
+            return sequence_candidate;
+        }
+
+        for dup in 1u32..=9999u32 {
+            let dup_candidate = parent.join(format!("{base_for_dups}-dup{dup:04}{ext}"));
+            if !dup_candidate.exists() {
+                return dup_candidate;
+            }
+        }
+
+        let nanos = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_nanos();
+        parent.join(format!("{base_for_dups}-dup{nanos}{ext}"))
+    }
+
     pub fn new(config: WriterConfig, strategy: S) -> Self {
         std::fs::create_dir_all(&config.base_path).unwrap_or_else(|e| {
             eprintln!("Failed to create base path {:?}: {}", &config.base_path, e);
@@ -362,6 +410,7 @@ impl<D, S: FormatStrategy<D>> WriterTask<D, S> {
         }
 
         let initial_path = self.strategy.next_file_path(&self.config, &self.state);
+        let initial_path = self.ensure_unique_output_path(initial_path);
         if let Some(parent) = initial_path.parent() {
             std::fs::create_dir_all(parent).map_err(TaskError::Io)?;
         }
@@ -435,6 +484,7 @@ impl<D, S: FormatStrategy<D>> WriterTask<D, S> {
 
         // open the new writer
         let next_path = self.strategy.next_file_path(&self.config, &self.state);
+        let next_path = self.ensure_unique_output_path(next_path);
         if let Some(parent) = next_path.parent() {
             std::fs::create_dir_all(parent).map_err(TaskError::Io)?;
         }
@@ -861,5 +911,50 @@ mod tests {
 
         assert_eq!(task.get_state().items_written_total, 5);
         assert_eq!(task.get_state().file_sequence_number, 2);
+    }
+
+    #[test]
+    fn test_writer_task_rotation_avoids_collisions_when_template_has_no_sequence_placeholder() {
+        let dir = tempdir().unwrap();
+        let config = WriterConfig {
+            base_path: dir.path().to_path_buf(),
+            file_name_template: "test_rotate_no_seq".to_string(),
+            file_extension: "log".to_string(),
+            ..WriterConfig::new(
+                dir.path().to_path_buf(),
+                "test_rotate_no_seq".to_string(),
+                "log".to_string(),
+            )
+        };
+
+        // Rotate before each subsequent item, so we'd collide without collision avoidance.
+        let strategy = TestStrategy {
+            item_count_to_rotate: 1,
+            header_content: None,
+            footer_content: None,
+            items_written_for_rotation_check: 0,
+        };
+        let mut task = WriterTask::new(config.clone(), strategy);
+
+        task.process_item(TestData("data1".to_string())).unwrap(); // File 0
+        task.process_item(TestData("data2".to_string())).unwrap(); // Rotate -> File 1
+        task.process_item(TestData("data3".to_string())).unwrap(); // Rotate -> File 2
+        task.close().unwrap();
+
+        let file0_path = config.base_path.join("test_rotate_no_seq.log");
+        let file1_path = config.base_path.join("test_rotate_no_seq-001.log");
+        let file2_path = config.base_path.join("test_rotate_no_seq-002.log");
+
+        assert!(file0_path.exists());
+        assert!(file1_path.exists());
+        assert!(file2_path.exists());
+
+        let content0 = fs::read_to_string(file0_path).unwrap();
+        let content1 = fs::read_to_string(file1_path).unwrap();
+        let content2 = fs::read_to_string(file2_path).unwrap();
+
+        assert_eq!(content0, "data1\n");
+        assert_eq!(content1, "data2\n");
+        assert_eq!(content2, "data3\n");
     }
 }

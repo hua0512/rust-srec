@@ -71,10 +71,11 @@ export function FileConfigCard({ control }: FileConfigCardProps) {
                 </FormControl>
                 <FormDescription className="text-xs">
                   <Trans>
-                    Vars: '&#123;streamer&#125;', '&#123;title&#125;' | Time:
-                    %Y, %m, %d, %H, %M, %S
+                    Vars: '&#123;streamer&#125;', '&#123;title&#125;',
+                    '&#123;platform&#125;' | Time: %Y, %m, %d, %H, %M, %S
                   </Trans>
                 </FormDescription>
+
                 <FormMessage />
               </FormItem>
             )}

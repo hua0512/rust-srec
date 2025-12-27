@@ -20,7 +20,7 @@ pub struct StreamerMetadata {
     pub name: String,
     /// Stream URL.
     pub url: String,
-    /// Platform configuration ID.
+    /// Platform configuration ID (e.g., "platform-douyin", "platform-twitch").
     pub platform_config_id: String,
     /// Template configuration ID (optional).
     pub template_config_id: Option<String>,
@@ -115,6 +115,16 @@ impl StreamerMetadata {
             if until > now { Some(until - now) } else { None }
         })
     }
+
+    /// Get the platform name derived from platform_config_id.
+    ///
+    /// Returns the platform name (e.g., "douyin", "twitch", "bilibili").
+    /// Strips the "platform-" prefix from platform_config_id if present.
+    pub fn platform(&self) -> &str {
+        self.platform_config_id
+            .strip_prefix("platform-")
+            .unwrap_or(&self.platform_config_id)
+    }
 }
 
 #[cfg(test)]
@@ -127,7 +137,7 @@ mod tests {
             name: "Test Streamer".to_string(),
             url: "https://twitch.tv/test".to_string(),
             avatar_url: None,
-            platform_config_id: "twitch".to_string(),
+            platform_config_id: "platform-twitch".to_string(),
             template_config_id: None,
             state: StreamerState::NotLive,
             priority: Priority::Normal,

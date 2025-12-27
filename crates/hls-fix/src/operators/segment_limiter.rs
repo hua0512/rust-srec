@@ -29,6 +29,14 @@ impl SegmentLimiterOperator {
         }
     }
 
+    fn safe_duration(secs: f32) -> Duration {
+        if !secs.is_finite() || secs <= 0.0 {
+            Duration::ZERO
+        } else {
+            Duration::from_secs_f32(secs)
+        }
+    }
+
     /// Helper function to check if any limit is reached
     fn is_limit_reached(&self, segment_data: &Bytes, segment_duration: f32) -> bool {
         // If no limits are set, no limit can be reached
@@ -55,7 +63,7 @@ impl SegmentLimiterOperator {
         if let Some(max_duration) = self.max_duration
             && !max_duration.is_zero()
         {
-            let segment_duration = Duration::from_secs((segment_duration) as u64);
+            let segment_duration = Self::safe_duration(segment_duration);
             if self.current_duration + segment_duration > max_duration {
                 debug!(
                     "Duration limit reached: {:?} > {:?}",
@@ -80,7 +88,7 @@ impl SegmentLimiterOperator {
     /// Add segment to current tracking
     fn track_segment(&mut self, segment_data: &Bytes, segment_duration: f32) {
         self.current_size += segment_data.len() as u64;
-        self.current_duration += Duration::from_secs_f32(segment_duration);
+        self.current_duration += Self::safe_duration(segment_duration);
     }
 }
 
@@ -103,9 +111,10 @@ impl Processor<HlsData> for SegmentLimiterOperator {
                         self.reset_counters();
                     }
 
-                    // Unconditionally output the current segment and track its metrics.
-                    output(HlsData::TsData(ts_data.clone()))?;
                     self.track_segment(&ts_data.data, ts_data.segment.duration);
+
+                    // Unconditionally output the current segment and track its metrics.
+                    output(HlsData::TsData(ts_data))?;
                 }
             }
             SegmentType::M4sInit => {
@@ -136,9 +145,10 @@ impl Processor<HlsData> for SegmentLimiterOperator {
                         self.init_segment_sent = true;
                     }
 
-                    // Unconditionally output the current media segment and track its metrics.
-                    output(HlsData::M4sData(M4sData::Segment(segment.clone())))?;
                     self.track_segment(&segment.data, segment.segment.duration);
+
+                    // Unconditionally output the current media segment and track its metrics.
+                    output(HlsData::M4sData(M4sData::Segment(segment)))?;
                 }
             }
             SegmentType::EndMarker => {
@@ -161,5 +171,75 @@ impl Processor<HlsData> for SegmentLimiterOperator {
 
     fn name(&self) -> &'static str {
         "SegmentLimiter"
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use bytes::Bytes;
+    use m3u8_rs::MediaSegment;
+    use pipeline_common::StreamerContext;
+    use tokio_util::sync::CancellationToken;
+
+    #[test]
+    fn splits_on_fractional_duration_limit() {
+        let token = CancellationToken::new();
+        let context = StreamerContext::arc_new(token);
+        let mut operator = SegmentLimiterOperator::new(Some(Duration::from_secs_f32(1.0)), None);
+
+        let mut out = Vec::new();
+        let mut output = |item: HlsData| -> Result<(), PipelineError> {
+            out.push(item);
+            Ok(())
+        };
+
+        let seg1 = HlsData::ts(
+            MediaSegment {
+                duration: 0.6,
+                ..MediaSegment::empty()
+            },
+            Bytes::from_static(b"aaaaaaaaaa"),
+        );
+        let seg2 = HlsData::ts(
+            MediaSegment {
+                duration: 0.6,
+                ..MediaSegment::empty()
+            },
+            Bytes::from_static(b"bbbbbbbbbb"),
+        );
+
+        operator.process(&context, seg1, &mut output).unwrap();
+        operator.process(&context, seg2, &mut output).unwrap();
+
+        assert_eq!(out.len(), 3);
+        assert!(matches!(out[0], HlsData::TsData(_)));
+        assert!(matches!(out[1], HlsData::EndMarker));
+        assert!(matches!(out[2], HlsData::TsData(_)));
+    }
+
+    #[test]
+    fn does_not_panic_on_non_finite_durations() {
+        let token = CancellationToken::new();
+        let context = StreamerContext::arc_new(token);
+        let mut operator = SegmentLimiterOperator::new(Some(Duration::from_secs(1)), None);
+
+        let mut out = Vec::new();
+        let mut output = |item: HlsData| -> Result<(), PipelineError> {
+            out.push(item);
+            Ok(())
+        };
+
+        let seg = HlsData::ts(
+            MediaSegment {
+                duration: f32::NAN,
+                ..MediaSegment::empty()
+            },
+            Bytes::from_static(b"aaaaaaaaaa"),
+        );
+
+        operator.process(&context, seg, &mut output).unwrap();
+        assert_eq!(out.len(), 1);
+        assert!(matches!(out[0], HlsData::TsData(_)));
     }
 }

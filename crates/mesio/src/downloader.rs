@@ -98,8 +98,13 @@ pub fn create_client(config: &DownloaderConfig) -> Result<Client, DownloadError>
     }
 
     if !config.read_timeout.is_zero() {
-        client_builder = client_builder.pool_idle_timeout(config.read_timeout);
+        client_builder = client_builder.read_timeout(config.read_timeout);
     }
+
+    // reqwest does not currently expose a per-request "write timeout" builder API.
+    // `timeout` (overall request timeout) is still applied above when configured.
+
+    client_builder = client_builder.danger_accept_invalid_certs(config.danger_accept_invalid_certs);
 
     // Set up proxy configuration
     if let Some(proxy_config) = &config.proxy {
@@ -206,6 +211,12 @@ where
         })
     }
 
+    fn ensure_primary_source(&mut self, url: &str) {
+        if !self.source_manager.has_sources() {
+            self.source_manager.add_url(url, 0);
+        }
+    }
+
     /// Add a source URL to the download manager
     pub fn add_source(&mut self, url: impl Into<String>, priority: u8) {
         self.source_manager.add_url(url, priority);
@@ -262,10 +273,7 @@ where
 {
     /// Download with source management
     pub async fn download_with_sources(&mut self, url: &str) -> Result<P::Stream, DownloadError> {
-        // If no sources configured yet, use the provided URL
-        if !self.source_manager.has_sources() {
-            self.source_manager.add_url(url, 0);
-        }
+        self.ensure_primary_source(url);
 
         self.protocol
             .download_with_sources(url, &mut self.source_manager, self.token.clone())
@@ -283,10 +291,7 @@ where
         &mut self,
         url: &str,
     ) -> Result<P::Stream, DownloadError> {
-        // If no sources configured yet, use the provided URL
-        if !self.source_manager.has_sources() {
-            self.source_manager.add_url(url, 0);
-        }
+        self.ensure_primary_source(url);
 
         // Try cache first if available
         if let Some(cache_manager) = &self.cache_manager {

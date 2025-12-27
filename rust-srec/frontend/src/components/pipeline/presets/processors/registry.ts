@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { lazy, ComponentType } from 'react';
 import {
   RemuxConfigSchema,
   RcloneConfigSchema,
@@ -9,9 +10,29 @@ import {
   DeleteConfigSchema,
   MetadataConfigSchema,
   ExecuteConfigSchema,
+  DanmakuFactoryConfigSchema,
+  AssBurninConfigSchema,
 } from '../processor-schemas';
-import { RemuxConfigForm } from './remux-config-form';
-import { RcloneConfigForm } from './rclone-config-form';
+
+// Lazy load large form components for code splitting
+const RemuxConfigForm = lazy(() =>
+  import('./remux-config-form').then((m) => ({ default: m.RemuxConfigForm })),
+);
+const RcloneConfigForm = lazy(() =>
+  import('./rclone-config-form').then((m) => ({ default: m.RcloneConfigForm })),
+);
+const DanmakuFactoryConfigForm = lazy(() =>
+  import('./danmaku-factory-config-form').then((m) => ({
+    default: m.DanmakuFactoryConfigForm,
+  })),
+);
+const AssBurninConfigForm = lazy(() =>
+  import('./ass-burnin-config-form').then((m) => ({
+    default: m.AssBurninConfigForm,
+  })),
+);
+
+// Smaller forms can be imported directly
 import { ThumbnailConfigForm } from './thumbnail-config-form';
 import { AudioExtractConfigForm } from './audio-extract-config-form';
 import { CompressionConfigForm } from './compression-config-form';
@@ -20,7 +41,6 @@ import { DeleteConfigForm } from './delete-config-form';
 import { MetadataConfigForm } from './metadata-config-form';
 import { ExecuteConfigForm } from './execute-config-form';
 
-import { ComponentType } from 'react';
 import { ProcessorConfigFormProps } from './common-props';
 import { msg } from '@lingui/core/macro';
 import { type MessageDescriptor } from '@lingui/core';
@@ -81,6 +101,26 @@ export const PROCESSOR_REGISTRY: Record<string, ProcessorDefinition> = {
     schema: ExecuteConfigSchema,
     component: ExecuteConfigForm,
     label: msg`Execute Command`,
+  },
+  danmaku_factory: {
+    schema: DanmakuFactoryConfigSchema,
+    component: DanmakuFactoryConfigForm,
+    label: msg`Danmaku to ASS`,
+  },
+  ass_burnin: {
+    schema: AssBurninConfigSchema,
+    component: AssBurninConfigForm,
+    label: msg`ASS Burn-in`,
+  },
+  upload: {
+    schema: RcloneConfigSchema,
+    component: RcloneConfigForm,
+    label: msg`Rclone Transfer`,
+  },
+  copy_move: {
+    schema: CopyMoveConfigSchema,
+    component: CopyMoveConfigForm,
+    label: msg`Copy / Move`,
   },
 };
 

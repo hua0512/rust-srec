@@ -51,3 +51,4 @@ colored-output = ["colored"]
 table-output = ["tabled"]
 regex-filters = ["regex"]
 minimal = []                                                                 # No optional features
+static-ssl = ["platforms-parser/static-ssl"]

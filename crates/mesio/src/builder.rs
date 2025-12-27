@@ -91,6 +91,9 @@ impl DownloaderConfigBuilder {
     }
 
     /// Set the write timeout (maximum time for sending request data)
+    ///
+    /// Note: `reqwest` does not currently expose a dedicated write-timeout setting on the
+    /// `ClientBuilder`; this field is reserved for future use.
     pub fn with_write_timeout(mut self, timeout: Duration) -> Self {
         self.config.write_timeout = timeout;
         self

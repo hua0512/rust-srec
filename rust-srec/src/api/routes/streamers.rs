@@ -17,6 +17,7 @@ use crate::domain::Priority as DomainPriority;
 use crate::domain::streamer::StreamerState;
 use crate::domain::value_objects::Priority as ApiPriority;
 use crate::streamer::StreamerMetadata;
+use crate::utils::json::{self, JsonContext};
 
 /// Convert API Priority to Domain Priority.
 fn api_to_domain_priority(p: ApiPriority) -> DomainPriority {
@@ -67,10 +68,14 @@ fn metadata_to_response(metadata: &StreamerMetadata) -> StreamerResponse {
         last_live_time: metadata.last_live_time,
         created_at: metadata.created_at,
         updated_at: metadata.updated_at,
-        streamer_specific_config: metadata
-            .streamer_specific_config
-            .as_ref()
-            .and_then(|s| serde_json::from_str(s).ok()),
+        streamer_specific_config: json::parse_optional_value_non_null(
+            metadata.streamer_specific_config.as_deref(),
+            JsonContext::StreamerField {
+                streamer_id: &metadata.id,
+                field: "streamer_specific_config",
+            },
+            "Invalid JSON field; omitting from response",
+        ),
     }
 }
 
@@ -247,10 +252,28 @@ pub async fn list_streamers(
             });
         }
         _ => {
-            // Default: match DB ordering and keep pages stable.
+            // Default: LIVE streamers first, then by priority desc, name asc, id asc.
+            // This ensures active streamers are always visible at the top.
             streamers.sort_by(|a, b| {
-                b.priority
-                    .cmp(&a.priority)
+                // State priority: Active states first, then offline, then errors, then disabled
+                let state_order = |s: &StreamerState| -> u8 {
+                    match s {
+                        StreamerState::Live => 0,
+                        StreamerState::InspectingLive => 1,
+                        StreamerState::NotLive => 2,
+                        StreamerState::OutOfSchedule => 3,
+                        StreamerState::Error => 4,
+                        StreamerState::FatalError => 5,
+                        StreamerState::OutOfSpace => 6,
+                        StreamerState::NotFound => 7,
+                        StreamerState::TemporalDisabled => 8,
+                        StreamerState::Cancelled => 9,
+                        StreamerState::Disabled => 10,
+                    }
+                };
+                state_order(&a.state)
+                    .cmp(&state_order(&b.state))
+                    .then_with(|| b.priority.cmp(&a.priority))
                     .then_with(|| a.name.cmp(&b.name))
                     .then_with(|| a.id.cmp(&b.id))
             });
@@ -1138,6 +1161,8 @@ pub async fn extract_metadata(
             download_retry_policy: c.download_retry_policy,
             event_hooks: c.event_hooks,
             pipeline: c.pipeline,
+            session_complete_pipeline: c.session_complete_pipeline,
+            paired_segment_pipeline: c.paired_segment_pipeline,
         })
         .collect();
 

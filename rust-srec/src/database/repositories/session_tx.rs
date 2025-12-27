@@ -6,6 +6,7 @@
 
 use chrono::{DateTime, Utc};
 use sqlx::{Row, SqliteConnection};
+use tracing::warn;
 
 use crate::Result;
 use crate::database::models::{LiveSessionDbModel, TitleEntry};
@@ -60,7 +61,7 @@ impl SessionTxOps {
             ts: start_time.to_rfc3339(),
             title: initial_title.to_string(),
         }];
-        let titles_json = serde_json::to_string(&initial_titles).unwrap_or("[]".to_string());
+        let titles_json = serde_json::to_string(&initial_titles)?;
 
         sqlx::query(
             r#"
@@ -141,9 +142,21 @@ impl SessionTxOps {
         new_title: &str,
         timestamp: DateTime<Utc>,
     ) -> Result<bool> {
-        let mut titles: Vec<TitleEntry> = current_titles_json
-            .and_then(|json| serde_json::from_str(json).ok())
-            .unwrap_or_default();
+        let mut titles: Vec<TitleEntry> = match current_titles_json {
+            Some(json) => match serde_json::from_str(json) {
+                Ok(parsed) => parsed,
+                Err(error) => {
+                    warn!(
+                        session_id = %session_id,
+                        raw_len = json.len(),
+                        error = %error,
+                        "Invalid session titles JSON; resetting to empty list"
+                    );
+                    Vec::new()
+                }
+            },
+            None => Vec::new(),
+        };
 
         let needs_update = titles.last().map(|t| t.title != new_title).unwrap_or(true);
 
@@ -152,7 +165,7 @@ impl SessionTxOps {
                 ts: timestamp.to_rfc3339(),
                 title: new_title.to_string(),
             });
-            let titles_json = serde_json::to_string(&titles).unwrap_or_else(|_| "[]".to_string());
+            let titles_json = serde_json::to_string(&titles)?;
 
             sqlx::query("UPDATE live_sessions SET titles = ? WHERE id = ?")
                 .bind(titles_json)

@@ -157,7 +157,7 @@ export function DanmuViewer({ url, title }: DanmuViewerProps) {
   }, [filteredComments, scrollTop, containerHeight]);
 
   return (
-    <Card className="flex flex-col h-[600px] w-full overflow-hidden border-border/50 shadow-xl bg-card text-card-foreground">
+    <Card className="flex flex-col h-[85vh] md:h-[600px] w-full overflow-hidden border-border/50 shadow-xl bg-card text-card-foreground">
       {/* Header */}
       <header className="flex items-center p-4 border-b bg-muted/30 gap-4 shrink-0 h-16 w-full">
         <div className="flex h-10 w-10 items-center justify-center rounded-full bg-primary/10 text-primary shrink-0 border border-primary/20">

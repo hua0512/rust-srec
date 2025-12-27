@@ -15,15 +15,15 @@ static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
+    // Load environment variables
+    dotenvy::dotenv().ok();
+
     // Initialize logging with reloadable filter
     let log_dir = std::env::var("LOG_DIR").unwrap_or_else(|_| "logs".to_string());
     let (logging_config, _guard) = init_logging(&log_dir)
         .map_err(|e| anyhow::anyhow!("Failed to initialize logging: {}", e))?;
 
     info!("Starting rust-srec v{}", env!("CARGO_PKG_VERSION"));
-
-    // Load environment variables
-    dotenvy::dotenv().ok();
 
     // Initialize database
     let database_url =
@@ -107,7 +107,11 @@ async fn main() -> anyhow::Result<()> {
 #[cfg(unix)]
 async fn wait_for_sigterm() {
     use tokio::signal::unix::{SignalKind, signal};
-    let mut sigterm = signal(SignalKind::terminate()).expect("Failed to register SIGTERM handler");
+    let Ok(mut sigterm) = signal(SignalKind::terminate()) else {
+        warn!("Failed to register SIGTERM handler; SIGTERM will not be handled");
+        std::future::pending::<()>().await;
+        return;
+    };
     sigterm.recv().await;
 }
 

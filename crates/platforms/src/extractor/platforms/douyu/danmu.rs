@@ -194,10 +194,10 @@ impl DanmuProtocol for DouyuDanmuProtocol {
                         DouyuMessageType::KeepAlive => {
                             debug!("Douyu keepalive received");
                         }
-                        DouyuMessageType::UserEnter => {
-                            // Optionally handle user enter events
-                            debug!("User entered room: {:?}", map.get("nn"));
-                        }
+                        // DouyuMessageType::UserEnter => {
+                        //     // Optionally handle user enter events
+                        //     debug!("User entered room: {:?}", map.get("nn"));
+                        // }
                         _ => {
                             // Ignore other message types
                         }

@@ -39,9 +39,13 @@ pub fn build_hls_config(
         builder = builder.add_header("Cookie", cookies);
     }
 
-    // Map proxy settings
+    // Map proxy settings - explicit proxy takes precedence, then system proxy
     if let Some(ref proxy_url) = config.proxy_url {
         builder = builder.proxy(parse_proxy_url(proxy_url));
+        // Note: proxy() method automatically sets use_system_proxy = false
+    } else {
+        // No explicit proxy - respect the use_system_proxy setting
+        builder = builder.use_system_proxy(config.use_system_proxy);
     }
 
     builder.get_config()
@@ -72,11 +76,17 @@ pub fn build_flv_config(
         builder = builder.add_header("Cookie", cookies);
     }
 
-    // Map proxy settings using with_config since FlvProtocolBuilder doesn't have a proxy method
+    // Map proxy settings - explicit proxy takes precedence, then system proxy
     if let Some(ref proxy_url) = config.proxy_url {
         let proxy = parse_proxy_url(proxy_url);
         builder = builder.with_config(|cfg| {
             cfg.base.proxy = Some(proxy);
+            cfg.base.use_system_proxy = false;
+        });
+    } else {
+        // No explicit proxy - respect the use_system_proxy setting
+        builder = builder.with_config(|cfg| {
+            cfg.base.use_system_proxy = config.use_system_proxy;
         });
     }
 
@@ -189,6 +199,7 @@ mod tests {
             max_segment_duration_secs: 0,
             max_segment_size_bytes: 0,
             proxy_url: None,
+            use_system_proxy: false,
             cookies: None,
             headers: Vec::new(),
             streamer_id: "test-streamer".to_string(),

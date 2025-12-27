@@ -107,7 +107,9 @@ mod tests {
             id: id.to_string(),
             name: format!("Streamer {}", id),
             url: format!("https://{}.tv/{}", platform, id),
+
             platform_config_id: platform.to_string(),
+
             template_config_id: None,
             state: StreamerState::NotLive,
             priority: Priority::Normal,

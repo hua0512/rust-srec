@@ -18,8 +18,8 @@ pub mod log_event {
 // Re-export commonly used types
 pub use download_progress::{
     ClientMessage, DownloadCancelled, DownloadCompleted, DownloadFailed, DownloadProgress,
-    DownloadSnapshot, DownloadStarted, ErrorPayload, EventType, SegmentCompleted, SubscribeRequest,
-    UnsubscribeRequest, WsMessage,
+    DownloadRejected, DownloadSnapshot, DownloadStarted, ErrorPayload, EventType, SegmentCompleted,
+    SubscribeRequest, UnsubscribeRequest, WsMessage,
 };
 
 impl From<&DownloadInfo> for DownloadProgress {

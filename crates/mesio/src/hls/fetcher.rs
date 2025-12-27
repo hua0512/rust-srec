@@ -7,6 +7,7 @@ use crate::{CacheManager, cache::CacheKey};
 use async_trait::async_trait;
 use bytes::Bytes;
 use reqwest::Client;
+use std::collections::{HashSet, VecDeque};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
 use tracing::{Span, debug, error, info, instrument, trace};
@@ -32,7 +33,43 @@ pub struct Http2Stats {
     /// Number of new connections established
     pub connections_new: AtomicU64,
     /// Track hosts seen for connection reuse estimation
-    hosts_seen: std::sync::Mutex<std::collections::HashSet<String>>,
+    hosts_seen: std::sync::Mutex<BoundedHostSet>,
+}
+
+/// Bounded set to prevent unbounded memory growth from tracking distinct hosts.
+///
+/// This is used only for observability heuristics (connection reuse estimation), so it is
+/// acceptable for it to evict older entries.
+#[derive(Debug, Default)]
+struct BoundedHostSet {
+    order: VecDeque<String>,
+    set: HashSet<String>,
+}
+
+impl BoundedHostSet {
+    // Keep this modest: HLS/CDN hostnames are usually low-cardinality.
+    const MAX_TRACKED_HOSTS: usize = 256;
+
+    fn contains(&self, host: &str) -> bool {
+        self.set.contains(host)
+    }
+
+    fn insert(&mut self, host: &str) -> bool {
+        if self.set.contains(host) {
+            return false;
+        }
+
+        let host_string = host.to_string();
+        self.set.insert(host_string.clone());
+        self.order.push_back(host_string);
+
+        while self.order.len() > Self::MAX_TRACKED_HOSTS {
+            if let Some(oldest) = self.order.pop_front() {
+                self.set.remove(&oldest);
+            }
+        }
+        true
+    }
 }
 
 impl Http2Stats {
@@ -44,7 +81,7 @@ impl Http2Stats {
             http1_bytes: AtomicU64::new(0),
             connections_reused: AtomicU64::new(0),
             connections_new: AtomicU64::new(0),
-            hosts_seen: std::sync::Mutex::new(std::collections::HashSet::new()),
+            hosts_seen: std::sync::Mutex::new(BoundedHostSet::default()),
         }
     }
 
@@ -77,8 +114,8 @@ impl Http2Stats {
             if hosts.contains(host) {
                 self.connections_reused.fetch_add(1, Ordering::Relaxed);
             } else {
-                hosts.insert(host.to_string());
                 self.connections_new.fetch_add(1, Ordering::Relaxed);
+                hosts.insert(host);
             }
         } else {
             // HTTP/1.x may or may not reuse connections, but we count each as potentially new
@@ -389,23 +426,24 @@ impl SegmentDownloader for SegmentFetcher {
 
         use indicatif::ProgressStyle;
         let style = ProgressStyle::default_bar()
-            .template(&format!(
-                "{{span_child_prefix}}{{spinner:.yellow}} [{{bar:20.yellow/white}}] {{bytes}}/{{total_bytes}} {}",
-                segment_label
-            ))
+            .template("{span_child_prefix}{spinner:.yellow} [{bar:20.yellow/white}] {bytes}/{total_bytes} {msg}")
             .unwrap()
             .progress_chars("=> ");
         current_span.pb_set_style(&style);
         current_span.pb_set_message(&segment_label);
 
-        let segment_url = Url::parse(&job.segment_uri).map_err(|e| {
+        let segment_url = Url::parse(&job.media_segment.uri).map_err(|e| {
             HlsDownloaderError::PlaylistError(format!(
                 "Invalid segment URL {}: {}",
-                job.segment_uri, e
+                job.media_segment.uri, e
             ))
         })?;
 
-        let cache_key = CacheKey::new(CacheResourceType::Segment, segment_url.to_string(), None);
+        let cache_key = CacheKey::new(
+            CacheResourceType::Segment,
+            job.media_segment.uri.clone(),
+            None,
+        );
 
         let mut cached_bytes: Option<Bytes> = None;
         if let Some(cache) = &self.cache_service {
@@ -444,7 +482,11 @@ impl SegmentDownloader for SegmentFetcher {
             Ok(bytes)
         } else {
             let downloaded_bytes = self
-                .fetch_with_retries(&segment_url, job.byte_range.as_ref(), &current_span)
+                .fetch_with_retries(
+                    &segment_url,
+                    job.media_segment.byte_range.as_ref(),
+                    &current_span,
+                )
                 .await?;
 
             if let Some(cache) = &self.cache_service {

@@ -28,6 +28,7 @@ pub enum DanmuEvent {
     /// Segment file started
     SegmentStarted {
         session_id: String,
+        streamer_id: String,
         segment_id: String,
         output_path: PathBuf,
         /// The start time of this segment (for danmu timestamp offset calculation).
@@ -36,6 +37,7 @@ pub enum DanmuEvent {
     /// Segment file completed
     SegmentCompleted {
         session_id: String,
+        streamer_id: String,
         segment_id: String,
         output_path: PathBuf,
         message_count: u64,

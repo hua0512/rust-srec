@@ -9,6 +9,7 @@ use tracing::{error, info, warn};
 
 use super::traits::{Processor, ProcessorContext, ProcessorInput, ProcessorOutput, ProcessorType};
 use crate::Result;
+use crate::utils::filename::expand_placeholders;
 
 /// Rclone operation type.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
@@ -138,9 +139,12 @@ impl RcloneProcessor {
     ) -> Result<ProcessorOutput> {
         let start = std::time::Instant::now();
 
+        // Use 'copyto' and 'moveto' for single-file operations.
+        // Unlike 'copy' and 'move', these commands are designed for file-to-file transfer
+        // and won't create a directory with the destination filename.
         let cmd_op = match operation {
-            RcloneOperation::Copy => "copy",
-            RcloneOperation::Move => "move",
+            RcloneOperation::Copy => "copyto",
+            RcloneOperation::Move => "moveto",
             RcloneOperation::Sync => unreachable!(),
         };
 
@@ -404,6 +408,55 @@ impl RcloneProcessor {
             last_error.unwrap_or_else(|| "Rclone batch failed".to_string()),
         ))
     }
+
+    /// Determine remote destination path with placeholder expansion.
+    /// Supports: {streamer}, {title}, {streamer_id}, {session_id}, and time placeholders (%Y, %m, %d, etc.)
+    fn determine_remote_destination(
+        input: &ProcessorInput,
+        config_json: Option<&serde_json::Value>,
+    ) -> String {
+        // Determine destination root
+        let destination_root = config_json
+            .and_then(|v| v.get("destination_root"))
+            .and_then(|s| s.as_str());
+
+        // For batch mode, we need a destination root (directory), not a specific file path
+        let remote_destination_raw = if let Some(out) = input.outputs.first() {
+            out.clone()
+        } else if let Some(root) = destination_root {
+            root.trim_end_matches('/').to_string()
+        } else {
+            String::new()
+        };
+
+        // Debug: Log all placeholder-related values before expansion
+        tracing::debug!(
+            template = %remote_destination_raw,
+            streamer_id = %input.streamer_id,
+            session_id = %input.session_id,
+            streamer_name = ?input.streamer_name,
+            session_title = ?input.session_title,
+            "Rclone: Expanding placeholders"
+        );
+
+        // Expand placeholders in destination path
+        let expanded = expand_placeholders(
+            &remote_destination_raw,
+            &input.streamer_id,
+            &input.session_id,
+            input.streamer_name.as_deref(),
+            input.session_title.as_deref(),
+            input.platform.as_deref(),
+        );
+
+        tracing::debug!(
+            template = %remote_destination_raw,
+            expanded = %expanded,
+            "Rclone: Placeholder expansion result"
+        );
+
+        expanded
+    }
 }
 
 impl Default for RcloneProcessor {
@@ -460,23 +513,13 @@ impl Processor for RcloneProcessor {
             .as_ref()
             .and_then(|c| serde_json::from_str::<serde_json::Value>(c).ok());
 
-        // Determine destination root
+        // Determine destination root (needed for logic later)
         let destination_root = config_json
             .as_ref()
             .and_then(|v| v.get("destination_root"))
             .and_then(|s| s.as_str());
 
-        // For batch mode, we need a destination root (directory), not a specific file path
-        let remote_destination = if let Some(out) = input.outputs.first() {
-            out.clone()
-        } else if let Some(root) = destination_root {
-            root.trim_end_matches('/').to_string()
-        } else {
-            return Err(crate::Error::Validation(
-                "No output path provided and no 'destination_root' in config for RcloneProcessor"
-                    .to_string(),
-            ));
-        };
+        let remote_destination = Self::determine_remote_destination(input, config_json.as_ref());
 
         // Determine operation
         let operation: RcloneOperation = config_json
@@ -608,5 +651,26 @@ mod tests {
     fn test_supports_batch_input() {
         let processor = RcloneProcessor::new();
         assert!(processor.supports_batch_input());
+    }
+
+    #[test]
+    fn test_determine_remote_destination_with_metadata() {
+        let input = ProcessorInput {
+            inputs: vec!["/input.mp4".to_string()],
+            outputs: vec![],
+            streamer_id: "123".to_string(),
+            session_id: "456".to_string(),
+            streamer_name: Some("StreamerName".to_string()),
+            session_title: Some("Live Title".to_string()),
+            platform: None,
+            config: Some(r#"{"destination_root": "remote:/{streamer}/{title}/"}"#.to_string()),
+        };
+
+        let config_json =
+            serde_json::from_str::<serde_json::Value>(input.config.as_ref().unwrap()).ok();
+        let destination =
+            RcloneProcessor::determine_remote_destination(&input, config_json.as_ref());
+
+        assert_eq!(destination, "remote:/StreamerName/Live Title");
     }
 }

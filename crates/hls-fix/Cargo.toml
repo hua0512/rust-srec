@@ -1,6 +1,6 @@
 [package]
 name = "hls-fix"
-version = "0.1.4"
+version = "0.1.5"
 edition = "2024"
 description = "HLS processing toolkit"
 
@@ -9,6 +9,7 @@ bytes = "1.11.0"
 m3u8-rs = "6.0.0"
 hls = { path = "../hls" }
 pipeline-common = { path = "../pipeline-common" }
+ts = { path = "../ts" }
 crc32fast = "1.4.2"
 tracing = "0.1"
 tracing-indicatif = "0.3"

@@ -1,7 +1,7 @@
 /**
  * Real-time log viewer component that consumes the log streaming WebSocket.
  */
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { motion } from 'motion/react';
 import { t } from '@lingui/core/macro';
@@ -256,7 +256,7 @@ export function LogViewer() {
   }, [logs, autoScroll, isPaused]);
 
   // Handle pause/resume
-  const togglePause = () => {
+  const togglePause = useCallback(() => {
     if (isPaused) {
       // Resume: add paused logs
       setLogs((prev) => {
@@ -268,43 +268,45 @@ export function LogViewer() {
       });
     }
     setIsPaused(!isPaused);
-  };
+  }, [isPaused]);
 
   // Clear logs
-  const clearLogs = () => {
+  const clearLogs = useCallback(() => {
     setLogs([]);
     pausedLogsRef.current = [];
-  };
+  }, []);
 
-  // Filter logs
-  const filteredLogs = logs.filter((log) => {
-    // Level filter
-    if (filterLevel !== 'all') {
-      const levelMap: Record<FilterLevel, LogLevel> = {
-        all: LogLevel.LOG_LEVEL_UNSPECIFIED,
-        trace: LogLevel.LOG_LEVEL_TRACE,
-        debug: LogLevel.LOG_LEVEL_DEBUG,
-        info: LogLevel.LOG_LEVEL_INFO,
-        warn: LogLevel.LOG_LEVEL_WARN,
-        error: LogLevel.LOG_LEVEL_ERROR,
-      };
-      if (log.level < levelMap[filterLevel]) return false;
-    }
+  // Filter logs - memoized to avoid recalculating on every render
+  const filteredLogs = useMemo(() => {
+    return logs.filter((log) => {
+      // Level filter
+      if (filterLevel !== 'all') {
+        const levelMap: Record<FilterLevel, LogLevel> = {
+          all: LogLevel.LOG_LEVEL_UNSPECIFIED,
+          trace: LogLevel.LOG_LEVEL_TRACE,
+          debug: LogLevel.LOG_LEVEL_DEBUG,
+          info: LogLevel.LOG_LEVEL_INFO,
+          warn: LogLevel.LOG_LEVEL_WARN,
+          error: LogLevel.LOG_LEVEL_ERROR,
+        };
+        if (log.level < levelMap[filterLevel]) return false;
+      }
 
-    // Search filter
-    if (searchQuery) {
-      const query = searchQuery.toLowerCase();
-      return (
-        log.target.toLowerCase().includes(query) ||
-        log.message.toLowerCase().includes(query)
-      );
-    }
+      // Search filter
+      if (searchQuery) {
+        const query = searchQuery.toLowerCase();
+        return (
+          log.target.toLowerCase().includes(query) ||
+          log.message.toLowerCase().includes(query)
+        );
+      }
 
-    return true;
-  });
+      return true;
+    });
+  }, [logs, filterLevel, searchQuery]);
 
-  // Format timestamp
-  const formatTime = (timestampMs: bigint) => {
+  // Format timestamp - memoized function
+  const formatTime = useCallback((timestampMs: bigint) => {
     const date = new Date(Number(timestampMs));
     return date.toLocaleTimeString('en-US', {
       hour12: false,
@@ -313,7 +315,7 @@ export function LogViewer() {
       second: '2-digit',
       fractionalSecondDigits: 3,
     });
-  };
+  }, []);
 
   return (
     <Card className="border-border/40 bg-gradient-to-b from-card to-card/80 shadow-lg">

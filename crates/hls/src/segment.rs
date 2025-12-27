@@ -72,7 +72,7 @@ impl TsSegmentData {
     /// Parse PAT and PMT tables from this TS segment
     pub fn parse_psi_tables(&self) -> PsiParseResult {
         let mut parser = OwnedTsParser::new();
-        parser.parse_packets(self.data.as_ref())?;
+        parser.parse_packets(self.data.clone())?;
 
         let pat = parser.pat().cloned();
         let pmts = parser.pmts().values().cloned().collect();

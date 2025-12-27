@@ -1,5 +1,5 @@
 import { ReactNode } from 'react';
-import { cn } from '../../../lib/utils';
+import { cn } from '@/lib/utils';
 
 type TooltipColorTheme =
   | 'amber'
@@ -95,8 +95,20 @@ export function StatusInfoTooltip({
 }: StatusInfoTooltipProps) {
   const styles = themeStyles[theme];
 
+  // Extract color for CSS variables
+  const colorMatch = styles.iconColor.match(/text-([a-z]+)-600/);
+  const colorName = colorMatch ? colorMatch[1] : 'primary';
+
   return (
-    <div className={cn('flex flex-col min-w-[280px] max-w-[340px]', className)}>
+    <div
+      className={cn('flex flex-col min-w-[280px] max-w-[340px]', className)}
+      style={
+        {
+          '--tooltip-theme-color': `var(--${colorName}-500, currentColor)`,
+          '--tooltip-theme-bg': `var(--${colorName}-500-10, color-mix(in srgb, currentColor 10%, transparent))`,
+        } as React.CSSProperties
+      }
+    >
       {/* Header */}
       <div
         className={cn('p-3 bg-gradient-to-br border-b', styles.headerGradient)}
@@ -104,7 +116,7 @@ export function StatusInfoTooltip({
         <div className="flex items-center gap-2.5">
           <div
             className={cn(
-              'p-1.5 rounded-full ring-1',
+              'p-1.5 rounded-full ring-1 transition-colors duration-300',
               styles.iconBg,
               styles.iconColor,
               styles.shadow,
@@ -127,7 +139,7 @@ export function StatusInfoTooltip({
       </div>
 
       {/* Content */}
-      <div className="p-3 space-y-3">{children}</div>
+      <div className="p-3 space-y-3 group/tooltip-content">{children}</div>
     </div>
   );
 }

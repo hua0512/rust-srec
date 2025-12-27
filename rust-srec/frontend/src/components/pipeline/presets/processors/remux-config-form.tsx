@@ -1,6 +1,7 @@
 import { useLingui } from '@lingui/react';
 import { t } from '@lingui/core/macro';
 import { Trans } from '@lingui/react/macro';
+import { memo } from 'react';
 import {
   FormField,
   FormItem,
@@ -41,7 +42,7 @@ import { Slider } from '@/components/ui/slider';
 
 type RemuxConfig = z.infer<typeof RemuxConfigSchema>;
 
-export function RemuxConfigForm({
+export const RemuxConfigForm = memo(function RemuxConfigForm({
   control,
   pathPrefix,
 }: ProcessorConfigFormProps<RemuxConfig>) {
@@ -775,4 +776,4 @@ export function RemuxConfigForm({
       </Tabs>
     </motion.div>
   );
-}
+});

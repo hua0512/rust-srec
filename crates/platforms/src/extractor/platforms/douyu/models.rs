@@ -29,6 +29,32 @@ pub struct DouyuBetardResponse {
     pub room: DouyuBetardRoom,
 }
 
+/// Avatar URLs in different sizes from betard API
+#[derive(Debug, Deserialize, Default)]
+pub struct DouyuAvatar {
+    #[serde(default)]
+    pub big: String,
+    #[serde(default)]
+    pub middle: String,
+    #[serde(default)]
+    pub small: String,
+}
+
+impl DouyuAvatar {
+    /// Returns the best available avatar URL (prefers big, then middle, then small)
+    pub fn get_best(&self) -> Option<String> {
+        if !self.big.is_empty() {
+            Some(self.big.clone())
+        } else if !self.middle.is_empty() {
+            Some(self.middle.clone())
+        } else if !self.small.is_empty() {
+            Some(self.small.clone())
+        } else {
+            None
+        }
+    }
+}
+
 #[derive(Debug, Deserialize)]
 pub struct DouyuBetardRoom {
     pub room_id: u64,
@@ -43,8 +69,8 @@ pub struct DouyuBetardRoom {
     pub is_vip: u64,
     #[serde(default, deserialize_with = "deserialize_string_or_any")]
     pub room_thumb: String,
-    #[serde(default, deserialize_with = "deserialize_string_or_any")]
-    pub avatar: String,
+    #[serde(default)]
+    pub avatar: DouyuAvatar,
 }
 
 /// Custom deserializer that handles both string and non-string values
@@ -231,7 +257,7 @@ pub struct DouyuH5PlayData {
     pub multirates: Vec<Multirates>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Clone)]
 pub struct CdnsWithName {
     pub name: String,
     pub cdn: String,

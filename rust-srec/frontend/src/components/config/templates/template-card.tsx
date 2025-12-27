@@ -37,6 +37,7 @@ import {
   Edit,
   Trash2,
   HardDrive,
+  CopyPlus,
   FileType,
 } from 'lucide-react';
 import z from 'zod';
@@ -45,9 +46,10 @@ import { TemplateSchema } from '@/api/schemas';
 interface TemplateCardProps {
   template: z.infer<typeof TemplateSchema>;
   onEdit: () => void;
+  onClone?: () => void;
 }
 
-export function TemplateCard({ template, onEdit }: TemplateCardProps) {
+export function TemplateCard({ template, onEdit, onClone }: TemplateCardProps) {
   const [showDeleteAlert, setShowDeleteAlert] = useState(false);
   const queryClient = useQueryClient();
   const { i18n } = useLingui();
@@ -113,6 +115,11 @@ export function TemplateCard({ template, onEdit }: TemplateCardProps) {
               <DropdownMenuItem onClick={onEdit}>
                 <Edit className="mr-2 h-4 w-4" /> <Trans>Edit</Trans>
               </DropdownMenuItem>
+              {onClone && (
+                <DropdownMenuItem onClick={onClone}>
+                  <CopyPlus className="mr-2 h-4 w-4" /> <Trans>Clone</Trans>
+                </DropdownMenuItem>
+              )}
               <DropdownMenuSeparator />
               <DropdownMenuItem
                 onClick={() => setShowDeleteAlert(true)}

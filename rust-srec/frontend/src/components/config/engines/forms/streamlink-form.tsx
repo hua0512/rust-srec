@@ -1,4 +1,3 @@
-// ... imports
 import { Control } from 'react-hook-form';
 import {
   FormControl,
@@ -77,6 +76,63 @@ export function StreamlinkForm({
       </div>
 
       <Separator className="bg-border/50" />
+
+      <Card className="border-border/40 bg-background/40 shadow-sm">
+        <CardHeader className="pb-3 pt-4 px-4">
+          <CardTitle className="text-sm font-medium flex items-center gap-2">
+            <Settings className="w-4 h-4 text-primary" />
+            <Trans>Twitch (ttv-lol)</Trans>
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="px-4 pb-4 space-y-4">
+          <FormField
+            control={control}
+            name={`${basePath}.twitch_proxy_playlist`}
+            render={({ field }) => (
+              <FormItem>
+                <FormLabel className="text-[10px] uppercase font-semibold text-muted-foreground">
+                  <Trans>Twitch Proxy Playlist</Trans>
+                </FormLabel>
+                <FormControl>
+                  <Input
+                    {...field}
+                    placeholder={t`https://lb-eu.cdn-perfprod.com`}
+                    className="bg-background/50"
+                  />
+                </FormControl>
+                <FormDescription className="text-[10px]">
+                  <Trans>Custom proxy URL for Twitch playlists</Trans>
+                </FormDescription>
+                <FormMessage />
+              </FormItem>
+            )}
+          />
+          <FormField
+            control={control}
+            name={`${basePath}.twitch_proxy_playlist_exclude`}
+            render={({ field }) => (
+              <FormItem>
+                <FormLabel className="text-[10px] uppercase font-semibold text-muted-foreground">
+                  <Trans>Twitch Proxy Playlist Exclude</Trans>
+                </FormLabel>
+                <FormControl>
+                  <Input
+                    {...field}
+                    placeholder={t`channel1,channel2`}
+                    className="bg-background/50"
+                  />
+                </FormControl>
+                <FormDescription className="text-[10px]">
+                  <Trans>
+                    Comma-separated list of channels to exclude from proxy
+                  </Trans>
+                </FormDescription>
+                <FormMessage />
+              </FormItem>
+            )}
+          />
+        </CardContent>
+      </Card>
 
       <Card className="border-border/40 bg-background/40 shadow-sm">
         <CardHeader className="pb-3 pt-4 px-4">

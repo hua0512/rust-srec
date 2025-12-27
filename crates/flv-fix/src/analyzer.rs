@@ -32,7 +32,7 @@ pub enum AnalyzerError {
 // Stats structure to hold all the metrics
 #[derive(Debug, Clone)]
 pub struct Keyframe {
-    pub timestamp_s: f32,
+    pub timestamp_s: f64,
     pub file_position: u64,
 }
 
@@ -181,7 +181,7 @@ impl FlvStats {
         let first_video_timestamp = self
             .video_stats
             .as_ref()
-            .and_then(|vs| vs.first_keyframe_timestamp);
+            .and_then(|vs| vs.first_video_timestamp);
 
         // Determine the earliest timestamp from available media streams
         let first_timestamp = match (first_video_timestamp, self.first_audio_timestamp) {
@@ -383,11 +383,11 @@ impl FlvStats {
                     }
 
                     // Calculate statistics
-                    let avg_interval = intervals.iter().sum::<f32>() / intervals.len() as f32;
+                    let avg_interval = intervals.iter().sum::<f64>() / intervals.len() as f64;
 
                     // Find min and max intervals
-                    let mut min_interval = f32::MAX;
-                    let mut max_interval = f32::MIN;
+                    let mut min_interval = f64::MAX;
+                    let mut max_interval = f64::MIN;
 
                     for interval in &intervals {
                         min_interval = min_interval.min(*interval);
@@ -457,8 +457,10 @@ impl FlvAnalyzer {
     }
 
     fn analyze_audio_tag(&mut self, tag: &FlvTag) {
+        // Mark audio present as soon as we see any audio tag (sequence headers are not guaranteed).
+        self.stats.has_audio = true;
+
         if tag.is_audio_sequence_header() {
-            self.stats.has_audio = true;
             self.has_audio_sequence_header = true;
 
             if self.stats.audio_codec.is_none() {
@@ -515,6 +517,9 @@ impl FlvAnalyzer {
     }
 
     fn analyze_video_tag(&mut self, tag: &FlvTag) {
+        // Mark video present as soon as we see any video tag (sequence headers are not guaranteed).
+        self.stats.has_video = true;
+
         let timestamp = tag.timestamp_ms;
         let video_stats = self
             .stats
@@ -543,7 +548,6 @@ impl FlvAnalyzer {
                 }
             }
 
-            self.stats.has_video = true;
             self.has_video_sequence_header = true;
         } else if tag.is_key_frame() {
             let position = self.stats.file_size;
@@ -562,7 +566,7 @@ impl FlvAnalyzer {
             if add_keyframe {
                 // Store the position and timestamp for this keyframe
                 video_stats.keyframes.push(Keyframe {
-                    timestamp_s: timestamp as f32 / 1000.0,
+                    timestamp_s: timestamp as f64 / 1000.0,
                     file_position: position,
                 });
                 trace!(

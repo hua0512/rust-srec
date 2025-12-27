@@ -4,6 +4,7 @@
 //! to prevent abuse and respect platform rate limits.
 
 use std::collections::HashMap;
+use std::collections::hash_map::Entry;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
@@ -33,12 +34,21 @@ impl Default for RateLimiterConfig {
 
 impl RateLimiterConfig {
     /// Create a config for a specific requests-per-second limit.
-    pub fn with_rps(rps: f64) -> Self {
-        Self {
-            max_tokens: (rps * 2.0) as u32, // Allow burst of 2x
-            refill_rate: rps,
-            initial_tokens: (rps * 2.0) as u32,
+    pub fn with_rps(rps: f64) -> Result<Self, crate::Error> {
+        if !rps.is_finite() || rps <= 0.0 {
+            return Err(crate::Error::Other(format!(
+                "rate limit must be a positive finite number, got {}",
+                rps
+            )));
         }
+
+        let max_tokens = (rps * 2.0).ceil().max(1.0) as u32; // Allow burst of 2x, min 1
+
+        Ok(Self {
+            max_tokens,
+            refill_rate: rps,
+            initial_tokens: max_tokens,
+        })
     }
 }
 
@@ -246,15 +256,17 @@ impl RateLimiterManager {
         limiters: &'a mut HashMap<String, RateLimiter>,
         platform_id: &str,
     ) -> &'a mut RateLimiter {
-        if !limiters.contains_key(platform_id) {
-            let config = self
-                .platform_configs
-                .get(platform_id)
-                .cloned()
-                .unwrap_or_else(|| self.default_config.clone());
-            limiters.insert(platform_id.to_string(), RateLimiter::new(config));
+        match limiters.entry(platform_id.to_string()) {
+            Entry::Occupied(entry) => entry.into_mut(),
+            Entry::Vacant(entry) => {
+                let config = self
+                    .platform_configs
+                    .get(platform_id)
+                    .cloned()
+                    .unwrap_or_else(|| self.default_config.clone());
+                entry.insert(RateLimiter::new(config))
+            }
         }
-        limiters.get_mut(platform_id).unwrap()
     }
 }
 
@@ -306,9 +318,17 @@ mod tests {
 
     #[test]
     fn test_rate_limiter_config_with_rps() {
-        let config = RateLimiterConfig::with_rps(5.0);
+        let config = RateLimiterConfig::with_rps(5.0).unwrap();
         assert_eq!(config.max_tokens, 10); // 2x burst
         assert_eq!(config.refill_rate, 5.0);
+    }
+
+    #[test]
+    fn test_rate_limiter_config_with_invalid_rps() {
+        assert!(RateLimiterConfig::with_rps(0.0).is_err());
+        assert!(RateLimiterConfig::with_rps(-1.0).is_err());
+        assert!(RateLimiterConfig::with_rps(f64::NAN).is_err());
+        assert!(RateLimiterConfig::with_rps(f64::INFINITY).is_err());
     }
 
     #[tokio::test]

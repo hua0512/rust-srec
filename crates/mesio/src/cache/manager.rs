@@ -33,15 +33,17 @@ impl CacheManager {
         }
 
         let cache_dir = config.disk_cache_path.as_ref().unwrap().clone();
+        let max_disk_size = config.max_disk_cache_size;
         let config = Arc::new(config);
 
         // Create memory cache with configured size
         let memory_cache = Arc::new(MemoryCache::new(config.max_memory_cache_size, 0));
 
-        // Create file cache with configured directory
+        // Create file cache with configured directory and size limit
         let file_cache = Arc::new(FileCache::new(
             cache_dir,
-            config.max_disk_cache_size > 0 && config.enabled,
+            max_disk_size > 0 && config.enabled,
+            max_disk_size,
         ));
 
         // Initialize the cache directories in advance
@@ -58,8 +60,13 @@ impl CacheManager {
 
     /// Create a new cache manager from an existing configuration
     pub fn from_config(config: CacheConfig) -> io::Result<Self> {
-        let runtime = tokio::runtime::Handle::current();
-        runtime.block_on(Self::new(config))
+        if tokio::runtime::Handle::try_current().is_ok() {
+            return Err(io::Error::other(
+                "CacheManager::from_config cannot be called from within a Tokio runtime; use CacheManager::new(...).await",
+            ));
+        }
+
+        tokio::runtime::Runtime::new()?.block_on(Self::new(config))
     }
 
     /// Get a value from the cache
@@ -208,15 +215,17 @@ impl CacheManager {
     }
 
     /// Perform maintenance tasks on the cache
-    /// This should be called periodically to clean up expired entries
+    /// This should be called periodically to clean up expired entries and enforce size limits
     pub async fn maintain(&self) -> CacheResult<()> {
         if !self.config.enabled {
             return Ok(());
         }
 
-        // For now, there's not much maintenance to do since Moka handles eviction
-        // and FileCache doesn't have automatic cleanup
-        // This is a placeholder for future implementation of file cache cleanup
+        // Sweep memory cache (runs Moka's pending tasks for expiration)
+        self.memory_cache.sweep().await?;
+
+        // Sweep file cache (enforces disk size limits via LRU eviction)
+        self.file_cache.sweep().await?;
 
         Ok(())
     }
@@ -235,5 +244,32 @@ impl CacheManager {
                 }
             }
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn from_config_works_outside_tokio_runtime() {
+        let cfg = CacheConfig {
+            enabled: false,
+            ..Default::default()
+        };
+        let manager = CacheManager::from_config(cfg);
+        assert!(manager.is_ok());
+    }
+
+    #[tokio::test]
+    async fn from_config_errors_inside_tokio_runtime() {
+        let cfg = CacheConfig {
+            enabled: false,
+            ..Default::default()
+        };
+        match CacheManager::from_config(cfg) {
+            Ok(_) => panic!("expected CacheManager::from_config to error inside Tokio runtime"),
+            Err(err) => assert_eq!(err.kind(), io::ErrorKind::Other),
+        }
     }
 }

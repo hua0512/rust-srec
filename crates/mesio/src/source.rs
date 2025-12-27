@@ -228,22 +228,18 @@ impl SourceManager {
             return None;
         }
 
-        if self.sources.len() == 1 {
+        let source = if self.sources.len() == 1 {
             let source = &self.sources[0];
-            let is_available = self.is_source_available(&source.url);
-            if is_available {
-                return Some(source.clone());
-            } else {
-                return None; // The only source is inactive
+            self.is_source_available(&source.url)
+                .then(|| source.clone())
+        } else {
+            // Select a source based on the strategy
+            match self.strategy {
+                SourceSelectionStrategy::Priority => self.select_by_priority(),
+                SourceSelectionStrategy::RoundRobin => self.select_round_robin(),
+                SourceSelectionStrategy::FastestResponse => self.select_fastest(),
+                SourceSelectionStrategy::Random => self.select_random(),
             }
-        }
-
-        // Select a source based on the strategy
-        let source = match self.strategy {
-            SourceSelectionStrategy::Priority => self.select_by_priority(),
-            SourceSelectionStrategy::RoundRobin => self.select_round_robin(),
-            SourceSelectionStrategy::FastestResponse => self.select_fastest(),
-            SourceSelectionStrategy::Random => self.select_random(),
         };
 
         // Update the recent selections list
@@ -265,11 +261,10 @@ impl SourceManager {
 
     /// Select a source using the priority strategy
     fn select_by_priority(&self) -> Option<ContentSource> {
-        // Find the first available source by priority
+        // Sources are kept sorted by priority.
         self.sources
             .iter()
-            .filter(|s| self.is_source_available(&s.url))
-            .min_by_key(|s| s.priority)
+            .find(|s| self.is_source_available(&s.url))
             .cloned()
     }
 
@@ -312,25 +307,23 @@ impl SourceManager {
 
     /// Select a random source
     fn select_random(&self) -> Option<ContentSource> {
-        if self.sources.is_empty() {
-            return None;
-        }
+        // Reservoir sample a uniformly random available source without allocating.
+        let mut rng = rand::rng();
+        let mut chosen: Option<&ContentSource> = None;
 
-        // Get available sources
-        let available_sources: Vec<_> = self
+        for (index, source) in self
             .sources
             .iter()
             .filter(|s| self.is_source_available(&s.url))
-            .collect();
-
-        if available_sources.is_empty() {
-            // If no available sources, return None
-            None
-        } else {
-            // Choose a random available source
-            let index = rand::rng().random_range(0..available_sources.len());
-            Some(available_sources[index].clone())
+            .enumerate()
+        {
+            let seen = index + 1;
+            if rng.random_range(0..seen) == 0 {
+                chosen = Some(source);
+            }
         }
+
+        chosen.cloned()
     }
 
     /// Record a successful request to a source
@@ -410,8 +403,13 @@ impl SourceManager {
 
         // Circuit breaker logic: disable source temporarily after repeated failures
         if !success && health.consecutive_failures >= 3 {
-            // Safe: health.consecutive_failures >= 3, so subtraction cannot underflow
-            let backoff_duration = Duration::from_secs(2_u64.pow(health.consecutive_failures - 3));
+            const MAX_BACKOFF_SECS: u64 = 300; // 5 minutes
+
+            // Safe: consecutive_failures >= 3, so subtraction cannot underflow.
+            // Cap the exponent to avoid overflow and excessively long backoffs.
+            let exp = (health.consecutive_failures - 3).min(31);
+            let backoff_secs = (1_u64.checked_shl(exp).unwrap_or(u64::MAX)).min(MAX_BACKOFF_SECS);
+            let backoff_duration = Duration::from_secs(backoff_secs);
             health.disabled_until = Some(Instant::now() + backoff_duration);
 
             debug!(

@@ -67,7 +67,13 @@ export function PlatformOverrideCard({
       value: 'specific',
       label: <Trans>Specific</Trans>,
       icon: Boxes,
-      content: <PlatformSpecificTab form={form} basePath={basePath} />,
+      content: (
+        <PlatformSpecificTab
+          form={form}
+          basePath={basePath}
+          platformName={platformName}
+        />
+      ),
     },
   ];
 
