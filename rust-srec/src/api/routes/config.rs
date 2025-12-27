@@ -97,6 +97,8 @@ fn map_global_config_to_response(config: GlobalConfigDbModel) -> GlobalConfigRes
         job_history_retention_days: config.job_history_retention_days as u32,
         session_gap_time_secs: config.session_gap_time_secs as u64,
         pipeline: config.pipeline,
+        session_complete_pipeline: config.session_complete_pipeline,
+        paired_segment_pipeline: config.paired_segment_pipeline,
         log_filter_directive: config.log_filter_directive,
     }
 }
@@ -123,6 +125,8 @@ fn map_platform_config_to_response(config: PlatformConfigDbModel) -> PlatformCon
         download_retry_policy: config.download_retry_policy,
         event_hooks: config.event_hooks,
         pipeline: config.pipeline,
+        session_complete_pipeline: config.session_complete_pipeline,
+        paired_segment_pipeline: config.paired_segment_pipeline,
     }
 }
 
@@ -207,7 +211,9 @@ pub async fn update_global_config(
         default_download_engine: |v: serde_json::Value| v.as_str().map(String::from),
         record_danmu: |v: serde_json::Value| v.as_bool(),
         proxy_config: |v: serde_json::Value| v.as_str().map(String::from),
-        pipeline: |v: serde_json::Value| v.as_str().map(String::from)
+        pipeline: |v: serde_json::Value| v.as_str().map(String::from),
+        session_complete_pipeline: |v: serde_json::Value| v.as_str().map(String::from),
+        paired_segment_pipeline: |v: serde_json::Value| v.as_str().map(String::from),
     ]);
 
     debug!(
@@ -357,6 +363,8 @@ pub async fn replace_platform_config(
         download_retry_policy: request.download_retry_policy,
         event_hooks: request.event_hooks,
         pipeline: request.pipeline,
+        session_complete_pipeline: request.session_complete_pipeline,
+        paired_segment_pipeline: request.paired_segment_pipeline,
     };
 
     // Replace config
@@ -407,6 +415,8 @@ mod tests {
             job_history_retention_days: 30,
             session_gap_time_secs: 3600,
             pipeline: None,
+            session_complete_pipeline: None,
+            paired_segment_pipeline: None,
             log_filter_directive: "rust_srec=info".to_string(),
         };
 
@@ -452,7 +462,9 @@ mod property_tests {
                 default_download_engine: |v: serde_json::Value| v.as_str().map(String::from),
                 record_danmu: |v: serde_json::Value| v.as_bool(),
                 proxy_config: |v: serde_json::Value| v.as_str().map(String::from),
-                pipeline: |v: serde_json::Value| v.as_str().map(String::from)
+                pipeline: |v: serde_json::Value| v.as_str().map(String::from),
+                session_complete_pipeline: |v: serde_json::Value| v.as_str().map(String::from),
+                paired_segment_pipeline: |v: serde_json::Value| v.as_str().map(String::from)
             ]
         );
     }
@@ -551,6 +563,8 @@ mod property_tests {
                 proxy_config: proxy_config.clone().map(|v| serde_json::json!(v)),
                 session_gap_time_secs: None,
                 pipeline: None,
+                session_complete_pipeline: None,
+                paired_segment_pipeline: None,
                 log_filter_directive: None,
             };
 

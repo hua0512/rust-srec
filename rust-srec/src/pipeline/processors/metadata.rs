@@ -206,44 +206,15 @@ impl MetadataProcessor {
             false
         }
     }
-}
 
-impl Default for MetadataProcessor {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-#[async_trait]
-impl Processor for MetadataProcessor {
-    fn processor_type(&self) -> ProcessorType {
-        ProcessorType::Cpu
-    }
-
-    fn job_types(&self) -> Vec<&'static str> {
-        vec!["metadata", "embed_metadata"]
-    }
-
-    fn name(&self) -> &'static str {
-        "MetadataProcessor"
-    }
-
-    async fn process(
+    async fn process_one(
         &self,
-        input: &ProcessorInput,
+        input_path: &str,
+        output_override: Option<&str>,
+        config: &MetadataConfig,
         ctx: &ProcessorContext,
     ) -> Result<ProcessorOutput> {
         let start = std::time::Instant::now();
-
-        let config: MetadataConfig =
-            super::utils::parse_config_or_default(input.config.as_deref(), ctx, "metadata", None);
-
-        // Get input path
-        let input_path = input.inputs.first().ok_or_else(|| {
-            crate::Error::PipelineError(
-                "No input file specified for metadata embedding".to_string(),
-            )
-        })?;
 
         // Check if input file exists
         if !Path::new(input_path).exists() {
@@ -257,12 +228,12 @@ impl Processor for MetadataProcessor {
         // If not supported, pass through the input file instead of failing
         if !self.supports_metadata(input_path) {
             let duration = start.elapsed().as_secs_f64();
-            let _ = ctx.info(format!(
+            ctx.info(format!(
                 "Input file format does not support metadata embedding, passing through: {}",
                 input_path
             ));
             return Ok(ProcessorOutput {
-                outputs: vec![input_path.clone()],
+                outputs: vec![input_path.to_string()],
                 duration_secs: duration,
                 metadata: Some(
                     serde_json::json!({
@@ -273,23 +244,28 @@ impl Processor for MetadataProcessor {
                     .to_string(),
                 ),
                 skipped_inputs: vec![(
-                    input_path.clone(),
+                    input_path.to_string(),
                     "format does not support metadata embedding".to_string(),
                 )],
                 ..Default::default()
             });
         }
 
-        // Determine output path
-        let output_path = self.determine_output_path(input_path, &config, input);
+        let mut dummy_input = ProcessorInput::default();
+        if let Some(output_override) = output_override.filter(|s| !s.is_empty()) {
+            dummy_input.outputs = vec![output_override.to_string()];
+        }
 
-        let _ = ctx.info(format!(
+        // Determine output path
+        let output_path = self.determine_output_path(input_path, config, &dummy_input);
+
+        ctx.info(format!(
             "Embedding metadata into {} -> {} (artist: {:?}, title: {:?}, date: {:?})",
             input_path, output_path, config.artist, config.title, config.date
         ));
 
         // Build ffmpeg arguments
-        let args = self.build_args(input_path, &output_path, &config);
+        let args = self.build_args(input_path, &output_path, config);
         debug!("FFmpeg args: {:?}", args);
 
         // Get input file size for metrics
@@ -347,7 +323,7 @@ impl Processor for MetadataProcessor {
             .ok()
             .map(|m| m.len());
 
-        let _ = ctx.info(format!(
+        ctx.info(format!(
             "Metadata embedding completed in {:.2}s: {}",
             command_output.duration, output_path
         ));
@@ -373,16 +349,135 @@ impl Processor for MetadataProcessor {
             input_size_bytes,
             output_size_bytes,
             failed_inputs: vec![],
-            succeeded_inputs: vec![input_path.clone()],
+            succeeded_inputs: vec![input_path.to_string()],
             skipped_inputs: vec![],
             logs: command_output.logs,
         })
     }
 }
 
+impl Default for MetadataProcessor {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+#[async_trait]
+impl Processor for MetadataProcessor {
+    fn processor_type(&self) -> ProcessorType {
+        ProcessorType::Cpu
+    }
+
+    fn job_types(&self) -> Vec<&'static str> {
+        vec!["metadata", "embed_metadata"]
+    }
+
+    fn name(&self) -> &'static str {
+        "MetadataProcessor"
+    }
+
+    fn supports_batch_input(&self) -> bool {
+        true
+    }
+
+    async fn process(
+        &self,
+        input: &ProcessorInput,
+        ctx: &ProcessorContext,
+    ) -> Result<ProcessorOutput> {
+        let config: MetadataConfig =
+            super::utils::parse_config_or_default(input.config.as_deref(), ctx, "metadata", None);
+
+        if input.inputs.is_empty() {
+            return Err(crate::Error::PipelineError(
+                "No input file specified for metadata embedding".to_string(),
+            ));
+        }
+
+        if input.inputs.len() > 1 {
+            // Batch mode: config.output_path is ambiguous when multiple inputs exist.
+            if config.output_path.is_some() {
+                return Err(crate::Error::PipelineError(
+                    "metadata: config.output_path is not supported for batch inputs; provide outputs[] per input or omit outputs to use generated defaults".to_string(),
+                ));
+            }
+
+            if !input.outputs.is_empty() && input.outputs.len() != input.inputs.len() {
+                return Err(crate::Error::PipelineError(format!(
+                    "metadata batch job requires outputs to be empty or have the same length as inputs (inputs={}, outputs={})",
+                    input.inputs.len(),
+                    input.outputs.len()
+                )));
+            }
+
+            let mut outputs = Vec::with_capacity(input.inputs.len());
+            let mut items_produced = Vec::new();
+            let mut skipped_inputs = Vec::new();
+            let mut succeeded_inputs = Vec::new();
+            let mut logs = Vec::new();
+            let mut duration_secs = 0.0;
+
+            for (idx, input_path) in input.inputs.iter().enumerate() {
+                let output_override = input.outputs.get(idx).map(|s| s.as_str());
+                match self
+                    .process_one(input_path, output_override, &config, ctx)
+                    .await
+                {
+                    Ok(one) => {
+                        duration_secs += one.duration_secs;
+                        outputs.extend(one.outputs);
+                        items_produced.extend(one.items_produced);
+                        skipped_inputs.extend(one.skipped_inputs);
+                        succeeded_inputs.extend(one.succeeded_inputs);
+                        logs.extend(one.logs);
+                    }
+                    Err(e) => {
+                        for produced in &items_produced {
+                            let _ = tokio::fs::remove_file(produced).await;
+                        }
+                        return Err(e);
+                    }
+                }
+            }
+
+            return Ok(ProcessorOutput {
+                outputs,
+                duration_secs,
+                metadata: Some(
+                    serde_json::json!({
+                        "batch": true,
+                        "inputs": input.inputs.len(),
+                    })
+                    .to_string(),
+                ),
+                items_produced,
+                input_size_bytes: None,
+                output_size_bytes: None,
+                failed_inputs: vec![],
+                succeeded_inputs,
+                skipped_inputs,
+                logs,
+            });
+        }
+
+        // Get input path
+        let input_path = input.inputs.first().ok_or_else(|| {
+            crate::Error::PipelineError(
+                "No input file specified for metadata embedding".to_string(),
+            )
+        })?;
+
+        let output_override = input.outputs.first().map(|s| s.as_str());
+        self.process_one(input_path, output_override, &config, ctx)
+            .await
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::fs;
+    use tempfile::TempDir;
 
     #[test]
     fn test_metadata_processor_type() {
@@ -762,5 +857,75 @@ mod tests {
 
         // Cleanup
         let _ = tokio::fs::remove_file(&temp_file).await;
+    }
+
+    #[tokio::test]
+    async fn test_metadata_batch_outputs_len_mismatch_errors() {
+        let processor = MetadataProcessor::new();
+        let ctx = ProcessorContext::noop("test");
+
+        let input = ProcessorInput {
+            inputs: vec!["a.txt".to_string(), "b.txt".to_string()],
+            outputs: vec!["out.mp4".to_string()],
+            config: None,
+            streamer_id: "test".to_string(),
+            session_id: "test".to_string(),
+            ..Default::default()
+        };
+
+        let err = processor.process(&input, &ctx).await.unwrap_err();
+        assert!(
+            err.to_string()
+                .contains("outputs to be empty or have the same length")
+        );
+    }
+
+    #[tokio::test]
+    async fn test_metadata_batch_config_output_path_forbidden() {
+        let processor = MetadataProcessor::new();
+        let ctx = ProcessorContext::noop("test");
+
+        let input = ProcessorInput {
+            inputs: vec!["a.txt".to_string(), "b.txt".to_string()],
+            outputs: vec![],
+            config: Some(serde_json::json!({ "output_path": "out.mp4" }).to_string()),
+            streamer_id: "test".to_string(),
+            session_id: "test".to_string(),
+            ..Default::default()
+        };
+
+        let err = processor.process(&input, &ctx).await.unwrap_err();
+        assert!(err.to_string().contains("config.output_path"));
+    }
+
+    #[tokio::test]
+    async fn test_metadata_batch_skips_unsupported_formats() {
+        let temp_dir = TempDir::new().unwrap();
+        let a = temp_dir.path().join("a.txt");
+        let b = temp_dir.path().join("b.txt");
+        fs::write(&a, "a").unwrap();
+        fs::write(&b, "b").unwrap();
+
+        let processor = MetadataProcessor::new();
+        let ctx = ProcessorContext::noop("test");
+
+        let input = ProcessorInput {
+            inputs: vec![
+                a.to_string_lossy().to_string(),
+                b.to_string_lossy().to_string(),
+            ],
+            outputs: vec![],
+            config: None,
+            streamer_id: "test".to_string(),
+            session_id: "test".to_string(),
+            ..Default::default()
+        };
+
+        let output = processor.process(&input, &ctx).await.unwrap();
+        assert_eq!(output.outputs.len(), 2);
+        assert_eq!(output.outputs[0], a.to_string_lossy().to_string());
+        assert_eq!(output.outputs[1], b.to_string_lossy().to_string());
+        assert!(output.items_produced.is_empty());
+        assert_eq!(output.skipped_inputs.len(), 2);
     }
 }

@@ -2,6 +2,7 @@
 
 use async_trait::async_trait;
 use sqlx::SqlitePool;
+use std::collections::{HashMap, HashSet};
 
 use crate::database::models::{
     DagExecutionDbModel, DagExecutionStats, DagStepExecutionDbModel, DagStepStatus, ReadyStep,
@@ -478,6 +479,35 @@ impl DagRepository for SqlxDagRepository {
             let now = chrono::Utc::now().to_rfc3339();
             let outputs_json = serde_json::to_string(outputs)?;
 
+            fn output_dedup_key(output: &str) -> String {
+                if cfg!(windows) {
+                    output.to_lowercase()
+                } else {
+                    output.to_string()
+                }
+            }
+
+            fn merge_dependency_outputs(
+                depends_on_step_ids: &[String],
+                completed_outputs_by_step_id: &HashMap<String, Vec<String>>,
+            ) -> Vec<String> {
+                let mut merged = Vec::new();
+                let mut seen = HashSet::<String>::new();
+
+                for dep in depends_on_step_ids {
+                    let Some(dep_outputs) = completed_outputs_by_step_id.get(dep) else {
+                        continue;
+                    };
+                    for out in dep_outputs {
+                        if seen.insert(output_dedup_key(out)) {
+                            merged.push(out.clone());
+                        }
+                    }
+                }
+
+                merged
+            }
+
             // 1. Mark step as completed with outputs
             sqlx::query(
                 r#"
@@ -524,31 +554,54 @@ impl DagRepository for SqlxDagRepository {
             )
             .bind(&completed_step.dag_id)
             .bind(&completed_step.step_id)
+                .fetch_all(&mut *tx)
+                .await?;
+
+            // 5. For each dependent, check if ALL its dependencies are complete.
+            //
+            // Performance: avoid per-dependent SQL queries. Instead, load the DAG step statuses
+            // and completed outputs once and evaluate readiness in-memory.
+            let step_rows: Vec<(String, String, Option<String>)> = sqlx::query_as(
+                r#"
+                SELECT step_id, status, outputs
+                FROM dag_step_execution
+                WHERE dag_id = ?
+                "#,
+            )
+            .bind(&completed_step.dag_id)
             .fetch_all(&mut *tx)
             .await?;
 
-            // 5. For each dependent, check if ALL its dependencies are complete
+            let mut status_by_step_id: HashMap<String, String> =
+                HashMap::with_capacity(step_rows.len());
+            let mut completed_outputs_by_step_id: HashMap<String, Vec<String>> =
+                HashMap::with_capacity(step_rows.len());
+
+            for (step_id, status, outputs) in step_rows {
+                status_by_step_id.insert(step_id.clone(), status.clone());
+                if status == "COMPLETED" {
+                    let parsed = outputs
+                        .as_deref()
+                        .and_then(|raw| serde_json::from_str::<Vec<String>>(raw).ok())
+                        .unwrap_or_default();
+                    completed_outputs_by_step_id.insert(step_id, parsed);
+                }
+            }
+
             let mut ready_steps = Vec::new();
 
             for dependent in blocked_dependents {
-                // let depends_on: Vec<String> =
-                //     serde_json::from_str(&dependent.depends_on_step_ids).unwrap_or_default();
+                let depends_on: Vec<String> =
+                    serde_json::from_str(&dependent.depends_on_step_ids).unwrap_or_default();
 
-                // Check if all dependencies are COMPLETED
-                let incomplete_count: i64 = sqlx::query_scalar(
-                    r#"
-                    SELECT COUNT(*) FROM dag_step_execution
-                    WHERE dag_id = ?
-                      AND step_id IN (SELECT value FROM json_each(?))
-                      AND status != 'COMPLETED'
-                    "#,
-                )
-                .bind(&completed_step.dag_id)
-                .bind(&dependent.depends_on_step_ids)
-                .fetch_one(&mut *tx)
-                .await?;
+                let all_deps_complete = depends_on.iter().all(|dep| {
+                    status_by_step_id
+                        .get(dep)
+                        .map(|s| s == "COMPLETED")
+                        .unwrap_or(false)
+                });
 
-                if incomplete_count == 0 {
+                if all_deps_complete {
                     // All dependencies complete - mark as PENDING
                     sqlx::query(
                         "UPDATE dag_step_execution SET status = 'PENDING', updated_at = ? WHERE id = ?",
@@ -558,32 +611,11 @@ impl DagRepository for SqlxDagRepository {
                     .execute(&mut *tx)
                     .await?;
 
-                    // Collect merged inputs from all dependencies
-                    let outputs_rows: Vec<Option<String>> = sqlx::query_scalar(
-                        r#"
-                        SELECT outputs FROM dag_step_execution
-                        WHERE dag_id = ?
-                          AND step_id IN (SELECT value FROM json_each(?))
-                          AND status = 'COMPLETED'
-                        "#,
-                    )
-                    .bind(&completed_step.dag_id)
-                    .bind(&dependent.depends_on_step_ids)
-                    .fetch_all(&mut *tx)
-                    .await?;
-
-                    // Deduplicate merged inputs to handle passthrough jobs in fan-in scenarios
-                    // where multiple dependency steps may output the same file.
-                    // Using IndexSet to preserve order while removing duplicates.
-                    let merged_inputs: Vec<String> = outputs_rows
-                        .into_iter()
-                        .flatten()
-                        .flat_map(|s| {
-                            serde_json::from_str::<Vec<String>>(&s).unwrap_or_default()
-                        })
-                        .collect::<indexmap::IndexSet<_>>()
-                        .into_iter()
-                        .collect();
+                    // Collect merged inputs from all dependencies (fan-in), respecting dependency order.
+                    let merged_inputs = merge_dependency_outputs(
+                        &depends_on,
+                        &completed_outputs_by_step_id,
+                    );
 
                     // Update the step record with PENDING status
                     let mut updated_step = dependent.clone();
@@ -1007,16 +1039,9 @@ mod tests {
             .unwrap();
         assert_eq!(ready.len(), 1);
         assert_eq!(ready[0].step.step_id, "C");
-        assert_eq!(ready[0].merged_inputs.len(), 2);
-        assert!(
-            ready[0]
-                .merged_inputs
-                .contains(&"/output/a.mp4".to_string())
-        );
-        assert!(
-            ready[0]
-                .merged_inputs
-                .contains(&"/output/b.jpg".to_string())
+        assert_eq!(
+            ready[0].merged_inputs,
+            vec!["/output/a.mp4".to_string(), "/output/b.jpg".to_string()]
         );
     }
 

@@ -57,6 +57,26 @@ impl<R: ConfigRepository> ConfigResolver<R> {
             },
             "Invalid JSON config; ignoring",
         );
+        let global_session_complete_pipeline: Option<DagPipelineDefinition> = json::parse_optional(
+            global_config.session_complete_pipeline.as_deref(),
+            JsonContext::StreamerConfig {
+                streamer_id: &streamer.id,
+                scope: "global",
+                scope_id: None,
+                field: "session_complete_pipeline",
+            },
+            "Invalid JSON config; ignoring",
+        );
+        let global_paired_segment_pipeline: Option<DagPipelineDefinition> = json::parse_optional(
+            global_config.paired_segment_pipeline.as_deref(),
+            JsonContext::StreamerConfig {
+                streamer_id: &streamer.id,
+                scope: "global",
+                scope_id: None,
+                field: "paired_segment_pipeline",
+            },
+            "Invalid JSON config; ignoring",
+        );
 
         builder = builder.with_global(
             global_config.output_folder.clone(),
@@ -79,6 +99,8 @@ impl<R: ConfigRepository> ConfigResolver<R> {
             global_config.default_download_engine.clone(),
             global_config.session_gap_time_secs,
             global_pipeline,
+            global_session_complete_pipeline,
+            global_paired_segment_pipeline,
         );
 
         // Layer 2: Platform config
@@ -147,6 +169,27 @@ impl<R: ConfigRepository> ConfigResolver<R> {
             },
             "Invalid JSON config; ignoring",
         );
+        let platform_session_complete_pipeline: Option<DagPipelineDefinition> =
+            json::parse_optional(
+                platform_config.session_complete_pipeline.as_deref(),
+                JsonContext::StreamerConfig {
+                    streamer_id: &streamer.id,
+                    scope: "platform",
+                    scope_id: Some(&streamer.platform_config_id),
+                    field: "session_complete_pipeline",
+                },
+                "Invalid JSON config; ignoring",
+            );
+        let platform_paired_segment_pipeline: Option<DagPipelineDefinition> = json::parse_optional(
+            platform_config.paired_segment_pipeline.as_deref(),
+            JsonContext::StreamerConfig {
+                streamer_id: &streamer.id,
+                scope: "platform",
+                scope_id: Some(&streamer.platform_config_id),
+                field: "paired_segment_pipeline",
+            },
+            "Invalid JSON config; ignoring",
+        );
 
         builder = builder.with_platform(
             platform_config.fetch_delay_ms,
@@ -166,6 +209,8 @@ impl<R: ConfigRepository> ConfigResolver<R> {
             platform_download_retry_policy,
             platform_event_hooks,
             platform_pipeline,
+            platform_session_complete_pipeline,
+            platform_paired_segment_pipeline,
         );
 
         // Layer 3: Template config (if assigned)
@@ -260,6 +305,28 @@ impl<R: ConfigRepository> ConfigResolver<R> {
                 },
                 "Invalid JSON config; ignoring",
             );
+            let template_session_complete_pipeline: Option<DagPipelineDefinition> =
+                json::parse_optional(
+                    template_config.session_complete_pipeline.as_deref(),
+                    JsonContext::StreamerConfig {
+                        streamer_id: &streamer.id,
+                        scope: "template",
+                        scope_id: Some(template_id),
+                        field: "session_complete_pipeline",
+                    },
+                    "Invalid JSON config; ignoring",
+                );
+            let template_paired_segment_pipeline: Option<DagPipelineDefinition> =
+                json::parse_optional(
+                    template_config.paired_segment_pipeline.as_deref(),
+                    JsonContext::StreamerConfig {
+                        streamer_id: &streamer.id,
+                        scope: "template",
+                        scope_id: Some(template_id),
+                        field: "paired_segment_pipeline",
+                    },
+                    "Invalid JSON config; ignoring",
+                );
 
             builder = builder.with_template(
                 template_config.output_folder,
@@ -278,6 +345,8 @@ impl<R: ConfigRepository> ConfigResolver<R> {
                 template_stream_selection,
                 template_engines_override,
                 template_pipeline,
+                template_session_complete_pipeline,
+                template_paired_segment_pipeline,
                 template_platform_extras, // platform_extras from platform_overrides
             );
         }

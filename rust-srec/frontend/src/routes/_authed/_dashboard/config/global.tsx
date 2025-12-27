@@ -73,11 +73,15 @@ function GlobalConfigForm({
       ...config,
       proxy_config: config.proxy_config ?? null,
       pipeline: config.pipeline ?? null,
+      session_complete_pipeline: config.session_complete_pipeline ?? null,
+      paired_segment_pipeline: config.paired_segment_pipeline ?? null,
     },
     values: {
       ...config,
       proxy_config: config.proxy_config ?? null,
       pipeline: config.pipeline ?? null,
+      session_complete_pipeline: config.session_complete_pipeline ?? null,
+      paired_segment_pipeline: config.paired_segment_pipeline ?? null,
     },
   });
 

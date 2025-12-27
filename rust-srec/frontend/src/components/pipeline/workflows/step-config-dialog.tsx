@@ -342,9 +342,9 @@ export const StepConfigDialog = memo(function StepConfigDialog({
               {/* TAB 1: CONFIGURATION */}
               <TabsContent
                 value="config"
-                className="flex-1 min-h-0 mt-0 flex flex-col data-[state=inactive]:hidden"
+                className="flex-1 min-h-0 mt-0 data-[state=inactive]:hidden"
               >
-                <ScrollArea className="flex-1 bg-background/50">
+                <ScrollArea className="h-full bg-background/50">
                   {isPreset && !isDetached ? (
                     // PRESET VIEW
                     <div className="p-6">
@@ -431,9 +431,9 @@ export const StepConfigDialog = memo(function StepConfigDialog({
               {/* TAB 2: FLOW & DEPENDENCIES */}
               <TabsContent
                 value="flow"
-                className="flex-1 min-h-0 mt-0 flex flex-col data-[state=inactive]:hidden"
+                className="flex-1 min-h-0 mt-0 data-[state=inactive]:hidden"
               >
-                <ScrollArea className="flex-1 bg-background/50">
+                <ScrollArea className="h-full bg-background/50">
                   <div className="p-6 max-w-2xl mx-auto space-y-6">
                     <div className="flex items-center gap-2 mb-6">
                       <div className="h-8 w-1 rounded bg-blue-500/50" />
@@ -497,11 +497,10 @@ export const StepConfigDialog = memo(function StepConfigDialog({
                                     return (
                                       <div
                                         key={otherId}
-                                        className={`flex items-center space-x-3 p-3 rounded-md transition-colors ${
-                                          isDep
+                                        className={`flex items-center space-x-3 p-3 rounded-md transition-colors ${isDep
                                             ? 'bg-primary/10 border border-primary/20'
                                             : 'hover:bg-muted/50 border border-transparent'
-                                        }`}
+                                          }`}
                                       >
                                         <Checkbox
                                           id={`dep-${otherId}`}

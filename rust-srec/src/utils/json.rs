@@ -263,6 +263,10 @@ pub fn parse_or_default<T: DeserializeOwned + Default>(
     ctx: JsonContext<'_>,
     msg: &'static str,
 ) -> T {
+    // Treat empty string as "no value" - return default without warning
+    if raw.is_empty() {
+        return T::default();
+    }
     match serde_json::from_str(raw) {
         Ok(parsed) => parsed,
         Err(error) => {

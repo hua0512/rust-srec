@@ -156,6 +156,10 @@ impl Processor for DeleteProcessor {
         "DeleteProcessor"
     }
 
+    fn supports_batch_input(&self) -> bool {
+        true
+    }
+
     async fn process(
         &self,
         input: &ProcessorInput,
@@ -167,107 +171,207 @@ impl Processor for DeleteProcessor {
         let config: DeleteConfig =
             parse_config_or_default(input.config.as_deref(), ctx, "delete", Some(&mut logs));
 
-        // Get file path to delete
-        let file_path = input.inputs.first().ok_or_else(|| {
-            crate::Error::PipelineError("No file path specified for delete".to_string())
-        })?;
+        if input.inputs.is_empty() {
+            return Err(crate::Error::PipelineError(
+                "No file path specified for delete".to_string(),
+            ));
+        }
 
-        let path = Path::new(file_path);
+        // Preserve the legacy single-input behavior (metadata schema + logs).
+        if input.inputs.len() == 1 {
+            // Get file path to delete
+            let file_path = input.inputs.first().expect("checked non-empty");
 
-        let start_msg = format!("Deleting file: {}", file_path);
+            let path = Path::new(file_path);
+
+            let start_msg = format!("Deleting file: {}", file_path);
+            info!("{}", start_msg);
+            logs.push(create_log_entry(
+                crate::pipeline::job_queue::LogLevel::Info,
+                start_msg,
+            ));
+
+            // Check if file exists (Requirements: 5.2)
+            if !path.exists() {
+                let msg = format!(
+                    "File does not exist, marking job as completed: {}",
+                    file_path
+                );
+                warn!("{}", msg);
+                logs.push(create_log_entry(
+                    crate::pipeline::job_queue::LogLevel::Warn,
+                    msg,
+                ));
+
+                let duration = start.elapsed().as_secs_f64();
+                // Requirements: 11.5 - Track as succeeded (non-existent file is not a failure)
+                return Ok(ProcessorOutput {
+                    outputs: vec![],
+                    duration_secs: duration,
+                    metadata: Some(
+                        serde_json::json!({
+                            "status": "skipped",
+                            "reason": "file_not_found",
+                            "path": file_path,
+                        })
+                        .to_string(),
+                    ),
+                    items_produced: vec![],
+                    input_size_bytes: None,
+                    output_size_bytes: None,
+                    failed_inputs: vec![],
+                    succeeded_inputs: vec![file_path.clone()],
+                    skipped_inputs: vec![],
+                    logs,
+                });
+            }
+
+            // Get file size before deletion for metrics
+            let file_size = fs::metadata(path).await.map(|m| m.len()).ok();
+
+            // Attempt deletion with retry logic (Requirements: 5.1, 5.3, 5.4)
+            return match self.delete_with_retry(path, &config, &mut logs).await {
+                Ok(()) => {
+                    let duration = start.elapsed().as_secs_f64();
+                    let msg = format!(
+                        "File deleted successfully in {:.2}s: {}",
+                        duration, file_path
+                    );
+                    info!("{}", msg);
+                    logs.push(create_log_entry(
+                        crate::pipeline::job_queue::LogLevel::Info,
+                        msg,
+                    ));
+
+                    // Requirements: 11.5 - Track succeeded inputs for partial failure reporting
+                    Ok(ProcessorOutput {
+                        outputs: vec![],
+                        duration_secs: duration,
+                        metadata: Some(
+                            serde_json::json!({
+                                "status": "deleted",
+                                "path": file_path,
+                                "size_bytes": file_size,
+                            })
+                            .to_string(),
+                        ),
+                        items_produced: vec![],
+                        input_size_bytes: file_size,
+                        output_size_bytes: Some(0),
+                        failed_inputs: vec![],
+                        succeeded_inputs: vec![file_path.clone()],
+                        skipped_inputs: vec![],
+                        logs,
+                    })
+                }
+                Err(error_msg) => {
+                    let err_detail = format!(
+                        "Failed to delete file after {} retries: {} - {}",
+                        config.max_retries, file_path, error_msg
+                    );
+                    error!("{}", err_detail); // Log error for backend
+                    logs.push(create_log_entry(
+                        crate::pipeline::job_queue::LogLevel::Error,
+                        err_detail.clone(),
+                    ));
+
+                    // Requirements: 5.4 - Report error after all retries fail
+                    Err(crate::Error::PipelineError(err_detail))
+                }
+            };
+        }
+
+        // Batch behavior: delete all inputs, fail if any deletion fails.
+        //
+        // Note: avoid per-file success log entries to prevent unbounded log growth for very large
+        // batches (session-complete can include many files).
+        let start_msg = format!("Deleting {} files", input.inputs.len());
         info!("{}", start_msg);
         logs.push(create_log_entry(
             crate::pipeline::job_queue::LogLevel::Info,
             start_msg,
         ));
 
-        // Check if file exists (Requirements: 5.2)
-        if !path.exists() {
-            let msg = format!(
-                "File does not exist, marking job as completed: {}",
-                file_path
-            );
-            warn!("{}", msg);
-            logs.push(create_log_entry(
-                crate::pipeline::job_queue::LogLevel::Warn,
-                msg,
-            ));
+        let mut succeeded = 0usize;
+        let mut skipped_missing = 0usize;
+        let mut failed: Vec<(String, String)> = Vec::new();
+        let mut total_input_size: u64 = 0;
 
-            let duration = start.elapsed().as_secs_f64();
-            // Requirements: 11.5 - Track as succeeded (non-existent file is not a failure)
-            return Ok(ProcessorOutput {
-                outputs: vec![],
-                duration_secs: duration,
-                metadata: Some(
-                    serde_json::json!({
-                        "status": "skipped",
-                        "reason": "file_not_found",
-                        "path": file_path,
-                    })
-                    .to_string(),
-                ),
-                items_produced: vec![],
-                input_size_bytes: None,
-                output_size_bytes: None,
-                failed_inputs: vec![],
-                succeeded_inputs: vec![file_path.clone()],
-                skipped_inputs: vec![],
-                logs,
-            });
-        }
+        for file_path in &input.inputs {
+            let path = Path::new(file_path);
 
-        // Get file size before deletion for metrics
-        let file_size = fs::metadata(path).await.map(|m| m.len()).ok();
-
-        // Attempt deletion with retry logic (Requirements: 5.1, 5.3, 5.4)
-        match self.delete_with_retry(path, &config, &mut logs).await {
-            Ok(()) => {
-                let duration = start.elapsed().as_secs_f64();
-                let msg = format!(
-                    "File deleted successfully in {:.2}s: {}",
-                    duration, file_path
-                );
-                info!("{}", msg);
+            if !path.exists() {
+                skipped_missing = skipped_missing.saturating_add(1);
+                let msg = format!("File does not exist, skipping: {}", file_path);
+                warn!("{}", msg);
                 logs.push(create_log_entry(
-                    crate::pipeline::job_queue::LogLevel::Info,
+                    crate::pipeline::job_queue::LogLevel::Warn,
                     msg,
                 ));
-
-                // Requirements: 11.5 - Track succeeded inputs for partial failure reporting
-                Ok(ProcessorOutput {
-                    outputs: vec![],
-                    duration_secs: duration,
-                    metadata: Some(
-                        serde_json::json!({
-                            "status": "deleted",
-                            "path": file_path,
-                            "size_bytes": file_size,
-                        })
-                        .to_string(),
-                    ),
-                    items_produced: vec![],
-                    input_size_bytes: file_size,
-                    output_size_bytes: Some(0),
-                    failed_inputs: vec![],
-                    succeeded_inputs: vec![file_path.clone()],
-                    skipped_inputs: vec![],
-                    logs,
-                })
+                continue;
             }
-            Err(error_msg) => {
-                let err_detail = format!(
-                    "Failed to delete file after {} retries: {} - {}",
-                    config.max_retries, file_path, error_msg
-                );
-                error!("{}", err_detail); // Log error for backend
-                logs.push(create_log_entry(
-                    crate::pipeline::job_queue::LogLevel::Error,
-                    err_detail.clone(),
-                ));
 
-                // Requirements: 5.4 - Report error after all retries fail
-                Err(crate::Error::PipelineError(err_detail))
+            if let Ok(meta) = fs::metadata(path).await {
+                total_input_size = total_input_size.saturating_add(meta.len());
             }
+
+            match self.delete_with_retry(path, &config, &mut logs).await {
+                Ok(()) => {
+                    succeeded = succeeded.saturating_add(1);
+                }
+                Err(error_msg) => {
+                    failed.push((file_path.clone(), error_msg));
+                }
+            }
+        }
+
+        let duration = start.elapsed().as_secs_f64();
+        let summary = serde_json::json!({
+            "status": if failed.is_empty() { "deleted" } else { "failed" },
+            "total": input.inputs.len(),
+            "deleted": succeeded,
+            "skipped_missing": skipped_missing,
+            "failed": failed.len(),
+        });
+
+        if failed.is_empty() {
+            Ok(ProcessorOutput {
+                outputs: vec![],
+                duration_secs: duration,
+                metadata: Some(summary.to_string()),
+                items_produced: vec![],
+                input_size_bytes: Some(total_input_size),
+                output_size_bytes: Some(0),
+                failed_inputs: vec![],
+                succeeded_inputs: input.inputs.clone(),
+                skipped_inputs: vec![],
+                logs,
+            })
+        } else {
+            let mut msg = format!(
+                "Failed to delete {} of {} files (deleted {}, skipped_missing {})",
+                failed.len(),
+                input.inputs.len(),
+                succeeded,
+                skipped_missing
+            );
+            // Include a small number of examples for debuggability without exploding the error string.
+            const MAX_EXAMPLES: usize = 5;
+            let examples: Vec<String> = failed
+                .iter()
+                .take(MAX_EXAMPLES)
+                .map(|(path, err)| format!("{}: {}", path, err))
+                .collect();
+            if !examples.is_empty() {
+                msg.push_str(&format!(". Examples: {}", examples.join("; ")));
+            }
+
+            error!("{}", msg);
+            logs.push(create_log_entry(
+                crate::pipeline::job_queue::LogLevel::Error,
+                msg.clone(),
+            ));
+            Err(crate::Error::PipelineError(msg))
         }
     }
 }
@@ -439,6 +543,46 @@ mod tests {
         // Verify file was deleted
         assert!(!file_path.exists());
         assert!(output.outputs.is_empty());
+    }
+
+    #[tokio::test]
+    async fn test_delete_multiple_inputs() {
+        let temp_dir = TempDir::new().unwrap();
+        let file_a = temp_dir.path().join("a.txt");
+        let file_b = temp_dir.path().join("b.txt");
+        let missing = temp_dir.path().join("missing.txt");
+
+        fs::write(&file_a, "a").await.unwrap();
+        fs::write(&file_b, "b").await.unwrap();
+
+        let processor = DeleteProcessor::new();
+        let ctx = ProcessorContext::noop("test");
+        let input = ProcessorInput {
+            inputs: vec![
+                file_a.to_string_lossy().to_string(),
+                file_b.to_string_lossy().to_string(),
+                missing.to_string_lossy().to_string(),
+            ],
+            outputs: vec![],
+            config: None,
+            streamer_id: "test".to_string(),
+            session_id: "test".to_string(),
+            ..Default::default()
+        };
+
+        let output = processor.process(&input, &ctx).await.unwrap();
+
+        assert!(!file_a.exists());
+        assert!(!file_b.exists());
+        assert!(output.outputs.is_empty());
+        assert_eq!(output.output_size_bytes, Some(0));
+
+        let metadata: serde_json::Value =
+            serde_json::from_str(output.metadata.as_ref().unwrap()).unwrap();
+        assert_eq!(metadata["status"], "deleted");
+        assert_eq!(metadata["deleted"], 2);
+        assert_eq!(metadata["skipped_missing"], 1);
+        assert_eq!(metadata["failed"], 0);
     }
 
     #[test]

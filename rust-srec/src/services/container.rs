@@ -55,6 +55,18 @@ const DEFAULT_EVENT_CAPACITY: usize = 256;
 /// Default shutdown timeout.
 const DEFAULT_SHUTDOWN_TIMEOUT: Duration = Duration::from_secs(30);
 
+fn autoscale_concurrency_limit(raw: i32) -> usize {
+    if raw > 0 {
+        return raw as usize;
+    }
+
+    let cores = std::thread::available_parallelism()
+        .map(|n| n.get())
+        .unwrap_or(2);
+
+    (cores / 2).max(1)
+}
+
 /// Service container holding all application services.
 pub struct ServiceContainer {
     /// Database connection pool.
@@ -120,6 +132,9 @@ impl ServiceContainer {
         let config_repo = Arc::new(SqlxConfigRepository::new(pool.clone()));
         let streamer_repo = Arc::new(SqlxStreamerRepository::new(pool.clone()));
 
+        // Load global config early for initial runtime knobs (worker pools, scheduler timing, etc.).
+        let global_config = config_repo.get_global_config().await?;
+
         // Create shared event broadcaster
         let event_broadcaster = ConfigEventBroadcaster::with_capacity(event_capacity);
 
@@ -129,10 +144,11 @@ impl ServiceContainer {
 
         // Create config service with custom cache
         let cache = ConfigCache::with_ttl(cache_ttl);
-        let config_service = Arc::new(ConfigService::with_cache(
+        let config_service = Arc::new(ConfigService::with_cache_and_broadcaster(
             config_repo.clone(),
             streamer_repo.clone(),
             cache,
+            event_broadcaster.clone(),
         ));
 
         // Create streamer manager
@@ -150,10 +166,14 @@ impl ServiceContainer {
             pool.clone(),
         ));
 
-        // Create download manager with default config
+        // Create download manager with default config, overridden by global config.
+        let download_config = DownloadManagerConfig {
+            max_concurrent_downloads: (global_config.max_concurrent_downloads as i64).max(1)
+                as usize,
+            ..Default::default()
+        };
         let download_manager = Arc::new(
-            DownloadManager::with_config(DownloadManagerConfig::default())
-                .with_config_repo(config_repo.clone()),
+            DownloadManager::with_config(download_config).with_config_repo(config_repo.clone()),
         );
 
         // Create job repository for pipeline persistence
@@ -166,9 +186,15 @@ impl ServiceContainer {
         let pipeline_preset_repo =
             Arc::new(SqlitePipelinePresetRepository::new(pool.clone().into()));
 
-        // Create pipeline manager with job repository for database persistence
+        // Create pipeline manager with job repository for database persistence.
+        // Wire global-config concurrency knobs into CPU/IO worker pool sizes.
+        let mut pipeline_config = PipelineManagerConfig::default();
+        pipeline_config.cpu_pool.max_workers =
+            autoscale_concurrency_limit(global_config.max_concurrent_cpu_jobs);
+        pipeline_config.io_pool.max_workers =
+            autoscale_concurrency_limit(global_config.max_concurrent_io_jobs);
         let pipeline_manager = Arc::new(
-            PipelineManager::with_repository(PipelineManagerConfig::default(), job_repo)
+            PipelineManager::with_repository(pipeline_config, job_repo)
                 .with_session_repository(session_repo)
                 .with_streamer_repository(streamer_repo.clone())
                 .with_preset_repository(preset_repo)
@@ -205,8 +231,6 @@ impl ServiceContainer {
         // Create cancellation token for graceful shutdown (before scheduler so it can be shared)
         let cancellation_token = CancellationToken::new();
 
-        // Load global config for scheduler timing settings
-        let global_config = config_repo.get_global_config().await?;
         let scheduler_config = crate::scheduler::SchedulerConfig {
             check_interval_ms: global_config.streamer_check_delay_ms as u64,
             offline_check_interval_ms: global_config.offline_check_delay_ms as u64,
@@ -222,7 +246,8 @@ impl ServiceContainer {
                 stream_monitor.clone(),
                 scheduler_config,
                 cancellation_token.child_token(),
-            ),
+            )
+            .with_config_repo(config_repo.clone()),
         ));
 
         info!("Service container initialized");
@@ -265,6 +290,9 @@ impl ServiceContainer {
         let config_repo = Arc::new(SqlxConfigRepository::new(pool.clone()));
         let streamer_repo = Arc::new(SqlxStreamerRepository::new(pool.clone()));
 
+        // Load global config early for initial runtime knobs (worker pools, scheduler timing, etc.).
+        let global_config = config_repo.get_global_config().await?;
+
         // Create shared event broadcaster
         let event_broadcaster = ConfigEventBroadcaster::with_capacity(event_capacity);
 
@@ -274,10 +302,11 @@ impl ServiceContainer {
 
         // Create config service with custom cache
         let cache = ConfigCache::with_ttl(cache_ttl);
-        let config_service = Arc::new(ConfigService::with_cache(
+        let config_service = Arc::new(ConfigService::with_cache_and_broadcaster(
             config_repo.clone(),
             streamer_repo.clone(),
             cache,
+            event_broadcaster.clone(),
         ));
 
         // Create streamer manager
@@ -295,9 +324,13 @@ impl ServiceContainer {
             pool.clone(),
         ));
 
-        // Create download manager with custom config
+        // Create download manager with custom config, overridden by global config for concurrency.
+        let mut effective_download_config = download_config.clone();
+        effective_download_config.max_concurrent_downloads =
+            (global_config.max_concurrent_downloads as i64).max(1) as usize;
         let download_manager = Arc::new(
-            DownloadManager::with_config(download_config).with_config_repo(config_repo.clone()),
+            DownloadManager::with_config(effective_download_config)
+                .with_config_repo(config_repo.clone()),
         );
 
         // Create job repository for pipeline persistence
@@ -310,9 +343,15 @@ impl ServiceContainer {
         let pipeline_preset_repo =
             Arc::new(SqlitePipelinePresetRepository::new(pool.clone().into()));
 
-        // Create pipeline manager with job repository for database persistence
+        // Create pipeline manager with job repository for database persistence.
+        // Wire global-config concurrency knobs into CPU/IO worker pool sizes.
+        let mut effective_pipeline_config = pipeline_config;
+        effective_pipeline_config.cpu_pool.max_workers =
+            autoscale_concurrency_limit(global_config.max_concurrent_cpu_jobs);
+        effective_pipeline_config.io_pool.max_workers =
+            autoscale_concurrency_limit(global_config.max_concurrent_io_jobs);
         let pipeline_manager = Arc::new(
-            PipelineManager::with_repository(pipeline_config, job_repo)
+            PipelineManager::with_repository(effective_pipeline_config, job_repo)
                 .with_session_repository(session_repo.clone())
                 .with_streamer_repository(streamer_repo.clone())
                 .with_preset_repository(preset_repo)
@@ -349,8 +388,6 @@ impl ServiceContainer {
         // Create cancellation token for graceful shutdown (before scheduler so it can be shared)
         let cancellation_token = CancellationToken::new();
 
-        // Load global config for scheduler timing settings
-        let global_config = config_repo.get_global_config().await?;
         let scheduler_config = crate::scheduler::SchedulerConfig {
             check_interval_ms: global_config.streamer_check_delay_ms as u64,
             offline_check_interval_ms: global_config.offline_check_delay_ms as u64,
@@ -366,7 +403,8 @@ impl ServiceContainer {
                 stream_monitor.clone(),
                 scheduler_config,
                 cancellation_token.child_token(),
-            ),
+            )
+            .with_config_repo(config_repo.clone()),
         ));
 
         info!("Service container initialized with full configuration and real status checking");
@@ -411,7 +449,7 @@ impl ServiceContainer {
         }
 
         // Start pipeline manager
-        self.pipeline_manager.start();
+        self.pipeline_manager.clone().start();
         info!("Pipeline manager started");
 
         // Subscribe streamer manager to config events
@@ -559,7 +597,9 @@ impl ServiceContainer {
     /// Set up config event subscriptions between services.
     fn setup_config_event_subscriptions(&self) {
         let streamer_manager = self.streamer_manager.clone();
+        let config_service = self.config_service.clone();
         let download_manager = self.download_manager.clone();
+        let pipeline_manager = self.pipeline_manager.clone();
         let danmu_service = self.danmu_service.clone();
         let stream_monitor = self.stream_monitor.clone();
         let mut receiver = self.event_broadcaster.subscribe();
@@ -580,6 +620,9 @@ impl ServiceContainer {
                             Ok(event) => {
                                 match event {
                                     ConfigUpdateEvent::StreamerMetadataUpdated { streamer_id } => {
+                                        // Ensure merged config cache is not stale after streamer/template/platform changes.
+                                        config_service.invalidate_streamer(&streamer_id);
+
                                         // Config update event - handles name, URL, priority, template changes.
                                         // If the update includes a state transition to an inactive state
                                         // (e.g., user disables a streamer via API), we must still perform
@@ -637,8 +680,48 @@ impl ServiceContainer {
                                     }
                                     ConfigUpdateEvent::GlobalUpdated => {
                                         debug!("Received global config update event");
+
+                                        match config_service.get_global_config().await {
+                                            Ok(global) => {
+                                                let new_limit =
+                                                    (global.max_concurrent_downloads as i64)
+                                                        .max(1)
+                                                        as usize;
+                                                let old_limit =
+                                                    download_manager.max_concurrent_downloads();
+
+                                                if new_limit != old_limit {
+                                                    download_manager
+                                                        .set_max_concurrent_downloads(new_limit);
+                                                    info!(
+                                                        "Updated download concurrency: max_concurrent_downloads {} -> {}",
+                                                        old_limit, new_limit
+                                                    );
+                                                }
+
+                                                // Wire CPU/IO pipeline job concurrency knobs (best-effort).
+                                                let cpu_jobs = autoscale_concurrency_limit(
+                                                    global.max_concurrent_cpu_jobs,
+                                                );
+                                                let io_jobs =
+                                                    autoscale_concurrency_limit(
+                                                        global.max_concurrent_io_jobs,
+                                                    );
+                                                pipeline_manager
+                                                    .set_worker_concurrency(cpu_jobs, io_jobs);
+                                            }
+                                            Err(e) => {
+                                                warn!(
+                                                    "Failed to reload global config for download concurrency: {}",
+                                                    e
+                                                );
+                                            }
+                                        }
                                     }
                                     ConfigUpdateEvent::StreamerDeleted { streamer_id } => {
+                                        // Best-effort: drop any stale cache entry (usually already removed).
+                                        config_service.invalidate_streamer(&streamer_id);
+
                                         info!(
                                             "Streamer {} deleted, initiating cleanup",
                                             streamer_id
@@ -693,110 +776,29 @@ impl ServiceContainer {
         let mut receiver = self.download_manager.subscribe();
         let cancellation_token = self.cancellation_token.clone();
 
+        const DOWNLOAD_EVENT_QUEUE_CAPACITY: usize = 8192;
+        let (event_tx, mut event_rx) =
+            tokio::sync::mpsc::channel::<DownloadManagerEvent>(DOWNLOAD_EVENT_QUEUE_CAPACITY);
+
+        // Fast path: drain broadcast channel quickly so we don't drop critical session events under backpressure.
+        let drain_token = cancellation_token.clone();
         tokio::spawn(async move {
             loop {
                 tokio::select! {
-                    _ = cancellation_token.cancelled() => {
-                        debug!("Download event handler shutting down");
+                    _ = drain_token.cancelled() => {
+                        debug!("Download event drain shutting down");
                         break;
                     }
                     result = receiver.recv() => {
                         match result {
                             Ok(download_event) => {
-                                // Handle download failure for error tracking
-                                if let DownloadManagerEvent::DownloadFailed { ref streamer_id, ref error, .. } = download_event {
-                                    // Record error for exponential backoff
-                                    if let Some(metadata) = streamer_manager.get_streamer(streamer_id) {
-                                        if let Err(e) = stream_monitor.handle_error(&metadata, error).await {
-                                            warn!("Failed to record download error for {}: {}", streamer_id, e);
-                                        } else {
-                                            debug!("Recorded download error for {}: {}", streamer_id, error);
-                                        }
-                                    }
+                                // Progress can be extremely frequent; downstream coordination does not need it.
+                                if matches!(download_event, DownloadManagerEvent::Progress { .. }) {
+                                    continue;
                                 }
-
-                                // Handle danmu segmentation
-                                match &download_event {
-                                    DownloadManagerEvent::SegmentStarted { session_id, segment_path, .. } => {
-                                        if let Some(handle) = danmu_service.get_handle(session_id) {
-                                            // Use filename as segment ID
-                                            let path = std::path::Path::new(segment_path);
-                                            let segment_id = path.file_name()
-                                                .map(|s| s.to_string_lossy().to_string())
-                                                .unwrap_or_else(|| "unknown".to_string());
-
-                                            // Start danmu segment
-                                            // We change extension to .xml for danmu file
-                                            let mut danmu_path = path.to_path_buf();
-                                            danmu_path.set_extension("xml");
-
-                                            if let Err(e) = handle.start_segment(
-                                                &segment_id,
-                                                danmu_path,
-                                                chrono::Utc::now()
-                                            ).await {
-                                                warn!("Failed to start danmu segment: {}", e);
-                                            }
-                                        }
-                                    }
-                                    DownloadManagerEvent::SegmentCompleted { session_id, streamer_id, segment_path, size_bytes, .. } => {
-                                        // Always finish the danmu segment first (Flush/Close XML)
-                                        if let Some(handle) = danmu_service.get_handle(session_id) {
-                                             let path = std::path::Path::new(segment_path);
-                                             let segment_id = path.file_name()
-                                                .map(|s| s.to_string_lossy().to_string())
-                                                .unwrap_or_else(|| "unknown".to_string());
-
-                                            if let Err(e) = handle.end_segment(&segment_id).await {
-                                                warn!("Failed to end danmu segment: {}", e);
-                                            }
-                                        }
-
-                                        let mut discard = false;
-                                        // Resolve config to check min_size
-                                        match config_service.get_config_for_streamer(streamer_id).await {
-                                            Ok(config) => {
-                                                if config.min_segment_size_bytes > 0 && (*size_bytes as i64) < config.min_segment_size_bytes {
-                                                     info!("Segment {} is too small ({} bytes < min {}), discarding",
-                                                         segment_path, size_bytes, config.min_segment_size_bytes);
-
-                                                     let path = std::path::Path::new(segment_path);
-                                                     // Delete video file
-                                                     if let Err(e) = tokio::fs::remove_file(path).await {
-                                                         warn!("Failed to delete small segment {}: {}", segment_path, e);
-                                                     } else {
-                                                         debug!("Deleted small segment: {}", segment_path);
-                                                     }
-
-                                                     // Delete danmu file if it exists
-                                                     // Note: We called end_segment above, so the file usage should be released.
-                                                     let mut danmu_path = path.to_path_buf();
-                                                     danmu_path.set_extension("xml");
-                                                     if danmu_path.exists() {
-                                                         if let Err(e) = tokio::fs::remove_file(&danmu_path).await {
-                                                            warn!("Failed to delete small segment danmu {}: {}", danmu_path.display(), e);
-                                                         } else {
-                                                            debug!("Deleted small segment danmu: {}", danmu_path.display());
-                                                         }
-                                                     }
-
-                                                     discard = true;
-                                                }
-                                            }
-                                            Err(e) => {
-                                                warn!("Failed to resolve config for streamer {} during segment completion: {}", streamer_id, e);
-                                            }
-                                        }
-
-                                        if discard {
-                                            continue;
-                                        }
-                                    }
-                                    _ => {}
+                                if event_tx.send(download_event).await.is_err() {
+                                    break;
                                 }
-
-                                // Forward to pipeline manager
-                                pipeline_manager.handle_download_event(download_event.clone()).await;
                             }
                             Err(tokio::sync::broadcast::error::RecvError::Lagged(n)) => {
                                 warn!("Download event handler lagged {} events", n);
@@ -808,6 +810,140 @@ impl ServiceContainer {
                         }
                     }
                 }
+            }
+        });
+
+        let process_token = cancellation_token.clone();
+        tokio::spawn(async move {
+            while let Some(download_event) = event_rx.recv().await {
+                if process_token.is_cancelled() {
+                    debug!("Download event processor shutting down");
+                    break;
+                }
+
+                // Handle download failure for error tracking
+                if let DownloadManagerEvent::DownloadFailed {
+                    ref streamer_id,
+                    ref error,
+                    ..
+                } = download_event
+                {
+                    // Record error for exponential backoff
+                    if let Some(metadata) = streamer_manager.get_streamer(streamer_id) {
+                        if let Err(e) = stream_monitor.handle_error(&metadata, error).await {
+                            warn!("Failed to record download error for {}: {}", streamer_id, e);
+                        } else {
+                            debug!("Recorded download error for {}: {}", streamer_id, error);
+                        }
+                    }
+                }
+
+                // Handle danmu segmentation
+                match &download_event {
+                    DownloadManagerEvent::SegmentStarted {
+                        session_id,
+                        segment_path,
+                        segment_index,
+                        ..
+                    } => {
+                        if let Some(handle) = danmu_service.get_handle(session_id) {
+                            let path = std::path::Path::new(segment_path);
+                            let segment_id = segment_index.to_string();
+
+                            // Start danmu segment
+                            // We change extension to .xml for danmu file
+                            let mut danmu_path = path.to_path_buf();
+                            danmu_path.set_extension("xml");
+
+                            if let Err(e) = handle
+                                .start_segment(&segment_id, danmu_path, chrono::Utc::now())
+                                .await
+                            {
+                                warn!("Failed to start danmu segment: {}", e);
+                            }
+                        }
+                    }
+                    DownloadManagerEvent::SegmentCompleted {
+                        session_id,
+                        streamer_id,
+                        segment_path,
+                        segment_index,
+                        size_bytes,
+                        ..
+                    } => {
+                        // Always finish the danmu segment first (Flush/Close XML)
+                        if let Some(handle) = danmu_service.get_handle(session_id) {
+                            let segment_id = segment_index.to_string();
+
+                            if let Err(e) = handle.end_segment(&segment_id).await {
+                                warn!("Failed to end danmu segment: {}", e);
+                            }
+                        }
+
+                        let mut discard = false;
+                        // Resolve config to check min_size
+                        match config_service.get_config_for_streamer(streamer_id).await {
+                            Ok(config) => {
+                                if config.min_segment_size_bytes > 0
+                                    && (*size_bytes as i64) < config.min_segment_size_bytes
+                                {
+                                    info!(
+                                        "Segment {} is too small ({} bytes < min {}), discarding",
+                                        segment_path, size_bytes, config.min_segment_size_bytes
+                                    );
+
+                                    let path = std::path::Path::new(segment_path);
+                                    // Delete video file
+                                    if let Err(e) = tokio::fs::remove_file(path).await {
+                                        warn!(
+                                            "Failed to delete small segment {}: {}",
+                                            segment_path, e
+                                        );
+                                    } else {
+                                        debug!("Deleted small segment: {}", segment_path);
+                                    }
+
+                                    // Delete danmu file if it exists
+                                    // Note: We called end_segment above, so the file usage should be released.
+                                    let mut danmu_path = path.to_path_buf();
+                                    danmu_path.set_extension("xml");
+                                    if danmu_path.exists() {
+                                        if let Err(e) = tokio::fs::remove_file(&danmu_path).await {
+                                            warn!(
+                                                "Failed to delete small segment danmu {}: {}",
+                                                danmu_path.display(),
+                                                e
+                                            );
+                                        } else {
+                                            debug!(
+                                                "Deleted small segment danmu: {}",
+                                                danmu_path.display()
+                                            );
+                                        }
+                                    }
+
+                                    discard = true;
+                                }
+                            }
+                            Err(e) => {
+                                warn!(
+                                    "Failed to resolve config for streamer {} during segment completion: {}",
+                                    streamer_id, e
+                                );
+                            }
+                        }
+
+                        if discard {
+                            continue;
+                        }
+                    }
+                    _ => {}
+                }
+
+                // Forward to pipeline manager
+                pipeline_manager
+                    .handle_download_event(download_event.clone())
+                    .await;
             }
         });
     }
@@ -869,12 +1005,14 @@ impl ServiceContainer {
                                             "Danmu collection started for session {} (streamer: {})",
                                             session_id, streamer_id
                                         );
+                                        pipeline_manager.handle_danmu_event(event.clone()).await;
                                     }
                                     DanmuEvent::CollectionStopped { session_id, statistics } => {
                                         info!(
                                             "Danmu collection stopped for session {}: {} messages",
                                             session_id, statistics.total_count
                                         );
+                                        pipeline_manager.handle_danmu_event(event.clone()).await;
                                     }
                                     DanmuEvent::SegmentStarted { session_id, segment_id, output_path, start_time, .. } => {
                                         debug!(
@@ -1248,45 +1386,41 @@ impl ServiceContainer {
         >,
         streamer_id: &str,
     ) {
-        // 1. End active streaming session first
+        // 1. Cancel active downloads (best-effort).
         //
-        // NOTE: We use force_end_active_session instead of handle_offline_with_session
-        // because by the time this handler runs, the streamer's in-memory state has
-        // already been updated to Disabled by partial_update_streamer.
-        if let Err(e) = stream_monitor.force_end_active_session(streamer_id).await {
-            warn!(
-                "Failed to end session for disabled streamer {}: {}",
-                streamer_id, e
-            );
-        }
+        // Do this before ending the session so the session's `total_size_bytes` snapshot
+        // is less likely to be stale due to late segment persistence.
+        let downloads: Vec<_> = download_manager
+            .get_active_downloads()
+            .into_iter()
+            .filter(|d| d.streamer_id == streamer_id)
+            .collect();
 
-        // Note: Actor removal is handled by the Scheduler's own config event handler.
-        // We don't do it here because scheduler.run() holds the RwLock write lock forever.
-
-        // 2. Cancel active download if exists
-        if let Some(download_info) = download_manager.get_download_by_streamer(streamer_id) {
-            match download_manager.stop_download(&download_info.id).await {
-                Ok(()) => {
-                    info!(
-                        "Cancelled download {} for disabled streamer {}",
-                        download_info.id, streamer_id
-                    );
-                }
-                Err(e) => {
-                    warn!(
-                        "Failed to cancel download for disabled streamer {}: {}",
-                        streamer_id, e
-                    );
-                }
-            }
-        } else {
+        if downloads.is_empty() {
             debug!(
                 "No active download found for disabled streamer: {}",
                 streamer_id
             );
+        } else {
+            for download in downloads {
+                match download_manager.stop_download(&download.id).await {
+                    Ok(()) => {
+                        info!(
+                            "Cancelled download {} for disabled streamer {}",
+                            download.id, streamer_id
+                        );
+                    }
+                    Err(e) => {
+                        warn!(
+                            "Failed to cancel download {} for disabled streamer {}: {}",
+                            download.id, streamer_id, e
+                        );
+                    }
+                }
+            }
         }
 
-        // 4. Stop danmu collection if active
+        // 2. Stop danmu collection if active (best-effort).
         if let Some(session_id) = danmu_service.get_session_by_streamer(streamer_id) {
             match danmu_service.stop_collection(&session_id).await {
                 Ok(stats) => {
@@ -1308,6 +1442,21 @@ impl ServiceContainer {
                 streamer_id
             );
         }
+
+        // 3. End active streaming session (best-effort).
+        //
+        // NOTE: We use force_end_active_session instead of handle_offline_with_session
+        // because by the time this handler runs, the streamer's in-memory state has
+        // already been updated to Disabled by partial_update_streamer.
+        if let Err(e) = stream_monitor.force_end_active_session(streamer_id).await {
+            warn!(
+                "Failed to end session for disabled streamer {}: {}",
+                streamer_id, e
+            );
+        }
+
+        // Note: Actor removal is handled by the Scheduler's own config event handler.
+        // We don't do it here because scheduler.run() holds the RwLock write lock forever.
     }
 
     /// Handle monitor events to trigger downloads and danmu collection.
@@ -1359,6 +1508,18 @@ impl ServiceContainer {
                             conflict.started_at
                         );
                     }
+                    return;
+                }
+
+                // Correctness guard: if the streamer was disabled/cancelled while a live check
+                // was in-flight, ignore the live event and don't start downloads/danmu.
+                if let Some(metadata) = streamer_manager.get_streamer(&streamer_id)
+                    && !metadata.is_active()
+                {
+                    info!(
+                        "Ignoring StreamerLive for inactive streamer {} (state: {})",
+                        streamer_id, metadata.state
+                    );
                     return;
                 }
 

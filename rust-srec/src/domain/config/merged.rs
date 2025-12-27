@@ -52,6 +52,8 @@ pub struct MergedConfig {
     // Pipeline configuration
     pub pipeline: Option<DagPipelineDefinition>,
     pub session_complete_pipeline: Option<DagPipelineDefinition>,
+    /// Optional pipeline that triggers once both video+danmu for a segment are available.
+    pub paired_segment_pipeline: Option<DagPipelineDefinition>,
     // Platform-specific extractor options (merged from all layers)
     pub platform_extras: Option<serde_json::Value>,
 }
@@ -86,6 +88,7 @@ pub struct MergedConfigBuilder {
     engines_override: Option<serde_json::Value>,
     pipeline: Option<DagPipelineDefinition>,
     session_complete_pipeline: Option<DagPipelineDefinition>,
+    paired_segment_pipeline: Option<DagPipelineDefinition>,
     platform_extras: Option<serde_json::Value>,
 }
 
@@ -105,6 +108,8 @@ impl MergedConfigBuilder {
         download_engine: String,
         session_gap_time_secs: i64,
         pipeline: Option<DagPipelineDefinition>,
+        session_complete_pipeline: Option<DagPipelineDefinition>,
+        paired_segment_pipeline: Option<DagPipelineDefinition>,
     ) -> Self {
         debug!(
             "[Layer 1: Global] Setting base config: output_folder={}, output_format={}, engine={}, record_danmu={}, session_gap={}s, pipeline_steps={}",
@@ -129,6 +134,8 @@ impl MergedConfigBuilder {
         self.event_hooks = Some(EventHooks::default());
         self.session_gap_time_secs = Some(session_gap_time_secs);
         self.pipeline = pipeline;
+        self.session_complete_pipeline = session_complete_pipeline;
+        self.paired_segment_pipeline = paired_segment_pipeline;
         self
     }
 
@@ -153,6 +160,8 @@ impl MergedConfigBuilder {
         download_retry_policy: Option<RetryPolicy>,
         event_hooks: Option<EventHooks>,
         pipeline: Option<DagPipelineDefinition>,
+        session_complete_pipeline: Option<DagPipelineDefinition>,
+        paired_segment_pipeline: Option<DagPipelineDefinition>,
     ) -> Self {
         debug!(
             "[Layer 2: Platform] Applying overrides: output_folder={:?}, engine={:?}, record_danmu={:?}, cookies={}, stream_selection={}, pipeline_steps={}",
@@ -183,6 +192,14 @@ impl MergedConfigBuilder {
         if let Some(pipe) = pipeline {
             debug!("Platform config override: pipeline");
             self.pipeline = Some(pipe);
+        }
+        if let Some(pipe) = session_complete_pipeline {
+            debug!("Platform config override: session_complete_pipeline");
+            self.session_complete_pipeline = Some(pipe);
+        }
+        if let Some(pipe) = paired_segment_pipeline {
+            debug!("Platform config override: paired_segment_pipeline");
+            self.paired_segment_pipeline = Some(pipe);
         }
 
         // Apply platform-specific config overrides
@@ -267,6 +284,8 @@ impl MergedConfigBuilder {
         stream_selection: Option<StreamSelectionConfig>,
         engines_override: Option<serde_json::Value>,
         pipeline: Option<DagPipelineDefinition>,
+        session_complete_pipeline: Option<DagPipelineDefinition>,
+        paired_segment_pipeline: Option<DagPipelineDefinition>,
         platform_extras: Option<serde_json::Value>,
     ) -> Self {
         debug!(
@@ -355,6 +374,14 @@ impl MergedConfigBuilder {
         if let Some(pipe) = pipeline {
             debug!("Template override: pipeline");
             self.pipeline = Some(pipe);
+        }
+        if let Some(pipe) = session_complete_pipeline {
+            debug!("Template override: session_complete_pipeline");
+            self.session_complete_pipeline = Some(pipe);
+        }
+        if let Some(pipe) = paired_segment_pipeline {
+            debug!("Template override: paired_segment_pipeline");
+            self.paired_segment_pipeline = Some(pipe);
         }
         // Merge platform extras from template layer
         if let Some(extras) = platform_extras {
@@ -468,6 +495,26 @@ impl MergedConfigBuilder {
                 self.pipeline = Some(v);
             }
 
+            if let Some(pipeline_val) = config.get("session_complete_pipeline")
+                && let Ok(v) = serde_json::from_value::<DagPipelineDefinition>(pipeline_val.clone())
+            {
+                debug!(
+                    "Streamer config override: session_complete_pipeline ({} items/nodes)",
+                    v.steps.len()
+                );
+                self.session_complete_pipeline = Some(v);
+            }
+
+            if let Some(pipeline_val) = config.get("paired_segment_pipeline")
+                && let Ok(v) = serde_json::from_value::<DagPipelineDefinition>(pipeline_val.clone())
+            {
+                debug!(
+                    "Streamer config override: paired_segment_pipeline ({} items/nodes)",
+                    v.steps.len()
+                );
+                self.paired_segment_pipeline = Some(v);
+            }
+
             if let Some(v) = config.get("download_retry_policy")
                 && let Ok(v) = serde_json::from_value::<RetryPolicy>(v.clone())
             {
@@ -539,6 +586,7 @@ impl MergedConfigBuilder {
             engines_override: self.engines_override,
             pipeline,
             session_complete_pipeline: self.session_complete_pipeline,
+            paired_segment_pipeline: self.paired_segment_pipeline,
             platform_extras: self.platform_extras,
         }
     }
@@ -565,6 +613,8 @@ mod tests {
                 "mesio".to_string(),
                 600,
                 None, // pipeline
+                None, // session_complete_pipeline
+                None, // paired_segment_pipeline
             )
             .with_platform(
                 Some(60000),
@@ -584,6 +634,8 @@ mod tests {
                 None,
                 None,
                 None,
+                None, // session_complete_pipeline
+                None, // paired_segment_pipeline
             )
             .build();
 
@@ -607,6 +659,8 @@ mod tests {
                 "ffmpeg".to_string(),
                 600,
                 None,
+                None,
+                None,
             )
             .with_platform(
                 Some(60000),
@@ -614,6 +668,8 @@ mod tests {
                 None,
                 None,
                 Some(true),
+                None,
+                None,
                 None,
                 None,
                 None,
@@ -644,6 +700,8 @@ mod tests {
                 None, // stream_selection
                 None, // engines_override
                 None, // pipeline
+                None, // session_complete_pipeline
+                None, // paired_segment_pipeline
                 None, // platform_extras
             )
             .build();
@@ -693,10 +751,14 @@ mod tests {
                         ),
                     ],
                 )),
+                None,
+                None,
             )
             .with_platform(
                 Some(60000),
                 Some(1000),
+                None,
+                None,
                 None,
                 None,
                 None,
@@ -755,10 +817,14 @@ mod tests {
                 "mesio".to_string(),
                 600,
                 None,
+                None,
+                None,
             )
             .with_platform(
                 Some(60000),
                 Some(1000),
+                None,
+                None,
                 None,
                 None,
                 None,
@@ -785,5 +851,81 @@ mod tests {
         assert!(
             matches!(&dag.steps[1].step, PipelineStep::Inline { processor, .. } if processor == "execute")
         );
+    }
+
+    #[test]
+    fn test_streamer_session_and_paired_pipelines_override() {
+        let streamer_config = serde_json::json!({
+            "session_complete_pipeline": {
+                "name": "session_concat",
+                "steps": [
+                    {"id": "concat", "step": {"type": "preset", "name": "remux"}, "depends_on": []}
+                ]
+            },
+            "paired_segment_pipeline": {
+                "name": "burn_in",
+                "steps": [
+                    {"id": "burn", "step": {"type": "inline", "processor": "execute", "config": {"command": "echo {input}"}}, "depends_on": []}
+                ]
+            }
+        });
+
+        let config = MergedConfig::builder()
+            .with_global(
+                "/app/output".to_string(),
+                "{streamer}".to_string(),
+                "flv".to_string(),
+                1024,
+                0,
+                8589934592,
+                false,
+                ProxyConfig::disabled(),
+                "mesio".to_string(),
+                600,
+                None,
+                None,
+                None,
+            )
+            .with_platform(
+                Some(60000),
+                Some(1000),
+                None,
+                None,
+                Some(true), // record_danmu
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+            )
+            .with_streamer(Some(&streamer_config))
+            .build();
+
+        let session = config
+            .session_complete_pipeline
+            .expect("session_complete_pipeline should be set");
+        assert_eq!(session.steps.len(), 1);
+        assert!(matches!(
+            &session.steps[0].step,
+            PipelineStep::Preset { name } if name == "remux"
+        ));
+
+        let paired = config
+            .paired_segment_pipeline
+            .expect("paired_segment_pipeline should be set");
+        assert_eq!(paired.steps.len(), 1);
+        assert!(matches!(
+            &paired.steps[0].step,
+            PipelineStep::Inline { processor, .. } if processor == "execute"
+        ));
     }
 }

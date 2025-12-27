@@ -70,6 +70,8 @@ fn db_model_to_response(model: &TemplateConfigDbModel, usage_count: u32) -> Temp
         proxy_config: model.proxy_config.clone(),
         event_hooks: model.event_hooks.clone(),
         pipeline: model.pipeline.clone(),
+        session_complete_pipeline: model.session_complete_pipeline.clone(),
+        paired_segment_pipeline: model.paired_segment_pipeline.clone(),
         usage_count,
         created_at: model.created_at,
         updated_at: model.updated_at,
@@ -134,6 +136,8 @@ pub async fn create_template(
     template.proxy_config = request.proxy_config;
     template.event_hooks = request.event_hooks;
     template.pipeline = request.pipeline;
+    template.session_complete_pipeline = request.session_complete_pipeline;
+    template.paired_segment_pipeline = request.paired_segment_pipeline;
 
     // Create the template
     config_service
@@ -311,6 +315,8 @@ pub async fn update_template(
     template.proxy_config = request.proxy_config;
     template.event_hooks = request.event_hooks;
     template.pipeline = request.pipeline;
+    template.session_complete_pipeline = request.session_complete_pipeline;
+    template.paired_segment_pipeline = request.paired_segment_pipeline;
 
     // Update the template
     config_service
@@ -455,6 +461,8 @@ pub async fn clone_template(
     cloned.proxy_config = existing.proxy_config;
     cloned.event_hooks = existing.event_hooks;
     cloned.pipeline = existing.pipeline;
+    cloned.session_complete_pipeline = existing.session_complete_pipeline;
+    cloned.paired_segment_pipeline = existing.paired_segment_pipeline;
 
     // Create the cloned template
     config_service
@@ -496,6 +504,8 @@ mod tests {
             proxy_config: None,
             event_hooks: None,
             pipeline: None,
+            session_complete_pipeline: None,
+            paired_segment_pipeline: None,
             usage_count: 5,
             created_at: chrono::Utc::now(),
             updated_at: chrono::Utc::now(),

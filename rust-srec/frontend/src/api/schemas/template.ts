@@ -77,6 +77,30 @@ export const TemplateSchema = z.object({
     .pipe(DagPipelineDefinitionSchema.nullable().optional())
     .nullable()
     .optional(),
+  session_complete_pipeline: z
+    .string()
+    .transform((str) => {
+      try {
+        return JSON.parse(str);
+      } catch {
+        return null;
+      }
+    })
+    .pipe(DagPipelineDefinitionSchema.nullable().optional())
+    .nullable()
+    .optional(),
+  paired_segment_pipeline: z
+    .string()
+    .transform((str) => {
+      try {
+        return JSON.parse(str);
+      } catch {
+        return null;
+      }
+    })
+    .pipe(DagPipelineDefinitionSchema.nullable().optional())
+    .nullable()
+    .optional(),
   usage_count: z.number().optional(),
   created_at: z.string().optional(),
   updated_at: z.string().optional(),
@@ -105,6 +129,8 @@ export const CreateTemplateRequestSchema = z.object({
   proxy_config: ProxyConfigObjectSchema.nullable().optional(),
   event_hooks: EventHooksSchema.nullable().optional(),
   pipeline: DagPipelineDefinitionSchema.nullable().optional(),
+  session_complete_pipeline: DagPipelineDefinitionSchema.nullable().optional(),
+  paired_segment_pipeline: DagPipelineDefinitionSchema.nullable().optional(),
 });
 export const UpdateTemplateRequestSchema = CreateTemplateRequestSchema;
 export const TemplateFormSchema = CreateTemplateRequestSchema;

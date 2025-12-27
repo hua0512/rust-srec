@@ -41,6 +41,34 @@ export const GlobalConfigSchema = z.object({
         }
       },
     ),
+  session_complete_pipeline: z
+    .string()
+    .nullable()
+    .optional()
+    .transform(
+      (val): z.infer<typeof DagPipelineDefinitionSchema> | null | undefined => {
+        if (!val) return null;
+        try {
+          return JSON.parse(val);
+        } catch {
+          return null;
+        }
+      },
+    ),
+  paired_segment_pipeline: z
+    .string()
+    .nullable()
+    .optional()
+    .transform(
+      (val): z.infer<typeof DagPipelineDefinitionSchema> | null | undefined => {
+        if (!val) return null;
+        try {
+          return JSON.parse(val);
+        } catch {
+          return null;
+        }
+      },
+    ),
 });
 
 // Schema for form validation - pipeline is already parsed as object
@@ -68,6 +96,8 @@ export const GlobalConfigFormSchema = z.object({
   log_filter_directive: z.string(),
   // Form works with object directly (already parsed from API response)
   pipeline: DagPipelineDefinitionSchema.nullable().optional(),
+  session_complete_pipeline: DagPipelineDefinitionSchema.nullable().optional(),
+  paired_segment_pipeline: DagPipelineDefinitionSchema.nullable().optional(),
 });
 
 // Schema for writing global config to backend (keeps pipeline as object, will be stringified by config.ts)
@@ -96,6 +126,8 @@ export const GlobalConfigWriteSchema = z.object({
 
   // Accept any object - will be stringified by config.ts when sending to backend
   pipeline: z.any().nullable().optional(),
+  session_complete_pipeline: z.any().nullable().optional(),
+  paired_segment_pipeline: z.any().nullable().optional(),
 });
 
 export const ComponentHealthSchema = z.object({

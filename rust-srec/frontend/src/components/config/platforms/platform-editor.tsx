@@ -51,6 +51,8 @@ export function PlatformEditor({
       download_retry_policy: platform.download_retry_policy,
       event_hooks: platform.event_hooks,
       pipeline: platform.pipeline,
+      session_complete_pipeline: platform.session_complete_pipeline,
+      paired_segment_pipeline: platform.paired_segment_pipeline,
     },
   });
 
@@ -138,6 +140,8 @@ export function PlatformEditor({
               danmu: '',
               hooks: 'event_hooks',
               pipeline: 'pipeline',
+              sessionCompletePipeline: 'session_complete_pipeline',
+              pairedSegmentPipeline: 'paired_segment_pipeline',
             }}
             extraTabs={[
               {

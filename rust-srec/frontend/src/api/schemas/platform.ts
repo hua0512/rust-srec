@@ -72,6 +72,18 @@ export const PlatformConfigSchema = z.object({
     .pipe(DagPipelineDefinitionSchema.nullable().optional())
     .nullable()
     .optional(),
+  session_complete_pipeline: z
+    .string()
+    .transform((str) => JSON.parse(str))
+    .pipe(DagPipelineDefinitionSchema.nullable().optional())
+    .nullable()
+    .optional(),
+  paired_segment_pipeline: z
+    .string()
+    .transform((str) => JSON.parse(str))
+    .pipe(DagPipelineDefinitionSchema.nullable().optional())
+    .nullable()
+    .optional(),
 });
 
 export type PlatformConfig = z.infer<typeof PlatformConfigSchema>;
@@ -84,4 +96,6 @@ export const PlatformConfigFormSchema = PlatformConfigSchema.extend({
   proxy_config: ProxyConfigObjectSchema.nullable().optional(),
   event_hooks: EventHooksSchema.nullable().optional(),
   pipeline: DagPipelineDefinitionSchema.nullable().optional(),
+  session_complete_pipeline: DagPipelineDefinitionSchema.nullable().optional(),
+  paired_segment_pipeline: DagPipelineDefinitionSchema.nullable().optional(),
 });

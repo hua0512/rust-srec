@@ -327,6 +327,8 @@ mod tests {
                 "ffmpeg".to_string(),
                 300,  // session_gap_time_secs
                 None, // pipeline
+                None, // session_complete_pipeline
+                None, // paired_segment_pipeline
             )
             .with_platform(
                 Some(60000),
@@ -346,6 +348,8 @@ mod tests {
                 None,
                 None,
                 None, // pipeline
+                None, // session_complete_pipeline
+                None, // paired_segment_pipeline
             )
             .build()
     }

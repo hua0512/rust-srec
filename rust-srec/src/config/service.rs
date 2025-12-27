@@ -51,21 +51,39 @@ where
 {
     /// Create a new ConfigService.
     pub fn new(config_repo: Arc<C>, streamer_repo: Arc<S>) -> Self {
-        Self {
+        Self::with_cache_and_broadcaster(
             config_repo,
             streamer_repo,
-            cache: ConfigCache::new(),
-            broadcaster: ConfigEventBroadcaster::new(),
-        }
+            ConfigCache::new(),
+            ConfigEventBroadcaster::new(),
+        )
     }
 
     /// Create a new ConfigService with custom cache settings.
     pub fn with_cache(config_repo: Arc<C>, streamer_repo: Arc<S>, cache: ConfigCache) -> Self {
+        Self::with_cache_and_broadcaster(
+            config_repo,
+            streamer_repo,
+            cache,
+            ConfigEventBroadcaster::new(),
+        )
+    }
+
+    /// Create a new ConfigService with custom cache settings and a shared broadcaster.
+    ///
+    /// This should be used by the runtime `ServiceContainer` so the scheduler and other
+    /// services see config update events from the API (global/platform/template/engine).
+    pub fn with_cache_and_broadcaster(
+        config_repo: Arc<C>,
+        streamer_repo: Arc<S>,
+        cache: ConfigCache,
+        broadcaster: ConfigEventBroadcaster,
+    ) -> Self {
         Self {
             config_repo,
             streamer_repo,
             cache,
-            broadcaster: ConfigEventBroadcaster::new(),
+            broadcaster,
         }
     }
 
@@ -223,6 +241,9 @@ where
     pub async fn create_engine_config(&self, config: &EngineConfigurationDbModel) -> Result<()> {
         self.config_repo.create_engine_config(config).await?;
 
+        // We don't track which streamers use which engine configs; invalidate all for correctness.
+        self.cache.invalidate_all();
+
         self.broadcaster.publish(ConfigUpdateEvent::EngineUpdated {
             engine_id: config.id.clone(),
         });
@@ -234,9 +255,9 @@ where
     pub async fn update_engine_config(&self, config: &EngineConfigurationDbModel) -> Result<()> {
         self.config_repo.update_engine_config(config).await?;
 
-        // Engine updates may affect any streamer using this engine
-        // For now, we don't track which streamers use which engines
-        // so we just broadcast the event
+        // Engine updates may affect any streamer using this engine; since we don't track
+        // usage, invalidate all cached merged configs for correctness.
+        self.cache.invalidate_all();
 
         self.broadcaster.publish(ConfigUpdateEvent::EngineUpdated {
             engine_id: config.id.clone(),
@@ -249,6 +270,9 @@ where
     /// Delete an engine configuration.
     pub async fn delete_engine_config(&self, id: &str) -> Result<()> {
         self.config_repo.delete_engine_config(id).await?;
+
+        // Deleting an engine can affect any streamer that referenced it; invalidate all.
+        self.cache.invalidate_all();
 
         self.broadcaster.publish(ConfigUpdateEvent::EngineUpdated {
             engine_id: id.to_string(),
@@ -267,59 +291,78 @@ where
     /// - Deduplicates concurrent requests for the same streamer
     /// - Only one request will resolve the config while others wait
     pub async fn get_config_for_streamer(&self, streamer_id: &str) -> Result<Arc<MergedConfig>> {
-        // Check cache first
-        if let Some(config) = self.cache.get(streamer_id) {
-            trace!("Cache hit for streamer {}", streamer_id);
-            return Ok(config);
-        }
+        // One retry is enough to handle "cache invalidated" races without creating
+        // unbounded loops if the config is being updated repeatedly.
+        for attempt in 0..2 {
+            // Check cache first
+            if let Some(config) = self.cache.get(streamer_id) {
+                trace!("Cache hit for streamer {}", streamer_id);
+                return Ok(config);
+            }
 
-        // Check for in-flight request (deduplication)
-        let (cell, is_new) = self.cache.get_or_create_in_flight(streamer_id);
+            // Check for in-flight request (deduplication)
+            let (cell, is_new) = self.cache.get_or_create_in_flight(streamer_id);
 
-        if !is_new {
-            // Another request is already resolving this config, wait for it
-            trace!("Waiting for in-flight request for streamer {}", streamer_id);
-            return match self.cache.wait_for_in_flight(&cell).await {
-                Ok(config) => Ok(config),
-                Err(message) => Err(crate::Error::Configuration(message)),
+            if !is_new {
+                // Another request is already resolving this config, wait for it
+                trace!("Waiting for in-flight request for streamer {}", streamer_id);
+                match self.cache.wait_for_in_flight(&cell).await {
+                    Ok(config) => return Ok(config),
+                    Err(message)
+                        if attempt == 0
+                            && (message.contains("Configuration invalidated")
+                                || message.contains("Configuration cache invalidated")) =>
+                    {
+                        trace!(
+                            "In-flight config was invalidated for streamer {}, retrying",
+                            streamer_id
+                        );
+                        continue;
+                    }
+                    Err(message) => return Err(crate::Error::Configuration(message)),
+                }
+            }
+
+            trace!("Cache miss for streamer {}, resolving config", streamer_id);
+
+            // Resolve the config
+            let resolve = tokio::time::timeout(
+                CONFIG_RESOLVE_HARD_TIMEOUT,
+                self.resolve_config_for_streamer(streamer_id),
+            )
+            .await;
+
+            return match resolve {
+                Ok(Ok(config)) => {
+                    // Complete the in-flight request (caches and notifies waiters)
+                    let config = Arc::new(config);
+                    self.cache
+                        .complete_in_flight(streamer_id, &cell, config.clone());
+                    Ok(config)
+                }
+                Ok(Err(e)) => {
+                    self.cache.fail_in_flight(
+                        streamer_id,
+                        &cell,
+                        format!("Failed to resolve config for streamer {streamer_id}: {e}"),
+                    );
+                    Err(e)
+                }
+                Err(_) => {
+                    let message = format!(
+                        "Timed out resolving config for streamer {streamer_id} after {:?}",
+                        CONFIG_RESOLVE_HARD_TIMEOUT
+                    );
+                    self.cache
+                        .fail_in_flight(streamer_id, &cell, message.clone());
+                    Err(crate::Error::Configuration(message))
+                }
             };
         }
 
-        trace!("Cache miss for streamer {}, resolving config", streamer_id);
-
-        // Resolve the config
-        let resolve = tokio::time::timeout(
-            CONFIG_RESOLVE_HARD_TIMEOUT,
-            self.resolve_config_for_streamer(streamer_id),
-        )
-        .await;
-
-        match resolve {
-            Ok(Ok(config)) => {
-                // Complete the in-flight request (caches and notifies waiters)
-                let config = Arc::new(config);
-                self.cache
-                    .complete_in_flight(streamer_id, &cell, config.clone());
-                Ok(config)
-            }
-            Ok(Err(e)) => {
-                self.cache.fail_in_flight(
-                    streamer_id,
-                    &cell,
-                    format!("Failed to resolve config for streamer {streamer_id}: {e}"),
-                );
-                Err(e)
-            }
-            Err(_) => {
-                let message = format!(
-                    "Timed out resolving config for streamer {streamer_id} after {:?}",
-                    CONFIG_RESOLVE_HARD_TIMEOUT
-                );
-                self.cache
-                    .fail_in_flight(streamer_id, &cell, message.clone());
-                Err(crate::Error::Configuration(message))
-            }
-        }
+        Err(crate::Error::Configuration(format!(
+            "Failed to resolve config for streamer {streamer_id} after retry"
+        )))
     }
 
     /// Resolve the merged configuration for a streamer without caching.
@@ -363,11 +406,6 @@ where
     /// Invalidate the cached config for a specific streamer.
     pub fn invalidate_streamer(&self, streamer_id: &str) {
         self.cache.invalidate(streamer_id);
-
-        self.broadcaster
-            .publish(ConfigUpdateEvent::StreamerMetadataUpdated {
-                streamer_id: streamer_id.to_string(),
-            });
     }
 
     // ========== Cache Management ==========

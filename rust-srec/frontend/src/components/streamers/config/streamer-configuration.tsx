@@ -30,6 +30,8 @@ export function StreamerConfiguration({
         danmuSampling: `${basePath}.danmu_sampling_config`,
         hooks: `${basePath}.event_hooks`,
         pipeline: `${basePath}.pipeline`,
+        sessionCompletePipeline: `${basePath}.session_complete_pipeline`,
+        pairedSegmentPipeline: `${basePath}.paired_segment_pipeline`,
       }}
       configMode="object"
       proxyMode="object"

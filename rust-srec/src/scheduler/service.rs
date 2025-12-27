@@ -91,6 +91,8 @@ pub struct Scheduler<R: StreamerRepository + Send + Sync + 'static> {
     event_broadcaster: ConfigEventBroadcaster,
     /// Scheduler configuration.
     config: SchedulerConfig,
+    /// Config repository for pulling fresh global timing config on hot reload.
+    config_repo: Option<Arc<dyn ConfigRepository>>,
     /// Cancellation token for graceful shutdown.
     cancellation_token: CancellationToken,
     /// Supervisor for managing actor lifecycle.
@@ -186,6 +188,7 @@ impl<R: StreamerRepository + Send + Sync + 'static> Scheduler<R> {
             streamer_manager,
             event_broadcaster,
             config,
+            config_repo: None,
             cancellation_token,
             supervisor,
             platform_mapping: PlatformMapping::new(),
@@ -280,12 +283,19 @@ impl<R: StreamerRepository + Send + Sync + 'static> Scheduler<R> {
             streamer_manager,
             event_broadcaster,
             config,
+            config_repo: None,
             cancellation_token,
             supervisor,
             platform_mapping: PlatformMapping::new(),
             platform_handles: HashMap::new(),
             download_event_rx: None,
         }
+    }
+
+    /// Attach a config repository to enable hot reloading of global scheduler timing config.
+    pub fn with_config_repo(mut self, config_repo: Arc<dyn ConfigRepository>) -> Self {
+        self.config_repo = Some(config_repo);
+        self
     }
 
     /// Get the cancellation token for this scheduler.
@@ -336,10 +346,48 @@ impl<R: StreamerRepository + Send + Sync + 'static> Scheduler<R> {
         }
     }
 
+    async fn refresh_timing_config_from_db(&mut self) -> Result<bool> {
+        let Some(repo) = &self.config_repo else {
+            return Ok(false);
+        };
+
+        let global = repo.get_global_config().await?;
+        let next = SchedulerConfig {
+            check_interval_ms: global.streamer_check_delay_ms as u64,
+            offline_check_interval_ms: global.offline_check_delay_ms as u64,
+            offline_check_count: global.offline_check_count as u32,
+            supervisor_config: self.config.supervisor_config.clone(),
+        };
+
+        if next.check_interval_ms == self.config.check_interval_ms
+            && next.offline_check_interval_ms == self.config.offline_check_interval_ms
+            && next.offline_check_count == self.config.offline_check_count
+        {
+            return Ok(false);
+        }
+
+        info!(
+            "Scheduler timing config updated: check_interval_ms {}->{}; offline_check_interval_ms {}->{}; offline_check_count {}->{}",
+            self.config.check_interval_ms,
+            next.check_interval_ms,
+            self.config.offline_check_interval_ms,
+            next.offline_check_interval_ms,
+            self.config.offline_check_count,
+            next.offline_check_count,
+        );
+
+        self.config.check_interval_ms = next.check_interval_ms;
+        self.config.offline_check_interval_ms = next.offline_check_interval_ms;
+        self.config.offline_check_count = next.offline_check_count;
+
+        Ok(true)
+    }
+
     /// Check if a platform supports batch detection.
     fn is_batch_capable_platform(&self, platform_id: &str) -> bool {
+        let platform = platform_id.strip_prefix("platform-").unwrap_or(platform_id);
         // Platforms that support batch API detection
-        matches!(platform_id, "youtube")
+        matches!(platform, "youtube")
     }
 
     /// Start the scheduler event loop.
@@ -575,6 +623,20 @@ impl<R: StreamerRepository + Send + Sync + 'static> Scheduler<R> {
     /// Handle a configuration update event using ConfigRouter.
     async fn handle_config_event(&mut self, event: ConfigUpdateEvent) {
         debug!("Handling config event: {}", event.description());
+
+        if matches!(event, ConfigUpdateEvent::GlobalUpdated) {
+            match self.refresh_timing_config_from_db().await {
+                Ok(true) => {}
+                Ok(false) => {
+                    // Avoid broadcasting config updates to every actor if global changes
+                    // don't affect scheduler timing (e.g., log filter changes).
+                    return;
+                }
+                Err(error) => {
+                    warn!("Failed to refresh scheduler timing config: {}", error);
+                }
+            }
+        }
 
         // Handle streamer deletion - remove actor immediately
         if let ConfigUpdateEvent::StreamerDeleted { ref streamer_id } = event {

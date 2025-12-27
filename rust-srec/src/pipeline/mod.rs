@@ -29,8 +29,9 @@ pub use manager::{
     PipelineCreationResult, PipelineEvent, PipelineManager, PipelineManagerConfig, PipelineStats,
 };
 pub use processors::{
-    CopyMoveConfig, CopyMoveOperation, CopyMoveProcessor, ExecuteCommandProcessor, Processor,
-    ProcessorContext, ProcessorInput, ProcessorOutput, ProcessorType, RcloneProcessor,
+    AssBurnInConfig, AssBurnInProcessor, AssMatchStrategy, CopyMoveConfig, CopyMoveOperation,
+    CopyMoveProcessor, DanmakuFactoryConfig, DanmakuFactoryProcessor, ExecuteCommandProcessor,
+    Processor, ProcessorContext, ProcessorInput, ProcessorOutput, ProcessorType, RcloneProcessor,
     RemuxProcessor, ThumbnailProcessor,
 };
 pub use progress::{JobProgressSnapshot, ProgressKind, ProgressReporter};

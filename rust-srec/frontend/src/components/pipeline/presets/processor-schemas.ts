@@ -128,3 +128,35 @@ export const ExecuteConfigSchema = z.object({
   // File extension filter for scanning (e.g., "mp4", "mkv")
   scan_extension: z.string().optional(),
 });
+
+// --- DanmakuFactory Processor ---
+export const DanmakuFactoryConfigSchema = z.object({
+  binary_path: z.string().optional(),
+  args: z.array(z.string()).default(['-i', '{input}', '-o', '{output}']),
+  extra_args: z.array(z.string()).default([]),
+  overwrite: z.boolean().default(true),
+  verify_output_exists: z.boolean().default(true),
+  prefer_manifest: z.boolean().default(true),
+  passthrough_inputs: z.boolean().default(true),
+  delete_source_xml_on_success: z.boolean().default(false),
+});
+
+// --- ASS Burn-in Processor ---
+export const AssMatchStrategySchema = z.enum(['manifest', 'stem']);
+
+export const AssBurninConfigSchema = z.object({
+  ffmpeg_path: z.string().optional(),
+  match_strategy: AssMatchStrategySchema.default('manifest'),
+  require_ass: z.boolean().default(true),
+  passthrough_inputs: z.boolean().default(true),
+  exclude_ass_from_passthrough: z.boolean().default(false),
+  output_extension: z.string().optional(),
+  video_codec: z.string().default('libx264'),
+  audio_codec: z.string().default('copy'),
+  crf: z.number().min(0).max(51).default(23),
+  preset: PresetSchema.default('veryfast'),
+  overwrite: z.boolean().default(true),
+  fonts_dir: z.string().optional(),
+  delete_source_videos_on_success: z.boolean().default(false),
+  delete_source_ass_on_success: z.boolean().default(false),
+});

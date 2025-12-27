@@ -1161,6 +1161,8 @@ pub async fn extract_metadata(
             download_retry_policy: c.download_retry_policy,
             event_hooks: c.event_hooks,
             pipeline: c.pipeline,
+            session_complete_pipeline: c.session_complete_pipeline,
+            paired_segment_pipeline: c.paired_segment_pipeline,
         })
         .collect();
 

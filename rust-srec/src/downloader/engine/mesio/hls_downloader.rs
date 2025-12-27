@@ -255,7 +255,9 @@ impl HlsDownloader {
 
         let mut writer = HlsWriter::new(output_dir, base_name, ext, extras);
 
-        // Setup callbacks for segment events
+        // SegmentStarted/SegmentCompleted must not be dropped (danmu segmentation + pipelines rely on it).
+        // These callbacks run on a blocking thread; use `blocking_send` to apply backpressure
+        // rather than unbounded buffering.
         let event_tx_start = self.event_tx.clone();
         let event_tx_complete = self.event_tx.clone();
 
@@ -264,7 +266,7 @@ impl HlsDownloader {
                 path: path.to_path_buf(),
                 sequence,
             };
-            let _ = event_tx_start.try_send(event);
+            let _ = event_tx_start.blocking_send(event);
         });
 
         writer.set_on_segment_complete_callback(
@@ -278,7 +280,7 @@ impl HlsDownloader {
                     index: sequence,
                     completed_at: Utc::now(),
                 });
-                let _ = event_tx_complete.try_send(event);
+                let _ = event_tx_complete.blocking_send(event);
             },
         );
 
@@ -450,7 +452,9 @@ impl HlsDownloader {
 
         let mut writer = HlsWriter::new(output_dir, base_name, ext, extras);
 
-        // Setup callbacks for segment events
+        // SegmentStarted/SegmentCompleted must not be dropped (danmu segmentation + pipelines rely on it).
+        // These callbacks run on a blocking thread; use `blocking_send` to apply backpressure
+        // rather than unbounded buffering.
         let event_tx_start = self.event_tx.clone();
         let event_tx_complete = self.event_tx.clone();
 
@@ -459,7 +463,7 @@ impl HlsDownloader {
                 path: path.to_path_buf(),
                 sequence,
             };
-            let _ = event_tx_start.try_send(event);
+            let _ = event_tx_start.blocking_send(event);
         });
 
         writer.set_on_segment_complete_callback(
@@ -473,7 +477,7 @@ impl HlsDownloader {
                     index: sequence,
                     completed_at: Utc::now(),
                 });
-                let _ = event_tx_complete.try_send(event);
+                let _ = event_tx_complete.blocking_send(event);
             },
         );
 

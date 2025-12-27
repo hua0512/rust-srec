@@ -317,6 +317,8 @@ impl StreamDetector {
             media_info.headers.is_some()
         );
 
+        // debug!("Media info: {:#?}", media_info);
+
         if media_info.is_live {
             // Extract additional metadata from extras if available
             let category = media_info
@@ -333,16 +335,16 @@ impl StreamDetector {
 
             // Extract HTTP headers from MediaInfo.headers for download engines
             let media_headers = media_info.headers.as_ref().map(|h| {
-                h.iter()
-                    .map(|(k, v)| (k.clone(), v.clone()))
-                    .collect::<HashMap<_, _>>()
+                let mut out = HashMap::with_capacity(h.len());
+                out.extend(h.iter().map(|(k, v)| (k.clone(), v.clone())));
+                out
             });
 
             // Extract additional extras from MediaInfo.extras
             let media_extras = media_info.extras.as_ref().map(|e| {
-                e.iter()
-                    .map(|(k, v)| (k.clone(), v.clone()))
-                    .collect::<HashMap<_, _>>()
+                let mut out = HashMap::with_capacity(e.len());
+                out.extend(e.iter().map(|(k, v)| (k.clone(), v.clone())));
+                out
             });
 
             if let Some(headers) = &media_headers {

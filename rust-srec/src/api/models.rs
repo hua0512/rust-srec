@@ -244,6 +244,8 @@ pub struct GlobalConfigResponse {
     pub job_history_retention_days: u32,
     pub session_gap_time_secs: u64,
     pub pipeline: Option<String>,
+    pub session_complete_pipeline: Option<String>,
+    pub paired_segment_pipeline: Option<String>,
     /// Log filter directive for dynamic logging (e.g., "rust_srec=debug,sqlx=warn")
     pub log_filter_directive: String,
 }
@@ -272,6 +274,10 @@ pub struct UpdateGlobalConfigRequest {
     pub session_gap_time_secs: Option<serde_json::Value>,
     /// Global pipeline configuration (JSON serialized Vec<PipelineStep>)
     pub pipeline: Option<serde_json::Value>,
+    /// Session-complete pipeline configuration (JSON serialized DagPipelineDefinition)
+    pub session_complete_pipeline: Option<serde_json::Value>,
+    /// Paired-segment pipeline configuration (JSON serialized DagPipelineDefinition)
+    pub paired_segment_pipeline: Option<serde_json::Value>,
     /// Log filter directive for dynamic logging
     pub log_filter_directive: Option<serde_json::Value>,
 }
@@ -299,6 +305,8 @@ pub struct PlatformConfigResponse {
     pub event_hooks: Option<String>,
     /// Platform-specific pipeline configuration (JSON serialized Vec<PipelineStep>)
     pub pipeline: Option<String>,
+    pub session_complete_pipeline: Option<String>,
+    pub paired_segment_pipeline: Option<String>,
 }
 
 // ============================================================================
@@ -326,6 +334,8 @@ pub struct CreateTemplateRequest {
     pub proxy_config: Option<String>,
     pub event_hooks: Option<String>,
     pub pipeline: Option<String>,
+    pub session_complete_pipeline: Option<String>,
+    pub paired_segment_pipeline: Option<String>,
 }
 
 /// Request to update a template.
@@ -349,6 +359,8 @@ pub struct UpdateTemplateRequest {
     pub proxy_config: Option<String>,
     pub event_hooks: Option<String>,
     pub pipeline: Option<String>,
+    pub session_complete_pipeline: Option<String>,
+    pub paired_segment_pipeline: Option<String>,
 }
 
 /// Template response.
@@ -373,6 +385,8 @@ pub struct TemplateResponse {
     pub proxy_config: Option<String>,
     pub event_hooks: Option<String>,
     pub pipeline: Option<String>,
+    pub session_complete_pipeline: Option<String>,
+    pub paired_segment_pipeline: Option<String>,
     pub usage_count: u32,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,

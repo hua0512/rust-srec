@@ -17,6 +17,8 @@ pub const VALID_PROCESSORS: &[&str] = &[
     "copy_move",
     "delete",
     "metadata",
+    "danmaku_factory",
+    "ass_burnin",
 ];
 
 /// Valid preset categories.
@@ -31,6 +33,8 @@ pub const VALID_CATEGORIES: &[&str] = &[
     "file_ops",    // Copy/move operations
     "custom",      // Custom execute commands
     "metadata",    // Metadata operations
+    "danmu",       // Danmu/danmaku processing
+    "subtitle",    // Subtitle conversion/rendering
 ];
 
 /// Job Preset configuration.

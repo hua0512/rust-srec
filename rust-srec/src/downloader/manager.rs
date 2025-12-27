@@ -2,9 +2,11 @@
 
 use std::collections::HashMap;
 use std::sync::Arc;
+use std::sync::atomic::{AtomicUsize, Ordering};
 
 use chrono::{DateTime, Utc};
 use dashmap::DashMap;
+use parking_lot::Mutex;
 use parking_lot::RwLock;
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
@@ -26,6 +28,84 @@ use crate::downloader::SegmentInfo;
 fn parse_engine_config<T: DeserializeOwned>(engine: &'static str, raw: &str) -> Result<T> {
     serde_json::from_str(raw)
         .map_err(|e| crate::Error::Other(format!("Failed to parse {} config: {}", engine, e)))
+}
+
+#[derive(Debug)]
+struct ConcurrencyLimit {
+    semaphore: Arc<Semaphore>,
+    /// "Physical" semaphore capacity (we only ever increase this, never decrease).
+    capacity: AtomicUsize,
+    /// Desired effective concurrency.
+    desired: AtomicUsize,
+    /// Minimum allowed desired value (0 for optional lanes like high-priority extra slots).
+    min_desired: usize,
+    /// Held permits to reduce effective concurrency (capacity - desired).
+    reserved_permits: Mutex<Vec<OwnedSemaphorePermit>>,
+}
+
+impl ConcurrencyLimit {
+    fn new(initial_desired: usize, min_desired: usize) -> Self {
+        let initial_desired = initial_desired.max(min_desired);
+        Self {
+            semaphore: Arc::new(Semaphore::new(initial_desired)),
+            capacity: AtomicUsize::new(initial_desired),
+            desired: AtomicUsize::new(initial_desired),
+            min_desired,
+            reserved_permits: Mutex::new(Vec::new()),
+        }
+    }
+
+    fn semaphore(&self) -> Arc<Semaphore> {
+        self.semaphore.clone()
+    }
+
+    fn apply_best_effort(&self) {
+        let desired = self.desired.load(Ordering::SeqCst);
+        let desired = desired.max(self.min_desired);
+        let capacity = self.capacity.load(Ordering::SeqCst);
+        let target_reserved = capacity.saturating_sub(desired);
+
+        let mut reserved = self.reserved_permits.lock();
+
+        while reserved.len() > target_reserved {
+            reserved.pop();
+        }
+
+        // Best-effort: reserve as many currently-available permits as needed.
+        // If downloads are currently holding permits, we may not reach target immediately.
+        while reserved.len() < target_reserved {
+            match self.semaphore.clone().try_acquire_owned() {
+                Ok(p) => reserved.push(p),
+                Err(_) => break,
+            }
+        }
+    }
+
+    /// Set desired effective concurrency (clamped to >= 1).
+    ///
+    /// Notes:
+    /// - Increasing beyond current capacity uses `Semaphore::add_permits`.
+    /// - Decreasing is implemented by reserving permits (best-effort).
+    fn set_desired(&self, desired: usize) -> usize {
+        let desired = desired.max(self.min_desired);
+
+        // Ensure physical capacity is at least `desired`.
+        let capacity = self.capacity.load(Ordering::SeqCst);
+        if desired > capacity {
+            let delta = desired - capacity;
+            self.semaphore.add_permits(delta);
+            self.capacity.store(desired, Ordering::SeqCst);
+        }
+
+        self.desired.store(desired, Ordering::SeqCst);
+        self.apply_best_effort();
+        desired
+    }
+
+    #[cfg(test)]
+    fn reserved_len(&self) -> usize {
+        self.reserved_permits.lock().len()
+    }
 }
 
 /// Pending configuration update for an active download.
@@ -128,11 +208,11 @@ struct ActiveDownload {
 /// The Download Manager service.
 pub struct DownloadManager {
     /// Configuration.
-    config: DownloadManagerConfig,
-    /// Semaphore for normal priority downloads.
-    normal_semaphore: Arc<Semaphore>,
-    /// Semaphore for high priority downloads (extra slots).
-    high_priority_semaphore: Arc<Semaphore>,
+    config: RwLock<DownloadManagerConfig>,
+    /// Effective concurrency for normal priority downloads.
+    normal_limit: Arc<ConcurrencyLimit>,
+    /// Effective concurrency for high priority extra slots.
+    high_priority_limit: Arc<ConcurrencyLimit>,
     /// Active downloads.
     active_downloads: Arc<DashMap<String, ActiveDownload>>,
     /// Pending configuration updates keyed by download_id.
@@ -255,8 +335,9 @@ impl DownloadManager {
         // Use broadcast channel to support multiple subscribers
         let (event_tx, _) = broadcast::channel(256);
 
-        let normal_semaphore = Arc::new(Semaphore::new(config.max_concurrent_downloads));
-        let high_priority_semaphore = Arc::new(Semaphore::new(config.high_priority_extra_slots));
+        let normal_limit = Arc::new(ConcurrencyLimit::new(config.max_concurrent_downloads, 1));
+        let high_priority_limit =
+            Arc::new(ConcurrencyLimit::new(config.high_priority_extra_slots, 0));
 
         let circuit_breakers = CircuitBreakerManager::new(
             config.circuit_breaker_threshold,
@@ -264,9 +345,9 @@ impl DownloadManager {
         );
 
         let manager = Self {
-            config,
-            normal_semaphore,
-            high_priority_semaphore,
+            config: RwLock::new(config),
+            normal_limit,
+            high_priority_limit,
             active_downloads: Arc::new(DashMap::new()),
             pending_updates: Arc::new(DashMap::new()),
             engines: RwLock::new(HashMap::new()),
@@ -346,7 +427,7 @@ impl DownloadManager {
                 streamer_id: config.streamer_id.clone(),
                 session_id: config.session_id.clone(),
                 reason: format!("Circuit breaker open for engine {}", engine_key),
-                retry_after_secs: Some(self.config.circuit_breaker_cooldown_secs),
+                retry_after_secs: Some(self.config.read().circuit_breaker_cooldown_secs),
             });
 
             // Try to find an alternative engine
@@ -380,7 +461,7 @@ impl DownloadManager {
             id
         } else {
             // Fallback to default engine type string
-            self.config.default_engine.as_str()
+            self.config.read().default_engine.as_str()
         };
 
         // 1. Check for overrides first
@@ -562,7 +643,7 @@ impl DownloadManager {
         }
 
         // Return default
-        let default_type = self.config.default_engine;
+        let default_type = self.config.read().default_engine;
         let engine = self.get_engine(default_type).ok_or_else(|| {
             crate::Error::Other(format!("Default engine {} not registered", default_type))
         })?;
@@ -627,21 +708,25 @@ impl DownloadManager {
             )));
         }
 
+        // Apply any pending concurrency reconfiguration before trying to acquire permits.
+        self.normal_limit.apply_best_effort();
+        self.high_priority_limit.apply_best_effort();
+
         // Acquire semaphore permit and hold it until the download finishes
         let permit = if is_high_priority {
             // Try high priority semaphore first, then fall back to normal
-            match self.high_priority_semaphore.clone().try_acquire_owned() {
+            match self.high_priority_limit.semaphore().try_acquire_owned() {
                 Ok(permit) => permit,
                 Err(_) => self
-                    .normal_semaphore
-                    .clone()
+                    .normal_limit
+                    .semaphore()
                     .acquire_owned()
                     .await
                     .map_err(|e| crate::Error::Other(format!("Semaphore error: {}", e)))?,
             }
         } else {
-            self.normal_semaphore
-                .clone()
+            self.normal_limit
+                .semaphore()
                 .acquire_owned()
                 .await
                 .map_err(|e| crate::Error::Other(format!("Semaphore error: {}", e)))?
@@ -714,6 +799,8 @@ impl DownloadManager {
         let active_downloads = self.active_downloads.clone();
         let pending_updates = self.pending_updates.clone();
         let circuit_breakers_ref = self.circuit_breakers.get(&engine_key);
+        let normal_limit = self.normal_limit.clone();
+        let high_priority_limit = self.high_priority_limit.clone();
 
         tokio::spawn(async move {
             while let Some(event) = segment_rx.recv().await {
@@ -783,6 +870,11 @@ impl DownloadManager {
 
                         pending_updates.remove(&download_id_clone);
 
+                        // Dropping the download releases its concurrency permit; apply limits immediately
+                        // so newly-available permits get reserved if the desired limit was decreased.
+                        normal_limit.apply_best_effort();
+                        high_priority_limit.apply_best_effort();
+
                         let _ = event_tx.send(DownloadManagerEvent::DownloadCompleted {
                             download_id: download_id_clone.clone(),
                             streamer_id: streamer_id.clone(),
@@ -800,7 +892,16 @@ impl DownloadManager {
                         break;
                     }
                     SegmentEvent::DownloadFailed { error, recoverable } => {
-                        circuit_breakers_ref.record_failure();
+                        // Skip circuit breaker for permanent HTTP failures that indicate
+                        // the resource is unavailable (not transient network issues).
+                        // The error format is "Server returned status code XXX" from mesio.
+                        let is_permanent_http_error = error.contains("status code 404")
+                            || error.contains("status code 403")
+                            || error.contains("status code 410");
+
+                        if !is_permanent_http_error {
+                            circuit_breakers_ref.record_failure();
+                        }
 
                         if let Some(mut download) = active_downloads.get_mut(&download_id_clone) {
                             download.status = DownloadStatus::Failed;
@@ -810,6 +911,9 @@ impl DownloadManager {
                         // just before the event to avoid race condition
                         active_downloads.remove(&download_id_clone);
                         pending_updates.remove(&download_id_clone);
+
+                        normal_limit.apply_best_effort();
+                        high_priority_limit.apply_best_effort();
 
                         let _ = event_tx.send(DownloadManagerEvent::DownloadFailed {
                             download_id: download_id_clone.clone(),
@@ -881,6 +985,11 @@ impl DownloadManager {
             });
 
             info!("Stopped download {}", download_id);
+
+            // Dropping `download` releases its concurrency permit; apply limits immediately.
+            self.normal_limit.apply_best_effort();
+            self.high_priority_limit.apply_best_effort();
+
             Ok(())
         } else {
             Err(crate::Error::NotFound {
@@ -917,19 +1026,45 @@ impl DownloadManager {
 
     /// Maximum normal-priority concurrent downloads.
     pub fn max_concurrent_downloads(&self) -> usize {
-        self.config.max_concurrent_downloads
+        self.config.read().max_concurrent_downloads
     }
 
     /// Extra slots reserved for high-priority downloads.
     pub fn high_priority_extra_slots(&self) -> usize {
-        self.config.high_priority_extra_slots
+        self.config.read().high_priority_extra_slots
     }
 
     /// Total concurrent download slots (normal + high priority extra).
     pub fn total_concurrent_slots(&self) -> usize {
-        self.config
+        let config = self.config.read();
+        config
             .max_concurrent_downloads
-            .saturating_add(self.config.high_priority_extra_slots)
+            .saturating_add(config.high_priority_extra_slots)
+    }
+
+    /// Adjust the normal-priority concurrency limit at runtime.
+    ///
+    /// This is best-effort: decreasing the limit reserves currently-available permits and the
+    /// reduced effective limit is re-applied when downloads stop and before starting new downloads.
+    pub fn set_max_concurrent_downloads(&self, limit: usize) -> usize {
+        let limit = limit.max(1);
+
+        {
+            let mut config = self.config.write();
+            config.max_concurrent_downloads = limit;
+        }
+
+        self.normal_limit.set_desired(limit)
+    }
+
+    /// Adjust the number of high-priority extra slots at runtime (0 disables high-priority slots).
+    pub fn set_high_priority_extra_slots(&self, slots: usize) -> usize {
+        {
+            let mut config = self.config.write();
+            config.high_priority_extra_slots = slots;
+        }
+
+        self.high_priority_limit.set_desired(slots)
     }
 
     /// Subscribe to download events.
@@ -1316,6 +1451,49 @@ mod tests {
         let manager = DownloadManager::new();
         assert_eq!(manager.active_count(), 0);
         assert!(!manager.available_engines().is_empty());
+    }
+
+    #[tokio::test]
+    async fn test_runtime_reconfigure_max_concurrent_downloads_reserves_permits() {
+        let config = DownloadManagerConfig {
+            max_concurrent_downloads: 2,
+            high_priority_extra_slots: 0,
+            ..Default::default()
+        };
+        let manager = DownloadManager::with_config(config);
+
+        // Increase beyond initial capacity.
+        assert_eq!(manager.set_max_concurrent_downloads(4), 4);
+        assert_eq!(manager.normal_limit.semaphore.available_permits(), 4);
+
+        // Decrease: should reserve permits immediately when available.
+        assert_eq!(manager.set_max_concurrent_downloads(1), 1);
+        assert_eq!(manager.normal_limit.reserved_len(), 3);
+        assert_eq!(manager.normal_limit.semaphore.available_permits(), 1);
+
+        // If permits are in use, reservations are best-effort until permits are released.
+        assert_eq!(manager.set_max_concurrent_downloads(3), 3);
+        let p1 = manager
+            .normal_limit
+            .semaphore()
+            .acquire_owned()
+            .await
+            .unwrap();
+        let p2 = manager
+            .normal_limit
+            .semaphore()
+            .acquire_owned()
+            .await
+            .unwrap();
+        assert_eq!(manager.set_max_concurrent_downloads(1), 1);
+
+        drop(p1);
+        manager.normal_limit.apply_best_effort();
+        drop(p2);
+        manager.normal_limit.apply_best_effort();
+
+        // After releases and best-effort application, the desired limit is enforceable.
+        assert_eq!(manager.normal_limit.semaphore.available_permits(), 1);
     }
 
     #[test]

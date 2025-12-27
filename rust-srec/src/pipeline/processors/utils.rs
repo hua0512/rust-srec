@@ -20,6 +20,7 @@ const MAX_LOG_ENTRIES: usize = 2000;
 /// Video file extensions that support processing.
 pub const VIDEO_EXTENSIONS: &[&str] = &[
     "mp4", "mkv", "webm", "mov", "flv", "avi", "wmv", "m4v", "ts", "mts", "m2ts", "3gp", "ogv",
+    "m4s",
 ];
 
 /// Audio file extensions.

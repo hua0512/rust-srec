@@ -31,6 +31,10 @@ pub struct GlobalConfigDbModel {
     pub session_gap_time_secs: i64,
     /// JSON serialized Vec<PipelineStep>
     pub pipeline: Option<String>,
+    /// JSON serialized DagPipelineDefinition for session-complete triggering.
+    pub session_complete_pipeline: Option<String>,
+    /// JSON serialized DagPipelineDefinition for paired (video+danmu) segment triggering.
+    pub paired_segment_pipeline: Option<String>,
     /// Log filter directive (e.g., "rust_srec=debug,sqlx=warn")
     pub log_filter_directive: String,
 }
@@ -58,6 +62,8 @@ impl Default for GlobalConfigDbModel {
             job_history_retention_days: 30,
             session_gap_time_secs: 3600,
             pipeline: None,
+            session_complete_pipeline: None,
+            paired_segment_pipeline: None,
             log_filter_directive: "rust_srec=info,sqlx=warn,mesio_engine=info,flv=info,hls=info"
                 .to_string(),
         }
@@ -95,6 +101,10 @@ pub struct PlatformConfigDbModel {
     pub event_hooks: Option<String>,
     /// JSON serialized Vec<PipelineStep>
     pub pipeline: Option<String>,
+    /// JSON serialized DagPipelineDefinition for session-complete triggering.
+    pub session_complete_pipeline: Option<String>,
+    /// JSON serialized DagPipelineDefinition for paired (video+danmu) segment triggering.
+    pub paired_segment_pipeline: Option<String>,
 }
 
 /// Template configuration database model.
@@ -129,6 +139,10 @@ pub struct TemplateConfigDbModel {
     pub stream_selection_config: Option<String>,
     /// JSON serialized Vec<PipelineStep>
     pub pipeline: Option<String>,
+    /// JSON serialized DagPipelineDefinition for session-complete triggering.
+    pub session_complete_pipeline: Option<String>,
+    /// JSON serialized DagPipelineDefinition for paired (video+danmu) segment triggering.
+    pub paired_segment_pipeline: Option<String>,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
 }
@@ -155,6 +169,8 @@ impl TemplateConfigDbModel {
             event_hooks: None,
             stream_selection_config: None,
             pipeline: None,
+            session_complete_pipeline: None,
+            paired_segment_pipeline: None,
             created_at: Utc::now(),
             updated_at: Utc::now(),
         }

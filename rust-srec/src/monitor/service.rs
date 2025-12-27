@@ -7,10 +7,12 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use dashmap::DashMap;
+use futures::StreamExt;
 use sqlx::SqlitePool;
 use tokio::sync::OnceCell;
 use tokio::sync::{Notify, mpsc};
 use tokio_util::sync::CancellationToken;
+use tokio_util::time::DelayQueue;
 use tracing::{debug, info, warn};
 
 use crate::database::ImmediateTransaction;
@@ -31,6 +33,12 @@ use super::rate_limiter::{RateLimiterConfig, RateLimiterManager};
 /// Hard upper bound for a single streamer status check to avoid indefinitely-stuck in-flight
 /// deduplication entries when upstream requests hang.
 const STREAM_CHECK_HARD_TIMEOUT: Duration = Duration::from_secs(300);
+
+/// In-flight deduplication window for per-streamer status checks.
+///
+/// This is a performance optimization only. If cleanup is delayed, the effect is limited
+/// to temporarily reusing the most recent result for the same streamer.
+const IN_FLIGHT_DEDUP_WINDOW: Duration = Duration::from_millis(100);
 
 /// Configuration for the stream monitor.
 #[derive(Debug, Clone)]
@@ -189,8 +197,8 @@ impl<
         let cancellation = CancellationToken::new();
 
         // Create bounded channel for cleanup requests (single worker pattern)
-        // Buffer size of 1024 should be plenty for typical concurrent request counts
-        let (cleanup_tx, cleanup_rx) = mpsc::channel::<String>(1024);
+        // Buffer size of 4096 should be plenty for typical concurrent request counts.
+        let (cleanup_tx, cleanup_rx) = mpsc::channel::<String>(4096);
         let in_flight = Arc::new(DashMap::new());
 
         let monitor = Self {
@@ -242,6 +250,7 @@ impl<
         cancellation_token: CancellationToken,
     ) {
         tokio::spawn(async move {
+            let mut queue = DelayQueue::new();
             loop {
                 tokio::select! {
                     biased;
@@ -251,8 +260,10 @@ impl<
                         break;
                     }
                     Some(id) = cleanup_rx.recv() => {
-                        // Delay cleanup to preserve the deduplication window
-                        tokio::time::sleep(Duration::from_millis(100)).await;
+                        queue.insert(id, IN_FLIGHT_DEDUP_WINDOW);
+                    }
+                    Some(expired) = queue.next() => {
+                        let id = expired.into_inner();
                         in_flight.remove(&id);
                     }
                 }
@@ -312,6 +323,19 @@ impl<
     pub async fn check_streamer(&self, streamer: &StreamerMetadata) -> Result<LiveStatus> {
         debug!("Checking status for streamer: {}", streamer.id);
 
+        // Correctness guard: if the streamer was disabled via API, we should not perform checks.
+        // This avoids wasted network calls and prevents races where in-flight checks could
+        // produce events/state updates after a user-initiated disable.
+        if let Some(fresh) = self.streamer_manager.get_streamer(&streamer.id)
+            && fresh.state == StreamerState::Disabled
+        {
+            debug!(
+                "Streamer {} is disabled; skipping status check",
+                streamer.id
+            );
+            return Ok(LiveStatus::Offline);
+        }
+
         let hard_timeout = if self.config.request_timeout > Duration::ZERO {
             self.config.request_timeout
         } else {
@@ -332,14 +356,14 @@ impl<
         let detector = self.detector.clone();
         let streamer_id_owned = streamer.id.clone();
         let streamer_id = streamer.id.as_str();
-        let platform_config_id = streamer.platform_config_id.as_str();
+        let platform_id = streamer.platform().to_string();
 
         // get_or_try_init ensures only ONE caller executes the closure,
         // all other concurrent callers wait for the result
         let result = cell
             .get_or_try_init(|| async move {
                 // Acquire rate limit token
-                let wait_time = rate_limiter.acquire(platform_config_id).await;
+                let wait_time = rate_limiter.acquire(&platform_id).await;
                 if !wait_time.is_zero() {
                     debug!("Rate limited for {:?}", wait_time);
                 }
@@ -392,14 +416,11 @@ impl<
         // Schedule delayed cleanup BEFORE checking result to ensure cleanup
         // happens regardless of success or error. This prevents in_flight map
         // from leaking entries when errors occur.
-        // Use the cleanup channel instead of spawning a task per entry.
-        if self.cleanup_tx.try_send(streamer.id.clone()).is_err() {
-            let in_flight = self.in_flight.clone();
-            let streamer_id = streamer.id.clone();
-            tokio::spawn(async move {
-                tokio::time::sleep(Duration::from_millis(100)).await;
-                in_flight.remove(&streamer_id);
-            });
+        // Use the cleanup worker (DelayQueue) to avoid spawning per-entry tasks.
+        // If the channel is saturated, fall back to immediate cleanup (dedup is best-effort).
+        let cleanup_id = streamer.id.clone();
+        if self.cleanup_tx.try_send(cleanup_id.clone()).is_err() {
+            self.in_flight.remove(&cleanup_id);
         }
 
         // Now check result - cleanup is already scheduled
@@ -441,6 +462,17 @@ impl<
         // The StreamerActor might be holding stale metadata
         let fresh_streamer = self.streamer_manager.get_streamer(&streamer.id);
         let streamer = fresh_streamer.as_ref().unwrap_or(streamer);
+
+        // Correctness guard: user-disabled streamers must not be reactivated by in-flight checks.
+        // This also suppresses monitor events (StreamerLive/Offline/Error) after disable.
+        if streamer.state == StreamerState::Disabled {
+            debug!(
+                "Ignoring monitor status for disabled streamer {}: {:?}",
+                streamer.id,
+                status_summary(&status)
+            );
+            return Ok(());
+        }
 
         match status {
             LiveStatus::Live {
@@ -940,6 +972,18 @@ impl<
     pub async fn handle_error(&self, streamer: &StreamerMetadata, error: &str) -> Result<()> {
         warn!("Error checking streamer {}: {}", streamer.name, error);
 
+        // If the user disabled the streamer, don't mutate error/backoff state or emit error events.
+        // Disable is a user intent override, and we don't want in-flight checks to keep writing DB.
+        if let Some(fresh) = self.streamer_manager.get_streamer(&streamer.id)
+            && fresh.state == StreamerState::Disabled
+        {
+            debug!(
+                "Skipping error handling for disabled streamer {}: {}",
+                streamer.id, error
+            );
+            return Ok(());
+        }
+
         let now = chrono::Utc::now();
 
         let mut tx = self.begin_immediate().await?;
@@ -998,6 +1042,17 @@ impl<
         streamer: &StreamerMetadata,
         retry_after_secs: u64,
     ) -> Result<()> {
+        // If the user disabled the streamer, don't mutate backoff state.
+        if let Some(fresh) = self.streamer_manager.get_streamer(&streamer.id)
+            && fresh.state == StreamerState::Disabled
+        {
+            debug!(
+                "Skipping circuit breaker backoff for disabled streamer {}",
+                streamer.id
+            );
+            return Ok(());
+        }
+
         let now = chrono::Utc::now();
         let disabled_until = now + chrono::Duration::seconds(retry_after_secs as i64);
 
@@ -1028,7 +1083,6 @@ impl<
 
 const OUTBOX_NO_RECEIVER_MAX_ATTEMPTS: i64 = 5;
 const OUTBOX_NO_RECEIVER_MAX_AGE_SECS: i64 = 30;
-
 async fn flush_outbox_once(pool: &SqlitePool, broadcaster: &MonitorEventBroadcaster) -> Result<()> {
     let entries = MonitorOutboxOps::fetch_undelivered(pool, 100).await?;
 

@@ -39,6 +39,12 @@ use crate::downloader::DownloadManagerEvent;
 use crate::monitor::MonitorEvent;
 use crate::pipeline::PipelineEvent;
 
+/// Best-effort interval for in-memory dead-letter cleanup.
+///
+/// Dead letters are also persisted to the database; this is purely to prevent unbounded growth
+/// of the in-memory `dead_letters` map in long-running processes.
+const DEAD_LETTER_CLEANUP_INTERVAL_SECS: u64 = 60 * 60;
+
 /// Configuration for the notification service.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct NotificationServiceConfig {
@@ -211,6 +217,7 @@ struct RetryParams {
     channels: Vec<Arc<RuntimeChannel>>,
     pending_queue: Arc<DashMap<u64, PendingNotification>>,
     dead_letters: Arc<DashMap<u64, DeadLetterEntry>>,
+    dead_letter_cleanup_ts: Arc<AtomicU64>,
     circuit_breakers: Arc<DashMap<String, CircuitBreakerState>>,
     notification_repo: Option<Arc<dyn NotificationRepository>>,
     config: NotificationServiceConfig,
@@ -223,6 +230,7 @@ struct ProcessingParams {
     channels: Vec<Arc<RuntimeChannel>>,
     pending_queue: Arc<DashMap<u64, PendingNotification>>,
     dead_letters: Arc<DashMap<u64, DeadLetterEntry>>,
+    dead_letter_cleanup_ts: Arc<AtomicU64>,
     circuit_breakers: Arc<DashMap<String, CircuitBreakerState>>,
     notification_repo: Option<Arc<dyn NotificationRepository>>,
     config: NotificationServiceConfig,
@@ -240,6 +248,8 @@ pub struct NotificationService {
     circuit_breakers: Arc<DashMap<String, CircuitBreakerState>>,
     pending_queue: Arc<DashMap<u64, PendingNotification>>,
     dead_letters: Arc<DashMap<u64, DeadLetterEntry>>,
+    /// Last time we performed in-memory dead-letter retention cleanup (unix epoch seconds).
+    dead_letter_cleanup_ts: Arc<AtomicU64>,
     next_id: AtomicU64,
     next_dead_letter_id: Arc<AtomicU64>,
     event_tx: broadcast::Sender<NotificationEvent>,
@@ -296,6 +306,7 @@ impl NotificationService {
             circuit_breakers: Arc::new(DashMap::new()),
             pending_queue: Arc::new(DashMap::new()),
             dead_letters: Arc::new(DashMap::new()),
+            dead_letter_cleanup_ts: Arc::new(AtomicU64::new(0)),
             next_id: AtomicU64::new(1),
             next_dead_letter_id: Arc::new(AtomicU64::new(1)),
             event_tx,
@@ -836,6 +847,7 @@ impl NotificationService {
             channels,
             pending_queue: self.pending_queue.clone(),
             dead_letters: self.dead_letters.clone(),
+            dead_letter_cleanup_ts: self.dead_letter_cleanup_ts.clone(),
             circuit_breakers: self.circuit_breakers.clone(),
             notification_repo: self.notification_repo.clone(),
             config: self.config.clone(),
@@ -843,6 +855,34 @@ impl NotificationService {
             cancellation_token: self.cancellation_token.clone(),
         })
         .await;
+    }
+
+    fn maybe_cleanup_dead_letters_detached(
+        dead_letters: &DashMap<u64, DeadLetterEntry>,
+        retention_days: u32,
+        dead_letter_cleanup_ts: &AtomicU64,
+        now: DateTime<Utc>,
+    ) {
+        let now_ts = now.timestamp().max(0) as u64;
+        let last = dead_letter_cleanup_ts.load(Ordering::Relaxed);
+        if now_ts.saturating_sub(last) < DEAD_LETTER_CLEANUP_INTERVAL_SECS {
+            return;
+        }
+        if dead_letter_cleanup_ts
+            .compare_exchange(last, now_ts, Ordering::SeqCst, Ordering::Relaxed)
+            .is_err()
+        {
+            return;
+        }
+
+        if retention_days == 0 {
+            dead_letters.clear();
+            return;
+        }
+
+        let retention = chrono::Duration::days(retention_days as i64);
+        let cutoff = now - retention;
+        dead_letters.retain(|_, entry| entry.dead_lettered_at > cutoff);
     }
 
     /// Calculate retry delay with exponential backoff and jitter.
@@ -873,6 +913,7 @@ impl NotificationService {
             channels,
             pending_queue,
             dead_letters,
+            dead_letter_cleanup_ts,
             circuit_breakers,
             notification_repo,
             config,
@@ -903,6 +944,7 @@ impl NotificationService {
                 channels,
                 pending_queue,
                 dead_letters,
+                dead_letter_cleanup_ts,
                 circuit_breakers,
                 notification_repo,
                 config,
@@ -939,6 +981,7 @@ impl NotificationService {
             channels,
             pending_queue,
             dead_letters,
+            dead_letter_cleanup_ts,
             circuit_breakers,
             notification_repo,
             config,
@@ -1046,6 +1089,13 @@ impl NotificationService {
                                 dead_lettered_at: now,
                             },
                         );
+
+                        Self::maybe_cleanup_dead_letters_detached(
+                            &dead_letters,
+                            config.dead_letter_retention_days,
+                            &dead_letter_cleanup_ts,
+                            now,
+                        );
                         warn!(
                             "Notification {} dead-lettered for channel {} after {} attempts",
                             id, channel.channel_type, config.max_retries
@@ -1105,6 +1155,7 @@ impl NotificationService {
             channels,
             pending_queue,
             dead_letters,
+            dead_letter_cleanup_ts,
             circuit_breakers,
             notification_repo,
             config,
@@ -1115,6 +1166,7 @@ impl NotificationService {
 
     /// Get dead letter entries.
     pub fn get_dead_letters(&self) -> Vec<DeadLetterEntry> {
+        self.cleanup_dead_letters();
         self.dead_letters
             .iter()
             .map(|e| e.value().clone())
@@ -1140,8 +1192,17 @@ impl NotificationService {
 
     /// Clear old dead letters.
     pub fn cleanup_dead_letters(&self) {
+        let now = Utc::now();
+        self.dead_letter_cleanup_ts
+            .store(now.timestamp().max(0) as u64, Ordering::Relaxed);
+
+        if self.config.dead_letter_retention_days == 0 {
+            self.dead_letters.clear();
+            return;
+        }
+
         let retention = chrono::Duration::days(self.config.dead_letter_retention_days as i64);
-        let cutoff = Utc::now() - retention;
+        let cutoff = now - retention;
 
         self.dead_letters
             .retain(|_, entry| entry.dead_lettered_at > cutoff);

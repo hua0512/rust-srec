@@ -106,6 +106,8 @@ pub struct GlobalConfigExport {
     pub job_history_retention_days: i32,
     pub session_gap_time_secs: i64,
     pub pipeline: Option<serde_json::Value>,
+    pub session_complete_pipeline: Option<serde_json::Value>,
+    pub paired_segment_pipeline: Option<serde_json::Value>,
     pub log_filter_directive: Option<String>,
 }
 
@@ -130,6 +132,8 @@ pub struct TemplateExport {
     pub event_hooks: Option<serde_json::Value>,
     pub stream_selection_config: Option<serde_json::Value>,
     pub pipeline: Option<serde_json::Value>,
+    pub session_complete_pipeline: Option<serde_json::Value>,
+    pub paired_segment_pipeline: Option<serde_json::Value>,
 }
 
 /// Streamer for export (uses URL as identifier).
@@ -183,6 +187,8 @@ pub struct PlatformExport {
     pub download_retry_policy: Option<serde_json::Value>,
     pub event_hooks: Option<serde_json::Value>,
     pub pipeline: Option<serde_json::Value>,
+    pub session_complete_pipeline: Option<serde_json::Value>,
+    pub paired_segment_pipeline: Option<serde_json::Value>,
 }
 
 /// Notification channel for export (uses name as identifier).
@@ -444,6 +450,8 @@ pub async fn export_config(State(state): State<AppState>) -> Result<impl IntoRes
             job_history_retention_days: global_config.job_history_retention_days,
             session_gap_time_secs: global_config.session_gap_time_secs,
             pipeline: global_config.pipeline.map(parse_db_config),
+            session_complete_pipeline: global_config.session_complete_pipeline.map(parse_db_config),
+            paired_segment_pipeline: global_config.paired_segment_pipeline.map(parse_db_config),
             log_filter_directive: Some(global_config.log_filter_directive),
         },
         templates: templates
@@ -467,6 +475,8 @@ pub async fn export_config(State(state): State<AppState>) -> Result<impl IntoRes
                 event_hooks: t.event_hooks.clone().map(parse_db_config),
                 stream_selection_config: t.stream_selection_config.clone().map(parse_db_config),
                 pipeline: t.pipeline.clone().map(parse_db_config),
+                session_complete_pipeline: t.session_complete_pipeline.clone().map(parse_db_config),
+                paired_segment_pipeline: t.paired_segment_pipeline.clone().map(parse_db_config),
             })
             .collect(),
         streamers: streamer_exports,
@@ -499,6 +509,8 @@ pub async fn export_config(State(state): State<AppState>) -> Result<impl IntoRes
                 download_retry_policy: p.download_retry_policy.clone().map(parse_db_config),
                 event_hooks: p.event_hooks.clone().map(parse_db_config),
                 pipeline: p.pipeline.clone().map(parse_db_config),
+                session_complete_pipeline: p.session_complete_pipeline.clone().map(parse_db_config),
+                paired_segment_pipeline: p.paired_segment_pipeline.clone().map(parse_db_config),
             })
             .collect(),
         notification_channels: channel_exports,
@@ -633,6 +645,14 @@ pub async fn import_config(
         .global_config
         .pipeline
         .map(|v| unwrap_json_value(v).to_string());
+    global.session_complete_pipeline = config
+        .global_config
+        .session_complete_pipeline
+        .map(|v| unwrap_json_value(v).to_string());
+    global.paired_segment_pipeline = config
+        .global_config
+        .paired_segment_pipeline
+        .map(|v| unwrap_json_value(v).to_string());
     if let Some(log_filter) = config.global_config.log_filter_directive {
         global.log_filter_directive = log_filter;
     }
@@ -753,6 +773,14 @@ pub async fn import_config(
                 .pipeline
                 .clone()
                 .map(|v| unwrap_json_value(v).to_string());
+            updated.session_complete_pipeline = template_export
+                .session_complete_pipeline
+                .clone()
+                .map(|v| unwrap_json_value(v).to_string());
+            updated.paired_segment_pipeline = template_export
+                .paired_segment_pipeline
+                .clone()
+                .map(|v| unwrap_json_value(v).to_string());
             updated.updated_at = Utc::now();
 
             config_service
@@ -804,6 +832,14 @@ pub async fn import_config(
                 .map(|v| unwrap_json_value(v).to_string());
             new_template.pipeline = template_export
                 .pipeline
+                .clone()
+                .map(|v| unwrap_json_value(v).to_string());
+            new_template.session_complete_pipeline = template_export
+                .session_complete_pipeline
+                .clone()
+                .map(|v| unwrap_json_value(v).to_string());
+            new_template.paired_segment_pipeline = template_export
+                .paired_segment_pipeline
                 .clone()
                 .map(|v| unwrap_json_value(v).to_string());
 
@@ -892,6 +928,14 @@ pub async fn import_config(
                 .map(|v| unwrap_json_value(v).to_string());
             updated.pipeline = platform_export
                 .pipeline
+                .clone()
+                .map(|v| unwrap_json_value(v).to_string());
+            updated.session_complete_pipeline = platform_export
+                .session_complete_pipeline
+                .clone()
+                .map(|v| unwrap_json_value(v).to_string());
+            updated.paired_segment_pipeline = platform_export
+                .paired_segment_pipeline
                 .clone()
                 .map(|v| unwrap_json_value(v).to_string());
 
@@ -1274,6 +1318,8 @@ mod tests {
             job_history_retention_days: 0,
             session_gap_time_secs: 0,
             pipeline: None,
+            session_complete_pipeline: None,
+            paired_segment_pipeline: None,
             log_filter_directive: Some("rust_srec=debug".to_string()),
         };
         let json = serde_json::to_string(&export).unwrap();

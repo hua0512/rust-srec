@@ -10,6 +10,8 @@ import {
   DeleteConfigSchema,
   MetadataConfigSchema,
   ExecuteConfigSchema,
+  DanmakuFactoryConfigSchema,
+  AssBurninConfigSchema,
 } from '../processor-schemas';
 
 // Lazy load large form components for code splitting
@@ -18,6 +20,16 @@ const RemuxConfigForm = lazy(() =>
 );
 const RcloneConfigForm = lazy(() =>
   import('./rclone-config-form').then((m) => ({ default: m.RcloneConfigForm })),
+);
+const DanmakuFactoryConfigForm = lazy(() =>
+  import('./danmaku-factory-config-form').then((m) => ({
+    default: m.DanmakuFactoryConfigForm,
+  })),
+);
+const AssBurninConfigForm = lazy(() =>
+  import('./ass-burnin-config-form').then((m) => ({
+    default: m.AssBurninConfigForm,
+  })),
 );
 
 // Smaller forms can be imported directly
@@ -89,6 +101,16 @@ export const PROCESSOR_REGISTRY: Record<string, ProcessorDefinition> = {
     schema: ExecuteConfigSchema,
     component: ExecuteConfigForm,
     label: msg`Execute Command`,
+  },
+  danmaku_factory: {
+    schema: DanmakuFactoryConfigSchema,
+    component: DanmakuFactoryConfigForm,
+    label: msg`Danmaku to ASS`,
+  },
+  ass_burnin: {
+    schema: AssBurninConfigSchema,
+    component: AssBurninConfigForm,
+    label: msg`ASS Burn-in`,
   },
 };
 

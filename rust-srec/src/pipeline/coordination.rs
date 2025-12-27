@@ -1,8 +1,8 @@
 //! Session coordination for collecting DAG outputs and triggering session-complete pipelines.
 
 use dashmap::DashMap;
-use std::path::PathBuf;
-use std::sync::atomic::{AtomicU32, Ordering};
+use dashmap::mapref::entry::Entry;
+use std::path::{Path, PathBuf};
 use std::time::Instant;
 use tracing::{debug, info, warn};
 
@@ -11,6 +11,43 @@ use tracing::{debug, info, warn};
 pub enum SourceType {
     Video,
     Danmu,
+}
+
+fn dedup_paths_preserve_order(paths: Vec<PathBuf>) -> Vec<PathBuf> {
+    use std::collections::HashSet;
+
+    fn key(p: &Path) -> String {
+        let s = p.to_string_lossy();
+        if cfg!(windows) {
+            s.to_lowercase()
+        } else {
+            s.to_string()
+        }
+    }
+
+    let mut seen = HashSet::<String>::new();
+    let mut out = Vec::new();
+    for p in paths {
+        if seen.insert(key(&p)) {
+            out.push(p);
+        }
+    }
+    out
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+struct SegmentKey {
+    session_id: String,
+    segment_index: u32,
+}
+
+impl SegmentKey {
+    fn new(session_id: &str, segment_index: u32) -> Self {
+        Self {
+            session_id: session_id.to_string(),
+            segment_index,
+        }
+    }
 }
 
 /// Output from a segment with ordering information.
@@ -22,6 +59,195 @@ pub struct SegmentOutput {
     pub path: PathBuf,
 }
 
+#[derive(Debug, Clone)]
+pub struct PairedSegmentOutputs {
+    pub session_id: String,
+    pub streamer_id: String,
+    pub segment_index: u32,
+    pub video_outputs: Vec<PathBuf>,
+    pub danmu_outputs: Vec<PathBuf>,
+}
+
+#[derive(Debug)]
+struct PairedSegmentState {
+    session_id: String,
+    streamer_id: String,
+    segment_index: u32,
+    last_activity: Instant,
+    video_outputs: Option<Vec<PathBuf>>,
+    danmu_outputs: Option<Vec<PathBuf>>,
+}
+
+impl PairedSegmentState {
+    fn new(session_id: String, streamer_id: String, segment_index: u32) -> Self {
+        let now = Instant::now();
+        Self {
+            session_id,
+            streamer_id,
+            segment_index,
+            last_activity: now,
+            video_outputs: None,
+            danmu_outputs: None,
+        }
+    }
+
+    fn is_ready(&self) -> bool {
+        self.video_outputs.is_some() && self.danmu_outputs.is_some()
+    }
+}
+
+/// Coordinator for paired per-segment pipelines.
+///
+/// Tracks outputs for a `(session_id, segment_index)` from both `Video` and `Danmu` sources.
+/// Once both are available, returns them and removes the entry to avoid duplicate triggering.
+pub struct PairedSegmentCoordinator {
+    segments: DashMap<SegmentKey, PairedSegmentState>,
+}
+
+impl PairedSegmentCoordinator {
+    pub fn new() -> Self {
+        Self {
+            segments: DashMap::new(),
+        }
+    }
+
+    pub fn on_video_ready(
+        &self,
+        session_id: &str,
+        streamer_id: &str,
+        segment_index: u32,
+        outputs: Vec<PathBuf>,
+    ) -> Option<PairedSegmentOutputs> {
+        self.on_ready(
+            session_id,
+            streamer_id,
+            segment_index,
+            SourceType::Video,
+            outputs,
+        )
+    }
+
+    pub fn on_danmu_ready(
+        &self,
+        session_id: &str,
+        streamer_id: &str,
+        segment_index: u32,
+        outputs: Vec<PathBuf>,
+    ) -> Option<PairedSegmentOutputs> {
+        self.on_ready(
+            session_id,
+            streamer_id,
+            segment_index,
+            SourceType::Danmu,
+            outputs,
+        )
+    }
+
+    fn on_ready(
+        &self,
+        session_id: &str,
+        streamer_id: &str,
+        segment_index: u32,
+        source: SourceType,
+        outputs: Vec<PathBuf>,
+    ) -> Option<PairedSegmentOutputs> {
+        let outputs = dedup_paths_preserve_order(outputs);
+        if outputs.is_empty() {
+            debug!(
+                session_id = %session_id,
+                segment_index = %segment_index,
+                source = ?source,
+                "Ignoring paired-segment source with empty outputs"
+            );
+            return None;
+        }
+
+        let key = SegmentKey::new(session_id, segment_index);
+        let now = Instant::now();
+        {
+            let mut entry = self.segments.entry(key.clone()).or_insert_with(|| {
+                PairedSegmentState::new(
+                    session_id.to_string(),
+                    streamer_id.to_string(),
+                    segment_index,
+                )
+            });
+
+            if entry.streamer_id != streamer_id {
+                warn!(
+                    session_id = %session_id,
+                    segment_index = %segment_index,
+                    existing_streamer_id = %entry.streamer_id,
+                    new_streamer_id = %streamer_id,
+                    "Paired segment streamer_id mismatch (keeping existing)"
+                );
+            }
+
+            entry.last_activity = now;
+
+            match source {
+                SourceType::Video => entry.video_outputs = Some(outputs),
+                SourceType::Danmu => entry.danmu_outputs = Some(outputs),
+            }
+        }
+
+        let ready = self
+            .segments
+            .get(&key)
+            .map(|v| v.is_ready())
+            .unwrap_or(false);
+
+        if !ready {
+            return None;
+        }
+
+        let (_, state) = self.segments.remove(&key)?;
+
+        Some(PairedSegmentOutputs {
+            session_id: state.session_id,
+            streamer_id: state.streamer_id,
+            segment_index: state.segment_index,
+            video_outputs: state.video_outputs.unwrap_or_default(),
+            danmu_outputs: state.danmu_outputs.unwrap_or_default(),
+        })
+    }
+
+    pub fn cleanup_stale(&self, max_age_secs: u64) {
+        let max_age = std::time::Duration::from_secs(max_age_secs);
+        let mut removed = 0;
+
+        self.segments.retain(|key, entry| {
+            if entry.last_activity.elapsed() > max_age {
+                warn!(
+                    session_id = %key.session_id,
+                    segment_index = %key.segment_index,
+                    age_secs = %entry.last_activity.elapsed().as_secs(),
+                    "Removing stale paired-segment entry"
+                );
+                removed += 1;
+                false
+            } else {
+                true
+            }
+        });
+
+        if removed > 0 {
+            info!(removed = %removed, "Cleaned up stale paired-segment entries");
+        }
+    }
+
+    #[cfg(test)]
+    pub fn active_pair_count(&self) -> usize {
+        self.segments.len()
+    }
+}
+
+impl Default for PairedSegmentCoordinator {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 /// Collected outputs for a session.
 #[derive(Debug)]
 pub struct SessionOutputs {
@@ -29,6 +255,7 @@ pub struct SessionOutputs {
     pub streamer_id: String,
     pub danmu_enabled: bool,
     pub created_at: Instant,
+    pub last_activity: Instant,
 
     /// Video segment outputs (from per-segment DAGs)
     pub video_outputs: Vec<SegmentOutput>,
@@ -40,32 +267,33 @@ pub struct SessionOutputs {
     pub danmu_complete: bool,
 
     /// Pending DAG counters
-    pub pending_video_dags: AtomicU32,
-    pub pending_danmu_dags: AtomicU32,
+    pub pending_video_dags: u32,
+    pub pending_danmu_dags: u32,
 }
 
 impl SessionOutputs {
     pub fn new(session_id: String, streamer_id: String, danmu_enabled: bool) -> Self {
+        let now = Instant::now();
         Self {
             session_id,
             streamer_id,
             danmu_enabled,
-            created_at: Instant::now(),
+            created_at: now,
+            last_activity: now,
             video_outputs: Vec::new(),
             danmu_outputs: Vec::new(),
             video_complete: false,
             danmu_complete: false,
-            pending_video_dags: AtomicU32::new(0),
-            pending_danmu_dags: AtomicU32::new(0),
+            pending_video_dags: 0,
+            pending_danmu_dags: 0,
         }
     }
 
     /// Check if session is ready for session-complete pipeline.
     pub fn is_ready(&self) -> bool {
-        let video_ready =
-            self.video_complete && self.pending_video_dags.load(Ordering::SeqCst) == 0;
-        let danmu_ready = !self.danmu_enabled
-            || (self.danmu_complete && self.pending_danmu_dags.load(Ordering::SeqCst) == 0);
+        let video_ready = self.video_complete && self.pending_video_dags == 0;
+        let danmu_ready =
+            !self.danmu_enabled || (self.danmu_complete && self.pending_danmu_dags == 0);
 
         video_ready && danmu_ready
     }
@@ -105,39 +333,46 @@ impl SessionCompleteCoordinator {
 
     /// Initialize session tracking.
     pub fn init_session(&self, session_id: &str, streamer_id: &str, danmu_enabled: bool) {
-        if !self.sessions.contains_key(session_id) {
-            debug!(
-                session_id = %session_id,
-                streamer_id = %streamer_id,
-                danmu_enabled = %danmu_enabled,
-                "Initializing session tracking"
-            );
-            self.sessions.insert(
-                session_id.to_string(),
-                SessionOutputs::new(
+        match self.sessions.entry(session_id.to_string()) {
+            Entry::Occupied(_) => {}
+            Entry::Vacant(entry) => {
+                debug!(
+                    session_id = %session_id,
+                    streamer_id = %streamer_id,
+                    danmu_enabled = %danmu_enabled,
+                    "Initializing session tracking"
+                );
+                entry.insert(SessionOutputs::new(
                     session_id.to_string(),
                     streamer_id.to_string(),
                     danmu_enabled,
-                ),
-            );
+                ));
+            }
         }
     }
 
     /// Called when a per-segment DAG is about to start.
     pub fn on_dag_started(&self, session_id: &str, source: SourceType) {
-        if let Some(session) = self.sessions.get_mut(session_id) {
+        if let Some(mut session) = self.sessions.get_mut(session_id) {
+            session.last_activity = Instant::now();
             match source {
                 SourceType::Video => {
-                    session.pending_video_dags.fetch_add(1, Ordering::SeqCst);
+                    session.pending_video_dags = session.pending_video_dags.saturating_add(1);
                 }
                 SourceType::Danmu => {
-                    session.pending_danmu_dags.fetch_add(1, Ordering::SeqCst);
+                    session.pending_danmu_dags = session.pending_danmu_dags.saturating_add(1);
                 }
             }
             debug!(
                 session_id = %session_id,
                 source = ?source,
                 "DAG started, incremented pending count"
+            );
+        } else {
+            warn!(
+                session_id = %session_id,
+                source = ?source,
+                "DAG started for unknown session (init_session may be missing)"
             );
         }
     }
@@ -150,14 +385,34 @@ impl SessionCompleteCoordinator {
         outputs: Vec<PathBuf>,
         source: SourceType,
     ) {
+        let outputs = dedup_paths_preserve_order(outputs);
         if let Some(mut session) = self.sessions.get_mut(session_id) {
+            session.last_activity = Instant::now();
             // Decrement pending counter
             match source {
                 SourceType::Video => {
-                    session.pending_video_dags.fetch_sub(1, Ordering::SeqCst);
+                    if session.pending_video_dags == 0 {
+                        warn!(
+                            session_id = %session_id,
+                            source = ?source,
+                            segment_index = %segment_index,
+                            "DAG completed but pending counter is already 0"
+                        );
+                    } else {
+                        session.pending_video_dags -= 1;
+                    }
                 }
                 SourceType::Danmu => {
-                    session.pending_danmu_dags.fetch_sub(1, Ordering::SeqCst);
+                    if session.pending_danmu_dags == 0 {
+                        warn!(
+                            session_id = %session_id,
+                            source = ?source,
+                            segment_index = %segment_index,
+                            "DAG completed but pending counter is already 0"
+                        );
+                    } else {
+                        session.pending_danmu_dags -= 1;
+                    }
                 }
             }
 
@@ -187,24 +442,54 @@ impl SessionCompleteCoordinator {
                     "DAG completed, collected outputs"
                 );
             }
+        } else {
+            warn!(
+                session_id = %session_id,
+                source = ?source,
+                segment_index = %segment_index,
+                "DAG completed for unknown session (init_session may be missing)"
+            );
         }
     }
 
     /// Called when a per-segment DAG fails.
     pub fn on_dag_failed(&self, session_id: &str, source: SourceType) {
-        if let Some(session) = self.sessions.get_mut(session_id) {
+        if let Some(mut session) = self.sessions.get_mut(session_id) {
+            session.last_activity = Instant::now();
             match source {
                 SourceType::Video => {
-                    session.pending_video_dags.fetch_sub(1, Ordering::SeqCst);
+                    if session.pending_video_dags == 0 {
+                        warn!(
+                            session_id = %session_id,
+                            source = ?source,
+                            "DAG failed but pending counter is already 0"
+                        );
+                    } else {
+                        session.pending_video_dags -= 1;
+                    }
                 }
                 SourceType::Danmu => {
-                    session.pending_danmu_dags.fetch_sub(1, Ordering::SeqCst);
+                    if session.pending_danmu_dags == 0 {
+                        warn!(
+                            session_id = %session_id,
+                            source = ?source,
+                            "DAG failed but pending counter is already 0"
+                        );
+                    } else {
+                        session.pending_danmu_dags -= 1;
+                    }
                 }
             }
             warn!(
                 session_id = %session_id,
                 source = ?source,
                 "DAG failed, continuing with partial outputs"
+            );
+        } else {
+            warn!(
+                session_id = %session_id,
+                source = ?source,
+                "DAG failed for unknown session (init_session may be missing)"
             );
         }
     }
@@ -218,6 +503,7 @@ impl SessionCompleteCoordinator {
         source: SourceType,
     ) {
         if let Some(mut session) = self.sessions.get_mut(session_id) {
+            session.last_activity = Instant::now();
             let output = SegmentOutput {
                 segment_index,
                 path,
@@ -232,16 +518,29 @@ impl SessionCompleteCoordinator {
                 source = ?source,
                 "Raw segment collected (no DAG configured)"
             );
+        } else {
+            warn!(
+                session_id = %session_id,
+                segment_index = %segment_index,
+                source = ?source,
+                "Raw segment received for unknown session (init_session may be missing)"
+            );
         }
     }
 
     /// Called when video stream completes (DownloadCompleted).
     pub fn on_video_complete(&self, session_id: &str) {
         if let Some(mut session) = self.sessions.get_mut(session_id) {
+            session.last_activity = Instant::now();
             session.video_complete = true;
             info!(
                 session_id = %session_id,
                 "Video stream completed"
+            );
+        } else {
+            warn!(
+                session_id = %session_id,
+                "Video stream completed for unknown session (init_session may be missing)"
             );
         }
     }
@@ -249,10 +548,16 @@ impl SessionCompleteCoordinator {
     /// Called when danmu collection stops (CollectionStopped).
     pub fn on_danmu_complete(&self, session_id: &str) {
         if let Some(mut session) = self.sessions.get_mut(session_id) {
+            session.last_activity = Instant::now();
             session.danmu_complete = true;
             info!(
                 session_id = %session_id,
                 "Danmu collection stopped"
+            );
+        } else {
+            warn!(
+                session_id = %session_id,
+                "Danmu collection stopped for unknown session (init_session may be missing)"
             );
         }
     }
@@ -265,19 +570,20 @@ impl SessionCompleteCoordinator {
             if !session.is_ready() {
                 return None;
             }
+            // Don't remove session state if outputs are still empty.
+            // Completion events can be observed before the last SegmentCompleted/DAG completion is
+            // fully processed; removing early would make the session pipeline untriggerable.
+            if session.video_outputs.is_empty() && session.danmu_outputs.is_empty() {
+                return None;
+            }
         } else {
             return None;
         }
 
         // Remove and return the session
-        if let Some((_, outputs)) = self.sessions.remove(session_id) {
-            if outputs.video_outputs.is_empty() {
-                warn!(
-                    session_id = %session_id,
-                    "Session completed with no video outputs, skipping pipeline"
-                );
-                return None;
-            }
+        if let Some((_, mut outputs)) = self.sessions.remove(session_id) {
+            outputs.video_outputs.sort_by_key(|o| o.segment_index);
+            outputs.danmu_outputs.sort_by_key(|o| o.segment_index);
             info!(
                 session_id = %session_id,
                 video_outputs = %outputs.video_outputs.len(),
@@ -296,10 +602,10 @@ impl SessionCompleteCoordinator {
         let mut removed = 0;
 
         self.sessions.retain(|session_id, session| {
-            if session.created_at.elapsed() > max_age {
+            if session.last_activity.elapsed() > max_age {
                 warn!(
                     session_id = %session_id,
-                    age_secs = %session.created_at.elapsed().as_secs(),
+                    age_secs = %session.last_activity.elapsed().as_secs(),
                     "Removing stale session"
                 );
                 removed += 1;
@@ -438,5 +744,54 @@ mod tests {
 
         // Ready but no outputs -> None (skipped)
         assert!(coord.try_trigger("session1").is_none());
+    }
+
+    #[test]
+    fn test_early_complete_event_does_not_drop_session() {
+        let coord = SessionCompleteCoordinator::new();
+
+        coord.init_session("session1", "streamer1", false);
+
+        coord.on_video_complete("session1");
+        assert!(coord.try_trigger("session1").is_none());
+
+        coord.on_raw_segment(
+            "session1",
+            0,
+            PathBuf::from("/test/seg0.mp4"),
+            SourceType::Video,
+        );
+
+        let outputs = coord
+            .try_trigger("session1")
+            .expect("Should be ready after output arrives");
+        assert_eq!(outputs.video_outputs.len(), 1);
+    }
+
+    #[test]
+    fn test_paired_segment_ready_once() {
+        let coord = PairedSegmentCoordinator::new();
+
+        assert!(
+            coord
+                .on_video_ready("session1", "streamer1", 0, vec![PathBuf::from("/seg0.mp4")])
+                .is_none()
+        );
+
+        let ready = coord
+            .on_danmu_ready(
+                "session1",
+                "streamer1",
+                0,
+                vec![PathBuf::from("/seg0.json")],
+            )
+            .expect("pair should become ready");
+
+        assert_eq!(ready.segment_index, 0);
+        assert_eq!(ready.video_outputs.len(), 1);
+        assert_eq!(ready.danmu_outputs.len(), 1);
+
+        // Should not trigger again for the same segment unless re-added.
+        assert!(coord.active_pair_count() == 0);
     }
 }

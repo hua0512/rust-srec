@@ -877,7 +877,7 @@ impl JobQueue {
             }
         } else {
             // Fallback to in-memory cache
-            let mut selected_id: Option<String> = None;
+            let mut selected: Option<(i32, chrono::DateTime<Utc>, String)> = None;
             for entry in self.jobs_cache.iter() {
                 let job = entry.value();
                 if job.status != JobStatus::Pending {
@@ -888,11 +888,25 @@ impl JobQueue {
                 {
                     continue;
                 }
-                selected_id = Some(entry.key().clone());
-                break;
+
+                // Match DB ordering: priority DESC, created_at DESC, id ASC for stability.
+                let candidate = (job.priority, job.created_at, job.id.clone());
+                match &selected {
+                    None => selected = Some(candidate),
+                    Some((best_prio, best_created, best_id)) => {
+                        if candidate.0 > *best_prio
+                            || (candidate.0 == *best_prio && candidate.1 > *best_created)
+                            || (candidate.0 == *best_prio
+                                && candidate.1 == *best_created
+                                && candidate.2 < *best_id)
+                        {
+                            selected = Some(candidate);
+                        }
+                    }
+                }
             }
 
-            if let Some(job_id) = selected_id
+            if let Some((_, _, job_id)) = selected
                 && let Some(mut job_ref) = self.jobs_cache.get_mut(&job_id)
             {
                 if job_ref.status != JobStatus::Pending {
