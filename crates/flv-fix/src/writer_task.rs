@@ -7,7 +7,7 @@ use std::{
     fs::OpenOptions,
     io::BufWriter,
     path::{Path, PathBuf},
-    time::Instant,
+    time::{Instant, SystemTime, UNIX_EPOCH},
 };
 
 use tracing::{Span, info};
@@ -161,10 +161,43 @@ impl FormatStrategy<FlvData> for FlvFormatStrategy {
     fn next_file_path(&self, config: &WriterConfig, state: &WriterState) -> PathBuf {
         let sequence = state.file_sequence_number;
 
-        let file_name = expand_filename_template(&config.file_name_template, Some(sequence));
+        let extension = &config.file_extension;
+        let template_has_index = config.file_name_template.contains("%i");
+
+        let mut file_name = expand_filename_template(&config.file_name_template, Some(sequence));
+        let mut candidate = config.base_path.join(format!("{file_name}.{extension}"));
+
+        if !candidate.exists() {
+            return candidate;
+        }
+
+        // Collision avoidance:
+        // If the template doesn't include `%i` (sequence index), multiple segments opened within the
+        // same second can resolve to the same filename and overwrite/truncate earlier segments.
+        if !template_has_index {
+            file_name = format!("{file_name}-{sequence:03}");
+            candidate = config.base_path.join(format!("{file_name}.{extension}"));
+
+            if !candidate.exists() {
+                return candidate;
+            }
+        }
+
+        for dup in 1u32..=9999 {
+            let name = format!("{file_name}-dup{dup:04}");
+            let path = config.base_path.join(format!("{name}.{extension}"));
+            if !path.exists() {
+                return path;
+            }
+        }
+
+        let nanos = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_nanos();
         config
             .base_path
-            .join(format!("{}.{}", file_name, config.file_extension))
+            .join(format!("{file_name}-dup{nanos}.{extension}"))
     }
 
     fn on_file_open(
@@ -272,5 +305,53 @@ impl FormatStrategy<FlvData> for FlvFormatStrategy {
 
     fn current_media_duration_secs(&self) -> f64 {
         self.calculate_duration() as f64
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn make_temp_dir(prefix: &str) -> PathBuf {
+        let nanos = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_nanos();
+        let dir = std::env::temp_dir().join(format!(
+            "flv-fix-{prefix}-pid{}-{nanos}",
+            std::process::id()
+        ));
+        std::fs::create_dir_all(&dir).unwrap();
+        dir
+    }
+
+    #[test]
+    fn next_file_path_avoids_collisions_when_template_has_no_index() {
+        let base_path = make_temp_dir("collision");
+        let config = WriterConfig::new(
+            base_path.clone(),
+            "same-name".to_string(),
+            "flv".to_string(),
+        );
+        let strategy = FlvFormatStrategy::new(true);
+
+        let state = WriterState {
+            file_sequence_number: 0,
+            ..Default::default()
+        };
+
+        let colliding = base_path.join("same-name.flv");
+        std::fs::write(&colliding, b"existing").unwrap();
+
+        let candidate = strategy.next_file_path(&config, &state);
+        assert_ne!(candidate, colliding);
+        assert_eq!(candidate, base_path.join("same-name-000.flv"));
+
+        std::fs::write(&candidate, b"existing2").unwrap();
+        let candidate2 = strategy.next_file_path(&config, &state);
+        assert_ne!(candidate2, candidate);
+        assert_eq!(candidate2, base_path.join("same-name-000-dup0001.flv"));
+
+        let _ = std::fs::remove_dir_all(base_path);
     }
 }
