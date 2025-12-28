@@ -7,17 +7,17 @@ license = "MIT"
 
 
 [dependencies]
-thiserror = "2.0"
-tracing = "0.1"
+thiserror = { workspace = true }
+tracing = { workspace = true }
 tracing-indicatif = "0.3"
 time = { version = "0.3.44", features = ["local-offset"] }
-tokio = { version = "1.48.0", default-features = false, features = ["sync", "rt", "macros"] }
-tokio-util = { version = "0.7.17" }
+tokio = { workspace = true, features = ["sync", "rt", "macros"] }
+tokio-util = { workspace = true }
 
 [dev-dependencies]
-tracing-subscriber = "0.3"
-tempfile = "3.23.0"
-criterion = { version = "0.7", features = ["async_tokio"] }
+tracing-subscriber = { workspace = true }
+tempfile = { workspace = true }
+criterion = { workspace = true, features = ["async_tokio"] }
 flume = "0.12.0"
 crossbeam-channel = "0.5.10"
 

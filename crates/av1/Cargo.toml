@@ -7,8 +7,8 @@ edition = "2024"
 unexpected_cfgs = { level = "warn", check-cfg = ['cfg(coverage_nightly)'] }
 
 [dependencies]
-bytes = "1.11.0"
-byteorder = "1.5"
+bytes = { workspace = true }
+byteorder = { workspace = true }
 bytes-util = { path = "../bytes-util" }
 
 [dev-dependencies]

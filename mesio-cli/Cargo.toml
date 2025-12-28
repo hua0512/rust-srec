@@ -7,25 +7,21 @@ license = "MIT OR Apache-2.0"
 repository = "https://github.com/hua0512/rust-srec"
 
 [dependencies]
-bytes = "1.11.0"
-byteorder = "1.5.0"
-tokio = { version = "1.48.0", default-features = false, features = ["rt-multi-thread", "macros", "io-util", "sync"] }
-tokio-util = { version = "0.7.11" }
-futures = "0.3"
-reqwest = { version = "0.12", default-features = false, features = [
-    "json",
-    "stream",
-    "rustls-tls",
-] }
+bytes = { workspace = true }
+byteorder = { workspace = true }
+tokio = { workspace = true, features = ["rt-multi-thread", "macros", "io-util", "sync"] }
+tokio-util = { workspace = true }
+futures = { workspace = true }
+reqwest = { workspace = true, features = ["json", "stream", "rustls-tls"] }
 crossterm = "0.29.0"
 
 # CLI dependencies
 clap = { version = "4.5", features = ["derive"] }
 
 # Logging
-tracing = "0.1"
-tracing-subscriber = { version = "0.3", features = ["ansi"] }
-tracing-appender = "0.2.4"
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true, features = ["ansi"] }
+tracing-appender = { workspace = true }
 tracing-indicatif = "0.3"
 
 # Workspace crates
@@ -36,10 +32,10 @@ hls = { path = "../crates/hls" }
 hls-fix = { path = "../crates/hls-fix" }
 mesio-engine = { path = "../crates/mesio", features = ["clap"] }
 indicatif = "0.18.2"
-thiserror = "2.0"
-mimalloc = "0.1.48"
+thiserror = { workspace = true }
+mimalloc = { workspace = true }
 
 [dev-dependencies]
-proptest = "1.5"
-m3u8-rs = "6.0.0"
+proptest = { workspace = true }
+m3u8-rs = { workspace = true }
 

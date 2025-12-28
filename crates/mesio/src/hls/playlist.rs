@@ -172,6 +172,10 @@ impl PlaylistProvider for PlaylistEngine {
                 HlsDownloaderError::PlaylistError(format!("Failed to determine base URL: {e}"))
             })?;
             let base_url = base_url_obj.to_string();
+            debug!(
+                "Derived base URL from playlist: {} -> {}",
+                playlist_url, base_url
+            );
             return match parse_playlist_res(&playlist_bytes_to_parse) {
                 Ok(m3u8_rs::Playlist::MasterPlaylist(pl)) => {
                     Ok(InitialPlaylist::Master(pl, base_url))
@@ -231,6 +235,10 @@ impl PlaylistProvider for PlaylistEngine {
             HlsDownloaderError::PlaylistError(format!("Failed to determine base URL: {e}"))
         })?;
         let base_url = base_url_obj.to_string();
+        debug!(
+            "Derived base URL from playlist: {} -> {}",
+            playlist_url, base_url
+        );
         match parse_playlist_res(&playlist_bytes_to_parse) {
             Ok(m3u8_rs::Playlist::MasterPlaylist(pl)) => Ok(InitialPlaylist::Master(pl, base_url)),
             Ok(m3u8_rs::Playlist::MediaPlaylist(pl)) => Ok(InitialPlaylist::Media(pl, base_url)),
@@ -371,6 +379,10 @@ impl PlaylistProvider for PlaylistEngine {
             HlsDownloaderError::PlaylistError(format!("Bad base URL for media playlist: {e}"))
         })?;
         let media_base_url = base_url_obj.to_string();
+        debug!(
+            "Derived base URL from media playlist: {} -> {}",
+            media_playlist_url, media_base_url
+        );
         match parse_playlist_res(&playlist_bytes_to_parse) {
             Ok(m3u8_rs::Playlist::MediaPlaylist(pl)) => Ok(MediaPlaylistDetails {
                 playlist: pl,
@@ -628,6 +640,7 @@ impl PlaylistEngine {
             }
 
             if let Ok(mut url) = Url::parse(uri_str) {
+                let original = url.to_string();
                 for (k, v) in &parent_params {
                     if url
                         .query_pairs()
@@ -637,19 +650,27 @@ impl PlaylistEngine {
                     }
                     url.query_pairs_mut().append_pair(k, v);
                 }
-                return url.to_string();
+                let merged = url.to_string();
+                if original != merged {
+                    trace!("Merged query params: {} -> {}", original, merged);
+                }
+                return merged;
             }
             uri_str.to_string()
         };
 
         let resolve_uri = |relative_uri: &str| -> Result<String, url::ParseError> {
-            if let Some(base) = base_url_parsed.as_ref() {
+            let resolved = if let Some(base) = base_url_parsed.as_ref() {
                 base.join(relative_uri).map(|u| u.to_string())
             } else {
                 Url::parse(base_url)
                     .and_then(|b| b.join(relative_uri))
                     .map(|u| u.to_string())
+            };
+            if let Ok(ref url) = resolved {
+                trace!("Resolved URI: {} + {} -> {}", base_url, relative_uri, url);
             }
+            resolved
         };
 
         macro_rules! handle_segment {

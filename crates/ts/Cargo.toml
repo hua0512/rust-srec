@@ -7,12 +7,12 @@ license = "MIT OR Apache-2.0"
 edition = "2024"
 
 [dependencies]
-thiserror = "2.0"
-bytes = "1.11.0"
-memchr = "2.7.6"
+thiserror = { workspace = true }
+bytes = { workspace = true }
+memchr = { workspace = true }
 
 [dev-dependencies]
-criterion = "0.7.0"
+criterion = { workspace = true }
 
 [[bench]]
 name = "parser_benchmark"
