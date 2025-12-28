@@ -427,7 +427,7 @@ impl Huya {
         // When use_wup_v2 is enabled, use get_living_info_wup to determine live status
         if self.use_wup_v2 {
             let living_info = self.get_living_info_wup(presenter_uid).await?;
-            debug!("living_info: {:#?}", living_info);
+            // debug!("living_info: {:#?}", living_info);
             return self.parse_wup_v2_media_info(&living_info, presenter_uid);
         }
 
@@ -916,20 +916,19 @@ impl PlatformExtractor for Huya {
         }
 
         // When use_wup_v2 is enabled, try room ID based WUP first (no web page parsing needed)
-        if self.use_wup_v2 {
-            if let Some(room_id) = self
+        if self.use_wup_v2
+            && let Some(room_id) = self
                 .extractor
                 .url
                 .split('/')
                 .next_back()
                 .and_then(|s| s.parse::<i64>().ok())
-            {
-                let living_info = self.get_living_info_by_room_id_wup(room_id).await?;
-                debug!("living_info: {:#?}", living_info);
-                // Get presenter_uid from the response
-                let presenter_uid = living_info.t_notice.l_presenter_uid;
-                return self.parse_wup_v2_media_info(&living_info, presenter_uid);
-            }
+        {
+            let living_info = self.get_living_info_by_room_id_wup(room_id).await?;
+            // debug!("living_info: {:#?}", living_info);
+            // Get presenter_uid from the response
+            let presenter_uid = living_info.t_notice.l_presenter_uid;
+            return self.parse_wup_v2_media_info(&living_info, presenter_uid);
         }
 
         // Fallback to web api (for non-numeric URLs or when use_wup is enabled)

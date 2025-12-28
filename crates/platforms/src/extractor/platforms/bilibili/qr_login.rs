@@ -204,7 +204,7 @@ pub async fn poll_qr(client: &Client, auth_code: &str) -> Result<QrPollResult, Q
                 refresh_token: None,
             });
         }
-        -3 | -400 | -404 | _ => {
+        _ => {
             return Err(QrLoginError::Api(format!(
                 "Poll failed: {} ({})",
                 message, code
