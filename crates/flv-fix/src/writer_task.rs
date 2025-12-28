@@ -273,4 +273,3 @@ impl FormatStrategy<FlvData> for FlvFormatStrategy {
         self.calculate_duration() as f64
     }
 }
-

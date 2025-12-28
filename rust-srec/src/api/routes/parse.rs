@@ -141,7 +141,11 @@ async fn resolve_cookies_for_url(
                     .platform_specific_config
                     .as_deref()
                     .and_then(|s| serde_json::from_str::<serde_json::Value>(s).ok())
-                    .and_then(|v| v.get("refresh_token").and_then(|t| t.as_str()).map(String::from));
+                    .and_then(|v| {
+                        v.get("refresh_token")
+                            .and_then(|t| t.as_str())
+                            .map(String::from)
+                    });
 
                 if let Some(ref existing) = cookies {
                     let source = CredentialSource::new(
@@ -158,7 +162,9 @@ async fn resolve_cookies_for_url(
                         credential_service.check_and_refresh_source(&source).await
                     {
                         cookies = Some(new_cookies);
-                        let _ = config_service.invalidate_platform(&platform_config.id).await;
+                        let _ = config_service
+                            .invalidate_platform(&platform_config.id)
+                            .await;
                     }
                 }
             }

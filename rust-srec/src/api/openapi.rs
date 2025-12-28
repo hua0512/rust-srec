@@ -13,12 +13,12 @@ use crate::api::models::{
     SessionResponse, StreamerResponse, TemplateResponse, UpdateFilterRequest,
     UpdateGlobalConfigRequest, UpdatePriorityRequest, UpdateStreamerRequest, UpdateTemplateRequest,
 };
-use crate::api::routes::credentials::{
-    CredentialRefreshResponse, CredentialSaveScope, CredentialSourceResponse, QrGenerateApiResponse,
-    QrPollApiResponse, QrPollRequest,
-};
 use crate::api::routes::auth::{
     ChangePasswordRequest, LoginRequest, LoginResponse, LogoutRequest, RefreshRequest,
+};
+use crate::api::routes::credentials::{
+    CredentialRefreshResponse, CredentialSaveScope, CredentialSourceResponse,
+    QrGenerateApiResponse, QrPollApiResponse, QrPollRequest,
 };
 use crate::api::routes::engines::{CreateEngineRequest, EngineTestResponse, UpdateEngineRequest};
 use crate::api::routes::export_import::{

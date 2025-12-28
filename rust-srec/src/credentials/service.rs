@@ -35,10 +35,7 @@ pub struct CredentialRefreshService<R: ConfigRepository> {
 
 impl<R: ConfigRepository + 'static> CredentialRefreshService<R> {
     /// Create a new credential refresh service.
-    pub fn new(
-        resolver: Arc<CredentialResolver<R>>,
-        store: Arc<dyn CredentialStore>,
-    ) -> Self {
+    pub fn new(resolver: Arc<CredentialResolver<R>>, store: Arc<dyn CredentialStore>) -> Self {
         Self {
             resolver,
             store,
@@ -258,9 +255,7 @@ impl<R: ConfigRepository + 'static> CredentialRefreshService<R> {
                 );
 
                 // Persist to database
-                self.store
-                    .update_credentials(source, &new_creds)
-                    .await?;
+                self.store.update_credentials(source, &new_creds).await?;
 
                 // Update daily tracker with valid status
                 self.daily_tracker

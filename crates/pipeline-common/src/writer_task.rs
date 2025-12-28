@@ -298,7 +298,10 @@ impl<D, S: FormatStrategy<D>> WriterTask<D, S> {
         let Some(parent) = candidate.parent() else {
             return candidate;
         };
-        let Some(stem) = candidate.file_stem().map(|s| s.to_string_lossy().to_string()) else {
+        let Some(stem) = candidate
+            .file_stem()
+            .map(|s| s.to_string_lossy().to_string())
+        else {
             return candidate;
         };
         let ext = candidate

@@ -291,7 +291,11 @@ where
     /// - Deduplicates concurrent requests for the same streamer
     /// - Only one request will resolve the config while others wait
     pub async fn get_config_for_streamer(&self, streamer_id: &str) -> Result<Arc<MergedConfig>> {
-        Ok(self.get_context_for_streamer(streamer_id).await?.config.clone())
+        Ok(self
+            .get_context_for_streamer(streamer_id)
+            .await?
+            .config
+            .clone())
     }
 
     /// Get the resolved streamer context for a streamer.

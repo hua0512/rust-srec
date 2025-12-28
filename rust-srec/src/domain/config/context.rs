@@ -12,4 +12,3 @@ pub struct ResolvedStreamerContext {
     pub config: Arc<MergedConfig>,
     pub credential_source: Option<CredentialSource>,
 }
-

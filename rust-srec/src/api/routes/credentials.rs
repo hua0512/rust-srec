@@ -124,7 +124,11 @@ pub fn router() -> Router<AppState> {
 fn extract_platform_refresh_token(platform_specific_config: Option<&str>) -> Option<String> {
     platform_specific_config
         .and_then(|config| serde_json::from_str::<serde_json::Value>(config).ok())
-        .and_then(|v| v.get("refresh_token").and_then(|t| t.as_str()).map(String::from))
+        .and_then(|v| {
+            v.get("refresh_token")
+                .and_then(|t| t.as_str())
+                .map(String::from)
+        })
 }
 
 fn extract_template_refresh_token(
@@ -253,7 +257,8 @@ pub async fn get_platform_credential_source(
         )));
     }
 
-    let refresh_token = extract_platform_refresh_token(platform.platform_specific_config.as_deref());
+    let refresh_token =
+        extract_platform_refresh_token(platform.platform_specific_config.as_deref());
     let source = CredentialSource::new(
         CredentialScope::Platform {
             platform_id: platform.id,
@@ -434,7 +439,8 @@ pub async fn refresh_platform_credentials(
         )));
     }
 
-    let refresh_token = extract_platform_refresh_token(platform.platform_specific_config.as_deref());
+    let refresh_token =
+        extract_platform_refresh_token(platform.platform_specific_config.as_deref());
     let source = CredentialSource::new(
         CredentialScope::Platform {
             platform_id: platform.id.clone(),
@@ -643,156 +649,159 @@ pub async fn bilibili_qr_poll(
     {
         match &body.scope {
             CredentialSaveScope::Platform { id } => {
-                    let cs = state.config_service.as_ref().ok_or_else(|| {
-                        ApiError::service_unavailable("Config service not available")
-                    })?;
-                    let mut platform = cs.get_platform_config(id).await.map_err(ApiError::from)?;
+                let cs = state
+                    .config_service
+                    .as_ref()
+                    .ok_or_else(|| ApiError::service_unavailable("Config service not available"))?;
+                let mut platform = cs.get_platform_config(id).await.map_err(ApiError::from)?;
 
-                    if !platform.platform_name.eq_ignore_ascii_case("bilibili") {
-                        return Err(ApiError::bad_request(format!(
-                            "Platform {id} is not bilibili"
-                        )));
-                    }
+                if !platform.platform_name.eq_ignore_ascii_case("bilibili") {
+                    return Err(ApiError::bad_request(format!(
+                        "Platform {id} is not bilibili"
+                    )));
+                }
 
-                    platform.cookies = Some(cookies.clone());
+                platform.cookies = Some(cookies.clone());
 
-                    let mut specific: serde_json::Value = platform
-                        .platform_specific_config
-                        .as_deref()
-                        .and_then(|s| serde_json::from_str(s).ok())
-                        .unwrap_or_else(|| serde_json::json!({}));
-                    if !specific.is_object() {
-                        specific = serde_json::json!({});
-                    }
-                    if let Some(map) = specific.as_object_mut() {
-                        map.insert(
-                            "refresh_token".to_string(),
-                            serde_json::Value::String(refresh_token.clone()),
-                        );
-                        map.insert(
-                            "last_cookie_check_date".to_string(),
-                            serde_json::Value::String(
-                                chrono::Utc::now().format("%Y-%m-%d").to_string(),
-                            ),
-                        );
-                        map.insert(
-                            "last_cookie_check_result".to_string(),
-                            serde_json::Value::String("valid".to_string()),
-                        );
-                    }
+                let mut specific: serde_json::Value = platform
+                    .platform_specific_config
+                    .as_deref()
+                    .and_then(|s| serde_json::from_str(s).ok())
+                    .unwrap_or_else(|| serde_json::json!({}));
+                if !specific.is_object() {
+                    specific = serde_json::json!({});
+                }
+                if let Some(map) = specific.as_object_mut() {
+                    map.insert(
+                        "refresh_token".to_string(),
+                        serde_json::Value::String(refresh_token.clone()),
+                    );
+                    map.insert(
+                        "last_cookie_check_date".to_string(),
+                        serde_json::Value::String(
+                            chrono::Utc::now().format("%Y-%m-%d").to_string(),
+                        ),
+                    );
+                    map.insert(
+                        "last_cookie_check_result".to_string(),
+                        serde_json::Value::String("valid".to_string()),
+                    );
+                }
 
-                    platform.platform_specific_config =
-                        Some(serde_json::to_string(&specific).unwrap_or_default());
+                platform.platform_specific_config =
+                    Some(serde_json::to_string(&specific).unwrap_or_default());
 
-                    cs.update_platform_config(&platform)
-                        .await
-                        .map_err(ApiError::from)?;
-                    cs.invalidate_platform(id).await.map_err(ApiError::from)?;
-                    tracing::info!(platform_id = %id, "Saved QR credentials to platform");
+                cs.update_platform_config(&platform)
+                    .await
+                    .map_err(ApiError::from)?;
+                cs.invalidate_platform(id).await.map_err(ApiError::from)?;
+                tracing::info!(platform_id = %id, "Saved QR credentials to platform");
 
-                    saved_scope = Some(CredentialScope::Platform {
-                        platform_id: id.clone(),
-                        platform_name: platform.platform_name.clone(),
-                    });
+                saved_scope = Some(CredentialScope::Platform {
+                    platform_id: id.clone(),
+                    platform_name: platform.platform_name.clone(),
+                });
             }
             CredentialSaveScope::Template { id } => {
-                    let cs = state.config_service.as_ref().ok_or_else(|| {
-                        ApiError::service_unavailable("Config service not available")
-                    })?;
-                    let mut template = cs.get_template_config(id).await.map_err(ApiError::from)?;
+                let cs = state
+                    .config_service
+                    .as_ref()
+                    .ok_or_else(|| ApiError::service_unavailable("Config service not available"))?;
+                let mut template = cs.get_template_config(id).await.map_err(ApiError::from)?;
 
-                    template.cookies = Some(cookies.clone());
+                template.cookies = Some(cookies.clone());
 
-                    let mut overrides: serde_json::Value = template
-                        .platform_overrides
-                        .as_deref()
-                        .and_then(|s| serde_json::from_str(s).ok())
-                        .unwrap_or_else(|| serde_json::json!({}));
-                    if !overrides.is_object() {
-                        overrides = serde_json::json!({});
+                let mut overrides: serde_json::Value = template
+                    .platform_overrides
+                    .as_deref()
+                    .and_then(|s| serde_json::from_str(s).ok())
+                    .unwrap_or_else(|| serde_json::json!({}));
+                if !overrides.is_object() {
+                    overrides = serde_json::json!({});
+                }
+                if let Some(root) = overrides.as_object_mut() {
+                    let entry = root
+                        .entry("bilibili".to_string())
+                        .or_insert_with(|| serde_json::Value::Object(serde_json::Map::new()));
+                    if !entry.is_object() {
+                        *entry = serde_json::Value::Object(serde_json::Map::new());
                     }
-                    if let Some(root) = overrides.as_object_mut() {
-                        let entry = root
-                            .entry("bilibili".to_string())
-                            .or_insert_with(|| serde_json::Value::Object(serde_json::Map::new()));
-                        if !entry.is_object() {
-                            *entry = serde_json::Value::Object(serde_json::Map::new());
-                        }
-                        if let Some(obj) = entry.as_object_mut() {
-                            obj.insert(
-                                "refresh_token".to_string(),
-                                serde_json::Value::String(refresh_token.clone()),
-                            );
-                        }
-                    }
-
-                    template.platform_overrides =
-                        Some(serde_json::to_string(&overrides).unwrap_or_default());
-                    cs.update_template_config(&template)
-                        .await
-                        .map_err(ApiError::from)?;
-                    cs.invalidate_template(id).await.map_err(ApiError::from)?;
-                    tracing::info!(template_id = %id, "Saved QR credentials to template");
-
-                    saved_scope = Some(CredentialScope::Template {
-                        template_id: id.clone(),
-                        template_name: template.name.clone(),
-                    });
-            }
-            CredentialSaveScope::Streamer { id } => {
-                    let cs = state.config_service.as_ref().ok_or_else(|| {
-                        ApiError::service_unavailable("Config service not available")
-                    })?;
-                    let streamer_repo = state.streamer_repository.as_ref().ok_or_else(|| {
-                        ApiError::service_unavailable("Streamer repository not available")
-                    })?;
-
-                    let mut streamer = streamer_repo
-                        .get_streamer(id)
-                        .await
-                        .map_err(ApiError::from)?;
-                    let platform = cs
-                        .get_platform_config(&streamer.platform_config_id)
-                        .await
-                        .map_err(ApiError::from)?;
-
-                    if !platform.platform_name.eq_ignore_ascii_case("bilibili") {
-                        return Err(ApiError::bad_request(format!(
-                            "Streamer {id} is not bilibili"
-                        )));
-                    }
-
-                    let mut config: serde_json::Value = streamer
-                        .streamer_specific_config
-                        .as_ref()
-                        .and_then(|s| serde_json::from_str(s).ok())
-                        .unwrap_or_else(|| serde_json::json!({}));
-                    if !config.is_object() {
-                        config = serde_json::json!({});
-                    }
-                    if let Some(map) = config.as_object_mut() {
-                        map.insert(
-                            "cookies".to_string(),
-                            serde_json::Value::String(cookies.clone()),
-                        );
-                        map.insert(
+                    if let Some(obj) = entry.as_object_mut() {
+                        obj.insert(
                             "refresh_token".to_string(),
                             serde_json::Value::String(refresh_token.clone()),
                         );
                     }
+                }
 
-                    streamer.streamer_specific_config = serde_json::to_string(&config).ok();
-                    streamer_repo
-                        .update_streamer(&streamer)
-                        .await
-                        .map_err(ApiError::from)?;
-                    cs.invalidate_streamer(id);
-                    tracing::info!(streamer_id = %id, "Saved QR credentials to streamer");
+                template.platform_overrides =
+                    Some(serde_json::to_string(&overrides).unwrap_or_default());
+                cs.update_template_config(&template)
+                    .await
+                    .map_err(ApiError::from)?;
+                cs.invalidate_template(id).await.map_err(ApiError::from)?;
+                tracing::info!(template_id = %id, "Saved QR credentials to template");
 
-                    saved_scope = Some(CredentialScope::Streamer {
-                        streamer_id: id.clone(),
-                        streamer_name: streamer.name.clone(),
-                    });
+                saved_scope = Some(CredentialScope::Template {
+                    template_id: id.clone(),
+                    template_name: template.name.clone(),
+                });
+            }
+            CredentialSaveScope::Streamer { id } => {
+                let cs = state
+                    .config_service
+                    .as_ref()
+                    .ok_or_else(|| ApiError::service_unavailable("Config service not available"))?;
+                let streamer_repo = state.streamer_repository.as_ref().ok_or_else(|| {
+                    ApiError::service_unavailable("Streamer repository not available")
+                })?;
+
+                let mut streamer = streamer_repo
+                    .get_streamer(id)
+                    .await
+                    .map_err(ApiError::from)?;
+                let platform = cs
+                    .get_platform_config(&streamer.platform_config_id)
+                    .await
+                    .map_err(ApiError::from)?;
+
+                if !platform.platform_name.eq_ignore_ascii_case("bilibili") {
+                    return Err(ApiError::bad_request(format!(
+                        "Streamer {id} is not bilibili"
+                    )));
+                }
+
+                let mut config: serde_json::Value = streamer
+                    .streamer_specific_config
+                    .as_ref()
+                    .and_then(|s| serde_json::from_str(s).ok())
+                    .unwrap_or_else(|| serde_json::json!({}));
+                if !config.is_object() {
+                    config = serde_json::json!({});
+                }
+                if let Some(map) = config.as_object_mut() {
+                    map.insert(
+                        "cookies".to_string(),
+                        serde_json::Value::String(cookies.clone()),
+                    );
+                    map.insert(
+                        "refresh_token".to_string(),
+                        serde_json::Value::String(refresh_token.clone()),
+                    );
+                }
+
+                streamer.streamer_specific_config = serde_json::to_string(&config).ok();
+                streamer_repo
+                    .update_streamer(&streamer)
+                    .await
+                    .map_err(ApiError::from)?;
+                cs.invalidate_streamer(id);
+                tracing::info!(streamer_id = %id, "Saved QR credentials to streamer");
+
+                saved_scope = Some(CredentialScope::Streamer {
+                    streamer_id: id.clone(),
+                    streamer_name: streamer.name.clone(),
+                });
             }
         }
     }

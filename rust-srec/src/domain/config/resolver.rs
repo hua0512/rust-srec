@@ -7,15 +7,15 @@
 use tracing::debug;
 
 use crate::Error;
+use crate::credentials::{CredentialScope, CredentialSource};
 use crate::database::models::job::DagPipelineDefinition;
 use crate::database::repositories::config::ConfigRepository;
-use crate::domain::config::merged::MergedConfig;
 use crate::domain::config::ResolvedStreamerContext;
+use crate::domain::config::merged::MergedConfig;
 use crate::domain::streamer::Streamer;
 use crate::domain::{DanmuSamplingConfig, EventHooks, ProxyConfig, RetryPolicy};
 use crate::downloader::StreamSelectionConfig;
 use crate::utils::json::{self, JsonContext};
-use crate::credentials::{CredentialScope, CredentialSource};
 use std::sync::Arc;
 
 /// Service for resolving configuration for streamers.
@@ -185,8 +185,7 @@ impl<R: ConfigRepository> ConfigResolver<R> {
         });
         // `platform_specific_config` can also contain credential metadata (e.g. refresh_token),
         // but extractor `platform_extras` must not carry credentials.
-        let platform_extras =
-            platform_specific.map(strip_credential_fields_from_platform_extras);
+        let platform_extras = platform_specific.map(strip_credential_fields_from_platform_extras);
         let platform_pipeline: Option<DagPipelineDefinition> = json::parse_optional(
             platform_config.pipeline.as_deref(),
             JsonContext::StreamerConfig {
@@ -459,7 +458,9 @@ impl<R: ConfigRepository> ConfigResolver<R> {
     }
 }
 
-fn strip_credential_fields_from_platform_extras(mut extras: serde_json::Value) -> serde_json::Value {
+fn strip_credential_fields_from_platform_extras(
+    mut extras: serde_json::Value,
+) -> serde_json::Value {
     if let serde_json::Value::Object(ref mut map) = extras {
         // These keys belong to the credentials subsystem, not extractor config.
         map.remove("refresh_token");

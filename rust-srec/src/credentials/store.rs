@@ -25,4 +25,3 @@ pub trait CredentialStore: Send + Sync {
         result: &str,
     ) -> Result<(), CredentialError>;
 }
-

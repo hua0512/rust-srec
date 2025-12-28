@@ -4,8 +4,9 @@
 //! and manages their lifecycle.
 
 use std::sync::Arc;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
+use dashmap::DashMap;
 use sqlx::SqlitePool;
 use tokio_util::sync::CancellationToken;
 use tracing::{debug, info, warn};
@@ -18,8 +19,7 @@ use crate::api::{
 };
 use crate::config::{ConfigCache, ConfigEventBroadcaster, ConfigService};
 use crate::credentials::{
-    CredentialRefreshService, CredentialResolver,
-    platforms::BilibiliCredentialManager,
+    CredentialRefreshService, CredentialResolver, platforms::BilibiliCredentialManager,
 };
 use crate::danmu::{DanmuEvent, DanmuService, service::DanmuServiceConfig};
 use crate::database::maintenance::{MaintenanceConfig, MaintenanceScheduler};
@@ -119,6 +119,9 @@ pub struct ServiceContainer {
     cancellation_token: CancellationToken,
     /// Logging configuration
     logging_config: std::sync::OnceLock<Arc<LoggingConfig>>,
+    /// Segment keys that should be discarded (min-size gate) to prevent danmu/xml and video
+    /// from racing into the pipeline while being deleted.
+    discarded_segment_keys: Arc<DashMap<(String, String), Instant>>,
 }
 
 impl ServiceContainer {
@@ -292,6 +295,7 @@ impl ServiceContainer {
             api_server_config: ApiServerConfig::from_env_or_default(),
             cancellation_token,
             logging_config: std::sync::OnceLock::new(),
+            discarded_segment_keys: Arc::new(DashMap::new()),
         })
     }
 
@@ -463,6 +467,7 @@ impl ServiceContainer {
             api_server_config: api_config,
             cancellation_token,
             logging_config: std::sync::OnceLock::new(),
+            discarded_segment_keys: Arc::new(DashMap::new()),
         })
     }
 
@@ -811,12 +816,30 @@ impl ServiceContainer {
         let streamer_manager = self.streamer_manager.clone();
         let danmu_service = self.danmu_service.clone();
         let config_service = self.config_service.clone();
+        let discarded_segment_keys = self.discarded_segment_keys.clone();
         let mut receiver = self.download_manager.subscribe();
         let cancellation_token = self.cancellation_token.clone();
 
         const DOWNLOAD_EVENT_QUEUE_CAPACITY: usize = 8192;
         let (event_tx, mut event_rx) =
             tokio::sync::mpsc::channel::<DownloadManagerEvent>(DOWNLOAD_EVENT_QUEUE_CAPACITY);
+
+        // Prevent unbounded growth if danmu events are missed (best-effort cleanup).
+        let cleanup_token = cancellation_token.clone();
+        let cleanup_keys = discarded_segment_keys.clone();
+        tokio::spawn(async move {
+            const CLEANUP_INTERVAL_SECS: u64 = 600;
+            const MAX_AGE_SECS: u64 = 3600;
+            let mut interval = tokio::time::interval(Duration::from_secs(CLEANUP_INTERVAL_SECS));
+            loop {
+                tokio::select! {
+                    _ = cleanup_token.cancelled() => break,
+                    _ = interval.tick() => {
+                        cleanup_keys.retain(|_, inserted_at| inserted_at.elapsed() < Duration::from_secs(MAX_AGE_SECS));
+                    }
+                }
+            }
+        });
 
         // Fast path: drain broadcast channel quickly so we don't drop critical session events under backpressure.
         let drain_token = cancellation_token.clone();
@@ -909,58 +932,32 @@ impl ServiceContainer {
                         size_bytes,
                         ..
                     } => {
-                        // Always finish the danmu segment first (Flush/Close XML)
-                        if let Some(handle) = danmu_service.get_handle(session_id) {
-                            let segment_id = segment_index.to_string();
-
-                            if let Err(e) = handle.end_segment(&segment_id).await {
-                                warn!("Failed to end danmu segment: {}", e);
-                            }
-                        }
-
+                        // Decide discard *before* ending danmu segment so we can suppress the
+                        // imminent DanmuEvent::SegmentCompleted (avoids pipeline race with deletion).
                         let mut discard = false;
-                        // Resolve config to check min_size
+                        let effective_size_bytes = tokio::fs::metadata(segment_path)
+                            .await
+                            .map(|m| m.len())
+                            .unwrap_or(*size_bytes);
+
+                        // Resolve config to check min_size.
                         match config_service.get_config_for_streamer(streamer_id).await {
                             Ok(config) => {
-                                if config.min_segment_size_bytes > 0
-                                    && (*size_bytes as i64) < config.min_segment_size_bytes
+                                let min = u64::try_from(config.min_segment_size_bytes)
+                                    .ok()
+                                    .filter(|v| *v > 0);
+                                if let Some(min) = min
+                                    && effective_size_bytes < min
                                 {
                                     info!(
                                         "Segment {} is too small ({} bytes < min {}), discarding",
-                                        segment_path, size_bytes, config.min_segment_size_bytes
+                                        segment_path, effective_size_bytes, min
                                     );
-
-                                    let path = std::path::Path::new(segment_path);
-                                    // Delete video file
-                                    if let Err(e) = tokio::fs::remove_file(path).await {
-                                        warn!(
-                                            "Failed to delete small segment {}: {}",
-                                            segment_path, e
-                                        );
-                                    } else {
-                                        debug!("Deleted small segment: {}", segment_path);
-                                    }
-
-                                    // Delete danmu file if it exists
-                                    // Note: We called end_segment above, so the file usage should be released.
-                                    let mut danmu_path = path.to_path_buf();
-                                    danmu_path.set_extension("xml");
-                                    if danmu_path.exists() {
-                                        if let Err(e) = tokio::fs::remove_file(&danmu_path).await {
-                                            warn!(
-                                                "Failed to delete small segment danmu {}: {}",
-                                                danmu_path.display(),
-                                                e
-                                            );
-                                        } else {
-                                            debug!(
-                                                "Deleted small segment danmu: {}",
-                                                danmu_path.display()
-                                            );
-                                        }
-                                    }
-
                                     discard = true;
+                                    discarded_segment_keys.insert(
+                                        (session_id.clone(), segment_index.to_string()),
+                                        Instant::now(),
+                                    );
                                 }
                             }
                             Err(e) => {
@@ -971,7 +968,38 @@ impl ServiceContainer {
                             }
                         }
 
+                        // Always finish the danmu segment first (Flush/Close XML).
+                        if let Some(handle) = danmu_service.get_handle(session_id) {
+                            let segment_id = segment_index.to_string();
+
+                            if let Err(e) = handle.end_segment(&segment_id).await {
+                                warn!("Failed to end danmu segment: {}", e);
+                            }
+                        }
+
                         if discard {
+                            let path = std::path::Path::new(segment_path);
+                            match tokio::fs::remove_file(path).await {
+                                Ok(()) => debug!("Deleted small segment: {}", segment_path),
+                                Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+                                Err(e) => {
+                                    warn!("Failed to delete small segment {}: {}", segment_path, e)
+                                }
+                            }
+
+                            let mut danmu_path = path.to_path_buf();
+                            danmu_path.set_extension("xml");
+                            match tokio::fs::remove_file(&danmu_path).await {
+                                Ok(()) => {
+                                    debug!("Deleted small segment danmu: {}", danmu_path.display())
+                                }
+                                Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+                                Err(e) => warn!(
+                                    "Failed to delete small segment danmu {}: {}",
+                                    danmu_path.display(),
+                                    e
+                                ),
+                            }
                             continue;
                         }
                     }
@@ -1025,6 +1053,7 @@ impl ServiceContainer {
     fn setup_danmu_event_subscriptions(&self) {
         let mut receiver = self.danmu_service.subscribe();
         let pipeline_manager = self.pipeline_manager.clone();
+        let discarded_segment_keys = self.discarded_segment_keys.clone();
         let cancellation_token = self.cancellation_token.clone();
 
         tokio::spawn(async move {
@@ -1058,11 +1087,34 @@ impl ServiceContainer {
                                             session_id, segment_id, output_path, start_time
                                         );
                                     }
-                                    DanmuEvent::SegmentCompleted { session_id, segment_id, message_count, .. } => {
+                                    DanmuEvent::SegmentCompleted { session_id, segment_id, output_path, message_count, .. } => {
                                         info!(
                                             "Danmu segment completed: session={}, segment={}, messages={}",
                                             session_id, segment_id, message_count
                                         );
+                                        if discarded_segment_keys
+                                            .remove(&(session_id.clone(), segment_id.clone()))
+                                            .is_some()
+                                        {
+                                            match tokio::fs::remove_file(output_path).await {
+                                                Ok(()) => debug!(
+                                                    "Deleted discarded danmu segment: {}",
+                                                    output_path.display()
+                                                ),
+                                                Err(e)
+                                                    if e.kind() == std::io::ErrorKind::NotFound => {}
+                                                Err(e) => warn!(
+                                                    "Failed to delete discarded danmu segment {}: {}",
+                                                    output_path.display(),
+                                                    e
+                                                ),
+                                            }
+                                            debug!(
+                                                "Skipping danmu segment {} for session {} (paired video discarded)",
+                                                segment_id, session_id
+                                            );
+                                            continue;
+                                        }
                                         // Forward to pipeline manager for processing
                                         pipeline_manager.handle_danmu_event(event.clone()).await;
                                     }
