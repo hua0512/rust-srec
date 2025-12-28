@@ -313,12 +313,12 @@ msgstr "Adjust the roundness of UI elements."
 #: src/components/pipeline/presets/processors/rclone-config-form.tsx:59
 #: src/components/pipeline/presets/processors/remux-config-form.tsx:108
 #: src/components/streamers/edit/streamer-config-form.tsx:74
-#: src/routes/_authed/_dashboard/streamers/$id.edit.tsx:291
+#: src/routes/_authed/_dashboard/streamers/$id.edit.tsx:295
 msgid "Advanced"
 msgstr "Advanced"
 
 #: src/components/streamers/edit/streamer-config-form.tsx:121
-#: src/routes/_authed/_dashboard/streamers/$id.edit.tsx:357
+#: src/routes/_authed/_dashboard/streamers/$id.edit.tsx:361
 msgid "Advanced Configuration"
 msgstr "Advanced Configuration"
 
@@ -372,6 +372,10 @@ msgstr "All Platforms"
 #: src/routes/_authed/_dashboard/sessions/index.tsx:177
 msgid "All Time"
 msgstr "All Time"
+
+#: src/components/credentials/bilibili-qr-login-dialog.tsx:174
+msgid "An error occurred"
+msgstr "An error occurred"
 
 #: src/components/config/engines/forms/streamlink-form.tsx:159
 msgid "Any additional command line arguments to pass to Streamlink"
@@ -508,10 +512,14 @@ msgstr "Audio Settings"
 msgid "Auth Type"
 msgstr "Auth Type"
 
-#: src/components/config/shared/network-settings-card.tsx:40
+#: src/components/config/shared/network-settings-card.tsx:152
 #: src/components/notifications/forms/webhook-form.tsx:195
 msgid "Authentication"
 msgstr "Authentication"
+
+#: src/components/config/shared/network-settings-card.tsx:275
+msgid "Auto-Refresh"
+msgstr "Auto-Refresh"
 
 #: src/components/logging/log-viewer.tsx:419
 msgid "Auto-scroll disabled"
@@ -538,8 +546,8 @@ msgid "Avg. Duration"
 msgstr "Avg. Duration"
 
 #: src/components/config/platforms/platform-editor.tsx:105
-#: src/components/config/templates/template-editor.tsx:140
-#: src/components/config/templates/template-editor.tsx:143
+#: src/components/config/templates/template-editor.tsx:152
+#: src/components/config/templates/template-editor.tsx:155
 msgid "Back"
 msgstr "Back"
 
@@ -559,6 +567,10 @@ msgstr "Back to Pipeline Jobs"
 #: src/components/sessions/session-header.tsx:71
 msgid "Back to Sessions"
 msgstr "Back to Sessions"
+
+#: src/components/config/shared/network-settings-card.tsx:290
+msgid "Background refresh enabled"
+msgstr "Background refresh enabled"
 
 #: src/components/config/shared/retry-policy-form.tsx:76
 msgid "Backoff Multiplier"
@@ -599,7 +611,7 @@ msgid "Basic post-processing: Remux FLV to MP4 and generate a thumbnail preview.
 msgstr "Basic post-processing: Remux FLV to MP4 and generate a thumbnail preview."
 
 #: src/components/streamers/edit/streamer-config-form.tsx:94
-#: src/routes/_authed/_dashboard/streamers/$id.edit.tsx:330
+#: src/routes/_authed/_dashboard/streamers/$id.edit.tsx:334
 msgid "Basic settings for the streamer."
 msgstr "Basic settings for the streamer."
 
@@ -614,6 +626,10 @@ msgstr "Bearer Token"
 #: src/components/config/engines/forms/streamlink-form.tsx:65
 msgid "best"
 msgstr "best"
+
+#: src/components/credentials/bilibili-qr-login-dialog.tsx:188
+msgid "Bilibili QR Login"
+msgstr "Bilibili QR Login"
 
 #: src/components/config/platforms/tabs/specific-configs/BilibiliConfigFields.tsx:69
 msgid "Bilibili quality identification (QN)."
@@ -1031,9 +1047,13 @@ msgstr "Context"
 msgid "Control verbosity for each module. Lower levels include higher ones."
 msgstr "Control verbosity for each module. Lower levels include higher ones."
 
-#: src/components/config/shared/network-settings-card.tsx:51
+#: src/components/config/shared/network-settings-card.tsx:203
 msgid "Cookies"
 msgstr "Cookies"
+
+#: src/components/config/shared/network-settings-card.tsx:284
+msgid "Cookies Only"
+msgstr "Cookies Only"
 
 #: src/components/pipeline/outputs/output-card.tsx:135
 msgid "Copied!"
@@ -1088,7 +1108,7 @@ msgstr "Could not connect to the server. Please check your connection."
 msgid "CPU Usage"
 msgstr "CPU Usage"
 
-#: src/components/config/templates/template-editor.tsx:162
+#: src/components/config/templates/template-editor.tsx:174
 #: src/routes/_authed/_dashboard/config/templates/index.tsx:138
 #: src/routes/_authed/_dashboard/pipeline/jobs/index.tsx:253
 msgid "Create"
@@ -1168,7 +1188,7 @@ msgstr "Create Preset"
 msgid "Create Streamer"
 msgstr "Create Streamer"
 
-#: src/components/config/templates/template-editor.tsx:114
+#: src/components/config/templates/template-editor.tsx:126
 #: src/routes/_authed/_dashboard/config/templates/index.tsx:230
 msgid "Create Template"
 msgstr "Create Template"
@@ -1198,6 +1218,18 @@ msgstr "Creating..."
 #: src/components/config/engines/engine-editor.tsx:358
 msgid "Creation Mode"
 msgstr "Creation Mode"
+
+#: src/components/config/shared/network-settings-card.tsx:238
+msgid "Credential Source Status"
+msgstr "Credential Source Status"
+
+#: src/components/config/shared/network-settings-card.tsx:127
+msgid "Credentials refreshed successfully"
+msgstr "Credentials refreshed successfully"
+
+#: src/components/config/shared/network-settings-card.tsx:339
+msgid "Credentials saved successfully"
+msgstr "Credentials saved successfully"
 
 #: src/components/pipeline/presets/processors/ass-burnin-config-form.tsx:102
 msgid "CRF (0-51)"
@@ -1312,7 +1344,7 @@ msgstr "DAG Graph"
 msgid "Danmaku to ASS"
 msgstr "Danmaku to ASS"
 
-#: src/components/config/shared-config-editor.tsx:198
+#: src/components/config/shared-config-editor.tsx:205
 msgid "Danmu"
 msgstr "Danmu"
 
@@ -1606,7 +1638,7 @@ msgstr "Download engine (mesio)"
 msgid "Download Manager"
 msgstr "Download Manager"
 
-#: src/components/config/shared/network-settings-card.tsx:81
+#: src/components/config/shared/network-settings-card.tsx:316
 msgid "Download Retry Policy"
 msgstr "Download Retry Policy"
 
@@ -1718,6 +1750,10 @@ msgstr "Edit Workflow: {0}"
 msgid "Editing Mode"
 msgstr "Editing Mode"
 
+#: src/components/config/shared/network-settings-card.tsx:255
+msgid "Effective Scope"
+msgstr "Effective Scope"
+
 #: src/components/streamers/card/stream-actions-menu.tsx:69
 msgid "Enable"
 msgstr "Enable"
@@ -1820,7 +1856,7 @@ msgstr "Engine used for downloads when not specified by platform/streamer."
 #: src/components/config/global/backup-restore-card.tsx:371
 #: src/components/config/global/backup-restore-card.tsx:376
 #: src/components/config/global/backup-restore-card.tsx:381
-#: src/components/config/templates/template-editor.tsx:203
+#: src/components/config/templates/template-editor.tsx:219
 #: src/components/sidebar/navbar.tsx:35
 #: src/routes/_authed/_dashboard/config/route.tsx:66
 msgid "Engines"
@@ -2149,6 +2185,10 @@ msgstr "Failed to load templates: {0}"
 msgid "Failed to load workflows: {0}"
 msgstr "Failed to load workflows: {0}"
 
+#: src/components/config/shared/network-settings-card.tsx:136
+msgid "Failed to refresh credentials"
+msgstr "Failed to refresh credentials"
+
 #: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.tsx:190
 msgid "Failed to retry job"
 msgstr "Failed to retry job"
@@ -2307,7 +2347,7 @@ msgstr "Filter Type"
 msgid "Filter updated successfully"
 msgstr "Filter updated successfully"
 
-#: src/components/config/shared-config-editor.tsx:143
+#: src/components/config/shared-config-editor.tsx:150
 msgid "Filters"
 msgstr "Filters"
 
@@ -2396,19 +2436,19 @@ msgstr "Full multimedia processing: Remux video, extract audio and thumbnail in 
 msgid "Full Processing"
 msgstr "Full Processing"
 
-#: src/components/config/platforms/platform-editor.tsx:151
+#: src/components/config/platforms/platform-editor.tsx:153
 #: src/components/config/templates/tabs/platform-override-card.tsx:62
-#: src/components/config/templates/template-editor.tsx:193
+#: src/components/config/templates/template-editor.tsx:209
 #: src/components/pipeline/presets/processors/audio-extract-config-form.tsx:54
 #: src/components/pipeline/presets/processors/rclone-config-form.tsx:53
 #: src/components/pipeline/presets/processors/remux-config-form.tsx:72
 #: src/components/streamers/edit/streamer-config-form.tsx:67
-#: src/routes/_authed/_dashboard/streamers/$id.edit.tsx:284
+#: src/routes/_authed/_dashboard/streamers/$id.edit.tsx:288
 msgid "General"
 msgstr "General"
 
 #: src/components/streamers/edit/streamer-config-form.tsx:91
-#: src/routes/_authed/_dashboard/streamers/$id.edit.tsx:327
+#: src/routes/_authed/_dashboard/streamers/$id.edit.tsx:331
 msgid "General Configuration"
 msgstr "General Configuration"
 
@@ -2443,6 +2483,14 @@ msgstr "Generate a thumbnail image from the video at 10 seconds (320px width)."
 #: src/components/pipeline/presets/default-presets-i18n.ts:86
 msgid "Generate multiple preview images at different timestamps for a gallery view."
 msgstr "Generate multiple preview images at different timestamps for a gallery view."
+
+#: src/components/credentials/bilibili-qr-login-dialog.tsx:166
+msgid "Generate new QR code"
+msgstr "Generate new QR code"
+
+#: src/components/credentials/bilibili-qr-login-dialog.tsx:121
+msgid "Generating QR code..."
+msgstr "Generating QR code..."
 
 #: src/components/config/engines/engine-card.tsx:284
 msgid "Get Started"
@@ -2586,7 +2634,7 @@ msgstr "HLS stream fixing pipeline"
 msgid "Home"
 msgstr "Home"
 
-#: src/components/config/shared-config-editor.tsx:187
+#: src/components/config/shared-config-editor.tsx:194
 msgid "Hooks"
 msgstr "Hooks"
 
@@ -2599,8 +2647,12 @@ msgid "How TTWID cookies are managed."
 msgstr "How TTWID cookies are managed."
 
 #: src/components/config/shared/network-settings-card.tsx:62
-msgid "HTTP cookies for authentication (Result of document.cookie)."
-msgstr "HTTP cookies for authentication (Result of document.cookie)."
+#~ msgid "HTTP cookies for authentication (Result of document.cookie)."
+#~ msgstr "HTTP cookies for authentication (Result of document.cookie)."
+
+#: src/components/config/shared/network-settings-card.tsx:223
+msgid "HTTP cookies for authentication. These are automatically updated when refreshed."
+msgstr "HTTP cookies for authentication. These are automatically updated when refreshed."
 
 #: src/routes/_authed/_dashboard/config/logging.tsx:66
 msgid "HTTP middleware"
@@ -2941,6 +2993,10 @@ msgstr "Logging configuration updated"
 msgid "Logging paused"
 msgstr "Logging paused"
 
+#: src/components/credentials/bilibili-qr-login-dialog.tsx:154
+msgid "Login successful!"
+msgstr "Login successful!"
+
 #: src/components/sidebar/navbar.tsx:27
 msgid "Logs"
 msgstr "Logs"
@@ -2961,6 +3017,10 @@ msgstr "Main application"
 #: src/routes/_authed/_dashboard/system/health.tsx:331
 msgid "Maintenance"
 msgstr "Maintenance"
+
+#: src/components/config/shared/network-settings-card.tsx:155
+msgid "Manage credentials and session cookies."
+msgstr "Manage credentials and session cookies."
 
 #: src/components/config/shared/output-settings-card.tsx:47
 msgid "Manage storage paths and file formats."
@@ -2985,6 +3045,10 @@ msgstr "Manage your monitored channels and downloads"
 #: src/components/pipeline/presets/processors/ass-burnin-config-form.tsx:184
 msgid "Manifest (Pair by Order)"
 msgstr "Manifest (Pair by Order)"
+
+#: src/components/config/shared/network-settings-card.tsx:292
+msgid "Manual update required"
+msgstr "Manual update required"
 
 #: src/components/pipeline/presets/processors/ass-burnin-config-form.tsx:171
 msgid "Match Strategy"
@@ -3202,7 +3266,7 @@ msgstr "name@example.com"
 msgid "Native Resolution Thumbnail"
 msgstr "Native Resolution Thumbnail"
 
-#: src/components/config/shared-config-editor.tsx:165
+#: src/components/config/shared-config-editor.tsx:172
 msgid "Network"
 msgstr "Network"
 
@@ -3257,6 +3321,10 @@ msgstr "No configuration form available for this processor."
 #: src/components/pipeline/presets/preset-card.tsx:246
 msgid "No configuration."
 msgstr "No configuration."
+
+#: src/components/config/shared/network-settings-card.tsx:300
+msgid "No credentials found."
+msgstr "No credentials found."
 
 #: src/components/notifications/forms/webhook-form.tsx:416
 msgid "No custom headers configured"
@@ -3396,6 +3464,10 @@ msgstr "No preview generated"
 #: src/components/streamers/edit/recent-sessions-list.tsx:102
 msgid "No recent sessions found."
 msgstr "No recent sessions found."
+
+#: src/components/config/shared/network-settings-card.tsx:132
+msgid "No refresh needed or not supported"
+msgstr "No refresh needed or not supported"
 
 #: src/components/sessions/session-list.tsx:65
 msgid "No sessions found"
@@ -3600,7 +3672,7 @@ msgid "Options for {platformName}"
 msgstr "Options for {platformName}"
 
 #: src/components/config/platforms/platform-card.tsx:130
-#: src/components/config/shared-config-editor.tsx:154
+#: src/components/config/shared-config-editor.tsx:161
 #: src/components/config/templates/template-card.tsx:161
 #: src/components/pipeline/presets/processors/thumbnail-config-form.tsx:134
 msgid "Output"
@@ -3684,7 +3756,7 @@ msgid "Override global default."
 msgstr "Override global default."
 
 #: src/components/streamers/edit/streamer-config-form.tsx:124
-#: src/routes/_authed/_dashboard/streamers/$id.edit.tsx:360
+#: src/routes/_authed/_dashboard/streamers/$id.edit.tsx:364
 msgid "Override global defaults for this streamer."
 msgstr "Override global defaults for this streamer."
 
@@ -3723,23 +3795,23 @@ msgid "Overwrite Output"
 msgstr "Overwrite Output"
 
 #: src/components/config/global/pipeline-config-card.tsx:192
-#: src/components/config/shared-config-editor.tsx:444
+#: src/components/config/shared-config-editor.tsx:454
 msgid "Paired"
 msgstr "Paired"
 
-#: src/components/config/shared-config-editor.tsx:573
+#: src/components/config/shared-config-editor.tsx:583
 msgid "Paired pipeline is not supported for this entity."
 msgstr "Paired pipeline is not supported for this entity."
 
 #: src/components/config/global/pipeline-config-card.tsx:189
-#: src/components/config/shared-config-editor.tsx:441
+#: src/components/config/shared-config-editor.tsx:451
 msgid "Paired Segment"
 msgstr "Paired Segment"
 
 #: src/components/config/global/pipeline-config-card.tsx:200
 #: src/components/config/global/pipeline-config-card.tsx:281
-#: src/components/config/shared-config-editor.tsx:452
-#: src/components/config/shared-config-editor.tsx:549
+#: src/components/config/shared-config-editor.tsx:462
+#: src/components/config/shared-config-editor.tsx:559
 msgid "Paired Segment Pipeline"
 msgstr "Paired Segment Pipeline"
 
@@ -3826,14 +3898,14 @@ msgid "Per page:"
 msgstr "Per page:"
 
 #: src/components/config/global/pipeline-config-card.tsx:152
-#: src/components/config/shared-config-editor.tsx:402
+#: src/components/config/shared-config-editor.tsx:412
 msgid "Per-segment"
 msgstr "Per-segment"
 
 #: src/components/config/global/pipeline-config-card.tsx:163
 #: src/components/config/global/pipeline-config-card.tsx:266
-#: src/components/config/shared-config-editor.tsx:413
-#: src/components/config/shared-config-editor.tsx:524
+#: src/components/config/shared-config-editor.tsx:423
+#: src/components/config/shared-config-editor.tsx:534
 msgid "Per-segment Pipeline"
 msgstr "Per-segment Pipeline"
 
@@ -3843,7 +3915,7 @@ msgstr "Per-segment Pipeline"
 msgid "Performance"
 msgstr "Performance"
 
-#: src/components/config/shared-config-editor.tsx:209
+#: src/components/config/shared-config-editor.tsx:216
 #: src/components/sidebar/navbar.tsx:30
 #: src/lib/menu-list.ts:69
 #: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.tsx:417
@@ -3973,7 +4045,7 @@ msgid "platforms"
 msgstr "platforms"
 
 #: src/components/config/global/backup-restore-card.tsx:388
-#: src/components/config/templates/template-editor.tsx:213
+#: src/components/config/templates/template-editor.tsx:229
 #: src/components/sidebar/navbar.tsx:36
 #: src/routes/_authed/_dashboard/config/route.tsx:54
 msgid "Platforms"
@@ -4185,7 +4257,7 @@ msgstr "Progress:"
 #~ msgid "Provide session details and choose the processing steps to launch a manual pipeline."
 #~ msgstr "Provide session details and choose the processing steps to launch a manual pipeline."
 
-#: src/components/config/shared-config-editor.tsx:176
+#: src/components/config/shared-config-editor.tsx:183
 msgid "Proxy"
 msgstr "Proxy"
 
@@ -4200,6 +4272,14 @@ msgstr "Proxy Strategy"
 #: src/components/config/shared/proxy-settings-card.tsx:154
 msgid "Proxy URL"
 msgstr "Proxy URL"
+
+#: src/components/credentials/bilibili-qr-login-dialog.tsx:163
+msgid "QR code expired"
+msgstr "QR code expired"
+
+#: src/components/config/shared/network-settings-card.tsx:170
+msgid "QR Login"
+msgstr "QR Login"
 
 #: src/components/config/engines/forms/streamlink-form.tsx:60
 #: src/components/player/stream-info-card.tsx:170
@@ -4301,7 +4381,7 @@ msgid "Recording"
 msgstr "Recording"
 
 #: src/components/streamers/edit/streamer-filters-tab.tsx:30
-#: src/routes/_authed/_dashboard/streamers/$id.edit.tsx:298
+#: src/routes/_authed/_dashboard/streamers/$id.edit.tsx:302
 msgid "Recording Filters"
 msgstr "Recording Filters"
 
@@ -4313,10 +4393,15 @@ msgstr "Recording will start when schedule allows"
 msgid "Recordings"
 msgstr "Recordings"
 
+#: src/components/config/shared/network-settings-card.tsx:189
 #: src/components/sessions/session-list.tsx:72
 #: src/routes/_authed/_dashboard/system/health.tsx:147
 msgid "Refresh"
 msgstr "Refresh"
+
+#: src/components/config/shared/network-settings-card.tsx:130
+msgid "Refresh failed: Manual login required"
+msgstr "Refresh failed: Manual login required"
 
 #: src/components/filters/forms/FilterTypeSelector.tsx:52
 msgid "Regex"
@@ -4396,8 +4481,8 @@ msgid "Require Subtitles"
 msgstr "Require Subtitles"
 
 #: src/components/config/global/pipeline-config-card.tsx:215
-#: src/components/config/shared-config-editor.tsx:467
-#: src/components/config/shared-config-editor.tsx:559
+#: src/components/config/shared-config-editor.tsx:477
+#: src/components/config/shared-config-editor.tsx:569
 msgid "Requires \"Record Danmu\" to be enabled."
 msgstr "Requires \"Record Danmu\" to be enabled."
 
@@ -4483,17 +4568,17 @@ msgid "Run a custom FFmpeg command. Edit the args to customize."
 msgstr "Run a custom FFmpeg command. Edit the args to customize."
 
 #: src/components/config/global/pipeline-config-card.tsx:267
-#: src/components/config/shared-config-editor.tsx:527
+#: src/components/config/shared-config-editor.tsx:537
 msgid "Runs for each recorded segment immediately after it's finished."
 msgstr "Runs for each recorded segment immediately after it's finished."
 
 #: src/components/config/global/pipeline-config-card.tsx:297
-#: src/components/config/shared-config-editor.tsx:593
+#: src/components/config/shared-config-editor.tsx:603
 msgid "Runs once after the entire session ends and all segment pipelines have completed."
 msgstr "Runs once after the entire session ends and all segment pipelines have completed."
 
 #: src/components/config/global/pipeline-config-card.tsx:247
-#: src/components/config/shared-config-editor.tsx:503
+#: src/components/config/shared-config-editor.tsx:513
 msgid "Runs once after the recording session concludes and all individual segment pipelines have finished. Ideal for session-wide actions like merging all segments, final notifications, or cleanup."
 msgstr "Runs once after the recording session concludes and all individual segment pipelines have finished. Ideal for session-wide actions like merging all segments, final notifications, or cleanup."
 
@@ -4510,11 +4595,11 @@ msgid "Runs when a download encounters an error."
 msgstr "Runs when a download encounters an error."
 
 #: src/components/config/global/pipeline-config-card.tsx:209
-#: src/components/config/shared-config-editor.tsx:461
+#: src/components/config/shared-config-editor.tsx:471
 msgid "Runs when both the video segment and its corresponding danmu segment are available."
 msgstr "Runs when both the video segment and its corresponding danmu segment are available."
 
-#: src/components/config/shared-config-editor.tsx:553
+#: src/components/config/shared-config-editor.tsx:563
 msgid "Runs when both video and danmu segments are available."
 msgstr "Runs when both video and danmu segments are available."
 
@@ -4557,7 +4642,7 @@ msgstr "Sampling Strategy"
 
 #: src/components/config/engines/engine-editor.tsx:288
 #: src/components/config/platforms/platform-editor.tsx:123
-#: src/components/config/templates/template-editor.tsx:164
+#: src/components/config/templates/template-editor.tsx:176
 #: src/components/filters/FilterDialog.tsx:281
 #: src/components/notifications/subscription-manager.tsx:446
 #: src/components/pipeline/presets/editor/preset-save-fab.tsx:37
@@ -4577,7 +4662,7 @@ msgid "Save Workflow"
 msgstr "Save Workflow"
 
 #: src/components/config/platforms/platform-editor.tsx:121
-#: src/components/config/templates/template-editor.tsx:160
+#: src/components/config/templates/template-editor.tsx:172
 #: src/components/filters/FilterDialog.tsx:278
 #: src/components/pipeline/workflows/workflow-editor.tsx:238
 #: src/components/streamers/edit/streamer-save-fab.tsx:40
@@ -4593,6 +4678,18 @@ msgstr "Scan a directory for new files created by the command. Detected files wi
 #: src/components/pipeline/presets/processors/execute-config-form.tsx:145
 msgid "Scan Directory"
 msgstr "Scan Directory"
+
+#: src/components/credentials/bilibili-qr-login-dialog.tsx:191
+msgid "Scan the QR code with Bilibili app to login and save credentials"
+msgstr "Scan the QR code with Bilibili app to login and save credentials"
+
+#: src/components/credentials/bilibili-qr-login-dialog.tsx:133
+msgid "Scan with Bilibili mobile app"
+msgstr "Scan with Bilibili mobile app"
+
+#: src/components/credentials/bilibili-qr-login-dialog.tsx:145
+msgid "Scanned! Please confirm on your phone"
+msgstr "Scanned! Please confirm on your phone"
 
 #: src/components/filters/forms/FilterTypeSelector.tsx:27
 msgid "Schedule recording times"
@@ -4664,7 +4761,7 @@ msgid "secs"
 msgstr "secs"
 
 #: src/components/config/global/pipeline-config-card.tsx:155
-#: src/components/config/shared-config-editor.tsx:405
+#: src/components/config/shared-config-editor.tsx:415
 msgid "Segment"
 msgstr "Segment"
 
@@ -4772,25 +4869,25 @@ msgid "Separate multiple paths with commas."
 msgstr "Separate multiple paths with commas."
 
 #: src/components/config/global/pipeline-config-card.tsx:233
-#: src/components/config/shared-config-editor.tsx:487
+#: src/components/config/shared-config-editor.tsx:497
 #: src/components/pipeline/outputs/output-card.tsx:197
 #: src/routes/_authed/_dashboard/pipeline/jobs/new.tsx:254
 msgid "Session"
 msgstr "Session"
 
 #: src/components/config/global/pipeline-config-card.tsx:230
-#: src/components/config/shared-config-editor.tsx:484
+#: src/components/config/shared-config-editor.tsx:494
 msgid "Session Complete"
 msgstr "Session Complete"
 
 #: src/components/config/global/pipeline-config-card.tsx:241
 #: src/components/config/global/pipeline-config-card.tsx:296
-#: src/components/config/shared-config-editor.tsx:495
-#: src/components/config/shared-config-editor.tsx:590
+#: src/components/config/shared-config-editor.tsx:505
+#: src/components/config/shared-config-editor.tsx:600
 msgid "Session Complete Pipeline"
 msgstr "Session Complete Pipeline"
 
-#: src/components/config/shared-config-editor.tsx:607
+#: src/components/config/shared-config-editor.tsx:617
 msgid "Session complete pipeline is not supported for this entity."
 msgstr "Session complete pipeline is not supported for this entity."
 
@@ -4925,7 +5022,7 @@ msgstr "Source"
 msgid "Space Saver"
 msgstr "Space Saver"
 
-#: src/components/config/platforms/platform-editor.tsx:161
+#: src/components/config/platforms/platform-editor.tsx:163
 #: src/components/config/templates/tabs/platform-override-card.tsx:68
 msgid "Specific"
 msgstr "Specific"
@@ -5130,6 +5227,10 @@ msgstr "Subscriptions updated"
 msgid "Subtitle Matching"
 msgstr "Subtitle Matching"
 
+#: src/components/config/shared/network-settings-card.tsx:280
+msgid "Supported"
+msgstr "Supported"
+
 #: src/components/config/platforms/supported-platforms.tsx:27
 msgid "Supported Platforms"
 msgstr "Supported Platforms"
@@ -5278,7 +5379,7 @@ msgid "This is a default preset. Description cannot be modified."
 msgstr "This is a default preset. Description cannot be modified."
 
 #: src/components/config/global/pipeline-config-card.tsx:169
-#: src/components/config/shared-config-editor.tsx:421
+#: src/components/config/shared-config-editor.tsx:431
 msgid "This pipeline runs immediately after a recording segment is finished. Use it for tasks that only require the individual video segment, such as remuxing, thumbnail generation, or per-segment uploads."
 msgstr "This pipeline runs immediately after a recording segment is finished. Use it for tasks that only require the individual video segment, such as remuxing, thumbnail generation, or per-segment uploads."
 
@@ -5437,12 +5538,12 @@ msgid "Treat interactive games as offline to avoid recording if not desired."
 msgstr "Treat interactive games as offline to avoid recording if not desired."
 
 #: src/components/config/global/pipeline-config-card.tsx:165
-#: src/components/config/shared-config-editor.tsx:415
+#: src/components/config/shared-config-editor.tsx:425
 msgid "Triggered after each segment recording"
 msgstr "Triggered after each segment recording"
 
 #: src/components/config/global/pipeline-config-card.tsx:243
-#: src/components/config/shared-config-editor.tsx:497
+#: src/components/config/shared-config-editor.tsx:507
 msgid "Triggered after the entire session ends"
 msgstr "Triggered after the entire session ends"
 
@@ -5503,7 +5604,7 @@ msgid "Triggered when the application starts up."
 msgstr "Triggered when the application starts up."
 
 #: src/components/config/global/pipeline-config-card.tsx:202
-#: src/components/config/shared-config-editor.tsx:454
+#: src/components/config/shared-config-editor.tsx:464
 msgid "Triggered when video and danmu are available"
 msgstr "Triggered when video and danmu are available"
 
@@ -5531,6 +5632,10 @@ msgstr "Try adjusting your search or filters."
 #: src/routes/_authed/_dashboard/pipeline/workflows/index.tsx:258
 msgid "Try adjusting your search."
 msgstr "Try adjusting your search."
+
+#: src/components/credentials/bilibili-qr-login-dialog.tsx:176
+msgid "Try again"
+msgstr "Try again"
 
 #: src/components/default-catch-boundary.tsx:42
 #: src/routes/_authed/_dashboard/system/health.tsx:110

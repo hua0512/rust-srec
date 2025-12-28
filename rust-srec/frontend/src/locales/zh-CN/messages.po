@@ -313,12 +313,12 @@ msgstr "调整 UI 元素的圆角程度。"
 #: src/components/pipeline/presets/processors/rclone-config-form.tsx:59
 #: src/components/pipeline/presets/processors/remux-config-form.tsx:108
 #: src/components/streamers/edit/streamer-config-form.tsx:74
-#: src/routes/_authed/_dashboard/streamers/$id.edit.tsx:291
+#: src/routes/_authed/_dashboard/streamers/$id.edit.tsx:295
 msgid "Advanced"
 msgstr "高级"
 
 #: src/components/streamers/edit/streamer-config-form.tsx:121
-#: src/routes/_authed/_dashboard/streamers/$id.edit.tsx:357
+#: src/routes/_authed/_dashboard/streamers/$id.edit.tsx:361
 msgid "Advanced Configuration"
 msgstr "高级配置"
 
@@ -372,6 +372,10 @@ msgstr "所有平台"
 #: src/routes/_authed/_dashboard/sessions/index.tsx:177
 msgid "All Time"
 msgstr "全部时间"
+
+#: src/components/credentials/bilibili-qr-login-dialog.tsx:174
+msgid "An error occurred"
+msgstr "发生错误"
 
 #: src/components/config/engines/forms/streamlink-form.tsx:159
 msgid "Any additional command line arguments to pass to Streamlink"
@@ -508,10 +512,14 @@ msgstr "音频设置"
 msgid "Auth Type"
 msgstr "认证类型"
 
-#: src/components/config/shared/network-settings-card.tsx:40
+#: src/components/config/shared/network-settings-card.tsx:152
 #: src/components/notifications/forms/webhook-form.tsx:195
 msgid "Authentication"
 msgstr "认证"
+
+#: src/components/config/shared/network-settings-card.tsx:275
+msgid "Auto-Refresh"
+msgstr "自动刷新"
 
 #: src/components/logging/log-viewer.tsx:419
 msgid "Auto-scroll disabled"
@@ -538,8 +546,8 @@ msgid "Avg. Duration"
 msgstr "平均时长"
 
 #: src/components/config/platforms/platform-editor.tsx:105
-#: src/components/config/templates/template-editor.tsx:140
-#: src/components/config/templates/template-editor.tsx:143
+#: src/components/config/templates/template-editor.tsx:152
+#: src/components/config/templates/template-editor.tsx:155
 msgid "Back"
 msgstr "返回"
 
@@ -559,6 +567,10 @@ msgstr "返回处理任务列表"
 #: src/components/sessions/session-header.tsx:71
 msgid "Back to Sessions"
 msgstr "返回录制会话"
+
+#: src/components/config/shared/network-settings-card.tsx:290
+msgid "Background refresh enabled"
+msgstr "后台刷新已启用"
 
 #: src/components/config/shared/retry-policy-form.tsx:76
 msgid "Backoff Multiplier"
@@ -599,7 +611,7 @@ msgid "Basic post-processing: Remux FLV to MP4 and generate a thumbnail preview.
 msgstr "基础后处理：将 FLV 重封装为 MP4，并生成缩略图预览。"
 
 #: src/components/streamers/edit/streamer-config-form.tsx:94
-#: src/routes/_authed/_dashboard/streamers/$id.edit.tsx:330
+#: src/routes/_authed/_dashboard/streamers/$id.edit.tsx:334
 msgid "Basic settings for the streamer."
 msgstr "主播的基本设置。"
 
@@ -614,6 +626,10 @@ msgstr "Bearer Token"
 #: src/components/config/engines/forms/streamlink-form.tsx:65
 msgid "best"
 msgstr "最佳"
+
+#: src/components/credentials/bilibili-qr-login-dialog.tsx:188
+msgid "Bilibili QR Login"
+msgstr "哔哩哔哩扫码登录"
 
 #: src/components/config/platforms/tabs/specific-configs/BilibiliConfigFields.tsx:69
 msgid "Bilibili quality identification (QN)."
@@ -1031,9 +1047,13 @@ msgstr "上下文"
 msgid "Control verbosity for each module. Lower levels include higher ones."
 msgstr "控制各模块的日志详细程度。较低级别包含较高级别。"
 
-#: src/components/config/shared/network-settings-card.tsx:51
+#: src/components/config/shared/network-settings-card.tsx:203
 msgid "Cookies"
 msgstr "Cookie"
+
+#: src/components/config/shared/network-settings-card.tsx:284
+msgid "Cookies Only"
+msgstr "仅 Cookie"
 
 #: src/components/pipeline/outputs/output-card.tsx:135
 msgid "Copied!"
@@ -1088,7 +1108,7 @@ msgstr "无法连接到服务器，请检查网络连接。"
 msgid "CPU Usage"
 msgstr "CPU 使用率"
 
-#: src/components/config/templates/template-editor.tsx:162
+#: src/components/config/templates/template-editor.tsx:174
 #: src/routes/_authed/_dashboard/config/templates/index.tsx:138
 #: src/routes/_authed/_dashboard/pipeline/jobs/index.tsx:253
 msgid "Create"
@@ -1168,7 +1188,7 @@ msgstr "创建预设"
 msgid "Create Streamer"
 msgstr "创建主播"
 
-#: src/components/config/templates/template-editor.tsx:114
+#: src/components/config/templates/template-editor.tsx:126
 #: src/routes/_authed/_dashboard/config/templates/index.tsx:230
 msgid "Create Template"
 msgstr "创建模板"
@@ -1198,6 +1218,18 @@ msgstr "创建中..."
 #: src/components/config/engines/engine-editor.tsx:358
 msgid "Creation Mode"
 msgstr "创建模式"
+
+#: src/components/config/shared/network-settings-card.tsx:238
+msgid "Credential Source Status"
+msgstr "凭据来源状态"
+
+#: src/components/config/shared/network-settings-card.tsx:127
+msgid "Credentials refreshed successfully"
+msgstr "凭据刷新成功"
+
+#: src/components/config/shared/network-settings-card.tsx:339
+msgid "Credentials saved successfully"
+msgstr "凭据保存成功"
 
 #: src/components/pipeline/presets/processors/ass-burnin-config-form.tsx:102
 msgid "CRF (0-51)"
@@ -1312,7 +1344,7 @@ msgstr "DAG 图"
 msgid "Danmaku to ASS"
 msgstr "弹幕转 ASS"
 
-#: src/components/config/shared-config-editor.tsx:198
+#: src/components/config/shared-config-editor.tsx:205
 msgid "Danmu"
 msgstr "弹幕"
 
@@ -1606,7 +1638,7 @@ msgstr "下载引擎（mesio）"
 msgid "Download Manager"
 msgstr "下载管理"
 
-#: src/components/config/shared/network-settings-card.tsx:81
+#: src/components/config/shared/network-settings-card.tsx:316
 msgid "Download Retry Policy"
 msgstr "录制重试策略"
 
@@ -1718,6 +1750,10 @@ msgstr "编辑工作流：{0}"
 msgid "Editing Mode"
 msgstr "编辑模式"
 
+#: src/components/config/shared/network-settings-card.tsx:255
+msgid "Effective Scope"
+msgstr "生效范围"
+
 #: src/components/streamers/card/stream-actions-menu.tsx:69
 msgid "Enable"
 msgstr "启用"
@@ -1820,7 +1856,7 @@ msgstr "未在平台/主播中指定时使用的录制引擎。"
 #: src/components/config/global/backup-restore-card.tsx:371
 #: src/components/config/global/backup-restore-card.tsx:376
 #: src/components/config/global/backup-restore-card.tsx:381
-#: src/components/config/templates/template-editor.tsx:203
+#: src/components/config/templates/template-editor.tsx:219
 #: src/components/sidebar/navbar.tsx:35
 #: src/routes/_authed/_dashboard/config/route.tsx:66
 msgid "Engines"
@@ -2149,6 +2185,10 @@ msgstr "加载模板列表失败：{0}"
 msgid "Failed to load workflows: {0}"
 msgstr "加载工作流列表失败：{0}"
 
+#: src/components/config/shared/network-settings-card.tsx:136
+msgid "Failed to refresh credentials"
+msgstr "刷新凭据失败"
+
 #: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.tsx:190
 msgid "Failed to retry job"
 msgstr "重试处理任务失败"
@@ -2307,7 +2347,7 @@ msgstr "过滤器类型"
 msgid "Filter updated successfully"
 msgstr "过滤器更新成功"
 
-#: src/components/config/shared-config-editor.tsx:143
+#: src/components/config/shared-config-editor.tsx:150
 msgid "Filters"
 msgstr "过滤器"
 
@@ -2396,19 +2436,19 @@ msgstr "完整的多媒体处理：并行进行视频重封装、音频提取和
 msgid "Full Processing"
 msgstr "全流程处理"
 
-#: src/components/config/platforms/platform-editor.tsx:151
+#: src/components/config/platforms/platform-editor.tsx:153
 #: src/components/config/templates/tabs/platform-override-card.tsx:62
-#: src/components/config/templates/template-editor.tsx:193
+#: src/components/config/templates/template-editor.tsx:209
 #: src/components/pipeline/presets/processors/audio-extract-config-form.tsx:54
 #: src/components/pipeline/presets/processors/rclone-config-form.tsx:53
 #: src/components/pipeline/presets/processors/remux-config-form.tsx:72
 #: src/components/streamers/edit/streamer-config-form.tsx:67
-#: src/routes/_authed/_dashboard/streamers/$id.edit.tsx:284
+#: src/routes/_authed/_dashboard/streamers/$id.edit.tsx:288
 msgid "General"
 msgstr "常规"
 
 #: src/components/streamers/edit/streamer-config-form.tsx:91
-#: src/routes/_authed/_dashboard/streamers/$id.edit.tsx:327
+#: src/routes/_authed/_dashboard/streamers/$id.edit.tsx:331
 msgid "General Configuration"
 msgstr "常规配置"
 
@@ -2443,6 +2483,14 @@ msgstr "从视频第 10 秒生成缩略图（宽 320px）。"
 #: src/components/pipeline/presets/default-presets-i18n.ts:86
 msgid "Generate multiple preview images at different timestamps for a gallery view."
 msgstr "在不同时间点生成多张预览图，用于图库展示。"
+
+#: src/components/credentials/bilibili-qr-login-dialog.tsx:166
+msgid "Generate new QR code"
+msgstr "生成新二维码"
+
+#: src/components/credentials/bilibili-qr-login-dialog.tsx:121
+msgid "Generating QR code..."
+msgstr "正在生成二维码..."
 
 #: src/components/config/engines/engine-card.tsx:284
 msgid "Get Started"
@@ -2586,7 +2634,7 @@ msgstr "HLS 流修复管道"
 msgid "Home"
 msgstr "主页"
 
-#: src/components/config/shared-config-editor.tsx:187
+#: src/components/config/shared-config-editor.tsx:194
 msgid "Hooks"
 msgstr "钩子"
 
@@ -2599,8 +2647,12 @@ msgid "How TTWID cookies are managed."
 msgstr "TTWID Cookie 管理方式。"
 
 #: src/components/config/shared/network-settings-card.tsx:62
-msgid "HTTP cookies for authentication (Result of document.cookie)."
-msgstr "用于认证的 HTTP Cookie（document.cookie 的结果）。"
+#~ msgid "HTTP cookies for authentication (Result of document.cookie)."
+#~ msgstr "用于认证的 HTTP Cookie（document.cookie 的结果）。"
+
+#: src/components/config/shared/network-settings-card.tsx:223
+msgid "HTTP cookies for authentication. These are automatically updated when refreshed."
+msgstr "用于认证的 HTTP cookie。刷新时会自动更新。"
 
 #: src/routes/_authed/_dashboard/config/logging.tsx:66
 msgid "HTTP middleware"
@@ -2941,6 +2993,10 @@ msgstr "日志配置已更新"
 msgid "Logging paused"
 msgstr "日志已暂停"
 
+#: src/components/credentials/bilibili-qr-login-dialog.tsx:154
+msgid "Login successful!"
+msgstr "登录成功！"
+
 #: src/components/sidebar/navbar.tsx:27
 msgid "Logs"
 msgstr "日志"
@@ -2961,6 +3017,10 @@ msgstr "主程序"
 #: src/routes/_authed/_dashboard/system/health.tsx:331
 msgid "Maintenance"
 msgstr "维护"
+
+#: src/components/config/shared/network-settings-card.tsx:155
+msgid "Manage credentials and session cookies."
+msgstr "管理凭据和会话 Cookie。"
 
 #: src/components/config/shared/output-settings-card.tsx:47
 msgid "Manage storage paths and file formats."
@@ -2985,6 +3045,10 @@ msgstr "管理你监控的主播及录制"
 #: src/components/pipeline/presets/processors/ass-burnin-config-form.tsx:184
 msgid "Manifest (Pair by Order)"
 msgstr "清单（按顺序配对）"
+
+#: src/components/config/shared/network-settings-card.tsx:292
+msgid "Manual update required"
+msgstr "需要手动更新"
 
 #: src/components/pipeline/presets/processors/ass-burnin-config-form.tsx:171
 msgid "Match Strategy"
@@ -3202,7 +3266,7 @@ msgstr "name@example.com"
 msgid "Native Resolution Thumbnail"
 msgstr "原始分辨率缩略图"
 
-#: src/components/config/shared-config-editor.tsx:165
+#: src/components/config/shared-config-editor.tsx:172
 msgid "Network"
 msgstr "网络"
 
@@ -3257,6 +3321,10 @@ msgstr "此处理器没有可用的配置表单。"
 #: src/components/pipeline/presets/preset-card.tsx:246
 msgid "No configuration."
 msgstr "无配置。"
+
+#: src/components/config/shared/network-settings-card.tsx:300
+msgid "No credentials found."
+msgstr "未找到凭据。"
 
 #: src/components/notifications/forms/webhook-form.tsx:416
 msgid "No custom headers configured"
@@ -3396,6 +3464,10 @@ msgstr "未生成预览"
 #: src/components/streamers/edit/recent-sessions-list.tsx:102
 msgid "No recent sessions found."
 msgstr "未找到最近的录制会话。"
+
+#: src/components/config/shared/network-settings-card.tsx:132
+msgid "No refresh needed or not supported"
+msgstr "无需刷新或不支持"
 
 #: src/components/sessions/session-list.tsx:65
 msgid "No sessions found"
@@ -3600,7 +3672,7 @@ msgid "Options for {platformName}"
 msgstr "{platformName} 选项"
 
 #: src/components/config/platforms/platform-card.tsx:130
-#: src/components/config/shared-config-editor.tsx:154
+#: src/components/config/shared-config-editor.tsx:161
 #: src/components/config/templates/template-card.tsx:161
 #: src/components/pipeline/presets/processors/thumbnail-config-form.tsx:134
 msgid "Output"
@@ -3684,7 +3756,7 @@ msgid "Override global default."
 msgstr "覆盖全局默认值。"
 
 #: src/components/streamers/edit/streamer-config-form.tsx:124
-#: src/routes/_authed/_dashboard/streamers/$id.edit.tsx:360
+#: src/routes/_authed/_dashboard/streamers/$id.edit.tsx:364
 msgid "Override global defaults for this streamer."
 msgstr "为此主播覆盖全局默认值。"
 
@@ -3723,23 +3795,23 @@ msgid "Overwrite Output"
 msgstr "覆盖输出"
 
 #: src/components/config/global/pipeline-config-card.tsx:192
-#: src/components/config/shared-config-editor.tsx:444
+#: src/components/config/shared-config-editor.tsx:454
 msgid "Paired"
 msgstr "已配对"
 
-#: src/components/config/shared-config-editor.tsx:573
+#: src/components/config/shared-config-editor.tsx:583
 msgid "Paired pipeline is not supported for this entity."
 msgstr "该实体不支持配对分段处理管道。"
 
 #: src/components/config/global/pipeline-config-card.tsx:189
-#: src/components/config/shared-config-editor.tsx:441
+#: src/components/config/shared-config-editor.tsx:451
 msgid "Paired Segment"
 msgstr "配对分段"
 
 #: src/components/config/global/pipeline-config-card.tsx:200
 #: src/components/config/global/pipeline-config-card.tsx:281
-#: src/components/config/shared-config-editor.tsx:452
-#: src/components/config/shared-config-editor.tsx:549
+#: src/components/config/shared-config-editor.tsx:462
+#: src/components/config/shared-config-editor.tsx:559
 msgid "Paired Segment Pipeline"
 msgstr "配对分段处理管道"
 
@@ -3826,14 +3898,14 @@ msgid "Per page:"
 msgstr "每页："
 
 #: src/components/config/global/pipeline-config-card.tsx:152
-#: src/components/config/shared-config-editor.tsx:402
+#: src/components/config/shared-config-editor.tsx:412
 msgid "Per-segment"
 msgstr "逐段"
 
 #: src/components/config/global/pipeline-config-card.tsx:163
 #: src/components/config/global/pipeline-config-card.tsx:266
-#: src/components/config/shared-config-editor.tsx:413
-#: src/components/config/shared-config-editor.tsx:524
+#: src/components/config/shared-config-editor.tsx:423
+#: src/components/config/shared-config-editor.tsx:534
 msgid "Per-segment Pipeline"
 msgstr "逐段处理管道"
 
@@ -3843,7 +3915,7 @@ msgstr "逐段处理管道"
 msgid "Performance"
 msgstr "性能"
 
-#: src/components/config/shared-config-editor.tsx:209
+#: src/components/config/shared-config-editor.tsx:216
 #: src/components/sidebar/navbar.tsx:30
 #: src/lib/menu-list.ts:69
 #: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.tsx:417
@@ -3973,7 +4045,7 @@ msgid "platforms"
 msgstr "平台"
 
 #: src/components/config/global/backup-restore-card.tsx:388
-#: src/components/config/templates/template-editor.tsx:213
+#: src/components/config/templates/template-editor.tsx:229
 #: src/components/sidebar/navbar.tsx:36
 #: src/routes/_authed/_dashboard/config/route.tsx:54
 msgid "Platforms"
@@ -4185,7 +4257,7 @@ msgstr "进度："
 #~ msgid "Provide session details and choose the processing steps to launch a manual pipeline."
 #~ msgstr "填写录制会话信息并选择处理步骤，以启动手动处理管道。"
 
-#: src/components/config/shared-config-editor.tsx:176
+#: src/components/config/shared-config-editor.tsx:183
 msgid "Proxy"
 msgstr "代理"
 
@@ -4200,6 +4272,14 @@ msgstr "代理策略"
 #: src/components/config/shared/proxy-settings-card.tsx:154
 msgid "Proxy URL"
 msgstr "代理 URL"
+
+#: src/components/credentials/bilibili-qr-login-dialog.tsx:163
+msgid "QR code expired"
+msgstr "二维码已过期"
+
+#: src/components/config/shared/network-settings-card.tsx:170
+msgid "QR Login"
+msgstr "扫码登录"
 
 #: src/components/config/engines/forms/streamlink-form.tsx:60
 #: src/components/player/stream-info-card.tsx:170
@@ -4301,7 +4381,7 @@ msgid "Recording"
 msgstr "录制"
 
 #: src/components/streamers/edit/streamer-filters-tab.tsx:30
-#: src/routes/_authed/_dashboard/streamers/$id.edit.tsx:298
+#: src/routes/_authed/_dashboard/streamers/$id.edit.tsx:302
 msgid "Recording Filters"
 msgstr "录制过滤器"
 
@@ -4313,10 +4393,15 @@ msgstr "录制将在计划允许时开始"
 msgid "Recordings"
 msgstr "录制内容"
 
+#: src/components/config/shared/network-settings-card.tsx:189
 #: src/components/sessions/session-list.tsx:72
 #: src/routes/_authed/_dashboard/system/health.tsx:147
 msgid "Refresh"
 msgstr "刷新"
+
+#: src/components/config/shared/network-settings-card.tsx:130
+msgid "Refresh failed: Manual login required"
+msgstr "刷新失败：需要手动登录"
 
 #: src/components/filters/forms/FilterTypeSelector.tsx:52
 msgid "Regex"
@@ -4396,8 +4481,8 @@ msgid "Require Subtitles"
 msgstr "需要字幕"
 
 #: src/components/config/global/pipeline-config-card.tsx:215
-#: src/components/config/shared-config-editor.tsx:467
-#: src/components/config/shared-config-editor.tsx:559
+#: src/components/config/shared-config-editor.tsx:477
+#: src/components/config/shared-config-editor.tsx:569
 msgid "Requires \"Record Danmu\" to be enabled."
 msgstr "需要启用“录制弹幕”。"
 
@@ -4483,17 +4568,17 @@ msgid "Run a custom FFmpeg command. Edit the args to customize."
 msgstr "运行自定义 FFmpeg 命令。编辑参数以自定义。"
 
 #: src/components/config/global/pipeline-config-card.tsx:267
-#: src/components/config/shared-config-editor.tsx:527
+#: src/components/config/shared-config-editor.tsx:537
 msgid "Runs for each recorded segment immediately after it's finished."
 msgstr "在每个录制分段完成后立即运行。"
 
 #: src/components/config/global/pipeline-config-card.tsx:297
-#: src/components/config/shared-config-editor.tsx:593
+#: src/components/config/shared-config-editor.tsx:603
 msgid "Runs once after the entire session ends and all segment pipelines have completed."
 msgstr "在整个会话结束且所有分段管道均已完成后运行一次。"
 
 #: src/components/config/global/pipeline-config-card.tsx:247
-#: src/components/config/shared-config-editor.tsx:503
+#: src/components/config/shared-config-editor.tsx:513
 msgid "Runs once after the recording session concludes and all individual segment pipelines have finished. Ideal for session-wide actions like merging all segments, final notifications, or cleanup."
 msgstr "在录制会话结束且所有单个分段管道均已完成后运行一次。适用于合并所有分段、最终通知或清理等全局操作。"
 
@@ -4510,11 +4595,11 @@ msgid "Runs when a download encounters an error."
 msgstr "录制发生错误时运行。"
 
 #: src/components/config/global/pipeline-config-card.tsx:209
-#: src/components/config/shared-config-editor.tsx:461
+#: src/components/config/shared-config-editor.tsx:471
 msgid "Runs when both the video segment and its corresponding danmu segment are available."
 msgstr "当视频分段及其对应的弹幕分段都可用时运行。"
 
-#: src/components/config/shared-config-editor.tsx:553
+#: src/components/config/shared-config-editor.tsx:563
 msgid "Runs when both video and danmu segments are available."
 msgstr "当视频和弹幕分段都可用时运行。"
 
@@ -4557,7 +4642,7 @@ msgstr "采样策略"
 
 #: src/components/config/engines/engine-editor.tsx:288
 #: src/components/config/platforms/platform-editor.tsx:123
-#: src/components/config/templates/template-editor.tsx:164
+#: src/components/config/templates/template-editor.tsx:176
 #: src/components/filters/FilterDialog.tsx:281
 #: src/components/notifications/subscription-manager.tsx:446
 #: src/components/pipeline/presets/editor/preset-save-fab.tsx:37
@@ -4577,7 +4662,7 @@ msgid "Save Workflow"
 msgstr "保存工作流"
 
 #: src/components/config/platforms/platform-editor.tsx:121
-#: src/components/config/templates/template-editor.tsx:160
+#: src/components/config/templates/template-editor.tsx:172
 #: src/components/filters/FilterDialog.tsx:278
 #: src/components/pipeline/workflows/workflow-editor.tsx:238
 #: src/components/streamers/edit/streamer-save-fab.tsx:40
@@ -4593,6 +4678,18 @@ msgstr "扫描目录以查找命令创建的新文件。检测到的文件将传
 #: src/components/pipeline/presets/processors/execute-config-form.tsx:145
 msgid "Scan Directory"
 msgstr "扫描目录"
+
+#: src/components/credentials/bilibili-qr-login-dialog.tsx:191
+msgid "Scan the QR code with Bilibili app to login and save credentials"
+msgstr "使用哔哩哔哩 App 扫码登录并保存凭据"
+
+#: src/components/credentials/bilibili-qr-login-dialog.tsx:133
+msgid "Scan with Bilibili mobile app"
+msgstr "使用哔哩哔哩移动端 App 扫码"
+
+#: src/components/credentials/bilibili-qr-login-dialog.tsx:145
+msgid "Scanned! Please confirm on your phone"
+msgstr "已扫描！请在手机上确认"
 
 #: src/components/filters/forms/FilterTypeSelector.tsx:27
 msgid "Schedule recording times"
@@ -4664,7 +4761,7 @@ msgid "secs"
 msgstr "秒"
 
 #: src/components/config/global/pipeline-config-card.tsx:155
-#: src/components/config/shared-config-editor.tsx:405
+#: src/components/config/shared-config-editor.tsx:415
 msgid "Segment"
 msgstr "分段"
 
@@ -4772,25 +4869,25 @@ msgid "Separate multiple paths with commas."
 msgstr "用英文逗号分隔多个路径。"
 
 #: src/components/config/global/pipeline-config-card.tsx:233
-#: src/components/config/shared-config-editor.tsx:487
+#: src/components/config/shared-config-editor.tsx:497
 #: src/components/pipeline/outputs/output-card.tsx:197
 #: src/routes/_authed/_dashboard/pipeline/jobs/new.tsx:254
 msgid "Session"
 msgstr "会话"
 
 #: src/components/config/global/pipeline-config-card.tsx:230
-#: src/components/config/shared-config-editor.tsx:484
+#: src/components/config/shared-config-editor.tsx:494
 msgid "Session Complete"
 msgstr "会话完成"
 
 #: src/components/config/global/pipeline-config-card.tsx:241
 #: src/components/config/global/pipeline-config-card.tsx:296
-#: src/components/config/shared-config-editor.tsx:495
-#: src/components/config/shared-config-editor.tsx:590
+#: src/components/config/shared-config-editor.tsx:505
+#: src/components/config/shared-config-editor.tsx:600
 msgid "Session Complete Pipeline"
 msgstr "会话完成处理管道"
 
-#: src/components/config/shared-config-editor.tsx:607
+#: src/components/config/shared-config-editor.tsx:617
 msgid "Session complete pipeline is not supported for this entity."
 msgstr "该实体不支持会话完成处理管道。"
 
@@ -4925,7 +5022,7 @@ msgstr "来源"
 msgid "Space Saver"
 msgstr "空间节省"
 
-#: src/components/config/platforms/platform-editor.tsx:161
+#: src/components/config/platforms/platform-editor.tsx:163
 #: src/components/config/templates/tabs/platform-override-card.tsx:68
 msgid "Specific"
 msgstr "特定"
@@ -5130,6 +5227,10 @@ msgstr "订阅已更新"
 msgid "Subtitle Matching"
 msgstr "字幕匹配"
 
+#: src/components/config/shared/network-settings-card.tsx:280
+msgid "Supported"
+msgstr "支持"
+
 #: src/components/config/platforms/supported-platforms.tsx:27
 msgid "Supported Platforms"
 msgstr "支持的平台"
@@ -5278,7 +5379,7 @@ msgid "This is a default preset. Description cannot be modified."
 msgstr "这是默认预设，描述无法修改。"
 
 #: src/components/config/global/pipeline-config-card.tsx:169
-#: src/components/config/shared-config-editor.tsx:421
+#: src/components/config/shared-config-editor.tsx:431
 msgid "This pipeline runs immediately after a recording segment is finished. Use it for tasks that only require the individual video segment, such as remuxing, thumbnail generation, or per-segment uploads."
 msgstr "此处理管道在录制分段完成后立即运行。适用于仅需要单个视频分段的任务，例如重封装、缩略图生成或逐段上传。"
 
@@ -5437,12 +5538,12 @@ msgid "Treat interactive games as offline to avoid recording if not desired."
 msgstr "将互动游戏视为离线，以避免录制不需要的内容。"
 
 #: src/components/config/global/pipeline-config-card.tsx:165
-#: src/components/config/shared-config-editor.tsx:415
+#: src/components/config/shared-config-editor.tsx:425
 msgid "Triggered after each segment recording"
 msgstr "每个分段录制后触发"
 
 #: src/components/config/global/pipeline-config-card.tsx:243
-#: src/components/config/shared-config-editor.tsx:497
+#: src/components/config/shared-config-editor.tsx:507
 msgid "Triggered after the entire session ends"
 msgstr "整个会话结束后触发"
 
@@ -5503,7 +5604,7 @@ msgid "Triggered when the application starts up."
 msgstr "应用启动时触发。"
 
 #: src/components/config/global/pipeline-config-card.tsx:202
-#: src/components/config/shared-config-editor.tsx:454
+#: src/components/config/shared-config-editor.tsx:464
 msgid "Triggered when video and danmu are available"
 msgstr "当视频和弹幕可用时触发"
 
@@ -5531,6 +5632,10 @@ msgstr "尝试调整搜索或过滤器。"
 #: src/routes/_authed/_dashboard/pipeline/workflows/index.tsx:258
 msgid "Try adjusting your search."
 msgstr "尝试调整搜索。"
+
+#: src/components/credentials/bilibili-qr-login-dialog.tsx:176
+msgid "Try again"
+msgstr "重试"
 
 #: src/components/default-catch-boundary.tsx:42
 #: src/routes/_authed/_dashboard/system/health.tsx:110

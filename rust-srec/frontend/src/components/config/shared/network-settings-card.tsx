@@ -1,6 +1,12 @@
 import { useState } from 'react';
 import { UseFormReturn } from 'react-hook-form';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from '@/components/ui/card';
 import {
   FormControl,
   FormDescription,
@@ -12,7 +18,14 @@ import {
 import { Textarea } from '@/components/ui/textarea';
 import { Trans } from '@lingui/react/macro';
 import { t } from '@lingui/core/macro';
-import { Cookie, Network, RefreshCw, Info, UserCheck, QrCode } from 'lucide-react';
+import {
+  Cookie,
+  Network,
+  RefreshCw,
+  Info,
+  UserCheck,
+  QrCode,
+} from 'lucide-react';
 import { RetryPolicyForm } from './retry-policy-form';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
@@ -55,16 +68,17 @@ export function NetworkSettingsCard({
   const [qrDialogOpen, setQrDialogOpen] = useState(false);
 
   const scope: CredentialSaveScope | null =
-    credentialScope ?? (streamerId ? { type: 'streamer', id: streamerId } : null);
+    credentialScope ??
+    (streamerId ? { type: 'streamer', id: streamerId } : null);
 
   const credentialSourceQueryKey = scope
     ? [
-      'credentials',
-      scope.type,
-      scope.id,
-      'source',
-      scope.type === 'template' ? (credentialPlatformNameHint ?? null) : null,
-    ]
+        'credentials',
+        scope.type,
+        scope.id,
+        'source',
+        scope.type === 'template' ? (credentialPlatformNameHint ?? null) : null,
+      ]
     : ['credentials', 'none'];
 
   const { data: credentialSource, isLoading: isLoadingCredentials } = useQuery({
@@ -207,7 +221,8 @@ export function NetworkSettingsCard({
                 </FormControl>
                 <FormDescription className="text-xs">
                   <Trans>
-                    HTTP cookies for authentication. These are automatically updated when refreshed.
+                    HTTP cookies for authentication. These are automatically
+                    updated when refreshed.
                   </Trans>
                 </FormDescription>
                 <FormMessage />
@@ -242,7 +257,10 @@ export function NetworkSettingsCard({
                       <p className="text-sm font-semibold truncate titlecase">
                         {credentialSource.scope_name}
                       </p>
-                      <Badge variant="secondary" className="mt-1 text-[10px] h-4">
+                      <Badge
+                        variant="secondary"
+                        className="mt-1 text-[10px] h-4"
+                      >
                         {credentialSource.scope_type}
                       </Badge>
                     </div>
@@ -315,7 +333,9 @@ export function NetworkSettingsCard({
           onOpenChange={setQrDialogOpen}
           scope={scope}
           onSuccess={() => {
-            queryClient.invalidateQueries({ queryKey: credentialSourceQueryKey });
+            queryClient.invalidateQueries({
+              queryKey: credentialSourceQueryKey,
+            });
             toast.success(t`Credentials saved successfully`);
           }}
         />
