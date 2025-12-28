@@ -4,6 +4,7 @@
 //! creating a clean and maintainable data access layer.
 
 pub mod config;
+pub mod credential_store;
 pub mod dag;
 pub mod filter;
 pub mod job;
@@ -18,6 +19,7 @@ pub mod streamer_tx;
 pub mod user;
 
 pub use config::*;
+pub use credential_store::*;
 pub use dag::*;
 pub use filter::*;
 pub use job::*;

@@ -11,3 +11,4 @@ export * from './engine';
 export * from './system';
 export * from './notifications';
 export * from './logging';
+export * from './credentials';

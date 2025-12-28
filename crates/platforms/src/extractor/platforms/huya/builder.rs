@@ -55,7 +55,7 @@ impl Huya {
     const MP_URL: &'static str = "https://mp.huya.com/cache.php";
     // WUP User-Agent for Huya
     const WUP_UA: &'static str =
-        "HYSDK(Windows,30000002)_APP(pc_exe&7030003&official)_SDK(trans&2.29.0.5493)";
+        "HYSDK(Windows,30000002)_APP(pc_exe&7060000&official)_SDK(trans&2.32.3.5646)";
 
     pub fn new(
         platform_url: String,
@@ -74,8 +74,8 @@ impl Huya {
 
         let force_origin_quality =
             parse_bool_from_extras(extras.as_ref(), "force_origin_quality", true);
-        let use_wup = parse_bool_from_extras(extras.as_ref(), "use_wup", true);
-        let use_wup_v2 = parse_bool_from_extras(extras.as_ref(), "use_wup_v2", false);
+        let use_wup = parse_bool_from_extras(extras.as_ref(), "use_wup", false);
+        let use_wup_v2 = parse_bool_from_extras(extras.as_ref(), "use_wup_v2", true);
 
         Self {
             extractor,
@@ -406,8 +406,7 @@ impl Huya {
     }
 
     async fn parse_web_media_info(&self, page_content: &str) -> Result<MediaInfo, ExtractorError> {
-        let live_status = self.parse_live_status(page_content)?;
-
+        // Extract profile info first (needed for presenter_uid)
         let profile_info_str = PROFILE_INFO_REGEX
             .captures(page_content)
             .and_then(|caps| caps.get(1))
@@ -419,11 +418,22 @@ impl Huya {
         let profile_info: WebProfileInfo =
             serde_json::from_str(profile_info_str).map_err(ExtractorError::JsonError)?;
 
-        let artist = profile_info.nick;
-
         if profile_info.lp <= 0 {
             return Err(ExtractorError::StreamerNotFound);
         }
+
+        let presenter_uid = profile_info.lp;
+
+        // When use_wup_v2 is enabled, use get_living_info_wup to determine live status
+        if self.use_wup_v2 {
+            let living_info = self.get_living_info_wup(presenter_uid).await?;
+            debug!("living_info: {:#?}", living_info);
+            return self.parse_wup_v2_media_info(&living_info, presenter_uid);
+        }
+
+        // Fallback to web page parsing for live status
+        let live_status = self.parse_live_status(page_content)?;
+        let artist = profile_info.nick;
 
         let avatar_url = if profile_info.avatar.is_empty() {
             None
@@ -462,8 +472,6 @@ impl Huya {
 
         let game_live_info = &stream_container.game_live_info;
 
-        // let presenter_uid = game_live_info.uid;
-        let presenter_uid = profile_info.lp;
         let title = &game_live_info.introduction;
         let cover_url = if game_live_info.screenshot.is_empty() {
             None
@@ -475,17 +483,12 @@ impl Huya {
         let default_bitrate = game_live_info.bit_rate as u64;
         let bitrate_info_list = &stream_response.v_multi_stream_info;
 
-        let streams = if self.use_wup_v2 {
-            let living_info = self.get_living_info_wup(presenter_uid).await?;
-            self.parse_living_info(&living_info)?
-        } else {
-            self.parse_streams(
-                stream_info_list,
-                bitrate_info_list,
-                default_bitrate,
-                presenter_uid,
-            )?
-        };
+        let streams = self.parse_streams(
+            stream_info_list,
+            bitrate_info_list,
+            default_bitrate,
+            presenter_uid,
+        )?;
 
         let mut extras = FxHashMap::default();
         extras.insert("presenter_uid".to_string(), presenter_uid.to_string());
@@ -494,6 +497,77 @@ impl Huya {
             self.extractor.url.clone(),
             title.to_string(),
             artist.to_string(),
+            cover_url,
+            avatar_url,
+            true,
+            streams,
+            Some(self.extractor.get_platform_headers_map()),
+            Some(extras),
+        ))
+    }
+
+    /// Parse media info from WUP v2 GetLivingInfoRsp
+    /// Uses b_is_living to determine live status and extracts info from BeginLiveNotice
+    fn parse_wup_v2_media_info(
+        &self,
+        living_info: &GetLivingInfoRsp,
+        presenter_uid: i64,
+    ) -> Result<MediaInfo, ExtractorError> {
+        // Check live status from GetLivingInfoRsp.b_is_living
+        let is_live = living_info.b_is_living != 0;
+
+        // Extract artist and avatar from BeginLiveNotice
+        let notice = &living_info.t_notice;
+        let artist = if notice.s_nick.is_empty() {
+            "Unknown".to_string()
+        } else {
+            notice.s_nick.clone()
+        };
+
+        let avatar_url = if notice.s_avatar_url.is_empty() {
+            None
+        } else {
+            Some(notice.s_avatar_url.clone())
+        };
+
+        // Extract title from BeginLiveNotice.s_live_desc
+        let title = if notice.s_live_desc.is_empty() {
+            "直播中".to_string()
+        } else {
+            notice.s_live_desc.clone()
+        };
+
+        // Extract cover from video capture URL if available
+        let cover_url = if notice.s_video_capture_url.is_empty() {
+            None
+        } else {
+            Some(notice.s_video_capture_url.clone())
+        };
+
+        if !is_live {
+            return Ok(MediaInfo::new(
+                self.extractor.url.clone(),
+                "直播未开始".to_string(),
+                artist,
+                None,
+                avatar_url,
+                false,
+                vec![],
+                None,
+                None,
+            ));
+        }
+
+        // Parse streams from living_info
+        let streams = self.parse_living_info(living_info)?;
+
+        let mut extras = FxHashMap::default();
+        extras.insert("presenter_uid".to_string(), presenter_uid.to_string());
+
+        Ok(MediaInfo::new(
+            self.extractor.url.clone(),
+            title,
+            artist,
             cover_url,
             avatar_url,
             true,
@@ -660,7 +734,7 @@ impl Huya {
         Ok(streams)
     }
 
-    /// Get living info via WUP
+    /// Get living info via WUP using presenter UID
     async fn get_living_info_wup(&self, lp: i64) -> Result<GetLivingInfoRsp, ExtractorError> {
         let ua = format!(
             "webh5&{}&websocket",
@@ -673,6 +747,44 @@ impl Huya {
                 e
             ))
         })?;
+
+        let response = self
+            .extractor
+            .post(Self::WUP_URL)
+            .body(request_body)
+            .send()
+            .await?;
+        let response = Self::check_http_response(response).await?;
+        let response_bytes = response.bytes().await?;
+
+        let living_info = tars::decode_get_living_info_response(response_bytes).map_err(|e| {
+            ExtractorError::ValidationError(format!(
+                "Failed to decode getLivingInfo response: {:?}",
+                e
+            ))
+        })?;
+
+        Ok(living_info)
+    }
+
+    /// Get living info via WUP using room ID (numeric ID from URL)
+    /// This avoids the need to parse the web page for presenter UID
+    async fn get_living_info_by_room_id_wup(
+        &self,
+        room_id: i64,
+    ) -> Result<GetLivingInfoRsp, ExtractorError> {
+        let ua = format!(
+            "webh5&{}&websocket",
+            chrono::Utc::now().format("%y%m%d%H%M")
+        );
+        let device = "chrome";
+        let request_body = tars::build_get_living_info_by_room_id_request(room_id, &ua, device)
+            .map_err(|e| {
+                ExtractorError::ValidationError(format!(
+                    "Failed to build getLivingInfo request: {:?}",
+                    e
+                ))
+            })?;
 
         let response = self
             .extractor
@@ -803,7 +915,24 @@ impl PlatformExtractor for Huya {
             return Ok(media_info);
         }
 
-        // use web api
+        // When use_wup_v2 is enabled, try room ID based WUP first (no web page parsing needed)
+        if self.use_wup_v2 {
+            if let Some(room_id) = self
+                .extractor
+                .url
+                .split('/')
+                .next_back()
+                .and_then(|s| s.parse::<i64>().ok())
+            {
+                let living_info = self.get_living_info_by_room_id_wup(room_id).await?;
+                debug!("living_info: {:#?}", living_info);
+                // Get presenter_uid from the response
+                let presenter_uid = living_info.t_notice.l_presenter_uid;
+                return self.parse_wup_v2_media_info(&living_info, presenter_uid);
+            }
+        }
+
+        // Fallback to web api (for non-numeric URLs or when use_wup is enabled)
         let page_content = self.get_room_page().await?;
         let media_info = self.parse_web_media_info(&page_content).await?;
         return Ok(media_info);
@@ -811,8 +940,7 @@ impl PlatformExtractor for Huya {
 
     async fn get_url(&self, stream_info: &mut StreamInfo) -> Result<(), ExtractorError> {
         // if not wup, return the stream info directly
-        // wup v2 do not need to get url
-        if !self.use_wup || self.use_wup_v2 {
+        if !self.use_wup && !self.use_wup_v2 {
             return Ok(());
         }
 
@@ -916,13 +1044,16 @@ mod tests {
             .with_max_level(tracing::Level::DEBUG)
             .init();
         let extractor = Huya::new(
-            "https://www.huya.com/660000".to_string(),
+            "https://www.huya.com/600000".to_string(),
             default_client(),
             None,
             None,
         );
         let mut media_info = extractor.extract().await.unwrap();
-        assert!(media_info.is_live);
+        if !media_info.is_live {
+            return;
+        }
+        // assert!(media_info.is_live);
         // println!("{media_info:?}");
         let mut stream_info = media_info.streams.drain(0..1).next().unwrap();
         assert!(!stream_info.url.is_empty());

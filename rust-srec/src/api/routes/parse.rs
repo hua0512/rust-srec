@@ -7,6 +7,7 @@ use tracing::{debug, warn};
 use crate::api::error::ApiResult;
 use crate::api::models::{ParseUrlRequest, ParseUrlResponse};
 use crate::api::server::AppState;
+use crate::credentials::{CredentialScope, CredentialSource};
 
 /// Create the parse router.
 pub fn router() -> Router<AppState> {
@@ -76,20 +77,42 @@ async fn resolve_cookies_for_url(
     }
 
     let config_service = state.config_service.as_ref()?;
+    let credential_service = state.credential_service.as_ref();
 
     // Try to find a matching streamer by URL
     if let Some(streamer_manager) = state.streamer_manager.as_ref()
         && let Some(streamer) = streamer_manager.get_streamer_by_url(url)
     {
-        // Get the merged config for this streamer to get cookies
-        match config_service.get_config_for_streamer(&streamer.id).await {
-            Ok(config) => {
-                if config.cookies.is_some() {
+        match config_service.get_context_for_streamer(&streamer.id).await {
+            Ok(context) => {
+                let config = &context.config;
+                let mut cookies = config.cookies.clone();
+
+                if let Some(credential_service) = credential_service
+                    && let Some(source) = context.credential_source.as_ref()
+                    && let Ok(Some(new_cookies)) =
+                        credential_service.check_and_refresh_source(source).await
+                {
+                    cookies = Some(new_cookies);
+                    match &source.scope {
+                        CredentialScope::Streamer { .. } => {
+                            config_service.invalidate_streamer(&streamer.id);
+                        }
+                        CredentialScope::Template { template_id, .. } => {
+                            let _ = config_service.invalidate_template(template_id).await;
+                        }
+                        CredentialScope::Platform { platform_id, .. } => {
+                            let _ = config_service.invalidate_platform(platform_id).await;
+                        }
+                    }
+                }
+
+                if cookies.is_some() {
                     debug!(
                         "Using cookies from streamer config for URL: {} (streamer: {})",
                         url, streamer.name
                     );
-                    return config.cookies.clone();
+                    return cookies;
                 }
             }
             Err(e) => {
@@ -111,11 +134,40 @@ async fn resolve_cookies_for_url(
                 .find(|c| c.platform_name.eq_ignore_ascii_case(platform_name))
             && platform_config.cookies.is_some()
         {
+            let mut cookies = platform_config.cookies.clone();
+
+            if let Some(credential_service) = credential_service {
+                let refresh_token = platform_config
+                    .platform_specific_config
+                    .as_deref()
+                    .and_then(|s| serde_json::from_str::<serde_json::Value>(s).ok())
+                    .and_then(|v| v.get("refresh_token").and_then(|t| t.as_str()).map(String::from));
+
+                if let Some(ref existing) = cookies {
+                    let source = CredentialSource::new(
+                        CredentialScope::Platform {
+                            platform_id: platform_config.id.clone(),
+                            platform_name: platform_config.platform_name.clone(),
+                        },
+                        existing.clone(),
+                        refresh_token,
+                        platform_config.platform_name.clone(),
+                    );
+
+                    if let Ok(Some(new_cookies)) =
+                        credential_service.check_and_refresh_source(&source).await
+                    {
+                        cookies = Some(new_cookies);
+                        let _ = config_service.invalidate_platform(&platform_config.id).await;
+                    }
+                }
+            }
+
             debug!(
                 "Using cookies from platform config for URL: {} (platform: {})",
                 url, platform_name
             );
-            return platform_config.cookies;
+            return cookies;
         }
     }
 

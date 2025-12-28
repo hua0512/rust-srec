@@ -255,6 +255,10 @@ function EditStreamerForm({
     },
   });
 
+  const platformNameHint = platforms?.find(
+    (p) => p.id === streamer.platform_config_id,
+  )?.name;
+
   return (
     <motion.div
       variants={containerVariants}
@@ -363,7 +367,12 @@ function EditStreamerForm({
                         </CardDescription>
                       </CardHeader>
                       <CardContent>
-                        <StreamerConfiguration form={form} engines={engines} />
+                        <StreamerConfiguration
+                          form={form}
+                          engines={engines}
+                          streamerId={id}
+                          credentialPlatformNameHint={platformNameHint}
+                        />
                       </CardContent>
                     </Card>
                   </motion.div>

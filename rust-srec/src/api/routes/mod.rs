@@ -4,6 +4,7 @@
 
 pub mod auth;
 pub mod config;
+pub mod credentials;
 pub mod downloads;
 pub mod engines;
 pub mod export_import;
@@ -43,6 +44,7 @@ pub fn create_router(state: AppState) -> Router {
         .nest("/api/streamers/{streamer_id}/filters", filters::router())
         .nest("/api/config", config::router())
         .nest("/api/config/backup", export_import::router())
+        .nest("/api/credentials", credentials::router())
         .nest("/api/templates", templates::router())
         .nest("/api/engines", engines::router())
         .nest("/api/job", job::router())

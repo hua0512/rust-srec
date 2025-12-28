@@ -15,10 +15,11 @@ use tokio_util::sync::CancellationToken;
 use tokio_util::time::DelayQueue;
 use tracing::{debug, info, warn};
 
+use crate::credentials::CredentialRefreshService;
 use crate::database::ImmediateTransaction;
 use crate::database::repositories::{
-    FilterRepository, MonitorOutboxOps, MonitorOutboxTxOps, SessionRepository, SessionTxOps,
-    StreamerRepository, StreamerTxOps,
+    ConfigRepository, FilterRepository, MonitorOutboxOps, MonitorOutboxTxOps, SessionRepository,
+    SessionTxOps, StreamerRepository, StreamerTxOps,
 };
 use crate::domain::StreamerState;
 use crate::domain::filter::Filter;
@@ -69,7 +70,7 @@ pub struct StreamMonitor<
     SR: StreamerRepository + Send + Sync + 'static,
     FR: FilterRepository + Send + Sync + 'static,
     SSR: SessionRepository + Send + Sync + 'static,
-    CR: crate::database::repositories::ConfigRepository + Send + Sync + 'static,
+    CR: ConfigRepository + Send + Sync + 'static,
 > {
     /// Streamer manager for state updates.
     streamer_manager: Arc<StreamerManager<SR>>,
@@ -101,6 +102,8 @@ pub struct StreamMonitor<
     /// Configuration.
     #[allow(dead_code)]
     config: StreamMonitorConfig,
+    /// Optional credential refresh service for automatic cookie refresh.
+    credential_service: Option<Arc<CredentialRefreshService<CR>>>,
 }
 
 /// Details for a streamer going live.
@@ -118,7 +121,7 @@ impl<
     SR: StreamerRepository + Send + Sync + 'static,
     FR: FilterRepository + Send + Sync + 'static,
     SSR: SessionRepository + Send + Sync + 'static,
-    CR: crate::database::repositories::ConfigRepository + Send + Sync + 'static,
+    CR: ConfigRepository + Send + Sync + 'static,
 > StreamMonitor<SR, FR, SSR, CR>
 {
     /// Create a new stream monitor.
@@ -216,6 +219,7 @@ impl<
             outbox_notify: outbox_notify.clone(),
             cancellation: cancellation.clone(),
             config,
+            credential_service: None,
         };
 
         monitor.spawn_outbox_publisher(outbox_notify, cancellation.clone());
@@ -241,6 +245,11 @@ impl<
     pub fn stop(&self) {
         info!("Stopping StreamMonitor background tasks");
         self.cancellation.cancel();
+    }
+
+    /// Set the credential refresh service for automatic cookie refresh.
+    pub fn set_credential_service(&mut self, service: Arc<CredentialRefreshService<CR>>) {
+        self.credential_service = Some(service);
     }
 
     /// Spawn a single cleanup worker that processes delayed removal requests.
@@ -354,6 +363,7 @@ impl<
         let filter_repo = self.filter_repo.clone();
         let config_service = self.config_service.clone();
         let detector = self.detector.clone();
+        let credential_service = self.credential_service.clone();
         let streamer_id_owned = streamer.id.clone();
         let streamer_id = streamer.id.as_str();
         let platform_id = streamer.platform().to_string();
@@ -387,15 +397,70 @@ impl<
                         })
                         .collect();
 
-                    // Get merged configuration to access stream selection preference and cookies
-                    let config = config_service.get_config_for_streamer(streamer_id).await?;
+                    // Get resolved context (merged config + credential source provenance).
+                    let context = config_service.get_context_for_streamer(streamer_id).await?;
+                    let config = &context.config;
+
+                    // Use cookies from config, but attempt best-effort refresh first (non-fatal).
+                    let mut cookies = config.cookies.clone();
+                    if let Some(ref credential_service) = credential_service
+                        && let Some(ref source) = context.credential_source
+                    {
+                        match credential_service.check_and_refresh_source(source).await {
+                            Ok(Some(new_cookies)) => {
+                                // Use refreshed cookies immediately for this check, and invalidate
+                                // cached config so subsequent reads pick up the DB update.
+                                cookies = Some(new_cookies);
+                                match &source.scope {
+                                    crate::credentials::CredentialScope::Streamer { .. } => {
+                                        config_service.invalidate_streamer(streamer_id);
+                                    }
+                                    crate::credentials::CredentialScope::Template {
+                                        template_id,
+                                        ..
+                                    } => {
+                                        if let Err(e) = config_service
+                                            .invalidate_template(template_id)
+                                            .await
+                                        {
+                                            warn!(
+                                                error = %e,
+                                                "Failed to invalidate template configs after credential refresh"
+                                            );
+                                        }
+                                    }
+                                    crate::credentials::CredentialScope::Platform {
+                                        platform_id,
+                                        ..
+                                    } => {
+                                        if let Err(e) = config_service
+                                            .invalidate_platform(platform_id)
+                                            .await
+                                        {
+                                            warn!(
+                                                error = %e,
+                                                "Failed to invalidate platform configs after credential refresh"
+                                            );
+                                        }
+                                    }
+                                }
+                            }
+                            Ok(None) => {}
+                            Err(e) => {
+                                warn!(
+                                    error = %e,
+                                    "Credential check/refresh failed; continuing with existing cookies"
+                                );
+                            }
+                        }
+                    }
 
                     // Check status with filters, cookies, selection config, and platform extras
                     detector
                         .check_status_with_filters(
                             streamer,
                             &filters,
-                            config.cookies.clone(),
+                            cookies,
                             Some(&config.stream_selection),
                             config.platform_extras.clone(),
                         )

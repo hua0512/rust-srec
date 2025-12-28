@@ -18,7 +18,7 @@ use crate::database::models::{
     EngineConfigurationDbModel, GlobalConfigDbModel, PlatformConfigDbModel, TemplateConfigDbModel,
 };
 use crate::database::repositories::{config::ConfigRepository, streamer::StreamerRepository};
-use crate::domain::config::{ConfigResolver, MergedConfig};
+use crate::domain::config::{ConfigResolver, MergedConfig, ResolvedStreamerContext};
 use crate::domain::streamer::Streamer;
 use crate::utils::json::{self, JsonContext};
 
@@ -291,13 +291,23 @@ where
     /// - Deduplicates concurrent requests for the same streamer
     /// - Only one request will resolve the config while others wait
     pub async fn get_config_for_streamer(&self, streamer_id: &str) -> Result<Arc<MergedConfig>> {
+        Ok(self.get_context_for_streamer(streamer_id).await?.config.clone())
+    }
+
+    /// Get the resolved streamer context for a streamer.
+    ///
+    /// This includes the merged config plus runtime-only derived values like `CredentialSource`.
+    pub async fn get_context_for_streamer(
+        &self,
+        streamer_id: &str,
+    ) -> Result<Arc<ResolvedStreamerContext>> {
         // One retry is enough to handle "cache invalidated" races without creating
         // unbounded loops if the config is being updated repeatedly.
         for attempt in 0..2 {
             // Check cache first
-            if let Some(config) = self.cache.get(streamer_id) {
+            if let Some(context) = self.cache.get(streamer_id) {
                 trace!("Cache hit for streamer {}", streamer_id);
-                return Ok(config);
+                return Ok(context);
             }
 
             // Check for in-flight request (deduplication)
@@ -307,7 +317,7 @@ where
                 // Another request is already resolving this config, wait for it
                 trace!("Waiting for in-flight request for streamer {}", streamer_id);
                 match self.cache.wait_for_in_flight(&cell).await {
-                    Ok(config) => return Ok(config),
+                    Ok(context) => return Ok(context),
                     Err(message)
                         if attempt == 0
                             && (message.contains("Configuration invalidated")
@@ -328,17 +338,17 @@ where
             // Resolve the config
             let resolve = tokio::time::timeout(
                 CONFIG_RESOLVE_HARD_TIMEOUT,
-                self.resolve_config_for_streamer(streamer_id),
+                self.resolve_context_for_streamer(streamer_id),
             )
             .await;
 
             return match resolve {
-                Ok(Ok(config)) => {
+                Ok(Ok(context)) => {
                     // Complete the in-flight request (caches and notifies waiters)
-                    let config = Arc::new(config);
+                    let context = Arc::new(context);
                     self.cache
-                        .complete_in_flight(streamer_id, &cell, config.clone());
-                    Ok(config)
+                        .complete_in_flight(streamer_id, &cell, context.clone());
+                    Ok(context)
                 }
                 Ok(Err(e)) => {
                     self.cache.fail_in_flight(
@@ -365,17 +375,20 @@ where
         )))
     }
 
-    /// Resolve the merged configuration for a streamer without caching.
+    /// Resolve the streamer context for a streamer without caching.
     ///
     /// Delegates to ConfigResolver which handles the 4-layer merging logic.
-    async fn resolve_config_for_streamer(&self, streamer_id: &str) -> Result<MergedConfig> {
+    async fn resolve_context_for_streamer(
+        &self,
+        streamer_id: &str,
+    ) -> Result<ResolvedStreamerContext> {
         // Get the streamer and convert to domain entity
         let streamer_db = self.streamer_repo.get_streamer(streamer_id).await?;
         let streamer = self.convert_to_domain_streamer(&streamer_db)?;
 
         // Use ConfigResolver to handle the merging logic
         let resolver = ConfigResolver::new(Arc::clone(&self.config_repo));
-        resolver.resolve_config_for_streamer(&streamer).await
+        resolver.resolve_context_for_streamer(&streamer).await
     }
 
     /// Convert database streamer model to domain entity.
@@ -406,6 +419,16 @@ where
     /// Invalidate the cached config for a specific streamer.
     pub fn invalidate_streamer(&self, streamer_id: &str) {
         self.cache.invalidate(streamer_id);
+    }
+
+    /// Invalidate cached configs for all streamers on a platform.
+    pub async fn invalidate_platform(&self, platform_id: &str) -> Result<()> {
+        self.invalidate_streamers_by_platform(platform_id).await
+    }
+
+    /// Invalidate cached configs for all streamers using a template.
+    pub async fn invalidate_template(&self, template_id: &str) -> Result<()> {
+        self.invalidate_streamers_by_template(template_id).await
     }
 
     // ========== Cache Management ==========

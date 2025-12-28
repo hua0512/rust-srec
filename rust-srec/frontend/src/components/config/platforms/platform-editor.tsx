@@ -143,6 +143,8 @@ export function PlatformEditor({
               sessionCompletePipeline: 'session_complete_pipeline',
               pairedSegmentPipeline: 'paired_segment_pipeline',
             }}
+            credentialScope={{ type: 'platform', id: platform.id }}
+            credentialPlatformNameHint={platform.name}
             extraTabs={[
               {
                 value: 'general',

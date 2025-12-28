@@ -34,6 +34,7 @@ import { PipelineConfigAdapter } from './shared/pipeline-config-adapter';
 import { NetworkSettingsCard } from './shared/network-settings-card';
 import { ProxySettingsCard } from './shared/proxy-settings-card';
 import { Alert, AlertDescription, AlertTitle } from '../ui/alert';
+import type { CredentialSaveScope } from '@/server/functions/credentials';
 
 export interface SharedConfigPaths {
   streamSelection: string;
@@ -82,6 +83,9 @@ interface SharedConfigEditorProps<T extends FieldValues> {
   proxyMode?: 'json' | 'object';
   // Mode for stream selection, retry policy, etc.
   configMode?: 'json' | 'object';
+  streamerId?: string;
+  credentialScope?: CredentialSaveScope;
+  credentialPlatformNameHint?: string;
 }
 
 const tabContentVariants = {
@@ -116,6 +120,9 @@ export function SharedConfigEditor<T extends FieldValues>({
   extraTabs = [],
   proxyMode = 'object',
   configMode = 'object',
+  streamerId,
+  credentialScope,
+  credentialPlatformNameHint,
 }: SharedConfigEditorProps<T>) {
   const showTab = (tab: ConfigTabType) => availableTabs.includes(tab);
 
@@ -299,6 +306,9 @@ export function SharedConfigEditor<T extends FieldValues>({
                   retryPolicy: paths.retryPolicy,
                 }}
                 configMode={configMode}
+                streamerId={streamerId}
+                credentialScope={credentialScope}
+                credentialPlatformNameHint={credentialPlatformNameHint}
               />
             </motion.div>
           </TabsContent>

@@ -17,12 +17,17 @@ use crate::api::{
     server::{ApiServerConfig, AppState},
 };
 use crate::config::{ConfigCache, ConfigEventBroadcaster, ConfigService};
+use crate::credentials::{
+    CredentialRefreshService, CredentialResolver,
+    platforms::BilibiliCredentialManager,
+};
 use crate::danmu::{DanmuEvent, DanmuService, service::DanmuServiceConfig};
 use crate::database::maintenance::{MaintenanceConfig, MaintenanceScheduler};
 use crate::database::repositories::{
     ConfigRepository, NotificationRepository, SqlxNotificationRepository,
 };
 use crate::database::repositories::{
+    SqlxCredentialStore,
     config::SqlxConfigRepository,
     dag::SqlxDagRepository,
     filter::SqlxFilterRepository,
@@ -106,6 +111,8 @@ pub struct ServiceContainer {
             SqlxConfigRepository,
         >,
     >,
+    /// Credential refresh service (shared between monitor + API).
+    pub credential_service: Arc<crate::credentials::CredentialRefreshService<SqlxConfigRepository>>,
     /// API server configuration.
     api_server_config: ApiServerConfig,
     /// Cancellation token for graceful shutdown.
@@ -158,13 +165,26 @@ impl ServiceContainer {
         ));
 
         // Create stream monitor for real status detection
-        let stream_monitor = Arc::new(StreamMonitor::new(
+        let mut stream_monitor = StreamMonitor::new(
             streamer_manager.clone(),
             filter_repo,
             session_repo.clone(),
             config_service.clone(),
             pool.clone(),
-        ));
+        );
+
+        // Build credential refresh service (shared between StreamMonitor + API).
+        let credential_resolver = Arc::new(CredentialResolver::new(config_repo.clone()));
+        let credential_store = Arc::new(SqlxCredentialStore::new(pool.clone()));
+        let mut credential_service =
+            CredentialRefreshService::new(credential_resolver, credential_store);
+        match BilibiliCredentialManager::new(reqwest::Client::new()) {
+            Ok(manager) => credential_service.register_manager(Arc::new(manager)),
+            Err(e) => warn!(error = %e, "Failed to init bilibili credential manager; skipping"),
+        }
+        let credential_service = Arc::new(credential_service);
+        stream_monitor.set_credential_service(Arc::clone(&credential_service));
+        let stream_monitor = Arc::new(stream_monitor);
 
         // Create download manager with default config, overridden by global config.
         let download_config = DownloadManagerConfig {
@@ -268,6 +288,7 @@ impl ServiceContainer {
             maintenance_scheduler,
             scheduler,
             stream_monitor,
+            credential_service,
             api_server_config: ApiServerConfig::from_env_or_default(),
             cancellation_token,
             logging_config: std::sync::OnceLock::new(),
@@ -316,13 +337,26 @@ impl ServiceContainer {
         ));
 
         // Create stream monitor for real status detection
-        let stream_monitor = Arc::new(StreamMonitor::new(
+        let mut stream_monitor = StreamMonitor::new(
             streamer_manager.clone(),
             filter_repo,
             session_repo.clone(),
             config_service.clone(),
             pool.clone(),
-        ));
+        );
+
+        // Build credential refresh service (shared between StreamMonitor + API).
+        let credential_resolver = Arc::new(CredentialResolver::new(config_repo.clone()));
+        let credential_store = Arc::new(SqlxCredentialStore::new(pool.clone()));
+        let mut credential_service =
+            CredentialRefreshService::new(credential_resolver, credential_store);
+        match BilibiliCredentialManager::new(reqwest::Client::new()) {
+            Ok(manager) => credential_service.register_manager(Arc::new(manager)),
+            Err(e) => warn!(error = %e, "Failed to init bilibili credential manager; skipping"),
+        }
+        let credential_service = Arc::new(credential_service);
+        stream_monitor.set_credential_service(Arc::clone(&credential_service));
+        let stream_monitor = Arc::new(stream_monitor);
 
         // Create download manager with custom config, overridden by global config for concurrency.
         let mut effective_download_config = download_config.clone();
@@ -425,6 +459,7 @@ impl ServiceContainer {
             maintenance_scheduler,
             scheduler,
             stream_monitor,
+            credential_service,
             api_server_config: api_config,
             cancellation_token,
             logging_config: std::sync::OnceLock::new(),
@@ -548,6 +583,9 @@ impl ServiceContainer {
 
         // Wire HealthChecker into AppState for health endpoints
         state = state.with_health_checker(self.health_checker.clone());
+
+        // Wire credential refresh service into AppState for API endpoints.
+        state = state.with_credential_service(self.credential_service.clone());
 
         // Wire SessionRepository, FilterRepository, and PipelinePresetRepository into AppState
         state = state

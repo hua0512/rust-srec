@@ -13,6 +13,10 @@ use crate::api::models::{
     SessionResponse, StreamerResponse, TemplateResponse, UpdateFilterRequest,
     UpdateGlobalConfigRequest, UpdatePriorityRequest, UpdateStreamerRequest, UpdateTemplateRequest,
 };
+use crate::api::routes::credentials::{
+    CredentialRefreshResponse, CredentialSaveScope, CredentialSourceResponse, QrGenerateApiResponse,
+    QrPollApiResponse, QrPollRequest,
+};
 use crate::api::routes::auth::{
     ChangePasswordRequest, LoginRequest, LoginResponse, LogoutRequest, RefreshRequest,
 };
@@ -81,6 +85,8 @@ pub struct MessageResponse {
         (name = "notifications", description = "Notification channel management endpoints"),
         (name = "job", description = "Job preset management endpoints"),
         (name = "export_import", description = "Configuration backup and restore endpoints")
+        ,
+        (name = "credentials", description = "Credential refresh and provenance endpoints")
     ),
     paths(
         // Health endpoints
@@ -190,6 +196,15 @@ pub struct MessageResponse {
         // Export/Import endpoints
         crate::api::routes::export_import::export_config,
         crate::api::routes::export_import::import_config,
+        // Credentials endpoints
+        crate::api::routes::credentials::get_streamer_credential_source,
+        crate::api::routes::credentials::refresh_streamer_credentials,
+        crate::api::routes::credentials::get_platform_credential_source,
+        crate::api::routes::credentials::refresh_platform_credentials,
+        crate::api::routes::credentials::get_template_credential_source,
+        crate::api::routes::credentials::refresh_template_credentials,
+        crate::api::routes::credentials::bilibili_qr_generate,
+        crate::api::routes::credentials::bilibili_qr_poll,
     ),
     components(
         schemas(
@@ -270,6 +285,13 @@ pub struct MessageResponse {
             ImportMode,
             ImportResult,
             ImportStats,
+            // Credentials schemas
+            CredentialSourceResponse,
+            CredentialRefreshResponse,
+            QrGenerateApiResponse,
+            CredentialSaveScope,
+            QrPollRequest,
+            QrPollApiResponse,
             // Pipeline DAG schemas
             CreatePipelineRequest,
             CreatePipelineResponse,

@@ -259,16 +259,16 @@ pub async fn list_streamers(
                 let state_order = |s: &StreamerState| -> u8 {
                     match s {
                         StreamerState::Live => 0,
-                        StreamerState::InspectingLive => 1,
-                        StreamerState::NotLive => 2,
-                        StreamerState::OutOfSchedule => 3,
-                        StreamerState::Error => 4,
-                        StreamerState::FatalError => 5,
-                        StreamerState::OutOfSpace => 6,
-                        StreamerState::NotFound => 7,
-                        StreamerState::TemporalDisabled => 8,
-                        StreamerState::Cancelled => 9,
-                        StreamerState::Disabled => 10,
+                        StreamerState::Error => 1,
+                        StreamerState::FatalError => 2,
+                        StreamerState::OutOfSpace => 3,
+                        StreamerState::NotFound => 4,
+                        StreamerState::TemporalDisabled => 5,
+                        StreamerState::InspectingLive => 6,
+                        StreamerState::OutOfSchedule => 7,
+                        StreamerState::Cancelled => 8,
+                        StreamerState::Disabled => 9,
+                        StreamerState::NotLive => 10,
                     }
                 };
                 state_order(&a.state)

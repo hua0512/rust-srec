@@ -1,6 +1,6 @@
 [package]
 name = "platforms-parser"
-version = "0.1.9"
+version = "0.1.10"
 edition = "2024"
 description = "A library for extracting streaming data from various online platforms."
 repository = "https://github.com/hua0512/rust-srec"
@@ -48,6 +48,11 @@ async-trait = "0.1.89"
 tars-codec = { path = "../tars-codec"}
 rustc-hash = { version = "2.1" }
 rand = "0.9.1"
+
+# RSA for Bilibili cookie refresh
+rsa = { version = "0.9", features = ["sha2"] }
+sha2 = "0.10"
+hex = "0.4"
 
 # JavaScript engine
 rquickjs = { version = "0.10.0", optional = true, features = ["full-async"] }

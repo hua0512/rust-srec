@@ -86,6 +86,18 @@ export function TemplateEditor({
         },
   });
 
+  const platformOverrides = form.watch('platform_overrides');
+  const platformOverrideKeys =
+    platformOverrides && typeof platformOverrides === 'object'
+      ? Object.keys(platformOverrides as Record<string, unknown>)
+      : [];
+  const credentialPlatformNameHint =
+    platformOverrideKeys.length === 1
+      ? platformOverrideKeys[0]
+      : platformOverrideKeys.includes('bilibili')
+        ? 'bilibili'
+        : undefined;
+
   return (
     <Form {...form}>
       <form
@@ -183,6 +195,10 @@ export function TemplateEditor({
               sessionCompletePipeline: 'session_complete_pipeline',
               pairedSegmentPipeline: 'paired_segment_pipeline',
             }}
+            credentialScope={
+              template ? { type: 'template', id: template.id } : undefined
+            }
+            credentialPlatformNameHint={credentialPlatformNameHint}
             proxyMode="object"
             configMode="object"
             extraTabs={[
