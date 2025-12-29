@@ -109,6 +109,7 @@ pub struct GlobalConfigExport {
     pub session_complete_pipeline: Option<serde_json::Value>,
     pub paired_segment_pipeline: Option<serde_json::Value>,
     pub log_filter_directive: Option<String>,
+    pub auto_thumbnail: bool,
 }
 
 /// Template for export (uses name as identifier).
@@ -453,6 +454,7 @@ pub async fn export_config(State(state): State<AppState>) -> Result<impl IntoRes
             session_complete_pipeline: global_config.session_complete_pipeline.map(parse_db_config),
             paired_segment_pipeline: global_config.paired_segment_pipeline.map(parse_db_config),
             log_filter_directive: Some(global_config.log_filter_directive),
+            auto_thumbnail: global_config.auto_thumbnail,
         },
         templates: templates
             .iter()
@@ -656,6 +658,7 @@ pub async fn import_config(
     if let Some(log_filter) = config.global_config.log_filter_directive {
         global.log_filter_directive = log_filter;
     }
+    global.auto_thumbnail = config.global_config.auto_thumbnail;
 
     config_service
         .update_global_config(&global)
@@ -1321,6 +1324,7 @@ mod tests {
             session_complete_pipeline: None,
             paired_segment_pipeline: None,
             log_filter_directive: Some("rust_srec=debug".to_string()),
+            auto_thumbnail: false,
         };
         let json = serde_json::to_string(&export).unwrap();
         assert!(json.contains("rust_srec=debug"));
