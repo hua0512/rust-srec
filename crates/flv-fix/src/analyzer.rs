@@ -7,7 +7,7 @@ use flv::{
 };
 
 use std::fmt;
-use tracing::{debug, error, trace};
+use tracing::{debug, trace};
 
 use crate::operators::MIN_INTERVAL_BETWEEN_KEYFRAMES_MS;
 use crate::utils::{FLV_HEADER_SIZE, FLV_PREVIOUS_TAG_SIZE, FLV_TAG_HEADER_SIZE};
@@ -535,7 +535,11 @@ impl FlvAnalyzer {
                 if let Some(resolution) = tag.get_video_resolution() {
                     video_stats.resolution = Some(resolution);
                 } else {
-                    error!("Failed to get video resolution");
+                    debug!(
+                        ts_ms = tag.timestamp_ms,
+                        len = tag.data.len(),
+                        "Video sequence header present but resolution could not be parsed"
+                    );
                 }
             }
 
@@ -544,7 +548,11 @@ impl FlvAnalyzer {
                 if let Some(codec_id) = tag.get_video_codec_id() {
                     video_stats.video_codec = Some(codec_id);
                 } else {
-                    error!("Failed to get video codec id");
+                    debug!(
+                        ts_ms = tag.timestamp_ms,
+                        len = tag.data.len(),
+                        "Video sequence header present but codec id could not be parsed"
+                    );
                 }
             }
 

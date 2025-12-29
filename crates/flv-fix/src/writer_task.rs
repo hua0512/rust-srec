@@ -217,7 +217,25 @@ impl FormatStrategy<FlvData> for FlvFormatStrategy {
                         tracing::info!(path = %path_buf.display(), "Successfully injected stats in background task");
                     }
                     Err(e) => {
-                        tracing::warn!(path = %path_buf.display(), error = ?e, "Failed to inject stats into script data section in background task");
+                        // The consumer may delete discarded/small segments immediately after close.
+                        // Treat a missing file as an expected race rather than a warning.
+                        match &e {
+                            script_modifier::ScriptModifierError::Io(ioe)
+                                if ioe.kind() == std::io::ErrorKind::NotFound =>
+                            {
+                                tracing::debug!(
+                                    path = %path_buf.display(),
+                                    "Skipping stats injection: file no longer exists"
+                                );
+                            }
+                            _ => {
+                                tracing::warn!(
+                                    path = %path_buf.display(),
+                                    error = ?e,
+                                    "Failed to inject stats into script data section in background task"
+                                );
+                            }
+                        }
                     }
                 }
 

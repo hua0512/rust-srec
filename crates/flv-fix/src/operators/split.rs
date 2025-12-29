@@ -46,6 +46,12 @@ struct StreamState {
     video_sequence_tag: Option<FlvTag>,
     video_crc: Option<u32>,
     audio_crc: Option<u32>,
+    /// Whether we've emitted any non-header/non-metadata/non-sequence *media* tag since the last
+    /// header injection.
+    ///
+    /// This helps avoid creating an initial "empty segment" when upstream sends multiple sequence
+    /// headers before the first media tag.
+    has_emitted_media_tag: bool,
     changed: bool,
     buffered_metadata: bool,
     buffered_audio_sequence_tag: bool,
@@ -61,6 +67,7 @@ impl StreamState {
             video_sequence_tag: None,
             video_crc: None,
             audio_crc: None,
+            has_emitted_media_tag: false,
             changed: false,
             buffered_metadata: false,
             buffered_audio_sequence_tag: false,
@@ -75,6 +82,7 @@ impl StreamState {
         self.video_sequence_tag = None;
         self.video_crc = None;
         self.audio_crc = None;
+        self.has_emitted_media_tag = false;
         self.changed = false;
         self.buffered_metadata = false;
         self.buffered_audio_sequence_tag = false;
@@ -127,6 +135,7 @@ impl SplitOperator {
         self.state.buffered_metadata = false;
         self.state.buffered_audio_sequence_tag = false;
         self.state.buffered_video_sequence_tag = false;
+        self.state.has_emitted_media_tag = false;
         info!("{} Stream split", self.context.name);
         Ok(())
     }
@@ -233,6 +242,7 @@ impl Processor<FlvData> for SplitOperator {
 
                     // First regular tag after a pending change: split now, then emit the tag.
                     self.split_stream(output)?;
+                    self.state.has_emitted_media_tag = true;
                     return output(FlvData::Tag(tag));
                 }
 
@@ -249,12 +259,23 @@ impl Processor<FlvData> for SplitOperator {
                     if let Some(prev_crc) = self.state.video_crc
                         && prev_crc != crc
                     {
-                        info!(
-                            "{} Video sequence header changed (CRC: {:x} -> {:x}), marking for split",
-                            self.context.name, prev_crc, crc
-                        );
-                        self.state.changed = true;
-                        self.state.buffered_video_sequence_tag = true;
+                        // If the stream hasn't produced any media tags yet, upstream may still be
+                        // negotiating/settling the initial codec configuration (common right at
+                        // stream start). Splitting here creates an "empty" first segment consisting
+                        // only of headers/sequence tags.
+                        if self.state.has_emitted_media_tag {
+                            info!(
+                                "{} Video sequence header changed (CRC: {:x} -> {:x}), marking for split",
+                                self.context.name, prev_crc, crc
+                            );
+                            self.state.changed = true;
+                            self.state.buffered_video_sequence_tag = true;
+                        } else {
+                            debug!(
+                                "{} Video sequence header changed before first media tag (CRC: {:x} -> {:x}); treating as initial config update (no split)",
+                                self.context.name, prev_crc, crc
+                            );
+                        }
                     }
                     self.state.video_sequence_tag = Some(tag.clone());
                     self.state.video_crc = Some(crc);
@@ -274,12 +295,19 @@ impl Processor<FlvData> for SplitOperator {
                     if let Some(prev_crc) = self.state.audio_crc
                         && prev_crc != crc
                     {
-                        info!(
-                            "{} Audio parameters changed: {:x} -> {:x}",
-                            self.context.name, prev_crc, crc
-                        );
-                        self.state.changed = true;
-                        self.state.buffered_audio_sequence_tag = true;
+                        if self.state.has_emitted_media_tag {
+                            info!(
+                                "{} Audio parameters changed: {:x} -> {:x}",
+                                self.context.name, prev_crc, crc
+                            );
+                            self.state.changed = true;
+                            self.state.buffered_audio_sequence_tag = true;
+                        } else {
+                            debug!(
+                                "{} Audio sequence header changed before first media tag (CRC: {:x} -> {:x}); treating as initial config update (no split)",
+                                self.context.name, prev_crc, crc
+                            );
+                        }
                     }
                     self.state.audio_sequence_tag = Some(tag.clone());
                     self.state.audio_crc = Some(crc);
@@ -295,6 +323,7 @@ impl Processor<FlvData> for SplitOperator {
                 if self.state.changed {
                     self.split_stream(output)?;
                 }
+                self.state.has_emitted_media_tag = true;
                 output(FlvData::Tag(tag))
             }
         }
@@ -317,7 +346,7 @@ impl Processor<FlvData> for SplitOperator {
 }
 
 #[cfg(test)]
-mod tests {
+    mod tests {
     use bytes::Bytes;
     use pipeline_common::{CancellationToken, StreamerContext};
 
@@ -672,6 +701,44 @@ mod tests {
         assert!(
             last_tag_idx < eos_idx,
             "Expected buffered tags to flush before EndOfSequence"
+        );
+    }
+
+    #[test]
+    fn test_no_split_when_sequence_header_changes_before_first_media_tag() {
+        let context = StreamerContext::arc_new(CancellationToken::new());
+        let mut operator = SplitOperator::new(context.clone());
+        let mut output_items = Vec::new();
+
+        let mut output_fn = |item: FlvData| -> Result<(), PipelineError> {
+            output_items.push(item);
+            Ok(())
+        };
+
+        operator
+            .process(&context, create_test_header(), &mut output_fn)
+            .unwrap();
+        operator
+            .process(&context, create_video_sequence_header(0, 1), &mut output_fn)
+            .unwrap();
+        // Upstream re-sends/changes sequence header before any media tags.
+        operator
+            .process(&context, create_video_sequence_header(0, 2), &mut output_fn)
+            .unwrap();
+
+        // First media tag arrives.
+        operator
+            .process(&context, create_video_tag(100, true), &mut output_fn)
+            .unwrap();
+
+        let header_count = output_items
+            .iter()
+            .filter(|item| matches!(item, FlvData::Header(_)))
+            .count();
+
+        assert_eq!(
+            header_count, 1,
+            "Should not inject a new header before first media tag"
         );
     }
 }

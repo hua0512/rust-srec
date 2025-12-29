@@ -3,7 +3,7 @@ use std::fmt;
 use byteorder::{BigEndian, ReadBytesExt};
 use bytes::{Buf, Bytes};
 use bytes_util::BytesCursorExt;
-use tracing::error;
+use tracing::{debug, trace};
 
 use crate::audio::SoundFormat;
 use crate::resolution::Resolution;
@@ -344,6 +344,16 @@ impl FlvTag {
             return None;
         }
 
+        // Best-effort parsing: avoid noisy demux errors for truncated/placeholder tags.
+        // (The AVC/HEVC header alone is already >= 5 bytes; anything shorter can't be parsed.)
+        if self.data.len() < 5 {
+            trace!(
+                len = self.data.len(),
+                "Video tag too small for resolution parsing"
+            );
+            return None;
+        }
+
         let data = self.data.clone();
         let mut reader = std::io::Cursor::new(data);
         // parse to owned version
@@ -359,7 +369,11 @@ impl FlvTag {
                 })
             }
             Err(e) => {
-                error!("Error parsing demuxing data: {}", e);
+                debug!(
+                    len = self.data.len(),
+                    error = %e,
+                    "Failed to demux video tag while extracting resolution"
+                );
                 None
             }
         }
