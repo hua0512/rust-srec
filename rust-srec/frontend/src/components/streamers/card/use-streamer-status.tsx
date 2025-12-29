@@ -31,6 +31,7 @@ export function useStreamerStatus(streamer: z.infer<typeof StreamerSchema>) {
       if (state === 'LIVE') return <Trans>Live</Trans>;
       if (state === 'INSPECTING_LIVE') return <Trans>Inspecting</Trans>;
       if (state === 'OUT_OF_SCHEDULE') return <Trans>Scheduled</Trans>;
+      if (state === 'NOT_FOUND') return <Trans>Not Found</Trans>;
       return (
         state.charAt(0).toUpperCase() +
         state.slice(1).toLowerCase().replace(/_/g, ' ')
@@ -44,7 +45,7 @@ export function useStreamerStatus(streamer: z.infer<typeof StreamerSchema>) {
     // During SSR (now === null), rely only on state field
     const isTemporarilyPaused = now
       ? (disabledUntil && disabledUntil > now) ||
-        streamer.state === 'TEMPORAL_DISABLED'
+      streamer.state === 'TEMPORAL_DISABLED'
       : streamer.state === 'TEMPORAL_DISABLED';
 
     const stopStates = [

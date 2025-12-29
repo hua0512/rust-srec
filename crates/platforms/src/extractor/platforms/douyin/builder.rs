@@ -525,8 +525,8 @@ impl<'a> DouyinRequest<'a> {
         }
 
         if let Some(user) = &response.data.user {
-            if self.is_account_banned(user) {
-                return Err(ExtractorError::StreamerBanned);
+            if self.is_account_cancelled(user) {
+                return Err(ExtractorError::StreamerNotFound);
             }
         } else {
             let msg = response
@@ -556,8 +556,8 @@ impl<'a> DouyinRequest<'a> {
             )));
         }
         if let Some(user) = &response.data.user {
-            if self.is_account_banned(user) {
-                return Err(ExtractorError::StreamerBanned);
+            if self.is_account_cancelled(user) {
+                return Err(ExtractorError::StreamerNotFound);
             }
         } else {
             let msg = response.data.message.as_ref().unwrap_or(&"Unknown error");
@@ -645,7 +645,7 @@ impl<'a> DouyinRequest<'a> {
         )
     }
 
-    fn is_account_banned(&self, user: &DouyinUserInfo) -> bool {
+    fn is_account_cancelled(&self, user: &DouyinUserInfo) -> bool {
         user.nickname == "账号已注销"
             && user
                 .avatar_thumb
@@ -1181,7 +1181,7 @@ mod tests {
                 url_list: vec!["http://example.com/aweme_default_avatar.png".into()],
             },
         };
-        assert!(request.is_account_banned(&banned_user));
+        assert!(request.is_account_cancelled(&banned_user));
 
         let active_user = DouyinUserInfo {
             id_str: "2",
@@ -1191,7 +1191,7 @@ mod tests {
                 url_list: vec!["http://example.com/real_avatar.png".into()],
             },
         };
-        assert!(!request.is_account_banned(&active_user));
+        assert!(!request.is_account_cancelled(&active_user));
     }
 
     #[test]

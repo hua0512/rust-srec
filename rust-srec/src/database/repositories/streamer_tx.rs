@@ -169,9 +169,11 @@ impl StreamerTxOps {
         tx: &mut SqliteConnection,
         streamer_id: &str,
         state: &str,
+        reason: &str,
     ) -> Result<u64> {
-        let result = sqlx::query("UPDATE streamers SET state = ? WHERE id = ?")
+        let result = sqlx::query("UPDATE streamers SET state = ?, last_error = ? WHERE id = ?")
             .bind(state)
+            .bind(reason)
             .bind(streamer_id)
             .execute(tx)
             .await?;

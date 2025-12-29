@@ -1,3 +1,4 @@
+import * as React from 'react';
 import { ChevronLeft } from 'lucide-react';
 
 import { cn } from '@/lib/utils';
@@ -8,7 +9,10 @@ interface SidebarToggleProps {
   setIsOpen?: () => void;
 }
 
-export function SidebarToggle({ isOpen, setIsOpen }: SidebarToggleProps) {
+export const SidebarToggle = React.memo(function SidebarToggle({
+  isOpen,
+  setIsOpen,
+}: SidebarToggleProps) {
   return (
     <div className="invisible lg:visible absolute top-[12px] -right-[16px] z-20">
       <Button
@@ -26,4 +30,4 @@ export function SidebarToggle({ isOpen, setIsOpen }: SidebarToggleProps) {
       </Button>
     </div>
   );
-}
+});

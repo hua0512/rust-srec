@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { memo, useState } from 'react';
 import { ChevronDown, Dot, LucideIcon } from 'lucide-react';
 import { Link, useLocation } from '@tanstack/react-router';
 
@@ -14,7 +14,6 @@ import {
   Tooltip,
   TooltipTrigger,
   TooltipContent,
-  TooltipProvider,
 } from '@/components/ui/tooltip';
 import {
   DropdownMenu,
@@ -40,7 +39,7 @@ interface CollapseMenuButtonProps {
   isOpen: boolean | undefined;
 }
 
-export function CollapseMenuButton({
+export const CollapseMenuButton = memo(function CollapseMenuButton({
   icon: Icon,
   label,
   active: _active,
@@ -101,8 +100,8 @@ export function CollapseMenuButton({
             className={cn(
               'w-full justify-start h-9 mb-1 transition-all duration-200 group relative overflow-hidden px-4',
               (active === undefined && pathname === href) || active
-                ? 'text-primary bg-primary/5 font-semibold'
-                : 'text-muted-foreground/70 hover:bg-muted/30 hover:text-foreground',
+                ? 'bg-primary/10 text-primary hover:bg-primary/15 hover:text-primary font-semibold'
+                : 'text-muted-foreground/70 hover:bg-muted/50 hover:text-foreground',
             )}
             asChild
           >
@@ -131,34 +130,32 @@ export function CollapseMenuButton({
     </Collapsible>
   ) : (
     <DropdownMenu>
-      <TooltipProvider disableHoverableContent>
-        <Tooltip delayDuration={100}>
-          <TooltipTrigger asChild>
-            <DropdownMenuTrigger asChild>
-              <Button
-                variant="ghost"
-                className={cn(
-                  'w-full h-11 mb-1 transition-all duration-200 group relative overflow-hidden justify-center',
-                  isSubmenuActive
-                    ? 'bg-primary/10 text-primary hover:bg-primary/15 hover:text-primary shadow-sm shadow-primary/5'
-                    : 'text-muted-foreground hover:bg-muted/50 hover:text-foreground',
-                )}
-              >
-                {isSubmenuActive && (
-                  <div className="absolute left-0 top-1/2 -translate-y-1/2 w-1.5 h-6 bg-primary rounded-r-full" />
-                )}
-                <span className="transition-transform duration-200 group-hover:scale-110 shrink-0">
-                  <Icon size={18} strokeWidth={isSubmenuActive ? 2.5 : 2} />
-                </span>
-                <p className="opacity-0 w-0 pointer-events-none">{label}</p>
-              </Button>
-            </DropdownMenuTrigger>
-          </TooltipTrigger>
-          <TooltipContent side="right" align="start" alignOffset={2}>
-            {label}
-          </TooltipContent>
-        </Tooltip>
-      </TooltipProvider>
+      <Tooltip delayDuration={100}>
+        <TooltipTrigger asChild>
+          <DropdownMenuTrigger asChild>
+            <Button
+              variant="ghost"
+              className={cn(
+                'w-full h-11 mb-1 transition-all duration-200 group relative overflow-hidden justify-center',
+                isSubmenuActive
+                  ? 'bg-primary/10 text-primary hover:bg-primary/15 hover:text-primary shadow-sm shadow-primary/5'
+                  : 'text-muted-foreground hover:bg-muted/50 hover:text-foreground',
+              )}
+            >
+              {isSubmenuActive && (
+                <div className="absolute left-0 top-1/2 -translate-y-1/2 w-1.5 h-6 bg-primary rounded-r-full" />
+              )}
+              <span className="transition-transform duration-200 group-hover:scale-110 shrink-0">
+                <Icon size={18} strokeWidth={isSubmenuActive ? 2.5 : 2} />
+              </span>
+              <p className="opacity-0 w-0 pointer-events-none">{label}</p>
+            </Button>
+          </DropdownMenuTrigger>
+        </TooltipTrigger>
+        <TooltipContent side="right" align="start" alignOffset={2}>
+          {label}
+        </TooltipContent>
+      </Tooltip>
       <DropdownMenuContent
         side="right"
         sideOffset={16}
@@ -179,7 +176,7 @@ export function CollapseMenuButton({
               className={cn(
                 'flex items-center w-full px-3 py-2 rounded-md cursor-pointer transition-all duration-200 group',
                 (active === undefined && pathname === href) || active
-                  ? 'bg-primary/10 text-primary font-medium'
+                  ? 'bg-primary/10 text-primary hover:bg-primary/15 hover:text-primary font-medium'
                   : 'text-foreground/80 hover:bg-muted/50 hover:text-foreground',
               )}
               to={href}
@@ -201,4 +198,4 @@ export function CollapseMenuButton({
       </DropdownMenuContent>
     </DropdownMenu>
   );
-}
+});

@@ -998,8 +998,9 @@ impl<
 
         let _ = SessionTxOps::end_active_session(&mut tx, &streamer.id, now).await?;
 
-        // Update state to the fatal error state
-        StreamerTxOps::set_fatal_error(&mut tx, &streamer.id, &new_state.to_string()).await?;
+        // Update state to the fatal error state and persist the reason
+        StreamerTxOps::set_fatal_error(&mut tx, &streamer.id, &new_state.to_string(), reason)
+            .await?;
 
         // Determine the fatal error type from the state
         let error_type = match new_state {

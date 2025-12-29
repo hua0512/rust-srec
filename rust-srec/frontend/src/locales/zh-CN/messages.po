@@ -862,7 +862,7 @@ msgstr "已触发检查"
 msgid "Checking"
 msgstr "检查中"
 
-#: src/components/streamers/card/use-streamer-status.tsx:184
+#: src/components/streamers/card/use-streamer-status.tsx:185
 msgid "Checking stream status..."
 msgstr "正在检查流状态..."
 
@@ -1982,7 +1982,7 @@ msgstr "条"
 msgid "Error"
 msgstr "错误"
 
-#: src/components/streamers/card/use-streamer-status.tsx:144
+#: src/components/streamers/card/use-streamer-status.tsx:145
 #: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.tsx:667
 msgid "Error Details"
 msgstr "错误详情"
@@ -2878,8 +2878,8 @@ msgid "Input Paths (comma separated)"
 msgstr "输入路径（逗号分隔）"
 
 #: src/components/streamers/card/use-streamer-status.tsx:32
-#: src/components/streamers/card/use-streamer-status.tsx:172
-#: src/components/streamers/card/use-streamer-status.tsx:181
+#: src/components/streamers/card/use-streamer-status.tsx:173
+#: src/components/streamers/card/use-streamer-status.tsx:182
 msgid "Inspecting"
 msgstr "检查中"
 
@@ -2985,7 +2985,7 @@ msgstr "语言"
 msgid "Language Settings"
 msgstr "语言设置"
 
-#: src/components/streamers/card/use-streamer-status.tsx:243
+#: src/components/streamers/card/use-streamer-status.tsx:244
 msgid "Last Activity"
 msgstr "最后活动"
 
@@ -2993,7 +2993,7 @@ msgstr "最后活动"
 msgid "Last Check"
 msgstr "最后检查"
 
-#: src/components/streamers/card/use-streamer-status.tsx:104
+#: src/components/streamers/card/use-streamer-status.tsx:105
 msgid "Last Error"
 msgstr "最后错误"
 
@@ -3032,7 +3032,7 @@ msgid "List"
 msgstr "列表"
 
 #: src/components/streamers/card/use-streamer-status.tsx:31
-#: src/components/streamers/card/use-streamer-status.tsx:159
+#: src/components/streamers/card/use-streamer-status.tsx:160
 #: src/components/streamers/edit/recent-sessions-list.tsx:65
 #: src/components/streamers/edit/streamer-header.tsx:62
 #: src/routes/_authed/_dashboard/sessions/index.tsx:187
@@ -3337,8 +3337,8 @@ msgstr "监控并管理处理任务"
 msgid "Monitor this streamer"
 msgstr "监控此主播"
 
-#: src/components/streamers/card/use-streamer-status.tsx:118
-#: src/components/streamers/card/use-streamer-status.tsx:127
+#: src/components/streamers/card/use-streamer-status.tsx:119
+#: src/components/streamers/card/use-streamer-status.tsx:128
 msgid "Monitoring Stopped"
 msgstr "已停止监控"
 
@@ -3673,6 +3673,10 @@ msgstr "正常"
 msgid "Not available"
 msgstr "不可用"
 
+#: src/components/streamers/card/use-streamer-status.tsx:34
+msgid "Not Found"
+msgstr "未找到主播"
+
 #: src/routes/_authed/_dashboard/system/health.tsx:330
 msgid "Notification Service"
 msgstr "通知服务"
@@ -3704,8 +3708,8 @@ msgid "OAuth Token"
 msgstr "OAuth 令牌"
 
 #: src/components/streamers/card/use-streamer-status.tsx:30
-#: src/components/streamers/card/use-streamer-status.tsx:229
-#: src/components/streamers/card/use-streamer-status.tsx:238
+#: src/components/streamers/card/use-streamer-status.tsx:230
+#: src/components/streamers/card/use-streamer-status.tsx:239
 #: src/components/streamers/edit/recent-sessions-list.tsx:63
 #: src/components/streamers/edit/streamer-header.tsx:64
 #: src/routes/_authed/_dashboard/streamers/index.tsx:64
@@ -3867,7 +3871,7 @@ msgstr "输出设置"
 msgid "Outputs"
 msgstr "输出"
 
-#: src/components/streamers/card/use-streamer-status.tsx:202
+#: src/components/streamers/card/use-streamer-status.tsx:203
 msgid "Outside Schedule"
 msgstr "不在计划时间内"
 
@@ -4508,7 +4512,7 @@ msgstr "实时日志"
 msgid "Real-time status of all system components and resources."
 msgstr "所有系统组件与资源的实时状态。"
 
-#: src/components/streamers/card/use-streamer-status.tsx:131
+#: src/components/streamers/card/use-streamer-status.tsx:132
 msgid "Reason"
 msgstr "原因"
 
@@ -4542,7 +4546,7 @@ msgstr "录制"
 msgid "Recording Filters"
 msgstr "录制过滤器"
 
-#: src/components/streamers/card/use-streamer-status.tsx:212
+#: src/components/streamers/card/use-streamer-status.tsx:213
 msgid "Recording will start when schedule allows"
 msgstr "录制将在计划允许时开始"
 
@@ -4678,7 +4682,7 @@ msgstr "重置密码"
 msgid "Resume"
 msgstr "继续"
 
-#: src/components/streamers/card/use-streamer-status.tsx:78
+#: src/components/streamers/card/use-streamer-status.tsx:79
 msgid "Resuming in"
 msgstr "将在…后恢复"
 
@@ -4788,7 +4792,7 @@ msgid "Rust regex syntax supported."
 msgstr "支持 Rust 正则语法。"
 
 #: src/components/sidebar/sheet-menu.tsx:33
-#: src/components/sidebar/sidebar.tsx:64
+#: src/components/sidebar/sidebar.tsx:75
 msgid "Rust-Srec"
 msgstr "Rust-Srec"
 
@@ -4860,7 +4864,7 @@ msgid "Schedule recording times"
 msgstr "安排录制时间"
 
 #: src/components/streamers/card/use-streamer-status.tsx:33
-#: src/components/streamers/card/use-streamer-status.tsx:193
+#: src/components/streamers/card/use-streamer-status.tsx:194
 msgid "Scheduled"
 msgstr "已计划"
 
@@ -5151,8 +5155,8 @@ msgstr "显示密码"
 msgid "Sign In"
 msgstr "登录"
 
-#: src/components/sidebar/menu.tsx:176
-#: src/components/sidebar/menu.tsx:183
+#: src/components/sidebar/menu.tsx:123
+#: src/components/sidebar/menu.tsx:130
 msgid "Sign out"
 msgstr "退出登录"
 
@@ -5349,7 +5353,7 @@ msgstr "主播 ID"
 msgid "Streamer ID is required"
 msgstr "主播 ID 是必需的"
 
-#: src/components/streamers/card/use-streamer-status.tsx:72
+#: src/components/streamers/card/use-streamer-status.tsx:73
 msgid "Streamer is on cooldown"
 msgstr "主播处于冷却期"
 
@@ -5505,8 +5509,8 @@ msgstr "模板"
 msgid "Templates"
 msgstr "模板"
 
-#: src/components/streamers/card/use-streamer-status.tsx:62
-#: src/components/streamers/card/use-streamer-status.tsx:71
+#: src/components/streamers/card/use-streamer-status.tsx:63
+#: src/components/streamers/card/use-streamer-status.tsx:72
 msgid "Temporarily Paused"
 msgstr "暂时暂停"
 
@@ -5576,7 +5580,7 @@ msgstr "此步骤是一个子工作流：<0>{workflowName}</0>。"
 msgid "This step is linked to the preset <0>{presetName}</0>."
 msgstr "此步骤已关联到预设 <0>{presetName}</0>。"
 
-#: src/components/streamers/card/use-streamer-status.tsx:205
+#: src/components/streamers/card/use-streamer-status.tsx:206
 msgid "This streamer is currently live, but outside your configured recording schedule."
 msgstr "该主播当前正在直播，但不在你配置的录制时间表内。"
 
@@ -5879,7 +5883,7 @@ msgstr "未知引擎 ID：{engineId}"
 msgid "Unknown File"
 msgstr "未知文件"
 
-#: src/components/streamers/card/use-streamer-status.tsx:93
+#: src/components/streamers/card/use-streamer-status.tsx:94
 msgid "Until"
 msgstr "直到"
 

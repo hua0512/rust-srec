@@ -862,7 +862,7 @@ msgstr "Check triggered"
 msgid "Checking"
 msgstr "Checking"
 
-#: src/components/streamers/card/use-streamer-status.tsx:184
+#: src/components/streamers/card/use-streamer-status.tsx:185
 msgid "Checking stream status..."
 msgstr "Checking stream status..."
 
@@ -1982,7 +1982,7 @@ msgstr "entries"
 msgid "Error"
 msgstr "Error"
 
-#: src/components/streamers/card/use-streamer-status.tsx:144
+#: src/components/streamers/card/use-streamer-status.tsx:145
 #: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.tsx:667
 msgid "Error Details"
 msgstr "Error Details"
@@ -2878,8 +2878,8 @@ msgid "Input Paths (comma separated)"
 msgstr "Input Paths (comma separated)"
 
 #: src/components/streamers/card/use-streamer-status.tsx:32
-#: src/components/streamers/card/use-streamer-status.tsx:172
-#: src/components/streamers/card/use-streamer-status.tsx:181
+#: src/components/streamers/card/use-streamer-status.tsx:173
+#: src/components/streamers/card/use-streamer-status.tsx:182
 msgid "Inspecting"
 msgstr "Inspecting"
 
@@ -2985,7 +2985,7 @@ msgstr "Language"
 msgid "Language Settings"
 msgstr "Language Settings"
 
-#: src/components/streamers/card/use-streamer-status.tsx:243
+#: src/components/streamers/card/use-streamer-status.tsx:244
 msgid "Last Activity"
 msgstr "Last Activity"
 
@@ -2993,7 +2993,7 @@ msgstr "Last Activity"
 msgid "Last Check"
 msgstr "Last Check"
 
-#: src/components/streamers/card/use-streamer-status.tsx:104
+#: src/components/streamers/card/use-streamer-status.tsx:105
 msgid "Last Error"
 msgstr "Last Error"
 
@@ -3032,7 +3032,7 @@ msgid "List"
 msgstr "List"
 
 #: src/components/streamers/card/use-streamer-status.tsx:31
-#: src/components/streamers/card/use-streamer-status.tsx:159
+#: src/components/streamers/card/use-streamer-status.tsx:160
 #: src/components/streamers/edit/recent-sessions-list.tsx:65
 #: src/components/streamers/edit/streamer-header.tsx:62
 #: src/routes/_authed/_dashboard/sessions/index.tsx:187
@@ -3337,8 +3337,8 @@ msgstr "Monitor and manage processing jobs"
 msgid "Monitor this streamer"
 msgstr "Monitor this streamer"
 
-#: src/components/streamers/card/use-streamer-status.tsx:118
-#: src/components/streamers/card/use-streamer-status.tsx:127
+#: src/components/streamers/card/use-streamer-status.tsx:119
+#: src/components/streamers/card/use-streamer-status.tsx:128
 msgid "Monitoring Stopped"
 msgstr "Monitoring Stopped"
 
@@ -3673,6 +3673,10 @@ msgstr "Normal"
 msgid "Not available"
 msgstr "Not available"
 
+#: src/components/streamers/card/use-streamer-status.tsx:34
+msgid "Not Found"
+msgstr "Not Found"
+
 #: src/routes/_authed/_dashboard/system/health.tsx:330
 msgid "Notification Service"
 msgstr "Notification Service"
@@ -3704,8 +3708,8 @@ msgid "OAuth Token"
 msgstr "OAuth Token"
 
 #: src/components/streamers/card/use-streamer-status.tsx:30
-#: src/components/streamers/card/use-streamer-status.tsx:229
-#: src/components/streamers/card/use-streamer-status.tsx:238
+#: src/components/streamers/card/use-streamer-status.tsx:230
+#: src/components/streamers/card/use-streamer-status.tsx:239
 #: src/components/streamers/edit/recent-sessions-list.tsx:63
 #: src/components/streamers/edit/streamer-header.tsx:64
 #: src/routes/_authed/_dashboard/streamers/index.tsx:64
@@ -3867,7 +3871,7 @@ msgstr "Output Settings"
 msgid "Outputs"
 msgstr "Outputs"
 
-#: src/components/streamers/card/use-streamer-status.tsx:202
+#: src/components/streamers/card/use-streamer-status.tsx:203
 msgid "Outside Schedule"
 msgstr "Outside Schedule"
 
@@ -4508,7 +4512,7 @@ msgstr "Real-Time Logs"
 msgid "Real-time status of all system components and resources."
 msgstr "Real-time status of all system components and resources."
 
-#: src/components/streamers/card/use-streamer-status.tsx:131
+#: src/components/streamers/card/use-streamer-status.tsx:132
 msgid "Reason"
 msgstr "Reason"
 
@@ -4542,7 +4546,7 @@ msgstr "Recording"
 msgid "Recording Filters"
 msgstr "Recording Filters"
 
-#: src/components/streamers/card/use-streamer-status.tsx:212
+#: src/components/streamers/card/use-streamer-status.tsx:213
 msgid "Recording will start when schedule allows"
 msgstr "Recording will start when schedule allows"
 
@@ -4678,7 +4682,7 @@ msgstr "Restore password"
 msgid "Resume"
 msgstr "Resume"
 
-#: src/components/streamers/card/use-streamer-status.tsx:78
+#: src/components/streamers/card/use-streamer-status.tsx:79
 msgid "Resuming in"
 msgstr "Resuming in"
 
@@ -4788,7 +4792,7 @@ msgid "Rust regex syntax supported."
 msgstr "Rust regex syntax supported."
 
 #: src/components/sidebar/sheet-menu.tsx:33
-#: src/components/sidebar/sidebar.tsx:64
+#: src/components/sidebar/sidebar.tsx:75
 msgid "Rust-Srec"
 msgstr "Rust-Srec"
 
@@ -4860,7 +4864,7 @@ msgid "Schedule recording times"
 msgstr "Schedule recording times"
 
 #: src/components/streamers/card/use-streamer-status.tsx:33
-#: src/components/streamers/card/use-streamer-status.tsx:193
+#: src/components/streamers/card/use-streamer-status.tsx:194
 msgid "Scheduled"
 msgstr "Scheduled"
 
@@ -5151,8 +5155,8 @@ msgstr "Show password"
 msgid "Sign In"
 msgstr "Sign In"
 
-#: src/components/sidebar/menu.tsx:176
-#: src/components/sidebar/menu.tsx:183
+#: src/components/sidebar/menu.tsx:123
+#: src/components/sidebar/menu.tsx:130
 msgid "Sign out"
 msgstr "Sign out"
 
@@ -5349,7 +5353,7 @@ msgstr "Streamer ID"
 msgid "Streamer ID is required"
 msgstr "Streamer ID is required"
 
-#: src/components/streamers/card/use-streamer-status.tsx:72
+#: src/components/streamers/card/use-streamer-status.tsx:73
 msgid "Streamer is on cooldown"
 msgstr "Streamer is on cooldown"
 
@@ -5505,8 +5509,8 @@ msgstr "templates"
 msgid "Templates"
 msgstr "Templates"
 
-#: src/components/streamers/card/use-streamer-status.tsx:62
-#: src/components/streamers/card/use-streamer-status.tsx:71
+#: src/components/streamers/card/use-streamer-status.tsx:63
+#: src/components/streamers/card/use-streamer-status.tsx:72
 msgid "Temporarily Paused"
 msgstr "Temporarily Paused"
 
@@ -5576,7 +5580,7 @@ msgstr "This step is a sub-workflow: <0>{workflowName}</0>."
 msgid "This step is linked to the preset <0>{presetName}</0>."
 msgstr "This step is linked to the preset <0>{presetName}</0>."
 
-#: src/components/streamers/card/use-streamer-status.tsx:205
+#: src/components/streamers/card/use-streamer-status.tsx:206
 msgid "This streamer is currently live, but outside your configured recording schedule."
 msgstr "This streamer is currently live, but outside your configured recording schedule."
 
@@ -5879,7 +5883,7 @@ msgstr "Unknown Engine ID: {engineId}"
 msgid "Unknown File"
 msgstr "Unknown File"
 
-#: src/components/streamers/card/use-streamer-status.tsx:93
+#: src/components/streamers/card/use-streamer-status.tsx:94
 msgid "Until"
 msgstr "Until"
 

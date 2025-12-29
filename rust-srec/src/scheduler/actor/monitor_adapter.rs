@@ -248,10 +248,6 @@ where
         for (streamer_id, status) in batch_result.results {
             let check_result = convert_live_status_to_check_result(&status);
 
-            // NOTE: We no longer call process_status() here.
-            // The StreamerActor will apply hysteresis via record_check() and
-            // call process_status() only if needed.
-
             results.push(BatchDetectionResult {
                 streamer_id,
                 result: check_result,
