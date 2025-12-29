@@ -5,15 +5,23 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { Trans } from '@lingui/react/macro';
 import { useLingui } from '@lingui/react';
 import { motion, AnimatePresence } from 'motion/react';
-import { formatBytes } from '@/lib/format';
-import { FileVideo, Download, Play, Video, MessageSquare } from 'lucide-react';
+import { formatBytes, formatDuration } from '@/lib/format';
+import {
+  FileVideo,
+  Download,
+  Play,
+  Video,
+  MessageSquare,
+  Timer,
+} from 'lucide-react';
 import { isPlayable } from '@/lib/media';
+import { MediaOutput } from '@/api/schemas/system';
 
 interface RecordingsTabProps {
   isLoading: boolean;
-  outputs: any[];
+  outputs: MediaOutput[];
   onDownload: (id: string, name: string) => void;
-  onPlay: (output: any) => void;
+  onPlay: (output: MediaOutput) => void;
 }
 
 export function RecordingsTab({
@@ -56,7 +64,7 @@ export function RecordingsTab({
           ) : (
             <div className="divide-y divide-border/40">
               <AnimatePresence mode="popLayout">
-                {outputs.map((output: any, index: number) => (
+                {outputs.map((output, index: number) => (
                   <motion.div
                     key={output.id}
                     initial={{ opacity: 0, x: -10 }}
@@ -90,8 +98,20 @@ export function RecordingsTab({
                               day: 'numeric',
                               hour: 'numeric',
                               minute: 'numeric',
+                              second: 'numeric',
                             })}
                           </span>
+                          {output.duration_secs && output.duration_secs > 0 && (
+                            <>
+                              <span>•</span>
+                              <span className="flex items-center gap-1">
+                                <Timer className="h-3 w-3 opacity-50" />
+                                {formatDuration(output.duration_secs, {
+                                  showSeconds: true,
+                                })}
+                              </span>
+                            </>
+                          )}
                         </div>
                       </div>
                     </div>

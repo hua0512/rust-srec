@@ -56,6 +56,8 @@ pub struct MergedConfig {
     pub paired_segment_pipeline: Option<DagPipelineDefinition>,
     // Platform-specific extractor options (merged from all layers)
     pub platform_extras: Option<serde_json::Value>,
+    /// Whether to automatically generate thumbnails for new sessions
+    pub auto_thumbnail: bool,
 }
 
 impl MergedConfig {
@@ -90,6 +92,7 @@ pub struct MergedConfigBuilder {
     session_complete_pipeline: Option<DagPipelineDefinition>,
     paired_segment_pipeline: Option<DagPipelineDefinition>,
     platform_extras: Option<serde_json::Value>,
+    auto_thumbnail: Option<bool>,
 }
 
 impl MergedConfigBuilder {
@@ -110,6 +113,7 @@ impl MergedConfigBuilder {
         pipeline: Option<DagPipelineDefinition>,
         session_complete_pipeline: Option<DagPipelineDefinition>,
         paired_segment_pipeline: Option<DagPipelineDefinition>,
+        auto_thumbnail: bool,
     ) -> Self {
         debug!(
             "[Layer 1: Global] Setting base config: output_folder={}, output_format={}, engine={}, record_danmu={}, session_gap={}s, pipeline_steps={}",
@@ -136,6 +140,7 @@ impl MergedConfigBuilder {
         self.pipeline = pipeline;
         self.session_complete_pipeline = session_complete_pipeline;
         self.paired_segment_pipeline = paired_segment_pipeline;
+        self.auto_thumbnail = Some(auto_thumbnail);
         self
     }
 
@@ -588,6 +593,7 @@ impl MergedConfigBuilder {
             session_complete_pipeline: self.session_complete_pipeline,
             paired_segment_pipeline: self.paired_segment_pipeline,
             platform_extras: self.platform_extras,
+            auto_thumbnail: self.auto_thumbnail.unwrap_or(true),
         }
     }
 }
@@ -615,6 +621,7 @@ mod tests {
                 None, // pipeline
                 None, // session_complete_pipeline
                 None, // paired_segment_pipeline
+                true,
             )
             .with_platform(
                 Some(60000),
@@ -661,6 +668,7 @@ mod tests {
                 None,
                 None,
                 None,
+                true,
             )
             .with_platform(
                 Some(60000),
@@ -753,6 +761,7 @@ mod tests {
                 )),
                 None,
                 None,
+                true,
             )
             .with_platform(
                 Some(60000),
@@ -819,6 +828,7 @@ mod tests {
                 None,
                 None,
                 None,
+                true,
             )
             .with_platform(
                 Some(60000),
@@ -885,6 +895,7 @@ mod tests {
                 None,
                 None,
                 None,
+                true,
             )
             .with_platform(
                 Some(60000),

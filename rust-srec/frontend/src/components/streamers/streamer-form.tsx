@@ -1,6 +1,6 @@
 import { useForm, SubmitHandler, Resolver } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
-import { PlatformConfigSchema } from '../../api/schemas';
+import { PlatformConfigSchema } from '@/api/schemas';
 import { useQuery } from '@tanstack/react-query';
 import {
   listPlatformConfigs,
@@ -8,9 +8,9 @@ import {
   extractMetadata,
   listEngines,
 } from '@/server/functions';
-import { Button } from '../ui/button';
+import { Button } from '@/components/ui/button';
 
-import { Form } from '../ui/form';
+import { Form } from '@/components/ui/form';
 import { z } from 'zod';
 import { Trans } from '@lingui/react/macro';
 import { Loader2, ArrowRight, ArrowLeft, Undo2 } from 'lucide-react';
@@ -20,9 +20,7 @@ import { StreamerConfigForm } from './edit/streamer-config-form';
 import { StreamerSaveFab } from './edit/streamer-save-fab';
 import { useNavigate } from '@tanstack/react-router';
 
-import { StreamerFormSchema, StreamerFormValues } from '../../api/schemas';
-
-// StreamerFormSchema is now imported from schemas
+import { StreamerFormSchema, StreamerFormValues } from '@/api/schemas';
 
 type PlatformConfig = z.infer<typeof PlatformConfigSchema>;
 
@@ -89,8 +87,6 @@ export function StreamerForm({
     defaultValues: defaults,
     mode: 'onChange', // Validate on change so we can disable Next button if needed
   });
-
-  const { isDirty } = form.formState;
 
   const handleNext = async () => {
     const url = form.getValues('url');
@@ -213,17 +209,17 @@ export function StreamerForm({
                 engines={engines}
               />
             </div>
+
+            <StreamerSaveFab
+              isSaving={isSubmitting}
+              alwaysVisible={true}
+              onSubmit={form.handleSubmit((data) => {
+                // Pass data as-is - server function handles JSON serialization
+                onSubmit(data);
+              })}
+            />
           </form>
         </Form>
-
-        <StreamerSaveFab
-          isDirty={isDirty || stage === 2}
-          isSaving={isSubmitting}
-          onSubmit={form.handleSubmit((data) => {
-            // Pass data as-is - server function handles JSON serialization
-            onSubmit(data);
-          })}
-        />
       </div>
     </div>
   );

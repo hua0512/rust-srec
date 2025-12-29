@@ -26,6 +26,7 @@ export const GlobalConfigSchema = z.object({
   job_history_retention_days: z.number(),
   session_gap_time_secs: z.number(),
   log_filter_directive: z.string(),
+  auto_thumbnail: z.boolean().default(true),
   // Handle pipeline - backend sends JSON string, need to parse it
   pipeline: z
     .string()
@@ -94,6 +95,7 @@ export const GlobalConfigFormSchema = z.object({
   job_history_retention_days: z.number(),
   session_gap_time_secs: z.number(),
   log_filter_directive: z.string(),
+  auto_thumbnail: z.boolean().default(true),
   // Form works with object directly (already parsed from API response)
   pipeline: DagPipelineDefinitionSchema.nullable().optional(),
   session_complete_pipeline: DagPipelineDefinitionSchema.nullable().optional(),
@@ -123,6 +125,7 @@ export const GlobalConfigWriteSchema = z.object({
   job_history_retention_days: z.number(),
   session_gap_time_secs: z.number(),
   log_filter_directive: z.string(),
+  auto_thumbnail: z.boolean().default(true),
 
   // Accept any object - will be stringified by config.ts when sending to backend
   pipeline: z.any().nullable().optional(),

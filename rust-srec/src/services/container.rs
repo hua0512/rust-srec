@@ -38,6 +38,7 @@ use crate::database::repositories::{
     streamer::SqlxStreamerRepository,
     user::SqlxUserRepository,
 };
+use crate::domain::Priority;
 use crate::downloader::{
     DownloadConfig, DownloadManager, DownloadManagerConfig, DownloadManagerEvent,
 };
@@ -1626,7 +1627,7 @@ impl ServiceContainer {
                 let streamer_metadata = streamer_manager.get_streamer(&streamer_id);
                 let is_high_priority = streamer_metadata
                     .as_ref()
-                    .map(|s| s.priority == crate::domain::Priority::High)
+                    .map(|s| s.priority == Priority::High)
                     .unwrap_or(false);
 
                 // Load merged config for this streamer

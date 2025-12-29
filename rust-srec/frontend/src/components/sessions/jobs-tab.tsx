@@ -96,6 +96,7 @@ export function JobsTab({ isLoading, dags }: JobsTabProps) {
                             day: 'numeric',
                             hour: 'numeric',
                             minute: 'numeric',
+                            second: 'numeric',
                           })}
                         </div>
                         {dag.progress_percent !== undefined && (

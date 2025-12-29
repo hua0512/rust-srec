@@ -1,21 +1,28 @@
 import { createFileRoute } from '@tanstack/react-router';
-import { useQuery, keepPreviousData } from '@tanstack/react-query';
+import {
+  useQuery,
+  keepPreviousData,
+  useQueryClient,
+} from '@tanstack/react-query';
 import { z } from 'zod';
-import { listSessions } from '@/server/functions/sessions';
+import { listSessions, deleteSessions } from '@/server/functions/sessions';
 import { SessionList } from '@/components/sessions/session-list';
 import { startOfDay, subDays, format } from 'date-fns';
-import { useMemo, useState } from 'react';
+import { useMemo, useState, useCallback } from 'react';
 import {
   Film,
-  Search,
   Filter,
   Activity,
   CheckCircle2,
   CalendarDays,
   X,
+  CheckSquare,
+  Square,
+  Trash2,
 } from 'lucide-react';
 import { Trans } from '@lingui/react/macro';
 import { t } from '@lingui/core/macro';
+import { useLingui } from '@lingui/react';
 import {
   Pagination,
   PaginationContent,
@@ -25,7 +32,6 @@ import {
   PaginationNext,
   PaginationPrevious,
 } from '@/components/ui/pagination';
-import { Input } from '@/components/ui/input';
 import { cn } from '@/lib/utils';
 import {
   Popover,
@@ -34,8 +40,10 @@ import {
 } from '@/components/ui/popover';
 import { Calendar } from '@/components/ui/calendar';
 import { Button } from '@/components/ui/button';
-import { motion } from 'motion/react';
+import { motion, AnimatePresence } from 'motion/react';
 import { DashboardHeader } from '@/components/shared/dashboard-header';
+import { SearchInput } from '@/components/sessions/search-input';
+import { toast } from 'sonner';
 
 const searchSchema = z.object({
   page: z.number().optional().catch(1),
@@ -60,7 +68,14 @@ function SessionsPage() {
   const search = Route.useSearch();
   const navigate = Route.useNavigate();
   const { user } = Route.useRouteContext();
+  const queryClient = useQueryClient();
+  const { i18n } = useLingui();
   const [isCalendarOpen, setIsCalendarOpen] = useState(false);
+
+  // Selection mode state
+  const [selectionMode, setSelectionMode] = useState(false);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [isDeleting, setIsDeleting] = useState(false);
 
   // Calculate dates based on timeRange or use custom dates
   const { from_date, to_date } = useMemo(() => {
@@ -206,10 +221,64 @@ function SessionsPage() {
     },
   };
 
-  const item = {
-    hidden: { opacity: 0, y: 20 },
-    show: { opacity: 1, y: 0 },
-  };
+  // Selection handlers
+  const handleSelectionChange = useCallback((id: string, selected: boolean) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (selected) {
+        next.add(id);
+      } else {
+        next.delete(id);
+      }
+      return next;
+    });
+  }, []);
+
+  const handleSelectAll = useCallback(() => {
+    const allIds = query.data?.items?.map((s) => s.id) || [];
+    setSelectedIds(new Set(allIds));
+  }, [query.data?.items]);
+
+  const handleDeselectAll = useCallback(() => {
+    setSelectedIds(new Set());
+  }, []);
+
+  const toggleSelectionMode = useCallback(() => {
+    setSelectionMode((prev) => {
+      if (prev) {
+        setSelectedIds(new Set()); // Clear selection when exiting
+      }
+      return !prev;
+    });
+  }, []);
+
+  const handleBatchDelete = useCallback(async () => {
+    if (selectedIds.size === 0) return;
+
+    if (
+      !window.confirm(
+        i18n._(
+          t`Are you sure you want to delete ${selectedIds.size} sessions? This action cannot be undone.`,
+        ),
+      )
+    ) {
+      return;
+    }
+
+    setIsDeleting(true);
+    try {
+      const result = await deleteSessions({ data: Array.from(selectedIds) });
+      toast.success(i18n._(t`Successfully deleted ${result.deleted} sessions`));
+      setSelectedIds(new Set());
+      setSelectionMode(false);
+      queryClient.invalidateQueries({ queryKey: ['sessions'] });
+    } catch (error) {
+      console.error('Failed to delete sessions:', error);
+      toast.error(i18n._(t`Failed to delete sessions`));
+    } finally {
+      setIsDeleting(false);
+    }
+  }, [selectedIds, i18n, queryClient]);
 
   return (
     <motion.div
@@ -226,20 +295,14 @@ function SessionsPage() {
         actions={
           <>
             {/* Search */}
-            <div className="relative w-full md:w-56 min-w-[200px]">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-              <Input
-                placeholder={t`Search sessions...`}
-                value={search.search || ''}
-                onChange={(e) =>
-                  updateSearch({
-                    search: e.target.value || undefined,
-                    page: 1,
-                  })
-                }
-                className="pl-9 h-9 bg-muted/40 border-border/50 focus:bg-background transition-colors"
-              />
-            </div>
+            <SearchInput
+              defaultValue={search.search || ''}
+              onSearch={(val) =>
+                updateSearch({ search: val || undefined, page: 1 })
+              }
+              placeholder={t`Search sessions...`}
+              className="md:w-56 min-w-[200px]"
+            />
 
             <div className="h-6 w-px bg-border/50 mx-1 shrink-0" />
 
@@ -376,9 +439,116 @@ function SessionsPage() {
                 <X className="h-4 w-4" />
               </Button>
             )}
+
+            <div className="h-6 w-px bg-border/50 mx-1 shrink-0" />
+
+            {/* Selection Mode Toggle */}
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={toggleSelectionMode}
+              className={cn(
+                'h-9 px-4 rounded-xl text-xs font-black uppercase tracking-widest transition-all duration-500 shrink-0 border border-white/5',
+                selectionMode
+                  ? 'bg-primary text-primary-foreground border-primary/50 shadow-[0_0_20px_rgba(var(--primary),0.3)] hover:bg-primary/90'
+                  : 'bg-muted/30 text-muted-foreground hover:text-foreground hover:bg-muted/50',
+              )}
+            >
+              <motion.div
+                animate={{ scale: selectionMode ? [1, 1.2, 1] : 1 }}
+                transition={{ duration: 0.4 }}
+                className="mr-2"
+              >
+                {selectionMode ? (
+                  <CheckSquare className="h-4 w-4" />
+                ) : (
+                  <Square className="h-4 w-4 text-muted-foreground/50" />
+                )}
+              </motion.div>
+              <Trans>Manage</Trans>
+            </Button>
           </>
         }
       />
+
+      {/* Batch Delete FAB (Bottom Floating Bar) */}
+      <AnimatePresence>
+        {selectionMode && (
+          <motion.div
+            initial={{ opacity: 0, y: 100, x: '-50%' }}
+            animate={{ opacity: 1, y: 0, x: '-50%' }}
+            exit={{ opacity: 0, y: 100, x: '-50%' }}
+            className="fixed bottom-8 left-1/2 z-50 min-w-[320px] max-w-[90vw]"
+          >
+            <div className="relative overflow-hidden rounded-full border border-white/10 shadow-[0_25px_60px_rgba(0,0,0,0.6)] bg-background/40 backdrop-blur-3xl p-1.5 flex items-center gap-2">
+              <div className="absolute inset-0 bg-gradient-to-br from-primary/20 via-transparent to-primary/10 opacity-30 pointer-events-none" />
+              <div className="absolute inset-0 bg-[radial-gradient(circle_at_50%_100%,rgba(var(--primary),0.15),transparent_60%)] pointer-events-none" />
+
+              {/* Selection Count Badge */}
+              <div className="flex items-center gap-2.5 px-4 py-2 rounded-full bg-primary/20 border border-primary/30 shadow-[inset_0_1px_1px_rgba(255,255,255,0.1)] ml-1">
+                <span className="text-sm font-black tabular-nums text-primary">
+                  {selectedIds.size}
+                </span>
+                <span className="text-[10px] font-black uppercase tracking-widest text-primary/80 hidden sm:inline">
+                  <Trans>Selected</Trans>
+                </span>
+              </div>
+              {/* Bulk Action Buttons */}
+              <div className="flex items-center gap-1.5 flex-1 justify-center px-1">
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={handleSelectAll}
+                  className="h-9 px-4 text-[10px] font-black uppercase tracking-wider hover:bg-white/10 rounded-full text-muted-foreground hover:text-foreground transition-all"
+                >
+                  <Trans>All</Trans>
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={handleDeselectAll}
+                  disabled={selectedIds.size === 0}
+                  className="h-9 px-4 text-[10px] font-black uppercase tracking-wider hover:bg-white/10 rounded-full text-muted-foreground hover:text-foreground transition-all"
+                >
+                  <Trans>None</Trans>
+                </Button>
+              </div>
+
+              {/* Delete Button */}
+              <Button
+                variant="destructive"
+                size="sm"
+                onClick={handleBatchDelete}
+                disabled={selectedIds.size === 0 || isDeleting}
+                className={cn(
+                  'h-10 px-6 rounded-full text-[10px] font-black uppercase tracking-[0.2em] transition-all duration-500 shadow-xl relative group/del overflow-hidden flex items-center justify-center shrink-0',
+                  selectedIds.size > 0
+                    ? 'bg-destructive shadow-destructive/20 hover:shadow-destructive/40 active:scale-95 translate-y-0 opacity-100'
+                    : 'bg-muted text-muted-foreground/30 opacity-50 translate-y-1',
+                )}
+              >
+                <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/10 to-transparent -translate-x-full group-hover/del:translate-x-full transition-transform duration-1000" />
+                <Trash2 className="h-4 w-4 mr-2.5 group-hover/del:animate-bounce" />
+                <span className="hidden sm:inline">
+                  <Trans>Delete</Trans>
+                </span>
+              </Button>
+
+              <div className="h-6 w-px bg-white/10 mx-1" />
+
+              {/* Close/Exit Management Mode */}
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={toggleSelectionMode}
+                className="h-10 w-10 rounded-full hover:bg-white/10 text-muted-foreground hover:text-foreground transition-all border border-white/5 shrink-0 mr-1"
+              >
+                <X className="h-5 w-5" />
+              </Button>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       <div className="p-4 md:px-8 space-y-6 pb-20">
         <SessionList
@@ -386,6 +556,9 @@ function SessionsPage() {
           isLoading={query.isLoading}
           onRefresh={() => query.refetch()}
           token={user?.token?.access_token}
+          selectionMode={selectionMode}
+          selectedIds={selectedIds}
+          onSelectionChange={handleSelectionChange}
         />
 
         {/* Pagination */}

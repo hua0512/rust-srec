@@ -21,7 +21,6 @@ export function DashboardHeader({
   subtitle,
   actions,
   children,
-  className,
   ...props
 }: DashboardHeaderProps) {
   return (

@@ -1,3 +1,4 @@
+import { useEffect } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
@@ -55,6 +56,32 @@ export function PlatformEditor({
       paired_segment_pipeline: platform.paired_segment_pipeline,
     },
   });
+  const { reset } = form;
+
+  // Reset form when platform data changes (e.g. after QR login re-fetch)
+  useEffect(() => {
+    reset({
+      fetch_delay_ms: platform.fetch_delay_ms,
+      download_delay_ms: platform.download_delay_ms,
+      record_danmu: platform.record_danmu,
+      cookies: platform.cookies,
+      platform_specific_config: platform.platform_specific_config,
+      proxy_config: platform.proxy_config,
+      output_folder: platform.output_folder,
+      output_filename_template: platform.output_filename_template,
+      download_engine: platform.download_engine,
+      stream_selection_config: platform.stream_selection_config,
+      output_file_format: platform.output_file_format,
+      min_segment_size_bytes: platform.min_segment_size_bytes,
+      max_download_duration_secs: platform.max_download_duration_secs,
+      max_part_size_bytes: platform.max_part_size_bytes,
+      download_retry_policy: platform.download_retry_policy,
+      event_hooks: platform.event_hooks,
+      pipeline: platform.pipeline,
+      session_complete_pipeline: platform.session_complete_pipeline,
+      paired_segment_pipeline: platform.paired_segment_pipeline,
+    });
+  }, [platform, reset]);
 
   const Icon = getPlatformIcon(platform.name);
   const colorClass = getPlatformColor(platform.name);

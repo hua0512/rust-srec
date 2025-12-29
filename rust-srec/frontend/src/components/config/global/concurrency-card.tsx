@@ -1,3 +1,4 @@
+import { memo } from 'react';
 import { Control } from 'react-hook-form';
 import { SettingsCard } from '../settings-card';
 import {
@@ -20,20 +21,21 @@ import {
 import { Cpu } from 'lucide-react';
 import { Trans } from '@lingui/react/macro';
 import { t } from '@lingui/core/macro';
-import { EngineConfigSchema } from '@/api/schemas';
-import { z } from 'zod';
+import { useQuery } from '@tanstack/react-query';
+import { listEngines } from '@/server/functions';
 
-interface ConcurrencyCardProps {
+export interface ConcurrencyCardProps {
   control: Control<any>;
-  engines?: z.infer<typeof EngineConfigSchema>[];
-  enginesLoading?: boolean;
 }
 
-export function ConcurrencyCard({
-  control,
-  engines,
-  enginesLoading,
-}: ConcurrencyCardProps) {
+export const ConcurrencyCard = memo(({ control }: ConcurrencyCardProps) => {
+  const { data: enginesData, isLoading: enginesLoading } = useQuery({
+    queryKey: ['engines'],
+    queryFn: () => listEngines(),
+  });
+
+  const engines = enginesData || [];
+
   return (
     <SettingsCard
       title={<Trans>Concurrency & Performance</Trans>}
@@ -161,4 +163,6 @@ export function ConcurrencyCard({
       </div>
     </SettingsCard>
   );
-}
+});
+
+ConcurrencyCard.displayName = 'ConcurrencyCard';

@@ -46,7 +46,7 @@ export function SettingsCard({
                 iconBgColor,
               )}
             >
-              <Icon className={cn('w-5 h-5', iconColor)} />
+              <Icon className={cn('w-5 h-5', iconColor)} aria-hidden="true" />
             </div>
             <div className="space-y-1">
               <CardTitle className="text-lg font-semibold tracking-tight leading-none">

@@ -248,6 +248,8 @@ pub struct GlobalConfigResponse {
     pub paired_segment_pipeline: Option<String>,
     /// Log filter directive for dynamic logging (e.g., "rust_srec=debug,sqlx=warn")
     pub log_filter_directive: String,
+    /// Whether to automatically generate thumbnails for new sessions
+    pub auto_thumbnail: bool,
 }
 
 /// Request to update global configuration.
@@ -280,6 +282,8 @@ pub struct UpdateGlobalConfigRequest {
     pub paired_segment_pipeline: Option<serde_json::Value>,
     /// Log filter directive for dynamic logging
     pub log_filter_directive: Option<serde_json::Value>,
+    /// Whether to automatically generate thumbnails for new sessions
+    pub auto_thumbnail: Option<serde_json::Value>,
 }
 
 /// Platform configuration response.

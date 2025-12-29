@@ -1,3 +1,4 @@
+import { useEffect } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
@@ -85,6 +86,35 @@ export function TemplateEditor({
           paired_segment_pipeline: null,
         },
   });
+  const { reset } = form;
+
+  // Reset form when template data changes (e.g. after QR login re-fetch)
+  useEffect(() => {
+    if (template) {
+      reset({
+        name: template.name,
+        output_folder: template.output_folder,
+        output_filename_template: template.output_filename_template,
+        output_file_format: template.output_file_format,
+        min_segment_size_bytes: template.min_segment_size_bytes,
+        max_download_duration_secs: template.max_download_duration_secs,
+        max_part_size_bytes: template.max_part_size_bytes,
+        record_danmu: template.record_danmu,
+        cookies: template.cookies,
+        platform_overrides: template.platform_overrides,
+        download_retry_policy: template.download_retry_policy,
+        danmu_sampling_config: template.danmu_sampling_config,
+        download_engine: template.download_engine,
+        engines_override: template.engines_override,
+        proxy_config: template.proxy_config,
+        event_hooks: template.event_hooks,
+        stream_selection_config: template.stream_selection_config,
+        pipeline: template.pipeline,
+        session_complete_pipeline: template.session_complete_pipeline,
+        paired_segment_pipeline: template.paired_segment_pipeline,
+      });
+    }
+  }, [template, reset]);
 
   const platformOverrides = form.watch('platform_overrides');
   const platformOverrideKeys =

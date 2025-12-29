@@ -119,6 +119,7 @@ impl<R: ConfigRepository> ConfigResolver<R> {
             global_pipeline,
             global_session_complete_pipeline,
             global_paired_segment_pipeline,
+            global_config.auto_thumbnail,
         );
 
         // Layer 2: Platform config

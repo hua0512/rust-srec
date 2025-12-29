@@ -95,7 +95,8 @@ impl ConfigRepository for SqlxConfigRepository {
                 pipeline = ?,
                 session_complete_pipeline = ?,
                 paired_segment_pipeline = ?,
-                log_filter_directive = ?
+                log_filter_directive = ?,
+                auto_thumbnail = ?
             WHERE id = ?
             "#,
         )
@@ -121,6 +122,7 @@ impl ConfigRepository for SqlxConfigRepository {
         .bind(&config.session_complete_pipeline)
         .bind(&config.paired_segment_pipeline)
         .bind(&config.log_filter_directive)
+        .bind(config.auto_thumbnail)
         .bind(&config.id)
         .execute(&self.pool)
         .await?;
@@ -137,8 +139,9 @@ impl ConfigRepository for SqlxConfigRepository {
                 streamer_check_delay_ms, proxy_config, offline_check_delay_ms,
                 offline_check_count, default_download_engine, max_concurrent_cpu_jobs,
                 max_concurrent_io_jobs, job_history_retention_days, session_gap_time_secs,
-                pipeline, session_complete_pipeline, paired_segment_pipeline, log_filter_directive
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                pipeline, session_complete_pipeline, paired_segment_pipeline, log_filter_directive,
+                auto_thumbnail
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             "#,
         )
         .bind(&config.id)
@@ -164,6 +167,7 @@ impl ConfigRepository for SqlxConfigRepository {
         .bind(&config.session_complete_pipeline)
         .bind(&config.paired_segment_pipeline)
         .bind(&config.log_filter_directive)
+        .bind(config.auto_thumbnail)
         .execute(&self.pool)
         .await?;
         Ok(())

@@ -119,6 +119,7 @@ pub struct MessageResponse {
         crate::api::routes::sessions::list_sessions,
         crate::api::routes::sessions::get_session,
         crate::api::routes::sessions::delete_session,
+        crate::api::routes::sessions::delete_sessions_batch,
         // Template endpoints
         crate::api::routes::templates::create_template,
         crate::api::routes::templates::list_templates,
@@ -237,6 +238,8 @@ pub struct MessageResponse {
             // Session schemas
             SessionResponse,
             PaginatedResponse<SessionResponse>,
+            crate::api::routes::sessions::BatchDeleteRequest,
+            crate::api::routes::sessions::BatchDeleteResponse,
             // Template schemas
             CreateTemplateRequest,
             UpdateTemplateRequest,

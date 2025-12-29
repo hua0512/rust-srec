@@ -1,13 +1,8 @@
 import { createFileRoute } from '@tanstack/react-router';
-import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { motion } from 'motion/react';
 import { GlobalConfigFormSchema } from '@/api/schemas';
-import {
-  getGlobalConfig,
-  updateGlobalConfig,
-  listEngines,
-} from '@/server/functions';
+import { getGlobalConfig, updateGlobalConfig } from '@/server/functions';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Button } from '@/components/ui/button';
 import { Form } from '@/components/ui/form';
@@ -16,11 +11,34 @@ import { z } from 'zod';
 import { t } from '@lingui/core/macro';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Save } from 'lucide-react';
-import { FileConfigCard } from '@/components/config/global/file-config-card';
-import { ResourceLimitsCard } from '@/components/config/global/resource-limits-card';
-import { ConcurrencyCard } from '@/components/config/global/concurrency-card';
-import { NetworkSystemCard } from '@/components/config/global/network-system-card';
-import { PipelineConfigCard } from '@/components/config/global/pipeline-config-card';
+import { useForm, useFormContext } from 'react-hook-form';
+import { useMemo, useCallback, lazy, Suspense } from 'react';
+
+const FileConfigCard = lazy(() =>
+  import('@/components/config/global/file-config-card').then((m) => ({
+    default: m.FileConfigCard,
+  })),
+);
+const ResourceLimitsCard = lazy(() =>
+  import('@/components/config/global/resource-limits-card').then((m) => ({
+    default: m.ResourceLimitsCard,
+  })),
+);
+const ConcurrencyCard = lazy(() =>
+  import('@/components/config/global/concurrency-card').then((m) => ({
+    default: m.ConcurrencyCard,
+  })),
+);
+const NetworkSystemCard = lazy(() =>
+  import('@/components/config/global/network-system-card').then((m) => ({
+    default: m.NetworkSystemCard,
+  })),
+);
+const PipelineConfigCard = lazy(() =>
+  import('@/components/config/global/pipeline-config-card').then((m) => ({
+    default: m.PipelineConfigCard,
+  })),
+);
 
 export const Route = createFileRoute('/_authed/_dashboard/config/global')({
   component: GlobalConfigPage,
@@ -32,12 +50,7 @@ function GlobalConfigPage() {
     queryFn: () => getGlobalConfig(),
   });
 
-  const { data: engines, isLoading: enginesLoading } = useQuery({
-    queryKey: ['engines'],
-    queryFn: () => listEngines(),
-  });
-
-  if (isLoading || enginesLoading || !config) {
+  if (isLoading || !config) {
     return (
       <div className="space-y-6 form-container">
         <div className="flex items-center justify-between">
@@ -55,34 +68,56 @@ function GlobalConfigPage() {
     );
   }
 
-  return <GlobalConfigForm config={config} engines={engines} />;
+  return <GlobalConfigForm config={config} />;
 }
+
+function SaveButton({ isPending }: { isPending: boolean }) {
+  const { formState } = useFormContext();
+
+  if (!formState.isDirty) return null;
+
+  return (
+    <div className="fixed bottom-8 right-8 z-50 animate-in fade-in slide-in-from-bottom-4 duration-300">
+      <Button
+        type="submit"
+        disabled={isPending}
+        size="lg"
+        className="shadow-2xl shadow-primary/40 hover:shadow-primary/50 transition-all hover:scale-105 active:scale-95 rounded-full px-8 h-14 bg-gradient-to-r from-primary to-primary/90 text-base font-semibold"
+      >
+        <Save className="w-5 h-5 mr-2" />
+        {isPending ? t`Saving...` : t`Save Changes`}
+      </Button>
+    </div>
+  );
+}
+
+const CardSkeleton = () => (
+  <Skeleton className="h-[400px] rounded-xl border-border/40 bg-muted/60" />
+);
 
 function GlobalConfigForm({
   config,
-  engines,
 }: {
   config: z.infer<typeof GlobalConfigFormSchema>;
-  engines: any;
 }) {
   const queryClient = useQueryClient();
 
+  const defaultValues = useMemo(
+    () => ({
+      ...config,
+      proxy_config: config.proxy_config ?? null,
+      pipeline: config.pipeline ?? null,
+      session_complete_pipeline: config.session_complete_pipeline ?? null,
+      paired_segment_pipeline: config.paired_segment_pipeline ?? null,
+    }),
+    [config],
+  );
+
   const form = useForm<z.infer<typeof GlobalConfigFormSchema>>({
     resolver: zodResolver(GlobalConfigFormSchema),
-    defaultValues: {
-      ...config,
-      proxy_config: config.proxy_config ?? null,
-      pipeline: config.pipeline ?? null,
-      session_complete_pipeline: config.session_complete_pipeline ?? null,
-      paired_segment_pipeline: config.paired_segment_pipeline ?? null,
-    },
-    values: {
-      ...config,
-      proxy_config: config.proxy_config ?? null,
-      pipeline: config.pipeline ?? null,
-      session_complete_pipeline: config.session_complete_pipeline ?? null,
-      paired_segment_pipeline: config.paired_segment_pipeline ?? null,
-    },
+    defaultValues,
+    values: defaultValues,
+    reValidateMode: 'onBlur',
   });
 
   const updateMutation = useMutation({
@@ -97,9 +132,12 @@ function GlobalConfigForm({
     },
   });
 
-  const onSubmit = (data: z.infer<typeof GlobalConfigFormSchema>) => {
-    updateMutation.mutate(data);
-  };
+  const onSubmit = useCallback(
+    (data: z.infer<typeof GlobalConfigFormSchema>) => {
+      updateMutation.mutate(data);
+    },
+    [updateMutation],
+  );
 
   return (
     <Form {...form}>
@@ -110,70 +148,63 @@ function GlobalConfigForm({
           animate={{ opacity: 1 }}
           transition={{ duration: 0.3 }}
         >
-          {/* File Configuration */}
-          <motion.div
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.3, delay: 0 }}
-          >
-            <FileConfigCard control={form.control} />
-          </motion.div>
+          <Suspense fallback={<CardSkeleton />}>
+            <motion.div
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.3, delay: 0 }}
+            >
+              <FileConfigCard control={form.control} />
+            </motion.div>
+          </Suspense>
 
-          {/* Resource Limits */}
-          <motion.div
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.3, delay: 0.05 }}
-          >
-            <ResourceLimitsCard control={form.control} />
-          </motion.div>
+          <Suspense fallback={<CardSkeleton />}>
+            <motion.div
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.3, delay: 0.05 }}
+            >
+              <ResourceLimitsCard control={form.control} />
+            </motion.div>
+          </Suspense>
 
-          {/* Concurrency & Performance */}
-          <motion.div
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.3, delay: 0.1 }}
-          >
-            <ConcurrencyCard
-              control={form.control}
-              engines={engines}
-              enginesLoading={false}
-            />
-          </motion.div>
+          <Suspense fallback={<CardSkeleton />}>
+            <motion.div
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.3, delay: 0.1 }}
+            >
+              <ConcurrencyCard control={form.control} />
+            </motion.div>
+          </Suspense>
 
-          {/* Network & System */}
-          <motion.div
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.3, delay: 0.15 }}
-          >
-            <NetworkSystemCard control={form.control} />
-          </motion.div>
+          <Suspense fallback={<CardSkeleton />}>
+            <motion.div
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.3, delay: 0.15 }}
+            >
+              <NetworkSystemCard control={form.control} />
+            </motion.div>
+          </Suspense>
 
-          {/* Pipeline Configuration */}
-          <motion.div
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.3, delay: 0.25 }}
-            className="lg:col-span-2 min-w-0"
+          <Suspense
+            fallback={
+              <Skeleton className="h-[500px] lg:col-span-2 rounded-xl border-border/40 bg-muted/60" />
+            }
           >
-            <PipelineConfigCard control={form.control} />
-          </motion.div>
+            <motion.div
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.3, delay: 0.25 }}
+              className="lg:col-span-2 min-w-0"
+            >
+              <PipelineConfigCard control={form.control} />
+            </motion.div>
+          </Suspense>
         </motion.div>
 
-        {form.formState.isDirty && (
-          <div className="fixed bottom-8 right-8 z-50 animate-in fade-in slide-in-from-bottom-4 duration-300">
-            <Button
-              type="submit"
-              disabled={updateMutation.isPending}
-              size="lg"
-              className="shadow-2xl shadow-primary/40 hover:shadow-primary/50 transition-all hover:scale-105 active:scale-95 rounded-full px-8 h-14 bg-gradient-to-r from-primary to-primary/90 text-base font-semibold"
-            >
-              <Save className="w-5 h-5 mr-2" />
-              {updateMutation.isPending ? t`Saving...` : t`Save Changes`}
-            </Button>
-          </div>
-        )}
+        <SaveButton isPending={updateMutation.isPending} />
       </form>
     </Form>
   );

@@ -42,7 +42,12 @@ import {
 import { Trans } from '@lingui/react/macro';
 import { t } from '@lingui/core/macro';
 import { motion } from 'motion/react';
-import { isDefaultPreset } from '../default-presets-i18n';
+import {
+  isDefaultPreset,
+  getCategoryName,
+  PRESET_CATEGORY_NAMES,
+} from '../default-presets-i18n';
+import { useLingui } from '@lingui/react';
 
 interface PresetMetaFormProps {
   form: UseFormReturn<any>;
@@ -61,7 +66,7 @@ const PROCESSOR_OPTIONS = [
   { id: 'metadata', label: <Trans>Metadata</Trans>, icon: Tags },
   {
     id: 'rclone',
-    label: <Trans>Rclone (Upload / Move / Sync)</Trans>,
+    label: <Trans>Rclone</Trans>,
     icon: Upload,
   },
   { id: 'execute', label: <Trans>Execute Command</Trans>, icon: Terminal },
@@ -73,25 +78,13 @@ const PROCESSOR_OPTIONS = [
   { id: 'ass_burnin', label: <Trans>ASS Burn-in</Trans>, icon: Type },
 ];
 
-const CATEGORY_OPTIONS = [
-  { id: 'remux', label: <Trans>Remux</Trans> },
-  { id: 'compression', label: <Trans>Compression</Trans> },
-  { id: 'thumbnail', label: <Trans>Thumbnail</Trans> },
-  { id: 'audio', label: <Trans>Audio</Trans> },
-  { id: 'archive', label: <Trans>Archive</Trans> },
-  { id: 'upload', label: <Trans>Upload</Trans> },
-  { id: 'cleanup', label: <Trans>Cleanup</Trans> },
-  { id: 'file_ops', label: <Trans>File Ops</Trans> },
-  { id: 'custom', label: <Trans>Custom</Trans> },
-  { id: 'metadata', label: <Trans>Metadata</Trans> },
-];
-
 export function PresetMetaForm({
   form,
   initialData,
   title,
   isUpdating,
 }: PresetMetaFormProps) {
+  const { i18n } = useLingui();
   const currentProcessor = form.watch('processor');
   const currentId = form.watch('id');
   const isDefault = isUpdating && currentId && isDefaultPreset(currentId);
@@ -235,9 +228,9 @@ export function PresetMetaForm({
               control={form.control}
               name="category"
               render={({ field }) => {
-                const selectedCategory = CATEGORY_OPTIONS.find(
-                  (opt) => opt.id === field.value,
-                );
+                const selectedCategoryName = field.value
+                  ? getCategoryName(field.value, i18n)
+                  : '';
                 return (
                   <FormItem>
                     <FormLabel className="text-xs uppercase tracking-wider text-muted-foreground font-medium ml-1">
@@ -250,9 +243,9 @@ export function PresetMetaForm({
                     >
                       <FormControl>
                         <SelectTrigger className="h-11 bg-muted/30 border-muted-foreground/20 focus:ring-primary/20 transition-all">
-                          {selectedCategory ? (
+                          {selectedCategoryName ? (
                             <span className="text-sm">
-                              {selectedCategory.label}
+                              {selectedCategoryName}
                             </span>
                           ) : (
                             <SelectValue placeholder={t`Select category`} />
@@ -260,9 +253,9 @@ export function PresetMetaForm({
                         </SelectTrigger>
                       </FormControl>
                       <SelectContent>
-                        {CATEGORY_OPTIONS.map((option) => (
-                          <SelectItem key={option.id} value={option.id}>
-                            {option.label}
+                        {Object.keys(PRESET_CATEGORY_NAMES).map((catId) => (
+                          <SelectItem key={catId} value={catId}>
+                            {getCategoryName(catId, i18n)}
                           </SelectItem>
                         ))}
                       </SelectContent>

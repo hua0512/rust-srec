@@ -100,6 +100,7 @@ fn map_global_config_to_response(config: GlobalConfigDbModel) -> GlobalConfigRes
         session_complete_pipeline: config.session_complete_pipeline,
         paired_segment_pipeline: config.paired_segment_pipeline,
         log_filter_directive: config.log_filter_directive,
+        auto_thumbnail: config.auto_thumbnail,
     }
 }
 
@@ -214,6 +215,7 @@ pub async fn update_global_config(
         pipeline: |v: serde_json::Value| v.as_str().map(String::from),
         session_complete_pipeline: |v: serde_json::Value| v.as_str().map(String::from),
         paired_segment_pipeline: |v: serde_json::Value| v.as_str().map(String::from),
+        auto_thumbnail: |v: serde_json::Value| v.as_bool(),
     ]);
 
     debug!(
@@ -418,6 +420,7 @@ mod tests {
             session_complete_pipeline: None,
             paired_segment_pipeline: None,
             log_filter_directive: "rust_srec=info".to_string(),
+            auto_thumbnail: true,
         };
 
         let json = serde_json::to_string(&response).unwrap();
@@ -566,6 +569,7 @@ mod property_tests {
                 session_complete_pipeline: None,
                 paired_segment_pipeline: None,
                 log_filter_directive: None,
+                auto_thumbnail: None,
             };
 
             // Apply the update

@@ -37,6 +37,8 @@ pub struct GlobalConfigDbModel {
     pub paired_segment_pipeline: Option<String>,
     /// Log filter directive (e.g., "rust_srec=debug,sqlx=warn")
     pub log_filter_directive: String,
+    /// Whether to automatically generate thumbnails for new sessions (default: true)
+    pub auto_thumbnail: bool,
 }
 
 impl Default for GlobalConfigDbModel {
@@ -66,6 +68,7 @@ impl Default for GlobalConfigDbModel {
             paired_segment_pipeline: None,
             log_filter_directive: "rust_srec=info,sqlx=warn,mesio_engine=info,flv=info,hls=info"
                 .to_string(),
+            auto_thumbnail: true,
         }
     }
 }

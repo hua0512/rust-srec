@@ -421,6 +421,23 @@ export function BackupRestoreCard() {
                     </div>
                   )}
                 </div>
+
+                <div className="rounded-lg bg-orange-500/10 border border-orange-500/20 p-4 mt-2">
+                  <div className="flex gap-3">
+                    <AlertTriangle className="h-5 w-5 text-orange-600 dark:text-orange-400 shrink-0" />
+                    <div className="space-y-1">
+                      <p className="text-sm font-semibold text-orange-600 dark:text-orange-400">
+                        <Trans>Restart Required</Trans>
+                      </p>
+                      <p className="text-xs text-orange-600/80 dark:text-orange-400/80 leading-relaxed">
+                        <Trans>
+                          Please restart the system to ensure all configuration
+                          changes are fully applied.
+                        </Trans>
+                      </p>
+                    </div>
+                  </div>
+                </div>
               </motion.div>
             ) : (
               <motion.div

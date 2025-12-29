@@ -346,7 +346,7 @@ impl Processor<FlvData> for SplitOperator {
 }
 
 #[cfg(test)]
-    mod tests {
+mod tests {
     use bytes::Bytes;
     use pipeline_common::{CancellationToken, StreamerContext};
 

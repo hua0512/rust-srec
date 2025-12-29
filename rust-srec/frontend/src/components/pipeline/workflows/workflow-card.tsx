@@ -43,8 +43,9 @@ import { plural } from '@lingui/core/macro';
 import { useLingui } from '@lingui/react';
 import type { PipelinePreset } from '@/server/functions/pipeline';
 import {
-  DEFAULT_PIPELINE_PRESET_DESCRIPTIONS,
-  DEFAULT_PIPELINE_PRESET_NAMES,
+  getJobPresetName,
+  getPipelinePresetDescription,
+  getPipelinePresetName,
 } from '../presets/default-presets-i18n';
 
 interface WorkflowCardProps {
@@ -126,9 +127,7 @@ export function WorkflowCard({
 }: WorkflowCardProps) {
   const { i18n } = useLingui();
   const steps = workflow.dag.steps;
-  const description = DEFAULT_PIPELINE_PRESET_DESCRIPTIONS[workflow.id]
-    ? i18n._(DEFAULT_PIPELINE_PRESET_DESCRIPTIONS[workflow.id])
-    : workflow.description;
+  const description = getPipelinePresetDescription(workflow, i18n);
 
   return (
     <Card className="relative h-full flex flex-col transition-all duration-500 hover:-translate-y-1 hover:shadow-2xl hover:shadow-primary/10 group overflow-hidden bg-gradient-to-br from-background/80 to-background/40 backdrop-blur-xl border-border/40 hover:border-primary/20">
@@ -143,9 +142,7 @@ export function WorkflowCard({
         </div>
         <div className="flex-1 min-w-0 space-y-1">
           <CardTitle className="text-base font-medium truncate tracking-tight text-foreground/90 group-hover:text-primary transition-colors duration-300">
-            {DEFAULT_PIPELINE_PRESET_NAMES[workflow.id]
-              ? i18n._(DEFAULT_PIPELINE_PRESET_NAMES[workflow.id])
-              : workflow.name}
+            {getPipelinePresetName(workflow, i18n)}
           </CardTitle>
           <div className="flex items-center gap-2">
             <span className="text-[10px] uppercase tracking-wider font-semibold text-muted-foreground/60">
@@ -246,7 +243,9 @@ export function WorkflowCard({
                   </span>
                 )}
                 <span className="text-[10px] font-medium truncate max-w-[80px]">
-                  {stepName}
+                  {step.type === 'preset'
+                    ? getJobPresetName({ id: step.name, name: step.name }, i18n)
+                    : stepName}
                 </span>
               </div>
             );

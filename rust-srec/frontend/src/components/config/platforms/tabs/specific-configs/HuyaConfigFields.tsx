@@ -35,7 +35,12 @@ export function HuyaConfigFields({ form, fieldName }: HuyaConfigFieldsProps) {
             <FormControl>
               <Switch
                 checked={field.value ?? true}
-                onCheckedChange={field.onChange}
+                onCheckedChange={(checked) => {
+                  field.onChange(checked);
+                  if (checked) {
+                    form.setValue(`${fieldName}.use_wup_v2`, false);
+                  }
+                }}
               />
             </FormControl>
           </FormItem>
@@ -51,13 +56,21 @@ export function HuyaConfigFields({ form, fieldName }: HuyaConfigFieldsProps) {
                 <Trans>Use WUP V2</Trans>
               </FormLabel>
               <FormDescription>
-                <Trans>Use computed query parameters (WUP v2).</Trans>
+                <Trans>
+                  Use WUP protocol for live stream extraction. Only available
+                  for numeric room IDs.
+                </Trans>
               </FormDescription>
             </div>
             <FormControl>
               <Switch
                 checked={!!field.value}
-                onCheckedChange={field.onChange}
+                onCheckedChange={(checked) => {
+                  field.onChange(checked);
+                  if (checked) {
+                    form.setValue(`${fieldName}.use_wup`, false);
+                  }
+                }}
               />
             </FormControl>
           </FormItem>

@@ -1,3 +1,4 @@
+import { memo } from 'react';
 import { Control } from 'react-hook-form';
 import { SettingsCard } from '../settings-card';
 import {
@@ -34,7 +35,7 @@ interface NetworkSystemCardProps {
   control: Control<any>;
 }
 
-export function NetworkSystemCard({ control }: NetworkSystemCardProps) {
+export const NetworkSystemCard = memo(({ control }: NetworkSystemCardProps) => {
   return (
     <SettingsCard
       title={<Trans>Network & System</Trans>}
@@ -286,4 +287,6 @@ export function NetworkSystemCard({ control }: NetworkSystemCardProps) {
       </div>
     </SettingsCard>
   );
-}
+});
+
+NetworkSystemCard.displayName = 'NetworkSystemCard';

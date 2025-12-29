@@ -1480,17 +1480,33 @@ where
                 let pipeline_has_thumbnail = if let Some(dag) = &pipeline_config {
                     dag.steps.iter().any(|node| match &node.step {
                         PipelineStep::Inline { processor, .. } => processor == "thumbnail",
-                        PipelineStep::Preset { name } => name.contains("thumbnail"),
-                        PipelineStep::Workflow { name } => name.contains("thumbnail"),
+                        // Match exact preset names or those with thumbnail_ prefix
+                        PipelineStep::Preset { name } => {
+                            name == "thumbnail"
+                                || name.starts_with("thumbnail_")
+                                || name == "thumbnail_native"
+                                || name == "thumbnail_hd"
+                        }
+                        // Match exact workflow names or those with thumbnail prefix
+                        PipelineStep::Workflow { name } => {
+                            name == "thumbnail" || name.starts_with("thumbnail_")
+                        }
                     })
                 } else {
                     false
                 };
 
+                // Check if auto_thumbnail is enabled in global settings (defaults to true)
+                let auto_thumbnail_enabled = merged_config
+                    .as_ref()
+                    .map(|c| c.auto_thumbnail)
+                    .unwrap_or(true);
+
                 // Generate automatic thumbnail for first segment only if:
                 // 1. This is the first segment (segment_index == 0)
                 // 2. User's pipeline doesn't already include a thumbnail step
-                if segment_index == 0 && !pipeline_has_thumbnail {
+                // 3. Auto thumbnail generation is enabled in global settings
+                if segment_index == 0 && !pipeline_has_thumbnail && auto_thumbnail_enabled {
                     self.maybe_create_thumbnail_job(&streamer_id, &session_id, &segment_path)
                         .await;
                 }

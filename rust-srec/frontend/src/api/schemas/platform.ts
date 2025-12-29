@@ -22,6 +22,7 @@ export const PlatformConfigSchema = z.object({
         try {
           return JSON.parse(val);
         } catch (e) {
+          console.error(e);
           return val;
         }
       }

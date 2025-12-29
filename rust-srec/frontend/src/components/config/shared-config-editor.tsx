@@ -1,4 +1,5 @@
 import { motion } from 'motion/react';
+import { lazy, Suspense } from 'react';
 import { UseFormReturn, FieldValues } from 'react-hook-form';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '../ui/tabs';
 import { Card, CardContent } from '../ui/card';
@@ -30,7 +31,11 @@ import { RecordDanmuCard } from './shared/record-danmu-card';
 import { DanmuConfigForm } from './shared/danmu-config-form';
 
 import { EventHooksForm } from './shared/event-hooks-form';
-import { PipelineConfigAdapter } from './shared/pipeline-config-adapter';
+const PipelineConfigAdapter = lazy(() =>
+  import('./shared/pipeline-config-adapter').then((m) => ({
+    default: m.PipelineConfigAdapter,
+  })),
+);
 import { NetworkSettingsCard } from './shared/network-settings-card';
 import { ProxySettingsCard } from './shared/proxy-settings-card';
 import { Alert, AlertDescription, AlertTitle } from '../ui/alert';
@@ -416,7 +421,7 @@ export function SharedConfigEditor<T extends FieldValues>({
                               </span>
                             </TabsTrigger>
                           </TooltipTrigger>
-                          <TooltipContent className="p-0 border-none shadow-none bg-transparent">
+                          <TooltipContent className="p-0 border-border/50 shadow-xl bg-background/95 backdrop-blur-md overflow-hidden">
                             <StatusInfoTooltip
                               theme="blue"
                               icon={<Layers className="w-4 h-4" />}
@@ -455,7 +460,7 @@ export function SharedConfigEditor<T extends FieldValues>({
                               </span>
                             </TabsTrigger>
                           </TooltipTrigger>
-                          <TooltipContent className="p-0 border-none shadow-none bg-transparent">
+                          <TooltipContent className="p-0 border-border/50 shadow-xl bg-background/95 backdrop-blur-md overflow-hidden">
                             <StatusInfoTooltip
                               theme="orange"
                               icon={<Combine className="w-4 h-4" />}
@@ -498,7 +503,7 @@ export function SharedConfigEditor<T extends FieldValues>({
                               </span>
                             </TabsTrigger>
                           </TooltipTrigger>
-                          <TooltipContent className="p-0 border-none shadow-none bg-transparent">
+                          <TooltipContent className="p-0 border-border/50 shadow-xl bg-background/95 backdrop-blur-md overflow-hidden">
                             <StatusInfoTooltip
                               theme="violet"
                               icon={<Clock className="w-4 h-4" />}
@@ -540,11 +545,17 @@ export function SharedConfigEditor<T extends FieldValues>({
                               </Trans>
                             </AlertDescription>
                           </Alert>
-                          <PipelineConfigAdapter
-                            form={form}
-                            name={paths.pipeline}
-                            mode={configMode}
-                          />
+                          <Suspense
+                            fallback={
+                              <div className="h-[400px] w-full bg-muted/20 animate-pulse rounded-lg" />
+                            }
+                          >
+                            <PipelineConfigAdapter
+                              form={form}
+                              name={paths.pipeline}
+                              mode={configMode}
+                            />
+                          </Suspense>
                         </div>
                       </TabsContent>
 
@@ -573,11 +584,17 @@ export function SharedConfigEditor<T extends FieldValues>({
                             </AlertDescription>
                           </Alert>
                           {paths.pairedSegmentPipeline ? (
-                            <PipelineConfigAdapter
-                              form={form}
-                              name={paths.pairedSegmentPipeline}
-                              mode={configMode}
-                            />
+                            <Suspense
+                              fallback={
+                                <div className="h-[400px] w-full bg-muted/20 animate-pulse rounded-lg" />
+                              }
+                            >
+                              <PipelineConfigAdapter
+                                form={form}
+                                name={paths.pairedSegmentPipeline}
+                                mode={configMode}
+                              />
+                            </Suspense>
                           ) : (
                             <div className="p-8 text-center text-muted-foreground border rounded-lg border-dashed">
                               <Trans>
@@ -607,11 +624,17 @@ export function SharedConfigEditor<T extends FieldValues>({
                             </AlertDescription>
                           </Alert>
                           {paths.sessionCompletePipeline ? (
-                            <PipelineConfigAdapter
-                              form={form}
-                              name={paths.sessionCompletePipeline}
-                              mode={configMode}
-                            />
+                            <Suspense
+                              fallback={
+                                <div className="h-[400px] w-full bg-muted/20 animate-pulse rounded-lg" />
+                              }
+                            >
+                              <PipelineConfigAdapter
+                                form={form}
+                                name={paths.sessionCompletePipeline}
+                                mode={configMode}
+                              />
+                            </Suspense>
                           ) : (
                             <div className="p-8 text-center text-muted-foreground border rounded-lg border-dashed">
                               <Trans>

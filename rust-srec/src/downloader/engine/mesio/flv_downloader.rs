@@ -244,6 +244,7 @@ impl FlvDownloader {
 
         // Consume the FLV stream and send to pipeline
         let mut stream = std::pin::pin!(flv_stream);
+        let mut stream_error: Option<String> = None;
 
         while let Some(result) = stream.next().await {
             // Check for cancellation
@@ -262,15 +263,10 @@ impl FlvDownloader {
                 }
                 Err(e) => {
                     error!("FLV stream error for {}: {}", streamer_id, e);
+                    let err = e.to_string();
+                    stream_error = Some(err.clone());
                     let _ = pipeline_input_tx
-                        .send(Err(PipelineError::Processing(e.to_string())))
-                        .await;
-                    let _ = self
-                        .event_tx
-                        .send(SegmentEvent::DownloadFailed {
-                            error: e.to_string(),
-                            recoverable: true,
-                        })
+                        .send(Err(PipelineError::Processing(err)))
                         .await;
                     break;
                 }
@@ -309,6 +305,17 @@ impl FlvDownloader {
                     files_created: files_created + 1,
                 };
 
+                if let Some(err) = &stream_error {
+                    let _ = self
+                        .event_tx
+                        .send(SegmentEvent::DownloadFailed {
+                            error: err.clone(),
+                            recoverable: true,
+                        })
+                        .await;
+                    return Err(crate::Error::Other(format!("FLV stream error: {}", err)));
+                }
+
                 let _ = self
                     .event_tx
                     .send(SegmentEvent::DownloadCompleted {
@@ -326,6 +333,16 @@ impl FlvDownloader {
                 Ok(stats)
             }
             Err(e) => {
+                if let Some(err) = stream_error {
+                    let _ = self
+                        .event_tx
+                        .send(SegmentEvent::DownloadFailed {
+                            error: err.clone(),
+                            recoverable: true,
+                        })
+                        .await;
+                    return Err(crate::Error::Other(format!("FLV stream error: {}", err)));
+                }
                 let _ = self
                     .event_tx
                     .send(SegmentEvent::DownloadFailed {
@@ -425,6 +442,7 @@ impl FlvDownloader {
 
         // Consume the FLV stream and send to writer
         let mut stream = std::pin::pin!(flv_stream);
+        let mut stream_error: Option<String> = None;
 
         while let Some(result) = stream.next().await {
             // Check for cancellation
@@ -444,14 +462,9 @@ impl FlvDownloader {
                 Err(e) => {
                     // Stream error - send error to writer and emit failure event
                     error!("FLV stream error for {}: {}", streamer_id, e);
-                    let _ = tx.send(Err(PipelineError::Processing(e.to_string()))).await;
-                    let _ = self
-                        .event_tx
-                        .send(SegmentEvent::DownloadFailed {
-                            error: e.to_string(),
-                            recoverable: true,
-                        })
-                        .await;
+                    let err = e.to_string();
+                    stream_error = Some(err.clone());
+                    let _ = tx.send(Err(PipelineError::Processing(err))).await;
                     break;
                 }
             }
@@ -475,6 +488,17 @@ impl FlvDownloader {
                     files_created: files_created + 1,
                 };
 
+                if let Some(err) = &stream_error {
+                    let _ = self
+                        .event_tx
+                        .send(SegmentEvent::DownloadFailed {
+                            error: err.clone(),
+                            recoverable: true,
+                        })
+                        .await;
+                    return Err(crate::Error::Other(format!("FLV stream error: {}", err)));
+                }
+
                 // Emit completion event with stats from writer
                 let _ = self
                     .event_tx
@@ -493,6 +517,16 @@ impl FlvDownloader {
                 Ok(stats)
             }
             Err(e) => {
+                if let Some(err) = stream_error {
+                    let _ = self
+                        .event_tx
+                        .send(SegmentEvent::DownloadFailed {
+                            error: err.clone(),
+                            recoverable: true,
+                        })
+                        .await;
+                    return Err(crate::Error::Other(format!("FLV stream error: {}", err)));
+                }
                 let _ = self
                     .event_tx
                     .send(SegmentEvent::DownloadFailed {

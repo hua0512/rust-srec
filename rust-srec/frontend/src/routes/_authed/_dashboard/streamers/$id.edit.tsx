@@ -1,3 +1,4 @@
+import { useEffect, lazy, Suspense } from 'react';
 import { createFileRoute, useNavigate } from '@tanstack/react-router';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
@@ -6,8 +7,27 @@ import { Trans } from '@lingui/react/macro';
 import { Skeleton } from '@/components/ui/skeleton';
 import { motion } from 'motion/react';
 
-import { StreamerGeneralSettings } from '@/components/streamers/config/streamer-general-settings';
-import { StreamerConfiguration } from '@/components/streamers/config/streamer-configuration';
+const StreamerGeneralSettings = lazy(() =>
+  import('@/components/streamers/config/streamer-general-settings').then(
+    (m) => ({ default: m.StreamerGeneralSettings }),
+  ),
+);
+const StreamerConfiguration = lazy(() =>
+  import('@/components/streamers/config/streamer-configuration').then((m) => ({
+    default: m.StreamerConfiguration,
+  })),
+);
+const StreamerFiltersTab = lazy(() =>
+  import('@/components/streamers/edit/streamer-filters-tab').then((m) => ({
+    default: m.StreamerFiltersTab,
+  })),
+);
+const StreamerSaveFab = lazy(() =>
+  import('@/components/streamers/edit/streamer-save-fab').then((m) => ({
+    default: m.StreamerSaveFab,
+  })),
+);
+
 import {
   UpdateStreamerSchema,
   StreamerFormSchema,
@@ -47,8 +67,6 @@ import {
 import { StreamerHeader } from '@/components/streamers/edit/streamer-header';
 import { ActiveDownloadCard } from '@/components/streamers/edit/active-download-card';
 import { RecentSessionsList } from '@/components/streamers/edit/recent-sessions-list';
-import { StreamerFiltersTab } from '@/components/streamers/edit/streamer-filters-tab';
-import { StreamerSaveFab } from '@/components/streamers/edit/streamer-save-fab';
 
 export const Route = createFileRoute('/_authed/_dashboard/streamers/$id/edit')({
   component: EditStreamerPage,
@@ -250,66 +268,84 @@ function EditStreamerForm({
       enabled: streamer.enabled,
       priority: streamer.priority,
       platform_config_id: streamer.platform_config_id || '',
-      template_id: streamer.template_id ?? undefined,
       streamer_specific_config: specificConfig,
     },
+    reValidateMode: 'onBlur',
   });
+  const { reset } = form;
+
+  // Reset form when streamer data changes (e.g. after QR login re-fetch)
+  useEffect(() => {
+    const specificConfig =
+      typeof streamer.streamer_specific_config === 'string'
+        ? JSON.parse(streamer.streamer_specific_config)
+        : (streamer.streamer_specific_config ?? {});
+    reset({
+      name: streamer.name,
+      url: streamer.url,
+      enabled: streamer.enabled,
+      priority: streamer.priority,
+      platform_config_id: streamer.platform_config_id || '',
+      template_id: streamer.template_id ?? undefined,
+      streamer_specific_config: specificConfig,
+    });
+  }, [streamer, reset]);
 
   const platformNameHint = platforms?.find(
     (p) => p.id === streamer.platform_config_id,
   )?.name;
 
   return (
-    <motion.div
-      variants={containerVariants}
-      initial="hidden"
-      animate="visible"
-      className="max-w-7xl mx-auto p-4 md:p-8 space-y-8"
-    >
-      <motion.div variants={itemVariants}>
-        <StreamerHeader
-          streamer={streamer}
-          isRecording={isRecording}
-          isLive={isLive}
-          platform={platform}
-        />
-      </motion.div>
+    <Form {...form}>
+      <motion.div
+        variants={containerVariants}
+        initial="hidden"
+        animate="visible"
+        className="max-w-7xl mx-auto p-4 md:p-8 space-y-8"
+      >
+        <motion.div variants={itemVariants}>
+          <StreamerHeader
+            streamer={streamer}
+            isRecording={isRecording}
+            isLive={isLive}
+            platform={platform}
+          />
+        </motion.div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-4 gap-8">
-        <div className="lg:col-span-3 space-y-6">
-          <Tabs defaultValue="general" className="w-full">
-            <motion.div variants={itemVariants}>
-              <TabsList className="grid w-full grid-cols-1 sm:grid-cols-3 h-auto p-1 bg-muted/30 border rounded-xl md:rounded-full md:inline-flex md:w-auto backdrop-blur-sm">
-                <TabsTrigger
-                  value="general"
-                  className="rounded-lg md:rounded-full px-4 md:px-6 py-2.5 data-[state=active]:bg-background data-[state=active]:text-foreground data-[state=active]:shadow-sm transition-all"
-                >
-                  <Settings className="w-4 h-4 mr-2" />
-                  <Trans>General</Trans>
-                </TabsTrigger>
-                <TabsTrigger
-                  value="advanced"
-                  className="rounded-lg md:rounded-full px-4 md:px-6 py-2.5 data-[state=active]:bg-background data-[state=active]:text-foreground data-[state=active]:shadow-sm transition-all"
-                >
-                  <Activity className="w-4 h-4 mr-2" />
-                  <Trans>Advanced</Trans>
-                </TabsTrigger>
-                <TabsTrigger
-                  value="filters"
-                  className="rounded-lg md:rounded-full px-4 md:px-6 py-2.5 data-[state=active]:bg-background data-[state=active]:text-foreground data-[state=active]:shadow-sm transition-all"
-                >
-                  <FilterIcon className="w-4 h-4 mr-2" />
-                  <Trans>Recording Filters</Trans>
-                  {filters && filters.length > 0 && (
-                    <span className="ml-2 bg-primary/10 text-primary text-[10px] font-bold px-1.5 py-0.5 rounded-full">
-                      {filters.length}
-                    </span>
-                  )}
-                </TabsTrigger>
-              </TabsList>
-            </motion.div>
+        <div className="grid grid-cols-1 lg:grid-cols-4 gap-8">
+          <div className="lg:col-span-3 space-y-6">
+            <Tabs defaultValue="general" className="w-full">
+              <motion.div variants={itemVariants}>
+                <TabsList className="grid w-full grid-cols-1 sm:grid-cols-3 h-auto p-1 bg-muted/30 border rounded-xl md:rounded-full md:inline-flex md:w-auto backdrop-blur-sm">
+                  <TabsTrigger
+                    value="general"
+                    className="rounded-lg md:rounded-full px-4 md:px-6 py-2.5 data-[state=active]:bg-background data-[state=active]:text-foreground data-[state=active]:shadow-sm transition-all"
+                  >
+                    <Settings className="w-4 h-4 mr-2" />
+                    <Trans>General</Trans>
+                  </TabsTrigger>
+                  <TabsTrigger
+                    value="advanced"
+                    className="rounded-lg md:rounded-full px-4 md:px-6 py-2.5 data-[state=active]:bg-background data-[state=active]:text-foreground data-[state=active]:shadow-sm transition-all"
+                  >
+                    <Activity className="w-4 h-4 mr-2" />
+                    <Trans>Advanced</Trans>
+                  </TabsTrigger>
+                  <TabsTrigger
+                    value="filters"
+                    className="rounded-lg md:rounded-full px-4 md:px-6 py-2.5 data-[state=active]:bg-background data-[state=active]:text-foreground data-[state=active]:shadow-sm transition-all"
+                  >
+                    <FilterIcon className="w-4 h-4 mr-2" />
+                    <Trans>Recording Filters</Trans>
+                    {filters && filters.length > 0 && (
+                      <span className="ml-2 bg-primary/10 text-primary text-[10px] font-bold px-1.5 py-0.5 rounded-full">
+                        {filters.length}
+                      </span>
+                    )}
+                  </TabsTrigger>
+                </TabsList>
+              </motion.div>
 
-            <Form {...form}>
               <form
                 id="streamer-edit-form"
                 onSubmit={form.handleSubmit(onSubmit, onInvalid)}
@@ -325,23 +361,27 @@ function EditStreamerForm({
                     animate="visible"
                     key="general"
                   >
-                    <Card>
-                      <CardHeader>
-                        <CardTitle>
-                          <Trans>General Configuration</Trans>
-                        </CardTitle>
-                        <CardDescription>
-                          <Trans>Basic settings for the streamer.</Trans>
-                        </CardDescription>
-                      </CardHeader>
-                      <CardContent>
-                        <StreamerGeneralSettings
-                          form={form}
-                          platformConfigs={platforms || []}
-                          templates={templates || []}
-                        />
-                      </CardContent>
-                    </Card>
+                    <Suspense
+                      fallback={<Skeleton className="h-[400px] w-full" />}
+                    >
+                      <Card>
+                        <CardHeader>
+                          <CardTitle>
+                            <Trans>General Configuration</Trans>
+                          </CardTitle>
+                          <CardDescription>
+                            <Trans>Basic settings for the streamer.</Trans>
+                          </CardDescription>
+                        </CardHeader>
+                        <CardContent>
+                          <StreamerGeneralSettings
+                            form={form}
+                            platformConfigs={platforms || []}
+                            templates={templates || []}
+                          />
+                        </CardContent>
+                      </Card>
+                    </Suspense>
                   </motion.div>
                 </TabsContent>
 
@@ -355,76 +395,81 @@ function EditStreamerForm({
                     animate="visible"
                     key="advanced"
                   >
-                    <Card>
-                      <CardHeader>
-                        <CardTitle>
-                          <Trans>Advanced Configuration</Trans>
-                        </CardTitle>
-                        <CardDescription>
-                          <Trans>
-                            Override global defaults for this streamer.
-                          </Trans>
-                        </CardDescription>
-                      </CardHeader>
-                      <CardContent>
-                        <StreamerConfiguration
-                          form={form}
-                          engines={engines}
-                          streamerId={id}
-                          credentialPlatformNameHint={platformNameHint}
-                        />
-                      </CardContent>
-                    </Card>
+                    <Suspense
+                      fallback={<Skeleton className="h-[600px] w-full" />}
+                    >
+                      <Card>
+                        <CardHeader>
+                          <CardTitle>
+                            <Trans>Advanced Configuration</Trans>
+                          </CardTitle>
+                          <CardDescription>
+                            <Trans>
+                              Override global defaults for this streamer.
+                            </Trans>
+                          </CardDescription>
+                        </CardHeader>
+                        <CardContent>
+                          <StreamerConfiguration
+                            form={form}
+                            engines={engines}
+                            streamerId={id}
+                            credentialPlatformNameHint={platformNameHint}
+                          />
+                        </CardContent>
+                      </Card>
+                    </Suspense>
                   </motion.div>
                 </TabsContent>
               </form>
-            </Form>
 
-            <TabsContent
-              value="filters"
-              className="mt-6 space-y-4 border-none ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
-            >
-              <motion.div
-                variants={tabContentVariants}
-                initial="hidden"
-                animate="visible"
-                key="filters"
+              <TabsContent
+                value="filters"
+                className="mt-6 space-y-4 border-none ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
               >
-                <StreamerFiltersTab
-                  streamerId={id}
-                  filters={filters || []}
-                  isLoading={isFiltersLoading}
-                  onDeleteFilter={(filterId) =>
-                    deleteFilterMutation.mutate(filterId)
-                  }
-                />
-              </motion.div>
-            </TabsContent>
-          </Tabs>
+                <motion.div
+                  variants={tabContentVariants}
+                  initial="hidden"
+                  animate="visible"
+                  key="filters"
+                >
+                  <StreamerFiltersTab
+                    streamerId={id}
+                    filters={filters || []}
+                    isLoading={isFiltersLoading}
+                    onDeleteFilter={(filterId) =>
+                      deleteFilterMutation.mutate(filterId)
+                    }
+                  />
+                </motion.div>
+              </TabsContent>
+            </Tabs>
+          </div>
+
+          <div className="space-y-6">
+            <motion.div variants={itemVariants}>
+              <ActiveDownloadCard
+                downloads={downloads}
+                isRecording={isRecording}
+              />
+            </motion.div>
+
+            <motion.div variants={itemVariants}>
+              <RecentSessionsList
+                sessions={sessions?.items || []}
+                isLoading={isLoadingSessions}
+              />
+            </motion.div>
+          </div>
         </div>
 
-        <div className="space-y-6">
-          <motion.div variants={itemVariants}>
-            <ActiveDownloadCard
-              downloads={downloads}
-              isRecording={isRecording}
-            />
-          </motion.div>
-
-          <motion.div variants={itemVariants}>
-            <RecentSessionsList
-              sessions={sessions?.items || []}
-              isLoading={isLoadingSessions}
-            />
-          </motion.div>
-        </div>
-      </div>
-
-      <StreamerSaveFab
-        isDirty={form.formState.isDirty}
-        isSaving={updateMutation.isPending}
-        formId="streamer-edit-form"
-      />
-    </motion.div>
+        <Suspense fallback={null}>
+          <StreamerSaveFab
+            isSaving={updateMutation.isPending}
+            formId="streamer-edit-form"
+          />
+        </Suspense>
+      </motion.div>
+    </Form>
   );
 }

@@ -24,8 +24,9 @@ import {
   FolderOpen,
 } from 'lucide-react';
 import { Trans } from '@lingui/react/macro';
+import { useLingui } from '@lingui/react';
 import { toast } from 'sonner';
-import { format, formatDistanceToNow } from 'date-fns';
+import { t } from '@lingui/core/macro';
 
 interface MediaOutput {
   id: string;
@@ -56,6 +57,7 @@ const FORMAT_COLORS: Record<string, string> = {
 import { formatBytes } from '@/lib/format';
 
 export function OutputCard({ output }: OutputCardProps) {
+  const { i18n } = useLingui();
   const [copied, setCopied] = useState(false);
 
   // Client-side time for hydration-safe relative time
@@ -67,11 +69,12 @@ export function OutputCard({ output }: OutputCardProps) {
   const handleCopyPath = () => {
     navigator.clipboard.writeText(output.file_path);
     setCopied(true);
-    toast.success('File path copied to clipboard');
+    toast.success(t`File path copied to clipboard`);
     setTimeout(() => setCopied(false), 2000);
   };
 
-  const filename = output.file_path.split(/[\\/]/).pop() || 'Unknown File';
+  const filename =
+    output.file_path.split(/[\\/]/).pop() || i18n._(t`Unknown File`);
   const formatLower = output.format.toLowerCase();
   const colorClass =
     FORMAT_COLORS[formatLower] ||
@@ -100,10 +103,11 @@ export function OutputCard({ output }: OutputCardProps) {
           <div className="flex items-center gap-2">
             <span className="text-[10px] uppercase tracking-wider font-semibold text-muted-foreground/60">
               {mounted
-                ? formatDistanceToNow(new Date(output.created_at), {
-                    addSuffix: true,
+                ? i18n.date(output.created_at, {
+                    dateStyle: 'medium',
+                    timeStyle: 'short',
                   })
-                : format(new Date(output.created_at), 'PP')}
+                : i18n.date(output.created_at, { dateStyle: 'medium' })}
             </span>
           </div>
         </div>
@@ -147,7 +151,7 @@ export function OutputCard({ output }: OutputCardProps) {
                   ),
                 );
                 navigator.clipboard.writeText(dir);
-                toast.success('Directory path copied');
+                toast.success(t`Directory path copied`);
               }}
             >
               <FolderOpen className="mr-2 h-4 w-4" />{' '}
@@ -185,7 +189,7 @@ export function OutputCard({ output }: OutputCardProps) {
                 <Trans>Created</Trans>
               </span>
               <span className="text-xs font-medium">
-                {format(new Date(output.created_at), 'PP')}
+                {i18n.date(output.created_at, { dateStyle: 'medium' })}
               </span>
             </div>
           </div>

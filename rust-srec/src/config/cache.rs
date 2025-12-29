@@ -330,6 +330,7 @@ mod tests {
                 None, // pipeline
                 None, // session_complete_pipeline
                 None, // paired_segment_pipeline
+                true,
             )
             .with_platform(
                 Some(60000),
