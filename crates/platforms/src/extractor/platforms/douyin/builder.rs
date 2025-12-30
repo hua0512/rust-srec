@@ -367,8 +367,8 @@ impl<'a> DouyinRequest<'a> {
             .extractor
             .client
             .request(reqwest::Method::GET, &url)
-            .header(reqwest::header::REFERER, BASE_URL)
-            .header(reqwest::header::ORIGIN, BASE_URL)
+            .header(reqwest::header::REFERER, LIVE_DOUYIN_URL)
+            .header(reqwest::header::ORIGIN, LIVE_DOUYIN_URL)
             .header(reqwest::header::USER_AGENT, DEFAULT_MOBILE_UA);
 
         if !self.cookies.is_empty() {
