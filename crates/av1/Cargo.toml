@@ -12,4 +12,4 @@ byteorder = { workspace = true }
 bytes-util = { path = "../bytes-util" }
 
 [dev-dependencies]
-insta = "1.44"
+insta = "1.45"
