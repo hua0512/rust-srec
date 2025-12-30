@@ -232,7 +232,7 @@ msgstr "添加"
 msgid "Add a module above to configure its log level"
 msgstr "在上方添加模块以配置其日志级别"
 
-#: src/routes/_authed/_dashboard/player/index.tsx:373
+#: src/routes/_authed/_dashboard/player/index.tsx:379
 msgid "Add a stream to start your viewing session."
 msgstr "添加一个流以开始观看会话。"
 
@@ -309,8 +309,8 @@ msgstr "添加 rclone 参数"
 msgid "Add Step"
 msgstr "添加步骤"
 
-#: src/routes/_authed/_dashboard/player/index.tsx:382
-#: src/routes/_authed/_dashboard/player/index.tsx:414
+#: src/routes/_authed/_dashboard/player/index.tsx:388
+#: src/routes/_authed/_dashboard/player/index.tsx:420
 msgid "Add Stream"
 msgstr "添加流"
 
@@ -1949,7 +1949,7 @@ msgstr "引擎列表"
 msgid "Enter a unique name"
 msgstr "输入唯一名称"
 
-#: src/routes/_authed/_dashboard/player/index.tsx:417
+#: src/routes/_authed/_dashboard/player/index.tsx:423
 msgid "Enter a URL to parse and play a stream"
 msgstr "输入 URL 以解析并播放流"
 
@@ -2061,8 +2061,8 @@ msgstr "执行设置"
 msgid "Executions"
 msgstr "执行记录"
 
-#: src/routes/_authed/_dashboard/player/index.tsx:222
-#: src/routes/_authed/_dashboard/player/index.tsx:313
+#: src/routes/_authed/_dashboard/player/index.tsx:256
+#: src/routes/_authed/_dashboard/player/index.tsx:319
 msgid "Exit Immersive"
 msgstr "退出沉浸模式"
 
@@ -2807,7 +2807,7 @@ msgstr "忽略高于此比特率的流。"
 msgid "Ignore streams below this bitrate."
 msgstr "忽略低于此比特率的流。"
 
-#: src/routes/_authed/_dashboard/player/index.tsx:318
+#: src/routes/_authed/_dashboard/player/index.tsx:324
 msgid "Immersive Mode"
 msgstr "沉浸模式"
 
@@ -3959,7 +3959,7 @@ msgstr "配对分段"
 msgid "Paired Segment Pipeline"
 msgstr "配对分段处理管道"
 
-#: src/routes/_authed/_dashboard/player/index.tsx:299
+#: src/routes/_authed/_dashboard/player/index.tsx:305
 msgid "Parse and play live streams"
 msgstr "解析并播放直播流"
 
@@ -3971,7 +3971,7 @@ msgstr "批量解析"
 msgid "Parse Stream"
 msgstr "解析流"
 
-#: src/routes/_authed/_dashboard/player/index.tsx:348
+#: src/routes/_authed/_dashboard/player/index.tsx:354
 msgid "Parsing Stream..."
 msgstr "正在解析流..."
 
@@ -4232,7 +4232,7 @@ msgstr "请重启系统以确保所有配置更改已完全生效。"
 msgid "Please select a JSON file"
 msgstr "请选择一个 JSON 文件"
 
-#: src/routes/_authed/_dashboard/player/index.tsx:351
+#: src/routes/_authed/_dashboard/player/index.tsx:357
 msgid "Please wait while we resolve the stream URL."
 msgstr "正在解析流 URL，请稍候。"
 
@@ -4500,7 +4500,7 @@ msgstr "Rclone 传输"
 msgid "Ready"
 msgstr "就绪"
 
-#: src/routes/_authed/_dashboard/player/index.tsx:370
+#: src/routes/_authed/_dashboard/player/index.tsx:376
 msgid "Ready to Watch"
 msgstr "准备观看"
 
@@ -5311,7 +5311,7 @@ msgstr "流监控遇到问题"
 msgid "Stream Options"
 msgstr "流选项"
 
-#: src/routes/_authed/_dashboard/player/index.tsx:296
+#: src/routes/_authed/_dashboard/player/index.tsx:302
 msgid "Stream Player"
 msgstr "流播放器"
 

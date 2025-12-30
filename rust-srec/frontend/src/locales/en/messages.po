@@ -232,7 +232,7 @@ msgstr "Add"
 msgid "Add a module above to configure its log level"
 msgstr "Add a module above to configure its log level"
 
-#: src/routes/_authed/_dashboard/player/index.tsx:373
+#: src/routes/_authed/_dashboard/player/index.tsx:379
 msgid "Add a stream to start your viewing session."
 msgstr "Add a stream to start your viewing session."
 
@@ -309,8 +309,8 @@ msgstr "Add rclone argument"
 msgid "Add Step"
 msgstr "Add Step"
 
-#: src/routes/_authed/_dashboard/player/index.tsx:382
-#: src/routes/_authed/_dashboard/player/index.tsx:414
+#: src/routes/_authed/_dashboard/player/index.tsx:388
+#: src/routes/_authed/_dashboard/player/index.tsx:420
 msgid "Add Stream"
 msgstr "Add Stream"
 
@@ -1949,7 +1949,7 @@ msgstr "Engines"
 msgid "Enter a unique name"
 msgstr "Enter a unique name"
 
-#: src/routes/_authed/_dashboard/player/index.tsx:417
+#: src/routes/_authed/_dashboard/player/index.tsx:423
 msgid "Enter a URL to parse and play a stream"
 msgstr "Enter a URL to parse and play a stream"
 
@@ -2061,8 +2061,8 @@ msgstr "Execution Settings"
 msgid "Executions"
 msgstr "Executions"
 
-#: src/routes/_authed/_dashboard/player/index.tsx:222
-#: src/routes/_authed/_dashboard/player/index.tsx:313
+#: src/routes/_authed/_dashboard/player/index.tsx:256
+#: src/routes/_authed/_dashboard/player/index.tsx:319
 msgid "Exit Immersive"
 msgstr "Exit Immersive"
 
@@ -2807,7 +2807,7 @@ msgstr "Ignore streams above this bitrate."
 msgid "Ignore streams below this bitrate."
 msgstr "Ignore streams below this bitrate."
 
-#: src/routes/_authed/_dashboard/player/index.tsx:318
+#: src/routes/_authed/_dashboard/player/index.tsx:324
 msgid "Immersive Mode"
 msgstr "Immersive Mode"
 
@@ -3959,7 +3959,7 @@ msgstr "Paired Segment"
 msgid "Paired Segment Pipeline"
 msgstr "Paired Segment Pipeline"
 
-#: src/routes/_authed/_dashboard/player/index.tsx:299
+#: src/routes/_authed/_dashboard/player/index.tsx:305
 msgid "Parse and play live streams"
 msgstr "Parse and play live streams"
 
@@ -3971,7 +3971,7 @@ msgstr "Parse Batch"
 msgid "Parse Stream"
 msgstr "Parse Stream"
 
-#: src/routes/_authed/_dashboard/player/index.tsx:348
+#: src/routes/_authed/_dashboard/player/index.tsx:354
 msgid "Parsing Stream..."
 msgstr "Parsing Stream..."
 
@@ -4232,7 +4232,7 @@ msgstr "Please restart the system to ensure all configuration changes are fully 
 msgid "Please select a JSON file"
 msgstr "Please select a JSON file"
 
-#: src/routes/_authed/_dashboard/player/index.tsx:351
+#: src/routes/_authed/_dashboard/player/index.tsx:357
 msgid "Please wait while we resolve the stream URL."
 msgstr "Please wait while we resolve the stream URL."
 
@@ -4500,7 +4500,7 @@ msgstr "Rclone Transfer"
 msgid "Ready"
 msgstr "Ready"
 
-#: src/routes/_authed/_dashboard/player/index.tsx:370
+#: src/routes/_authed/_dashboard/player/index.tsx:376
 msgid "Ready to Watch"
 msgstr "Ready to Watch"
 
@@ -5311,7 +5311,7 @@ msgstr "Stream monitoring encountered issues"
 msgid "Stream Options"
 msgstr "Stream Options"
 
-#: src/routes/_authed/_dashboard/player/index.tsx:296
+#: src/routes/_authed/_dashboard/player/index.tsx:302
 msgid "Stream Player"
 msgstr "Stream Player"
 

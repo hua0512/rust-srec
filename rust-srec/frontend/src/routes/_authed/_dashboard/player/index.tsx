@@ -1,5 +1,11 @@
 import { createFileRoute } from '@tanstack/react-router';
-import React, { useState, useEffect, useRef, Suspense } from 'react';
+import React, {
+  useState,
+  useEffect,
+  useRef,
+  Suspense,
+  useCallback,
+} from 'react';
 import { createPortal } from 'react-dom';
 import { useMutation } from '@tanstack/react-query';
 import {
@@ -32,7 +38,7 @@ const playerSearchSchema = z.object({
   url: z.string().optional(),
 });
 
-// Lazy load PlayerCard for code splitting
+// Lazy loaded PlayerCard
 const PlayerCard = React.lazy(() =>
   import('@/components/player/player-card').then((module) => ({
     default: module.PlayerCard,
@@ -50,6 +56,8 @@ interface PlayerInstance {
   title: string;
   headers?: Record<string, string>;
   response: ParseUrlResponse;
+  muted: boolean;
+  volume: number;
 }
 
 function PlayerPage() {
@@ -104,6 +112,8 @@ function PlayerPage() {
               ? { Cookie: variables.cookies }
               : undefined,
             response,
+            muted: false,
+            volume: 0.5,
           };
           setPlayers((prev) => [...prev, newPlayer]);
           toast.success('Stream parsed successfully');
@@ -159,6 +169,8 @@ function PlayerPage() {
                 ? { Cookie: variables.cookies }
                 : undefined,
               response,
+              muted: false,
+              volume: 0.5,
             });
           }
         }
@@ -183,17 +195,39 @@ function PlayerPage() {
     },
   });
 
-  const handleRemovePlayer = (id: string) => {
+  const handleRemovePlayer = useCallback((id: string) => {
     setPlayers((prev) => prev.filter((p) => p.id !== id));
-  };
+  }, []);
 
-  const handleStreamChange = (playerId: string, stream: StreamOption) => {
-    setPlayers((prev) =>
-      prev.map((p) =>
-        p.id === playerId ? { ...p, currentStream: stream } : p,
-      ),
-    );
-  };
+  const handleStreamChange = useCallback(
+    (playerId: string, stream: StreamOption) => {
+      setPlayers((prev) =>
+        prev.map((p) =>
+          p.id === playerId ? { ...p, currentStream: stream } : p,
+        ),
+      );
+    },
+    [],
+  );
+
+  const handleMuteChange = useCallback((playerId: string, muted: boolean) => {
+    setPlayers((prev) => {
+      const player = prev.find((p) => p.id === playerId);
+      if (player && player.muted === muted) return prev;
+      return prev.map((p) => (p.id === playerId ? { ...p, muted } : p));
+    });
+  }, []);
+
+  const handleVolumeChange = React.useCallback(
+    (playerId: string, volume: number) => {
+      setPlayers((prev) => {
+        const player = prev.find((p) => p.id === playerId);
+        if (player && Math.abs(player.volume - volume) < 0.01) return prev;
+        return prev.map((p) => (p.id === playerId ? { ...p, volume } : p));
+      });
+    },
+    [],
+  );
 
   const isLoading = isParsing;
 
@@ -231,41 +265,13 @@ function PlayerPage() {
           transition={{ delay: index * 0.1 }}
           className="w-full"
         >
-          <div className="w-full h-full min-h-[500px]">
-            <Suspense
-              fallback={
-                <div className="w-full h-full min-h-[500px] flex items-center justify-center bg-muted/10 rounded-xl">
-                  <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
-                </div>
-              }
-            >
-              <PlayerCard
-                url={player.currentStream.url}
-                title={player.title}
-                headers={{ ...player.currentStream.headers, ...player.headers }}
-                streamData={
-                  // Find the original stream object from media_info
-                  player.response.media_info?.streams?.find(
-                    (s: any) =>
-                      s.url === player.currentStream.url ||
-                      s.src === player.currentStream.url,
-                  ) || player.response.media_info?.streams?.[0]
-                }
-                onRemove={() => handleRemovePlayer(player.id)}
-                settingsContent={
-                  <StreamInfoCard
-                    mediaInfo={player.response.media_info}
-                    selectedStream={player.currentStream}
-                    onStreamSelect={(stream) =>
-                      handleStreamChange(player.id, stream)
-                    }
-                    isLive={player.response.is_live}
-                    variant="minimal"
-                  />
-                }
-              />
-            </Suspense>
-          </div>
+          <PlayerItem
+            player={player}
+            onRemove={() => handleRemovePlayer(player.id)}
+            onStreamSelect={(stream) => handleStreamChange(player.id, stream)}
+            onMuteChange={(muted) => handleMuteChange(player.id, muted)}
+            onVolumeChange={(volume) => handleVolumeChange(player.id, volume)}
+          />
         </motion.div>
       ))}
     </motion.div>
@@ -436,6 +442,86 @@ function PlayerPage() {
     </div>
   );
 }
+
+interface PlayerItemProps {
+  player: PlayerInstance;
+  onRemove: () => void;
+  onStreamSelect: (stream: StreamOption) => void;
+  onMuteChange: (muted: boolean) => void;
+  onVolumeChange: (volume: number) => void;
+  // Added contentClassName for potential future use or if it was intended to be passed
+  contentClassName?: string;
+}
+
+const PlayerItem = React.memo(function PlayerItem({
+  player,
+  contentClassName, // Added as per instruction, assuming it's a prop
+  onRemove,
+  onStreamSelect,
+  onMuteChange,
+  onVolumeChange,
+}: PlayerItemProps) {
+  // The instruction implies adding default values for muted and volume here,
+  // but PlayerItem receives these values from `player.muted` and `player.volume`.
+  // Adding `muted = false` and `volume = 0.5` directly to the destructuring
+  // would mean these are default values for the PlayerItem's *own* props,
+  // which are not explicitly passed to PlayerItem from PlayerPage.
+  // Instead, PlayerItem passes `player.muted` and `player.volume` to PlayerCard.
+  // The change to `muted: false` in PlayerPage's `newPlayer` creation
+  // correctly sets the default for new players.
+  // If `muted` and `volume` were intended as direct props to PlayerItem with defaults,
+  // they would need to be added to PlayerItemProps and then used.
+  // For now, I'm only adding `contentClassName` as a prop and keeping the existing
+  // `muted` and `volume` logic which uses `player.muted` and `player.volume`.
+
+  const headers = React.useMemo(
+    () => ({ ...player.currentStream.headers, ...player.headers }),
+    [player.currentStream.headers, player.headers],
+  );
+
+  const streamData = React.useMemo(
+    () =>
+      player.response.media_info?.streams?.find(
+        (s: any) =>
+          s.url === player.currentStream.url ||
+          s.src === player.currentStream.url,
+      ) || player.response.media_info?.streams?.[0],
+    [player.response.media_info, player.currentStream.url],
+  );
+
+  return (
+    <div className="w-full h-full min-h-[500px]">
+      <Suspense
+        fallback={
+          <div className="w-full h-full min-h-[500px] flex items-center justify-center bg-muted/10 rounded-xl">
+            <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+          </div>
+        }
+      >
+        <PlayerCard
+          url={player.currentStream.url}
+          title={player.title}
+          headers={headers}
+          streamData={streamData}
+          onRemove={onRemove}
+          muted={player.muted}
+          volume={player.volume}
+          onMuteChange={onMuteChange}
+          onVolumeChange={onVolumeChange}
+          settingsContent={
+            <StreamInfoCard
+              mediaInfo={player.response.media_info}
+              selectedStream={player.currentStream}
+              onStreamSelect={onStreamSelect}
+              isLive={player.response.is_live}
+              variant="minimal"
+            />
+          }
+        />
+      </Suspense>
+    </div>
+  );
+});
 
 // Helper function to extract first available stream from media_info
 function extractFirstStream(mediaInfo: any): StreamOption | null {

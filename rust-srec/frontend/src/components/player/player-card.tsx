@@ -21,6 +21,10 @@ export interface PlayerCardProps {
   className?: string;
   contentClassName?: string;
   settingsContent?: React.ReactNode;
+  muted?: boolean;
+  volume?: number;
+  onVolumeChange?: (volume: number) => void;
+  onMuteChange?: (muted: boolean) => void;
 }
 
 export function PlayerCard({
@@ -32,6 +36,10 @@ export function PlayerCard({
   className,
   settingsContent,
   contentClassName,
+  muted = false,
+  volume = 0.5,
+  onVolumeChange,
+  onMuteChange,
 }: PlayerCardProps) {
   const artRef = useRef<HTMLDivElement>(null);
   const playerRef = useRef<any | null>(null); // Type loose for dynamic import
@@ -83,8 +91,7 @@ export function PlayerCard({
         if (response.success && response.stream_info) {
           console.log('[PlayerCard] Resolved URL:', response.stream_info.url);
           setCurrentUrl(response.stream_info.url || url);
-          // Merge headers if any new ones are returned (though backend usually updates headers in stream_info)
-          // Ensuring we use headers from resolved stream info if available
+          // Ensure use headers from resolved stream info if available
           // setCurrentHeaders(response.stream_info.headers || headers);
           setResolvedStream(response.stream_info);
         } else {
@@ -162,8 +169,8 @@ export function PlayerCard({
           container: artRef.current,
           url: playUrl,
           autoplay: true,
-          volume: 0.5,
-          muted: false,
+          volume: volume,
+          muted: muted,
           autoSize: false,
           pip: true,
           mutex: false,
@@ -263,6 +270,11 @@ export function PlayerCard({
           console.log('Player Error: ', err);
           setError(`Player Error: ${err?.message || 'Unknown error'}`);
           setLoading(false);
+        });
+
+        art.on('video:volumechange', () => {
+          onVolumeChange?.(art.volume);
+          onMuteChange?.(art.muted);
         });
       } catch (err) {
         setError(
