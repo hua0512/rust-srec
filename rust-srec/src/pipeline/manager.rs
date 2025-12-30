@@ -1722,18 +1722,6 @@ where
                     return;
                 };
 
-                // Get file size for persistence
-                let file_size = match tokio::fs::metadata(&output_path).await {
-                    Ok(meta) => meta.len(),
-                    Err(e) => {
-                        warn!(
-                            "Failed to get file size for danmu segment {}: {}, using 0",
-                            segment_path, e
-                        );
-                        0
-                    }
-                };
-
                 // Persist danmu segment to database as a media output
                 self.persist_danmu_segment(&session_id, &segment_path, message_count)
                     .await;
