@@ -39,7 +39,7 @@ msgstr "-reconnect 1"
 msgid "(Delete source)"
 msgstr "（删除源文件）"
 
-#: src/routes/_authed/_dashboard/config/logging.tsx:345
+#: src/routes/_authed/_dashboard/config/logging.tsx:330
 msgid "(empty)"
 msgstr "（空）"
 
@@ -198,7 +198,7 @@ msgstr "绝对路径，或在 PATH 中时填写“ffmpeg”"
 msgid "Absolute path or 'streamlink' in PATH"
 msgstr "绝对路径，或在 PATH 中时填写“streamlink”"
 
-#: src/routes/_authed/_dashboard/config/theme.tsx:68
+#: src/routes/_authed/_dashboard/config/theme.tsx:59
 msgid "Accent Color"
 msgstr "强调色"
 
@@ -208,7 +208,7 @@ msgstr "操作"
 
 #: src/components/notifications/forms/webhook-form.tsx:113
 #: src/components/streamers/edit/streamer-meta-form.tsx:178
-#: src/routes/_authed/_dashboard/config/language.tsx:108
+#: src/routes/_authed/_dashboard/config/language.tsx:96
 msgid "Active"
 msgstr "启用"
 
@@ -228,7 +228,7 @@ msgstr "正在录制"
 msgid "Add"
 msgstr "添加"
 
-#: src/routes/_authed/_dashboard/config/logging.tsx:333
+#: src/routes/_authed/_dashboard/config/logging.tsx:318
 msgid "Add a module above to configure its log level"
 msgstr "在上方添加模块以配置其日志级别"
 
@@ -272,7 +272,7 @@ msgstr "添加元数据"
 msgid "Add metadata tags (title, artist, date) to the video file."
 msgstr "为视频文件添加元数据标签（标题、艺术家、日期）。"
 
-#: src/routes/_authed/_dashboard/config/logging.tsx:240
+#: src/routes/_authed/_dashboard/config/logging.tsx:225
 msgid "Add module..."
 msgstr "添加模块..."
 
@@ -322,7 +322,7 @@ msgstr "添加主播"
 msgid "Adjust sampling rate based on danmu traffic volume."
 msgstr "根据弹幕流量动态调整采样率。"
 
-#: src/routes/_authed/_dashboard/config/theme.tsx:80
+#: src/routes/_authed/_dashboard/config/theme.tsx:71
 msgid "Adjust the roundness of UI elements."
 msgstr "调整 UI 元素的圆角程度。"
 
@@ -404,8 +404,8 @@ msgid "API Request Retries"
 msgstr "API 请求重试次数"
 
 #: src/routes/_authed/_dashboard/config/theme.tsx:38
-msgid "Appearance"
-msgstr "外观"
+#~ msgid "Appearance"
+#~ msgstr "外观"
 
 #: src/routes/_authed/_dashboard/config/route.tsx:81
 msgid "Appearance & style"
@@ -415,7 +415,7 @@ msgstr "外观与样式"
 msgid "Appended before output filename"
 msgstr "追加到输出文件名之前"
 
-#: src/routes/_authed/_dashboard/config/theme.tsx:345
+#: src/routes/_authed/_dashboard/config/theme.tsx:336
 msgid "Apply a blur effect to the background of cards and sidebars."
 msgstr "为卡片和侧边栏的背景应用模糊效果。"
 
@@ -692,7 +692,7 @@ msgstr "比特率"
 msgid "Blocked"
 msgstr "已阻止"
 
-#: src/routes/_authed/_dashboard/config/theme.tsx:79
+#: src/routes/_authed/_dashboard/config/theme.tsx:70
 msgid "Border Radius"
 msgstr "圆角半径"
 
@@ -1043,8 +1043,8 @@ msgid "Configure how you want to import data from the selected backup file."
 msgstr "配置从所选备份文件导入数据的方式。"
 
 #: src/routes/_authed/_dashboard/config/logging.tsx:209
-msgid "Configure log levels for different modules"
-msgstr "配置不同模块的日志级别"
+#~ msgid "Configure log levels for different modules"
+#~ msgstr "配置不同模块的日志级别"
 
 #: src/components/filters/FilterDialog.tsx:246
 msgid "Configure recording rules for this streamer."
@@ -1103,7 +1103,7 @@ msgstr "容器"
 msgid "Context"
 msgstr "上下文"
 
-#: src/routes/_authed/_dashboard/config/logging.tsx:228
+#: src/routes/_authed/_dashboard/config/logging.tsx:213
 msgid "Control verbosity for each module. Lower levels include higher ones."
 msgstr "控制各模块的日志详细程度。较低级别包含较高级别。"
 
@@ -1319,7 +1319,7 @@ msgstr "Cron"
 msgid "Cron Expression"
 msgstr "Cron 表达式"
 
-#: src/routes/_authed/_dashboard/config/logging.tsx:342
+#: src/routes/_authed/_dashboard/config/logging.tsx:327
 msgid "Current Filter Directive"
 msgstr "当前过滤指令"
 
@@ -1391,8 +1391,8 @@ msgstr "为此模板自定义特定的引擎设置。"
 #~ msgstr "自定义步骤"
 
 #: src/routes/_authed/_dashboard/config/theme.tsx:41
-msgid "Customize the look and feel of your dashboard."
-msgstr "自定义仪表盘的外观与体验。"
+#~ msgid "Customize the look and feel of your dashboard."
+#~ msgstr "自定义仪表盘的外观与体验。"
 
 #: src/components/pipeline/workflows/step-config-dialog.tsx:442
 msgid "DAG Configuration"
@@ -1424,7 +1424,7 @@ msgstr "弹幕"
 msgid "Danmu Service"
 msgstr "弹幕服务"
 
-#: src/routes/_authed/_dashboard/config/theme.tsx:210
+#: src/routes/_authed/_dashboard/config/theme.tsx:201
 msgid "Dark"
 msgstr "深色"
 
@@ -1864,7 +1864,7 @@ msgstr "启用代理"
 msgid "Enable recording of danmu/chat messages along with the video."
 msgstr "启用弹幕/聊天消息与视频一起录制。"
 
-#: src/routes/_authed/_dashboard/config/theme.tsx:59
+#: src/routes/_authed/_dashboard/config/theme.tsx:50
 msgid "Enable translucent background blur effects."
 msgstr "启用半透明背景模糊效果。"
 
@@ -2593,7 +2593,7 @@ msgstr "正在生成二维码..."
 msgid "Get Started"
 msgstr "开始使用"
 
-#: src/routes/_authed/_dashboard/config/theme.tsx:57
+#: src/routes/_authed/_dashboard/config/theme.tsx:48
 msgid "Glass Mode"
 msgstr "玻璃模式"
 
@@ -2982,8 +2982,8 @@ msgid "Language"
 msgstr "语言"
 
 #: src/routes/_authed/_dashboard/config/language.tsx:51
-msgid "Language Settings"
-msgstr "语言设置"
+#~ msgid "Language Settings"
+#~ msgstr "语言设置"
 
 #: src/components/streamers/card/use-streamer-status.tsx:244
 msgid "Last Activity"
@@ -3013,7 +3013,7 @@ msgstr "启动处理流程"
 msgid "Leave empty for stream copy"
 msgstr "留空以进行流复制"
 
-#: src/routes/_authed/_dashboard/config/theme.tsx:209
+#: src/routes/_authed/_dashboard/config/theme.tsx:200
 msgid "Light"
 msgstr "浅色"
 
@@ -3046,7 +3046,7 @@ msgstr "直播"
 msgid "LIVE"
 msgstr "直播中"
 
-#: src/routes/_authed/_dashboard/config/theme.tsx:98
+#: src/routes/_authed/_dashboard/config/theme.tsx:89
 msgid "Live Preview"
 msgstr "实时预览"
 
@@ -3101,8 +3101,8 @@ msgid "Logging"
 msgstr "日志"
 
 #: src/routes/_authed/_dashboard/config/logging.tsx:206
-msgid "Logging Configuration"
-msgstr "日志配置"
+#~ msgid "Logging Configuration"
+#~ msgstr "日志配置"
 
 #: src/routes/_authed/_dashboard/config/logging.tsx:150
 msgid "Logging configuration updated"
@@ -3325,7 +3325,7 @@ msgstr "最低优先级"
 msgid "Modify the parameters for this processing step."
 msgstr "修改此处理步骤的参数。"
 
-#: src/routes/_authed/_dashboard/config/logging.tsx:225
+#: src/routes/_authed/_dashboard/config/logging.tsx:210
 msgid "Module Log Levels"
 msgstr "模块日志级别"
 
@@ -3536,7 +3536,7 @@ msgstr "尚未生成媒体输出。"
 msgid "No media outputs yet"
 msgstr "暂无媒体文件"
 
-#: src/routes/_authed/_dashboard/config/logging.tsx:330
+#: src/routes/_authed/_dashboard/config/logging.tsx:315
 msgid "No modules configured"
 msgstr "未配置模块"
 
@@ -4350,7 +4350,7 @@ msgstr "预览不可用"
 msgid "Previous Title"
 msgstr "上一个标题"
 
-#: src/routes/_authed/_dashboard/config/theme.tsx:70
+#: src/routes/_authed/_dashboard/config/theme.tsx:61
 msgid "Primary color for buttons and interactions."
 msgstr "按钮和交互的主色。"
 
@@ -4650,7 +4650,7 @@ msgstr "需要字幕"
 msgid "Requires \"Record Danmu\" to be enabled."
 msgstr "需要启用“录制弹幕”。"
 
-#: src/routes/_authed/_dashboard/config/logging.tsx:367
+#: src/routes/_authed/_dashboard/config/logging.tsx:352
 msgid "Reset"
 msgstr "重置"
 
@@ -4817,7 +4817,7 @@ msgstr "采样策略"
 #: src/components/pipeline/workflows/step-config-dialog.tsx:587
 #: src/components/streamers/edit/streamer-save-fab.tsx:53
 #: src/routes/_authed/_dashboard/config/global.tsx:88
-#: src/routes/_authed/_dashboard/config/logging.tsx:376
+#: src/routes/_authed/_dashboard/config/logging.tsx:361
 msgid "Save Changes"
 msgstr "保存更改"
 
@@ -4835,7 +4835,7 @@ msgstr "保存工作流"
 #: src/components/pipeline/workflows/workflow-editor.tsx:238
 #: src/components/streamers/edit/streamer-save-fab.tsx:48
 #: src/routes/_authed/_dashboard/config/global.tsx:88
-#: src/routes/_authed/_dashboard/config/logging.tsx:376
+#: src/routes/_authed/_dashboard/config/logging.tsx:361
 msgid "Saving..."
 msgstr "保存中..."
 
@@ -5020,13 +5020,13 @@ msgstr "选择必须在此步骤运行前成功完成的步骤。"
 msgid "Select type"
 msgstr "选择类型"
 
-#: src/routes/_authed/_dashboard/config/theme.tsx:49
+#: src/routes/_authed/_dashboard/config/theme.tsx:40
 msgid "Select your preferred color scheme."
 msgstr "选择你偏好的配色方案。"
 
 #: src/routes/_authed/_dashboard/config/language.tsx:54
-msgid "Select your preferred language for the interface."
-msgstr "选择你偏好的界面语言。"
+#~ msgid "Select your preferred language for the interface."
+#~ msgstr "选择你偏好的界面语言。"
 
 #: src/components/notifications/subscription-manager.tsx:425
 msgid "selected"
@@ -5435,7 +5435,7 @@ msgid "Sync"
 msgstr "同步"
 
 #: src/components/sidebar/navbar.tsx:33
-#: src/routes/_authed/_dashboard/config/theme.tsx:211
+#: src/routes/_authed/_dashboard/config/theme.tsx:202
 msgid "System"
 msgstr "系统"
 
@@ -5551,7 +5551,7 @@ msgstr "用于录制的底层工具。"
 msgid "Theme"
 msgstr "主题"
 
-#: src/routes/_authed/_dashboard/config/theme.tsx:48
+#: src/routes/_authed/_dashboard/config/theme.tsx:39
 msgid "Theme Mode"
 msgstr "主题模式"
 

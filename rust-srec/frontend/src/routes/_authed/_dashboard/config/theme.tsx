@@ -33,15 +33,6 @@ function ConfigTheme() {
         transition={{ duration: 0.4 }}
         className="flex-1 space-y-8 max-w-2xl"
       >
-        <div>
-          <h1 className="text-3xl font-bold tracking-tight mb-2">
-            <Trans>Appearance</Trans>
-          </h1>
-          <p className="text-muted-foreground">
-            <Trans>Customize the look and feel of your dashboard.</Trans>
-          </p>
-        </div>
-
         <div className="grid gap-8">
           {/* Theme Mode */}
           <Section

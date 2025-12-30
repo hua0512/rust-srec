@@ -39,7 +39,7 @@ msgstr "-reconnect 1"
 msgid "(Delete source)"
 msgstr "(Delete source)"
 
-#: src/routes/_authed/_dashboard/config/logging.tsx:345
+#: src/routes/_authed/_dashboard/config/logging.tsx:330
 msgid "(empty)"
 msgstr "(empty)"
 
@@ -198,7 +198,7 @@ msgstr "Absolute path or 'ffmpeg' if in PATH"
 msgid "Absolute path or 'streamlink' in PATH"
 msgstr "Absolute path or 'streamlink' in PATH"
 
-#: src/routes/_authed/_dashboard/config/theme.tsx:68
+#: src/routes/_authed/_dashboard/config/theme.tsx:59
 msgid "Accent Color"
 msgstr "Accent Color"
 
@@ -208,7 +208,7 @@ msgstr "Actions"
 
 #: src/components/notifications/forms/webhook-form.tsx:113
 #: src/components/streamers/edit/streamer-meta-form.tsx:178
-#: src/routes/_authed/_dashboard/config/language.tsx:108
+#: src/routes/_authed/_dashboard/config/language.tsx:96
 msgid "Active"
 msgstr "Active"
 
@@ -228,7 +228,7 @@ msgstr "Active Recordings"
 msgid "Add"
 msgstr "Add"
 
-#: src/routes/_authed/_dashboard/config/logging.tsx:333
+#: src/routes/_authed/_dashboard/config/logging.tsx:318
 msgid "Add a module above to configure its log level"
 msgstr "Add a module above to configure its log level"
 
@@ -272,7 +272,7 @@ msgstr "Add Metadata"
 msgid "Add metadata tags (title, artist, date) to the video file."
 msgstr "Add metadata tags (title, artist, date) to the video file."
 
-#: src/routes/_authed/_dashboard/config/logging.tsx:240
+#: src/routes/_authed/_dashboard/config/logging.tsx:225
 msgid "Add module..."
 msgstr "Add module..."
 
@@ -322,7 +322,7 @@ msgstr "Add Streamer"
 msgid "Adjust sampling rate based on danmu traffic volume."
 msgstr "Adjust sampling rate based on danmu traffic volume."
 
-#: src/routes/_authed/_dashboard/config/theme.tsx:80
+#: src/routes/_authed/_dashboard/config/theme.tsx:71
 msgid "Adjust the roundness of UI elements."
 msgstr "Adjust the roundness of UI elements."
 
@@ -404,8 +404,8 @@ msgid "API Request Retries"
 msgstr "API Request Retries"
 
 #: src/routes/_authed/_dashboard/config/theme.tsx:38
-msgid "Appearance"
-msgstr "Appearance"
+#~ msgid "Appearance"
+#~ msgstr "Appearance"
 
 #: src/routes/_authed/_dashboard/config/route.tsx:81
 msgid "Appearance & style"
@@ -415,7 +415,7 @@ msgstr "Appearance & style"
 msgid "Appended before output filename"
 msgstr "Appended before output filename"
 
-#: src/routes/_authed/_dashboard/config/theme.tsx:345
+#: src/routes/_authed/_dashboard/config/theme.tsx:336
 msgid "Apply a blur effect to the background of cards and sidebars."
 msgstr "Apply a blur effect to the background of cards and sidebars."
 
@@ -692,7 +692,7 @@ msgstr "Bitrate"
 msgid "Blocked"
 msgstr "Blocked"
 
-#: src/routes/_authed/_dashboard/config/theme.tsx:79
+#: src/routes/_authed/_dashboard/config/theme.tsx:70
 msgid "Border Radius"
 msgstr "Border Radius"
 
@@ -1043,8 +1043,8 @@ msgid "Configure how you want to import data from the selected backup file."
 msgstr "Configure how you want to import data from the selected backup file."
 
 #: src/routes/_authed/_dashboard/config/logging.tsx:209
-msgid "Configure log levels for different modules"
-msgstr "Configure log levels for different modules"
+#~ msgid "Configure log levels for different modules"
+#~ msgstr "Configure log levels for different modules"
 
 #: src/components/filters/FilterDialog.tsx:246
 msgid "Configure recording rules for this streamer."
@@ -1103,7 +1103,7 @@ msgstr "Container"
 msgid "Context"
 msgstr "Context"
 
-#: src/routes/_authed/_dashboard/config/logging.tsx:228
+#: src/routes/_authed/_dashboard/config/logging.tsx:213
 msgid "Control verbosity for each module. Lower levels include higher ones."
 msgstr "Control verbosity for each module. Lower levels include higher ones."
 
@@ -1319,7 +1319,7 @@ msgstr "Cron"
 msgid "Cron Expression"
 msgstr "Cron Expression"
 
-#: src/routes/_authed/_dashboard/config/logging.tsx:342
+#: src/routes/_authed/_dashboard/config/logging.tsx:327
 msgid "Current Filter Directive"
 msgstr "Current Filter Directive"
 
@@ -1391,8 +1391,8 @@ msgstr "Customize specific engine settings for this template."
 #~ msgstr "Customize Step"
 
 #: src/routes/_authed/_dashboard/config/theme.tsx:41
-msgid "Customize the look and feel of your dashboard."
-msgstr "Customize the look and feel of your dashboard."
+#~ msgid "Customize the look and feel of your dashboard."
+#~ msgstr "Customize the look and feel of your dashboard."
 
 #: src/components/pipeline/workflows/step-config-dialog.tsx:442
 msgid "DAG Configuration"
@@ -1424,7 +1424,7 @@ msgstr "Danmu"
 msgid "Danmu Service"
 msgstr "Danmu Service"
 
-#: src/routes/_authed/_dashboard/config/theme.tsx:210
+#: src/routes/_authed/_dashboard/config/theme.tsx:201
 msgid "Dark"
 msgstr "Dark"
 
@@ -1864,7 +1864,7 @@ msgstr "Enable Proxy"
 msgid "Enable recording of danmu/chat messages along with the video."
 msgstr "Enable recording of danmu/chat messages along with the video."
 
-#: src/routes/_authed/_dashboard/config/theme.tsx:59
+#: src/routes/_authed/_dashboard/config/theme.tsx:50
 msgid "Enable translucent background blur effects."
 msgstr "Enable translucent background blur effects."
 
@@ -2593,7 +2593,7 @@ msgstr "Generating QR code..."
 msgid "Get Started"
 msgstr "Get Started"
 
-#: src/routes/_authed/_dashboard/config/theme.tsx:57
+#: src/routes/_authed/_dashboard/config/theme.tsx:48
 msgid "Glass Mode"
 msgstr "Glass Mode"
 
@@ -2982,8 +2982,8 @@ msgid "Language"
 msgstr "Language"
 
 #: src/routes/_authed/_dashboard/config/language.tsx:51
-msgid "Language Settings"
-msgstr "Language Settings"
+#~ msgid "Language Settings"
+#~ msgstr "Language Settings"
 
 #: src/components/streamers/card/use-streamer-status.tsx:244
 msgid "Last Activity"
@@ -3013,7 +3013,7 @@ msgstr "Launch Pipeline"
 msgid "Leave empty for stream copy"
 msgstr "Leave empty for stream copy"
 
-#: src/routes/_authed/_dashboard/config/theme.tsx:209
+#: src/routes/_authed/_dashboard/config/theme.tsx:200
 msgid "Light"
 msgstr "Light"
 
@@ -3046,7 +3046,7 @@ msgstr "Live"
 msgid "LIVE"
 msgstr "LIVE"
 
-#: src/routes/_authed/_dashboard/config/theme.tsx:98
+#: src/routes/_authed/_dashboard/config/theme.tsx:89
 msgid "Live Preview"
 msgstr "Live Preview"
 
@@ -3101,8 +3101,8 @@ msgid "Logging"
 msgstr "Logging"
 
 #: src/routes/_authed/_dashboard/config/logging.tsx:206
-msgid "Logging Configuration"
-msgstr "Logging Configuration"
+#~ msgid "Logging Configuration"
+#~ msgstr "Logging Configuration"
 
 #: src/routes/_authed/_dashboard/config/logging.tsx:150
 msgid "Logging configuration updated"
@@ -3325,7 +3325,7 @@ msgstr "Minimum Priority"
 msgid "Modify the parameters for this processing step."
 msgstr "Modify the parameters for this processing step."
 
-#: src/routes/_authed/_dashboard/config/logging.tsx:225
+#: src/routes/_authed/_dashboard/config/logging.tsx:210
 msgid "Module Log Levels"
 msgstr "Module Log Levels"
 
@@ -3536,7 +3536,7 @@ msgstr "No media outputs generated yet."
 msgid "No media outputs yet"
 msgstr "No media outputs yet"
 
-#: src/routes/_authed/_dashboard/config/logging.tsx:330
+#: src/routes/_authed/_dashboard/config/logging.tsx:315
 msgid "No modules configured"
 msgstr "No modules configured"
 
@@ -4350,7 +4350,7 @@ msgstr "Preview Unavailable"
 msgid "Previous Title"
 msgstr "Previous Title"
 
-#: src/routes/_authed/_dashboard/config/theme.tsx:70
+#: src/routes/_authed/_dashboard/config/theme.tsx:61
 msgid "Primary color for buttons and interactions."
 msgstr "Primary color for buttons and interactions."
 
@@ -4650,7 +4650,7 @@ msgstr "Require Subtitles"
 msgid "Requires \"Record Danmu\" to be enabled."
 msgstr "Requires \"Record Danmu\" to be enabled."
 
-#: src/routes/_authed/_dashboard/config/logging.tsx:367
+#: src/routes/_authed/_dashboard/config/logging.tsx:352
 msgid "Reset"
 msgstr "Reset"
 
@@ -4817,7 +4817,7 @@ msgstr "Sampling Strategy"
 #: src/components/pipeline/workflows/step-config-dialog.tsx:587
 #: src/components/streamers/edit/streamer-save-fab.tsx:53
 #: src/routes/_authed/_dashboard/config/global.tsx:88
-#: src/routes/_authed/_dashboard/config/logging.tsx:376
+#: src/routes/_authed/_dashboard/config/logging.tsx:361
 msgid "Save Changes"
 msgstr "Save Changes"
 
@@ -4835,7 +4835,7 @@ msgstr "Save Workflow"
 #: src/components/pipeline/workflows/workflow-editor.tsx:238
 #: src/components/streamers/edit/streamer-save-fab.tsx:48
 #: src/routes/_authed/_dashboard/config/global.tsx:88
-#: src/routes/_authed/_dashboard/config/logging.tsx:376
+#: src/routes/_authed/_dashboard/config/logging.tsx:361
 msgid "Saving..."
 msgstr "Saving..."
 
@@ -5020,13 +5020,13 @@ msgstr "Select the steps that must complete successfully before this step runs."
 msgid "Select type"
 msgstr "Select type"
 
-#: src/routes/_authed/_dashboard/config/theme.tsx:49
+#: src/routes/_authed/_dashboard/config/theme.tsx:40
 msgid "Select your preferred color scheme."
 msgstr "Select your preferred color scheme."
 
 #: src/routes/_authed/_dashboard/config/language.tsx:54
-msgid "Select your preferred language for the interface."
-msgstr "Select your preferred language for the interface."
+#~ msgid "Select your preferred language for the interface."
+#~ msgstr "Select your preferred language for the interface."
 
 #: src/components/notifications/subscription-manager.tsx:425
 msgid "selected"
@@ -5435,7 +5435,7 @@ msgid "Sync"
 msgstr "Sync"
 
 #: src/components/sidebar/navbar.tsx:33
-#: src/routes/_authed/_dashboard/config/theme.tsx:211
+#: src/routes/_authed/_dashboard/config/theme.tsx:202
 msgid "System"
 msgstr "System"
 
@@ -5551,7 +5551,7 @@ msgstr "The underlying tool used for downloading."
 msgid "Theme"
 msgstr "Theme"
 
-#: src/routes/_authed/_dashboard/config/theme.tsx:48
+#: src/routes/_authed/_dashboard/config/theme.tsx:39
 msgid "Theme Mode"
 msgstr "Theme Mode"
 

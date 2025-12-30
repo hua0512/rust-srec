@@ -292,7 +292,7 @@ export function PlayerCard({
         artRef.current.innerHTML = '';
       }
     };
-  }, [url, headers, refreshKey]);
+  }, [currentUrl, currentHeaders, resolving, title, refreshKey]);
 
   return (
     <Card
