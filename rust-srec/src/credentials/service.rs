@@ -97,6 +97,15 @@ impl<R: ConfigRepository + 'static> CredentialRefreshService<R> {
         &self,
         source: &CredentialSource,
     ) -> Result<Option<String>, CredentialError> {
+        // Skip platforms without a registered credential manager (unsupported for auto-refresh).
+        if !self.managers.contains_key(&source.platform_name) {
+            debug!(
+                platform = %source.platform_name,
+                "Platform does not support credential auto-refresh; skipping"
+            );
+            return Ok(None);
+        }
+
         // Check if we already checked today
         if let Some(cached_status) = self.daily_tracker.get_cached_status(&source.scope) {
             return self.handle_cached_status(source, cached_status).await;

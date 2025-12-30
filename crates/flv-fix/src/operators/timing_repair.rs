@@ -568,7 +568,7 @@ impl Processor<FlvData> for TimingRepairOperator {
                     self.state.rebound_count += 1;
                     let new_delta = self.state.calculate_delta_correction(&tag);
 
-                    warn!(
+                    debug!(
                         "{} TimingRepair: Timestamp rebound detected: {}ms, last ts: {}ms,  would go back in time - applying correction delta: {}ms",
                         self.context.name,
                         tag.timestamp_ms,

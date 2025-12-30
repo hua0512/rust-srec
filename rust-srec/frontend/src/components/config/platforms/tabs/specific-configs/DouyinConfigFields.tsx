@@ -122,6 +122,52 @@ export function DouyinConfigFields({
           </FormItem>
         )}
       />
+      <FormField
+        control={form.control}
+        name={`${fieldName}.force_mobile_api`}
+        render={({ field }) => (
+          <FormItem className="flex flex-row items-center justify-between rounded-lg border p-4">
+            <div className="space-y-0.5">
+              <FormLabel className="text-base">
+                <Trans>Force Mobile API</Trans>
+              </FormLabel>
+              <FormDescription>
+                <Trans>Use mobile API for stream extraction.</Trans>
+              </FormDescription>
+            </div>
+            <FormControl>
+              <Switch
+                checked={!!field.value}
+                onCheckedChange={field.onChange}
+              />
+            </FormControl>
+          </FormItem>
+        )}
+      />
+      <FormField
+        control={form.control}
+        name={`${fieldName}.skip_interactive_games`}
+        render={({ field }) => (
+          <FormItem className="flex flex-row items-center justify-between rounded-lg border p-4">
+            <div className="space-y-0.5">
+              <FormLabel className="text-base">
+                <Trans>Skip Interactive Games</Trans>
+              </FormLabel>
+              <FormDescription>
+                <Trans>
+                  Treat interactive game streams (互动玩法) as offline.
+                </Trans>
+              </FormDescription>
+            </div>
+            <FormControl>
+              <Switch
+                checked={field.value ?? true}
+                onCheckedChange={field.onChange}
+              />
+            </FormControl>
+          </FormItem>
+        )}
+      />
     </div>
   );
 }

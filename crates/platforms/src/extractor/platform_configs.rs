@@ -36,6 +36,12 @@ pub struct DouyinConfig {
     /// Specific ttwid cookie value
     #[serde(skip_serializing_if = "Option::is_none")]
     pub ttwid: Option<String>,
+    /// Force use mobile API for stream extraction (default: false)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub force_mobile_api: Option<bool>,
+    /// Skip interactive game streams (互动玩法), treat as offline (default: true)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub skip_interactive_games: Option<bool>,
 }
 
 /// Bilibili platform-specific configuration

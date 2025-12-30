@@ -2484,6 +2484,10 @@ msgstr "Fonts Directory"
 msgid "Force Huoshan CDN"
 msgstr "Force Huoshan CDN"
 
+#: src/components/config/platforms/tabs/specific-configs/DouyinConfigFields.tsx:132
+msgid "Force Mobile API"
+msgstr "Force Mobile API"
+
 #: src/components/config/platforms/tabs/specific-configs/DouyinConfigFields.tsx:38
 #: src/components/config/platforms/tabs/specific-configs/HuyaConfigFields.tsx:86
 #: src/components/config/platforms/tabs/specific-configs/TikTokConfigFields.tsx:29
@@ -5182,6 +5186,10 @@ msgstr "Size"
 msgid "Size and duration constraints for recordings."
 msgstr "Size and duration constraints for recordings."
 
+#: src/components/config/platforms/tabs/specific-configs/DouyinConfigFields.tsx:154
+msgid "Skip Interactive Games"
+msgstr "Skip Interactive Games"
+
 #: src/components/notifications/forms/email-form.tsx:36
 msgid "SMTP Host"
 msgstr "SMTP Host"
@@ -5721,6 +5729,10 @@ msgstr "Track Information"
 msgid "Transcode H.264"
 msgstr "Transcode H.264"
 
+#: src/components/config/platforms/tabs/specific-configs/DouyinConfigFields.tsx:157
+msgid "Treat interactive game streams (互动玩法) as offline."
+msgstr "Treat interactive game streams (互动玩法) as offline."
+
 #: src/components/config/platforms/tabs/specific-configs/DouyuConfigFields.tsx:49
 msgid "Treat interactive games as offline to avoid recording if not desired."
 msgstr "Treat interactive games as offline to avoid recording if not desired."
@@ -5959,6 +5971,10 @@ msgstr "Use <0>-movflags +faststart</0>"
 #: src/components/pipeline/presets/processors/danmaku-factory-config-form.tsx:143
 msgid "Use danmu_inputs from job manifest"
 msgstr "Use danmu_inputs from job manifest"
+
+#: src/components/config/platforms/tabs/specific-configs/DouyinConfigFields.tsx:135
+msgid "Use mobile API for stream extraction."
+msgstr "Use mobile API for stream extraction."
 
 #: src/components/config/platforms/tabs/specific-configs/DouyinConfigFields.tsx:60
 msgid "Use separate stream data for double screen."

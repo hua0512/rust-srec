@@ -16,6 +16,8 @@ export const DouyinConfigSchema = z
     double_screen: z.boolean().nullable().optional(),
     ttwid_management_mode: z.string().nullable().optional(),
     ttwid: z.string().nullable().optional(),
+    force_mobile_api: z.boolean().nullable().optional(),
+    skip_interactive_games: z.boolean().nullable().optional(),
   })
   .strict();
 

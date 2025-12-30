@@ -27,11 +27,18 @@ use chrono::{TimeZone, Utc};
 
 use super::URL_REGEX;
 
-/// Douyin WebSocket server URL template
-const DOUYIN_WS_URL: &str = "wss://webcast100-ws-web-lq.douyin.com/webcast/im/push/v2/";
+/// Douyin WebSocket server hosts
+const DOUYIN_WS_HOSTS: &[&str] = &[
+    "wss://webcast100-ws-web-lq.douyin.com",
+    "wss://webcast100-ws-web-hl.douyin.com",
+    "wss://webcast100-ws-web-lf.douyin.com",
+];
+
+/// Douyin WebSocket server URL path
+const DOUYIN_WS_URL_PATH: &str = "/webcast/im/push/v2/";
 
 /// Heartbeat interval in seconds
-const HEARTBEAT_INTERVAL_SECS: u64 = 10;
+const HEARTBEAT_INTERVAL_SECS: u64 = 15;
 
 /// The webmssdk.js file content for signature generation
 const WEBMSSDK_JS: &str = include_str!("../../../resources/douyin-webmssdk.js");
@@ -120,9 +127,15 @@ impl DouyinDanmuProtocol {
         let md5_hash = Self::md5_hash(&signature_param);
         let signature = Self::generate_signature(&md5_hash)?;
 
+        use rand::seq::IndexedRandom;
+        let mut rng = rand::rng();
+        let host = DOUYIN_WS_HOSTS
+            .choose(&mut rng)
+            .unwrap_or(&DOUYIN_WS_HOSTS[0]);
+
         let url = format!(
-            "{}?{}&signature={}",
-            DOUYIN_WS_URL, query_for_sign, signature
+            "{}{}?{}&signature={}",
+            host, DOUYIN_WS_URL_PATH, query_for_sign, signature
         );
 
         Ok(url)
