@@ -3,7 +3,7 @@ use crate::extractor::error::ExtractorError;
 use crate::extractor::platform_extractor::{Extractor, PlatformExtractor};
 use crate::extractor::platforms::douyin::abogus::ABogus;
 use crate::extractor::platforms::douyin::apis::{
-    APP_REFLOW_URL, BASE_URL, LIVE_DOUYIN_URL, WEBCAST_ENTER_URL,
+    APP_REFLOW_URL, LIVE_DOUYIN_URL, WEBCAST_ENTER_URL,
 };
 use crate::extractor::platforms::douyin::models::{
     DouyinAppResponse, DouyinPcData, DouyinPcResponse, DouyinQuality, DouyinStreamDataParsed,
