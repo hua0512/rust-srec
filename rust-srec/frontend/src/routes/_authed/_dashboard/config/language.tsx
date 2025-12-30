@@ -1,7 +1,7 @@
 import { createFileRoute } from '@tanstack/react-router';
 import { motion } from 'motion/react';
 import { useLingui } from '@lingui/react';
-import { Check, Languages } from 'lucide-react';
+import { Check } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Trans } from '@lingui/react/macro';
 import { Card } from '@/components/ui/card';

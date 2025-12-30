@@ -79,8 +79,7 @@ function PlayerPage() {
       autoPlayProcessed.current = url;
       parseSingleMutation.mutate({ url });
     }
-    // If url is cleared or changed empty, reset? No, keep logic simple.
-  }, [url]); // Trigger when url changes
+  }, [url]);
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -455,24 +454,11 @@ interface PlayerItemProps {
 
 const PlayerItem = React.memo(function PlayerItem({
   player,
-  contentClassName, // Added as per instruction, assuming it's a prop
   onRemove,
   onStreamSelect,
   onMuteChange,
   onVolumeChange,
 }: PlayerItemProps) {
-  // The instruction implies adding default values for muted and volume here,
-  // but PlayerItem receives these values from `player.muted` and `player.volume`.
-  // Adding `muted = false` and `volume = 0.5` directly to the destructuring
-  // would mean these are default values for the PlayerItem's *own* props,
-  // which are not explicitly passed to PlayerItem from PlayerPage.
-  // Instead, PlayerItem passes `player.muted` and `player.volume` to PlayerCard.
-  // The change to `muted: false` in PlayerPage's `newPlayer` creation
-  // correctly sets the default for new players.
-  // If `muted` and `volume` were intended as direct props to PlayerItem with defaults,
-  // they would need to be added to PlayerItemProps and then used.
-  // For now, I'm only adding `contentClassName` as a prop and keeping the existing
-  // `muted` and `volume` logic which uses `player.muted` and `player.volume`.
 
   const headers = React.useMemo(
     () => ({ ...player.currentStream.headers, ...player.headers }),

@@ -37,7 +37,7 @@ import { Trans } from '@lingui/react/macro';
 import { t } from '@lingui/core/macro';
 import { formatBytes, formatDuration } from '@/lib/format';
 import { cn, getProxiedUrl } from '@/lib/utils';
-import { motion, AnimatePresence } from 'motion/react';
+import { motion } from 'motion/react';
 
 type Session = z.infer<typeof SessionSchema>;
 

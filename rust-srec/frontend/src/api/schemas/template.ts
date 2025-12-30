@@ -23,6 +23,7 @@ export const TemplateSchema = z.object({
         try {
           return JSON.parse(val);
         } catch (e) {
+          console.error('Failed to parse JSON:', e);
           return val;
         }
       }
