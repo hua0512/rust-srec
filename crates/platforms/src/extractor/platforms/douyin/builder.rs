@@ -492,11 +492,11 @@ impl<'a> DouyinRequest<'a> {
             }
         };
 
-        // Check for "直播已结束" prompt
+        // Check for "直播已结束" prompt or visibility restriction
         if let Some(prompts) = &response.data.prompts
-            && prompts.contains("直播已结束")
+            && (prompts.contains("直播已结束") || prompts.contains("你不在主播设置的可见范围内"))
         {
-            debug!("Stream ended with response: {:?}", response);
+            debug!("Stream ended or restricted with response: {:?}", response);
             // If we have user info, we can return offline info
             // Try to get title from room data if available, otherwise use default
             let title = response
@@ -570,8 +570,9 @@ impl<'a> DouyinRequest<'a> {
             }
         };
         if let Some(prompts) = &response.data.prompts {
-            if prompts.contains("直播已结束") {
-                debug!("Stream ended with response: {:?}", response);
+            if prompts.contains("直播已结束") || prompts.contains("你不在主播设置的可见范围内")
+            {
+                debug!("Stream ended or restricted with response: {:?}", response);
                 let user = response.data.user.as_ref();
                 let title = response
                     .data
@@ -1133,7 +1134,7 @@ mod tests {
     use crate::extractor::platforms::douyin::models::{DouyinAvatarThumb, DouyinUserInfo};
     use crate::extractor::platforms::douyin::utils::GlobalTtwidManager;
 
-    const TEST_URL: &str = "https://live.douyin.com/71564838536";
+    const TEST_URL: &str = "https://live.douyin.com/XXbaby0125";
 
     #[tokio::test]
     #[ignore]

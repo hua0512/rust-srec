@@ -1738,11 +1738,6 @@ where
                 self.persist_danmu_segment(&session_id, &segment_path, message_count)
                     .await;
 
-                debug!(
-                    "Persisted danmu segment for session {} ({} messages, {} bytes)",
-                    session_id, message_count, file_size
-                );
-
                 let merged_config = if let Some(config_service) = &self.config_service {
                     config_service
                         .get_config_for_streamer(&streamer_id)
