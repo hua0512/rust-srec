@@ -26,7 +26,7 @@ reqwest = { workspace = true }
 sqlx = { workspace = true }
 
 # Caching
-dashmap = "5.5"
+dashmap = "6.1"
 indexmap = "2"
 parking_lot = { workspace = true }
 
