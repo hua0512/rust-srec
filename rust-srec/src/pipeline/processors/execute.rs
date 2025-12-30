@@ -312,7 +312,6 @@ impl Processor for ExecuteCommandProcessor {
             input.inputs.clone()
         };
 
-        // Requirements: 11.5 - Track succeeded inputs for partial failure reporting
         Ok(ProcessorOutput {
             outputs,
             duration_secs: duration,

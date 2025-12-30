@@ -14,6 +14,7 @@ use argon2::{
 };
 use chrono::{Duration, Utc};
 use sha2::{Digest, Sha256};
+use tracing::{debug, info, warn};
 
 use crate::database::models::RefreshTokenDbModel;
 use crate::database::repositories::{RefreshTokenRepository, UserRepository};
@@ -207,6 +208,12 @@ impl AuthService {
         hex::encode(hasher.finalize())
     }
 
+    fn token_hash_prefix(token_hash: &str) -> &str {
+        const PREFIX_LEN: usize = 10;
+        let end = std::cmp::min(PREFIX_LEN, token_hash.len());
+        &token_hash[..end]
+    }
+
     /// Validate password strength.
     pub fn validate_password_strength(&self, password: &str) -> Result<(), AuthError> {
         if password.len() < self.config.min_password_length {
@@ -243,6 +250,12 @@ impl AuthService {
         password: &str,
         device_info: Option<String>,
     ) -> Result<AuthResponse, AuthError> {
+        debug!(
+            username = %username,
+            device_info = ?device_info.as_deref(),
+            "Login attempt"
+        );
+
         // Find user by username
         let user = self
             .user_repo
@@ -253,11 +266,13 @@ impl AuthService {
 
         // Check if account is active
         if !user.is_active {
+            warn!(user_id = %user.id, username = %username, "Login blocked: account disabled");
             return Err(AuthError::AccountDisabled);
         }
 
         // Verify password
         if !Self::verify_password(password, &user.password_hash)? {
+            warn!(user_id = %user.id, username = %username, "Login failed: invalid credentials");
             return Err(AuthError::InvalidCredentials);
         }
 
@@ -292,6 +307,15 @@ impl AuthService {
             .await
             .map_err(|e| AuthError::Database(e.to_string()))?;
 
+        info!(
+            user_id = %user.id,
+            username = %username,
+            refresh_token_id = %token_model.id,
+            refresh_expires_at = %token_model.expires_at,
+            device_info = ?token_model.device_info.as_deref(),
+            "Login successful (refresh token issued)"
+        );
+
         Ok(AuthResponse {
             access_token,
             refresh_token,
@@ -306,6 +330,8 @@ impl AuthService {
     /// Refresh tokens using a valid refresh token.
     pub async fn refresh_tokens(&self, refresh_token: &str) -> Result<AuthResponse, AuthError> {
         let token_hash = Self::hash_refresh_token(refresh_token);
+        let token_hash_prefix = Self::token_hash_prefix(&token_hash);
+        debug!(token_hash_prefix = %token_hash_prefix, "Refresh token request received");
 
         // Find the token
         let stored_token = self
@@ -313,20 +339,44 @@ impl AuthService {
             .find_by_token_hash(&token_hash)
             .await
             .map_err(|e| AuthError::Database(e.to_string()))?
-            .ok_or(AuthError::InvalidToken)?;
+            .ok_or_else(|| {
+                warn!(token_hash_prefix = %token_hash_prefix, "Refresh token not found");
+                AuthError::InvalidToken
+            })?;
 
         // Check if token is revoked (potential reuse attack)
         if stored_token.is_revoked() {
+            warn!(
+                user_id = %stored_token.user_id,
+                refresh_token_id = %stored_token.id,
+                refresh_expires_at = %stored_token.expires_at,
+                refresh_revoked_at = ?stored_token.revoked_at.as_deref(),
+                device_info = ?stored_token.device_info.as_deref(),
+                token_hash_prefix = %token_hash_prefix,
+                "Revoked refresh token presented (possible token reuse)"
+            );
             // Security breach detection: revoke all tokens for this user
             self.token_repo
                 .revoke_all_for_user(&stored_token.user_id)
                 .await
                 .map_err(|e| AuthError::Database(e.to_string()))?;
+            warn!(
+                user_id = %stored_token.user_id,
+                "Revoked all refresh tokens for user due to revoked token reuse attempt"
+            );
             return Err(AuthError::TokenRevoked);
         }
 
         // Check if token is expired
         if stored_token.is_expired() {
+            info!(
+                user_id = %stored_token.user_id,
+                refresh_token_id = %stored_token.id,
+                refresh_expires_at = %stored_token.expires_at,
+                device_info = ?stored_token.device_info.as_deref(),
+                token_hash_prefix = %token_hash_prefix,
+                "Expired refresh token presented"
+            );
             return Err(AuthError::TokenExpired);
         }
 
@@ -335,6 +385,12 @@ impl AuthService {
             .revoke(&stored_token.id)
             .await
             .map_err(|e| AuthError::Database(e.to_string()))?;
+        debug!(
+            user_id = %stored_token.user_id,
+            refresh_token_id = %stored_token.id,
+            token_hash_prefix = %token_hash_prefix,
+            "Refresh token rotated (old token revoked)"
+        );
 
         // Get user for roles
         let user = self
@@ -345,6 +401,10 @@ impl AuthService {
             .ok_or(AuthError::UserNotFound)?;
 
         if !user.is_active {
+            warn!(
+                user_id = %user.id,
+                "Token refresh blocked: account disabled"
+            );
             return Err(AuthError::AccountDisabled);
         }
 
@@ -373,6 +433,16 @@ impl AuthService {
             .await
             .map_err(|e| AuthError::Database(e.to_string()))?;
 
+        info!(
+            user_id = %user.id,
+            old_refresh_token_id = %stored_token.id,
+            new_refresh_token_id = %token_model.id,
+            refresh_expires_at = %token_model.expires_at,
+            device_info = ?token_model.device_info.as_deref(),
+            token_hash_prefix = %token_hash_prefix,
+            "Token refresh succeeded (refresh token rotated)"
+        );
+
         Ok(AuthResponse {
             access_token,
             refresh_token: new_refresh_token,
@@ -391,6 +461,7 @@ impl AuthService {
         current_password: &str,
         new_password: &str,
     ) -> Result<(), AuthError> {
+        debug!(user_id = %user_id, "Password change attempt");
         // Get user
         let user = self
             .user_repo
@@ -401,6 +472,7 @@ impl AuthService {
 
         // Verify current password
         if !Self::verify_password(current_password, &user.password_hash)? {
+            warn!(user_id = %user_id, "Password change failed: incorrect current password");
             return Err(AuthError::IncorrectCurrentPassword);
         }
 
@@ -431,24 +503,41 @@ impl AuthService {
             .await
             .map_err(|e| AuthError::Database(e.to_string()))?;
 
+        info!(
+            user_id = %user_id,
+            "Password changed; revoked all refresh tokens for user"
+        );
+
         Ok(())
     }
 
     /// Logout by revoking a specific refresh token.
     pub async fn logout(&self, refresh_token: &str) -> Result<(), AuthError> {
         let token_hash = Self::hash_refresh_token(refresh_token);
+        let token_hash_prefix = Self::token_hash_prefix(&token_hash);
+        debug!(token_hash_prefix = %token_hash_prefix, "Logout request received");
 
         let stored_token = self
             .token_repo
             .find_by_token_hash(&token_hash)
             .await
             .map_err(|e| AuthError::Database(e.to_string()))?
-            .ok_or(AuthError::InvalidToken)?;
+            .ok_or_else(|| {
+                warn!(token_hash_prefix = %token_hash_prefix, "Logout failed: refresh token not found");
+                AuthError::InvalidToken
+            })?;
 
         self.token_repo
             .revoke(&stored_token.id)
             .await
             .map_err(|e| AuthError::Database(e.to_string()))?;
+
+        info!(
+            user_id = %stored_token.user_id,
+            refresh_token_id = %stored_token.id,
+            device_info = ?stored_token.device_info.as_deref(),
+            "Logout successful (refresh token revoked)"
+        );
 
         Ok(())
     }
@@ -459,6 +548,8 @@ impl AuthService {
             .revoke_all_for_user(user_id)
             .await
             .map_err(|e| AuthError::Database(e.to_string()))?;
+
+        info!(user_id = %user_id, "Logout-all successful (all refresh tokens revoked)");
 
         Ok(())
     }

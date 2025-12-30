@@ -1,0 +1,28 @@
+# Dependencies
+node_modules/
+
+# Build output
+.vitepress/dist/
+.vitepress/cache/
+
+# Git
+.git/
+.gitignore
+
+# Editor
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+npm-debug.log*
+
+# Source files not needed in container
+*.md
+!README.md

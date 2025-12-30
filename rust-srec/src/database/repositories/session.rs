@@ -30,7 +30,7 @@ pub trait SessionRepository: Send + Sync {
     async fn delete_session(&self, id: &str) -> Result<()>;
     async fn delete_sessions_batch(&self, ids: &[String]) -> Result<u64>;
 
-    // Filtering and pagination (Requirements 4.1, 4.3, 4.4, 4.5)
+    // Filtering and pagination
     /// List sessions with optional filters and pagination.
     /// Returns a tuple of (sessions, total_count).
     async fn list_sessions_filtered(
@@ -48,12 +48,11 @@ pub trait SessionRepository: Send + Sync {
     async fn create_media_output(&self, output: &MediaOutputDbModel) -> Result<()>;
     async fn delete_media_output(&self, id: &str) -> Result<()>;
 
-    /// Get the count of media outputs for a session (Requirements 4.2).
+    /// Get the count of media outputs for a session.
     async fn get_output_count(&self, session_id: &str) -> Result<u32>;
 
     /// List media outputs with optional filters and pagination.
     /// Returns a tuple of (outputs, total_count).
-    /// Requirements: 5.1, 5.2, 5.3, 5.4
     async fn list_outputs_filtered(
         &self,
         filters: &OutputFilters,

@@ -1675,7 +1675,6 @@ mod tests {
     }
 
     // **Feature: download-config-updates, Property 5: Concurrent updates are thread-safe**
-    // **Validates: Requirements 4.1, 4.3**
     proptest! {
         #![proptest_config(ProptestConfig::with_cases(100))]
 

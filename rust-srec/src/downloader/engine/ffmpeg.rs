@@ -155,7 +155,7 @@ impl DownloadEngine for FfmpegEngine {
 
     async fn start(&self, handle: Arc<DownloadHandle>) -> Result<()> {
         let config = handle.config_snapshot();
-        // 1. Ensure output directory exists before spawning process (Requirements 2.1, 2.2)
+        // 1. Ensure output directory exists before spawning process
         if let Err(e) = ensure_output_dir(&config.output_dir).await {
             let _ = handle.event_tx.try_send(SegmentEvent::DownloadFailed {
                 error: e.clone(),
@@ -185,14 +185,14 @@ impl DownloadEngine for FfmpegEngine {
             .take()
             .ok_or_else(|| crate::Error::Other("Failed to capture ffmpeg stderr".to_string()))?;
 
-        // 2. Use shared process waiter utility (Requirements 3.1, 3.2)
+        // 2. Use shared process waiter utility
         let exit_rx = spawn_process_waiter(child, handle.cancellation_token.clone());
 
         let event_tx = handle.event_tx.clone();
         let cancellation_token = handle.cancellation_token.clone();
         let streamer_id = config.streamer_id.clone();
 
-        // 3. Spawn stderr reader task - waits for exit status before emitting event (Requirements 1.1, 1.3, 1.4)
+        // 3. Spawn stderr reader task - waits for exit status before emitting event
         tokio::spawn(async move {
             let reader = BufReader::new(stderr);
             let mut lines = reader.lines();
@@ -261,7 +261,7 @@ impl DownloadEngine for FfmpegEngine {
 
             match exit_code {
                 Some(0) => {
-                    // Exit code 0 - success (Requirement 1.3)
+                    // Exit code 0 - success
                     let _ = event_tx
                         .send(SegmentEvent::DownloadCompleted {
                             total_bytes,
@@ -271,7 +271,7 @@ impl DownloadEngine for FfmpegEngine {
                         .await;
                 }
                 Some(code) => {
-                    // Non-zero exit code - failure (Requirements 1.1, 3.3)
+                    // Non-zero exit code - failure
                     let _ = event_tx
                         .send(SegmentEvent::DownloadFailed {
                             error: format!("FFmpeg exited with code {}", code),
@@ -280,7 +280,7 @@ impl DownloadEngine for FfmpegEngine {
                         .await;
                 }
                 None => {
-                    // Cancelled - don't emit any event (Requirement 1.4)
+                    // Cancelled - don't emit any event
                     debug!(
                         "Download cancelled, not emitting completion event for {}",
                         streamer_id

@@ -280,7 +280,6 @@ mod property_tests {
     }
 
     // **Feature: jwt-auth-and-api-implementation, Property 2: Valid JWT Token Authentication**
-    // **Validates: Requirements 1.2**
     proptest! {
         #![proptest_config(ProptestConfig::with_cases(100))]
 
@@ -317,7 +316,6 @@ mod property_tests {
     }
 
     // **Feature: jwt-auth-and-api-implementation, Property 3: Expired JWT Token Rejection**
-    // **Validates: Requirements 1.3**
     proptest! {
         #![proptest_config(ProptestConfig::with_cases(100))]
 
@@ -350,7 +348,6 @@ mod property_tests {
     }
 
     // **Feature: jwt-auth-and-api-implementation, Property 4: Invalid JWT Token Rejection**
-    // **Validates: Requirements 1.4**
     proptest! {
         #![proptest_config(ProptestConfig::with_cases(100))]
 

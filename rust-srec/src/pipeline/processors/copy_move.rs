@@ -3,7 +3,6 @@
 //! This processor handles copying and moving files to different locations
 //! with directory creation and integrity verification.
 //!
-//! Requirements: 1.1, 1.2, 1.3, 1.4, 1.5
 
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
@@ -43,12 +42,10 @@ pub struct CopyMoveConfig {
     pub destination: Option<String>,
 
     /// Whether to create destination directories if they don't exist.
-    /// Requirements: 1.3
     #[serde(default = "default_true")]
     pub create_dirs: bool,
 
     /// Whether to verify file integrity after copy using size comparison.
-    /// Requirements: 1.5
     #[serde(default = "default_true")]
     pub verify_integrity: bool,
 
@@ -72,9 +69,9 @@ impl Default for CopyMoveConfig {
 /// Processor for copying and moving files.
 ///
 /// Handles file copy and move operations with:
-/// - Directory creation (Requirements: 1.3)
-/// - Integrity verification via size comparison (Requirements: 1.5)
-/// - Disk space error reporting (Requirements: 1.4)
+/// - Directory creation
+/// - Integrity verification via size comparison
+/// - Disk space error reporting
 pub struct CopyMoveProcessor;
 
 impl CopyMoveProcessor {
@@ -217,7 +214,7 @@ impl Processor for CopyMoveProcessor {
             return Err(crate::Error::PipelineError(error_msg));
         }
 
-        // Create destination directory if needed (Requirements: 1.3)
+        // Create destination directory if needed
         if config.create_dirs
             && let Some(parent) = dest.parent()
             && !parent.exists()
@@ -237,7 +234,7 @@ impl Processor for CopyMoveProcessor {
             })?;
         }
 
-        // Check available disk space (Requirements: 1.4)
+        // Check available disk space
         if let Some(parent) = dest.parent()
             && let Some(available) = Self::get_available_space(parent).await
             && available < source_size
@@ -249,7 +246,7 @@ impl Processor for CopyMoveProcessor {
             )));
         }
 
-        // Perform the copy operation (Requirements: 1.1)
+        // Perform the copy operation
         if let Err(e) = fs::copy(source, dest).await {
             // Check if it's a disk space error
             // ENOSPC on Unix = 28, ERROR_DISK_FULL on Windows = 112
@@ -276,7 +273,7 @@ impl Processor for CopyMoveProcessor {
             return Err(crate::Error::PipelineError(error_msg));
         }
 
-        // Verify integrity using size comparison (Requirements: 1.5)
+        // Verify integrity using size comparison
         let dest_size = if config.verify_integrity {
             let dest_metadata = fs::metadata(dest).await.map_err(|e| {
                 crate::Error::PipelineError(format!(
@@ -319,7 +316,7 @@ impl Processor for CopyMoveProcessor {
                 .unwrap_or(source_size)
         };
 
-        // For move operation, remove the source file (Requirements: 1.2)
+        // For move operation, remove the source file
         if config.operation == CopyMoveOperation::Move {
             if let Err(e) = fs::remove_file(source).await {
                 let error_msg = format!("Failed to remove source file after move: {}", e);
@@ -357,7 +354,6 @@ impl Processor for CopyMoveProcessor {
             success_msg,
         ));
 
-        // Requirements: 11.5 - Track succeeded inputs for partial failure reporting
         Ok(ProcessorOutput {
             outputs: vec![dest_path.clone()],
             duration_secs: duration,

@@ -19,7 +19,7 @@ use super::job_queue::{Job, JobLogEntry, JobQueue, JobQueueConfig, QueueDepthSta
 use super::processors::{
     AssBurnInProcessor, AudioExtractProcessor, CompressionProcessor, CopyMoveProcessor,
     DanmakuFactoryProcessor, DeleteProcessor, ExecuteCommandProcessor, MetadataProcessor,
-    Processor, RcloneProcessor, RemuxProcessor, ThumbnailProcessor,
+    Processor, RcloneProcessor, RemuxProcessor, TdlUploadProcessor, ThumbnailProcessor,
 };
 use super::progress::JobProgressSnapshot;
 use super::purge::{JobPurgeService, PurgeConfig};
@@ -120,11 +120,9 @@ pub struct PipelineManagerConfig {
     pub io_pool: WorkerPoolConfig,
 
     /// Throttle controller configuration.
-    /// Requirements: 8.1, 8.2, 8.3, 8.4, 8.5
     #[serde(default)]
     pub throttle: ThrottleConfig,
     /// Job purge service configuration.
-    /// Requirements: 7.1, 7.2, 7.3, 7.4, 7.5
     #[serde(default)]
     pub purge: PurgeConfig,
 }
@@ -201,12 +199,10 @@ pub struct PipelineManager<
     /// Cancellation token.
     cancellation_token: CancellationToken,
     /// Throttle controller for download backpressure management.
-    /// Requirements: 8.1, 8.2, 8.3, 8.4, 8.5
     throttle_controller: Option<Arc<ThrottleController>>,
     /// Download limit adjuster for throttle controller integration.
     download_adjuster: Option<Arc<dyn DownloadLimitAdjuster>>,
     /// Job purge service for automatic cleanup of old jobs.
-    /// Requirements: 7.1, 7.2, 7.3, 7.4, 7.5
     purge_service: Option<Arc<JobPurgeService>>,
     /// Job preset repository for resolving named pipeline steps.
     preset_repo: Option<Arc<dyn JobPresetRepository>>,
@@ -300,6 +296,7 @@ where
             Arc::new(DanmakuFactoryProcessor::new()),
             Arc::new(AssBurnInProcessor::new()),
             Arc::new(RcloneProcessor::new()),
+            Arc::new(TdlUploadProcessor::new()),
             Arc::new(ExecuteCommandProcessor::new()),
             Arc::new(ThumbnailProcessor::new()),
             Arc::new(CopyMoveProcessor::new()),
@@ -310,7 +307,6 @@ where
         ];
 
         // Create throttle controller if enabled
-        // Requirements: 8.1, 8.5
         let throttle_controller = if config.throttle.enabled {
             Some(Arc::new(ThrottleController::new(config.throttle.clone())))
         } else {
@@ -347,7 +343,6 @@ where
 
     /// Create a new Pipeline Manager with custom configuration and job repository.
     /// This enables database persistence and job recovery on startup.
-    /// Requirements: 6.1, 6.3
     pub fn with_repository(
         config: PipelineManagerConfig,
         job_repository: Arc<dyn JobRepository>,
@@ -359,7 +354,6 @@ where
         ));
 
         // Create purge service if retention is enabled
-        // Requirements: 7.1, 7.2, 7.3, 7.4, 7.5
         let purge_service = if config.purge.retention_days > 0 {
             Some(Arc::new(JobPurgeService::new(
                 config.purge.clone(),
@@ -375,6 +369,7 @@ where
             Arc::new(DanmakuFactoryProcessor::new()),
             Arc::new(AssBurnInProcessor::new()),
             Arc::new(RcloneProcessor::new()),
+            Arc::new(TdlUploadProcessor::new()),
             Arc::new(ExecuteCommandProcessor::new()),
             Arc::new(ThumbnailProcessor::new()),
             Arc::new(CopyMoveProcessor::new()),
@@ -385,7 +380,6 @@ where
         ];
 
         // Create throttle controller if enabled
-        // Requirements: 8.1, 8.5
         let throttle_controller = if config.throttle.enabled {
             Some(Arc::new(ThrottleController::new(config.throttle.clone())))
         } else {
@@ -509,7 +503,6 @@ where
     }
 
     /// Get a reference to the purge service, if enabled.
-    /// Requirements: 7.1
     pub fn purge_service(&self) -> Option<&Arc<JobPurgeService>> {
         self.purge_service.as_ref()
     }
@@ -518,7 +511,6 @@ where
     /// Resets PROCESSING jobs to PENDING for re-execution.
     /// For sequential pipelines, no special handling is needed since only one job
     /// per pipeline exists at a time.
-    /// Requirements: 6.3, 7.4
     pub async fn recover_jobs(&self) -> Result<usize> {
         info!("Recovering jobs from database...");
         let recovered = self.job_queue.recover_jobs().await?;
@@ -531,7 +523,6 @@ where
     }
 
     /// Start the pipeline manager.
-    /// Requirements: 8.1, 8.2, 8.3
     pub fn start(self: Arc<Self>) {
         info!("Starting Pipeline Manager");
 
@@ -1994,12 +1985,11 @@ where
     }
 
     // ========================================================================
-    // Query and Management Methods (Requirements 1.1-1.5, 2.1-2.5, 3.1-3.3)
+    // Query and Management Methods
     // ========================================================================
 
     /// List jobs with filters and pagination.
     /// Delegates to JobQueue/JobRepository.
-    /// Requirements: 1.1, 1.3, 1.4, 1.5
     pub async fn list_jobs(
         &self,
         filters: &JobFilters,
@@ -2033,14 +2023,12 @@ where
 
     /// Get a job by ID.
     /// Retrieves job from repository.
-    /// Requirements: 1.2
     pub async fn get_job(&self, id: &str) -> Result<Option<Job>> {
         self.job_queue.get_job(id).await
     }
 
     /// Retry a failed job.
     /// Delegates to JobQueue.
-    /// Requirements: 2.1, 2.2
     pub async fn retry_job(&self, id: &str) -> Result<Job> {
         let job = self.job_queue.retry_job(id).await?;
 
@@ -2062,7 +2050,6 @@ where
     /// For Processing jobs: signals cancellation and marks as Interrupted.
     /// Returns error for Completed/Failed jobs.
     /// Delegates to JobQueue.
-    /// Requirements: 2.3, 2.4, 2.5
     pub async fn cancel_job(&self, id: &str) -> Result<()> {
         let cancelled_job = self.job_queue.cancel_job(id).await?;
 
@@ -2103,7 +2090,6 @@ where
     }
 
     /// List available job presets.
-    /// Requirements: 6.1
     pub async fn list_presets(&self) -> Result<Vec<crate::database::models::JobPreset>> {
         if let Some(repo) = &self.preset_repo {
             repo.list_presets().await
@@ -2248,7 +2234,6 @@ where
     /// Get comprehensive pipeline statistics.
     /// Returns counts by status (pending, processing, completed, failed)
     /// and average processing time.
-    /// Requirements: 3.1, 3.2, 3.3
     pub async fn get_stats(&self) -> Result<PipelineStats> {
         let job_stats = self.job_queue.get_stats().await?;
 
@@ -2322,7 +2307,6 @@ where
 }
 
 /// Comprehensive pipeline statistics.
-/// Requirements: 3.1, 3.2, 3.3
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PipelineStats {
     /// Number of pending jobs.
@@ -2344,7 +2328,6 @@ pub struct PipelineStats {
 }
 
 /// Result of creating a new pipeline.
-/// Requirements: 6.1, 7.1
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PipelineCreationResult {
     /// Pipeline ID (same as first job's ID).
@@ -2378,7 +2361,7 @@ mod tests {
         assert!(!config.throttle.enabled);
         assert_eq!(config.throttle.critical_threshold, 500);
         assert_eq!(config.throttle.warning_threshold, 100);
-        // Verify purge config defaults (Requirements: 7.1, 8.1)
+        // Verify purge config defaults
         assert_eq!(config.purge.retention_days, 30);
         assert_eq!(config.purge.batch_size, 100);
         assert!(config.purge.time_window.is_some());

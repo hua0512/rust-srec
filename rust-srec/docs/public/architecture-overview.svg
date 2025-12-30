@@ -1,0 +1,222 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 800">
+  <defs>
+    <!-- Background Gradient -->
+    <linearGradient id="bg-gradient" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" style="stop-color:#0f172a;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#1e293b;stop-opacity:1" />
+    </linearGradient>
+
+    <!-- Node Gradients -->
+    <linearGradient id="grad-client" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" style="stop-color:#34d399;stop-opacity:0.2" />
+      <stop offset="100%" style="stop-color:#10b981;stop-opacity:0.1" />
+    </linearGradient>
+    <linearGradient id="stroke-client" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" style="stop-color:#34d399;stop-opacity:0.8" />
+      <stop offset="100%" style="stop-color:#059669;stop-opacity:0.4" />
+    </linearGradient>
+
+    <linearGradient id="grad-api" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" style="stop-color:#38bdf8;stop-opacity:0.2" />
+      <stop offset="100%" style="stop-color:#0ea5e9;stop-opacity:0.1" />
+    </linearGradient>
+    <linearGradient id="stroke-api" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" style="stop-color:#38bdf8;stop-opacity:0.8" />
+      <stop offset="100%" style="stop-color:#0284c7;stop-opacity:0.4" />
+    </linearGradient>
+
+    <linearGradient id="grad-service" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" style="stop-color:#818cf8;stop-opacity:0.2" />
+      <stop offset="100%" style="stop-color:#6366f1;stop-opacity:0.1" />
+    </linearGradient>
+    <linearGradient id="stroke-service" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" style="stop-color:#818cf8;stop-opacity:0.8" />
+      <stop offset="100%" style="stop-color:#4f46e5;stop-opacity:0.4" />
+    </linearGradient>
+
+    <linearGradient id="grad-exec" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" style="stop-color:#f472b6;stop-opacity:0.2" />
+      <stop offset="100%" style="stop-color:#db2777;stop-opacity:0.1" />
+    </linearGradient>
+    <linearGradient id="stroke-exec" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" style="stop-color:#f472b6;stop-opacity:0.8" />
+      <stop offset="100%" style="stop-color:#be185d;stop-opacity:0.4" />
+    </linearGradient>
+
+    <linearGradient id="grad-storage" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" style="stop-color:#fbbf24;stop-opacity:0.2" />
+      <stop offset="100%" style="stop-color:#d97706;stop-opacity:0.1" />
+    </linearGradient>
+
+    <!-- Filters -->
+    <filter id="glow" x="-50%" y="-50%" width="200%" height="200%">
+      <feGaussianBlur stdDeviation="3" result="coloredBlur"/>
+      <feMerge>
+        <feMergeNode in="coloredBlur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+
+    <filter id="neon-text" x="-50%" y="-50%" width="200%" height="200%">
+      <feGaussianBlur in="SourceAlpha" stdDeviation="2" result="blur"/>
+      <feOffset dx="0" dy="0" result="offsetblur"/>
+      <feFlood flood-color="white" flood-opacity="0.3" result="color"/>
+      <feComposite in="color" in2="blur" operator="in" result="shadow"/>
+      <feMerge>
+        <feMergeNode in="shadow"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+    
+    <!-- Grid Pattern -->
+    <pattern id="grid" width="50" height="50" patternUnits="userSpaceOnUse">
+      <path d="M 50 0 L 0 0 0 50" fill="none" stroke="rgba(255,255,255,0.03)" stroke-width="1"/>
+    </pattern>
+    
+    <!-- Marker Arrow -->
+    <marker id="arrow" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto" markerUnits="strokeWidth">
+      <path d="M0,0 L0,6 L9,3 z" fill="rgba(148, 163, 184, 0.5)" />
+    </marker>
+    <marker id="arrow-reverse" markerWidth="10" markerHeight="10" refX="1" refY="3" orient="auto" markerUnits="strokeWidth">
+      <path d="M9,0 L9,6 L0,3 z" fill="rgba(148, 163, 184, 0.5)" />
+    </marker>
+  </defs>
+
+  <!-- Background -->
+  <rect width="1000" height="800" fill="url(#bg-gradient)" />
+  <rect width="1000" height="800" fill="url(#grid)" />
+
+  <!-- Layout Groups -->
+  
+  <!-- 1. Client & API (Top Center) -->
+  <g transform="translate(500, 60)">
+    <!-- Client -->
+    <g transform="translate(0, 0)" filter="url(#glow)">
+      <rect x="-80" y="-30" width="160" height="60" rx="10" fill="url(#grad-client)" stroke="url(#stroke-client)" stroke-width="1.5"/>
+      <text x="0" y="5" text-anchor="middle" fill="#d1fae5" font-family="Segoe UI, sans-serif" font-weight="bold" font-size="14">CLIENT</text>
+      <text x="0" y="20" text-anchor="middle" fill="#6ee7b7" font-family="Segoe UI, sans-serif" font-size="10">Web UI / API Clients</text>
+    </g>
+    
+    <!-- Arrow Client -> API -->
+    <path d="M0 30 L0 70" stroke="rgba(52,211,153,0.5)" stroke-width="2" marker-end="url(#arrow)" />
+
+    <!-- API -->
+    <g transform="translate(0, 100)" filter="url(#glow)">
+      <rect x="-80" y="-30" width="160" height="60" rx="10" fill="url(#grad-api)" stroke="url(#stroke-api)" stroke-width="1.5"/>
+      <text x="0" y="5" text-anchor="middle" fill="#e0f2fe" font-family="Segoe UI, sans-serif" font-weight="bold" font-size="14">API LAYER</text>
+      <text x="0" y="20" text-anchor="middle" fill="#7dd3fc" font-family="Segoe UI, sans-serif" font-size="10">Axum / JWT / OpenAPI</text>
+    </g>
+  </g>
+  
+  <!-- Arrow API -> Services -->
+  <path d="M500 190 L500 240" stroke="rgba(56,189,248,0.5)" stroke-width="2" marker-end="url(#arrow)" />
+
+  <!-- 2. Core Services (Horizontal Flow Container) -->
+  <!-- Bounding Box for Core -->
+  <rect x="50" y="240" width="900" height="280" rx="20" fill="rgba(30, 41, 59, 0.3)" stroke="rgba(99,102,241,0.2)" stroke-dasharray="5,5" />
+  <text x="500" y="230" text-anchor="middle" fill="#818cf8" font-family="Segoe UI, sans-serif" font-weight="bold" font-size="12" letter-spacing="2">CORE SERVICE CONTAINER</text>
+
+  <!-- Service Nodes -->
+  <!-- Config (Left) -->
+  <g transform="translate(150, 300)" filter="url(#glow)">
+    <rect x="-70" y="-30" width="140" height="60" rx="8" fill="url(#grad-service)" stroke="url(#stroke-service)" stroke-width="1.5"/>
+    <text x="0" y="5" text-anchor="middle" fill="#e0e7ff" font-family="Segoe UI, sans-serif" font-weight="600" font-size="13">CONFIG</text>
+    <text x="0" y="20" text-anchor="middle" fill="#a5b4fc" font-family="Segoe UI, sans-serif" font-size="10">Settings Manager</text>
+  </g>
+  
+  <!-- Flow: Config -> Streamer -->
+  <path d="M220 300 L280 300" stroke="rgba(129,140,248,0.4)" stroke-width="2" marker-end="url(#arrow)" />
+
+  <!-- Streamer (Center-Left) -->
+  <g transform="translate(350, 300)" filter="url(#glow)">
+    <rect x="-70" y="-30" width="140" height="60" rx="8" fill="url(#grad-service)" stroke="url(#stroke-service)" stroke-width="1.5"/>
+    <text x="0" y="5" text-anchor="middle" fill="#e0e7ff" font-family="Segoe UI, sans-serif" font-weight="600" font-size="13">STREAMER</text>
+    <text x="0" y="20" text-anchor="middle" fill="#a5b4fc" font-family="Segoe UI, sans-serif" font-size="10">State Manager</text>
+  </g>
+
+  <!-- Flow: Streamer -> Download -->
+  <path d="M420 300 L480 300" stroke="rgba(129,140,248,0.4)" stroke-width="2" marker-end="url(#arrow)" />
+
+  <!-- Download (Center) -->
+  <g transform="translate(550, 300)" filter="url(#glow)">
+    <rect x="-70" y="-30" width="140" height="60" rx="8" fill="url(#grad-service)" stroke="url(#stroke-service)" stroke-width="1.5"/>
+    <text x="0" y="5" text-anchor="middle" fill="#e0e7ff" font-family="Segoe UI, sans-serif" font-weight="600" font-size="13">DOWNLOAD</text>
+    <text x="0" y="20" text-anchor="middle" fill="#a5b4fc" font-family="Segoe UI, sans-serif" font-size="10">Engine Controller</text>
+  </g>
+
+  <!-- Flow: Download -> Pipeline -->
+  <path d="M620 300 L680 300" stroke="rgba(129,140,248,0.4)" stroke-width="2" marker-end="url(#arrow)" />
+
+  <!-- Pipeline (Center-Right) -->
+  <g transform="translate(750, 300)" filter="url(#glow)">
+    <rect x="-70" y="-30" width="140" height="60" rx="8" fill="url(#grad-service)" stroke="url(#stroke-service)" stroke-width="1.5"/>
+    <text x="0" y="5" text-anchor="middle" fill="#e0e7ff" font-family="Segoe UI, sans-serif" font-weight="600" font-size="13">PIPELINE</text>
+    <text x="0" y="20" text-anchor="middle" fill="#a5b4fc" font-family="Segoe UI, sans-serif" font-size="10">Job &amp; DAG Manager</text>
+  </g>
+  
+  <!-- Danmu Service (Between Streamer/Download) -->
+  <g transform="translate(450, 420)" filter="url(#glow)">
+    <rect x="-60" y="-25" width="120" height="50" rx="8" fill="url(#grad-service)" stroke="url(#stroke-service)" stroke-width="1.5"/>
+    <text x="0" y="5" text-anchor="middle" fill="#e0e7ff" font-family="Segoe UI, sans-serif" font-weight="600" font-size="12">DANMU</text>
+  </g>
+  <!-- Link: Streamer -> Danmu -->
+  <path d="M380 330 L420 400" stroke="rgba(129,140,248,0.3)" stroke-width="1.5" stroke-dasharray="3,3" />
+
+  <!-- Notification Service (Floating Right) -->
+  <g transform="translate(850, 420)" filter="url(#glow)">
+    <rect x="-60" y="-25" width="120" height="50" rx="8" fill="url(#grad-service)" stroke="url(#stroke-service)" stroke-width="1.5"/>
+    <text x="0" y="5" text-anchor="middle" fill="#e0e7ff" font-family="Segoe UI, sans-serif" font-weight="600" font-size="12">NOTIFY</text>
+  </g>
+  <!-- Link: Pipeline -> Notify -->
+  <path d="M780 330 L820 400" stroke="rgba(129,140,248,0.3)" stroke-width="1.5" stroke-dasharray="3,3" />
+
+
+  <!-- 3. Execution Layer (Directly Below Managers) -->
+  
+  <!-- Monitor (Below Streamer) -->
+  <g transform="translate(350, 600)" filter="url(#glow)">
+    <rect x="-70" y="-30" width="140" height="60" rx="8" fill="url(#grad-exec)" stroke="url(#stroke-exec)" stroke-width="1.5"/>
+    <text x="0" y="5" text-anchor="middle" fill="#fce7f3" font-family="Segoe UI, sans-serif" font-weight="600" font-size="13">MONITOR</text>
+    <text x="0" y="20" text-anchor="middle" fill="#f472b6" font-family="Segoe UI, sans-serif" font-size="10">Detectors / Poller</text>
+  </g>
+  <!-- Link: Streamer <-> Monitor -->
+  <path d="M350 330 L350 570" stroke="rgba(244,114,182,0.4)" stroke-width="2" stroke-dasharray="5,5" marker-start="url(#arrow-reverse)" marker-end="url(#arrow)" />
+  <circle r="3" fill="#f472b6" filter="url(#glow)">
+     <animateMotion dur="3s" repeatCount="indefinite" path="M350 570 L350 330" />
+  </circle>
+
+  <!-- Execution Engine (Below Download) -->
+  <g transform="translate(550, 600)" filter="url(#glow)">
+    <rect x="-70" y="-30" width="140" height="60" rx="8" fill="url(#grad-exec)" stroke="url(#stroke-exec)" stroke-width="1.5"/>
+    <text x="0" y="5" text-anchor="middle" fill="#fce7f3" font-family="Segoe UI, sans-serif" font-weight="600" font-size="13">ENGINES</text>
+    <text x="0" y="20" text-anchor="middle" fill="#f472b6" font-family="Segoe UI, sans-serif" font-size="10">FFmpeg / Mesio</text>
+  </g>
+  <!-- Link: Download -> Engines -->
+  <path d="M550 330 L550 570" stroke="rgba(244,114,182,0.4)" stroke-width="2" marker-end="url(#arrow)" />
+  <circle r="3" fill="#f472b6" filter="url(#glow)">
+     <animateMotion dur="2s" repeatCount="indefinite" path="M550 330 L550 570" />
+  </circle>
+
+  <!-- Workers (Below Pipeline) -->
+  <g transform="translate(750, 600)" filter="url(#glow)">
+    <rect x="-70" y="-30" width="140" height="60" rx="8" fill="url(#grad-exec)" stroke="url(#stroke-exec)" stroke-width="1.5"/>
+    <text x="0" y="5" text-anchor="middle" fill="#fce7f3" font-family="Segoe UI, sans-serif" font-weight="600" font-size="13">DAG WORKERS</text>
+    <text x="0" y="20" text-anchor="middle" fill="#f472b6" font-family="Segoe UI, sans-serif" font-size="10">CPU / IO Pools</text>
+  </g>
+  <!-- Link: Pipeline -> Workers -->
+  <path d="M750 330 L750 570" stroke="rgba(244,114,182,0.4)" stroke-width="2" marker-end="url(#arrow)" />
+
+  <!-- 4. Storage & Persistence (Bottom) -->
+  <g transform="translate(500, 730)" filter="url(#glow)">
+    <rect x="-400" y="-30" width="800" height="60" rx="10" fill="url(#grad-storage)" stroke="rgba(251,191,36,0.6)" stroke-width="1.5"/>
+    <text x="0" y="5" text-anchor="middle" fill="#fef3c7" font-family="Segoe UI, sans-serif" font-weight="Bold" font-size="14" letter-spacing="4">STORAGE &amp; PERSISTENCE</text>
+    <text x="0" y="22" text-anchor="middle" fill="#fbbf24" font-family="Segoe UI, sans-serif" font-size="11">SQLite Database | Filesystem | In-Memory Cache</text>
+  </g>
+  
+  <!-- Storage Connections -->
+  <path d="M150 330 L150 700 L200 700" stroke="rgba(251,191,36,0.2)" stroke-width="1" fill="none" />
+  <path d="M550 630 L550 700" stroke="rgba(251,191,36,0.3)" stroke-width="2" fill="none" />
+  <path d="M750 630 L750 700" stroke="rgba(251,191,36,0.3)" stroke-width="2" fill="none" />
+
+</svg>

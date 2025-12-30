@@ -632,12 +632,6 @@ pub struct DagStatsResponse {
 /// }
 /// ```
 ///
-/// # Requirements
-///
-/// - 1.1: Return all jobs matching filter criteria with pagination
-/// - 1.3: Filter by status
-/// - 1.4: Filter by streamer_id
-/// - 1.5: Filter by session_id
 #[utoipa::path(
     get,
     path = "/api/pipeline/jobs",
@@ -863,9 +857,6 @@ pub async fn get_job_progress(
 ///
 /// - `404 Not Found` - Job with the specified ID does not exist
 ///
-/// # Requirements
-///
-/// - 1.2: Return job if exists or indicate not found
 #[utoipa::path(
     get,
     path = "/api/pipeline/jobs/{id}",
@@ -932,10 +923,6 @@ pub async fn get_job(
 /// - `404 Not Found` - Job with the specified ID does not exist
 /// - `400 Bad Request` - Job is not in "failed" status
 ///
-/// # Requirements
-///
-/// - 2.1: Reset failed job status to Pending and increment retry_count
-/// - 2.2: Reject retry for jobs not in Failed status
 #[utoipa::path(
     post,
     path = "/api/pipeline/jobs/{id}/retry",
@@ -1006,11 +993,6 @@ pub async fn retry_job(
 /// - For processing jobs: Signals cancellation to worker and marks as "interrupted"
 /// - For completed/failed jobs: Returns error (cannot cancel terminal jobs)
 ///
-/// # Requirements
-///
-/// - 2.3: Cancel pending jobs by removing from queue
-/// - 2.4: Cancel processing jobs by signaling cancellation
-/// - 2.5: Reject cancellation for completed/failed jobs
 #[utoipa::path(
     delete,
     path = "/api/pipeline/jobs/{id}",
@@ -1212,11 +1194,6 @@ pub async fn list_outputs(
 /// }
 /// ```
 ///
-/// # Requirements
-///
-/// - 3.1: Return counts of jobs by status
-/// - 3.2: Compute mean duration of completed jobs
-/// - 3.3: Maintain accurate counts across state transitions
 #[utoipa::path(
     get,
     path = "/api/pipeline/stats",
@@ -1925,6 +1902,12 @@ pub async fn retry_dag(
     if failed_steps.is_empty() {
         return Err(ApiError::bad_request("No failed steps found to retry"));
     }
+
+    // Prepare DAG for retry so downstream steps can be scheduled again.
+    dag_scheduler
+        .reset_dag_for_retry(&dag_id)
+        .await
+        .map_err(ApiError::from)?;
 
     // Retry each failed job
     let mut job_ids = Vec::new();

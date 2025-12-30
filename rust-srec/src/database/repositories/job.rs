@@ -64,16 +64,14 @@ pub trait JobRepository: Send + Sync {
     async fn cleanup_old_jobs(&self, retention_days: i32) -> Result<i32>;
     async fn delete_job(&self, id: &str) -> Result<()>;
 
-    // Purge methods (Requirements 7.1, 7.3)
+    // Purge methods
     /// Purge completed/failed jobs older than the specified number of days.
     /// Deletes jobs in batches to avoid long-running transactions.
     /// Returns the number of jobs deleted.
-    /// Requirements: 7.1, 7.3
     async fn purge_jobs_older_than(&self, days: u32, batch_size: u32) -> Result<u64>;
 
     /// Get IDs of jobs that are eligible for purging.
     /// Returns job IDs for completed/failed jobs older than the specified days.
-    /// Requirements: 7.1, 7.3
     async fn get_purgeable_jobs(&self, days: u32, limit: u32) -> Result<Vec<String>>;
 
     // Execution logs
@@ -89,7 +87,7 @@ pub trait JobRepository: Send + Sync {
     ) -> Result<(Vec<JobExecutionLogDbModel>, u64)>;
     async fn delete_execution_logs_for_job(&self, job_id: &str) -> Result<()>;
 
-    // Filtering and pagination (Requirements 1.1, 1.3, 1.4, 1.5)
+    // Filtering and pagination
     /// List jobs with optional filters and pagination.
     /// Returns a tuple of (jobs, total_count).
     async fn list_jobs_filtered(
@@ -104,14 +102,14 @@ pub trait JobRepository: Send + Sync {
         pagination: &Pagination,
     ) -> Result<Vec<JobDbModel>>;
 
-    // Statistics (Requirements 3.1, 3.2, 3.3)
+    // Statistics
     /// Get job counts by status.
     async fn get_job_counts_by_status(&self) -> Result<JobCounts>;
 
     /// Get average processing time for completed jobs in seconds.
     async fn get_avg_processing_time(&self) -> Result<Option<f64>>;
 
-    // Atomic pipeline operations (Requirements 7.2, 7.3)
+    // Atomic pipeline operations
 
     /// Cancel all pending/processing jobs in a pipeline.
     /// Returns the number of jobs cancelled.
@@ -1078,7 +1076,6 @@ impl JobRepository for SqlxJobRepository {
     /// Purge completed/failed jobs older than the specified number of days.
     /// Deletes jobs in batches to avoid long-running transactions.
     /// Returns the number of jobs deleted.
-    /// Requirements: 7.1, 7.3
     async fn purge_jobs_older_than(&self, days: u32, batch_size: u32) -> Result<u64> {
         let cutoff = chrono::Utc::now() - chrono::Duration::days(days as i64);
         let cutoff_str = cutoff.to_rfc3339();
@@ -1136,7 +1133,6 @@ impl JobRepository for SqlxJobRepository {
 
     /// Get IDs of jobs that are eligible for purging.
     /// Returns job IDs for completed/failed jobs older than the specified days.
-    /// Requirements: 7.1, 7.3
     async fn get_purgeable_jobs(&self, days: u32, limit: u32) -> Result<Vec<String>> {
         let cutoff = chrono::Utc::now() - chrono::Duration::days(days as i64);
         let cutoff_str = cutoff.to_rfc3339();

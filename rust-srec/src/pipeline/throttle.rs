@@ -4,7 +4,6 @@
 //! When the queue becomes critically full, the controller reduces concurrent
 //! downloads to allow the pipeline to catch up.
 //!
-//! Requirements: 8.1, 8.2, 8.3, 8.4, 8.5
 
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
@@ -17,24 +16,19 @@ use tracing::{debug, info, warn};
 use super::job_queue::JobQueue;
 
 /// Configuration for the throttle controller.
-/// Requirements: 8.1, 8.5
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ThrottleConfig {
     /// Enable download throttling based on queue depth.
     /// When false, no throttle events are emitted regardless of queue depth.
-    /// Requirements: 8.5
     pub enabled: bool,
     /// Queue depth threshold to activate throttling.
     /// When queue depth exceeds this value, throttling is activated.
-    /// Requirements: 8.1
     pub critical_threshold: usize,
     /// Queue depth threshold to deactivate throttling.
     /// When queue depth falls below this value, throttling is deactivated.
-    /// Requirements: 8.3
     pub warning_threshold: usize,
     /// Factor to reduce max_concurrent_downloads by when throttling (0.0-1.0).
     /// A value of 0.5 means reduce to 50% of original.
-    /// Requirements: 8.2
     #[serde(default = "default_reduction_factor")]
     pub reduction_factor: f32,
     /// Interval in milliseconds between queue depth checks.
@@ -63,11 +57,9 @@ impl Default for ThrottleConfig {
 }
 
 /// Events emitted by the throttle controller.
-/// Requirements: 8.1, 8.3, 8.4
 #[derive(Debug, Clone)]
 pub enum ThrottleEvent {
     /// Throttling has been activated due to high queue depth.
-    /// Requirements: 8.1, 8.2
     ThrottleActivated {
         /// Current queue depth that triggered activation.
         queue_depth: usize,
@@ -77,7 +69,6 @@ pub enum ThrottleEvent {
         original_limit: usize,
     },
     /// Throttling has been deactivated as queue depth recovered.
-    /// Requirements: 8.3
     ThrottleDeactivated {
         /// Current queue depth when deactivated.
         queue_depth: usize,
@@ -98,7 +89,6 @@ pub trait DownloadLimitAdjuster: Send + Sync {
 
 /// The Throttle Controller service.
 /// Monitors pipeline queue depth and controls download throttling.
-/// Requirements: 8.1, 8.2, 8.3, 8.4, 8.5
 pub struct ThrottleController {
     /// Configuration.
     config: ThrottleConfig,
@@ -154,7 +144,6 @@ impl ThrottleController {
     }
 
     /// Calculate the throttled limit based on the original limit.
-    /// Requirements: 8.2
     pub fn calculate_throttled_limit(&self, original: usize) -> usize {
         let reduced = (original as f32 * self.config.reduction_factor) as usize;
         // Ensure at least 1 concurrent download
@@ -163,14 +152,12 @@ impl ThrottleController {
 
     /// Check queue depth and update throttle state.
     /// Returns Some(event) if a state transition occurred.
-    /// Requirements: 8.1, 8.2, 8.3, 8.4, 8.5
     pub fn check_and_update<A: DownloadLimitAdjuster + ?Sized>(
         &self,
         queue_depth: usize,
         adjuster: &A,
     ) -> Option<ThrottleEvent> {
         // If throttling is disabled, never emit events
-        // Requirements: 8.5
         if !self.config.enabled {
             return None;
         }
@@ -179,7 +166,6 @@ impl ThrottleController {
 
         if !currently_throttled && queue_depth > self.config.critical_threshold {
             // Activate throttling
-            // Requirements: 8.1, 8.2
             let original = adjuster.get_max_concurrent_downloads();
             self.original_max_downloads
                 .store(original, Ordering::SeqCst);
@@ -189,7 +175,6 @@ impl ThrottleController {
             self.is_throttled.store(true, Ordering::SeqCst);
 
             // Log the transition
-            // Requirements: 8.4
             warn!(
                 "Throttling activated: queue_depth={}, reducing max_concurrent_downloads from {} to {}",
                 queue_depth, original, new_limit
@@ -204,13 +189,11 @@ impl ThrottleController {
             return Some(event);
         } else if currently_throttled && queue_depth < self.config.warning_threshold {
             // Deactivate throttling
-            // Requirements: 8.3
             let original = self.original_max_downloads.load(Ordering::SeqCst);
             adjuster.set_max_concurrent_downloads(original);
             self.is_throttled.store(false, Ordering::SeqCst);
 
             // Log the transition
-            // Requirements: 8.4
             info!(
                 "Throttling deactivated: queue_depth={}, restoring max_concurrent_downloads to {}",
                 queue_depth, original
@@ -337,7 +320,6 @@ mod tests {
 
     #[test]
     fn test_throttle_disabled_no_events() {
-        // Requirements: 8.5
         let config = ThrottleConfig {
             enabled: false,
             critical_threshold: 100,
@@ -356,7 +338,6 @@ mod tests {
 
     #[test]
     fn test_throttle_activation() {
-        // Requirements: 8.1, 8.2
         let config = ThrottleConfig {
             enabled: true,
             critical_threshold: 100,
@@ -391,7 +372,6 @@ mod tests {
 
     #[test]
     fn test_throttle_deactivation() {
-        // Requirements: 8.3
         let config = ThrottleConfig {
             enabled: true,
             critical_threshold: 100,
@@ -462,7 +442,6 @@ mod tests {
 
     #[test]
     fn test_throttle_round_trip() {
-        // Requirements: 8.1, 8.2, 8.3 - Property 10: Throttling round-trip
         let config = ThrottleConfig {
             enabled: true,
             critical_threshold: 100,

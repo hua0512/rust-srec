@@ -480,7 +480,7 @@ impl ServiceContainer {
         let streamer_count = self.streamer_manager.hydrate().await?;
         info!("Hydrated {} streamers", streamer_count);
 
-        // Recover jobs from database on startup (Requirements 6.3, 7.4)
+        // Recover jobs from database on startup
         // This resets PROCESSING jobs to PENDING for re-execution.
         // For sequential pipelines, no special handling is needed since only one job
         // per pipeline exists at a time.

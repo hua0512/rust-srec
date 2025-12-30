@@ -5,7 +5,7 @@
 //! - Platform updates go to all StreamerActors on that platform
 //! - Global updates go to all actors
 //!
-//! This implements Requirements 3.1, 3.2, 3.3 from the scheduler-actor-refactoring spec.
+//! This implements the scheduler-actor-refactoring spec.
 
 use std::collections::HashMap;
 

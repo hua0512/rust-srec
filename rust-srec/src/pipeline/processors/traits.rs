@@ -145,22 +145,17 @@ pub struct ProcessorOutput {
     pub metadata: Option<String>,
     /// Intermediate artifacts created during processing.
     /// Used for observability and cleanup on failure.
-    /// Requirements: 6.2, 6.3
     pub items_produced: Vec<String>,
     /// Input file size in bytes (for metrics).
-    /// Requirements: 6.2, 6.3
     pub input_size_bytes: Option<u64>,
     /// Output file size in bytes (for metrics).
-    /// Requirements: 6.2, 6.3
     pub output_size_bytes: Option<u64>,
     /// Input files that failed processing with their error messages.
     /// Used for partial failure reporting in multi-input jobs.
     /// Each tuple contains (input_path, error_message).
-    /// Requirements: 11.5
     pub failed_inputs: Vec<(String, String)>,
     /// Input files that were successfully processed.
     /// Used for partial failure reporting in multi-input jobs.
-    /// Requirements: 11.5
     pub succeeded_inputs: Vec<String>,
     /// Input files that were skipped (passed through) because the processor
     /// doesn't support them. These files are included in outputs for chaining.
@@ -205,7 +200,6 @@ pub trait Processor: Send + Sync {
     /// When `true`, the processor can handle multiple input files in a single `process()` call.
     /// When `false` (default), the worker pool will split multi-input jobs into separate jobs.
     ///
-    /// Requirements: 11.3, 11.4
     fn supports_batch_input(&self) -> bool {
         false
     }
@@ -215,7 +209,6 @@ pub trait Processor: Send + Sync {
     /// When `true`, the processor may produce multiple output files from a single input.
     /// The worker pool will pass all outputs as inputs to the next pipeline step.
     ///
-    /// Requirements: 11.3, 11.4
     fn supports_fan_out(&self) -> bool {
         false
     }

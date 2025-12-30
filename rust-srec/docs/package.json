@@ -1,0 +1,16 @@
+{
+    "name": "rust-srec-docs",
+    "type": "module",
+    "scripts": {
+        "docs:dev": "vitepress dev",
+        "docs:build": "vitepress build",
+        "docs:preview": "vitepress preview"
+    },
+    "devDependencies": {
+        "mermaid": "^11.4.0",
+        "vitepress": "^1.5.0"
+    },
+    "dependencies": {
+        "vitepress-plugin-mermaid": "^2.0.17"
+    }
+}

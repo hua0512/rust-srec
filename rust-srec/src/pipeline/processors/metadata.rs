@@ -3,7 +3,6 @@
 //! This processor embeds metadata fields (artist, title, date, custom) into media files
 //! using ffmpeg. It supports common container formats like MP4, MKV, and FLV.
 //!
-//! Requirements: 4.1, 4.2, 4.3, 4.4, 4.5
 
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
@@ -16,19 +15,15 @@ use super::traits::{Processor, ProcessorContext, ProcessorInput, ProcessorOutput
 use crate::Result;
 
 /// Configuration for metadata embedding operations.
-/// Requirements: 4.1, 4.2, 4.3, 4.4
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct MetadataConfig {
     /// Artist/streamer name.
-    /// Requirements: 4.2
     pub artist: Option<String>,
 
     /// Title/stream title.
-    /// Requirements: 4.3
     pub title: Option<String>,
 
     /// Recording date (ISO 8601 format recommended, e.g., "2024-01-15").
-    /// Requirements: 4.4
     pub date: Option<String>,
 
     /// Album name (optional).
@@ -78,9 +73,9 @@ const SUPPORTED_EXTENSIONS: &[&str] = &[
 /// Processor for embedding metadata into media files.
 ///
 /// Uses ffmpeg to embed metadata fields into media containers.
-/// - artist → `-metadata artist=` (Requirements: 4.2)
-/// - title → `-metadata title=` (Requirements: 4.3)
-/// - date → `-metadata date=` (Requirements: 4.4)
+/// - artist → `-metadata artist=`
+/// - title → `-metadata title=`
+/// - date → `-metadata date=`
 pub struct MetadataProcessor {
     /// Path to ffmpeg binary.
     ffmpeg_path: String,
@@ -103,7 +98,6 @@ impl MetadataProcessor {
     }
 
     /// Build FFmpeg command arguments for metadata embedding.
-    /// Requirements: 4.1, 4.2, 4.3, 4.4
     pub fn build_args(
         &self,
         input_path: &str,
@@ -129,17 +123,14 @@ impl MetadataProcessor {
         args.extend(["-c".to_string(), "copy".to_string()]);
 
         // Add standard metadata fields
-        // Requirements: 4.2 - Artist/streamer name
         if let Some(ref artist) = config.artist {
             args.extend(["-metadata".to_string(), format!("artist={}", artist)]);
         }
 
-        // Requirements: 4.3 - Title/stream title
         if let Some(ref title) = config.title {
             args.extend(["-metadata".to_string(), format!("title={}", title)]);
         }
 
-        // Requirements: 4.4 - Recording date
         if let Some(ref date) = config.date {
             args.extend(["-metadata".to_string(), format!("date={}", date)]);
         }
@@ -197,7 +188,6 @@ impl MetadataProcessor {
     }
 
     /// Check if the input file format supports metadata embedding.
-    /// Requirements: 4.5
     fn supports_metadata(&self, input_path: &str) -> bool {
         let path = Path::new(input_path);
         if let Some(ext) = path.extension().and_then(|s| s.to_str()) {
@@ -224,7 +214,7 @@ impl MetadataProcessor {
             )));
         }
 
-        // Check if format supports metadata (Requirements: 4.5)
+        // Check if format supports metadata
         // If not supported, pass through the input file instead of failing
         if !self.supports_metadata(input_path) {
             let duration = start.elapsed().as_secs_f64();
@@ -340,7 +330,6 @@ impl MetadataProcessor {
             "output": output_path,
         });
 
-        // Requirements: 11.5 - Track succeeded inputs for partial failure reporting
         Ok(ProcessorOutput {
             outputs: vec![output_path.clone()],
             duration_secs: command_output.duration,
@@ -552,7 +541,6 @@ mod tests {
 
     #[test]
     fn test_build_args_with_artist() {
-        // Requirements: 4.2 - Artist/streamer name
         let processor = MetadataProcessor::new();
         let config = MetadataConfig {
             artist: Some("StreamerName".to_string()),
@@ -573,7 +561,6 @@ mod tests {
 
     #[test]
     fn test_build_args_with_title() {
-        // Requirements: 4.3 - Title/stream title
         let processor = MetadataProcessor::new();
         let config = MetadataConfig {
             title: Some("My Stream Title".to_string()),
@@ -588,7 +575,6 @@ mod tests {
 
     #[test]
     fn test_build_args_with_date() {
-        // Requirements: 4.4 - Recording date
         let processor = MetadataProcessor::new();
         let config = MetadataConfig {
             date: Some("2024-01-15".to_string()),
@@ -707,7 +693,6 @@ mod tests {
 
     #[test]
     fn test_supports_metadata_unsupported() {
-        // Requirements: 4.5 - Unsupported formats
         let processor = MetadataProcessor::new();
         assert!(!processor.supports_metadata("/path/to/file.txt"));
         assert!(!processor.supports_metadata("/path/to/file.jpg"));
@@ -826,7 +811,6 @@ mod tests {
 
     #[tokio::test]
     async fn test_process_unsupported_format() {
-        // Requirements: 4.5 - Unsupported format should pass through
         let processor = MetadataProcessor::new();
         let ctx = ProcessorContext::noop("test");
 

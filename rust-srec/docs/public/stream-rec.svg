@@ -1,0 +1,17 @@
+<svg width="64" height="64" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <!-- 定义遮罩 -->
+  <mask id="tv-mask-black">
+    <!-- 白色区域保留 -->
+    <rect width="24" height="24" fill="white"/>
+    <!-- 黑色区域挖空：小的折线 -->
+    <path d="M9 15.5L11.5 13L13.5 15L16 12.5" stroke="black" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+  </mask>
+
+  <!-- 图标主体 -->
+  <g mask="url(#tv-mask-black)">
+    <!-- 天线 (黑色) -->
+    <path d="M17 3L12 8L7 3" stroke="black" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+    <!-- 电视机身 (黑色) -->
+    <rect x="2" y="7" width="20" height="15" rx="4" fill="black"/>
+  </g>
+</svg>
