@@ -92,7 +92,7 @@ const SignOutButton = React.memo(function SignOutButton({
   isOpen,
 }: SignOutButtonProps) {
   return (
-    <li className="w-full grow flex items-end pb-4">
+    <li className="w-full grow flex items-end pb-10">
       <Tooltip delayDuration={100}>
         <TooltipTrigger asChild>
           <Button
