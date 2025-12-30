@@ -622,3 +622,104 @@ impl HlsDownloader {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use bytes::Bytes;
+    use m3u8_rs::MediaSegment;
+    use tokio::time::{Duration, timeout};
+
+    #[tokio::test]
+    async fn download_raw_emits_segment_completed_before_download_failed_on_stream_error() {
+        let temp = tempfile::tempdir().expect("tempdir");
+
+        let config = DownloadConfig::new(
+            "http://example.invalid/stream.m3u8",
+            temp.path().to_path_buf(),
+            "streamer",
+            "session",
+        )
+        .with_filename_template("test-hls");
+
+        let (event_tx, mut event_rx) = tokio::sync::mpsc::channel::<SegmentEvent>(32);
+        let downloader = HlsDownloader::new(
+            Arc::new(RwLock::new(config)),
+            MesioEngineConfig::default(),
+            event_tx,
+            CancellationToken::new(),
+            None,
+        );
+
+        let first_segment = HlsData::ts(
+            MediaSegment {
+                uri: "seg0.ts".to_string(),
+                duration: 1.0,
+                ..Default::default()
+            },
+            Bytes::from_static(&[0_u8; 188]),
+        );
+
+        let hls_stream = futures::stream::iter([
+            Ok(HlsData::ts(
+                MediaSegment {
+                    uri: "seg1.ts".to_string(),
+                    duration: 1.0,
+                    ..Default::default()
+                },
+                Bytes::from_static(&[1_u8; 188]),
+            )),
+            Err(mesio::hls::HlsDownloaderError::PlaylistError(
+                "simulated stream error".to_string(),
+            )),
+        ]);
+
+        let events_task = tokio::spawn(async move {
+            let mut events = Vec::new();
+            loop {
+                let next = timeout(Duration::from_secs(5), event_rx.recv())
+                    .await
+                    .expect("event recv timeout");
+                let Some(ev) = next else {
+                    break;
+                };
+                events.push(ev.clone());
+                if matches!(ev, SegmentEvent::DownloadFailed { .. }) {
+                    break;
+                }
+            }
+            events
+        });
+
+        let result = downloader
+            .download_raw(CancellationToken::new(), hls_stream, first_segment, "ts")
+            .await;
+        assert!(result.is_err(), "expected stream error");
+
+        let events = events_task.await.expect("events task join");
+
+        let completed_idx = events
+            .iter()
+            .position(|e| matches!(e, SegmentEvent::SegmentCompleted(_)))
+            .expect("expected SegmentCompleted");
+        let failed_idx = events
+            .iter()
+            .position(|e| matches!(e, SegmentEvent::DownloadFailed { .. }))
+            .expect("expected DownloadFailed");
+
+        assert!(
+            completed_idx < failed_idx,
+            "expected SegmentCompleted before DownloadFailed, got: {:?}",
+            events
+                .iter()
+                .map(|e| match e {
+                    SegmentEvent::SegmentStarted { .. } => "SegmentStarted",
+                    SegmentEvent::SegmentCompleted(_) => "SegmentCompleted",
+                    SegmentEvent::Progress(_) => "Progress",
+                    SegmentEvent::DownloadCompleted { .. } => "DownloadCompleted",
+                    SegmentEvent::DownloadFailed { .. } => "DownloadFailed",
+                })
+                .collect::<Vec<_>>()
+        );
+    }
+}

@@ -81,6 +81,7 @@ mockall = { workspace = true }
 proptest = { workspace = true }
 rstest = { workspace = true }
 tempfile = { workspace = true }
+m3u8-rs = { workspace = true }
 
 
 [profile.dev.package.sqlx-macros]

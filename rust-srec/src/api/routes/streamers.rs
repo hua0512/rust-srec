@@ -364,13 +364,71 @@ pub async fn update_streamer(
     }
 
     // Convert enabled flag to state if provided
-    let new_state = request.enabled.map(|enabled| {
-        if enabled {
-            StreamerState::NotLive
-        } else {
-            StreamerState::Disabled
+    let current_metadata = streamer_manager.get_streamer(&id);
+    let current_state = current_metadata.as_ref().map(|m| m.state);
+
+    tracing::debug!(
+        streamer_id = %id,
+        current_state = ?current_state,
+        request_enabled = ?request.enabled,
+        "Processing update_streamer state transition"
+    );
+
+    let new_state = match request.enabled {
+        Some(true) => {
+            // User wants to enable the streamer
+            // Only transition to NotLive if:
+            // 1. Currently Disabled (manual disable)
+            // 2. In an error state that can be recovered (FatalError, Error, TemporalDisabled, etc.)
+            // Otherwise preserve current state (e.g., Live, NotLive, InspectingLive)
+            match current_metadata {
+                Some(metadata) => {
+                    let current = metadata.state;
+                    if current == StreamerState::Disabled || current.is_error() {
+                        // Disabled or error state: transition to NotLive to restart monitoring
+                        if current.can_transition_to(StreamerState::NotLive) {
+                            tracing::debug!(
+                                streamer_id = %id,
+                                from = ?current,
+                                to = "NotLive",
+                                "Transitioning from disabled/error state"
+                            );
+                            Some(StreamerState::NotLive)
+                        } else {
+                            tracing::debug!(
+                                streamer_id = %id,
+                                current = ?current,
+                                "Invalid transition, preserving current state"
+                            );
+                            None // Invalid transition, preserve current
+                        }
+                    } else {
+                        tracing::debug!(
+                            streamer_id = %id,
+                            current = ?current,
+                            "Active state, preserving current state"
+                        );
+                        None // Active state (Live, NotLive, etc.): preserve current
+                    }
+                }
+                None => {
+                    tracing::debug!(streamer_id = %id, "Streamer not found, using NotLive fallback");
+                    Some(StreamerState::NotLive) // Fallback for new streamers
+                }
+            }
         }
-    });
+        Some(false) => {
+            tracing::debug!(streamer_id = %id, "Disabling streamer");
+            Some(StreamerState::Disabled)
+        }
+        None => None,
+    };
+
+    tracing::debug!(
+        streamer_id = %id,
+        new_state = ?new_state,
+        "Computed new state for update"
+    );
 
     // Convert API priority to domain priority if provided
     let new_priority = request.priority.map(api_to_domain_priority);

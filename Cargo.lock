@@ -3458,6 +3458,7 @@ dependencies = [
  "indexmap",
  "json-patch",
  "jsonwebtoken",
+ "m3u8-rs",
  "mesio-engine",
  "mimalloc",
  "mockall",

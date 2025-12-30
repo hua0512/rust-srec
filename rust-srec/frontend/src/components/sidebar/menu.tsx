@@ -150,9 +150,16 @@ export function MenuComponent({ isOpen, className }: MenuProps) {
             isOpen === false ? 'px-1' : 'px-0',
           )}
         >
-          <TooltipProvider key={isOpen ? 'open' : 'closed'} disableHoverableContent delayDuration={100}>
+          <TooltipProvider
+            key={isOpen ? 'open' : 'closed'}
+            disableHoverableContent
+            delayDuration={100}
+          >
             {menuList.map(({ groupLabel, menus }, index) => (
-              <li className={cn('w-full', groupLabel ? 'pt-6' : '')} key={index}>
+              <li
+                className={cn('w-full', groupLabel ? 'pt-6' : '')}
+                key={index}
+              >
                 {(isOpen && groupLabel) || isOpen === undefined ? (
                   <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground/60 px-4 pb-3 max-w-[248px] truncate">
                     {groupLabel}

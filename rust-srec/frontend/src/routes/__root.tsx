@@ -127,7 +127,7 @@ function RootDocument({ children }: { children: React.ReactNode }) {
           <I18nProvider i18n={i18n}>
             <ThemeProvider defaultTheme="system" storageKey="vite-ui-theme">
               {children}
-              <Toaster />
+              <Toaster position="top-right" />
               <Suspense>
                 <TanStackRouterDevtools position="bottom-right" />
               </Suspense>
