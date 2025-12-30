@@ -459,7 +459,6 @@ const PlayerItem = React.memo(function PlayerItem({
   onMuteChange,
   onVolumeChange,
 }: PlayerItemProps) {
-
   const headers = React.useMemo(
     () => ({ ...player.currentStream.headers, ...player.headers }),
     [player.currentStream.headers, player.headers],

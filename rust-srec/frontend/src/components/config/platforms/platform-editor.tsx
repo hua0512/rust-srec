@@ -96,61 +96,62 @@ export function PlatformEditor({
           initial={{ opacity: 0, y: 10 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.3 }}
-          className="max-w-8xl space-y-8 px-4 sm:px-6 lg:px-8 py-8"
+          className="max-w-7xl mx-auto space-y-6 sm:space-y-8 px-4 sm:px-6 lg:px-8 py-4 sm:py-8"
         >
           {/* Header Section */}
-          <div className="flex flex-col gap-6">
-            <div className="flex items-start justify-between">
-              <div className="flex items-center gap-4">
-                <div
-                  className={cn(
-                    'p-3 rounded-2xl ring-1 ring-inset ring-black/5 dark:ring-white/10 shadow-sm',
-                    colorClass,
-                  )}
-                >
-                  <Icon className="w-8 h-8" />
-                </div>
-                <div className="space-y-1">
-                  <h1 className="text-3xl font-bold tracking-tight">
-                    {platform.name}
-                  </h1>
-                  <p className="text-muted-foreground text-sm flex items-center gap-2">
-                    <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-accent/50 text-xs font-medium border border-border/50">
-                      ID: <span className="font-mono">{platform.id}</span>
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-6">
+            <div className="flex items-center gap-4">
+              <div
+                className={cn(
+                  'p-2.5 sm:p-3 rounded-2xl ring-1 ring-inset ring-black/5 dark:ring-white/10 shadow-sm shrink-0',
+                  colorClass,
+                )}
+              >
+                <Icon className="w-6 h-6 sm:w-8 sm:h-8" />
+              </div>
+              <div className="min-w-0 space-y-1">
+                <h1 className="text-2xl sm:text-3xl font-bold tracking-tight truncate">
+                  {platform.name}
+                </h1>
+                <p className="text-muted-foreground text-sm flex items-center gap-2">
+                  <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-accent/50 text-xs font-medium border border-border/50">
+                    <span className="opacity-60">ID:</span>{' '}
+                    <span className="font-mono truncate max-w-[120px] sm:max-w-none">
+                      {platform.id}
                     </span>
-                  </p>
-                </div>
+                  </span>
+                </p>
               </div>
-              <div className="flex gap-2">
-                <Button
-                  type="button"
-                  variant="outline"
-                  onClick={() => window.history.back()}
-                  className="gap-2"
-                >
-                  <ArrowLeft className="w-4 h-4" />
-                  <Trans>Back</Trans>
-                </Button>
-                <Button
-                  type="submit"
-                  disabled={isUpdating}
-                  className={cn(
-                    'min-w-[140px] gap-2 shadow-lg shadow-primary/20 transition-all hover:scale-105 active:scale-95',
-                    isUpdating && 'opacity-80',
-                  )}
-                >
-                  {isUpdating ? (
-                    <Loader2 className="w-4 h-4 animate-spin" />
-                  ) : (
-                    <Save className="w-4 h-4" />
-                  )}
-                  {isUpdating ? (
-                    <Trans>Saving...</Trans>
-                  ) : (
-                    <Trans>Save Changes</Trans>
-                  )}
-                </Button>
-              </div>
+            </div>
+            <div className="flex flex-col-reverse sm:flex-row gap-3 sm:gap-2">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => window.history.back()}
+                className="gap-2 h-11 sm:h-10 order-2 sm:order-1"
+              >
+                <ArrowLeft className="w-4 h-4" />
+                <Trans>Back</Trans>
+              </Button>
+              <Button
+                type="submit"
+                disabled={isUpdating}
+                className={cn(
+                  'min-w-full sm:min-w-[140px] gap-2 shadow-lg shadow-primary/20 transition-all hover:scale-[1.02] active:scale-95 h-11 sm:h-10 order-1 sm:order-2',
+                  isUpdating && 'opacity-80',
+                )}
+              >
+                {isUpdating ? (
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                ) : (
+                  <Save className="w-4 h-4" />
+                )}
+                {isUpdating ? (
+                  <Trans>Saving...</Trans>
+                ) : (
+                  <Trans>Save Changes</Trans>
+                )}
+              </Button>
             </div>
           </div>
 

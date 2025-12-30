@@ -522,7 +522,8 @@ impl<'a> DouyinRequest<'a> {
                 .map(|url| url.to_string());
             let avatar_url = user
                 .as_ref()
-                .and_then(|u| u.avatar_thumb.url_list.first())
+                .and_then(|u| u.avatar_thumb.as_ref())
+                .and_then(|avatar| avatar.url_list.first())
                 .map(|url| url.to_string());
 
             return Ok(self.create_offline_media_info(title, artist, cover_url, avatar_url));
@@ -592,7 +593,8 @@ impl<'a> DouyinRequest<'a> {
                     .map(|url| url.to_string());
                 let avatar_url = user
                     .as_ref()
-                    .and_then(|u| u.avatar_thumb.url_list.first())
+                    .and_then(|u| u.avatar_thumb.as_ref())
+                    .and_then(|avatar| avatar.url_list.first())
                     .map(|url| url.to_string());
 
                 return Ok(self.create_offline_media_info(title, artist, cover_url, avatar_url));
@@ -675,8 +677,8 @@ impl<'a> DouyinRequest<'a> {
             .map(|url| url.to_string());
         let avatar_url = user
             .avatar_thumb
-            .url_list
-            .first()
+            .as_ref()
+            .and_then(|avatar| avatar.url_list.first())
             .map(|url| url.to_string());
 
         if !is_live {
@@ -1134,7 +1136,7 @@ mod tests {
     use crate::extractor::platforms::douyin::models::{DouyinAvatarThumb, DouyinUserInfo};
     use crate::extractor::platforms::douyin::utils::GlobalTtwidManager;
 
-    const TEST_URL: &str = "https://live.douyin.com/XXbaby0125";
+    const TEST_URL: &str = "https://live.douyin.com/Larj888";
 
     #[tokio::test]
     #[ignore]
@@ -1234,9 +1236,9 @@ mod tests {
             id_str: "1",
             sec_uid: "1",
             nickname: "账号已注销".to_string(),
-            avatar_thumb: DouyinAvatarThumb {
+            avatar_thumb: Some(DouyinAvatarThumb {
                 url_list: vec!["http://example.com/aweme_default_avatar.png".into()],
-            },
+            }),
         };
         assert!(banned_user.is_cancelled());
 
@@ -1244,9 +1246,9 @@ mod tests {
             id_str: "2",
             sec_uid: "2",
             nickname: "ActiveUser".to_string(),
-            avatar_thumb: DouyinAvatarThumb {
+            avatar_thumb: Some(DouyinAvatarThumb {
                 url_list: vec!["http://example.com/real_avatar.png".into()],
-            },
+            }),
         };
         assert!(!active_user.is_cancelled());
     }

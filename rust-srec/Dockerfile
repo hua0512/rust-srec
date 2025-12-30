@@ -27,14 +27,26 @@ FROM debian:bookworm-slim
 RUN apt-get update && apt-get install -y \
     ca-certificates \
     curl \
-    ffmpeg \
     locales \
     python3 \
     python3-pip \
     unzip \
+    xz-utils \
     && rm -rf /var/lib/apt/lists/* \
     && sed -i '/en_US.UTF-8/s/^# //g' /etc/locale.gen \
     && locale-gen
+
+# Install ffmpeg with architecture check
+RUN ARCH=$(uname -m) && \
+    if [ "$ARCH" = "x86_64" ]; then \
+      URL="https://github.com/yt-dlp/FFmpeg-Builds/releases/download/latest/ffmpeg-master-latest-linux64-gpl.tar.xz"; \
+    elif [ "$ARCH" = "aarch64" ]; then \
+      URL="https://github.com/yt-dlp/FFmpeg-Builds/releases/download/latest/ffmpeg-master-latest-linuxarm64-gpl.tar.xz"; \
+    fi && \
+    curl -L $URL | tar -xJ && \
+    mv ffmpeg-*-linux*/bin/{ffmpeg,ffprobe,ffplay} /usr/local/bin/ && \
+    chmod +x /usr/local/bin/{ffmpeg,ffprobe,ffplay} && \
+    rm -rf ffmpeg-*
 
 # Set UTF-8 locale
 ENV LANG=en_US.UTF-8

@@ -127,7 +127,7 @@ pub(crate) struct DouyinUserInfo<'a> {
     pub sec_uid: &'a str,
     pub nickname: String,
     #[serde(borrow)]
-    pub avatar_thumb: DouyinAvatarThumb<'a>,
+    pub avatar_thumb: Option<DouyinAvatarThumb<'a>>,
 }
 
 impl DouyinUserInfo<'_> {
@@ -140,9 +140,10 @@ impl DouyinUserInfo<'_> {
         self.nickname == "账号已注销"
             && self
                 .avatar_thumb
-                .url_list
-                .iter()
-                .any(|url| url.contains("aweme_default_avatar.png"))
+                .as_ref()
+                .and_then(|avatar| avatar.url_list.first())
+                .map(|url| url.contains("aweme_default_avatar.png"))
+                .unwrap_or(false)
     }
 }
 

@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect } from 'react';
 import { Link, createFileRoute } from '@tanstack/react-router';
 import {
   useQuery,
@@ -28,7 +28,6 @@ import { Separator } from '@/components/ui/separator';
 
 import { Trans, useLingui } from '@lingui/react/macro';
 import { t, plural } from '@lingui/core/macro';
-import { format } from 'date-fns';
 import { toast } from 'sonner';
 import { getProcessorDefinition } from '@/components/pipeline/presets/processors/registry';
 import { motion } from 'motion/react';
@@ -177,7 +176,7 @@ function JobDetailsPage() {
 
   const { ref: loadMoreRef, inView } = useInView();
 
-  React.useEffect(() => {
+  useEffect(() => {
     if (inView && hasNextPage) {
       fetchNextPage();
     }
@@ -850,6 +849,8 @@ function TimelineItem({
   active: boolean;
   isLast?: boolean;
 }) {
+  console.log(time);
+
   return (
     <div className="relative pl-6">
       {!isLast && (
@@ -883,15 +884,11 @@ function TimelineItem({
             active ? 'text-foreground' : 'text-muted-foreground/50',
           )}
         >
-          {time ? format(new Date(time), 'HH:mm:ss MST') : '-'}
+          {time || '-'}
         </span>
       </div>
       <div className="text-xs text-muted-foreground/50 mt-0.5 pl-0.5">
-        {time ? (
-          format(new Date(time), 'MMM d, yyyy')
-        ) : (
-          <span className="opacity-0">.</span>
-        )}
+        {time || <span className="opacity-0">.</span>}
       </div>
     </div>
   );

@@ -57,7 +57,7 @@ msgid "{0, plural, one {# done} other {# done}}"
 msgstr "{0, plural, other {# 已完成}}"
 
 #. placeholder {0}: job.execution_info.log_error_count
-#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.tsx:704
+#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.tsx:703
 msgid "{0, plural, one {# Error} other {# Errors}}"
 msgstr "{0, plural, other {# 个错误}}"
 
@@ -71,7 +71,7 @@ msgstr "{0, plural, other {# 失败}}"
 #~ msgstr "{0, plural, other {# 个任务}}"
 
 #. placeholder {0}: job.execution_info.log_lines_total
-#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.tsx:726
+#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.tsx:725
 msgid "{0, plural, one {# Line} other {# Lines}}"
 msgstr "{0, plural, other {# 行}}"
 
@@ -84,7 +84,7 @@ msgid "{0, plural, one {# step} other {# steps}}"
 msgstr "{0, plural, other {# 步}}"
 
 #. placeholder {0}: job.execution_info.log_warn_count
-#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.tsx:715
+#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.tsx:714
 msgid "{0, plural, one {# Warning} other {# Warnings}}"
 msgstr "{0, plural, other {# 个警告}}"
 
@@ -232,7 +232,7 @@ msgstr "添加"
 msgid "Add a module above to configure its log level"
 msgstr "在上方添加模块以配置其日志级别"
 
-#: src/routes/_authed/_dashboard/player/index.tsx:379
+#: src/routes/_authed/_dashboard/player/index.tsx:378
 msgid "Add a stream to start your viewing session."
 msgstr "添加一个流以开始观看会话。"
 
@@ -309,8 +309,8 @@ msgstr "添加 rclone 参数"
 msgid "Add Step"
 msgstr "添加步骤"
 
-#: src/routes/_authed/_dashboard/player/index.tsx:388
-#: src/routes/_authed/_dashboard/player/index.tsx:420
+#: src/routes/_authed/_dashboard/player/index.tsx:387
+#: src/routes/_authed/_dashboard/player/index.tsx:419
 msgid "Add Stream"
 msgstr "添加流"
 
@@ -459,7 +459,7 @@ msgstr "你确定要删除 {0} 个会话吗？此操作无法撤销。"
 msgid "Are you sure you want to delete the template \"{0}\"? This action cannot be undone."
 msgstr "确定要删除模板“{0}”吗？此操作无法撤销。"
 
-#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.tsx:394
+#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.tsx:393
 msgid "Are you sure you want to delete this job?"
 msgstr "确定要删除该处理任务吗？"
 
@@ -588,7 +588,7 @@ msgstr "头像 URL（可选）"
 msgid "Avg. Duration"
 msgstr "平均时长"
 
-#: src/components/config/platforms/platform-editor.tsx:132
+#: src/components/config/platforms/platform-editor.tsx:134
 #: src/components/config/templates/template-editor.tsx:182
 #: src/components/config/templates/template-editor.tsx:185
 msgid "Back"
@@ -598,7 +598,7 @@ msgstr "返回"
 msgid "Back to Details"
 msgstr "返回详情"
 
-#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.tsx:283
+#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.tsx:282
 #: src/routes/_authed/_dashboard/pipeline/jobs/new.tsx:137
 msgid "Back to Jobs"
 msgstr "返回处理任务列表"
@@ -740,7 +740,7 @@ msgstr "C:path1.flv,C:path2.flv"
 msgid "Cancel"
 msgstr "取消"
 
-#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.tsx:384
+#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.tsx:383
 msgid "Cancel Execution"
 msgstr "取消执行"
 
@@ -943,8 +943,8 @@ msgstr "完整流程：重封装、生成缩略图、添加元数据并上传。
 #: src/routes/_authed/_dashboard/pipeline/executions.$pipelineId.tsx:272
 #: src/routes/_authed/_dashboard/pipeline/executions.$pipelineId.tsx:346
 #: src/routes/_authed/_dashboard/pipeline/executions.$pipelineId.tsx:511
-#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.tsx:328
-#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.tsx:641
+#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.tsx:327
+#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.tsx:640
 #: src/routes/_authed/_dashboard/pipeline/jobs/index.tsx:71
 #: src/routes/_authed/_dashboard/pipeline/jobs/index.tsx:279
 msgid "Completed"
@@ -1099,7 +1099,7 @@ msgstr "连续失败"
 msgid "Container"
 msgstr "容器"
 
-#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.tsx:422
+#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.tsx:421
 msgid "Context"
 msgstr "上下文"
 
@@ -1271,7 +1271,7 @@ msgstr "创建你的第一个工作流，用于定义录制内容的处理步骤
 
 #: src/components/config/global/backup-restore-card.tsx:176
 #: src/components/pipeline/outputs/output-card.tsx:189
-#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.tsx:627
+#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.tsx:626
 msgid "Created"
 msgstr "已创建"
 
@@ -1525,7 +1525,7 @@ msgstr "删除引擎？"
 msgid "Delete File"
 msgstr "删除文件"
 
-#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.tsx:402
+#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.tsx:401
 msgid "Delete Job"
 msgstr "删除处理任务"
 
@@ -1734,7 +1734,7 @@ msgstr "双格式输出"
 
 #: src/components/pipeline/presets/processors/remux-config-form.tsx:514
 #: src/components/streamers/edit/active-download-card.tsx:68
-#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.tsx:584
+#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.tsx:583
 msgid "Duration"
 msgstr "时长"
 
@@ -1949,7 +1949,7 @@ msgstr "引擎列表"
 msgid "Enter a unique name"
 msgstr "输入唯一名称"
 
-#: src/routes/_authed/_dashboard/player/index.tsx:423
+#: src/routes/_authed/_dashboard/player/index.tsx:422
 msgid "Enter a URL to parse and play a stream"
 msgstr "输入 URL 以解析并播放流"
 
@@ -1983,11 +1983,11 @@ msgid "Error"
 msgstr "错误"
 
 #: src/components/streamers/card/use-streamer-status.tsx:145
-#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.tsx:667
+#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.tsx:666
 msgid "Error Details"
 msgstr "错误详情"
 
-#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.tsx:242
+#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.tsx:241
 msgid "Error Loading Job"
 msgstr "加载处理任务失败"
 
@@ -2028,7 +2028,7 @@ msgstr "加载工作流失败"
 msgid "Error: Could not load preset details."
 msgstr "错误：无法加载预设详情。"
 
-#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.tsx:613
+#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.tsx:612
 msgid "ETA"
 msgstr "预计剩余时间"
 
@@ -2061,8 +2061,8 @@ msgstr "执行设置"
 msgid "Executions"
 msgstr "执行记录"
 
-#: src/routes/_authed/_dashboard/player/index.tsx:256
-#: src/routes/_authed/_dashboard/player/index.tsx:319
+#: src/routes/_authed/_dashboard/player/index.tsx:255
+#: src/routes/_authed/_dashboard/player/index.tsx:318
 msgid "Exit Immersive"
 msgstr "退出沉浸模式"
 
@@ -2119,7 +2119,7 @@ msgstr "提取 MP3"
 #: src/routes/_authed/_dashboard/dashboard.tsx:264
 #: src/routes/_authed/_dashboard/pipeline/executions.$pipelineId.tsx:274
 #: src/routes/_authed/_dashboard/pipeline/executions.$pipelineId.tsx:513
-#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.tsx:330
+#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.tsx:329
 #: src/routes/_authed/_dashboard/pipeline/jobs/index.tsx:72
 #: src/routes/_authed/_dashboard/pipeline/jobs/index.tsx:286
 msgid "Failed"
@@ -2129,7 +2129,7 @@ msgstr "失败"
 msgid "Failed steps retry initiated"
 msgstr "已开始重试失败的步骤"
 
-#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.tsx:201
+#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.tsx:200
 msgid "Failed to cancel job"
 msgstr "取消处理任务失败"
 
@@ -2195,7 +2195,7 @@ msgstr "删除渠道失败"
 msgid "Failed to delete filter"
 msgstr "删除过滤器失败"
 
-#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.tsx:211
+#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.tsx:210
 msgid "Failed to delete job"
 msgstr "删除处理任务失败"
 
@@ -2282,7 +2282,7 @@ msgstr "加载工作流列表失败：{0}"
 msgid "Failed to refresh credentials"
 msgstr "刷新凭据失败"
 
-#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.tsx:192
+#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.tsx:191
 msgid "Failed to retry job"
 msgstr "重试处理任务失败"
 
@@ -2537,7 +2537,7 @@ msgstr "完整的多媒体处理：并行进行视频重封装、音频提取和
 msgid "Full Processing"
 msgstr "全流程处理"
 
-#: src/components/config/platforms/platform-editor.tsx:180
+#: src/components/config/platforms/platform-editor.tsx:181
 #: src/components/config/templates/tabs/platform-override-card.tsx:62
 #: src/components/config/templates/template-editor.tsx:239
 #: src/components/pipeline/presets/processors/audio-extract-config-form.tsx:54
@@ -2622,7 +2622,7 @@ msgid "Go back"
 msgstr "返回"
 
 #: src/components/default-catch-boundary.tsx:58
-#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.tsx:250
+#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.tsx:249
 #: src/routes/_authed/_dashboard/sessions/$sessionId.tsx:167
 msgid "Go Back"
 msgstr "返回"
@@ -2811,7 +2811,7 @@ msgstr "忽略高于此比特率的流。"
 msgid "Ignore streams below this bitrate."
 msgstr "忽略低于此比特率的流。"
 
-#: src/routes/_authed/_dashboard/player/index.tsx:324
+#: src/routes/_authed/_dashboard/player/index.tsx:323
 msgid "Immersive Mode"
 msgstr "沉浸模式"
 
@@ -2873,7 +2873,7 @@ msgstr "输入参数"
 msgid "Input Options (-i flags)"
 msgstr "输入选项（-i 参数）"
 
-#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.tsx:497
+#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.tsx:496
 msgid "Input Path"
 msgstr "输入路径"
 
@@ -2887,7 +2887,7 @@ msgstr "输入路径（逗号分隔）"
 msgid "Inspecting"
 msgstr "检查中"
 
-#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.tsx:332
+#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.tsx:331
 msgid "Interrupted"
 msgstr "已中断"
 
@@ -2911,7 +2911,7 @@ msgstr "检查间隔。"
 msgid "Jitter"
 msgstr "抖动"
 
-#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.tsx:198
+#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.tsx:197
 msgid "Job cancelled"
 msgstr "处理任务已取消"
 
@@ -2923,11 +2923,11 @@ msgstr "处理任务配置"
 msgid "Job configurations"
 msgstr "任务配置"
 
-#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.tsx:207
+#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.tsx:206
 msgid "Job deleted"
 msgstr "处理任务已删除"
 
-#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.tsx:312
+#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.tsx:311
 msgid "Job Details"
 msgstr "处理任务详情"
 
@@ -2935,7 +2935,7 @@ msgstr "处理任务详情"
 msgid "Job limits and engine settings."
 msgstr "任务限制与引擎设置。"
 
-#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.tsx:245
+#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.tsx:244
 msgid "Job not found"
 msgstr "未找到处理任务"
 
@@ -2943,7 +2943,7 @@ msgstr "未找到处理任务"
 msgid "Job Presets"
 msgstr "任务预设"
 
-#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.tsx:189
+#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.tsx:188
 msgid "Job retry initiated"
 msgstr "已开始重试处理任务"
 
@@ -3063,7 +3063,7 @@ msgstr "已加载模板：{0}"
 msgid "Loading editor components..."
 msgstr "正在加载编辑器组件..."
 
-#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.tsx:742
+#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.tsx:741
 msgid "Loading logs..."
 msgstr "正在加载日志..."
 
@@ -3072,7 +3072,7 @@ msgstr "正在加载日志..."
 msgid "Loading more..."
 msgstr "正在加载更多..."
 
-#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.tsx:779
+#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.tsx:778
 msgid "Loading older logs..."
 msgstr "正在加载历史日志..."
 
@@ -3253,12 +3253,12 @@ msgstr "最大重试尝试次数。"
 msgid "Maximum quality compression with HEVC, then upload to cloud storage."
 msgstr "使用 HEVC 进行最高质量压缩，然后上传到云存储。"
 
-#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.tsx:465
-#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.tsx:476
+#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.tsx:464
+#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.tsx:475
 msgid "MB"
 msgstr "MB"
 
-#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.tsx:607
+#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.tsx:606
 msgid "MB/s"
 msgstr "MB/s"
 
@@ -3495,7 +3495,7 @@ msgstr "未发现错误。最大深度：{0}"
 msgid "No filters yet"
 msgstr "暂无过滤器"
 
-#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.tsx:519
+#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.tsx:518
 msgid "No input paths"
 msgstr "没有输入路径"
 
@@ -3520,7 +3520,7 @@ msgstr "未设置关键字"
 msgid "No limit"
 msgstr "不限"
 
-#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.tsx:791
+#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.tsx:790
 msgid "No logs available for this execution."
 msgstr "该执行记录暂无日志。"
 
@@ -3552,7 +3552,7 @@ msgstr "暂无通知渠道"
 msgid "No other steps available to depend on."
 msgstr "没有其他可依赖的步骤。"
 
-#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.tsx:554
+#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.tsx:553
 msgid "No output generated"
 msgstr "未生成输出"
 
@@ -3852,7 +3852,7 @@ msgstr "输出格式"
 msgid "Output Options"
 msgstr "输出选项"
 
-#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.tsx:532
+#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.tsx:531
 msgid "Output Path"
 msgstr "输出路径"
 
@@ -3963,7 +3963,7 @@ msgstr "配对分段"
 msgid "Paired Segment Pipeline"
 msgstr "配对分段处理管道"
 
-#: src/routes/_authed/_dashboard/player/index.tsx:305
+#: src/routes/_authed/_dashboard/player/index.tsx:304
 msgid "Parse and play live streams"
 msgstr "解析并播放直播流"
 
@@ -3975,7 +3975,7 @@ msgstr "批量解析"
 msgid "Parse Stream"
 msgstr "解析流"
 
-#: src/routes/_authed/_dashboard/player/index.tsx:354
+#: src/routes/_authed/_dashboard/player/index.tsx:353
 msgid "Parsing Stream..."
 msgstr "正在解析流..."
 
@@ -4028,7 +4028,7 @@ msgstr "条已暂停"
 #: src/components/pipeline/dag-graph-view.tsx:372
 #: src/routes/_authed/_dashboard/pipeline/executions.$pipelineId.tsx:268
 #: src/routes/_authed/_dashboard/pipeline/executions.$pipelineId.tsx:507
-#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.tsx:324
+#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.tsx:323
 #: src/routes/_authed/_dashboard/pipeline/jobs/index.tsx:69
 #: src/routes/_authed/_dashboard/pipeline/jobs/index.tsx:264
 msgid "Pending"
@@ -4063,14 +4063,14 @@ msgstr "逐段处理管道"
 
 #: src/components/pipeline/presets/processors/remux-config-form.tsx:611
 #: src/components/sessions/overview-tab.tsx:196
-#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.tsx:577
+#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.tsx:576
 msgid "Performance"
 msgstr "性能"
 
 #: src/components/config/shared-config-editor.tsx:221
 #: src/components/sidebar/navbar.tsx:30
 #: src/lib/menu-list.ts:69
-#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.tsx:440
+#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.tsx:439
 msgid "Pipeline"
 msgstr "处理管道"
 
@@ -4236,7 +4236,7 @@ msgstr "请重启系统以确保所有配置更改已完全生效。"
 msgid "Please select a JSON file"
 msgstr "请选择一个 JSON 文件"
 
-#: src/routes/_authed/_dashboard/player/index.tsx:357
+#: src/routes/_authed/_dashboard/player/index.tsx:356
 msgid "Please wait while we resolve the stream URL."
 msgstr "正在解析流 URL，请稍候。"
 
@@ -4387,7 +4387,7 @@ msgstr "并行处理视频并提取播客音频，然后同时上传两者。"
 #: src/routes/_authed/_dashboard/dashboard.tsx:248
 #: src/routes/_authed/_dashboard/pipeline/executions.$pipelineId.tsx:270
 #: src/routes/_authed/_dashboard/pipeline/executions.$pipelineId.tsx:509
-#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.tsx:326
+#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.tsx:325
 #: src/routes/_authed/_dashboard/pipeline/jobs/index.tsx:70
 #: src/routes/_authed/_dashboard/pipeline/jobs/index.tsx:270
 msgid "Processing"
@@ -4462,7 +4462,7 @@ msgstr "质量控制"
 msgid "Quality Rate"
 msgstr "画质等级"
 
-#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.tsx:592
+#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.tsx:591
 msgid "Queue"
 msgstr "队列"
 
@@ -4504,7 +4504,7 @@ msgstr "Rclone 传输"
 msgid "Ready"
 msgstr "就绪"
 
-#: src/routes/_authed/_dashboard/player/index.tsx:376
+#: src/routes/_authed/_dashboard/player/index.tsx:375
 msgid "Ready to Watch"
 msgstr "准备观看"
 
@@ -4666,7 +4666,7 @@ msgstr "分辨率（缩放）"
 msgid "Resource Limits"
 msgstr "资源限制"
 
-#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.tsx:454
+#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.tsx:453
 msgid "Resources"
 msgstr "资源"
 
@@ -4706,7 +4706,7 @@ msgstr "重试延迟（ms）"
 msgid "Retry Failed Steps"
 msgstr "重试失败步骤"
 
-#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.tsx:373
+#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.tsx:372
 msgid "Retry Job"
 msgstr "重试处理任务"
 
@@ -4813,7 +4813,7 @@ msgid "Sampling Strategy"
 msgstr "采样策略"
 
 #: src/components/config/engines/engine-editor.tsx:288
-#: src/components/config/platforms/platform-editor.tsx:150
+#: src/components/config/platforms/platform-editor.tsx:152
 #: src/components/config/templates/template-editor.tsx:206
 #: src/components/filters/FilterDialog.tsx:290
 #: src/components/notifications/subscription-manager.tsx:446
@@ -4833,7 +4833,7 @@ msgstr "将设置保存为 JSON 文件"
 msgid "Save Workflow"
 msgstr "保存工作流"
 
-#: src/components/config/platforms/platform-editor.tsx:148
+#: src/components/config/platforms/platform-editor.tsx:150
 #: src/components/config/templates/template-editor.tsx:202
 #: src/components/filters/FilterDialog.tsx:287
 #: src/components/pipeline/workflows/workflow-editor.tsx:238
@@ -5087,7 +5087,7 @@ msgstr "会话间隔"
 #~ msgid "Session Gap (seconds)"
 #~ msgstr "录制会话间隔（秒）"
 
-#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.tsx:427
+#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.tsx:426
 msgid "Session ID"
 msgstr "录制会话 ID"
 
@@ -5206,7 +5206,7 @@ msgstr "来源"
 msgid "Space Saver"
 msgstr "空间节省"
 
-#: src/components/config/platforms/platform-editor.tsx:190
+#: src/components/config/platforms/platform-editor.tsx:191
 #: src/components/config/templates/tabs/platform-override-card.tsx:68
 msgid "Specific"
 msgstr "特定"
@@ -5220,7 +5220,7 @@ msgid "Specific TTWID value for this platform."
 msgstr "此平台的特定 TTWID 值。"
 
 #: src/components/streamers/edit/active-download-card.tsx:46
-#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.tsx:602
+#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.tsx:601
 msgid "Speed"
 msgstr "速度"
 
@@ -5256,7 +5256,7 @@ msgstr "开始时间"
 #: src/components/pipeline/jobs/pipeline-summary-card.tsx:275
 #: src/components/sessions/overview-tab.tsx:218
 #: src/routes/_authed/_dashboard/pipeline/executions.$pipelineId.tsx:352
-#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.tsx:632
+#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.tsx:631
 msgid "Started"
 msgstr "已开始"
 
@@ -5319,7 +5319,7 @@ msgstr "流监控遇到问题"
 msgid "Stream Options"
 msgstr "流选项"
 
-#: src/routes/_authed/_dashboard/player/index.tsx:302
+#: src/routes/_authed/_dashboard/player/index.tsx:301
 msgid "Stream Player"
 msgstr "流播放器"
 
@@ -5353,7 +5353,7 @@ msgstr "主播已删除"
 msgid "Streamer Details"
 msgstr "主播详情"
 
-#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.tsx:433
+#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.tsx:432
 msgid "Streamer ID"
 msgstr "主播 ID"
 
@@ -5697,7 +5697,7 @@ msgstr "令牌"
 msgid "total"
 msgstr "总计"
 
-#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.tsx:730
+#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.tsx:729
 msgid "Total"
 msgstr "总计"
 

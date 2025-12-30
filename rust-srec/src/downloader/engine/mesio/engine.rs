@@ -57,7 +57,7 @@ impl MesioEngine {
     pub fn with_config(config: MesioEngineConfig) -> Self {
         Self {
             available: true,
-            version: env!("CARGO_PKG_VERSION").to_string(),
+            version: "0.1.9".to_string(),
             config,
             hls_config: Some(
                 HlsProtocolBuilder::new()

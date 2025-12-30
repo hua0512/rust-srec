@@ -89,17 +89,17 @@ export function PlatformSpecificTab({
 
   return (
     <Card className="border-dashed shadow-none">
-      <CardHeader className="pb-3 border-b border-border/40">
-        <div className="flex items-center justify-between">
+      <CardHeader className="pb-4 border-b border-border/40">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
           <div className="flex items-center gap-3">
-            <div className="p-2 rounded-lg bg-indigo-500/10 text-indigo-600 dark:text-indigo-400">
+            <div className="p-2 rounded-lg bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 shrink-0">
               <Boxes className="w-5 h-5" />
             </div>
-            <div className="grid gap-0.5">
-              <CardTitle className="text-lg">
+            <div className="grid gap-0.5 min-w-0">
+              <CardTitle className="text-lg truncate">
                 <Trans>Platform Specific Configuration</Trans>
               </CardTitle>
-              <p className="text-xs text-muted-foreground">
+              <p className="text-xs text-muted-foreground truncate">
                 {platformName ? (
                   <Trans>Options for {platformName}</Trans>
                 ) : (
@@ -109,12 +109,12 @@ export function PlatformSpecificTab({
             </div>
           </div>
           {hasSpecificFields && (
-            <div className="flex items-center p-1 bg-muted/50 rounded-lg border border-border/50">
+            <div className="flex items-center p-1 bg-muted/50 rounded-lg border border-border/50 self-start sm:self-auto">
               <Button
                 type="button"
                 variant={viewMode === 'form' ? 'secondary' : 'ghost'}
                 size="sm"
-                className="h-8 gap-2 rounded-md transition-all"
+                className="h-8 gap-2 rounded-md transition-all flex-1 sm:flex-none"
                 onClick={() => setViewMode('form')}
               >
                 <List className="w-4 h-4" />
@@ -124,7 +124,7 @@ export function PlatformSpecificTab({
                 type="button"
                 variant={viewMode === 'json' ? 'secondary' : 'ghost'}
                 size="sm"
-                className="h-8 gap-2 rounded-md transition-all"
+                className="h-8 gap-2 rounded-md transition-all flex-1 sm:flex-none"
                 onClick={() => setViewMode('json')}
               >
                 <Code className="w-4 h-4" />
