@@ -82,7 +82,7 @@ cron = "0.15"
 dotenvy = "0.15"
 sysinfo = { version = "0.37" }
 tracing-appender = "0.2"
-mockall = "0.12.1"
+mockall = "0.14.0"
 proptest = "1.4"
 rstest = "0.26.1"
 itertools = "0.14.0"
