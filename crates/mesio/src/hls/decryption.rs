@@ -108,14 +108,14 @@ impl DecryptionOffloader {
             .map_err(|e| HlsDownloaderError::DecryptionError(format!("Decryption failed: {e}")))?
             .len();
 
-        let result = Bytes::copy_from_slice(&buffer[..decrypted_len]);
-
-        // Return buffer to pool if available
         if let Some(pool) = buffer_pool {
+            let result = Bytes::copy_from_slice(&buffer[..decrypted_len]);
             pool.release(buffer);
+            Ok(result)
+        } else {
+            buffer.truncate(decrypted_len);
+            Ok(Bytes::from(buffer))
         }
-
-        Ok(result)
     }
 }
 
@@ -263,7 +263,7 @@ impl DecryptionService {
 
         // Check in-memory cache first
 
-        let key = CacheKey::new(CacheResourceType::Key, key_uri_str.clone(), None);
+        let key = CacheKey::new(CacheResourceType::Key, key_uri_str, None);
         if let Some(cache_manager) = &self.cache_manager
             && let Some(cached_key) = cache_manager
                 .get(&key)
@@ -273,16 +273,16 @@ impl DecryptionService {
             return Ok(cached_key.0);
         }
 
-        let fetched_key_bytes = self.key_fetcher.fetch_key(&key_uri_str).await?;
+        let fetched_key_bytes = self.key_fetcher.fetch_key(&key.url).await?;
         if fetched_key_bytes.len() != 16 {
             // AES-128 keys are 16 bytes
             return Err(HlsDownloaderError::DecryptionError(format!(
-                "Fetched decryption key from {key_uri_str} has incorrect length: {} bytes (expected 16)",
+                "Fetched decryption key from {} has incorrect length: {} bytes (expected 16)",
+                key.url,
                 fetched_key_bytes.len()
             )));
         }
-        let key_clone = fetched_key_bytes.clone();
-        let len = key_clone.len();
+        let len = fetched_key_bytes.len();
 
         // Store in cache
 
@@ -290,7 +290,7 @@ impl DecryptionService {
             let metadata = CacheMetadata::new(len as u64)
                 .with_expiration(self.config.decryption_config.key_cache_ttl);
             cache_manager
-                .put(key.clone(), key_clone, metadata)
+                .put(key, fetched_key_bytes.clone(), metadata)
                 .await
                 .map_err(|e| HlsDownloaderError::CacheError(format!("Cache error: {e}")))?;
         }

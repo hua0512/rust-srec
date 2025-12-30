@@ -36,11 +36,18 @@ import {
   Upload,
   Terminal,
   Settings2,
+  FileText,
+  Type,
 } from 'lucide-react';
 import { Trans } from '@lingui/react/macro';
 import { t } from '@lingui/core/macro';
 import { motion } from 'motion/react';
-import { isDefaultPreset } from '../default-presets-i18n';
+import {
+  isDefaultPreset,
+  getCategoryName,
+  PRESET_CATEGORY_NAMES,
+} from '../default-presets-i18n';
+import { useLingui } from '@lingui/react';
 
 interface PresetMetaFormProps {
   form: UseFormReturn<any>;
@@ -59,10 +66,16 @@ const PROCESSOR_OPTIONS = [
   { id: 'metadata', label: <Trans>Metadata</Trans>, icon: Tags },
   {
     id: 'rclone',
-    label: <Trans>Rclone (Upload / Move / Sync)</Trans>,
+    label: <Trans>Rclone</Trans>,
     icon: Upload,
   },
   { id: 'execute', label: <Trans>Execute Command</Trans>, icon: Terminal },
+  {
+    id: 'danmaku_factory',
+    label: <Trans>Danmaku to ASS</Trans>,
+    icon: FileText,
+  },
+  { id: 'ass_burnin', label: <Trans>ASS Burn-in</Trans>, icon: Type },
 ];
 
 export function PresetMetaForm({
@@ -71,6 +84,7 @@ export function PresetMetaForm({
   title,
   isUpdating,
 }: PresetMetaFormProps) {
+  const { i18n } = useLingui();
   const currentProcessor = form.watch('processor');
   const currentId = form.watch('id');
   const isDefault = isUpdating && currentId && isDefaultPreset(currentId);
@@ -208,6 +222,48 @@ export function PresetMetaForm({
                   <FormMessage />
                 </FormItem>
               )}
+            />
+
+            <FormField
+              control={form.control}
+              name="category"
+              render={({ field }) => {
+                const selectedCategoryName = field.value
+                  ? getCategoryName(field.value, i18n)
+                  : '';
+                return (
+                  <FormItem>
+                    <FormLabel className="text-xs uppercase tracking-wider text-muted-foreground font-medium ml-1">
+                      <Trans>Category</Trans>
+                    </FormLabel>
+                    <Select
+                      onValueChange={field.onChange}
+                      value={field.value || ''}
+                      key={field.value || 'empty'}
+                    >
+                      <FormControl>
+                        <SelectTrigger className="h-11 bg-muted/30 border-muted-foreground/20 focus:ring-primary/20 transition-all">
+                          {selectedCategoryName ? (
+                            <span className="text-sm">
+                              {selectedCategoryName}
+                            </span>
+                          ) : (
+                            <SelectValue placeholder={t`Select category`} />
+                          )}
+                        </SelectTrigger>
+                      </FormControl>
+                      <SelectContent>
+                        {Object.keys(PRESET_CATEGORY_NAMES).map((catId) => (
+                          <SelectItem key={catId} value={catId}>
+                            {getCategoryName(catId, i18n)}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    <FormMessage />
+                  </FormItem>
+                );
+              }}
             />
 
             <FormField

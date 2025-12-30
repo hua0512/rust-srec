@@ -81,6 +81,82 @@ pub fn sanitize_filename(input: &str) -> String {
     trimmed.to_string()
 }
 
+/// Expand placeholders in a path template.
+///
+/// This function handles both curly-brace placeholders (e.g., `{streamer}`) and
+/// time-based percent placeholders (e.g., `%Y`, `%m`, `%d`).
+///
+/// # Supported Placeholders
+///
+/// ## Streamer/Session Placeholders
+/// - `{streamer}` - Streamer name (sanitized for filesystem), falls back to streamer_id
+/// - `{title}` - Session/stream title (sanitized for filesystem), falls back to empty
+/// - `{streamer_id}` - Raw streamer ID
+/// - `{session_id}` - Raw session ID
+///
+/// ## Time Placeholders (expanded to current local time)
+/// - `%Y` - Year (4 digits)
+/// - `%m` - Month (01-12)
+/// - `%d` - Day (01-31)
+/// - `%H` - Hour (00-23)
+/// - `%M` - Minute (00-59)
+/// - `%S` - Second (00-59)
+/// - `%t` - Unix timestamp
+/// - `%%` - Literal percent sign
+///
+/// # Arguments
+///
+/// * `template` - The path template to expand
+/// * `streamer_id` - Raw streamer ID
+/// * `session_id` - Raw session ID
+/// * `streamer_name` - Optional human-readable streamer name
+/// * `session_title` - Optional session/stream title
+///
+/// # Returns
+///
+/// The expanded path with all placeholders replaced.
+///
+/// # Examples
+///
+/// ```
+/// use rust_srec::utils::filename::expand_placeholders;
+///
+/// let path = expand_placeholders(
+///     "remote:/{streamer}/{title}",
+///     "abc123",
+///     "session-456",
+///     Some("StreamerName"),
+///     Some("Live Stream?"),
+///     None, // platform
+/// );
+/// assert!(path.starts_with("remote:/StreamerName/Live Stream_"));
+/// ```
+pub fn expand_placeholders(
+    template: &str,
+    streamer_id: &str,
+    session_id: &str,
+    streamer_name: Option<&str>,
+    session_title: Option<&str>,
+    platform: Option<&str>,
+) -> String {
+    // First, expand curly-brace placeholders
+    let streamer_display = streamer_name
+        .map(sanitize_filename)
+        .unwrap_or_else(|| streamer_id.to_string());
+    let title_display = session_title.map(sanitize_filename).unwrap_or_default();
+    let platform_display = platform.unwrap_or_default();
+
+    let result = template
+        .replace("{streamer}", &streamer_display)
+        .replace("{title}", &title_display)
+        .replace("{streamer_id}", streamer_id)
+        .replace("{session_id}", session_id)
+        .replace("{platform}", platform_display);
+
+    // Then expand time-based placeholders using pipeline_common's expand_path_template
+    pipeline_common::expand_path_template(&result)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -169,5 +245,113 @@ mod tests {
             let twice = sanitize_filename(&once);
             assert_eq!(once, twice, "Idempotency failed for input: {}", input);
         }
+    }
+
+    #[test]
+    fn test_expand_placeholders_streamer() {
+        let result = expand_placeholders(
+            "remote:/{streamer}/videos",
+            "streamer-123",
+            "session-456",
+            Some("TestStreamer"),
+            None,
+            None,
+        );
+        assert_eq!(result, "remote:/TestStreamer/videos");
+    }
+
+    #[test]
+    fn test_expand_placeholders_streamer_fallback() {
+        // When streamer_name is None, should fall back to streamer_id
+        let result = expand_placeholders(
+            "remote:/{streamer}/videos",
+            "streamer-123",
+            "session-456",
+            None,
+            None,
+            None,
+        );
+        assert_eq!(result, "remote:/streamer-123/videos");
+    }
+
+    #[test]
+    fn test_expand_placeholders_title() {
+        let result = expand_placeholders(
+            "remote:/{streamer}/{title}",
+            "streamer-123",
+            "session-456",
+            Some("Streamer"),
+            Some("Live Stream?"),
+            None,
+        );
+        // The ? character is sanitized to _
+        assert_eq!(result, "remote:/Streamer/Live Stream_");
+    }
+
+    #[test]
+    fn test_expand_placeholders_ids() {
+        let result = expand_placeholders(
+            "remote:/{streamer_id}/{session_id}",
+            "streamer-123",
+            "session-456",
+            Some("Streamer"),
+            None,
+            None,
+        );
+        assert_eq!(result, "remote:/streamer-123/session-456");
+    }
+
+    #[test]
+    fn test_expand_placeholders_no_placeholders() {
+        let result = expand_placeholders(
+            "remote:/fixed/path",
+            "streamer-123",
+            "session-456",
+            Some("Streamer"),
+            None,
+            None,
+        );
+        assert_eq!(result, "remote:/fixed/path");
+    }
+
+    #[test]
+    fn test_expand_placeholders_sanitizes_special_chars() {
+        let result = expand_placeholders(
+            "remote:/{streamer}/{title}",
+            "streamer-123",
+            "session-456",
+            Some("Streamer<Name>"),
+            Some("Title:With:Colons"),
+            None,
+        );
+        // Characters are sanitized
+        assert_eq!(result, "remote:/Streamer_Name_/Title_With_Colons");
+    }
+
+    #[test]
+    fn test_expand_placeholders_platform() {
+        let result = expand_placeholders(
+            "remote:/{platform}/{streamer}/videos",
+            "streamer-123",
+            "session-456",
+            Some("TestStreamer"),
+            None,
+            Some("Twitch"),
+        );
+        assert_eq!(result, "remote:/Twitch/TestStreamer/videos");
+    }
+
+    #[test]
+    fn test_expand_placeholders_platform_none() {
+        // When platform is None, should expand to empty string
+        let result = expand_placeholders(
+            "remote:/{platform}/{streamer}/videos",
+            "streamer-123",
+            "session-456",
+            Some("TestStreamer"),
+            None,
+            None,
+        );
+        assert_eq!(result, "remote://TestStreamer/videos");
     }
 }

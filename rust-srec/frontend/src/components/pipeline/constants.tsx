@@ -20,6 +20,8 @@ import {
   Music,
   Film,
   Camera,
+  Flame,
+  Type,
 } from 'lucide-react';
 import React from 'react';
 
@@ -34,6 +36,8 @@ export const STEP_ICONS: Record<string, React.ElementType> = {
   compression: Archive,
   delete: Trash,
   metadata: Tag,
+  danmaku_factory: Type,
+  ass_burnin: Flame,
 };
 
 export const STEP_COLORS: Record<string, string> = {
@@ -58,6 +62,10 @@ export const STEP_COLORS: Record<string, string> = {
     'from-amber-500/10 to-amber-500/5 text-amber-500 border-amber-500/20',
   archive:
     'from-yellow-500/10 to-yellow-500/5 text-yellow-500 border-yellow-500/20',
+  danmaku_factory:
+    'from-indigo-500/10 to-indigo-500/5 text-indigo-500 border-indigo-500/20',
+  ass_burnin:
+    'from-orange-600/10 to-orange-600/5 text-orange-600 border-orange-600/20',
   custom: 'from-slate-500/10 to-slate-500/5 text-slate-500 border-slate-500/20',
 };
 

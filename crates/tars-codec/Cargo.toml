@@ -4,8 +4,8 @@ version = "0.1.2"
 edition = "2024"
 
 [dependencies]
-bytes = "1.11"
-tokio-util = { version = "0.7", features = ["codec"] }
-thiserror = "2.0"
+bytes = { workspace = true }
+tokio-util = { workspace = true, features = ["codec"] }
+thiserror = { workspace = true }
 smallvec = "1.15.1"
-rustc-hash = { version = "2.1" }
+rustc-hash = { workspace = true }

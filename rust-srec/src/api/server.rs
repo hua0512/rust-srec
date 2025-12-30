@@ -70,6 +70,7 @@ use std::sync::Arc;
 use crate::api::auth_service::{AuthConfig, AuthService};
 use crate::api::jwt::JwtService;
 use crate::config::ConfigService;
+use crate::credentials::CredentialRefreshService;
 use crate::danmu::DanmuService;
 use crate::database::repositories::{
     config::SqlxConfigRepository,
@@ -82,6 +83,7 @@ use crate::downloader::DownloadManager;
 use crate::metrics::HealthChecker;
 use crate::pipeline::PipelineManager;
 use crate::streamer::StreamerManager;
+use platforms_parser::extractor::create_client_builder;
 
 /// Shared application state.
 #[derive(Clone)]
@@ -121,9 +123,26 @@ pub struct AppState {
     pub notification_service: Option<Arc<NotificationService>>,
     /// Logging configuration for dynamic log level changes
     pub logging_config: Option<Arc<crate::logging::LoggingConfig>>,
+    /// Shared HTTP client for parsing/resolving URLs
+    pub http_client: Option<reqwest::Client>,
+    /// Optional credential refresh service for API-triggered refresh and cookie resolution.
+    pub credential_service: Option<Arc<CredentialRefreshService<SqlxConfigRepository>>>,
 }
 
 impl AppState {
+    pub(crate) fn build_http_client() -> reqwest::Client {
+        match create_client_builder(None).build() {
+            Ok(client) => client,
+            Err(error) => {
+                tracing::warn!(
+                    error = %error,
+                    "Failed to create HTTP client via platforms-parser; falling back to reqwest defaults"
+                );
+                reqwest::Client::new()
+            }
+        }
+    }
+
     /// Create a new application state without services (for testing).
     pub fn new() -> Self {
         Self {
@@ -144,6 +163,8 @@ impl AppState {
             notification_repository: None,
             notification_service: None,
             logging_config: None,
+            http_client: Some(Self::build_http_client()),
+            credential_service: None,
         }
     }
 
@@ -170,6 +191,8 @@ impl AppState {
             notification_repository: None,
             notification_service: None,
             logging_config: None,
+            http_client: Some(Self::build_http_client()),
+            credential_service: None,
         }
     }
 
@@ -200,6 +223,8 @@ impl AppState {
             notification_repository: None,
             notification_service: None,
             logging_config: None,
+            http_client: Some(Self::build_http_client()),
+            credential_service: None,
         }
     }
 
@@ -242,6 +267,15 @@ impl AppState {
     /// Set the health checker.
     pub fn with_health_checker(mut self, health_checker: Arc<HealthChecker>) -> Self {
         self.health_checker = Some(health_checker);
+        self
+    }
+
+    /// Set the credential refresh service.
+    pub fn with_credential_service(
+        mut self,
+        credential_service: Arc<CredentialRefreshService<SqlxConfigRepository>>,
+    ) -> Self {
+        self.credential_service = Some(credential_service);
         self
     }
 

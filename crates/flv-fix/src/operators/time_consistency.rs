@@ -51,7 +51,6 @@
 use flv::data::FlvData;
 use flv::tag::FlvUtil;
 use pipeline_common::{PipelineError, Processor, StreamerContext};
-use std::cmp::max;
 use std::sync::Arc;
 use tracing::{debug, trace};
 
@@ -122,6 +121,17 @@ impl TimeConsistencyOperator {
             context,
             continuity_mode,
             state: TimelineState::new(),
+        }
+    }
+
+    fn apply_offset(timestamp_ms: u32, offset: i64) -> u32 {
+        let expected = timestamp_ms as i128 + offset as i128;
+        if expected <= 0 {
+            0
+        } else if expected >= u32::MAX as i128 {
+            u32::MAX
+        } else {
+            expected as u32
         }
     }
 
@@ -198,15 +208,14 @@ impl Processor<FlvData> for TimeConsistencyOperator {
 
                         return output(FlvData::Tag(tag));
                     } else if tag.is_script_tag() {
-                        // apply delta to script data tags
-                        if self.state.timestamp_offset != 0 {
-                            tag.timestamp_ms = 0;
-
+                        // Keep script metadata at timestamp 0 for maximum player compatibility.
+                        if tag.timestamp_ms != 0 {
                             debug!(
-                                "{} Adjusted script data timestamp: {}ms -> {}ms",
-                                self.context.name, original_timestamp, 0
+                                "{} Reset script data timestamp: {}ms -> 0ms",
+                                self.context.name, original_timestamp
                             );
                         }
+                        tag.timestamp_ms = 0;
                         return output(FlvData::Tag(tag));
                     }
 
@@ -233,9 +242,8 @@ impl Processor<FlvData> for TimeConsistencyOperator {
 
                 // Apply timestamp correction if needed
                 if self.state.timestamp_offset != 0 {
-                    // Calculate the corrected timestamp, ensure it doesn't go negative
-                    let expected = tag.timestamp_ms as i64 + self.state.timestamp_offset;
-                    let corrected = max(0, expected) as u32;
+                    let corrected =
+                        Self::apply_offset(tag.timestamp_ms, self.state.timestamp_offset);
                     tag.timestamp_ms = corrected;
 
                     trace!(

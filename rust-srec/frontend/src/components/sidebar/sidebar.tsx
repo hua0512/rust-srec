@@ -1,3 +1,5 @@
+import { useCallback } from 'react';
+
 import { Menu } from '@/components/sidebar/menu';
 import { SidebarToggle } from '@/components/sidebar/sidebar-toggle';
 import { Button } from '@/components/ui/button';
@@ -19,20 +21,29 @@ export function Sidebar() {
       setIsHover: state.setIsHover,
     })),
   );
+
+  const handleMouseEnter = useCallback(() => {
+    sidebar?.setIsHover(true);
+  }, [sidebar]);
+
+  const handleMouseLeave = useCallback(() => {
+    sidebar?.setIsHover(false);
+  }, [sidebar]);
+
   if (!sidebar) return null;
-  const { isOpen, toggleOpen, setIsHover, settings } = sidebar;
+  const { isOpen, toggleOpen, settings } = sidebar;
   return (
     <aside
       className={cn(
-        'fixed top-0 left-0 z-20 h-screen -translate-x-full lg:translate-x-0 transition-[width] ease-in-out duration-300 bg-sidebar/80 backdrop-blur-xl border-r border-border/50',
+        'fixed top-0 left-0 z-20 h-screen -translate-x-full lg:translate-x-0 transition-[width] ease-in-out duration-300 bg-sidebar/80 backdrop-blur-xl border-r border-border/50 will-change-[width]',
         !isOpen ? 'w-[90px]' : 'w-72',
         settings.disabled && 'hidden',
       )}
     >
       <SidebarToggle isOpen={isOpen} setIsOpen={toggleOpen} />
       <div
-        onMouseEnter={() => setIsHover(true)}
-        onMouseLeave={() => setIsHover(false)}
+        onMouseEnter={handleMouseEnter}
+        onMouseLeave={handleMouseLeave}
         className={cn(
           'relative h-full flex flex-col py-4 overflow-hidden',
           !isOpen ? 'px-0' : 'px-3',
@@ -40,13 +51,16 @@ export function Sidebar() {
       >
         <Button
           className={cn(
-            'transition-all ease-in-out duration-300 mb-6 bg-transparent hover:bg-transparent px-2',
-            !isOpen ? 'justify-center' : 'justify-start',
+            'w-full transition-all ease-in-out duration-300 mb-6 bg-transparent hover:bg-transparent',
+            !isOpen ? 'justify-center' : 'justify-start px-4',
           )}
           variant="link"
           asChild
         >
-          <Link to="/dashboard" className="flex items-center gap-3">
+          <Link
+            to="/dashboard"
+            className={cn('flex items-center', isOpen ? 'gap-4' : 'gap-0')}
+          >
             <div className="w-10 h-10 bg-primary rounded-xl flex items-center justify-center shrink-0 shadow-lg shadow-primary/20 transition-all duration-300 group-hover:scale-105">
               <div className="w-6 h-6 bg-primary-foreground [mask-image:url(/stream-rec-white.svg)] [mask-size:contain] [mask-repeat:no-repeat] [mask-position:center]" />
             </div>

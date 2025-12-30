@@ -35,7 +35,7 @@ export function SheetMenu() {
             </Link>
           </Button>
         </SheetHeader>
-        <Menu isOpen />
+        <Menu isOpen className="flex-1" />
       </SheetContent>
     </Sheet>
   );

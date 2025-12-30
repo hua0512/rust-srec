@@ -4,9 +4,9 @@ use crate::cache::{CacheKey, CacheManager, CacheMetadata, CacheResourceType};
 use crate::hls::HlsDownloaderError;
 use crate::hls::config::{HlsConfig, HlsVariantSelectionPolicy};
 use crate::hls::scheduler::ScheduledSegmentJob;
-use crate::hls::twitch_processor::{ProcessedSegment, TwitchPlaylistProcessor};
+use crate::hls::twitch_processor::TwitchPlaylistProcessor;
 use async_trait::async_trait;
-use m3u8_rs::{MasterPlaylist, MediaPlaylist, parse_playlist_res};
+use m3u8_rs::{MasterPlaylist, MediaPlaylist, MediaSegment, parse_playlist_res};
 use moka::future::Cache;
 use moka::policy::EvictionPolicy;
 use reqwest::Client;
@@ -156,19 +156,27 @@ impl PlaylistProvider for PlaylistEngine {
         if let Some(cache_service) = &self.cache_service
             && let Ok(Some((cached_data, _, _))) = cache_service.get(&cache_key).await
         {
-            let mut playlist_content = String::from_utf8(cached_data.to_vec()).map_err(|e| {
+            let playlist_content = std::str::from_utf8(cached_data.as_ref()).map_err(|e| {
                 HlsDownloaderError::PlaylistError(format!(
                     "Failed to parse cached playlist from UTF-8: {e}"
                 ))
             })?;
-            if TwitchPlaylistProcessor::is_twitch_playlist(playlist_url.as_str()) {
-                playlist_content = self.preprocess_twitch_playlist(&playlist_content);
-            }
+            let playlist_bytes_to_parse: Cow<[u8]> =
+                if TwitchPlaylistProcessor::is_twitch_playlist(playlist_url.as_str()) {
+                    let preprocessed = self.preprocess_twitch_playlist(playlist_content);
+                    Cow::Owned(preprocessed.into_bytes())
+                } else {
+                    Cow::Borrowed(cached_data.as_ref())
+                };
             let base_url_obj = playlist_url.join(".").map_err(|e| {
                 HlsDownloaderError::PlaylistError(format!("Failed to determine base URL: {e}"))
             })?;
             let base_url = base_url_obj.to_string();
-            return match parse_playlist_res(playlist_content.as_bytes()) {
+            debug!(
+                "Derived base URL from playlist: {} -> {}",
+                playlist_url, base_url
+            );
+            return match parse_playlist_res(&playlist_bytes_to_parse) {
                 Ok(m3u8_rs::Playlist::MasterPlaylist(pl)) => {
                     Ok(InitialPlaylist::Master(pl, base_url))
                 }
@@ -213,17 +221,25 @@ impl PlaylistProvider for PlaylistEngine {
                 .put(cache_key, playlist_bytes.clone(), metadata)
                 .await?;
         }
-        let mut playlist_content = String::from_utf8(playlist_bytes.to_vec()).map_err(|e| {
+        let playlist_content = std::str::from_utf8(playlist_bytes.as_ref()).map_err(|e| {
             HlsDownloaderError::PlaylistError(format!("Playlist content is not valid UTF-8: {e}"))
         })?;
-        if TwitchPlaylistProcessor::is_twitch_playlist(playlist_url.as_str()) {
-            playlist_content = self.preprocess_twitch_playlist(&playlist_content);
-        }
+        let playlist_bytes_to_parse: Cow<[u8]> =
+            if TwitchPlaylistProcessor::is_twitch_playlist(playlist_url.as_str()) {
+                let preprocessed = self.preprocess_twitch_playlist(playlist_content);
+                Cow::Owned(preprocessed.into_bytes())
+            } else {
+                Cow::Borrowed(playlist_bytes.as_ref())
+            };
         let base_url_obj = playlist_url.join(".").map_err(|e| {
             HlsDownloaderError::PlaylistError(format!("Failed to determine base URL: {e}"))
         })?;
         let base_url = base_url_obj.to_string();
-        match parse_playlist_res(playlist_content.as_bytes()) {
+        debug!(
+            "Derived base URL from playlist: {} -> {}",
+            playlist_url, base_url
+        );
+        match parse_playlist_res(&playlist_bytes_to_parse) {
             Ok(m3u8_rs::Playlist::MasterPlaylist(pl)) => Ok(InitialPlaylist::Master(pl, base_url)),
             Ok(m3u8_rs::Playlist::MediaPlaylist(pl)) => Ok(InitialPlaylist::Media(pl, base_url)),
             Err(e) => Err(HlsDownloaderError::PlaylistError(format!(
@@ -349,17 +365,25 @@ impl PlaylistProvider for PlaylistEngine {
                 .map_err(|e| HlsDownloaderError::NetworkError {
                     source: Arc::new(e),
                 })?;
-        let mut playlist_content = String::from_utf8(playlist_bytes.to_vec()).map_err(|e| {
+        let playlist_content = std::str::from_utf8(playlist_bytes.as_ref()).map_err(|e| {
             HlsDownloaderError::PlaylistError(format!("Media playlist not UTF-8: {e}"))
         })?;
-        if TwitchPlaylistProcessor::is_twitch_playlist(media_playlist_url.as_str()) {
-            playlist_content = self.preprocess_twitch_playlist(&playlist_content);
-        }
+        let playlist_bytes_to_parse: Cow<[u8]> =
+            if TwitchPlaylistProcessor::is_twitch_playlist(media_playlist_url.as_str()) {
+                let preprocessed = self.preprocess_twitch_playlist(playlist_content);
+                Cow::Owned(preprocessed.into_bytes())
+            } else {
+                Cow::Borrowed(playlist_bytes.as_ref())
+            };
         let base_url_obj = media_playlist_url.join(".").map_err(|e| {
             HlsDownloaderError::PlaylistError(format!("Bad base URL for media playlist: {e}"))
         })?;
         let media_base_url = base_url_obj.to_string();
-        match parse_playlist_res(playlist_content.as_bytes()) {
+        debug!(
+            "Derived base URL from media playlist: {} -> {}",
+            media_playlist_url, media_base_url
+        );
+        match parse_playlist_res(&playlist_bytes_to_parse) {
             Ok(m3u8_rs::Playlist::MediaPlaylist(pl)) => Ok(MediaPlaylistDetails {
                 playlist: pl,
                 url: media_playlist_url.to_string(),
@@ -425,6 +449,7 @@ impl PlaylistProvider for PlaylistEngine {
                             &seen_segment_uris,
                             &mut last_map_uri,
                             &mut twitch_processor,
+                            playlist_url.query(),
                         )
                         .await?;
 
@@ -556,10 +581,10 @@ impl PlaylistEngine {
         {
             // Same length, do full byte comparison
             if last_bytes == &playlist_bytes {
-                debug!(
-                    "Playlist content for {} has not changed. Skipping parsing.",
-                    playlist_url
-                );
+                // debug!(
+                //     "Playlist content for {} has not changed. Skipping parsing.",
+                //     playlist_url
+                // );
                 return Ok(None);
             }
         }
@@ -594,28 +619,83 @@ impl PlaylistEngine {
         seen_segment_uris: &Cache<String, ()>,
         last_map_uri: &mut Option<String>,
         twitch_processor: &mut Option<TwitchPlaylistProcessor>,
+        parent_query: Option<&str>,
     ) -> Result<Vec<ScheduledSegmentJob>, HlsDownloaderError> {
         let mut jobs_to_send = Vec::new();
-        let processed_segments = if let Some(processor) = twitch_processor {
-            processor.process_playlist(new_playlist)
-        } else {
-            new_playlist
-                .segments
-                .iter()
-                .map(|s| ProcessedSegment {
-                    segment: s.clone(),
-                    is_ad: false,
-                })
-                .collect()
+        let base_url_parsed = Url::parse(base_url).ok();
+        let base_url_arc: Arc<str> = Arc::from(base_url);
+
+        // Helper to merge query params from parent if missing in child
+        let parent_params: Vec<(String, String)> = parent_query
+            .map(|q| {
+                url::form_urlencoded::parse(q.as_bytes())
+                    .map(|(k, v)| (k.into_owned(), v.into_owned()))
+                    .collect()
+            })
+            .unwrap_or_default();
+
+        let merge_params = |uri_str: &str| -> String {
+            if parent_params.is_empty() {
+                return uri_str.to_string();
+            }
+
+            if let Ok(mut url) = Url::parse(uri_str) {
+                let original = url.to_string();
+                for (k, v) in &parent_params {
+                    if url
+                        .query_pairs()
+                        .any(|(existing_k, _)| existing_k == k.as_str())
+                    {
+                        continue;
+                    }
+                    url.query_pairs_mut().append_pair(k, v);
+                }
+                let merged = url.to_string();
+                if original != merged {
+                    trace!("Merged query params: {} -> {}", original, merged);
+                }
+                return merged;
+            }
+            uri_str.to_string()
         };
 
-        for (idx, processed_segment) in processed_segments.into_iter().enumerate() {
-            let segment = &processed_segment.segment;
-            if let Some(map_info) = &segment.map {
-                let absolute_map_uri = Url::parse(base_url)
-                    .and_then(|b| b.join(&map_info.uri))
+        let resolve_uri = |relative_uri: &str| -> Result<String, url::ParseError> {
+            let resolved = if let Some(base) = base_url_parsed.as_ref() {
+                base.join(relative_uri).map(|u| u.to_string())
+            } else {
+                Url::parse(base_url)
+                    .and_then(|b| b.join(relative_uri))
                     .map(|u| u.to_string())
-                    .unwrap_or_else(|_| {
+            };
+            if let Ok(ref url) = resolved {
+                trace!("Resolved URI: {} + {} -> {}", base_url, relative_uri, url);
+            }
+            resolved
+        };
+
+        macro_rules! handle_segment {
+            ($idx:expr, $segment:expr, $is_ad:expr) => {{
+                let idx: usize = $idx;
+                let segment: &MediaSegment = $segment;
+                let is_ad: bool = $is_ad;
+
+                let resolved_key = segment.key.as_ref().map(|key| {
+                    let mut key = key.clone();
+                    if let Some(uri) = key.uri.as_deref() {
+                        let absolute_key_uri =
+                            if uri.starts_with("http://") || uri.starts_with("https://") {
+                                uri.to_string()
+                            } else {
+                                resolve_uri(uri).unwrap_or_else(|_| uri.to_string())
+                            };
+
+                        key.uri = Some(merge_params(&absolute_key_uri));
+                    }
+                    key
+                });
+
+                if let Some(map_info) = &segment.map {
+                    let absolute_map_uri = resolve_uri(&map_info.uri).unwrap_or_else(|_| {
                         error!(
                             "Failed to resolve map URI '{}' with base '{}'",
                             map_info.uri, base_url
@@ -623,29 +703,32 @@ impl PlaylistEngine {
                         map_info.uri.clone()
                     });
 
-                if last_map_uri.as_ref() != Some(&absolute_map_uri) {
-                    debug!("New init segment detected: {}", absolute_map_uri);
-                    let init_job = ScheduledSegmentJob {
-                        segment_uri: absolute_map_uri.clone(),
-                        base_url: base_url.to_string(),
-                        media_sequence_number: new_playlist.media_sequence + idx as u64,
-                        duration: 0.0,
-                        key: segment.key.clone(),
-                        byte_range: map_info.byte_range.clone(),
-                        discontinuity: segment.discontinuity,
-                        media_segment: segment.clone(),
-                        is_init_segment: true,
-                        is_prefetch: false,
-                    };
-                    jobs_to_send.push(init_job);
-                    *last_map_uri = Some(absolute_map_uri);
-                }
-            }
+                    let final_map_uri = merge_params(&absolute_map_uri);
 
-            let absolute_segment_uri = Url::parse(base_url)
-                .and_then(|b| b.join(&segment.uri))
-                .map(|u| u.to_string())
-                .unwrap_or_else(|_| {
+                    if last_map_uri.as_ref() != Some(&final_map_uri) {
+                        debug!("New init segment detected: {}", final_map_uri);
+                        let init_media_segment = MediaSegment {
+                            uri: final_map_uri.clone(),
+                            duration: 0.0,
+                            byte_range: map_info.byte_range.clone(),
+                            discontinuity: segment.discontinuity,
+                            key: resolved_key.clone(),
+                            map: None,
+                            ..Default::default()
+                        };
+                        let init_job = ScheduledSegmentJob {
+                            base_url: Arc::clone(&base_url_arc),
+                            media_sequence_number: new_playlist.media_sequence + idx as u64,
+                            media_segment: Arc::new(init_media_segment),
+                            is_init_segment: true,
+                            is_prefetch: false,
+                        };
+                        jobs_to_send.push(init_job);
+                        *last_map_uri = Some(final_map_uri);
+                    }
+                }
+
+                let absolute_segment_uri = resolve_uri(&segment.uri).unwrap_or_else(|_| {
                     error!(
                         "Failed to resolve segment URI '{}' with base '{}'",
                         segment.uri, base_url
@@ -653,31 +736,44 @@ impl PlaylistEngine {
                     segment.uri.clone()
                 });
 
-            if !seen_segment_uris.contains_key(&absolute_segment_uri) {
-                if processed_segment.is_ad {
-                    debug!("Skipping Twitch ad segment: {}", segment.uri);
-                    continue;
+                let final_segment_uri = merge_params(&absolute_segment_uri);
+
+                if !seen_segment_uris.contains_key(&final_segment_uri) {
+                    if is_ad {
+                        debug!("Skipping Twitch ad segment: {}", segment.uri);
+                    } else {
+                        let mut segment_for_job = segment.clone();
+                        segment_for_job.key = resolved_key.clone();
+                        segment_for_job.uri = final_segment_uri.clone();
+                        seen_segment_uris
+                            .insert(final_segment_uri.clone(), ())
+                            .await;
+                        trace!("New segment detected: {}", final_segment_uri);
+                        let job = ScheduledSegmentJob {
+                            base_url: Arc::clone(&base_url_arc),
+                            media_sequence_number: new_playlist.media_sequence + idx as u64,
+                            media_segment: Arc::new(segment_for_job),
+                            is_init_segment: false,
+                            is_prefetch: false,
+                        };
+                        jobs_to_send.push(job);
+                    }
+                } else {
+                    trace!("Segment {} already seen, skipping.", final_segment_uri);
                 }
 
-                seen_segment_uris
-                    .insert(absolute_segment_uri.clone(), ())
-                    .await;
-                debug!("New segment detected: {}", absolute_segment_uri);
-                let job = ScheduledSegmentJob {
-                    segment_uri: absolute_segment_uri,
-                    base_url: base_url.to_string(),
-                    media_sequence_number: new_playlist.media_sequence + idx as u64,
-                    duration: segment.duration,
-                    key: segment.key.clone(),
-                    byte_range: segment.byte_range.clone(),
-                    discontinuity: segment.discontinuity,
-                    media_segment: segment.clone(),
-                    is_init_segment: false,
-                    is_prefetch: false,
-                };
-                jobs_to_send.push(job);
-            } else {
-                trace!("Segment {} already seen, skipping.", absolute_segment_uri);
+                Ok::<(), HlsDownloaderError>(())
+            }};
+        }
+
+        if let Some(processor) = twitch_processor {
+            let processed_segments = processor.process_playlist(new_playlist);
+            for (idx, processed_segment) in processed_segments.into_iter().enumerate() {
+                handle_segment!(idx, processed_segment.segment, processed_segment.is_ad)?;
+            }
+        } else {
+            for (idx, segment) in new_playlist.segments.iter().enumerate() {
+                handle_segment!(idx, segment, false)?;
             }
         }
         Ok(jobs_to_send)
@@ -694,7 +790,7 @@ impl PlaylistEngine {
             return Ok(());
         }
         for job in jobs {
-            debug!("Sending segment job: {:?}", job.segment_uri);
+            trace!("Sending segment job: {:?}", job.media_segment.uri);
             if segment_request_tx.send(job).await.is_err() {
                 error!(
                     "SegmentScheduler request channel closed for {}.",

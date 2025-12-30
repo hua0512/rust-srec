@@ -9,3 +9,4 @@ export * from './sessions';
 export * from './streamers';
 export * from './system';
 export * from './notifications';
+export * from './credentials';

@@ -1,3 +1,4 @@
+import { memo } from 'react';
 import { Control } from 'react-hook-form';
 import { SettingsCard } from '../settings-card';
 import {
@@ -17,7 +18,7 @@ interface FileConfigCardProps {
   control: Control<any>;
 }
 
-export function FileConfigCard({ control }: FileConfigCardProps) {
+export const FileConfigCard = memo(({ control }: FileConfigCardProps) => {
   return (
     <SettingsCard
       title={<Trans>File Configuration</Trans>}
@@ -34,6 +35,18 @@ export function FileConfigCard({ control }: FileConfigCardProps) {
           description={
             <Trans>
               Enable recording of danmu/chat messages along with the video.
+            </Trans>
+          }
+        />
+
+        <FlagFormField
+          control={control}
+          fieldName="auto_thumbnail"
+          title={<Trans>Auto Thumbnail</Trans>}
+          description={
+            <Trans>
+              Automatically generate a thumbnail for the first segment of each
+              session.
             </Trans>
           }
         />
@@ -71,10 +84,11 @@ export function FileConfigCard({ control }: FileConfigCardProps) {
                 </FormControl>
                 <FormDescription className="text-xs">
                   <Trans>
-                    Vars: '&#123;streamer&#125;', '&#123;title&#125;' | Time:
-                    %Y, %m, %d, %H, %M, %S
+                    Vars: '&#123;streamer&#125;', '&#123;title&#125;',
+                    '&#123;platform&#125;' | Time: %Y, %m, %d, %H, %M, %S
                   </Trans>
                 </FormDescription>
+
                 <FormMessage />
               </FormItem>
             )}
@@ -99,4 +113,6 @@ export function FileConfigCard({ control }: FileConfigCardProps) {
       </div>
     </SettingsCard>
   );
-}
+});
+
+FileConfigCard.displayName = 'FileConfigCard';

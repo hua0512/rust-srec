@@ -24,6 +24,28 @@ use crate::database::models::{JobPreset, PipelinePreset};
 /// Current schema version for exports.
 const EXPORT_SCHEMA_VERSION: &str = "0.1.0";
 
+/// Unwraps double-encoded JSON values.
+fn unwrap_json_value(mut v: serde_json::Value) -> serde_json::Value {
+    while let Some(s) = v.as_str() {
+        if let Ok(inner) = serde_json::from_str::<serde_json::Value>(s) {
+            v = inner;
+        } else {
+            break;
+        }
+    }
+    v
+}
+
+/// Helper to parse a database string into a normalized JSON Value.
+fn parse_db_config(s: impl Into<String>) -> serde_json::Value {
+    let s = s.into();
+    if s.is_empty() {
+        return serde_json::Value::Null;
+    }
+    let value = serde_json::from_str(&s).unwrap_or(serde_json::Value::String(s));
+    unwrap_json_value(value)
+}
+
 /// Create the export/import router.
 pub fn router() -> Router<AppState> {
     Router::new()
@@ -75,7 +97,7 @@ pub struct GlobalConfigExport {
     pub max_concurrent_downloads: i32,
     pub max_concurrent_uploads: i32,
     pub streamer_check_delay_ms: i64,
-    pub proxy_config: String,
+    pub proxy_config: serde_json::Value,
     pub offline_check_delay_ms: i64,
     pub offline_check_count: i32,
     pub default_download_engine: String,
@@ -83,8 +105,11 @@ pub struct GlobalConfigExport {
     pub max_concurrent_io_jobs: i32,
     pub job_history_retention_days: i32,
     pub session_gap_time_secs: i64,
-    pub pipeline: Option<String>,
+    pub pipeline: Option<serde_json::Value>,
+    pub session_complete_pipeline: Option<serde_json::Value>,
+    pub paired_segment_pipeline: Option<serde_json::Value>,
     pub log_filter_directive: Option<String>,
+    pub auto_thumbnail: bool,
 }
 
 /// Template for export (uses name as identifier).
@@ -99,15 +124,17 @@ pub struct TemplateExport {
     pub max_download_duration_secs: Option<i64>,
     pub max_part_size_bytes: Option<i64>,
     pub record_danmu: Option<bool>,
-    pub platform_overrides: Option<String>,
-    pub download_retry_policy: Option<String>,
-    pub danmu_sampling_config: Option<String>,
+    pub platform_overrides: Option<serde_json::Value>,
+    pub download_retry_policy: Option<serde_json::Value>,
+    pub danmu_sampling_config: Option<serde_json::Value>,
     pub download_engine: Option<String>,
-    pub engines_override: Option<String>,
-    pub proxy_config: Option<String>,
-    pub event_hooks: Option<String>,
-    pub stream_selection_config: Option<String>,
-    pub pipeline: Option<String>,
+    pub engines_override: Option<serde_json::Value>,
+    pub proxy_config: Option<serde_json::Value>,
+    pub event_hooks: Option<serde_json::Value>,
+    pub stream_selection_config: Option<serde_json::Value>,
+    pub pipeline: Option<serde_json::Value>,
+    pub session_complete_pipeline: Option<serde_json::Value>,
+    pub paired_segment_pipeline: Option<serde_json::Value>,
 }
 
 /// Streamer for export (uses URL as identifier).
@@ -120,7 +147,7 @@ pub struct StreamerExport {
     /// Template name (resolved from template_config_id).
     pub template: Option<String>,
     pub priority: String,
-    pub streamer_specific_config: Option<String>,
+    pub streamer_specific_config: Option<serde_json::Value>,
     /// Associated filters.
     pub filters: Vec<FilterExport>,
 }
@@ -129,7 +156,7 @@ pub struct StreamerExport {
 #[derive(Debug, Clone, Serialize, Deserialize, utoipa::ToSchema)]
 pub struct FilterExport {
     pub filter_type: String,
-    pub config: String,
+    pub config: serde_json::Value,
 }
 
 /// Engine configuration for export (uses name as identifier).
@@ -137,7 +164,7 @@ pub struct FilterExport {
 pub struct EngineExport {
     pub name: String,
     pub engine_type: String,
-    pub config: String,
+    pub config: serde_json::Value,
 }
 
 /// Platform configuration for export (uses platform_name as identifier).
@@ -147,20 +174,22 @@ pub struct PlatformExport {
     pub fetch_delay_ms: Option<i64>,
     pub download_delay_ms: Option<i64>,
     pub cookies: Option<String>,
-    pub platform_specific_config: Option<String>,
-    pub proxy_config: Option<String>,
+    pub platform_specific_config: Option<serde_json::Value>,
+    pub proxy_config: Option<serde_json::Value>,
     pub record_danmu: Option<bool>,
     pub output_folder: Option<String>,
     pub output_filename_template: Option<String>,
     pub download_engine: Option<String>,
-    pub stream_selection_config: Option<String>,
+    pub stream_selection_config: Option<serde_json::Value>,
     pub output_file_format: Option<String>,
     pub min_segment_size_bytes: Option<i64>,
     pub max_download_duration_secs: Option<i64>,
     pub max_part_size_bytes: Option<i64>,
-    pub download_retry_policy: Option<String>,
-    pub event_hooks: Option<String>,
-    pub pipeline: Option<String>,
+    pub download_retry_policy: Option<serde_json::Value>,
+    pub event_hooks: Option<serde_json::Value>,
+    pub pipeline: Option<serde_json::Value>,
+    pub session_complete_pipeline: Option<serde_json::Value>,
+    pub paired_segment_pipeline: Option<serde_json::Value>,
 }
 
 /// Notification channel for export (uses name as identifier).
@@ -168,7 +197,7 @@ pub struct PlatformExport {
 pub struct NotificationChannelExport {
     pub name: String,
     pub channel_type: String,
-    pub settings: String,
+    pub settings: serde_json::Value,
     pub subscriptions: Vec<String>,
 }
 
@@ -187,7 +216,7 @@ pub struct JobPresetExport {
 pub struct PipelinePresetExport {
     pub name: String,
     pub description: Option<String>,
-    pub dag_definition: Option<String>,
+    pub dag_definition: Option<serde_json::Value>,
     pub pipeline_type: Option<String>,
 }
 
@@ -355,7 +384,7 @@ pub async fn export_config(State(state): State<AppState>) -> Result<impl IntoRes
             .iter()
             .map(|f| FilterExport {
                 filter_type: f.filter_type.clone(),
-                config: f.config.clone(),
+                config: parse_db_config(f.config.clone()),
             })
             .collect();
 
@@ -375,7 +404,10 @@ pub async fn export_config(State(state): State<AppState>) -> Result<impl IntoRes
             platform: platform_name,
             template: template_name,
             priority: streamer.priority.as_str().to_string(),
-            streamer_specific_config: streamer.streamer_specific_config.clone(),
+            streamer_specific_config: streamer
+                .streamer_specific_config
+                .clone()
+                .map(parse_db_config),
             filters: filter_exports,
         });
     }
@@ -391,7 +423,7 @@ pub async fn export_config(State(state): State<AppState>) -> Result<impl IntoRes
         channel_exports.push(NotificationChannelExport {
             name: channel.name.clone(),
             channel_type: channel.channel_type.clone(),
-            settings: channel.settings.clone(),
+            settings: parse_db_config(channel.settings.clone()),
             subscriptions,
         });
     }
@@ -410,7 +442,7 @@ pub async fn export_config(State(state): State<AppState>) -> Result<impl IntoRes
             max_concurrent_downloads: global_config.max_concurrent_downloads,
             max_concurrent_uploads: global_config.max_concurrent_uploads,
             streamer_check_delay_ms: global_config.streamer_check_delay_ms,
-            proxy_config: global_config.proxy_config,
+            proxy_config: parse_db_config(global_config.proxy_config),
             offline_check_delay_ms: global_config.offline_check_delay_ms,
             offline_check_count: global_config.offline_check_count,
             default_download_engine: global_config.default_download_engine,
@@ -418,8 +450,11 @@ pub async fn export_config(State(state): State<AppState>) -> Result<impl IntoRes
             max_concurrent_io_jobs: global_config.max_concurrent_io_jobs,
             job_history_retention_days: global_config.job_history_retention_days,
             session_gap_time_secs: global_config.session_gap_time_secs,
-            pipeline: global_config.pipeline,
+            pipeline: global_config.pipeline.map(parse_db_config),
+            session_complete_pipeline: global_config.session_complete_pipeline.map(parse_db_config),
+            paired_segment_pipeline: global_config.paired_segment_pipeline.map(parse_db_config),
             log_filter_directive: Some(global_config.log_filter_directive),
+            auto_thumbnail: global_config.auto_thumbnail,
         },
         templates: templates
             .iter()
@@ -433,15 +468,17 @@ pub async fn export_config(State(state): State<AppState>) -> Result<impl IntoRes
                 max_download_duration_secs: t.max_download_duration_secs,
                 max_part_size_bytes: t.max_part_size_bytes,
                 record_danmu: t.record_danmu,
-                platform_overrides: t.platform_overrides.clone(),
-                download_retry_policy: t.download_retry_policy.clone(),
-                danmu_sampling_config: t.danmu_sampling_config.clone(),
+                platform_overrides: t.platform_overrides.clone().map(parse_db_config),
+                download_retry_policy: t.download_retry_policy.clone().map(parse_db_config),
+                danmu_sampling_config: t.danmu_sampling_config.clone().map(parse_db_config),
                 download_engine: t.download_engine.clone(),
-                engines_override: t.engines_override.clone(),
-                proxy_config: t.proxy_config.clone(),
-                event_hooks: t.event_hooks.clone(),
-                stream_selection_config: t.stream_selection_config.clone(),
-                pipeline: t.pipeline.clone(),
+                engines_override: t.engines_override.clone().map(parse_db_config),
+                proxy_config: t.proxy_config.clone().map(parse_db_config),
+                event_hooks: t.event_hooks.clone().map(parse_db_config),
+                stream_selection_config: t.stream_selection_config.clone().map(parse_db_config),
+                pipeline: t.pipeline.clone().map(parse_db_config),
+                session_complete_pipeline: t.session_complete_pipeline.clone().map(parse_db_config),
+                paired_segment_pipeline: t.paired_segment_pipeline.clone().map(parse_db_config),
             })
             .collect(),
         streamers: streamer_exports,
@@ -450,7 +487,7 @@ pub async fn export_config(State(state): State<AppState>) -> Result<impl IntoRes
             .map(|e| EngineExport {
                 name: e.name.clone(),
                 engine_type: e.engine_type.clone(),
-                config: e.config.clone(),
+                config: parse_db_config(e.config.clone()),
             })
             .collect(),
         platforms: platforms
@@ -460,20 +497,22 @@ pub async fn export_config(State(state): State<AppState>) -> Result<impl IntoRes
                 fetch_delay_ms: p.fetch_delay_ms,
                 download_delay_ms: p.download_delay_ms,
                 cookies: p.cookies.clone(),
-                platform_specific_config: p.platform_specific_config.clone(),
-                proxy_config: p.proxy_config.clone(),
+                platform_specific_config: p.platform_specific_config.clone().map(parse_db_config),
+                proxy_config: p.proxy_config.clone().map(parse_db_config),
                 record_danmu: p.record_danmu,
                 output_folder: p.output_folder.clone(),
                 output_filename_template: p.output_filename_template.clone(),
                 download_engine: p.download_engine.clone(),
-                stream_selection_config: p.stream_selection_config.clone(),
+                stream_selection_config: p.stream_selection_config.clone().map(parse_db_config),
                 output_file_format: p.output_file_format.clone(),
                 min_segment_size_bytes: p.min_segment_size_bytes,
                 max_download_duration_secs: p.max_download_duration_secs,
                 max_part_size_bytes: p.max_part_size_bytes,
-                download_retry_policy: p.download_retry_policy.clone(),
-                event_hooks: p.event_hooks.clone(),
-                pipeline: p.pipeline.clone(),
+                download_retry_policy: p.download_retry_policy.clone().map(parse_db_config),
+                event_hooks: p.event_hooks.clone().map(parse_db_config),
+                pipeline: p.pipeline.clone().map(parse_db_config),
+                session_complete_pipeline: p.session_complete_pipeline.clone().map(parse_db_config),
+                paired_segment_pipeline: p.paired_segment_pipeline.clone().map(parse_db_config),
             })
             .collect(),
         notification_channels: channel_exports,
@@ -484,7 +523,8 @@ pub async fn export_config(State(state): State<AppState>) -> Result<impl IntoRes
                 description: jp.description,
                 category: jp.category,
                 processor: jp.processor,
-                config: serde_json::Value::String(jp.config),
+                config: serde_json::from_str(&jp.config)
+                    .unwrap_or(serde_json::Value::String(jp.config)),
             })
             .collect(),
         pipeline_presets: pipeline_presets
@@ -492,7 +532,7 @@ pub async fn export_config(State(state): State<AppState>) -> Result<impl IntoRes
             .map(|pp| PipelinePresetExport {
                 name: pp.name,
                 description: pp.description,
-                dag_definition: pp.dag_definition,
+                dag_definition: pp.dag_definition.map(parse_db_config),
                 pipeline_type: pp.pipeline_type,
             })
             .collect(),
@@ -595,7 +635,7 @@ pub async fn import_config(
     global.max_concurrent_downloads = config.global_config.max_concurrent_downloads;
     global.max_concurrent_uploads = config.global_config.max_concurrent_uploads;
     global.streamer_check_delay_ms = config.global_config.streamer_check_delay_ms;
-    global.proxy_config = config.global_config.proxy_config;
+    global.proxy_config = unwrap_json_value(config.global_config.proxy_config).to_string();
     global.offline_check_delay_ms = config.global_config.offline_check_delay_ms;
     global.offline_check_count = config.global_config.offline_check_count;
     global.default_download_engine = config.global_config.default_download_engine;
@@ -603,10 +643,22 @@ pub async fn import_config(
     global.max_concurrent_io_jobs = config.global_config.max_concurrent_io_jobs;
     global.job_history_retention_days = config.global_config.job_history_retention_days;
     global.session_gap_time_secs = config.global_config.session_gap_time_secs;
-    global.pipeline = config.global_config.pipeline;
+    global.pipeline = config
+        .global_config
+        .pipeline
+        .map(|v| unwrap_json_value(v).to_string());
+    global.session_complete_pipeline = config
+        .global_config
+        .session_complete_pipeline
+        .map(|v| unwrap_json_value(v).to_string());
+    global.paired_segment_pipeline = config
+        .global_config
+        .paired_segment_pipeline
+        .map(|v| unwrap_json_value(v).to_string());
     if let Some(log_filter) = config.global_config.log_filter_directive {
         global.log_filter_directive = log_filter;
     }
+    global.auto_thumbnail = config.global_config.auto_thumbnail;
 
     config_service
         .update_global_config(&global)
@@ -628,7 +680,7 @@ pub async fn import_config(
             // Update existing
             let mut updated = existing.clone();
             updated.engine_type = engine_export.engine_type.clone();
-            updated.config = engine_export.config.clone();
+            updated.config = unwrap_json_value(engine_export.config.clone()).to_string();
             config_service
                 .update_engine_config(&updated)
                 .await
@@ -640,7 +692,7 @@ pub async fn import_config(
                 engine_export.name.clone(),
                 crate::database::models::EngineType::parse(&engine_export.engine_type)
                     .unwrap_or(crate::database::models::EngineType::Mesio),
-                engine_export.config.clone(),
+                unwrap_json_value(engine_export.config.clone()).to_string(),
             );
             config_service
                 .create_engine_config(&new_engine)
@@ -691,15 +743,47 @@ pub async fn import_config(
             updated.max_download_duration_secs = template_export.max_download_duration_secs;
             updated.max_part_size_bytes = template_export.max_part_size_bytes;
             updated.record_danmu = template_export.record_danmu;
-            updated.platform_overrides = template_export.platform_overrides.clone();
-            updated.download_retry_policy = template_export.download_retry_policy.clone();
-            updated.danmu_sampling_config = template_export.danmu_sampling_config.clone();
+            updated.platform_overrides = template_export
+                .platform_overrides
+                .clone()
+                .map(|v| unwrap_json_value(v).to_string());
+            updated.download_retry_policy = template_export
+                .download_retry_policy
+                .clone()
+                .map(|v| unwrap_json_value(v).to_string());
+            updated.danmu_sampling_config = template_export
+                .danmu_sampling_config
+                .clone()
+                .map(|v| unwrap_json_value(v).to_string());
             updated.download_engine = template_export.download_engine.clone();
-            updated.engines_override = template_export.engines_override.clone();
-            updated.proxy_config = template_export.proxy_config.clone();
-            updated.event_hooks = template_export.event_hooks.clone();
-            updated.stream_selection_config = template_export.stream_selection_config.clone();
-            updated.pipeline = template_export.pipeline.clone();
+            updated.engines_override = template_export
+                .engines_override
+                .clone()
+                .map(|v| unwrap_json_value(v).to_string());
+            updated.proxy_config = template_export
+                .proxy_config
+                .clone()
+                .map(|v| unwrap_json_value(v).to_string());
+            updated.event_hooks = template_export
+                .event_hooks
+                .clone()
+                .map(|v| unwrap_json_value(v).to_string());
+            updated.stream_selection_config = template_export
+                .stream_selection_config
+                .clone()
+                .map(|v| unwrap_json_value(v).to_string());
+            updated.pipeline = template_export
+                .pipeline
+                .clone()
+                .map(|v| unwrap_json_value(v).to_string());
+            updated.session_complete_pipeline = template_export
+                .session_complete_pipeline
+                .clone()
+                .map(|v| unwrap_json_value(v).to_string());
+            updated.paired_segment_pipeline = template_export
+                .paired_segment_pipeline
+                .clone()
+                .map(|v| unwrap_json_value(v).to_string());
             updated.updated_at = Utc::now();
 
             config_service
@@ -720,15 +804,47 @@ pub async fn import_config(
             new_template.max_download_duration_secs = template_export.max_download_duration_secs;
             new_template.max_part_size_bytes = template_export.max_part_size_bytes;
             new_template.record_danmu = template_export.record_danmu;
-            new_template.platform_overrides = template_export.platform_overrides.clone();
-            new_template.download_retry_policy = template_export.download_retry_policy.clone();
-            new_template.danmu_sampling_config = template_export.danmu_sampling_config.clone();
+            new_template.platform_overrides = template_export
+                .platform_overrides
+                .clone()
+                .map(|v| unwrap_json_value(v).to_string());
+            new_template.download_retry_policy = template_export
+                .download_retry_policy
+                .clone()
+                .map(|v| unwrap_json_value(v).to_string());
+            new_template.danmu_sampling_config = template_export
+                .danmu_sampling_config
+                .clone()
+                .map(|v| unwrap_json_value(v).to_string());
             new_template.download_engine = template_export.download_engine.clone();
-            new_template.engines_override = template_export.engines_override.clone();
-            new_template.proxy_config = template_export.proxy_config.clone();
-            new_template.event_hooks = template_export.event_hooks.clone();
-            new_template.stream_selection_config = template_export.stream_selection_config.clone();
-            new_template.pipeline = template_export.pipeline.clone();
+            new_template.engines_override = template_export
+                .engines_override
+                .clone()
+                .map(|v| unwrap_json_value(v).to_string());
+            new_template.proxy_config = template_export
+                .proxy_config
+                .clone()
+                .map(|v| unwrap_json_value(v).to_string());
+            new_template.event_hooks = template_export
+                .event_hooks
+                .clone()
+                .map(|v| unwrap_json_value(v).to_string());
+            new_template.stream_selection_config = template_export
+                .stream_selection_config
+                .clone()
+                .map(|v| unwrap_json_value(v).to_string());
+            new_template.pipeline = template_export
+                .pipeline
+                .clone()
+                .map(|v| unwrap_json_value(v).to_string());
+            new_template.session_complete_pipeline = template_export
+                .session_complete_pipeline
+                .clone()
+                .map(|v| unwrap_json_value(v).to_string());
+            new_template.paired_segment_pipeline = template_export
+                .paired_segment_pipeline
+                .clone()
+                .map(|v| unwrap_json_value(v).to_string());
 
             config_service
                 .create_template_config(&new_template)
@@ -785,20 +901,46 @@ pub async fn import_config(
             updated.fetch_delay_ms = platform_export.fetch_delay_ms;
             updated.download_delay_ms = platform_export.download_delay_ms;
             updated.cookies = platform_export.cookies.clone();
-            updated.platform_specific_config = platform_export.platform_specific_config.clone();
-            updated.proxy_config = platform_export.proxy_config.clone();
+            updated.platform_specific_config = platform_export
+                .platform_specific_config
+                .clone()
+                .map(|v| unwrap_json_value(v).to_string());
+            updated.proxy_config = platform_export
+                .proxy_config
+                .clone()
+                .map(|v| unwrap_json_value(v).to_string());
             updated.record_danmu = platform_export.record_danmu;
             updated.output_folder = platform_export.output_folder.clone();
             updated.output_filename_template = platform_export.output_filename_template.clone();
             updated.download_engine = platform_export.download_engine.clone();
-            updated.stream_selection_config = platform_export.stream_selection_config.clone();
+            updated.stream_selection_config = platform_export
+                .stream_selection_config
+                .clone()
+                .map(|v| unwrap_json_value(v).to_string());
             updated.output_file_format = platform_export.output_file_format.clone();
             updated.min_segment_size_bytes = platform_export.min_segment_size_bytes;
             updated.max_download_duration_secs = platform_export.max_download_duration_secs;
             updated.max_part_size_bytes = platform_export.max_part_size_bytes;
-            updated.download_retry_policy = platform_export.download_retry_policy.clone();
-            updated.event_hooks = platform_export.event_hooks.clone();
-            updated.pipeline = platform_export.pipeline.clone();
+            updated.download_retry_policy = platform_export
+                .download_retry_policy
+                .clone()
+                .map(|v| unwrap_json_value(v).to_string());
+            updated.event_hooks = platform_export
+                .event_hooks
+                .clone()
+                .map(|v| unwrap_json_value(v).to_string());
+            updated.pipeline = platform_export
+                .pipeline
+                .clone()
+                .map(|v| unwrap_json_value(v).to_string());
+            updated.session_complete_pipeline = platform_export
+                .session_complete_pipeline
+                .clone()
+                .map(|v| unwrap_json_value(v).to_string());
+            updated.paired_segment_pipeline = platform_export
+                .paired_segment_pipeline
+                .clone()
+                .map(|v| unwrap_json_value(v).to_string());
 
             config_service
                 .update_platform_config(&updated)
@@ -842,7 +984,10 @@ pub async fn import_config(
             updated.platform_config_id = platform_id;
             updated.template_config_id = template_id;
             updated.priority = streamer_export.priority.clone();
-            updated.streamer_specific_config = streamer_export.streamer_specific_config.clone();
+            updated.streamer_specific_config = streamer_export
+                .streamer_specific_config
+                .clone()
+                .map(|v| unwrap_json_value(v).to_string());
             updated.updated_at = Utc::now().to_rfc3339();
 
             streamer_repo
@@ -861,7 +1006,7 @@ pub async fn import_config(
                     &updated.id,
                     crate::database::models::FilterType::parse(&filter_export.filter_type)
                         .unwrap_or(crate::database::models::FilterType::Keyword),
-                    &filter_export.config,
+                    unwrap_json_value(filter_export.config.clone()).to_string(),
                 );
                 filter_repo.create_filter(&filter).await.ok();
             }
@@ -873,8 +1018,10 @@ pub async fn import_config(
                 StreamerDbModel::new(&streamer_export.name, &streamer_export.url, &platform_id);
             new_streamer.template_config_id = template_id;
             new_streamer.priority = streamer_export.priority.clone();
-            new_streamer.streamer_specific_config =
-                streamer_export.streamer_specific_config.clone();
+            new_streamer.streamer_specific_config = streamer_export
+                .streamer_specific_config
+                .clone()
+                .map(|v| unwrap_json_value(v).to_string());
 
             streamer_repo
                 .create_streamer(&new_streamer)
@@ -887,7 +1034,7 @@ pub async fn import_config(
                     &new_streamer.id,
                     crate::database::models::FilterType::parse(&filter_export.filter_type)
                         .unwrap_or(crate::database::models::FilterType::Keyword),
-                    &filter_export.config,
+                    unwrap_json_value(filter_export.config.clone()).to_string(),
                 );
                 filter_repo.create_filter(&filter).await.ok();
             }
@@ -926,7 +1073,7 @@ pub async fn import_config(
             // Update existing
             let mut updated = existing.clone();
             updated.channel_type = channel_export.channel_type.clone();
-            updated.settings = channel_export.settings.clone();
+            updated.settings = unwrap_json_value(channel_export.settings.clone()).to_string();
 
             notification_repo
                 .update_channel(&updated)
@@ -949,7 +1096,7 @@ pub async fn import_config(
                 &channel_export.name,
                 crate::database::models::ChannelType::parse(&channel_export.channel_type)
                     .unwrap_or(crate::database::models::ChannelType::Webhook),
-                &channel_export.settings,
+                unwrap_json_value(channel_export.settings.clone()).to_string(),
             );
 
             notification_repo
@@ -1013,7 +1160,7 @@ pub async fn import_config(
             updated.description = preset_export.description.clone();
             updated.category = preset_export.category.clone();
             updated.processor = preset_export.processor.clone();
-            updated.config = preset_export.config.to_string();
+            updated.config = unwrap_json_value(preset_export.config.clone()).to_string();
             updated.updated_at = Utc::now();
 
             job_preset_repo
@@ -1067,7 +1214,10 @@ pub async fn import_config(
             // Update existing
             let mut updated = existing.clone();
             updated.description = preset_export.description.clone();
-            updated.dag_definition = preset_export.dag_definition.clone();
+            updated.dag_definition = preset_export
+                .dag_definition
+                .clone()
+                .map(|v| unwrap_json_value(v).to_string());
             updated.pipeline_type = preset_export.pipeline_type.clone();
             updated.updated_at = Utc::now();
 
@@ -1080,12 +1230,14 @@ pub async fn import_config(
             stats.pipeline_presets_updated += 1;
         } else {
             // Create new
-            let dag_json = preset_export.dag_definition.as_deref().ok_or_else(|| {
+            let dag_json = preset_export.dag_definition.clone().ok_or_else(|| {
                 ApiError::bad_request("Missing dag_definition for pipeline preset")
             })?;
 
+            let final_dag_json = unwrap_json_value(dag_json).to_string();
+
             let dag_def: crate::database::models::job::DagPipelineDefinition =
-                serde_json::from_str(dag_json).map_err(|e| {
+                serde_json::from_str(&final_dag_json).map_err(|e| {
                     ApiError::bad_request(format!(
                         "Invalid dag_definition for pipeline preset '{}': {}",
                         preset_export.name, e
@@ -1160,7 +1312,7 @@ mod tests {
             max_concurrent_downloads: 0,
             max_concurrent_uploads: 0,
             streamer_check_delay_ms: 0,
-            proxy_config: "test".to_string(),
+            proxy_config: serde_json::Value::String("test".to_string()),
             offline_check_delay_ms: 0,
             offline_check_count: 0,
             default_download_engine: "test".to_string(),
@@ -1169,10 +1321,43 @@ mod tests {
             job_history_retention_days: 0,
             session_gap_time_secs: 0,
             pipeline: None,
+            session_complete_pipeline: None,
+            paired_segment_pipeline: None,
             log_filter_directive: Some("rust_srec=debug".to_string()),
+            auto_thumbnail: false,
         };
         let json = serde_json::to_string(&export).unwrap();
         assert!(json.contains("rust_srec=debug"));
         assert!(json.contains("log_filter_directive"));
+    }
+
+    #[test]
+    fn test_unwrap_json_value() {
+        let double_encoded = serde_json::Value::String("{\"a\": 1}".to_string());
+        let unwrapped = unwrap_json_value(double_encoded);
+        assert_eq!(unwrapped["a"], 1);
+
+        let triple_encoded = serde_json::Value::String("\"{\\\"b\\\": 2}\"".to_string());
+        let unwrapped2 = unwrap_json_value(triple_encoded);
+        assert_eq!(unwrapped2["b"], 2);
+
+        let normal = serde_json::json!({"c": 3});
+        let unwrapped3 = unwrap_json_value(normal.clone());
+        assert_eq!(unwrapped3, normal);
+    }
+
+    #[test]
+    fn test_parse_db_config() {
+        let db_string = "{\"a\": 1}".to_string();
+        let parsed = parse_db_config(db_string);
+        assert_eq!(parsed["a"], 1);
+
+        let escaped_db_string = "\"{\\\"b\\\": 2}\"".to_string();
+        let parsed2 = parse_db_config(escaped_db_string);
+        assert_eq!(parsed2["b"], 2);
+
+        let non_json = "plain text".to_string();
+        let parsed3 = parse_db_config(non_json);
+        assert_eq!(parsed3.as_str().unwrap(), "plain text");
     }
 }

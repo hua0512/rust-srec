@@ -12,6 +12,7 @@ export function getPlatformFromUrl(url: string) {
   if (url.includes('huya')) return 'huya';
   if (url.includes('douyu')) return 'douyu';
   if (url.includes('bilibili') || url.includes('hdslb.com')) return 'bilibili';
+  if (url.includes('acfun')) return 'acfun';
   return 'other';
 }
 
@@ -20,7 +21,7 @@ export function getProxiedUrl(url: string | null | undefined) {
 
   const platform = getPlatformFromUrl(url);
 
-  if (['douyin', 'huya', 'douyu', 'bilibili'].includes(platform)) {
+  if (['douyin', 'huya', 'douyu', 'bilibili', 'acfun'].includes(platform)) {
     const headers = {
       Referer: `https://live.${platform !== 'huya' ? platform : 'huya'}.com/`,
     };
@@ -30,7 +31,9 @@ export function getProxiedUrl(url: string | null | undefined) {
     if (platform === 'huya') {
       headers['Referer'] = 'https://www.huya.com/';
     }
-
+    if (platform === 'acfun') {
+      headers['Referer'] = 'https://live.acfun.cn/';
+    }
     return `/stream-proxy?url=${encodeURIComponent(url)}&headers=${encodeURIComponent(
       JSON.stringify(headers),
     )}`;

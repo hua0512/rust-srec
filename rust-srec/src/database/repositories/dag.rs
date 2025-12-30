@@ -1,78 +1,14 @@
 //! DAG (Directed Acyclic Graph) repository for pipeline execution.
 
 use async_trait::async_trait;
-use rand::random;
 use sqlx::SqlitePool;
-use std::borrow::Cow;
-use std::future::Future;
-use std::time::Duration;
-use tokio::time::sleep;
-use tracing::debug;
+use std::collections::{HashMap, HashSet};
 
 use crate::database::models::{
     DagExecutionDbModel, DagExecutionStats, DagStepExecutionDbModel, DagStepStatus, ReadyStep,
 };
+use crate::database::retry::retry_on_sqlite_busy;
 use crate::{Error, Result};
-
-// SQLite busy retry configuration
-const SQLITE_BUSY_MAX_RETRIES: usize = 8;
-const SQLITE_BUSY_BASE_DELAY_MS: u64 = 10;
-const SQLITE_BUSY_MAX_DELAY_MS: u64 = 250;
-
-fn is_sqlite_busy_error(err: &Error) -> bool {
-    let Error::DatabaseSqlx(sqlx_err) = err else {
-        return false;
-    };
-
-    let sqlx::Error::Database(db_err) = sqlx_err else {
-        let msg = sqlx_err.to_string().to_ascii_lowercase();
-        return msg.contains("database is locked") || msg.contains("database is busy");
-    };
-
-    let code = db_err.code().map(Cow::into_owned);
-    if matches!(code.as_deref(), Some("5") | Some("6")) {
-        return true;
-    }
-
-    let msg = db_err.message().to_ascii_lowercase();
-    msg.contains("database is locked") || msg.contains("database is busy")
-}
-
-async fn retry_on_sqlite_busy<T, F, Fut>(op_name: &'static str, mut op: F) -> Result<T>
-where
-    F: FnMut() -> Fut,
-    Fut: Future<Output = Result<T>>,
-{
-    let mut attempt = 0usize;
-    loop {
-        match op().await {
-            Ok(value) => return Ok(value),
-            Err(err) => {
-                if !is_sqlite_busy_error(&err) || attempt >= SQLITE_BUSY_MAX_RETRIES {
-                    return Err(err);
-                }
-
-                let exp_backoff_ms = SQLITE_BUSY_BASE_DELAY_MS.saturating_mul(1u64 << attempt);
-                let capped_ms = exp_backoff_ms.min(SQLITE_BUSY_MAX_DELAY_MS);
-                let jitter_ms =
-                    (random::<u64>() % (capped_ms / 4 + 1)).min(SQLITE_BUSY_MAX_DELAY_MS);
-                let delay =
-                    Duration::from_millis((capped_ms + jitter_ms).min(SQLITE_BUSY_MAX_DELAY_MS));
-
-                debug!(
-                    "SQLite busy during {}, retrying in {:?} (attempt {}/{})",
-                    op_name,
-                    delay,
-                    attempt + 1,
-                    SQLITE_BUSY_MAX_RETRIES
-                );
-
-                sleep(delay).await;
-                attempt += 1;
-            }
-        }
-    }
-}
 
 /// DAG repository trait for pipeline execution management.
 #[async_trait]
@@ -96,16 +32,17 @@ pub trait DagRepository: Send + Sync {
     /// Increment failed steps counter for a DAG.
     async fn increment_dag_failed(&self, dag_id: &str) -> Result<()>;
 
-    /// List DAG executions with optional status filter.
+    /// List DAG executions with optional status and session_id filters.
     async fn list_dags(
         &self,
         status: Option<&str>,
+        session_id: Option<&str>,
         limit: u32,
         offset: u32,
     ) -> Result<Vec<DagExecutionDbModel>>;
 
-    /// Count DAG executions with optional status filter.
-    async fn count_dags(&self, status: Option<&str>) -> Result<u64>;
+    /// Count DAG executions with optional status and session_id filters.
+    async fn count_dags(&self, status: Option<&str>, session_id: Option<&str>) -> Result<u64>;
 
     /// Delete a DAG execution and all its steps.
     async fn delete_dag(&self, id: &str) -> Result<()>;
@@ -297,41 +234,70 @@ impl DagRepository for SqlxDagRepository {
     async fn list_dags(
         &self,
         status: Option<&str>,
+        session_id: Option<&str>,
         limit: u32,
         offset: u32,
     ) -> Result<Vec<DagExecutionDbModel>> {
-        let dags = if let Some(status) = status {
-            sqlx::query_as::<_, DagExecutionDbModel>(
-                "SELECT * FROM dag_execution WHERE status = ? ORDER BY created_at DESC LIMIT ? OFFSET ?",
-            )
-            .bind(status)
-            .bind(limit)
-            .bind(offset)
-            .fetch_all(&self.pool)
-            .await?
+        // Build dynamic WHERE clause
+        let mut conditions: Vec<String> = Vec::new();
+        if status.is_some() {
+            conditions.push("status = ?".to_string());
+        }
+        if session_id.is_some() {
+            conditions.push("session_id = ?".to_string());
+        }
+
+        let where_clause = if conditions.is_empty() {
+            String::new()
         } else {
-            sqlx::query_as::<_, DagExecutionDbModel>(
-                "SELECT * FROM dag_execution ORDER BY created_at DESC LIMIT ? OFFSET ?",
-            )
-            .bind(limit)
-            .bind(offset)
-            .fetch_all(&self.pool)
-            .await?
+            format!("WHERE {}", conditions.join(" AND "))
         };
+
+        let sql = format!(
+            "SELECT * FROM dag_execution {} ORDER BY created_at DESC LIMIT ? OFFSET ?",
+            where_clause
+        );
+
+        let mut query = sqlx::query_as::<_, DagExecutionDbModel>(&sql);
+        if let Some(status) = status {
+            query = query.bind(status);
+        }
+        if let Some(session_id) = session_id {
+            query = query.bind(session_id);
+        }
+        query = query.bind(limit).bind(offset);
+
+        let dags = query.fetch_all(&self.pool).await?;
         Ok(dags)
     }
 
-    async fn count_dags(&self, status: Option<&str>) -> Result<u64> {
-        let count: i64 = if let Some(status) = status {
-            sqlx::query_scalar("SELECT COUNT(*) FROM dag_execution WHERE status = ?")
-                .bind(status)
-                .fetch_one(&self.pool)
-                .await?
+    async fn count_dags(&self, status: Option<&str>, session_id: Option<&str>) -> Result<u64> {
+        // Build dynamic WHERE clause
+        let mut conditions: Vec<String> = Vec::new();
+        if status.is_some() {
+            conditions.push("status = ?".to_string());
+        }
+        if session_id.is_some() {
+            conditions.push("session_id = ?".to_string());
+        }
+
+        let where_clause = if conditions.is_empty() {
+            String::new()
         } else {
-            sqlx::query_scalar("SELECT COUNT(*) FROM dag_execution")
-                .fetch_one(&self.pool)
-                .await?
+            format!("WHERE {}", conditions.join(" AND "))
         };
+
+        let sql = format!("SELECT COUNT(*) FROM dag_execution {}", where_clause);
+
+        let mut query = sqlx::query_scalar::<_, i64>(&sql);
+        if let Some(status) = status {
+            query = query.bind(status);
+        }
+        if let Some(session_id) = session_id {
+            query = query.bind(session_id);
+        }
+
+        let count = query.fetch_one(&self.pool).await?;
         Ok(count as u64)
     }
 
@@ -511,7 +477,36 @@ impl DagRepository for SqlxDagRepository {
         retry_on_sqlite_busy("complete_step_and_check_dependents", || async {
             let mut tx = self.pool.begin().await?;
             let now = chrono::Utc::now().to_rfc3339();
-            let outputs_json = serde_json::to_string(outputs).unwrap_or_else(|_| "[]".to_string());
+            let outputs_json = serde_json::to_string(outputs)?;
+
+            fn output_dedup_key(output: &str) -> String {
+                if cfg!(windows) {
+                    output.to_lowercase()
+                } else {
+                    output.to_string()
+                }
+            }
+
+            fn merge_dependency_outputs(
+                depends_on_step_ids: &[String],
+                completed_outputs_by_step_id: &HashMap<String, Vec<String>>,
+            ) -> Vec<String> {
+                let mut merged = Vec::new();
+                let mut seen = HashSet::<String>::new();
+
+                for dep in depends_on_step_ids {
+                    let Some(dep_outputs) = completed_outputs_by_step_id.get(dep) else {
+                        continue;
+                    };
+                    for out in dep_outputs {
+                        if seen.insert(output_dedup_key(out)) {
+                            merged.push(out.clone());
+                        }
+                    }
+                }
+
+                merged
+            }
 
             // 1. Mark step as completed with outputs
             sqlx::query(
@@ -559,31 +554,54 @@ impl DagRepository for SqlxDagRepository {
             )
             .bind(&completed_step.dag_id)
             .bind(&completed_step.step_id)
+                .fetch_all(&mut *tx)
+                .await?;
+
+            // 5. For each dependent, check if ALL its dependencies are complete.
+            //
+            // Performance: avoid per-dependent SQL queries. Instead, load the DAG step statuses
+            // and completed outputs once and evaluate readiness in-memory.
+            let step_rows: Vec<(String, String, Option<String>)> = sqlx::query_as(
+                r#"
+                SELECT step_id, status, outputs
+                FROM dag_step_execution
+                WHERE dag_id = ?
+                "#,
+            )
+            .bind(&completed_step.dag_id)
             .fetch_all(&mut *tx)
             .await?;
 
-            // 5. For each dependent, check if ALL its dependencies are complete
+            let mut status_by_step_id: HashMap<String, String> =
+                HashMap::with_capacity(step_rows.len());
+            let mut completed_outputs_by_step_id: HashMap<String, Vec<String>> =
+                HashMap::with_capacity(step_rows.len());
+
+            for (step_id, status, outputs) in step_rows {
+                status_by_step_id.insert(step_id.clone(), status.clone());
+                if status == "COMPLETED" {
+                    let parsed = outputs
+                        .as_deref()
+                        .and_then(|raw| serde_json::from_str::<Vec<String>>(raw).ok())
+                        .unwrap_or_default();
+                    completed_outputs_by_step_id.insert(step_id, parsed);
+                }
+            }
+
             let mut ready_steps = Vec::new();
 
             for dependent in blocked_dependents {
-                // let depends_on: Vec<String> =
-                //     serde_json::from_str(&dependent.depends_on_step_ids).unwrap_or_default();
+                let depends_on: Vec<String> =
+                    serde_json::from_str(&dependent.depends_on_step_ids).unwrap_or_default();
 
-                // Check if all dependencies are COMPLETED
-                let incomplete_count: i64 = sqlx::query_scalar(
-                    r#"
-                    SELECT COUNT(*) FROM dag_step_execution
-                    WHERE dag_id = ?
-                      AND step_id IN (SELECT value FROM json_each(?))
-                      AND status != 'COMPLETED'
-                    "#,
-                )
-                .bind(&completed_step.dag_id)
-                .bind(&dependent.depends_on_step_ids)
-                .fetch_one(&mut *tx)
-                .await?;
+                let all_deps_complete = depends_on.iter().all(|dep| {
+                    status_by_step_id
+                        .get(dep)
+                        .map(|s| s == "COMPLETED")
+                        .unwrap_or(false)
+                });
 
-                if incomplete_count == 0 {
+                if all_deps_complete {
                     // All dependencies complete - mark as PENDING
                     sqlx::query(
                         "UPDATE dag_step_execution SET status = 'PENDING', updated_at = ? WHERE id = ?",
@@ -593,27 +611,11 @@ impl DagRepository for SqlxDagRepository {
                     .execute(&mut *tx)
                     .await?;
 
-                    // Collect merged inputs from all dependencies
-                    let outputs_rows: Vec<Option<String>> = sqlx::query_scalar(
-                        r#"
-                        SELECT outputs FROM dag_step_execution
-                        WHERE dag_id = ?
-                          AND step_id IN (SELECT value FROM json_each(?))
-                          AND status = 'COMPLETED'
-                        "#,
-                    )
-                    .bind(&completed_step.dag_id)
-                    .bind(&dependent.depends_on_step_ids)
-                    .fetch_all(&mut *tx)
-                    .await?;
-
-                    let merged_inputs: Vec<String> = outputs_rows
-                        .into_iter()
-                        .flatten()
-                        .flat_map(|s| {
-                            serde_json::from_str::<Vec<String>>(&s).unwrap_or_default()
-                        })
-                        .collect();
+                    // Collect merged inputs from all dependencies (fan-in), respecting dependency order.
+                    let merged_inputs = merge_dependency_outputs(
+                        &depends_on,
+                        &completed_outputs_by_step_id,
+                    );
 
                     // Update the step record with PENDING status
                     let mut updated_step = dependent.clone();
@@ -721,7 +723,7 @@ impl DagRepository for SqlxDagRepository {
             return Ok(Vec::new());
         }
 
-        let step_ids_json = serde_json::to_string(step_ids).unwrap_or_else(|_| "[]".to_string());
+        let step_ids_json = serde_json::to_string(step_ids)?;
 
         let outputs_rows: Vec<Option<String>> = sqlx::query_scalar(
             r#"
@@ -1037,16 +1039,9 @@ mod tests {
             .unwrap();
         assert_eq!(ready.len(), 1);
         assert_eq!(ready[0].step.step_id, "C");
-        assert_eq!(ready[0].merged_inputs.len(), 2);
-        assert!(
-            ready[0]
-                .merged_inputs
-                .contains(&"/output/a.mp4".to_string())
-        );
-        assert!(
-            ready[0]
-                .merged_inputs
-                .contains(&"/output/b.jpg".to_string())
+        assert_eq!(
+            ready[0].merged_inputs,
+            vec!["/output/a.mp4".to_string(), "/output/b.jpg".to_string()]
         );
     }
 

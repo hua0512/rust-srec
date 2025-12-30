@@ -5,10 +5,10 @@ import {
   FormLabel,
   FormMessage,
 } from '@/components/ui/form';
-import { Trans } from '@lingui/macro';
-import { Clock, Tag, Folder, Calendar, Regex } from 'lucide-react';
+import { Trans } from '@lingui/react/macro';
+import { Clock, Tag, Calendar, Regex } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import { t } from '@lingui/macro';
+import { t } from '@lingui/core/macro';
 
 const FILTER_TYPES = [
   {
@@ -29,6 +29,7 @@ const FILTER_TYPES = [
     bg: 'bg-blue-500/10',
     border: 'peer-data-[state=checked]:border-blue-500',
   },
+  /*
   {
     value: 'CATEGORY',
     label: t`Category`,
@@ -38,6 +39,7 @@ const FILTER_TYPES = [
     bg: 'bg-violet-500/10',
     border: 'peer-data-[state=checked]:border-violet-500',
   },
+  */
   {
     value: 'CRON',
     label: t`Cron`,

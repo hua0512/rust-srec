@@ -7,6 +7,7 @@ use tracing::{debug, warn};
 use crate::api::error::ApiResult;
 use crate::api::models::{ParseUrlRequest, ParseUrlResponse};
 use crate::api::server::AppState;
+use crate::credentials::{CredentialScope, CredentialSource};
 
 /// Create the parse router.
 pub fn router() -> Router<AppState> {
@@ -31,7 +32,8 @@ pub async fn parse_url(
     Json(request): Json<ParseUrlRequest>,
 ) -> ApiResult<Json<ParseUrlResponse>> {
     let cookies = resolve_cookies_for_url(&state, &request.url, request.cookies.clone()).await;
-    let response = process_parse_request(request.url, cookies).await;
+    let extractor_factory = extractor_factory(&state);
+    let response = process_parse_request(&extractor_factory, request.url, cookies).await;
     Ok(Json(response))
 }
 
@@ -50,9 +52,10 @@ pub async fn parse_url_batch(
     Json(requests): Json<Vec<ParseUrlRequest>>,
 ) -> ApiResult<Json<Vec<ParseUrlResponse>>> {
     let mut responses = Vec::new();
+    let extractor_factory = extractor_factory(&state);
     for request in requests {
         let cookies = resolve_cookies_for_url(&state, &request.url, request.cookies.clone()).await;
-        responses.push(process_parse_request(request.url, cookies).await);
+        responses.push(process_parse_request(&extractor_factory, request.url, cookies).await);
     }
     Ok(Json(responses))
 }
@@ -74,30 +77,46 @@ async fn resolve_cookies_for_url(
     }
 
     let config_service = state.config_service.as_ref()?;
+    let credential_service = state.credential_service.as_ref();
 
     // Try to find a matching streamer by URL
-    if let Some(streamer_manager) = state.streamer_manager.as_ref() {
-        // Look up streamer by URL (case-insensitive match)
-        let url_lower = url.to_lowercase();
-        if let Some(streamer) = streamer_manager
-            .get_all()
-            .into_iter()
-            .find(|s| s.url.to_lowercase() == url_lower)
-        {
-            // Get the merged config for this streamer to get cookies
-            match config_service.get_config_for_streamer(&streamer.id).await {
-                Ok(config) => {
-                    if config.cookies.is_some() {
-                        debug!(
-                            "Using cookies from streamer config for URL: {} (streamer: {})",
-                            url, streamer.name
-                        );
-                        return config.cookies;
+    if let Some(streamer_manager) = state.streamer_manager.as_ref()
+        && let Some(streamer) = streamer_manager.get_streamer_by_url(url)
+    {
+        match config_service.get_context_for_streamer(&streamer.id).await {
+            Ok(context) => {
+                let config = &context.config;
+                let mut cookies = config.cookies.clone();
+
+                if let Some(credential_service) = credential_service
+                    && let Some(source) = context.credential_source.as_ref()
+                    && let Ok(Some(new_cookies)) =
+                        credential_service.check_and_refresh_source(source).await
+                {
+                    cookies = Some(new_cookies);
+                    match &source.scope {
+                        CredentialScope::Streamer { .. } => {
+                            config_service.invalidate_streamer(&streamer.id);
+                        }
+                        CredentialScope::Template { template_id, .. } => {
+                            let _ = config_service.invalidate_template(template_id).await;
+                        }
+                        CredentialScope::Platform { platform_id, .. } => {
+                            let _ = config_service.invalidate_platform(platform_id).await;
+                        }
                     }
                 }
-                Err(e) => {
-                    warn!("Failed to get config for streamer {}: {}", streamer.id, e);
+
+                if cookies.is_some() {
+                    debug!(
+                        "Using cookies from streamer config for URL: {} (streamer: {})",
+                        url, streamer.name
+                    );
+                    return cookies;
                 }
+            }
+            Err(e) => {
+                warn!("Failed to get config for streamer {}: {}", streamer.id, e);
             }
         }
     }
@@ -115,11 +134,46 @@ async fn resolve_cookies_for_url(
                 .find(|c| c.platform_name.eq_ignore_ascii_case(platform_name))
             && platform_config.cookies.is_some()
         {
+            let mut cookies = platform_config.cookies.clone();
+
+            if let Some(credential_service) = credential_service {
+                let refresh_token = platform_config
+                    .platform_specific_config
+                    .as_deref()
+                    .and_then(|s| serde_json::from_str::<serde_json::Value>(s).ok())
+                    .and_then(|v| {
+                        v.get("refresh_token")
+                            .and_then(|t| t.as_str())
+                            .map(String::from)
+                    });
+
+                if let Some(ref existing) = cookies {
+                    let source = CredentialSource::new(
+                        CredentialScope::Platform {
+                            platform_id: platform_config.id.clone(),
+                            platform_name: platform_config.platform_name.clone(),
+                        },
+                        existing.clone(),
+                        refresh_token,
+                        platform_config.platform_name.clone(),
+                    );
+
+                    if let Ok(Some(new_cookies)) =
+                        credential_service.check_and_refresh_source(&source).await
+                    {
+                        cookies = Some(new_cookies);
+                        let _ = config_service
+                            .invalidate_platform(&platform_config.id)
+                            .await;
+                    }
+                }
+            }
+
             debug!(
                 "Using cookies from platform config for URL: {} (platform: {})",
                 url, platform_name
             );
-            return platform_config.cookies;
+            return cookies;
         }
     }
 
@@ -137,6 +191,7 @@ async fn resolve_cookies_for_url(
     security(("bearer_auth" = []))
 )]
 pub async fn resolve_url(
+    State(state): State<AppState>,
     Json(request): Json<crate::api::models::ResolveUrlRequest>,
 ) -> ApiResult<Json<crate::api::models::ResolveUrlResponse>> {
     if request.url.is_empty() {
@@ -161,10 +216,7 @@ pub async fn resolve_url(
         };
 
     // Create extractor
-    let client = platforms_parser::extractor::create_client_builder(None)
-        .build()
-        .expect("Failed to create HTTP client");
-    let extractor_factory = ExtractorFactory::new(client);
+    let extractor_factory = extractor_factory(&state);
 
     let extractor = match extractor_factory.create_extractor(&request.url, request.cookies, None) {
         Ok(ext) => ext,
@@ -200,7 +252,11 @@ pub async fn resolve_url(
 }
 
 /// Helper to process a single parse request
-async fn process_parse_request(url: String, cookies: Option<String>) -> ParseUrlResponse {
+async fn process_parse_request(
+    extractor_factory: &ExtractorFactory,
+    url: String,
+    cookies: Option<String>,
+) -> ParseUrlResponse {
     // Validate URL
     if url.is_empty() {
         return ParseUrlResponse {
@@ -212,12 +268,6 @@ async fn process_parse_request(url: String, cookies: Option<String>) -> ParseUrl
     }
 
     debug!("Parsing URL: {}", url);
-
-    // Create HTTP client and extractor factory
-    let client = platforms_parser::extractor::create_client_builder(None)
-        .build()
-        .expect("Failed to create HTTP client");
-    let extractor_factory = ExtractorFactory::new(client);
 
     // Create extractor for the URL
     let extractor = match extractor_factory.create_extractor(&url, cookies.clone(), None) {
@@ -307,4 +357,12 @@ async fn process_parse_request(url: String, cookies: Option<String>) -> ParseUrl
             }
         }
     }
+}
+
+fn extractor_factory(state: &AppState) -> ExtractorFactory {
+    let client = state
+        .http_client
+        .clone()
+        .unwrap_or_else(AppState::build_http_client);
+    ExtractorFactory::new(client)
 }

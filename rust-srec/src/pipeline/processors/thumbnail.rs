@@ -6,7 +6,7 @@ use tokio::process::Command;
 use tracing::debug;
 
 use super::traits::{Processor, ProcessorContext, ProcessorInput, ProcessorOutput, ProcessorType};
-use super::utils::{get_extension, is_image, is_video};
+use super::utils::{get_extension, is_image, is_video, parse_config_or_default};
 use crate::Result;
 
 /// Configuration for thumbnail extraction.
@@ -70,52 +70,15 @@ impl ThumbnailProcessor {
             ffmpeg_path: path.into(),
         }
     }
-}
 
-impl Default for ThumbnailProcessor {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-#[async_trait]
-impl Processor for ThumbnailProcessor {
-    fn processor_type(&self) -> ProcessorType {
-        ProcessorType::Cpu
-    }
-
-    fn job_types(&self) -> Vec<&'static str> {
-        vec!["thumbnail"]
-    }
-
-    fn name(&self) -> &'static str {
-        "ThumbnailProcessor"
-    }
-
-    async fn process(
+    async fn process_one(
         &self,
-        input: &ProcessorInput,
+        input_path: &str,
+        output_override: Option<&str>,
+        config: &ThumbnailConfig,
         ctx: &ProcessorContext,
     ) -> Result<ProcessorOutput> {
         let start = std::time::Instant::now();
-
-        // Parse config or use defaults
-        let config: ThumbnailConfig = if let Some(ref config_str) = input.config {
-            match serde_json::from_str(config_str) {
-                Ok(c) => c,
-                Err(e) => {
-                    let _ = ctx.error(format!(
-                        "Failed to parse thumbnail config: {} (config: '{}'). Using defaults.",
-                        e, config_str
-                    ));
-                    ThumbnailConfig::default()
-                }
-            }
-        } else {
-            ThumbnailConfig::default()
-        };
-
-        let input_path = input.inputs.first().map(|s| s.as_str()).unwrap_or("");
 
         // Check if input file exists
         if !Path::new(input_path).exists() {
@@ -131,7 +94,7 @@ impl Processor for ThumbnailProcessor {
         // Check if input is already an image - pass through as-is
         if is_image(&ext) {
             let duration = start.elapsed().as_secs_f64();
-            let _ = ctx.info(format!(
+            ctx.info(format!(
                 "Input is already an image, passing through: {}",
                 input_path
             ));
@@ -158,7 +121,7 @@ impl Processor for ThumbnailProcessor {
         // If not supported, pass through the input file instead of failing
         if !is_video(&ext) {
             let duration = start.elapsed().as_secs_f64();
-            let _ = ctx.info(format!(
+            ctx.info(format!(
                 "Input file is not a supported video format for thumbnail extraction, passing through: {}",
                 input_path
             ));
@@ -182,8 +145,8 @@ impl Processor for ThumbnailProcessor {
         }
 
         // Determine output path: use provided output or generate one dynamically
-        let output_string = if let Some(out) = input.outputs.first().filter(|s| !s.is_empty()) {
-            out.clone()
+        let output_string = if let Some(out) = output_override.filter(|s| !s.is_empty()) {
+            out.to_string()
         } else {
             // Generate dynamic output path: input_filename.jpg
             let input_path_obj = std::path::Path::new(input_path);
@@ -203,7 +166,7 @@ impl Processor for ThumbnailProcessor {
         };
         let output_path = output_string.as_str();
 
-        let _ = ctx.info(format!(
+        ctx.info(format!(
             "Extracting thumbnail from {} at {:.2}s{}",
             input_path,
             config.timestamp_secs,
@@ -264,7 +227,7 @@ impl Processor for ThumbnailProcessor {
                 .collect::<Vec<_>>()
                 .join("\n");
 
-            let _ = ctx.error(format!("ffmpeg failed: {}", stderr));
+            ctx.error(format!("ffmpeg failed: {}", stderr));
 
             // Check for no video stream error - pass through instead of failing
             if stderr.contains("does not contain any stream")
@@ -272,7 +235,7 @@ impl Processor for ThumbnailProcessor {
                 || stderr.contains("Invalid data found")
                 || stderr.contains("no video stream")
             {
-                let _ = ctx.info(format!(
+                ctx.info(format!(
                     "Input file has no extractable video frames, passing through: {}",
                     input_path
                 ));
@@ -304,7 +267,7 @@ impl Processor for ThumbnailProcessor {
 
         debug!("ffmpeg exited successfully");
 
-        let _ = ctx.info(format!(
+        ctx.info(format!(
             "Thumbnail extracted in {:.2}s: {}",
             command_output.duration, output_path
         ));
@@ -343,9 +306,116 @@ impl Processor for ThumbnailProcessor {
     }
 }
 
+impl Default for ThumbnailProcessor {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+#[async_trait]
+impl Processor for ThumbnailProcessor {
+    fn processor_type(&self) -> ProcessorType {
+        ProcessorType::Cpu
+    }
+
+    fn job_types(&self) -> Vec<&'static str> {
+        vec!["thumbnail"]
+    }
+
+    fn name(&self) -> &'static str {
+        "ThumbnailProcessor"
+    }
+
+    fn supports_batch_input(&self) -> bool {
+        true
+    }
+
+    async fn process(
+        &self,
+        input: &ProcessorInput,
+        ctx: &ProcessorContext,
+    ) -> Result<ProcessorOutput> {
+        let config: ThumbnailConfig =
+            parse_config_or_default(input.config.as_deref(), ctx, "thumbnail", None);
+
+        if input.inputs.is_empty() {
+            return Err(crate::Error::PipelineError(
+                "No input file specified for thumbnail extraction".to_string(),
+            ));
+        }
+
+        if input.inputs.len() == 1 {
+            let input_path = input.inputs[0].as_str();
+            let output_override = input.outputs.first().map(|s| s.as_str());
+            return self
+                .process_one(input_path, output_override, &config, ctx)
+                .await;
+        }
+
+        if !input.outputs.is_empty() && input.outputs.len() != input.inputs.len() {
+            return Err(crate::Error::PipelineError(format!(
+                "Thumbnail batch job requires outputs to be empty or have the same length as inputs (inputs={}, outputs={})",
+                input.inputs.len(),
+                input.outputs.len()
+            )));
+        }
+
+        let mut outputs = Vec::with_capacity(input.inputs.len());
+        let mut items_produced = Vec::new();
+        let mut skipped_inputs = Vec::new();
+        let mut succeeded_inputs = Vec::new();
+        let mut logs = Vec::new();
+        let mut duration_secs = 0.0;
+
+        for (idx, input_path) in input.inputs.iter().enumerate() {
+            let output_override = input.outputs.get(idx).map(|s| s.as_str());
+            match self
+                .process_one(input_path, output_override, &config, ctx)
+                .await
+            {
+                Ok(one) => {
+                    duration_secs += one.duration_secs;
+                    outputs.extend(one.outputs);
+                    items_produced.extend(one.items_produced);
+                    skipped_inputs.extend(one.skipped_inputs);
+                    succeeded_inputs.extend(one.succeeded_inputs);
+                    logs.extend(one.logs);
+                }
+                Err(e) => {
+                    for produced in &items_produced {
+                        let _ = tokio::fs::remove_file(produced).await;
+                    }
+                    return Err(e);
+                }
+            }
+        }
+
+        Ok(ProcessorOutput {
+            outputs,
+            duration_secs,
+            metadata: Some(
+                serde_json::json!({
+                    "batch": true,
+                    "inputs": input.inputs.len(),
+                })
+                .to_string(),
+            ),
+            items_produced,
+            input_size_bytes: None,
+            output_size_bytes: None,
+            failed_inputs: vec![],
+            succeeded_inputs,
+            skipped_inputs,
+            logs,
+        })
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::fs;
+    use tempfile::TempDir;
 
     #[test]
     fn test_thumbnail_processor_type() {
@@ -410,5 +480,57 @@ mod tests {
         // Confirm fallback behavior (simulated)
         let config = result.unwrap_or_default();
         assert_eq!(config.width, 320);
+    }
+
+    #[tokio::test]
+    async fn test_thumbnail_batch_outputs_len_mismatch_errors() {
+        let processor = ThumbnailProcessor::new();
+        let ctx = ProcessorContext::noop("test");
+
+        let input = ProcessorInput {
+            inputs: vec!["a.txt".to_string(), "b.txt".to_string()],
+            outputs: vec!["out.jpg".to_string()],
+            config: None,
+            streamer_id: "test".to_string(),
+            session_id: "test".to_string(),
+            ..Default::default()
+        };
+
+        let err = processor.process(&input, &ctx).await.unwrap_err();
+        assert!(
+            err.to_string()
+                .contains("outputs to be empty or have the same length")
+        );
+    }
+
+    #[tokio::test]
+    async fn test_thumbnail_batch_skips_unsupported_formats() {
+        let temp_dir = TempDir::new().unwrap();
+        let a = temp_dir.path().join("a.txt");
+        let b = temp_dir.path().join("b.txt");
+        fs::write(&a, "a").unwrap();
+        fs::write(&b, "b").unwrap();
+
+        let processor = ThumbnailProcessor::new();
+        let ctx = ProcessorContext::noop("test");
+
+        let input = ProcessorInput {
+            inputs: vec![
+                a.to_string_lossy().to_string(),
+                b.to_string_lossy().to_string(),
+            ],
+            outputs: vec![],
+            config: None,
+            streamer_id: "test".to_string(),
+            session_id: "test".to_string(),
+            ..Default::default()
+        };
+
+        let output = processor.process(&input, &ctx).await.unwrap();
+        assert_eq!(output.outputs.len(), 2);
+        assert_eq!(output.outputs[0], a.to_string_lossy().to_string());
+        assert_eq!(output.outputs[1], b.to_string_lossy().to_string());
+        assert!(output.items_produced.is_empty());
+        assert_eq!(output.skipped_inputs.len(), 2);
     }
 }

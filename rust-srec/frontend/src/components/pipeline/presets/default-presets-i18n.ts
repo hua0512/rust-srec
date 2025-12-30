@@ -27,6 +27,23 @@ export const DEFAULT_JOB_PRESET_NAMES: Record<string, any> = {
   'preset-compress-hevc-max': msg`Max HEVC Compression`,
   'preset-compress-ultrafast': msg`Ultrafast Compression`,
   'preset-remux-clean': msg`Remux and Clean`,
+  'preset-default-danmu-to-ass': msg`Danmaku to ASS Subtitles`,
+  'preset-default-ass-burnin': msg`ASS Subtitle Burn-in`,
+};
+
+export const PRESET_CATEGORY_NAMES: Record<string, any> = {
+  remux: msg`Remux`,
+  compression: msg`Compression`,
+  thumbnail: msg`Thumbnail`,
+  audio: msg`Audio`,
+  archive: msg`Archive`,
+  upload: msg`Upload`,
+  cleanup: msg`Cleanup`,
+  file_ops: msg`File Operations`,
+  custom: msg`Custom`,
+  metadata: msg`Metadata`,
+  danmu: msg`Danmaku`,
+  subtitle: msg`Subtitle`,
 };
 
 export const DEFAULT_JOB_PRESET_DESCRIPTIONS: Record<string, any> = {
@@ -56,6 +73,8 @@ export const DEFAULT_JOB_PRESET_DESCRIPTIONS: Record<string, any> = {
   'preset-compress-hevc-max': msg`Maximum HEVC/H.265 compression (CRF 28) for minimal file size.`,
   'preset-compress-ultrafast': msg`Ultrafast H.264 encoding (CRF 26) for quick sharing.`,
   'preset-remux-clean': msg`Remux to MP4 without re-encoding and delete the original file on success. Saves disk space.`,
+  'preset-default-danmu-to-ass': msg`Convert danmu XML (Bilibili-style) into .ass subtitles using DanmakuFactory. Manifest-aware and batch-safe.`,
+  'preset-default-ass-burnin': msg`Burn .ass subtitles into videos (produces *_burnin.mp4 by default). Manifest-aware and batch-safe.`,
 };
 
 export const DEFAULT_PIPELINE_PRESET_NAMES: Record<string, any> = {
@@ -93,4 +112,76 @@ export function isDefaultPreset(id: string): boolean {
     id in DEFAULT_JOB_PRESET_DESCRIPTIONS ||
     id in DEFAULT_PIPELINE_PRESET_DESCRIPTIONS
   );
+}
+
+/**
+ * Get the translated name for a job preset.
+ * @param preset
+ * @param i18n
+ */
+export function getJobPresetName(
+  preset: { id: string; name: string },
+  i18n: any,
+): string {
+  if (DEFAULT_JOB_PRESET_NAMES[preset.id]) {
+    return i18n._(DEFAULT_JOB_PRESET_NAMES[preset.id]);
+  }
+  return preset.name;
+}
+
+/**
+ * Get the translated description for a job preset.
+ * @param preset
+ * @param i18n
+ */
+export function getJobPresetDescription(
+  preset: { id: string; description?: string | null },
+  i18n: any,
+): string {
+  if (DEFAULT_JOB_PRESET_DESCRIPTIONS[preset.id]) {
+    return i18n._(DEFAULT_JOB_PRESET_DESCRIPTIONS[preset.id]);
+  }
+  return preset.description || '';
+}
+
+/**
+ * Get the translated name for a pipeline preset (workflow).
+ * @param workflow
+ * @param i18n
+ */
+export function getPipelinePresetName(
+  workflow: { id: string; name: string },
+  i18n: any,
+): string {
+  if (DEFAULT_PIPELINE_PRESET_NAMES[workflow.id]) {
+    return i18n._(DEFAULT_PIPELINE_PRESET_NAMES[workflow.id]);
+  }
+  return workflow.name;
+}
+
+/**
+ * Get the translated description for a pipeline preset (workflow).
+ * @param workflow
+ * @param i18n
+ */
+export function getPipelinePresetDescription(
+  workflow: { id: string; description?: string | null },
+  i18n: any,
+): string {
+  if (DEFAULT_PIPELINE_PRESET_DESCRIPTIONS[workflow.id]) {
+    return i18n._(DEFAULT_PIPELINE_PRESET_DESCRIPTIONS[workflow.id]);
+  }
+  return workflow.description || '';
+}
+
+/**
+ * Get the translated name for a preset category.
+ * @param category
+ * @param i18n
+ */
+export function getCategoryName(category: string, i18n: any): string {
+  if (PRESET_CATEGORY_NAMES[category]) {
+    return i18n._(PRESET_CATEGORY_NAMES[category]);
+  }
+  return category;
 }

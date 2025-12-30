@@ -16,6 +16,10 @@ use crate::api::models::{
 use crate::api::routes::auth::{
     ChangePasswordRequest, LoginRequest, LoginResponse, LogoutRequest, RefreshRequest,
 };
+use crate::api::routes::credentials::{
+    CredentialRefreshResponse, CredentialSaveScope, CredentialSourceResponse,
+    QrGenerateApiResponse, QrPollApiResponse, QrPollRequest,
+};
 use crate::api::routes::engines::{CreateEngineRequest, EngineTestResponse, UpdateEngineRequest};
 use crate::api::routes::export_import::{
     ConfigExport, ImportMode, ImportRequest, ImportResult, ImportStats,
@@ -81,6 +85,8 @@ pub struct MessageResponse {
         (name = "notifications", description = "Notification channel management endpoints"),
         (name = "job", description = "Job preset management endpoints"),
         (name = "export_import", description = "Configuration backup and restore endpoints")
+        ,
+        (name = "credentials", description = "Credential refresh and provenance endpoints")
     ),
     paths(
         // Health endpoints
@@ -113,6 +119,7 @@ pub struct MessageResponse {
         crate::api::routes::sessions::list_sessions,
         crate::api::routes::sessions::get_session,
         crate::api::routes::sessions::delete_session,
+        crate::api::routes::sessions::delete_sessions_batch,
         // Template endpoints
         crate::api::routes::templates::create_template,
         crate::api::routes::templates::list_templates,
@@ -190,6 +197,15 @@ pub struct MessageResponse {
         // Export/Import endpoints
         crate::api::routes::export_import::export_config,
         crate::api::routes::export_import::import_config,
+        // Credentials endpoints
+        crate::api::routes::credentials::get_streamer_credential_source,
+        crate::api::routes::credentials::refresh_streamer_credentials,
+        crate::api::routes::credentials::get_platform_credential_source,
+        crate::api::routes::credentials::refresh_platform_credentials,
+        crate::api::routes::credentials::get_template_credential_source,
+        crate::api::routes::credentials::refresh_template_credentials,
+        crate::api::routes::credentials::bilibili_qr_generate,
+        crate::api::routes::credentials::bilibili_qr_poll,
     ),
     components(
         schemas(
@@ -222,6 +238,8 @@ pub struct MessageResponse {
             // Session schemas
             SessionResponse,
             PaginatedResponse<SessionResponse>,
+            crate::api::routes::sessions::BatchDeleteRequest,
+            crate::api::routes::sessions::BatchDeleteResponse,
             // Template schemas
             CreateTemplateRequest,
             UpdateTemplateRequest,
@@ -270,6 +288,13 @@ pub struct MessageResponse {
             ImportMode,
             ImportResult,
             ImportStats,
+            // Credentials schemas
+            CredentialSourceResponse,
+            CredentialRefreshResponse,
+            QrGenerateApiResponse,
+            CredentialSaveScope,
+            QrPollRequest,
+            QrPollApiResponse,
             // Pipeline DAG schemas
             CreatePipelineRequest,
             CreatePipelineResponse,

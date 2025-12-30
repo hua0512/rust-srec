@@ -1,3 +1,4 @@
+import { useState, useEffect } from 'react';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { CardTitle } from '@/components/ui/card';
 import {
@@ -18,7 +19,7 @@ import { cn, getPlatformFromUrl, getProxiedUrl } from '@/lib/utils';
 import { Trans } from '@lingui/react/macro';
 import { z } from 'zod';
 import { StreamerSchema } from '@/api/schemas';
-import { StatusInfoTooltip } from './status-info-tooltip';
+import { StatusInfoTooltip } from '@/components/shared/status-info-tooltip';
 
 interface StreamAvatarInfoProps {
   streamer: z.infer<typeof StreamerSchema>;
@@ -26,13 +27,21 @@ interface StreamAvatarInfoProps {
 
 export const StreamAvatarInfo = ({ streamer }: StreamAvatarInfoProps) => {
   const platform = getPlatformFromUrl(streamer.url);
-  const now = new Date();
+
+  // Use client-side state to avoid hydration mismatch from time differences
+  const [now, setNow] = useState<Date | null>(null);
+  useEffect(() => {
+    setNow(new Date());
+  }, []);
+
   const disabledUntil = streamer.disabled_until
     ? new Date(streamer.disabled_until)
     : null;
-  const isTemporarilyPaused =
-    (disabledUntil && disabledUntil > now) ||
-    streamer.state === 'TEMPORAL_DISABLED';
+  // During SSR (now === null), default to false to avoid hydration mismatch
+  const isTemporarilyPaused = now
+    ? (disabledUntil && disabledUntil > now) ||
+      streamer.state === 'TEMPORAL_DISABLED'
+    : streamer.state === 'TEMPORAL_DISABLED';
 
   const stopStates = [
     'FATAL_ERROR',
@@ -101,7 +110,7 @@ export const StreamAvatarInfo = ({ streamer }: StreamAvatarInfoProps) => {
                   </TooltipTrigger>
                   <TooltipContent
                     side="bottom"
-                    className="p-0 border-border/50 shadow-2xl bg-background/95 backdrop-blur-xl overflow-hidden ring-1 ring-white/5"
+                    className="p-0 border-none shadow-none bg-transparent overflow-hidden"
                   >
                     <StatusInfoTooltip
                       theme="orange"
@@ -125,7 +134,7 @@ export const StreamAvatarInfo = ({ streamer }: StreamAvatarInfoProps) => {
 
                       <div className="space-y-2">
                         <p className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider flex items-center gap-1.5 ml-0.5">
-                          <Activity className="h-3 w-3 opacity-70" />
+                          <Activity className="h-3 w-3 text-[var(--tooltip-theme-color)]" />
                           <Trans>Last Error Log</Trans>
                         </p>
                         <div className="text-xs bg-muted/40 text-muted-foreground/90 p-2.5 rounded-md font-mono break-all border border-border/40 shadow-sm leading-relaxed max-h-[120px] overflow-y-auto">
@@ -149,7 +158,7 @@ export const StreamAvatarInfo = ({ streamer }: StreamAvatarInfoProps) => {
                   href={streamer.url}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="ml-auto opacity-0 group-hover:opacity-100 transition-opacity p-1 hover:bg-muted rounded-full"
+                  className="ml-auto opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-opacity p-1 hover:bg-muted rounded-full"
                 >
                   <ExternalLink className="h-3 w-3 hover:text-primary transition-colors" />
                 </a>

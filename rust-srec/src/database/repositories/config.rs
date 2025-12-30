@@ -93,7 +93,10 @@ impl ConfigRepository for SqlxConfigRepository {
                 job_history_retention_days = ?,
                 session_gap_time_secs = ?,
                 pipeline = ?,
-                log_filter_directive = ?
+                session_complete_pipeline = ?,
+                paired_segment_pipeline = ?,
+                log_filter_directive = ?,
+                auto_thumbnail = ?
             WHERE id = ?
             "#,
         )
@@ -116,7 +119,10 @@ impl ConfigRepository for SqlxConfigRepository {
         .bind(config.job_history_retention_days)
         .bind(config.session_gap_time_secs)
         .bind(&config.pipeline)
+        .bind(&config.session_complete_pipeline)
+        .bind(&config.paired_segment_pipeline)
         .bind(&config.log_filter_directive)
+        .bind(config.auto_thumbnail)
         .bind(&config.id)
         .execute(&self.pool)
         .await?;
@@ -133,8 +139,9 @@ impl ConfigRepository for SqlxConfigRepository {
                 streamer_check_delay_ms, proxy_config, offline_check_delay_ms,
                 offline_check_count, default_download_engine, max_concurrent_cpu_jobs,
                 max_concurrent_io_jobs, job_history_retention_days, session_gap_time_secs,
-                pipeline, log_filter_directive
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                pipeline, session_complete_pipeline, paired_segment_pipeline, log_filter_directive,
+                auto_thumbnail
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             "#,
         )
         .bind(&config.id)
@@ -157,7 +164,10 @@ impl ConfigRepository for SqlxConfigRepository {
         .bind(config.job_history_retention_days)
         .bind(config.session_gap_time_secs)
         .bind(&config.pipeline)
+        .bind(&config.session_complete_pipeline)
+        .bind(&config.paired_segment_pipeline)
         .bind(&config.log_filter_directive)
+        .bind(config.auto_thumbnail)
         .execute(&self.pool)
         .await?;
         Ok(())
@@ -198,8 +208,8 @@ impl ConfigRepository for SqlxConfigRepository {
                 cookies, platform_specific_config, proxy_config, record_danmu,
                 output_folder, output_filename_template, download_engine, stream_selection_config,
                 output_file_format, min_segment_size_bytes, max_download_duration_secs, max_part_size_bytes,
-                download_retry_policy, event_hooks, pipeline
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                download_retry_policy, event_hooks, pipeline, session_complete_pipeline, paired_segment_pipeline
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             "#,
         )
         .bind(&config.id)
@@ -221,6 +231,8 @@ impl ConfigRepository for SqlxConfigRepository {
         .bind(&config.download_retry_policy)
         .bind(&config.event_hooks)
         .bind(&config.pipeline)
+        .bind(&config.session_complete_pipeline)
+        .bind(&config.paired_segment_pipeline)
         .execute(&self.pool)
         .await?;
         Ok(())
@@ -247,7 +259,9 @@ impl ConfigRepository for SqlxConfigRepository {
                 max_part_size_bytes = ?,
                 download_retry_policy = ?,
                 event_hooks = ?,
-                pipeline = ?
+                pipeline = ?,
+                session_complete_pipeline = ?,
+                paired_segment_pipeline = ?
             WHERE id = ?
             "#,
         )
@@ -269,6 +283,8 @@ impl ConfigRepository for SqlxConfigRepository {
         .bind(&config.download_retry_policy)
         .bind(&config.event_hooks)
         .bind(&config.pipeline)
+        .bind(&config.session_complete_pipeline)
+        .bind(&config.paired_segment_pipeline)
         .bind(&config.id)
         .execute(&self.pool)
         .await?;
@@ -317,8 +333,8 @@ impl ConfigRepository for SqlxConfigRepository {
                 max_download_duration_secs, max_part_size_bytes, record_danmu,
                 platform_overrides, download_retry_policy, danmu_sampling_config,
                 download_engine, engines_override, proxy_config, event_hooks, stream_selection_config,
-                pipeline, created_at, updated_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                pipeline, session_complete_pipeline, paired_segment_pipeline, created_at, updated_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 
             "#,
         )
@@ -341,6 +357,8 @@ impl ConfigRepository for SqlxConfigRepository {
         .bind(&config.event_hooks)
         .bind(&config.stream_selection_config)
         .bind(&config.pipeline)
+        .bind(&config.session_complete_pipeline)
+        .bind(&config.paired_segment_pipeline)
         .bind(config.created_at)
         .bind(config.updated_at)
         .execute(&self.pool)
@@ -370,6 +388,8 @@ impl ConfigRepository for SqlxConfigRepository {
                 event_hooks = ?,
                 stream_selection_config = ?,
                 pipeline = ?,
+                session_complete_pipeline = ?,
+                paired_segment_pipeline = ?,
                 updated_at = ?
             WHERE id = ?
             "#,
@@ -392,6 +412,8 @@ impl ConfigRepository for SqlxConfigRepository {
         .bind(&config.event_hooks)
         .bind(&config.stream_selection_config)
         .bind(&config.pipeline)
+        .bind(&config.session_complete_pipeline)
+        .bind(&config.paired_segment_pipeline)
         .bind(Utc::now())
         .bind(&config.id)
         .execute(&self.pool)

@@ -124,6 +124,7 @@ impl XmlDanmuWriter {
                 let comment_xml = format!("<!-- {} -->\n", comment.replace("-->", "--"));
                 file.write_all(comment_xml.as_bytes()).await?;
             }
+            self.header_comments.clear();
             file.write_all(b"<i>\n").await?;
         }
         Ok(())
@@ -239,11 +240,18 @@ pub fn message_type_to_int(msg_type: &DanmuType) -> u8 {
 
 /// Escape special XML characters in a string.
 pub fn escape_xml(s: &str) -> String {
-    s.replace('&', "&amp;")
-        .replace('<', "&lt;")
-        .replace('>', "&gt;")
-        .replace('"', "&quot;")
-        .replace('\'', "&apos;")
+    let mut out = String::with_capacity(s.len());
+    for ch in s.chars() {
+        match ch {
+            '&' => out.push_str("&amp;"),
+            '<' => out.push_str("&lt;"),
+            '>' => out.push_str("&gt;"),
+            '"' => out.push_str("&quot;"),
+            '\'' => out.push_str("&apos;"),
+            _ => out.push(ch),
+        }
+    }
+    out
 }
 
 /// Calculate CRC32 hash of a string.

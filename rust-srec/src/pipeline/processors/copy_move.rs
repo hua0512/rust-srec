@@ -9,10 +9,10 @@ use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 use std::path::Path;
 use tokio::fs;
-use tracing::{debug, error, info, warn};
+use tracing::{debug, error, info};
 
 use super::traits::{Processor, ProcessorContext, ProcessorInput, ProcessorOutput, ProcessorType};
-use super::utils::create_log_entry;
+use super::utils::{create_log_entry, parse_config_or_default};
 use crate::Result;
 
 /// Default value for create_dirs option.
@@ -141,19 +141,15 @@ impl Processor for CopyMoveProcessor {
     async fn process(
         &self,
         input: &ProcessorInput,
-        _ctx: &ProcessorContext,
+        ctx: &ProcessorContext,
     ) -> Result<ProcessorOutput> {
         let start = std::time::Instant::now();
 
-        // Parse config or use defaults
-        let config: CopyMoveConfig = if let Some(ref config_str) = input.config {
-            serde_json::from_str(config_str).unwrap_or_else(|e| {
-                warn!("Failed to parse copy/move config, using defaults: {}", e);
-                CopyMoveConfig::default()
-            })
-        } else {
-            CopyMoveConfig::default()
-        };
+        // Initialize logs vector
+        let mut logs = Vec::new();
+
+        let config: CopyMoveConfig =
+            parse_config_or_default(input.config.as_deref(), ctx, "copy_move", Some(&mut logs));
 
         // Get source path
         let source_path = input.inputs.first().ok_or_else(|| {
@@ -173,9 +169,6 @@ impl Processor for CopyMoveProcessor {
 
         let source = Path::new(source_path);
         let dest = Path::new(dest_path);
-
-        // Initialize logs vector
-        let mut logs = Vec::new();
 
         let log_msg = format!(
             "{} {} -> {}",
@@ -473,6 +466,7 @@ mod tests {
             ),
             streamer_id: "test".to_string(),
             session_id: "test".to_string(),
+            ..Default::default()
         };
 
         let output = processor.process(&input, &ctx).await.unwrap();
@@ -511,6 +505,7 @@ mod tests {
             ),
             streamer_id: "test".to_string(),
             session_id: "test".to_string(),
+            ..Default::default()
         };
 
         let output = processor.process(&input, &ctx).await.unwrap();
@@ -547,6 +542,7 @@ mod tests {
             ),
             streamer_id: "test".to_string(),
             session_id: "test".to_string(),
+            ..Default::default()
         };
 
         let output = processor.process(&input, &ctx).await.unwrap();
@@ -584,6 +580,7 @@ mod tests {
             ),
             streamer_id: "test".to_string(),
             session_id: "test".to_string(),
+            ..Default::default()
         };
 
         let result = processor.process(&input, &ctx).await;
@@ -618,6 +615,7 @@ mod tests {
             ),
             streamer_id: "test".to_string(),
             session_id: "test".to_string(),
+            ..Default::default()
         };
 
         let output = processor.process(&input, &ctx).await.unwrap();
@@ -646,6 +644,7 @@ mod tests {
             config: None,
             streamer_id: "test".to_string(),
             session_id: "test".to_string(),
+            ..Default::default()
         };
 
         let result = processor.process(&input, &ctx).await;
@@ -666,6 +665,7 @@ mod tests {
             config: None,
             streamer_id: "test".to_string(),
             session_id: "test".to_string(),
+            ..Default::default()
         };
 
         let result = processor.process(&input, &ctx).await;
@@ -690,6 +690,7 @@ mod tests {
             config: None,
             streamer_id: "test".to_string(),
             session_id: "test".to_string(),
+            ..Default::default()
         };
 
         let result = processor.process(&input, &ctx).await;

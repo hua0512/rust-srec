@@ -3,6 +3,7 @@
 use crate::database::models::job::DagPipelineDefinition;
 use crate::domain::{DanmuSamplingConfig, EventHooks, ProxyConfig, RetryPolicy};
 use crate::downloader::StreamSelectionConfig;
+use platforms_parser::extractor::platform_configs::merge_platform_extras;
 use serde::{Deserialize, Serialize};
 use tracing::debug;
 
@@ -50,6 +51,13 @@ pub struct MergedConfig {
 
     // Pipeline configuration
     pub pipeline: Option<DagPipelineDefinition>,
+    pub session_complete_pipeline: Option<DagPipelineDefinition>,
+    /// Optional pipeline that triggers once both video+danmu for a segment are available.
+    pub paired_segment_pipeline: Option<DagPipelineDefinition>,
+    // Platform-specific extractor options (merged from all layers)
+    pub platform_extras: Option<serde_json::Value>,
+    /// Whether to automatically generate thumbnails for new sessions
+    pub auto_thumbnail: bool,
 }
 
 impl MergedConfig {
@@ -81,6 +89,10 @@ pub struct MergedConfigBuilder {
     stream_selection: Option<StreamSelectionConfig>,
     engines_override: Option<serde_json::Value>,
     pipeline: Option<DagPipelineDefinition>,
+    session_complete_pipeline: Option<DagPipelineDefinition>,
+    paired_segment_pipeline: Option<DagPipelineDefinition>,
+    platform_extras: Option<serde_json::Value>,
+    auto_thumbnail: Option<bool>,
 }
 
 impl MergedConfigBuilder {
@@ -99,6 +111,9 @@ impl MergedConfigBuilder {
         download_engine: String,
         session_gap_time_secs: i64,
         pipeline: Option<DagPipelineDefinition>,
+        session_complete_pipeline: Option<DagPipelineDefinition>,
+        paired_segment_pipeline: Option<DagPipelineDefinition>,
+        auto_thumbnail: bool,
     ) -> Self {
         debug!(
             "[Layer 1: Global] Setting base config: output_folder={}, output_format={}, engine={}, record_danmu={}, session_gap={}s, pipeline_steps={}",
@@ -123,6 +138,9 @@ impl MergedConfigBuilder {
         self.event_hooks = Some(EventHooks::default());
         self.session_gap_time_secs = Some(session_gap_time_secs);
         self.pipeline = pipeline;
+        self.session_complete_pipeline = session_complete_pipeline;
+        self.paired_segment_pipeline = paired_segment_pipeline;
+        self.auto_thumbnail = Some(auto_thumbnail);
         self
     }
 
@@ -147,6 +165,8 @@ impl MergedConfigBuilder {
         download_retry_policy: Option<RetryPolicy>,
         event_hooks: Option<EventHooks>,
         pipeline: Option<DagPipelineDefinition>,
+        session_complete_pipeline: Option<DagPipelineDefinition>,
+        paired_segment_pipeline: Option<DagPipelineDefinition>,
     ) -> Self {
         debug!(
             "[Layer 2: Platform] Applying overrides: output_folder={:?}, engine={:?}, record_danmu={:?}, cookies={}, stream_selection={}, pipeline_steps={}",
@@ -178,10 +198,20 @@ impl MergedConfigBuilder {
             debug!("Platform config override: pipeline");
             self.pipeline = Some(pipe);
         }
+        if let Some(pipe) = session_complete_pipeline {
+            debug!("Platform config override: session_complete_pipeline");
+            self.session_complete_pipeline = Some(pipe);
+        }
+        if let Some(pipe) = paired_segment_pipeline {
+            debug!("Platform config override: paired_segment_pipeline");
+            self.paired_segment_pipeline = Some(pipe);
+        }
 
         // Apply platform-specific config overrides
-        if let Some(_config) = platform_specific_config {
+        if let Some(config) = platform_specific_config {
             debug!("Applying platform-specific config overrides");
+            self.platform_extras =
+                merge_platform_extras(self.platform_extras.take(), Some(config.clone()));
         }
 
         // Apply explicit overrides
@@ -259,16 +289,20 @@ impl MergedConfigBuilder {
         stream_selection: Option<StreamSelectionConfig>,
         engines_override: Option<serde_json::Value>,
         pipeline: Option<DagPipelineDefinition>,
+        session_complete_pipeline: Option<DagPipelineDefinition>,
+        paired_segment_pipeline: Option<DagPipelineDefinition>,
+        platform_extras: Option<serde_json::Value>,
     ) -> Self {
         debug!(
-            "[Layer 3: Template] Applying overrides: output_folder={:?}, engine={:?}, record_danmu={:?}, cookies={}, stream_selection={}, engines_override={}, pipeline_steps={}",
+            "[Layer 3: Template] Applying overrides: output_folder={:?}, engine={:?}, record_danmu={:?}, cookies={}, stream_selection={}, engines_override={}, pipeline_steps={}, platform_extras={}",
             output_folder,
             download_engine,
             record_danmu,
             cookies.is_some(),
             stream_selection.is_some(),
             engines_override.is_some(),
-            pipeline.as_ref().map(|p| p.steps.len()).unwrap_or(0)
+            pipeline.as_ref().map(|p| p.steps.len()).unwrap_or(0),
+            platform_extras.is_some()
         );
         if let Some(v) = output_folder {
             debug!("Template override: output_folder = {}", v);
@@ -345,6 +379,19 @@ impl MergedConfigBuilder {
         if let Some(pipe) = pipeline {
             debug!("Template override: pipeline");
             self.pipeline = Some(pipe);
+        }
+        if let Some(pipe) = session_complete_pipeline {
+            debug!("Template override: session_complete_pipeline");
+            self.session_complete_pipeline = Some(pipe);
+        }
+        if let Some(pipe) = paired_segment_pipeline {
+            debug!("Template override: paired_segment_pipeline");
+            self.paired_segment_pipeline = Some(pipe);
+        }
+        // Merge platform extras from template layer
+        if let Some(extras) = platform_extras {
+            debug!("Template override: platform_extras");
+            self.platform_extras = merge_platform_extras(self.platform_extras.take(), Some(extras));
         }
         self
     }
@@ -453,6 +500,26 @@ impl MergedConfigBuilder {
                 self.pipeline = Some(v);
             }
 
+            if let Some(pipeline_val) = config.get("session_complete_pipeline")
+                && let Ok(v) = serde_json::from_value::<DagPipelineDefinition>(pipeline_val.clone())
+            {
+                debug!(
+                    "Streamer config override: session_complete_pipeline ({} items/nodes)",
+                    v.steps.len()
+                );
+                self.session_complete_pipeline = Some(v);
+            }
+
+            if let Some(pipeline_val) = config.get("paired_segment_pipeline")
+                && let Ok(v) = serde_json::from_value::<DagPipelineDefinition>(pipeline_val.clone())
+            {
+                debug!(
+                    "Streamer config override: paired_segment_pipeline ({} items/nodes)",
+                    v.steps.len()
+                );
+                self.paired_segment_pipeline = Some(v);
+            }
+
             if let Some(v) = config.get("download_retry_policy")
                 && let Ok(v) = serde_json::from_value::<RetryPolicy>(v.clone())
             {
@@ -466,6 +533,13 @@ impl MergedConfigBuilder {
                 debug!("Streamer config override: danmu_sampling_config");
                 self.danmu_sampling_config = Some(v);
             }
+
+            // Merge platform extras from streamer layer
+            if let Some(extras) = config.get("platform_extras").cloned() {
+                debug!("Streamer config override: platform_extras");
+                self.platform_extras =
+                    merge_platform_extras(self.platform_extras.take(), Some(extras));
+            }
         }
         self
     }
@@ -474,12 +548,14 @@ impl MergedConfigBuilder {
     pub fn build(self) -> MergedConfig {
         let output_folder = self
             .output_folder
-            .unwrap_or_else(|| "./downloads".to_string());
+            .unwrap_or_else(|| "/app/output".to_string());
         let output_filename_template = self
             .output_filename_template
             .unwrap_or_else(|| "{streamer}-{title}-%Y%m%d-%H%M%S".to_string());
         let output_file_format = self.output_file_format.unwrap_or_else(|| "flv".to_string());
-        let download_engine = self.download_engine.unwrap_or_else(|| "mesio".to_string());
+        let download_engine = self
+            .download_engine
+            .unwrap_or_else(|| "default-mesio".to_string());
         let record_danmu = self.record_danmu.unwrap_or(false);
         let stream_selection = self.stream_selection.unwrap_or_default();
         let pipeline = self.pipeline;
@@ -514,6 +590,10 @@ impl MergedConfigBuilder {
             stream_selection,
             engines_override: self.engines_override,
             pipeline,
+            session_complete_pipeline: self.session_complete_pipeline,
+            paired_segment_pipeline: self.paired_segment_pipeline,
+            platform_extras: self.platform_extras,
+            auto_thumbnail: self.auto_thumbnail.unwrap_or(true),
         }
     }
 }
@@ -528,7 +608,7 @@ mod tests {
     fn test_merged_config_builder() {
         let config = MergedConfig::builder()
             .with_global(
-                "./downloads".to_string(),
+                "/app/output".to_string(),
                 "{streamer}-{title}".to_string(),
                 "flv".to_string(),
                 1024,
@@ -539,6 +619,9 @@ mod tests {
                 "mesio".to_string(),
                 600,
                 None, // pipeline
+                None, // session_complete_pipeline
+                None, // paired_segment_pipeline
+                true,
             )
             .with_platform(
                 Some(60000),
@@ -558,10 +641,12 @@ mod tests {
                 None,
                 None,
                 None,
+                None, // session_complete_pipeline
+                None, // paired_segment_pipeline
             )
             .build();
 
-        assert_eq!(config.output_folder, "./downloads");
+        assert_eq!(config.output_folder, "/app/output");
         assert_eq!(config.download_engine, "mesio");
         assert!(!config.record_danmu);
     }
@@ -570,7 +655,7 @@ mod tests {
     fn test_layer_override() {
         let config = MergedConfig::builder()
             .with_global(
-                "./downloads".to_string(),
+                "/app/output".to_string(),
                 "{streamer}".to_string(),
                 "flv".to_string(),
                 1024,
@@ -581,6 +666,9 @@ mod tests {
                 "ffmpeg".to_string(),
                 600,
                 None,
+                None,
+                None,
+                true,
             )
             .with_platform(
                 Some(60000),
@@ -588,6 +676,8 @@ mod tests {
                 None,
                 None,
                 Some(true),
+                None,
+                None,
                 None,
                 None,
                 None,
@@ -618,6 +708,9 @@ mod tests {
                 None, // stream_selection
                 None, // engines_override
                 None, // pipeline
+                None, // session_complete_pipeline
+                None, // paired_segment_pipeline
+                None, // platform_extras
             )
             .build();
 
@@ -643,7 +736,7 @@ mod tests {
 
         let config = MergedConfig::builder()
             .with_global(
-                "./downloads".to_string(),
+                "/app/output".to_string(),
                 "{streamer}".to_string(),
                 "flv".to_string(),
                 1024,
@@ -666,10 +759,15 @@ mod tests {
                         ),
                     ],
                 )),
+                None,
+                None,
+                true,
             )
             .with_platform(
                 Some(60000),
                 Some(1000),
+                None,
+                None,
                 None,
                 None,
                 None,
@@ -717,7 +815,7 @@ mod tests {
 
         let config = MergedConfig::builder()
             .with_global(
-                "./downloads".to_string(),
+                "/app/output".to_string(),
                 "{streamer}".to_string(),
                 "flv".to_string(),
                 1024,
@@ -728,10 +826,15 @@ mod tests {
                 "mesio".to_string(),
                 600,
                 None,
+                None,
+                None,
+                true,
             )
             .with_platform(
                 Some(60000),
                 Some(1000),
+                None,
+                None,
                 None,
                 None,
                 None,
@@ -758,5 +861,82 @@ mod tests {
         assert!(
             matches!(&dag.steps[1].step, PipelineStep::Inline { processor, .. } if processor == "execute")
         );
+    }
+
+    #[test]
+    fn test_streamer_session_and_paired_pipelines_override() {
+        let streamer_config = serde_json::json!({
+            "session_complete_pipeline": {
+                "name": "session_concat",
+                "steps": [
+                    {"id": "concat", "step": {"type": "preset", "name": "remux"}, "depends_on": []}
+                ]
+            },
+            "paired_segment_pipeline": {
+                "name": "burn_in",
+                "steps": [
+                    {"id": "burn", "step": {"type": "inline", "processor": "execute", "config": {"command": "echo {input}"}}, "depends_on": []}
+                ]
+            }
+        });
+
+        let config = MergedConfig::builder()
+            .with_global(
+                "/app/output".to_string(),
+                "{streamer}".to_string(),
+                "flv".to_string(),
+                1024,
+                0,
+                8589934592,
+                false,
+                ProxyConfig::disabled(),
+                "mesio".to_string(),
+                600,
+                None,
+                None,
+                None,
+                true,
+            )
+            .with_platform(
+                Some(60000),
+                Some(1000),
+                None,
+                None,
+                Some(true), // record_danmu
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+            )
+            .with_streamer(Some(&streamer_config))
+            .build();
+
+        let session = config
+            .session_complete_pipeline
+            .expect("session_complete_pipeline should be set");
+        assert_eq!(session.steps.len(), 1);
+        assert!(matches!(
+            &session.steps[0].step,
+            PipelineStep::Preset { name } if name == "remux"
+        ));
+
+        let paired = config
+            .paired_segment_pipeline
+            .expect("paired_segment_pipeline should be set");
+        assert_eq!(paired.steps.len(), 1);
+        assert!(matches!(
+            &paired.steps[0].step,
+            PipelineStep::Inline { processor, .. } if processor == "execute"
+        ));
     }
 }

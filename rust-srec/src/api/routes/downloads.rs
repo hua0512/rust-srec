@@ -26,9 +26,10 @@ const HEARTBEAT_INTERVAL_SECS: u64 = 30;
 
 use crate::api::error::ApiError;
 use crate::api::proto::{
-    ClientMessage, DownloadCancelled, DownloadCompleted, DownloadFailed, DownloadStarted,
-    EventType, SegmentCompleted, WsMessage, create_error_message, create_snapshot_message,
-    download_progress::client_message::Action, download_progress::ws_message::Payload,
+    ClientMessage, DownloadCancelled, DownloadCompleted, DownloadFailed, DownloadRejected,
+    DownloadStarted, EventType, SegmentCompleted, WsMessage, create_error_message,
+    create_snapshot_message, download_progress::client_message::Action,
+    download_progress::ws_message::Payload,
 };
 use crate::api::server::AppState;
 use crate::downloader::DownloadManagerEvent;
@@ -391,17 +392,16 @@ fn map_event_to_protobuf(
             reason,
             retry_after_secs,
         } => {
-            // Use DownloadFailed payload with empty download_id to indicate rejection
-            let payload = DownloadFailed {
-                download_id: String::new(), // No download_id for rejected downloads
+            let payload = DownloadRejected {
                 streamer_id: streamer_id.clone(),
                 session_id: session_id.clone(),
-                error: format!("{} (retry in {}s)", reason, retry_after_secs.unwrap_or(0)),
+                reason: reason.clone(),
+                retry_after_secs: retry_after_secs.unwrap_or(0),
                 recoverable: true, // Circuit breaker rejections are always recoverable
             };
             Some(WsMessage {
-                event_type: EventType::DownloadFailed as i32,
-                payload: Some(Payload::DownloadFailed(payload)),
+                event_type: EventType::DownloadRejected as i32,
+                payload: Some(Payload::DownloadRejected(payload)),
             })
         }
     }
@@ -564,6 +564,29 @@ mod tests {
             assert_eq!(payload.streamer_id, "streamer-123");
         } else {
             panic!("Expected DownloadCancelled payload");
+        }
+    }
+
+    #[test]
+    fn test_download_rejected_event_mapping() {
+        let event = DownloadManagerEvent::DownloadRejected {
+            streamer_id: "streamer-123".to_string(),
+            session_id: "session-1".to_string(),
+            reason: "Circuit breaker open".to_string(),
+            retry_after_secs: Some(60),
+        };
+
+        let msg = map_event_to_protobuf(&event, &None).unwrap();
+        assert_eq!(msg.event_type, EventType::DownloadRejected as i32);
+
+        if let Some(Payload::DownloadRejected(payload)) = msg.payload {
+            assert_eq!(payload.streamer_id, "streamer-123");
+            assert_eq!(payload.session_id, "session-1");
+            assert_eq!(payload.reason, "Circuit breaker open");
+            assert_eq!(payload.retry_after_secs, 60);
+            assert!(payload.recoverable);
+        } else {
+            panic!("Expected DownloadRejected payload");
         }
     }
 

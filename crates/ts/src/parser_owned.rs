@@ -4,6 +4,7 @@ use crate::{
     pat::Pat,
     pmt::Pmt,
 };
+use bytes::{Buf, Bytes};
 use memchr::memchr;
 use std::collections::HashMap;
 
@@ -28,35 +29,35 @@ impl OwnedTsParser {
     }
 
     /// Parse TS packets from bytes and extract PAT/PMT information
-    pub fn parse_packets(&mut self, data: &[u8]) -> Result<(), TsError> {
+    pub fn parse_packets(&mut self, data: Bytes) -> Result<(), TsError> {
         let mut remaining_data = data;
 
         while !remaining_data.is_empty() {
-            let sync_offset = match memchr(0x47, remaining_data) {
+            let sync_offset = match memchr(0x47, &remaining_data) {
                 Some(offset) => offset,
                 None => break, // No more sync bytes
             };
 
-            remaining_data = &remaining_data[sync_offset..];
+            remaining_data.advance(sync_offset);
 
             if remaining_data.len() < 188 {
                 break; // Not enough data for a full packet
             }
 
             // Now remaining_data is 0x47
-            let chunk = &remaining_data[..188];
+            let chunk = remaining_data.slice(..188);
 
             match TsPacket::parse(chunk) {
                 Ok(packet) => {
                     if packet.payload_unit_start_indicator {
                         self.process_packet(&packet)?;
                     }
-                    remaining_data = &remaining_data[188..];
+                    remaining_data.advance(188);
                 }
                 Err(_) => {
                     // The packet was invalid despite the sync byte.
                     // Advance one byte to continue searching from the next position.
-                    remaining_data = &remaining_data[1..];
+                    remaining_data.advance(1);
                 }
             }
         }

@@ -45,6 +45,7 @@ const HEARTBEAT: &[u8] = &[
 ];
 
 /// Operation codes
+#[allow(dead_code)]
 mod op {
     pub const HEARTBEAT_REPLY: u32 = 3;
     pub const NOTIFICATION: u32 = 5;
@@ -292,9 +293,10 @@ impl BilibiliDanmuProtocol {
 
         // Handle DANMU_MSG variants (e.g., "DANMU_MSG:4:0:2:2:2:0")
         let cmd_base = cmd.split(':').next().unwrap_or(cmd);
+        // DANMU_MSG_MIRROR are mirror of DANMU_MSG
 
         match cmd_base {
-            "DANMU_MSG" => Self::parse_danmu_msg(&json),
+            "DANMU_MSG" | "DANMU_MSG_MIRROR" => Self::parse_danmu_msg(&json),
             "SEND_GIFT" => Self::parse_gift(&json),
             "SUPER_CHAT_MESSAGE" => Self::parse_super_chat(&json),
             _ => None,
@@ -490,14 +492,14 @@ impl DanmuProtocol for BilibiliDanmuProtocol {
                                 danmus.push(danmu);
                             }
                         }
-                        op::HEARTBEAT_REPLY => {
-                            debug!("Bilibili heartbeat reply received");
-                        }
+                        // op::HEARTBEAT_REPLY => {
+                        //     debug!("Bilibili heartbeat reply received");
+                        // }
                         op::AUTH_REPLY => {
                             debug!("Bilibili auth reply received");
                         }
                         _ => {
-                            debug!("Unknown operation: {}", packet.operation);
+                            // debug!("Unknown operation: {}", packet.operation);
                         }
                     }
                 }

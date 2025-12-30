@@ -9,6 +9,7 @@
 //! - Download throttling based on queue depth
 //! - DAG pipeline support with fan-in/fan-out
 
+mod coordination;
 mod dag_scheduler;
 mod job_queue;
 mod manager;
@@ -18,6 +19,7 @@ mod purge;
 mod throttle;
 mod worker_pool;
 
+pub use coordination::{SegmentOutput, SessionCompleteCoordinator, SessionOutputs, SourceType};
 pub use dag_scheduler::{DagCreationResult, DagScheduler};
 pub use job_queue::{
     Job, JobExecutionInfo, JobLogEntry, JobQueue, JobQueueConfig, JobResult, JobStats, JobStatus,
@@ -27,8 +29,9 @@ pub use manager::{
     PipelineCreationResult, PipelineEvent, PipelineManager, PipelineManagerConfig, PipelineStats,
 };
 pub use processors::{
-    CopyMoveConfig, CopyMoveOperation, CopyMoveProcessor, ExecuteCommandProcessor, Processor,
-    ProcessorContext, ProcessorInput, ProcessorOutput, ProcessorType, RcloneProcessor,
+    AssBurnInConfig, AssBurnInProcessor, AssMatchStrategy, CopyMoveConfig, CopyMoveOperation,
+    CopyMoveProcessor, DanmakuFactoryConfig, DanmakuFactoryProcessor, ExecuteCommandProcessor,
+    Processor, ProcessorContext, ProcessorInput, ProcessorOutput, ProcessorType, RcloneProcessor,
     RemuxProcessor, ThumbnailProcessor,
 };
 pub use progress::{JobProgressSnapshot, ProgressKind, ProgressReporter};

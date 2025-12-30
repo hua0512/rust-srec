@@ -10,7 +10,8 @@ import { Input } from '@/components/ui/input';
 import { type RcloneConfigSchema } from '../processor-schemas';
 import { z } from 'zod';
 import { ListInput } from '@/components/ui/list-input';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent } from '@/components/ui/card';
+import { CardHeaderWithIcon } from '@/components/ui/card-header-with-icon';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import {
   Select,
@@ -62,16 +63,13 @@ export function RcloneConfigForm({
       <TabsContent value="general" className="space-y-4">
         {/* Operation Selection */}
         <Card className="border-border/50 bg-muted/10 shadow-sm">
-          <CardHeader className="pb-3 border-b border-border/10 bg-muted/5">
-            <div className="flex items-center gap-2">
-              <div className="p-1.5 rounded-md bg-background/50 border border-border/20 shadow-sm">
-                <ArrowRightLeft className="h-4 w-4 text-primary" />
-              </div>
-              <CardTitle className="text-sm font-medium">
-                <Trans>Operation Mode</Trans>
-              </CardTitle>
-            </div>
-          </CardHeader>
+          <CardHeaderWithIcon
+            icon={ArrowRightLeft}
+            title={<Trans>Operation Mode</Trans>}
+            className="border-b border-border/10 bg-muted/5"
+            iconBgClassName="p-1.5 bg-background/50 border border-border/20 shadow-sm"
+            iconClassName="h-4 w-4"
+          />
           <CardContent className="grid gap-4 pt-4">
             <FormField
               control={control}
@@ -145,16 +143,13 @@ export function RcloneConfigForm({
 
         {/* Target Configuration */}
         <Card className="border-border/50 bg-muted/10 shadow-sm">
-          <CardHeader className="pb-3 border-b border-border/10 bg-muted/5">
-            <div className="flex items-center gap-2">
-              <div className="p-1.5 rounded-md bg-background/50 border border-border/20 shadow-sm">
-                <Cloud className="h-4 w-4 text-primary" />
-              </div>
-              <CardTitle className="text-sm font-medium">
-                <Trans>Target Configuration</Trans>
-              </CardTitle>
-            </div>
-          </CardHeader>
+          <CardHeaderWithIcon
+            icon={Cloud}
+            title={<Trans>Target Configuration</Trans>}
+            className="border-b border-border/10 bg-muted/5"
+            iconBgClassName="p-1.5 bg-background/50 border border-border/20 shadow-sm"
+            iconClassName="h-4 w-4"
+          />
           <CardContent className="grid gap-4 pt-4">
             <FormField
               control={control}
@@ -228,16 +223,13 @@ export function RcloneConfigForm({
       <TabsContent value="advanced" className="space-y-4">
         {/* Retry Policy */}
         <Card className="border-border/50 bg-muted/10 shadow-sm">
-          <CardHeader className="pb-3 border-b border-border/10 bg-muted/5">
-            <div className="flex items-center gap-2">
-              <div className="p-1.5 rounded-md bg-background/50 border border-border/20 shadow-sm">
-                <Settings2 className="h-4 w-4 text-primary" />
-              </div>
-              <CardTitle className="text-sm font-medium">
-                <Trans>Retry Policy</Trans>
-              </CardTitle>
-            </div>
-          </CardHeader>
+          <CardHeaderWithIcon
+            icon={Settings2}
+            title={<Trans>Retry Policy</Trans>}
+            className="border-b border-border/10 bg-muted/5"
+            iconBgClassName="p-1.5 bg-background/50 border border-border/20 shadow-sm"
+            iconClassName="h-4 w-4"
+          />
           <CardContent className="grid gap-4 pt-4">
             <FormField
               control={control}
@@ -267,16 +259,13 @@ export function RcloneConfigForm({
 
         {/* Arguments */}
         <Card className="border-border/50 bg-muted/10 shadow-sm">
-          <CardHeader className="pb-3 border-b border-border/10 bg-muted/5">
-            <div className="flex items-center gap-2">
-              <div className="p-1.5 rounded-md bg-background/50 border border-border/20 shadow-sm">
-                <Terminal className="h-4 w-4 text-primary" />
-              </div>
-              <CardTitle className="text-sm font-medium">
-                <Trans>Extra Arguments</Trans>
-              </CardTitle>
-            </div>
-          </CardHeader>
+          <CardHeaderWithIcon
+            icon={Terminal}
+            title={<Trans>Extra Arguments</Trans>}
+            className="border-b border-border/10 bg-muted/5"
+            iconBgClassName="p-1.5 bg-background/50 border border-border/20 shadow-sm"
+            iconClassName="h-4 w-4"
+          />
           <CardContent className="pt-4">
             <FormField
               control={control}

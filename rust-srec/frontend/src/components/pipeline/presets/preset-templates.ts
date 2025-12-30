@@ -75,4 +75,27 @@ export const PRESET_TEMPLATES = {
       overwrite: true,
     },
   },
+  danmaku_factory: {
+    label: msg`Danmaku to ASS`,
+    value: {
+      overwrite: true,
+      verify_output_exists: true,
+      prefer_manifest: true,
+      passthrough_inputs: true,
+      delete_source_xml_on_success: false,
+    },
+  },
+  ass_burnin: {
+    label: msg`ASS Burn-in`,
+    value: {
+      video_codec: 'libx264',
+      audio_codec: 'copy',
+      crf: 23,
+      preset: 'veryfast',
+      overwrite: true,
+      match_strategy: 'manifest',
+      require_ass: true,
+      passthrough_inputs: true,
+    },
+  },
 };

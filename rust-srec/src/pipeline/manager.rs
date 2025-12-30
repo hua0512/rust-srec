@@ -1,18 +1,25 @@
 //! Pipeline Manager implementation.
 
+use dashmap::DashMap;
 use serde::{Deserialize, Serialize};
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU8, Ordering};
 use tokio::sync::{broadcast, mpsc};
 use tokio_util::sync::CancellationToken;
 use tracing::{debug, info, warn};
 
+use super::coordination::{
+    PairedSegmentCoordinator, PairedSegmentOutputs, SessionCompleteCoordinator, SessionOutputs,
+    SourceType,
+};
+use super::dag_scheduler::DagCompletionInfo;
 use super::dag_scheduler::{DagCreationResult, DagScheduler};
 use super::job_queue::{Job, JobLogEntry, JobQueue, JobQueueConfig, QueueDepthStatus};
 use super::processors::{
-    AudioExtractProcessor, CompressionProcessor, CopyMoveProcessor, DeleteProcessor,
-    ExecuteCommandProcessor, MetadataProcessor, Processor, RcloneProcessor, RemuxProcessor,
-    ThumbnailProcessor,
+    AssBurnInProcessor, AudioExtractProcessor, CompressionProcessor, CopyMoveProcessor,
+    DanmakuFactoryProcessor, DeleteProcessor, ExecuteCommandProcessor, MetadataProcessor,
+    Processor, RcloneProcessor, RemuxProcessor, ThumbnailProcessor,
 };
 use super::progress::JobProgressSnapshot;
 use super::purge::{JobPurgeService, PurgeConfig};
@@ -21,13 +28,86 @@ use super::worker_pool::{WorkerPool, WorkerPoolConfig, WorkerType};
 use crate::Result;
 use crate::config::ConfigService;
 use crate::database::models::job::{DagPipelineDefinition, DagStep, PipelineStep};
-use crate::database::models::{JobFilters, MediaFileType, MediaOutputDbModel, Pagination};
+use crate::database::models::{
+    JobFilters, MediaFileType, MediaOutputDbModel, Pagination, TitleEntry,
+};
 use crate::database::repositories::config::{ConfigRepository, SqlxConfigRepository};
 use crate::database::repositories::streamer::{SqlxStreamerRepository, StreamerRepository};
 use crate::database::repositories::{
     DagRepository, JobPresetRepository, JobRepository, PipelinePresetRepository, SessionRepository,
 };
 use crate::downloader::DownloadManagerEvent;
+use crate::utils::filename::sanitize_filename;
+
+type BeforeRootJobsHook = Box<dyn FnOnce(&str) + Send>;
+
+#[derive(Debug, Clone)]
+struct SegmentDagContext {
+    session_id: String,
+    streamer_id: String,
+    segment_index: u32,
+    source: SourceType,
+    created_at: std::time::Instant,
+}
+
+#[derive(Debug, Clone)]
+struct SessionCompletePipelineEntry {
+    last_seen: std::time::Instant,
+    definition: DagPipelineDefinition,
+}
+
+#[derive(Debug, Clone)]
+struct PairedSegmentPipelineEntry {
+    last_seen: std::time::Instant,
+    definition: DagPipelineDefinition,
+}
+
+const SESSION_COMPLETE_TTL_SECS: u64 = 48 * 60 * 60;
+const SESSION_COMPLETE_CLEANUP_INTERVAL_SECS: u64 = 10 * 60;
+const PAIRED_SEGMENT_TTL_SECS: u64 = 6 * 60 * 60;
+
+fn parse_trailing_u32(value: &str) -> Option<u32> {
+    let bytes = value.as_bytes();
+    let end = bytes.len();
+    let mut start = end;
+
+    while start > 0 && bytes[start - 1].is_ascii_digit() {
+        start -= 1;
+    }
+
+    if start == end {
+        return None;
+    }
+
+    // Safe: the slice only spans ASCII digits, which are always valid UTF-8 boundaries.
+    value.get(start..end)?.parse::<u32>().ok()
+}
+
+fn parse_segment_index_from_segment_id(segment_id: &str) -> Option<u32> {
+    if let Some(value) = parse_trailing_u32(segment_id) {
+        return Some(value);
+    }
+
+    let stem = Path::new(segment_id)
+        .file_stem()
+        .and_then(|s| s.to_str())
+        .unwrap_or(segment_id);
+    parse_trailing_u32(stem)
+}
+
+fn parse_segment_index_from_danmu(segment_id: &str, output_path: &Path) -> Option<u32> {
+    if let Ok(idx) = segment_id.parse::<u32>() {
+        return Some(idx);
+    }
+
+    if let Some(stem) = output_path.file_stem().and_then(|s| s.to_str())
+        && let Some(idx) = parse_trailing_u32(stem)
+    {
+        return Some(idx);
+    }
+
+    parse_segment_index_from_segment_id(segment_id)
+}
 
 /// Configuration for the Pipeline Manager.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -116,6 +196,8 @@ pub struct PipelineManager<
     event_tx: broadcast::Sender<PipelineEvent>,
     /// Session repository for persistence (optional).
     session_repo: Option<Arc<dyn SessionRepository>>,
+    /// Streamer repository for metadata lookup (optional).
+    streamer_repo: Option<Arc<SR>>,
     /// Cancellation token.
     cancellation_token: CancellationToken,
     /// Throttle controller for download backpressure management.
@@ -134,6 +216,20 @@ pub struct PipelineManager<
     config_service: Option<Arc<ConfigService<CR, SR>>>,
     /// Last observed queue depth status (edge-trigger warnings).
     last_queue_status: AtomicU8,
+
+    /// Session-complete pipeline coordinator.
+    session_complete_coordinator: Arc<SessionCompleteCoordinator>,
+    /// Session -> session-complete pipeline definition (captured at runtime).
+    session_complete_pipelines: DashMap<String, SessionCompletePipelineEntry>,
+
+    /// Paired segment (video+danmu) coordinator.
+    paired_segment_coordinator: Arc<PairedSegmentCoordinator>,
+    /// Session -> paired-segment pipeline definition (captured at runtime).
+    paired_segment_pipelines: DashMap<String, PairedSegmentPipelineEntry>,
+
+    /// DAG execution -> segment context mapping (for per-segment DAG completion accounting).
+    dag_segment_contexts: DashMap<String, SegmentDagContext>,
+
     /// DAG repository for DAG pipeline persistence.
     dag_repository: Option<Arc<dyn DagRepository>>,
     /// Job repository reference (needed for DAG scheduler).
@@ -147,6 +243,47 @@ where
     CR: ConfigRepository + Send + Sync + 'static,
     SR: StreamerRepository + Send + Sync + 'static,
 {
+    /// Adjust CPU/IO worker pool concurrency at runtime.
+    ///
+    /// Notes:
+    /// - This updates the *desired* concurrency only; it cannot increase beyond each pool's
+    ///   `max_workers()` without restarting the pipeline manager.
+    pub fn set_worker_concurrency(&self, cpu_jobs: usize, io_jobs: usize) {
+        let cpu_jobs = cpu_jobs.max(1);
+        let io_jobs = io_jobs.max(1);
+
+        let cpu_max = self.cpu_pool.max_workers();
+        let io_max = self.io_pool.max_workers();
+
+        let applied_cpu = self.cpu_pool.set_desired_max_workers(cpu_jobs);
+        let applied_io = self.io_pool.set_desired_max_workers(io_jobs);
+
+        if applied_cpu != cpu_jobs {
+            tracing::warn!(
+                requested = cpu_jobs,
+                applied = applied_cpu,
+                max_workers = cpu_max,
+                "CPU worker pool concurrency was clamped; restart is required to increase max_workers"
+            );
+        }
+        if applied_io != io_jobs {
+            tracing::warn!(
+                requested = io_jobs,
+                applied = applied_io,
+                max_workers = io_max,
+                "IO worker pool concurrency was clamped; restart is required to increase max_workers"
+            );
+        }
+
+        tracing::info!(
+            cpu_requested = cpu_jobs,
+            cpu_applied = applied_cpu,
+            io_requested = io_jobs,
+            io_applied = applied_io,
+            "Updated pipeline worker pool concurrency"
+        );
+    }
+
     /// Create a new Pipeline Manager.
     pub fn new() -> Self {
         Self::with_config(PipelineManagerConfig::default())
@@ -160,6 +297,8 @@ where
         // Create default processors
         let processors: Vec<Arc<dyn Processor>> = vec![
             Arc::new(RemuxProcessor::new()),
+            Arc::new(DanmakuFactoryProcessor::new()),
+            Arc::new(AssBurnInProcessor::new()),
             Arc::new(RcloneProcessor::new()),
             Arc::new(ExecuteCommandProcessor::new()),
             Arc::new(ThumbnailProcessor::new()),
@@ -186,6 +325,7 @@ where
             processors,
             event_tx,
             session_repo: None,
+            streamer_repo: None,
             cancellation_token: CancellationToken::new(),
             throttle_controller,
             download_adjuster: None,
@@ -194,6 +334,11 @@ where
             pipeline_preset_repo: None,
             config_service: None,
             last_queue_status: AtomicU8::new(0),
+            session_complete_coordinator: Arc::new(SessionCompleteCoordinator::new()),
+            session_complete_pipelines: DashMap::new(),
+            paired_segment_coordinator: Arc::new(PairedSegmentCoordinator::new()),
+            paired_segment_pipelines: DashMap::new(),
+            dag_segment_contexts: DashMap::new(),
             dag_repository: None,
             job_repository: None,
             dag_scheduler: None,
@@ -227,6 +372,8 @@ where
         // Create default processors
         let processors: Vec<Arc<dyn Processor>> = vec![
             Arc::new(RemuxProcessor::new()),
+            Arc::new(DanmakuFactoryProcessor::new()),
+            Arc::new(AssBurnInProcessor::new()),
             Arc::new(RcloneProcessor::new()),
             Arc::new(ExecuteCommandProcessor::new()),
             Arc::new(ThumbnailProcessor::new()),
@@ -253,6 +400,7 @@ where
             processors,
             event_tx,
             session_repo: None,
+            streamer_repo: None,
             cancellation_token: CancellationToken::new(),
             throttle_controller,
             download_adjuster: None,
@@ -261,6 +409,11 @@ where
             pipeline_preset_repo: None,
             config_service: None,
             last_queue_status: AtomicU8::new(0),
+            session_complete_coordinator: Arc::new(SessionCompleteCoordinator::new()),
+            session_complete_pipelines: DashMap::new(),
+            paired_segment_coordinator: Arc::new(PairedSegmentCoordinator::new()),
+            paired_segment_pipelines: DashMap::new(),
+            dag_segment_contexts: DashMap::new(),
             dag_repository: None,
             job_repository: Some(job_repository),
             dag_scheduler: None,
@@ -275,6 +428,15 @@ where
         self.session_repo = Some(session_repository.clone());
         // Also set session repo on job queue
         self.job_queue.set_session_repo(session_repository);
+        self
+    }
+
+    /// Set the streamer repository for metadata lookup.
+    pub fn with_streamer_repository(mut self, streamer_repository: Arc<SR>) -> Self {
+        // Also set streamer repo on job queue for metadata resolution during dequeue
+        self.job_queue
+            .set_streamer_repo(streamer_repository.clone() as Arc<dyn StreamerRepository>);
+        self.streamer_repo = Some(streamer_repository);
         self
     }
 
@@ -313,11 +475,10 @@ where
 
         // Create DAG scheduler if we have both repositories
         if let Some(job_repo) = &self.job_repository {
-            self.dag_scheduler = Some(Arc::new(DagScheduler::new(
-                self.job_queue.clone(),
-                dag_repository,
-                job_repo.clone(),
-            )));
+            let scheduler =
+                DagScheduler::new(self.job_queue.clone(), dag_repository, job_repo.clone());
+
+            self.dag_scheduler = Some(Arc::new(scheduler));
         }
 
         self
@@ -371,7 +532,7 @@ where
 
     /// Start the pipeline manager.
     /// Requirements: 8.1, 8.2, 8.3
-    pub fn start(&self) {
+    pub fn start(self: Arc<Self>) {
         info!("Starting Pipeline Manager");
 
         // Get CPU and IO processors
@@ -399,16 +560,71 @@ where
             io_processors.iter().map(|p| p.name()).collect::<Vec<_>>()
         );
 
+        // Use a bounded channel for DAG completion notifications to avoid unbounded memory growth
+        // if completions outpace handling (apply backpressure instead).
+        let (dag_notify_tx, mut dag_notify_rx) = mpsc::channel::<DagCompletionInfo>(1024);
+        let manager = self.clone();
+        tokio::spawn(async move {
+            while let Some(completion) = dag_notify_rx.recv().await {
+                manager.handle_dag_completion(completion).await;
+            }
+        });
+
+        let cleanup_manager = self.clone();
+        let cleanup_token = self.cancellation_token.clone();
+        tokio::spawn(async move {
+            let interval = std::time::Duration::from_secs(SESSION_COMPLETE_CLEANUP_INTERVAL_SECS);
+            loop {
+                tokio::select! {
+                    _ = cleanup_token.cancelled() => break,
+                    _ = tokio::time::sleep(interval) => {
+                        cleanup_manager.session_complete_coordinator.cleanup_stale(SESSION_COMPLETE_TTL_SECS);
+                        cleanup_manager.paired_segment_coordinator.cleanup_stale(PAIRED_SEGMENT_TTL_SECS);
+
+                        let now = std::time::Instant::now();
+                        cleanup_manager.session_complete_pipelines.retain(|session_id, entry| {
+                            if now.duration_since(entry.last_seen).as_secs() > SESSION_COMPLETE_TTL_SECS {
+                                warn!(session_id = %session_id, "Removing stale session_complete_pipeline entry");
+                                false
+                            } else {
+                                true
+                            }
+                        });
+
+                        cleanup_manager.paired_segment_pipelines.retain(|session_id, entry| {
+                            if now.duration_since(entry.last_seen).as_secs() > PAIRED_SEGMENT_TTL_SECS {
+                                warn!(session_id = %session_id, "Removing stale paired_segment_pipeline entry");
+                                false
+                            } else {
+                                true
+                            }
+                        });
+
+                        cleanup_manager.dag_segment_contexts.retain(|dag_id, ctx| {
+                            if now.duration_since(ctx.created_at).as_secs() > SESSION_COMPLETE_TTL_SECS {
+                                warn!(dag_id = %dag_id, session_id = %ctx.session_id, "Removing stale per-segment DAG context");
+                                false
+                            } else {
+                                true
+                            }
+                        });
+                    }
+                }
+            }
+        });
+
         // Start worker pools with optional DAG scheduler
         self.cpu_pool.start_with_dag_scheduler(
             self.job_queue.clone(),
             cpu_processors,
             self.dag_scheduler.clone(),
+            Some(dag_notify_tx.clone()),
         );
         self.io_pool.start_with_dag_scheduler(
             self.job_queue.clone(),
             io_processors,
             self.dag_scheduler.clone(),
+            Some(dag_notify_tx),
         );
 
         // Start throttle controller monitoring if enabled and adjuster is set
@@ -431,6 +647,332 @@ where
         }
 
         info!("Pipeline Manager started");
+    }
+
+    async fn handle_dag_completion(&self, completion: DagCompletionInfo) {
+        if let Some(session_id) = completion.session_id.as_deref()
+            && let Some(mut entry) = self.session_complete_pipelines.get_mut(session_id)
+        {
+            entry.last_seen = std::time::Instant::now();
+        }
+        if let Some(session_id) = completion.session_id.as_deref()
+            && let Some(mut entry) = self.paired_segment_pipelines.get_mut(session_id)
+        {
+            entry.last_seen = std::time::Instant::now();
+        }
+
+        let Some((_, ctx)) = self.dag_segment_contexts.remove(&completion.dag_id) else {
+            debug!(
+                dag_id = %completion.dag_id,
+                "Ignoring DAG completion without segment context"
+            );
+            return;
+        };
+
+        if let Some(session_id) = completion.session_id.as_deref()
+            && session_id != ctx.session_id
+        {
+            warn!(
+                dag_id = %completion.dag_id,
+                completion_session_id = %session_id,
+                context_session_id = %ctx.session_id,
+                "DAG completion session_id mismatch"
+            );
+        }
+
+        if completion.succeeded {
+            let leaf_outputs: Vec<PathBuf> = completion
+                .leaf_outputs
+                .into_iter()
+                .map(PathBuf::from)
+                .collect();
+
+            let paired_enabled = self.paired_segment_pipelines.contains_key(&ctx.session_id);
+            if paired_enabled {
+                self.session_complete_coordinator.on_dag_complete(
+                    &ctx.session_id,
+                    ctx.segment_index,
+                    leaf_outputs.clone(),
+                    ctx.source,
+                );
+                let paired = match ctx.source {
+                    SourceType::Video => self.paired_segment_coordinator.on_video_ready(
+                        &ctx.session_id,
+                        &ctx.streamer_id,
+                        ctx.segment_index,
+                        leaf_outputs,
+                    ),
+                    SourceType::Danmu => self.paired_segment_coordinator.on_danmu_ready(
+                        &ctx.session_id,
+                        &ctx.streamer_id,
+                        ctx.segment_index,
+                        leaf_outputs,
+                    ),
+                };
+
+                if let Some(ready) = paired {
+                    self.try_trigger_paired_segment(ready).await;
+                }
+            } else {
+                self.session_complete_coordinator.on_dag_complete(
+                    &ctx.session_id,
+                    ctx.segment_index,
+                    leaf_outputs,
+                    ctx.source,
+                );
+            }
+        } else {
+            self.session_complete_coordinator
+                .on_dag_failed(&ctx.session_id, ctx.source);
+        }
+
+        self.try_trigger_session_complete(&ctx.session_id).await;
+    }
+
+    async fn try_trigger_session_complete(&self, session_id: &str) {
+        let Some(outputs) = self.session_complete_coordinator.try_trigger(session_id) else {
+            return;
+        };
+
+        let Some((_, pipeline_entry)) = self.session_complete_pipelines.remove(session_id) else {
+            warn!(
+                session_id = %session_id,
+                "Session became ready but no session_complete_pipeline definition was captured"
+            );
+            return;
+        };
+
+        self.run_session_complete_pipeline(outputs, pipeline_entry.definition)
+            .await;
+    }
+
+    async fn run_session_complete_pipeline(
+        &self,
+        outputs: SessionOutputs,
+        pipeline_def: DagPipelineDefinition,
+    ) {
+        #[derive(Serialize)]
+        struct SessionCompleteManifest {
+            session_id: String,
+            streamer_id: String,
+            video_inputs: Vec<String>,
+            danmu_inputs: Vec<String>,
+        }
+
+        let video_paths = outputs.get_sorted_video_outputs();
+        let danmu_paths = outputs.get_sorted_danmu_outputs();
+
+        let mut input_paths: Vec<String> = Vec::new();
+
+        if let Some(base_dir) = video_paths
+            .first()
+            .or_else(|| danmu_paths.first())
+            .and_then(|p| p.parent())
+        {
+            let manifest = SessionCompleteManifest {
+                session_id: outputs.session_id.clone(),
+                streamer_id: outputs.streamer_id.clone(),
+                video_inputs: video_paths
+                    .iter()
+                    .map(|p| p.to_string_lossy().to_string())
+                    .collect(),
+                danmu_inputs: danmu_paths
+                    .iter()
+                    .map(|p| p.to_string_lossy().to_string())
+                    .collect(),
+            };
+
+            let manifest_name = format!(
+                "session_{}_inputs.json",
+                sanitize_filename(&outputs.session_id)
+            );
+            let manifest_path = base_dir.join(manifest_name);
+
+            match serde_json::to_vec_pretty(&manifest) {
+                Ok(json) => {
+                    if let Err(e) = tokio::fs::write(&manifest_path, json).await {
+                        warn!(
+                            session_id = %outputs.session_id,
+                            path = %manifest_path.display(),
+                            error = %e,
+                            "Failed to write session input manifest (continuing without manifest)"
+                        );
+                    } else {
+                        input_paths.push(manifest_path.to_string_lossy().to_string());
+                    }
+                }
+                Err(e) => {
+                    warn!(
+                        session_id = %outputs.session_id,
+                        error = %e,
+                        "Failed to serialize session input manifest (continuing without manifest)"
+                    );
+                }
+            }
+        }
+
+        input_paths.extend(
+            video_paths
+                .into_iter()
+                .map(|p| p.to_string_lossy().to_string()),
+        );
+        input_paths.extend(
+            danmu_paths
+                .into_iter()
+                .map(|p| p.to_string_lossy().to_string()),
+        );
+
+        info!(
+            session_id = %outputs.session_id,
+            streamer_id = %outputs.streamer_id,
+            inputs = %input_paths.len(),
+            "Triggering session-complete pipeline"
+        );
+
+        if let Err(e) = self
+            .create_dag_pipeline(
+                &outputs.session_id,
+                &outputs.streamer_id,
+                input_paths,
+                pipeline_def,
+            )
+            .await
+        {
+            tracing::error!(
+                "Failed to create session-complete pipeline for session {}: {}",
+                outputs.session_id,
+                e
+            );
+        }
+    }
+
+    async fn try_trigger_paired_segment(&self, outputs: PairedSegmentOutputs) {
+        let Some(entry) = self.paired_segment_pipelines.get(&outputs.session_id) else {
+            warn!(
+                session_id = %outputs.session_id,
+                segment_index = %outputs.segment_index,
+                "Paired segment became ready but no paired_segment_pipeline definition was captured"
+            );
+            return;
+        };
+
+        let pipeline_def = entry.definition.clone();
+        drop(entry);
+
+        self.run_paired_segment_pipeline(outputs, pipeline_def)
+            .await;
+    }
+
+    async fn run_paired_segment_pipeline(
+        &self,
+        outputs: PairedSegmentOutputs,
+        pipeline_def: DagPipelineDefinition,
+    ) {
+        #[derive(Serialize)]
+        struct PairedSegmentManifest {
+            session_id: String,
+            streamer_id: String,
+            segment_index: u32,
+            video_inputs: Vec<String>,
+            danmu_inputs: Vec<String>,
+        }
+
+        let video_inputs: Vec<String> = outputs
+            .video_outputs
+            .iter()
+            .map(|p| p.to_string_lossy().to_string())
+            .collect();
+        let danmu_inputs: Vec<String> = outputs
+            .danmu_outputs
+            .iter()
+            .map(|p| p.to_string_lossy().to_string())
+            .collect();
+
+        let mut input_paths: Vec<String> = Vec::new();
+
+        if let Some(base_dir) = outputs
+            .video_outputs
+            .first()
+            .or_else(|| outputs.danmu_outputs.first())
+            .and_then(|p| p.parent())
+        {
+            let manifest = PairedSegmentManifest {
+                session_id: outputs.session_id.clone(),
+                streamer_id: outputs.streamer_id.clone(),
+                segment_index: outputs.segment_index,
+                video_inputs,
+                danmu_inputs,
+            };
+
+            let manifest_name = format!(
+                "segment_{}_{}_inputs.json",
+                sanitize_filename(&outputs.session_id),
+                outputs.segment_index
+            );
+            let manifest_path = base_dir.join(manifest_name);
+
+            match serde_json::to_vec_pretty(&manifest) {
+                Ok(json) => {
+                    if let Err(e) = tokio::fs::write(&manifest_path, json).await {
+                        warn!(
+                            session_id = %outputs.session_id,
+                            segment_index = %outputs.segment_index,
+                            path = %manifest_path.display(),
+                            error = %e,
+                            "Failed to write paired-segment input manifest (continuing without manifest)"
+                        );
+                    } else {
+                        input_paths.push(manifest_path.to_string_lossy().to_string());
+                    }
+                }
+                Err(e) => {
+                    warn!(
+                        session_id = %outputs.session_id,
+                        segment_index = %outputs.segment_index,
+                        error = %e,
+                        "Failed to serialize paired-segment input manifest (continuing without manifest)"
+                    );
+                }
+            }
+        }
+
+        input_paths.extend(
+            outputs
+                .video_outputs
+                .into_iter()
+                .map(|p| p.to_string_lossy().to_string()),
+        );
+        input_paths.extend(
+            outputs
+                .danmu_outputs
+                .into_iter()
+                .map(|p| p.to_string_lossy().to_string()),
+        );
+
+        info!(
+            session_id = %outputs.session_id,
+            streamer_id = %outputs.streamer_id,
+            segment_index = %outputs.segment_index,
+            inputs = %input_paths.len(),
+            "Triggering paired-segment pipeline"
+        );
+
+        if let Err(e) = self
+            .create_dag_pipeline(
+                &outputs.session_id,
+                &outputs.streamer_id,
+                input_paths,
+                pipeline_def,
+            )
+            .await
+        {
+            tracing::error!(
+                "Failed to create paired-segment pipeline for session {} segment {}: {}",
+                outputs.session_id,
+                outputs.segment_index,
+                e
+            );
+        }
     }
 
     /// Stop the pipeline manager.
@@ -529,6 +1071,51 @@ where
         self.enqueue(job).await
     }
 
+    /// Look up the streamer name from the repository.
+    async fn lookup_streamer_name(&self, streamer_id: &str) -> Option<String> {
+        let repo = self.streamer_repo.as_ref()?;
+
+        match repo.get_streamer(streamer_id).await {
+            Ok(streamer) => Some(streamer.name),
+            Err(e) => {
+                debug!(
+                    streamer_id = %streamer_id,
+                    error = %e,
+                    "Failed to look up streamer name"
+                );
+                None
+            }
+        }
+    }
+
+    /// Look up the session title from the repository.
+    /// Returns the most recent title from the titles JSON array.
+    async fn lookup_session_title(&self, session_id: &str) -> Option<String> {
+        let repo = self.session_repo.as_ref()?;
+
+        match repo.get_session(session_id).await {
+            Ok(session) => {
+                // Parse the titles JSON array and get the most recent title
+                if let Some(titles_json) = session.titles
+                    && let Ok(entries) = serde_json::from_str::<Vec<TitleEntry>>(&titles_json)
+                {
+                    // Return the last (most recent) title
+                    return entries.last().map(|e| e.title.clone());
+                }
+
+                None
+            }
+            Err(e) => {
+                debug!(
+                    session_id = %session_id,
+                    error = %e,
+                    "Failed to look up session title"
+                );
+                None
+            }
+        }
+    }
+
     /// Create a DAG pipeline with fan-in/fan-out support.
     ///
     /// Unlike sequential pipelines, DAG pipelines support:
@@ -543,6 +1130,24 @@ where
         streamer_id: &str,
         input_paths: Vec<String>,
         dag_definition: DagPipelineDefinition,
+    ) -> Result<DagCreationResult> {
+        self.create_dag_pipeline_internal(
+            session_id,
+            streamer_id,
+            input_paths,
+            dag_definition,
+            None,
+        )
+        .await
+    }
+
+    async fn create_dag_pipeline_internal(
+        &self,
+        session_id: &str,
+        streamer_id: &str,
+        input_paths: Vec<String>,
+        dag_definition: DagPipelineDefinition,
+        before_root_jobs: Option<BeforeRootJobsHook>,
     ) -> Result<DagCreationResult> {
         let dag_scheduler = self.dag_scheduler.as_ref().ok_or_else(|| {
             crate::Error::Validation(
@@ -560,22 +1165,32 @@ where
             dag_step.step = resolved;
         }
 
+        // Look up metadata for placeholder support
+        let streamer_name = self.lookup_streamer_name(streamer_id).await;
+        let session_title = self.lookup_session_title(session_id).await;
+
         // Delegate to DAG scheduler
         let result = dag_scheduler
-            .create_dag_pipeline(
+            .create_dag_pipeline_with_hook(
                 resolved_dag,
                 &input_paths,
                 Some(streamer_id.to_string()),
                 Some(session_id.to_string()),
+                streamer_name.clone(),
+                session_title.clone(),
+                before_root_jobs,
             )
             .await?;
 
         info!(
-            "Created DAG pipeline {} with {} steps ({} root jobs) for session {}",
+            "Created DAG pipeline {} with {} steps ({} root jobs) for session {}, streamer {}, streamer name {}, session title {}",
             result.dag_id,
             result.total_steps,
             result.root_job_ids.len(),
-            session_id
+            session_id,
+            streamer_id,
+            streamer_name.unwrap_or_default(),
+            session_title.unwrap_or_default(),
         );
 
         // Emit events for root jobs
@@ -811,55 +1426,168 @@ where
                 self.persist_segment(&session_id, &segment_path, size_bytes)
                     .await;
 
-                // Get pipeline config for this streamer (if available)
-                let pipeline_config = if let Some(config_service) = &self.config_service {
+                let merged_config = if let Some(config_service) = &self.config_service {
                     config_service
                         .get_config_for_streamer(&streamer_id)
                         .await
-                        .map(|c| c.pipeline)
                         .ok()
-                        .flatten()
                 } else {
                     None
                 };
+
+                let pipeline_config = merged_config.as_ref().and_then(|c| c.pipeline.clone());
+                let session_complete_pipeline = merged_config
+                    .as_ref()
+                    .and_then(|c| c.session_complete_pipeline.clone());
+                let paired_segment_pipeline = merged_config
+                    .as_ref()
+                    .and_then(|c| c.paired_segment_pipeline.clone());
+                let danmu_enabled = merged_config
+                    .as_ref()
+                    .map(|c| c.record_danmu)
+                    .unwrap_or(false);
+
+                if let Some(def) = &session_complete_pipeline {
+                    self.session_complete_pipelines
+                        .entry(session_id.clone())
+                        .and_modify(|e| e.last_seen = std::time::Instant::now())
+                        .or_insert_with(|| SessionCompletePipelineEntry {
+                            last_seen: std::time::Instant::now(),
+                            definition: def.clone(),
+                        });
+                    self.session_complete_coordinator.init_session(
+                        &session_id,
+                        &streamer_id,
+                        danmu_enabled,
+                    );
+                }
+
+                if danmu_enabled && let Some(def) = &paired_segment_pipeline {
+                    self.paired_segment_pipelines
+                        .entry(session_id.clone())
+                        .and_modify(|e| {
+                            e.last_seen = std::time::Instant::now();
+                            e.definition = def.clone();
+                        })
+                        .or_insert_with(|| PairedSegmentPipelineEntry {
+                            last_seen: std::time::Instant::now(),
+                            definition: def.clone(),
+                        });
+                }
 
                 // Check for thumbnail step in DAG nodes
                 // For direct DAG support, we check if any node is a thumbnail processor/workflow
                 let pipeline_has_thumbnail = if let Some(dag) = &pipeline_config {
                     dag.steps.iter().any(|node| match &node.step {
                         PipelineStep::Inline { processor, .. } => processor == "thumbnail",
-                        PipelineStep::Preset { name } => name.contains("thumbnail"),
-                        PipelineStep::Workflow { name } => name.contains("thumbnail"),
+                        // Match exact preset names or those with thumbnail_ prefix
+                        PipelineStep::Preset { name } => {
+                            name == "thumbnail"
+                                || name.starts_with("thumbnail_")
+                                || name == "thumbnail_native"
+                                || name == "thumbnail_hd"
+                        }
+                        // Match exact workflow names or those with thumbnail prefix
+                        PipelineStep::Workflow { name } => {
+                            name == "thumbnail" || name.starts_with("thumbnail_")
+                        }
                     })
                 } else {
                     false
                 };
 
+                // Check if auto_thumbnail is enabled in global settings (defaults to true)
+                let auto_thumbnail_enabled = merged_config
+                    .as_ref()
+                    .map(|c| c.auto_thumbnail)
+                    .unwrap_or(true);
+
                 // Generate automatic thumbnail for first segment only if:
                 // 1. This is the first segment (segment_index == 0)
                 // 2. User's pipeline doesn't already include a thumbnail step
-                if segment_index == 0 && !pipeline_has_thumbnail {
+                // 3. Auto thumbnail generation is enabled in global settings
+                if segment_index == 0 && !pipeline_has_thumbnail && auto_thumbnail_enabled {
                     self.maybe_create_thumbnail_job(&streamer_id, &session_id, &segment_path)
                         .await;
                 }
 
                 // Create pipeline jobs if pipeline is configured
                 if let Some(dag) = pipeline_config {
-                    if let Err(e) = self
-                        .create_dag_pipeline(&session_id, &streamer_id, vec![segment_path], dag)
+                    let tracking_session_complete = session_complete_pipeline.is_some();
+                    let tracking_paired = danmu_enabled && paired_segment_pipeline.is_some();
+                    if tracking_session_complete {
+                        self.session_complete_coordinator
+                            .on_dag_started(&session_id, SourceType::Video);
+                    }
+
+                    let before_root_jobs = if tracking_session_complete || tracking_paired {
+                        let contexts = self.dag_segment_contexts.clone();
+                        let ctx = SegmentDagContext {
+                            session_id: session_id.clone(),
+                            streamer_id: streamer_id.clone(),
+                            segment_index,
+                            source: SourceType::Video,
+                            created_at: std::time::Instant::now(),
+                        };
+                        Some(Box::new(move |dag_id: &str| {
+                            contexts.insert(dag_id.to_string(), ctx);
+                        }) as Box<dyn FnOnce(&str) + Send>)
+                    } else {
+                        None
+                    };
+
+                    match self
+                        .create_dag_pipeline_internal(
+                            &session_id,
+                            &streamer_id,
+                            vec![segment_path.clone()],
+                            dag,
+                            before_root_jobs,
+                        )
                         .await
                     {
-                        tracing::error!(
-                            "Failed to create pipeline for session {}: {}",
-                            session_id,
-                            e
-                        );
+                        Ok(DagCreationResult { .. }) => {}
+                        Err(e) => {
+                            tracing::error!(
+                                "Failed to create pipeline for session {}: {}",
+                                session_id,
+                                e
+                            );
+                            if tracking_session_complete {
+                                self.session_complete_coordinator
+                                    .on_dag_failed(&session_id, SourceType::Video);
+                            }
+                        }
                     }
                 } else {
                     debug!(
                         "No pipeline steps configured for {} (session: {}), skipping pipeline creation",
                         streamer_id, session_id
                     );
+                    if session_complete_pipeline.is_some() {
+                        self.session_complete_coordinator.on_raw_segment(
+                            &session_id,
+                            segment_index,
+                            PathBuf::from(&segment_path),
+                            SourceType::Video,
+                        );
+                    }
+
+                    if danmu_enabled
+                        && paired_segment_pipeline.is_some()
+                        && let Some(ready) = self.paired_segment_coordinator.on_video_ready(
+                            &session_id,
+                            &streamer_id,
+                            segment_index,
+                            vec![PathBuf::from(&segment_path)],
+                        )
+                    {
+                        self.try_trigger_paired_segment(ready).await;
+                    }
+                }
+
+                if session_complete_pipeline.is_some() {
+                    self.try_trigger_session_complete(&session_id).await;
                 }
             }
             DownloadManagerEvent::DownloadCompleted {
@@ -871,7 +1599,259 @@ where
                     "Download completed for streamer {} session {}",
                     streamer_id, session_id
                 );
-                // Could create post-processing jobs here
+
+                if !self.session_complete_pipelines.contains_key(&session_id)
+                    && let Some(config_service) = &self.config_service
+                    && let Ok(config) = config_service.get_config_for_streamer(&streamer_id).await
+                    && let Some(def) = config.session_complete_pipeline.clone()
+                {
+                    self.session_complete_pipelines.insert(
+                        session_id.clone(),
+                        SessionCompletePipelineEntry {
+                            last_seen: std::time::Instant::now(),
+                            definition: def,
+                        },
+                    );
+                    self.session_complete_coordinator.init_session(
+                        &session_id,
+                        &streamer_id,
+                        config.record_danmu,
+                    );
+                }
+
+                if self.session_complete_pipelines.contains_key(&session_id) {
+                    if let Some(mut entry) = self.session_complete_pipelines.get_mut(&session_id) {
+                        entry.last_seen = std::time::Instant::now();
+                    }
+                    self.session_complete_coordinator
+                        .on_video_complete(&session_id);
+                    self.try_trigger_session_complete(&session_id).await;
+                }
+            }
+            _ => {}
+        }
+    }
+
+    /// Handle danmu service events.
+    ///
+    /// Processes `DanmuEvent::SegmentCompleted` events by:
+    /// 1. Persisting the danmu segment to the database as a media output
+    /// 2. Creating pipeline jobs if a pipeline is configured for the streamer
+    pub async fn handle_danmu_event(&self, event: crate::danmu::DanmuEvent) {
+        use crate::danmu::DanmuEvent;
+
+        match event {
+            DanmuEvent::CollectionStarted {
+                session_id,
+                streamer_id,
+            } => {
+                if let Some(config_service) = &self.config_service
+                    && let Ok(config) = config_service.get_config_for_streamer(&streamer_id).await
+                {
+                    if let Some(def) = config.session_complete_pipeline.clone() {
+                        self.session_complete_pipelines
+                            .entry(session_id.clone())
+                            .and_modify(|e| {
+                                e.last_seen = std::time::Instant::now();
+                                e.definition = def.clone();
+                            })
+                            .or_insert_with(|| SessionCompletePipelineEntry {
+                                last_seen: std::time::Instant::now(),
+                                definition: def,
+                            });
+                        self.session_complete_coordinator.init_session(
+                            &session_id,
+                            &streamer_id,
+                            config.record_danmu,
+                        );
+                    }
+
+                    if config.record_danmu
+                        && let Some(def) = config.paired_segment_pipeline.clone()
+                    {
+                        self.paired_segment_pipelines
+                            .entry(session_id.clone())
+                            .and_modify(|e| {
+                                e.last_seen = std::time::Instant::now();
+                                e.definition = def.clone();
+                            })
+                            .or_insert_with(|| PairedSegmentPipelineEntry {
+                                last_seen: std::time::Instant::now(),
+                                definition: def,
+                            });
+                    }
+                }
+            }
+            DanmuEvent::CollectionStopped { session_id, .. } => {
+                if let Some(mut entry) = self.session_complete_pipelines.get_mut(&session_id) {
+                    entry.last_seen = std::time::Instant::now();
+                }
+                self.session_complete_coordinator
+                    .on_danmu_complete(&session_id);
+                self.try_trigger_session_complete(&session_id).await;
+            }
+            DanmuEvent::SegmentCompleted {
+                streamer_id,
+                session_id,
+                segment_id,
+                output_path,
+                message_count,
+            } => {
+                let segment_path = output_path.to_string_lossy().to_string();
+
+                debug!(
+                    "Danmu segment completed for {} (session: {}): {} ({} messages)",
+                    streamer_id, session_id, segment_path, message_count
+                );
+
+                // Check if the danmu file still exists before processing.
+                // The file may have been deleted if the corresponding video segment was too small.
+                if !output_path.exists() {
+                    debug!("Danmu segment file no longer exists: {}", segment_path);
+                    return;
+                }
+
+                let Some(segment_index) = parse_segment_index_from_danmu(&segment_id, &output_path)
+                else {
+                    warn!(
+                        session_id = %session_id,
+                        segment_id = %segment_id,
+                        path = %output_path.display(),
+                        "Failed to parse danmu segment_index; skipping danmu pipeline coordination for this segment"
+                    );
+                    return;
+                };
+
+                // Persist danmu segment to database as a media output
+                self.persist_danmu_segment(&session_id, &segment_path, message_count)
+                    .await;
+
+                let merged_config = if let Some(config_service) = &self.config_service {
+                    config_service
+                        .get_config_for_streamer(&streamer_id)
+                        .await
+                        .ok()
+                } else {
+                    None
+                };
+
+                let pipeline_config = merged_config.as_ref().and_then(|c| c.pipeline.clone());
+                let session_complete_pipeline = merged_config
+                    .as_ref()
+                    .and_then(|c| c.session_complete_pipeline.clone());
+                let paired_segment_pipeline = merged_config
+                    .as_ref()
+                    .and_then(|c| c.paired_segment_pipeline.clone());
+                let danmu_enabled = merged_config
+                    .as_ref()
+                    .map(|c| c.record_danmu)
+                    .unwrap_or(false);
+
+                if let Some(def) = &session_complete_pipeline {
+                    self.session_complete_pipelines
+                        .entry(session_id.clone())
+                        .and_modify(|e| e.last_seen = std::time::Instant::now())
+                        .or_insert_with(|| SessionCompletePipelineEntry {
+                            last_seen: std::time::Instant::now(),
+                            definition: def.clone(),
+                        });
+                    self.session_complete_coordinator.init_session(
+                        &session_id,
+                        &streamer_id,
+                        danmu_enabled,
+                    );
+                }
+
+                if danmu_enabled && let Some(def) = &paired_segment_pipeline {
+                    self.paired_segment_pipelines
+                        .entry(session_id.clone())
+                        .and_modify(|e| {
+                            e.last_seen = std::time::Instant::now();
+                            e.definition = def.clone();
+                        })
+                        .or_insert_with(|| PairedSegmentPipelineEntry {
+                            last_seen: std::time::Instant::now(),
+                            definition: def.clone(),
+                        });
+                }
+
+                if let Some(dag) = pipeline_config {
+                    let tracking_session_complete = session_complete_pipeline.is_some();
+                    let tracking_paired = danmu_enabled && paired_segment_pipeline.is_some();
+                    if tracking_session_complete {
+                        self.session_complete_coordinator
+                            .on_dag_started(&session_id, SourceType::Danmu);
+                    }
+
+                    let before_root_jobs = if tracking_session_complete || tracking_paired {
+                        let contexts = self.dag_segment_contexts.clone();
+                        let ctx = SegmentDagContext {
+                            session_id: session_id.clone(),
+                            streamer_id: streamer_id.clone(),
+                            segment_index,
+                            source: SourceType::Danmu,
+                            created_at: std::time::Instant::now(),
+                        };
+                        Some(Box::new(move |dag_id: &str| {
+                            contexts.insert(dag_id.to_string(), ctx);
+                        }) as Box<dyn FnOnce(&str) + Send>)
+                    } else {
+                        None
+                    };
+
+                    match self
+                        .create_dag_pipeline_internal(
+                            &session_id,
+                            &streamer_id,
+                            vec![segment_path.clone()],
+                            dag,
+                            before_root_jobs,
+                        )
+                        .await
+                    {
+                        Ok(DagCreationResult { .. }) => {}
+                        Err(e) => {
+                            tracing::error!(
+                                "Failed to create pipeline for danmu segment (session {}): {}",
+                                session_id,
+                                e
+                            );
+                            if tracking_session_complete {
+                                self.session_complete_coordinator
+                                    .on_dag_failed(&session_id, SourceType::Danmu);
+                            }
+                        }
+                    }
+                } else {
+                    debug!(
+                        "No pipeline steps configured for {} (session: {}), skipping danmu pipeline creation",
+                        streamer_id, session_id
+                    );
+                    if session_complete_pipeline.is_some() {
+                        self.session_complete_coordinator.on_raw_segment(
+                            &session_id,
+                            segment_index,
+                            output_path.clone(),
+                            SourceType::Danmu,
+                        );
+                    }
+
+                    if danmu_enabled
+                        && paired_segment_pipeline.is_some()
+                        && let Some(ready) = self.paired_segment_coordinator.on_danmu_ready(
+                            &session_id,
+                            &streamer_id,
+                            segment_index,
+                            vec![output_path.clone()],
+                        )
+                    {
+                        self.try_trigger_paired_segment(ready).await;
+                    }
+                }
+
+                if session_complete_pipeline.is_some() {
+                    self.try_trigger_session_complete(&session_id).await;
+                }
             }
             _ => {}
         }
@@ -1305,6 +2285,40 @@ where
             }
         }
     }
+
+    /// Persist a danmu segment to the database.
+    async fn persist_danmu_segment(&self, session_id: &str, path: &str, message_count: u64) {
+        if let Some(repo) = &self.session_repo {
+            // Get actual file size from disk
+            let size_bytes = match tokio::fs::metadata(path).await {
+                Ok(metadata) => metadata.len() as i64,
+                Err(e) => {
+                    tracing::warn!(
+                        "Failed to get file size for danmu segment {}: {}, using 0",
+                        path,
+                        e
+                    );
+                    0
+                }
+            };
+
+            let output =
+                MediaOutputDbModel::new(session_id, path, MediaFileType::DanmuXml, size_bytes);
+
+            if let Err(e) = repo.create_media_output(&output).await {
+                tracing::error!(
+                    "Failed to persist danmu segment for session {}: {}",
+                    session_id,
+                    e
+                );
+            } else {
+                debug!(
+                    "Persisted danmu segment for session {} ({} messages, {} bytes)",
+                    session_id, message_count, size_bytes
+                );
+            }
+        }
+    }
 }
 
 /// Comprehensive pipeline statistics.
@@ -1375,6 +2389,21 @@ mod tests {
         let manager: PipelineManager = PipelineManager::new();
         assert_eq!(manager.queue_depth(), 0);
         assert_eq!(manager.queue_status(), QueueDepthStatus::Normal);
+    }
+
+    #[test]
+    fn test_set_worker_concurrency_clamps_to_max_workers() {
+        let manager: PipelineManager = PipelineManager::new();
+
+        // Defaults are 2/4, so requests above should clamp.
+        manager.set_worker_concurrency(10, 20);
+        assert_eq!(manager.cpu_pool.desired_max_workers(), 2);
+        assert_eq!(manager.io_pool.desired_max_workers(), 4);
+
+        // Requests below max should apply.
+        manager.set_worker_concurrency(1, 3);
+        assert_eq!(manager.cpu_pool.desired_max_workers(), 1);
+        assert_eq!(manager.io_pool.desired_max_workers(), 3);
     }
 
     #[tokio::test]

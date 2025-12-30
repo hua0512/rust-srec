@@ -59,3 +59,14 @@ export const deleteSession = createServerFn({ method: 'POST' })
       method: 'DELETE',
     });
   });
+
+export const deleteSessions = createServerFn({ method: 'POST' })
+  .inputValidator((ids: string[]) => ids)
+  .handler(async ({ data: ids }) => {
+    const json = await fetchBackend('/sessions/batch-delete', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ids }),
+    });
+    return json as { deleted: number };
+  });

@@ -13,7 +13,7 @@
 use axum::{
     Json, Router,
     extract::{Path, Query, State},
-    routing::get,
+    routing::{get, post},
 };
 
 use crate::api::error::{ApiError, ApiResult};
@@ -29,9 +29,12 @@ use crate::database::models::{Pagination, SessionFilters, TitleEntry};
 ///
 /// - `GET /` - List sessions with filtering and pagination
 /// - `GET /:id` - Get a single session by ID
+/// - `DELETE /:id` - Delete a single session by ID
+/// - `POST /batch-delete` - Delete multiple sessions by IDs
 pub fn router() -> Router<AppState> {
     Router::new()
         .route("/", get(list_sessions))
+        .route("/batch-delete", post(delete_sessions_batch))
         .route("/{id}", get(get_session).delete(delete_session))
 }
 
@@ -428,6 +431,77 @@ pub async fn delete_session(
         .map_err(ApiError::from)?;
 
     Ok(())
+}
+
+/// Request body for batch session deletion.
+#[derive(Debug, Clone, serde::Deserialize, utoipa::ToSchema)]
+pub struct BatchDeleteRequest {
+    /// List of session IDs to delete
+    pub ids: Vec<String>,
+}
+
+/// Response for batch session deletion.
+#[derive(Debug, Clone, serde::Serialize, utoipa::ToSchema)]
+pub struct BatchDeleteResponse {
+    /// Number of sessions deleted
+    pub deleted: u64,
+}
+
+/// Delete multiple sessions by IDs.
+///
+/// # Endpoint
+///
+/// `POST /api/sessions/batch-delete`
+///
+/// # Request Body
+///
+/// ```json
+/// {
+///     "ids": ["session-id-1", "session-id-2", "session-id-3"]
+/// }
+/// ```
+///
+/// # Response
+///
+/// Returns the count of deleted sessions.
+///
+/// ```json
+/// {
+///     "deleted": 3
+/// }
+/// ```
+///
+/// # Errors
+///
+/// - `500 Internal Server Error` - Database error
+#[utoipa::path(
+    post,
+    path = "/api/sessions/batch-delete",
+    tag = "sessions",
+    request_body = BatchDeleteRequest,
+    responses(
+        (status = 200, description = "Sessions deleted", body = BatchDeleteResponse),
+        (status = 500, description = "Server error", body = crate::api::error::ApiErrorResponse)
+    ),
+    security(("bearer_auth" = []))
+)]
+pub async fn delete_sessions_batch(
+    State(state): State<AppState>,
+    Json(request): Json<BatchDeleteRequest>,
+) -> ApiResult<Json<BatchDeleteResponse>> {
+    // Get session repository from state
+    let session_repository = state
+        .session_repository
+        .as_ref()
+        .ok_or_else(|| ApiError::service_unavailable("Session service not available"))?;
+
+    // Delete sessions in batch
+    let deleted = session_repository
+        .delete_sessions_batch(&request.ids)
+        .await
+        .map_err(ApiError::from)?;
+
+    Ok(Json(BatchDeleteResponse { deleted }))
 }
 
 #[cfg(test)]

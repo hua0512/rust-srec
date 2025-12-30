@@ -18,15 +18,18 @@ pub struct FileCache {
     cache_dir: PathBuf,
     initialized: std::sync::Arc<std::sync::atomic::AtomicBool>,
     enabled: bool,
+    /// Maximum disk cache size in bytes (0 = unlimited)
+    max_size: u64,
 }
 
 impl FileCache {
-    /// Create a new file cache with the specified directory
-    pub fn new(cache_dir: PathBuf, enabled: bool) -> Self {
+    /// Create a new file cache with the specified directory and size limit
+    pub fn new(cache_dir: PathBuf, enabled: bool, max_size: u64) -> Self {
         Self {
             cache_dir,
             initialized: std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false)),
             enabled,
+            max_size,
         }
     }
 
@@ -351,8 +354,135 @@ impl CacheProvider for FileCache {
     }
 
     async fn sweep(&self) -> CacheResult<()> {
-        // This is a no-op for file cache
-        // File cache doesn't need to sweep as it uses file system for expiration
+        if !self.enabled {
+            return Ok(());
+        }
+
+        // No limit configured, nothing to sweep
+        if self.max_size == 0 {
+            return Ok(());
+        }
+
+        self.ensure_initialized().await?;
+
+        // Collect all cached entries with their metadata
+        let mut entries: Vec<(PathBuf, PathBuf, u64, u64)> = Vec::new(); // (data_path, meta_path, size, cached_at)
+        let mut total_size: u64 = 0;
+
+        // Scan all subdirectories for cache entries
+        let mut dir_entries = match fs::read_dir(&self.cache_dir).await {
+            Ok(entries) => entries,
+            Err(e) => {
+                warn!(dir = ?self.cache_dir, error = %e, "Failed to read cache directory for sweep");
+                return Ok(());
+            }
+        };
+
+        while let Ok(Some(subdir_entry)) = dir_entries.next_entry().await {
+            let subdir_path = subdir_entry.path();
+            if !subdir_path.is_dir() {
+                continue;
+            }
+
+            let mut subdir_entries = match fs::read_dir(&subdir_path).await {
+                Ok(entries) => entries,
+                Err(_) => continue,
+            };
+
+            while let Ok(Some(entry)) = subdir_entries.next_entry().await {
+                let path = entry.path();
+
+                // Skip metadata files (we'll handle them with their data files)
+                if path.extension().is_some_and(|ext| ext == "meta") {
+                    continue;
+                }
+
+                // Skip temp files
+                if path.extension().is_some_and(|ext| ext == "tmp") {
+                    continue;
+                }
+
+                let meta_path = path.with_extension("meta");
+
+                // Get file size
+                let file_size = match fs::metadata(&path).await {
+                    Ok(m) => m.len(),
+                    Err(_) => continue,
+                };
+
+                let meta_size = match fs::metadata(&meta_path).await {
+                    Ok(m) => m.len(),
+                    Err(_) => continue, // Skip entries without valid metadata
+                };
+
+                // Read metadata to get cached_at timestamp
+                let metadata_bytes = match fs::read(&meta_path).await {
+                    Ok(bytes) => bytes,
+                    Err(_) => continue,
+                };
+
+                let metadata: CacheMetadata = match serde_json::from_slice(&metadata_bytes) {
+                    Ok(m) => m,
+                    Err(_) => continue, // Skip entries with invalid metadata
+                };
+
+                let entry_size = file_size + meta_size;
+                total_size += entry_size;
+                entries.push((path, meta_path, entry_size, metadata.cached_at));
+            }
+        }
+
+        // Check if we're over the limit
+        if total_size <= self.max_size {
+            debug!(
+                total_size = total_size,
+                max_size = self.max_size,
+                "Disk cache within limits, no eviction needed"
+            );
+            return Ok(());
+        }
+
+        // Sort by cached_at (oldest first) for LRU eviction
+        entries.sort_by_key(|(_, _, _, cached_at)| *cached_at);
+
+        // Target 80% of max_size to avoid constant eviction cycles
+        let target_size = (self.max_size as f64 * 0.8) as u64;
+        let mut evicted_count = 0;
+        let mut evicted_size: u64 = 0;
+
+        for (data_path, meta_path, entry_size, _) in entries {
+            if total_size <= target_size {
+                break;
+            }
+
+            // Remove both data and metadata files
+            if let Err(e) = fs::remove_file(&data_path).await
+                && e.kind() != io::ErrorKind::NotFound
+            {
+                warn!(path = ?data_path, error = %e, "Failed to remove cache data file during sweep");
+            }
+
+            if let Err(e) = fs::remove_file(&meta_path).await
+                && e.kind() != io::ErrorKind::NotFound
+            {
+                warn!(path = ?meta_path, error = %e, "Failed to remove cache metadata file during sweep");
+            }
+
+            total_size = total_size.saturating_sub(entry_size);
+            evicted_size += entry_size;
+            evicted_count += 1;
+        }
+
+        if evicted_count > 0 {
+            debug!(
+                evicted_count = evicted_count,
+                evicted_size = evicted_size,
+                remaining_size = total_size,
+                max_size = self.max_size,
+                "Evicted old cache entries to enforce disk limit"
+            );
+        }
+
         Ok(())
     }
 }

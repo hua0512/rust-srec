@@ -24,7 +24,9 @@ export function TagInput({
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
     if (e.key === 'Enter' || e.key === ',') {
+      // Always prevent default to avoid form submission or comma insertion
       e.preventDefault();
+      e.stopPropagation();
       const newTag = inputValue.trim();
       if (newTag && !value.includes(newTag)) {
         onChange([...value, newTag]);

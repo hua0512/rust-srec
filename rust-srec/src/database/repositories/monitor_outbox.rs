@@ -58,7 +58,7 @@ impl MonitorOutboxOps {
     pub async fn fetch_undelivered(pool: &SqlitePool, limit: i32) -> Result<Vec<OutboxEntry>> {
         let rows = sqlx::query(
             r#"
-            SELECT id, payload
+            SELECT id, payload, created_at, attempts
             FROM monitor_event_outbox
             WHERE delivered_at IS NULL
             ORDER BY id
@@ -74,6 +74,8 @@ impl MonitorOutboxOps {
             .map(|row| OutboxEntry {
                 id: row.get("id"),
                 payload: row.get("payload"),
+                created_at: row.get("created_at"),
+                attempts: row.get("attempts"),
             })
             .collect();
 
@@ -95,6 +97,25 @@ impl MonitorOutboxOps {
         Ok(())
     }
 
+    /// Permanently delete delivered rows older than a cutoff.
+    ///
+    /// This prevents unbounded growth of the outbox table. The outbox is not intended
+    /// as an audit log: delivered entries are safe to delete.
+    pub async fn prune_delivered_before(pool: &SqlitePool, cutoff_rfc3339: &str) -> Result<u64> {
+        let result = sqlx::query(
+            r#"
+            DELETE FROM monitor_event_outbox
+            WHERE delivered_at IS NOT NULL
+              AND delivered_at < ?
+            "#,
+        )
+        .bind(cutoff_rfc3339)
+        .execute(pool)
+        .await?;
+
+        Ok(result.rows_affected())
+    }
+
     /// Record a delivery failure.
     pub async fn record_failure(pool: &SqlitePool, id: i64, error: &str) -> Result<()> {
         sqlx::query(
@@ -113,6 +134,8 @@ impl MonitorOutboxOps {
 pub struct OutboxEntry {
     pub id: i64,
     pub payload: String,
+    pub created_at: String,
+    pub attempts: i64,
 }
 
 #[cfg(test)]
@@ -203,5 +226,68 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(entries.len(), 0);
+    }
+
+    #[tokio::test]
+    async fn test_prune_delivered_before() {
+        let pool = setup_test_db().await;
+
+        // Undelivered row should never be pruned
+        sqlx::query(
+            "INSERT INTO monitor_event_outbox (streamer_id, event_type, payload, created_at) VALUES (?, ?, ?, ?)",
+        )
+        .bind("s1")
+        .bind("StateChanged")
+        .bind("{}")
+        .bind(chrono::Utc::now().to_rfc3339())
+        .execute(&pool)
+        .await
+        .unwrap();
+
+        // Delivered row older than cutoff should be pruned
+        let old_delivered = (chrono::Utc::now() - chrono::Duration::days(2)).to_rfc3339();
+        sqlx::query(
+            "INSERT INTO monitor_event_outbox (streamer_id, event_type, payload, created_at, delivered_at) VALUES (?, ?, ?, ?, ?)",
+        )
+        .bind("s2")
+        .bind("StateChanged")
+        .bind("{}")
+        .bind(chrono::Utc::now().to_rfc3339())
+        .bind(old_delivered)
+        .execute(&pool)
+        .await
+        .unwrap();
+
+        // Delivered row newer than cutoff should remain
+        let new_delivered = (chrono::Utc::now() - chrono::Duration::minutes(5)).to_rfc3339();
+        sqlx::query(
+            "INSERT INTO monitor_event_outbox (streamer_id, event_type, payload, created_at, delivered_at) VALUES (?, ?, ?, ?, ?)",
+        )
+        .bind("s3")
+        .bind("StateChanged")
+        .bind("{}")
+        .bind(chrono::Utc::now().to_rfc3339())
+        .bind(new_delivered)
+        .execute(&pool)
+        .await
+        .unwrap();
+
+        let cutoff = (chrono::Utc::now() - chrono::Duration::hours(24)).to_rfc3339();
+        let deleted = MonitorOutboxOps::prune_delivered_before(&pool, &cutoff)
+            .await
+            .unwrap();
+        assert_eq!(deleted, 1);
+
+        // Verify 2 rows still exist in total: 1 undelivered + 1 newer delivered
+        let (count,): (i64,) = sqlx::query_as("SELECT COUNT(*) FROM monitor_event_outbox")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+        assert_eq!(count, 2);
+
+        let undelivered = MonitorOutboxOps::fetch_undelivered(&pool, 10)
+            .await
+            .unwrap();
+        assert_eq!(undelivered.len(), 1);
     }
 }

@@ -126,14 +126,17 @@ impl StreamerState {
             // From TemporalDisabled - can recover
             (TemporalDisabled, NotLive | InspectingLive | Cancelled) => true,
 
+            // From Disabled - can be re-enabled
+            (Disabled, NotLive) => true,
+
             // FatalError can transition to TemporalDisabled
             (FatalError, TemporalDisabled) => true,
 
             // Cancelled can only go to NotLive
             (Cancelled, NotLive) => true,
 
-            // Any state can be cancelled
-            (_, Cancelled) => true,
+            // Any state can be cancelled or disabled
+            (_, Cancelled | Disabled) => true,
 
             _ => false,
         }

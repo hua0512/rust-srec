@@ -4,27 +4,24 @@ on:
   pull_request:
     branches: [main]
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
 env:
   CARGO_TERM_COLOR: always
-  PROTOC_VERSION: "33.2"
 
 jobs:
-  check-and-clippy:
-    name: Check and Clippy
+  clippy:
+    name: Clippy
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: clippy
-      - name: Install protoc (Linux)
-        run: |
-          curl -LO https://github.com/protocolbuffers/protobuf/releases/download/v${{ env.PROTOC_VERSION }}/protoc-${{ env.PROTOC_VERSION }}-linux-x86_64.zip
-          unzip protoc-${{ env.PROTOC_VERSION }}-linux-x86_64.zip -d $HOME/.local
-          echo "$HOME/.local/bin" >> $GITHUB_PATH
+      - uses: ./.github/actions/setup-protoc
       - uses: Swatinem/rust-cache@v2
-      - name: Check
-        run: cargo check --workspace
       - name: Clippy check
         run: cargo clippy --all-targets --all-features -- -D warnings
 
@@ -34,32 +31,15 @@ jobs:
       matrix:
         include:
           - os: ubuntu-latest
-            protoc_arch: linux-x86_64
           - os: ubuntu-22.04-arm
-            protoc_arch: linux-aarch_64
           - os: windows-latest
-            protoc_arch: win64
           - os: macos-15-intel
-            protoc_arch: osx-x86_64
           - os: macos-latest
-            protoc_arch: osx-aarch_64
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v6
       - uses: dtolnay/rust-toolchain@stable
-      - name: Install protoc (Unix)
-        if: runner.os != 'Windows'
-        run: |
-          curl -LO https://github.com/protocolbuffers/protobuf/releases/download/v${{ env.PROTOC_VERSION }}/protoc-${{ env.PROTOC_VERSION }}-${{ matrix.protoc_arch }}.zip
-          unzip protoc-${{ env.PROTOC_VERSION }}-${{ matrix.protoc_arch }}.zip -d $HOME/.local
-          echo "$HOME/.local/bin" >> $GITHUB_PATH
-      - name: Install protoc (Windows)
-        if: runner.os == 'Windows'
-        shell: pwsh
-        run: |
-          Invoke-WebRequest -Uri "https://github.com/protocolbuffers/protobuf/releases/download/v${{ env.PROTOC_VERSION }}/protoc-${{ env.PROTOC_VERSION }}-${{ matrix.protoc_arch }}.zip" -OutFile protoc.zip
-          Expand-Archive -Path protoc.zip -DestinationPath "$env:USERPROFILE\.local"
-          echo "$env:USERPROFILE\.local\bin" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+      - uses: ./.github/actions/setup-protoc
       - uses: Swatinem/rust-cache@v2
       - name: Run tests
         run: cargo test --workspace

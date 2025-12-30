@@ -6,6 +6,8 @@ export interface FormatOptions {
   decimals?: number;
   /** Compact format: "1.5h" instead of "1h 30m" (default: false) */
   compact?: boolean;
+  /** Always show seconds even for long durations (default: false) */
+  showSeconds?: boolean;
   /** Value to display for null/undefined/zero (default varies by function) */
   nullValue?: string;
 }
@@ -44,7 +46,12 @@ export function formatDuration(
   seconds: number | null | undefined,
   options: FormatOptions = {},
 ): string {
-  const { compact = false, nullValue = '-', decimals = 1 } = options;
+  const {
+    compact = false,
+    nullValue = '-',
+    decimals = 1,
+    showSeconds = false,
+  } = options;
 
   if (seconds == null || seconds === 0) return nullValue;
 
@@ -75,8 +82,8 @@ export function formatDuration(
   if (days > 0) parts.push(`${days}d`);
   if (hours > 0) parts.push(`${hours}h`);
   if (mins > 0) parts.push(`${mins}m`);
-  // Only show seconds if less than 1 hour total
-  if (seconds < 3600 && secs > 0) parts.push(`${secs}s`);
+  // Show seconds if less than 1 hour total OR if showSeconds is enabled
+  if ((seconds < 3600 || showSeconds) && secs > 0) parts.push(`${secs}s`);
 
   return parts.join(' ') || nullValue;
 }

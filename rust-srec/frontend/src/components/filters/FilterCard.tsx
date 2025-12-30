@@ -2,7 +2,7 @@ import {
   FilterSchema,
   TimeBasedFilterConfigSchema,
   KeywordFilterConfigSchema,
-  CategoryFilterConfigSchema,
+  // CategoryFilterConfigSchema,
   CronFilterConfigSchema,
   RegexFilterConfigSchema,
 } from '../../api/schemas';
@@ -10,8 +10,8 @@ import { z } from 'zod';
 import { Card, CardContent, CardHeader } from '../ui/card';
 import { Badge } from '../ui/badge';
 import { Button } from '../ui/button';
-import { Edit, Trash2, Clock, Tag, Folder, Calendar } from 'lucide-react';
-import { Trans } from '@lingui/macro';
+import { Edit, Trash2, Clock, Tag, Calendar } from 'lucide-react';
+import { Trans } from '@lingui/react/macro';
 
 type Filter = z.infer<typeof FilterSchema>;
 
@@ -125,6 +125,7 @@ export function FilterCard({ filter, onEdit, onDelete }: FilterCardProps) {
           </div>
         );
       }
+      /*
       case 'CATEGORY': {
         const config = CategoryFilterConfigSchema.safeParse(filter.config);
         if (!config.success)
@@ -167,6 +168,7 @@ export function FilterCard({ filter, onEdit, onDelete }: FilterCardProps) {
           </div>
         );
       }
+      */
       case 'CRON': {
         const config = CronFilterConfigSchema.safeParse(filter.config);
         if (!config.success)
@@ -238,8 +240,10 @@ export function FilterCard({ filter, onEdit, onDelete }: FilterCardProps) {
         return <Clock className="w-3.5 h-3.5" />;
       case 'KEYWORD':
         return <Tag className="w-3.5 h-3.5" />;
+      /*
       case 'CATEGORY':
         return <Folder className="w-3.5 h-3.5" />;
+      */
       case 'CRON':
         return <Calendar className="w-3.5 h-3.5" />;
       case 'REGEX':

@@ -45,6 +45,63 @@ pub(crate) struct DouyinPcData<'a> {
     pub cover: Option<DouyinCover<'a>>,
     #[serde(borrow)]
     pub stream_url: Option<DouyinStreamUrl<'a>>,
+    /// Scene type information, contains is_union_live_room flag
+    pub scene_type_info: Option<SceneTypeInfo>,
+    /// Toolbar data, contains entrance list with interactive game info
+    #[serde(borrow)]
+    pub toolbar_data: Option<ToolbarData<'a>>,
+}
+
+impl DouyinPcData<'_> {
+    /// Detects if this is an interactive game stream (互动玩法).
+    ///
+    /// Interactive game streams are identified by:
+    /// 1. `scene_type_info.is_union_live_room` = false
+    /// 2. `toolbar_data.entrance_list` contains an entry with text "互动玩法"
+    pub fn is_interactive_game_stream(&self) -> bool {
+        let is_not_union_room = self
+            .scene_type_info
+            .as_ref()
+            .map(|scene| !scene.is_union_live_room)
+            .unwrap_or(false);
+
+        if !is_not_union_room {
+            return false;
+        }
+
+        // Check if toolbar has "互动玩法" entry
+        self.toolbar_data
+            .as_ref()
+            .map(|toolbar| {
+                toolbar
+                    .entrance_list
+                    .iter()
+                    .any(|entry| entry.text == "互动玩法")
+            })
+            .unwrap_or(false)
+    }
+}
+
+/// Scene type information for the live room
+#[derive(Deserialize, Debug)]
+pub(crate) struct SceneTypeInfo {
+    /// Whether this is a union live room (true for normal streams, false for interactive games)
+    #[serde(default)]
+    pub is_union_live_room: bool,
+}
+
+/// Toolbar data containing entrance list
+#[derive(Deserialize, Debug)]
+pub(crate) struct ToolbarData<'a> {
+    #[serde(borrow, default)]
+    pub entrance_list: Vec<ToolbarEntrance<'a>>,
+}
+
+/// Individual toolbar entrance item
+#[derive(Deserialize, Debug)]
+pub(crate) struct ToolbarEntrance<'a> {
+    #[serde(borrow, default)]
+    pub text: &'a str,
 }
 
 #[derive(Deserialize, Debug)]
@@ -71,6 +128,22 @@ pub(crate) struct DouyinUserInfo<'a> {
     pub nickname: String,
     #[serde(borrow)]
     pub avatar_thumb: DouyinAvatarThumb<'a>,
+}
+
+impl DouyinUserInfo<'_> {
+    /// Checks if this account has been cancelled/deactivated.
+    ///
+    /// Cancelled accounts are identified by:
+    /// 1. Nickname being "账号已注销" (Account Cancelled)
+    /// 2. Avatar containing the default avatar image
+    pub fn is_cancelled(&self) -> bool {
+        self.nickname == "账号已注销"
+            && self
+                .avatar_thumb
+                .url_list
+                .iter()
+                .any(|url| url.contains("aweme_default_avatar.png"))
+    }
 }
 
 #[derive(Deserialize, Debug)]
@@ -399,6 +472,27 @@ pub(crate) struct DouyinStreamMain<'a> {
     pub sdk_params: &'a str,
     #[serde(rename = "enableEncryption")]
     pub enable_encryption: bool,
+}
+
+/// Normalizes codec names to standard format.
+///
+/// Converts Douyin-specific codec identifiers to standard names:
+/// - "264" → "avc"
+/// - "265" → "hevc"
+pub(crate) fn normalize_codec(codec: &str) -> String {
+    match codec {
+        "264" => "avc".to_string(),
+        "265" => "hevc".to_string(),
+        _ => codec.to_string(),
+    }
+}
+
+/// Normalizes bitrate from bps to kbps.
+pub(crate) fn normalize_bitrate(bitrate: u32) -> u32 {
+    match bitrate {
+        0 => 0,
+        _ => bitrate / 1000,
+    }
 }
 
 #[cfg(test)]

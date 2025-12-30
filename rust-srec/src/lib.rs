@@ -4,6 +4,7 @@
 
 pub mod api;
 pub mod config;
+pub mod credentials;
 pub mod danmu;
 pub mod database;
 pub mod domain;

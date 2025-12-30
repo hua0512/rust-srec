@@ -7,6 +7,8 @@
 use serde::{Deserialize, Serialize};
 use sqlx::FromRow;
 
+use crate::utils::json::{self, JsonContext};
+
 use super::job::{DagExecutionStatus, DagPipelineDefinition, DagStepStatus};
 
 // ============================================================================
@@ -51,12 +53,20 @@ impl DagExecutionDbModel {
         session_id: Option<String>,
     ) -> Self {
         let now = chrono::Utc::now().to_rfc3339();
+        let id = uuid::Uuid::new_v4().to_string();
         let total_steps = dag_definition.steps.len() as i32;
 
         Self {
-            id: uuid::Uuid::new_v4().to_string(),
-            dag_definition: serde_json::to_string(dag_definition)
-                .unwrap_or_else(|_| "{}".to_string()),
+            id: id.clone(),
+            dag_definition: json::to_string_or_fallback(
+                dag_definition,
+                "{}",
+                JsonContext::DagExecutionField {
+                    dag_execution_id: &id,
+                    field: "dag_definition",
+                },
+                "Failed to serialize dag_definition; storing empty object",
+            ),
             status: DagExecutionStatus::Processing.as_str().to_string(),
             streamer_id,
             session_id,
@@ -72,7 +82,14 @@ impl DagExecutionDbModel {
 
     /// Get the DAG pipeline definition.
     pub fn get_dag_definition(&self) -> Option<DagPipelineDefinition> {
-        serde_json::from_str(&self.dag_definition).ok()
+        json::parse_optional(
+            Some(self.dag_definition.as_str()),
+            JsonContext::DagExecutionField {
+                dag_execution_id: &self.id,
+                field: "dag_definition",
+            },
+            "Invalid dag_definition JSON",
+        )
     }
 
     /// Get the execution status as an enum.
@@ -168,9 +185,10 @@ impl DagStepExecutionDbModel {
     pub fn new(dag_id: &str, step_id: &str, depends_on: &[String]) -> Self {
         let now = chrono::Utc::now().to_rfc3339();
         let is_root = depends_on.is_empty();
+        let id = uuid::Uuid::new_v4().to_string();
 
         Self {
-            id: uuid::Uuid::new_v4().to_string(),
+            id: id.clone(),
             dag_id: dag_id.to_string(),
             step_id: step_id.to_string(),
             job_id: None,
@@ -179,8 +197,17 @@ impl DagStepExecutionDbModel {
             } else {
                 DagStepStatus::Blocked.as_str().to_string()
             },
-            depends_on_step_ids: serde_json::to_string(depends_on)
-                .unwrap_or_else(|_| "[]".to_string()),
+            depends_on_step_ids: json::to_string_or_fallback(
+                depends_on,
+                "[]",
+                JsonContext::DagStepExecutionField {
+                    dag_step_execution_id: &id,
+                    dag_execution_id: dag_id,
+                    step_id,
+                    field: "depends_on_step_ids",
+                },
+                "Failed to serialize depends_on_step_ids; storing empty list",
+            ),
             outputs: None,
             created_at: now.clone(),
             updated_at: now,
@@ -194,20 +221,49 @@ impl DagStepExecutionDbModel {
 
     /// Get the dependency step IDs.
     pub fn get_depends_on(&self) -> Vec<String> {
-        serde_json::from_str(&self.depends_on_step_ids).unwrap_or_default()
+        json::parse_or_default(
+            self.depends_on_step_ids.as_str(),
+            JsonContext::DagStepExecutionField {
+                dag_step_execution_id: &self.id,
+                dag_execution_id: &self.dag_id,
+                step_id: &self.step_id,
+                field: "depends_on_step_ids",
+            },
+            "Invalid depends_on_step_ids JSON; treating as empty",
+        )
     }
 
     /// Get the output paths.
     pub fn get_outputs(&self) -> Vec<String> {
-        self.outputs
-            .as_ref()
-            .and_then(|s| serde_json::from_str(s).ok())
-            .unwrap_or_default()
+        let Some(raw) = self.outputs.as_deref() else {
+            return Vec::new();
+        };
+
+        json::parse_or_default(
+            raw,
+            JsonContext::DagStepExecutionField {
+                dag_step_execution_id: &self.id,
+                dag_execution_id: &self.dag_id,
+                step_id: &self.step_id,
+                field: "outputs",
+            },
+            "Invalid outputs JSON; treating as empty",
+        )
     }
 
     /// Set the output paths.
     pub fn set_outputs(&mut self, outputs: &[String]) {
-        self.outputs = Some(serde_json::to_string(outputs).unwrap_or_else(|_| "[]".to_string()));
+        self.outputs = Some(json::to_string_or_fallback(
+            outputs,
+            "[]",
+            JsonContext::DagStepExecutionField {
+                dag_step_execution_id: &self.id,
+                dag_execution_id: &self.dag_id,
+                step_id: &self.step_id,
+                field: "outputs",
+            },
+            "Failed to serialize outputs; storing empty list",
+        ));
         self.updated_at = chrono::Utc::now().to_rfc3339();
     }
 

@@ -7,26 +7,39 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use dashmap::DashMap;
+use futures::StreamExt;
 use sqlx::SqlitePool;
-use tokio::sync::Notify;
 use tokio::sync::OnceCell;
+use tokio::sync::{Notify, mpsc};
 use tokio_util::sync::CancellationToken;
+use tokio_util::time::DelayQueue;
 use tracing::{debug, info, warn};
 
-use crate::Result;
+use crate::credentials::CredentialRefreshService;
 use crate::database::ImmediateTransaction;
 use crate::database::repositories::{
-    FilterRepository, MonitorOutboxOps, MonitorOutboxTxOps, SessionRepository, SessionTxOps,
-    StreamerRepository, StreamerTxOps,
+    ConfigRepository, FilterRepository, MonitorOutboxOps, MonitorOutboxTxOps, SessionRepository,
+    SessionTxOps, StreamerRepository, StreamerTxOps,
 };
 use crate::domain::StreamerState;
 use crate::domain::filter::Filter;
 use crate::streamer::{StreamerManager, StreamerMetadata};
+use crate::{Error, Result};
 
 use super::batch_detector::{BatchDetector, BatchResult};
 use super::detector::{FilterReason, LiveStatus, StreamDetector};
 use super::events::{FatalErrorType, MonitorEvent, MonitorEventBroadcaster};
 use super::rate_limiter::{RateLimiterConfig, RateLimiterManager};
+
+/// Hard upper bound for a single streamer status check to avoid indefinitely-stuck in-flight
+/// deduplication entries when upstream requests hang.
+const STREAM_CHECK_HARD_TIMEOUT: Duration = Duration::from_secs(300);
+
+/// In-flight deduplication window for per-streamer status checks.
+///
+/// This is a performance optimization only. If cleanup is delayed, the effect is limited
+/// to temporarily reusing the most recent result for the same streamer.
+const IN_FLIGHT_DEDUP_WINDOW: Duration = Duration::from_millis(100);
 
 /// Configuration for the stream monitor.
 #[derive(Debug, Clone)]
@@ -46,7 +59,7 @@ impl Default for StreamMonitorConfig {
         Self {
             default_rate_limit: 1.0,
             platform_rate_limits: vec![("twitch".to_string(), 2.0), ("youtube".to_string(), 1.0)],
-            request_timeout: Duration::from_secs(0),
+            request_timeout: Duration::ZERO,
             max_concurrent_requests: 10,
         }
     }
@@ -57,7 +70,7 @@ pub struct StreamMonitor<
     SR: StreamerRepository + Send + Sync + 'static,
     FR: FilterRepository + Send + Sync + 'static,
     SSR: SessionRepository + Send + Sync + 'static,
-    CR: crate::database::repositories::ConfigRepository + Send + Sync + 'static,
+    CR: ConfigRepository + Send + Sync + 'static,
 > {
     /// Streamer manager for state updates.
     streamer_manager: Arc<StreamerManager<SR>>,
@@ -76,17 +89,21 @@ pub struct StreamMonitor<
     rate_limiter: RateLimiterManager,
     /// In-flight request deduplication.
     in_flight: Arc<DashMap<String, Arc<OnceCell<LiveStatus>>>>,
+    /// Sender for in-flight cleanup requests (single worker processes these).
+    cleanup_tx: mpsc::Sender<String>,
     /// Event broadcaster for notifications.
     event_broadcaster: MonitorEventBroadcaster,
     /// Database pool for transactional updates + outbox.
     pool: SqlitePool,
     /// Notifies the outbox publisher that new events are available.
     outbox_notify: Arc<Notify>,
-    /// Cancellation token for the outbox publisher task.
-    outbox_cancellation: CancellationToken,
+    /// Cancellation token for background tasks (outbox publisher and cleanup worker).
+    cancellation: CancellationToken,
     /// Configuration.
     #[allow(dead_code)]
     config: StreamMonitorConfig,
+    /// Optional credential refresh service for automatic cookie refresh.
+    credential_service: Option<Arc<CredentialRefreshService<CR>>>,
 }
 
 /// Details for a streamer going live.
@@ -104,7 +121,7 @@ impl<
     SR: StreamerRepository + Send + Sync + 'static,
     FR: FilterRepository + Send + Sync + 'static,
     SSR: SessionRepository + Send + Sync + 'static,
-    CR: crate::database::repositories::ConfigRepository + Send + Sync + 'static,
+    CR: ConfigRepository + Send + Sync + 'static,
 > StreamMonitor<SR, FR, SSR, CR>
 {
     /// Create a new stream monitor.
@@ -135,17 +152,32 @@ impl<
         config: StreamMonitorConfig,
     ) -> Self {
         // Create rate limiter with platform-specific configs
-        let mut rate_limiter =
-            RateLimiterManager::with_config(RateLimiterConfig::with_rps(config.default_rate_limit));
+        let default_rate_config = RateLimiterConfig::with_rps(config.default_rate_limit)
+            .unwrap_or_else(|e| {
+                warn!(
+                    "Invalid default rate limit {}: {}. Falling back to defaults.",
+                    config.default_rate_limit, e
+                );
+                RateLimiterConfig::default()
+            });
+        let mut rate_limiter = RateLimiterManager::with_config(default_rate_config);
 
         for (platform, rps) in &config.platform_rate_limits {
-            rate_limiter.set_platform_config(platform, RateLimiterConfig::with_rps(*rps));
+            match RateLimiterConfig::with_rps(*rps) {
+                Ok(cfg) => rate_limiter.set_platform_config(platform, cfg),
+                Err(e) => {
+                    warn!(
+                        "Invalid rate limit for platform {} ({}): {}. Skipping override.",
+                        platform, rps, e
+                    );
+                }
+            }
         }
 
         // Create HTTP client
         let mut client_builder = platforms_parser::extractor::create_client_builder(None);
 
-        if config.request_timeout > Duration::from_secs(0) {
+        if config.request_timeout > Duration::ZERO {
             client_builder = client_builder.timeout(config.request_timeout);
         }
 
@@ -153,15 +185,24 @@ impl<
             client_builder = client_builder.pool_max_idle_per_host(config.max_concurrent_requests);
         }
 
-        let client = client_builder
-            .build()
-            .expect("Failed to create HTTP client");
+        let client = client_builder.build().unwrap_or_else(|error| {
+            warn!(
+                "Failed to create HTTP client via platforms-parser: {}. Falling back to reqwest defaults.",
+                error
+            );
+            reqwest::Client::new()
+        });
 
         let detector = Arc::new(StreamDetector::with_client(client.clone()));
         let batch_detector = BatchDetector::with_client(client, rate_limiter.clone());
 
         let outbox_notify = Arc::new(Notify::new());
-        let outbox_cancellation = CancellationToken::new();
+        let cancellation = CancellationToken::new();
+
+        // Create bounded channel for cleanup requests (single worker pattern)
+        // Buffer size of 4096 should be plenty for typical concurrent request counts.
+        let (cleanup_tx, cleanup_rx) = mpsc::channel::<String>(4096);
+        let in_flight = Arc::new(DashMap::new());
 
         let monitor = Self {
             streamer_manager,
@@ -171,15 +212,18 @@ impl<
             detector,
             batch_detector,
             rate_limiter,
-            in_flight: Arc::new(DashMap::new()),
+            in_flight: in_flight.clone(),
+            cleanup_tx,
             event_broadcaster: MonitorEventBroadcaster::new(),
             pool,
             outbox_notify: outbox_notify.clone(),
-            outbox_cancellation: outbox_cancellation.clone(),
+            cancellation: cancellation.clone(),
             config,
+            credential_service: None,
         };
 
-        monitor.spawn_outbox_publisher(outbox_notify, outbox_cancellation);
+        monitor.spawn_outbox_publisher(outbox_notify, cancellation.clone());
+        Self::spawn_cleanup_worker(in_flight, cleanup_rx, cancellation);
 
         monitor
     }
@@ -196,11 +240,45 @@ impl<
 
     /// Stop the stream monitor's background tasks.
     ///
-    /// This cancels the outbox publisher task. Should be called during
-    /// graceful shutdown to ensure clean task termination.
+    /// This cancels the outbox publisher and cleanup worker tasks. Should be called
+    /// during graceful shutdown to ensure clean task termination.
     pub fn stop(&self) {
-        info!("Stopping StreamMonitor outbox publisher");
-        self.outbox_cancellation.cancel();
+        info!("Stopping StreamMonitor background tasks");
+        self.cancellation.cancel();
+    }
+
+    /// Set the credential refresh service for automatic cookie refresh.
+    pub fn set_credential_service(&mut self, service: Arc<CredentialRefreshService<CR>>) {
+        self.credential_service = Some(service);
+    }
+
+    /// Spawn a single cleanup worker that processes delayed removal requests.
+    fn spawn_cleanup_worker(
+        in_flight: Arc<DashMap<String, Arc<OnceCell<LiveStatus>>>>,
+        mut cleanup_rx: mpsc::Receiver<String>,
+        cancellation_token: CancellationToken,
+    ) {
+        tokio::spawn(async move {
+            let mut queue = DelayQueue::new();
+            loop {
+                tokio::select! {
+                    biased;
+
+                    _ = cancellation_token.cancelled() => {
+                        debug!("In-flight cleanup worker shutting down");
+                        break;
+                    }
+                    Some(id) = cleanup_rx.recv() => {
+                        queue.insert(id, IN_FLIGHT_DEDUP_WINDOW);
+                    }
+                    Some(expired) = queue.next() => {
+                        let id = expired.into_inner();
+                        in_flight.remove(&id);
+                    }
+                }
+            }
+            debug!("In-flight cleanup worker stopped");
+        });
     }
 
     fn spawn_outbox_publisher(
@@ -254,6 +332,25 @@ impl<
     pub async fn check_streamer(&self, streamer: &StreamerMetadata) -> Result<LiveStatus> {
         debug!("Checking status for streamer: {}", streamer.id);
 
+        // Correctness guard: if the streamer was disabled via API, we should not perform checks.
+        // This avoids wasted network calls and prevents races where in-flight checks could
+        // produce events/state updates after a user-initiated disable.
+        if let Some(fresh) = self.streamer_manager.get_streamer(&streamer.id)
+            && fresh.state == StreamerState::Disabled
+        {
+            debug!(
+                "Streamer {} is disabled; skipping status check",
+                streamer.id
+            );
+            return Ok(LiveStatus::Offline);
+        }
+
+        let hard_timeout = if self.config.request_timeout > Duration::ZERO {
+            self.config.request_timeout
+        } else {
+            STREAM_CHECK_HARD_TIMEOUT
+        };
+
         // Get or create the deduplication cell for this streamer
         let cell = self
             .in_flight
@@ -266,51 +363,130 @@ impl<
         let filter_repo = self.filter_repo.clone();
         let config_service = self.config_service.clone();
         let detector = self.detector.clone();
-        let streamer_id = streamer.id.clone();
-        let platform_config_id = streamer.platform_config_id.clone();
-        let streamer_clone = streamer.clone();
+        let credential_service = self.credential_service.clone();
+        let streamer_id_owned = streamer.id.clone();
+        let streamer_id = streamer.id.as_str();
+        let platform_id = streamer.platform().to_string();
 
         // get_or_try_init ensures only ONE caller executes the closure,
         // all other concurrent callers wait for the result
         let result = cell
             .get_or_try_init(|| async move {
                 // Acquire rate limit token
-                let wait_time = rate_limiter.acquire(&platform_config_id).await;
+                let wait_time = rate_limiter.acquire(&platform_id).await;
                 if !wait_time.is_zero() {
                     debug!("Rate limited for {:?}", wait_time);
                 }
 
-                // Load filters for this streamer
-                let filter_models = filter_repo.get_by_streamer(&streamer_id).await?;
-                let filters: Vec<Filter> = filter_models
-                    .into_iter()
-                    .filter_map(|model| Filter::from_db_model(&model).ok())
-                    .collect();
+                let check = async {
+                    // Load filters for this streamer
+                    let filter_models = filter_repo.get_by_streamer(streamer_id).await?;
+                    let filters: Vec<Filter> = filter_models
+                        .into_iter()
+                        .filter_map(|model| match Filter::from_db_model(&model) {
+                            Ok(filter) => Some(filter),
+                            Err(error) => {
+                                warn!(
+                                    filter_id = %model.id,
+                                    filter_type = %model.filter_type,
+                                    error = %error,
+                                    "Skipping invalid streamer filter"
+                                );
+                                None
+                            }
+                        })
+                        .collect();
 
-                // Get merged configuration to access stream selection preference and cookies
-                let config = config_service.get_config_for_streamer(&streamer_id).await?;
+                    // Get resolved context (merged config + credential source provenance).
+                    let context = config_service.get_context_for_streamer(streamer_id).await?;
+                    let config = &context.config;
 
-                // Check status with filters, cookies, and selection config
-                detector
-                    .check_status_with_filters(
-                        &streamer_clone,
-                        &filters,
-                        config.cookies.clone(),
-                        Some(&config.stream_selection),
-                    )
+                    // Use cookies from config, but attempt best-effort refresh first (non-fatal).
+                    let mut cookies = config.cookies.clone();
+                    if let Some(ref credential_service) = credential_service
+                        && let Some(ref source) = context.credential_source
+                    {
+                        match credential_service.check_and_refresh_source(source).await {
+                            Ok(Some(new_cookies)) => {
+                                // Use refreshed cookies immediately for this check, and invalidate
+                                // cached config so subsequent reads pick up the DB update.
+                                cookies = Some(new_cookies);
+                                match &source.scope {
+                                    crate::credentials::CredentialScope::Streamer { .. } => {
+                                        config_service.invalidate_streamer(streamer_id);
+                                    }
+                                    crate::credentials::CredentialScope::Template {
+                                        template_id,
+                                        ..
+                                    } => {
+                                        if let Err(e) = config_service
+                                            .invalidate_template(template_id)
+                                            .await
+                                        {
+                                            warn!(
+                                                error = %e,
+                                                "Failed to invalidate template configs after credential refresh"
+                                            );
+                                        }
+                                    }
+                                    crate::credentials::CredentialScope::Platform {
+                                        platform_id,
+                                        ..
+                                    } => {
+                                        if let Err(e) = config_service
+                                            .invalidate_platform(platform_id)
+                                            .await
+                                        {
+                                            warn!(
+                                                error = %e,
+                                                "Failed to invalidate platform configs after credential refresh"
+                                            );
+                                        }
+                                    }
+                                }
+                            }
+                            Ok(None) => {}
+                            Err(e) => {
+                                warn!(
+                                    error = %e,
+                                    "Credential check/refresh failed; continuing with existing cookies"
+                                );
+                            }
+                        }
+                    }
+
+                    // Check status with filters, cookies, selection config, and platform extras
+                    detector
+                        .check_status_with_filters(
+                            streamer,
+                            &filters,
+                            cookies,
+                            Some(&config.stream_selection),
+                            config.platform_extras.clone(),
+                        )
+                        .await
+                };
+
+                tokio::time::timeout(hard_timeout, check)
                     .await
+                    .map_err(|_| {
+                        Error::Monitor(format!(
+                            "Stream monitor check timed out after {:?} (streamer_id={})",
+                            hard_timeout, streamer_id_owned
+                        ))
+                    })?
             })
             .await;
 
         // Schedule delayed cleanup BEFORE checking result to ensure cleanup
         // happens regardless of success or error. This prevents in_flight map
         // from leaking entries when errors occur.
-        let in_flight = self.in_flight.clone();
-        let id = streamer.id.clone();
-        tokio::spawn(async move {
-            tokio::time::sleep(Duration::from_millis(100)).await;
-            in_flight.remove(&id);
-        });
+        // Use the cleanup worker (DelayQueue) to avoid spawning per-entry tasks.
+        // If the channel is saturated, fall back to immediate cleanup (dedup is best-effort).
+        let cleanup_id = streamer.id.clone();
+        if self.cleanup_tx.try_send(cleanup_id.clone()).is_err() {
+            self.in_flight.remove(&cleanup_id);
+        }
 
         // Now check result - cleanup is already scheduled
         let status = result?.clone();
@@ -351,6 +527,17 @@ impl<
         // The StreamerActor might be holding stale metadata
         let fresh_streamer = self.streamer_manager.get_streamer(&streamer.id);
         let streamer = fresh_streamer.as_ref().unwrap_or(streamer);
+
+        // Correctness guard: user-disabled streamers must not be reactivated by in-flight checks.
+        // This also suppresses monitor events (StreamerLive/Offline/Error) after disable.
+        if streamer.state == StreamerState::Disabled {
+            debug!(
+                "Ignoring monitor status for disabled streamer {}: {:?}",
+                streamer.id,
+                status_summary(&status)
+            );
+            return Ok(());
+        }
 
         match status {
             LiveStatus::Live {
@@ -479,70 +666,76 @@ impl<
         let last_session = SessionTxOps::get_last_session(&mut tx, &streamer.id).await?;
 
         let session_id = if let Some(session) = last_session {
-            // Check if active or recently ended
-            if session.end_time.is_none() {
-                // Already active, reuse
-                debug!("Reusing active session {}", session.id);
-                SessionTxOps::update_titles(
-                    &mut tx,
-                    &session.id,
-                    session.titles.as_deref(),
-                    &title,
-                    now,
-                )
-                .await?;
-                session.id.clone()
-            } else {
-                let end_time_str = session.end_time.as_ref().unwrap();
-                let end_time = chrono::DateTime::parse_from_rfc3339(end_time_str)
-                    .map(|dt| dt.with_timezone(&chrono::Utc))
-                    .unwrap_or_else(|_| chrono::Utc::now());
+            match session.end_time.as_deref() {
+                None => {
+                    debug!("Reusing active session {}", session.id);
+                    SessionTxOps::update_titles(
+                        &mut tx,
+                        &session.id,
+                        session.titles.as_deref(),
+                        &title,
+                        now,
+                    )
+                    .await?;
+                    session.id.clone()
+                }
+                Some(end_time_str) => {
+                    let end_time = chrono::DateTime::parse_from_rfc3339(end_time_str)
+                        .map(|dt| dt.with_timezone(&chrono::Utc))
+                        .unwrap_or_else(|error| {
+                            warn!(
+                                "Failed to parse session end_time '{}' for session {}: {}; using now as fallback",
+                                end_time_str, session.id, error
+                            );
+                            chrono::Utc::now()
+                        });
 
-                // Check if the stream is a continuation (monitoring gap)
-                if SessionTxOps::should_resume_by_continuation(end_time, started_at) {
-                    info!(
-                        "Resuming session {} (stream started at {:?}, before session end at {})",
-                        session.id, started_at, end_time_str
-                    );
-                    SessionTxOps::resume_session(&mut tx, &session.id).await?;
-                    SessionTxOps::update_titles(
-                        &mut tx,
-                        &session.id,
-                        session.titles.as_deref(),
-                        &title,
-                        now,
-                    )
-                    .await?;
-                    session.id.clone()
-                } else if SessionTxOps::should_resume_by_gap(end_time, now, gap_secs) {
-                    // Resume within gap threshold
-                    let offline_duration_secs = (now - end_time).num_seconds();
-                    info!(
-                        "Resuming session {} (offline for {}s, threshold: {}s)",
-                        session.id, offline_duration_secs, gap_secs
-                    );
-                    SessionTxOps::resume_session(&mut tx, &session.id).await?;
-                    SessionTxOps::update_titles(
-                        &mut tx,
-                        &session.id,
-                        session.titles.as_deref(),
-                        &title,
-                        now,
-                    )
-                    .await?;
-                    session.id.clone()
-                } else {
-                    // Create new session
-                    let offline_duration_secs = (now - end_time).num_seconds();
-                    info!(
-                        "Creating new session for {} (offline for {}s exceeded threshold of {}s)",
-                        streamer.name, offline_duration_secs, gap_secs
-                    );
-                    let new_id = uuid::Uuid::new_v4().to_string();
-                    SessionTxOps::create_session(&mut tx, &new_id, &streamer.id, now, &title)
+                    // Check if the stream is a continuation (monitoring gap)
+                    if SessionTxOps::should_resume_by_continuation(end_time, started_at) {
+                        info!(
+                            "Resuming session {} (stream started at {:?}, before session end at {})",
+                            session.id, started_at, end_time_str
+                        );
+                        SessionTxOps::resume_session(&mut tx, &session.id).await?;
+                        SessionTxOps::update_titles(
+                            &mut tx,
+                            &session.id,
+                            session.titles.as_deref(),
+                            &title,
+                            now,
+                        )
                         .await?;
-                    info!("Created new session {}", new_id);
-                    new_id
+                        session.id.clone()
+                    } else if SessionTxOps::should_resume_by_gap(end_time, now, gap_secs) {
+                        // Resume within gap threshold
+                        let offline_duration_secs = (now - end_time).num_seconds();
+                        info!(
+                            "Resuming session {} (offline for {}s, threshold: {}s)",
+                            session.id, offline_duration_secs, gap_secs
+                        );
+                        SessionTxOps::resume_session(&mut tx, &session.id).await?;
+                        SessionTxOps::update_titles(
+                            &mut tx,
+                            &session.id,
+                            session.titles.as_deref(),
+                            &title,
+                            now,
+                        )
+                        .await?;
+                        session.id.clone()
+                    } else {
+                        // Create new session
+                        let offline_duration_secs = (now - end_time).num_seconds();
+                        info!(
+                            "Creating new session for {} (offline for {}s exceeded threshold of {}s)",
+                            streamer.name, offline_duration_secs, gap_secs
+                        );
+                        let new_id = uuid::Uuid::new_v4().to_string();
+                        SessionTxOps::create_session(&mut tx, &new_id, &streamer.id, now, &title)
+                            .await?;
+                        info!("Created new session {}", new_id);
+                        new_id
+                    }
                 }
             }
         } else {
@@ -805,8 +998,9 @@ impl<
 
         let _ = SessionTxOps::end_active_session(&mut tx, &streamer.id, now).await?;
 
-        // Update state to the fatal error state
-        StreamerTxOps::set_fatal_error(&mut tx, &streamer.id, &new_state.to_string()).await?;
+        // Update state to the fatal error state and persist the reason
+        StreamerTxOps::set_fatal_error(&mut tx, &streamer.id, &new_state.to_string(), reason)
+            .await?;
 
         // Determine the fatal error type from the state
         let error_type = match new_state {
@@ -843,6 +1037,18 @@ impl<
     /// Handle an error during status check.
     pub async fn handle_error(&self, streamer: &StreamerMetadata, error: &str) -> Result<()> {
         warn!("Error checking streamer {}: {}", streamer.name, error);
+
+        // If the user disabled the streamer, don't mutate error/backoff state or emit error events.
+        // Disable is a user intent override, and we don't want in-flight checks to keep writing DB.
+        if let Some(fresh) = self.streamer_manager.get_streamer(&streamer.id)
+            && fresh.state == StreamerState::Disabled
+        {
+            debug!(
+                "Skipping error handling for disabled streamer {}: {}",
+                streamer.id, error
+            );
+            return Ok(());
+        }
 
         let now = chrono::Utc::now();
 
@@ -887,8 +1093,62 @@ impl<
 
         Ok(())
     }
+
+    /// Set a streamer to temporarily disabled due to circuit breaker block.
+    ///
+    /// This sets the state to `TemporalDisabled` and stores the disabled_until timestamp
+    /// without incrementing the error count (since it's an infrastructure issue,
+    /// not a streamer issue).
+    ///
+    /// # Arguments
+    /// * `streamer` - The streamer metadata
+    /// * `retry_after_secs` - Seconds until the circuit breaker allows retries
+    pub async fn set_circuit_breaker_blocked(
+        &self,
+        streamer: &StreamerMetadata,
+        retry_after_secs: u64,
+    ) -> Result<()> {
+        // If the user disabled the streamer, don't mutate backoff state.
+        if let Some(fresh) = self.streamer_manager.get_streamer(&streamer.id)
+            && fresh.state == StreamerState::Disabled
+        {
+            debug!(
+                "Skipping circuit breaker backoff for disabled streamer {}",
+                streamer.id
+            );
+            return Ok(());
+        }
+
+        let now = chrono::Utc::now();
+        let disabled_until = now + chrono::Duration::seconds(retry_after_secs as i64);
+
+        info!(
+            "Streamer {} blocked by circuit breaker, disabled until {} ({}s)",
+            streamer.name, disabled_until, retry_after_secs
+        );
+
+        let mut tx = self.begin_immediate().await?;
+
+        // Set state to TEMPORAL_DISABLED with disabled_until timestamp
+        // Note: We don't increment error count since this is infrastructure-level, not streamer-level
+        StreamerTxOps::set_disabled_until(&mut tx, &streamer.id, Some(disabled_until)).await?;
+
+        tx.commit().await?;
+
+        // Reload metadata from DB to sync in-memory cache.
+        if let Err(e) = self.streamer_manager.reload_from_repo(&streamer.id).await {
+            warn!(
+                "Failed to reload streamer {} after circuit breaker block: {}. Cache may be stale.",
+                streamer.id, e
+            );
+        }
+
+        Ok(())
+    }
 }
 
+const OUTBOX_NO_RECEIVER_MAX_ATTEMPTS: i64 = 5;
+const OUTBOX_NO_RECEIVER_MAX_AGE_SECS: i64 = 30;
 async fn flush_outbox_once(pool: &SqlitePool, broadcaster: &MonitorEventBroadcaster) -> Result<()> {
     let entries = MonitorOutboxOps::fetch_undelivered(pool, 100).await?;
 
@@ -907,14 +1167,39 @@ async fn flush_outbox_once(pool: &SqlitePool, broadcaster: &MonitorEventBroadcas
                         MonitorOutboxOps::mark_delivered(pool, entry.id).await?;
                     }
                     Err(e) => {
-                        // No receivers available - this is not a permanent failure
-                        // Log the condition but still mark as delivered to avoid infinite retry
-                        // The event will be lost if no receivers exist (expected during shutdown)
-                        warn!(
-                            "Monitor outbox event id={} has no receivers, discarding: {:?}",
-                            entry.id, e.0
-                        );
-                        MonitorOutboxOps::mark_delivered(pool, entry.id).await?;
+                        // No receivers available - keep events briefly to handle listener startup.
+                        let now = chrono::Utc::now();
+                        let age_secs = match chrono::DateTime::parse_from_rfc3339(&entry.created_at)
+                        {
+                            Ok(dt) => now
+                                .signed_duration_since(dt.with_timezone(&chrono::Utc))
+                                .num_seconds(),
+                            Err(err) => {
+                                warn!(
+                                    "Monitor outbox event id={} has invalid created_at '{}': {}",
+                                    entry.id, entry.created_at, err
+                                );
+                                0
+                            }
+                        };
+
+                        let should_drop = entry.attempts >= OUTBOX_NO_RECEIVER_MAX_ATTEMPTS
+                            || age_secs >= OUTBOX_NO_RECEIVER_MAX_AGE_SECS;
+
+                        if should_drop {
+                            warn!(
+                                "Monitor outbox event id={} has no receivers after {} attempts or {}s, discarding: {:?}",
+                                entry.id, entry.attempts, age_secs, e.0
+                            );
+                            MonitorOutboxOps::mark_delivered(pool, entry.id).await?;
+                        } else {
+                            debug!(
+                                "Monitor outbox event id={} has no receivers, retrying later",
+                                entry.id
+                            );
+                            MonitorOutboxOps::record_failure(pool, entry.id, "no receivers")
+                                .await?;
+                        }
                     }
                 }
             }
@@ -951,7 +1236,7 @@ mod tests {
     fn test_stream_monitor_config_default() {
         let config = StreamMonitorConfig::default();
         assert_eq!(config.default_rate_limit, 1.0);
-        assert_eq!(config.request_timeout, Duration::from_secs(0));
+        assert_eq!(config.request_timeout, Duration::ZERO);
     }
 
     #[test]

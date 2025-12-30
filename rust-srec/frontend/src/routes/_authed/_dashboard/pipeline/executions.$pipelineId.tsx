@@ -27,11 +27,19 @@ import {
   Layers,
   ExternalLink,
 } from 'lucide-react';
-import { Trans, useLingui } from '@lingui/react/macro';
-import { t } from '@lingui/core/macro';
+import { Trans } from '@lingui/react/macro';
+import { useLingui } from '@lingui/react';
+import { t, plural } from '@lingui/core/macro';
 import { toast } from 'sonner';
 import { motion } from 'motion/react';
 import { cn } from '@/lib/utils';
+import { getJobPresetName } from '@/components/pipeline/presets/default-presets-i18n';
+import { getProcessorDefinition } from '@/components/pipeline/presets/processors/registry';
+import {
+  type DagStep,
+  type DagStatus,
+  type DagStepStatus,
+} from '@/api/schemas';
 
 export const Route = createFileRoute(
   '/_authed/_dashboard/pipeline/executions/$pipelineId',
@@ -40,9 +48,9 @@ export const Route = createFileRoute(
 });
 
 const STATUS_CONFIG: Record<
-  string,
+  DagStatus | DagStepStatus,
   {
-    icon: any;
+    icon: React.ElementType;
     color: string;
     badgeVariant: 'default' | 'secondary' | 'destructive' | 'outline';
     animate?: boolean;
@@ -80,11 +88,11 @@ const STATUS_CONFIG: Record<
     badgeVariant: 'secondary',
     gradient: 'from-gray-500/20 to-gray-500/5',
   },
-  INTERRUPTED: {
-    icon: AlertCircle,
-    color: 'text-orange-500',
-    badgeVariant: 'secondary',
-    gradient: 'from-orange-500/20 to-orange-500/5',
+  BLOCKED: {
+    icon: Clock,
+    color: 'text-muted-foreground/40',
+    badgeVariant: 'outline',
+    gradient: 'from-gray-500/10 to-gray-500/5',
   },
 };
 
@@ -255,7 +263,19 @@ function PipelineExecutionPage() {
                       {overallStatus === 'PROCESSING' && (
                         <span className="absolute inset-0 bg-current opacity-10 animate-pulse pointer-events-none" />
                       )}
-                      {overallStatus}
+                      {i18n._(
+                        overallStatus === 'PENDING'
+                          ? t`Pending`
+                          : overallStatus === 'PROCESSING'
+                            ? t`Processing`
+                            : overallStatus === 'COMPLETED'
+                              ? t`Completed`
+                              : overallStatus === 'FAILED'
+                                ? t`Failed`
+                                : overallStatus === 'CANCELLED'
+                                  ? t`Cancelled`
+                                  : overallStatus,
+                      )}
                     </Badge>
                   </div>
                   <p className="text-muted-foreground font-mono text-sm opacity-80">
@@ -391,7 +411,14 @@ function PipelineExecutionPage() {
   );
 }
 
-function StepCard({ step, jobConfig }: { step: any; jobConfig: any }) {
+function StepCard({
+  step,
+  jobConfig,
+}: {
+  step: DagStep;
+  jobConfig: (typeof STATUS_CONFIG)[keyof typeof STATUS_CONFIG];
+}) {
+  const { i18n } = useLingui();
   const isProcessing = step.status === 'PROCESSING';
   const isCompleted = step.status === 'COMPLETED';
   const isFailed = step.status === 'FAILED';
@@ -440,13 +467,19 @@ function StepCard({ step, jobConfig }: { step: any; jobConfig: any }) {
                 variant="outline"
                 className="font-mono text-[10px] uppercase opacity-60 tracking-tight"
               >
-                {step.processor}
+                {(() => {
+                  const def = getProcessorDefinition(step.processor);
+                  return def ? i18n._(def.label) : step.processor;
+                })()}
               </Badge>
             </div>
 
             <div>
               <h3 className="text-xl font-bold tracking-tight text-foreground/90 group-hover:text-primary transition-colors duration-300">
-                {step.step_id.replace(/_/g, ' ')}
+                {getJobPresetName(
+                  { id: step.step_id, name: step.step_id },
+                  i18n,
+                ).replace(/_/g, ' ')}
               </h3>
               {step.job_id && (
                 <div className="flex items-center gap-1.5 mt-1 text-xs text-muted-foreground/60 font-mono">
@@ -469,7 +502,19 @@ function StepCard({ step, jobConfig }: { step: any; jobConfig: any }) {
                     jobConfig.color,
                   )}
                 >
-                  {step.status}
+                  {i18n._(
+                    step.status === 'PENDING'
+                      ? t`Pending`
+                      : step.status === 'PROCESSING'
+                        ? t`Processing`
+                        : step.status === 'COMPLETED'
+                          ? t`Completed`
+                          : step.status === 'FAILED'
+                            ? t`Failed`
+                            : step.status === 'CANCELLED'
+                              ? t`Cancelled`
+                              : step.status,
+                  )}
                 </span>
                 {isCompleted && (
                   <CheckCircle2 className="h-4 w-4 text-emerald-500" />
@@ -486,7 +531,12 @@ function StepCard({ step, jobConfig }: { step: any; jobConfig: any }) {
                 <span className="text-sm font-semibold">
                   {step.outputs.length}
                 </span>
-                <span className="text-xs opacity-60 font-medium">files</span>
+                <span className="text-xs opacity-60 font-medium">
+                  {plural(step.outputs.length, {
+                    one: 'file',
+                    other: 'files',
+                  })}
+                </span>
               </div>
             </div>
           </div>
@@ -519,9 +569,9 @@ function StatsCard({
   subtext,
   delay,
 }: {
-  icon: any;
+  icon: React.ReactNode;
   label: string;
-  value: any;
+  value: string | number;
   subtext?: string;
   delay: number;
 }) {

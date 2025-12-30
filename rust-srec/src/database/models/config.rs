@@ -31,15 +31,21 @@ pub struct GlobalConfigDbModel {
     pub session_gap_time_secs: i64,
     /// JSON serialized Vec<PipelineStep>
     pub pipeline: Option<String>,
+    /// JSON serialized DagPipelineDefinition for session-complete triggering.
+    pub session_complete_pipeline: Option<String>,
+    /// JSON serialized DagPipelineDefinition for paired (video+danmu) segment triggering.
+    pub paired_segment_pipeline: Option<String>,
     /// Log filter directive (e.g., "rust_srec=debug,sqlx=warn")
     pub log_filter_directive: String,
+    /// Whether to automatically generate thumbnails for new sessions (default: true)
+    pub auto_thumbnail: bool,
 }
 
 impl Default for GlobalConfigDbModel {
     fn default() -> Self {
         Self {
             id: uuid::Uuid::new_v4().to_string(),
-            output_folder: "./downloads".to_string(),
+            output_folder: "/app/output".to_string(),
             output_filename_template: "{streamer}-{title}-%Y%m%d-%H%M%S".to_string(),
             output_file_format: "flv".to_string(),
             min_segment_size_bytes: 1048576, // 1MB
@@ -58,8 +64,11 @@ impl Default for GlobalConfigDbModel {
             job_history_retention_days: 30,
             session_gap_time_secs: 3600,
             pipeline: None,
+            session_complete_pipeline: None,
+            paired_segment_pipeline: None,
             log_filter_directive: "rust_srec=info,sqlx=warn,mesio_engine=info,flv=info,hls=info"
                 .to_string(),
+            auto_thumbnail: true,
         }
     }
 }
@@ -95,6 +104,10 @@ pub struct PlatformConfigDbModel {
     pub event_hooks: Option<String>,
     /// JSON serialized Vec<PipelineStep>
     pub pipeline: Option<String>,
+    /// JSON serialized DagPipelineDefinition for session-complete triggering.
+    pub session_complete_pipeline: Option<String>,
+    /// JSON serialized DagPipelineDefinition for paired (video+danmu) segment triggering.
+    pub paired_segment_pipeline: Option<String>,
 }
 
 /// Template configuration database model.
@@ -129,6 +142,10 @@ pub struct TemplateConfigDbModel {
     pub stream_selection_config: Option<String>,
     /// JSON serialized Vec<PipelineStep>
     pub pipeline: Option<String>,
+    /// JSON serialized DagPipelineDefinition for session-complete triggering.
+    pub session_complete_pipeline: Option<String>,
+    /// JSON serialized DagPipelineDefinition for paired (video+danmu) segment triggering.
+    pub paired_segment_pipeline: Option<String>,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
 }
@@ -155,6 +172,8 @@ impl TemplateConfigDbModel {
             event_hooks: None,
             stream_selection_config: None,
             pipeline: None,
+            session_complete_pipeline: None,
+            paired_segment_pipeline: None,
             created_at: Utc::now(),
             updated_at: Utc::now(),
         }
@@ -168,7 +187,7 @@ mod tests {
     #[test]
     fn test_global_config_default() {
         let config = GlobalConfigDbModel::default();
-        assert_eq!(config.output_folder, "./downloads");
+        assert_eq!(config.output_folder, "/app/output");
         assert_eq!(config.max_concurrent_downloads, 6);
         assert!(!config.record_danmu);
     }

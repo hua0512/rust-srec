@@ -16,6 +16,11 @@ import {
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { GraphViewport, GlassNode } from './graph-shared';
+import { useLingui } from '@lingui/react';
+import { t } from '@lingui/core/macro';
+import { Trans } from '@lingui/react/macro';
+import { getJobPresetName } from './presets/default-presets-i18n';
+import { getProcessorDefinition } from './presets/processors/registry';
 
 interface DagGraphViewProps {
   graph: DagGraph;
@@ -25,7 +30,7 @@ interface DagGraphViewProps {
 const STATUS_CONFIG: Record<
   DagStepStatus,
   {
-    icon: any;
+    icon: React.ElementType;
     color: string;
     bg: string;
     glow: string;
@@ -79,6 +84,7 @@ const STATUS_CONFIG: Record<
 };
 
 export function DagGraphView({ graph, className }: DagGraphViewProps) {
+  const { i18n } = useLingui();
   const [scale, setScale] = useState(1);
   const x = useMotionValue(0);
   const y = useMotionValue(0);
@@ -314,7 +320,7 @@ export function DagGraphView({ graph, className }: DagGraphViewProps) {
                 {node.job_id && (
                   <div className="absolute -top-2 -right-2 opacity-0 group-hover:opacity-100 transition-opacity z-20">
                     <div className="bg-primary text-primary-foreground text-[8px] font-black uppercase px-2 py-0.5 rounded-full shadow-lg ring-1 ring-white/20">
-                      View
+                      <Trans>View</Trans>
                     </div>
                   </div>
                 )}
@@ -338,12 +344,18 @@ export function DagGraphView({ graph, className }: DagGraphViewProps) {
                     variant="outline"
                     className="bg-foreground/5 border-foreground/10 text-[9px] uppercase tracking-widest font-black opacity-40 group-hover:opacity-80 transition-opacity"
                   >
-                    {node.processor}
+                    {(() => {
+                      const def = getProcessorDefinition(node.processor || '');
+                      return def ? i18n._(def.label) : node.processor || '';
+                    })()}
                   </Badge>
                 </div>
 
                 <h4 className="text-[15px] font-bold truncate text-foreground mb-1 tracking-tight relative z-10 uppercase">
-                  {node.label || node.id}
+                  {getJobPresetName(
+                    { id: node.label || node.id, name: node.label || node.id },
+                    i18n,
+                  )}
                 </h4>
 
                 <div className="flex items-center justify-between relative z-10">
@@ -353,7 +365,21 @@ export function DagGraphView({ graph, className }: DagGraphViewProps) {
                       config.color,
                     )}
                   >
-                    {node.status}
+                    {i18n._(
+                      node.status === 'BLOCKED'
+                        ? t`Blocked`
+                        : node.status === 'PENDING'
+                          ? t`Pending`
+                          : node.status === 'PROCESSING'
+                            ? t`Processing`
+                            : node.status === 'COMPLETED'
+                              ? t`Completed`
+                              : node.status === 'FAILED'
+                                ? t`Failed`
+                                : node.status === 'CANCELLED'
+                                  ? t`Cancelled`
+                                  : node.status,
+                    )}
                   </span>
                   {node.job_id && (
                     <span className="text-[9px] font-mono text-foreground/20 group-hover:text-foreground/40 transition-colors">

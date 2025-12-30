@@ -12,13 +12,14 @@ import { Shield } from 'lucide-react';
 import { UseFormReturn } from 'react-hook-form';
 import { InputWithUnit } from '@/components/ui/input-with-unit';
 import { t } from '@lingui/core/macro';
+import { memo } from 'react';
 
 interface LimitsCardProps {
   form: UseFormReturn<any>;
   basePath?: string;
 }
 
-export function LimitsCard({ form, basePath }: LimitsCardProps) {
+export const LimitsCard = memo(({ form, basePath }: LimitsCardProps) => {
   return (
     <Card className="border-border/50 shadow-sm hover:shadow-md transition-all">
       <CardHeader className="pb-3">
@@ -122,4 +123,6 @@ export function LimitsCard({ form, basePath }: LimitsCardProps) {
       </CardContent>
     </Card>
   );
-}
+});
+
+LimitsCard.displayName = 'LimitsCard';

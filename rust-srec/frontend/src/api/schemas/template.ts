@@ -17,7 +17,19 @@ export const TemplateSchema = z.object({
   output_file_format: z.string().nullable().optional(),
   download_engine: z.string().nullable().optional(),
   record_danmu: z.boolean().nullable().optional(),
-  platform_overrides: z.any().nullable().optional(),
+  platform_overrides: z
+    .preprocess((val) => {
+      if (typeof val === 'string' && val.trim() !== '') {
+        try {
+          return JSON.parse(val);
+        } catch (e) {
+          return val;
+        }
+      }
+      return val;
+    }, z.any())
+    .nullable()
+    .optional(),
   engines_override: z.any().nullable().optional(),
   min_segment_size_bytes: z.number().nullable().optional(),
   max_download_duration_secs: z.number().nullable().optional(),
@@ -65,6 +77,30 @@ export const TemplateSchema = z.object({
     .pipe(DagPipelineDefinitionSchema.nullable().optional())
     .nullable()
     .optional(),
+  session_complete_pipeline: z
+    .string()
+    .transform((str) => {
+      try {
+        return JSON.parse(str);
+      } catch {
+        return null;
+      }
+    })
+    .pipe(DagPipelineDefinitionSchema.nullable().optional())
+    .nullable()
+    .optional(),
+  paired_segment_pipeline: z
+    .string()
+    .transform((str) => {
+      try {
+        return JSON.parse(str);
+      } catch {
+        return null;
+      }
+    })
+    .pipe(DagPipelineDefinitionSchema.nullable().optional())
+    .nullable()
+    .optional(),
   usage_count: z.number().optional(),
   created_at: z.string().optional(),
   updated_at: z.string().optional(),
@@ -93,6 +129,8 @@ export const CreateTemplateRequestSchema = z.object({
   proxy_config: ProxyConfigObjectSchema.nullable().optional(),
   event_hooks: EventHooksSchema.nullable().optional(),
   pipeline: DagPipelineDefinitionSchema.nullable().optional(),
+  session_complete_pipeline: DagPipelineDefinitionSchema.nullable().optional(),
+  paired_segment_pipeline: DagPipelineDefinitionSchema.nullable().optional(),
 });
 export const UpdateTemplateRequestSchema = CreateTemplateRequestSchema;
 export const TemplateFormSchema = CreateTemplateRequestSchema;

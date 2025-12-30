@@ -82,6 +82,41 @@ pub fn build_get_cdn_token_info_request(
     Ok(bytes.freeze())
 }
 
+/// Build getLivingInfo request using room ID instead of presenter UID
+/// This allows querying stream info without knowing the presenter UID beforehand
+pub(crate) fn build_get_living_info_by_room_id_request(
+    room_id: i64,
+    ua: &str,
+    device: &str,
+) -> Result<Bytes, TarsError> {
+    let user_id = HuyaUserId::new(0, String::new(), String::new(), ua.to_string())
+        .with_device_info(device.to_string());
+    let req = GetLivingInfoReq::new(user_id, 0).with_room_id(room_id);
+    let mut body = FxHashMap::default();
+    body.insert(
+        String::from("tReq"),
+        tars_codec::ser::to_bytes_mut_wrapped(&TarsValue::from(req))?,
+    );
+
+    let message = TarsMessage {
+        header: TarsRequestHeader {
+            version: 3,
+            packet_type: 0,
+            message_type: 0,
+            request_id: next_request_id(),
+            servant_name: String::from("huyaliveui"),
+            func_name: String::from("getLivingInfo"),
+            timeout: 0,
+            context: FxHashMap::default(),
+            status: FxHashMap::default(),
+        },
+        body,
+    };
+
+    let bytes = tars_codec::encode_request(&message)?;
+    Ok(bytes.freeze())
+}
+
 pub fn decode_get_living_info_response(bytes: Bytes) -> Result<GetLivingInfoRsp, TarsError> {
     let message = decode_response_zero_copy(bytes)?;
     let resp_bytes = message.body.get("tRsp").ok_or(TarsError::Unknown)?;

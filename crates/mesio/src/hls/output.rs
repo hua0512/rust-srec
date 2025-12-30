@@ -11,7 +11,7 @@ use std::time::Instant;
 use tokio::sync::mpsc;
 use tokio::time::sleep;
 use tokio_util::sync::CancellationToken;
-use tracing::{debug, error, info, warn};
+use tracing::{debug, error, info, trace, warn};
 
 // --- Gap State Tracking ---
 
@@ -574,7 +574,7 @@ impl OutputManager {
                                 continue; // Skip buffering this segment
                             }
 
-                            debug!(
+                            trace!(
                                 "Adding segment {} (live: {}) to reorder buffer.",
                                 current_segment_sequence, self.is_live_stream
                             );
@@ -586,7 +586,7 @@ impl OutputManager {
                                 && current_segment_sequence > gap_state.missing_sequence
                             {
                                 gap_state.increment_segments_since_gap();
-                                debug!(
+                                trace!(
                                     "Live stream: Received segment {} while waiting for {}. Segments since gap: {}.",
                                     current_segment_sequence, gap_state.missing_sequence, gap_state.segments_since_gap
                                 );
@@ -833,7 +833,7 @@ impl OutputManager {
                 };
 
                 if is_new_gap {
-                    debug!(
+                    trace!(
                         "New gap detected. Expected: {}, Found: {}. Creating new gap state.",
                         self.expected_next_media_sequence, segment_sequence
                     );
@@ -852,7 +852,7 @@ impl OutputManager {
 
                     self.gap_state = Some(new_gap_state);
 
-                    debug!(
+                    trace!(
                         "After re-counting buffered segments, segments_since_gap for expected {}: {}.",
                         self.expected_next_media_sequence,
                         self.gap_state
@@ -906,7 +906,7 @@ impl OutputManager {
                     let segments_since_gap = gap_state.segments_since_gap;
 
                     warn!(
-                        "Gap skip triggered for expected segment {}. Reason: {:?}. Elapsed: {:?}, Segments since gap: {}. Skipping to segment {}.",
+                        "GAP CONFIRMED: Missing segment(s) starting at {}. Reason: {:?}. Elapsed: {:?}, Segments since gap: {}. Skipping to segment {}.",
                         self.expected_next_media_sequence,
                         skip_reason,
                         elapsed,
@@ -937,7 +937,7 @@ impl OutputManager {
                     // Skip condition not met, log and wait
                     if let Some(ref gap_state) = self.gap_state {
                         let elapsed = gap_state.elapsed();
-                        debug!(
+                        trace!(
                             "Gap detected. Expected: {}, Found: {}. Waiting. Elapsed: {:?}, Segments since gap: {}. Strategy: {:?}",
                             self.expected_next_media_sequence,
                             segment_sequence,

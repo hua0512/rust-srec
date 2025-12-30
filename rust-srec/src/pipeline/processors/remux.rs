@@ -7,7 +7,7 @@ use tokio::process::Command;
 use tracing::{debug, info};
 
 use super::traits::{Processor, ProcessorContext, ProcessorInput, ProcessorOutput, ProcessorType};
-use super::utils::{create_log_entry, get_extension, is_media};
+use super::utils::{create_log_entry, get_extension, is_media, parse_config_or_default};
 use crate::Result;
 
 /// Helper to ensure path is absolute.
@@ -283,12 +283,7 @@ impl RemuxProcessor {
     }
 
     /// Build FFmpeg command arguments from config.
-    fn build_args(
-        &self,
-        input: &ProcessorInput,
-        config: &RemuxConfig,
-        output_path: &str,
-    ) -> Vec<String> {
+    fn build_args(&self, input_path: &str, config: &RemuxConfig, output_path: &str) -> Vec<String> {
         let mut args = Vec::new();
 
         // Overwrite flag
@@ -317,9 +312,7 @@ impl RemuxProcessor {
         }
 
         // Input file
-        if let Some(input_path) = input.inputs.first() {
-            args.extend(["-i".to_string(), input_path.clone()]);
-        }
+        args.extend(["-i".to_string(), input_path.to_string()]);
 
         // Duration or end time
         if let Some(duration) = config.duration {
@@ -408,50 +401,73 @@ impl RemuxProcessor {
 
         args
     }
-}
 
-impl Default for RemuxProcessor {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-#[async_trait]
-impl Processor for RemuxProcessor {
-    fn processor_type(&self) -> ProcessorType {
-        ProcessorType::Cpu
+    fn paths_equal(a: &str, b: &str) -> bool {
+        if cfg!(windows) {
+            a.eq_ignore_ascii_case(b)
+        } else {
+            a == b
+        }
     }
 
-    fn job_types(&self) -> Vec<&'static str> {
-        vec!["remux", "transcode", "convert"]
+    fn determine_output_path_for_input(
+        input_path: &str,
+        config: &RemuxConfig,
+        output_override: Option<&str>,
+    ) -> Result<String> {
+        let input_abs = make_absolute(input_path);
+
+        if let Some(out) = output_override.filter(|s| !s.is_empty()) {
+            let out_abs = make_absolute(out);
+            if Self::paths_equal(&input_abs, &out_abs) {
+                return Err(crate::Error::PipelineError(
+                    "Remux output path must not be the same as the input path (use a different output or omit outputs for an auto-generated path)".to_string(),
+                ));
+            }
+            return Ok(out.to_string());
+        }
+
+        // Generate dynamic output path: input_filename.{extension}
+        let input_path_obj = std::path::Path::new(input_path);
+        let file_stem = input_path_obj
+            .file_stem()
+            .unwrap_or_default()
+            .to_string_lossy();
+        let parent = input_path_obj
+            .parent()
+            .unwrap_or_else(|| std::path::Path::new("."));
+
+        // Determine extension based on config format or default to "mp4"
+        let ext = config.format.as_deref().unwrap_or("mp4");
+
+        let candidate = parent
+            .join(format!("{}.{}", file_stem, ext))
+            .to_string_lossy()
+            .to_string();
+        let candidate_abs = make_absolute(&candidate);
+
+        // Avoid in-place remux (ffmpeg cannot safely write to the same path it's reading from).
+        if Self::paths_equal(&input_abs, &candidate_abs) {
+            return Ok(parent
+                .join(format!("{}_remux.{}", file_stem, ext))
+                .to_string_lossy()
+                .to_string());
+        }
+
+        Ok(candidate)
     }
 
-    fn name(&self) -> &'static str {
-        "RemuxProcessor"
-    }
-
-    async fn process(
+    async fn process_one(
         &self,
-        input: &ProcessorInput,
+        input_path: &str,
+        output_override: Option<&str>,
+        config: &RemuxConfig,
         ctx: &ProcessorContext,
+        remove_input_on_success: bool,
     ) -> Result<ProcessorOutput> {
         let start = std::time::Instant::now();
 
-        // Parse config or use defaults
-        let config: RemuxConfig = if let Some(ref config_str) = input.config {
-            serde_json::from_str(config_str).unwrap_or_else(|e| {
-                let _ = ctx.warn(format!(
-                    "Failed to parse remux config, using defaults: {}",
-                    e
-                ));
-                RemuxConfig::default()
-            })
-        } else {
-            RemuxConfig::default()
-        };
-
-        let raw_input_path = input.inputs.first().map(|s| s.as_str()).unwrap_or("");
-        let input_path_string = make_absolute(raw_input_path);
+        let input_path_string = make_absolute(input_path);
         let input_path = input_path_string.as_str();
 
         // Check if input file exists
@@ -469,7 +485,7 @@ impl Processor for RemuxProcessor {
         // If not supported, pass through the input file instead of failing
         if !is_media(&ext) {
             let duration = start.elapsed().as_secs_f64();
-            let _ = ctx.info(format!(
+            ctx.info(format!(
                 "Input file is not a supported media format for remuxing, passing through: {}",
                 input_path
             ));
@@ -492,38 +508,19 @@ impl Processor for RemuxProcessor {
             });
         }
 
-        // Determine output path: use provided output or generate one dynamically
-        let output_string = if let Some(out) = input.outputs.first() {
-            out.clone()
-        } else {
-            // Generate dynamic output path: input_filename.{extension}
-            let input_path_obj = std::path::Path::new(input_path);
-            let file_stem = input_path_obj
-                .file_stem()
-                .unwrap_or_default()
-                .to_string_lossy();
-            let parent = input_path_obj
-                .parent()
-                .unwrap_or_else(|| std::path::Path::new("."));
-
-            // Determine extension based on config format or default to "mp4"
-            let ext = config.format.as_deref().unwrap_or("mp4");
-
-            // Use same directory as input, but with new extension
-            parent
-                .join(format!("{}.{}", file_stem, ext))
-                .to_string_lossy()
-                .to_string()
-        };
+        // Determine output path: use provided output or generate one dynamically.
+        // Ensures we never choose an output path equal to the input path.
+        let output_string =
+            Self::determine_output_path_for_input(input_path, config, output_override)?;
         let output_path_string = make_absolute(&output_string);
         let output_path = output_path_string.as_str();
 
-        let _ = ctx.info(format!(
+        ctx.info(format!(
             "Processing {} -> {} (video: {:?}, audio: {:?})",
             input_path, output_path, config.video_codec, config.audio_codec
         ));
 
-        let args = self.build_args(input, &config, output_path);
+        let args = self.build_args(input_path, config, output_path);
         debug!("FFmpeg args: {:?}", args);
 
         // Build ffmpeg command
@@ -547,7 +544,7 @@ impl Processor for RemuxProcessor {
                 .map(|l| l.message.clone())
                 .unwrap_or_else(|| "Unknown ffmpeg error".to_string());
 
-            let _ = ctx.error(format!("ffmpeg failed: {}", error_msg));
+            ctx.error(format!("ffmpeg failed: {}", error_msg));
 
             return Err(crate::Error::Other(format!(
                 "ffmpeg failed with exit code {}: {}",
@@ -556,14 +553,14 @@ impl Processor for RemuxProcessor {
             )));
         }
 
-        let _ = ctx.info(format!(
+        ctx.info(format!(
             "Processing completed in {:.2}s: {}",
             command_output.duration, output_path
         ));
 
         // Remove input file if requested and successful
         let mut logs = command_output.logs;
-        if config.remove_input_on_success {
+        if remove_input_on_success {
             match tokio::fs::remove_file(input_path).await {
                 Ok(_) => {
                     info!("Removed input file after successful remux: {}", input_path);
@@ -573,7 +570,7 @@ impl Processor for RemuxProcessor {
                     ));
                 }
                 Err(e) => {
-                    let _ = ctx.warn(format!("Failed to remove input file {}: {}", input_path, e));
+                    ctx.warn(format!("Failed to remove input file {}: {}", input_path, e));
                     logs.push(create_log_entry(
                         crate::pipeline::job_queue::LogLevel::Warn,
                         format!("Failed to remove input file {}: {}", input_path, e),
@@ -596,7 +593,7 @@ impl Processor for RemuxProcessor {
                 serde_json::json!({
                     "video_codec": format!("{:?}", config.video_codec),
                     "audio_codec": format!("{:?}", config.audio_codec),
-                    "input_removed": config.remove_input_on_success,
+                    "input_removed": remove_input_on_success,
                 })
                 .to_string(),
             ),
@@ -611,9 +608,157 @@ impl Processor for RemuxProcessor {
     }
 }
 
+impl Default for RemuxProcessor {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+#[async_trait]
+impl Processor for RemuxProcessor {
+    fn processor_type(&self) -> ProcessorType {
+        ProcessorType::Cpu
+    }
+
+    fn job_types(&self) -> Vec<&'static str> {
+        vec!["remux", "transcode", "convert"]
+    }
+
+    fn name(&self) -> &'static str {
+        "RemuxProcessor"
+    }
+
+    fn supports_batch_input(&self) -> bool {
+        true
+    }
+
+    async fn process(
+        &self,
+        input: &ProcessorInput,
+        ctx: &ProcessorContext,
+    ) -> Result<ProcessorOutput> {
+        let config: RemuxConfig =
+            parse_config_or_default(input.config.as_deref(), ctx, "remux", None);
+
+        if input.inputs.is_empty() {
+            return Err(crate::Error::PipelineError(
+                "No input file specified for remuxing".to_string(),
+            ));
+        }
+
+        if input.inputs.len() == 1 {
+            let input_path = input.inputs[0].as_str();
+            let output_override = input.outputs.first().map(|s| s.as_str());
+            return self
+                .process_one(
+                    input_path,
+                    output_override,
+                    &config,
+                    ctx,
+                    config.remove_input_on_success,
+                )
+                .await;
+        }
+
+        // Batch mode: map remux over each input.
+        // Output mapping contract:
+        // - if `outputs` is empty: generate output next to each input
+        // - if `outputs.len() == inputs.len()`: map by index
+        // - otherwise: error (ambiguous)
+        if !input.outputs.is_empty() && input.outputs.len() != input.inputs.len() {
+            return Err(crate::Error::PipelineError(format!(
+                "Remux batch job requires outputs to be empty or have the same length as inputs (inputs={}, outputs={})",
+                input.inputs.len(),
+                input.outputs.len()
+            )));
+        }
+
+        let mut outputs = Vec::with_capacity(input.inputs.len());
+        let mut items_produced = Vec::new();
+        let mut skipped_inputs = Vec::new();
+        let mut succeeded_inputs = Vec::new();
+        let mut logs = Vec::new();
+        let mut duration_secs = 0.0;
+
+        // Keep input files until *all* remuxes succeed, then optionally remove them at the end.
+        for (idx, input_path) in input.inputs.iter().enumerate() {
+            let output_override = input
+                .outputs
+                .get(idx)
+                .map(|s| s.as_str())
+                .filter(|s| !s.is_empty());
+
+            match self
+                .process_one(input_path, output_override, &config, ctx, false)
+                .await
+            {
+                Ok(one) => {
+                    duration_secs += one.duration_secs;
+                    outputs.extend(one.outputs);
+                    items_produced.extend(one.items_produced);
+                    skipped_inputs.extend(one.skipped_inputs);
+                    succeeded_inputs.extend(one.succeeded_inputs);
+                    logs.extend(one.logs);
+                }
+                Err(e) => {
+                    // Best-effort cleanup of any produced outputs in this batch to avoid leaving partial artifacts.
+                    for produced in &items_produced {
+                        let _ = tokio::fs::remove_file(produced).await;
+                    }
+                    return Err(e);
+                }
+            }
+        }
+
+        if config.remove_input_on_success {
+            // Only remove inputs that were actually remuxed. Skipped inputs should never be removed.
+            for input_path in &succeeded_inputs {
+                let input_path_string = make_absolute(input_path);
+                let input_path = input_path_string.as_str();
+                if let Err(e) = tokio::fs::remove_file(input_path).await {
+                    let _ = ctx.warn(format!("Failed to remove input file {}: {}", input_path, e));
+                    logs.push(create_log_entry(
+                        crate::pipeline::job_queue::LogLevel::Warn,
+                        format!("Failed to remove input file {}: {}", input_path, e),
+                    ));
+                } else {
+                    logs.push(create_log_entry(
+                        crate::pipeline::job_queue::LogLevel::Info,
+                        format!("Removed input file: {}", input_path),
+                    ));
+                }
+            }
+        }
+
+        Ok(ProcessorOutput {
+            outputs,
+            duration_secs,
+            metadata: Some(
+                serde_json::json!({
+                    "batch": true,
+                    "inputs": input.inputs.len(),
+                    "input_removed": config.remove_input_on_success,
+                    "video_codec": format!("{:?}", config.video_codec),
+                    "audio_codec": format!("{:?}", config.audio_codec),
+                })
+                .to_string(),
+            ),
+            items_produced,
+            input_size_bytes: None,
+            output_size_bytes: None,
+            failed_inputs: vec![],
+            succeeded_inputs,
+            skipped_inputs,
+            logs,
+        })
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::fs;
+    use tempfile::TempDir;
 
     #[test]
     fn test_remux_processor_type() {
@@ -683,16 +828,9 @@ mod tests {
     #[test]
     fn test_build_args_simple() {
         let processor = RemuxProcessor::new();
-        let input = ProcessorInput {
-            inputs: vec!["/input.flv".to_string()],
-            outputs: vec!["/output.mp4".to_string()],
-            config: None,
-            streamer_id: "test".to_string(),
-            session_id: "test".to_string(),
-        };
         let config = RemuxConfig::default();
 
-        let args = processor.build_args(&input, &config, "/output.mp4");
+        let args = processor.build_args("/input.flv", &config, "/output.mp4");
 
         assert!(args.contains(&"-y".to_string()));
         assert!(args.contains(&"-i".to_string()));
@@ -705,13 +843,6 @@ mod tests {
     #[test]
     fn test_build_args_with_transcode() {
         let processor = RemuxProcessor::new();
-        let input = ProcessorInput {
-            inputs: vec!["/input.flv".to_string()],
-            outputs: vec!["/output.mp4".to_string()],
-            config: None,
-            streamer_id: "test".to_string(),
-            session_id: "test".to_string(),
-        };
         let config = RemuxConfig {
             video_codec: VideoCodec::H264,
             audio_codec: AudioCodec::Aac,
@@ -721,7 +852,7 @@ mod tests {
             ..Default::default()
         };
 
-        let args = processor.build_args(&input, &config, "/output.mp4");
+        let args = processor.build_args("/input.flv", &config, "/output.mp4");
 
         assert!(args.contains(&"libx264".to_string()));
         assert!(args.contains(&"aac".to_string()));
@@ -747,5 +878,107 @@ mod tests {
         let rel = "test_file.txt";
         let expected = cwd.join(rel).to_string_lossy().to_string();
         assert_eq!(make_absolute(rel), expected);
+    }
+
+    #[tokio::test]
+    async fn test_remux_batch_outputs_len_mismatch_errors() {
+        let processor = RemuxProcessor::new();
+        let ctx = ProcessorContext::noop("test");
+
+        let input = ProcessorInput {
+            inputs: vec!["a.txt".to_string(), "b.txt".to_string()],
+            outputs: vec!["out.mp4".to_string()],
+            config: None,
+            streamer_id: "test".to_string(),
+            session_id: "test".to_string(),
+            ..Default::default()
+        };
+
+        let err = processor.process(&input, &ctx).await.unwrap_err();
+        assert!(
+            err.to_string()
+                .contains("outputs to be empty or have the same length")
+        );
+    }
+
+    #[tokio::test]
+    async fn test_remux_batch_skips_unsupported_formats() {
+        let temp_dir = TempDir::new().unwrap();
+        let a = temp_dir.path().join("a.txt");
+        let b = temp_dir.path().join("b.txt");
+        fs::write(&a, "a").unwrap();
+        fs::write(&b, "b").unwrap();
+
+        let processor = RemuxProcessor::new();
+        let ctx = ProcessorContext::noop("test");
+
+        let input = ProcessorInput {
+            inputs: vec![
+                a.to_string_lossy().to_string(),
+                b.to_string_lossy().to_string(),
+            ],
+            outputs: vec![],
+            config: None,
+            streamer_id: "test".to_string(),
+            session_id: "test".to_string(),
+            ..Default::default()
+        };
+
+        let output = processor.process(&input, &ctx).await.unwrap();
+        assert_eq!(output.outputs.len(), 2);
+        assert_eq!(output.outputs[0], a.to_string_lossy().to_string());
+        assert_eq!(output.outputs[1], b.to_string_lossy().to_string());
+        assert!(output.items_produced.is_empty());
+        assert_eq!(output.skipped_inputs.len(), 2);
+    }
+
+    #[tokio::test]
+    async fn test_remux_batch_does_not_remove_skipped_inputs() {
+        let temp_dir = TempDir::new().unwrap();
+        let a = temp_dir.path().join("a.txt");
+        let b = temp_dir.path().join("b.txt");
+        fs::write(&a, "a").unwrap();
+        fs::write(&b, "b").unwrap();
+
+        let processor = RemuxProcessor::new();
+        let ctx = ProcessorContext::noop("test");
+
+        let input = ProcessorInput {
+            inputs: vec![
+                a.to_string_lossy().to_string(),
+                b.to_string_lossy().to_string(),
+            ],
+            outputs: vec![],
+            config: Some(serde_json::json!({ "remove_input_on_success": true }).to_string()),
+            streamer_id: "test".to_string(),
+            session_id: "test".to_string(),
+            ..Default::default()
+        };
+
+        let output = processor.process(&input, &ctx).await.unwrap();
+        assert_eq!(output.outputs.len(), 2);
+        assert!(a.exists());
+        assert!(b.exists());
+    }
+
+    #[test]
+    fn test_determine_output_path_avoids_in_place_collision() {
+        let temp_dir = TempDir::new().unwrap();
+        let input_path = temp_dir.path().join("a.mp4");
+        fs::write(&input_path, "dummy").unwrap();
+
+        let config = RemuxConfig::default(); // format=None => default "mp4"
+        let output = RemuxProcessor::determine_output_path_for_input(
+            &input_path.to_string_lossy(),
+            &config,
+            None,
+        )
+        .unwrap();
+
+        assert!(output.ends_with("_remux.mp4"));
+        assert_ne!(
+            make_absolute(&output),
+            make_absolute(&input_path.to_string_lossy())
+        );
     }
 }

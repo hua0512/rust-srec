@@ -6,10 +6,10 @@ import {
   FormLabel,
 } from '@/components/ui/form';
 import { Input } from '@/components/ui/input';
-import { Switch } from '@/components/ui/switch';
 import { Card, CardContent } from '@/components/ui/card';
 import { Trans } from '@lingui/react/macro';
-import { useEffect, useState } from 'react';
+import { useNestedFormState } from '@/hooks/use-form-field-update';
+import { SwitchCard } from '@/components/ui/switch-card';
 
 // Define the shape of the RetryPolicy object
 interface RetryPolicy {
@@ -39,45 +39,13 @@ export function RetryPolicyForm({
   name,
   mode = 'json',
 }: RetryPolicyFormProps) {
-  // Local state object to manage the fields before stringifying
-  const currentVal = form.watch(name);
-  const [policy, setPolicy] = useState<RetryPolicy>(DEFAULT_RETRY_POLICY);
-
-  // Sync local state with form's value
-  useEffect(() => {
-    if (currentVal) {
-      if (mode === 'json' && typeof currentVal === 'string') {
-        try {
-          const parsed = JSON.parse(currentVal);
-          setPolicy({ ...DEFAULT_RETRY_POLICY, ...parsed });
-        } catch (e) {
-          console.warn('Invalid RetryPolicy JSON', e);
-        }
-      } else if (typeof currentVal === 'object') {
-        setPolicy({ ...DEFAULT_RETRY_POLICY, ...currentVal });
-      }
-    } else {
-      setPolicy(DEFAULT_RETRY_POLICY);
-    }
-  }, [currentVal, mode]);
-
-  // Helper to update a single field and sync back to form
-  const updateField = <K extends keyof RetryPolicy>(
-    key: K,
-    value: RetryPolicy[K],
-  ) => {
-    const newPolicy = { ...policy, [key]: value };
-    setPolicy(newPolicy);
-    form.setValue(
-      name,
-      mode === 'json' ? JSON.stringify(newPolicy) : newPolicy,
-      {
-        shouldDirty: true,
-        shouldTouch: true,
-        shouldValidate: true,
-      },
-    );
-  };
+  // Use the custom hook to manage nested form state
+  const [policy, updateField] = useNestedFormState(
+    form,
+    name as any,
+    DEFAULT_RETRY_POLICY,
+    { mode },
+  );
 
   return (
     <Card className="border-muted/40 shadow-none bg-muted/20">
@@ -162,22 +130,17 @@ export function RetryPolicyForm({
           </FormItem>
         </div>
 
-        <div className="flex flex-row items-center justify-between rounded-lg border p-3 bg-background/50">
-          <div className="space-y-0.5">
-            <FormLabel className="text-base">
-              <Trans>Jitter</Trans>
-            </FormLabel>
-            <FormDescription className="text-xs">
-              <Trans>
-                Add randomness to retry delays to prevent thundering herd.
-              </Trans>
-            </FormDescription>
-          </div>
-          <Switch
-            checked={policy.use_jitter}
-            onCheckedChange={(checked) => updateField('use_jitter', checked)}
-          />
-        </div>
+        <SwitchCard
+          label={<Trans>Jitter</Trans>}
+          description={
+            <Trans>
+              Add randomness to retry delays to prevent thundering herd.
+            </Trans>
+          }
+          checked={policy.use_jitter}
+          onCheckedChange={(checked) => updateField('use_jitter', checked)}
+          className="bg-background/50"
+        />
       </CardContent>
     </Card>
   );

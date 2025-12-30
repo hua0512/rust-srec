@@ -7,8 +7,8 @@ edition = "2024"
 unexpected_cfgs = { level = "warn", check-cfg = ['cfg(coverage_nightly)'] }
 
 [dependencies]
-bytes = "1.11.0"
-byteorder = "1.5"
+bytes = { workspace = true }
+byteorder = { workspace = true }
 num-traits = "0.2"
 num-derive = "0.4"
-thiserror = "2.0"
+thiserror = { workspace = true }

@@ -26,10 +26,11 @@ import { Badge } from '@/components/ui/badge';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Separator } from '@/components/ui/separator';
 
-import { Trans } from '@lingui/react/macro';
-import { t } from '@lingui/core/macro';
+import { Trans, useLingui } from '@lingui/react/macro';
+import { t, plural } from '@lingui/core/macro';
 import { format } from 'date-fns';
 import { toast } from 'sonner';
+import { getProcessorDefinition } from '@/components/pipeline/presets/processors/registry';
 import { motion } from 'motion/react';
 import { useInView } from 'react-intersection-observer';
 import { cn } from '@/lib/utils';
@@ -65,7 +66,7 @@ import { formatDuration } from '@/lib/format';
 const STATUS_CONFIG: Record<
   string,
   {
-    icon: any;
+    icon: React.ElementType;
     color: string;
     badgeVariant: 'default' | 'secondary' | 'destructive' | 'outline';
     animate?: boolean;
@@ -120,6 +121,7 @@ const STATUS_CONFIG: Record<
 
 function JobDetailsPage() {
   const { jobId } = Route.useParams();
+  const { i18n } = useLingui();
   const queryClient = useQueryClient();
 
   const {
@@ -317,13 +319,30 @@ function JobDetailsPage() {
                       statusConfig.color,
                     )}
                   >
-                    {job.status}
+                    {i18n._(
+                      job.status === 'PENDING'
+                        ? t`Pending`
+                        : job.status === 'PROCESSING'
+                          ? t`Processing`
+                          : job.status === 'COMPLETED'
+                            ? t`Completed`
+                            : job.status === 'FAILED'
+                              ? t`Failed`
+                              : job.status === 'INTERRUPTED'
+                                ? t`Interrupted`
+                                : job.status,
+                    )}
                   </Badge>
                 </div>
                 <div className="flex flex-wrap items-center gap-2 text-sm text-muted-foreground font-medium">
                   <span className="flex items-center gap-1.5 px-2 py-0.5 rounded-md bg-muted/50 border border-border/50">
                     <Workflow className="h-3.5 w-3.5" />
-                    {job.processor_type.replace(/_/g, ' ')}
+                    {(() => {
+                      const def = getProcessorDefinition(job.processor_type);
+                      return def
+                        ? i18n._(def.label)
+                        : job.processor_type.replace(/_/g, ' ');
+                    })()}
                   </span>
                   <span className="opacity-40">•</span>
                   <span className="font-mono text-xs opacity-70 selection:bg-muted select-all">
@@ -370,7 +389,11 @@ function JobDetailsPage() {
                   variant="destructive"
                   className="shadow-lg shadow-destructive/20 hover:shadow-destructive/40 transition-all"
                   onClick={() => {
-                    if (confirm('Are you sure you want to delete this job?')) {
+                    if (
+                      confirm(
+                        i18n._(t`Are you sure you want to delete this job?`),
+                      )
+                    ) {
                       deleteMutation.mutate(job.id);
                     }
                   }}
@@ -439,7 +462,7 @@ function JobDetailsPage() {
                               1024 /
                               1024
                             ).toFixed(1)}{' '}
-                            MB
+                            <Trans>MB</Trans>
                           </Badge>
                         )}
                         {job.execution_info?.output_size_bytes && (
@@ -450,7 +473,7 @@ function JobDetailsPage() {
                               1024 /
                               1024
                             ).toFixed(1)}{' '}
-                            MB
+                            <Trans>MB</Trans>
                           </Badge>
                         )}
                       </div>
@@ -580,7 +603,8 @@ function JobDetailsPage() {
                         </div>
                         <div className="text-xl font-bold tracking-tight font-mono">
                           {progressSnapshot.speed_bytes_per_sec
-                            ? `${(progressSnapshot.speed_bytes_per_sec / 1024 / 1024).toFixed(2)} MB/s`
+                            ? `${(progressSnapshot.speed_bytes_per_sec / 1024 / 1024).toFixed(2)} ` +
+                              i18n._(t`MB/s`)
                             : '-'}
                         </div>
                       </div>
@@ -601,17 +625,25 @@ function JobDetailsPage() {
                 <div className="space-y-6">
                   <TimelineItem
                     label={t`Created`}
-                    time={job.created_at}
+                    time={i18n.date(job.created_at, { timeStyle: 'medium' })}
                     active
                   />
                   <TimelineItem
                     label={t`Started`}
-                    time={job.started_at}
+                    time={
+                      job.started_at
+                        ? i18n.date(job.started_at, { timeStyle: 'medium' })
+                        : undefined
+                    }
                     active={!!job.started_at}
                   />
                   <TimelineItem
                     label={t`Completed`}
-                    time={job.completed_at}
+                    time={
+                      job.completed_at
+                        ? i18n.date(job.completed_at, { timeStyle: 'medium' })
+                        : undefined
+                    }
                     active={!!job.completed_at}
                     isLast
                   />
@@ -669,7 +701,10 @@ function JobDetailsPage() {
                           variant="outline"
                           className="text-[10px] border-red-500/30 text-red-400 bg-red-500/10 hover:bg-red-500/20 transition-colors"
                         >
-                          {job.execution_info.log_error_count} Errors
+                          {plural(job.execution_info.log_error_count, {
+                            one: '# Error',
+                            other: '# Errors',
+                          })}
                         </Badge>
                       )}
                       {(job.execution_info.log_warn_count ?? 0) > 0 && (
@@ -677,7 +712,10 @@ function JobDetailsPage() {
                           variant="outline"
                           className="text-[10px] border-yellow-500/30 text-yellow-400 bg-yellow-500/10 hover:bg-yellow-500/20 transition-colors"
                         >
-                          {job.execution_info.log_warn_count} Warnings
+                          {plural(job.execution_info.log_warn_count, {
+                            one: '# Warning',
+                            other: '# Warnings',
+                          })}
                         </Badge>
                       )}
                       <Badge
@@ -685,8 +723,11 @@ function JobDetailsPage() {
                         className="text-[10px] border-zinc-700 text-zinc-500 bg-zinc-900"
                       >
                         {job.execution_info.log_lines_total
-                          ? `${job.execution_info.log_lines_total} Lines`
-                          : `Total ${totalLogs}`}
+                          ? plural(job.execution_info.log_lines_total, {
+                              one: '# Line',
+                              other: '# Lines',
+                            })
+                          : i18n._(t`Total`) + ` ${totalLogs}`}
                       </Badge>
                     </div>
                   </div>
@@ -697,7 +738,9 @@ function JobDetailsPage() {
                         {isLogsLoading && logs.length === 0 ? (
                           <div className="flex flex-col items-center justify-center h-[200px] text-zinc-700 space-y-2">
                             <RefreshCw className="h-6 w-6 animate-spin opacity-50" />
-                            <p>Loading logs...</p>
+                            <p>
+                              <Trans>Loading logs...</Trans>
+                            </p>
                           </div>
                         ) : logs.length > 0 ? (
                           <>
@@ -707,10 +750,9 @@ function JobDetailsPage() {
                                 className="flex gap-4 hover:bg-zinc-900/50 -mx-2 px-2 py-0.5 rounded transition-colors group"
                               >
                                 <span className="text-zinc-600 shrink-0 select-none w-20 group-hover:text-zinc-500 transition-colors">
-                                  {format(
-                                    new Date(log.timestamp),
-                                    'HH:mm:ss.SSS',
-                                  )}
+                                  {i18n.date(log.timestamp, {
+                                    timeStyle: 'medium',
+                                  })}
                                 </span>
                                 <span
                                   className={cn(
@@ -734,7 +776,7 @@ function JobDetailsPage() {
                                 {isFetchingNextPage ? (
                                   <div className="flex items-center gap-2 text-muted-foreground text-xs">
                                     <RefreshCw className="h-3 w-3 animate-spin" />
-                                    Loading older logs...
+                                    <Trans>Loading older logs...</Trans>
                                   </div>
                                 ) : (
                                   <div className="h-8" />
@@ -745,7 +787,11 @@ function JobDetailsPage() {
                         ) : (
                           <div className="flex flex-col items-center justify-center h-[200px] text-zinc-700">
                             <Terminal className="h-10 w-10 mb-3 opacity-20" />
-                            <p>No logs available for this execution.</p>
+                            <p>
+                              <Trans>
+                                No logs available for this execution.
+                              </Trans>
+                            </p>
                           </div>
                         )}
                         {/* Simulated Cursor */}

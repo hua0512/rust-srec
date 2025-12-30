@@ -73,6 +73,20 @@ export const StreamerSpecificConfigSchema = z.object({
     )
     .nullable()
     .optional(),
+  session_complete_pipeline: z
+    .preprocess(
+      (val) => (typeof val === 'string' ? JSON.parse(val) : val),
+      DagPipelineDefinitionSchema.nullable().optional(),
+    )
+    .nullable()
+    .optional(),
+  paired_segment_pipeline: z
+    .preprocess(
+      (val) => (typeof val === 'string' ? JSON.parse(val) : val),
+      DagPipelineDefinitionSchema.nullable().optional(),
+    )
+    .nullable()
+    .optional(),
 
   output_folder: z
     .preprocess((v) => (v === '' ? null : v), z.string().nullable().optional())

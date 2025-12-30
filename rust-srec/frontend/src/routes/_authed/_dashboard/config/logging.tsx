@@ -196,21 +196,6 @@ function LoggingConfigPage() {
 
   return (
     <div className="space-y-8 pb-32">
-      {/* Header */}
-      <div className="flex items-center justify-between">
-        <div className="space-y-1">
-          <h2 className="text-2xl font-semibold tracking-tight flex items-center gap-3">
-            <div className="p-2 rounded-lg bg-gradient-to-br from-violet-500/20 to-purple-500/10 ring-1 ring-violet-500/20">
-              <Terminal className="h-5 w-5 text-violet-400" />
-            </div>
-            <Trans>Logging Configuration</Trans>
-          </h2>
-          <p className="text-muted-foreground">
-            <Trans>Configure log levels for different modules</Trans>
-          </p>
-        </div>
-      </div>
-
       <motion.div
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}

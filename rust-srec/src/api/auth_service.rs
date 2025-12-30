@@ -404,6 +404,13 @@ impl AuthService {
             return Err(AuthError::IncorrectCurrentPassword);
         }
 
+        // Prevent password reuse - new password must be different from current
+        if current_password == new_password {
+            return Err(AuthError::WeakPassword(
+                "New password must be different from current password".to_string(),
+            ));
+        }
+
         // Validate new password strength
         self.validate_password_strength(new_password)?;
 
@@ -413,6 +420,14 @@ impl AuthService {
         // Update password and clear must_change_password flag
         self.user_repo
             .update_password(user_id, &new_hash, true)
+            .await
+            .map_err(|e| AuthError::Database(e.to_string()))?;
+
+        // Revoke all existing refresh tokens to invalidate all sessions
+        // This ensures that if an attacker has a stolen token, they cannot
+        // continue using it after the legitimate user changes their password
+        self.token_repo
+            .revoke_all_for_user(user_id)
             .await
             .map_err(|e| AuthError::Database(e.to_string()))?;
 

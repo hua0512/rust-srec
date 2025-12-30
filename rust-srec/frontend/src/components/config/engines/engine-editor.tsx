@@ -51,7 +51,6 @@ import { createEngine, updateEngine } from '@/server/functions';
 import { FfmpegForm } from './forms/ffmpeg-form';
 import { StreamlinkForm } from './forms/streamlink-form';
 import { MesioForm } from './forms/mesio-form';
-import { useEffect } from 'react';
 import { Link } from '@tanstack/react-router';
 import { cn } from '@/lib/utils';
 import { Badge } from '@/components/ui/badge';
@@ -61,28 +60,25 @@ interface EngineEditorProps {
   onSuccess: () => void;
 }
 
-export function EngineEditor({ engine, onSuccess }: EngineEditorProps) {
-  const isEdit = !!engine;
+interface EngineFormProps {
+  defaultValues: z.infer<typeof CreateEngineRequestSchema>;
+  isEdit: boolean;
+  engineId?: string;
+  onSuccess: () => void;
+}
+
+function EngineForm({
+  defaultValues,
+  isEdit,
+  engineId,
+  onSuccess,
+}: EngineFormProps) {
   const queryClient = useQueryClient();
 
   const form = useForm<z.infer<typeof CreateEngineRequestSchema>>({
     resolver: zodResolver(CreateEngineRequestSchema),
-    defaultValues: {
-      name: '',
-      engine_type: 'FFMPEG',
-      config: FfmpegConfigSchema.parse({}),
-    },
+    defaultValues,
   });
-
-  useEffect(() => {
-    if (engine) {
-      form.reset({
-        name: engine.name,
-        engine_type: engine.engine_type,
-        config: engine.config as Record<string, unknown>,
-      });
-    }
-  }, [engine, form]);
 
   const engineType = form.watch('engine_type');
 
@@ -100,7 +96,7 @@ export function EngineEditor({ engine, onSuccess }: EngineEditorProps) {
 
   const updateMutation = useMutation({
     mutationFn: (data: z.infer<typeof UpdateEngineRequestSchema>) =>
-      updateEngine({ data: { id: engine!.id, data } }),
+      updateEngine({ data: { id: engineId!, data } }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['engines'] });
       onSuccess();
@@ -116,6 +112,205 @@ export function EngineEditor({ engine, onSuccess }: EngineEditorProps) {
   };
 
   const isSubmitting = createMutation.isPending || updateMutation.isPending;
+
+  return (
+    <Form {...form}>
+      <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-8">
+        {/* Basic Info Card */}
+        <Card className="border-border/40 bg-gradient-to-br from-card to-card/50 backdrop-blur-sm shadow-sm hover:shadow-md transition-shadow duration-500">
+          <CardHeader className="pb-4">
+            <div className="flex items-center gap-3">
+              <div className="p-2 rounded-lg bg-primary/10 text-primary ring-1 ring-primary/20">
+                <Tag className="w-5 h-5" />
+              </div>
+              <div>
+                <CardTitle className="text-lg">
+                  <Trans>Basic Information</Trans>
+                </CardTitle>
+                <CardDescription>
+                  <Trans>Identity and type of the engine.</Trans>
+                </CardDescription>
+              </div>
+            </div>
+          </CardHeader>
+          <CardContent className="grid gap-8 md:grid-cols-2">
+            <FormField
+              control={form.control}
+              name="name"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel className="text-xs uppercase tracking-wider text-muted-foreground font-semibold">
+                    <Trans>Engine Name</Trans>
+                  </FormLabel>
+                  <FormControl>
+                    <Input
+                      className="h-10 bg-background/50 border-input/50 focus:border-primary/50 transition-colors"
+                      placeholder={t`e.g. High Quality Streamlink`}
+                      {...field}
+                    />
+                  </FormControl>
+                  <FormDescription>
+                    <Trans>
+                      A unique and descriptive name for this configuration.
+                    </Trans>
+                  </FormDescription>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+
+            <FormField
+              control={form.control}
+              name="engine_type"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel className="text-xs uppercase tracking-wider text-muted-foreground font-semibold">
+                    <Trans>Engine Type</Trans>
+                  </FormLabel>
+                  <Select
+                    onValueChange={(value) => {
+                      field.onChange(value);
+                      // Reset config to defaults of new type
+                      if (value === 'FFMPEG')
+                        form.setValue(
+                          'config',
+                          FfmpegConfigSchema.parse({}) as any,
+                        );
+                      if (value === 'STREAMLINK')
+                        form.setValue(
+                          'config',
+                          StreamlinkConfigSchema.parse({}) as any,
+                        );
+                      if (value === 'MESIO')
+                        form.setValue(
+                          'config',
+                          MesioConfigSchema.parse({}) as any,
+                        );
+                    }}
+                    value={field.value}
+                  >
+                    <FormControl>
+                      <SelectTrigger className="h-10 bg-background/50 border-input/50 focus:border-primary/50 transition-colors">
+                        <SelectValue placeholder={t`Select type`} />
+                      </SelectTrigger>
+                    </FormControl>
+                    <SelectContent>
+                      <SelectItem value="FFMPEG">
+                        <div className="flex items-center gap-2">
+                          <Terminal className="w-4 h-4 text-emerald-500" />
+                          <span className="font-medium">FFmpeg</span>
+                        </div>
+                      </SelectItem>
+                      <SelectItem value="STREAMLINK">
+                        <div className="flex items-center gap-2">
+                          <Radio className="w-4 h-4 text-sky-500" />
+                          <span className="font-medium">Streamlink</span>
+                        </div>
+                      </SelectItem>
+                      <SelectItem value="MESIO">
+                        <div className="flex items-center gap-2">
+                          <Database className="w-4 h-4 text-indigo-500" />
+                          <span className="font-medium">Mesio</span>
+                        </div>
+                      </SelectItem>
+                    </SelectContent>
+                  </Select>
+                  <FormDescription>
+                    <Trans>The underlying tool used for downloading.</Trans>
+                  </FormDescription>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+          </CardContent>
+        </Card>
+
+        {/* Configuration Card */}
+        <Card className="border-border/40 bg-gradient-to-br from-card to-card/50 backdrop-blur-sm shadow-sm hover:shadow-md transition-shadow duration-500">
+          <CardHeader className="border-b border-border/40 bg-muted/20 pb-4">
+            <div className="flex flex-row items-center gap-3">
+              <div className="p-2 rounded-lg bg-primary/10 text-primary ring-1 ring-primary/20">
+                {engineType === 'FFMPEG' && <Terminal className="w-5 h-5" />}
+                {engineType === 'STREAMLINK' && <Radio className="w-5 h-5" />}
+                {engineType === 'MESIO' && <Database className="w-5 h-5" />}
+              </div>
+              <div className="space-y-0.5">
+                <CardTitle className="text-lg flex items-center gap-2">
+                  {engineType === 'FFMPEG'
+                    ? 'FFmpeg'
+                    : engineType === 'STREAMLINK'
+                      ? 'Streamlink'
+                      : 'Mesio'}
+                  <Trans>Settings</Trans>
+                </CardTitle>
+                <CardDescription>
+                  <Trans>
+                    Configure granular options for the selected engine.
+                  </Trans>
+                </CardDescription>
+              </div>
+            </div>
+          </CardHeader>
+          <CardContent className="pt-6">
+            {engineType === 'FFMPEG' && <FfmpegForm control={form.control} />}
+            {engineType === 'STREAMLINK' && (
+              <StreamlinkForm control={form.control} />
+            )}
+            {engineType === 'MESIO' && <MesioForm control={form.control} />}
+          </CardContent>
+        </Card>
+
+        <AnimatePresence>
+          {form.formState.isDirty && (
+            <motion.div
+              initial={{ opacity: 0, y: 20, scale: 0.9 }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              exit={{ opacity: 0, y: 20, scale: 0.9 }}
+              transition={{ duration: 0.2 }}
+              className="fixed bottom-6 right-6 md:bottom-10 md:right-10 z-50"
+            >
+              <Button
+                type="submit"
+                disabled={isSubmitting}
+                size="lg"
+                className={cn(
+                  'h-14 px-8 rounded-full font-semibold shadow-2xl shadow-primary/30 transition-all duration-300',
+                  isSubmitting
+                    ? 'opacity-50 grayscale scale-95'
+                    : 'bg-gradient-to-r from-primary to-primary/90 hover:scale-105 active:scale-95 hover:shadow-primary/50',
+                )}
+              >
+                {isSubmitting ? (
+                  <Loader2 className="w-5 h-5 mr-2 animate-spin" />
+                ) : (
+                  <Save className="w-5 h-5 mr-2" />
+                )}
+                {isEdit ? t`Save Changes` : t`Create Engine`}
+              </Button>
+            </motion.div>
+          )}
+        </AnimatePresence>
+        {/* Add padding at bottom to prevent floating button from covering content */}
+        <div className="h-24" />
+      </form>
+    </Form>
+  );
+}
+
+export function EngineEditor({ engine, onSuccess }: EngineEditorProps) {
+  const isEdit = !!engine;
+
+  const defaultValues = isEdit
+    ? {
+        name: engine.name,
+        engine_type: engine.engine_type,
+        config: engine.config as Record<string, unknown>,
+      }
+    : {
+        name: '',
+        engine_type: 'FFMPEG' as const,
+        config: FfmpegConfigSchema.parse({}),
+      };
 
   return (
     <motion.div
@@ -166,186 +361,13 @@ export function EngineEditor({ engine, onSuccess }: EngineEditorProps) {
         </div>
       </div>
 
-      <Form {...form}>
-        <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-8">
-          {/* Basic Info Card */}
-          <Card className="border-border/40 bg-gradient-to-br from-card to-card/50 backdrop-blur-sm shadow-sm hover:shadow-md transition-shadow duration-500">
-            <CardHeader className="pb-4">
-              <div className="flex items-center gap-3">
-                <div className="p-2 rounded-lg bg-primary/10 text-primary ring-1 ring-primary/20">
-                  <Tag className="w-5 h-5" />
-                </div>
-                <div>
-                  <CardTitle className="text-lg">
-                    <Trans>Basic Information</Trans>
-                  </CardTitle>
-                  <CardDescription>
-                    <Trans>Identity and type of the engine.</Trans>
-                  </CardDescription>
-                </div>
-              </div>
-            </CardHeader>
-            <CardContent className="grid gap-8 md:grid-cols-2">
-              <FormField
-                control={form.control}
-                name="name"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel className="text-xs uppercase tracking-wider text-muted-foreground font-semibold">
-                      <Trans>Engine Name</Trans>
-                    </FormLabel>
-                    <FormControl>
-                      <Input
-                        className="h-10 bg-background/50 border-input/50 focus:border-primary/50 transition-colors"
-                        placeholder={t`e.g. High Quality Streamlink`}
-                        {...field}
-                      />
-                    </FormControl>
-                    <FormDescription>
-                      <Trans>
-                        A unique and descriptive name for this configuration.
-                      </Trans>
-                    </FormDescription>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-
-              <FormField
-                control={form.control}
-                name="engine_type"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel className="text-xs uppercase tracking-wider text-muted-foreground font-semibold">
-                      <Trans>Engine Type</Trans>
-                    </FormLabel>
-                    <Select
-                      onValueChange={(value) => {
-                        field.onChange(value);
-                        // Reset config to defaults of new type
-                        if (value === 'FFMPEG')
-                          form.setValue(
-                            'config',
-                            FfmpegConfigSchema.parse({}) as any,
-                          );
-                        if (value === 'STREAMLINK')
-                          form.setValue(
-                            'config',
-                            StreamlinkConfigSchema.parse({}) as any,
-                          );
-                        if (value === 'MESIO')
-                          form.setValue(
-                            'config',
-                            MesioConfigSchema.parse({}) as any,
-                          );
-                      }}
-                      defaultValue={field.value}
-                    >
-                      <FormControl>
-                        <SelectTrigger className="h-10 bg-background/50 border-input/50 focus:border-primary/50 transition-colors">
-                          <SelectValue placeholder={t`Select type`} />
-                        </SelectTrigger>
-                      </FormControl>
-                      <SelectContent>
-                        <SelectItem value="FFMPEG">
-                          <div className="flex items-center gap-2">
-                            <Terminal className="w-4 h-4 text-emerald-500" />
-                            <span className="font-medium">FFmpeg</span>
-                          </div>
-                        </SelectItem>
-                        <SelectItem value="STREAMLINK">
-                          <div className="flex items-center gap-2">
-                            <Radio className="w-4 h-4 text-sky-500" />
-                            <span className="font-medium">Streamlink</span>
-                          </div>
-                        </SelectItem>
-                        <SelectItem value="MESIO">
-                          <div className="flex items-center gap-2">
-                            <Database className="w-4 h-4 text-indigo-500" />
-                            <span className="font-medium">Mesio</span>
-                          </div>
-                        </SelectItem>
-                      </SelectContent>
-                    </Select>
-                    <FormDescription>
-                      <Trans>The underlying tool used for downloading.</Trans>
-                    </FormDescription>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-            </CardContent>
-          </Card>
-
-          {/* Configuration Card */}
-          <Card className="border-border/40 bg-gradient-to-br from-card to-card/50 backdrop-blur-sm shadow-sm hover:shadow-md transition-shadow duration-500">
-            <CardHeader className="border-b border-border/40 bg-muted/20 pb-4">
-              <div className="flex flex-row items-center gap-3">
-                <div className="p-2 rounded-lg bg-primary/10 text-primary ring-1 ring-primary/20">
-                  {engineType === 'FFMPEG' && <Terminal className="w-5 h-5" />}
-                  {engineType === 'STREAMLINK' && <Radio className="w-5 h-5" />}
-                  {engineType === 'MESIO' && <Database className="w-5 h-5" />}
-                </div>
-                <div className="space-y-0.5">
-                  <CardTitle className="text-lg flex items-center gap-2">
-                    {engineType === 'FFMPEG'
-                      ? 'FFmpeg'
-                      : engineType === 'STREAMLINK'
-                        ? 'Streamlink'
-                        : 'Mesio'}
-                    <Trans>Settings</Trans>
-                  </CardTitle>
-                  <CardDescription>
-                    <Trans>
-                      Configure granular options for the selected engine.
-                    </Trans>
-                  </CardDescription>
-                </div>
-              </div>
-            </CardHeader>
-            <CardContent className="pt-6">
-              {engineType === 'FFMPEG' && <FfmpegForm control={form.control} />}
-              {engineType === 'STREAMLINK' && (
-                <StreamlinkForm control={form.control} />
-              )}
-              {engineType === 'MESIO' && <MesioForm control={form.control} />}
-            </CardContent>
-          </Card>
-
-          <AnimatePresence>
-            {form.formState.isDirty && (
-              <motion.div
-                initial={{ opacity: 0, y: 20, scale: 0.9 }}
-                animate={{ opacity: 1, y: 0, scale: 1 }}
-                exit={{ opacity: 0, y: 20, scale: 0.9 }}
-                transition={{ duration: 0.2 }}
-                className="fixed bottom-6 right-6 md:bottom-10 md:right-10 z-50"
-              >
-                <Button
-                  type="submit"
-                  disabled={isSubmitting}
-                  size="lg"
-                  className={cn(
-                    'h-14 px-8 rounded-full font-semibold shadow-2xl shadow-primary/30 transition-all duration-300',
-                    isSubmitting
-                      ? 'opacity-50 grayscale scale-95'
-                      : 'bg-gradient-to-r from-primary to-primary/90 hover:scale-105 active:scale-95 hover:shadow-primary/50',
-                  )}
-                >
-                  {isSubmitting ? (
-                    <Loader2 className="w-5 h-5 mr-2 animate-spin" />
-                  ) : (
-                    <Save className="w-5 h-5 mr-2" />
-                  )}
-                  {isEdit ? t`Save Changes` : t`Create Engine`}
-                </Button>
-              </motion.div>
-            )}
-          </AnimatePresence>
-          {/* Add padding at bottom to prevent floating button from covering content */}
-          <div className="h-24" />
-        </form>
-      </Form>
+      <EngineForm
+        key={engine?.id || 'new'}
+        defaultValues={defaultValues}
+        isEdit={isEdit}
+        engineId={engine?.id}
+        onSuccess={onSuccess}
+      />
     </motion.div>
   );
 }

@@ -3,22 +3,30 @@ import { Save, Zap } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Trans } from '@lingui/react/macro';
 
+import { useFormContext, useFormState, Control } from 'react-hook-form';
+
 interface StreamerSaveFabProps {
-  isDirty: boolean;
   isSaving: boolean;
   onSubmit?: () => void;
   formId?: string;
+  // Allow passing control directly when not inside a Form provider
+  control?: Control<any>;
+  alwaysVisible?: boolean;
 }
 
-export function StreamerSaveFab({
-  isDirty,
+// Inner component that uses useFormState - only renders when control is available
+function SaveFabWithFormState({
   isSaving,
   onSubmit,
   formId,
-}: StreamerSaveFabProps) {
+  control,
+  alwaysVisible,
+}: StreamerSaveFabProps & { control: Control<any> }) {
+  const { isDirty } = useFormState({ control });
+
   return (
     <AnimatePresence>
-      {(isDirty || isSaving) && (
+      {(isDirty || isSaving || alwaysVisible) && (
         <motion.div
           initial={{ opacity: 0, y: 50, scale: 0.9 }}
           animate={{ opacity: 1, y: 0, scale: 1 }}
@@ -50,4 +58,21 @@ export function StreamerSaveFab({
       )}
     </AnimatePresence>
   );
+}
+
+export function StreamerSaveFab({
+  control: propControl,
+  ...props
+}: StreamerSaveFabProps) {
+  const formContext = useFormContext();
+
+  // Use control from props if provided, otherwise try form context
+  const control = propControl ?? formContext?.control;
+
+  // If no control available, don't render
+  if (!control) {
+    return null;
+  }
+
+  return <SaveFabWithFormState {...props} control={control} />;
 }

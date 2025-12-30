@@ -17,6 +17,7 @@ use crate::domain::Priority as DomainPriority;
 use crate::domain::streamer::StreamerState;
 use crate::domain::value_objects::Priority as ApiPriority;
 use crate::streamer::StreamerMetadata;
+use crate::utils::json::{self, JsonContext};
 
 /// Convert API Priority to Domain Priority.
 fn api_to_domain_priority(p: ApiPriority) -> DomainPriority {
@@ -67,10 +68,14 @@ fn metadata_to_response(metadata: &StreamerMetadata) -> StreamerResponse {
         last_live_time: metadata.last_live_time,
         created_at: metadata.created_at,
         updated_at: metadata.updated_at,
-        streamer_specific_config: metadata
-            .streamer_specific_config
-            .as_ref()
-            .and_then(|s| serde_json::from_str(s).ok()),
+        streamer_specific_config: json::parse_optional_value_non_null(
+            metadata.streamer_specific_config.as_deref(),
+            JsonContext::StreamerField {
+                streamer_id: &metadata.id,
+                field: "streamer_specific_config",
+            },
+            "Invalid JSON field; omitting from response",
+        ),
     }
 }
 
@@ -247,10 +252,28 @@ pub async fn list_streamers(
             });
         }
         _ => {
-            // Default: match DB ordering and keep pages stable.
+            // Default: LIVE streamers first, then by priority desc, name asc, id asc.
+            // This ensures active streamers are always visible at the top.
             streamers.sort_by(|a, b| {
-                b.priority
-                    .cmp(&a.priority)
+                // State priority: Active states first, then offline, then errors, then disabled
+                let state_order = |s: &StreamerState| -> u8 {
+                    match s {
+                        StreamerState::Live => 0,
+                        StreamerState::Error => 1,
+                        StreamerState::FatalError => 2,
+                        StreamerState::OutOfSpace => 3,
+                        StreamerState::NotFound => 4,
+                        StreamerState::TemporalDisabled => 5,
+                        StreamerState::InspectingLive => 6,
+                        StreamerState::OutOfSchedule => 7,
+                        StreamerState::Cancelled => 8,
+                        StreamerState::Disabled => 9,
+                        StreamerState::NotLive => 10,
+                    }
+                };
+                state_order(&a.state)
+                    .cmp(&state_order(&b.state))
+                    .then_with(|| b.priority.cmp(&a.priority))
                     .then_with(|| a.name.cmp(&b.name))
                     .then_with(|| a.id.cmp(&b.id))
             });
@@ -341,13 +364,71 @@ pub async fn update_streamer(
     }
 
     // Convert enabled flag to state if provided
-    let new_state = request.enabled.map(|enabled| {
-        if enabled {
-            StreamerState::NotLive
-        } else {
-            StreamerState::Disabled
+    let current_metadata = streamer_manager.get_streamer(&id);
+    let current_state = current_metadata.as_ref().map(|m| m.state);
+
+    tracing::debug!(
+        streamer_id = %id,
+        current_state = ?current_state,
+        request_enabled = ?request.enabled,
+        "Processing update_streamer state transition"
+    );
+
+    let new_state = match request.enabled {
+        Some(true) => {
+            // User wants to enable the streamer
+            // Only transition to NotLive if:
+            // 1. Currently Disabled (manual disable)
+            // 2. In an error state that can be recovered (FatalError, Error, TemporalDisabled, etc.)
+            // Otherwise preserve current state (e.g., Live, NotLive, InspectingLive)
+            match current_metadata {
+                Some(metadata) => {
+                    let current = metadata.state;
+                    if current == StreamerState::Disabled || current.is_error() {
+                        // Disabled or error state: transition to NotLive to restart monitoring
+                        if current.can_transition_to(StreamerState::NotLive) {
+                            tracing::debug!(
+                                streamer_id = %id,
+                                from = ?current,
+                                to = "NotLive",
+                                "Transitioning from disabled/error state"
+                            );
+                            Some(StreamerState::NotLive)
+                        } else {
+                            tracing::debug!(
+                                streamer_id = %id,
+                                current = ?current,
+                                "Invalid transition, preserving current state"
+                            );
+                            None // Invalid transition, preserve current
+                        }
+                    } else {
+                        tracing::debug!(
+                            streamer_id = %id,
+                            current = ?current,
+                            "Active state, preserving current state"
+                        );
+                        None // Active state (Live, NotLive, etc.): preserve current
+                    }
+                }
+                None => {
+                    tracing::debug!(streamer_id = %id, "Streamer not found, using NotLive fallback");
+                    Some(StreamerState::NotLive) // Fallback for new streamers
+                }
+            }
         }
-    });
+        Some(false) => {
+            tracing::debug!(streamer_id = %id, "Disabling streamer");
+            Some(StreamerState::Disabled)
+        }
+        None => None,
+    };
+
+    tracing::debug!(
+        streamer_id = %id,
+        new_state = ?new_state,
+        "Computed new state for update"
+    );
 
     // Convert API priority to domain priority if provided
     let new_priority = request.priority.map(api_to_domain_priority);
@@ -1138,6 +1219,8 @@ pub async fn extract_metadata(
             download_retry_policy: c.download_retry_policy,
             event_hooks: c.event_hooks,
             pipeline: c.pipeline,
+            session_complete_pipeline: c.session_complete_pipeline,
+            paired_segment_pipeline: c.paired_segment_pipeline,
         })
         .collect();
 

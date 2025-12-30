@@ -5,11 +5,15 @@ import { SharedConfigEditor } from '../../config/shared-config-editor';
 interface StreamerConfigurationProps {
   form: UseFormReturn<any>;
   engines?: EngineConfig[];
+  streamerId?: string;
+  credentialPlatformNameHint?: string;
 }
 
 export function StreamerConfiguration({
   form,
   engines,
+  streamerId,
+  credentialPlatformNameHint,
 }: StreamerConfigurationProps) {
   // We can directly watch form values if needed, but shared components bind directly to form context.
   // The 'streamer_specific_config' is now a nested object in the form state.
@@ -30,9 +34,13 @@ export function StreamerConfiguration({
         danmuSampling: `${basePath}.danmu_sampling_config`,
         hooks: `${basePath}.event_hooks`,
         pipeline: `${basePath}.pipeline`,
+        sessionCompletePipeline: `${basePath}.session_complete_pipeline`,
+        pairedSegmentPipeline: `${basePath}.paired_segment_pipeline`,
       }}
       configMode="object"
       proxyMode="object"
+      streamerId={streamerId}
+      credentialPlatformNameHint={credentialPlatformNameHint}
     />
   );
 }

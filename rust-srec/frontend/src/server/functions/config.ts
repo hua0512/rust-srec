@@ -29,6 +29,8 @@ const jsonToString = z.any().transform((val) => {
 const GlobalConfigUpdateSchema = GlobalConfigWriteSchema.extend({
   proxy_config: jsonToString.optional(),
   pipeline: jsonToString.optional(),
+  session_complete_pipeline: jsonToString.optional(),
+  paired_segment_pipeline: jsonToString.optional(),
 });
 
 export const updateGlobalConfig = createServerFn({ method: 'POST' })
@@ -91,6 +93,8 @@ const PlatformConfigWriteSchema = PlatformConfigSchema.partial().extend({
   proxy_config: jsonToString.optional(),
   event_hooks: jsonToString.optional(),
   pipeline: jsonToString.optional(),
+  session_complete_pipeline: jsonToString.optional(),
+  paired_segment_pipeline: jsonToString.optional(),
   platform_specific_config: jsonToString.optional(),
 });
 
@@ -147,6 +151,8 @@ const TemplateWriteSchema = CreateTemplateRequestSchema.extend({
   proxy_config: jsonToString.optional(),
   event_hooks: jsonToString.optional(),
   pipeline: jsonToString.optional(),
+  session_complete_pipeline: jsonToString.optional(),
+  paired_segment_pipeline: jsonToString.optional(),
 });
 
 export const createTemplate = createServerFn({ method: 'POST' })
@@ -181,6 +187,17 @@ export const deleteTemplate = createServerFn({ method: 'POST' })
   .inputValidator((id: string) => id)
   .handler(async ({ data: id }) => {
     await fetchBackend(`/templates/${id}`, { method: 'DELETE' });
+  });
+
+export const cloneTemplate = createServerFn({ method: 'POST' })
+  .inputValidator((d: { id: string; new_name: string }) => d)
+  .handler(async ({ data }) => {
+    const { id, new_name } = data;
+    const json = await fetchBackend(`/templates/${id}/clone`, {
+      method: 'POST',
+      body: JSON.stringify({ new_name }),
+    });
+    return TemplateSchema.parse(json);
   });
 
 // --- Backup & Restore ---

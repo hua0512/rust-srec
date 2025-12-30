@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, memo } from 'react';
 import { useInfiniteQuery } from '@tanstack/react-query';
 import {
   Search,
@@ -12,6 +12,7 @@ import {
 } from 'lucide-react';
 import { Trans } from '@lingui/react/macro';
 import { t } from '@lingui/core/macro';
+import { useLingui } from '@lingui/react';
 import { motion, AnimatePresence } from 'motion/react';
 import { useInView } from 'react-intersection-observer';
 
@@ -33,6 +34,13 @@ import { listJobPresets } from '@/server/functions/job';
 import { listPipelinePresets } from '@/server/functions/pipeline';
 import { PipelineStep } from '@/api/schemas';
 import { cn } from '@/lib/utils';
+import {
+  getCategoryName,
+  getJobPresetDescription,
+  getJobPresetName,
+  getPipelinePresetDescription,
+  getPipelinePresetName,
+} from '@/components/pipeline/presets/default-presets-i18n';
 
 interface StepLibraryProps {
   onAddStep: (step: PipelineStep) => void;
@@ -40,7 +48,7 @@ interface StepLibraryProps {
   trigger?: React.ReactNode;
 }
 
-export function StepLibrary({
+export const StepLibrary = memo(function StepLibrary({
   onAddStep,
   currentSteps,
   trigger,
@@ -50,6 +58,8 @@ export function StepLibrary({
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
   const [isOpen, setIsOpen] = useState(false);
   const [activeTab, setActiveTab] = useState('presets');
+
+  const { i18n } = useLingui();
 
   const { ref: presetsRef, inView: presetsInView } = useInView();
   const { ref: workflowsRef, inView: workflowsInView } = useInView();
@@ -293,7 +303,7 @@ export function StepLibrary({
                           : 'bg-background border border-border/50 hover:bg-muted',
                       )}
                     >
-                      {cat}
+                      {getCategoryName(cat, i18n)}
                     </Button>
                   ))}
                 </div>
@@ -376,14 +386,16 @@ export function StepLibrary({
 
                               <div className="space-y-1.5 relative z-10">
                                 <div className="font-semibold text-base tracking-tight text-foreground flex items-center justify-between">
-                                  {preset.name}
+                                  {getJobPresetName(preset, i18n)}
                                 </div>
-                                {preset.description && (
+                                {getJobPresetDescription(preset, i18n) && (
                                   <p className="text-xs text-muted-foreground/80 line-clamp-2 leading-relaxed h-9">
-                                    {preset.description}
+                                    {getJobPresetDescription(preset, i18n)}
                                   </p>
                                 )}
-                                {!preset.description && <div className="h-9" />}
+                                {!getJobPresetDescription(preset, i18n) && (
+                                  <div className="h-9" />
+                                )}
                               </div>
 
                               {/* Hover Action */}
@@ -505,16 +517,23 @@ export function StepLibrary({
 
                               <div className="space-y-1.5 relative z-10">
                                 <div className="font-semibold text-base tracking-tight text-foreground flex items-center justify-between">
-                                  {workflow.name}
+                                  {getPipelinePresetName(workflow, i18n)}
                                 </div>
-                                {workflow.description && (
+                                {getPipelinePresetDescription(
+                                  workflow,
+                                  i18n,
+                                ) && (
                                   <p className="text-xs text-muted-foreground/80 line-clamp-2 leading-relaxed h-9">
-                                    {workflow.description}
+                                    {getPipelinePresetDescription(
+                                      workflow,
+                                      i18n,
+                                    )}
                                   </p>
                                 )}
-                                {!workflow.description && (
-                                  <div className="h-9" />
-                                )}
+                                {!getPipelinePresetDescription(
+                                  workflow,
+                                  i18n,
+                                ) && <div className="h-9" />}
                               </div>
 
                               {/* Hover Action */}
@@ -576,4 +595,4 @@ export function StepLibrary({
       </SheetContent>
     </Sheet>
   );
-}
+});

@@ -28,6 +28,7 @@ pub trait SessionRepository: Send + Sync {
     async fn resume_session(&self, id: &str) -> Result<()>;
     async fn update_session_titles(&self, id: &str, titles: &str) -> Result<()>;
     async fn delete_session(&self, id: &str) -> Result<()>;
+    async fn delete_sessions_batch(&self, ids: &[String]) -> Result<u64>;
 
     // Filtering and pagination (Requirements 4.1, 4.3, 4.4, 4.5)
     /// List sessions with optional filters and pagination.
@@ -176,6 +177,24 @@ impl SessionRepository for SqlxSessionRepository {
             .execute(&self.pool)
             .await?;
         Ok(())
+    }
+
+    async fn delete_sessions_batch(&self, ids: &[String]) -> Result<u64> {
+        if ids.is_empty() {
+            return Ok(0);
+        }
+
+        // Build a query with multiple placeholders: DELETE FROM live_sessions WHERE id IN (?, ?, ...)
+        let placeholders = ids.iter().map(|_| "?").collect::<Vec<_>>().join(", ");
+        let sql = format!("DELETE FROM live_sessions WHERE id IN ({})", placeholders);
+
+        let mut query = sqlx::query(&sql);
+        for id in ids {
+            query = query.bind(id);
+        }
+
+        let result = query.execute(&self.pool).await?;
+        Ok(result.rows_affected())
     }
 
     async fn get_media_output(&self, id: &str) -> Result<MediaOutputDbModel> {

@@ -7,7 +7,7 @@ use crate::extractor::platforms::douyin::apis::{
 };
 use crate::extractor::platforms::douyin::models::{
     DouyinAppResponse, DouyinPcData, DouyinPcResponse, DouyinQuality, DouyinStreamDataParsed,
-    DouyinStreamExtras, DouyinStreamUrl, DouyinUserInfo,
+    DouyinStreamExtras, DouyinStreamUrl, DouyinUserInfo, normalize_bitrate, normalize_codec,
 };
 use crate::extractor::platforms::douyin::utils::{
     GlobalTtwidManager, extract_rid, fetch_ttwid, generate_ms_token, generate_nonce,
@@ -54,6 +54,10 @@ pub struct DouyinExtractorConfig {
     pub ttwid: Option<String>,
     /// Whether to use double screen stream data if available.
     pub double_screen: bool,
+    /// Force the use of mobile API for stream extraction.
+    pub force_mobile_api: bool,
+    /// Skip interactive game streams (互动玩法), treat as offline.
+    pub skip_interactive_games: bool,
 }
 
 /// Builder for `DouyinExtractorConfig`.
@@ -63,6 +67,8 @@ pub struct Douyin {
     ttwid_management_mode: TtwidManagementMode,
     ttwid: Option<String>,
     double_screen: bool,
+    force_mobile_api: bool,
+    skip_interactive_games: bool,
 }
 
 impl Douyin {
@@ -110,12 +116,18 @@ impl Douyin {
             .and_then(|extras| extras.get("ttwid").and_then(|v| v.as_str()))
             .map(|v| v.to_string());
 
+        let force_mobile_api = parse_bool_from_extras(extras.as_ref(), "force_mobile_api", false);
+        let skip_interactive_games =
+            parse_bool_from_extras(extras.as_ref(), "skip_interactive_games", true);
+
         Self {
             extractor,
             force_origin_quality,
             ttwid_management_mode,
             ttwid,
             double_screen,
+            force_mobile_api,
+            skip_interactive_games,
         }
     }
 
@@ -141,6 +153,18 @@ impl Douyin {
         self.ttwid_management_mode = TtwidManagementMode::PerExtractor;
         self
     }
+
+    /// Force the use of mobile API for stream extraction.
+    pub fn force_mobile_api(mut self, enable: bool) -> Self {
+        self.force_mobile_api = enable;
+        self
+    }
+
+    /// Skip interactive game streams (互动玩法), treating them as offline.
+    pub fn skip_interactive_games(mut self, enable: bool) -> Self {
+        self.skip_interactive_games = enable;
+        self
+    }
 }
 
 /// Handles the state and logic for a single `extract` call.
@@ -156,6 +180,9 @@ struct DouyinRequest<'a> {
 impl<'a> DouyinRequest<'a> {
     /// Creates a new request handler.
     fn new(cookies: FxHashMap<String, String>, config: &'a Douyin, web_rid: String) -> Self {
+        let mut cookies = cookies;
+        cookies.insert("hevc_supported".to_string(), "true".to_string());
+
         Self {
             config,
             web_rid,
@@ -170,7 +197,21 @@ impl<'a> DouyinRequest<'a> {
     async fn extract(&mut self) -> Result<MediaInfo, ExtractorError> {
         self.ensure_all_requirements().await?;
 
+        // Force mobile API if configured
+        // We still need to call PC API first to get sec_user_id and room_id
+        if self.config.force_mobile_api {
+            let pc_response = self.get_pc_response().await?;
+            // Extract just the user info (sec_uid and room_id) from PC response
+            if let Err(e) = self.extract_user_info_from_pc_response(&pc_response) {
+                debug!("Failed to extract user info from PC response: {:?}", e);
+                return Err(e);
+            }
+            let app_response = self.get_app_response().await?;
+            return self.parse_app_response(&app_response);
+        }
+
         let pc_response = self.get_pc_response().await?;
+        // std::fs::write("pc_response.json", &pc_response).unwrap();
         match self.parse_pc_response(&pc_response) {
             Ok(media_info) => Ok(media_info),
             Err(err) => {
@@ -182,6 +223,42 @@ impl<'a> DouyinRequest<'a> {
                 Err(err)
             }
         }
+    }
+
+    /// Extracts only the user info (sec_uid and room_id) from PC response.
+    /// Used when forcing mobile API to get required parameters.
+    fn extract_user_info_from_pc_response(&mut self, body: &str) -> Result<(), ExtractorError> {
+        if body.is_empty() {
+            return Err(ExtractorError::ValidationError(
+                "Empty response from API".to_string(),
+            ));
+        }
+
+        let trimmed = body.trim_start();
+        if trimmed.starts_with("<!") || trimmed.starts_with("<html") {
+            return Err(ExtractorError::ValidationError(
+                "Received HTML error page instead of JSON".to_string(),
+            ));
+        }
+
+        let response: DouyinPcResponse = serde_json::from_str(body)?;
+        // debug!("response: {:#?}", response);
+
+        // Unlike parse_pc_response, we continue even if stream ended
+        // We just need the user info to call the mobile API
+        if let Some(user) = &response.data.user {
+            if user.is_cancelled() {
+                return Err(ExtractorError::StreamerNotFound);
+            }
+            self.sec_rid = Some(user.sec_uid.to_string());
+        } else {
+            let msg = response.data.message.as_ref().unwrap_or(&"Unknown error");
+            return Err(ExtractorError::ValidationError(format!("API error: {msg}")));
+        }
+
+        self.id_str = response.data.enter_room_id.map(|v| v.to_string());
+
+        Ok(())
     }
 
     /// Creates a `RequestBuilder` with all necessary headers, params, and cookies.
@@ -250,6 +327,7 @@ impl<'a> DouyinRequest<'a> {
     async fn get_pc_response(&mut self) -> Result<String, ExtractorError> {
         let mut params = get_common_params();
         params.insert("web_rid", &self.web_rid);
+        params.insert("cookie_enabled", "true");
         let abogus = self.get_a_bogus_params(&params).await?;
         let url = format!("{WEBCAST_ENTER_URL}?{abogus}");
         debug!("url: {}", url);
@@ -414,11 +492,11 @@ impl<'a> DouyinRequest<'a> {
             }
         };
 
-        // Check for "直播已结束" prompt
+        // Check for "直播已结束" prompt or visibility restriction
         if let Some(prompts) = &response.data.prompts
-            && prompts.contains("直播已结束")
+            && (prompts.contains("直播已结束") || prompts.contains("你不在主播设置的可见范围内"))
         {
-            debug!("Stream ended with response: {:?}", response);
+            debug!("Stream ended or restricted with response: {:?}", response);
             // If we have user info, we can return offline info
             // Try to get title from room data if available, otherwise use default
             let title = response
@@ -492,8 +570,9 @@ impl<'a> DouyinRequest<'a> {
             }
         };
         if let Some(prompts) = &response.data.prompts {
-            if prompts.contains("直播已结束") {
-                debug!("Stream ended with response: {:?}", response);
+            if prompts.contains("直播已结束") || prompts.contains("你不在主播设置的可见范围内")
+            {
+                debug!("Stream ended or restricted with response: {:?}", response);
                 let user = response.data.user.as_ref();
                 let title = response
                     .data
@@ -525,8 +604,8 @@ impl<'a> DouyinRequest<'a> {
         }
 
         if let Some(user) = &response.data.user {
-            if self.is_account_banned(user) {
-                return Err(ExtractorError::StreamerBanned);
+            if user.is_cancelled() {
+                return Err(ExtractorError::StreamerNotFound);
             }
         } else {
             let msg = response
@@ -556,8 +635,8 @@ impl<'a> DouyinRequest<'a> {
             )));
         }
         if let Some(user) = &response.data.user {
-            if self.is_account_banned(user) {
-                return Err(ExtractorError::StreamerBanned);
+            if user.is_cancelled() {
+                return Err(ExtractorError::StreamerNotFound);
             }
         } else {
             let msg = response.data.message.as_ref().unwrap_or(&"Unknown error");
@@ -604,6 +683,12 @@ impl<'a> DouyinRequest<'a> {
             return Ok(self.create_offline_media_info(title, artist, cover_url, avatar_url));
         }
 
+        // Check if this is an interactive game stream
+        if self.config.skip_interactive_games && data.is_interactive_game_stream() {
+            debug!("Skipping interactive game stream for room: {}", data.id_str);
+            return Ok(self.create_offline_media_info(title, artist, cover_url, avatar_url));
+        }
+
         let stream_url = data
             .stream_url
             .as_ref()
@@ -643,15 +728,6 @@ impl<'a> DouyinRequest<'a> {
             None,
             None,
         )
-    }
-
-    fn is_account_banned(&self, user: &DouyinUserInfo) -> bool {
-        user.nickname == "账号已注销"
-            && user
-                .avatar_thumb
-                .url_list
-                .iter()
-                .any(|url| url.contains("aweme_default_avatar.png"))
     }
 
     /// Extract streams using owned quality data (from pull_datas)
@@ -712,8 +788,8 @@ impl<'a> DouyinRequest<'a> {
         let (quality_name, bitrate, codec, fps, extras) = match origin_quality_details {
             Some(details) => (
                 "原画",
-                Self::normalize_bitrate(details.v_bit_rate.try_into().unwrap()),
-                Self::normalize_codec(&details.v_codec),
+                normalize_bitrate(details.v_bit_rate.try_into().unwrap()),
+                normalize_codec(&details.v_codec),
                 details.fps,
                 Some(Arc::new(DouyinStreamExtras {
                     resolution: details.resolution.clone(),
@@ -755,9 +831,9 @@ impl<'a> DouyinRequest<'a> {
             let (quality_name, bitrate, fps, codec) = match quality_details {
                 Some(details) => (
                     details.name.as_str(),
-                    Self::normalize_bitrate(details.v_bit_rate as u32),
+                    normalize_bitrate(details.v_bit_rate as u32),
                     details.fps,
-                    Self::normalize_codec(&details.v_codec),
+                    normalize_codec(&details.v_codec),
                 ),
                 None => (sdk_key.as_str(), 0, 0, String::new()),
             };
@@ -880,8 +956,8 @@ impl<'a> DouyinRequest<'a> {
         let (quality_name, bitrate, codec, fps, extras) = match origin_quality_details {
             Some(details) => (
                 "原画",
-                Self::normalize_bitrate(details.v_bit_rate.try_into().unwrap()),
-                Self::normalize_codec(details.v_codec),
+                normalize_bitrate(details.v_bit_rate.try_into().unwrap()),
+                normalize_codec(details.v_codec),
                 details.fps,
                 Some(Arc::new(DouyinStreamExtras {
                     resolution: details.resolution.to_string(),
@@ -921,9 +997,9 @@ impl<'a> DouyinRequest<'a> {
             let (quality_name, bitrate, fps, codec) = match quality_details {
                 Some(details) => (
                     details.name,
-                    Self::normalize_bitrate(details.v_bit_rate as u32),
+                    normalize_bitrate(details.v_bit_rate as u32),
                     details.fps,
-                    Self::normalize_codec(details.v_codec),
+                    normalize_codec(details.v_codec),
                 ),
                 None => (sdk_key.as_str(), 0, 0, String::new()),
             };
@@ -1031,21 +1107,6 @@ impl<'a> DouyinRequest<'a> {
         }
         streams
     }
-
-    fn normalize_codec(codec: &str) -> String {
-        match codec {
-            "264" => "avc".to_string(),
-            "265" => "hevc".to_string(),
-            _ => codec.to_string(),
-        }
-    }
-
-    fn normalize_bitrate(bitrate: u32) -> u32 {
-        match bitrate {
-            0 => 0,
-            _ => bitrate / 1000,
-        }
-    }
 }
 
 #[async_trait]
@@ -1073,7 +1134,7 @@ mod tests {
     use crate::extractor::platforms::douyin::models::{DouyinAvatarThumb, DouyinUserInfo};
     use crate::extractor::platforms::douyin::utils::GlobalTtwidManager;
 
-    const TEST_URL: &str = "https://live.douyin.com/403593241280";
+    const TEST_URL: &str = "https://live.douyin.com/XXbaby0125";
 
     #[tokio::test]
     #[ignore]
@@ -1169,10 +1230,6 @@ mod tests {
 
     #[test]
     fn test_is_account_banned() {
-        let config = Douyin::new(TEST_URL.to_string(), default_client(), None, None);
-        let request =
-            DouyinRequest::new(config.extractor.cookies.clone(), &config, "123".to_string());
-
         let banned_user = DouyinUserInfo {
             id_str: "1",
             sec_uid: "1",
@@ -1181,7 +1238,7 @@ mod tests {
                 url_list: vec!["http://example.com/aweme_default_avatar.png".into()],
             },
         };
-        assert!(request.is_account_banned(&banned_user));
+        assert!(banned_user.is_cancelled());
 
         let active_user = DouyinUserInfo {
             id_str: "2",
@@ -1191,7 +1248,7 @@ mod tests {
                 url_list: vec!["http://example.com/real_avatar.png".into()],
             },
         };
-        assert!(!request.is_account_banned(&active_user));
+        assert!(!active_user.is_cancelled());
     }
 
     #[test]

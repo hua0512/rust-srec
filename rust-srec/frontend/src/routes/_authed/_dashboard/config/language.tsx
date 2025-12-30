@@ -43,18 +43,6 @@ function LanguageSettings() {
         transition={{ duration: 0.4 }}
         className="max-w-2xl px-1"
       >
-        <div className="mb-6 sm:mb-8">
-          <h1 className="text-2xl sm:text-3xl font-bold tracking-tight mb-2 flex items-center gap-2 sm:gap-3">
-            <div className="p-1.5 sm:p-2 rounded-xl bg-primary/10 text-primary shrink-0">
-              <Languages className="w-6 h-6 sm:w-8 sm:h-8" />
-            </div>
-            <Trans>Language Settings</Trans>
-          </h1>
-          <p className="text-muted-foreground text-sm sm:text-lg">
-            <Trans>Select your preferred language for the interface.</Trans>
-          </p>
-        </div>
-
         <div className="grid gap-4 sm:gap-6">
           {locales.map((locale, index) => {
             const isActive = i18n.locale === locale.code;

@@ -4,8 +4,8 @@ version = "0.1.1"
 edition = "2024"
 
 [dependencies]
-bytes = "1.11.0"
-byteorder = "1.5"
+bytes = { workspace = true }
+byteorder = { workspace = true }
 expgolomb = { path = "../expgolomb" }
 bytes-util = { path = "../bytes-util" }
 bitflags = "2.10.0"

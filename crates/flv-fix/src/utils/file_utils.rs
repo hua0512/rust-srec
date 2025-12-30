@@ -21,6 +21,10 @@ pub fn shift_content_forward<T: Read + Write + Seek>(
     size_diff: i64,       // Positive number, how much space to add
 ) -> io::Result<()> {
     debug!("Shifting content forward by {} bytes", size_diff);
+    debug_assert!(
+        size_diff > 0,
+        "shift_content_forward requires positive size_diff"
+    );
 
     let mut chunk_buffer = vec![0u8; DEFAULT_BUFFER_SIZE];
 
@@ -47,21 +51,12 @@ pub fn shift_content_forward<T: Read + Write + Seek>(
 
         // Read chunk from the original position
         file_handle.seek(SeekFrom::Start(read_start_pos))?;
-        // Ensure we only try to read into the valid part of the buffer
-        let bytes_read = file_handle.read(&mut chunk_buffer[0..amount_to_process as usize])?;
-
-        // Check if we actually read anything, or the expected amount
-        if bytes_read == 0 {
-            // This might indicate an issue if we expected to read data
-            // Could happen if total_file_size was wrong? Or seek failed silently?
-            // For now, let's break to avoid potential infinite loops if read fails repeatedly.
-            break;
-        }
+        let chunk = &mut chunk_buffer[0..amount_to_process as usize];
+        file_handle.read_exact(chunk)?;
 
         // Write chunk to the new position
         file_handle.seek(SeekFrom::Start(write_start_pos))?;
-        file_handle.write_all(&chunk_buffer[0..bytes_read])?; // Use bytes_read
-        // file_handle.flush()?; // Flushing every chunk can be slow, maybe remove?
+        file_handle.write_all(chunk)?;
 
         // Move positions backward for the next iteration
         current_original_pos = read_start_pos;
@@ -79,6 +74,10 @@ pub fn shift_content_backward<T: Read + Write + Seek>(
     total_file_size: u64,
 ) -> io::Result<()> {
     debug!("Shifting content backward");
+    debug_assert!(
+        new_next_tag_pos <= next_tag_pos,
+        "shift_content_backward expects a non-increasing destination"
+    );
 
     let mut chunk_buffer = vec![0u8; DEFAULT_BUFFER_SIZE];
     let mut read_pos = next_tag_pos;
@@ -96,12 +95,12 @@ pub fn shift_content_backward<T: Read + Write + Seek>(
 
         file_handle.seek(SeekFrom::Start(write_pos))?;
         file_handle.write_all(&chunk_buffer[0..actual_read])?;
-        file_handle.flush()?;
 
         read_pos += actual_read as u64;
         write_pos += actual_read as u64;
     }
 
+    file_handle.flush()?;
     Ok(())
 }
 

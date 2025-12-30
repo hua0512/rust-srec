@@ -4,6 +4,7 @@ use chrono::{DateTime, Utc};
 use dashmap::DashMap;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+use std::collections::VecDeque;
 use std::collections::hash_map::DefaultHasher;
 use std::hash::{Hash, Hasher};
 use std::sync::Arc;
@@ -17,9 +18,10 @@ use crate::database::models::JobExecutionProgressDbModel;
 use crate::database::models::job::LogEntry as DbLogEntry;
 use crate::database::models::{
     JobDbModel, JobExecutionLogDbModel, JobFilters, JobStatus as DbJobStatus, MediaFileType,
-    MediaOutputDbModel, Pagination,
+    MediaOutputDbModel, Pagination, TitleEntry,
 };
-use crate::database::repositories::{JobRepository, SessionRepository};
+use crate::database::repositories::{JobRepository, SessionRepository, StreamerRepository};
+use crate::utils::json::{self, JsonContext};
 use crate::{Error, Result};
 
 const EXECUTION_INFO_MAX_LOGS: usize = 200;
@@ -60,19 +62,16 @@ fn extend_logs_capped(exec_info: &mut JobExecutionInfo, new_logs: &[JobLogEntry]
     };
 
     exec_info.logs.extend(tail.iter().cloned());
-    if exec_info.logs.len() > EXECUTION_INFO_MAX_LOGS {
-        let drain = exec_info.logs.len() - EXECUTION_INFO_MAX_LOGS;
-        exec_info.logs.drain(0..drain);
+    while exec_info.logs.len() > EXECUTION_INFO_MAX_LOGS {
+        exec_info.logs.pop_front();
     }
 }
 
-fn cap_logs_in_place(logs: &mut Vec<JobLogEntry>, cap: usize) {
-    if logs.len() <= cap {
-        return;
+fn cap_logs_in_place(logs: &mut VecDeque<JobLogEntry>, cap: usize) {
+    // VecDeque::pop_front is O(1) vs Vec::drain which is O(n)
+    while logs.len() > cap {
+        logs.pop_front();
     }
-
-    let start = logs.len() - cap;
-    logs.drain(0..start);
 }
 
 fn update_log_summary(exec_info: &mut JobExecutionInfo, new_logs: &[JobLogEntry]) {
@@ -230,8 +229,8 @@ pub struct JobExecutionInfo {
     pub input_size_bytes: Option<u64>,
     /// Output file size in bytes.
     pub output_size_bytes: Option<u64>,
-    /// Detailed execution logs.
-    pub logs: Vec<JobLogEntry>,
+    /// Detailed execution logs (VecDeque for O(1) pop_front when capping).
+    pub logs: VecDeque<JobLogEntry>,
     /// Total number of log lines captured for this job (across all steps).
     #[serde(default)]
     pub log_lines_total: u64,
@@ -267,7 +266,7 @@ impl JobExecutionInfo {
 
     /// Add a log entry.
     pub fn add_log(&mut self, entry: JobLogEntry) {
-        self.logs.push(entry);
+        self.logs.push_back(entry);
     }
 
     /// Add an info log.
@@ -340,6 +339,12 @@ pub struct Job {
     pub streamer_id: String,
     /// Session ID this job belongs to.
     pub session_id: String,
+    /// Human-readable streamer name.
+    pub streamer_name: Option<String>,
+    /// Session/stream title.
+    pub session_title: Option<String>,
+    /// Platform name (e.g., "Twitch", "Huya").
+    pub platform: Option<String>,
     /// Additional configuration as JSON.
     pub config: Option<String>,
     /// When the job was created.
@@ -383,6 +388,9 @@ impl Job {
             status: JobStatus::Pending,
             streamer_id: streamer_id.into(),
             session_id: session_id.into(),
+            streamer_name: None,
+            session_title: None,
+            platform: None,
             config: None,
             created_at: Utc::now(),
             started_at: None,
@@ -415,6 +423,9 @@ impl Job {
             status: JobStatus::Pending,
             streamer_id: streamer_id.into(),
             session_id: session_id.into(),
+            streamer_name: None,
+            session_title: None,
+            platform: None,
             config: None,
             created_at: Utc::now(),
             started_at: None,
@@ -453,6 +464,24 @@ impl Job {
         self
     }
 
+    /// Set the streamer name.
+    pub fn with_streamer_name(mut self, name: impl Into<String>) -> Self {
+        self.streamer_name = Some(name.into());
+        self
+    }
+
+    /// Set the session title.
+    pub fn with_session_title(mut self, title: impl Into<String>) -> Self {
+        self.session_title = Some(title.into());
+        self
+    }
+
+    /// Set the platform.
+    pub fn with_platform(mut self, platform: impl Into<String>) -> Self {
+        self.platform = Some(platform.into());
+        self
+    }
+
     /// Check if this job is part of a DAG pipeline.
     pub fn is_dag_job(&self) -> bool {
         self.dag_step_execution_id.is_some()
@@ -484,6 +513,8 @@ pub struct JobQueue {
     job_repository: Option<Arc<dyn JobRepository>>,
     /// Session repository for persisting media outputs (e.g., thumbnails).
     session_repo: std::sync::OnceLock<Arc<dyn SessionRepository>>,
+    /// Streamer repository for looking up streamer metadata (e.g., name).
+    streamer_repo: std::sync::OnceLock<Arc<dyn StreamerRepository>>,
     /// In-memory cache of jobs (for quick lookups).
     jobs_cache: DashMap<String, Job>,
     /// Cancellation tokens for processing jobs.
@@ -505,8 +536,14 @@ impl JobQueue {
     /// Create a new job queue with custom configuration.
     pub fn with_config(config: JobQueueConfig) -> Self {
         let (progress_tx, progress_rx) = tokio::sync::mpsc::channel::<JobProgressUpdate>(1024);
+        let cancellation_tokens: DashMap<String, CancellationToken> = DashMap::new();
         let progress_cache: DashMap<String, JobProgressSnapshot> = DashMap::new();
-        spawn_progress_aggregator(None, progress_rx, progress_cache.clone());
+        spawn_progress_aggregator(
+            None,
+            progress_rx,
+            cancellation_tokens.clone(),
+            progress_cache.clone(),
+        );
 
         Self {
             config,
@@ -514,8 +551,9 @@ impl JobQueue {
             notify: Arc::new(Notify::new()),
             job_repository: None,
             session_repo: std::sync::OnceLock::new(),
+            streamer_repo: std::sync::OnceLock::new(),
             jobs_cache: DashMap::new(),
-            cancellation_tokens: DashMap::new(),
+            cancellation_tokens,
             progress_cache,
             progress_tx,
             persisted_log_cursor: DashMap::new(),
@@ -525,10 +563,12 @@ impl JobQueue {
     /// Create a new job queue with a job repository for database persistence.
     pub fn with_repository(config: JobQueueConfig, repository: Arc<dyn JobRepository>) -> Self {
         let (progress_tx, progress_rx) = tokio::sync::mpsc::channel::<JobProgressUpdate>(1024);
+        let cancellation_tokens: DashMap<String, CancellationToken> = DashMap::new();
         let progress_cache: DashMap<String, JobProgressSnapshot> = DashMap::new();
         spawn_progress_aggregator(
             Some(repository.clone()),
             progress_rx,
+            cancellation_tokens.clone(),
             progress_cache.clone(),
         );
 
@@ -538,8 +578,9 @@ impl JobQueue {
             notify: Arc::new(Notify::new()),
             job_repository: Some(repository),
             session_repo: std::sync::OnceLock::new(),
+            streamer_repo: std::sync::OnceLock::new(),
             jobs_cache: DashMap::new(),
-            cancellation_tokens: DashMap::new(),
+            cancellation_tokens,
             progress_cache,
             progress_tx,
             persisted_log_cursor: DashMap::new(),
@@ -555,6 +596,12 @@ impl JobQueue {
     /// This can only be called once.
     pub fn set_session_repo(&self, repo: Arc<dyn SessionRepository>) {
         let _ = self.session_repo.set(repo);
+    }
+
+    /// Set the streamer repository for looking up streamer metadata.
+    /// This can only be called once.
+    pub fn set_streamer_repo(&self, repo: Arc<dyn StreamerRepository>) {
+        let _ = self.streamer_repo.set(repo);
     }
 
     /// Persist thumbnail output to media_outputs table.
@@ -632,9 +679,15 @@ impl JobQueue {
                 .map(|entry| JobExecutionLogDbModel {
                     id: uuid::Uuid::new_v4().to_string(),
                     job_id: job_id.to_string(),
-                    entry: serde_json::to_string(entry).unwrap_or_else(|_| {
-                        "{\"level\":\"error\",\"message\":\"log serialize failed\"}".to_string()
-                    }),
+                    entry: json::to_string_or_fallback(
+                        entry,
+                        r#"{"level":"error","message":"log serialize failed"}"#,
+                        JsonContext::JobField {
+                            job_id,
+                            field: "execution_log_entry",
+                        },
+                        "Failed to serialize execution log entry; using fallback",
+                    ),
                     created_at: entry.timestamp.to_rfc3339(),
                     level: Some(log_level_to_db(entry.level).to_string()),
                     message: Some(entry.message.clone()),
@@ -678,14 +731,83 @@ impl JobQueue {
         let snapshot = serde_json::from_str::<JobProgressSnapshot>(&row.progress)
             .map_err(|e| Error::Other(format!("Failed to parse job progress JSON: {}", e)))?;
 
-        self.progress_cache
-            .insert(job_id.to_string(), snapshot.clone());
+        // Only cache progress for actively-processing jobs. This avoids unbounded memory growth
+        // from clients requesting progress for historical (already completed) jobs.
+        if self.cancellation_tokens.contains_key(job_id) {
+            self.progress_cache
+                .insert(job_id.to_string(), snapshot.clone());
+        }
         Ok(Some(snapshot))
+    }
+
+    /// Resolve missing metadata (streamer_name, session_title) for a job.
+    ///
+    /// This is useful for jobs recovered from the database where metadata
+    /// is not persisted. It looks up the streamer and session repositories.
+    pub async fn resolve_job_metadata(&self, job: &mut Job) {
+        // Only resolve if we have a streamer_id and name is missing
+        if job.streamer_name.is_none()
+            && !job.streamer_id.is_empty()
+            && let Some(streamer_repo) = self.streamer_repo.get()
+        {
+            match streamer_repo.get_streamer(&job.streamer_id).await {
+                Ok(streamer) => {
+                    tracing::debug!(
+                        job_id = %job.id,
+                        streamer_id = %job.streamer_id,
+                        streamer_name = %streamer.name,
+                        "Resolved streamer_name from repository"
+                    );
+                    job.streamer_name = Some(streamer.name);
+                }
+                Err(e) => {
+                    tracing::debug!(
+                        job_id = %job.id,
+                        streamer_id = %job.streamer_id,
+                        error = %e,
+                        "Failed to lookup streamer_name"
+                    );
+                }
+            }
+        }
+
+        // Only resolve if we have a session_id and title is missing
+        if job.session_title.is_none()
+            && !job.session_id.is_empty()
+            && let Some(session_repo) = self.session_repo.get()
+        {
+            match session_repo.get_session(&job.session_id).await {
+                Ok(session) => {
+                    // Parse titles JSON and get the most recent one
+                    if let Some(titles_json) = session.titles
+                        && let Ok(entries) = serde_json::from_str::<Vec<TitleEntry>>(&titles_json)
+                        && let Some(last_entry) = entries.last()
+                    {
+                        tracing::debug!(
+                            job_id = %job.id,
+                            session_id = %job.session_id,
+                            session_title = %last_entry.title,
+                            "Resolved session_title from repository"
+                        );
+                        job.session_title = Some(last_entry.title.clone());
+                    }
+                }
+                Err(e) => {
+                    tracing::debug!(
+                        job_id = %job.id,
+                        session_id = %job.session_id,
+                        error = %e,
+                        "Failed to lookup session_title"
+                    );
+                }
+            }
+        }
     }
 
     /// Enqueue a new job.
     pub async fn enqueue(&self, job: Job) -> Result<String> {
         let job_id = job.id.clone();
+        let job_type = job.job_type.clone();
 
         // Persist to database if repository is available
         if let Some(repo) = &self.job_repository {
@@ -694,11 +816,11 @@ impl JobQueue {
         }
 
         // Add to in-memory cache
-        self.jobs_cache.insert(job_id.clone(), job.clone());
+        self.jobs_cache.insert(job_id.clone(), job);
 
         self.depth.fetch_add(1, Ordering::SeqCst);
 
-        info!("Enqueued job {} of type {}", job_id, job.job_type);
+        info!("Enqueued job {} of type {}", job_id, job_type);
 
         // Notify waiting workers
         self.notify.notify_one();
@@ -711,13 +833,14 @@ impl JobQueue {
     /// Used by DagScheduler when creating jobs for DAG steps.
     pub async fn enqueue_existing(&self, job: Job) -> Result<String> {
         let job_id = job.id.clone();
+        let job_type = job.job_type.clone();
 
         // Add to in-memory cache (job is already in database)
-        self.jobs_cache.insert(job_id.clone(), job.clone());
+        self.jobs_cache.insert(job_id.clone(), job);
 
         self.depth.fetch_add(1, Ordering::SeqCst);
 
-        info!("Enqueued existing job {} of type {}", job_id, job.job_type);
+        info!("Enqueued existing job {} of type {}", job_id, job_type);
 
         // Notify waiting workers
         self.notify.notify_one();
@@ -739,6 +862,10 @@ impl JobQueue {
                     job.started_at = Some(Utc::now());
                 }
 
+                // Resolve missing metadata (streamer_name, session_title)
+                // These are not stored in the database, so we look them up from repositories
+                self.resolve_job_metadata(&mut job).await;
+
                 // Update cache
                 self.jobs_cache.insert(job.id.clone(), job.clone());
 
@@ -750,7 +877,7 @@ impl JobQueue {
             }
         } else {
             // Fallback to in-memory cache
-            let mut selected_id: Option<String> = None;
+            let mut selected: Option<(i32, chrono::DateTime<Utc>, String)> = None;
             for entry in self.jobs_cache.iter() {
                 let job = entry.value();
                 if job.status != JobStatus::Pending {
@@ -761,11 +888,25 @@ impl JobQueue {
                 {
                     continue;
                 }
-                selected_id = Some(entry.key().clone());
-                break;
+
+                // Match DB ordering: priority DESC, created_at DESC, id ASC for stability.
+                let candidate = (job.priority, job.created_at, job.id.clone());
+                match &selected {
+                    None => selected = Some(candidate),
+                    Some((best_prio, best_created, best_id)) => {
+                        if candidate.0 > *best_prio
+                            || (candidate.0 == *best_prio && candidate.1 > *best_created)
+                            || (candidate.0 == *best_prio
+                                && candidate.1 == *best_created
+                                && candidate.2 < *best_id)
+                        {
+                            selected = Some(candidate);
+                        }
+                    }
+                }
             }
 
-            if let Some(job_id) = selected_id
+            if let Some((_, _, job_id)) = selected
                 && let Some(mut job_ref) = self.jobs_cache.get_mut(&job_id)
             {
                 if job_ref.status != JobStatus::Pending {
@@ -828,11 +969,14 @@ impl JobQueue {
             if !result.logs.is_empty() {
                 let new_logs = self.persist_logs_to_db(job_id, &result.logs).await?;
 
-                let mut exec_info: JobExecutionInfo = db_job
-                    .execution_info
-                    .as_ref()
-                    .and_then(|s| serde_json::from_str(s).ok())
-                    .unwrap_or_default();
+                let mut exec_info: JobExecutionInfo = json::parse_optional_or_default(
+                    db_job.execution_info.as_deref(),
+                    JsonContext::JobField {
+                        job_id: &db_job.id,
+                        field: "execution_info",
+                    },
+                    "Invalid execution_info JSON; resetting to defaults",
+                );
 
                 update_log_summary(&mut exec_info, &new_logs);
                 extend_logs_capped(&mut exec_info, &new_logs);
@@ -875,6 +1019,13 @@ impl JobQueue {
         // Remove cancellation token
         let _ = self.cancellation_tokens.remove(job_id);
         let _ = self.persisted_log_cursor.remove(job_id);
+        self.progress_cache.remove(job_id);
+
+        // In DB-backed mode, completed jobs can always be queried from the repository, so keeping
+        // terminal jobs in the in-memory cache only risks unbounded growth.
+        if self.job_repository.is_some() {
+            self.jobs_cache.remove(job_id);
+        }
 
         self.depth.fetch_sub(1, Ordering::SeqCst);
         info!("Job {} completed in {:.2}s", job_id, result.duration_secs);
@@ -882,40 +1033,8 @@ impl JobQueue {
     }
     /// Mark a job as failed.
     pub async fn fail(&self, job_id: &str, error: &str) -> Result<()> {
-        // Update database if repository is available
-        if let Some(repo) = &self.job_repository {
-            repo.mark_job_failed(job_id, error).await?;
-
-            let log_entry = JobLogEntry::error(format!("Job failed: {}", error));
-            let _ = self
-                .persist_logs_to_db(job_id, std::slice::from_ref(&log_entry))
-                .await?;
-
-            let exec_info_str = repo.get_job_execution_info(job_id).await?;
-            let mut exec_info: JobExecutionInfo = exec_info_str
-                .as_deref()
-                .and_then(|s| serde_json::from_str(s).ok())
-                .unwrap_or_default();
-            extend_logs_capped(&mut exec_info, std::slice::from_ref(&log_entry));
-            update_log_summary(&mut exec_info, std::slice::from_ref(&log_entry));
-            let exec_info_json =
-                serde_json::to_string(&exec_info).unwrap_or_else(|_| "{}".to_string());
-            repo.update_job_execution_info(job_id, &exec_info_json)
-                .await?;
-        }
-
-        // Update cache
-        if let Some(mut job) = self.jobs_cache.get_mut(job_id) {
-            job.status = JobStatus::Failed;
-            job.completed_at = Some(Utc::now());
-            job.error = Some(error.to_string());
-        }
-
-        // Remove cancellation token
-        let _ = self.cancellation_tokens.remove(job_id);
-        let _ = self.persisted_log_cursor.remove(job_id);
-
-        self.depth.fetch_sub(1, Ordering::SeqCst);
+        self.fail_internal(job_id, error, None, None, None, false)
+            .await?;
         warn!("Job {} failed: {}", job_id, error);
         Ok(())
     }
@@ -930,75 +1049,15 @@ impl JobQueue {
         step_number: Option<u32>,
         total_steps: Option<u32>,
     ) -> Result<()> {
-        // Update database if repository is available
-        if let Some(repo) = &self.job_repository {
-            repo.mark_job_failed(job_id, error).await?;
-
-            let exec_info_str = repo.get_job_execution_info(job_id).await?;
-            let mut exec_info: JobExecutionInfo = exec_info_str
-                .as_deref()
-                .and_then(|s| serde_json::from_str(s).ok())
-                .unwrap_or_default();
-
-            // Record the failing step info
-            if let Some(name) = processor_name {
-                exec_info.current_processor = Some(name.to_string());
-            }
-            if let Some(step) = step_number {
-                exec_info.current_step = Some(step);
-            }
-            if let Some(total) = total_steps {
-                exec_info.total_steps = Some(total);
-            }
-
-            let log_entry = JobLogEntry::error(format!("Job failed: {}", error));
-            extend_logs_capped(&mut exec_info, std::slice::from_ref(&log_entry));
-            update_log_summary(&mut exec_info, std::slice::from_ref(&log_entry));
-
-            let _ = self
-                .persist_logs_to_db(job_id, std::slice::from_ref(&log_entry))
-                .await?;
-
-            let exec_info_json =
-                serde_json::to_string(&exec_info).unwrap_or_else(|_| "{}".to_string());
-            repo.update_job_execution_info(job_id, &exec_info_json)
-                .await?;
-        }
-
-        // Update cache
-        if let Some(mut job) = self.jobs_cache.get_mut(job_id) {
-            job.status = JobStatus::Failed;
-            job.completed_at = Some(Utc::now());
-            job.error = Some(error.to_string());
-
-            // Update execution_info in cache
-            let exec_info = job
-                .execution_info
-                .get_or_insert_with(JobExecutionInfo::default);
-            if let Some(name) = processor_name {
-                exec_info.current_processor = Some(name.to_string());
-            }
-            if let Some(step) = step_number {
-                exec_info.current_step = Some(step);
-            }
-            if let Some(total) = total_steps {
-                exec_info.total_steps = Some(total);
-            }
-            extend_logs_capped(
-                exec_info,
-                &[JobLogEntry::error(format!("Job failed: {}", error))],
-            );
-            update_log_summary(
-                exec_info,
-                &[JobLogEntry::error(format!("Job failed: {}", error))],
-            );
-        }
-
-        // Remove cancellation token
-        let _ = self.cancellation_tokens.remove(job_id);
-        let _ = self.persisted_log_cursor.remove(job_id);
-
-        self.depth.fetch_sub(1, Ordering::SeqCst);
+        self.fail_internal(
+            job_id,
+            error,
+            processor_name,
+            step_number,
+            total_steps,
+            true,
+        )
+        .await?;
         warn!(
             "Job {} failed at step {:?}/{:?} (processor: {:?}): {}",
             job_id, step_number, total_steps, processor_name, error
@@ -1095,12 +1154,14 @@ impl JobQueue {
             {
                 let total = parsed.logs.len() as u64;
                 let start = pagination.offset as usize;
-                let end = std::cmp::min(start + pagination.limit as usize, parsed.logs.len());
-                let page = if start < parsed.logs.len() {
-                    parsed.logs[start..end].to_vec()
-                } else {
-                    vec![]
-                };
+                let limit = pagination.limit as usize;
+                let page: Vec<_> = parsed
+                    .logs
+                    .iter()
+                    .skip(start)
+                    .take(limit)
+                    .cloned()
+                    .collect();
                 return Ok((page, total));
             }
 
@@ -1116,12 +1177,8 @@ impl JobQueue {
 
         let total = logs.len() as u64;
         let start = pagination.offset as usize;
-        let end = std::cmp::min(start + pagination.limit as usize, logs.len());
-        let page = if start < logs.len() {
-            logs[start..end].to_vec()
-        } else {
-            vec![]
-        };
+        let limit = pagination.limit as usize;
+        let page: Vec<_> = logs.iter().skip(start).take(limit).cloned().collect();
 
         Ok((page, total))
     }
@@ -1139,33 +1196,17 @@ impl JobQueue {
         }
 
         // Fallback to cache (basic filtering)
-        let mut jobs: Vec<Job> = self.jobs_cache.iter().map(|e| e.value().clone()).collect();
-
-        // Apply filters
-        if let Some(status) = &filters.status {
-            let status_enum = match status {
-                DbJobStatus::Pending => JobStatus::Pending,
-                DbJobStatus::Processing => JobStatus::Processing,
-                DbJobStatus::Completed => JobStatus::Completed,
-                DbJobStatus::Failed => JobStatus::Failed,
-                DbJobStatus::Interrupted => JobStatus::Interrupted,
-            };
-            jobs.retain(|j| j.status == status_enum);
-        }
-        if let Some(streamer_id) = &filters.streamer_id {
-            jobs.retain(|j| &j.streamer_id == streamer_id);
-        }
-        if let Some(session_id) = &filters.session_id {
-            jobs.retain(|j| &j.session_id == session_id);
-        }
-
-        let total = jobs.len() as u64;
+        let ids = self.filter_cached_job_ids(filters);
+        let total = ids.len() as u64;
 
         // Apply pagination
         let start = pagination.offset as usize;
-        let end = std::cmp::min(start + pagination.limit as usize, jobs.len());
-        let jobs = if start < jobs.len() {
-            jobs[start..end].to_vec()
+        let end = std::cmp::min(start + pagination.limit as usize, ids.len());
+        let jobs = if start < ids.len() {
+            ids[start..end]
+                .iter()
+                .filter_map(|id| self.jobs_cache.get(id).map(|job| job.clone()))
+                .collect()
         } else {
             vec![]
         };
@@ -1186,29 +1227,14 @@ impl JobQueue {
         }
 
         // Fallback to cache (basic filtering)
-        let mut jobs: Vec<Job> = self.jobs_cache.iter().map(|e| e.value().clone()).collect();
-
-        if let Some(status) = &filters.status {
-            let status_enum = match status {
-                DbJobStatus::Pending => JobStatus::Pending,
-                DbJobStatus::Processing => JobStatus::Processing,
-                DbJobStatus::Completed => JobStatus::Completed,
-                DbJobStatus::Failed => JobStatus::Failed,
-                DbJobStatus::Interrupted => JobStatus::Interrupted,
-            };
-            jobs.retain(|j| j.status == status_enum);
-        }
-        if let Some(streamer_id) = &filters.streamer_id {
-            jobs.retain(|j| &j.streamer_id == streamer_id);
-        }
-        if let Some(session_id) = &filters.session_id {
-            jobs.retain(|j| &j.session_id == session_id);
-        }
-
+        let ids = self.filter_cached_job_ids(filters);
         let start = pagination.offset as usize;
-        let end = std::cmp::min(start + pagination.limit as usize, jobs.len());
-        let jobs = if start < jobs.len() {
-            jobs[start..end].to_vec()
+        let end = std::cmp::min(start + pagination.limit as usize, ids.len());
+        let jobs = if start < ids.len() {
+            ids[start..end]
+                .iter()
+                .filter_map(|id| self.jobs_cache.get(id).map(|job| job.clone()))
+                .collect()
         } else {
             vec![]
         };
@@ -1316,6 +1342,11 @@ impl JobQueue {
         // Remove cancellation token
         let _ = self.cancellation_tokens.remove(id);
         let _ = self.persisted_log_cursor.remove(id);
+        self.progress_cache.remove(id);
+
+        if self.job_repository.is_some() {
+            self.jobs_cache.remove(id);
+        }
 
         // Decrement depth only for pending jobs (processing jobs already counted)
         if job.status == JobStatus::Pending {
@@ -1348,9 +1379,10 @@ impl JobQueue {
                     let status = match job.get_status() {
                         Some(s) => s,
                         None => {
-                            // Should parse, but if not, assume it's weird and let's try to delete anyway?
-                            // Or be safe and error. Let's error if we can't parse status.
-                            DbJobStatus::Failed // Fallback
+                            return Err(Error::Other(format!(
+                                "Invalid job status for job {}: {}",
+                                id, job.status
+                            )));
                         }
                     };
 
@@ -1455,6 +1487,11 @@ impl JobQueue {
 
             let _ = self.cancellation_tokens.remove(id);
             let _ = self.persisted_log_cursor.remove(id);
+            self.progress_cache.remove(id);
+
+            if self.job_repository.is_some() {
+                self.jobs_cache.remove(id);
+            }
         }
 
         if depth_reduction > 0 {
@@ -1503,6 +1540,9 @@ impl JobQueue {
         let (db_jobs, total) = repo.list_jobs_filtered(&filters, &pagination).await?;
 
         self.jobs_cache.clear();
+        self.cancellation_tokens.clear();
+        self.persisted_log_cursor.clear();
+        self.progress_cache.clear();
         for db_job in &db_jobs {
             let job = db_model_to_job(db_job);
             self.jobs_cache.insert(job.id.clone(), job);
@@ -1596,6 +1636,15 @@ impl JobQueue {
         // Remove cancellation token for original job
         let _ = self.cancellation_tokens.remove(&job.id);
         let _ = self.persisted_log_cursor.remove(&job.id);
+        self.progress_cache.remove(&job.id);
+
+        if self.job_repository.is_some() {
+            self.jobs_cache.remove(&job.id);
+        }
+
+        // Adjust queue depth to account for the original job completing.
+        // The split jobs are enqueued and already increment depth.
+        self.depth.fetch_sub(1, Ordering::SeqCst);
 
         info!(
             "Split job {} into {} jobs for single-input processing",
@@ -1612,16 +1661,19 @@ impl JobQueue {
         // Update database if repository is available
         if let Some(repo) = &self.job_repository {
             let exec_info_str = repo.get_job_execution_info(job_id).await?;
-            let mut exec_info: JobExecutionInfo = exec_info_str
-                .as_deref()
-                .and_then(|s| serde_json::from_str(s).ok())
-                .unwrap_or_default();
+            let mut exec_info: JobExecutionInfo = json::parse_optional_or_default(
+                exec_info_str.as_deref(),
+                JsonContext::JobField {
+                    job_id,
+                    field: "execution_info",
+                },
+                "Invalid execution_info JSON; resetting to defaults",
+            );
 
             // Add the partial outputs
             exec_info.items_produced.extend(outputs.iter().cloned());
 
-            let exec_info_json =
-                serde_json::to_string(&exec_info).unwrap_or_else(|_| "{}".to_string());
+            let exec_info_json = serde_json::to_string(&exec_info)?;
             repo.update_job_execution_info(job_id, &exec_info_json)
                 .await?;
         }
@@ -1697,13 +1749,15 @@ impl JobQueue {
         // Update database if repository is available
         if let Some(repo) = &self.job_repository {
             if !exec_info.logs.is_empty() {
-                let new_logs = self.persist_logs_to_db(job_id, &exec_info.logs).await?;
+                // make_contiguous() allows VecDeque to be used as a slice
+                let new_logs = self
+                    .persist_logs_to_db(job_id, exec_info.logs.make_contiguous())
+                    .await?;
                 update_log_summary(&mut exec_info, &new_logs);
                 cap_logs_in_place(&mut exec_info.logs, EXECUTION_INFO_MAX_LOGS);
             }
 
-            let exec_info_json =
-                serde_json::to_string(&exec_info).unwrap_or_else(|_| "{}".to_string());
+            let exec_info_json = serde_json::to_string(&exec_info)?;
             repo.update_job_execution_info(job_id, &exec_info_json)
                 .await?;
         }
@@ -1750,11 +1804,139 @@ impl JobQueue {
     pub fn notifier(&self) -> Arc<Notify> {
         self.notify.clone()
     }
+
+    async fn fail_internal(
+        &self,
+        job_id: &str,
+        error: &str,
+        processor_name: Option<&str>,
+        step_number: Option<u32>,
+        total_steps: Option<u32>,
+        update_cache_logs: bool,
+    ) -> Result<()> {
+        let log_entry = JobLogEntry::error(format!("Job failed: {}", error));
+
+        // Update database if repository is available
+        if let Some(repo) = &self.job_repository {
+            repo.mark_job_failed(job_id, error).await?;
+
+            let exec_info_str = repo.get_job_execution_info(job_id).await?;
+            let mut exec_info: JobExecutionInfo = json::parse_optional_or_default(
+                exec_info_str.as_deref(),
+                JsonContext::JobField {
+                    job_id,
+                    field: "execution_info",
+                },
+                "Invalid execution_info JSON; resetting to defaults",
+            );
+
+            if let Some(name) = processor_name {
+                exec_info.current_processor = Some(name.to_string());
+            }
+            if let Some(step) = step_number {
+                exec_info.current_step = Some(step);
+            }
+            if let Some(total) = total_steps {
+                exec_info.total_steps = Some(total);
+            }
+
+            extend_logs_capped(&mut exec_info, std::slice::from_ref(&log_entry));
+            update_log_summary(&mut exec_info, std::slice::from_ref(&log_entry));
+
+            let _ = self
+                .persist_logs_to_db(job_id, std::slice::from_ref(&log_entry))
+                .await?;
+
+            let exec_info_json = serde_json::to_string(&exec_info)?;
+            repo.update_job_execution_info(job_id, &exec_info_json)
+                .await?;
+        }
+
+        // Update cache
+        if let Some(mut job) = self.jobs_cache.get_mut(job_id) {
+            job.status = JobStatus::Failed;
+            job.completed_at = Some(Utc::now());
+            job.error = Some(error.to_string());
+
+            if update_cache_logs {
+                let exec_info = job
+                    .execution_info
+                    .get_or_insert_with(JobExecutionInfo::default);
+                if let Some(name) = processor_name {
+                    exec_info.current_processor = Some(name.to_string());
+                }
+                if let Some(step) = step_number {
+                    exec_info.current_step = Some(step);
+                }
+                if let Some(total) = total_steps {
+                    exec_info.total_steps = Some(total);
+                }
+                extend_logs_capped(exec_info, std::slice::from_ref(&log_entry));
+                update_log_summary(exec_info, std::slice::from_ref(&log_entry));
+            }
+        }
+
+        // Remove cancellation token
+        let _ = self.cancellation_tokens.remove(job_id);
+        let _ = self.persisted_log_cursor.remove(job_id);
+        self.progress_cache.remove(job_id);
+
+        if self.job_repository.is_some() {
+            self.jobs_cache.remove(job_id);
+        }
+
+        self.depth.fetch_sub(1, Ordering::SeqCst);
+        Ok(())
+    }
+
+    fn filter_cached_job_ids(&self, filters: &JobFilters) -> Vec<String> {
+        let mut items: Vec<(i32, chrono::DateTime<Utc>, String)> = Vec::new();
+
+        for entry in self.jobs_cache.iter() {
+            let job = entry.value();
+
+            if let Some(status) = &filters.status {
+                let status_enum = match status {
+                    DbJobStatus::Pending => JobStatus::Pending,
+                    DbJobStatus::Processing => JobStatus::Processing,
+                    DbJobStatus::Completed => JobStatus::Completed,
+                    DbJobStatus::Failed => JobStatus::Failed,
+                    DbJobStatus::Interrupted => JobStatus::Interrupted,
+                };
+                if job.status != status_enum {
+                    continue;
+                }
+            }
+            if let Some(streamer_id) = &filters.streamer_id
+                && &job.streamer_id != streamer_id
+            {
+                continue;
+            }
+
+            if let Some(session_id) = &filters.session_id
+                && &job.session_id != session_id
+            {
+                continue;
+            }
+
+            items.push((job.priority, job.created_at, job.id.clone()));
+        }
+
+        // Match DB ordering: priority DESC, created_at DESC, id ASC for stability.
+        items.sort_by(|a, b| {
+            b.0.cmp(&a.0)
+                .then_with(|| b.1.cmp(&a.1))
+                .then_with(|| a.2.cmp(&b.2))
+        });
+
+        items.into_iter().map(|(_, _, id)| id).collect()
+    }
 }
 
 fn spawn_progress_aggregator(
     repo: Option<Arc<dyn JobRepository>>,
     mut rx: tokio::sync::mpsc::Receiver<JobProgressUpdate>,
+    cancellation_tokens: DashMap<String, CancellationToken>,
     progress_cache: DashMap<String, JobProgressSnapshot>,
 ) {
     if tokio::runtime::Handle::try_current().is_err() {
@@ -1794,6 +1976,12 @@ fn spawn_progress_aggregator(
                 }
                 update = rx.recv() => {
                     let Some(update) = update else { break; };
+                    // Only retain/persist progress for actively-processing jobs. This prevents
+                    // late progress messages (after completion/cancellation) from reintroducing
+                    // entries into the in-memory cache.
+                    if !cancellation_tokens.contains_key(&update.job_id) {
+                        continue;
+                    }
                     progress_cache.insert(update.job_id.clone(), update.snapshot.clone());
                     pending.insert(update.job_id, update.snapshot);
                 }
@@ -1829,14 +2017,36 @@ fn job_to_db_model(job: &Job) -> JobDbModel {
         JobStatus::Interrupted => DbJobStatus::Interrupted,
     };
 
-    let inputs_json = serde_json::to_string(&job.inputs).unwrap_or_else(|_| "[]".to_string());
-    let outputs_json = serde_json::to_string(&job.outputs).unwrap_or_else(|_| "[]".to_string());
+    let inputs_json = json::to_string_or_fallback(
+        &job.inputs,
+        "[]",
+        JsonContext::JobField {
+            job_id: &job.id,
+            field: "inputs",
+        },
+        "Failed to serialize job inputs; storing empty list",
+    );
+    let outputs_json = json::to_string_or_fallback(
+        &job.outputs,
+        "[]",
+        JsonContext::JobField {
+            job_id: &job.id,
+            field: "outputs",
+        },
+        "Failed to serialize job outputs; storing empty list",
+    );
 
     // Serialize execution_info to JSON
-    let execution_info_json = job
-        .execution_info
-        .as_ref()
-        .and_then(|info| serde_json::to_string(info).ok());
+    let execution_info_json = job.execution_info.as_ref().and_then(|info| {
+        json::to_string_option_or_warn(
+            info,
+            JsonContext::JobField {
+                job_id: &job.id,
+                field: "execution_info",
+            },
+            "Failed to serialize job execution_info; omitting",
+        )
+    });
 
     JobDbModel {
         id: job.id.clone(),
@@ -1945,6 +2155,9 @@ fn db_model_to_job(db_job: &JobDbModel) -> Job {
         duration_secs: db_job.duration_secs,
         queue_wait_secs: db_job.queue_wait_secs,
         dag_step_execution_id: db_job.dag_step_execution_id.clone(),
+        streamer_name: None,
+        session_title: None,
+        platform: None,
     }
 }
 
@@ -2246,7 +2459,7 @@ mod tests {
 
         // Verify error log was added
         assert!(!exec_info.logs.is_empty());
-        let last_log = exec_info.logs.last().unwrap();
+        let last_log = exec_info.logs.back().unwrap();
         assert_eq!(last_log.level, LogLevel::Error);
         assert!(last_log.message.contains("FFmpeg error"));
     }

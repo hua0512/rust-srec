@@ -255,7 +255,9 @@ impl HlsDownloader {
 
         let mut writer = HlsWriter::new(output_dir, base_name, ext, extras);
 
-        // Setup callbacks for segment events
+        // SegmentStarted/SegmentCompleted must not be dropped (danmu segmentation + pipelines rely on it).
+        // These callbacks run on a blocking thread; use `blocking_send` to apply backpressure
+        // rather than unbounded buffering.
         let event_tx_start = self.event_tx.clone();
         let event_tx_complete = self.event_tx.clone();
 
@@ -264,7 +266,7 @@ impl HlsDownloader {
                 path: path.to_path_buf(),
                 sequence,
             };
-            let _ = event_tx_start.try_send(event);
+            let _ = event_tx_start.blocking_send(event);
         });
 
         writer.set_on_segment_complete_callback(
@@ -278,7 +280,7 @@ impl HlsDownloader {
                     index: sequence,
                     completed_at: Utc::now(),
                 });
-                let _ = event_tx_complete.try_send(event);
+                let _ = event_tx_complete.blocking_send(event);
             },
         );
 
@@ -309,6 +311,7 @@ impl HlsDownloader {
 
         // Consume the rest of the HLS stream and send to pipeline
         let mut stream = std::pin::pin!(hls_stream);
+        let mut stream_error: Option<String> = None;
 
         while let Some(result) = stream.next().await {
             // Check for cancellation
@@ -327,15 +330,10 @@ impl HlsDownloader {
                 }
                 Err(e) => {
                     error!("HLS stream error for {}: {}", streamer_id, e);
+                    let err = e.to_string();
+                    stream_error = Some(err.clone());
                     let _ = pipeline_input_tx
-                        .send(Err(PipelineError::Processing(e.to_string())))
-                        .await;
-                    let _ = self
-                        .event_tx
-                        .send(SegmentEvent::DownloadFailed {
-                            error: e.to_string(),
-                            recoverable: true,
-                        })
+                        .send(Err(PipelineError::Processing(err)))
                         .await;
                     break;
                 }
@@ -374,6 +372,17 @@ impl HlsDownloader {
                     files_created: files_created + 1,
                 };
 
+                if let Some(err) = &stream_error {
+                    let _ = self
+                        .event_tx
+                        .send(SegmentEvent::DownloadFailed {
+                            error: err.clone(),
+                            recoverable: true,
+                        })
+                        .await;
+                    return Err(crate::Error::Other(format!("HLS stream error: {}", err)));
+                }
+
                 let _ = self
                     .event_tx
                     .send(SegmentEvent::DownloadCompleted {
@@ -391,6 +400,16 @@ impl HlsDownloader {
                 Ok(stats)
             }
             Err(e) => {
+                if let Some(err) = stream_error {
+                    let _ = self
+                        .event_tx
+                        .send(SegmentEvent::DownloadFailed {
+                            error: err.clone(),
+                            recoverable: true,
+                        })
+                        .await;
+                    return Err(crate::Error::Other(format!("HLS stream error: {}", err)));
+                }
                 let _ = self
                     .event_tx
                     .send(SegmentEvent::DownloadFailed {
@@ -450,7 +469,9 @@ impl HlsDownloader {
 
         let mut writer = HlsWriter::new(output_dir, base_name, ext, extras);
 
-        // Setup callbacks for segment events
+        // SegmentStarted/SegmentCompleted must not be dropped (danmu segmentation + pipelines rely on it).
+        // These callbacks run on a blocking thread; use `blocking_send` to apply backpressure
+        // rather than unbounded buffering.
         let event_tx_start = self.event_tx.clone();
         let event_tx_complete = self.event_tx.clone();
 
@@ -459,7 +480,7 @@ impl HlsDownloader {
                 path: path.to_path_buf(),
                 sequence,
             };
-            let _ = event_tx_start.try_send(event);
+            let _ = event_tx_start.blocking_send(event);
         });
 
         writer.set_on_segment_complete_callback(
@@ -473,7 +494,7 @@ impl HlsDownloader {
                     index: sequence,
                     completed_at: Utc::now(),
                 });
-                let _ = event_tx_complete.try_send(event);
+                let _ = event_tx_complete.blocking_send(event);
             },
         );
 
@@ -504,6 +525,7 @@ impl HlsDownloader {
 
         // Consume the rest of the HLS stream and send to writer
         let mut stream = std::pin::pin!(hls_stream);
+        let mut stream_error: Option<String> = None;
 
         while let Some(result) = stream.next().await {
             // Check for cancellation
@@ -523,14 +545,9 @@ impl HlsDownloader {
                 Err(e) => {
                     // Stream error - send error to writer and emit failure event
                     error!("HLS stream error for {}: {}", streamer_id, e);
-                    let _ = tx.send(Err(PipelineError::Processing(e.to_string()))).await;
-                    let _ = self
-                        .event_tx
-                        .send(SegmentEvent::DownloadFailed {
-                            error: e.to_string(),
-                            recoverable: true,
-                        })
-                        .await;
+                    let err = e.to_string();
+                    stream_error = Some(err.clone());
+                    let _ = tx.send(Err(PipelineError::Processing(err))).await;
                     break;
                 }
             }
@@ -554,6 +571,17 @@ impl HlsDownloader {
                     files_created: files_created + 1,
                 };
 
+                if let Some(err) = &stream_error {
+                    let _ = self
+                        .event_tx
+                        .send(SegmentEvent::DownloadFailed {
+                            error: err.clone(),
+                            recoverable: true,
+                        })
+                        .await;
+                    return Err(crate::Error::Other(format!("HLS stream error: {}", err)));
+                }
+
                 // Emit completion event with stats from writer
                 let _ = self
                     .event_tx
@@ -572,6 +600,16 @@ impl HlsDownloader {
                 Ok(stats)
             }
             Err(e) => {
+                if let Some(err) = stream_error {
+                    let _ = self
+                        .event_tx
+                        .send(SegmentEvent::DownloadFailed {
+                            error: err.clone(),
+                            recoverable: true,
+                        })
+                        .await;
+                    return Err(crate::Error::Other(format!("HLS stream error: {}", err)));
+                }
                 let _ = self
                     .event_tx
                     .send(SegmentEvent::DownloadFailed {
@@ -582,5 +620,106 @@ impl HlsDownloader {
                 Err(crate::Error::Other(format!("HLS writer error: {}", e)))
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use bytes::Bytes;
+    use m3u8_rs::MediaSegment;
+    use tokio::time::{Duration, timeout};
+
+    #[tokio::test]
+    async fn download_raw_emits_segment_completed_before_download_failed_on_stream_error() {
+        let temp = tempfile::tempdir().expect("tempdir");
+
+        let config = DownloadConfig::new(
+            "http://example.invalid/stream.m3u8",
+            temp.path().to_path_buf(),
+            "streamer",
+            "session",
+        )
+        .with_filename_template("test-hls");
+
+        let (event_tx, mut event_rx) = tokio::sync::mpsc::channel::<SegmentEvent>(32);
+        let downloader = HlsDownloader::new(
+            Arc::new(RwLock::new(config)),
+            MesioEngineConfig::default(),
+            event_tx,
+            CancellationToken::new(),
+            None,
+        );
+
+        let first_segment = HlsData::ts(
+            MediaSegment {
+                uri: "seg0.ts".to_string(),
+                duration: 1.0,
+                ..Default::default()
+            },
+            Bytes::from_static(&[0_u8; 188]),
+        );
+
+        let hls_stream = futures::stream::iter([
+            Ok(HlsData::ts(
+                MediaSegment {
+                    uri: "seg1.ts".to_string(),
+                    duration: 1.0,
+                    ..Default::default()
+                },
+                Bytes::from_static(&[1_u8; 188]),
+            )),
+            Err(mesio::hls::HlsDownloaderError::PlaylistError(
+                "simulated stream error".to_string(),
+            )),
+        ]);
+
+        let events_task = tokio::spawn(async move {
+            let mut events = Vec::new();
+            loop {
+                let next = timeout(Duration::from_secs(5), event_rx.recv())
+                    .await
+                    .expect("event recv timeout");
+                let Some(ev) = next else {
+                    break;
+                };
+                events.push(ev.clone());
+                if matches!(ev, SegmentEvent::DownloadFailed { .. }) {
+                    break;
+                }
+            }
+            events
+        });
+
+        let result = downloader
+            .download_raw(CancellationToken::new(), hls_stream, first_segment, "ts")
+            .await;
+        assert!(result.is_err(), "expected stream error");
+
+        let events = events_task.await.expect("events task join");
+
+        let completed_idx = events
+            .iter()
+            .position(|e| matches!(e, SegmentEvent::SegmentCompleted(_)))
+            .expect("expected SegmentCompleted");
+        let failed_idx = events
+            .iter()
+            .position(|e| matches!(e, SegmentEvent::DownloadFailed { .. }))
+            .expect("expected DownloadFailed");
+
+        assert!(
+            completed_idx < failed_idx,
+            "expected SegmentCompleted before DownloadFailed, got: {:?}",
+            events
+                .iter()
+                .map(|e| match e {
+                    SegmentEvent::SegmentStarted { .. } => "SegmentStarted",
+                    SegmentEvent::SegmentCompleted(_) => "SegmentCompleted",
+                    SegmentEvent::Progress(_) => "Progress",
+                    SegmentEvent::DownloadCompleted { .. } => "DownloadCompleted",
+                    SegmentEvent::DownloadFailed { .. } => "DownloadFailed",
+                })
+                .collect::<Vec<_>>()
+        );
     }
 }

@@ -5,6 +5,13 @@ import { Settings2, Trash2, Database, Zap, Box } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 
 import { GlassNode } from '../../graph-shared';
+import { useLingui } from '@lingui/react';
+import {
+  getJobPresetName,
+  getPipelinePresetName,
+} from '@/components/pipeline/presets/default-presets-i18n';
+import { getProcessorDefinition } from '../../presets/processors/registry';
+import { t } from '@lingui/core/macro';
 
 export type StepNodeData = {
   step: DagStepDefinition['step'];
@@ -16,6 +23,7 @@ export type StepNodeData = {
 export type StepNode = Node<StepNodeData, 'stepNode'>;
 
 export function StepNode({ data }: NodeProps<StepNode>) {
+  const { i18n } = useLingui();
   const { step, id, onEdit, onRemove } = data;
 
   console.log('StepNode render:', { id, stepType: step.type });
@@ -83,7 +91,19 @@ export function StepNode({ data }: NodeProps<StepNode>) {
 
       <div className="space-y-1 relative z-10">
         <h4 className="text-[14px] font-bold text-foreground truncate tracking-tight uppercase">
-          {step.type === 'inline' ? step.processor : step.name}
+          {step.type === 'inline'
+            ? (() => {
+                const def = getProcessorDefinition(step.processor);
+                return def ? i18n._(def.label) : step.processor;
+              })()
+            : step.type === 'preset'
+              ? getJobPresetName({ id: step.name, name: step.name }, i18n)
+              : step.type === 'workflow'
+                ? getPipelinePresetName(
+                    { id: step.name, name: step.name },
+                    i18n,
+                  )
+                : 'Unknown'}
         </h4>
         <div className="flex items-center justify-between">
           <span className="text-[9px] font-mono text-foreground/20 group-hover:text-foreground/40 transition-colors">
@@ -95,7 +115,13 @@ export function StepNode({ data }: NodeProps<StepNode>) {
               colorClass,
             )}
           >
-            {step.type}
+            {step.type === 'inline'
+              ? i18n._(t`inline`)
+              : step.type === 'preset'
+                ? i18n._(t`preset`)
+                : step.type === 'workflow'
+                  ? i18n._(t`workflow`)
+                  : (step as { type: string }).type}
           </span>
         </div>
       </div>

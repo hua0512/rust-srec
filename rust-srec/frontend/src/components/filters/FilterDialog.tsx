@@ -17,7 +17,7 @@ import {
   FilterSchema,
   TimeBasedFilterConfigSchema,
   KeywordFilterConfigSchema,
-  CategoryFilterConfigSchema,
+  // CategoryFilterConfigSchema,
   CronFilterConfigSchema,
   RegexFilterConfigSchema,
 } from '../../api/schemas';
@@ -27,7 +27,7 @@ import { toast } from 'sonner';
 import { FilterTypeSelector } from './forms/FilterTypeSelector';
 import { TimeBasedFilterForm } from './forms/TimeBasedFilterForm';
 import { KeywordFilterForm } from './forms/KeywordFilterForm';
-import { CategoryFilterForm } from './forms/CategoryFilterForm';
+// import { CategoryFilterForm } from './forms/CategoryFilterForm';
 import { CronFilterForm } from './forms/CronFilterForm';
 import { RegexFilterForm } from './forms/RegexFilterForm';
 import { useEffect } from 'react';
@@ -111,9 +111,11 @@ export function FilterDialog({
               case_sensitive: false,
             };
             break;
+          /*
           case 'CATEGORY':
             defaultConfig = { categories: [], exclude: false };
             break;
+          */
           case 'CRON':
             defaultConfig = { expression: '* * * * * *', timezone: 'UTC' };
             break;
@@ -174,9 +176,11 @@ export function FilterDialog({
       case 'KEYWORD':
         result = KeywordFilterConfigSchema.safeParse(data.config);
         break;
+      /*
       case 'CATEGORY':
         result = CategoryFilterConfigSchema.safeParse(data.config);
         break;
+      */
       case 'CRON':
         result = CronFilterConfigSchema.safeParse(data.config);
         break;
@@ -209,8 +213,10 @@ export function FilterDialog({
         return <TimeBasedFilterForm />;
       case 'KEYWORD':
         return <KeywordFilterForm />;
+      /*
       case 'CATEGORY':
         return <CategoryFilterForm />;
+      */
       case 'CRON':
         return <CronFilterForm />;
       case 'REGEX':
@@ -255,6 +261,9 @@ export function FilterDialog({
               <div className="rounded-xl border bg-card text-card-foreground shadow-sm p-5 transition-all">
                 {renderSubForm()}
               </div>
+
+              {/* Hidden submit button to ensure Enter key submission works reliably within dialog */}
+              <button type="submit" className="hidden" aria-hidden="true" />
             </form>
           </Form>
         </div>

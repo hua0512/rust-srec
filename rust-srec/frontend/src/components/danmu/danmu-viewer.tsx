@@ -132,11 +132,25 @@ export function DanmuViewer({ url, title }: DanmuViewerProps) {
     });
   }, [comments, searchQuery, filterMode]);
 
-  // Virtual Scrolling Constants
+  // Virtual Scrolling
   const rowHeight = 44;
-  const containerHeight = 600 - 64 - 48 - 32; // Card height minus header, toolbar, and footer
+  const [containerHeight, setContainerHeight] = useState(0);
   const [scrollTop, setScrollTop] = useState(0);
   const containerRef = useRef<HTMLDivElement>(null);
+
+  // Measure container height for virtual scrolling
+  useEffect(() => {
+    if (!containerRef.current) return;
+
+    const resizeObserver = new ResizeObserver((entries) => {
+      for (const entry of entries) {
+        setContainerHeight(entry.contentRect.height);
+      }
+    });
+
+    resizeObserver.observe(containerRef.current);
+    return () => resizeObserver.disconnect();
+  }, []);
 
   const handleScroll = (e: React.UIEvent<HTMLDivElement>) => {
     setScrollTop(e.currentTarget.scrollTop);
@@ -157,22 +171,22 @@ export function DanmuViewer({ url, title }: DanmuViewerProps) {
   }, [filteredComments, scrollTop, containerHeight]);
 
   return (
-    <Card className="flex flex-col h-[600px] w-full overflow-hidden border-border/50 shadow-xl bg-card text-card-foreground">
+    <Card className="flex flex-col h-[85vh] md:h-[600px] w-full overflow-hidden border-border/50 shadow-xl bg-card text-card-foreground">
       {/* Header */}
       <header className="flex items-center p-4 border-b bg-muted/30 gap-4 shrink-0 h-16 w-full">
         <div className="flex h-10 w-10 items-center justify-center rounded-full bg-primary/10 text-primary shrink-0 border border-primary/20">
           <MessageSquare className="h-5 w-5" />
         </div>
-        <div className="min-w-0 flex-1">
+        <div className="min-w-0 flex-1 flex flex-col justify-center">
           <h3
-            className="font-bold text-sm tracking-tight truncate leading-tight"
+            className="font-bold text-sm tracking-tight truncate leading-tight w-full"
             title={title}
           >
             {title}
           </h3>
-          <div className="flex items-center gap-2 mt-0.5">
-            <span className="inline-block w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse" />
-            <span className="text-[11px] font-medium text-muted-foreground uppercase tracking-wider">
+          <div className="flex items-center gap-2 mt-0.5 max-w-full">
+            <span className="inline-block w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse shrink-0" />
+            <span className="text-[11px] font-medium text-muted-foreground uppercase tracking-wider truncate">
               {comments.length.toLocaleString()} messages
             </span>
           </div>
@@ -236,7 +250,10 @@ export function DanmuViewer({ url, title }: DanmuViewerProps) {
       </div>
 
       {/* Main List */}
-      <main className="flex-1 overflow-hidden relative bg-background/20">
+      <main
+        className="flex-1 overflow-hidden relative bg-background/20"
+        ref={containerRef}
+      >
         {loading ? (
           <div className="absolute inset-0 flex flex-col items-center justify-center gap-4">
             <Loader2 className="h-10 w-10 animate-spin text-primary opacity-30" />
@@ -261,7 +278,6 @@ export function DanmuViewer({ url, title }: DanmuViewerProps) {
         ) : (
           <div
             className="h-full overflow-y-auto scrollbar-thin scrollbar-thumb-border hover:scrollbar-thumb-muted-foreground/30 transition-colors"
-            ref={containerRef}
             onScroll={handleScroll}
           >
             <div
@@ -330,6 +346,7 @@ export function DanmuViewer({ url, title }: DanmuViewerProps) {
                                 day: 'numeric',
                                 hour: '2-digit',
                                 minute: '2-digit',
+                                second: '2-digit',
                               },
                             )}
                           </Badge>

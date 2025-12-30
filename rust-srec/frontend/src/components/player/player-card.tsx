@@ -21,6 +21,10 @@ export interface PlayerCardProps {
   className?: string;
   contentClassName?: string;
   settingsContent?: React.ReactNode;
+  muted?: boolean;
+  volume?: number;
+  onVolumeChange?: (volume: number) => void;
+  onMuteChange?: (muted: boolean) => void;
 }
 
 export function PlayerCard({
@@ -32,6 +36,10 @@ export function PlayerCard({
   className,
   settingsContent,
   contentClassName,
+  muted = false,
+  volume = 0.5,
+  onVolumeChange,
+  onMuteChange,
 }: PlayerCardProps) {
   const artRef = useRef<HTMLDivElement>(null);
   const playerRef = useRef<any | null>(null); // Type loose for dynamic import
@@ -42,6 +50,7 @@ export function PlayerCard({
   const [resolving, setResolving] = useState(false);
   const [currentUrl, setCurrentUrl] = useState(url);
   const [currentHeaders, setCurrentHeaders] = useState(headers);
+  const [resolvedStream, setResolvedStream] = useState<any>(null);
   const [refreshKey, setRefreshKey] = useState(0);
 
   const handleRefresh = () => {
@@ -55,24 +64,36 @@ export function PlayerCard({
       if (!streamData || !title) {
         setCurrentUrl(url);
         setCurrentHeaders(headers);
+        setResolvedStream(null);
         return;
       }
+
+      // Use the previously resolved stream info as base ONLY if it matches the current selection
+      // This prevents using resolved info from one quality for another
+      const baseStreamInfo =
+        resolvedStream &&
+        resolvedStream.quality === streamData?.quality &&
+        resolvedStream.cdn === streamData?.cdn
+          ? resolvedStream
+          : streamData;
 
       setResolving(true);
       try {
         const response = await resolveUrl({
           data: {
             url: title,
-            stream_info: streamData,
+            stream_info: baseStreamInfo,
           },
         });
+        console.log('[PlayerCard] Headers:', headers);
+        console.log('[PlayerCard] Resolve Response:', response);
 
         if (response.success && response.stream_info) {
           console.log('[PlayerCard] Resolved URL:', response.stream_info.url);
           setCurrentUrl(response.stream_info.url || url);
-          // Merge headers if any new ones are returned (though backend usually updates headers in stream_info)
-          // Ensuring we use headers from resolved stream info if available
-          setCurrentHeaders(response.stream_info.headers || headers);
+          // Ensure use headers from resolved stream info if available
+          // setCurrentHeaders(response.stream_info.headers || headers);
+          setResolvedStream(response.stream_info);
         } else {
           console.warn(
             '[PlayerCard] URL resolution failed, using original:',
@@ -148,8 +169,8 @@ export function PlayerCard({
           container: artRef.current,
           url: playUrl,
           autoplay: true,
-          volume: 0.5,
-          muted: false,
+          volume: volume,
+          muted: muted,
           autoSize: false,
           pip: true,
           mutex: false,
@@ -250,6 +271,11 @@ export function PlayerCard({
           setError(`Player Error: ${err?.message || 'Unknown error'}`);
           setLoading(false);
         });
+
+        art.on('video:volumechange', () => {
+          onVolumeChange?.(art.volume);
+          onMuteChange?.(art.muted);
+        });
       } catch (err) {
         setError(
           `Failed to initialize player: ${err instanceof Error ? err.message : 'Unknown error'}`,
@@ -278,7 +304,7 @@ export function PlayerCard({
         artRef.current.innerHTML = '';
       }
     };
-  }, [url, headers, refreshKey]);
+  }, [currentUrl, currentHeaders, resolving, title, refreshKey]);
 
   return (
     <Card

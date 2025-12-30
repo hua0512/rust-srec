@@ -226,6 +226,7 @@ impl OnMetaDataBuilder {
         let keyframes_size = if low_latency_mode
             && spacer_size > 0
             && file_positions_size + times_size <= spacer_size
+            && (original_payload_size as usize) >= metadata_size_without_keyframes
         {
             original_payload_size as usize - metadata_size_without_keyframes
         } else {

@@ -12,7 +12,10 @@ pub enum HttpVersionPreference {
     /// Let ALPN negotiate the best version (default)
     #[default]
     Auto,
-    /// Force HTTP/2 only (fails if server doesn't support)
+    /// Prefer HTTP/2 when available.
+    ///
+    /// Note: with `reqwest` + `rustls-tls`, HTTP/2 is negotiated via ALPN and
+    /// fallback behavior is not strictly controllable at the client-builder level.
     Http2Only,
     /// Force HTTP/1.1 only (disable HTTP/2)
     Http1Only,
@@ -33,7 +36,10 @@ pub struct DownloaderConfig {
     /// Read timeout (maximum time between receiving data chunks)
     pub read_timeout: Duration,
 
-    /// Write timeout (maximum time for sending request data)
+    /// Write timeout (maximum time for sending request data).
+    ///
+    /// Note: `reqwest` does not currently expose a dedicated write-timeout setting on the
+    /// `ClientBuilder`; this field is reserved for future use.
     pub write_timeout: Duration,
 
     /// Whether to follow redirects

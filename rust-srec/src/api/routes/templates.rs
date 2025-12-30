@@ -13,7 +13,15 @@ use crate::api::models::{
 };
 use crate::api::server::AppState;
 use crate::database::models::TemplateConfigDbModel;
+use crate::utils::json::{self, JsonContext};
 use tracing::info;
+
+/// Request to clone a template.
+#[derive(Debug, Clone, serde::Deserialize, utoipa::ToSchema)]
+pub struct CloneTemplateRequest {
+    /// New name for the cloned template.
+    pub new_name: String,
+}
 
 /// Create the templates router.
 pub fn router() -> Router<AppState> {
@@ -23,6 +31,7 @@ pub fn router() -> Router<AppState> {
         .route("/{id}", get(get_template))
         .route("/{id}", put(update_template))
         .route("/{id}", delete(delete_template))
+        .route("/{id}/clone", post(clone_template))
 }
 
 /// Convert TemplateConfigDbModel to TemplateResponse.
@@ -35,14 +44,22 @@ fn db_model_to_response(model: &TemplateConfigDbModel, usage_count: u32) -> Temp
         output_file_format: model.output_file_format.clone(),
         download_engine: model.download_engine.clone(),
         record_danmu: model.record_danmu,
-        platform_overrides: model
-            .platform_overrides
-            .as_ref()
-            .and_then(|s| serde_json::from_str(s).ok()),
-        engines_override: model
-            .engines_override
-            .as_ref()
-            .and_then(|s| serde_json::from_str(s).ok()),
+        platform_overrides: json::parse_optional_value_non_null(
+            model.platform_overrides.as_deref(),
+            JsonContext::TemplateField {
+                template_id: &model.id,
+                field: "platform_overrides",
+            },
+            "Invalid template JSON field; omitting from response",
+        ),
+        engines_override: json::parse_optional_value_non_null(
+            model.engines_override.as_deref(),
+            JsonContext::TemplateField {
+                template_id: &model.id,
+                field: "engines_override",
+            },
+            "Invalid template JSON field; omitting from response",
+        ),
         stream_selection_config: model.stream_selection_config.clone(),
         cookies: model.cookies.clone(),
         min_segment_size_bytes: model.min_segment_size_bytes,
@@ -53,6 +70,8 @@ fn db_model_to_response(model: &TemplateConfigDbModel, usage_count: u32) -> Temp
         proxy_config: model.proxy_config.clone(),
         event_hooks: model.event_hooks.clone(),
         pipeline: model.pipeline.clone(),
+        session_complete_pipeline: model.session_complete_pipeline.clone(),
+        paired_segment_pipeline: model.paired_segment_pipeline.clone(),
         usage_count,
         created_at: model.created_at,
         updated_at: model.updated_at,
@@ -92,12 +111,21 @@ pub async fn create_template(
     template.output_file_format = request.output_file_format;
     template.download_engine = request.download_engine;
     template.record_danmu = request.record_danmu;
-    template.platform_overrides = request
-        .platform_overrides
-        .map(|v| serde_json::to_string(&v).unwrap_or_default());
-    template.engines_override = request
-        .engines_override
-        .map(|v| serde_json::to_string(&v).unwrap_or_default());
+
+    template.platform_overrides = match request.platform_overrides {
+        Some(v) if v.is_null() => None,
+        Some(v) => Some(serde_json::to_string(&v).map_err(|e| {
+            ApiError::internal(format!("Failed to serialize platform_overrides: {e}"))
+        })?),
+        None => None,
+    };
+    template.engines_override = match request.engines_override {
+        Some(v) if v.is_null() => None,
+        Some(v) => Some(serde_json::to_string(&v).map_err(|e| {
+            ApiError::internal(format!("Failed to serialize engines_override: {e}"))
+        })?),
+        None => None,
+    };
     template.stream_selection_config = request.stream_selection_config;
     template.cookies = request.cookies;
     template.min_segment_size_bytes = request.min_segment_size_bytes;
@@ -108,6 +136,8 @@ pub async fn create_template(
     template.proxy_config = request.proxy_config;
     template.event_hooks = request.event_hooks;
     template.pipeline = request.pipeline;
+    template.session_complete_pipeline = request.session_complete_pipeline;
+    template.paired_segment_pipeline = request.paired_segment_pipeline;
 
     // Create the template
     config_service
@@ -261,12 +291,20 @@ pub async fn update_template(
     template.output_file_format = request.output_file_format;
     template.download_engine = request.download_engine;
     template.record_danmu = request.record_danmu;
-    template.platform_overrides = request
-        .platform_overrides
-        .map(|v| serde_json::to_string(&v).unwrap_or_default());
-    template.engines_override = request
-        .engines_override
-        .map(|v| serde_json::to_string(&v).unwrap_or_default());
+    template.platform_overrides = match request.platform_overrides {
+        Some(v) if v.is_null() => None,
+        Some(v) => Some(serde_json::to_string(&v).map_err(|e| {
+            ApiError::internal(format!("Failed to serialize platform_overrides: {e}"))
+        })?),
+        None => None,
+    };
+    template.engines_override = match request.engines_override {
+        Some(v) if v.is_null() => None,
+        Some(v) => Some(serde_json::to_string(&v).map_err(|e| {
+            ApiError::internal(format!("Failed to serialize engines_override: {e}"))
+        })?),
+        None => None,
+    };
     template.stream_selection_config = request.stream_selection_config;
     template.cookies = request.cookies;
     template.min_segment_size_bytes = request.min_segment_size_bytes;
@@ -277,6 +315,8 @@ pub async fn update_template(
     template.proxy_config = request.proxy_config;
     template.event_hooks = request.event_hooks;
     template.pipeline = request.pipeline;
+    template.session_complete_pipeline = request.session_complete_pipeline;
+    template.paired_segment_pipeline = request.paired_segment_pipeline;
 
     // Update the template
     config_service
@@ -352,6 +392,92 @@ pub async fn delete_template(
     })))
 }
 
+#[utoipa::path(
+    post,
+    path = "/api/templates/{id}/clone",
+    tag = "templates",
+    params(("id" = String, Path, description = "Template ID to clone")),
+    request_body = CloneTemplateRequest,
+    responses(
+        (status = 201, description = "Template cloned", body = TemplateResponse),
+        (status = 404, description = "Template not found", body = crate::api::error::ApiErrorResponse),
+        (status = 409, description = "Template name already exists", body = crate::api::error::ApiErrorResponse)
+    ),
+    security(("bearer_auth" = []))
+)]
+pub async fn clone_template(
+    State(state): State<AppState>,
+    Path(id): Path<String>,
+    Json(request): Json<CloneTemplateRequest>,
+) -> ApiResult<Json<TemplateResponse>> {
+    // Validate new name
+    if request.new_name.is_empty() {
+        return Err(ApiError::validation("Template name cannot be empty"));
+    }
+
+    // Get config service from state
+    let config_service = state
+        .config_service
+        .as_ref()
+        .ok_or_else(|| ApiError::service_unavailable("Config service not available"))?;
+
+    // Get the existing template
+    let existing = config_service.get_template_config(&id).await.map_err(|e| {
+        if e.to_string().contains("not found") {
+            ApiError::not_found(format!("Template with id '{}' not found", id))
+        } else {
+            ApiError::internal(format!("Failed to get template: {}", e))
+        }
+    })?;
+
+    // Check if a template with the new name already exists
+    if config_service
+        .get_template_config_by_name(&request.new_name)
+        .await
+        .is_ok()
+    {
+        return Err(ApiError::conflict(format!(
+            "A template with name '{}' already exists",
+            request.new_name
+        )));
+    }
+
+    // Create the cloned template with a new ID and name
+    let mut cloned = TemplateConfigDbModel::new(&request.new_name);
+    cloned.output_folder = existing.output_folder;
+    cloned.output_filename_template = existing.output_filename_template;
+    cloned.output_file_format = existing.output_file_format;
+    cloned.download_engine = existing.download_engine;
+    cloned.record_danmu = existing.record_danmu;
+    cloned.platform_overrides = existing.platform_overrides;
+    cloned.engines_override = existing.engines_override;
+    cloned.stream_selection_config = existing.stream_selection_config;
+    cloned.cookies = existing.cookies;
+    cloned.min_segment_size_bytes = existing.min_segment_size_bytes;
+    cloned.max_download_duration_secs = existing.max_download_duration_secs;
+    cloned.max_part_size_bytes = existing.max_part_size_bytes;
+    cloned.download_retry_policy = existing.download_retry_policy;
+    cloned.danmu_sampling_config = existing.danmu_sampling_config;
+    cloned.proxy_config = existing.proxy_config;
+    cloned.event_hooks = existing.event_hooks;
+    cloned.pipeline = existing.pipeline;
+    cloned.session_complete_pipeline = existing.session_complete_pipeline;
+    cloned.paired_segment_pipeline = existing.paired_segment_pipeline;
+
+    // Create the cloned template
+    config_service
+        .create_template_config(&cloned)
+        .await
+        .map_err(|e| ApiError::internal(format!("Failed to create cloned template: {}", e)))?;
+
+    info!(
+        "Cloned template '{}' (id: {}) to '{}' (id: {})",
+        existing.name, id, cloned.name, cloned.id
+    );
+
+    Ok(Json(db_model_to_response(&cloned, 0)))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -378,6 +504,8 @@ mod tests {
             proxy_config: None,
             event_hooks: None,
             pipeline: None,
+            session_complete_pipeline: None,
+            paired_segment_pipeline: None,
             usage_count: 5,
             created_at: chrono::Utc::now(),
             updated_at: chrono::Utc::now(),

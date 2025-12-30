@@ -35,6 +35,8 @@ pub struct FlvFormatStrategy {
     file_start_instant: Option<Instant>,
     last_header_received: bool,
     current_tag_count: u64,
+    last_status_update: Option<Instant>,
+    last_status_bytes: u64,
 
     // Whether to use low-latency mode for metadata modification.
     enable_low_latency: bool,
@@ -48,6 +50,8 @@ impl FlvFormatStrategy {
             file_start_instant: None,
             last_header_received: false,
             current_tag_count: 0,
+            last_status_update: None,
+            last_status_bytes: 0,
             enable_low_latency,
         }
     }
@@ -56,12 +60,34 @@ impl FlvFormatStrategy {
         self.analyzer.stats.calculate_duration()
     }
 
+    fn should_update_status(&mut self, state: &WriterState) -> bool {
+        const MIN_UPDATE_INTERVAL: std::time::Duration = std::time::Duration::from_millis(250);
+        const MIN_BYTES_DELTA: u64 = 512 * 1024; // 512KiB
+
+        let now = Instant::now();
+        let last = self.last_status_update.get_or_insert(now);
+
+        let time_due = now.duration_since(*last) >= MIN_UPDATE_INTERVAL;
+        let bytes_due = state
+            .bytes_written_current_file
+            .saturating_sub(self.last_status_bytes)
+            >= MIN_BYTES_DELTA;
+
+        if time_due || bytes_due {
+            *last = now;
+            self.last_status_bytes = state.bytes_written_current_file;
+            true
+        } else {
+            false
+        }
+    }
+
     fn update_status(&self, state: &WriterState) {
         // Update the current span with progress information
         let span = Span::current();
         span.pb_set_position(state.bytes_written_current_file);
         span.pb_set_message(&format!(
-            "{} | {} tags | {} ms",
+            "{} | {} tags | {}s",
             state.current_path.display(),
             self.current_tag_count,
             self.calculate_duration()
@@ -135,10 +161,9 @@ impl FormatStrategy<FlvData> for FlvFormatStrategy {
     fn next_file_path(&self, config: &WriterConfig, state: &WriterState) -> PathBuf {
         let sequence = state.file_sequence_number;
 
+        let extension = &config.file_extension;
         let file_name = expand_filename_template(&config.file_name_template, Some(sequence));
-        config
-            .base_path
-            .join(format!("{}.{}", file_name, config.file_extension))
+        config.base_path.join(format!("{file_name}.{extension}"))
     }
 
     fn on_file_open(
@@ -151,6 +176,8 @@ impl FormatStrategy<FlvData> for FlvFormatStrategy {
         self.file_start_instant = Some(Instant::now());
         self.analyzer.reset();
         self.current_tag_count = 0;
+        self.last_status_update = None;
+        self.last_status_bytes = 0;
 
         info!(path = %path.display(), "Opening segment");
 
@@ -171,7 +198,7 @@ impl FormatStrategy<FlvData> for FlvFormatStrategy {
     ) -> Result<u64, Self::StrategyError> {
         writer.flush()?;
 
-        let duration = self.calculate_duration();
+        let duration_secs = self.calculate_duration();
         let tag_count = self.current_tag_count;
         let mut analyzer = std::mem::take(&mut self.analyzer);
 
@@ -180,8 +207,7 @@ impl FormatStrategy<FlvData> for FlvFormatStrategy {
             let path_buf = path.to_path_buf();
             let enable_low_latency = self.enable_low_latency;
 
-            // Spawn the blocking I/O operation in a separate thread.
-            tokio::task::spawn_blocking(move || {
+            let task = move || {
                 match script_modifier::inject_stats_into_script_data(
                     &path_buf,
                     &stats,
@@ -191,22 +217,47 @@ impl FormatStrategy<FlvData> for FlvFormatStrategy {
                         tracing::info!(path = %path_buf.display(), "Successfully injected stats in background task");
                     }
                     Err(e) => {
-                        tracing::warn!(path = %path_buf.display(), error = ?e, "Failed to inject stats into script data section in background task");
+                        // The consumer may delete discarded/small segments immediately after close.
+                        // Treat a missing file as an expected race rather than a warning.
+                        match &e {
+                            script_modifier::ScriptModifierError::Io(ioe)
+                                if ioe.kind() == std::io::ErrorKind::NotFound =>
+                            {
+                                tracing::debug!(
+                                    path = %path_buf.display(),
+                                    "Skipping stats injection: file no longer exists"
+                                );
+                            }
+                            _ => {
+                                tracing::warn!(
+                                    path = %path_buf.display(),
+                                    error = ?e,
+                                    "Failed to inject stats into script data section in background task"
+                                );
+                            }
+                        }
                     }
                 }
 
                 info!(
                     path = %path_buf.display(),
                     tags = tag_count,
-                    duration_ms = ?duration,
+                    duration_secs = ?duration_secs,
                     "Closed segment"
                 );
-            });
+            };
+
+            // Prefer tokio's blocking pool when available, otherwise fall back to a plain thread.
+            if let Ok(handle) = tokio::runtime::Handle::try_current() {
+                handle.spawn_blocking(task);
+            } else {
+                std::thread::spawn(task);
+            }
         } else {
             info!(
                 path = %path.display(),
                 tags = tag_count,
-                duration_ms = ?duration,
+                duration_secs = ?duration_secs,
                 "Closed segment"
             );
         }
@@ -224,7 +275,9 @@ impl FormatStrategy<FlvData> for FlvFormatStrategy {
         _bytes_written: u64,
         state: &WriterState,
     ) -> Result<PostWriteAction, Self::StrategyError> {
-        self.update_status(state);
+        if self.should_update_status(state) {
+            self.update_status(state);
+        }
         if state.items_written_total.is_multiple_of(50000) {
             tracing::debug!(
                 tags_written = state.items_written_total,

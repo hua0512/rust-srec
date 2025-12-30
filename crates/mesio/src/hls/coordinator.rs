@@ -53,7 +53,7 @@ impl HlsStreamCoordinator {
     > {
         // Initialize Services & Components
 
-        // Create shared performance metrics for the pipeline (Requirements 7.3)
+        // Create shared performance metrics for the pipeline
         let performance_metrics = Arc::new(PerformanceMetrics::new());
 
         // Create shared buffer pool for decryption operations with metrics

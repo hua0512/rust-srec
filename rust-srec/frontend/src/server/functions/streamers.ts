@@ -23,10 +23,15 @@ export const listStreamers = createServerFn({ method: 'GET' })
     ) => d,
   )
   .handler(async ({ data }) => {
-    // Backend endpoint expects query params
+    // Backend endpoint expects query params with offset-based pagination
     const params = new URLSearchParams();
-    if (data.page) params.set('page', data.page.toString());
-    if (data.limit) params.set('limit', data.limit.toString());
+    // Convert page-based pagination to offset-based
+    const limit = data.limit ?? 20;
+    if (data.page && data.page > 1) {
+      const offset = (data.page - 1) * limit;
+      params.set('offset', offset.toString());
+    }
+    params.set('limit', limit.toString());
     if (data.search) params.set('search', data.search);
     if (data.platform) params.set('platform', data.platform);
     if (data.state) params.set('state', data.state);
