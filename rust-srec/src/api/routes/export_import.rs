@@ -655,18 +655,15 @@ pub async fn import_config(
     global.max_concurrent_io_jobs = config.global_config.max_concurrent_io_jobs;
     global.job_history_retention_days = config.global_config.job_history_retention_days;
     global.session_gap_time_secs = config.global_config.session_gap_time_secs;
-    global.pipeline = config
-        .global_config
-        .pipeline
-        .map(|v| json_value_to_db_string(v));
+    global.pipeline = config.global_config.pipeline.map(json_value_to_db_string);
     global.session_complete_pipeline = config
         .global_config
         .session_complete_pipeline
-        .map(|v| json_value_to_db_string(v));
+        .map(json_value_to_db_string);
     global.paired_segment_pipeline = config
         .global_config
         .paired_segment_pipeline
-        .map(|v| json_value_to_db_string(v));
+        .map(json_value_to_db_string);
     if let Some(log_filter) = config.global_config.log_filter_directive {
         global.log_filter_directive = log_filter;
     }
@@ -758,44 +755,44 @@ pub async fn import_config(
             updated.platform_overrides = template_export
                 .platform_overrides
                 .clone()
-                .map(|v| json_value_to_db_string(v));
+                .map(json_value_to_db_string);
             updated.download_retry_policy = template_export
                 .download_retry_policy
                 .clone()
-                .map(|v| json_value_to_db_string(v));
+                .map(json_value_to_db_string);
             updated.danmu_sampling_config = template_export
                 .danmu_sampling_config
                 .clone()
-                .map(|v| json_value_to_db_string(v));
+                .map(json_value_to_db_string);
             updated.download_engine = template_export.download_engine.clone();
             updated.engines_override = template_export
                 .engines_override
                 .clone()
-                .map(|v| json_value_to_db_string(v));
+                .map(json_value_to_db_string);
             updated.proxy_config = template_export
                 .proxy_config
                 .clone()
-                .map(|v| json_value_to_db_string(v));
+                .map(json_value_to_db_string);
             updated.event_hooks = template_export
                 .event_hooks
                 .clone()
-                .map(|v| json_value_to_db_string(v));
+                .map(json_value_to_db_string);
             updated.stream_selection_config = template_export
                 .stream_selection_config
                 .clone()
-                .map(|v| json_value_to_db_string(v));
+                .map(json_value_to_db_string);
             updated.pipeline = template_export
                 .pipeline
                 .clone()
-                .map(|v| json_value_to_db_string(v));
+                .map(json_value_to_db_string);
             updated.session_complete_pipeline = template_export
                 .session_complete_pipeline
                 .clone()
-                .map(|v| json_value_to_db_string(v));
+                .map(json_value_to_db_string);
             updated.paired_segment_pipeline = template_export
                 .paired_segment_pipeline
                 .clone()
-                .map(|v| json_value_to_db_string(v));
+                .map(json_value_to_db_string);
             updated.updated_at = Utc::now();
 
             config_service
@@ -819,44 +816,44 @@ pub async fn import_config(
             new_template.platform_overrides = template_export
                 .platform_overrides
                 .clone()
-                .map(|v| json_value_to_db_string(v));
+                .map(json_value_to_db_string);
             new_template.download_retry_policy = template_export
                 .download_retry_policy
                 .clone()
-                .map(|v| json_value_to_db_string(v));
+                .map(json_value_to_db_string);
             new_template.danmu_sampling_config = template_export
                 .danmu_sampling_config
                 .clone()
-                .map(|v| json_value_to_db_string(v));
+                .map(json_value_to_db_string);
             new_template.download_engine = template_export.download_engine.clone();
             new_template.engines_override = template_export
                 .engines_override
                 .clone()
-                .map(|v| json_value_to_db_string(v));
+                .map(json_value_to_db_string);
             new_template.proxy_config = template_export
                 .proxy_config
                 .clone()
-                .map(|v| json_value_to_db_string(v));
+                .map(json_value_to_db_string);
             new_template.event_hooks = template_export
                 .event_hooks
                 .clone()
-                .map(|v| json_value_to_db_string(v));
+                .map(json_value_to_db_string);
             new_template.stream_selection_config = template_export
                 .stream_selection_config
                 .clone()
-                .map(|v| json_value_to_db_string(v));
+                .map(json_value_to_db_string);
             new_template.pipeline = template_export
                 .pipeline
                 .clone()
-                .map(|v| json_value_to_db_string(v));
+                .map(json_value_to_db_string);
             new_template.session_complete_pipeline = template_export
                 .session_complete_pipeline
                 .clone()
-                .map(|v| json_value_to_db_string(v));
+                .map(json_value_to_db_string);
             new_template.paired_segment_pipeline = template_export
                 .paired_segment_pipeline
                 .clone()
-                .map(|v| json_value_to_db_string(v));
+                .map(json_value_to_db_string);
 
             config_service
                 .create_template_config(&new_template)
@@ -916,11 +913,11 @@ pub async fn import_config(
             updated.platform_specific_config = platform_export
                 .platform_specific_config
                 .clone()
-                .map(|v| json_value_to_db_string(v));
+                .map(json_value_to_db_string);
             updated.proxy_config = platform_export
                 .proxy_config
                 .clone()
-                .map(|v| json_value_to_db_string(v));
+                .map(json_value_to_db_string);
             updated.record_danmu = platform_export.record_danmu;
             updated.output_folder = platform_export.output_folder.clone();
             updated.output_filename_template = platform_export.output_filename_template.clone();
@@ -928,7 +925,7 @@ pub async fn import_config(
             updated.stream_selection_config = platform_export
                 .stream_selection_config
                 .clone()
-                .map(|v| json_value_to_db_string(v));
+                .map(json_value_to_db_string);
             updated.output_file_format = platform_export.output_file_format.clone();
             updated.min_segment_size_bytes = platform_export.min_segment_size_bytes;
             updated.max_download_duration_secs = platform_export.max_download_duration_secs;
@@ -936,23 +933,23 @@ pub async fn import_config(
             updated.download_retry_policy = platform_export
                 .download_retry_policy
                 .clone()
-                .map(|v| json_value_to_db_string(v));
+                .map(json_value_to_db_string);
             updated.event_hooks = platform_export
                 .event_hooks
                 .clone()
-                .map(|v| json_value_to_db_string(v));
+                .map(json_value_to_db_string);
             updated.pipeline = platform_export
                 .pipeline
                 .clone()
-                .map(|v| json_value_to_db_string(v));
+                .map(json_value_to_db_string);
             updated.session_complete_pipeline = platform_export
                 .session_complete_pipeline
                 .clone()
-                .map(|v| json_value_to_db_string(v));
+                .map(json_value_to_db_string);
             updated.paired_segment_pipeline = platform_export
                 .paired_segment_pipeline
                 .clone()
-                .map(|v| json_value_to_db_string(v));
+                .map(json_value_to_db_string);
 
             config_service
                 .update_platform_config(&updated)
@@ -999,7 +996,7 @@ pub async fn import_config(
             updated.streamer_specific_config = streamer_export
                 .streamer_specific_config
                 .clone()
-                .map(|v| json_value_to_db_string(v));
+                .map(json_value_to_db_string);
             updated.updated_at = Utc::now().to_rfc3339();
 
             streamer_repo
@@ -1033,7 +1030,7 @@ pub async fn import_config(
             new_streamer.streamer_specific_config = streamer_export
                 .streamer_specific_config
                 .clone()
-                .map(|v| json_value_to_db_string(v));
+                .map(json_value_to_db_string);
 
             streamer_repo
                 .create_streamer(&new_streamer)
