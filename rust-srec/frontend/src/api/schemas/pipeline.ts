@@ -100,6 +100,8 @@ export const VALID_PROCESSORS = [
   'metadata',
   'danmaku_factory',
   'ass_burnin',
+  'tdl',
+  'telegram',
 ] as const;
 export type ProcessorType = (typeof VALID_PROCESSORS)[number];
 

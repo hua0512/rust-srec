@@ -24,6 +24,7 @@ function detectClientLocale(): Locale {
   // 1. Check saved preference
   const saved = localStorage.getItem('locale');
   if (saved && locales.includes(saved as Locale)) {
+    console.log(`[i18n] Client: Using saved locale preference: ${saved}`);
     return saved as Locale;
   }
 
@@ -96,6 +97,7 @@ i18n.activate(defaultLocale);
  */
 export function activateLocale(locale: Locale): void {
   if (i18n.locale !== locale) {
+    console.log(`[i18n] Activating locale: ${locale}`);
     i18n.activate(locale);
   }
 }

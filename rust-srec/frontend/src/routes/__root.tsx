@@ -11,10 +11,10 @@ const TanStackRouterDevtools =
   process.env.NODE_ENV === 'production'
     ? () => null
     : lazy(() =>
-        import('@tanstack/react-router-devtools').then((res) => ({
-          default: res.TanStackRouterDevtools,
-        })),
-      );
+      import('@tanstack/react-router-devtools').then((res) => ({
+        default: res.TanStackRouterDevtools,
+      })),
+    );
 
 const fetchUser = createServerFn({ method: 'GET' }).handler(async () => {
   // Use ensureValidToken to validate the session and refresh if needed
@@ -42,6 +42,7 @@ export const Route = createRootRoute({
       fetchUser(),
       detectServerLocale(),
     ]);
+    console.log(`[Root] beforeLoad context: user=${user ? user.username : 'guest'}, locale=${serverLocale}`);
     return {
       user,
       serverLocale,

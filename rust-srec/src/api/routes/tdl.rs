@@ -41,6 +41,15 @@ fn detect_password_prompt(chunk: &str) -> bool {
         || chunk.contains("二步验证")
 }
 
+fn twofa_not_supported_message() -> String {
+    // `tdl` reads the Telegram 2FA password from a real TTY (eg. via ReadPassword).
+    // Since we spawn `tdl` with piped stdin/stdout for the web UI, there is no TTY.
+    // On Windows this often surfaces as "Incorrect function." and on other OSes it
+    // fails similarly. Supporting this would require a PTY, which we intentionally
+    // do not use here.
+    "TDL requested a Telegram 2FA password, but 2FA is not supported via the web login session (no TTY). Use `tdl login -T desktop` (optionally `-d`/`-p`) or run `tdl login` locally in a terminal.".to_string()
+}
+
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum TdlLoginStatus {
@@ -58,6 +67,7 @@ pub enum TdlLoginState {
     Unknown,
 }
 
+#[allow(dead_code)]
 #[derive(Debug)]
 struct TdlLoginSession {
     created_at: std::time::Instant,
@@ -127,8 +137,9 @@ pub struct StartLoginRequest {
     pub ttl_secs: Option<u64>,
     /// Allow Telegram 2FA password input via this API session.
     ///
-    /// When disabled (default), if `tdl` prompts for a password/2FA secret the login session is
-    /// immediately aborted to avoid handling sensitive secrets via HTTP.
+    /// NOTE: Telegram 2FA password is NOT supported via the web login session (no TTY).
+    /// This flag is accepted for compatibility but is ignored; the session will abort if a 2FA
+    /// password prompt is detected.
     #[serde(default)]
     pub allow_password: bool,
     /// When sending sensitive input (like 2FA password), suppress captured output briefly to
@@ -280,9 +291,10 @@ async fn spawn_tdl_login(
                     {
                         continue;
                     }
-                    if !session_out.allow_password && detect_password_prompt(&chunk) {
+                    if detect_password_prompt(&chunk) {
+                        // Telegram 2FA password prompt requires a real TTY; do not attempt to handle it via HTTP.
                         *session_out.status.write() = TdlLoginStatus::Failed {
-                            message: "TDL login requires a password/2FA secret, which is disabled for this API session.".to_string(),
+                            message: twofa_not_supported_message(),
                         };
                         session_out.cancel.cancel();
                         session_out.push_output(chunk);
@@ -311,9 +323,9 @@ async fn spawn_tdl_login(
                     {
                         continue;
                     }
-                    if !session_err.allow_password && detect_password_prompt(&chunk) {
+                    if detect_password_prompt(&chunk) {
                         *session_err.status.write() = TdlLoginStatus::Failed {
-                            message: "TDL login requires a password/2FA secret, which is disabled for this API session.".to_string(),
+                            message: twofa_not_supported_message(),
                         };
                         session_err.cancel.cancel();
                         session_err.push_output(chunk);
@@ -410,6 +422,31 @@ fn is_not_logged_in(text: &str) -> bool {
         || text.contains("未授權")
 }
 
+fn find_global_arg_value(global_args: &[String], key: &str) -> Option<String> {
+    let mut i = 0usize;
+    while i < global_args.len() {
+        if global_args[i] == key {
+            return global_args.get(i + 1).cloned();
+        }
+        i += 1;
+    }
+    None
+}
+
+fn parse_storage_path(storage_spec: &str) -> Option<String> {
+    // Example: "type=bolt,path=/data/tdl"
+    for part in storage_spec.split(',') {
+        let part = part.trim();
+        if let Some(path) = part.strip_prefix("path=") {
+            let path = path.trim();
+            if !path.is_empty() {
+                return Some(path.to_string());
+            }
+        }
+    }
+    None
+}
+
 pub async fn get_tdl_status(
     State(_state): State<AppState>,
     Json(payload): Json<TdlStatusRequest>,
@@ -420,7 +457,13 @@ pub async fn get_tdl_status(
     // Version check (best effort).
     let version_output = match timeout(
         std::time::Duration::from_secs(3),
-        run_tdl_output(&tdl_path, working_dir, &payload.env, &payload.global_args, &["--version"]),
+        run_tdl_output(
+            &tdl_path,
+            working_dir,
+            &payload.env,
+            &payload.global_args,
+            &["--version"],
+        ),
     )
     .await
     {
@@ -449,13 +492,100 @@ pub async fn get_tdl_status(
         }
     }
 
+    // Heuristic: if `--storage` is configured and the storage path contains data files,
+    // consider the account likely initialized (logged in).
+    if let Some(storage_spec) = find_global_arg_value(&payload.global_args, "--storage")
+        && let Some(path) = parse_storage_path(&storage_spec)
+    {
+        match tokio::fs::metadata(&path).await {
+            Ok(meta) if meta.is_dir() => {
+                let mut dir = match tokio::fs::read_dir(&path).await {
+                    Ok(d) => d,
+                    Err(e) => {
+                        return Ok(Json(TdlStatusResponse {
+                            resolved_tdl_path: tdl_path,
+                            binary_ok: true,
+                            version,
+                            login_state: TdlLoginState::Unknown,
+                            detail: Some(format!(
+                                "TDL storage dir exists but can't be read ({}): {}",
+                                path, e
+                            )),
+                        }));
+                    }
+                };
+
+                let mut entries: Vec<String> = Vec::new();
+                while let Ok(Some(ent)) = dir.next_entry().await {
+                    if let Some(name) = ent.file_name().to_str() {
+                        entries.push(name.to_string());
+                    }
+                    if entries.len() >= 10 {
+                        break;
+                    }
+                }
+
+                if entries.is_empty() {
+                    return Ok(Json(TdlStatusResponse {
+                        resolved_tdl_path: tdl_path,
+                        binary_ok: true,
+                        version,
+                        login_state: TdlLoginState::NotLoggedIn,
+                        detail: Some(format!(
+                            "TDL storage dir is empty ({}). Login has not been initialized.",
+                            path
+                        )),
+                    }));
+                }
+
+                let ns = find_global_arg_value(&payload.global_args, "--ns")
+                    .or_else(|| find_global_arg_value(&payload.global_args, "-n"))
+                    .unwrap_or_else(|| "default".to_string());
+                let likely = entries.iter().any(|e| e.contains(&ns));
+
+                return Ok(Json(TdlStatusResponse {
+                    resolved_tdl_path: tdl_path,
+                    binary_ok: true,
+                    version,
+                    login_state: if likely {
+                        TdlLoginState::LoggedIn
+                    } else {
+                        TdlLoginState::Unknown
+                    },
+                    detail: Some(format!(
+                        "TDL storage dir has data ({}). Sample entries: {:?}",
+                        path, entries
+                    )),
+                }));
+            }
+            Ok(_) => {
+                return Ok(Json(TdlStatusResponse {
+                    resolved_tdl_path: tdl_path,
+                    binary_ok: true,
+                    version,
+                    login_state: TdlLoginState::Unknown,
+                    detail: Some(format!("TDL storage path is not a directory ({})", path)),
+                }));
+            }
+            Err(_) => {
+                // Fall through to command-based check.
+            }
+        }
+    }
+
     // Login check (best effort): try a few common self-identification subcommands.
     let candidates: &[&[&str]] = &[&["me"], &["whoami"], &["account"], &["user"]];
     let mut last_detail: Option<String> = None;
     for args in candidates {
         let out = match timeout(
             std::time::Duration::from_secs(5),
-            run_tdl_output(&tdl_path, working_dir, &payload.env, &payload.global_args, args),
+            run_tdl_output(
+                &tdl_path,
+                working_dir,
+                &payload.env,
+                &payload.global_args,
+                args,
+            ),
         )
         .await
         {

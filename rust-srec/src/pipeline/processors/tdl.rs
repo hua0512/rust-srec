@@ -33,6 +33,15 @@ pub struct TdlUploadConfig {
     #[serde(default)]
     pub env: HashMap<String, String>,
 
+    /// TDL namespace (maps to `tdl --ns <name>`), useful for multiple accounts.
+    #[serde(default)]
+    pub namespace: Option<String>,
+
+    /// TDL storage configuration (maps to `tdl --storage <spec>`).
+    /// Example: `type=bolt,path=/data/tdl`.
+    #[serde(default)]
+    pub storage: Option<String>,
+
     /// Base arguments passed to `tdl` for each upload.
     ///
     /// - If any arg contains `{input}`, it is replaced with the file path.
@@ -193,6 +202,26 @@ impl TdlUploadProcessor {
 
         args
     }
+
+    fn build_global_args(cfg: &TdlUploadConfig) -> Vec<String> {
+        let mut args = Vec::new();
+
+        if let Some(ns) = cfg.namespace.as_deref()
+            && !ns.trim().is_empty()
+        {
+            args.push("--ns".to_string());
+            args.push(ns.trim().to_string());
+        }
+
+        if let Some(storage) = cfg.storage.as_deref()
+            && !storage.trim().is_empty()
+        {
+            args.push("--storage".to_string());
+            args.push(storage.trim().to_string());
+        }
+
+        args
+    }
 }
 
 impl Default for TdlUploadProcessor {
@@ -239,6 +268,7 @@ impl Processor for TdlUploadProcessor {
 
         let tdl_path = Self::tdl_path(&cfg);
         let mut logs = Vec::new();
+        let global_args = Self::build_global_args(&cfg);
 
         let mut succeeded_inputs = Vec::new();
         let mut failed_inputs: Vec<(String, String)> = Vec::new();
@@ -264,12 +294,16 @@ impl Processor for TdlUploadProcessor {
             }
 
             let args = Self::build_args(&cfg, input, file_path);
-            debug!(job_id = %ctx.job_id, tdl_path, ?args, "tdl upload command");
+            let mut full_args = Vec::with_capacity(global_args.len() + args.len());
+            full_args.extend(global_args.iter().cloned());
+            full_args.extend(args.iter().cloned());
+
+            debug!(job_id = %ctx.job_id, tdl_path, ?full_args, "tdl upload command");
 
             if cfg.dry_run {
                 logs.push(create_log_entry(
                     LogLevel::Info,
-                    format!("dry_run: {} {}", tdl_path, args.join(" ")),
+                    format!("dry_run: {} {}", tdl_path, full_args.join(" ")),
                 ));
                 succeeded_inputs.push(file_path.clone());
                 output_paths.push(file_path.clone());
@@ -283,7 +317,7 @@ impl Processor for TdlUploadProcessor {
                 attempt = attempt.saturating_add(1);
 
                 let mut command = Command::new(&tdl_path);
-                command.args(&args);
+                command.args(&full_args);
                 if let Some(dir) = cfg.working_dir.as_deref()
                     && !dir.trim().is_empty()
                 {
@@ -375,6 +409,8 @@ mod tests {
             dry_run: true,
             max_retries: 0,
             continue_on_error: false,
+            namespace: None,
+            storage: None,
         };
         let input = ProcessorInput {
             inputs: vec!["/in.mp4".to_string()],
@@ -427,6 +463,8 @@ mod tests {
             dry_run: true,
             max_retries: 0,
             continue_on_error: false,
+            namespace: None,
+            storage: None,
         };
 
         assert!(TdlUploadProcessor::should_upload(&cfg, "/a/b/c.json").0);
@@ -448,6 +486,8 @@ mod tests {
             dry_run: true,
             max_retries: 0,
             continue_on_error: false,
+            namespace: None,
+            storage: None,
         };
 
         assert!(TdlUploadProcessor::should_upload(&cfg, "/a/b/c.weird").0);

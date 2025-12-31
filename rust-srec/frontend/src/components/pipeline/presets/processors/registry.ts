@@ -31,6 +31,9 @@ const AssBurninConfigForm = lazy(() =>
     default: m.AssBurninConfigForm,
   })),
 );
+// const TdlConfigForm = lazy(() =>
+//   import('./tdl-config-form').then((m) => ({ default: m.TdlConfigForm })),
+// );
 
 // Smaller forms can be imported directly
 import { ThumbnailConfigForm } from './thumbnail-config-form';
@@ -122,6 +125,11 @@ export const PROCESSOR_REGISTRY: Record<string, ProcessorDefinition> = {
     component: CopyMoveConfigForm,
     label: msg`Copy / Move`,
   },
+  // tdl: {
+  //   schema: TdlConfigSchema,
+  //   component: TdlConfigForm,
+  //   label: msg`TDL Upload`,
+  // }
 };
 
 export const getProcessorDefinition = (

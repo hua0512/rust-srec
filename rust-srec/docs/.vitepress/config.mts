@@ -5,6 +5,7 @@ export default withMermaid(
     defineConfig({
         title: 'Rust-Srec',
         description: 'Automatic Online Streaming Recorder',
+        base: '/rust-srec/',
 
         // Ignore dead links for external URLs and runtime-generated paths
         ignoreDeadLinks: [

@@ -30,6 +30,7 @@ export const loginFn = createServerFn({ method: 'POST' })
   .handler(async ({ data }) => {
     try {
       const json = await authClient.post('auth/login', { json: data }).json();
+      console.log(`[Auth] Login successful for user: ${data.username}. Parsing response...`);
       const parsed = LoginResponseSchema.parse(json);
 
       const { useAppSession } = await import('../../utils/session');
@@ -46,6 +47,7 @@ export const loginFn = createServerFn({ method: 'POST' })
         roles: parsed.roles,
         mustChangePassword: parsed.must_change_password,
       };
+      console.log(`[Auth] Updating session for ${data.username}. Access expiry: ${new Date(userData.token.expires_in).toLocaleString()}`);
       await session.update(userData);
 
       // Do not leak refresh token back to the browser; return a sanitized view.
@@ -102,6 +104,7 @@ export const checkAuthFn = createServerFn({ method: 'POST' }).handler(
     // Use the global token refresh mechanism to ensure proper coordination
     // with other concurrent refresh attempts (e.g., from API 401 handling)
     const sessionData = await ensureValidToken();
+    console.log(`[Auth] checkAuth result: ${sessionData ? `Authenticated as ${sessionData.username}` : 'Not authenticated'}`);
     return sessionData;
   },
 );
