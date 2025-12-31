@@ -163,8 +163,6 @@ where
         let result = convert_live_status_to_check_result(&status);
 
         // Return both the result and the status.
-        // The caller (StreamerActor) will decide whether to call process_status()
-        // based on the hysteresis logic in record_check().
         Ok((result, status))
     }
 

@@ -58,7 +58,6 @@ impl JsError {
     }
 }
 
-#[cfg(feature = "douyu")]
 impl From<rquickjs::Error> for JsError {
     fn from(err: rquickjs::Error) -> Self {
         JsError::Evaluation {

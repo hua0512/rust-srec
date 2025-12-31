@@ -1,11 +1,19 @@
 //! Copy/Move processor for file operations.
 //!
 //! This processor handles copying and moving files to different locations
-//! with directory creation and integrity verification.
+//! with directory creation et integrity verification.
 //!
+//! Supports placeholder expansion in destination paths:
+//! - `{streamer}` - Streamer name
+//! - `{title}` - Session title
+//! - `{streamer_id}` - Streamer ID
+//! - `{session_id}` - Session ID
+//! - `{platform}` - Platform name
+//! - Time placeholders: `%Y`, `%m`, `%d`, `%H`, `%M`, `%S`, etc.
 
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
+use std::io::ErrorKind;
 use std::path::Path;
 use tokio::fs;
 use tracing::{debug, error, info};
@@ -13,6 +21,7 @@ use tracing::{debug, error, info};
 use super::traits::{Processor, ProcessorContext, ProcessorInput, ProcessorOutput, ProcessorType};
 use super::utils::{create_log_entry, parse_config_or_default};
 use crate::Result;
+use crate::utils::filename::expand_placeholders;
 
 /// Default value for create_dirs option.
 fn default_true() -> bool {
@@ -80,21 +89,15 @@ impl CopyMoveProcessor {
         Self
     }
 
-    /// Get available disk space at the given path.
-    /// Returns None if unable to determine.
-    ///
-    /// Note: This is a best-effort implementation. On some platforms or
-    /// configurations, it may not be able to determine available space.
-    #[allow(unused_variables)]
-    async fn get_available_space(path: &Path) -> Option<u64> {
-        // Use fs2 crate for cross-platform disk space checking if available
-        // For now, we'll skip the pre-check and rely on the copy operation
-        // to fail with an appropriate error if there's insufficient space.
-        // This is a reasonable approach since:
-        // 1. The copy operation will fail with ENOSPC/ERROR_DISK_FULL
-        // 2. We handle that error specifically in the copy operation
-        // 3. Checking space before copy has a race condition anyway
-        None
+    fn is_disk_full_error(error: &std::io::Error) -> bool {
+        // Unix: ENOSPC = 28
+        // Windows: ERROR_DISK_FULL = 112
+        if matches!(error.raw_os_error(), Some(28) | Some(112)) {
+            return true;
+        }
+
+        let msg = error.to_string().to_lowercase();
+        msg.contains("no space left") || msg.contains("disk full")
     }
 
     /// Format bytes as human-readable string.
@@ -128,11 +131,15 @@ impl Processor for CopyMoveProcessor {
     }
 
     fn job_types(&self) -> Vec<&'static str> {
-        vec!["copy", "move"]
+        vec!["copy_move"]
     }
 
     fn name(&self) -> &'static str {
         "CopyMoveProcessor"
+    }
+
+    fn supports_batch_input(&self) -> bool {
+        true
     }
 
     async fn process(
@@ -148,205 +155,327 @@ impl Processor for CopyMoveProcessor {
         let config: CopyMoveConfig =
             parse_config_or_default(input.config.as_deref(), ctx, "copy_move", Some(&mut logs));
 
-        // Get source path
-        let source_path = input.inputs.first().ok_or_else(|| {
-            crate::Error::PipelineError("No input file specified for copy/move".to_string())
+        if input.inputs.is_empty() {
+            return Err(crate::Error::PipelineError(
+                "No input files specified for copy/move".to_string(),
+            ));
+        }
+
+        // Get destination template from config
+        let dest_template = config.destination.as_deref().ok_or_else(|| {
+            crate::Error::PipelineError(
+                "No destination directory specified for copy/move operation".to_string(),
+            )
         })?;
 
-        // Get destination path from config or outputs
-        let dest_path = config
-            .destination
-            .as_ref()
-            .or_else(|| input.outputs.first())
-            .ok_or_else(|| {
-                crate::Error::PipelineError(
-                    "No destination path specified for copy/move".to_string(),
-                )
-            })?;
-
-        let source = Path::new(source_path);
-        let dest = Path::new(dest_path);
-
-        let log_msg = format!(
-            "{} {} -> {}",
-            if config.operation == CopyMoveOperation::Copy {
-                "Copying"
-            } else {
-                "Moving"
-            },
-            source_path,
-            dest_path
+        // Expand placeholders in destination path
+        let dest_dir = expand_placeholders(
+            dest_template,
+            &input.streamer_id,
+            &input.session_id,
+            input.streamer_name.as_deref(),
+            input.session_title.as_deref(),
+            input.platform.as_deref(),
         );
-        info!("{}", log_msg);
-        logs.push(create_log_entry(
-            crate::pipeline::job_queue::LogLevel::Info,
-            log_msg,
-        ));
 
-        // Check if source exists
-        if !source.exists() {
-            let error_msg = format!("Source file does not exist: {}", source_path);
-            error!("{}", error_msg);
-            logs.push(create_log_entry(
-                crate::pipeline::job_queue::LogLevel::Error,
-                error_msg.clone(),
-            ));
-            return Err(crate::Error::PipelineError(error_msg));
-        }
+        debug!(
+            template = %dest_template,
+            expanded = %dest_dir,
+            "CopyMove: Placeholder expansion result"
+        );
 
-        // Get source file size
-        let source_metadata = fs::metadata(source).await.map_err(|e| {
-            crate::Error::PipelineError(format!("Failed to get source file metadata: {}", e))
+        let dest_dir_path = Path::new(&dest_dir);
+
+        let dest_dir_exists = fs::try_exists(dest_dir_path).await.map_err(|e| {
+            crate::Error::PipelineError(format!(
+                "Failed to check destination directory '{}': {}",
+                dest_dir, e
+            ))
         })?;
-        let source_size = source_metadata.len();
-
-        // Check if destination exists and handle overwrite
-        if dest.exists() && !config.overwrite {
-            let error_msg = format!(
-                "Destination file already exists and overwrite is disabled: {}",
-                dest_path
-            );
-            error!("{}", error_msg);
-            logs.push(create_log_entry(
-                crate::pipeline::job_queue::LogLevel::Error,
-                error_msg.clone(),
-            ));
-            return Err(crate::Error::PipelineError(error_msg));
-        }
 
         // Create destination directory if needed
-        if config.create_dirs
-            && let Some(parent) = dest.parent()
-            && !parent.exists()
-        {
-            let log_msg = format!("Creating destination directory: {:?}", parent);
-            debug!("{}", log_msg);
-            logs.push(create_log_entry(
-                crate::pipeline::job_queue::LogLevel::Debug,
-                log_msg,
-            ));
+        if !dest_dir_exists {
+            if config.create_dirs {
+                let log_msg = format!("Creating destination directory: {}", dest_dir);
+                debug!("{}", log_msg);
+                logs.push(create_log_entry(
+                    crate::pipeline::job_queue::LogLevel::Debug,
+                    log_msg,
+                ));
 
-            fs::create_dir_all(parent).await.map_err(|e| {
-                crate::Error::PipelineError(format!(
-                    "Failed to create destination directory: {}",
-                    e
-                ))
-            })?;
-        }
-
-        // Check available disk space
-        if let Some(parent) = dest.parent()
-            && let Some(available) = Self::get_available_space(parent).await
-            && available < source_size
-        {
-            return Err(crate::Error::PipelineError(format!(
-                "Insufficient disk space. Required: {}, Available: {}",
-                Self::format_bytes(source_size),
-                Self::format_bytes(available)
-            )));
-        }
-
-        // Perform the copy operation
-        if let Err(e) = fs::copy(source, dest).await {
-            // Check if it's a disk space error
-            // ENOSPC on Unix = 28, ERROR_DISK_FULL on Windows = 112
-            let is_disk_full = e.raw_os_error() == Some(28)
-                || e.raw_os_error() == Some(112)
-                || e.to_string().to_lowercase().contains("no space left")
-                || e.to_string().to_lowercase().contains("disk full");
-
-            let error_msg = if is_disk_full {
-                format!(
-                    "Insufficient disk space while copying. Required: {}",
-                    Self::format_bytes(source_size)
-                )
+                fs::create_dir_all(dest_dir_path).await.map_err(|e| {
+                    crate::Error::PipelineError(format!(
+                        "Failed to create destination directory '{}': {}",
+                        dest_dir, e
+                    ))
+                })?;
             } else {
-                format!("Failed to copy file: {}", e)
+                return Err(crate::Error::PipelineError(format!(
+                    "Destination directory does not exist: {}",
+                    dest_dir
+                )));
+            }
+        }
+
+        let mut outputs = Vec::with_capacity(input.inputs.len());
+        let mut items_produced = Vec::with_capacity(input.inputs.len());
+        let mut succeeded_inputs = Vec::with_capacity(input.inputs.len());
+        let mut failed_inputs: Vec<(String, String)> = Vec::new();
+        let mut total_input_size: u64 = 0;
+        let mut total_output_size: u64 = 0;
+
+        for source_path in &input.inputs {
+            let source = Path::new(source_path);
+
+            // Get filename from source
+            let Some(filename) = source.file_name() else {
+                let error_msg = format!("Failed to get filename from source: {}", source_path);
+                error!("{}", error_msg);
+                logs.push(create_log_entry(
+                    crate::pipeline::job_queue::LogLevel::Error,
+                    &error_msg,
+                ));
+                failed_inputs.push((source_path.clone(), error_msg));
+                continue;
             };
 
-            error!("{}", error_msg);
-            logs.push(create_log_entry(
-                crate::pipeline::job_queue::LogLevel::Error,
-                error_msg.clone(),
-            ));
-
-            return Err(crate::Error::PipelineError(error_msg));
-        }
-
-        // Verify integrity using size comparison
-        let dest_size = if config.verify_integrity {
-            let dest_metadata = fs::metadata(dest).await.map_err(|e| {
-                crate::Error::PipelineError(format!(
-                    "Failed to get destination file metadata: {}",
-                    e
-                ))
-            })?;
-            let dest_size = dest_metadata.len();
-
-            if dest_size != source_size {
-                // Clean up the incomplete copy
-                let _ = fs::remove_file(dest).await;
-                let error_msg = format!(
-                    "File integrity check failed. Source size: {}, Destination size: {}",
-                    source_size, dest_size
-                );
-                error!("{}", error_msg);
-                logs.push(create_log_entry(
-                    crate::pipeline::job_queue::LogLevel::Error,
-                    error_msg.clone(),
-                ));
-                return Err(crate::Error::PipelineError(error_msg));
-            }
+            let dest = dest_dir_path.join(filename);
 
             let log_msg = format!(
-                "Integrity verified: {} bytes copied successfully",
-                dest_size
+                "{} {} -> {}",
+                if config.operation == CopyMoveOperation::Copy {
+                    "Copying"
+                } else {
+                    "Moving"
+                },
+                source_path,
+                dest.display()
             );
-            debug!("{}", log_msg);
+            info!("{}", log_msg);
             logs.push(create_log_entry(
-                crate::pipeline::job_queue::LogLevel::Debug,
+                crate::pipeline::job_queue::LogLevel::Info,
                 log_msg,
             ));
-            dest_size
-        } else {
-            // Get dest size without verification
-            fs::metadata(dest)
-                .await
-                .map(|m| m.len())
-                .unwrap_or(source_size)
-        };
 
-        // For move operation, remove the source file
-        if config.operation == CopyMoveOperation::Move {
-            if let Err(e) = fs::remove_file(source).await {
-                let error_msg = format!("Failed to remove source file after move: {}", e);
-                error!("{}", error_msg);
-                logs.push(create_log_entry(
-                    crate::pipeline::job_queue::LogLevel::Error,
-                    error_msg.clone(),
-                ));
-                return Err(crate::Error::PipelineError(error_msg));
+            // Get source file size (also validates existence)
+            let source_size = match fs::metadata(source).await {
+                Ok(m) => m.len(),
+                Err(e) if e.kind() == ErrorKind::NotFound => {
+                    let error_msg = format!("Source file does not exist: {}", source_path);
+                    error!("{}", error_msg);
+                    logs.push(create_log_entry(
+                        crate::pipeline::job_queue::LogLevel::Error,
+                        &error_msg,
+                    ));
+                    failed_inputs.push((source_path.clone(), error_msg));
+                    continue;
+                }
+                Err(e) => {
+                    let error_msg = format!("Failed to get source file metadata: {}", e);
+                    error!("{}", error_msg);
+                    logs.push(create_log_entry(
+                        crate::pipeline::job_queue::LogLevel::Error,
+                        &error_msg,
+                    ));
+                    failed_inputs.push((source_path.clone(), error_msg));
+                    continue;
+                }
+            };
+
+            // Check if destination exists and handle overwrite
+            if !config.overwrite {
+                match fs::try_exists(&dest).await {
+                    Ok(true) => {
+                        let error_msg = format!(
+                            "Destination file already exists and overwrite is disabled: {}",
+                            dest.display()
+                        );
+                        error!("{}", error_msg);
+                        logs.push(create_log_entry(
+                            crate::pipeline::job_queue::LogLevel::Error,
+                            &error_msg,
+                        ));
+                        failed_inputs.push((source_path.clone(), error_msg));
+                        continue;
+                    }
+                    Ok(false) => {}
+                    Err(e) => {
+                        let error_msg =
+                            format!("Failed to check destination file existence: {}", e);
+                        error!("{}", error_msg);
+                        logs.push(create_log_entry(
+                            crate::pipeline::job_queue::LogLevel::Error,
+                            &error_msg,
+                        ));
+                        failed_inputs.push((source_path.clone(), error_msg));
+                        continue;
+                    }
+                }
             }
-            let log_msg = format!("Source file removed after move: {}", source_path);
-            debug!("{}", log_msg);
-            logs.push(create_log_entry(
-                crate::pipeline::job_queue::LogLevel::Debug,
-                log_msg,
-            ));
+
+            let dest_size = match config.operation {
+                CopyMoveOperation::Copy => {
+                    let bytes_copied = match fs::copy(source, &dest).await {
+                        Ok(bytes) => bytes,
+                        Err(e) => {
+                            let error_msg = if Self::is_disk_full_error(&e) {
+                                format!(
+                                    "Insufficient disk space while copying. Required: {}",
+                                    Self::format_bytes(source_size)
+                                )
+                            } else {
+                                format!("Failed to copy file: {}", e)
+                            };
+
+                            error!("{}", error_msg);
+                            logs.push(create_log_entry(
+                                crate::pipeline::job_queue::LogLevel::Error,
+                                &error_msg,
+                            ));
+                            failed_inputs.push((source_path.clone(), error_msg));
+                            continue;
+                        }
+                    };
+
+                    // Verify integrity using size comparison (avoid extra metadata call)
+                    if config.verify_integrity && bytes_copied != source_size {
+                        let _ = fs::remove_file(&dest).await;
+                        let error_msg = format!(
+                            "File integrity check failed. Source size: {}, Destination size: {}",
+                            source_size, bytes_copied
+                        );
+                        error!("{}", error_msg);
+                        logs.push(create_log_entry(
+                            crate::pipeline::job_queue::LogLevel::Error,
+                            &error_msg,
+                        ));
+                        failed_inputs.push((source_path.clone(), error_msg));
+                        continue;
+                    }
+
+                    bytes_copied
+                }
+                CopyMoveOperation::Move => {
+                    // First try a cheap rename (fast-path on the same filesystem).
+                    match fs::rename(source, &dest).await {
+                        Ok(()) => source_size,
+                        Err(e) if e.kind() == ErrorKind::AlreadyExists && config.overwrite => {
+                            // Windows doesn't overwrite on rename; remove then retry.
+                            if let Err(e) = fs::remove_file(&dest).await {
+                                let error_msg = format!(
+                                    "Failed to remove destination file for overwrite: {}",
+                                    e
+                                );
+                                error!("{}", error_msg);
+                                logs.push(create_log_entry(
+                                    crate::pipeline::job_queue::LogLevel::Error,
+                                    &error_msg,
+                                ));
+                                failed_inputs.push((source_path.clone(), error_msg));
+                                continue;
+                            }
+
+                            if let Err(e) = fs::rename(source, &dest).await {
+                                let error_msg = format!("Failed to move file: {}", e);
+                                error!("{}", error_msg);
+                                logs.push(create_log_entry(
+                                    crate::pipeline::job_queue::LogLevel::Error,
+                                    &error_msg,
+                                ));
+                                failed_inputs.push((source_path.clone(), error_msg));
+                                continue;
+                            }
+
+                            source_size
+                        }
+                        Err(e) if matches!(e.raw_os_error(), Some(17) | Some(18)) => {
+                            // Cross-filesystem move: fallback to copy + verify + remove.
+                            let bytes_copied = match fs::copy(source, &dest).await {
+                                Ok(bytes) => bytes,
+                                Err(e) => {
+                                    let error_msg = if Self::is_disk_full_error(&e) {
+                                        format!(
+                                            "Insufficient disk space while copying. Required: {}",
+                                            Self::format_bytes(source_size)
+                                        )
+                                    } else {
+                                        format!("Failed to copy file: {}", e)
+                                    };
+
+                                    error!("{}", error_msg);
+                                    logs.push(create_log_entry(
+                                        crate::pipeline::job_queue::LogLevel::Error,
+                                        &error_msg,
+                                    ));
+                                    failed_inputs.push((source_path.clone(), error_msg));
+                                    continue;
+                                }
+                            };
+
+                            if config.verify_integrity && bytes_copied != source_size {
+                                let _ = fs::remove_file(&dest).await;
+                                let error_msg = format!(
+                                    "File integrity check failed. Source size: {}, Destination size: {}",
+                                    source_size, bytes_copied
+                                );
+                                error!("{}", error_msg);
+                                logs.push(create_log_entry(
+                                    crate::pipeline::job_queue::LogLevel::Error,
+                                    &error_msg,
+                                ));
+                                failed_inputs.push((source_path.clone(), error_msg));
+                                continue;
+                            }
+
+                            if let Err(e) = fs::remove_file(source).await {
+                                let error_msg =
+                                    format!("Failed to remove source file after move: {}", e);
+                                error!("{}", error_msg);
+                                logs.push(create_log_entry(
+                                    crate::pipeline::job_queue::LogLevel::Error,
+                                    error_msg,
+                                ));
+                                // Don't mark as failed since copy succeeded
+                            }
+
+                            bytes_copied
+                        }
+                        Err(e) => {
+                            let error_msg = format!("Failed to move file: {}", e);
+                            error!("{}", error_msg);
+                            logs.push(create_log_entry(
+                                crate::pipeline::job_queue::LogLevel::Error,
+                                &error_msg,
+                            ));
+                            failed_inputs.push((source_path.clone(), error_msg));
+                            continue;
+                        }
+                    }
+                }
+            };
+
+            let dest_path = dest.to_string_lossy().into_owned();
+
+            total_input_size += source_size;
+            total_output_size += dest_size;
+            outputs.push(dest_path.clone());
+            items_produced.push(dest_path);
+            succeeded_inputs.push(source_path.clone());
         }
 
         let duration = start.elapsed().as_secs_f64();
 
         let success_msg = format!(
-            "{} completed in {:.2}s: {} -> {}",
+            "{} completed in {:.2}s: {} files processed ({} succeeded, {} failed)",
             if config.operation == CopyMoveOperation::Copy {
                 "Copy"
             } else {
                 "Move"
             },
             duration,
-            source_path,
-            dest_path
+            input.inputs.len(),
+            succeeded_inputs.len(),
+            failed_inputs.len()
         );
         info!("{}", success_msg);
         logs.push(create_log_entry(
@@ -354,25 +483,33 @@ impl Processor for CopyMoveProcessor {
             success_msg,
         ));
 
+        // If all inputs failed, return error
+        if succeeded_inputs.is_empty() && !failed_inputs.is_empty() {
+            return Err(crate::Error::PipelineError(format!(
+                "All {} input files failed to copy/move",
+                failed_inputs.len()
+            )));
+        }
+
         Ok(ProcessorOutput {
-            outputs: vec![dest_path.clone()],
+            outputs,
             duration_secs: duration,
             metadata: Some(
                 serde_json::json!({
                     "operation": format!("{:?}", config.operation),
-                    "source": source_path,
-                    "destination": dest_path,
-                    "size_bytes": dest_size,
-                    "verified": config.verify_integrity,
+                    "destination_dir": dest_dir,
+                    "total_files": input.inputs.len(),
+                    "succeeded": succeeded_inputs.len(),
+                    "failed": failed_inputs.len(),
+                    "total_size_bytes": total_output_size,
                 })
                 .to_string(),
             ),
-            items_produced: vec![dest_path.clone()],
-            input_size_bytes: Some(source_size),
-            output_size_bytes: Some(dest_size),
-            // Single input succeeded if we reach this point
-            failed_inputs: vec![],
-            succeeded_inputs: vec![source_path.clone()],
+            items_produced,
+            input_size_bytes: Some(total_input_size),
+            output_size_bytes: Some(total_output_size),
+            failed_inputs,
+            succeeded_inputs,
             skipped_inputs: vec![],
             logs,
         })
@@ -393,8 +530,9 @@ mod tests {
     #[test]
     fn test_copy_move_processor_job_types() {
         let processor = CopyMoveProcessor::new();
-        assert!(processor.can_process("copy"));
-        assert!(processor.can_process("move"));
+        assert!(processor.can_process("copy_move"));
+        assert!(!processor.can_process("copy"));
+        assert!(!processor.can_process("move"));
         assert!(!processor.can_process("remux"));
     }
 
@@ -444,7 +582,7 @@ mod tests {
     async fn test_copy_operation() {
         let temp_dir = TempDir::new().unwrap();
         let source_path = temp_dir.path().join("source.txt");
-        let dest_path = temp_dir.path().join("dest.txt");
+        let dest_dir = temp_dir.path().join("output");
 
         // Create source file
         fs::write(&source_path, "test content").await.unwrap();
@@ -453,10 +591,11 @@ mod tests {
         let ctx = ProcessorContext::noop("test");
         let input = ProcessorInput {
             inputs: vec![source_path.to_string_lossy().to_string()],
-            outputs: vec![dest_path.to_string_lossy().to_string()],
+            outputs: vec![],
             config: Some(
                 serde_json::json!({
-                    "operation": "copy"
+                    "operation": "copy",
+                    "destination": dest_dir.to_string_lossy()
                 })
                 .to_string(),
             ),
@@ -468,6 +607,7 @@ mod tests {
         let output = processor.process(&input, &ctx).await.unwrap();
 
         // Verify copy succeeded
+        let dest_path = dest_dir.join("source.txt");
         assert!(dest_path.exists());
         assert!(source_path.exists()); // Source should still exist
         assert_eq!(
@@ -483,7 +623,7 @@ mod tests {
     async fn test_move_operation() {
         let temp_dir = TempDir::new().unwrap();
         let source_path = temp_dir.path().join("source.txt");
-        let dest_path = temp_dir.path().join("dest.txt");
+        let dest_dir = temp_dir.path().join("output");
 
         // Create source file
         fs::write(&source_path, "test content").await.unwrap();
@@ -492,10 +632,11 @@ mod tests {
         let ctx = ProcessorContext::noop("test");
         let input = ProcessorInput {
             inputs: vec![source_path.to_string_lossy().to_string()],
-            outputs: vec![dest_path.to_string_lossy().to_string()],
+            outputs: vec![],
             config: Some(
                 serde_json::json!({
-                    "operation": "move"
+                    "operation": "move",
+                    "destination": dest_dir.to_string_lossy()
                 })
                 .to_string(),
             ),
@@ -507,6 +648,7 @@ mod tests {
         let output = processor.process(&input, &ctx).await.unwrap();
 
         // Verify move succeeded
+        let dest_path = dest_dir.join("source.txt");
         assert!(dest_path.exists());
         assert!(!source_path.exists()); // Source should be removed
         assert_eq!(
@@ -519,7 +661,7 @@ mod tests {
     async fn test_create_dirs() {
         let temp_dir = TempDir::new().unwrap();
         let source_path = temp_dir.path().join("source.txt");
-        let dest_path = temp_dir.path().join("subdir1/subdir2/dest.txt");
+        let dest_dir = temp_dir.path().join("subdir1/subdir2");
 
         // Create source file
         fs::write(&source_path, "test content").await.unwrap();
@@ -528,10 +670,11 @@ mod tests {
         let ctx = ProcessorContext::noop("test");
         let input = ProcessorInput {
             inputs: vec![source_path.to_string_lossy().to_string()],
-            outputs: vec![dest_path.to_string_lossy().to_string()],
+            outputs: vec![],
             config: Some(
                 serde_json::json!({
                     "operation": "copy",
+                    "destination": dest_dir.to_string_lossy(),
                     "create_dirs": true
                 })
                 .to_string(),
@@ -544,8 +687,9 @@ mod tests {
         let output = processor.process(&input, &ctx).await.unwrap();
 
         // Verify directories were created and copy succeeded
+        let dest_path = dest_dir.join("source.txt");
         assert!(dest_path.exists());
-        assert!(dest_path.parent().unwrap().exists());
+        assert!(dest_dir.exists());
         assert_eq!(
             output.outputs,
             vec![dest_path.to_string_lossy().to_string()]
@@ -556,20 +700,24 @@ mod tests {
     async fn test_overwrite_disabled() {
         let temp_dir = TempDir::new().unwrap();
         let source_path = temp_dir.path().join("source.txt");
-        let dest_path = temp_dir.path().join("dest.txt");
+        let dest_dir = temp_dir.path();
 
         // Create source and destination files
         fs::write(&source_path, "source content").await.unwrap();
-        fs::write(&dest_path, "existing content").await.unwrap();
+        // Destination file has same name as source
+        fs::write(dest_dir.join("source.txt"), "existing content")
+            .await
+            .unwrap();
 
         let processor = CopyMoveProcessor::new();
         let ctx = ProcessorContext::noop("test");
         let input = ProcessorInput {
             inputs: vec![source_path.to_string_lossy().to_string()],
-            outputs: vec![dest_path.to_string_lossy().to_string()],
+            outputs: vec![],
             config: Some(
                 serde_json::json!({
                     "operation": "copy",
+                    "destination": dest_dir.to_string_lossy(),
                     "overwrite": false
                 })
                 .to_string(),
@@ -581,30 +729,37 @@ mod tests {
 
         let result = processor.process(&input, &ctx).await;
 
-        // Should fail because destination exists and overwrite is disabled
+        // In batch mode, single file failure results in partial success
+        // Since this is the only file, it should fail completely
         assert!(result.is_err());
         let err = result.unwrap_err();
-        assert!(err.to_string().contains("already exists"));
+        assert!(err.to_string().contains("failed to copy/move"));
     }
 
     #[tokio::test]
     async fn test_overwrite_enabled() {
         let temp_dir = TempDir::new().unwrap();
         let source_path = temp_dir.path().join("source.txt");
-        let dest_path = temp_dir.path().join("dest.txt");
+        let dest_dir = temp_dir.path().join("output");
 
-        // Create source and destination files
+        // Create dest dir and existing file
+        fs::create_dir_all(&dest_dir).await.unwrap();
+        fs::write(dest_dir.join("source.txt"), "old content")
+            .await
+            .unwrap();
+
+        // Create source file
         fs::write(&source_path, "new content").await.unwrap();
-        fs::write(&dest_path, "old content").await.unwrap();
 
         let processor = CopyMoveProcessor::new();
         let ctx = ProcessorContext::noop("test");
         let input = ProcessorInput {
             inputs: vec![source_path.to_string_lossy().to_string()],
-            outputs: vec![dest_path.to_string_lossy().to_string()],
+            outputs: vec![],
             config: Some(
                 serde_json::json!({
                     "operation": "copy",
+                    "destination": dest_dir.to_string_lossy(),
                     "overwrite": true
                 })
                 .to_string(),
@@ -617,6 +772,7 @@ mod tests {
         let output = processor.process(&input, &ctx).await.unwrap();
 
         // Verify overwrite succeeded
+        let dest_path = dest_dir.join("source.txt");
         assert!(dest_path.exists());
         let content = fs::read_to_string(&dest_path).await.unwrap();
         assert_eq!(content, "new content");
@@ -630,14 +786,19 @@ mod tests {
     async fn test_source_not_found() {
         let temp_dir = TempDir::new().unwrap();
         let source_path = temp_dir.path().join("nonexistent.txt");
-        let dest_path = temp_dir.path().join("dest.txt");
+        let dest_dir = temp_dir.path().join("output");
 
         let processor = CopyMoveProcessor::new();
         let ctx = ProcessorContext::noop("test");
         let input = ProcessorInput {
             inputs: vec![source_path.to_string_lossy().to_string()],
-            outputs: vec![dest_path.to_string_lossy().to_string()],
-            config: None,
+            outputs: vec![],
+            config: Some(
+                serde_json::json!({
+                    "destination": dest_dir.to_string_lossy()
+                })
+                .to_string(),
+            ),
             streamer_id: "test".to_string(),
             session_id: "test".to_string(),
             ..Default::default()
@@ -645,10 +806,10 @@ mod tests {
 
         let result = processor.process(&input, &ctx).await;
 
-        // Should fail because source doesn't exist
+        // Should fail because source doesn't exist (single file = total failure)
         assert!(result.is_err());
         let err = result.unwrap_err();
-        assert!(err.to_string().contains("does not exist"));
+        assert!(err.to_string().contains("failed to copy/move"));
     }
 
     #[tokio::test]
@@ -657,8 +818,13 @@ mod tests {
         let ctx = ProcessorContext::noop("test");
         let input = ProcessorInput {
             inputs: vec![],
-            outputs: vec!["/dest/file.txt".to_string()],
-            config: None,
+            outputs: vec![],
+            config: Some(
+                serde_json::json!({
+                    "destination": "/dest"
+                })
+                .to_string(),
+            ),
             streamer_id: "test".to_string(),
             session_id: "test".to_string(),
             ..Default::default()
@@ -695,5 +861,95 @@ mod tests {
         assert!(result.is_err());
         let err = result.unwrap_err();
         assert!(err.to_string().contains("No destination"));
+    }
+
+    #[tokio::test]
+    async fn test_placeholder_expansion() {
+        let temp_dir = TempDir::new().unwrap();
+        let source_path = temp_dir.path().join("video.mp4");
+
+        // Create source file
+        fs::write(&source_path, "test video content").await.unwrap();
+
+        let processor = CopyMoveProcessor::new();
+        let ctx = ProcessorContext::noop("test");
+
+        // Use placeholders in destination using platform-native path separator
+        let dest_template = temp_dir
+            .path()
+            .join("{streamer}")
+            .join("{title}")
+            .to_string_lossy()
+            .to_string();
+
+        let input = ProcessorInput {
+            inputs: vec![source_path.to_string_lossy().to_string()],
+            outputs: vec![],
+            config: Some(
+                serde_json::json!({
+                    "operation": "copy",
+                    "destination": dest_template
+                })
+                .to_string(),
+            ),
+            streamer_id: "streamer123".to_string(),
+            session_id: "session456".to_string(),
+            streamer_name: Some("TestStreamer".to_string()),
+            session_title: Some("LiveStream".to_string()),
+            platform: None,
+        };
+
+        let output = processor.process(&input, &ctx).await.unwrap();
+
+        // Verify placeholders were expanded - check via output existence
+        assert_eq!(output.outputs.len(), 1);
+        assert!(output.outputs[0].contains("TestStreamer"));
+        assert!(output.outputs[0].contains("LiveStream"));
+        assert!(output.outputs[0].contains("video.mp4"));
+
+        // Verify file actually exists at output path
+        let output_path = Path::new(&output.outputs[0]);
+        assert!(output_path.exists());
+    }
+
+    #[tokio::test]
+    async fn test_batch_copy() {
+        let temp_dir = TempDir::new().unwrap();
+        let source1 = temp_dir.path().join("file1.txt");
+        let source2 = temp_dir.path().join("file2.txt");
+        let dest_dir = temp_dir.path().join("output");
+
+        // Create source files
+        fs::write(&source1, "content 1").await.unwrap();
+        fs::write(&source2, "content 2").await.unwrap();
+
+        let processor = CopyMoveProcessor::new();
+        let ctx = ProcessorContext::noop("test");
+        let input = ProcessorInput {
+            inputs: vec![
+                source1.to_string_lossy().to_string(),
+                source2.to_string_lossy().to_string(),
+            ],
+            outputs: vec![],
+            config: Some(
+                serde_json::json!({
+                    "operation": "copy",
+                    "destination": dest_dir.to_string_lossy()
+                })
+                .to_string(),
+            ),
+            streamer_id: "test".to_string(),
+            session_id: "test".to_string(),
+            ..Default::default()
+        };
+
+        let output = processor.process(&input, &ctx).await.unwrap();
+
+        // Verify both files copied
+        assert!(dest_dir.join("file1.txt").exists());
+        assert!(dest_dir.join("file2.txt").exists());
+        assert_eq!(output.outputs.len(), 2);
+        assert_eq!(output.succeeded_inputs.len(), 2);
+        assert!(output.failed_inputs.is_empty());
     }
 }

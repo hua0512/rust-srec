@@ -2,7 +2,6 @@
 
 use super::error::JsError;
 
-#[cfg(feature = "douyu")]
 use rquickjs::CatchResultExt;
 
 /// Default browser environment setup code.
@@ -41,12 +40,10 @@ pub const BROWSER_ENV_SETUP: &str = r#"
 "#;
 
 /// A wrapper around rquickjs::Context providing an ergonomic API.
-#[cfg(feature = "douyu")]
 pub struct JsContext {
     ctx: rquickjs::Context,
 }
 
-#[cfg(feature = "douyu")]
 impl JsContext {
     /// Create a new JsContext from a rquickjs Runtime.
     pub fn new(runtime: &rquickjs::Runtime) -> Result<Self, JsError> {

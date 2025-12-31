@@ -28,6 +28,15 @@ pub struct AuthConfig {
     pub access_token_expiration_secs: u64,
     /// Refresh token expiration in seconds (default: 604800 = 7 days)
     pub refresh_token_expiration_secs: u64,
+    /// Grace window to tolerate replay of a recently-rotated refresh token (default: 0 = disabled).
+    ///
+    /// This helps with clients that accidentally send the old refresh token again due to
+    /// concurrent refresh attempts or retries.
+    pub refresh_token_reuse_grace_secs: u64,
+    /// Whether to revoke all refresh tokens for a user when a revoked token is presented.
+    ///
+    /// Default is `false` to avoid logging out other sessions due to common client-side races.
+    pub revoke_all_on_refresh_token_reuse: bool,
     /// Minimum password length
     pub min_password_length: usize,
 }
@@ -37,6 +46,8 @@ impl Default for AuthConfig {
         Self {
             access_token_expiration_secs: 3600,    // 1 hour
             refresh_token_expiration_secs: 604800, // 7 days
+            refresh_token_reuse_grace_secs: 0,
+            revoke_all_on_refresh_token_reuse: false,
             min_password_length: 8,
         }
     }
@@ -48,6 +59,8 @@ impl AuthConfig {
     /// Environment variables:
     /// - `ACCESS_TOKEN_EXPIRATION_SECS`: Access token expiration in seconds (default: 3600 = 1 hour)
     /// - `REFRESH_TOKEN_EXPIRATION_SECS`: Refresh token expiration in seconds (default: 604800 = 7 days)
+    /// - `REFRESH_TOKEN_REUSE_GRACE_SECS`: Grace window for recently rotated tokens (default: 0)
+    /// - `REVOKE_ALL_ON_REFRESH_TOKEN_REUSE`: Whether to revoke all tokens on revoked-token reuse (default: false)
     /// - `MIN_PASSWORD_LENGTH`: Minimum password length (default: 8)
     pub fn from_env() -> Self {
         let access_token_expiration_secs = std::env::var("ACCESS_TOKEN_EXPIRATION_SECS")
@@ -60,6 +73,20 @@ impl AuthConfig {
             .and_then(|s| s.parse().ok())
             .unwrap_or(604800);
 
+        let refresh_token_reuse_grace_secs = std::env::var("REFRESH_TOKEN_REUSE_GRACE_SECS")
+            .ok()
+            .and_then(|s| s.parse().ok())
+            .unwrap_or(0);
+
+        let revoke_all_on_refresh_token_reuse = std::env::var("REVOKE_ALL_ON_REFRESH_TOKEN_REUSE")
+            .ok()
+            .is_some_and(|v| {
+                matches!(
+                    v.trim().to_ascii_lowercase().as_str(),
+                    "1" | "true" | "yes" | "on"
+                )
+            });
+
         let min_password_length = std::env::var("MIN_PASSWORD_LENGTH")
             .ok()
             .and_then(|s| s.parse().ok())
@@ -68,6 +95,8 @@ impl AuthConfig {
         Self {
             access_token_expiration_secs,
             refresh_token_expiration_secs,
+            refresh_token_reuse_grace_secs,
+            revoke_all_on_refresh_token_reuse,
             min_password_length,
         }
     }
@@ -329,6 +358,12 @@ impl AuthService {
 
     /// Refresh tokens using a valid refresh token.
     pub async fn refresh_tokens(&self, refresh_token: &str) -> Result<AuthResponse, AuthError> {
+        let refresh_token = refresh_token.trim();
+        if refresh_token.is_empty() {
+            warn!("Empty refresh token presented");
+            return Err(AuthError::InvalidToken);
+        }
+
         let token_hash = Self::hash_refresh_token(refresh_token);
         let token_hash_prefix = Self::token_hash_prefix(&token_hash);
         debug!(token_hash_prefix = %token_hash_prefix, "Refresh token request received");
@@ -344,8 +379,35 @@ impl AuthService {
                 AuthError::InvalidToken
             })?;
 
-        // Check if token is revoked (potential reuse attack)
-        if stored_token.is_revoked() {
+        // Check if token is revoked (potential reuse attack).
+        // Note: tokens are revoked on every successful refresh (rotation), so clients that
+        // retry/concurrently refresh can legitimately present a recently revoked token.
+        let is_revoked = stored_token.is_revoked();
+        let revoked_recently = if is_revoked && self.config.refresh_token_reuse_grace_secs > 0 {
+            stored_token
+                .get_revoked_at()
+                .map(|revoked_at| {
+                    let grace =
+                        Duration::seconds(self.config.refresh_token_reuse_grace_secs as i64);
+                    (Utc::now() - revoked_at) <= grace
+                })
+                .unwrap_or(false)
+        } else {
+            false
+        };
+
+        if is_revoked && revoked_recently {
+            debug!(
+                user_id = %stored_token.user_id,
+                refresh_token_id = %stored_token.id,
+                refresh_expires_at = %stored_token.expires_at,
+                refresh_revoked_at = ?stored_token.revoked_at.as_deref(),
+                device_info = ?stored_token.device_info.as_deref(),
+                token_hash_prefix = %token_hash_prefix,
+                grace_secs = %self.config.refresh_token_reuse_grace_secs,
+                "Recently revoked refresh token presented; proceeding due to grace window"
+            );
+        } else if is_revoked {
             warn!(
                 user_id = %stored_token.user_id,
                 refresh_token_id = %stored_token.id,
@@ -355,15 +417,23 @@ impl AuthService {
                 token_hash_prefix = %token_hash_prefix,
                 "Revoked refresh token presented (possible token reuse)"
             );
-            // Security breach detection: revoke all tokens for this user
-            self.token_repo
-                .revoke_all_for_user(&stored_token.user_id)
-                .await
-                .map_err(|e| AuthError::Database(e.to_string()))?;
-            warn!(
-                user_id = %stored_token.user_id,
-                "Revoked all refresh tokens for user due to revoked token reuse attempt"
-            );
+
+            if self.config.revoke_all_on_refresh_token_reuse {
+                // Security breach detection: revoke all tokens for this user
+                self.token_repo
+                    .revoke_all_for_user(&stored_token.user_id)
+                    .await
+                    .map_err(|e| AuthError::Database(e.to_string()))?;
+                warn!(
+                    user_id = %stored_token.user_id,
+                    "Revoked all refresh tokens for user due to revoked token reuse attempt"
+                );
+            } else {
+                warn!(
+                    user_id = %stored_token.user_id,
+                    "Revoked token reuse detected; not revoking other sessions (REVOKE_ALL_ON_REFRESH_TOKEN_REUSE=false)"
+                );
+            }
             return Err(AuthError::TokenRevoked);
         }
 
@@ -585,12 +655,16 @@ impl AuthService {
 mod tests {
     use super::*;
     use crate::database::models::UserDbModel;
+    use std::sync::atomic::{AtomicBool, Ordering};
+    use tokio::sync::Mutex;
 
     #[test]
     fn test_auth_config_default() {
         let config = AuthConfig::default();
         assert_eq!(config.access_token_expiration_secs, 3600);
         assert_eq!(config.refresh_token_expiration_secs, 604800);
+        assert_eq!(config.refresh_token_reuse_grace_secs, 0);
+        assert!(!config.revoke_all_on_refresh_token_reuse);
         assert_eq!(config.min_password_length, 8);
     }
 
@@ -778,6 +852,215 @@ mod tests {
         async fn count_active_by_user(&self, _user_id: &str) -> crate::Result<i64> {
             Ok(0)
         }
+    }
+
+    struct SpyRefreshTokenRepository {
+        token: Mutex<RefreshTokenDbModel>,
+        revoke_all_called: AtomicBool,
+        revoke_called: AtomicBool,
+        create_called: AtomicBool,
+    }
+
+    impl SpyRefreshTokenRepository {
+        fn new(token: RefreshTokenDbModel) -> Self {
+            Self {
+                token: Mutex::new(token),
+                revoke_all_called: AtomicBool::new(false),
+                revoke_called: AtomicBool::new(false),
+                create_called: AtomicBool::new(false),
+            }
+        }
+    }
+
+    #[async_trait::async_trait]
+    impl RefreshTokenRepository for SpyRefreshTokenRepository {
+        async fn create(&self, _token: &RefreshTokenDbModel) -> crate::Result<()> {
+            self.create_called.store(true, Ordering::SeqCst);
+            Ok(())
+        }
+
+        async fn find_by_token_hash(
+            &self,
+            _hash: &str,
+        ) -> crate::Result<Option<RefreshTokenDbModel>> {
+            Ok(Some(self.token.lock().await.clone()))
+        }
+
+        async fn find_active_by_user(
+            &self,
+            _user_id: &str,
+        ) -> crate::Result<Vec<RefreshTokenDbModel>> {
+            Ok(vec![])
+        }
+
+        async fn revoke(&self, id: &str) -> crate::Result<()> {
+            self.revoke_called.store(true, Ordering::SeqCst);
+            let mut token = self.token.lock().await;
+            if token.id == id {
+                token.revoked_at = Some(Utc::now().to_rfc3339());
+            }
+            Ok(())
+        }
+
+        async fn revoke_all_for_user(&self, _user_id: &str) -> crate::Result<()> {
+            self.revoke_all_called.store(true, Ordering::SeqCst);
+            Ok(())
+        }
+
+        async fn cleanup_expired(&self) -> crate::Result<u64> {
+            Ok(0)
+        }
+
+        async fn count_active_by_user(&self, _user_id: &str) -> crate::Result<i64> {
+            Ok(0)
+        }
+    }
+
+    struct SpyUserRepository {
+        user: UserDbModel,
+    }
+
+    #[async_trait::async_trait]
+    impl UserRepository for SpyUserRepository {
+        async fn create(&self, _user: &UserDbModel) -> crate::Result<()> {
+            Ok(())
+        }
+        async fn find_by_id(&self, id: &str) -> crate::Result<Option<UserDbModel>> {
+            if self.user.id == id {
+                Ok(Some(self.user.clone()))
+            } else {
+                Ok(None)
+            }
+        }
+        async fn find_by_username(&self, _username: &str) -> crate::Result<Option<UserDbModel>> {
+            Ok(None)
+        }
+        async fn find_by_email(&self, _email: &str) -> crate::Result<Option<UserDbModel>> {
+            Ok(None)
+        }
+        async fn update(&self, _user: &UserDbModel) -> crate::Result<()> {
+            Ok(())
+        }
+        async fn delete(&self, _id: &str) -> crate::Result<()> {
+            Ok(())
+        }
+        async fn list(&self, _limit: i64, _offset: i64) -> crate::Result<Vec<UserDbModel>> {
+            Ok(vec![])
+        }
+        async fn update_last_login(
+            &self,
+            _id: &str,
+            _time: chrono::DateTime<chrono::Utc>,
+        ) -> crate::Result<()> {
+            Ok(())
+        }
+        async fn update_password(&self, _id: &str, _hash: &str, _clear: bool) -> crate::Result<()> {
+            Ok(())
+        }
+        async fn count(&self) -> crate::Result<i64> {
+            Ok(0)
+        }
+    }
+
+    #[tokio::test]
+    async fn test_refresh_revoked_token_does_not_revoke_all_by_default() {
+        let refresh_token = "abc123";
+        let token_hash = AuthService::hash_refresh_token(refresh_token);
+
+        let mut stored =
+            RefreshTokenDbModel::new("user-1", token_hash, Utc::now() + Duration::days(7), None);
+        stored.revoked_at = Some((Utc::now() - Duration::hours(2)).to_rfc3339());
+
+        let token_repo = Arc::new(SpyRefreshTokenRepository::new(stored));
+        let user_repo = Arc::new(MockUserRepository);
+        let jwt_service = Arc::new(JwtService::new(
+            "test-secret-key-32-chars-long!!",
+            "test-issuer",
+            "test-audience",
+            Some(900),
+        ));
+
+        let service = AuthService::new(
+            user_repo,
+            token_repo.clone(),
+            jwt_service,
+            AuthConfig::default(),
+        );
+
+        let result = service.refresh_tokens(refresh_token).await;
+        assert!(matches!(result, Err(AuthError::TokenRevoked)));
+        assert!(!token_repo.revoke_all_called.load(Ordering::SeqCst));
+    }
+
+    #[tokio::test]
+    async fn test_refresh_revoked_token_revokes_all_when_enabled() {
+        let refresh_token = "abc123";
+        let token_hash = AuthService::hash_refresh_token(refresh_token);
+
+        let mut stored =
+            RefreshTokenDbModel::new("user-1", token_hash, Utc::now() + Duration::days(7), None);
+        stored.revoked_at = Some((Utc::now() - Duration::hours(2)).to_rfc3339());
+
+        let token_repo = Arc::new(SpyRefreshTokenRepository::new(stored));
+        let user_repo = Arc::new(MockUserRepository);
+        let jwt_service = Arc::new(JwtService::new(
+            "test-secret-key-32-chars-long!!",
+            "test-issuer",
+            "test-audience",
+            Some(900),
+        ));
+
+        let config = AuthConfig {
+            revoke_all_on_refresh_token_reuse: true,
+            ..Default::default()
+        };
+
+        let service = AuthService::new(user_repo, token_repo.clone(), jwt_service, config);
+
+        let result = service.refresh_tokens(refresh_token).await;
+        assert!(matches!(result, Err(AuthError::TokenRevoked)));
+        assert!(token_repo.revoke_all_called.load(Ordering::SeqCst));
+    }
+
+    #[tokio::test]
+    async fn test_refresh_recently_revoked_token_succeeds_with_grace_window() {
+        let refresh_token = "abc123";
+        let token_hash = AuthService::hash_refresh_token(refresh_token);
+
+        let mut stored = RefreshTokenDbModel::new(
+            "user-1",
+            token_hash,
+            Utc::now() + Duration::days(7),
+            Some("test-device".to_string()),
+        );
+        stored.revoked_at = Some((Utc::now() - Duration::seconds(1)).to_rfc3339());
+
+        let token_repo = Arc::new(SpyRefreshTokenRepository::new(stored));
+
+        let mut user = UserDbModel::new("u", "hash", vec!["admin".to_string()]);
+        user.id = "user-1".to_string();
+        user.must_change_password = false;
+        let user_repo = Arc::new(SpyUserRepository { user });
+
+        let jwt_service = Arc::new(JwtService::new(
+            "test-secret-key-32-chars-long!!",
+            "test-issuer",
+            "test-audience",
+            Some(900),
+        ));
+
+        let config = AuthConfig {
+            refresh_token_reuse_grace_secs: 10,
+            ..Default::default()
+        };
+
+        let service = AuthService::new(user_repo, token_repo.clone(), jwt_service, config);
+
+        let result = service.refresh_tokens(refresh_token).await;
+        assert!(result.is_ok());
+        assert!(token_repo.revoke_called.load(Ordering::SeqCst));
+        assert!(token_repo.create_called.load(Ordering::SeqCst));
+        assert!(!token_repo.revoke_all_called.load(Ordering::SeqCst));
     }
 }
 

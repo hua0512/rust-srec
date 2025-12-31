@@ -64,6 +64,7 @@ impl DouyinDanmuProtocol {
     }
 
     /// Generates the ac_signature (X-Bogus) using the webmssdk.js
+    #[cfg(feature = "rquickjs")]
     fn generate_signature(md5_hash: &str) -> Result<String> {
         use crate::js_engine::JsEngineManager;
 
@@ -77,6 +78,13 @@ impl DouyinDanmuProtocol {
                 ctx.eval_string(&format!("get_sign(\"{}\")", md5_hash))
             })
             .map_err(|e| DanmakuError::protocol(format!("Signature generation failed: {}", e)))
+    }
+
+    #[cfg(not(feature = "rquickjs"))]
+    fn generate_signature(_md5_hash: &str) -> Result<String> {
+        Err(DanmakuError::protocol(
+            "Signature generation requires the `rquickjs` feature",
+        ))
     }
 
     /// Generates MD5 hash of the input string

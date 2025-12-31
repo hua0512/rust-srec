@@ -71,6 +71,9 @@ export function InputWithUnit({
 
   const [unitMultiplier, setUnitMultiplier] = React.useState<number>(1);
   const lastEmittedValue = React.useRef<number | null | undefined>(undefined);
+  const [inputValue, setInputValue] = React.useState<string>(
+    isNullValue ? '' : (safeValue / unitMultiplier).toString(),
+  );
 
   // Auto-convert unit when value changes externally
   React.useEffect(() => {
@@ -83,29 +86,31 @@ export function InputWithUnit({
     }
 
     // External update (load, reset, etc.)
-    if (!isNullValue && safeValue > 0) {
-      const currentUnits = getUnits(unitType);
-      let bestUnit = 1;
-      for (let i = currentUnits.length - 1; i >= 0; i--) {
-        if (safeValue >= currentUnits[i].value) {
-          bestUnit = currentUnits[i].value;
-          break;
+    if (!isNullValue) {
+      if (safeValue > 0) {
+        const currentUnits = getUnits(unitType);
+        let bestUnit = 1;
+        for (let i = currentUnits.length - 1; i >= 0; i--) {
+          if (safeValue >= currentUnits[i].value) {
+            bestUnit = currentUnits[i].value;
+            break;
+          }
         }
+        setUnitMultiplier(bestUnit);
+        setInputValue((safeValue / bestUnit).toString());
+      } else if (safeValue === 0) {
+        setUnitMultiplier(1);
+        setInputValue('0');
       }
-      setUnitMultiplier(bestUnit);
-    } else if (!isNullValue && safeValue === 0) {
-      setUnitMultiplier(1);
+    } else {
+      setInputValue('');
     }
-    // If null, we typically keep the unit as is or default to 1, but we don't display it anyway if empty?
-    // Actually we do display unit select always. default to 1 is fine.
   }, [value, safeValue, unitType, isNullValue]);
-
-  // Calculate the display value based on current unit
-  // If null, displayValue is null (mapped to empty string in input)
-  const displayValue = isNullValue ? '' : safeValue / unitMultiplier;
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const valStr = e.target.value;
+    setInputValue(valStr);
+
     if (valStr === '') {
       onChange(null);
       lastEmittedValue.current = null;
@@ -114,8 +119,6 @@ export function InputWithUnit({
 
     const newVal = e.target.valueAsNumber;
     if (isNaN(newVal)) {
-      // Invalid number input, maybe don't emit change or emit null?
-      // Browser type="number" usually handles this by returning empty string if invalid.
       return;
     }
 
@@ -130,10 +133,8 @@ export function InputWithUnit({
 
     setUnitMultiplier(newUnitVal);
 
-    if (isNullValue) return;
-
     // When changing unit, preserve the NUMBER in the input
-    const currentInputNumber = Number(displayValue);
+    const currentInputNumber = Number(inputValue);
     if (isNaN(currentInputNumber)) return;
 
     const computedValue = currentInputNumber * newUnitVal;
@@ -159,12 +160,12 @@ export function InputWithUnit({
           'flex-1 border-0 shadow-none focus-visible:ring-0 focus-visible:ring-offset-0 bg-transparent rounded-r-none h-9',
           inputClassName,
         )}
-        value={displayValue}
+        value={inputValue}
         onChange={handleInputChange}
         placeholder={placeholder}
         min={min}
         max={max}
-        step={step}
+        step={step ?? 'any'}
       />
       <div className="h-4 w-[1px] bg-border shrink-0" />
       <Select value={currentUnitValue} onValueChange={handleUnitChange}>

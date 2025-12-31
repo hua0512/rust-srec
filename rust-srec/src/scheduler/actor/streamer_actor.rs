@@ -324,10 +324,13 @@ impl StreamerActor {
             //
             // To avoid getting stuck indefinitely in Live state when external download
             // orchestration fails to send DownloadEnded, perform an occasional watchdog
-            // check while Live.
+            // check while Live. Also, if the download appears stalled (no heartbeat),
+            // check sooner to recover state quickly.
             let mut sleep_duration = self.state.time_until_next_check();
             if sleep_duration.is_none() && self.state.streamer_state == StreamerState::Live {
-                sleep_duration = Some(self.live_watchdog_interval());
+                let watchdog = self.live_watchdog_interval();
+                let stall = self.time_until_live_stall_watchdog();
+                sleep_duration = Some(std::cmp::min(watchdog, stall));
             }
             let check_timer = Self::create_check_timer(sleep_duration);
 
@@ -444,6 +447,26 @@ impl StreamerActor {
         )
     }
 
+    fn live_stall_watchdog_interval(&self) -> Duration {
+        // If we stop seeing download heartbeats while Live, consider the download "stalled"
+        // and verify status sooner than the 2h watchdog.
+        Duration::from_secs(5 * 60)
+    }
+
+    fn time_until_live_stall_watchdog(&self) -> Duration {
+        let stall = self.live_stall_watchdog_interval();
+        let Some(last) = self.state.last_download_activity_at else {
+            return stall;
+        };
+
+        let elapsed = last.elapsed();
+        if elapsed >= stall {
+            Duration::ZERO
+        } else {
+            stall - elapsed
+        }
+    }
+
     /// Initiate a status check.
     ///
     /// If on a batch-capable platform, delegates to the PlatformActor.
@@ -518,6 +541,13 @@ impl StreamerActor {
     async fn perform_check(&mut self) -> Result<(), ActorError> {
         debug!("StreamerActor {} performing status check", self.id);
 
+        // If we're currently Live and no check is scheduled, any timer-driven check is the
+        // "live watchdog" (used only to avoid getting stuck when DownloadEnded is missed).
+        // For watchdog checks, failures should not mutate DB error/backoff state because the
+        // download may still be healthy; treat them as recoverable and keep the actor Live.
+        let is_live_watchdog =
+            self.state.streamer_state == StreamerState::Live && self.state.next_check.is_none();
+
         // Fetch fresh metadata from the store
         let metadata = self
             .get_metadata()
@@ -529,6 +559,10 @@ impl StreamerActor {
                 // let prev_state = self.state.streamer_state;
                 let next_state = result.state;
                 let error_count = self.get_error_count();
+
+                if next_state == StreamerState::Live {
+                    self.state.last_download_activity_at = Some(Instant::now());
+                }
 
                 // Record the check result and get hysteresis decision
                 let should_emit = self.state.record_check(result, &self.config, error_count);
@@ -564,6 +598,16 @@ impl StreamerActor {
                 Ok(())
             }
             Err(e) => {
+                if is_live_watchdog {
+                    // Do not call status_checker.handle_error() and do not record an Error state:
+                    // this would increment consecutive error counts, potentially set disabled_until,
+                    // and would also switch scheduling away from the Live watchdog cadence.
+                    return Err(ActorError::recoverable(format!(
+                        "Live watchdog status check failed (ignored while download active): {}",
+                        e.message
+                    )));
+                }
+
                 // Handle the error through the status checker
                 if let Err(handle_err) = self
                     .status_checker
@@ -616,6 +660,14 @@ impl StreamerActor {
             } => {
                 self.handle_download_started(download_id, session_id)
                     .await?;
+                Ok(false)
+            }
+            StreamerMessage::DownloadHeartbeat {
+                download_id,
+                session_id,
+                progress,
+            } => {
+                self.handle_download_heartbeat(download_id, session_id, progress);
                 Ok(false)
             }
             StreamerMessage::DownloadEnded(reason) => {
@@ -697,19 +749,30 @@ impl StreamerActor {
         }
 
         let _prev_state = self.state.streamer_state;
-        let _next_state = result.result.state;
+        let next_state = result.result.state;
         let error_count = self.get_error_count();
         let is_error = result.result.is_error();
         let error_message = result.result.error.clone();
 
-        // Record the check result and get hysteresis decision
-        let should_emit = self
-            .state
-            .record_check(result.result, &self.config, error_count);
-
         // Batch failures are handled as errors, not as offline transitions.
         // This matches perform_check() behavior and avoids incorrectly ending sessions.
         if is_error {
+            let is_live_watchdog =
+                self.state.streamer_state == StreamerState::Live && self.state.next_check.is_none();
+            if is_live_watchdog {
+                let msg = error_message.as_deref().unwrap_or("Batch check failed");
+                warn!(
+                    "StreamerActor {} live watchdog batch check failed (ignored while download active): {}",
+                    self.id, msg
+                );
+                return Ok(());
+            }
+
+            // Record the check result so scheduling/backoff can proceed normally when not Live.
+            let _ = self
+                .state
+                .record_check(result.result, &self.config, error_count);
+
             if let Some(metadata) = self.get_metadata() {
                 let msg = error_message.as_deref().unwrap_or("Batch check failed");
                 if let Err(e) = self.status_checker.handle_error(&metadata, msg).await {
@@ -721,6 +784,15 @@ impl StreamerActor {
             }
             return Ok(());
         }
+
+        // Record the check result and get hysteresis decision
+        if next_state == StreamerState::Live {
+            self.state.last_download_activity_at = Some(Instant::now());
+        }
+
+        let should_emit = self
+            .state
+            .record_check(result.result, &self.config, error_count);
 
         // Call process_status only if hysteresis allows it
         if should_emit {
@@ -763,10 +835,38 @@ impl StreamerActor {
         // might not have just observed a Live check result.
         self.state.streamer_state = StreamerState::Live;
         self.state.hysteresis.mark_live();
+        self.state.last_download_activity_at = Some(Instant::now());
         self.state
             .schedule_next_check(&self.config, self.get_error_count());
 
         Ok(())
+    }
+
+    fn handle_download_heartbeat(
+        &mut self,
+        download_id: String,
+        session_id: String,
+        progress: Option<crate::downloader::engine::DownloadProgress>,
+    ) {
+        // Heartbeats are intentionally lightweight; they are used only to avoid triggering
+        // platform extraction while a download is actively making progress.
+        self.state.last_download_activity_at = Some(Instant::now());
+        if let Some(progress) = progress {
+            debug!(
+                "StreamerActor {} download heartbeat: download_id={}, session_id={}, bytes={}, segments={}, speed={}",
+                self.id,
+                download_id,
+                session_id,
+                progress.bytes_downloaded,
+                progress.segments_completed,
+                progress.speed_bytes_per_sec
+            );
+        } else {
+            debug!(
+                "StreamerActor {} download heartbeat: download_id={}, session_id={}",
+                self.id, download_id, session_id
+            );
+        }
     }
 
     /// Handle DownloadEnded message - resume status checking or stop monitoring.
@@ -832,6 +932,7 @@ impl StreamerActor {
         info!("StreamerActor {} download ended: {:?}", self.id, reason);
 
         let error_count = self.get_error_count();
+        self.state.last_download_activity_at = None;
 
         // Update state and schedule check based on reason
         match reason {
@@ -1213,6 +1314,7 @@ impl PersistedActorState {
         let state = StreamerActorState {
             streamer_state,
             next_check: None, // Will be recalculated
+            last_download_activity_at: None,
             hysteresis: self.hysteresis,
             last_check,
         };
@@ -1491,6 +1593,7 @@ mod tests {
         let state = StreamerActorState {
             streamer_state: StreamerState::Live,
             next_check: Some(Instant::now()),
+            last_download_activity_at: None,
             hysteresis,
             last_check: Some(CheckResult::success(StreamerState::Live)),
         };

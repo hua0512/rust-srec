@@ -13,7 +13,9 @@
 
 use std::collections::HashMap;
 use std::sync::Arc;
+use std::time::{Duration, Instant};
 
+use dashmap::DashMap;
 use tokio::sync::broadcast;
 use tokio_util::sync::CancellationToken;
 use tracing::{debug, error, info, warn};
@@ -103,6 +105,8 @@ pub struct Scheduler<R: StreamerRepository + Send + Sync + 'static> {
     platform_handles: HashMap<String, ActorHandle<PlatformMessage>>,
     /// Broadcast receiver for download events (direct subscription).
     download_event_rx: Option<broadcast::Receiver<DownloadManagerEvent>>,
+    /// Throttle map for forwarding download heartbeats to streamer actors.
+    download_heartbeat_last_sent: DashMap<String, Instant>,
 }
 
 impl<R: StreamerRepository + Send + Sync + 'static> Scheduler<R> {
@@ -194,6 +198,7 @@ impl<R: StreamerRepository + Send + Sync + 'static> Scheduler<R> {
             platform_mapping: PlatformMapping::new(),
             platform_handles: HashMap::new(),
             download_event_rx: None,
+            download_heartbeat_last_sent: DashMap::new(),
         }
     }
 
@@ -289,6 +294,7 @@ impl<R: StreamerRepository + Send + Sync + 'static> Scheduler<R> {
             platform_mapping: PlatformMapping::new(),
             platform_handles: HashMap::new(),
             download_event_rx: None,
+            download_heartbeat_last_sent: DashMap::new(),
         }
     }
 
@@ -861,42 +867,73 @@ impl<R: StreamerRepository + Send + Sync + 'static> Scheduler<R> {
 
     /// Process a download event (internal).
     async fn process_download_event(&self, event: DownloadManagerEvent) {
-        let (streamer_id, msg) = match event {
+        const HEARTBEAT_THROTTLE: Duration = Duration::from_secs(30);
+
+        let send_to_actor = |streamer_id: String, msg: StreamerMessage| async move {
+            debug!(
+                "Handling download event for streamer {}: {:?}",
+                streamer_id, msg
+            );
+            if let Some(handle) = self.supervisor.registry().get_streamer(&streamer_id) {
+                if let Err(e) = handle.send(msg).await {
+                    warn!(
+                        "Failed to send download message to actor {}: {}",
+                        streamer_id, e
+                    );
+                }
+            } else {
+                debug!("No actor found for streamer {}", streamer_id);
+            }
+        };
+
+        let now = Instant::now();
+        match event {
             DownloadManagerEvent::DownloadStarted {
                 streamer_id,
                 download_id,
                 session_id,
                 ..
-            } => (
-                streamer_id,
-                StreamerMessage::DownloadStarted {
-                    download_id,
-                    session_id,
-                },
-            ),
-            DownloadManagerEvent::DownloadCompleted { streamer_id, .. } => (
-                streamer_id,
-                StreamerMessage::DownloadEnded(DownloadEndReason::StreamerOffline),
-            ),
+            } => {
+                send_to_actor(
+                    streamer_id,
+                    StreamerMessage::DownloadStarted {
+                        download_id,
+                        session_id,
+                    },
+                )
+                .await;
+            }
+            DownloadManagerEvent::DownloadCompleted { streamer_id, .. } => {
+                send_to_actor(
+                    streamer_id,
+                    StreamerMessage::DownloadEnded(DownloadEndReason::StreamerOffline),
+                )
+                .await;
+            }
             DownloadManagerEvent::DownloadFailed {
                 streamer_id, error, ..
-            } => (
-                streamer_id,
-                StreamerMessage::DownloadEnded(DownloadEndReason::SegmentFailed(error)),
-            ),
-            DownloadManagerEvent::DownloadCancelled { streamer_id, .. } => (
-                streamer_id,
-                StreamerMessage::DownloadEnded(DownloadEndReason::Cancelled),
-            ),
+            } => {
+                send_to_actor(
+                    streamer_id,
+                    StreamerMessage::DownloadEnded(DownloadEndReason::SegmentFailed(error)),
+                )
+                .await;
+            }
+            DownloadManagerEvent::DownloadCancelled { streamer_id, .. } => {
+                send_to_actor(
+                    streamer_id,
+                    StreamerMessage::DownloadEnded(DownloadEndReason::Cancelled),
+                )
+                .await;
+            }
             DownloadManagerEvent::DownloadRejected {
                 streamer_id,
                 reason,
                 retry_after_secs,
                 session_id,
             } => {
-                // Circuit breaker blocked the download - schedule delayed retry
                 let retry_secs = retry_after_secs.unwrap_or(60);
-                (
+                send_to_actor(
                     streamer_id,
                     StreamerMessage::DownloadEnded(DownloadEndReason::CircuitBreakerBlocked {
                         reason,
@@ -904,25 +941,63 @@ impl<R: StreamerRepository + Send + Sync + 'static> Scheduler<R> {
                         session_id,
                     }),
                 )
+                .await;
             }
-            _ => return, // Ignore other events
-        };
-
-        debug!(
-            "Handling download event for streamer {}: {:?}",
-            streamer_id, msg
-        );
-
-        // Get actor handle
-        if let Some(handle) = self.supervisor.registry().get_streamer(&streamer_id) {
-            if let Err(e) = handle.send(msg).await {
-                warn!(
-                    "Failed to send download message to actor {}: {}",
-                    streamer_id, e
-                );
+            DownloadManagerEvent::Progress {
+                download_id,
+                streamer_id,
+                session_id,
+                progress,
+            } => {
+                let should_send = match self.download_heartbeat_last_sent.get(&streamer_id) {
+                    Some(last) => now.duration_since(*last.value()) >= HEARTBEAT_THROTTLE,
+                    None => true,
+                };
+                if should_send {
+                    self.download_heartbeat_last_sent
+                        .insert(streamer_id.clone(), now);
+                    send_to_actor(
+                        streamer_id,
+                        StreamerMessage::DownloadHeartbeat {
+                            download_id,
+                            session_id,
+                            progress: Some(progress),
+                        },
+                    )
+                    .await;
+                }
             }
-        } else {
-            debug!("No actor found for streamer {}", streamer_id);
+            DownloadManagerEvent::SegmentStarted {
+                download_id,
+                streamer_id,
+                session_id,
+                ..
+            }
+            | DownloadManagerEvent::SegmentCompleted {
+                download_id,
+                streamer_id,
+                session_id,
+                ..
+            } => {
+                let should_send = match self.download_heartbeat_last_sent.get(&streamer_id) {
+                    Some(last) => now.duration_since(*last.value()) >= HEARTBEAT_THROTTLE,
+                    None => true,
+                };
+                if should_send {
+                    self.download_heartbeat_last_sent
+                        .insert(streamer_id.clone(), now);
+                    send_to_actor(
+                        streamer_id,
+                        StreamerMessage::DownloadHeartbeat {
+                            download_id,
+                            session_id,
+                            progress: None,
+                        },
+                    )
+                    .await;
+                }
+            }
+            _ => {}
         }
     }
 
