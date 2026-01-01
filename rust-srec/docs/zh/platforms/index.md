@@ -12,8 +12,8 @@ rust-srec 支持 12 个直播平台，自动检测并录制直播流。
 | [虎牙](./huya.md) | `huya.com/{room_id}` | FLV/HLS | ✅ |
 | [AcFun](./others.md#acfun) | `acfun.cn/live/{room_id}` | HLS | ❌ |
 | [PandaTV](./others.md#pandatv) | `pandalive.co.kr/play/{id}` | HLS | ❌ |
-| [小红书](./others.md#redbook-小红书) | `xiaohongshu.com/user/profile/{id}` | HLS | ❌ |
-| [微博](./others.md#weibo) | `weibo.com/u/{uid}` | HLS | ❌ |
+| [小红书](./others.md#redbook-小红书) | `xiaohongshu.com/user/profile/{id} or xhs.link/{id}` | HLS | ❌ |
+| [微博](./others.md#weibo) | `weibo.com/u/{uid} or weibo.com/l/wblive/p/show/{id}` | HLS | ❌ |
 | [Twitch](./twitch.md) | `twitch.tv/{channel}` | HLS | ✅ |
 | [TikTok](./others.md#tiktok) | `tiktok.com/@{user}/live` | HLS | ❌ |
 | [Twitcasting](./others.md#twitcasting) | `twitcasting.tv/{user}` | HLS | ✅ |

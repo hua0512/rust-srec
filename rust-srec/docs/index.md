@@ -4,7 +4,7 @@ layout: page
 
 <script setup>
 if (typeof window !== 'undefined') {
-  window.location.href = '/en/'
+  window.location.href = 'rust-srec/en/'
 }
 </script>
 
