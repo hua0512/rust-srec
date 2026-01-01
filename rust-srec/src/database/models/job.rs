@@ -153,7 +153,7 @@ pub struct JobDbModel {
     pub created_at: String,
     /// ISO 8601 timestamp when the job was last updated
     pub updated_at: String,
-    // Pipeline-specific fields (Requirements 6.1, 6.2, 6.4)
+    // Pipeline-specific fields
     /// Input path or source for the job (single input file)
     pub input: Option<String>,
     /// Output paths produced by the job (JSON array, can be 0, 1, or more outputs)
@@ -175,7 +175,6 @@ pub struct JobDbModel {
     /// Pipeline ID to group related jobs (first job's ID)
     pub pipeline_id: Option<String>,
     /// Execution information for observability (JSON)
-    /// Requirements: 6.1, 6.2, 6.3, 6.4
     pub execution_info: Option<String>,
     /// Processing duration in seconds (from processor output)
     pub duration_secs: Option<f64>,
@@ -602,7 +601,6 @@ impl PipelineStep {
 
 /// Pipeline definition with ordered steps.
 /// Used to define the sequence of jobs in a pipeline.
-/// Requirements: 6.1, 6.2, 7.1
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PipelineDefinition {
     /// Ordered list of job types to execute.

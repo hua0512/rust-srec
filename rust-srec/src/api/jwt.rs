@@ -249,7 +249,6 @@ mod property_tests {
     use proptest::prelude::*;
 
     // **Feature: jwt-auth-and-api-implementation, Property 1: JWT Token Contains Required Claims**
-    // **Validates: Requirements 1.6**
     proptest! {
         #![proptest_config(ProptestConfig::with_cases(100))]
 

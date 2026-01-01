@@ -82,8 +82,8 @@ prost-build = { workspace = true }
 
 
 [features]
-default = ["douyu", "native-tls"]
-douyu = ["rquickjs"]
+default = ["rquickjs", "native-tls"]
+rquickjs = ["dep:rquickjs"]
 static-ssl = ["openssl"]
 # TLS backend for WebSocket connections (tokio-tungstenite)
 # native-tls: Uses platform native TLS (SChannel on Windows, Security.framework on macOS, OpenSSL on Linux)

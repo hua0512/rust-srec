@@ -178,7 +178,7 @@ msgstr "404"
 msgid "A unique and descriptive name for this configuration."
 msgstr "A unique and descriptive name for this configuration."
 
-#: src/components/pipeline/workflows/step-config-dialog.tsx:476
+#: src/components/pipeline/workflows/step-config-dialog.tsx:436
 msgid "A unique ID used by other steps to reference this one."
 msgstr "A unique ID used by other steps to reference this one."
 
@@ -256,6 +256,10 @@ msgstr "Add Channel"
 msgid "Add Custom Tag"
 msgstr "Add Custom Tag"
 
+#: src/components/pipeline/presets/processors/tdl-config-form.tsx:129
+msgid "Add Environment Variable"
+msgstr "Add Environment Variable"
+
 #: src/components/streamers/edit/streamer-filters-tab.tsx:46
 msgid "Add Filter"
 msgstr "Add Filter"
@@ -314,7 +318,7 @@ msgstr "Add Step"
 msgid "Add Stream"
 msgstr "Add Stream"
 
-#: src/routes/_authed/_dashboard/streamers/index.tsx:391
+#: src/routes/_authed/_dashboard/streamers/index.tsx:392
 msgid "Add Streamer"
 msgstr "Add Streamer"
 
@@ -375,7 +379,7 @@ msgstr "Alerts when disk space is running low."
 #: src/routes/_authed/_dashboard/pipeline/presets/index.tsx:277
 #: src/routes/_authed/_dashboard/sessions/index.tsx:186
 #: src/routes/_authed/_dashboard/sessions/index.tsx:504
-#: src/routes/_authed/_dashboard/streamers/index.tsx:62
+#: src/routes/_authed/_dashboard/streamers/index.tsx:67
 msgid "All"
 msgstr "All"
 
@@ -383,13 +387,17 @@ msgstr "All"
 msgid "All Levels"
 msgstr "All Levels"
 
-#: src/routes/_authed/_dashboard/streamers/index.tsx:269
+#: src/routes/_authed/_dashboard/streamers/index.tsx:270
 msgid "All Platforms"
 msgstr "All Platforms"
 
 #: src/routes/_authed/_dashboard/sessions/index.tsx:192
 msgid "All Time"
 msgstr "All Time"
+
+#: src/components/pipeline/presets/processors/tdl-config-form.tsx:559
+msgid "Allowed Extensions"
+msgstr "Allowed Extensions"
 
 #: src/components/credentials/bilibili-qr-login-dialog.tsx:174
 msgid "An error occurred"
@@ -468,7 +476,7 @@ msgid "Are you sure you want to delete this session? This action cannot be undon
 msgstr "Are you sure you want to delete this session? This action cannot be undone."
 
 #: src/routes/_authed/_dashboard/dashboard.tsx:90
-#: src/routes/_authed/_dashboard/streamers/index.tsx:206
+#: src/routes/_authed/_dashboard/streamers/index.tsx:207
 msgid "Are you sure you want to delete this streamer?"
 msgstr "Are you sure you want to delete this streamer?"
 
@@ -486,7 +494,7 @@ msgstr "Artist"
 
 #: src/components/pipeline/presets/editor/preset-meta-form.tsx:78
 #: src/components/pipeline/presets/preset-templates.ts:89
-#: src/components/pipeline/presets/processors/registry.ts:113
+#: src/components/pipeline/presets/processors/registry.ts:116
 msgid "ASS Burn-in"
 msgstr "ASS Burn-in"
 
@@ -523,7 +531,7 @@ msgstr "Audio Codec"
 msgid "Audio Extract"
 msgstr "Audio Extract"
 
-#: src/components/pipeline/presets/processors/registry.ts:73
+#: src/components/pipeline/presets/processors/registry.ts:76
 msgid "Audio Extraction"
 msgstr "Audio Extraction"
 
@@ -548,7 +556,15 @@ msgstr "Auth Type"
 msgid "Authentication"
 msgstr "Authentication"
 
-#: src/components/pipeline/workflows/flow-editor/workflow-flow-editor.tsx:249
+#: src/components/pipeline/presets/processors/tdl-config-form.tsx:174
+msgid "Authentication & Setup"
+msgstr "Authentication & Setup"
+
+#: src/components/pipeline/presets/processors/tdl-config-form.tsx:209
+msgid "Auto (QR → Phone & Code → Desktop)"
+msgstr "Auto (QR → Phone & Code → Desktop)"
+
+#: src/components/pipeline/workflows/flow-editor/workflow-flow-editor.tsx:259
 msgid "Auto Layout"
 msgstr "Auto Layout"
 
@@ -731,7 +747,7 @@ msgstr "C:path1.flv,C:path2.flv"
 #: src/components/pipeline/jobs/pipeline-summary-card.tsx:219
 #: src/components/pipeline/jobs/pipeline-summary-card.tsx:256
 #: src/components/pipeline/presets/preset-card.tsx:204
-#: src/components/pipeline/workflows/step-config-dialog.tsx:570
+#: src/components/pipeline/workflows/step-config-dialog.tsx:526
 #: src/components/pipeline/workflows/workflow-card.tsx:196
 #: src/components/streamers/streamer-form.tsx:157
 #: src/routes/_authed/_dashboard/config/templates/index.tsx:266
@@ -753,6 +769,7 @@ msgid "Cancel Pipeline?"
 msgstr "Cancel Pipeline?"
 
 #: src/components/pipeline/dag-graph-view.tsx:380
+#: src/components/streamers/card/use-streamer-status.tsx:36
 #: src/routes/_authed/_dashboard/pipeline/executions.$pipelineId.tsx:276
 #: src/routes/_authed/_dashboard/pipeline/executions.$pipelineId.tsx:515
 msgid "Cancelled"
@@ -841,6 +858,10 @@ msgstr "Channels"
 msgid "Check if file exists after conversion"
 msgstr "Check if file exists after conversion"
 
+#: src/components/pipeline/presets/processors/tdl-login-dialog.tsx:410
+msgid "Check Login"
+msgstr "Check Login"
+
 #: src/components/streamers/card/stream-actions-menu.tsx:58
 #~ msgid "Check Now"
 #~ msgstr "Check Now"
@@ -850,7 +871,7 @@ msgid "Check size after copy"
 msgstr "Check size after copy"
 
 #: src/routes/_authed/_dashboard/dashboard.tsx:73
-#: src/routes/_authed/_dashboard/streamers/index.tsx:189
+#: src/routes/_authed/_dashboard/streamers/index.tsx:190
 msgid "Check triggered"
 msgstr "Check triggered"
 
@@ -862,7 +883,7 @@ msgstr "Check triggered"
 msgid "Checking"
 msgstr "Checking"
 
-#: src/components/streamers/card/use-streamer-status.tsx:185
+#: src/components/streamers/card/use-streamer-status.tsx:192
 msgid "Checking stream status..."
 msgstr "Checking stream status..."
 
@@ -919,6 +940,7 @@ msgid "Cloning..."
 msgstr "Cloning..."
 
 #: src/components/config/global/backup-restore-card.tsx:569
+#: src/components/pipeline/presets/processors/tdl-login-dialog.tsx:682
 msgid "Close"
 msgstr "Close"
 
@@ -930,9 +952,17 @@ msgstr "Comma-separated list of channels to exclude from proxy"
 msgid "Command"
 msgstr "Command"
 
+#: src/components/pipeline/presets/processors/tdl-config-form.tsx:452
+msgid "Command Arguments"
+msgstr "Command Arguments"
+
 #: src/components/pipeline/presets/processors/metadata-config-form.tsx:220
 msgid "Comment"
 msgstr "Comment"
+
+#: src/components/pipeline/presets/processors/tdl-login-dialog.tsx:353
+msgid "Complete the Telegram login process in this terminal."
+msgstr "Complete the Telegram login process in this terminal."
 
 #: src/components/pipeline/presets/default-presets-i18n.ts:102
 msgid "Complete workflow: Remux, generate thumbnail, add metadata, and upload."
@@ -977,7 +1007,7 @@ msgstr "Compression"
 msgid "Compression (Zip)"
 msgstr "Compression (Zip)"
 
-#: src/components/pipeline/presets/processors/registry.ts:78
+#: src/components/pipeline/presets/processors/registry.ts:81
 msgid "Compression / Archive"
 msgstr "Compression / Archive"
 
@@ -999,8 +1029,8 @@ msgstr "Config Path (Optional)"
 
 #: src/components/notifications/channel-form.tsx:341
 #: src/components/pipeline/presets/editor/preset-config-form.tsx:46
-#: src/components/pipeline/workflows/step-config-dialog.tsx:364
-#: src/components/pipeline/workflows/workflow-editor.tsx:265
+#: src/components/pipeline/workflows/step-config-dialog.tsx:326
+#: src/components/pipeline/workflows/workflow-editor.tsx:295
 #: src/lib/menu-list.ts:118
 msgid "Configuration"
 msgstr "Configuration"
@@ -1014,7 +1044,7 @@ msgid "Configuration imported successfully"
 msgstr "Configuration imported successfully"
 
 #: src/components/config/engines/engine-card.tsx:210
-#: src/components/pipeline/workflows/step-config-dialog.tsx:276
+#: src/components/pipeline/workflows/step-config-dialog.tsx:249
 msgid "Configure"
 msgstr "Configure"
 
@@ -1103,6 +1133,10 @@ msgstr "Container"
 msgid "Context"
 msgstr "Context"
 
+#: src/components/pipeline/presets/processors/tdl-config-form.tsx:535
+msgid "Continue on Error"
+msgstr "Continue on Error"
+
 #: src/routes/_authed/_dashboard/config/logging.tsx:213
 msgid "Control verbosity for each module. Lower levels include higher ones."
 msgstr "Control verbosity for each module. Lower levels include higher ones."
@@ -1134,9 +1168,9 @@ msgid "Copy (Passthrough)"
 msgstr "Copy (Passthrough)"
 
 #: src/components/pipeline/presets/editor/preset-meta-form.tsx:64
-#: src/components/pipeline/presets/processors/registry.ts:83
-#: src/components/pipeline/presets/processors/registry.ts:88
-#: src/components/pipeline/presets/processors/registry.ts:123
+#: src/components/pipeline/presets/processors/registry.ts:86
+#: src/components/pipeline/presets/processors/registry.ts:91
+#: src/components/pipeline/presets/processors/registry.ts:126
 msgid "Copy / Move"
 msgstr "Copy / Move"
 
@@ -1394,7 +1428,7 @@ msgstr "Customize specific engine settings for this template."
 #~ msgid "Customize the look and feel of your dashboard."
 #~ msgstr "Customize the look and feel of your dashboard."
 
-#: src/components/pipeline/workflows/step-config-dialog.tsx:442
+#: src/components/pipeline/workflows/step-config-dialog.tsx:405
 msgid "DAG Configuration"
 msgstr "DAG Configuration"
 
@@ -1408,7 +1442,7 @@ msgstr "Danmaku"
 
 #: src/components/pipeline/presets/editor/preset-meta-form.tsx:75
 #: src/components/pipeline/presets/preset-templates.ts:79
-#: src/components/pipeline/presets/processors/registry.ts:108
+#: src/components/pipeline/presets/processors/registry.ts:111
 msgid "Danmaku to ASS"
 msgstr "Danmaku to ASS"
 
@@ -1472,7 +1506,7 @@ msgstr "Default workflow: Remux to MP4 (deletes original), generate native-resol
 msgid "Default: 8388608 (8 MiB)"
 msgstr "Default: 8388608 (8 MiB)"
 
-#: src/components/pipeline/workflows/step-config-dialog.tsx:445
+#: src/components/pipeline/workflows/step-config-dialog.tsx:408
 msgid "Define how this step identifies itself and connects to others."
 msgstr "Define how this step identifies itself and connects to others."
 
@@ -1521,7 +1555,7 @@ msgstr "Delete Channel?"
 msgid "Delete Engine?"
 msgstr "Delete Engine?"
 
-#: src/components/pipeline/presets/processors/registry.ts:93
+#: src/components/pipeline/presets/processors/registry.ts:96
 msgid "Delete File"
 msgstr "Delete File"
 
@@ -1589,16 +1623,16 @@ msgstr "Deletes all existing configurations before importing. This action cannot
 msgid "Delivery Policy"
 msgstr "Delivery Policy"
 
-#: src/components/pipeline/workflows/step-config-dialog.tsx:485
+#: src/components/pipeline/workflows/step-config-dialog.tsx:444
 msgid "Depends On (Ancestors)"
 msgstr "Depends On (Ancestors)"
 
-#: src/components/pipeline/workflows/workflow-editor.tsx:299
+#: src/components/pipeline/workflows/workflow-editor.tsx:329
 msgid "Describe what this workflow does..."
 msgstr "Describe what this workflow does..."
 
 #: src/components/pipeline/presets/editor/preset-meta-form.tsx:275
-#: src/components/pipeline/workflows/workflow-editor.tsx:295
+#: src/components/pipeline/workflows/workflow-editor.tsx:325
 msgid "Description"
 msgstr "Description"
 
@@ -1610,7 +1644,7 @@ msgstr "Description is managed by the system"
 msgid "Deselect All"
 msgstr "Deselect All"
 
-#: src/components/pipeline/workflows/workflow-editor.tsx:211
+#: src/components/pipeline/workflows/workflow-editor.tsx:241
 msgid "Design your automation pipeline step by step"
 msgstr "Design your automation pipeline step by step"
 
@@ -1622,7 +1656,7 @@ msgstr "Destination Path (Optional)"
 msgid "Destination Root"
 msgstr "Destination Root"
 
-#: src/components/pipeline/workflows/step-config-dialog.tsx:583
+#: src/components/pipeline/workflows/step-config-dialog.tsx:539
 msgid "Detach & Edit"
 msgstr "Detach & Edit"
 
@@ -1654,7 +1688,8 @@ msgstr "Disable"
 msgid "Disable Interactive Games"
 msgstr "Disable Interactive Games"
 
-#: src/routes/_authed/_dashboard/streamers/index.tsx:66
+#: src/components/streamers/card/use-streamer-status.tsx:41
+#: src/routes/_authed/_dashboard/streamers/index.tsx:71
 msgid "Disabled"
 msgstr "Disabled"
 
@@ -1724,9 +1759,13 @@ msgstr "Download Retry Policy"
 msgid "Downloading"
 msgstr "Downloading"
 
-#: src/components/pipeline/workflows/flow-editor/workflow-flow-editor.tsx:262
+#: src/components/pipeline/workflows/flow-editor/workflow-flow-editor.tsx:272
 msgid "Drag from edge to link steps"
 msgstr "Drag from edge to link steps"
+
+#: src/components/pipeline/presets/processors/tdl-config-form.tsx:678
+msgid "Dry Run"
+msgstr "Dry Run"
 
 #: src/components/pipeline/presets/default-presets-i18n.ts:91
 msgid "Dual Format"
@@ -1738,9 +1777,17 @@ msgstr "Dual Format"
 msgid "Duration"
 msgstr "Duration"
 
+#: src/components/pipeline/presets/processors/tdl-config-form.tsx:416
+msgid "e.g. --namespace my_account"
+msgstr "e.g. --namespace my_account"
+
 #: src/components/config/engines/forms/streamlink-form.tsx:70
 msgid "e.g. 'best', 'worst', '720p', 'audio_only'"
 msgstr "e.g. 'best', 'worst', '720p', 'audio_only'"
+
+#: src/components/pipeline/presets/processors/tdl-config-form.tsx:350
+msgid "e.g. /data/tdl"
+msgstr "e.g. /data/tdl"
 
 #: src/components/pipeline/presets/processors/execute-config-form.tsx:149
 msgid "e.g. /output/processed/"
@@ -1749,6 +1796,10 @@ msgstr "e.g. /output/processed/"
 #: src/components/pipeline/presets/processors/audio-extract-config-form.tsx:130
 msgid "e.g. 128k, 320k"
 msgstr "e.g. 128k, 320k"
+
+#: src/components/pipeline/presets/processors/tdl-config-form.tsx:382
+msgid "e.g. C:\\Users\\...\\AppData\\Roaming\\Telegram Desktop"
+msgstr "e.g. C:\\Users\\...\\AppData\\Roaming\\Telegram Desktop"
 
 #: src/components/pipeline/presets/processors/execute-config-form.tsx:62
 msgid "e.g. echo {input} > {output}"
@@ -1763,6 +1814,7 @@ msgid "e.g. High Quality Streamlink"
 msgstr "e.g. High Quality Streamlink"
 
 #: src/components/pipeline/presets/processors/execute-config-form.tsx:175
+#: src/components/pipeline/presets/processors/tdl-config-form.tsx:565
 msgid "e.g. mp4"
 msgstr "e.g. mp4"
 
@@ -1775,11 +1827,19 @@ msgstr "e.g. My Favorite Streamer"
 msgid "e.g. Remux to H.264"
 msgstr "e.g. Remux to H.264"
 
-#: src/components/pipeline/workflows/step-config-dialog.tsx:471
+#: src/components/pipeline/presets/processors/tdl-config-form.tsx:594
+msgid "e.g. tmp"
+msgstr "e.g. tmp"
+
+#: src/components/pipeline/presets/processors/tdl-config-form.tsx:458
+msgid "e.g. up -c @channel -p {input}"
+msgstr "e.g. up -c @channel -p {input}"
+
+#: src/components/pipeline/workflows/step-config-dialog.tsx:431
 msgid "e.g., process-video"
 msgstr "e.g., process-video"
 
-#: src/components/pipeline/workflows/workflow-editor.tsx:279
+#: src/components/pipeline/workflows/workflow-editor.tsx:309
 msgid "e.g., Standard Processing"
 msgstr "e.g., Standard Processing"
 
@@ -1969,7 +2029,12 @@ msgstr "Enter your credentials to access your account"
 msgid "entries"
 msgstr "entries"
 
+#: src/components/pipeline/presets/processors/tdl-config-form.tsx:432
+msgid "Environment Variables"
+msgstr "Environment Variables"
+
 #: src/components/config/engines/engine-card.tsx:151
+#: src/components/streamers/card/use-streamer-status.tsx:40
 #: src/routes/_authed/_dashboard/config/engines/$engineId.tsx:47
 #: src/routes/_authed/_dashboard/config/engines/index.tsx:34
 #: src/routes/_authed/_dashboard/config/platforms/index.tsx:58
@@ -1978,11 +2043,11 @@ msgstr "entries"
 #: src/routes/_authed/_dashboard/pipeline/outputs.tsx:142
 #: src/routes/_authed/_dashboard/pipeline/presets/index.tsx:227
 #: src/routes/_authed/_dashboard/pipeline/workflows/index.tsx:140
-#: src/routes/_authed/_dashboard/streamers/index.tsx:65
+#: src/routes/_authed/_dashboard/streamers/index.tsx:70
 msgid "Error"
 msgstr "Error"
 
-#: src/components/streamers/card/use-streamer-status.tsx:145
+#: src/components/streamers/card/use-streamer-status.tsx:152
 #: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.tsx:666
 msgid "Error Details"
 msgstr "Error Details"
@@ -2008,7 +2073,7 @@ msgid "Error Loading Session"
 msgstr "Error Loading Session"
 
 #. placeholder {0}: (error as any).message
-#: src/routes/_authed/_dashboard/streamers/index.tsx:226
+#: src/routes/_authed/_dashboard/streamers/index.tsx:227
 msgid "Error loading streamers: {0}"
 msgstr "Error loading streamers: {0}"
 
@@ -2024,7 +2089,7 @@ msgstr "Error loading workflow"
 #~ msgid "Error Output"
 #~ msgstr "Error Output"
 
-#: src/components/pipeline/workflows/step-config-dialog.tsx:395
+#: src/components/pipeline/workflows/step-config-dialog.tsx:355
 msgid "Error: Could not load preset details."
 msgstr "Error: Could not load preset details."
 
@@ -2044,8 +2109,12 @@ msgstr "Exclude"
 msgid "Exclude ASS from Passthrough"
 msgstr "Exclude ASS from Passthrough"
 
+#: src/components/pipeline/presets/processors/tdl-config-form.tsx:588
+msgid "Excluded Extensions"
+msgstr "Excluded Extensions"
+
 #: src/components/pipeline/presets/editor/preset-meta-form.tsx:72
-#: src/components/pipeline/presets/processors/registry.ts:103
+#: src/components/pipeline/presets/processors/registry.ts:106
 msgid "Execute Command"
 msgstr "Execute Command"
 
@@ -2142,6 +2211,11 @@ msgstr "Failed to cancel pipeline"
 msgid "Failed to change password"
 msgstr "Failed to change password"
 
+#. placeholder {0}: e.message
+#: src/components/pipeline/presets/processors/tdl-login-dialog.tsx:180
+msgid "Failed to check TDL status: {0}"
+msgstr "Failed to check TDL status: {0}"
+
 #. placeholder {0}: error.message
 #: src/routes/_authed/_dashboard/pipeline/presets/index.tsx:188
 msgid "Failed to clone preset: {0}"
@@ -2217,7 +2291,7 @@ msgid "Failed to delete sessions"
 msgstr "Failed to delete sessions"
 
 #: src/routes/_authed/_dashboard/dashboard.tsx:67
-#: src/routes/_authed/_dashboard/streamers/index.tsx:184
+#: src/routes/_authed/_dashboard/streamers/index.tsx:185
 msgid "Failed to delete streamer"
 msgstr "Failed to delete streamer"
 
@@ -2290,12 +2364,22 @@ msgstr "Failed to retry job"
 msgid "Failed to retry steps"
 msgstr "Failed to retry steps"
 
+#. placeholder {0}: e.message
+#: src/components/pipeline/presets/processors/tdl-login-dialog.tsx:147
+msgid "Failed to send input: {0}"
+msgstr "Failed to send input: {0}"
+
 #: src/routes/_authed/_dashboard/notifications/index.tsx:58
 msgid "Failed to send test notification"
 msgstr "Failed to send test notification"
 
+#. placeholder {0}: e.message
+#: src/components/pipeline/presets/processors/tdl-login-dialog.tsx:135
+msgid "Failed to start login: {0}"
+msgstr "Failed to start login: {0}"
+
 #: src/routes/_authed/_dashboard/dashboard.tsx:75
-#: src/routes/_authed/_dashboard/streamers/index.tsx:191
+#: src/routes/_authed/_dashboard/streamers/index.tsx:192
 msgid "Failed to trigger check"
 msgstr "Failed to trigger check"
 
@@ -2321,13 +2405,13 @@ msgstr "Failed to update platform: {0}"
 msgid "Failed to update preset: {0}"
 msgstr "Failed to update preset: {0}"
 
-#: src/routes/_authed/_dashboard/config/global.tsx:131
+#: src/routes/_authed/_dashboard/config/global.tsx:133
 msgid "Failed to update settings"
 msgstr "Failed to update settings"
 
 #: src/routes/_authed/_dashboard/dashboard.tsx:86
 #: src/routes/_authed/_dashboard/streamers/$id.edit.tsx:222
-#: src/routes/_authed/_dashboard/streamers/index.tsx:202
+#: src/routes/_authed/_dashboard/streamers/index.tsx:203
 msgid "Failed to update streamer"
 msgstr "Failed to update streamer"
 
@@ -2356,6 +2440,10 @@ msgstr "Fast encoding for quick sharing on social media or messaging."
 #: src/components/pipeline/presets/default-presets-i18n.ts:52
 msgid "Fast H.264 compression (CRF 23). Good balance of speed, quality, and file size."
 msgstr "Fast H.264 compression (CRF 23). Good balance of speed, quality, and file size."
+
+#: src/components/streamers/card/use-streamer-status.tsx:35
+msgid "Fatal Error"
+msgstr "Fatal Error"
 
 #: src/components/config/platforms/platform-card.tsx:100
 msgid "Fetch"
@@ -2444,6 +2532,10 @@ msgstr "Filter Type"
 msgid "Filter updated successfully"
 msgstr "Filter updated successfully"
 
+#: src/components/pipeline/presets/processors/tdl-config-form.tsx:498
+msgid "Filtering & Behavior"
+msgstr "Filtering & Behavior"
+
 #: src/components/config/shared-config-editor.tsx:155
 msgid "Filters"
 msgstr "Filters"
@@ -2464,7 +2556,7 @@ msgstr "Fix HLS"
 msgid "Fixed Interval"
 msgstr "Fixed Interval"
 
-#: src/components/pipeline/workflows/step-config-dialog.tsx:337
+#: src/components/pipeline/workflows/step-config-dialog.tsx:296
 msgid "Flow & Dependencies"
 msgstr "Flow & Dependencies"
 
@@ -2627,21 +2719,21 @@ msgstr "Go back"
 msgid "Go Back"
 msgstr "Go Back"
 
-#: src/routes/_authed/_dashboard/streamers/index.tsx:464
+#: src/routes/_authed/_dashboard/streamers/index.tsx:465
 msgid "Go to next page"
 msgstr "Go to next page"
 
-#: src/routes/_authed/_dashboard/streamers/index.tsx:452
+#: src/routes/_authed/_dashboard/streamers/index.tsx:453
 msgid "Go to page {p}"
 msgstr "Go to page {p}"
 
-#: src/routes/_authed/_dashboard/streamers/index.tsx:432
+#: src/routes/_authed/_dashboard/streamers/index.tsx:433
 msgid "Go to previous page"
 msgstr "Go to previous page"
 
 #: src/components/pipeline/workflows/pipeline-workflow-editor.tsx:86
 #: src/components/pipeline/workflows/pipeline-workflow-editor.tsx:89
-#: src/components/pipeline/workflows/workflow-editor.tsx:346
+#: src/components/pipeline/workflows/workflow-editor.tsx:376
 msgid "Graph"
 msgstr "Graph"
 
@@ -2803,6 +2895,10 @@ msgstr "If enabled, streams matching these keywords will be ignored."
 msgid "If enabled, streams matching this pattern will be ignored."
 msgstr "If enabled, streams matching this pattern will be ignored."
 
+#: src/components/pipeline/presets/processors/tdl-config-form.tsx:240
+msgid "If your account has Telegram 2FA enabled, use Desktop login (`-T desktop`) or run `tdl login` locally in a terminal."
+msgstr "If your account has Telegram 2FA enabled, use Desktop login (`-T desktop`) or run `tdl login` locally in a terminal."
+
 #: src/components/streamers/config/stream-selection-input.tsx:181
 msgid "Ignore streams above this bitrate."
 msgstr "Ignore streams above this bitrate."
@@ -2810,6 +2906,10 @@ msgstr "Ignore streams above this bitrate."
 #: src/components/streamers/config/stream-selection-input.tsx:157
 msgid "Ignore streams below this bitrate."
 msgstr "Ignore streams below this bitrate."
+
+#: src/components/pipeline/presets/processors/tdl-config-form.tsx:570
+msgid "Ignored when \"Upload All Files\" is enabled."
+msgstr "Ignored when \"Upload All Files\" is enabled."
 
 #: src/routes/_authed/_dashboard/player/index.tsx:323
 msgid "Immersive Mode"
@@ -2840,6 +2940,10 @@ msgstr "In active"
 #: src/components/filters/FilterCard.tsx:210
 msgid "Include"
 msgstr "Include"
+
+#: src/components/pipeline/presets/processors/tdl-config-form.tsx:642
+msgid "Include Images"
+msgstr "Include Images"
 
 #: src/components/pipeline/presets/processors/danmaku-factory-config-form.tsx:166
 msgid "Include original files in outputs"
@@ -2882,10 +2986,14 @@ msgid "Input Paths (comma separated)"
 msgstr "Input Paths (comma separated)"
 
 #: src/components/streamers/card/use-streamer-status.tsx:32
-#: src/components/streamers/card/use-streamer-status.tsx:173
-#: src/components/streamers/card/use-streamer-status.tsx:182
+#: src/components/streamers/card/use-streamer-status.tsx:180
+#: src/components/streamers/card/use-streamer-status.tsx:189
 msgid "Inspecting"
 msgstr "Inspecting"
+
+#: src/components/pipeline/presets/processors/tdl-login-dialog.tsx:453
+msgid "Interactive password entry via this API is not supported on Windows. Please use \"Desktop Login\" (import tdata) or log in once in a regular terminal."
+msgstr "Interactive password entry via this API is not supported on Windows. Please use \"Desktop Login\" (import tdata) or log in once in a regular terminal."
 
 #: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.tsx:331
 msgid "Interrupted"
@@ -2973,6 +3081,14 @@ msgstr "Keep directory structure"
 msgid "Keep Running"
 msgstr "Keep Running"
 
+#: src/components/pipeline/presets/processors/tdl-config-form.tsx:538
+msgid "Keep uploading other files if one fails"
+msgstr "Keep uploading other files if one fails"
+
+#: src/components/pipeline/presets/processors/tdl-config-form.tsx:93
+msgid "Key"
+msgstr "Key"
+
 #: src/components/filters/forms/FilterTypeSelector.tsx:16
 msgid "Keyword"
 msgstr "Keyword"
@@ -2989,7 +3105,7 @@ msgstr "Language"
 #~ msgid "Language Settings"
 #~ msgstr "Language Settings"
 
-#: src/components/streamers/card/use-streamer-status.tsx:244
+#: src/components/streamers/card/use-streamer-status.tsx:251
 msgid "Last Activity"
 msgstr "Last Activity"
 
@@ -2997,7 +3113,7 @@ msgstr "Last Activity"
 msgid "Last Check"
 msgstr "Last Check"
 
-#: src/components/streamers/card/use-streamer-status.tsx:105
+#: src/components/streamers/card/use-streamer-status.tsx:112
 msgid "Last Error"
 msgstr "Last Error"
 
@@ -3031,16 +3147,20 @@ msgstr "Limits & Validation"
 
 #: src/components/pipeline/workflows/pipeline-workflow-editor.tsx:77
 #: src/components/pipeline/workflows/pipeline-workflow-editor.tsx:80
-#: src/components/pipeline/workflows/workflow-editor.tsx:340
+#: src/components/pipeline/workflows/workflow-editor.tsx:370
 msgid "List"
 msgstr "List"
 
+#: src/components/pipeline/presets/processors/tdl-config-form.tsx:572
+msgid "List of allowed file extensions (without dot)."
+msgstr "List of allowed file extensions (without dot)."
+
 #: src/components/streamers/card/use-streamer-status.tsx:31
-#: src/components/streamers/card/use-streamer-status.tsx:160
+#: src/components/streamers/card/use-streamer-status.tsx:167
 #: src/components/streamers/edit/recent-sessions-list.tsx:65
 #: src/components/streamers/edit/streamer-header.tsx:62
 #: src/routes/_authed/_dashboard/sessions/index.tsx:187
-#: src/routes/_authed/_dashboard/streamers/index.tsx:63
+#: src/routes/_authed/_dashboard/streamers/index.tsx:68
 msgid "Live"
 msgstr "Live"
 
@@ -3080,7 +3200,7 @@ msgstr "Loading older logs..."
 msgid "Loading pipeline editor..."
 msgstr "Loading pipeline editor..."
 
-#: src/components/pipeline/workflows/step-config-dialog.tsx:354
+#: src/components/pipeline/workflows/step-config-dialog.tsx:316
 msgid "Loading preset details..."
 msgstr "Loading preset details..."
 
@@ -3116,9 +3236,30 @@ msgstr "Logging configuration updated"
 msgid "Logging paused"
 msgstr "Logging paused"
 
+#: src/components/pipeline/presets/processors/tdl-config-form.tsx:410
+msgid "Login Args"
+msgstr "Login Args"
+
+#. placeholder {0}: typeof status === 'object' && 'failed' in status ? status.failed.message : 'Unknown error'
+#: src/components/pipeline/presets/processors/tdl-login-dialog.tsx:598
+msgid "Login failed: {0}"
+msgstr "Login failed: {0}"
+
+#: src/components/pipeline/presets/processors/tdl-login-dialog.tsx:592
+msgid "Login session cancelled"
+msgstr "Login session cancelled"
+
 #: src/components/credentials/bilibili-qr-login-dialog.tsx:154
 msgid "Login successful!"
 msgstr "Login successful!"
+
+#: src/components/pipeline/presets/processors/tdl-config-form.tsx:184
+msgid "Login to Telegram"
+msgstr "Login to Telegram"
+
+#: src/components/pipeline/presets/processors/tdl-config-form.tsx:195
+msgid "Login Type"
+msgstr "Login Type"
 
 #: src/components/sidebar/navbar.tsx:27
 msgid "Logs"
@@ -3165,7 +3306,7 @@ msgstr "Manage where system notifications are sent"
 msgid "Manage your application configuration."
 msgstr "Manage your application configuration."
 
-#: src/routes/_authed/_dashboard/streamers/index.tsx:243
+#: src/routes/_authed/_dashboard/streamers/index.tsx:244
 msgid "Manage your monitored channels and downloads"
 msgstr "Manage your monitored channels and downloads"
 
@@ -3226,6 +3367,7 @@ msgstr "Max Quality Thumbnail"
 #: src/components/config/shared/retry-policy-form.tsx:56
 #: src/components/pipeline/presets/processors/delete-config-form.tsx:53
 #: src/components/pipeline/presets/processors/rclone-config-form.tsx:240
+#: src/components/pipeline/presets/processors/tdl-config-form.tsx:612
 msgid "Max Retries"
 msgstr "Max Retries"
 
@@ -3291,7 +3433,7 @@ msgstr "Message"
 msgid "Metadata"
 msgstr "Metadata"
 
-#: src/components/pipeline/presets/processors/registry.ts:98
+#: src/components/pipeline/presets/processors/registry.ts:101
 msgid "Metadata Editor"
 msgstr "Metadata Editor"
 
@@ -3325,7 +3467,7 @@ msgstr "Min size to keep."
 msgid "Minimum Priority"
 msgstr "Minimum Priority"
 
-#: src/components/pipeline/workflows/step-config-dialog.tsx:302
+#: src/components/pipeline/workflows/step-config-dialog.tsx:272
 msgid "Modify the parameters for this processing step."
 msgstr "Modify the parameters for this processing step."
 
@@ -3341,8 +3483,8 @@ msgstr "Monitor and manage processing jobs"
 msgid "Monitor this streamer"
 msgstr "Monitor this streamer"
 
-#: src/components/streamers/card/use-streamer-status.tsx:119
-#: src/components/streamers/card/use-streamer-status.tsx:128
+#: src/components/streamers/card/use-streamer-status.tsx:126
+#: src/components/streamers/card/use-streamer-status.tsx:135
 msgid "Monitoring Stopped"
 msgstr "Monitoring Stopped"
 
@@ -3384,7 +3526,7 @@ msgstr "My Archiving Workflow"
 
 #: src/components/notifications/channel-form.tsx:275
 #: src/components/pipeline/presets/editor/preset-meta-form.tsx:213
-#: src/components/pipeline/workflows/workflow-editor.tsx:275
+#: src/components/pipeline/workflows/workflow-editor.tsx:305
 #: src/components/streamers/config/streamer-general-settings.tsx:74
 #: src/components/streamers/edit/streamer-meta-form.tsx:123
 msgid "Name"
@@ -3397,6 +3539,10 @@ msgstr "Name is required"
 #: src/routes/_public/login.tsx:161
 msgid "name@example.com"
 msgstr "name@example.com"
+
+#: src/components/pipeline/presets/processors/tdl-config-form.tsx:256
+msgid "Namespace"
+msgstr "Namespace"
 
 #: src/components/pipeline/presets/default-presets-i18n.ts:12
 msgid "Native Resolution Thumbnail"
@@ -3454,7 +3600,7 @@ msgstr "No changes detected"
 msgid "No configuration available for this processor."
 msgstr "No configuration available for this processor."
 
-#: src/components/pipeline/workflows/step-config-dialog.tsx:421
+#: src/components/pipeline/workflows/step-config-dialog.tsx:381
 msgid "No configuration form available for this processor."
 msgstr "No configuration form available for this processor."
 
@@ -3486,10 +3632,18 @@ msgstr "No detailed error message available"
 msgid "No engines found."
 msgstr "No engines found."
 
+#: src/components/pipeline/presets/processors/tdl-config-form.tsx:118
+msgid "No environment variables defined"
+msgstr "No environment variables defined"
+
 #. placeholder {0}: result.max_depth
-#: src/components/pipeline/workflows/workflow-editor.tsx:152
+#: src/components/pipeline/workflows/workflow-editor.tsx:182
 msgid "No errors found. Max depth: {0}"
 msgstr "No errors found. Max depth: {0}"
+
+#: src/components/pipeline/presets/processors/tdl-config-form.tsx:660
+msgid "No Extension"
+msgstr "No Extension"
 
 #: src/components/filters/FilterList.tsx:23
 msgid "No filters yet"
@@ -3548,7 +3702,7 @@ msgstr "No modules configured"
 msgid "No notification channels"
 msgstr "No notification channels"
 
-#: src/components/pipeline/workflows/step-config-dialog.tsx:543
+#: src/components/pipeline/workflows/step-config-dialog.tsx:499
 msgid "No other steps available to depend on."
 msgstr "No other steps available to depend on."
 
@@ -3633,7 +3787,7 @@ msgstr "No steps defined"
 #~ msgid "No steps selected yet"
 #~ msgstr "No steps selected yet"
 
-#: src/routes/_authed/_dashboard/streamers/index.tsx:377
+#: src/routes/_authed/_dashboard/streamers/index.tsx:378
 msgid "No streamers found"
 msgstr "No streamers found"
 
@@ -3668,6 +3822,7 @@ msgstr "None"
 msgid "None (Default)"
 msgstr "None (Default)"
 
+#: src/components/pipeline/presets/processors/tdl-login-dialog.tsx:643
 #: src/components/streamers/config/streamer-general-settings.tsx:190
 #: src/components/streamers/edit/streamer-meta-form.tsx:159
 msgid "Normal"
@@ -3677,7 +3832,7 @@ msgstr "Normal"
 msgid "Not available"
 msgstr "Not available"
 
-#: src/components/streamers/card/use-streamer-status.tsx:34
+#: src/components/streamers/card/use-streamer-status.tsx:37
 msgid "Not Found"
 msgstr "Not Found"
 
@@ -3692,6 +3847,7 @@ msgid "Notifications"
 msgstr "Notifications"
 
 #: src/components/pipeline/presets/processors/rclone-config-form.tsx:251
+#: src/components/pipeline/presets/processors/tdl-config-form.tsx:627
 msgid "Number of attempts before failing the upload."
 msgstr "Number of attempts before failing the upload."
 
@@ -3712,11 +3868,11 @@ msgid "OAuth Token"
 msgstr "OAuth Token"
 
 #: src/components/streamers/card/use-streamer-status.tsx:30
-#: src/components/streamers/card/use-streamer-status.tsx:230
-#: src/components/streamers/card/use-streamer-status.tsx:239
+#: src/components/streamers/card/use-streamer-status.tsx:237
+#: src/components/streamers/card/use-streamer-status.tsx:246
 #: src/components/streamers/edit/recent-sessions-list.tsx:63
 #: src/components/streamers/edit/streamer-header.tsx:64
-#: src/routes/_authed/_dashboard/streamers/index.tsx:64
+#: src/routes/_authed/_dashboard/streamers/index.tsx:69
 msgid "Offline"
 msgstr "Offline"
 
@@ -3810,6 +3966,10 @@ msgstr "Optional"
 msgid "Optional description for this preset"
 msgstr "Optional description for this preset"
 
+#: src/components/pipeline/presets/processors/tdl-config-form.tsx:420
+msgid "Optional extra arguments appended to `tdl login`."
+msgstr "Optional extra arguments appended to `tdl login`."
+
 #: src/components/pipeline/presets/processors/compression-config-form.tsx:115
 #: src/components/pipeline/presets/processors/copy-move-config-form.tsx:116
 msgid "Options"
@@ -3818,6 +3978,10 @@ msgstr "Options"
 #: src/components/config/platforms/tabs/platform-specific-tab.tsx:104
 msgid "Options for {platformName}"
 msgstr "Options for {platformName}"
+
+#: src/components/streamers/card/use-streamer-status.tsx:34
+msgid "Out of Space"
+msgstr "Out of Space"
 
 #: src/components/config/platforms/platform-card.tsx:130
 #: src/components/config/shared-config-editor.tsx:166
@@ -3875,7 +4039,7 @@ msgstr "Output Settings"
 msgid "Outputs"
 msgstr "Outputs"
 
-#: src/components/streamers/card/use-streamer-status.tsx:203
+#: src/components/streamers/card/use-streamer-status.tsx:210
 msgid "Outside Schedule"
 msgstr "Outside Schedule"
 
@@ -3997,6 +4161,10 @@ msgstr "Passthrough Inputs"
 msgid "Password"
 msgstr "Password"
 
+#: src/components/pipeline/presets/processors/tdl-login-dialog.tsx:487
+msgid "Password / 2FA blocked"
+msgstr "Password / 2FA blocked"
+
 #: src/routes/_authed/change-password.tsx:76
 #~ msgid "Password changed successfully"
 #~ msgstr "Password changed successfully"
@@ -4016,6 +4184,10 @@ msgstr "Password for protected streams."
 #: src/components/pipeline/presets/processors/danmaku-factory-config-form.tsx:65
 msgid "Path to DanmakuFactory binary. If empty, uses environment variable or PATH."
 msgstr "Path to DanmakuFactory binary. If empty, uses environment variable or PATH."
+
+#: src/components/pipeline/presets/processors/tdl-login-dialog.tsx:521
+msgid "Path to Telegram Desktop (contains tdata)"
+msgstr "Path to Telegram Desktop (contains tdata)"
 
 #: src/components/logging/log-viewer.tsx:374
 msgid "Pause"
@@ -4067,6 +4239,10 @@ msgstr "Per-segment Pipeline"
 msgid "Performance"
 msgstr "Performance"
 
+#: src/components/pipeline/presets/processors/tdl-config-form.tsx:215
+msgid "Phone & Code (2FA optional)"
+msgstr "Phone & Code (2FA optional)"
+
 #: src/components/config/shared-config-editor.tsx:221
 #: src/components/sidebar/navbar.tsx:30
 #: src/lib/menu-list.ts:69
@@ -4102,7 +4278,7 @@ msgstr "Pipeline is already completed or cancelled"
 msgid "Pipeline is empty."
 msgstr "Pipeline is empty."
 
-#: src/components/pipeline/workflows/workflow-editor.tsx:151
+#: src/components/pipeline/workflows/workflow-editor.tsx:181
 msgid "Pipeline is valid"
 msgstr "Pipeline is valid"
 
@@ -4119,7 +4295,7 @@ msgstr "Pipeline Jobs"
 msgid "Pipeline Manager"
 msgstr "Pipeline Manager"
 
-#: src/components/pipeline/workflows/workflow-editor.tsx:137
+#: src/components/pipeline/workflows/workflow-editor.tsx:167
 msgid "Pipeline must have at least one step"
 msgstr "Pipeline must have at least one step"
 
@@ -4144,7 +4320,7 @@ msgstr "Pipeline Statistics"
 #~ msgstr "Pipeline Steps"
 
 #: src/components/pipeline/workflows/pipeline-workflow-editor.tsx:64
-#: src/components/pipeline/workflows/workflow-editor.tsx:327
+#: src/components/pipeline/workflows/workflow-editor.tsx:357
 msgid "Pipeline Structure"
 msgstr "Pipeline Structure"
 
@@ -4152,7 +4328,11 @@ msgstr "Pipeline Structure"
 msgid "pipelines"
 msgstr "pipelines"
 
-#: src/routes/_authed/_dashboard/streamers/index.tsx:263
+#: src/components/pipeline/presets/processors/tdl-config-form.tsx:464
+msgid "Placeholders"
+msgstr "Placeholders"
+
+#: src/routes/_authed/_dashboard/streamers/index.tsx:264
 msgid "Platform"
 msgstr "Platform"
 
@@ -4236,6 +4416,10 @@ msgstr "Please restart the system to ensure all configuration changes are fully 
 msgid "Please select a JSON file"
 msgstr "Please select a JSON file"
 
+#: src/components/pipeline/presets/processors/tdl-login-dialog.tsx:534
+msgid "Please set Telegram Desktop Directory first"
+msgstr "Please set Telegram Desktop Directory first"
+
 #: src/routes/_authed/_dashboard/player/index.tsx:356
 msgid "Please wait while we resolve the stream URL."
 msgstr "Please wait while we resolve the stream URL."
@@ -4259,6 +4443,10 @@ msgstr "Powered by <0>Rust-srec</0>. WebUI version: 0.1.0"
 #: src/components/pipeline/presets/processors/danmaku-factory-config-form.tsx:140
 msgid "Prefer Manifest"
 msgstr "Prefer Manifest"
+
+#: src/components/pipeline/presets/processors/tdl-config-form.tsx:223
+msgid "Prefer QR login first; Phone & Code (2FA optional) second; Desktop last."
+msgstr "Prefer QR login first; Phone & Code (2FA optional) second; Desktop last."
 
 #: src/components/streamers/config/stream-selection-input.tsx:58
 msgid "Preferences"
@@ -4312,7 +4500,7 @@ msgstr "Preset Details"
 msgid "Preset not found"
 msgstr "Preset not found"
 
-#: src/components/pipeline/workflows/step-config-dialog.tsx:272
+#: src/components/pipeline/workflows/step-config-dialog.tsx:245
 msgid "Preset Step"
 msgstr "Preset Step"
 
@@ -4374,6 +4562,11 @@ msgstr "Prioritize specific streaming protocols. Press Enter to add."
 #: src/components/streamers/edit/streamer-meta-form.tsx:146
 msgid "Priority"
 msgstr "Priority"
+
+#. placeholder {0}: status.exited.code ?? 0
+#: src/components/pipeline/presets/processors/tdl-login-dialog.tsx:594
+msgid "Process exited with code {0}"
+msgstr "Process exited with code {0}"
 
 #: src/components/pipeline/presets/default-presets-i18n.ts:103
 msgid "Process locally: Remux to MP4, generate thumbnail, move to archive folder."
@@ -4437,6 +4630,11 @@ msgstr "Proxy Strategy"
 msgid "Proxy URL"
 msgstr "Proxy URL"
 
+#: src/components/pipeline/presets/processors/tdl-config-form.tsx:212
+#: src/components/pipeline/presets/processors/tdl-login-dialog.tsx:504
+msgid "QR Code"
+msgstr "QR Code"
+
 #: src/components/credentials/bilibili-qr-login-dialog.tsx:163
 msgid "QR code expired"
 msgstr "QR code expired"
@@ -4495,8 +4693,8 @@ msgstr "Rclone"
 msgid "Rclone Executable"
 msgstr "Rclone Executable"
 
-#: src/components/pipeline/presets/processors/registry.ts:63
-#: src/components/pipeline/presets/processors/registry.ts:118
+#: src/components/pipeline/presets/processors/registry.ts:66
+#: src/components/pipeline/presets/processors/registry.ts:121
 msgid "Rclone Transfer"
 msgstr "Rclone Transfer"
 
@@ -4516,7 +4714,7 @@ msgstr "Real-Time Logs"
 msgid "Real-time status of all system components and resources."
 msgstr "Real-time status of all system components and resources."
 
-#: src/components/streamers/card/use-streamer-status.tsx:132
+#: src/components/streamers/card/use-streamer-status.tsx:139
 msgid "Reason"
 msgstr "Reason"
 
@@ -4550,7 +4748,7 @@ msgstr "Recording"
 msgid "Recording Filters"
 msgstr "Recording Filters"
 
-#: src/components/streamers/card/use-streamer-status.tsx:213
+#: src/components/streamers/card/use-streamer-status.tsx:220
 msgid "Recording will start when schedule allows"
 msgstr "Recording will start when schedule allows"
 
@@ -4596,7 +4794,7 @@ msgstr "Remux"
 
 #: src/components/pipeline/presets/editor/preset-meta-form.tsx:60
 #: src/components/pipeline/presets/preset-templates.ts:5
-#: src/components/pipeline/presets/processors/registry.ts:58
+#: src/components/pipeline/presets/processors/registry.ts:61
 msgid "Remux / Transcode"
 msgstr "Remux / Transcode"
 
@@ -4674,6 +4872,10 @@ msgstr "Resources"
 msgid "Restart Required"
 msgstr "Restart Required"
 
+#: src/components/pipeline/presets/processors/tdl-login-dialog.tsx:548
+msgid "Restart with -d"
+msgstr "Restart with -d"
+
 #: src/components/config/global/backup-restore-card.tsx:260
 msgid "Restore from a backup file"
 msgstr "Restore from a backup file"
@@ -4686,7 +4888,7 @@ msgstr "Restore password"
 msgid "Resume"
 msgstr "Resume"
 
-#: src/components/streamers/card/use-streamer-status.tsx:79
+#: src/components/streamers/card/use-streamer-status.tsx:86
 msgid "Resuming in"
 msgstr "Resuming in"
 
@@ -4731,7 +4933,7 @@ msgstr "Review recorded streams and manage archives"
 msgid "Route traffic through an intermediate server"
 msgstr "Route traffic through an intermediate server"
 
-#: src/routes/_authed/_dashboard/streamers/index.tsx:402
+#: src/routes/_authed/_dashboard/streamers/index.tsx:403
 msgid "Rows per page"
 msgstr "Rows per page"
 
@@ -4818,7 +5020,7 @@ msgstr "Sampling Strategy"
 #: src/components/filters/FilterDialog.tsx:290
 #: src/components/notifications/subscription-manager.tsx:446
 #: src/components/pipeline/presets/editor/preset-save-fab.tsx:37
-#: src/components/pipeline/workflows/step-config-dialog.tsx:587
+#: src/components/pipeline/workflows/step-config-dialog.tsx:543
 #: src/components/streamers/edit/streamer-save-fab.tsx:53
 #: src/routes/_authed/_dashboard/config/global.tsx:88
 #: src/routes/_authed/_dashboard/config/logging.tsx:361
@@ -4829,14 +5031,14 @@ msgstr "Save Changes"
 msgid "Save settings to a JSON file"
 msgstr "Save settings to a JSON file"
 
-#: src/components/pipeline/workflows/workflow-editor.tsx:240
+#: src/components/pipeline/workflows/workflow-editor.tsx:270
 msgid "Save Workflow"
 msgstr "Save Workflow"
 
 #: src/components/config/platforms/platform-editor.tsx:150
 #: src/components/config/templates/template-editor.tsx:202
 #: src/components/filters/FilterDialog.tsx:287
-#: src/components/pipeline/workflows/workflow-editor.tsx:238
+#: src/components/pipeline/workflows/workflow-editor.tsx:268
 #: src/components/streamers/edit/streamer-save-fab.tsx:48
 #: src/routes/_authed/_dashboard/config/global.tsx:88
 #: src/routes/_authed/_dashboard/config/logging.tsx:361
@@ -4868,7 +5070,7 @@ msgid "Schedule recording times"
 msgstr "Schedule recording times"
 
 #: src/components/streamers/card/use-streamer-status.tsx:33
-#: src/components/streamers/card/use-streamer-status.tsx:194
+#: src/components/streamers/card/use-streamer-status.tsx:201
 msgid "Scheduled"
 msgstr "Scheduled"
 
@@ -4916,7 +5118,7 @@ msgstr "Search presets..."
 msgid "Search sessions..."
 msgstr "Search sessions..."
 
-#: src/routes/_authed/_dashboard/streamers/index.tsx:250
+#: src/routes/_authed/_dashboard/streamers/index.tsx:251
 msgid "Search streamers..."
 msgstr "Search streamers..."
 
@@ -4989,6 +5191,10 @@ msgstr "Select config"
 msgid "Select File"
 msgstr "Select File"
 
+#: src/components/pipeline/presets/processors/tdl-config-form.tsx:204
+msgid "Select login type"
+msgstr "Select login type"
+
 #: src/components/pipeline/presets/processors/rclone-config-form.tsx:91
 msgid "Select operation"
 msgstr "Select operation"
@@ -5015,7 +5221,7 @@ msgstr "Select the days required for this filter to apply."
 msgid "Select the events that should trigger notifications for <0>{0}</0>."
 msgstr "Select the events that should trigger notifications for <0>{0}</0>."
 
-#: src/components/pipeline/workflows/step-config-dialog.tsx:551
+#: src/components/pipeline/workflows/step-config-dialog.tsx:507
 msgid "Select the steps that must complete successfully before this step runs."
 msgstr "Select the steps that must complete successfully before this step runs."
 
@@ -5039,6 +5245,14 @@ msgstr "selected"
 #: src/routes/_authed/_dashboard/sessions/index.tsx:493
 msgid "Selected"
 msgstr "Selected"
+
+#: src/components/pipeline/presets/processors/tdl-login-dialog.tsx:658
+msgid "Send"
+msgstr "Send"
+
+#: src/components/pipeline/presets/processors/tdl-login-dialog.tsx:643
+msgid "Sensitive"
+msgstr "Sensitive"
 
 #: src/routes/_authed/_dashboard/pipeline/jobs/new.tsx:303
 msgid "Separate multiple paths with commas."
@@ -5095,6 +5309,10 @@ msgstr "Session ID"
 msgid "Session ID is required"
 msgstr "Session ID is required"
 
+#: src/components/pipeline/presets/processors/tdl-login-dialog.tsx:621
+msgid "Session is not running"
+msgstr "Session is not running"
+
 #: src/components/sessions/session-card.tsx:256
 msgid "Session Menu"
 msgstr "Session Menu"
@@ -5121,6 +5339,10 @@ msgstr "Session thumbnail"
 msgid "Sessions"
 msgstr "Sessions"
 
+#: src/components/pipeline/presets/processors/tdl-login-dialog.tsx:477
+msgid "Set \"TDL Binary Path\" to your `tdl` executable, or make sure `tdl` is in PATH."
+msgstr "Set \"TDL Binary Path\" to your `tdl` executable, or make sure `tdl` is in PATH."
+
 #: src/components/config/shared/limits-card.tsx:35
 msgid "Set constraints on downloads."
 msgstr "Set constraints on downloads."
@@ -5140,7 +5362,7 @@ msgstr "Settings"
 msgid "Settings have been optimized for this platform."
 msgstr "Settings have been optimized for this platform."
 
-#: src/routes/_authed/_dashboard/config/global.tsx:127
+#: src/routes/_authed/_dashboard/config/global.tsx:129
 msgid "Settings updated successfully"
 msgstr "Settings updated successfully"
 
@@ -5244,9 +5466,21 @@ msgstr "Standard cron expression (sec min hour day mon year)."
 msgid "Start checking this streamer immediately."
 msgstr "Start checking this streamer immediately."
 
+#: src/components/pipeline/presets/processors/tdl-login-dialog.tsx:309
+msgid "Start Desktop Login"
+msgstr "Start Desktop Login"
+
 #: src/components/not-found.tsx:28
 msgid "Start Over"
 msgstr "Start Over"
+
+#: src/components/pipeline/presets/processors/tdl-login-dialog.tsx:311
+msgid "Start Phone & Code Login"
+msgstr "Start Phone & Code Login"
+
+#: src/components/pipeline/presets/processors/tdl-login-dialog.tsx:313
+msgid "Start QR Login"
+msgstr "Start QR Login"
 
 #: src/components/filters/forms/TimeBasedFilterForm.tsx:81
 #: src/components/pipeline/presets/processors/remux-config-form.tsx:484
@@ -5259,6 +5493,10 @@ msgstr "Start Time"
 #: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.tsx:631
 msgid "Started"
 msgstr "Started"
+
+#: src/components/pipeline/presets/processors/tdl-login-dialog.tsx:562
+msgid "Starting tdl process..."
+msgstr "Starting tdl process..."
 
 #: src/routes/_authed/_dashboard/pipeline/executions.$pipelineId.tsx:496
 #: src/routes/_authed/_dashboard/system/health.tsx:157
@@ -5278,11 +5516,11 @@ msgstr "Stem (Filename Match)"
 #~ msgid "Step {0}/{1}"
 #~ msgstr "Step {0}/{1}"
 
-#: src/components/pipeline/workflows/step-config-dialog.tsx:330
+#: src/components/pipeline/workflows/step-config-dialog.tsx:289
 msgid "Step Configuration"
 msgstr "Step Configuration"
 
-#: src/components/pipeline/workflows/step-config-dialog.tsx:459
+#: src/components/pipeline/workflows/step-config-dialog.tsx:419
 msgid "Step Identifier (Unique)"
 msgstr "Step Identifier (Unique)"
 
@@ -5301,6 +5539,10 @@ msgstr "Step Library"
 #: src/routes/_authed/_dashboard/pipeline/executions.$pipelineId.tsx:371
 msgid "Steps List"
 msgstr "Steps List"
+
+#: src/components/pipeline/presets/processors/tdl-config-form.tsx:287
+msgid "Storage"
+msgstr "Storage"
 
 #: src/components/pipeline/presets/default-presets-i18n.ts:92
 msgid "Stream Archive"
@@ -5345,7 +5587,7 @@ msgid "Streamer created successfully"
 msgstr "Streamer created successfully"
 
 #: src/routes/_authed/_dashboard/dashboard.tsx:63
-#: src/routes/_authed/_dashboard/streamers/index.tsx:180
+#: src/routes/_authed/_dashboard/streamers/index.tsx:181
 msgid "Streamer deleted"
 msgstr "Streamer deleted"
 
@@ -5361,16 +5603,16 @@ msgstr "Streamer ID"
 msgid "Streamer ID is required"
 msgstr "Streamer ID is required"
 
-#: src/components/streamers/card/use-streamer-status.tsx:73
+#: src/components/streamers/card/use-streamer-status.tsx:80
 msgid "Streamer is on cooldown"
 msgstr "Streamer is on cooldown"
 
-#: src/routes/_authed/_dashboard/streamers/index.tsx:426
+#: src/routes/_authed/_dashboard/streamers/index.tsx:427
 msgid "Streamer pagination"
 msgstr "Streamer pagination"
 
 #: src/routes/_authed/_dashboard/dashboard.tsx:82
-#: src/routes/_authed/_dashboard/streamers/index.tsx:198
+#: src/routes/_authed/_dashboard/streamers/index.tsx:199
 msgid "Streamer updated"
 msgstr "Streamer updated"
 
@@ -5383,7 +5625,7 @@ msgstr "Streamer updated successfully"
 #: src/components/config/global/backup-restore-card.tsx:364
 #: src/components/sidebar/navbar.tsx:25
 #: src/lib/menu-list.ts:57
-#: src/routes/_authed/_dashboard/streamers/index.tsx:242
+#: src/routes/_authed/_dashboard/streamers/index.tsx:243
 msgid "Streamers"
 msgstr "Streamers"
 
@@ -5477,6 +5719,66 @@ msgstr "Target Danmus per Sample"
 msgid "Target number of messages to capture per sample period."
 msgstr "Target number of messages to capture per sample period."
 
+#: src/components/pipeline/presets/processors/tdl-config-form.tsx:271
+msgid "TDL account namespace (`tdl --ns ...`). Use this to manage multiple Telegram accounts."
+msgstr "TDL account namespace (`tdl --ns ...`). Use this to manage multiple Telegram accounts."
+
+#: src/components/pipeline/presets/processors/tdl-login-dialog.tsx:474
+msgid "TDL binary not found"
+msgstr "TDL binary not found"
+
+#: src/components/pipeline/presets/processors/tdl-config-form.tsx:320
+msgid "TDL Binary Path"
+msgstr "TDL Binary Path"
+
+#: src/components/pipeline/presets/processors/tdl-login-dialog.tsx:350
+msgid "TDL Interactive Login"
+msgstr "TDL Interactive Login"
+
+#: src/components/pipeline/presets/processors/tdl-login-dialog.tsx:170
+msgid "TDL is logged in{version}"
+msgstr "TDL is logged in{version}"
+
+#: src/components/pipeline/presets/processors/tdl-login-dialog.tsx:174
+msgid "TDL is not logged in{version}"
+msgstr "TDL is not logged in{version}"
+
+#: src/components/pipeline/presets/processors/tdl-login-dialog.tsx:132
+msgid "TDL login session started"
+msgstr "TDL login session started"
+
+#: src/components/pipeline/presets/processors/tdl-login-dialog.tsx:166
+msgid "TDL not found"
+msgstr "TDL not found"
+
+#: src/components/pipeline/presets/processors/tdl-login-dialog.tsx:464
+msgid "TDL Status"
+msgstr "TDL Status"
+
+#: src/components/pipeline/presets/processors/tdl-login-dialog.tsx:177
+msgid "TDL status unknown{version}"
+msgstr "TDL status unknown{version}"
+
+#: src/components/pipeline/presets/processors/tdl-config-form.tsx:237
+msgid "Telegram 2FA password is not supported"
+msgstr "Telegram 2FA password is not supported"
+
+#: src/components/pipeline/presets/processors/tdl-login-dialog.tsx:372
+msgid "Telegram 2FA via web is unsupported"
+msgstr "Telegram 2FA via web is unsupported"
+
+#: src/components/pipeline/presets/processors/tdl-config-form.tsx:218
+msgid "Telegram Desktop"
+msgstr "Telegram Desktop"
+
+#: src/components/pipeline/presets/processors/tdl-login-dialog.tsx:515
+msgid "Telegram Desktop data required"
+msgstr "Telegram Desktop data required"
+
+#: src/components/pipeline/presets/processors/tdl-config-form.tsx:377
+msgid "Telegram Desktop Directory"
+msgstr "Telegram Desktop Directory"
+
 #: src/components/streamers/config/streamer-general-settings.tsx:137
 msgid "Template"
 msgstr "Template"
@@ -5517,8 +5819,9 @@ msgstr "templates"
 msgid "Templates"
 msgstr "Templates"
 
-#: src/components/streamers/card/use-streamer-status.tsx:63
-#: src/components/streamers/card/use-streamer-status.tsx:72
+#: src/components/streamers/card/use-streamer-status.tsx:39
+#: src/components/streamers/card/use-streamer-status.tsx:70
+#: src/components/streamers/card/use-streamer-status.tsx:79
 msgid "Temporarily Paused"
 msgstr "Temporarily Paused"
 
@@ -5571,6 +5874,10 @@ msgstr "Theme Mode"
 msgid "This is a default preset. Description cannot be modified."
 msgstr "This is a default preset. Description cannot be modified."
 
+#: src/components/pipeline/presets/processors/tdl-login-dialog.tsx:490
+msgid "This login requires a Telegram 2FA password. Enable \"Allow 2FA\" and restart."
+msgstr "This login requires a Telegram 2FA password. Enable \"Allow 2FA\" and restart."
+
 #: src/components/config/global/pipeline-config-card.tsx:191
 #: src/components/config/shared-config-editor.tsx:436
 msgid "This pipeline runs immediately after a recording segment is finished. Use it for tasks that only require the individual video segment, such as remuxing, thumbnail generation, or per-segment uploads."
@@ -5580,15 +5887,15 @@ msgstr "This pipeline runs immediately after a recording segment is finished. Us
 #~ msgid "This pipeline sequence appears to be empty."
 #~ msgstr "This pipeline sequence appears to be empty."
 
-#: src/components/pipeline/workflows/step-config-dialog.tsx:289
+#: src/components/pipeline/workflows/step-config-dialog.tsx:262
 msgid "This step is a sub-workflow: <0>{workflowName}</0>."
 msgstr "This step is a sub-workflow: <0>{workflowName}</0>."
 
-#: src/components/pipeline/workflows/step-config-dialog.tsx:297
+#: src/components/pipeline/workflows/step-config-dialog.tsx:267
 msgid "This step is linked to the preset <0>{presetName}</0>."
 msgstr "This step is linked to the preset <0>{presetName}</0>."
 
-#: src/components/streamers/card/use-streamer-status.tsx:206
+#: src/components/streamers/card/use-streamer-status.tsx:213
 msgid "This streamer is currently live, but outside your configured recording schedule."
 msgstr "This streamer is currently live, but outside your configured recording schedule."
 
@@ -5633,7 +5940,7 @@ msgstr "Thumbnail"
 #~ msgid "Thumbnail for {0}"
 #~ msgstr "Thumbnail for {0}"
 
-#: src/components/pipeline/presets/processors/registry.ts:68
+#: src/components/pipeline/presets/processors/registry.ts:71
 msgid "Thumbnail Generator"
 msgstr "Thumbnail Generator"
 
@@ -5693,7 +6000,7 @@ msgstr "Today"
 msgid "Token"
 msgstr "Token"
 
-#: src/routes/_authed/_dashboard/streamers/index.tsx:283
+#: src/routes/_authed/_dashboard/streamers/index.tsx:284
 msgid "total"
 msgstr "total"
 
@@ -5817,7 +6124,7 @@ msgstr "Trimming & Time"
 msgid "Try adjusting your search or filters"
 msgstr "Try adjusting your search or filters"
 
-#: src/routes/_authed/_dashboard/streamers/index.tsx:380
+#: src/routes/_authed/_dashboard/streamers/index.tsx:381
 msgid "Try adjusting your search or filters, or add a new streamer to start monitoring."
 msgstr "Try adjusting your search or filters, or add a new streamer to start monitoring."
 
@@ -5870,6 +6177,14 @@ msgstr "Twitch Proxy Playlist Exclude"
 msgid "Type"
 msgstr "Type"
 
+#: src/components/pipeline/presets/processors/tdl-login-dialog.tsx:620
+msgid "Type your answer here..."
+msgstr "Type your answer here..."
+
+#: src/components/pipeline/presets/processors/tdl-config-form.tsx:292
+msgid "type=bolt,path=/data/tdl"
+msgstr "type=bolt,path=/data/tdl"
+
 #: src/components/pipeline/presets/default-presets-i18n.ts:28
 msgid "Ultrafast Compression"
 msgstr "Ultrafast Compression"
@@ -5895,7 +6210,7 @@ msgstr "Unknown Engine ID: {engineId}"
 msgid "Unknown File"
 msgstr "Unknown File"
 
-#: src/components/streamers/card/use-streamer-status.tsx:94
+#: src/components/streamers/card/use-streamer-status.tsx:101
 msgid "Until"
 msgstr "Until"
 
@@ -5934,9 +6249,21 @@ msgstr "Upload"
 msgid "Upload (Rclone)"
 msgstr "Upload (Rclone)"
 
+#: src/components/pipeline/presets/processors/tdl-config-form.tsx:511
+msgid "Upload All Files"
+msgstr "Upload All Files"
+
 #: src/components/pipeline/presets/default-presets-i18n.ts:20
 msgid "Upload and Delete"
 msgstr "Upload and Delete"
+
+#: src/components/pipeline/presets/processors/tdl-config-form.tsx:442
+msgid "Upload Arguments"
+msgstr "Upload Arguments"
+
+#: src/components/pipeline/presets/processors/tdl-config-form.tsx:514
+msgid "Upload everything regardless of file type"
+msgstr "Upload everything regardless of file type"
 
 #: src/components/pipeline/presets/default-presets-i18n.ts:66
 msgid "Upload file to cloud storage and delete local copy after successful upload."
@@ -5976,6 +6303,14 @@ msgstr "Use danmu_inputs from job manifest"
 msgid "Use mobile API for stream extraction."
 msgstr "Use mobile API for stream extraction."
 
+#: src/components/pipeline/presets/processors/tdl-login-dialog.tsx:421
+msgid "Use Phone & Code"
+msgstr "Use Phone & Code"
+
+#: src/components/pipeline/presets/processors/tdl-login-dialog.tsx:432
+msgid "Use QR Login"
+msgstr "Use QR Login"
+
 #: src/components/config/platforms/tabs/specific-configs/DouyinConfigFields.tsx:60
 msgid "Use separate stream data for double screen."
 msgstr "Use separate stream data for double screen."
@@ -6008,6 +6343,10 @@ msgstr "Use WUP protocol for live stream extraction. Only available for numeric 
 msgid "Use WUP V2"
 msgstr "Use WUP V2"
 
+#: src/components/pipeline/presets/processors/tdl-config-form.tsx:394
+msgid "Used for Desktop login (fallback); points to Telegram Desktop folder containing `tdata`."
+msgstr "Used for Desktop login (fallback); points to Telegram Desktop folder containing `tdata`."
+
 #: src/components/config/engines/forms/ffmpeg-form.tsx:94
 msgid "User Agent"
 msgstr "User Agent"
@@ -6027,17 +6366,21 @@ msgstr "Username (Optional)"
 msgid "Users"
 msgstr "Users"
 
-#: src/components/pipeline/workflows/workflow-editor.tsx:229
+#: src/components/pipeline/workflows/workflow-editor.tsx:259
 msgid "Validate"
 msgstr "Validate"
 
-#: src/components/pipeline/workflows/workflow-editor.tsx:156
+#: src/components/pipeline/workflows/workflow-editor.tsx:186
 msgid "Validation Failed"
 msgstr "Validation Failed"
 
-#: src/components/pipeline/workflows/workflow-editor.tsx:182
+#: src/components/pipeline/workflows/workflow-editor.tsx:212
 msgid "Validation service unavailable"
 msgstr "Validation service unavailable"
+
+#: src/components/pipeline/presets/processors/tdl-config-form.tsx:99
+msgid "Value"
+msgstr "Value"
 
 #: src/components/config/global/file-config-card.tsx:73
 #~ msgid "Vars: '{streamer}', '{title}' | Time: %Y, %m, %d, %H, %M, %S"
@@ -6152,6 +6495,14 @@ msgstr "Week"
 msgid "Welcome back"
 msgstr "Welcome back"
 
+#: src/components/pipeline/presets/processors/tdl-config-form.tsx:360
+msgid "Where TDL stores its session and configuration."
+msgstr "Where TDL stores its session and configuration."
+
+#: src/components/pipeline/presets/processors/tdl-config-form.tsx:302
+msgid "Where TDL stores session data (`tdl --storage ...`). Example: `type=bolt,path=/data/tdl`."
+msgstr "Where TDL stores session data (`tdl --storage ...`). Example: `type=bolt,path=/data/tdl`."
+
 #: src/components/pipeline/presets/processors/thumbnail-config-form.tsx:80
 msgid "Width"
 msgstr "Width"
@@ -6159,6 +6510,10 @@ msgstr "Width"
 #: src/components/pipeline/presets/processors/thumbnail-config-form.tsx:94
 msgid "Width in pixels (keeps aspect ratio)"
 msgstr "Width in pixels (keeps aspect ratio)"
+
+#: src/components/pipeline/presets/processors/tdl-login-dialog.tsx:450
+msgid "Windows Console Error"
+msgstr "Windows Console Error"
 
 #: src/components/pipeline/workflows/flow-editor/step-node.tsx:123
 msgid "workflow"
@@ -6176,7 +6531,7 @@ msgstr "Workflow deleted successfully"
 msgid "Workflow not found"
 msgstr "Workflow not found"
 
-#: src/components/pipeline/workflows/step-config-dialog.tsx:270
+#: src/components/pipeline/workflows/step-config-dialog.tsx:243
 msgid "Workflow Step"
 msgstr "Workflow Step"
 
@@ -6194,6 +6549,10 @@ msgstr "workflows"
 #: src/routes/_authed/_dashboard/pipeline/workflows/index.tsx:155
 msgid "Workflows"
 msgstr "Workflows"
+
+#: src/components/pipeline/presets/processors/tdl-config-form.tsx:345
+msgid "Working Directory"
+msgstr "Working Directory"
 
 #: src/routes/_authed/_dashboard/sessions/index.tsx:194
 msgid "Yesterday"

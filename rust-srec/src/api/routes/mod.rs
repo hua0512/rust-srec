@@ -18,6 +18,7 @@ pub mod parse;
 pub mod pipeline;
 pub mod sessions;
 pub mod streamers;
+pub mod tdl;
 pub mod templates;
 
 use axum::Router;
@@ -49,6 +50,7 @@ pub fn create_router(state: AppState) -> Router {
         .nest("/api/engines", engines::router())
         .nest("/api/job", job::router())
         .nest("/api/pipeline", pipeline::router())
+        .nest("/api/tools/tdl", tdl::router())
         .nest("/api/sessions", sessions::router())
         .nest("/api/notifications", notifications::router())
         .nest("/api/parse", parse::router())

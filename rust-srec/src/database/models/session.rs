@@ -5,7 +5,6 @@ use serde::{Deserialize, Serialize};
 use sqlx::FromRow;
 
 /// Filter criteria for querying media outputs.
-/// Requirements: 5.1, 5.2, 5.3, 5.4
 #[derive(Debug, Clone, Default)]
 pub struct OutputFilters {
     /// Filter by session ID.
@@ -42,7 +41,6 @@ impl OutputFilters {
 }
 
 /// Filter criteria for querying sessions.
-/// Requirements: 4.1, 4.3, 4.4, 4.5
 #[derive(Debug, Clone, Default)]
 pub struct SessionFilters {
     /// Filter by streamer ID.

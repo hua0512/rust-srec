@@ -514,7 +514,6 @@ mod property_tests {
     }
 
     // **Feature: jwt-auth-and-api-implementation, Property 8: Config Update Persistence**
-    // **Validates: Requirements 3.2, 3.5**
     proptest! {
         #![proptest_config(ProptestConfig::with_cases(100))]
 

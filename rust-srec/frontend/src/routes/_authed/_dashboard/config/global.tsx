@@ -100,6 +100,7 @@ function GlobalConfigForm({
 }: {
   config: z.infer<typeof GlobalConfigFormSchema>;
 }) {
+  type GlobalConfigFormValues = z.infer<typeof GlobalConfigFormSchema>;
   const queryClient = useQueryClient();
 
   const defaultValues = useMemo(
@@ -113,16 +114,17 @@ function GlobalConfigForm({
     [config],
   );
 
-  const form = useForm<z.infer<typeof GlobalConfigFormSchema>>({
-    resolver: zodResolver(GlobalConfigFormSchema),
+  const form = useForm<GlobalConfigFormValues>({
+    // Work around a react-hook-form resolver type incompatibility (often caused by
+    // `exactOptionalPropertyTypes` + resolver type definitions).
+    resolver: zodResolver(GlobalConfigFormSchema) as any,
     defaultValues,
     values: defaultValues,
     reValidateMode: 'onBlur',
   });
 
   const updateMutation = useMutation({
-    mutationFn: (data: z.infer<typeof GlobalConfigFormSchema>) =>
-      updateGlobalConfig({ data }),
+    mutationFn: (data: GlobalConfigFormValues) => updateGlobalConfig({ data }),
     onSuccess: () => {
       toast.success(t`Settings updated successfully`);
       queryClient.invalidateQueries({ queryKey: ['config', 'global'] });
@@ -133,7 +135,7 @@ function GlobalConfigForm({
   });
 
   const onSubmit = useCallback(
-    (data: z.infer<typeof GlobalConfigFormSchema>) => {
+    (data: GlobalConfigFormValues) => {
       updateMutation.mutate(data);
     },
     [updateMutation],

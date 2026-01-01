@@ -183,6 +183,13 @@ impl HealthChecker {
         self.checks.write().await.insert(name.into(), check);
     }
 
+    /// Unregister a health check.
+    ///
+    /// Returns true if the check was removed, false if it didn't exist.
+    pub async fn unregister(&self, name: &str) -> bool {
+        self.checks.write().await.remove(name).is_some()
+    }
+
     /// Run all health checks.
     pub async fn check_all(&self) -> SystemHealth {
         let checks = self.checks.read().await;

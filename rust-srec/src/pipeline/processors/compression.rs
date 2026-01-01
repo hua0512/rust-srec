@@ -3,7 +3,6 @@
 //! This processor creates compressed archives (ZIP or tar.gz) from input files,
 //! supporting multiple input files in a single archive.
 //!
-//! Requirements: 3.1, 3.2, 3.3, 3.4, 3.5
 
 use async_trait::async_trait;
 use flate2::Compression;
@@ -31,11 +30,9 @@ fn default_compression_level() -> u8 {
 #[serde(rename_all = "lowercase")]
 pub enum ArchiveFormat {
     /// ZIP archive format.
-    /// Requirements: 3.2
     #[default]
     Zip,
     /// Gzipped tar archive format.
-    /// Requirements: 3.3
     TarGz,
 }
 
@@ -53,7 +50,6 @@ impl ArchiveFormat {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CompressionConfig {
     /// Archive format (zip or tar.gz).
-    /// Requirements: 3.2, 3.3
     #[serde(default)]
     pub format: ArchiveFormat,
 
@@ -95,9 +91,9 @@ impl Default for CompressionConfig {
 /// Processor for creating compressed archives.
 ///
 /// Supports creating ZIP and tar.gz archives from one or more input files.
-/// - ZIP archives use the `zip` crate (Requirements: 3.2)
-/// - tar.gz archives use `flate2` and `tar` crates (Requirements: 3.3)
-/// - Multiple input files are bundled into a single archive (Requirements: 3.4)
+/// - ZIP archives use the `zip` crate
+/// - tar.gz archives use `flate2` and `tar` crates
+/// - Multiple input files are bundled into a single archive
 pub struct CompressionProcessor;
 
 impl CompressionProcessor {
@@ -155,7 +151,6 @@ impl CompressionProcessor {
     }
 
     /// Create a ZIP archive from the input files.
-    /// Requirements: 3.2
     fn create_zip_archive(
         &self,
         inputs: &[String],
@@ -234,7 +229,6 @@ impl CompressionProcessor {
     }
 
     /// Create a tar.gz archive from the input files.
-    /// Requirements: 3.3
     fn create_tar_gz_archive(
         &self,
         inputs: &[String],
@@ -334,7 +328,6 @@ impl Processor for CompressionProcessor {
     }
 
     /// Indicates this processor supports multiple inputs (batch processing).
-    /// Requirements: 3.4 - Multiple input files in a single archive
     fn supports_batch_input(&self) -> bool {
         true
     }
@@ -393,7 +386,6 @@ impl Processor for CompressionProcessor {
         ));
 
         // Create the archive based on format
-        // Requirements: 3.1, 3.2, 3.3
         let result = match config.format {
             ArchiveFormat::Zip => self.create_zip_archive(&input.inputs, &output_path, &config),
             ArchiveFormat::TarGz => {
@@ -438,8 +430,6 @@ impl Processor for CompressionProcessor {
             complete_msg,
         ));
 
-        // Requirements: 3.5 - Record archive file path and compression ratio
-        // Requirements: 11.5 - Track succeeded inputs for partial failure reporting
         Ok(ProcessorOutput {
             outputs: vec![output_path.clone()],
             duration_secs: duration,
@@ -632,7 +622,6 @@ mod tests {
 
     #[tokio::test]
     async fn test_create_zip_archive_multiple_files() {
-        // Requirements: 3.4 - Multiple input files in single archive
         let temp_dir = TempDir::new().unwrap();
         let input1 = temp_dir.path().join("file1.txt");
         let input2 = temp_dir.path().join("file2.txt");
@@ -669,7 +658,6 @@ mod tests {
 
     #[tokio::test]
     async fn test_create_tar_gz_archive_multiple_files() {
-        // Requirements: 3.4 - Multiple input files in single archive
         let temp_dir = TempDir::new().unwrap();
         let input1 = temp_dir.path().join("file1.txt");
         let input2 = temp_dir.path().join("file2.txt");
@@ -706,7 +694,6 @@ mod tests {
 
     #[tokio::test]
     async fn test_compression_ratio_in_metadata() {
-        // Requirements: 3.5 - Record compression ratio
         let temp_dir = TempDir::new().unwrap();
         let input_path = temp_dir.path().join("input.txt");
         let output_path = temp_dir.path().join("output.zip");

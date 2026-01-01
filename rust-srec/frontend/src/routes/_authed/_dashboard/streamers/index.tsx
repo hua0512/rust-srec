@@ -58,17 +58,18 @@ export const Route = createFileRoute('/_authed/_dashboard/streamers/')({
 
 const PAGE_SIZES = [12, 24, 48, 96];
 
-const STATE_FILTERS = [
-  { value: 'all', label: t`All`, icon: Users },
-  { value: 'LIVE', label: t`Live`, icon: Wifi },
-  { value: 'NOT_LIVE', label: t`Offline`, icon: WifiOff },
-  { value: 'ERROR', label: t`Error`, icon: AlertTriangle },
-  { value: 'DISABLED', label: t`Disabled`, icon: Ban },
-];
-
 function StreamersPage() {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
+
+  // State filters defined inside the component to ensure they are re-translated when locale changes
+  const STATE_FILTERS = [
+    { value: 'all', label: t`All`, icon: Users },
+    { value: 'LIVE', label: t`Live`, icon: Wifi },
+    { value: 'NOT_LIVE', label: t`Offline`, icon: WifiOff },
+    { value: 'ERROR', label: t`Error`, icon: AlertTriangle },
+    { value: 'DISABLED', label: t`Disabled`, icon: Ban },
+  ];
 
   // State
   const [page, setPage] = useState(1);

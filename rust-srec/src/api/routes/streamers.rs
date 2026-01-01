@@ -977,7 +977,6 @@ mod property_tests {
     }
 
     // **Feature: jwt-auth-and-api-implementation, Property 5: Streamer CRUD Round-Trip**
-    // **Validates: Requirements 2.1, 2.3**
     proptest! {
         #![proptest_config(ProptestConfig::with_cases(100))]
 
@@ -1036,7 +1035,6 @@ mod property_tests {
     }
 
     // **Feature: jwt-auth-and-api-implementation, Property 6: Streamer Update Persistence**
-    // **Validates: Requirements 2.4**
     proptest! {
         #![proptest_config(ProptestConfig::with_cases(100))]
 
@@ -1096,7 +1094,6 @@ mod property_tests {
     }
 
     // **Feature: jwt-auth-and-api-implementation, Property 7: Streamer Delete Removes Resource**
-    // **Validates: Requirements 2.5**
     proptest! {
         #![proptest_config(ProptestConfig::with_cases(100))]
 

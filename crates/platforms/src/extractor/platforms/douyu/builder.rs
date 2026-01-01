@@ -2,12 +2,11 @@ use std::sync::{Arc, LazyLock};
 
 use async_trait::async_trait;
 
+use parking_lot::RwLock;
 use regex::Regex;
 use reqwest::Client;
 use rustc_hash::FxHashMap;
-use tokio::task;
 use tracing::debug;
-use uuid::Uuid;
 
 use std::collections::HashMap;
 
@@ -18,14 +17,11 @@ use crate::{
         platforms::douyu::models::{
             CachedEncryptionKey, CdnOrigin, DouyuBetardResponse, DouyuEncryptionResponse,
             DouyuH5PlayData, DouyuH5PlayResponse, DouyuInteractiveGameResponse,
-            DouyuMobilePlayData, DouyuMobilePlayResponse, DouyuRoomInfoResponse,
-            FallbackSignResult, ParsedStreamInfo,
+            DouyuRoomInfoResponse, FallbackSignResult, ParsedStreamInfo,
         },
     },
     media::{MediaFormat, MediaInfo, StreamFormat, StreamInfo},
 };
-
-use std::sync::RwLock;
 
 pub static URL_REGEX: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"^(?:https?://)?(?:www\.)?douyu\.com/(\d+)").unwrap());
@@ -39,48 +35,17 @@ static ROOM_STATUS_REGEX: LazyLock<Regex> =
 static VIDEO_LOOP_REGEX: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(VIDEO_LOOP_REGEX_STR).unwrap());
 
-const ENCODED_SCRIPT_REGEX_STR: &str = r#"(var vdwdae325w_64we =[\s\S]+?)\s*</script>"#;
-static ENCODED_SCRIPT_REGEX: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(ENCODED_SCRIPT_REGEX_STR).unwrap());
-static SIGN_REGEX: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"v=(\d+)&did=(\w+)&tt=(\d+)&sign=(\w+)").unwrap());
-
 /// Regex to extract the Tencent CDN group suffix from hostname
 /// Matches: sa, 3a, 1a, 3, 1 at the end of the host prefix
 static TX_HOST_SUFFIX_REGEX: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r".+(sa|3a|1a|3|1)").unwrap());
 
-/// Regex to extract 'v' value (12-char hex) from the ub98484234 intermediate result
-static V_REGEX: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"v=(\w{12})").unwrap());
-
-/// Regex to match eval(strc)(rid, did, tt); pattern - needs to be replaced with strc;
-static EVAL_STRC_REGEX: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"eval\(strc\)\(\w+,\w+,.\w+\);").unwrap());
-
 /// Default device ID for Douyu requests
 pub const DOUYU_DEFAULT_DID: &str = "10000000000000000000000000001501";
 
 /// Global cache for encryption key (used for fallback authentication)
-static ENCRYPTION_KEY_CACHE: LazyLock<RwLock<Option<CachedEncryptionKey>>> =
-    LazyLock::new(|| RwLock::new(None));
-
-struct DouyuTokenResult {
-    v: String,
-    did: String,
-    tt: String,
-    sign: String,
-}
-
-impl DouyuTokenResult {
-    pub fn new(v: &str, did: &str, tt: &str, sign: &str) -> Self {
-        Self {
-            v: v.to_string(),
-            did: did.to_string(),
-            tt: tt.to_string(),
-            sign: sign.to_string(),
-        }
-    }
-}
+static ENCRYPTION_KEY_CACHE: LazyLock<RwLock<FxHashMap<String, CachedEncryptionKey>>> =
+    LazyLock::new(|| RwLock::new(FxHashMap::default()));
 
 pub struct Douyu {
     pub extractor: Extractor,
@@ -280,14 +245,6 @@ impl Douyu {
         Ok(betard_info)
     }
 
-    /// Checks if a room is a VIP room using the betard API
-    /// VIP rooms may have different API handling requirements
-    #[allow(dead_code)]
-    pub(crate) async fn is_vip_room(&self, rid: u64) -> Result<bool, ExtractorError> {
-        let betard_info = self.get_betard_room_info(rid).await?;
-        Ok(betard_info.room.is_vip == 1)
-    }
-
     /// Checks if a room is running an interactive game
     /// Interactive games are special streaming modes that may not be suitable for recording
     pub(crate) async fn has_interactive_game(&self, rid: u64) -> Result<bool, ExtractorError> {
@@ -339,118 +296,6 @@ impl Douyu {
         ];
         let mut rng = rand::rng();
         agents[rng.random_range(0..agents.len())].to_string()
-    }
-
-    /// Gets play info from the mobile API
-    /// Mobile tokens have looser validation and are useful for CDN switching
-    ///
-    /// # Arguments
-    /// * `token` - Token result from JS signing (contains v, did, tt, sign)
-    /// * `rid` - Room ID
-    /// * `cdn` - CDN to request
-    /// * `rate` - Quality rate (0 = original)
-    #[allow(clippy::too_many_arguments)]
-    pub async fn get_mobile_play_info(
-        &self,
-        v: &str,
-        did: &str,
-        tt: &str,
-        sign: &str,
-        rid: u64,
-        cdn: &str,
-        rate: i64,
-    ) -> Result<DouyuMobilePlayData, ExtractorError> {
-        let mut form_data: FxHashMap<&str, String> = FxHashMap::default();
-        form_data.insert("v", v.to_string());
-        form_data.insert("did", did.to_string());
-        form_data.insert("tt", tt.to_string());
-        form_data.insert("sign", sign.to_string());
-        form_data.insert("cdn", cdn.to_string());
-        form_data.insert("rate", rate.to_string());
-        form_data.insert("rid", rid.to_string());
-
-        let resp = self
-            .extractor
-            .client
-            .post(format!(
-                "https://{}/api/room/ratestream",
-                Self::MOBILE_DOMAIN
-            ))
-            .header(
-                reqwest::header::USER_AGENT,
-                Self::random_mobile_user_agent(),
-            )
-            .header(
-                reqwest::header::REFERER,
-                format!("https://{}/", Self::MOBILE_DOMAIN),
-            )
-            .form(&form_data)
-            .send()
-            .await?
-            .json::<DouyuMobilePlayResponse>()
-            .await?;
-
-        if resp.code != 0 {
-            return Err(ExtractorError::ValidationError(format!(
-                "Failed to get mobile play info: code={}, msg={}",
-                resp.code, resp.msg
-            )));
-        }
-
-        resp.data.ok_or_else(|| {
-            ExtractorError::ValidationError("Failed to get mobile play info: no data".to_string())
-        })
-    }
-
-    /// Parses query parameters from a mobile stream URL
-    /// Returns a HashMap of the query parameters
-    pub fn parse_mobile_stream_params(url: &str) -> HashMap<String, String> {
-        let mut params = HashMap::new();
-
-        if let Some(query_start) = url.find('?') {
-            let query_string = &url[query_start + 1..];
-            for pair in query_string.split('&') {
-                if let Some((key, value)) = pair.split_once('=') {
-                    params.insert(
-                        key.to_string(),
-                        urlencoding::decode(value).unwrap_or_default().to_string(),
-                    );
-                }
-            }
-        }
-
-        params
-    }
-
-    /// Builds a Tencent CDN URL using mobile API tokens
-    /// Mobile tokens have looser validation, making CDN switching more reliable
-    ///
-    /// # Arguments
-    /// * `stream_info` - Parsed stream info from the original URL
-    /// * `mobile_params` - Query parameters from mobile API response
-    pub fn build_tencent_url_with_mobile_token(
-        stream_info: &ParsedStreamInfo,
-        mobile_params: &HashMap<String, String>,
-    ) -> Result<String, ExtractorError> {
-        let tx_host = "tc-tct.douyucdn2.cn";
-        let mut query = stream_info.query_params.clone();
-
-        // Add mobile params (they have looser validation)
-        for (k, v) in mobile_params {
-            if k != "vhost" {
-                // Don't copy vhost from mobile
-                query.insert(k.clone(), v.clone());
-            }
-        }
-
-        query.insert("fcdn".to_string(), "tct".to_string());
-        query.remove("vhost");
-
-        let query_string = Self::encode_query_params(&query);
-        Ok(format!(
-            "https://{}/{}/{}.flv?{}",
-            tx_host, stream_info.tx_app_name, stream_info.stream_id, query_string
-        ))
     }
 
     /// Gets the real room ID from a vanity URL using the mobile domain
@@ -553,23 +398,29 @@ impl Douyu {
     /// Gets a valid encryption key, fetching a new one if needed
     /// Uses a global cache to avoid repeated API calls
     async fn get_encryption_key(&self, did: &str) -> Result<CachedEncryptionKey, ExtractorError> {
-        // Check cache first
         {
-            let cache = ENCRYPTION_KEY_CACHE.read().unwrap();
-            if let Some(ref cached) = *cache
+            let cache = ENCRYPTION_KEY_CACHE.read();
+            if let Some(cached) = cache.get(did)
                 && cached.is_valid()
             {
                 return Ok(cached.clone());
             }
         }
 
-        // Fetch new key
+        {
+            let mut cache = ENCRYPTION_KEY_CACHE.write();
+            cache.retain(|_, v| v.is_valid());
+            if let Some(cached) = cache.get(did) {
+                return Ok(cached.clone());
+            }
+        }
+
         let new_key = self.fetch_encryption_key(did).await?;
 
-        // Update cache
         {
-            let mut cache = ENCRYPTION_KEY_CACHE.write().unwrap();
-            *cache = Some(new_key.clone());
+            let mut cache = ENCRYPTION_KEY_CACHE.write();
+            cache.retain(|_, v| v.is_valid());
+            cache.insert(did.to_string(), new_key.clone());
         }
 
         Ok(new_key)
@@ -588,9 +439,19 @@ impl Douyu {
         did: Option<&str>,
         ts: Option<u64>,
     ) -> Result<FallbackSignResult, ExtractorError> {
+        let did = did.unwrap_or(DOUYU_DEFAULT_DID);
+
+        Ok(self.fallback_sign_with_key(rid, did, ts).await?.0)
+    }
+
+    async fn fallback_sign_with_key(
+        &self,
+        rid: u64,
+        did: &str,
+        ts: Option<u64>,
+    ) -> Result<(FallbackSignResult, CachedEncryptionKey), ExtractorError> {
         use md5::{Digest, Md5};
 
-        let did = did.unwrap_or(DOUYU_DEFAULT_DID);
         let ts = ts.unwrap_or_else(|| {
             std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
@@ -598,7 +459,6 @@ impl Douyu {
                 .as_secs()
         });
 
-        // Get encryption key (from cache or fetch new)
         let key_data = self.get_encryption_key(did).await?;
         let enc = &key_data.data;
 
@@ -622,14 +482,17 @@ impl Douyu {
         hasher.update(format!("{}{}{}", secret, enc.key, salt).as_bytes());
         let auth = format!("{:x}", hasher.finalize());
 
-        Ok(FallbackSignResult {
-            auth,
-            ts,
-            enc_data: enc.enc_data.clone(),
-        })
+        Ok((
+            FallbackSignResult {
+                auth,
+                ts,
+                enc_data: enc.enc_data.clone(),
+            },
+            key_data,
+        ))
     }
 
-    /// Gets play info using fallback authentication (V1 API)
+    /// Gets play info using server-side authentication (V1 API)
     /// This method doesn't require a JS engine
     ///
     /// # Arguments
@@ -646,16 +509,7 @@ impl Douyu {
     ) -> Result<DouyuH5PlayData, ExtractorError> {
         let did = did.unwrap_or(DOUYU_DEFAULT_DID);
 
-        // Get fallback signature
-        let sign_result = self.fallback_sign(rid, Some(did), None).await?;
-
-        // Get the cached key to retrieve user agent
-        let key_data = {
-            let cache = ENCRYPTION_KEY_CACHE.read().unwrap();
-            cache.clone().ok_or_else(|| {
-                ExtractorError::ValidationError("No cached encryption key".to_string())
-            })?
-        };
+        let (sign_result, key_data) = self.fallback_sign_with_key(rid, did, None).await?;
 
         let mut form_data: FxHashMap<&str, String> = FxHashMap::default();
         form_data.insert("enc_data", sign_result.enc_data);
@@ -697,14 +551,6 @@ impl Douyu {
                 "Failed to get play info (fallback): no data".to_string(),
             )
         })
-    }
-
-    /// Clears the encryption key cache
-    /// Useful when the key becomes invalid or for testing
-    #[allow(dead_code)]
-    pub fn clear_encryption_cache() {
-        let mut cache = ENCRYPTION_KEY_CACHE.write().unwrap();
-        *cache = None;
     }
 
     // ==================== CDN URL Construction ====================
@@ -825,34 +671,6 @@ impl Douyu {
         ))
     }
 
-    /// Builds a Tencent CDN URL using mobile API for looser token validation
-    /// This matches the Python implementation's build_tx_url which uses mobile tokens
-    async fn build_tencent_url_with_mobile_api(
-        &self,
-        stream_info: &ParsedStreamInfo,
-        token_result: &DouyuTokenResult,
-        rid: u64,
-    ) -> Result<String, ExtractorError> {
-        // Get mobile play info for tct CDN - mobile tokens have looser validation
-        let mobile_data = self
-            .get_mobile_play_info(
-                &token_result.v,
-                &token_result.did,
-                &token_result.tt,
-                &token_result.sign,
-                rid,
-                "tct-h5",
-                self.rate,
-            )
-            .await?;
-
-        // Parse mobile stream params
-        let mobile_params = Self::parse_mobile_stream_params(&mobile_data.url);
-
-        // Build Tencent URL with mobile params
-        Self::build_tencent_url_with_mobile_token(stream_info, &mobile_params)
-    }
-
     /// Builds a Huoshan/Volcano CDN (hs-h5) URL
     /// This CDN often provides better performance for some users
     ///
@@ -917,14 +735,6 @@ impl Douyu {
     /// Checks if a CDN type starts with "scdn" (problematic CDN to avoid)
     pub fn is_scdn(cdn: &str) -> bool {
         cdn.starts_with("scdn")
-    }
-
-    /// Gets the last available CDN from a list, useful for avoiding scdn
-    #[allow(dead_code)]
-    pub fn get_fallback_cdn(
-        cdns: &[crate::extractor::platforms::douyu::models::CdnsWithName],
-    ) -> Option<&str> {
-        cdns.last().map(|c| c.cdn.as_str())
     }
 
     fn create_media_info(
@@ -1064,46 +874,23 @@ impl Douyu {
             }
         }
 
-        // streamer is live - try JS signing first, fallback to server-side auth
-        let response_for_thread = Arc::clone(&response);
-        let js_token_handle =
-            task::spawn_blocking(move || Self::get_js_token(&response_for_thread, rid));
-
-        let js_token_result = js_token_handle.await.unwrap();
-
-        let streams = match js_token_result {
-            Ok(js_token) => {
-                // JS signing succeeded
-                self.get_live_stream_info(&js_token, rid, is_vip).await?
-            }
-            Err(e) => {
-                // JS signing failed, try fallback authentication
-                debug!("JS signing failed: {}, trying fallback authentication", e);
-                match self.get_streams_with_fallback_auth(rid, is_vip).await {
-                    Ok(streams) => streams,
-                    Err(fallback_err) => {
-                        // Both methods failed, return the original JS error
-                        debug!("Fallback authentication also failed: {}", fallback_err);
-                        return Err(e);
-                    }
-                }
-            }
-        };
+        // streamer is live
+        let streams = self.get_streams_with_stable_auth(rid, is_vip).await?;
 
         Ok(self.create_media_info(&title, &artist, cover_url, avatar_url, true, streams))
     }
 
-    /// Gets streams using fallback authentication (no JS engine required)
-    async fn get_streams_with_fallback_auth(
+    /// Gets streams using stable server-side authentication
+    async fn get_streams_with_stable_auth(
         &self,
         rid: u64,
         is_vip: bool,
     ) -> Result<Vec<StreamInfo>, ExtractorError> {
         let mut stream_infos = vec![];
 
-        // Use fallback authentication to get play info
-        let data = self
-            .get_play_info_fallback(rid, &self.cdn, self.rate, None)
+        // Use stable server-side authentication to get play info (with scdn avoidance)
+        let (data, actual_cdn) = self
+            .get_play_info_fallback_with_scdn_avoidance(rid, &self.cdn, self.rate, None)
             .await?;
 
         // Build the base stream URL
@@ -1155,7 +942,7 @@ impl Douyu {
         // Check if we need to inject hs-h5
         let has_hs = cdns_to_process.iter().any(|c| c.cdn == "hs-h5");
         if !has_hs && hs_url_details.is_some() {
-            debug!("Injecting 'hs-h5' into available CDNs (fallback auth)");
+            debug!("Injecting 'hs-h5' into available CDNs");
             // Create a synthetic hs-h5 entry
             let is_h265 = cdns_to_process
                 .iter()
@@ -1180,7 +967,7 @@ impl Douyu {
         for cdn in cdns_to_process {
             for rate in &data.multirates {
                 let stream_url = if (cdn.cdn == "hs-h5" && hs_host.is_some())
-                    || (cdn.cdn == self.cdn && rate.rate == self.rate as u64)
+                    || (cdn.cdn == actual_cdn && rate.rate == self.rate as u64)
                 {
                     final_stream_url.clone()
                 } else {
@@ -1201,11 +988,10 @@ impl Douyu {
                 let codec = if cdn.is_h265 { "hevc,aac" } else { "avc,aac" };
 
                 let mut extras = serde_json::json!({
-                    "cdn": cdn.cdn,
+                    "cdn": cdn.cdn.clone(),
                     "rate": rate.rate.to_string(),
                     "rid": rid.to_string(),
                     "is_vip": is_vip.to_string(),
-                    "auth_method": "fallback",
                 });
 
                 // Add host header if hs-h5 URL was built
@@ -1234,374 +1020,49 @@ impl Douyu {
         Ok(stream_infos)
     }
 
-    const JS_DOM: &str = "
-        var encripted = {decryptedCodes: [], sign: ''};
-        var window = window || {};
-        var document = document || {};
-    ";
-
-    fn get_js_token(response: &str, rid: u64) -> Result<DouyuTokenResult, ExtractorError> {
-        use crate::js_engine::JsEngineManager;
-        use md5::{Digest, Md5};
-
-        let encoded_script = ENCODED_SCRIPT_REGEX
-            .captures(response)
-            .and_then(|c| c.get(1))
-            .map_or("", |m| m.as_str());
-
-        // Check if we found the encoded script
-        if encoded_script.is_empty() {
-            return Err(ExtractorError::JsError(
-                "Failed to extract encoded script from page (ub98484234 function not found)"
-                    .to_string(),
-            ));
-        }
-
-        let did = Uuid::new_v4().to_string().replace("-", "");
-        let tt = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap()
-            .as_secs();
-
-        // Step 1: Execute ub98484234 to get the intermediate JS code containing 'v' value
-        // The original pattern is: eval(strc)(rid, did, tt); - we replace it with: strc;
-        let modified_script = EVAL_STRC_REGEX.replace(encoded_script, "strc;");
-
-        let step1_js = format!(
-            "{}\nub98484234({}, \"{}\", {})",
-            modified_script, rid, did, tt
-        );
-
-        // Use the centralized JS engine manager
-        let manager = JsEngineManager::global();
-
-        let intermediate_js = manager
-            .execute(|ctx| {
-                // Set up encripted variable needed by the script
-                ctx.load_script(Self::JS_DOM)?;
-                ctx.eval_string(&step1_js)
-            })
-            .map_err(|e| ExtractorError::JsError(format!("Step 1 failed: {}", e)))?;
-
-        // Step 2: Extract 'v' value from the intermediate JS
-        let v_value = V_REGEX
-            .captures(&intermediate_js)
-            .and_then(|c| c.get(1))
-            .map(|m| m.as_str())
-            .ok_or_else(|| {
-                ExtractorError::JsError("Failed to extract 'v' value from intermediate JS".into())
-            })?;
-
-        // Step 3: Compute MD5(rid + did + tt + v) natively in Rust (this is 'rb' in the original code)
-        let cb = format!("{}{}{}{}", rid, did, tt, v_value);
-        let mut hasher = Md5::new();
-        hasher.update(cb.as_bytes());
-        let rb = format!("{:x}", hasher.finalize());
-
-        debug!(
-            "Native MD5: rid={}, did={}, tt={}, v={}, rb={}",
-            rid, did, tt, v_value, rb
-        );
-
-        // Step 4: Replace CryptoJS.MD5(cb).toString() with our pre-computed hash
-        let patched_js =
-            intermediate_js.replace("CryptoJS.MD5(cb).toString()", &format!("\"{}\"", rb));
-
-        // Step 5: Transform the patched JS into a callable function and execute it
-        let final_patched_js = patched_js
-            .replace("return rt;});", "return rt;}")
-            .replace("(function (", "function sign(");
-
-        let step2_js = format!("{}\nsign({}, \"{}\", {})", final_patched_js, rid, did, tt);
-
-        let sign = manager
-            .execute(|ctx| {
-                ctx.load_script(Self::JS_DOM)?;
-                ctx.eval_string(&step2_js)
-            })
-            .map_err(|e| ExtractorError::JsError(format!("Step 2 failed: {}", e)))?;
-
-        debug!("sign result: {}", sign);
-
-        // Parse the sign result: v=XXX&did=XXX&tt=XXX&sign=XXX
-        let sign_captures = SIGN_REGEX.captures(&sign);
-        if let Some(captures) = sign_captures {
-            let v = captures.get(1).unwrap().as_str();
-            let did = captures.get(2).unwrap().as_str();
-            let tt = captures.get(3).unwrap().as_str();
-            let sign = captures.get(4).unwrap().as_str();
-
-            Ok(DouyuTokenResult::new(v, did, tt, sign))
-        } else {
-            Err(ExtractorError::JsError(format!(
-                "Failed to parse sign result: {}",
-                sign
-            )))
-        }
-    }
-
-    async fn call_get_h5_play(
-        &self,
-        token_result: &DouyuTokenResult,
-        rid: u64,
-        cdn: &str,
-        rate: i64,
-    ) -> Result<DouyuH5PlayData, ExtractorError> {
-        let mut form_data: FxHashMap<&str, String> = FxHashMap::default();
-        form_data.insert("v", token_result.v.to_string());
-        form_data.insert("did", token_result.did.to_string());
-        form_data.insert("tt", token_result.tt.to_string());
-        form_data.insert("sign", token_result.sign.to_string());
-        form_data.insert("cdn", cdn.to_string());
-        form_data.insert("rate", rate.to_string());
-        form_data.insert("iar", "0".to_string());
-        form_data.insert("ive", "0".to_string());
-
-        let resp = self
-            .extractor
-            .client
-            .post(format!(
-                "https://playweb.douyucdn.cn/lapi/live/getH5Play/{rid}"
-            ))
-            .form(&form_data)
-            .send()
-            .await?
-            .json::<DouyuH5PlayResponse>()
-            .await?;
-
-        if resp.error != 0 {
-            return Err(ExtractorError::ValidationError(format!(
-                "Failed to get live stream info: {}",
-                resp.msg
-            )));
-        }
-
-        resp.data.ok_or_else(|| {
-            ExtractorError::ValidationError("Failed to get live stream info: no data".to_string())
-        })
-    }
-
     /// Maximum number of retries when avoiding scdn
     const MAX_SCDN_RETRIES: u32 = 2;
 
-    async fn get_live_stream_info(
+    /// Gets play info (fallback auth) with automatic scdn avoidance.
+    /// If the returned CDN starts with "scdn", it will retry with a fallback CDN from the list.
+    async fn get_play_info_fallback_with_scdn_avoidance(
         &self,
-        token_result: &DouyuTokenResult,
         rid: u64,
-        is_vip: bool,
-    ) -> Result<Vec<StreamInfo>, ExtractorError> {
-        let mut stream_infos = vec![];
-
-        // Try to get play info, with scdn avoidance
-        let (data, actual_cdn) = self
-            .get_play_info_with_scdn_avoidance(token_result, rid)
-            .await?;
-
-        // Build the base stream URL
-        let base_stream_url = format!("{}/{}", data.rtmp_url, data.rtmp_live);
-
-        // Attempt to build hs-h5 URL details regardless of selection
-        // This allows us to inject it as an option or use it if selected
-        let hs_url_details = match Self::parse_stream_url(&base_stream_url) {
-            Ok(stream_info) => {
-                // First build Tencent URL if not already tct
-                let is_tct = data.rtmp_cdn == "tct-h5";
-                let tct_url = if is_tct {
-                    Some(base_stream_url.clone())
-                } else {
-                    // Try mobile API first for looser token validation
-                    match self
-                        .build_tencent_url_with_mobile_api(&stream_info, token_result, rid)
-                        .await
-                    {
-                        Ok(url) => {
-                            debug!("Built Tencent URL using mobile API");
-                            Some(url)
-                        }
-                        Err(e) => {
-                            debug!(
-                                "Mobile API failed: {}, falling back to direct conversion",
-                                e
-                            );
-                            match Self::build_tencent_url(&stream_info, None) {
-                                Ok(url) => Some(url),
-                                Err(e) => {
-                                    debug!("Failed to build Tencent URL: {}, using original", e);
-                                    None
-                                }
-                            }
-                        }
-                    }
-                };
-
-                if let Some(tct_url) = tct_url {
-                    // Then build Huoshan URL
-                    match Self::build_huoshan_url(&stream_info, &tct_url) {
-                        Ok((host, url)) => {
-                            debug!("Built hs-h5 URL: {} (Host: {})", url, host);
-                            Some((url, host))
-                        }
-                        Err(e) => {
-                            debug!("Failed to build Huoshan URL: {}", e);
-                            None
-                        }
-                    }
-                } else {
-                    None
-                }
-            }
-            Err(e) => {
-                debug!("Failed to parse stream URL: {}", e);
-                None
-            }
-        };
-
-        // Prepare the list of CDNs to process
-        let mut cdns_to_process = data.cdns.clone();
-
-        // Check if we need to inject hs-h5
-        let has_hs = cdns_to_process.iter().any(|c| c.cdn == "hs-h5");
-        if !has_hs && hs_url_details.is_some() {
-            debug!("Injecting 'hs-h5' into available CDNs");
-            // Create a synthetic hs-h5 entry
-            // We use tct-h5 properties if available, or defaults
-            let is_h265 = cdns_to_process
-                .iter()
-                .find(|c| c.cdn == "tct-h5")
-                .map(|c| c.is_h265)
-                .unwrap_or(false);
-
-            cdns_to_process.push(crate::extractor::platforms::douyu::models::CdnsWithName {
-                name: "火山".to_string(),
-                cdn: "hs-h5".to_string(),
-                is_h265,
-                re_weight: None, // priority unknown
-            });
-        }
-
-        // If hs-h5 was selected but we failed to build it (and it wasn't returned natively),
-        // we might have an issue, but we proceed with what we have.
-        // If hs-h5 WAS built:
-        // - If it matches actual_cdn (API returned hs-h5), we use the built URL if force_hs is true.
-        // - If we injected it, we use the built URL.
-
-        let (final_stream_url, hs_host) = if let Some((url, host)) = hs_url_details {
-            (url, Some(host))
-        } else {
-            (base_stream_url.clone(), None)
-        };
-
-        for cdn in cdns_to_process {
-            debug!("cdn: {:?}", cdn);
-            for rate in &data.multirates {
-                debug!("rate: {:?}", rate);
-
-                // Determine the URL for this specific stream variant
-                let stream_url = if cdn.cdn == "hs-h5" && hs_host.is_some() {
-                    // If this is hs-h5 and we successfully built an HS URL, use it
-                    // regardless of whether it's the 'active' stream or injected
-                    final_stream_url.clone()
-                } else if cdn.cdn == actual_cdn && rate.rate == self.rate as u64 {
-                    // Otherwise, use the base stream URL if it matches the active selection
-                    base_stream_url.clone()
-                } else {
-                    // Empty URL for other variants (resolved later via get_url, though hs-h5 needs manual handling if not injected here)
-                    "".to_string()
-                };
-
-                let format = if data.rtmp_live.contains("flv") {
-                    StreamFormat::Flv
-                } else {
-                    StreamFormat::Hls
-                };
-                let media_format = if data.rtmp_live.contains("flv") {
-                    MediaFormat::Flv
-                } else {
-                    MediaFormat::Ts
-                };
-
-                let codec = if cdn.is_h265 { "hevc,aac" } else { "avc,aac" };
-
-                let mut extras = serde_json::json!({
-                    "cdn": cdn.cdn,
-                    "rate": rate.rate.to_string(),
-                    "rid": rid.to_string(),
-                    "sign" : token_result.sign,
-                    "v" : token_result.v,
-                    "did" : token_result.did,
-                    "tt" : token_result.tt,
-                    "is_vip": is_vip.to_string(),
-                    "actual_cdn": actual_cdn,
-                    "auth_method": "js",
-                });
-
-                // Only add host header if this IS an hs-h5 stream and we have the host
-                if cdn.cdn == "hs-h5"
-                    && let Some(ref host) = hs_host
-                {
-                    extras["host_header"] = serde_json::Value::String(host.clone());
-                }
-
-                let stream = StreamInfo {
-                    url: stream_url,
-                    stream_format: format,
-                    media_format,
-                    quality: rate.name.to_string(),
-                    bitrate: rate.bit,
-                    priority: 0,
-                    extras: Some(extras),
-                    codec: codec.to_string(),
-                    fps: 0.0,
-                    is_headers_needed: true,
-                };
-                stream_infos.push(stream);
-            }
-        }
-        Ok(stream_infos)
-    }
-
-    /// Gets play info with automatic scdn avoidance
-    /// If the returned CDN starts with "scdn", it will retry with a fallback CDN
-    async fn get_play_info_with_scdn_avoidance(
-        &self,
-        token_result: &DouyuTokenResult,
-        rid: u64,
+        cdn: &str,
+        rate: i64,
+        did: Option<&str>,
     ) -> Result<(DouyuH5PlayData, String), ExtractorError> {
-        let mut current_cdn = self.cdn.clone();
+        let mut current_cdn = cdn.to_string();
 
         for attempt in 0..Self::MAX_SCDN_RETRIES {
             let resp = self
-                .call_get_h5_play(token_result, rid, &current_cdn, self.rate)
+                .get_play_info_fallback(rid, &current_cdn, rate, did)
                 .await?;
 
-            // Check if the returned CDN is scdn (problematic)
             if Self::is_scdn(&resp.rtmp_cdn) {
                 debug!(
-                    "Attempt {}: Got scdn '{}', trying to avoid",
+                    "Attempt {}: Got scdn '{}' (requested '{}'), trying to avoid",
                     attempt + 1,
-                    resp.rtmp_cdn
+                    resp.rtmp_cdn,
+                    current_cdn
                 );
 
-                // Try to find a fallback CDN from the available list
                 if let Some(fallback) = Self::find_non_scdn_fallback(&resp.cdns) {
                     debug!("Switching from scdn to fallback CDN: {}", fallback);
                     current_cdn = fallback;
                     continue;
-                } else {
-                    // No fallback available, use what we have
-                    debug!("No non-scdn fallback available, using scdn");
-                    return Ok((resp, current_cdn));
                 }
+
+                debug!("No non-scdn fallback available, using scdn");
+                return Ok((resp, current_cdn));
             }
 
-            // Not scdn, we're good
             debug!("Using CDN: {} (rtmp_cdn: {})", current_cdn, resp.rtmp_cdn);
             return Ok((resp, current_cdn));
         }
 
-        // Exhausted retries, try one more time with the current CDN
         let resp = self
-            .call_get_h5_play(token_result, rid, &current_cdn, self.rate)
+            .get_play_info_fallback(rid, &current_cdn, rate, did)
             .await?;
         Ok((resp, current_cdn))
     }
@@ -1658,36 +1119,9 @@ impl PlatformExtractor for Douyu {
             .and_then(|s| s.parse::<i64>().ok())
             .ok_or_else(|| ExtractorError::ValidationError("Missing rate in extras".to_string()))?;
 
-        let auth_method = extras["auth_method"].as_str().unwrap_or("js");
-        if auth_method == "fallback" {
-            debug!(
-                "Resolving Douyu stream URL using fallback method for rid: {}",
-                rid
-            );
-            let resp = self.get_play_info_fallback(rid, cdn, rate, None).await?;
-            stream_info.url = format!("{}/{}", resp.rtmp_url, resp.rtmp_live);
-            return Ok(());
-        }
-
-        let tt = extras["tt"].as_str().ok_or_else(|| {
-            ExtractorError::ValidationError("Missing tt in extras (JS auth)".to_string())
-        })?;
-        let v = extras["v"].as_str().ok_or_else(|| {
-            ExtractorError::ValidationError("Missing v in extras (JS auth)".to_string())
-        })?;
-        let did = extras["did"].as_str().ok_or_else(|| {
-            ExtractorError::ValidationError("Missing did in extras (JS auth)".to_string())
-        })?;
-        let sign = extras["sign"].as_str().ok_or_else(|| {
-            ExtractorError::ValidationError("Missing sign in extras (JS auth)".to_string())
-        })?;
-
-        let token_result = DouyuTokenResult::new(v, did, tt, sign);
-
-        let resp = self.call_get_h5_play(&token_result, rid, cdn, rate).await?;
-
+        debug!("Resolving Douyu stream URL for rid: {}", rid);
+        let resp = self.get_play_info_fallback(rid, cdn, rate, None).await?;
         stream_info.url = format!("{}/{}", resp.rtmp_url, resp.rtmp_live);
-
         Ok(())
     }
 }
@@ -1708,7 +1142,7 @@ mod tests {
             .try_init()
             .unwrap();
 
-        let url = "https://www.douyu.com/4767111";
+        let url = "https://www.douyu.com/9263298";
 
         let extractor = Douyu::new(url.to_string(), default_client(), None, None);
         let media_info = extractor.extract().await.unwrap();

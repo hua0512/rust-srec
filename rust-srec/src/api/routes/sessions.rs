@@ -233,9 +233,6 @@ pub async fn list_sessions(
 ///
 /// - `404 Not Found` - Session with the specified ID does not exist
 ///
-/// # Requirements
-///
-/// - 4.2: Return session with metadata and output count
 #[utoipa::path(
     get,
     path = "/api/sessions/{id}",

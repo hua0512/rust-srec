@@ -355,7 +355,6 @@ impl WorkerPool {
                             //
                             // IMPORTANT: Splitting a DAG step job into multiple jobs would corrupt DAG semantics
                             // (one step would be "completed" multiple times). For DAG jobs, fail fast instead.
-                            // Requirements: correctness-first
                             if job.inputs.len() > 1 && !processor.supports_batch_input() {
                                 if let Some(dag_step_id) = job.dag_step_execution_id.as_deref() {
                                     let reason = format!(
@@ -434,7 +433,6 @@ impl WorkerPool {
                             let started = std::time::Instant::now();
 
                             // Record execution start info
-                            // Requirements: 6.1
                             let exec_info =
                                 JobExecutionInfo::new().with_processor(processor.name());
                             if let Err(e) =
@@ -501,7 +499,6 @@ impl WorkerPool {
                             match result {
                                 Ok(Ok(output)) => {
                                     // Track partial outputs for observability
-                                    // Requirements: 9.1, 9.2
                                     if !output.items_produced.is_empty()
                                         && let Err(e) = job_queue
                                             .track_partial_outputs(&job_id, &output.items_produced)
@@ -638,7 +635,6 @@ impl WorkerPool {
                                         // Regular pipeline job failure
                                         // Clean up partial outputs on failure
                                         // Record step info for observability
-                                        // Requirements: 6.4, 9.5, 10.3
                                         let partial_outputs = job_queue
                                             .fail_with_cleanup_and_step_info(
                                                 &job_id,
@@ -705,7 +701,6 @@ impl WorkerPool {
                                         // Regular pipeline job timeout
                                         // Clean up partial outputs on timeout
                                         // Record step info for observability
-                                        // Requirements: 6.4, 9.5, 10.3
                                         let partial_outputs = job_queue
                                             .fail_with_cleanup_and_step_info(
                                                 &job_id,
@@ -868,7 +863,6 @@ impl WorkerPool {
 }
 
 /// Clean up partial outputs created by a failed job.
-/// Requirements: 9.5
 async fn cleanup_partial_outputs(outputs: &[String]) {
     for output in outputs {
         let path = std::path::Path::new(output);

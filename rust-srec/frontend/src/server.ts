@@ -50,6 +50,18 @@ export default createServerEntry({
     const serverFnBase = process.env.TSS_SERVER_FN_BASE ?? '/_serverFn/';
     const isServerFnRequest = url.pathname.startsWith(serverFnBase);
 
+    if (isServerFnRequest) {
+      const serverFnId =
+        url.pathname.slice(serverFnBase.length).split('/')[0] ?? '';
+      console.log(
+        `[Server] Inbound Server Function: ${serverFnId} (${url.pathname})`,
+      );
+    } else {
+      console.log(
+        `[Server] Inbound Request: ${request.method} ${url.pathname}`,
+      );
+    }
+
     for (let attempt = 0; attempt < 2; attempt++) {
       try {
         return await baseFetch(...args);

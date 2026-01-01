@@ -37,7 +37,6 @@ macro_rules! create_constructor {
 // Create constructor functions using the macro
 create_constructor!(new_huya, Huya::new);
 create_constructor!(new_douyin, Douyin::new);
-#[cfg(feature = "douyu")]
 create_constructor!(new_douyu, Douyu::new);
 create_constructor!(new_pandatv, PandaTV::new);
 create_constructor!(new_weibo, Weibo::new);
@@ -59,7 +58,6 @@ static PLATFORMS: &[PlatformEntry] = &[
         regex: &platforms::douyin::URL_REGEX,
         constructor: new_douyin,
     },
-    #[cfg(feature = "douyu")]
     PlatformEntry {
         regex: &platforms::douyu::URL_REGEX,
         constructor: new_douyu,

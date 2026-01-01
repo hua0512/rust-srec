@@ -43,10 +43,14 @@ RUN ARCH=$(uname -m) && \
     elif [ "$ARCH" = "aarch64" ]; then \
       URL="https://github.com/yt-dlp/FFmpeg-Builds/releases/download/latest/ffmpeg-master-latest-linuxarm64-gpl.tar.xz"; \
     fi && \
-    curl -L $URL | tar -xJ && \
-    mv ffmpeg-*-linux*/bin/{ffmpeg,ffprobe,ffplay} /usr/local/bin/ && \
-    chmod +x /usr/local/bin/{ffmpeg,ffprobe,ffplay} && \
-    rm -rf ffmpeg-*
+    curl -L -o /tmp/ffmpeg.tar.xz "$URL" && \
+    mkdir -p /tmp/ffmpeg && \
+    tar -xJf /tmp/ffmpeg.tar.xz -C /tmp/ffmpeg --strip-components=1 && \
+    mv /tmp/ffmpeg/bin/ffmpeg /usr/local/bin/ && \
+    mv /tmp/ffmpeg/bin/ffprobe /usr/local/bin/ && \
+    mv /tmp/ffmpeg/bin/ffplay /usr/local/bin/ && \
+    chmod +x /usr/local/bin/ffmpeg /usr/local/bin/ffprobe /usr/local/bin/ffplay && \
+    rm -rf /tmp/ffmpeg /tmp/ffmpeg.tar.xz
 
 # Set UTF-8 locale
 ENV LANG=en_US.UTF-8

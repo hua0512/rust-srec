@@ -42,10 +42,16 @@ interface WorkflowFlowEditorProps {
   steps: DagStepDefinition[];
   onUpdateSteps: (steps: DagStepDefinition[]) => void;
   onEditStep?: (id: string) => void;
+  onRemoveStep?: (id: string) => void;
 }
 
 const WorkflowFlowEditorInner = memo(
-  ({ steps, onUpdateSteps, onEditStep }: WorkflowFlowEditorProps) => {
+  ({
+    steps,
+    onUpdateSteps,
+    onEditStep,
+    onRemoveStep,
+  }: WorkflowFlowEditorProps) => {
     const [nodes, setNodes, onNodesChange] = useNodesState<Node>([]);
     const [edges, setEdges, onEdgesChange] = useEdgesState<Edge>([]);
     const [hasLaidOut, setHasLaidOut] = useState(false);
@@ -55,9 +61,13 @@ const WorkflowFlowEditorInner = memo(
     // Memoized remove handler to avoid creating new functions on every render
     const handleRemoveStep = useCallback(
       (id: string) => {
-        onUpdateSteps(steps.filter((st) => st.id !== id));
+        if (onRemoveStep) {
+          onRemoveStep(id);
+        } else {
+          onUpdateSteps(steps.filter((st) => st.id !== id));
+        }
       },
-      [steps, onUpdateSteps],
+      [steps, onUpdateSteps, onRemoveStep],
     );
 
     // Sync from props

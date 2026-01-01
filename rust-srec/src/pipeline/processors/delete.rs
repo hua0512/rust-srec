@@ -2,7 +2,6 @@
 //!
 //! This processor handles file deletion with retry logic for locked files.
 //!
-//! Requirements: 5.1, 5.2, 5.3, 5.4, 5.5
 
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
@@ -29,13 +28,11 @@ fn default_retry_delay_ms() -> u64 {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DeleteConfig {
     /// Maximum retry attempts for locked files.
-    /// Requirements: 5.3
     #[serde(default = "default_max_retries")]
     pub max_retries: u32,
 
     /// Base delay between retries in milliseconds.
     /// Uses exponential backoff: delay * 2^attempt
-    /// Requirements: 5.3
     #[serde(default = "default_retry_delay_ms")]
     pub retry_delay_ms: u64,
 }
@@ -52,9 +49,9 @@ impl Default for DeleteConfig {
 /// Processor for deleting files with retry logic.
 ///
 /// Handles file deletion with:
-/// - Retry with exponential backoff for locked files (Requirements: 5.3)
-/// - Warning log for non-existent files (Requirements: 5.2)
-/// - Error reporting after all retries fail (Requirements: 5.4)
+/// - Retry with exponential backoff for locked files
+/// - Warning log for non-existent files
+/// - Error reporting after all retries fail
 pub struct DeleteProcessor;
 
 impl DeleteProcessor {
@@ -76,7 +73,6 @@ impl DeleteProcessor {
     }
 
     /// Attempt to delete a file with retry logic for locked files.
-    /// Requirements: 5.1, 5.3, 5.4
     async fn delete_with_retry(
         &self,
         path: &Path,
@@ -191,7 +187,7 @@ impl Processor for DeleteProcessor {
                 start_msg,
             ));
 
-            // Check if file exists (Requirements: 5.2)
+            // Check if file exists
             if !path.exists() {
                 let msg = format!(
                     "File does not exist, marking job as completed: {}",
@@ -204,7 +200,6 @@ impl Processor for DeleteProcessor {
                 ));
 
                 let duration = start.elapsed().as_secs_f64();
-                // Requirements: 11.5 - Track as succeeded (non-existent file is not a failure)
                 return Ok(ProcessorOutput {
                     outputs: vec![],
                     duration_secs: duration,
@@ -229,7 +224,7 @@ impl Processor for DeleteProcessor {
             // Get file size before deletion for metrics
             let file_size = fs::metadata(path).await.map(|m| m.len()).ok();
 
-            // Attempt deletion with retry logic (Requirements: 5.1, 5.3, 5.4)
+            // Attempt deletion with retry logic
             return match self.delete_with_retry(path, &config, &mut logs).await {
                 Ok(()) => {
                     let duration = start.elapsed().as_secs_f64();
@@ -243,7 +238,6 @@ impl Processor for DeleteProcessor {
                         msg,
                     ));
 
-                    // Requirements: 11.5 - Track succeeded inputs for partial failure reporting
                     Ok(ProcessorOutput {
                         outputs: vec![],
                         duration_secs: duration,
@@ -275,7 +269,6 @@ impl Processor for DeleteProcessor {
                         err_detail.clone(),
                     ));
 
-                    // Requirements: 5.4 - Report error after all retries fail
                     Err(crate::Error::PipelineError(err_detail))
                 }
             };
@@ -480,7 +473,7 @@ mod tests {
             ..Default::default()
         };
 
-        // Should complete successfully with warning (Requirements: 5.2)
+        // Should complete successfully with warning
         let output = processor.process(&input, &ctx).await.unwrap();
 
         assert!(output.outputs.is_empty());

@@ -11,6 +11,7 @@ use chrono::{DateTime, Utc};
 use tokio::sync::oneshot;
 
 use crate::domain::{Priority, StreamerState};
+use crate::downloader::engine::DownloadProgress;
 use crate::streamer::StreamerMetadata;
 
 /// Messages that can be sent to a StreamerActor.
@@ -31,6 +32,21 @@ pub enum StreamerMessage {
         download_id: String,
         /// Download session identifier.
         session_id: String,
+    },
+    /// Lightweight download heartbeat.
+    ///
+    /// Sent periodically while a download is active so the actor can distinguish
+    /// "live and downloading normally" from "stuck in Live because DownloadEnded was missed".
+    ///
+    /// This avoids brittle platform status checks (page scraping / JS execution) during
+    /// healthy downloads and allows much faster recovery when the download stalls.
+    DownloadHeartbeat {
+        /// Download identifier.
+        download_id: String,
+        /// Download session identifier.
+        session_id: String,
+        /// Optional progress snapshot for diagnostics.
+        progress: Option<DownloadProgress>,
     },
     /// Notify that the download has ended (streamer went offline or error).
     /// This triggers the actor to resume status checking.
@@ -488,6 +504,11 @@ pub struct StreamerActorState {
     pub streamer_state: StreamerState,
     /// Next scheduled check time.
     pub next_check: Option<Instant>,
+    /// Last observed download activity time (heartbeats / progress).
+    ///
+    /// This is used only while Live to implement a "stall watchdog" that can
+    /// detect missed DownloadEnded events quickly without running platform extractors.
+    pub last_download_activity_at: Option<Instant>,
     /// Hysteresis state for offline grace period logic.
     pub hysteresis: HysteresisState,
     /// Last check result.
@@ -499,6 +520,7 @@ impl Default for StreamerActorState {
         Self {
             streamer_state: StreamerState::NotLive,
             next_check: None,
+            last_download_activity_at: None,
             hysteresis: HysteresisState::default(),
             last_check: None,
         }
@@ -511,6 +533,7 @@ impl StreamerActorState {
         Self {
             streamer_state: metadata.state,
             next_check: Some(Instant::now()), // Due immediately
+            last_download_activity_at: None,
             hysteresis: HysteresisState::from_state(metadata.state),
             last_check: None,
         }

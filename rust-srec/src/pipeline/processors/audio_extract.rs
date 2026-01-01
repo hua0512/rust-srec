@@ -4,7 +4,6 @@
 //! with support for various output formats (MP3, AAC, FLAC, Opus) or
 //! stream copy without re-encoding.
 //!
-//! Requirements: 2.1, 2.2, 2.3, 2.4, 2.5
 
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
@@ -57,7 +56,6 @@ impl AudioFormat {
 pub struct AudioExtractConfig {
     /// Output format (mp3, aac, flac, opus).
     /// If not specified, audio is extracted without re-encoding (stream copy).
-    /// Requirements: 2.2, 2.3
     pub format: Option<AudioFormat>,
 
     /// Audio bitrate (e.g., "128k", "320k").
@@ -101,8 +99,8 @@ impl Default for AudioExtractConfig {
 /// Processor for extracting audio from video files.
 ///
 /// Uses ffmpeg to extract audio streams with optional transcoding.
-/// - When format is specified: transcodes to the target format (Requirements: 2.2)
-/// - When format is None: copies audio stream without re-encoding (Requirements: 2.3)
+/// - When format is specified: transcodes to the target format
+/// - When format is None: copies audio stream without re-encoding
 pub struct AudioExtractProcessor {
     /// Path to ffmpeg binary.
     ffmpeg_path: String,
@@ -151,10 +149,10 @@ impl AudioExtractProcessor {
 
         // Audio codec
         if let Some(ref format) = config.format {
-            // Transcode to specified format (Requirements: 2.2)
+            // Transcode to specified format
             args.extend(["-c:a".to_string(), format.codec_arg().to_string()]);
         } else {
-            // Copy audio stream without re-encoding (Requirements: 2.3)
+            // Copy audio stream without re-encoding
             args.extend(["-c:a".to_string(), "copy".to_string()]);
         }
 
@@ -314,7 +312,7 @@ impl AudioExtractProcessor {
             });
         }
 
-        // Check if input has audio stream (Requirements: 2.4)
+        // Check if input has audio stream
         // If no audio stream, pass through the input file instead of failing
         match self.has_audio_stream(input_path).await {
             Ok(true) => {}
@@ -443,8 +441,6 @@ impl AudioExtractProcessor {
             .ok()
             .map(|m| m.len());
 
-        // Requirements: 2.5 - Record output file path in job outputs
-        // Requirements: 11.5 - Track succeeded inputs for partial failure reporting
         // Only return the newly produced audio file (no additive passthrough)
         Ok(ProcessorOutput {
             outputs: vec![output_path.clone()],
@@ -642,7 +638,7 @@ impl Processor for AudioExtractProcessor {
             });
         }
 
-        // Check if input has audio stream (Requirements: 2.4)
+        // Check if input has audio stream
         // If no audio stream, pass through the input file instead of failing
         match self.has_audio_stream(input_path).await {
             Ok(true) => {}
@@ -766,8 +762,6 @@ impl Processor for AudioExtractProcessor {
             .ok()
             .map(|m| m.len());
 
-        // Requirements: 2.5 - Record output file path in job outputs
-        // Requirements: 11.5 - Track succeeded inputs for partial failure reporting
         // Only return the newly produced audio file (no additive passthrough)
         Ok(ProcessorOutput {
             outputs: vec![output_path.clone()],
@@ -892,7 +886,6 @@ mod tests {
 
     #[test]
     fn test_build_args_stream_copy() {
-        // Requirements: 2.3 - No format specified = stream copy
         let processor = AudioExtractProcessor::new();
         let config = AudioExtractConfig::default();
 
@@ -909,7 +902,6 @@ mod tests {
 
     #[test]
     fn test_build_args_mp3_format() {
-        // Requirements: 2.2 - MP3 format
         let processor = AudioExtractProcessor::new();
         let config = AudioExtractConfig {
             format: Some(AudioFormat::Mp3),
@@ -927,7 +919,6 @@ mod tests {
 
     #[test]
     fn test_build_args_aac_format() {
-        // Requirements: 2.2 - AAC format
         let processor = AudioExtractProcessor::new();
         let config = AudioExtractConfig {
             format: Some(AudioFormat::Aac),
@@ -948,7 +939,6 @@ mod tests {
 
     #[test]
     fn test_build_args_flac_format() {
-        // Requirements: 2.2 - FLAC format
         let processor = AudioExtractProcessor::new();
         let config = AudioExtractConfig {
             format: Some(AudioFormat::Flac),
@@ -969,7 +959,6 @@ mod tests {
 
     #[test]
     fn test_build_args_opus_format() {
-        // Requirements: 2.2 - Opus format
         let processor = AudioExtractProcessor::new();
         let config = AudioExtractConfig {
             format: Some(AudioFormat::Opus),

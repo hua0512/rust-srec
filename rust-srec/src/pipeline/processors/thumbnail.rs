@@ -276,7 +276,6 @@ impl ThumbnailProcessor {
         let input_size_bytes = tokio::fs::metadata(input_path).await.ok().map(|m| m.len());
         let output_size_bytes = tokio::fs::metadata(output_path).await.ok().map(|m| m.len());
 
-        // Requirements: 11.5 - Track succeeded inputs for partial failure reporting
         let width_str = if config.preserve_resolution {
             "native".to_string()
         } else {

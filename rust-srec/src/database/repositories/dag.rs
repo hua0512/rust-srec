@@ -96,6 +96,14 @@ pub trait DagRepository: Send + Sync {
     /// Returns job IDs of steps that had jobs created (for cancellation).
     async fn fail_dag_and_cancel_steps(&self, dag_id: &str, error: &str) -> Result<Vec<String>>;
 
+    /// Reset a previously-failed DAG execution for retry.
+    ///
+    /// This prepares the DAG state so that when retried jobs complete, downstream steps
+    /// can be scheduled again:
+    /// - DAG: status -> PROCESSING, clear error/completed_at, recompute failed_steps
+    /// - Steps: CANCELLED -> BLOCKED, FAILED -> PROCESSING (preserves job_id)
+    async fn reset_dag_for_retry(&self, dag_id: &str) -> Result<()>;
+
     // ========================================================================
     // Query Operations
     // ========================================================================
@@ -710,6 +718,65 @@ impl DagRepository for SqlxDagRepository {
         .await
     }
 
+    async fn reset_dag_for_retry(&self, dag_id: &str) -> Result<()> {
+        retry_on_sqlite_busy("reset_dag_for_retry", || async {
+            let mut tx = self.pool.begin().await?;
+            let now = chrono::Utc::now().to_rfc3339();
+
+            // Un-cancel downstream work so it can be scheduled again.
+            sqlx::query(
+                r#"
+                UPDATE dag_step_execution
+                SET status = 'BLOCKED', job_id = NULL, outputs = NULL, updated_at = ?
+                WHERE dag_id = ? AND status = 'CANCELLED'
+                "#,
+            )
+            .bind(&now)
+            .bind(dag_id)
+            .execute(&mut *tx)
+            .await?;
+
+            // Mark failed steps as active again (their jobs will be retried separately).
+            sqlx::query(
+                r#"
+                UPDATE dag_step_execution
+                SET status = 'PROCESSING', outputs = NULL, updated_at = ?
+                WHERE dag_id = ? AND status = 'FAILED'
+                "#,
+            )
+            .bind(&now)
+            .bind(dag_id)
+            .execute(&mut *tx)
+            .await?;
+
+            // Reset DAG execution record back to non-terminal state.
+            sqlx::query(
+                r#"
+                UPDATE dag_execution
+                SET status = 'PROCESSING',
+                    completed_at = NULL,
+                    updated_at = ?,
+                    error = NULL,
+                    failed_steps = (
+                        SELECT COUNT(*)
+                        FROM dag_step_execution
+                        WHERE dag_id = ? AND status = 'FAILED'
+                    )
+                WHERE id = ?
+                "#,
+            )
+            .bind(&now)
+            .bind(dag_id)
+            .bind(dag_id)
+            .execute(&mut *tx)
+            .await?;
+
+            tx.commit().await?;
+            Ok(())
+        })
+        .await
+    }
+
     // ========================================================================
     // Query Operations
     // ========================================================================
@@ -1100,5 +1167,72 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(step_c.status, "CANCELLED");
+    }
+
+    #[tokio::test]
+    async fn test_reset_dag_for_retry_unblocks_downstream() {
+        let pool = setup_test_pool().await;
+        let repo = SqlxDagRepository::new(pool);
+
+        // Create DAG: A -> B
+        let dag_def = DagPipelineDefinition::new(
+            "test-dag",
+            vec![
+                DagStep::new("A", PipelineStep::preset("remux")),
+                DagStep::with_dependencies(
+                    "B",
+                    PipelineStep::preset("upload"),
+                    vec!["A".to_string()],
+                ),
+            ],
+        );
+
+        let dag = DagExecutionDbModel::new(&dag_def, None, None);
+        let dag_id = dag.id.clone();
+        repo.create_dag(&dag).await.unwrap();
+
+        let step_a = DagStepExecutionDbModel::new(&dag_id, "A", &[]);
+        let step_b = DagStepExecutionDbModel::new(&dag_id, "B", &["A".to_string()]);
+        let step_a_id = step_a.id.clone();
+        let step_b_id = step_b.id.clone();
+
+        repo.create_steps(&[step_a, step_b]).await.unwrap();
+
+        // Mimic a failed DAG: A failed, B cancelled by fail-fast.
+        repo.update_step_status_with_job(&step_a_id, "PROCESSING", "job-a")
+            .await
+            .unwrap();
+        repo.update_step_status(&step_a_id, "FAILED").await.unwrap();
+        repo.increment_dag_failed(&dag_id).await.unwrap();
+        repo.fail_dag_and_cancel_steps(&dag_id, "Step A failed")
+            .await
+            .unwrap();
+
+        let b = repo.get_step(&step_b_id).await.unwrap();
+        assert_eq!(b.status, "CANCELLED");
+
+        // Retry prep should restore downstream to BLOCKED so completion can re-trigger it.
+        repo.reset_dag_for_retry(&dag_id).await.unwrap();
+
+        let dag = repo.get_dag(&dag_id).await.unwrap();
+        assert_eq!(dag.status, "PROCESSING");
+        assert!(dag.completed_at.is_none());
+        assert!(dag.error.is_none());
+        assert_eq!(dag.failed_steps, 0);
+
+        let a = repo.get_step(&step_a_id).await.unwrap();
+        assert_eq!(a.status, "PROCESSING");
+
+        let b = repo.get_step(&step_b_id).await.unwrap();
+        assert_eq!(b.status, "BLOCKED");
+
+        // Completing A should now discover B as ready.
+        let ready = repo
+            .complete_step_and_check_dependents(&step_a_id, &["/out/a.mp4".to_string()])
+            .await
+            .unwrap();
+        assert_eq!(ready.len(), 1);
+        assert_eq!(ready[0].step.step_id, "B");
+        assert_eq!(ready[0].merged_inputs, vec!["/out/a.mp4".to_string()]);
     }
 }

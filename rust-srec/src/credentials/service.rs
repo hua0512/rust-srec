@@ -99,10 +99,10 @@ impl<R: ConfigRepository + 'static> CredentialRefreshService<R> {
     ) -> Result<Option<String>, CredentialError> {
         // Skip platforms without a registered credential manager (unsupported for auto-refresh).
         if !self.managers.contains_key(&source.platform_name) {
-            debug!(
-                platform = %source.platform_name,
-                "Platform does not support credential auto-refresh; skipping"
-            );
+            // debug!(
+            //     platform = %source.platform_name,
+            //     "Platform does not support credential auto-refresh; skipping"
+            // );
             return Ok(None);
         }
 

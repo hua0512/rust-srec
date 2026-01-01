@@ -31,7 +31,14 @@ export function useStreamerStatus(streamer: z.infer<typeof StreamerSchema>) {
       if (state === 'LIVE') return <Trans>Live</Trans>;
       if (state === 'INSPECTING_LIVE') return <Trans>Inspecting</Trans>;
       if (state === 'OUT_OF_SCHEDULE') return <Trans>Scheduled</Trans>;
+      if (state === 'OUT_OF_SPACE') return <Trans>Out of Space</Trans>;
+      if (state === 'FATAL_ERROR') return <Trans>Fatal Error</Trans>;
+      if (state === 'CANCELLED') return <Trans>Cancelled</Trans>;
       if (state === 'NOT_FOUND') return <Trans>Not Found</Trans>;
+      if (state === 'TEMPORAL_DISABLED')
+        return <Trans>Temporarily Paused</Trans>;
+      if (state === 'ERROR') return <Trans>Error</Trans>;
+      if (state === 'DISABLED') return <Trans>Disabled</Trans>;
       return (
         state.charAt(0).toUpperCase() +
         state.slice(1).toLowerCase().replace(/_/g, ' ')

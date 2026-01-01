@@ -42,6 +42,9 @@ export const Route = createRootRoute({
       fetchUser(),
       detectServerLocale(),
     ]);
+    console.log(
+      `[Root] beforeLoad context: user=${user ? user.username : 'guest'}, locale=${serverLocale}`,
+    );
     return {
       user,
       serverLocale,

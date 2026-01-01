@@ -12,11 +12,6 @@ use tokio::fs;
 /// * `Ok(())` - If the directory exists or was created successfully
 /// * `Err(String)` - If the directory could not be created, with a descriptive error message
 ///
-/// # Requirements
-/// This function satisfies Requirements 2.1, 2.2, 2.3:
-/// - Creates the output directory if it doesn't exist (2.1)
-/// - Returns a descriptive error message if creation fails (2.2)
-/// - Succeeds without error if the directory already exists (2.3)
 pub async fn ensure_output_dir(path: &Path) -> Result<(), String> {
     fs::create_dir_all(path)
         .await

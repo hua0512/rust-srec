@@ -90,8 +90,15 @@ impl BatchScheduler {
         let mut batch = std::mem::take(&mut self.pending);
         self.batch_start = None;
 
-        // Sort by media sequence number in ascending order
-        batch.sort_by_key(|job| job.media_sequence_number);
+        // Sort by MSN (ascending). For identical MSNs, ensure init segments are dispatched before
+        // media segments, and non-prefetch before prefetch.
+        batch.sort_by_key(|job| {
+            (
+                job.media_sequence_number,
+                !job.is_init_segment,
+                job.is_prefetch,
+            )
+        });
 
         batch
     }
@@ -153,6 +160,13 @@ pub struct SegmentScheduler {
     in_flight_segments: HashSet<u64>,
     /// Performance metrics for tracking prefetch operations
     metrics: Option<Arc<PerformanceMetrics>>,
+
+    /// Whether any init segment jobs have been observed for this stream.
+    /// Used to gate prefetching on fMP4 streams until an init segment is seen.
+    init_required: bool,
+
+    /// Whether we've successfully processed at least one init segment job.
+    init_seen: bool,
 }
 
 impl SegmentScheduler {
@@ -180,6 +194,8 @@ impl SegmentScheduler {
             buffer_size: 0,
             in_flight_segments: HashSet::new(),
             metrics: None,
+            init_required: false,
+            init_seen: false,
         }
     }
 
@@ -209,6 +225,8 @@ impl SegmentScheduler {
             buffer_size: 0,
             in_flight_segments: HashSet::new(),
             metrics: Some(metrics),
+            init_required: false,
+            init_seen: false,
         }
     }
 
@@ -220,10 +238,12 @@ impl SegmentScheduler {
     ) -> (
         u64,
         bool,
+        bool,
         Result<ProcessedSegmentOutput, HlsDownloaderError>,
     ) {
         let msn = job.media_sequence_number;
         let is_prefetch = job.is_prefetch;
+        let is_init_segment = job.is_init_segment;
 
         let raw_data_result = segment_fetcher.download_segment_from_job(&job).await;
 
@@ -231,7 +251,7 @@ impl SegmentScheduler {
             Ok(data) => data,
             Err(e) => {
                 error!(uri = %job.media_segment.uri, error = %e, "Segment download failed");
-                return (msn, is_prefetch, Err(e));
+                return (msn, is_prefetch, is_init_segment, Err(e));
             }
         };
 
@@ -256,7 +276,7 @@ impl SegmentScheduler {
             }
         };
 
-        (msn, is_prefetch, result)
+        (msn, is_prefetch, is_init_segment, result)
     }
 
     /// Store a job template for potential prefetching
@@ -398,6 +418,10 @@ impl SegmentScheduler {
                     if let Some(job_request) = maybe_job_request {
                         trace!(uri = %job_request.media_segment.uri, msn = %job_request.media_sequence_number, "Received new segment job.");
 
+                        if job_request.is_init_segment {
+                            self.init_required = true;
+                        }
+
                         // Track segment for potential prefetching
                         if prefetch_enabled {
                             self.track_segment_job(&job_request);
@@ -462,7 +486,7 @@ impl SegmentScheduler {
 
                 // 4. Handle completed futures
                 // This branch remains active during draining to finish in-progress work.
-                Some((completed_msn, is_prefetch, processed_result)) = futures.next() => {
+                Some((completed_msn, is_prefetch, is_init_segment, processed_result)) = futures.next() => {
                     // Update buffer size
                     if self.buffer_size > 0 {
                         self.buffer_size -= 1;
@@ -478,6 +502,10 @@ impl SegmentScheduler {
 
                     match processed_result {
                         Ok(processed_output) => {
+                            if is_init_segment {
+                                self.init_seen = true;
+                            }
+
                             // Record prefetch usage metric when a prefetched segment completes successfully
                             if is_prefetch
                                 && let Some(metrics) = &self.metrics
@@ -487,7 +515,13 @@ impl SegmentScheduler {
 
                             // Initiate prefetch for next segments after successful download
                             // Only prefetch after non-prefetch jobs to avoid cascading prefetches
-                            if prefetch_enabled && !is_prefetch && !draining {
+                            let should_prefetch = prefetch_enabled
+                                && !is_prefetch
+                                && !draining
+                                && !is_init_segment
+                                && (!self.init_required || self.init_seen);
+
+                            if should_prefetch {
                                 let prefetch_jobs = self.get_prefetch_jobs(completed_msn);
                                 for prefetch_job in prefetch_jobs {
                                     // Only dispatch if we have capacity
@@ -565,6 +599,14 @@ mod tests {
 
     /// Helper function to create a test ScheduledSegmentJob with a given MSN
     fn create_test_job(msn: u64) -> ScheduledSegmentJob {
+        create_test_job_with_flags(msn, false, false)
+    }
+
+    fn create_test_job_with_flags(
+        msn: u64,
+        is_init_segment: bool,
+        is_prefetch: bool,
+    ) -> ScheduledSegmentJob {
         ScheduledSegmentJob {
             base_url: Arc::<str>::from("https://example.com/"),
             media_sequence_number: msn,
@@ -572,8 +614,8 @@ mod tests {
                 uri: format!("segment_{}.ts", msn),
                 ..Default::default()
             }),
-            is_init_segment: false,
-            is_prefetch: false,
+            is_init_segment,
+            is_prefetch,
         }
     }
 
@@ -648,6 +690,34 @@ mod tests {
         assert_eq!(batch[2].media_sequence_number, 3);
         assert_eq!(batch[3].media_sequence_number, 5);
         assert_eq!(batch[4].media_sequence_number, 8);
+    }
+
+    #[test]
+    fn test_batch_scheduler_take_batch_orders_init_before_media_for_same_msn() {
+        let config = BatchSchedulerConfig {
+            enabled: true,
+            batch_window_ms: 1000,
+            max_batch_size: 10,
+        };
+        let mut scheduler = BatchScheduler::new(config);
+
+        scheduler.add_job(create_test_job_with_flags(1, false, false));
+        scheduler.add_job(create_test_job_with_flags(1, true, false));
+        scheduler.add_job(create_test_job_with_flags(1, false, true));
+
+        let batch = scheduler.take_batch();
+        assert_eq!(batch.len(), 3);
+        assert_eq!(batch[0].media_sequence_number, 1);
+        assert!(batch[0].is_init_segment);
+        assert!(!batch[0].is_prefetch);
+
+        assert_eq!(batch[1].media_sequence_number, 1);
+        assert!(!batch[1].is_init_segment);
+        assert!(!batch[1].is_prefetch);
+
+        assert_eq!(batch[2].media_sequence_number, 1);
+        assert!(!batch[2].is_init_segment);
+        assert!(batch[2].is_prefetch);
     }
 
     #[test]

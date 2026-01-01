@@ -627,6 +627,110 @@ impl DagScheduler {
         Ok(cancelled.len() as u64)
     }
 
+    /// Reset a failed DAG execution so it can be retried.
+    ///
+    /// This restores cancelled downstream steps back to `BLOCKED`, clears the DAG terminal state,
+    /// and marks failed steps as active again so retried jobs can fan-out to subsequent steps.
+    pub async fn reset_dag_for_retry(&self, dag_id: &str) -> Result<()> {
+        self.dag_repository.reset_dag_for_retry(dag_id).await?;
+
+        // Some cancelled steps may already have all dependencies completed (e.g. a parallel
+        // branch when fail-fast triggers). Since no new completion events will occur for those
+        // dependencies, proactively enqueue any now-ready steps.
+        self.enqueue_now_ready_steps(dag_id, None, None).await?;
+
+        Ok(())
+    }
+
+    async fn enqueue_now_ready_steps(
+        &self,
+        dag_id: &str,
+        streamer_name: Option<&str>,
+        session_title: Option<&str>,
+    ) -> Result<Vec<String>> {
+        let streamer_name = streamer_name.map(ToString::to_string);
+        let session_title = session_title.map(ToString::to_string);
+
+        let dag = self.dag_repository.get_dag(dag_id).await?;
+        let dag_def = dag
+            .get_dag_definition()
+            .ok_or_else(|| Error::Validation("Failed to parse DAG definition".into()))?;
+        let steps = self.dag_repository.get_steps_by_dag(dag_id).await?;
+
+        let mut status_by_step_id = HashMap::<String, String>::with_capacity(steps.len());
+        let mut outputs_by_step_id = HashMap::<String, Vec<String>>::with_capacity(steps.len());
+
+        for step in &steps {
+            status_by_step_id.insert(step.step_id.clone(), step.status.clone());
+            if step.status == DagStepStatus::Completed.as_str() {
+                outputs_by_step_id.insert(step.step_id.clone(), step.get_outputs());
+            }
+        }
+
+        let mut new_job_ids = Vec::new();
+
+        for step_exec in steps {
+            if step_exec.status != DagStepStatus::Blocked.as_str() || step_exec.job_id.is_some() {
+                continue;
+            }
+
+            let depends_on = step_exec.get_depends_on();
+            if depends_on.is_empty() {
+                // Root steps should already have a job created at DAG creation time.
+                continue;
+            }
+
+            let all_deps_complete = depends_on.iter().all(|dep| {
+                status_by_step_id
+                    .get(dep)
+                    .map(|s| s == DagStepStatus::Completed.as_str())
+                    .unwrap_or(false)
+            });
+            if !all_deps_complete {
+                continue;
+            }
+
+            let merged_inputs = {
+                let mut merged = Vec::new();
+                let mut seen = HashSet::<String>::new();
+                for dep in &depends_on {
+                    let Some(dep_outputs) = outputs_by_step_id.get(dep) else {
+                        continue;
+                    };
+                    for out in dep_outputs {
+                        if seen.insert(Self::output_dedup_key(out)) {
+                            merged.push(out.clone());
+                        }
+                    }
+                }
+                merged
+            };
+
+            let dag_step = dag_def.get_step(&step_exec.step_id).ok_or_else(|| {
+                Error::Validation(format!(
+                    "Step '{}' not found in DAG definition",
+                    step_exec.step_id
+                ))
+            })?;
+
+            let job_id = self
+                .create_step_job(
+                    dag_id,
+                    &step_exec.id,
+                    dag_step,
+                    merged_inputs,
+                    dag.streamer_id.clone(),
+                    dag.session_id.clone(),
+                    streamer_name.clone(),
+                    session_title.clone(),
+                )
+                .await?;
+            new_job_ids.push(job_id);
+        }
+
+        Ok(new_job_ids)
+    }
+
     /// List DAG executions with optional status and session_id filters.
     pub async fn list_dags(
         &self,

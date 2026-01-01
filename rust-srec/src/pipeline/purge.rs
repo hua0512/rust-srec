@@ -3,7 +3,6 @@
 //! This service runs in the background and periodically purges jobs that have
 //! exceeded the configured retention period.
 //!
-//! Requirements: 7.1, 7.2, 7.3, 7.4, 7.5
 
 use chrono::{NaiveTime, Utc};
 use serde::{Deserialize, Serialize};
@@ -16,23 +15,19 @@ use crate::Result;
 use crate::database::repositories::JobRepository;
 
 /// Configuration for job purging.
-/// Requirements: 7.1, 7.2, 7.3, 7.5
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PurgeConfig {
     /// Number of days to retain completed/failed jobs.
     /// Set to 0 to retain all jobs indefinitely.
-    /// Requirements: 7.1, 7.5
     #[serde(default = "default_retention_days")]
     pub retention_days: u32,
 
     /// Time window for purging (e.g., "02:00-05:00").
     /// If None, purging can run at any time.
-    /// Requirements: 7.2
     #[serde(default)]
     pub time_window: Option<String>,
 
     /// Batch size for deletion to avoid long-running transactions.
-    /// Requirements: 7.3
     #[serde(default = "default_batch_size")]
     pub batch_size: u32,
 
@@ -129,7 +124,6 @@ impl TimeWindow {
 }
 
 /// Job Purge Service for automatic cleanup of old jobs.
-/// Requirements: 7.1, 7.2, 7.3, 7.4, 7.5
 pub struct JobPurgeService {
     config: PurgeConfig,
     job_repository: Arc<dyn JobRepository>,
@@ -159,7 +153,6 @@ impl JobPurgeService {
     }
 
     /// Check if purging is currently allowed based on time window.
-    /// Requirements: 7.2
     pub fn is_purge_allowed(&self) -> bool {
         match &self.time_window {
             Some(window) => {
@@ -172,17 +165,14 @@ impl JobPurgeService {
 
     /// Run a single purge operation.
     /// Returns the number of jobs deleted.
-    /// Requirements: 7.1, 7.3, 7.4
     pub async fn run_purge(&self) -> Result<u64> {
         // Check if retention is disabled (0 = retain forever)
-        // Requirements: 7.5
         if self.config.retention_days == 0 {
             debug!("Job purging disabled (retention_days = 0)");
             return Ok(0);
         }
 
         // Check time window
-        // Requirements: 7.2
         if !self.is_purge_allowed() {
             debug!("Purge not allowed outside time window");
             return Ok(0);
@@ -191,7 +181,6 @@ impl JobPurgeService {
         let mut total_deleted: u64 = 0;
 
         // Delete in batches to avoid long-running transactions
-        // Requirements: 7.3
         loop {
             let deleted = self
                 .job_repository
@@ -214,7 +203,6 @@ impl JobPurgeService {
         }
 
         // Log the result
-        // Requirements: 7.4
         if total_deleted > 0 {
             info!(
                 "Purged {} old jobs (retention: {} days)",
@@ -228,7 +216,6 @@ impl JobPurgeService {
     }
 
     /// Start the background purge task.
-    /// Requirements: 7.1, 7.2, 7.3, 7.4, 7.5
     pub fn start_background_task(&self, cancellation_token: CancellationToken) {
         let config = self.config.clone();
         let job_repository = self.job_repository.clone();

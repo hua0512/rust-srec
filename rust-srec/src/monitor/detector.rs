@@ -299,11 +299,21 @@ impl StreamDetector {
                 debug!("No streams found for: {}", streamer.name);
                 return Ok(LiveStatus::Offline);
             }
+            Err(ExtractorError::JsError(msg)) => {
+                warn!(
+                    "JavaScript-based extraction failed for {} ({}): {}",
+                    streamer.name, streamer.url, msg
+                );
+                return Err(crate::Error::Monitor(format!(
+                    "Failed to extract media info for {} ({}): js error: {}",
+                    streamer.name, streamer.url, msg
+                )));
+            }
             // Transient errors - should be retried
             Err(e) => {
                 return Err(crate::Error::Monitor(format!(
-                    "Failed to extract media info: {}",
-                    e
+                    "Failed to extract media info for {} ({}): {}",
+                    streamer.name, streamer.url, e
                 )));
             }
         };

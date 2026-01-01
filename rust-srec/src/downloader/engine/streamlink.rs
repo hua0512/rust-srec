@@ -200,7 +200,7 @@ impl DownloadEngine for StreamlinkEngine {
 
     async fn start(&self, handle: Arc<DownloadHandle>) -> Result<()> {
         let config = handle.config_snapshot();
-        // 1. Ensure output directory exists before spawning processes (Requirements 2.1, 2.2)
+        // 1. Ensure output directory exists before spawning processes
         if let Err(e) = ensure_output_dir(&config.output_dir).await {
             let _ = handle.event_tx.try_send(SegmentEvent::DownloadFailed {
                 error: e.clone(),
@@ -251,7 +251,7 @@ impl DownloadEngine for StreamlinkEngine {
             .take()
             .ok_or_else(|| crate::Error::Other("Failed to capture ffmpeg stderr".to_string()))?;
 
-        // 2. Use shared piped process waiter utility (Requirements 3.1, 3.2)
+        // 2. Use shared piped process waiter utility
         let exit_rx =
             spawn_piped_process_waiter(streamlink, ffmpeg, handle.cancellation_token.clone());
 
@@ -326,7 +326,7 @@ impl DownloadEngine for StreamlinkEngine {
             }
         });
 
-        // 3. Spawn task to monitor ffmpeg stderr and emit events - waits for exit status (Requirements 1.2, 1.3, 1.4)
+        // 3. Spawn task to monitor ffmpeg stderr and emit events - waits for exit status
         let event_tx_clone = event_tx.clone();
         let streamer_id_clone = streamer_id.clone();
         let cancellation_token_clone = cancellation_token.clone();
@@ -388,7 +388,7 @@ impl DownloadEngine for StreamlinkEngine {
 
             match exit_code {
                 Some(0) => {
-                    // Exit code 0 - success (Requirement 1.3)
+                    // Exit code 0 - success
                     let _ = event_tx_clone
                         .send(SegmentEvent::DownloadCompleted {
                             total_bytes,
@@ -398,7 +398,7 @@ impl DownloadEngine for StreamlinkEngine {
                         .await;
                 }
                 Some(code) => {
-                    // Non-zero exit code - failure (Requirements 1.2, 3.3)
+                    // Non-zero exit code - failure
                     let _ = event_tx_clone
                         .send(SegmentEvent::DownloadFailed {
                             error: format!("Streamlink/FFmpeg exited with code {}", code),
@@ -407,7 +407,7 @@ impl DownloadEngine for StreamlinkEngine {
                         .await;
                 }
                 None => {
-                    // Cancelled - don't emit any event (Requirement 1.4)
+                    // Cancelled - don't emit any event
                     debug!(
                         "Download cancelled, not emitting completion event for {}",
                         streamer_id_clone

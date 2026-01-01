@@ -383,19 +383,24 @@ pub struct CachedEncryptionKey {
 }
 
 impl CachedEncryptionKey {
-    /// Creates a new cached key with 24-hour expiration
-    pub fn new(data: DouyuEncryptionData, user_agent: String) -> Self {
+    /// Creates a new cached key with custom TTL (seconds).
+    pub fn new_with_ttl(data: DouyuEncryptionData, user_agent: String, ttl_secs: u64) -> Self {
         let expire_at = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap()
             .as_secs()
-            + 86400; // 24 hours
+            + ttl_secs;
 
         Self {
             data,
             expire_at,
             user_agent,
         }
+    }
+
+    /// Creates a new cached key with 24-hour expiration.
+    pub fn new(data: DouyuEncryptionData, user_agent: String) -> Self {
+        Self::new_with_ttl(data, user_agent, 86400)
     }
 
     /// Checks if the key is still valid

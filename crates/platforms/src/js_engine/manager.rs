@@ -5,7 +5,6 @@ use std::cell::RefCell;
 use super::context::JsContext;
 use super::error::JsError;
 
-#[cfg(feature = "douyu")]
 thread_local! {
 /// Thread-local runtime cache.
 /// Each thread gets its own cached runtime to avoid the overhead of creating
@@ -19,10 +18,8 @@ thread_local! {
 /// we use thread-local storage to cache one runtime per thread.
 /// This avoids the expensive runtime creation for repeated calls within
 /// the same thread.
-#[cfg(feature = "douyu")]
 pub struct JsEngineManager;
 
-#[cfg(feature = "douyu")]
 impl JsEngineManager {
     /// Get the global engine manager instance.
     /// This is a zero-cost abstraction since JsEngineManager has no state.
@@ -123,7 +120,6 @@ impl JsEngineManager {
     }
 }
 
-#[cfg(feature = "douyu")]
 impl Default for JsEngineManager {
     fn default() -> Self {
         Self::global()
@@ -131,7 +127,6 @@ impl Default for JsEngineManager {
 }
 
 #[cfg(test)]
-#[cfg(feature = "douyu")]
 mod tests {
     use super::*;
 

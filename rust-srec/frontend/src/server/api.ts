@@ -38,6 +38,13 @@ export const fetchBackend = async <T = any>(
   const headers = new Headers(init?.headers);
   if (token) {
     headers.set('Authorization', `Bearer ${token}`);
+    console.log(
+      `[API] ${init?.method || 'GET'} ${endpoint} - Token present: ${token.slice(0, 10)}...`,
+    );
+  } else {
+    console.log(
+      `[API] ${init?.method || 'GET'} ${endpoint} - No token found in session.`,
+    );
   }
 
   // Ensure Content-Type is set for JSON bodies if not already present
@@ -63,6 +70,10 @@ export const fetchBackend = async <T = any>(
     ...init,
     headers,
   });
+
+  console.log(
+    `[API] ${init?.method || 'GET'} ${endpoint} - Status: ${response.status}`,
+  );
 
   // Handle errors
   if (!response.ok) {
@@ -107,7 +118,9 @@ export const fetchBackend = async <T = any>(
             errorBody,
           );
         } else {
-          console.log(`[API] Refresh failed or returned no token.`);
+          console.log(
+            `[API] Refresh failed or returned no token for retry of ${endpoint}.`,
+          );
         }
       } catch (refreshError) {
         console.error(
