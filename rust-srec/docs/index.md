@@ -6,7 +6,7 @@ layout: page
 import { withBase } from 'vitepress'
 
 if (typeof window !== 'undefined') {
-  window.location.href = withBase('/en/')
+  window.location.href = import.meta.env.BASE_URL + 'en/'
 }
 </script>
 
