@@ -76,7 +76,7 @@ argon2 = "0.5"
 zip = { version = "3.0", default-features = false, features = ["deflate"] }
 tar = "0.4"
 strum = { version = "0.27.2", features = ["derive"] }
-json-patch = "1.0"
+json-patch = "4.1"
 chrono-tz = "0.10"
 cron = "0.15"
 dotenvy = "0.15"
