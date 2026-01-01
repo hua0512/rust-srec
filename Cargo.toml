@@ -101,7 +101,7 @@ libsm = "0.6.0"
 rsa = { version = "0.9.9", features = ["sha2"] }
 rustc-hash = "2.1"
 memchr = "2.7.6"
-criterion = "0.7.0"
+criterion = "0.8.1"
 
 [profile.dev]
 debug = true
