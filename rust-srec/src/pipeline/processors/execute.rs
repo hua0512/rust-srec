@@ -9,6 +9,7 @@ use tracing::debug;
 
 use super::traits::{Processor, ProcessorContext, ProcessorInput, ProcessorOutput, ProcessorType};
 use crate::Result;
+use crate::utils::filename::expand_placeholders;
 
 /// Configuration for execute command processor.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -22,6 +23,12 @@ pub struct ExecuteConfig {
     /// - `{outputs_json}` - JSON array of all outputs
     /// - `{streamer_id}` - streamer ID
     /// - `{session_id}` - session ID
+    ///
+    /// Placeholders path templates:
+    /// - `{streamer}` - sanitized streamer name (falls back to streamer_id)
+    /// - `{title}` - sanitized session title (falls back to empty)
+    /// - `{platform}` - platform name (falls back to empty)
+    /// - time placeholders like `%Y`, `%m`, `%d`, `%H`, `%M`, `%S`, `%t`, and `%%`
     pub command: String,
 
     /// Directory to scan for new files after command execution.
@@ -59,6 +66,15 @@ impl ExecuteCommandProcessor {
 
     /// Substitute variables in a command string.
     fn substitute_variables(command: &str, input: &ProcessorInput) -> String {
+        let command = expand_placeholders(
+            command,
+            &input.streamer_id,
+            &input.session_id,
+            input.streamer_name.as_deref(),
+            input.session_title.as_deref(),
+            input.platform.as_deref(),
+        );
+
         let input_path = input.inputs.first().map(|s| s.as_str()).unwrap_or("");
         let output_path = input.outputs.first().map(|s| s.as_str()).unwrap_or("");
 
@@ -84,6 +100,52 @@ impl ExecuteCommandProcessor {
         expanded
     }
 
+    fn parse_config(input: &ProcessorInput) -> Result<ExecuteConfig> {
+        let Some(config_str) = input.config.as_ref() else {
+            return Err(crate::Error::Other(
+                "No config specified for execute processor".to_string(),
+            ));
+        };
+
+        let trimmed = config_str.trim_start();
+        let looks_like_json = matches!(
+            trimmed.as_bytes().first(),
+            Some(b'{') | Some(b'[') | Some(b'"')
+        );
+
+        if !looks_like_json {
+            return Ok(ExecuteConfig {
+                command: config_str.clone(),
+                scan_output_dir: None,
+                scan_extension: None,
+            });
+        }
+
+        let value: serde_json::Value = serde_json::from_str(config_str).map_err(|e| {
+            crate::Error::Other(format!(
+                "Invalid JSON for execute processor config: {e}. If you intended a raw command, \
+                 pass it as a plain string (not starting with '{{', '[', or '\"') or as \
+                 {{\"command\":\"...\"}}."
+            ))
+        })?;
+
+        match value {
+            serde_json::Value::Object(_) => serde_json::from_value(value).map_err(|e| {
+                crate::Error::Other(format!(
+                    "Invalid execute processor config object (expected {{\"command\": \"...\"}}): {e}"
+                ))
+            }),
+            serde_json::Value::String(command) => Ok(ExecuteConfig {
+                command,
+                scan_output_dir: None,
+                scan_extension: None,
+            }),
+            _ => Err(crate::Error::Other(
+                "Execute processor config must be a JSON object or JSON string".to_string(),
+            )),
+        }
+    }
+
     /// Scan a directory and return all file paths.
     async fn scan_directory(dir: &Path, extension_filter: Option<&str>) -> Vec<String> {
         let mut files = Vec::new();
@@ -91,7 +153,12 @@ impl ExecuteCommandProcessor {
         if let Ok(mut entries) = tokio::fs::read_dir(dir).await {
             while let Ok(Some(entry)) = entries.next_entry().await {
                 let path = entry.path();
-                if path.is_file() {
+                let is_file = entry
+                    .file_type()
+                    .await
+                    .map(|t| t.is_file())
+                    .unwrap_or(false);
+                if is_file {
                     // Apply extension filter if specified
                     if let Some(ext_filter) = extension_filter {
                         if let Some(ext) = path.extension().and_then(|e| e.to_str())
@@ -121,7 +188,9 @@ impl ExecuteCommandProcessor {
             .collect();
 
         // Find files that exist now but didn't exist before
-        after.difference(before).cloned().collect()
+        let mut new_files: Vec<String> = after.difference(before).cloned().collect();
+        new_files.sort();
+        new_files
     }
 }
 
@@ -156,23 +225,11 @@ impl Processor for ExecuteCommandProcessor {
         input: &ProcessorInput,
         ctx: &ProcessorContext,
     ) -> Result<ProcessorOutput> {
-        // Parse config - support both JSON config and raw command string
-        // JSON config: {"command": "...", "scan_output_dir": "...", ...}
-        // Raw string: "echo hello" (for dynamic job creation)
-        let config: ExecuteConfig = if let Some(ref config_str) = input.config {
-            serde_json::from_str(config_str).unwrap_or_else(|_| {
-                // Treat as raw command string for backwards compatibility
-                ExecuteConfig {
-                    command: config_str.clone(),
-                    scan_output_dir: None,
-                    scan_extension: None,
-                }
-            })
-        } else {
-            return Err(crate::Error::Other(
-                "No config specified for execute processor".to_string(),
-            ));
-        };
+        // Parse config - support JSON config, JSON string, and raw command string.
+        // JSON object: {"command": "...", "scan_output_dir": "...", ...}
+        // JSON string: "echo hello"
+        // Raw string: echo hello
+        let config = Self::parse_config(input)?;
 
         let command = Self::substitute_variables(&config.command, input);
 
@@ -182,20 +239,24 @@ impl Processor for ExecuteCommandProcessor {
         let before_snapshot: Option<HashSet<String>> = if let Some(ref dir) = config.scan_output_dir
         {
             let dir_path = Path::new(dir);
-            if dir_path.exists() {
-                Some(
-                    Self::scan_directory(dir_path, config.scan_extension.as_deref())
-                        .await
-                        .into_iter()
-                        .collect(),
-                )
-            } else {
-                // Create directory if it doesn't exist
+            let is_dir = tokio::fs::metadata(dir_path)
+                .await
+                .map(|m| m.is_dir())
+                .unwrap_or(false);
+
+            if !is_dir {
+                // Create directory if it doesn't exist (or isn't a directory yet)
                 if let Err(e) = tokio::fs::create_dir_all(dir_path).await {
                     let _ = ctx.warn(format!("Failed to create output directory {}: {}", dir, e));
                 }
-                Some(HashSet::new())
             }
+
+            Some(
+                Self::scan_directory(dir_path, config.scan_extension.as_deref())
+                    .await
+                    .into_iter()
+                    .collect(),
+            )
         } else {
             None
         };
@@ -214,6 +275,9 @@ impl Processor for ExecuteCommandProcessor {
             c.args(["-c", &command]);
             c
         };
+
+        // Ensure the child process is terminated if the job times out or the task is cancelled.
+        cmd.kill_on_drop(true);
 
         // Execute command and capture logs (with timeout)
         let command_output_result = tokio::time::timeout(
@@ -281,6 +345,7 @@ impl Processor for ExecuteCommandProcessor {
         // 1. Scan output directory for new files (if configured)
         // 2. Use explicit outputs (if provided)
         // 3. Pass through inputs (fallback for chaining)
+        let mut items_produced = Vec::new();
         let outputs = if let (Some(dir), Some(before)) = (&config.scan_output_dir, &before_snapshot)
         {
             let new_files =
@@ -289,11 +354,16 @@ impl Processor for ExecuteCommandProcessor {
 
             if new_files.is_empty() {
                 debug!(
-                    "No new files detected in {}, falling back to input passthrough",
+                    "No new files detected in {}, falling back to explicit outputs or input passthrough",
                     dir
                 );
-                // Fall back to inputs if no new files detected
-                input.inputs.clone()
+
+                if !input.outputs.is_empty() {
+                    items_produced = input.outputs.clone();
+                    input.outputs.clone()
+                } else {
+                    input.inputs.clone()
+                }
             } else {
                 let _ = ctx.info(format!(
                     "Detected {} new files in output directory",
@@ -302,13 +372,15 @@ impl Processor for ExecuteCommandProcessor {
                 for file in &new_files {
                     debug!("  - {}", file);
                 }
+                items_produced = new_files.clone();
                 new_files
             }
         } else if !input.outputs.is_empty() {
-            // Use explicit outputs if provided
+            // Use explicit outputs if provided.
+            items_produced = input.outputs.clone();
             input.outputs.clone()
         } else {
-            // Pass through inputs for chaining
+            // Pass through inputs for chaining.
             input.inputs.clone()
         };
 
@@ -323,7 +395,7 @@ impl Processor for ExecuteCommandProcessor {
                 })
                 .to_string(),
             ),
-            items_produced: vec![],
+            items_produced,
             input_size_bytes,
             output_size_bytes,
             failed_inputs: vec![],
@@ -554,6 +626,37 @@ mod tests {
         assert_eq!(result.outputs, vec!["/input.mp4".to_string()]);
     }
 
+    /// Test scan output directory fallback prefers explicit outputs over input passthrough.
+    #[tokio::test]
+    async fn test_scan_output_directory_fallback_prefers_explicit_outputs() {
+        use tempfile::TempDir;
+        use tokio::fs;
+
+        let temp_dir = TempDir::new().unwrap();
+        let output_dir = temp_dir.path().join("output");
+        fs::create_dir_all(&output_dir).await.unwrap();
+
+        let processor = ExecuteCommandProcessor::new();
+        let ctx = ProcessorContext::noop("test");
+
+        let config = serde_json::json!({
+            "command": "echo scanning test",
+            "scan_output_dir": output_dir.to_string_lossy(),
+        });
+
+        let input = ProcessorInput {
+            inputs: vec!["/input.mp4".to_string()],
+            outputs: vec!["/explicit.mp4".to_string()],
+            config: Some(config.to_string()),
+            streamer_id: "test".to_string(),
+            session_id: "test".to_string(),
+            ..Default::default()
+        };
+
+        let result = processor.process(&input, &ctx).await.unwrap();
+        assert_eq!(result.outputs, vec!["/explicit.mp4".to_string()]);
+    }
+
     /// Test raw command string (for dynamic job creation).
     #[tokio::test]
     async fn test_raw_command_string() {
@@ -573,6 +676,25 @@ mod tests {
         let result = processor.process(&input, &ctx).await.unwrap();
 
         // Should work and pass through inputs
+        assert_eq!(result.outputs, vec!["/input.mp4".to_string()]);
+    }
+
+    /// Test JSON string config (for programmatic callers that always send JSON).
+    #[tokio::test]
+    async fn test_json_string_config() {
+        let processor = ExecuteCommandProcessor::new();
+        let ctx = ProcessorContext::noop("test");
+
+        let input = ProcessorInput {
+            inputs: vec!["/input.mp4".to_string()],
+            outputs: vec![],
+            config: Some("\"echo hello world\"".to_string()),
+            streamer_id: "test".to_string(),
+            session_id: "test".to_string(),
+            ..Default::default()
+        };
+
+        let result = processor.process(&input, &ctx).await.unwrap();
         assert_eq!(result.outputs, vec!["/input.mp4".to_string()]);
     }
 
@@ -597,6 +719,47 @@ mod tests {
         assert!(out.contains("[\"/out0.mp4\",\"/out1.json\"]"));
         assert!(out.contains(" s "));
         assert!(out.contains(" sess"));
+    }
+
+    #[test]
+    fn test_substitute_variables_rclone_style_placeholders() {
+        let input = ProcessorInput {
+            inputs: vec!["/in0.mp4".to_string()],
+            outputs: vec![],
+            streamer_id: "streamer-123".to_string(),
+            session_id: "session-456".to_string(),
+            streamer_name: Some("Streamer<Name>".to_string()),
+            session_title: Some("Title:With:Colons".to_string()),
+            platform: Some("Twitch".to_string()),
+            config: None,
+        };
+
+        let cmd = "echo {platform} {streamer} {title} {streamer_id} {session_id}";
+        let out = ExecuteCommandProcessor::substitute_variables(cmd, &input);
+
+        assert!(out.contains("Twitch"));
+        assert!(out.contains("Streamer_Name_"));
+        assert!(out.contains("Title_With_Colons"));
+        assert!(out.contains("streamer-123"));
+        assert!(out.contains("session-456"));
+    }
+
+    #[test]
+    fn test_parse_config_rejects_invalid_json_object() {
+        let input = ProcessorInput {
+            inputs: vec![],
+            outputs: vec![],
+            config: Some(r#"{"command": 123}"#.to_string()),
+            streamer_id: "s".to_string(),
+            session_id: "sess".to_string(),
+            ..Default::default()
+        };
+
+        let err = ExecuteCommandProcessor::parse_config(&input).unwrap_err();
+        assert!(
+            err.to_string()
+                .contains("Invalid execute processor config object")
+        );
     }
 
     /// Test missing config returns an error.

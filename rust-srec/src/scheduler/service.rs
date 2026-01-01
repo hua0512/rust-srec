@@ -18,7 +18,7 @@ use std::time::{Duration, Instant};
 use dashmap::DashMap;
 use tokio::sync::broadcast;
 use tokio_util::sync::CancellationToken;
-use tracing::{debug, error, info, warn};
+use tracing::{debug, error, info, trace, warn};
 
 use crate::Result;
 use crate::config::{ConfigEventBroadcaster, ConfigUpdateEvent};
@@ -870,7 +870,7 @@ impl<R: StreamerRepository + Send + Sync + 'static> Scheduler<R> {
         const HEARTBEAT_THROTTLE: Duration = Duration::from_secs(30);
 
         let send_to_actor = |streamer_id: String, msg: StreamerMessage| async move {
-            debug!(
+            trace!(
                 "Handling download event for streamer {}: {:?}",
                 streamer_id, msg
             );

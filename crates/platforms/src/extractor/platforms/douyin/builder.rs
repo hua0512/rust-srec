@@ -9,6 +9,7 @@ use crate::extractor::platforms::douyin::models::{
     DouyinAppResponse, DouyinPcData, DouyinPcResponse, DouyinQuality, DouyinStreamDataParsed,
     DouyinStreamExtras, DouyinStreamUrl, DouyinUserInfo, normalize_bitrate, normalize_codec,
 };
+use crate::extractor::platforms::douyin::sign::gen_verify_fp;
 use crate::extractor::platforms::douyin::utils::{
     GlobalTtwidManager, extract_rid, fetch_ttwid, generate_ms_token, generate_nonce,
     generate_odin_ttid, get_common_params,
@@ -356,6 +357,9 @@ impl<'a> DouyinRequest<'a> {
         params.insert("app_id", "1128");
         params.insert("compress", "gzip");
         params.insert("aid", "6383");
+
+        let verify_fp = gen_verify_fp();
+        params.insert("verifyFp", verify_fp.as_str());
 
         let abogus = self.get_a_bogus_params(&params).await?;
 
@@ -1136,7 +1140,7 @@ mod tests {
     use crate::extractor::platforms::douyin::models::{DouyinAvatarThumb, DouyinUserInfo};
     use crate::extractor::platforms::douyin::utils::GlobalTtwidManager;
 
-    const TEST_URL: &str = "https://live.douyin.com/Larj888";
+    const TEST_URL: &str = "https://live.douyin.com/778Nmi";
 
     #[tokio::test]
     #[ignore]

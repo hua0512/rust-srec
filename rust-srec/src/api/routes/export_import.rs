@@ -15,6 +15,7 @@ use std::collections::HashMap;
 
 use crate::api::error::{ApiError, ApiResult};
 use crate::api::server::AppState;
+use crate::credentials::CredentialScope;
 use crate::database::models::{
     EngineConfigurationDbModel, FilterDbModel, NotificationChannelDbModel, PlatformConfigDbModel,
     StreamerDbModel, TemplateConfigDbModel,
@@ -589,6 +590,7 @@ pub async fn import_config(
 ) -> ApiResult<Json<ImportResult>> {
     let config = request.config;
     let mode = request.mode;
+    let credential_service = state.credential_service.clone();
 
     // Validate schema version
     if !config.version.starts_with("0.") {
@@ -799,6 +801,13 @@ pub async fn import_config(
                 .update_template_config(&updated)
                 .await
                 .map_err(|e| ApiError::internal(format!("Failed to update template: {}", e)))?;
+
+            if let Some(cs) = credential_service.as_ref() {
+                cs.invalidate(&CredentialScope::Template {
+                    template_id: updated.id.clone(),
+                    template_name: updated.name.clone(),
+                });
+            }
             new_template_name_to_id.insert(updated.name.clone(), updated.id.clone());
             stats.templates_updated += 1;
         } else {
@@ -859,6 +868,13 @@ pub async fn import_config(
                 .create_template_config(&new_template)
                 .await
                 .map_err(|e| ApiError::internal(format!("Failed to create template: {}", e)))?;
+
+            if let Some(cs) = credential_service.as_ref() {
+                cs.invalidate(&CredentialScope::Template {
+                    template_id: new_template.id.clone(),
+                    template_name: new_template.name.clone(),
+                });
+            }
             new_template_name_to_id.insert(new_template.name.clone(), new_template.id.clone());
             stats.templates_created += 1;
         }
@@ -875,6 +891,12 @@ pub async fn import_config(
                     .await
                     .is_ok()
             {
+                if let Some(cs) = credential_service.as_ref() {
+                    cs.invalidate(&CredentialScope::Template {
+                        template_id: template.id.clone(),
+                        template_name: template.name.clone(),
+                    });
+                }
                 stats.templates_deleted += 1;
             }
         }
@@ -955,6 +977,13 @@ pub async fn import_config(
                 .update_platform_config(&updated)
                 .await
                 .map_err(|e| ApiError::internal(format!("Failed to update platform: {}", e)))?;
+
+            if let Some(cs) = credential_service.as_ref() {
+                cs.invalidate(&CredentialScope::Platform {
+                    platform_id: updated.id.clone(),
+                    platform_name: updated.platform_name.clone(),
+                });
+            }
             platform_name_to_id.insert(updated.platform_name.clone(), updated.id.clone());
             stats.platforms_updated += 1;
         }
@@ -1004,6 +1033,13 @@ pub async fn import_config(
                 .await
                 .map_err(|e| ApiError::internal(format!("Failed to update streamer: {}", e)))?;
 
+            if let Some(cs) = credential_service.as_ref() {
+                cs.invalidate(&CredentialScope::Streamer {
+                    streamer_id: updated.id.clone(),
+                    streamer_name: updated.name.clone(),
+                });
+            }
+
             // Update filters: delete existing, add new
             filter_repo
                 .delete_filters_for_streamer(&updated.id)
@@ -1037,6 +1073,13 @@ pub async fn import_config(
                 .await
                 .map_err(|e| ApiError::internal(format!("Failed to create streamer: {}", e)))?;
 
+            if let Some(cs) = credential_service.as_ref() {
+                cs.invalidate(&CredentialScope::Streamer {
+                    streamer_id: new_streamer.id.clone(),
+                    streamer_name: new_streamer.name.clone(),
+                });
+            }
+
             // Add filters
             for filter_export in &streamer_export.filters {
                 let filter = FilterDbModel::new(
@@ -1064,6 +1107,12 @@ pub async fn import_config(
                     .await
                     .ok();
                 if streamer_repo.delete_streamer(&streamer.id).await.is_ok() {
+                    if let Some(cs) = credential_service.as_ref() {
+                        cs.invalidate(&CredentialScope::Streamer {
+                            streamer_id: streamer.id.clone(),
+                            streamer_name: streamer.name.clone(),
+                        });
+                    }
                     stats.streamers_deleted += 1;
                 }
             }

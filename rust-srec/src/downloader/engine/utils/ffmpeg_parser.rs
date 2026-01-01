@@ -4,6 +4,7 @@
 //! These utilities are shared between FfmpegEngine and StreamlinkEngine.
 
 use crate::downloader::engine::DownloadProgress;
+use std::path::PathBuf;
 
 /// Parse time string in HH:MM:SS.ms format to seconds.
 ///
@@ -135,6 +136,29 @@ pub fn is_segment_start(line: &str) -> bool {
     line.contains("Opening") && line.contains("for writing")
 }
 
+/// Parse the output path from an FFmpeg "Opening '...'" message.
+///
+/// Example:
+/// - `Opening 'output_001.ts' for writing`
+/// - `[segment] Opening 'C:/out/%Y%m%d-%H%M%S.mp4' for writing`
+pub fn parse_opened_path(line: &str) -> Option<PathBuf> {
+    // Common FFmpeg format: Opening '...path...' for writing
+    if let Some(start) = line.find("Opening '") {
+        let rest = &line[start + "Opening '".len()..];
+        let end = rest.find('\'')?;
+        return Some(PathBuf::from(rest[..end].to_string()));
+    }
+
+    // Fallback: Opening "..." for writing
+    if let Some(start) = line.find("Opening \"") {
+        let rest = &line[start + "Opening \"".len()..];
+        let end = rest.find('"')?;
+        return Some(PathBuf::from(rest[..end].to_string()));
+    }
+
+    None
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -226,5 +250,22 @@ mod tests {
         assert!(!is_segment_start("frame=100 fps=25"));
         assert!(!is_segment_start("Opening file"));
         assert!(!is_segment_start("for writing"));
+    }
+
+    #[test]
+    fn test_parse_opened_path() {
+        assert_eq!(
+            parse_opened_path("Opening 'output_001.ts' for writing")
+                .unwrap()
+                .to_string_lossy(),
+            "output_001.ts"
+        );
+        assert_eq!(
+            parse_opened_path("[segment] Opening \"C:/out/file.mp4\" for writing")
+                .unwrap()
+                .to_string_lossy(),
+            "C:/out/file.mp4"
+        );
+        assert!(parse_opened_path("frame=100 fps=25").is_none());
     }
 }

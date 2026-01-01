@@ -11,9 +11,12 @@ import { Switch } from '@/components/ui/switch';
 import { ProcessorConfigFormProps } from './common-props';
 import { DanmakuFactoryConfigSchema } from '../processor-schemas';
 import { z } from 'zod';
-import { motion } from 'motion/react';
-import { Terminal, Settings, Trash2 } from 'lucide-react';
 import { Trans } from '@lingui/react/macro';
+import { ListInput } from '@/components/ui/list-input';
+import { useLingui } from '@lingui/react';
+import { t } from '@lingui/core/macro';
+import { Settings, Terminal, Trash2 } from 'lucide-react';
+import { motion } from 'motion/react';
 
 type DanmakuFactoryConfig = z.infer<typeof DanmakuFactoryConfigSchema>;
 
@@ -21,6 +24,7 @@ export function DanmakuFactoryConfigForm({
   control,
   pathPrefix,
 }: ProcessorConfigFormProps<DanmakuFactoryConfig>) {
+  const { i18n } = useLingui();
   const prefix = pathPrefix ? `${pathPrefix}.` : '';
 
   const containerVariants = {
@@ -66,6 +70,55 @@ export function DanmakuFactoryConfigForm({
                       Path to DanmakuFactory binary. If empty, uses environment
                       variable or PATH.
                     </Trans>
+                  </FormDescription>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+
+            <FormField
+              control={control}
+              name={`${prefix}args` as any}
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel className="text-xs text-muted-foreground ml-1">
+                    <Trans>Command Arguments</Trans>
+                  </FormLabel>
+                  <FormControl>
+                    <ListInput
+                      value={field.value || []}
+                      onChange={field.onChange}
+                      placeholder={t(i18n)`Add argument template`}
+                    />
+                  </FormControl>
+                  <FormDescription className="text-[11px] ml-1">
+                    <Trans>
+                      Command template args. Use {'{input}'} and {'{output}'}{' '}
+                      placeholders.
+                    </Trans>
+                  </FormDescription>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+
+            <FormField
+              control={control}
+              name={`${prefix}extra_args` as any}
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel className="text-xs text-muted-foreground ml-1">
+                    <Trans>Extra Arguments</Trans>
+                  </FormLabel>
+                  <FormControl>
+                    <ListInput
+                      value={field.value || []}
+                      onChange={field.onChange}
+                      placeholder={t(i18n)`Add extra argument`}
+                    />
+                  </FormControl>
+                  <FormDescription className="text-[11px] ml-1">
+                    <Trans>Additional arguments appended to the command.</Trans>
                   </FormDescription>
                   <FormMessage />
                 </FormItem>

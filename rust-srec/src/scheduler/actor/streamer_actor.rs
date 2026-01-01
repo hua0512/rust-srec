@@ -24,7 +24,7 @@ use std::time::{Duration, Instant};
 use dashmap::DashMap;
 use tokio::sync::mpsc;
 use tokio_util::sync::CancellationToken;
-use tracing::{debug, info, warn};
+use tracing::{debug, info, trace, warn};
 
 use super::handle::{ActorHandle, ActorMetadata, DEFAULT_MAILBOX_CAPACITY};
 use super::messages::{
@@ -852,7 +852,7 @@ impl StreamerActor {
         // platform extraction while a download is actively making progress.
         self.state.last_download_activity_at = Some(Instant::now());
         if let Some(progress) = progress {
-            debug!(
+            trace!(
                 "StreamerActor {} download heartbeat: download_id={}, session_id={}, bytes={}, segments={}, speed={}",
                 self.id,
                 download_id,
@@ -862,7 +862,7 @@ impl StreamerActor {
                 progress.speed_bytes_per_sec
             );
         } else {
-            debug!(
+            trace!(
                 "StreamerActor {} download heartbeat: download_id={}, session_id={}",
                 self.id, download_id, session_id
             );
