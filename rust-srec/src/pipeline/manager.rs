@@ -742,6 +742,15 @@ where
         outputs: SessionOutputs,
         pipeline_def: DagPipelineDefinition,
     ) {
+        // Skip if pipeline has no steps configured
+        if pipeline_def.is_empty() {
+            debug!(
+                session_id = %outputs.session_id,
+                "Skipping session-complete pipeline: no steps configured"
+            );
+            return;
+        }
+
         #[derive(Serialize)]
         struct SessionCompleteManifest {
             session_id: String,
@@ -859,6 +868,16 @@ where
         outputs: PairedSegmentOutputs,
         pipeline_def: DagPipelineDefinition,
     ) {
+        // Skip if pipeline has no steps configured
+        if pipeline_def.is_empty() {
+            debug!(
+                session_id = %outputs.session_id,
+                segment_index = %outputs.segment_index,
+                "Skipping paired-segment pipeline: no steps configured"
+            );
+            return;
+        }
+
         #[derive(Serialize)]
         struct PairedSegmentManifest {
             session_id: String,
@@ -1502,8 +1521,8 @@ where
                         .await;
                 }
 
-                // Create pipeline jobs if pipeline is configured
-                if let Some(dag) = pipeline_config {
+                // Create pipeline jobs if pipeline is configured and has steps
+                if let Some(dag) = pipeline_config.filter(|d| !d.is_empty()) {
                     let tracking_session_complete = session_complete_pipeline.is_some();
                     let tracking_paired = danmu_enabled && paired_segment_pipeline.is_some();
                     if tracking_session_complete {
@@ -1766,7 +1785,8 @@ where
                         });
                 }
 
-                if let Some(dag) = pipeline_config {
+                // Create pipeline jobs if pipeline is configured and has steps
+                if let Some(dag) = pipeline_config.filter(|d| !d.is_empty()) {
                     let tracking_session_complete = session_complete_pipeline.is_some();
                     let tracking_paired = danmu_enabled && paired_segment_pipeline.is_some();
                     if tracking_session_complete {
