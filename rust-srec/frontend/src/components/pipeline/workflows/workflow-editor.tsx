@@ -106,11 +106,41 @@ export function WorkflowEditor({
 
   const handleRemoveStep = (index: number) => {
     const currentSteps = form.getValues('steps');
-    form.setValue(
-      'steps',
-      currentSteps.filter((_, i) => i !== index),
-      { shouldDirty: true },
-    );
+    const removedStep = currentSteps[index];
+    if (!removedStep) return;
+    performRemoveStep(removedStep.id, currentSteps);
+  };
+
+  const handleRemoveStepById = (id: string) => {
+    const currentSteps = form.getValues('steps');
+    performRemoveStep(id, currentSteps);
+  };
+
+  const performRemoveStep = (id: string, currentSteps: DagStepDefinition[]) => {
+    const removedStep = currentSteps.find((s) => s.id === id);
+    if (!removedStep) return;
+
+    // Implementation of bridging logic:
+    // When a step is removed, its successors will now depend on its predecessors
+    const predecessors = removedStep.depends_on || [];
+
+    const updatedSteps = currentSteps
+      .filter((s) => s.id !== id)
+      .map((s) => {
+        if (s.depends_on?.includes(id)) {
+          // Remove the deleted step from dependencies and add its own predecessors
+          const newDependsOn = [
+            ...new Set([
+              ...s.depends_on.filter((depId) => depId !== id),
+              ...predecessors,
+            ]),
+          ];
+          return { ...s, depends_on: newDependsOn };
+        }
+        return s;
+      });
+
+    form.setValue('steps', updatedSteps, { shouldDirty: true });
   };
 
   const handleReorder = (newOrder: DagStepDefinition[]) => {
@@ -367,6 +397,7 @@ export function WorkflowEditor({
                     steps={steps}
                     onUpdateSteps={handleReorder}
                     onEditStep={handleEditStepById}
+                    onRemoveStep={handleRemoveStepById}
                   />
                 </div>
               )}

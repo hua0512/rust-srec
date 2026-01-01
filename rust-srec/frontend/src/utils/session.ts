@@ -63,7 +63,9 @@ function isSecureCookie(): boolean {
     const forwardedProto = getRequestHeader('x-forwarded-proto');
     if (forwardedProto) {
       const isHttps = forwardedProto.toLowerCase() === 'https';
-      console.log(`[Session] X-Forwarded-Proto: ${forwardedProto}, secure cookie: ${isHttps}`);
+      console.log(
+        `[Session] X-Forwarded-Proto: ${forwardedProto}, secure cookie: ${isHttps}`,
+      );
       return isHttps;
     }
   } catch {

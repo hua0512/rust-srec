@@ -5,7 +5,9 @@ import { WebSocketProvider } from '@/providers/WebSocketProvider';
 export const Route = createFileRoute('/_authed')({
   beforeLoad: ({ context, location }) => {
     if (!context.user && location.pathname !== '/login') {
-      console.log(`[_authed] No user found, redirecting from ${location.pathname} to /login`);
+      console.log(
+        `[_authed] No user found, redirecting from ${location.pathname} to /login`,
+      );
       throw redirect({ to: '/login', replace: true });
     }
 

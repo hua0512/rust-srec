@@ -35,7 +35,8 @@ export function useStreamerStatus(streamer: z.infer<typeof StreamerSchema>) {
       if (state === 'FATAL_ERROR') return <Trans>Fatal Error</Trans>;
       if (state === 'CANCELLED') return <Trans>Cancelled</Trans>;
       if (state === 'NOT_FOUND') return <Trans>Not Found</Trans>;
-      if (state === 'TEMPORAL_DISABLED') return <Trans>Temporarily Paused</Trans>;
+      if (state === 'TEMPORAL_DISABLED')
+        return <Trans>Temporarily Paused</Trans>;
       if (state === 'ERROR') return <Trans>Error</Trans>;
       if (state === 'DISABLED') return <Trans>Disabled</Trans>;
       return (
@@ -51,7 +52,7 @@ export function useStreamerStatus(streamer: z.infer<typeof StreamerSchema>) {
     // During SSR (now === null), rely only on state field
     const isTemporarilyPaused = now
       ? (disabledUntil && disabledUntil > now) ||
-      streamer.state === 'TEMPORAL_DISABLED'
+        streamer.state === 'TEMPORAL_DISABLED'
       : streamer.state === 'TEMPORAL_DISABLED';
 
     const stopStates = [

@@ -25,7 +25,11 @@ export const StartTdlLoginRequestSchema = z.object({
   global_args: z.array(z.string()).default([]),
   ttl_secs: z.number().int().positive().optional(),
   allow_password: z.boolean().optional(),
-  suppress_output_on_sensitive_input_secs: z.number().int().positive().optional(),
+  suppress_output_on_sensitive_input_secs: z
+    .number()
+    .int()
+    .positive()
+    .optional(),
   login_args: z.array(z.string()).default([]),
 });
 
@@ -38,7 +42,11 @@ export const StartTdlLoginResponseSchema = z.object({
 
 export type StartTdlLoginResponse = z.infer<typeof StartTdlLoginResponseSchema>;
 
-export const TdlLoginStateSchema = z.enum(['logged_in', 'not_logged_in', 'unknown']);
+export const TdlLoginStateSchema = z.enum([
+  'logged_in',
+  'not_logged_in',
+  'unknown',
+]);
 export type TdlLoginState = z.infer<typeof TdlLoginStateSchema>;
 
 export const GetTdlStatusRequestSchema = z.object({
@@ -64,7 +72,9 @@ export const TdlLoginStatusResponseSchema = z.object({
   output: z.array(z.string()),
 });
 
-export type TdlLoginStatusResponse = z.infer<typeof TdlLoginStatusResponseSchema>;
+export type TdlLoginStatusResponse = z.infer<
+  typeof TdlLoginStatusResponseSchema
+>;
 
 export const SendTdlLoginInputRequestSchema = z.object({
   text: z.string(),

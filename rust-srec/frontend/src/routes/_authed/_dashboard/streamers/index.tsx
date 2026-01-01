@@ -294,10 +294,11 @@ function StreamersPage() {
               <button
                 key={filter.value}
                 onClick={() => handleStateChange(filter.value)}
-                className={`relative px-3 py-1.5 text-sm font-medium rounded-full transition-all duration-200 flex items-center gap-2 ${isActive
+                className={`relative px-3 py-1.5 text-sm font-medium rounded-full transition-all duration-200 flex items-center gap-2 ${
+                  isActive
                     ? 'bg-primary text-primary-foreground shadow-sm'
                     : 'text-muted-foreground hover:text-foreground hover:bg-muted'
-                  }`}
+                }`}
               >
                 <Icon className="h-3.5 w-3.5" />
                 <span className="relative z-10">{filter.label}</span>

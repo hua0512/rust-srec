@@ -156,7 +156,6 @@ export const StepConfigDialog = memo(function StepConfigDialog({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, step, formValuesJson]);
 
-
   const handleSubmit = (data: any) => {
     if (!dagStep) return;
 
@@ -236,9 +235,7 @@ export const StepConfigDialog = memo(function StepConfigDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent
-        className="max-w-6xl! p-0 h-[90vh] flex flex-col gap-0 bg-card/95 backdrop-blur-xl border-border/50 shadow-2xl rounded-2xl overflow-hidden"
-      >
+      <DialogContent className="max-w-6xl! p-0 h-[90vh] flex flex-col gap-0 bg-card/95 backdrop-blur-xl border-border/50 shadow-2xl rounded-2xl overflow-hidden">
         {/* Custom Header */}
         <DialogHeader className="p-6 pr-12 pb-4 border-b border-border/40 shrink-0 space-y-1">
           <DialogTitle className="text-lg font-semibold tracking-tight">
@@ -344,9 +341,7 @@ export const StepConfigDialog = memo(function StepConfigDialog({
                                     </div>
                                   }
                                 >
-                                  <Def.component
-                                    control={presetForm.control}
-                                  />
+                                  <Def.component control={presetForm.control} />
                                 </Suspense>
                               ) : null;
                             })()}
@@ -411,8 +406,8 @@ export const StepConfigDialog = memo(function StepConfigDialog({
                     </h3>
                     <p className="text-sm text-muted-foreground">
                       <Trans>
-                        Define how this step identifies itself and connects
-                        to others.
+                        Define how this step identifies itself and connects to
+                        others.
                       </Trans>
                     </p>
                   </div>
@@ -420,10 +415,7 @@ export const StepConfigDialog = memo(function StepConfigDialog({
 
                 <div className="space-y-6">
                   <div className="space-y-3">
-                    <Label
-                      htmlFor="step-id"
-                      className="text-sm font-medium"
-                    >
+                    <Label htmlFor="step-id" className="text-sm font-medium">
                       <Trans>Step Identifier (Unique)</Trans>
                     </Label>
                     <div className="relative">
@@ -442,8 +434,7 @@ export const StepConfigDialog = memo(function StepConfigDialog({
                     </div>
                     <p className="text-[10px] text-muted-foreground">
                       <Trans>
-                        A unique ID used by other steps to reference this
-                        one.
+                        A unique ID used by other steps to reference this one.
                       </Trans>
                     </p>
                   </div>
@@ -465,20 +456,18 @@ export const StepConfigDialog = memo(function StepConfigDialog({
                                 return (
                                   <div
                                     key={otherId}
-                                    className={`flex items-center space-x-3 p-3 rounded-md transition-colors ${isDep
-                                      ? 'bg-primary/10 border border-primary/20'
-                                      : 'hover:bg-muted/50 border border-transparent'
-                                      }`}
+                                    className={`flex items-center space-x-3 p-3 rounded-md transition-colors ${
+                                      isDep
+                                        ? 'bg-primary/10 border border-primary/20'
+                                        : 'hover:bg-muted/50 border border-transparent'
+                                    }`}
                                   >
                                     <Checkbox
                                       id={`dep-${otherId}`}
                                       checked={isDep}
                                       onCheckedChange={(checked) => {
                                         if (checked) {
-                                          setDependsOn([
-                                            ...dependsOn,
-                                            otherId,
-                                          ]);
+                                          setDependsOn([...dependsOn, otherId]);
                                         } else {
                                           setDependsOn(
                                             dependsOn.filter(
@@ -516,8 +505,8 @@ export const StepConfigDialog = memo(function StepConfigDialog({
                     </div>
                     <p className="text-[10px] text-muted-foreground">
                       <Trans>
-                        Select the steps that must complete successfully
-                        before this step runs.
+                        Select the steps that must complete successfully before
+                        this step runs.
                       </Trans>
                     </p>
                   </div>

@@ -3,12 +3,12 @@ import { t } from '@lingui/core/macro';
 import { Trans } from '@lingui/react/macro';
 import { memo, useState } from 'react';
 import {
-    FormField,
-    FormItem,
-    FormLabel,
-    FormControl,
-    FormMessage,
-    FormDescription,
+  FormField,
+  FormItem,
+  FormLabel,
+  FormControl,
+  FormMessage,
+  FormDescription,
 } from '@/components/ui/form';
 import { Input } from '@/components/ui/input';
 import { Switch } from '@/components/ui/switch';
@@ -19,147 +19,147 @@ import { z } from 'zod';
 import { motion } from 'motion/react';
 import { Badge } from '@/components/ui/badge';
 import {
-    Terminal,
-    Settings,
-    Upload,
-    Lock,
-    ShieldCheck,
-    AlertTriangle,
-    RefreshCw,
-    PlusCircle,
-    Trash2,
+  Terminal,
+  Settings,
+  Upload,
+  Lock,
+  ShieldCheck,
+  AlertTriangle,
+  RefreshCw,
+  PlusCircle,
+  Trash2,
 } from 'lucide-react';
 import { TdlLoginDialog } from './tdl-login-dialog';
 import { Button } from '@/components/ui/button';
 import { useWatch, useFormContext } from 'react-hook-form';
 import {
-    Select,
-    SelectContent,
-    SelectItem,
-    SelectTrigger,
-    SelectValue,
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
 } from '@/components/ui/select';
 
 type TdlConfig = z.infer<typeof TdlProcessorConfigSchema>;
 
 // Helper component for key-value pairs (Environment Variables)
 function EnvVarsFields({ basePath }: { basePath: string }) {
-    const { watch, setValue } = useFormContext();
-    const { i18n } = useLingui();
+  const { watch, setValue } = useFormContext();
+  const { i18n } = useLingui();
 
-    const env = (watch((basePath ? `${basePath}.env` : 'env') as any) ||
-        {}) as Record<string, string>;
-    const entries = Object.entries(env);
+  const env = (watch((basePath ? `${basePath}.env` : 'env') as any) ||
+    {}) as Record<string, string>;
+  const entries = Object.entries(env);
 
-    const addEntry = () => {
-        const newEnv = { ...env, '': '' };
-        setValue((basePath ? `${basePath}.env` : 'env') as any, newEnv, {
-            shouldDirty: true,
-        });
-    };
+  const addEntry = () => {
+    const newEnv = { ...env, '': '' };
+    setValue((basePath ? `${basePath}.env` : 'env') as any, newEnv, {
+      shouldDirty: true,
+    });
+  };
 
-    const removeEntry = (keyToRemove: string) => {
-        const newEnv = { ...env };
-        delete newEnv[keyToRemove];
-        setValue((basePath ? `${basePath}.env` : 'env') as any, newEnv, {
-            shouldDirty: true,
-        });
-    };
+  const removeEntry = (keyToRemove: string) => {
+    const newEnv = { ...env };
+    delete newEnv[keyToRemove];
+    setValue((basePath ? `${basePath}.env` : 'env') as any, newEnv, {
+      shouldDirty: true,
+    });
+  };
 
-    const updateEntryKey = (oldKey: string, newKey: string, value: string) => {
-        if (oldKey === newKey) return;
-        const newEnv = { ...env };
-        delete newEnv[oldKey];
-        newEnv[newKey] = value;
-        setValue((basePath ? `${basePath}.env` : 'env') as any, newEnv, {
-            shouldDirty: true,
-        });
-    };
+  const updateEntryKey = (oldKey: string, newKey: string, value: string) => {
+    if (oldKey === newKey) return;
+    const newEnv = { ...env };
+    delete newEnv[oldKey];
+    newEnv[newKey] = value;
+    setValue((basePath ? `${basePath}.env` : 'env') as any, newEnv, {
+      shouldDirty: true,
+    });
+  };
 
-    const updateEntryValue = (key: string, newValue: string) => {
-        const newEnv = { ...env };
-        newEnv[key] = newValue;
-        setValue((basePath ? `${basePath}.env` : 'env') as any, newEnv, {
-            shouldDirty: true,
-        });
-    };
+  const updateEntryValue = (key: string, newValue: string) => {
+    const newEnv = { ...env };
+    newEnv[key] = newValue;
+    setValue((basePath ? `${basePath}.env` : 'env') as any, newEnv, {
+      shouldDirty: true,
+    });
+  };
 
-    return (
-        <div className="space-y-3 pt-2">
-            <div className="grid grid-cols-1 gap-2">
-                {entries.map(([key, value], index) => (
-                    <div key={index} className="flex gap-2 items-center group">
-                        <Input
-                            placeholder={t(i18n)`Key`}
-                            defaultValue={key}
-                            onBlur={(e) => updateEntryKey(key, e.target.value, value)}
-                            className="w-1/3 bg-background/50 border-border/50 focus:bg-background h-9 text-xs font-mono"
-                        />
-                        <Input
-                            placeholder={t(i18n)`Value`}
-                            value={value}
-                            onChange={(e) => updateEntryValue(key, e.target.value)}
-                            className="flex-1 bg-background/50 border-border/50 focus:bg-background h-9 text-xs font-mono"
-                        />
-                        <Button
-                            type="button"
-                            variant="ghost"
-                            size="icon"
-                            className="h-9 w-9 text-muted-foreground/50 hover:text-destructive hover:bg-destructive/10"
-                            onClick={() => removeEntry(key)}
-                        >
-                            <Trash2 className="h-4 w-4" />
-                        </Button>
-                    </div>
-                ))}
-            </div>
-            {entries.length === 0 && (
-                <div className="text-[10px] text-muted-foreground text-center py-3 border border-dashed border-border/50 rounded-lg">
-                    <Trans>No environment variables defined</Trans>
-                </div>
-            )}
+  return (
+    <div className="space-y-3 pt-2">
+      <div className="grid grid-cols-1 gap-2">
+        {entries.map(([key, value], index) => (
+          <div key={index} className="flex gap-2 items-center group">
+            <Input
+              placeholder={t(i18n)`Key`}
+              defaultValue={key}
+              onBlur={(e) => updateEntryKey(key, e.target.value, value)}
+              className="w-1/3 bg-background/50 border-border/50 focus:bg-background h-9 text-xs font-mono"
+            />
+            <Input
+              placeholder={t(i18n)`Value`}
+              value={value}
+              onChange={(e) => updateEntryValue(key, e.target.value)}
+              className="flex-1 bg-background/50 border-border/50 focus:bg-background h-9 text-xs font-mono"
+            />
             <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                className="w-full border-dashed border-border/60 hover:border-primary/50 hover:bg-primary/5 text-muted-foreground hover:text-primary h-8 text-[10px]"
-                onClick={addEntry}
+              type="button"
+              variant="ghost"
+              size="icon"
+              className="h-9 w-9 text-muted-foreground/50 hover:text-destructive hover:bg-destructive/10"
+              onClick={() => removeEntry(key)}
             >
-                <PlusCircle className="mr-2 h-3.5 w-3.5" />
-                <Trans>Add Environment Variable</Trans>
+              <Trash2 className="h-4 w-4" />
             </Button>
+          </div>
+        ))}
+      </div>
+      {entries.length === 0 && (
+        <div className="text-[10px] text-muted-foreground text-center py-3 border border-dashed border-border/50 rounded-lg">
+          <Trans>No environment variables defined</Trans>
         </div>
-    );
+      )}
+      <Button
+        type="button"
+        variant="outline"
+        size="sm"
+        className="w-full border-dashed border-border/60 hover:border-primary/50 hover:bg-primary/5 text-muted-foreground hover:text-primary h-8 text-[10px]"
+        onClick={addEntry}
+      >
+        <PlusCircle className="mr-2 h-3.5 w-3.5" />
+        <Trans>Add Environment Variable</Trans>
+      </Button>
+    </div>
+  );
 }
 
 export const TdlConfigForm = memo(function TdlConfigForm({
-    control,
-    pathPrefix,
+  control,
+  pathPrefix,
 }: ProcessorConfigFormProps<TdlConfig>) {
-    const { i18n } = useLingui();
-    const prefix = pathPrefix ? `${pathPrefix}.` : '';
-    const [loginDialogOpen, setLoginDialogOpen] = useState(false);
+  const { i18n } = useLingui();
+  const prefix = pathPrefix ? `${pathPrefix}.` : '';
+  const [loginDialogOpen, setLoginDialogOpen] = useState(false);
 
-    // Watch tdl_path and working_dir to pass to login dialog
-    const tdlPath = useWatch({ control, name: `${prefix}tdl_path` as any });
-    const workingDir = useWatch({ control, name: `${prefix}working_dir` as any });
-    const env = useWatch({ control, name: `${prefix}env` as any });
-    const uploadAll = useWatch({ control, name: `${prefix}upload_all` as any });
-    const loginType = useWatch({ control, name: `${prefix}login_type` as any });
-    const namespace = useWatch({ control, name: `${prefix}namespace` as any });
-    const storage = useWatch({ control, name: `${prefix}storage` as any });
-    const telegramDesktopDir = useWatch({
-        control,
-        name: `${prefix}telegram_desktop_dir` as any,
-    });
-    const loginArgs = useWatch({ control, name: `${prefix}login_args` as any });
+  // Watch tdl_path and working_dir to pass to login dialog
+  const tdlPath = useWatch({ control, name: `${prefix}tdl_path` as any });
+  const workingDir = useWatch({ control, name: `${prefix}working_dir` as any });
+  const env = useWatch({ control, name: `${prefix}env` as any });
+  const uploadAll = useWatch({ control, name: `${prefix}upload_all` as any });
+  const loginType = useWatch({ control, name: `${prefix}login_type` as any });
+  const namespace = useWatch({ control, name: `${prefix}namespace` as any });
+  const storage = useWatch({ control, name: `${prefix}storage` as any });
+  const telegramDesktopDir = useWatch({
+    control,
+    name: `${prefix}telegram_desktop_dir` as any,
+  });
+  const loginArgs = useWatch({ control, name: `${prefix}login_args` as any });
 
-    const containerVariants = {
-        hidden: { opacity: 0, y: 20 },
-        visible: { opacity: 1, y: 0, transition: { duration: 0.3 } },
-    };
+  const containerVariants = {
+    hidden: { opacity: 0, y: 20 },
+    visible: { opacity: 1, y: 0, transition: { duration: 0.3 } },
+  };
 
-    return (
+  return (
     <motion.div
       variants={containerVariants}
       initial="hidden"
@@ -204,7 +204,7 @@ export const TdlConfigForm = memo(function TdlConfigForm({
                         <SelectValue placeholder={t(i18n)`Select login type`} />
                       </SelectTrigger>
                     </FormControl>
-                      <SelectContent>
+                    <SelectContent>
                       <SelectItem value="auto">
                         <Trans>Auto (QR → Phone & Code → Desktop)</Trans>
                       </SelectItem>
@@ -221,7 +221,8 @@ export const TdlConfigForm = memo(function TdlConfigForm({
                   </Select>
                   <FormDescription className="text-[10px] ml-1">
                     <Trans>
-                      Prefer QR login first; Phone & Code (2FA optional) second; Desktop last.
+                      Prefer QR login first; Phone & Code (2FA optional) second;
+                      Desktop last.
                     </Trans>
                   </FormDescription>
                   <FormMessage />
@@ -237,7 +238,8 @@ export const TdlConfigForm = memo(function TdlConfigForm({
                 </div>
                 <div className="text-[11px] text-muted-foreground mt-1">
                   <Trans>
-                    If your account has Telegram 2FA enabled, use Desktop login (`-T desktop`) or run `tdl login` locally in a terminal.
+                    If your account has Telegram 2FA enabled, use Desktop login
+                    (`-T desktop`) or run `tdl login` locally in a terminal.
                   </Trans>
                 </div>
               </div>
@@ -267,7 +269,8 @@ export const TdlConfigForm = memo(function TdlConfigForm({
                   </FormControl>
                   <FormDescription className="text-[10px] ml-1">
                     <Trans>
-                      TDL account namespace (`tdl --ns ...`). Use this to manage multiple Telegram accounts.
+                      TDL account namespace (`tdl --ns ...`). Use this to manage
+                      multiple Telegram accounts.
                     </Trans>
                   </FormDescription>
                   <FormMessage />
@@ -297,7 +300,8 @@ export const TdlConfigForm = memo(function TdlConfigForm({
                   </FormControl>
                   <FormDescription className="text-[10px] ml-1">
                     <Trans>
-                      Where TDL stores session data (`tdl --storage ...`). Example: `type=bolt,path=/data/tdl`.
+                      Where TDL stores session data (`tdl --storage ...`).
+                      Example: `type=bolt,path=/data/tdl`.
                     </Trans>
                   </FormDescription>
                   <FormMessage />
@@ -353,7 +357,9 @@ export const TdlConfigForm = memo(function TdlConfigForm({
                     />
                   </FormControl>
                   <FormDescription className="text-[10px] ml-1">
-                    <Trans>Where TDL stores its session and configuration.</Trans>
+                    <Trans>
+                      Where TDL stores its session and configuration.
+                    </Trans>
                   </FormDescription>
                   <FormMessage />
                 </FormItem>
@@ -373,7 +379,9 @@ export const TdlConfigForm = memo(function TdlConfigForm({
                   <FormControl>
                     <Input
                       className="h-11 bg-background/50 border-border/50 focus:bg-background rounded-lg font-mono text-sm transition-colors"
-                      placeholder={t(i18n)`e.g. C:\\Users\\...\\AppData\\Roaming\\Telegram Desktop`}
+                      placeholder={t(
+                        i18n,
+                      )`e.g. C:\\Users\\...\\AppData\\Roaming\\Telegram Desktop`}
                       {...field}
                       value={field.value ?? ''}
                       onChange={(e) => {
@@ -384,7 +392,8 @@ export const TdlConfigForm = memo(function TdlConfigForm({
                   </FormControl>
                   <FormDescription className="text-[10px] ml-1">
                     <Trans>
-                      Used for Desktop login (fallback); points to Telegram Desktop folder containing `tdata`.
+                      Used for Desktop login (fallback); points to Telegram
+                      Desktop folder containing `tdata`.
                     </Trans>
                   </FormDescription>
                   <FormMessage />
@@ -558,9 +567,7 @@ export const TdlConfigForm = memo(function TdlConfigForm({
                   </FormControl>
                   <FormDescription className="text-[10px] ml-1">
                     {uploadAll ? (
-                      <Trans>
-                        Ignored when "Upload All Files" is enabled.
-                      </Trans>
+                      <Trans>Ignored when "Upload All Files" is enabled.</Trans>
                     ) : (
                       <Trans>
                         List of allowed file extensions (without dot).
@@ -610,7 +617,9 @@ export const TdlConfigForm = memo(function TdlConfigForm({
                       type="number"
                       className="h-11 bg-background/50 border-border/50 focus:bg-background rounded-lg transition-colors"
                       {...field}
-                      onChange={(e) => field.onChange(parseInt(e.target.value) || 0)}
+                      onChange={(e) =>
+                        field.onChange(parseInt(e.target.value) || 0)
+                      }
                       value={field.value ?? 1}
                     />
                   </FormControl>
@@ -694,6 +703,6 @@ export const TdlConfigForm = memo(function TdlConfigForm({
         telegramDesktopDir={telegramDesktopDir}
         loginArgs={loginArgs}
       />
-    </motion.div >
+    </motion.div>
   );
 });

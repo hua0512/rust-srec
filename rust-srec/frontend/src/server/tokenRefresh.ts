@@ -65,9 +65,9 @@ async function applyOutcomeToSession({
       outcome.mustChangePassword ?? currentSessionData.mustChangePassword,
   };
 
-  console.log(
-    `[TokenRefresh] Applying new tokens to session. Access: ${outcome.accessToken.slice(0, 10)}..., Refresh: ${outcome.refreshToken.slice(0, 10)}...`,
-  );
+  // console.log(
+  //   `[TokenRefresh] Applying new tokens to session. Access: ${outcome.accessToken.slice(0, 10)}..., Refresh: ${outcome.refreshToken.slice(0, 10)}...`,
+  // );
   await session.update(userData);
 
   if (outcome.refreshToken !== oldRefreshToken) {
@@ -99,15 +99,15 @@ export async function refreshAuthTokenGlobal(): Promise<string | null> {
   const currentRefreshToken = currentData.token?.refresh_token;
 
   if (!currentRefreshToken) {
-    console.log('[TokenRefresh] No refresh token available in session.');
+    // console.log('[TokenRefresh] No refresh token available in session.');
     return null;
   }
 
   const recent = getRecentRotation(currentRefreshToken);
   if (recent) {
-    console.log(
-      `[TokenRefresh] Refresh token was recently rotated (outcome cached). Using new access token: ${recent.accessToken.slice(0, 10)}...`,
-    );
+    // console.log(
+    //   `[TokenRefresh] Refresh token was recently rotated (outcome cached). Using new access token: ${recent.accessToken.slice(0, 10)}...`,
+    // );
     await applyOutcomeToSession({
       session,
       currentSessionData: currentData,
@@ -120,9 +120,9 @@ export async function refreshAuthTokenGlobal(): Promise<string | null> {
   // If a refresh is already in progress for this refresh token, wait for it
   let refreshPromise = inFlightRefreshByRefreshToken.get(currentRefreshToken);
   if (refreshPromise) {
-    console.log(
-      `[TokenRefresh] Refresh already in progress for token ${currentRefreshToken.slice(0, 10)}..., waiting...`,
-    );
+    // console.log(
+    //   `[TokenRefresh] Refresh already in progress for token ${currentRefreshToken.slice(0, 10)}..., waiting...`,
+    // );
   } else {
     refreshPromise = performRefresh({
       refreshToken: currentRefreshToken,
@@ -138,7 +138,7 @@ export async function refreshAuthTokenGlobal(): Promise<string | null> {
   const outcome = await refreshPromise;
 
   if (!outcome) {
-    console.log('[TokenRefresh] Refresh failed (no outcome), clearing session.');
+    // console.log('[TokenRefresh] Refresh failed (no outcome), clearing session.');
     await session.clear();
     return null;
   }
@@ -166,11 +166,11 @@ async function performRefresh({
   fallbackRefreshExpiry?: number;
 }): Promise<RefreshOutcome | null> {
   try {
-    console.log('[TokenRefresh] Calling refresh endpoint...');
+    // console.log('[TokenRefresh] Calling refresh endpoint...');
 
     const baseUrl = BASE_URL.endsWith('/') ? BASE_URL.slice(0, -1) : BASE_URL;
     const url = `${baseUrl}/auth/refresh`;
-    console.log(`[TokenRefresh] POST ${url} with token: ${refreshToken.slice(0, 10)}...`);
+    // console.log(`[TokenRefresh] POST ${url} with token: ${refreshToken.slice(0, 10)}...`);
     const response = await fetch(url, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -180,9 +180,9 @@ async function performRefresh({
     if (!response.ok) {
       const rotated = getRecentRotation(refreshToken);
       if (rotated) {
-        console.log(
-          '[TokenRefresh] Token was rotated by another request, using new token.',
-        );
+        // console.log(
+        //   '[TokenRefresh] Token was rotated by another request, using new token.',
+        // );
         return rotated;
       }
 
@@ -209,10 +209,11 @@ async function performRefresh({
         // ignore body parsing errors
       }
 
-      const wwwAuthenticate = response.headers.get('www-authenticate') ?? undefined;
-      console.error(
-        `[TokenRefresh] Refresh failed with status: ${response.status}${detail ? ` (${detail})` : ''}${wwwAuthenticate ? ` [www-authenticate: ${wwwAuthenticate}]` : ''}`,
-      );
+      const wwwAuthenticate =
+        response.headers.get('www-authenticate') ?? undefined;
+      // console.error(
+      //   `[TokenRefresh] Refresh failed with status: ${response.status}${detail ? ` (${detail})` : ''}${wwwAuthenticate ? ` [www-authenticate: ${wwwAuthenticate}]` : ''}`,
+      // );
       throw new Error(
         `Refresh failed: ${response.status}${detail ? ` (${detail})` : ''}`,
       );
@@ -228,13 +229,13 @@ async function performRefresh({
 
     const computedRefreshExpiry =
       typeof json.refresh_expires_in === 'number' &&
-        Number.isFinite(json.refresh_expires_in)
+      Number.isFinite(json.refresh_expires_in)
         ? now + json.refresh_expires_in * 1000
         : (fallbackRefreshExpiry ?? now);
 
-    console.log(
-      `[TokenRefresh] Token refreshed successfully. Access expiry: ${new Date(computedAccessExpiry).toLocaleString()}, Refresh expiry: ${new Date(computedRefreshExpiry).toLocaleString()}`,
-    );
+    // console.log(
+    //   `[TokenRefresh] Token refreshed successfully. Access expiry: ${new Date(computedAccessExpiry).toLocaleString()}, Refresh expiry: ${new Date(computedRefreshExpiry).toLocaleString()}`,
+    // );
     return {
       accessToken: json.access_token,
       refreshToken: json.refresh_token || refreshToken,
@@ -248,9 +249,9 @@ async function performRefresh({
 
     const rotated = getRecentRotation(refreshToken);
     if (rotated) {
-      console.log(
-        '[TokenRefresh] Token was rotated by another request during error, using new token.',
-      );
+      // console.log(
+      //   '[TokenRefresh] Token was rotated by another request during error, using new token.',
+      // );
       return rotated;
     }
     return null;
@@ -271,7 +272,7 @@ export async function ensureValidToken(): Promise<ClientSessionData | null> {
 
   // Check if we have the minimum required data
   if (!token?.refresh_token || !username) {
-    console.log(`[TokenRefresh] Missing ${!token?.refresh_token ? 'refresh_token' : ''}${!token?.refresh_token && !username ? ' and ' : ''}${!username ? 'username' : ''} in session.`);
+    // console.log(`[TokenRefresh] Missing ${!token?.refresh_token ? 'refresh_token' : ''}${!token?.refresh_token && !username ? ' and ' : ''}${!username ? 'username' : ''} in session.`);
     return null;
   }
 
@@ -280,7 +281,7 @@ export async function ensureValidToken(): Promise<ClientSessionData | null> {
   // Check if refresh token is expired
   const refreshExpiry = token.refresh_expires_in ?? 0;
   if (now >= refreshExpiry) {
-    console.log('[TokenRefresh] Refresh token expired, clearing session.');
+    // console.log('[TokenRefresh] Refresh token expired, clearing session.');
     await session.clear();
     return null;
   }
@@ -289,9 +290,9 @@ export async function ensureValidToken(): Promise<ClientSessionData | null> {
   const accessExpiry = token.expires_in ?? 0;
   const buffer = 30000;
   if (now >= accessExpiry - buffer) {
-    console.log(
-      `[TokenRefresh] Access token expired or expiring soon. Now: ${new Date(now).toLocaleString()}, Expiry: ${new Date(accessExpiry).toLocaleString()}, Buffer: ${buffer}ms. Refreshing...`,
-    );
+    // console.log(
+    //   `[TokenRefresh] Access token expired or expiring soon. Now: ${new Date(now).toLocaleString()}, Expiry: ${new Date(accessExpiry).toLocaleString()}, Buffer: ${buffer}ms. Refreshing...`,
+    // );
     const newAccessToken = await refreshAuthTokenGlobal();
 
     if (!newAccessToken) {
