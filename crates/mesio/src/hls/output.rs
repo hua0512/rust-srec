@@ -242,6 +242,7 @@ use super::HlsDownloaderError;
 use crate::hls::config::GapSkipStrategy;
 use crate::hls::events::GapSkipReason;
 use crate::hls::metrics::PerformanceMetrics;
+use hls::SegmentType;
 
 /// Statistics about the current state of the reorder buffer.
 #[derive(Debug, Clone)]
@@ -262,6 +263,24 @@ pub struct OutputManager {
     event_tx: mpsc::Sender<Result<HlsStreamEvent, HlsDownloaderError>>,
     /// Reorder buffer storing segments with metadata
     reorder_buffer: BTreeMap<u64, BufferedSegment>,
+    /// Pending fMP4 init segments keyed by the MSN at which they become applicable.
+    ///
+    /// These are not inserted into `reorder_buffer` because the buffer is keyed by MSN and
+    /// cannot hold both an init segment and a media segment for the same MSN.
+    pending_init_segments: BTreeMap<u64, BufferedSegment>,
+    /// Whether we've seen at least one init segment on this stream.
+    ///
+    /// For fMP4 streams, emitting media segments before any init segment results in downstream
+    /// buffering/dropping. We therefore gate initial media emission until an init arrives.
+    has_seen_init_segment: bool,
+    /// Whether we have observed any fMP4 segments on this stream (init or media).
+    /// Used to apply fMP4-specific startup heuristics without affecting TS streams.
+    is_fmp4_stream: bool,
+    /// Whether we've emitted at least one *media* segment (TS or fMP4 media).
+    ///
+    /// For live fMP4 streams, count-based gap skipping before the first media emission is prone
+    /// to false positives due to out-of-order completion under download concurrency.
+    has_emitted_media_segment: bool,
     is_live_stream: bool,
     expected_next_media_sequence: u64,
     playlist_ended: bool,
@@ -308,6 +327,10 @@ impl OutputManager {
             input_rx,
             event_tx,
             reorder_buffer: BTreeMap::new(),
+            pending_init_segments: BTreeMap::new(),
+            has_seen_init_segment: false,
+            is_fmp4_stream: false,
+            has_emitted_media_segment: false,
             is_live_stream,
             expected_next_media_sequence: initial_media_sequence,
             playlist_ended: false,
@@ -342,6 +365,10 @@ impl OutputManager {
             input_rx,
             event_tx,
             reorder_buffer: BTreeMap::new(),
+            pending_init_segments: BTreeMap::new(),
+            has_seen_init_segment: false,
+            is_fmp4_stream: false,
+            has_emitted_media_segment: false,
             is_live_stream,
             expected_next_media_sequence: initial_media_sequence,
             playlist_ended: false,
@@ -447,6 +474,10 @@ impl OutputManager {
         //
         let strategy = self.get_gap_strategy();
 
+        let in_startup =
+            self.is_live_stream && self.is_fmp4_stream && !self.has_emitted_media_segment;
+        let elapsed = gap_state.elapsed();
+
         match strategy {
             GapSkipStrategy::WaitIndefinitely => {
                 // Never skip based on gap strategy alone.
@@ -456,14 +487,16 @@ impl OutputManager {
                 None
             }
             GapSkipStrategy::SkipAfterCount(threshold) => {
-                if gap_state.segments_since_gap >= *threshold {
+                // More robust startup behavior: count-based skipping is prone to false positives
+                // when downloads complete out of order (common with concurrency). Until we have
+                // emitted at least one media segment on fMP4 streams, only duration-based skipping is allowed.
+                if !in_startup && gap_state.segments_since_gap >= *threshold {
                     Some(GapSkipReason::CountThreshold(gap_state.segments_since_gap))
                 } else {
                     None
                 }
             }
             GapSkipStrategy::SkipAfterDuration(threshold) => {
-                let elapsed = gap_state.elapsed();
                 if elapsed >= *threshold {
                     Some(GapSkipReason::DurationThreshold(elapsed))
                 } else {
@@ -472,9 +505,11 @@ impl OutputManager {
             }
             GapSkipStrategy::SkipAfterBoth { count, duration } => {
                 // Skip when EITHER threshold is exceeded (OR semantics)
-                let elapsed = gap_state.elapsed();
-                let count_exceeded = gap_state.segments_since_gap >= *count;
                 let duration_exceeded = elapsed >= *duration;
+
+                // More robust startup behavior: disable count-based skipping until at least one
+                // media segment has been emitted on fMP4 streams.
+                let count_exceeded = !in_startup && gap_state.segments_since_gap >= *count;
 
                 if count_exceeded && duration_exceeded {
                     Some(GapSkipReason::BothThresholds {
@@ -558,6 +593,38 @@ impl OutputManager {
                     match processed_result {
                         Some(Ok(processed_output)) => {
                             let current_segment_sequence = processed_output.media_sequence_number;
+
+                            match processed_output.data.segment_type() {
+                                SegmentType::M4sInit | SegmentType::M4sMedia => {
+                                    self.is_fmp4_stream = true;
+                                }
+                                SegmentType::Ts | SegmentType::EndMarker => {}
+                            }
+
+                            // fMP4 init segments are not part of the media sequence progression
+                            // and cannot be stored in the reorder buffer (keyed by MSN). Track them
+                            // separately and emit them when we later emit a media segment whose MSN
+                            // is >= the init segment's MSN.
+                            if processed_output.data.is_init_segment() {
+                                self.has_seen_init_segment = true;
+                                let buffered_init = BufferedSegment::new(processed_output);
+                                self.pending_init_segments
+                                    .insert(current_segment_sequence, buffered_init);
+
+                                // Prevent unbounded growth if a playlist produces many init segments.
+                                const MAX_PENDING_INIT_SEGMENTS: usize = 8;
+                                while self.pending_init_segments.len() > MAX_PENDING_INIT_SEGMENTS {
+                                    self.pending_init_segments.pop_first();
+                                }
+
+                                // An init segment can unblock emission for already-buffered media.
+                                if self.try_emit_segments().await.is_err() {
+                                    error!("Error emitting segments from buffer after init segment. Exiting.");
+                                    break;
+                                }
+
+                                continue;
+                            }
 
                             // Record segment received in metrics
                             self.metrics.record_segment_received();
@@ -692,13 +759,23 @@ impl OutputManager {
     /// Attempts to emit segments from the reorder buffer.
     /// Handles ordering, discontinuities, and gap skipping (for live streams).
     /// Returns Ok(()) if successful, Err(()) if event_tx is closed.
-    #[allow(deprecated)]
     async fn try_emit_segments(&mut self) -> Result<(), ()> {
         while let Some(entry) = self.reorder_buffer.first_entry() {
             let segment_sequence = *entry.key();
 
             if segment_sequence == self.expected_next_media_sequence {
                 // Expected segment found
+                if let Some(buffered_segment) = self.reorder_buffer.get(&segment_sequence) {
+                    let is_fmp4_media =
+                        buffered_segment.output.data.segment_type() == SegmentType::M4sMedia;
+
+                    // For fMP4, do not emit any media segments until we've seen an init segment.
+                    // This prevents downstream components from buffering/dropping early segments.
+                    if is_fmp4_media && !self.has_seen_init_segment {
+                        break;
+                    }
+                }
+
                 if let Some((_seq, buffered_segment)) =
                     self.reorder_buffer.remove_entry(&segment_sequence)
                 {
@@ -781,6 +858,16 @@ impl OutputManager {
                             return Err(());
                         }
                     }
+
+                    // If we sent the discontinuity event for this MSN, avoid duplicating it when
+                    // emitting a pending init segment for the same boundary.
+                    self.emit_applicable_init_segment(
+                        segment_sequence,
+                        segment_output.discontinuity,
+                    )
+                    .await?;
+
+                    let is_media = !segment_output.data.is_init_segment();
                     let event = HlsStreamEvent::Data(Box::new(segment_output.data));
                     if self.event_tx.send(Ok(event)).await.is_err() {
                         return Err(());
@@ -788,6 +875,9 @@ impl OutputManager {
 
                     // Record segment emitted in metrics
                     self.metrics.record_segment_emitted();
+                    if is_media {
+                        self.has_emitted_media_segment = true;
+                    }
 
                     self.expected_next_media_sequence += 1;
 
@@ -1086,6 +1176,7 @@ impl OutputManager {
     /// Flushes remaining segments from the reorder buffer.
     /// Returns Ok(()) if successful, Err(()) if event_tx is closed.
     async fn flush_reorder_buffer(&mut self) -> Result<(), ()> {
+        let mut warned_missing_init = false;
         // Removes and returns the first element (smallest key),
         while let Some((_key, buffered_segment)) = self.reorder_buffer.pop_first() {
             // Update buffer byte tracking
@@ -1099,6 +1190,17 @@ impl OutputManager {
 
             // Extract the ProcessedSegmentOutput from BufferedSegment
             let segment_output = buffered_segment.output;
+
+            let is_fmp4_media = segment_output.data.segment_type() == SegmentType::M4sMedia;
+            if is_fmp4_media && !self.has_seen_init_segment {
+                if !warned_missing_init {
+                    warn!(
+                        "Dropping fMP4 media segments during flush because no init segment was ever received."
+                    );
+                    warned_missing_init = true;
+                }
+                continue;
+            }
 
             if segment_output.discontinuity {
                 debug!("sending discontinuity tag encountered in flush_reorder_buffer");
@@ -1124,6 +1226,15 @@ impl OutputManager {
                     return Err(());
                 }
             }
+
+            // Emit the most recent init segment applicable to this MSN (if any).
+            self.emit_applicable_init_segment(
+                segment_output.media_sequence_number,
+                segment_output.discontinuity,
+            )
+            .await?;
+
+            let is_media = !segment_output.data.is_init_segment();
             let event = HlsStreamEvent::Data(Box::new(segment_output.data));
             if self.event_tx.send(Ok(event)).await.is_err() {
                 // If sending fails, return the error.
@@ -1132,6 +1243,9 @@ impl OutputManager {
 
             // Record segment emitted in metrics
             self.metrics.record_segment_emitted();
+            if is_media {
+                self.has_emitted_media_segment = true;
+            }
         }
 
         // Update metrics for buffer depth (should be 0 after flush)
@@ -1172,6 +1286,10 @@ impl OutputManager {
         self.expected_next_media_sequence = initial_sequence;
         self.playlist_ended = false; // Reset if re-initializing
         self.reorder_buffer.clear();
+        self.pending_init_segments.clear();
+        self.has_seen_init_segment = false;
+        self.is_fmp4_stream = false;
+        self.has_emitted_media_segment = false;
         // Reset gap state
         self.gap_state = None;
         // Reset buffer byte tracking
@@ -1185,12 +1303,363 @@ impl OutputManager {
         self.metrics.update_buffer_depth(0);
         self.metrics.update_buffer_bytes(0);
     }
+
+    async fn emit_applicable_init_segment(
+        &mut self,
+        msn: u64,
+        discontinuity_already_emitted: bool,
+    ) -> Result<(), ()> {
+        let Some((&last_key, _)) = self.pending_init_segments.range(..=msn).next_back() else {
+            return Ok(());
+        };
+
+        // Remove all init segments that are now behind or equal to the current MSN.
+        // Only emit the most recent one, since it represents the active init state.
+        let keys: Vec<u64> = self
+            .pending_init_segments
+            .range(..=msn)
+            .map(|(&k, _)| k)
+            .collect();
+
+        let mut last: Option<BufferedSegment> = None;
+        for k in keys {
+            last = self.pending_init_segments.remove(&k);
+        }
+
+        let Some(buffered_init) = last else {
+            return Ok(());
+        };
+
+        // Sanity: make sure we're emitting the expected most-recent init segment.
+        debug_assert_eq!(buffered_init.media_sequence_number(), last_key);
+
+        if buffered_init.output.discontinuity
+            && !discontinuity_already_emitted
+            && self
+                .event_tx
+                .send(Ok(HlsStreamEvent::DiscontinuityTagEncountered {}))
+                .await
+                .is_err()
+        {
+            return Err(());
+        }
+
+        let event = HlsStreamEvent::Data(Box::new(buffered_init.output.data));
+        if self.event_tx.send(Ok(event)).await.is_err() {
+            return Err(());
+        }
+
+        Ok(())
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use bytes::Bytes;
+    use hls::HlsData;
     use proptest::prelude::*;
+    use std::time::Duration;
+
+    fn test_init_segment(data: &[u8]) -> HlsData {
+        HlsData::mp4_init(
+            m3u8_rs::MediaSegment {
+                uri: "init.mp4".to_string(),
+                duration: 0.0,
+                title: None,
+                byte_range: None,
+                discontinuity: false,
+                key: None,
+                map: None,
+                program_date_time: None,
+                daterange: None,
+                unknown_tags: vec![],
+            },
+            Bytes::from(data.to_vec()),
+        )
+    }
+
+    fn test_media_segment(data: &[u8]) -> HlsData {
+        HlsData::mp4_segment(
+            m3u8_rs::MediaSegment {
+                uri: "segment.m4s".to_string(),
+                duration: 1.0,
+                title: None,
+                byte_range: None,
+                discontinuity: false,
+                key: None,
+                map: None,
+                program_date_time: None,
+                daterange: None,
+                unknown_tags: vec![],
+            },
+            Bytes::from(data.to_vec()),
+        )
+    }
+
+    #[tokio::test]
+    async fn emits_init_before_media_on_gap_skip() {
+        let mut config = HlsConfig::default();
+        config.output_config.live_gap_strategy = GapSkipStrategy::SkipAfterCount(1);
+        config.output_config.live_max_overall_stall_duration = None;
+
+        let (input_tx, input_rx) = mpsc::channel(16);
+        let (event_tx, mut event_rx) = mpsc::channel(16);
+        let token = CancellationToken::new();
+
+        let mut mgr = OutputManager::new(
+            Arc::new(config),
+            input_rx,
+            event_tx,
+            true,
+            99,
+            token.clone(),
+        );
+
+        let join = tokio::spawn(async move {
+            mgr.run().await;
+        });
+
+        // Emit one media segment first so that count-based gap skipping is enabled (startup
+        // suppresses count-based skipping for robustness).
+        input_tx
+            .send(Ok(ProcessedSegmentOutput {
+                original_segment_uri: "init0.mp4".to_string(),
+                data: test_init_segment(b"init0"),
+                media_sequence_number: 99,
+                discontinuity: false,
+            }))
+            .await
+            .unwrap();
+        input_tx
+            .send(Ok(ProcessedSegmentOutput {
+                original_segment_uri: "segment0.m4s".to_string(),
+                data: test_media_segment(b"media0"),
+                media_sequence_number: 99,
+                discontinuity: false,
+            }))
+            .await
+            .unwrap();
+
+        // Drain the initial init+media emissions.
+        tokio::time::timeout(Duration::from_secs(2), async {
+            let mut drained = 0usize;
+            while drained < 2 {
+                if let Some(evt) = event_rx.recv().await
+                    && matches!(evt, Ok(HlsStreamEvent::Data(_)))
+                {
+                    drained += 1;
+                }
+            }
+        })
+        .await
+        .expect("timed out waiting for initial emissions");
+
+        input_tx
+            .send(Ok(ProcessedSegmentOutput {
+                original_segment_uri: "init.mp4".to_string(),
+                data: test_init_segment(b"init"),
+                media_sequence_number: 100,
+                discontinuity: false,
+            }))
+            .await
+            .unwrap();
+
+        input_tx
+            .send(Ok(ProcessedSegmentOutput {
+                original_segment_uri: "segment.m4s".to_string(),
+                data: test_media_segment(b"media"),
+                media_sequence_number: 101,
+                discontinuity: false,
+            }))
+            .await
+            .unwrap();
+
+        let mut data_events: Vec<HlsData> = Vec::new();
+        let read = tokio::time::timeout(Duration::from_secs(2), async {
+            while let Some(evt) = event_rx.recv().await {
+                if let Ok(HlsStreamEvent::Data(data)) = evt {
+                    data_events.push(*data);
+                    if data_events.len() >= 2 {
+                        break;
+                    }
+                }
+            }
+        })
+        .await;
+        assert!(read.is_ok(), "timed out waiting for events");
+
+        assert_eq!(data_events.len(), 2);
+        assert!(data_events[0].is_init_segment());
+        assert!(!data_events[1].is_init_segment());
+
+        token.cancel();
+        drop(input_tx);
+        let _ = join.await;
+    }
+
+    #[tokio::test]
+    async fn emits_init_and_media_for_same_msn_without_collision() {
+        let mut config = HlsConfig::default();
+        config.output_config.live_max_overall_stall_duration = None;
+
+        let (input_tx, input_rx) = mpsc::channel(16);
+        let (event_tx, mut event_rx) = mpsc::channel(16);
+        let token = CancellationToken::new();
+
+        let mut mgr = OutputManager::new(
+            Arc::new(config),
+            input_rx,
+            event_tx,
+            true,
+            100,
+            token.clone(),
+        );
+
+        let join = tokio::spawn(async move {
+            mgr.run().await;
+        });
+
+        input_tx
+            .send(Ok(ProcessedSegmentOutput {
+                original_segment_uri: "init.mp4".to_string(),
+                data: test_init_segment(b"init"),
+                media_sequence_number: 100,
+                discontinuity: false,
+            }))
+            .await
+            .unwrap();
+
+        input_tx
+            .send(Ok(ProcessedSegmentOutput {
+                original_segment_uri: "segment.m4s".to_string(),
+                data: test_media_segment(b"media"),
+                media_sequence_number: 100,
+                discontinuity: false,
+            }))
+            .await
+            .unwrap();
+
+        let mut data_events: Vec<HlsData> = Vec::new();
+        let read = tokio::time::timeout(Duration::from_secs(2), async {
+            while let Some(evt) = event_rx.recv().await {
+                if let Ok(HlsStreamEvent::Data(data)) = evt {
+                    data_events.push(*data);
+                    if data_events.len() >= 2 {
+                        break;
+                    }
+                }
+            }
+        })
+        .await;
+        assert!(read.is_ok(), "timed out waiting for events");
+
+        assert_eq!(data_events.len(), 2);
+        assert!(data_events[0].is_init_segment());
+        assert!(!data_events[1].is_init_segment());
+
+        token.cancel();
+        drop(input_tx);
+        let _ = join.await;
+    }
+
+    #[tokio::test]
+    async fn does_not_emit_fmp4_media_before_init() {
+        let mut config = HlsConfig::default();
+        config.output_config.live_max_overall_stall_duration = None;
+        config.output_config.live_gap_strategy = GapSkipStrategy::SkipAfterCount(1);
+
+        let (input_tx, input_rx) = mpsc::channel(16);
+        let (event_tx, mut event_rx) = mpsc::channel(16);
+        let token = CancellationToken::new();
+
+        let mut mgr = OutputManager::new(
+            Arc::new(config),
+            input_rx,
+            event_tx,
+            true,
+            100,
+            token.clone(),
+        );
+
+        let join = tokio::spawn(async move {
+            mgr.run().await;
+        });
+
+        input_tx
+            .send(Ok(ProcessedSegmentOutput {
+                original_segment_uri: "segment.m4s".to_string(),
+                data: test_media_segment(b"media"),
+                media_sequence_number: 100,
+                discontinuity: false,
+            }))
+            .await
+            .unwrap();
+
+        let no_event = tokio::time::timeout(Duration::from_millis(200), event_rx.recv()).await;
+        assert!(no_event.is_err(), "should not emit media before init");
+
+        input_tx
+            .send(Ok(ProcessedSegmentOutput {
+                original_segment_uri: "init.mp4".to_string(),
+                data: test_init_segment(b"init"),
+                media_sequence_number: 100,
+                discontinuity: false,
+            }))
+            .await
+            .unwrap();
+
+        let mut data_events: Vec<HlsData> = Vec::new();
+        let read = tokio::time::timeout(Duration::from_secs(2), async {
+            while let Some(evt) = event_rx.recv().await {
+                if let Ok(HlsStreamEvent::Data(data)) = evt {
+                    data_events.push(*data);
+                    if data_events.len() >= 2 {
+                        break;
+                    }
+                }
+            }
+        })
+        .await;
+        assert!(read.is_ok(), "timed out waiting for events after init");
+
+        assert_eq!(data_events.len(), 2);
+        assert!(data_events[0].is_init_segment());
+        assert!(!data_events[1].is_init_segment());
+
+        token.cancel();
+        drop(input_tx);
+        let _ = join.await;
+    }
+
+    #[test]
+    fn startup_count_based_gap_skip_is_suppressed_until_first_media_emitted() {
+        let mut config = HlsConfig::default();
+        config.output_config.live_max_overall_stall_duration = None;
+        config.output_config.live_gap_strategy = GapSkipStrategy::SkipAfterCount(3);
+
+        let (_input_tx, input_rx) = mpsc::channel(1);
+        let (event_tx, _event_rx) = mpsc::channel(1);
+        let token = CancellationToken::new();
+
+        let mut mgr = OutputManager::new(Arc::new(config), input_rx, event_tx, true, 0, token);
+
+        mgr.is_fmp4_stream = true;
+        mgr.gap_state = Some(GapState {
+            missing_sequence: 0,
+            detected_at: Instant::now(),
+            segments_since_gap: 3,
+        });
+        mgr.has_emitted_media_segment = false;
+
+        assert!(mgr.should_skip_gap().is_none());
+
+        mgr.has_emitted_media_segment = true;
+        assert!(matches!(
+            mgr.should_skip_gap(),
+            Some(GapSkipReason::CountThreshold(3))
+        ));
+    }
 
     /// Helper function to simulate stale segment rejection logic
     /// This mirrors the admission control logic in OutputManager::run()

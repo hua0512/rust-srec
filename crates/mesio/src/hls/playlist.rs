@@ -11,6 +11,7 @@ use moka::future::Cache;
 use moka::policy::EvictionPolicy;
 use reqwest::Client;
 use std::borrow::Cow;
+use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::mpsc;
@@ -519,6 +520,68 @@ impl PlaylistEngine {
         }
     }
 
+    fn parse_playlist_level_map(playlist: &MediaPlaylist) -> Option<m3u8_rs::Map> {
+        let ext = playlist
+            .unknown_tags
+            .iter()
+            .rev()
+            .find(|t| t.tag == "X-MAP")?;
+        let rest = ext.rest.as_deref()?;
+
+        let mut uri: Option<String> = None;
+        let mut byte_range: Option<m3u8_rs::ByteRange> = None;
+
+        // Split on commas, but keep quoted values intact.
+        let mut parts: Vec<&str> = Vec::new();
+        let mut in_quotes = false;
+        let mut start = 0usize;
+        for (idx, ch) in rest.char_indices() {
+            match ch {
+                '"' => in_quotes = !in_quotes,
+                ',' if !in_quotes => {
+                    parts.push(rest[start..idx].trim());
+                    start = idx + 1;
+                }
+                _ => {}
+            }
+        }
+        if start < rest.len() {
+            parts.push(rest[start..].trim());
+        }
+
+        for part in parts.into_iter().filter(|p| !p.is_empty()) {
+            let Some((k, v)) = part.split_once('=') else {
+                continue;
+            };
+            let key = k.trim();
+            let mut val = v.trim();
+            if let Some(stripped) = val.strip_prefix('"').and_then(|s| s.strip_suffix('"')) {
+                val = stripped;
+            }
+
+            if key.eq_ignore_ascii_case("URI") {
+                uri = Some(val.to_string());
+            } else if key.eq_ignore_ascii_case("BYTERANGE") {
+                let (len_str, offset_str) = val.split_once('@').unwrap_or((val, ""));
+                if let Ok(length) = len_str.trim().parse::<u64>() {
+                    let offset = if offset_str.trim().is_empty() {
+                        None
+                    } else {
+                        offset_str.trim().parse::<u64>().ok()
+                    };
+                    byte_range = Some(m3u8_rs::ByteRange { length, offset });
+                }
+            }
+        }
+
+        let uri = uri?;
+        Some(m3u8_rs::Map {
+            uri,
+            byte_range,
+            other_attributes: HashMap::new(),
+        })
+    }
+
     /// Removes Twitch ad-related EXT-X-DATERANGE tags from the playlist and transforms
     /// EXT-X-TWITCH-PREFETCH tags into standard segments.
     fn preprocess_twitch_playlist(&self, playlist_content: &str) -> String {
@@ -624,6 +687,7 @@ impl PlaylistEngine {
         let mut jobs_to_send = Vec::new();
         let base_url_parsed = Url::parse(base_url).ok();
         let base_url_arc: Arc<str> = Arc::from(base_url);
+        let playlist_level_map = Self::parse_playlist_level_map(new_playlist);
 
         // Helper to merge query params from parent if missing in child
         let parent_params: Vec<(String, String)> = parent_query
@@ -694,7 +758,10 @@ impl PlaylistEngine {
                     key
                 });
 
-                if let Some(map_info) = &segment.map {
+                // m3u8-rs only attaches EXT-X-MAP to `MediaSegment.map` when it appears in the
+                // segment-scoped tag region. If it appears before the first segment, it lands in
+                // `MediaPlaylist.unknown_tags` as an `ExtTag` ("X-MAP").
+                if let Some(map_info) = segment.map.as_ref().or(playlist_level_map.as_ref()) {
                     let absolute_map_uri = resolve_uri(&map_info.uri).unwrap_or_else(|_| {
                         error!(
                             "Failed to resolve map URI '{}' with base '{}'",
