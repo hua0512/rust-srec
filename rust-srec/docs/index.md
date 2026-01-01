@@ -3,15 +3,18 @@ layout: page
 ---
 
 <script setup>
-import { withBase } from 'vitepress'
+import { onMounted } from 'vue'
+import { useRouter } from 'vitepress'
 
-if (typeof window !== 'undefined') {
-  window.location.href = import.meta.env.BASE_URL + 'en/'
-}
+const { go } = useRouter()
+
+onMounted(() => {
+  go('/en/')
+})
 </script>
 
 <div style="display: flex; flex-direction: column; justify-content: center; align-items: center; height: 50vh; gap: 1rem;">
-  <img :src="withBase('/stream-rec-white.svg')" alt="rust-srec" style="width: 64px; height: 64px;" />
+  <img src="./public/stream-rec-white.svg" alt="rust-srec" style="width: 64px; height: 64px;" />
   <p>Redirecting...</p>
-  <p><a :href="withBase('/en/')">Click here if not redirected</a></p>
+  <p><a href="./en/">Click here if not redirected</a></p>
 </div>
