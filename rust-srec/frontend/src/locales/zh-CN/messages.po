@@ -244,6 +244,10 @@ msgstr "添加覆盖项以自定义特定平台的行为。"
 msgid "Add an override to customize engine behavior for this template."
 msgstr "添加覆盖项以自定义此模板的引擎行为。"
 
+#: src/components/pipeline/presets/processors/danmaku-factory-config-form.tsx:91
+msgid "Add argument template"
+msgstr "添加参数模板"
+
 #: src/routes/_authed/_dashboard/pipeline/jobs/new.tsx:53
 msgid "Add at least one step"
 msgstr "至少添加一个步骤"
@@ -260,6 +264,14 @@ msgstr "添加自定义标签"
 msgid "Add Environment Variable"
 msgstr ""
 
+#: src/components/pipeline/presets/processors/copy-move-config-form.tsx:190
+msgid "Add exclude regex pattern"
+msgstr "添加排除正则模式"
+
+#: src/components/pipeline/presets/processors/danmaku-factory-config-form.tsx:117
+msgid "Add extra argument"
+msgstr "添加额外参数"
+
 #: src/components/streamers/edit/streamer-filters-tab.tsx:46
 msgid "Add Filter"
 msgstr "添加过滤器"
@@ -272,7 +284,7 @@ msgstr "添加项目..."
 msgid "Add Metadata"
 msgstr "添加元数据"
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:67
+#: src/components/pipeline/presets/default-presets-i18n.ts:68
 msgid "Add metadata tags (title, artist, date) to the video file."
 msgstr "为视频文件添加元数据标签（标题、艺术家、日期）。"
 
@@ -322,6 +334,10 @@ msgstr "添加流"
 msgid "Add Streamer"
 msgstr "添加主播"
 
+#: src/components/pipeline/presets/processors/danmaku-factory-config-form.tsx:121
+msgid "Additional arguments appended to the command."
+msgstr "附加到命令的额外参数。"
+
 #: src/components/config/shared/danmu-config-form.tsx:146
 msgid "Adjust sampling rate based on danmu traffic volume."
 msgstr "根据弹幕流量动态调整采样率。"
@@ -361,7 +377,7 @@ msgstr "高级设置"
 #~ msgstr "高级主题选项。"
 
 #. placeholder {0}: dagStep.depends_on.join(', ')
-#: src/components/pipeline/workflows/steps-list.tsx:143
+#: src/components/pipeline/workflows/steps-list.tsx:145
 msgid "AFTER: {0}"
 msgstr "之后: {0}"
 
@@ -435,13 +451,13 @@ msgstr "为卡片和侧边栏的背景应用模糊效果。"
 msgid "Apply template settings."
 msgstr "应用模板设置。"
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:39
+#: src/components/pipeline/presets/default-presets-i18n.ts:40
 #: src/components/pipeline/presets/preset-card.tsx:90
 #: src/routes/_authed/_dashboard/pipeline/presets/index.tsx:66
 msgid "Archive"
 msgstr "归档"
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:24
+#: src/components/pipeline/presets/default-presets-i18n.ts:25
 msgid "Archive Compression"
 msgstr "归档压缩"
 
@@ -453,7 +469,7 @@ msgstr "归档格式"
 msgid "Archive Settings"
 msgstr "归档设置"
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:82
+#: src/components/pipeline/presets/default-presets-i18n.ts:84
 msgid "Archive to Cloud"
 msgstr "云端归档"
 
@@ -498,7 +514,7 @@ msgstr "艺术家"
 msgid "ASS Burn-in"
 msgstr "ASS 硬字幕"
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:31
+#: src/components/pipeline/presets/default-presets-i18n.ts:32
 msgid "ASS Subtitle Burn-in"
 msgstr "ASS 字幕内嵌"
 
@@ -510,7 +526,7 @@ msgstr "至少需要一个输入路径"
 msgid "Attempt to repair timestamps in FLV streams"
 msgstr "尝试修复 FLV 流中的时间戳"
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:38
+#: src/components/pipeline/presets/default-presets-i18n.ts:39
 #: src/components/pipeline/presets/preset-card.tsx:89
 #: src/components/pipeline/presets/processors/remux-config-form.tsx:99
 #: src/routes/_authed/_dashboard/pipeline/presets/index.tsx:65
@@ -593,8 +609,8 @@ msgid "available"
 msgstr "可选"
 
 #: src/components/pipeline/presets/processors/execute-config-form.tsx:71
-msgid "Available Variables"
-msgstr "可用变量"
+#~ msgid "Available Variables"
+#~ msgstr "可用变量"
 
 #: src/components/notifications/forms/discord-form.tsx:74
 msgid "Avatar URL (Optional)"
@@ -665,7 +681,7 @@ msgstr "此配置模板的基本信息。"
 msgid "Basic Information"
 msgstr "基本信息"
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:96
+#: src/components/pipeline/presets/default-presets-i18n.ts:98
 msgid "Basic post-processing: Remux FLV to MP4 and generate a thumbnail preview."
 msgstr "基础后处理：将 FLV 重封装为 MP4，并生成缩略图预览。"
 
@@ -696,7 +712,7 @@ msgstr "B站画质标识 (QN)。"
 
 #: src/components/config/engines/forms/ffmpeg-form.tsx:41
 #: src/components/config/engines/forms/streamlink-form.tsx:37
-#: src/components/pipeline/presets/processors/danmaku-factory-config-form.tsx:55
+#: src/components/pipeline/presets/processors/danmaku-factory-config-form.tsx:59
 msgid "Binary Path"
 msgstr "可执行文件路径"
 
@@ -724,7 +740,7 @@ msgstr "缓冲区设置"
 msgid "Buffer Size"
 msgstr "缓冲区大小"
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:77
+#: src/components/pipeline/presets/default-presets-i18n.ts:79
 msgid "Burn .ass subtitles into videos (produces *_burnin.mp4 by default). Manifest-aware and batch-safe."
 msgstr "将 .ass 字幕内嵌到视频中（默认生成 *_burnin.mp4）。支持清单感知和批量处理。"
 
@@ -809,7 +825,7 @@ msgstr "区分大小写"
 msgid "Categories"
 msgstr "分类"
 
-#: src/components/pipeline/presets/editor/preset-meta-form.tsx:237
+#: src/components/pipeline/presets/editor/preset-meta-form.tsx:239
 msgid "Category"
 msgstr "分类"
 
@@ -854,7 +870,7 @@ msgstr "个渠道"
 msgid "Channels"
 msgstr "声道"
 
-#: src/components/pipeline/presets/processors/danmaku-factory-config-form.tsx:120
+#: src/components/pipeline/presets/processors/danmaku-factory-config-form.tsx:173
 msgid "Check if file exists after conversion"
 msgstr "转换后检查文件是否存在"
 
@@ -866,7 +882,7 @@ msgstr ""
 #~ msgid "Check Now"
 #~ msgstr "立即检查"
 
-#: src/components/pipeline/presets/processors/copy-move-config-form.tsx:154
+#: src/components/pipeline/presets/processors/copy-move-config-form.tsx:158
 msgid "Check size after copy"
 msgstr "复制后检查大小"
 
@@ -903,10 +919,10 @@ msgstr "选择此主播如何处理代理连接。"
 msgid "Choose your display language"
 msgstr "选择你的显示语言"
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:41
+#: src/components/pipeline/presets/default-presets-i18n.ts:42
 #: src/components/pipeline/presets/preset-card.tsx:92
 #: src/components/pipeline/presets/processors/ass-burnin-config-form.tsx:320
-#: src/components/pipeline/presets/processors/danmaku-factory-config-form.tsx:186
+#: src/components/pipeline/presets/processors/danmaku-factory-config-form.tsx:239
 #: src/routes/_authed/_dashboard/pipeline/presets/index.tsx:68
 msgid "Cleanup"
 msgstr "清理"
@@ -952,9 +968,14 @@ msgstr "用于排除代理的频道列表（逗号分隔）"
 msgid "Command"
 msgstr "命令"
 
+#: src/components/pipeline/presets/processors/danmaku-factory-config-form.tsx:85
 #: src/components/pipeline/presets/processors/tdl-config-form.tsx:452
 msgid "Command Arguments"
 msgstr ""
+
+#: src/components/pipeline/presets/processors/danmaku-factory-config-form.tsx:95
+msgid "Command template args. Use {input} and {output} placeholders."
+msgstr "命令模板参数。使用 {input} 和 {output} 占位符。"
 
 #: src/components/pipeline/presets/processors/metadata-config-form.tsx:220
 msgid "Comment"
@@ -964,7 +985,7 @@ msgstr "评论"
 msgid "Complete the Telegram login process in this terminal."
 msgstr ""
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:102
+#: src/components/pipeline/presets/default-presets-i18n.ts:104
 msgid "Complete workflow: Remux, generate thumbnail, add metadata, and upload."
 msgstr "完整流程：重封装、生成缩略图、添加元数据并上传。"
 
@@ -992,11 +1013,11 @@ msgstr "组件"
 msgid "Component Status"
 msgstr "组件状态"
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:97
+#: src/components/pipeline/presets/default-presets-i18n.ts:99
 msgid "Compress video for storage, upload to cloud, then delete local file to save space."
 msgstr "压缩视频用于存档，上传到云端，然后删除本地文件以节省空间。"
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:36
+#: src/components/pipeline/presets/default-presets-i18n.ts:37
 #: src/components/pipeline/presets/editor/preset-meta-form.tsx:63
 #: src/components/pipeline/presets/preset-card.tsx:87
 #: src/routes/_authed/_dashboard/pipeline/presets/index.tsx:63
@@ -1080,7 +1101,7 @@ msgstr "配置从所选备份文件导入数据的方式。"
 msgid "Configure recording rules for this streamer."
 msgstr "配置此主播的录制规则。"
 
-#: src/components/pipeline/workflows/steps-list.tsx:161
+#: src/components/pipeline/workflows/steps-list.tsx:163
 msgid "Configure Step"
 msgstr "配置步骤"
 
@@ -1141,7 +1162,7 @@ msgstr ""
 msgid "Control verbosity for each module. Lower levels include higher ones."
 msgstr "控制各模块的日志详细程度。较低级别包含较高级别。"
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:76
+#: src/components/pipeline/presets/default-presets-i18n.ts:78
 msgid "Convert danmu XML (Bilibili-style) into .ass subtitles using DanmakuFactory. Manifest-aware and batch-safe."
 msgstr "使用 DanmakuFactory 将弹幕 XML（Bilibili 格式）转换为 .ass 字幕。支持清单感知和批量处理。"
 
@@ -1182,7 +1203,7 @@ msgstr "复制目录"
 msgid "Copy File"
 msgstr "复制文件"
 
-#: src/components/pipeline/presets/processors/copy-move-config-form.tsx:74
+#: src/components/pipeline/presets/processors/copy-move-config-form.tsx:78
 msgid "Copy Files"
 msgstr "复制文件"
 
@@ -1190,7 +1211,7 @@ msgstr "复制文件"
 msgid "Copy Path"
 msgstr "复制路径"
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:63
+#: src/components/pipeline/presets/default-presets-i18n.ts:64
 msgid "Copy the file to another location. Keeps the original file."
 msgstr "将文件复制到其他位置，保留原始文件。"
 
@@ -1231,7 +1252,7 @@ msgstr "创建过滤器以控制何时录制该主播。你可以按时间、关
 msgid "Create a template to define reusable download configurations."
 msgstr "创建模板以定义可复用的录制配置。"
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:61
+#: src/components/pipeline/presets/default-presets-i18n.ts:62
 msgid "Create a ZIP archive of the file. Good for bundling with metadata."
 msgstr "为文件创建 ZIP 压缩包，适合与元数据一起打包。"
 
@@ -1241,7 +1262,7 @@ msgstr "为文件创建 ZIP 压缩包，适合与元数据一起打包。"
 msgid "Create Channel"
 msgstr "创建渠道"
 
-#: src/components/pipeline/presets/processors/copy-move-config-form.tsx:128
+#: src/components/pipeline/presets/processors/copy-move-config-form.tsx:132
 msgid "Create Directories"
 msgstr "创建目录"
 
@@ -1254,7 +1275,7 @@ msgstr "创建引擎"
 msgid "Create Filter"
 msgstr "创建过滤器"
 
-#: src/components/pipeline/presets/processors/copy-move-config-form.tsx:131
+#: src/components/pipeline/presets/processors/copy-move-config-form.tsx:135
 msgid "Create missing folders"
 msgstr "创建缺失的文件夹"
 
@@ -1365,14 +1386,14 @@ msgstr "当前密码"
 msgid "Current Password"
 msgstr "当前密码"
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:43
+#: src/components/pipeline/presets/default-presets-i18n.ts:44
 #: src/components/pipeline/presets/preset-card.tsx:94
 #: src/routes/_authed/_dashboard/pipeline/presets/index.tsx:70
 #: src/routes/_authed/_dashboard/sessions/index.tsx:364
 msgid "Custom"
 msgstr "自定义"
 
-#: src/components/pipeline/workflows/steps-list.tsx:101
+#: src/components/pipeline/workflows/steps-list.tsx:103
 msgid "Custom Config"
 msgstr "自定义配置"
 
@@ -1436,7 +1457,7 @@ msgstr "DAG 配置"
 msgid "DAG Graph"
 msgstr "DAG 图"
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:45
+#: src/components/pipeline/presets/default-presets-i18n.ts:46
 msgid "Danmaku"
 msgstr "弹幕"
 
@@ -1446,7 +1467,7 @@ msgstr "弹幕"
 msgid "Danmaku to ASS"
 msgstr "弹幕转 ASS"
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:30
+#: src/components/pipeline/presets/default-presets-i18n.ts:31
 msgid "Danmaku to ASS Subtitles"
 msgstr "弹幕转 ASS 字幕"
 
@@ -1480,6 +1501,10 @@ msgstr "数据库查询"
 msgid "Date"
 msgstr "日期"
 
+#: src/components/pipeline/presets/processors/execute-config-form.tsx:188
+msgid "Day (01-31)"
+msgstr "天 (01-31)"
+
 #: src/components/config/platforms/platform-card.tsx:107
 #: src/components/config/platforms/platform-card.tsx:122
 msgid "default"
@@ -1498,7 +1523,7 @@ msgstr "默认引擎"
 msgid "Default pipeline flow. Configure the sequence of processors for new jobs."
 msgstr "默认处理管道流程。为新的处理任务配置处理器顺序。"
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:107
+#: src/components/pipeline/presets/default-presets-i18n.ts:109
 msgid "Default workflow: Remux to MP4 (deletes original), generate native-resolution thumbnail, upload both to cloud and delete local files."
 msgstr "默认工作流：重封装为 MP4（删除原始文件），生成原始分辨率缩略图，上传两者至云端并删除本地文件。"
 
@@ -1591,7 +1616,7 @@ msgstr "删除源 ASS 文件"
 msgid "Delete Source Videos"
 msgstr "删除源视频文件"
 
-#: src/components/pipeline/presets/processors/danmaku-factory-config-form.tsx:198
+#: src/components/pipeline/presets/processors/danmaku-factory-config-form.tsx:251
 msgid "Delete Source XML"
 msgstr "删除源 XML 文件"
 
@@ -1599,7 +1624,7 @@ msgstr "删除源 XML 文件"
 msgid "Delete Template"
 msgstr "删除模板"
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:62
+#: src/components/pipeline/presets/default-presets-i18n.ts:63
 msgid "Delete the source file. Use as the last step in a pipeline to clean up."
 msgstr "删除源文件。可作为处理管道最后一步用于清理。"
 
@@ -1607,7 +1632,7 @@ msgstr "删除源文件。可作为处理管道最后一步用于清理。"
 msgid "Delete Workflow?"
 msgstr "删除工作流？"
 
-#: src/components/pipeline/presets/processors/danmaku-factory-config-form.tsx:201
+#: src/components/pipeline/presets/processors/danmaku-factory-config-form.tsx:254
 msgid "Delete XML files after successful conversion"
 msgstr "转换成功后删除 XML 文件"
 
@@ -1631,12 +1656,12 @@ msgstr "依赖于（前辈节点）"
 msgid "Describe what this workflow does..."
 msgstr "描述此工作流的用途..."
 
-#: src/components/pipeline/presets/editor/preset-meta-form.tsx:275
+#: src/components/pipeline/presets/editor/preset-meta-form.tsx:277
 #: src/components/pipeline/workflows/workflow-editor.tsx:325
 msgid "Description"
 msgstr "描述"
 
-#: src/components/pipeline/presets/editor/preset-meta-form.tsx:284
+#: src/components/pipeline/presets/editor/preset-meta-form.tsx:286
 msgid "Description is managed by the system"
 msgstr "描述由系统管理"
 
@@ -1648,7 +1673,7 @@ msgstr "取消全选"
 msgid "Design your automation pipeline step by step"
 msgstr "逐步设计你的自动化处理管道"
 
-#: src/components/pipeline/presets/processors/copy-move-config-form.tsx:92
+#: src/components/pipeline/presets/processors/copy-move-config-form.tsx:96
 msgid "Destination Path (Optional)"
 msgstr "目标路径（可选）"
 
@@ -1676,7 +1701,7 @@ msgstr "尺寸与滤镜"
 msgid "Directory path copied"
 msgstr "目录路径已复制"
 
-#: src/components/pipeline/presets/processors/execute-config-form.tsx:156
+#: src/components/pipeline/presets/processors/execute-config-form.tsx:269
 msgid "Directory to scan for new files after command execution"
 msgstr "命令执行后扫描新文件的目录"
 
@@ -1767,7 +1792,7 @@ msgstr "从边缘拖动以连接步骤"
 msgid "Dry Run"
 msgstr ""
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:91
+#: src/components/pipeline/presets/default-presets-i18n.ts:93
 msgid "Dual Format"
 msgstr "双格式输出"
 
@@ -1789,7 +1814,7 @@ msgstr "例如 'best'、'worst'、'720p'、'audio_only'"
 msgid "e.g. /data/tdl"
 msgstr ""
 
-#: src/components/pipeline/presets/processors/execute-config-form.tsx:149
+#: src/components/pipeline/presets/processors/execute-config-form.tsx:262
 msgid "e.g. /output/processed/"
 msgstr "例如 /output/processed/"
 
@@ -1813,7 +1838,7 @@ msgstr "例如 gdrive:/videos"
 msgid "e.g. High Quality Streamlink"
 msgstr "例如 高质量 Streamlink"
 
-#: src/components/pipeline/presets/processors/execute-config-form.tsx:175
+#: src/components/pipeline/presets/processors/execute-config-form.tsx:288
 #: src/components/pipeline/presets/processors/tdl-config-form.tsx:565
 msgid "e.g. mp4"
 msgstr "例如 mp4"
@@ -1823,7 +1848,7 @@ msgstr "例如 mp4"
 msgid "e.g. My Favorite Streamer"
 msgstr "例如 我喜欢的主播"
 
-#: src/components/pipeline/presets/editor/preset-meta-form.tsx:218
+#: src/components/pipeline/presets/editor/preset-meta-form.tsx:220
 msgid "e.g. Remux to H.264"
 msgstr "例如：重封装为 H.264"
 
@@ -2109,10 +2134,15 @@ msgstr "排除"
 msgid "Exclude ASS from Passthrough"
 msgstr "从透传中排除 ASS"
 
+#: src/components/pipeline/presets/processors/copy-move-config-form.tsx:177
+msgid "Exclude Patterns"
+msgstr "排除模式"
+
 #: src/components/pipeline/presets/processors/tdl-config-form.tsx:588
 msgid "Excluded Extensions"
 msgstr ""
 
+#: src/components/pipeline/presets/default-presets-i18n.ts:23
 #: src/components/pipeline/presets/editor/preset-meta-form.tsx:72
 #: src/components/pipeline/presets/processors/registry.ts:106
 msgid "Execute Command"
@@ -2122,7 +2152,7 @@ msgstr "执行命令"
 msgid "Execute shell commands on lifecycle events. Commands run in the system shell."
 msgstr "在生命周期事件上执行 Shell 命令。命令在系统 Shell 中运行。"
 
-#: src/components/pipeline/presets/processors/danmaku-factory-config-form.tsx:44
+#: src/components/pipeline/presets/processors/danmaku-factory-config-form.tsx:48
 msgid "Execution Settings"
 msgstr "执行设置"
 
@@ -2152,6 +2182,7 @@ msgid "Exports include all global settings, platforms, templates, streamers, eng
 msgstr "导出内容包含所有全局设置、平台、模板、主播、引擎和通知渠道。敏感数据（如密码）可能会根据平台设置被脱敏或加密。"
 
 #: src/components/config/engines/forms/streamlink-form.tsx:141
+#: src/components/pipeline/presets/processors/danmaku-factory-config-form.tsx:111
 #: src/components/pipeline/presets/processors/rclone-config-form.tsx:264
 msgid "Extra Arguments"
 msgstr "额外参数"
@@ -2160,19 +2191,19 @@ msgstr "额外参数"
 msgid "Extract AAC"
 msgstr "提取 AAC"
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:71
+#: src/components/pipeline/presets/default-presets-i18n.ts:73
 msgid "Extract audio to high-quality MP3 (320kbps) for podcast distribution."
 msgstr "提取高质量 MP3（320kbps）音频，用于播客分发。"
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:60
+#: src/components/pipeline/presets/default-presets-i18n.ts:61
 msgid "Extract audio track to AAC format (256kbps). High quality, widely compatible."
 msgstr "提取 AAC（256kbps）音频轨道，质量高且兼容性好。"
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:59
+#: src/components/pipeline/presets/default-presets-i18n.ts:60
 msgid "Extract audio track to MP3 format (192kbps). Good for podcasts and music."
 msgstr "提取 MP3（192kbps）音频轨道，适合播客与音乐。"
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:99
+#: src/components/pipeline/presets/default-presets-i18n.ts:101
 msgid "Extract high-quality audio for podcast distribution and upload."
 msgstr "提取高质量音频用于播客分发并上传。"
 
@@ -2433,11 +2464,11 @@ msgstr "更新工作流失败：{0}"
 msgid "Fast Compression"
 msgstr "快速压缩"
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:100
+#: src/components/pipeline/presets/default-presets-i18n.ts:102
 msgid "Fast encoding for quick sharing on social media or messaging."
 msgstr "快速编码，便于在社交媒体或聊天中快速分享。"
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:52
+#: src/components/pipeline/presets/default-presets-i18n.ts:53
 msgid "Fast H.264 compression (CRF 23). Good balance of speed, quality, and file size."
 msgstr "快速 H.264 压缩（CRF 23）。在速度、画质与体积之间取得良好平衡。"
 
@@ -2469,11 +2500,11 @@ msgstr "FFmpeg 视频滤镜"
 msgid "File Configuration"
 msgstr "文件配置"
 
-#: src/components/pipeline/presets/processors/execute-config-form.tsx:171
+#: src/components/pipeline/presets/processors/execute-config-form.tsx:284
 msgid "File Extension Filter"
 msgstr "文件扩展名过滤"
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:42
+#: src/components/pipeline/presets/default-presets-i18n.ts:43
 #: src/components/pipeline/presets/processors/metadata-config-form.tsx:251
 msgid "File Operations"
 msgstr "文件操作"
@@ -2543,6 +2574,14 @@ msgstr "过滤器"
 #: src/routes/_authed/_dashboard/pipeline/executions.$pipelineId.tsx:466
 #~ msgid "Finished"
 #~ msgstr "已完成"
+
+#: src/components/pipeline/presets/processors/execute-config-form.tsx:79
+msgid "First input file path"
+msgstr "第一个输入文件路径"
+
+#: src/components/pipeline/presets/processors/execute-config-form.tsx:86
+msgid "First output file path"
+msgstr "第一个输出文件路径"
 
 #: src/components/config/engines/forms/mesio-form.tsx:72
 msgid "Fix FLV"
@@ -2621,11 +2660,11 @@ msgstr "发件人地址"
 msgid "Full HD Thumbnail"
 msgstr "全高清缩略图"
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:104
+#: src/components/pipeline/presets/default-presets-i18n.ts:106
 msgid "Full multimedia processing: Remux video, extract audio and thumbnail in parallel, then upload all."
 msgstr "完整的多媒体处理：并行进行视频重封装、音频提取和缩略图生成，然后上传所有文件。"
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:87
+#: src/components/pipeline/presets/default-presets-i18n.ts:89
 msgid "Full Processing"
 msgstr "全流程处理"
 
@@ -2649,31 +2688,31 @@ msgstr "常规配置"
 msgid "General options for extractors"
 msgstr "提取器常规选项"
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:56
+#: src/components/pipeline/presets/default-presets-i18n.ts:57
 msgid "Generate a Full HD thumbnail (1280px width) for modern displays and video players."
 msgstr "生成全高清缩略图（宽 1280px），适用于现代显示器与播放器。"
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:55
+#: src/components/pipeline/presets/default-presets-i18n.ts:56
 msgid "Generate a high-resolution thumbnail (640px width) at 10 seconds."
 msgstr "在第 10 秒生成高清缩略图（宽 640px）。"
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:57
+#: src/components/pipeline/presets/default-presets-i18n.ts:58
 msgid "Generate a maximum quality thumbnail (1920px width) preserving full 1080p detail."
 msgstr "生成最高质量缩略图（宽 1920px），保留完整 1080p 细节。"
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:72
+#: src/components/pipeline/presets/default-presets-i18n.ts:74
 msgid "Generate a thumbnail at 30 seconds with 480px width for previews."
 msgstr "在第 30 秒生成缩略图（宽 480px）用于预览。"
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:58
+#: src/components/pipeline/presets/default-presets-i18n.ts:59
 msgid "Generate a thumbnail at native stream resolution (no scaling). Best quality, largest file size."
 msgstr "以原始直播分辨率生成缩略图（不缩放）。质量最佳，但文件体积最大。"
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:54
+#: src/components/pipeline/presets/default-presets-i18n.ts:55
 msgid "Generate a thumbnail image from the video at 10 seconds (320px width)."
 msgstr "从视频第 10 秒生成缩略图（宽 320px）。"
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:105
+#: src/components/pipeline/presets/default-presets-i18n.ts:107
 msgid "Generate multiple preview images at different timestamps for a gallery view."
 msgstr "在不同时间点生成多张预览图，用于图库展示。"
 
@@ -2741,7 +2780,7 @@ msgstr "图表"
 msgid "H.264"
 msgstr "H.264"
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:70
+#: src/components/pipeline/presets/default-presets-i18n.ts:72
 msgid "H.264 medium compression (CRF 23) optimized for long-term storage."
 msgstr "面向长期存储优化的 H.264 中等压缩（CRF 23）。"
 
@@ -2790,7 +2829,7 @@ msgstr "隐藏密码"
 msgid "High"
 msgstr "高"
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:83
+#: src/components/pipeline/presets/default-presets-i18n.ts:85
 msgid "High Quality Archive"
 msgstr "高质量归档"
 
@@ -2798,11 +2837,11 @@ msgstr "高质量归档"
 msgid "High Quality Compression"
 msgstr "高质量压缩"
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:53
+#: src/components/pipeline/presets/default-presets-i18n.ts:54
 msgid "High quality H.265/HEVC compression (CRF 22). Smaller files but slower encoding."
 msgstr "高质量 H.265/HEVC 压缩（CRF 22）。文件更小，但编码更慢。"
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:25
+#: src/components/pipeline/presets/default-presets-i18n.ts:26
 msgid "High Quality MP3"
 msgstr "高质量 MP3"
 
@@ -2830,6 +2869,10 @@ msgstr "主页"
 #: src/components/config/shared-config-editor.tsx:199
 msgid "Hooks"
 msgstr "钩子"
+
+#: src/components/pipeline/presets/processors/execute-config-form.tsx:195
+msgid "Hour (00-23)"
+msgstr "小时 (00-23)"
 
 #: src/components/pipeline/presets/processors/ass-burnin-config-form.tsx:192
 msgid "How to pair video files with .ass subtitles"
@@ -2867,7 +2910,7 @@ msgstr "i"
 msgid "IANA Timezone (e.g. Asia/Shanghai, UTC)."
 msgstr "IANA 时区（例如 Asia/Shanghai、UTC）。"
 
-#: src/components/pipeline/presets/editor/preset-meta-form.tsx:187
+#: src/components/pipeline/presets/editor/preset-meta-form.tsx:189
 msgid "ID"
 msgstr "ID"
 
@@ -2879,7 +2922,7 @@ msgstr "必须填写 ID"
 msgid "Identity and type of the engine."
 msgstr "引擎的身份与类型。"
 
-#: src/components/pipeline/presets/processors/copy-move-config-form.tsx:103
+#: src/components/pipeline/presets/processors/copy-move-config-form.tsx:107
 msgid "If empty, uses next output path in pipeline"
 msgstr "留空则使用处理管道中的下一个输出路径"
 
@@ -2945,7 +2988,7 @@ msgstr "包含"
 msgid "Include Images"
 msgstr ""
 
-#: src/components/pipeline/presets/processors/danmaku-factory-config-form.tsx:166
+#: src/components/pipeline/presets/processors/danmaku-factory-config-form.tsx:219
 msgid "Include original files in outputs"
 msgstr "在输出中包含原始文件"
 
@@ -2965,7 +3008,7 @@ msgstr "初始延迟（ms）"
 msgid "inline"
 msgstr "内联"
 
-#: src/components/pipeline/workflows/steps-list.tsx:125
+#: src/components/pipeline/workflows/steps-list.tsx:127
 msgid "Inline: {stepName}"
 msgstr "内联：{stepName}"
 
@@ -3072,6 +3115,14 @@ msgstr "处理录制内容后，处理任务将显示在此处。"
 #: src/components/config/platforms/tabs/platform-specific-tab.tsx:131
 msgid "JSON"
 msgstr "JSON"
+
+#: src/components/pipeline/presets/processors/execute-config-form.tsx:93
+msgid "JSON array of all inputs"
+msgstr "所有输入的 JSON 数组"
+
+#: src/components/pipeline/presets/processors/execute-config-form.tsx:100
+msgid "JSON array of all outputs"
+msgstr "所有输出的 JSON 数组"
 
 #: src/components/pipeline/presets/processors/compression-config-form.tsx:130
 msgid "Keep directory structure"
@@ -3212,7 +3263,7 @@ msgstr "正在加载预设..."
 msgid "Loading workflows..."
 msgstr "正在加载工作流..."
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:88
+#: src/components/pipeline/presets/default-presets-i18n.ts:90
 msgid "Local Archive"
 msgstr "本地归档"
 
@@ -3343,7 +3394,7 @@ msgstr "最大并发录制数"
 msgid "Max Duration"
 msgstr "最大时长"
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:27
+#: src/components/pipeline/presets/default-presets-i18n.ts:28
 msgid "Max HEVC Compression"
 msgstr "最大 HEVC 压缩"
 
@@ -3375,11 +3426,11 @@ msgstr "最大重试次数"
 msgid "Max Uploads"
 msgstr "最大上传数"
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:101
+#: src/components/pipeline/presets/default-presets-i18n.ts:103
 msgid "Maximum compression to minimize storage usage, then delete original."
 msgstr "最大程度压缩以尽量降低存储占用，然后删除原始文件。"
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:73
+#: src/components/pipeline/presets/default-presets-i18n.ts:75
 msgid "Maximum HEVC/H.265 compression (CRF 28) for minimal file size."
 msgstr "最大 HEVC/H.265 压缩（CRF 28），以获得最小文件体积。"
 
@@ -3391,7 +3442,7 @@ msgstr "片段之间的最大空闲时间，超过此时间系统将开始新的
 msgid "Maximum number of retry attempts."
 msgstr "最大重试尝试次数。"
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:98
+#: src/components/pipeline/presets/default-presets-i18n.ts:100
 msgid "Maximum quality compression with HEVC, then upload to cloud storage."
 msgstr "使用 HEVC 进行最高质量压缩，然后上传到云存储。"
 
@@ -3425,7 +3476,7 @@ msgstr "合并更改"
 msgid "Message"
 msgstr "消息"
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:44
+#: src/components/pipeline/presets/default-presets-i18n.ts:45
 #: src/components/pipeline/presets/editor/preset-meta-form.tsx:66
 #: src/components/pipeline/presets/preset-card.tsx:95
 #: src/components/pipeline/presets/preset-templates.ts:72
@@ -3436,6 +3487,10 @@ msgstr "元数据"
 #: src/components/pipeline/presets/processors/registry.ts:101
 msgid "Metadata Editor"
 msgstr "元数据编辑器"
+
+#: src/components/pipeline/presets/processors/execute-config-form.tsx:125
+msgid "Metadata Variables"
+msgstr "元数据变量"
 
 #: src/components/notifications/forms/webhook-form.tsx:88
 msgid "Method"
@@ -3467,6 +3522,10 @@ msgstr "保留的最小大小。"
 msgid "Minimum Priority"
 msgstr "最低优先级"
 
+#: src/components/pipeline/presets/processors/execute-config-form.tsx:202
+msgid "Minute (00-59)"
+msgstr "分 (00-59)"
+
 #: src/components/pipeline/workflows/step-config-dialog.tsx:272
 msgid "Modify the parameters for this processing step."
 msgstr "修改此处理步骤的参数。"
@@ -3492,6 +3551,10 @@ msgstr "已停止监控"
 msgid "Month"
 msgstr "本月"
 
+#: src/components/pipeline/presets/processors/execute-config-form.tsx:181
+msgid "Month (01-12)"
+msgstr "月 (01-12)"
+
 #: src/components/pipeline/presets/processors/rclone-config-form.tsx:112
 msgid "Move"
 msgstr "移动"
@@ -3500,11 +3563,11 @@ msgstr "移动"
 msgid "Move File"
 msgstr "移动文件"
 
-#: src/components/pipeline/presets/processors/copy-move-config-form.tsx:77
+#: src/components/pipeline/presets/processors/copy-move-config-form.tsx:81
 msgid "Move Files"
 msgstr "移动文件"
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:64
+#: src/components/pipeline/presets/default-presets-i18n.ts:65
 msgid "Move the file to another location. Removes the original file."
 msgstr "将文件移动到其他位置，并移除原始文件。"
 
@@ -3512,7 +3575,7 @@ msgstr "将文件移动到其他位置，并移除原始文件。"
 msgid "Mozilla/5.0..."
 msgstr "Mozilla/5.0..."
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:89
+#: src/components/pipeline/presets/default-presets-i18n.ts:91
 msgid "Multimedia Archive"
 msgstr "多媒体归档"
 
@@ -3525,7 +3588,7 @@ msgid "My Archiving Workflow"
 msgstr "我的归档工作流"
 
 #: src/components/notifications/channel-form.tsx:275
-#: src/components/pipeline/presets/editor/preset-meta-form.tsx:213
+#: src/components/pipeline/presets/editor/preset-meta-form.tsx:215
 #: src/components/pipeline/workflows/workflow-editor.tsx:305
 #: src/components/streamers/config/streamer-general-settings.tsx:74
 #: src/components/streamers/edit/streamer-meta-form.tsx:123
@@ -3775,7 +3838,7 @@ msgstr "无需刷新或不支持"
 msgid "No specific options available for this platform."
 msgstr "此平台没有特定选项。"
 
-#: src/components/pipeline/workflows/steps-list.tsx:195
+#: src/components/pipeline/workflows/steps-list.tsx:197
 msgid "No Steps Added"
 msgstr "未添加步骤"
 
@@ -3845,6 +3908,14 @@ msgstr "通知服务"
 #: src/routes/_authed/_dashboard/notifications/index.tsx:117
 msgid "Notifications"
 msgstr "通知"
+
+#: src/components/pipeline/presets/processors/execute-config-form.tsx:107
+msgid "Nth input: {input0}, {input1}..."
+msgstr "第 N 个输入：{input0}, {input1}..."
+
+#: src/components/pipeline/presets/processors/execute-config-form.tsx:114
+msgid "Nth output: {output0}, {output1}..."
+msgstr "第 N 个输出：{output0}, {output1}..."
 
 #: src/components/pipeline/presets/processors/rclone-config-form.tsx:251
 #: src/components/pipeline/presets/processors/tdl-config-form.tsx:627
@@ -3929,7 +4000,7 @@ msgstr "处理管道完成时"
 msgid "Ongoing"
 msgstr "进行中"
 
-#: src/components/pipeline/presets/processors/execute-config-form.tsx:182
+#: src/components/pipeline/presets/processors/execute-config-form.tsx:295
 msgid "Only include files with this extension (without dot)"
 msgstr "仅包含具有该扩展名的文件（不含点号）"
 
@@ -3943,7 +4014,7 @@ msgstr "仅包含具有该扩展名的文件（不含点号）"
 msgid "Open menu"
 msgstr "打开菜单"
 
-#: src/components/pipeline/presets/processors/copy-move-config-form.tsx:50
+#: src/components/pipeline/presets/processors/copy-move-config-form.tsx:54
 #: src/components/pipeline/presets/processors/rclone-config-form.tsx:80
 msgid "Operation"
 msgstr "操作"
@@ -3952,17 +4023,17 @@ msgstr "操作"
 msgid "Operation Mode"
 msgstr "操作模式"
 
-#: src/components/pipeline/presets/processors/copy-move-config-form.tsx:61
+#: src/components/pipeline/presets/processors/copy-move-config-form.tsx:65
 msgid "Operation Type"
 msgstr "操作类型"
 
 #: src/components/config/shared/proxy-settings-card.tsx:175
 #: src/components/config/shared/proxy-settings-card.tsx:194
-#: src/components/pipeline/presets/processors/execute-config-form.tsx:127
+#: src/components/pipeline/presets/processors/execute-config-form.tsx:240
 msgid "Optional"
 msgstr "可选"
 
-#: src/components/pipeline/presets/editor/preset-meta-form.tsx:285
+#: src/components/pipeline/presets/editor/preset-meta-form.tsx:287
 msgid "Optional description for this preset"
 msgstr "此预设的可选描述"
 
@@ -3971,7 +4042,7 @@ msgid "Optional extra arguments appended to `tdl login`."
 msgstr ""
 
 #: src/components/pipeline/presets/processors/compression-config-form.tsx:115
-#: src/components/pipeline/presets/processors/copy-move-config-form.tsx:116
+#: src/components/pipeline/presets/processors/copy-move-config-form.tsx:120
 msgid "Options"
 msgstr "选项"
 
@@ -3998,7 +4069,7 @@ msgstr "输出参数"
 msgid "Output Configuration"
 msgstr "输出配置"
 
-#: src/components/pipeline/presets/processors/execute-config-form.tsx:124
+#: src/components/pipeline/presets/processors/execute-config-form.tsx:237
 msgid "Output Detection"
 msgstr "输出检测"
 
@@ -4089,7 +4160,7 @@ msgstr "概览"
 msgid "Overwrite"
 msgstr "覆盖"
 
-#: src/components/pipeline/presets/processors/danmaku-factory-config-form.tsx:97
+#: src/components/pipeline/presets/processors/danmaku-factory-config-form.tsx:150
 msgid "Overwrite existing .ass files"
 msgstr "覆盖现有的 .ass 文件"
 
@@ -4102,7 +4173,7 @@ msgstr "覆盖现有文件"
 msgid "Overwrite Files"
 msgstr "覆盖文件"
 
-#: src/components/pipeline/presets/processors/danmaku-factory-config-form.tsx:94
+#: src/components/pipeline/presets/processors/danmaku-factory-config-form.tsx:147
 msgid "Overwrite Output"
 msgstr "覆盖输出"
 
@@ -4149,7 +4220,7 @@ msgid "Parsing..."
 msgstr "解析中..."
 
 #: src/components/pipeline/presets/processors/ass-burnin-config-form.tsx:280
-#: src/components/pipeline/presets/processors/danmaku-factory-config-form.tsx:163
+#: src/components/pipeline/presets/processors/danmaku-factory-config-form.tsx:216
 msgid "Passthrough Inputs"
 msgstr "透传输入"
 
@@ -4181,13 +4252,17 @@ msgstr "受保护流的密码。"
 #~ msgid "Paste your exported CSS variables here."
 #~ msgstr "在此粘贴你导出的 CSS 变量。"
 
-#: src/components/pipeline/presets/processors/danmaku-factory-config-form.tsx:65
+#: src/components/pipeline/presets/processors/danmaku-factory-config-form.tsx:69
 msgid "Path to DanmakuFactory binary. If empty, uses environment variable or PATH."
 msgstr "DanmakuFactory 可执行文件路径。如果为空，则使用环境变量或 PATH。"
 
 #: src/components/pipeline/presets/processors/tdl-login-dialog.tsx:521
 msgid "Path to Telegram Desktop (contains tdata)"
 msgstr ""
+
+#: src/components/pipeline/presets/processors/execute-config-form.tsx:73
+msgid "Path Variables"
+msgstr "路径变量"
 
 #: src/components/logging/log-viewer.tsx:374
 msgid "Pause"
@@ -4274,7 +4349,7 @@ msgstr "处理管道中有失败的处理任务。点击查看详情。"
 msgid "Pipeline is already completed or cancelled"
 msgstr "该处理管道已结束或已取消"
 
-#: src/components/pipeline/workflows/steps-list.tsx:198
+#: src/components/pipeline/workflows/steps-list.tsx:200
 msgid "Pipeline is empty."
 msgstr "处理管道为空。"
 
@@ -4352,6 +4427,10 @@ msgstr "平台配置可用时将显示在此处。"
 msgid "Platform Detected: {detectedPlatform}"
 msgstr "检测到平台：{detectedPlatform}"
 
+#: src/components/pipeline/presets/processors/execute-config-form.tsx:159
+msgid "Platform name"
+msgstr "平台名称"
+
 #: src/routes/_authed/_dashboard/config/platforms/$platformId.tsx:82
 msgid "Platform not found"
 msgstr "未找到平台"
@@ -4424,7 +4503,7 @@ msgstr ""
 msgid "Please wait while we resolve the stream URL."
 msgstr "正在解析流 URL，请稍候。"
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:84
+#: src/components/pipeline/presets/default-presets-i18n.ts:86
 msgid "Podcast Extraction"
 msgstr "播客提取"
 
@@ -4440,7 +4519,7 @@ msgstr "由 <0>Rust-srec</0> 提供支持。WebUI 版本：0.1.0"
 #~ msgid "Powered by <0>Rust-srec</0>. WebUI version: 0.3.6"
 #~ msgstr "由 <0>Rust-srec</0> 提供支持。WebUI 版本：0.3.6"
 
-#: src/components/pipeline/presets/processors/danmaku-factory-config-form.tsx:140
+#: src/components/pipeline/presets/processors/danmaku-factory-config-form.tsx:193
 msgid "Prefer Manifest"
 msgstr "优先使用清单"
 
@@ -4492,7 +4571,7 @@ msgstr "预设创建成功"
 msgid "Preset deleted successfully"
 msgstr "预设删除成功"
 
-#: src/components/pipeline/presets/editor/preset-meta-form.tsx:122
+#: src/components/pipeline/presets/editor/preset-meta-form.tsx:124
 msgid "Preset Details"
 msgstr "预设详情"
 
@@ -4526,11 +4605,11 @@ msgstr "可用预设"
 msgid "Press Enter to add recipient"
 msgstr "按 Enter 添加收件人"
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:90
+#: src/components/pipeline/presets/default-presets-i18n.ts:92
 msgid "Preview Gallery"
 msgstr "预览图库"
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:26
+#: src/components/pipeline/presets/default-presets-i18n.ts:27
 msgid "Preview Thumbnail"
 msgstr "预览缩略图"
 
@@ -4568,11 +4647,11 @@ msgstr "优先级"
 msgid "Process exited with code {0}"
 msgstr ""
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:103
+#: src/components/pipeline/presets/default-presets-i18n.ts:105
 msgid "Process locally: Remux to MP4, generate thumbnail, move to archive folder."
 msgstr "本地处理：重封装为 MP4，生成缩略图，移动到归档文件夹。"
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:106
+#: src/components/pipeline/presets/default-presets-i18n.ts:108
 msgid "Process video and extract podcast audio in parallel, then upload both."
 msgstr "并行处理视频并提取播客音频，然后同时上传两者。"
 
@@ -4586,7 +4665,7 @@ msgstr "并行处理视频并提取播客音频，然后同时上传两者。"
 msgid "Processing"
 msgstr "处理中"
 
-#: src/components/pipeline/presets/processors/danmaku-factory-config-form.tsx:82
+#: src/components/pipeline/presets/processors/danmaku-factory-config-form.tsx:135
 msgid "Processing Behavior"
 msgstr "处理行为"
 
@@ -4594,7 +4673,7 @@ msgstr "处理行为"
 msgid "Processing nodes"
 msgstr "处理节点"
 
-#: src/components/pipeline/presets/editor/preset-meta-form.tsx:141
+#: src/components/pipeline/presets/editor/preset-meta-form.tsx:143
 msgid "Processor"
 msgstr "处理器"
 
@@ -4664,7 +4743,7 @@ msgstr "画质等级"
 msgid "Queue"
 msgstr "队列"
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:85
+#: src/components/pipeline/presets/default-presets-i18n.ts:87
 msgid "Quick Share"
 msgstr "快速分享"
 
@@ -4777,6 +4856,10 @@ msgstr "正则表达式"
 msgid "Regex Pattern"
 msgstr "正则模式"
 
+#: src/components/pipeline/presets/processors/copy-move-config-form.tsx:194
+msgid "Regex patterns to exclude files. Matched against full path and filename."
+msgstr "用于排除文件的正则模式。将针对完整路径和文件名进行匹配。"
+
 #: src/components/config/templates/tabs/engine-overrides-tab.tsx:160
 msgid "Remove"
 msgstr "移除"
@@ -4786,7 +4869,7 @@ msgid "Remove Input on Success"
 msgstr "成功后移除输入"
 
 #: src/components/pipeline/presets/default-presets-i18n.ts:4
-#: src/components/pipeline/presets/default-presets-i18n.ts:35
+#: src/components/pipeline/presets/default-presets-i18n.ts:36
 #: src/components/pipeline/presets/preset-card.tsx:86
 #: src/routes/_authed/_dashboard/pipeline/presets/index.tsx:62
 msgid "Remux"
@@ -4798,7 +4881,7 @@ msgstr "重封装"
 msgid "Remux / Transcode"
 msgstr "重封装/转码"
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:29
+#: src/components/pipeline/presets/default-presets-i18n.ts:30
 msgid "Remux and Clean"
 msgstr "重封装并清理"
 
@@ -4806,23 +4889,23 @@ msgstr "重封装并清理"
 msgid "Remux to MKV"
 msgstr "重封装为 MKV"
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:51
+#: src/components/pipeline/presets/default-presets-i18n.ts:52
 msgid "Remux to MKV without re-encoding. Matroska supports more codecs and features."
 msgstr "无需重新编码，重封装为 MKV。Matroska 支持更多编码与特性。"
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:69
+#: src/components/pipeline/presets/default-presets-i18n.ts:71
 msgid "Remux to MP4 with faststart flag for web streaming optimization."
 msgstr "使用 faststart 标志重封装为 MP4，以优化网页播放。"
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:75
+#: src/components/pipeline/presets/default-presets-i18n.ts:77
 msgid "Remux to MP4 without re-encoding and delete the original file on success. Saves disk space."
 msgstr "重封装为 MP4 且不重新编码，并在成功后删除原始文件。节省磁盘空间。"
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:50
+#: src/components/pipeline/presets/default-presets-i18n.ts:51
 msgid "Remux to MP4 without re-encoding. Fast and lossless - just changes the container format."
 msgstr "无需重新编码，重封装为 MP4。快速且无损——仅更改封装格式。"
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:23
+#: src/components/pipeline/presets/default-presets-i18n.ts:24
 msgid "Remux with Faststart"
 msgstr "重封装 (Faststart)"
 
@@ -4937,9 +5020,13 @@ msgstr "通过中间服务器转发流量"
 msgid "Rows per page"
 msgstr "每页行数"
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:68
+#: src/components/pipeline/presets/default-presets-i18n.ts:69
 msgid "Run a custom FFmpeg command. Edit the args to customize."
 msgstr "运行自定义 FFmpeg 命令。编辑参数以自定义。"
+
+#: src/components/pipeline/presets/default-presets-i18n.ts:70
+msgid "Run a custom shell command with placeholders (e.g. {input}, {inputs_json}, {streamer}, %Y%m%d)."
+msgstr "运行带有占位符的自定义 Shell 命令（例如 {input}, {inputs_json}, {streamer}, %Y%m%d）。"
 
 #: src/components/config/global/pipeline-config-card.tsx:291
 #: src/components/config/shared-config-editor.tsx:542
@@ -5014,6 +5101,14 @@ msgstr "采样率（Hz）"
 msgid "Sampling Strategy"
 msgstr "采样策略"
 
+#: src/components/pipeline/presets/processors/execute-config-form.tsx:152
+msgid "Sanitized session title"
+msgstr "清理后的会话标题"
+
+#: src/components/pipeline/presets/processors/execute-config-form.tsx:145
+msgid "Sanitized streamer name"
+msgstr "清理后的主播名称"
+
 #: src/components/config/engines/engine-editor.tsx:288
 #: src/components/config/platforms/platform-editor.tsx:152
 #: src/components/config/templates/template-editor.tsx:206
@@ -5045,11 +5140,11 @@ msgstr "保存工作流"
 msgid "Saving..."
 msgstr "保存中..."
 
-#: src/components/pipeline/presets/processors/execute-config-form.tsx:132
+#: src/components/pipeline/presets/processors/execute-config-form.tsx:245
 msgid "Scan a directory for new files created by the command. Detected files will be passed to the next pipeline step."
 msgstr "扫描目录以查找命令创建的新文件。检测到的文件将传递到下一个管道步骤。"
 
-#: src/components/pipeline/presets/processors/execute-config-form.tsx:145
+#: src/components/pipeline/presets/processors/execute-config-form.tsx:258
 msgid "Scan Directory"
 msgstr "扫描目录"
 
@@ -5130,6 +5225,10 @@ msgstr "搜索模板..."
 msgid "Search workflows..."
 msgstr "搜索工作流..."
 
+#: src/components/pipeline/presets/processors/execute-config-form.tsx:209
+msgid "Second (00-59)"
+msgstr "秒 (00-59)"
+
 #: src/components/config/engines/forms/ffmpeg-form.tsx:74
 msgid "secs"
 msgstr "秒"
@@ -5179,7 +5278,7 @@ msgstr "选择引擎"
 msgid "Select behavior"
 msgstr "选择行为"
 
-#: src/components/pipeline/presets/editor/preset-meta-form.tsx:251
+#: src/components/pipeline/presets/editor/preset-meta-form.tsx:253
 msgid "Select category"
 msgstr "选择类别"
 
@@ -5226,7 +5325,7 @@ msgid "Select the steps that must complete successfully before this step runs."
 msgstr "选择必须在此步骤运行前成功完成的步骤。"
 
 #: src/components/config/engines/engine-editor.tsx:194
-#: src/components/pipeline/presets/editor/preset-meta-form.tsx:159
+#: src/components/pipeline/presets/editor/preset-meta-form.tsx:161
 msgid "Select type"
 msgstr "选择类型"
 
@@ -5301,6 +5400,7 @@ msgstr "会话间隔"
 #~ msgid "Session Gap (seconds)"
 #~ msgstr "录制会话间隔（秒）"
 
+#: src/components/pipeline/presets/processors/execute-config-form.tsx:138
 #: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.tsx:426
 msgid "Session ID"
 msgstr "录制会话 ID"
@@ -5424,7 +5524,7 @@ msgstr "发生错误！"
 msgid "Source"
 msgstr "来源"
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:86
+#: src/components/pipeline/presets/default-presets-i18n.ts:88
 msgid "Space Saver"
 msgstr "空间节省"
 
@@ -5454,7 +5554,7 @@ msgstr "按时长分割。"
 msgid "Split after size."
 msgstr "按大小分割。"
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:81
+#: src/components/pipeline/presets/default-presets-i18n.ts:83
 msgid "Standard"
 msgstr "标准"
 
@@ -5544,7 +5644,7 @@ msgstr "步骤列表"
 msgid "Storage"
 msgstr ""
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:92
+#: src/components/pipeline/presets/default-presets-i18n.ts:94
 msgid "Stream Archive"
 msgstr "直播归档"
 
@@ -5595,6 +5695,7 @@ msgstr "主播已删除"
 msgid "Streamer Details"
 msgstr "主播详情"
 
+#: src/components/pipeline/presets/processors/execute-config-form.tsx:131
 #: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.tsx:432
 msgid "Streamer ID"
 msgstr "主播 ID"
@@ -5649,7 +5750,7 @@ msgstr "订阅"
 msgid "Subscriptions updated"
 msgstr "订阅已更新"
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:46
+#: src/components/pipeline/presets/default-presets-i18n.ts:47
 msgid "Subtitle"
 msgstr "字幕"
 
@@ -5870,7 +5971,7 @@ msgstr "主题模式"
 #~ msgid "There are no recorded sessions matching your criteria."
 #~ msgstr "没有符合条件的录制会话。"
 
-#: src/components/pipeline/presets/editor/preset-meta-form.tsx:294
+#: src/components/pipeline/presets/editor/preset-meta-form.tsx:296
 msgid "This is a default preset. Description cannot be modified."
 msgstr "这是默认预设，描述无法修改。"
 
@@ -5928,7 +6029,7 @@ msgid "This will permanently remove the \"{0}\" configuration. This action canno
 msgstr "这将永久移除“{0}”配置。此操作无法撤销。"
 
 #: src/components/pipeline/presets/default-presets-i18n.ts:8
-#: src/components/pipeline/presets/default-presets-i18n.ts:37
+#: src/components/pipeline/presets/default-presets-i18n.ts:38
 #: src/components/pipeline/presets/editor/preset-meta-form.tsx:61
 #: src/components/pipeline/presets/preset-card.tsx:88
 #: src/components/pipeline/presets/preset-templates.ts:24
@@ -5955,6 +6056,10 @@ msgstr "采样尝试之间的时间间隔。"
 #: src/components/pipeline/presets/processors/thumbnail-config-form.tsx:67
 msgid "Time offset to take screenshot from"
 msgstr "截图时间偏移"
+
+#: src/components/pipeline/presets/processors/execute-config-form.tsx:168
+msgid "Time Placeholders (Local Time)"
+msgstr "时间占位符（本地时间）"
 
 #: src/routes/_authed/_dashboard/sessions/$sessionId.tsx:223
 msgid "Timeline"
@@ -6185,11 +6290,11 @@ msgstr ""
 msgid "type=bolt,path=/data/tdl"
 msgstr ""
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:28
+#: src/components/pipeline/presets/default-presets-i18n.ts:29
 msgid "Ultrafast Compression"
 msgstr "极速压缩"
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:74
+#: src/components/pipeline/presets/default-presets-i18n.ts:76
 msgid "Ultrafast H.264 encoding (CRF 26) for quick sharing."
 msgstr "超快 H.264 编码（CRF 26），用于快速分享。"
 
@@ -6197,6 +6302,10 @@ msgstr "超快 H.264 编码（CRF 26），用于快速分享。"
 #: src/routes/_authed/_dashboard/dashboard.tsx:505
 msgid "Unhealthy"
 msgstr "不健康"
+
+#: src/components/pipeline/presets/processors/execute-config-form.tsx:216
+msgid "Unix timestamp"
+msgstr "Unix 时间戳"
 
 #: src/routes/_authed/_dashboard/dashboard.tsx:507
 msgid "Unknown"
@@ -6239,7 +6348,7 @@ msgstr "已更新"
 msgid "Updates existing items and creates new ones. Nothing is deleted."
 msgstr "更新现有项目并创建新项目，不会删除任何内容。"
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:40
+#: src/components/pipeline/presets/default-presets-i18n.ts:41
 #: src/components/pipeline/presets/preset-card.tsx:91
 #: src/routes/_authed/_dashboard/pipeline/presets/index.tsx:67
 msgid "Upload"
@@ -6265,11 +6374,11 @@ msgstr ""
 msgid "Upload everything regardless of file type"
 msgstr ""
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:66
+#: src/components/pipeline/presets/default-presets-i18n.ts:67
 msgid "Upload file to cloud storage and delete local copy after successful upload."
 msgstr "将文件上传到云存储，上传成功后删除本地副本。"
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:65
+#: src/components/pipeline/presets/default-presets-i18n.ts:66
 msgid "Upload file to cloud storage using rclone. Configure remote in rclone config."
 msgstr "使用 rclone 将文件上传到云存储。在 rclone 配置中设置远端。"
 
@@ -6295,7 +6404,7 @@ msgstr "使用 <0>-movflags +faststart</0>"
 #~ msgid "Use computed query parameters (WUP v2)."
 #~ msgstr "使用计算出的查询参数 (WUP v2)。"
 
-#: src/components/pipeline/presets/processors/danmaku-factory-config-form.tsx:143
+#: src/components/pipeline/presets/processors/danmaku-factory-config-form.tsx:196
 msgid "Use danmu_inputs from job manifest"
 msgstr "使用任务清单中的 danmu_inputs"
 
@@ -6394,11 +6503,11 @@ msgstr "变量：'{streamer}'、'{title}'、'{platform}' | 时间：%Y、%m、%d
 msgid "Velocity Based (Dynamic)"
 msgstr "基于速度（动态）"
 
-#: src/components/pipeline/presets/processors/copy-move-config-form.tsx:151
+#: src/components/pipeline/presets/processors/copy-move-config-form.tsx:155
 msgid "Verify Integrity"
 msgstr "校验完整性"
 
-#: src/components/pipeline/presets/processors/danmaku-factory-config-form.tsx:117
+#: src/components/pipeline/presets/processors/danmaku-factory-config-form.tsx:170
 msgid "Verify Output"
 msgstr "验证输出"
 
@@ -6553,6 +6662,10 @@ msgstr "工作流"
 #: src/components/pipeline/presets/processors/tdl-config-form.tsx:345
 msgid "Working Directory"
 msgstr ""
+
+#: src/components/pipeline/presets/processors/execute-config-form.tsx:174
+msgid "Year (4 digits)"
+msgstr "年 (4 位数字)"
 
 #: src/routes/_authed/_dashboard/sessions/index.tsx:194
 msgid "Yesterday"

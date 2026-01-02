@@ -244,6 +244,10 @@ msgstr "Add an override to customize behavior for specific platforms."
 msgid "Add an override to customize engine behavior for this template."
 msgstr "Add an override to customize engine behavior for this template."
 
+#: src/components/pipeline/presets/processors/danmaku-factory-config-form.tsx:91
+msgid "Add argument template"
+msgstr "Add argument template"
+
 #: src/routes/_authed/_dashboard/pipeline/jobs/new.tsx:53
 msgid "Add at least one step"
 msgstr "Add at least one step"
@@ -260,6 +264,14 @@ msgstr "Add Custom Tag"
 msgid "Add Environment Variable"
 msgstr "Add Environment Variable"
 
+#: src/components/pipeline/presets/processors/copy-move-config-form.tsx:190
+msgid "Add exclude regex pattern"
+msgstr "Add exclude regex pattern"
+
+#: src/components/pipeline/presets/processors/danmaku-factory-config-form.tsx:117
+msgid "Add extra argument"
+msgstr "Add extra argument"
+
 #: src/components/streamers/edit/streamer-filters-tab.tsx:46
 msgid "Add Filter"
 msgstr "Add Filter"
@@ -272,7 +284,7 @@ msgstr "Add item..."
 msgid "Add Metadata"
 msgstr "Add Metadata"
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:67
+#: src/components/pipeline/presets/default-presets-i18n.ts:68
 msgid "Add metadata tags (title, artist, date) to the video file."
 msgstr "Add metadata tags (title, artist, date) to the video file."
 
@@ -322,6 +334,10 @@ msgstr "Add Stream"
 msgid "Add Streamer"
 msgstr "Add Streamer"
 
+#: src/components/pipeline/presets/processors/danmaku-factory-config-form.tsx:121
+msgid "Additional arguments appended to the command."
+msgstr "Additional arguments appended to the command."
+
 #: src/components/config/shared/danmu-config-form.tsx:146
 msgid "Adjust sampling rate based on danmu traffic volume."
 msgstr "Adjust sampling rate based on danmu traffic volume."
@@ -361,7 +377,7 @@ msgstr "Advanced Settings"
 #~ msgstr "Advanced theming options."
 
 #. placeholder {0}: dagStep.depends_on.join(', ')
-#: src/components/pipeline/workflows/steps-list.tsx:143
+#: src/components/pipeline/workflows/steps-list.tsx:145
 msgid "AFTER: {0}"
 msgstr "AFTER: {0}"
 
@@ -435,13 +451,13 @@ msgstr "Apply a blur effect to the background of cards and sidebars."
 msgid "Apply template settings."
 msgstr "Apply template settings."
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:39
+#: src/components/pipeline/presets/default-presets-i18n.ts:40
 #: src/components/pipeline/presets/preset-card.tsx:90
 #: src/routes/_authed/_dashboard/pipeline/presets/index.tsx:66
 msgid "Archive"
 msgstr "Archive"
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:24
+#: src/components/pipeline/presets/default-presets-i18n.ts:25
 msgid "Archive Compression"
 msgstr "Archive Compression"
 
@@ -453,7 +469,7 @@ msgstr "Archive Format"
 msgid "Archive Settings"
 msgstr "Archive Settings"
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:82
+#: src/components/pipeline/presets/default-presets-i18n.ts:84
 msgid "Archive to Cloud"
 msgstr "Archive to Cloud"
 
@@ -498,7 +514,7 @@ msgstr "Artist"
 msgid "ASS Burn-in"
 msgstr "ASS Burn-in"
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:31
+#: src/components/pipeline/presets/default-presets-i18n.ts:32
 msgid "ASS Subtitle Burn-in"
 msgstr "ASS Subtitle Burn-in"
 
@@ -510,7 +526,7 @@ msgstr "At least one input path is required"
 msgid "Attempt to repair timestamps in FLV streams"
 msgstr "Attempt to repair timestamps in FLV streams"
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:38
+#: src/components/pipeline/presets/default-presets-i18n.ts:39
 #: src/components/pipeline/presets/preset-card.tsx:89
 #: src/components/pipeline/presets/processors/remux-config-form.tsx:99
 #: src/routes/_authed/_dashboard/pipeline/presets/index.tsx:65
@@ -593,8 +609,8 @@ msgid "available"
 msgstr "available"
 
 #: src/components/pipeline/presets/processors/execute-config-form.tsx:71
-msgid "Available Variables"
-msgstr "Available Variables"
+#~ msgid "Available Variables"
+#~ msgstr "Available Variables"
 
 #: src/components/notifications/forms/discord-form.tsx:74
 msgid "Avatar URL (Optional)"
@@ -665,7 +681,7 @@ msgstr "Basic details for this configuration template."
 msgid "Basic Information"
 msgstr "Basic Information"
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:96
+#: src/components/pipeline/presets/default-presets-i18n.ts:98
 msgid "Basic post-processing: Remux FLV to MP4 and generate a thumbnail preview."
 msgstr "Basic post-processing: Remux FLV to MP4 and generate a thumbnail preview."
 
@@ -696,7 +712,7 @@ msgstr "Bilibili quality identification (QN)."
 
 #: src/components/config/engines/forms/ffmpeg-form.tsx:41
 #: src/components/config/engines/forms/streamlink-form.tsx:37
-#: src/components/pipeline/presets/processors/danmaku-factory-config-form.tsx:55
+#: src/components/pipeline/presets/processors/danmaku-factory-config-form.tsx:59
 msgid "Binary Path"
 msgstr "Binary Path"
 
@@ -724,7 +740,7 @@ msgstr "Buffer Settings"
 msgid "Buffer Size"
 msgstr "Buffer Size"
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:77
+#: src/components/pipeline/presets/default-presets-i18n.ts:79
 msgid "Burn .ass subtitles into videos (produces *_burnin.mp4 by default). Manifest-aware and batch-safe."
 msgstr "Burn .ass subtitles into videos (produces *_burnin.mp4 by default). Manifest-aware and batch-safe."
 
@@ -809,7 +825,7 @@ msgstr "Case Sensitive"
 msgid "Categories"
 msgstr "Categories"
 
-#: src/components/pipeline/presets/editor/preset-meta-form.tsx:237
+#: src/components/pipeline/presets/editor/preset-meta-form.tsx:239
 msgid "Category"
 msgstr "Category"
 
@@ -854,7 +870,7 @@ msgstr "channels"
 msgid "Channels"
 msgstr "Channels"
 
-#: src/components/pipeline/presets/processors/danmaku-factory-config-form.tsx:120
+#: src/components/pipeline/presets/processors/danmaku-factory-config-form.tsx:173
 msgid "Check if file exists after conversion"
 msgstr "Check if file exists after conversion"
 
@@ -866,7 +882,7 @@ msgstr "Check Login"
 #~ msgid "Check Now"
 #~ msgstr "Check Now"
 
-#: src/components/pipeline/presets/processors/copy-move-config-form.tsx:154
+#: src/components/pipeline/presets/processors/copy-move-config-form.tsx:158
 msgid "Check size after copy"
 msgstr "Check size after copy"
 
@@ -903,10 +919,10 @@ msgstr "Choose how this streamer handles proxy connections."
 msgid "Choose your display language"
 msgstr "Choose your display language"
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:41
+#: src/components/pipeline/presets/default-presets-i18n.ts:42
 #: src/components/pipeline/presets/preset-card.tsx:92
 #: src/components/pipeline/presets/processors/ass-burnin-config-form.tsx:320
-#: src/components/pipeline/presets/processors/danmaku-factory-config-form.tsx:186
+#: src/components/pipeline/presets/processors/danmaku-factory-config-form.tsx:239
 #: src/routes/_authed/_dashboard/pipeline/presets/index.tsx:68
 msgid "Cleanup"
 msgstr "Cleanup"
@@ -952,9 +968,14 @@ msgstr "Comma-separated list of channels to exclude from proxy"
 msgid "Command"
 msgstr "Command"
 
+#: src/components/pipeline/presets/processors/danmaku-factory-config-form.tsx:85
 #: src/components/pipeline/presets/processors/tdl-config-form.tsx:452
 msgid "Command Arguments"
 msgstr "Command Arguments"
+
+#: src/components/pipeline/presets/processors/danmaku-factory-config-form.tsx:95
+msgid "Command template args. Use {input} and {output} placeholders."
+msgstr "Command template args. Use {input} and {output} placeholders."
 
 #: src/components/pipeline/presets/processors/metadata-config-form.tsx:220
 msgid "Comment"
@@ -964,7 +985,7 @@ msgstr "Comment"
 msgid "Complete the Telegram login process in this terminal."
 msgstr "Complete the Telegram login process in this terminal."
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:102
+#: src/components/pipeline/presets/default-presets-i18n.ts:104
 msgid "Complete workflow: Remux, generate thumbnail, add metadata, and upload."
 msgstr "Complete workflow: Remux, generate thumbnail, add metadata, and upload."
 
@@ -992,11 +1013,11 @@ msgstr "Component"
 msgid "Component Status"
 msgstr "Component Status"
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:97
+#: src/components/pipeline/presets/default-presets-i18n.ts:99
 msgid "Compress video for storage, upload to cloud, then delete local file to save space."
 msgstr "Compress video for storage, upload to cloud, then delete local file to save space."
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:36
+#: src/components/pipeline/presets/default-presets-i18n.ts:37
 #: src/components/pipeline/presets/editor/preset-meta-form.tsx:63
 #: src/components/pipeline/presets/preset-card.tsx:87
 #: src/routes/_authed/_dashboard/pipeline/presets/index.tsx:63
@@ -1080,7 +1101,7 @@ msgstr "Configure how you want to import data from the selected backup file."
 msgid "Configure recording rules for this streamer."
 msgstr "Configure recording rules for this streamer."
 
-#: src/components/pipeline/workflows/steps-list.tsx:161
+#: src/components/pipeline/workflows/steps-list.tsx:163
 msgid "Configure Step"
 msgstr "Configure Step"
 
@@ -1141,7 +1162,7 @@ msgstr "Continue on Error"
 msgid "Control verbosity for each module. Lower levels include higher ones."
 msgstr "Control verbosity for each module. Lower levels include higher ones."
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:76
+#: src/components/pipeline/presets/default-presets-i18n.ts:78
 msgid "Convert danmu XML (Bilibili-style) into .ass subtitles using DanmakuFactory. Manifest-aware and batch-safe."
 msgstr "Convert danmu XML (Bilibili-style) into .ass subtitles using DanmakuFactory. Manifest-aware and batch-safe."
 
@@ -1182,7 +1203,7 @@ msgstr "Copy Directory"
 msgid "Copy File"
 msgstr "Copy File"
 
-#: src/components/pipeline/presets/processors/copy-move-config-form.tsx:74
+#: src/components/pipeline/presets/processors/copy-move-config-form.tsx:78
 msgid "Copy Files"
 msgstr "Copy Files"
 
@@ -1190,7 +1211,7 @@ msgstr "Copy Files"
 msgid "Copy Path"
 msgstr "Copy Path"
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:63
+#: src/components/pipeline/presets/default-presets-i18n.ts:64
 msgid "Copy the file to another location. Keeps the original file."
 msgstr "Copy the file to another location. Keeps the original file."
 
@@ -1231,7 +1252,7 @@ msgstr "Create a filter to control when this streamer is recorded. You can filte
 msgid "Create a template to define reusable download configurations."
 msgstr "Create a template to define reusable download configurations."
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:61
+#: src/components/pipeline/presets/default-presets-i18n.ts:62
 msgid "Create a ZIP archive of the file. Good for bundling with metadata."
 msgstr "Create a ZIP archive of the file. Good for bundling with metadata."
 
@@ -1241,7 +1262,7 @@ msgstr "Create a ZIP archive of the file. Good for bundling with metadata."
 msgid "Create Channel"
 msgstr "Create Channel"
 
-#: src/components/pipeline/presets/processors/copy-move-config-form.tsx:128
+#: src/components/pipeline/presets/processors/copy-move-config-form.tsx:132
 msgid "Create Directories"
 msgstr "Create Directories"
 
@@ -1254,7 +1275,7 @@ msgstr "Create Engine"
 msgid "Create Filter"
 msgstr "Create Filter"
 
-#: src/components/pipeline/presets/processors/copy-move-config-form.tsx:131
+#: src/components/pipeline/presets/processors/copy-move-config-form.tsx:135
 msgid "Create missing folders"
 msgstr "Create missing folders"
 
@@ -1365,14 +1386,14 @@ msgstr "Current password"
 msgid "Current Password"
 msgstr "Current Password"
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:43
+#: src/components/pipeline/presets/default-presets-i18n.ts:44
 #: src/components/pipeline/presets/preset-card.tsx:94
 #: src/routes/_authed/_dashboard/pipeline/presets/index.tsx:70
 #: src/routes/_authed/_dashboard/sessions/index.tsx:364
 msgid "Custom"
 msgstr "Custom"
 
-#: src/components/pipeline/workflows/steps-list.tsx:101
+#: src/components/pipeline/workflows/steps-list.tsx:103
 msgid "Custom Config"
 msgstr "Custom Config"
 
@@ -1436,7 +1457,7 @@ msgstr "DAG Configuration"
 msgid "DAG Graph"
 msgstr "DAG Graph"
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:45
+#: src/components/pipeline/presets/default-presets-i18n.ts:46
 msgid "Danmaku"
 msgstr "Danmaku"
 
@@ -1446,7 +1467,7 @@ msgstr "Danmaku"
 msgid "Danmaku to ASS"
 msgstr "Danmaku to ASS"
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:30
+#: src/components/pipeline/presets/default-presets-i18n.ts:31
 msgid "Danmaku to ASS Subtitles"
 msgstr "Danmaku to ASS Subtitles"
 
@@ -1480,6 +1501,10 @@ msgstr "Database queries"
 msgid "Date"
 msgstr "Date"
 
+#: src/components/pipeline/presets/processors/execute-config-form.tsx:188
+msgid "Day (01-31)"
+msgstr "Day (01-31)"
+
 #: src/components/config/platforms/platform-card.tsx:107
 #: src/components/config/platforms/platform-card.tsx:122
 msgid "default"
@@ -1498,7 +1523,7 @@ msgstr "Default Engine"
 msgid "Default pipeline flow. Configure the sequence of processors for new jobs."
 msgstr "Default pipeline flow. Configure the sequence of processors for new jobs."
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:107
+#: src/components/pipeline/presets/default-presets-i18n.ts:109
 msgid "Default workflow: Remux to MP4 (deletes original), generate native-resolution thumbnail, upload both to cloud and delete local files."
 msgstr "Default workflow: Remux to MP4 (deletes original), generate native-resolution thumbnail, upload both to cloud and delete local files."
 
@@ -1591,7 +1616,7 @@ msgstr "Delete Source ASS"
 msgid "Delete Source Videos"
 msgstr "Delete Source Videos"
 
-#: src/components/pipeline/presets/processors/danmaku-factory-config-form.tsx:198
+#: src/components/pipeline/presets/processors/danmaku-factory-config-form.tsx:251
 msgid "Delete Source XML"
 msgstr "Delete Source XML"
 
@@ -1599,7 +1624,7 @@ msgstr "Delete Source XML"
 msgid "Delete Template"
 msgstr "Delete Template"
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:62
+#: src/components/pipeline/presets/default-presets-i18n.ts:63
 msgid "Delete the source file. Use as the last step in a pipeline to clean up."
 msgstr "Delete the source file. Use as the last step in a pipeline to clean up."
 
@@ -1607,7 +1632,7 @@ msgstr "Delete the source file. Use as the last step in a pipeline to clean up."
 msgid "Delete Workflow?"
 msgstr "Delete Workflow?"
 
-#: src/components/pipeline/presets/processors/danmaku-factory-config-form.tsx:201
+#: src/components/pipeline/presets/processors/danmaku-factory-config-form.tsx:254
 msgid "Delete XML files after successful conversion"
 msgstr "Delete XML files after successful conversion"
 
@@ -1631,12 +1656,12 @@ msgstr "Depends On (Ancestors)"
 msgid "Describe what this workflow does..."
 msgstr "Describe what this workflow does..."
 
-#: src/components/pipeline/presets/editor/preset-meta-form.tsx:275
+#: src/components/pipeline/presets/editor/preset-meta-form.tsx:277
 #: src/components/pipeline/workflows/workflow-editor.tsx:325
 msgid "Description"
 msgstr "Description"
 
-#: src/components/pipeline/presets/editor/preset-meta-form.tsx:284
+#: src/components/pipeline/presets/editor/preset-meta-form.tsx:286
 msgid "Description is managed by the system"
 msgstr "Description is managed by the system"
 
@@ -1648,7 +1673,7 @@ msgstr "Deselect All"
 msgid "Design your automation pipeline step by step"
 msgstr "Design your automation pipeline step by step"
 
-#: src/components/pipeline/presets/processors/copy-move-config-form.tsx:92
+#: src/components/pipeline/presets/processors/copy-move-config-form.tsx:96
 msgid "Destination Path (Optional)"
 msgstr "Destination Path (Optional)"
 
@@ -1676,7 +1701,7 @@ msgstr "Dimensions & Filters"
 msgid "Directory path copied"
 msgstr "Directory path copied"
 
-#: src/components/pipeline/presets/processors/execute-config-form.tsx:156
+#: src/components/pipeline/presets/processors/execute-config-form.tsx:269
 msgid "Directory to scan for new files after command execution"
 msgstr "Directory to scan for new files after command execution"
 
@@ -1767,7 +1792,7 @@ msgstr "Drag from edge to link steps"
 msgid "Dry Run"
 msgstr "Dry Run"
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:91
+#: src/components/pipeline/presets/default-presets-i18n.ts:93
 msgid "Dual Format"
 msgstr "Dual Format"
 
@@ -1789,7 +1814,7 @@ msgstr "e.g. 'best', 'worst', '720p', 'audio_only'"
 msgid "e.g. /data/tdl"
 msgstr "e.g. /data/tdl"
 
-#: src/components/pipeline/presets/processors/execute-config-form.tsx:149
+#: src/components/pipeline/presets/processors/execute-config-form.tsx:262
 msgid "e.g. /output/processed/"
 msgstr "e.g. /output/processed/"
 
@@ -1813,7 +1838,7 @@ msgstr "e.g. gdrive:/videos"
 msgid "e.g. High Quality Streamlink"
 msgstr "e.g. High Quality Streamlink"
 
-#: src/components/pipeline/presets/processors/execute-config-form.tsx:175
+#: src/components/pipeline/presets/processors/execute-config-form.tsx:288
 #: src/components/pipeline/presets/processors/tdl-config-form.tsx:565
 msgid "e.g. mp4"
 msgstr "e.g. mp4"
@@ -1823,7 +1848,7 @@ msgstr "e.g. mp4"
 msgid "e.g. My Favorite Streamer"
 msgstr "e.g. My Favorite Streamer"
 
-#: src/components/pipeline/presets/editor/preset-meta-form.tsx:218
+#: src/components/pipeline/presets/editor/preset-meta-form.tsx:220
 msgid "e.g. Remux to H.264"
 msgstr "e.g. Remux to H.264"
 
@@ -2109,10 +2134,15 @@ msgstr "Exclude"
 msgid "Exclude ASS from Passthrough"
 msgstr "Exclude ASS from Passthrough"
 
+#: src/components/pipeline/presets/processors/copy-move-config-form.tsx:177
+msgid "Exclude Patterns"
+msgstr "Exclude Patterns"
+
 #: src/components/pipeline/presets/processors/tdl-config-form.tsx:588
 msgid "Excluded Extensions"
 msgstr "Excluded Extensions"
 
+#: src/components/pipeline/presets/default-presets-i18n.ts:23
 #: src/components/pipeline/presets/editor/preset-meta-form.tsx:72
 #: src/components/pipeline/presets/processors/registry.ts:106
 msgid "Execute Command"
@@ -2122,7 +2152,7 @@ msgstr "Execute Command"
 msgid "Execute shell commands on lifecycle events. Commands run in the system shell."
 msgstr "Execute shell commands on lifecycle events. Commands run in the system shell."
 
-#: src/components/pipeline/presets/processors/danmaku-factory-config-form.tsx:44
+#: src/components/pipeline/presets/processors/danmaku-factory-config-form.tsx:48
 msgid "Execution Settings"
 msgstr "Execution Settings"
 
@@ -2152,6 +2182,7 @@ msgid "Exports include all global settings, platforms, templates, streamers, eng
 msgstr "Exports include all global settings, platforms, templates, streamers, engines, and notification channels. Sensitive data like passwords might be redacted or encrypted depending on platform settings."
 
 #: src/components/config/engines/forms/streamlink-form.tsx:141
+#: src/components/pipeline/presets/processors/danmaku-factory-config-form.tsx:111
 #: src/components/pipeline/presets/processors/rclone-config-form.tsx:264
 msgid "Extra Arguments"
 msgstr "Extra Arguments"
@@ -2160,19 +2191,19 @@ msgstr "Extra Arguments"
 msgid "Extract AAC"
 msgstr "Extract AAC"
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:71
+#: src/components/pipeline/presets/default-presets-i18n.ts:73
 msgid "Extract audio to high-quality MP3 (320kbps) for podcast distribution."
 msgstr "Extract audio to high-quality MP3 (320kbps) for podcast distribution."
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:60
+#: src/components/pipeline/presets/default-presets-i18n.ts:61
 msgid "Extract audio track to AAC format (256kbps). High quality, widely compatible."
 msgstr "Extract audio track to AAC format (256kbps). High quality, widely compatible."
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:59
+#: src/components/pipeline/presets/default-presets-i18n.ts:60
 msgid "Extract audio track to MP3 format (192kbps). Good for podcasts and music."
 msgstr "Extract audio track to MP3 format (192kbps). Good for podcasts and music."
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:99
+#: src/components/pipeline/presets/default-presets-i18n.ts:101
 msgid "Extract high-quality audio for podcast distribution and upload."
 msgstr "Extract high-quality audio for podcast distribution and upload."
 
@@ -2433,11 +2464,11 @@ msgstr "Failed to update workflow: {0}"
 msgid "Fast Compression"
 msgstr "Fast Compression"
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:100
+#: src/components/pipeline/presets/default-presets-i18n.ts:102
 msgid "Fast encoding for quick sharing on social media or messaging."
 msgstr "Fast encoding for quick sharing on social media or messaging."
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:52
+#: src/components/pipeline/presets/default-presets-i18n.ts:53
 msgid "Fast H.264 compression (CRF 23). Good balance of speed, quality, and file size."
 msgstr "Fast H.264 compression (CRF 23). Good balance of speed, quality, and file size."
 
@@ -2469,11 +2500,11 @@ msgstr "FFmpeg Video Filter"
 msgid "File Configuration"
 msgstr "File Configuration"
 
-#: src/components/pipeline/presets/processors/execute-config-form.tsx:171
+#: src/components/pipeline/presets/processors/execute-config-form.tsx:284
 msgid "File Extension Filter"
 msgstr "File Extension Filter"
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:42
+#: src/components/pipeline/presets/default-presets-i18n.ts:43
 #: src/components/pipeline/presets/processors/metadata-config-form.tsx:251
 msgid "File Operations"
 msgstr "File Operations"
@@ -2543,6 +2574,14 @@ msgstr "Filters"
 #: src/routes/_authed/_dashboard/pipeline/executions.$pipelineId.tsx:466
 #~ msgid "Finished"
 #~ msgstr "Finished"
+
+#: src/components/pipeline/presets/processors/execute-config-form.tsx:79
+msgid "First input file path"
+msgstr "First input file path"
+
+#: src/components/pipeline/presets/processors/execute-config-form.tsx:86
+msgid "First output file path"
+msgstr "First output file path"
 
 #: src/components/config/engines/forms/mesio-form.tsx:72
 msgid "Fix FLV"
@@ -2621,11 +2660,11 @@ msgstr "From Address"
 msgid "Full HD Thumbnail"
 msgstr "Full HD Thumbnail"
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:104
+#: src/components/pipeline/presets/default-presets-i18n.ts:106
 msgid "Full multimedia processing: Remux video, extract audio and thumbnail in parallel, then upload all."
 msgstr "Full multimedia processing: Remux video, extract audio and thumbnail in parallel, then upload all."
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:87
+#: src/components/pipeline/presets/default-presets-i18n.ts:89
 msgid "Full Processing"
 msgstr "Full Processing"
 
@@ -2649,31 +2688,31 @@ msgstr "General Configuration"
 msgid "General options for extractors"
 msgstr "General options for extractors"
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:56
+#: src/components/pipeline/presets/default-presets-i18n.ts:57
 msgid "Generate a Full HD thumbnail (1280px width) for modern displays and video players."
 msgstr "Generate a Full HD thumbnail (1280px width) for modern displays and video players."
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:55
+#: src/components/pipeline/presets/default-presets-i18n.ts:56
 msgid "Generate a high-resolution thumbnail (640px width) at 10 seconds."
 msgstr "Generate a high-resolution thumbnail (640px width) at 10 seconds."
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:57
+#: src/components/pipeline/presets/default-presets-i18n.ts:58
 msgid "Generate a maximum quality thumbnail (1920px width) preserving full 1080p detail."
 msgstr "Generate a maximum quality thumbnail (1920px width) preserving full 1080p detail."
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:72
+#: src/components/pipeline/presets/default-presets-i18n.ts:74
 msgid "Generate a thumbnail at 30 seconds with 480px width for previews."
 msgstr "Generate a thumbnail at 30 seconds with 480px width for previews."
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:58
+#: src/components/pipeline/presets/default-presets-i18n.ts:59
 msgid "Generate a thumbnail at native stream resolution (no scaling). Best quality, largest file size."
 msgstr "Generate a thumbnail at native stream resolution (no scaling). Best quality, largest file size."
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:54
+#: src/components/pipeline/presets/default-presets-i18n.ts:55
 msgid "Generate a thumbnail image from the video at 10 seconds (320px width)."
 msgstr "Generate a thumbnail image from the video at 10 seconds (320px width)."
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:105
+#: src/components/pipeline/presets/default-presets-i18n.ts:107
 msgid "Generate multiple preview images at different timestamps for a gallery view."
 msgstr "Generate multiple preview images at different timestamps for a gallery view."
 
@@ -2741,7 +2780,7 @@ msgstr "Graph"
 msgid "H.264"
 msgstr "H.264"
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:70
+#: src/components/pipeline/presets/default-presets-i18n.ts:72
 msgid "H.264 medium compression (CRF 23) optimized for long-term storage."
 msgstr "H.264 medium compression (CRF 23) optimized for long-term storage."
 
@@ -2790,7 +2829,7 @@ msgstr "Hide password"
 msgid "High"
 msgstr "High"
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:83
+#: src/components/pipeline/presets/default-presets-i18n.ts:85
 msgid "High Quality Archive"
 msgstr "High Quality Archive"
 
@@ -2798,11 +2837,11 @@ msgstr "High Quality Archive"
 msgid "High Quality Compression"
 msgstr "High Quality Compression"
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:53
+#: src/components/pipeline/presets/default-presets-i18n.ts:54
 msgid "High quality H.265/HEVC compression (CRF 22). Smaller files but slower encoding."
 msgstr "High quality H.265/HEVC compression (CRF 22). Smaller files but slower encoding."
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:25
+#: src/components/pipeline/presets/default-presets-i18n.ts:26
 msgid "High Quality MP3"
 msgstr "High Quality MP3"
 
@@ -2830,6 +2869,10 @@ msgstr "Home"
 #: src/components/config/shared-config-editor.tsx:199
 msgid "Hooks"
 msgstr "Hooks"
+
+#: src/components/pipeline/presets/processors/execute-config-form.tsx:195
+msgid "Hour (00-23)"
+msgstr "Hour (00-23)"
 
 #: src/components/pipeline/presets/processors/ass-burnin-config-form.tsx:192
 msgid "How to pair video files with .ass subtitles"
@@ -2867,7 +2910,7 @@ msgstr "i"
 msgid "IANA Timezone (e.g. Asia/Shanghai, UTC)."
 msgstr "IANA Timezone (e.g. Asia/Shanghai, UTC)."
 
-#: src/components/pipeline/presets/editor/preset-meta-form.tsx:187
+#: src/components/pipeline/presets/editor/preset-meta-form.tsx:189
 msgid "ID"
 msgstr "ID"
 
@@ -2879,7 +2922,7 @@ msgstr "ID is required"
 msgid "Identity and type of the engine."
 msgstr "Identity and type of the engine."
 
-#: src/components/pipeline/presets/processors/copy-move-config-form.tsx:103
+#: src/components/pipeline/presets/processors/copy-move-config-form.tsx:107
 msgid "If empty, uses next output path in pipeline"
 msgstr "If empty, uses next output path in pipeline"
 
@@ -2945,7 +2988,7 @@ msgstr "Include"
 msgid "Include Images"
 msgstr "Include Images"
 
-#: src/components/pipeline/presets/processors/danmaku-factory-config-form.tsx:166
+#: src/components/pipeline/presets/processors/danmaku-factory-config-form.tsx:219
 msgid "Include original files in outputs"
 msgstr "Include original files in outputs"
 
@@ -2965,7 +3008,7 @@ msgstr "Initial Delay (ms)"
 msgid "inline"
 msgstr "inline"
 
-#: src/components/pipeline/workflows/steps-list.tsx:125
+#: src/components/pipeline/workflows/steps-list.tsx:127
 msgid "Inline: {stepName}"
 msgstr "Inline: {stepName}"
 
@@ -3072,6 +3115,14 @@ msgstr "Jobs will appear here when recordings are processed."
 #: src/components/config/platforms/tabs/platform-specific-tab.tsx:131
 msgid "JSON"
 msgstr "JSON"
+
+#: src/components/pipeline/presets/processors/execute-config-form.tsx:93
+msgid "JSON array of all inputs"
+msgstr "JSON array of all inputs"
+
+#: src/components/pipeline/presets/processors/execute-config-form.tsx:100
+msgid "JSON array of all outputs"
+msgstr "JSON array of all outputs"
 
 #: src/components/pipeline/presets/processors/compression-config-form.tsx:130
 msgid "Keep directory structure"
@@ -3212,7 +3263,7 @@ msgstr "Loading presets..."
 msgid "Loading workflows..."
 msgstr "Loading workflows..."
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:88
+#: src/components/pipeline/presets/default-presets-i18n.ts:90
 msgid "Local Archive"
 msgstr "Local Archive"
 
@@ -3343,7 +3394,7 @@ msgstr "Max Downloads"
 msgid "Max Duration"
 msgstr "Max Duration"
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:27
+#: src/components/pipeline/presets/default-presets-i18n.ts:28
 msgid "Max HEVC Compression"
 msgstr "Max HEVC Compression"
 
@@ -3375,11 +3426,11 @@ msgstr "Max Retries"
 msgid "Max Uploads"
 msgstr "Max Uploads"
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:101
+#: src/components/pipeline/presets/default-presets-i18n.ts:103
 msgid "Maximum compression to minimize storage usage, then delete original."
 msgstr "Maximum compression to minimize storage usage, then delete original."
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:73
+#: src/components/pipeline/presets/default-presets-i18n.ts:75
 msgid "Maximum HEVC/H.265 compression (CRF 28) for minimal file size."
 msgstr "Maximum HEVC/H.265 compression (CRF 28) for minimal file size."
 
@@ -3391,7 +3442,7 @@ msgstr "Maximum idle time between segments before the system starts a new record
 msgid "Maximum number of retry attempts."
 msgstr "Maximum number of retry attempts."
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:98
+#: src/components/pipeline/presets/default-presets-i18n.ts:100
 msgid "Maximum quality compression with HEVC, then upload to cloud storage."
 msgstr "Maximum quality compression with HEVC, then upload to cloud storage."
 
@@ -3425,7 +3476,7 @@ msgstr "Merge Changes"
 msgid "Message"
 msgstr "Message"
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:44
+#: src/components/pipeline/presets/default-presets-i18n.ts:45
 #: src/components/pipeline/presets/editor/preset-meta-form.tsx:66
 #: src/components/pipeline/presets/preset-card.tsx:95
 #: src/components/pipeline/presets/preset-templates.ts:72
@@ -3436,6 +3487,10 @@ msgstr "Metadata"
 #: src/components/pipeline/presets/processors/registry.ts:101
 msgid "Metadata Editor"
 msgstr "Metadata Editor"
+
+#: src/components/pipeline/presets/processors/execute-config-form.tsx:125
+msgid "Metadata Variables"
+msgstr "Metadata Variables"
 
 #: src/components/notifications/forms/webhook-form.tsx:88
 msgid "Method"
@@ -3467,6 +3522,10 @@ msgstr "Min size to keep."
 msgid "Minimum Priority"
 msgstr "Minimum Priority"
 
+#: src/components/pipeline/presets/processors/execute-config-form.tsx:202
+msgid "Minute (00-59)"
+msgstr "Minute (00-59)"
+
 #: src/components/pipeline/workflows/step-config-dialog.tsx:272
 msgid "Modify the parameters for this processing step."
 msgstr "Modify the parameters for this processing step."
@@ -3492,6 +3551,10 @@ msgstr "Monitoring Stopped"
 msgid "Month"
 msgstr "Month"
 
+#: src/components/pipeline/presets/processors/execute-config-form.tsx:181
+msgid "Month (01-12)"
+msgstr "Month (01-12)"
+
 #: src/components/pipeline/presets/processors/rclone-config-form.tsx:112
 msgid "Move"
 msgstr "Move"
@@ -3500,11 +3563,11 @@ msgstr "Move"
 msgid "Move File"
 msgstr "Move File"
 
-#: src/components/pipeline/presets/processors/copy-move-config-form.tsx:77
+#: src/components/pipeline/presets/processors/copy-move-config-form.tsx:81
 msgid "Move Files"
 msgstr "Move Files"
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:64
+#: src/components/pipeline/presets/default-presets-i18n.ts:65
 msgid "Move the file to another location. Removes the original file."
 msgstr "Move the file to another location. Removes the original file."
 
@@ -3512,7 +3575,7 @@ msgstr "Move the file to another location. Removes the original file."
 msgid "Mozilla/5.0..."
 msgstr "Mozilla/5.0..."
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:89
+#: src/components/pipeline/presets/default-presets-i18n.ts:91
 msgid "Multimedia Archive"
 msgstr "Multimedia Archive"
 
@@ -3525,7 +3588,7 @@ msgid "My Archiving Workflow"
 msgstr "My Archiving Workflow"
 
 #: src/components/notifications/channel-form.tsx:275
-#: src/components/pipeline/presets/editor/preset-meta-form.tsx:213
+#: src/components/pipeline/presets/editor/preset-meta-form.tsx:215
 #: src/components/pipeline/workflows/workflow-editor.tsx:305
 #: src/components/streamers/config/streamer-general-settings.tsx:74
 #: src/components/streamers/edit/streamer-meta-form.tsx:123
@@ -3775,7 +3838,7 @@ msgstr "No refresh needed or not supported"
 msgid "No specific options available for this platform."
 msgstr "No specific options available for this platform."
 
-#: src/components/pipeline/workflows/steps-list.tsx:195
+#: src/components/pipeline/workflows/steps-list.tsx:197
 msgid "No Steps Added"
 msgstr "No Steps Added"
 
@@ -3845,6 +3908,14 @@ msgstr "Notification Service"
 #: src/routes/_authed/_dashboard/notifications/index.tsx:117
 msgid "Notifications"
 msgstr "Notifications"
+
+#: src/components/pipeline/presets/processors/execute-config-form.tsx:107
+msgid "Nth input: {input0}, {input1}..."
+msgstr "Nth input: {input0}, {input1}..."
+
+#: src/components/pipeline/presets/processors/execute-config-form.tsx:114
+msgid "Nth output: {output0}, {output1}..."
+msgstr "Nth output: {output0}, {output1}..."
 
 #: src/components/pipeline/presets/processors/rclone-config-form.tsx:251
 #: src/components/pipeline/presets/processors/tdl-config-form.tsx:627
@@ -3929,7 +4000,7 @@ msgstr "On Pipeline Complete"
 msgid "Ongoing"
 msgstr "Ongoing"
 
-#: src/components/pipeline/presets/processors/execute-config-form.tsx:182
+#: src/components/pipeline/presets/processors/execute-config-form.tsx:295
 msgid "Only include files with this extension (without dot)"
 msgstr "Only include files with this extension (without dot)"
 
@@ -3943,7 +4014,7 @@ msgstr "Only include files with this extension (without dot)"
 msgid "Open menu"
 msgstr "Open menu"
 
-#: src/components/pipeline/presets/processors/copy-move-config-form.tsx:50
+#: src/components/pipeline/presets/processors/copy-move-config-form.tsx:54
 #: src/components/pipeline/presets/processors/rclone-config-form.tsx:80
 msgid "Operation"
 msgstr "Operation"
@@ -3952,17 +4023,17 @@ msgstr "Operation"
 msgid "Operation Mode"
 msgstr "Operation Mode"
 
-#: src/components/pipeline/presets/processors/copy-move-config-form.tsx:61
+#: src/components/pipeline/presets/processors/copy-move-config-form.tsx:65
 msgid "Operation Type"
 msgstr "Operation Type"
 
 #: src/components/config/shared/proxy-settings-card.tsx:175
 #: src/components/config/shared/proxy-settings-card.tsx:194
-#: src/components/pipeline/presets/processors/execute-config-form.tsx:127
+#: src/components/pipeline/presets/processors/execute-config-form.tsx:240
 msgid "Optional"
 msgstr "Optional"
 
-#: src/components/pipeline/presets/editor/preset-meta-form.tsx:285
+#: src/components/pipeline/presets/editor/preset-meta-form.tsx:287
 msgid "Optional description for this preset"
 msgstr "Optional description for this preset"
 
@@ -3971,7 +4042,7 @@ msgid "Optional extra arguments appended to `tdl login`."
 msgstr "Optional extra arguments appended to `tdl login`."
 
 #: src/components/pipeline/presets/processors/compression-config-form.tsx:115
-#: src/components/pipeline/presets/processors/copy-move-config-form.tsx:116
+#: src/components/pipeline/presets/processors/copy-move-config-form.tsx:120
 msgid "Options"
 msgstr "Options"
 
@@ -3998,7 +4069,7 @@ msgstr "Output Arguments"
 msgid "Output Configuration"
 msgstr "Output Configuration"
 
-#: src/components/pipeline/presets/processors/execute-config-form.tsx:124
+#: src/components/pipeline/presets/processors/execute-config-form.tsx:237
 msgid "Output Detection"
 msgstr "Output Detection"
 
@@ -4089,7 +4160,7 @@ msgstr "Overview"
 msgid "Overwrite"
 msgstr "Overwrite"
 
-#: src/components/pipeline/presets/processors/danmaku-factory-config-form.tsx:97
+#: src/components/pipeline/presets/processors/danmaku-factory-config-form.tsx:150
 msgid "Overwrite existing .ass files"
 msgstr "Overwrite existing .ass files"
 
@@ -4102,7 +4173,7 @@ msgstr "Overwrite existing files"
 msgid "Overwrite Files"
 msgstr "Overwrite Files"
 
-#: src/components/pipeline/presets/processors/danmaku-factory-config-form.tsx:94
+#: src/components/pipeline/presets/processors/danmaku-factory-config-form.tsx:147
 msgid "Overwrite Output"
 msgstr "Overwrite Output"
 
@@ -4149,7 +4220,7 @@ msgid "Parsing..."
 msgstr "Parsing..."
 
 #: src/components/pipeline/presets/processors/ass-burnin-config-form.tsx:280
-#: src/components/pipeline/presets/processors/danmaku-factory-config-form.tsx:163
+#: src/components/pipeline/presets/processors/danmaku-factory-config-form.tsx:216
 msgid "Passthrough Inputs"
 msgstr "Passthrough Inputs"
 
@@ -4181,13 +4252,17 @@ msgstr "Password for protected streams."
 #~ msgid "Paste your exported CSS variables here."
 #~ msgstr "Paste your exported CSS variables here."
 
-#: src/components/pipeline/presets/processors/danmaku-factory-config-form.tsx:65
+#: src/components/pipeline/presets/processors/danmaku-factory-config-form.tsx:69
 msgid "Path to DanmakuFactory binary. If empty, uses environment variable or PATH."
 msgstr "Path to DanmakuFactory binary. If empty, uses environment variable or PATH."
 
 #: src/components/pipeline/presets/processors/tdl-login-dialog.tsx:521
 msgid "Path to Telegram Desktop (contains tdata)"
 msgstr "Path to Telegram Desktop (contains tdata)"
+
+#: src/components/pipeline/presets/processors/execute-config-form.tsx:73
+msgid "Path Variables"
+msgstr "Path Variables"
 
 #: src/components/logging/log-viewer.tsx:374
 msgid "Pause"
@@ -4274,7 +4349,7 @@ msgstr "Pipeline has failed jobs. Click to view details."
 msgid "Pipeline is already completed or cancelled"
 msgstr "Pipeline is already completed or cancelled"
 
-#: src/components/pipeline/workflows/steps-list.tsx:198
+#: src/components/pipeline/workflows/steps-list.tsx:200
 msgid "Pipeline is empty."
 msgstr "Pipeline is empty."
 
@@ -4352,6 +4427,10 @@ msgstr "Platform configurations will appear here when available."
 msgid "Platform Detected: {detectedPlatform}"
 msgstr "Platform Detected: {detectedPlatform}"
 
+#: src/components/pipeline/presets/processors/execute-config-form.tsx:159
+msgid "Platform name"
+msgstr "Platform name"
+
 #: src/routes/_authed/_dashboard/config/platforms/$platformId.tsx:82
 msgid "Platform not found"
 msgstr "Platform not found"
@@ -4424,7 +4503,7 @@ msgstr "Please set Telegram Desktop Directory first"
 msgid "Please wait while we resolve the stream URL."
 msgstr "Please wait while we resolve the stream URL."
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:84
+#: src/components/pipeline/presets/default-presets-i18n.ts:86
 msgid "Podcast Extraction"
 msgstr "Podcast Extraction"
 
@@ -4440,7 +4519,7 @@ msgstr "Powered by <0>Rust-srec</0>. WebUI version: 0.1.0"
 #~ msgid "Powered by <0>Rust-srec</0>. WebUI version: 0.3.6"
 #~ msgstr "Powered by <0>Rust-srec</0>. WebUI version: 0.3.6"
 
-#: src/components/pipeline/presets/processors/danmaku-factory-config-form.tsx:140
+#: src/components/pipeline/presets/processors/danmaku-factory-config-form.tsx:193
 msgid "Prefer Manifest"
 msgstr "Prefer Manifest"
 
@@ -4492,7 +4571,7 @@ msgstr "Preset created successfully"
 msgid "Preset deleted successfully"
 msgstr "Preset deleted successfully"
 
-#: src/components/pipeline/presets/editor/preset-meta-form.tsx:122
+#: src/components/pipeline/presets/editor/preset-meta-form.tsx:124
 msgid "Preset Details"
 msgstr "Preset Details"
 
@@ -4526,11 +4605,11 @@ msgstr "Presets Available"
 msgid "Press Enter to add recipient"
 msgstr "Press Enter to add recipient"
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:90
+#: src/components/pipeline/presets/default-presets-i18n.ts:92
 msgid "Preview Gallery"
 msgstr "Preview Gallery"
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:26
+#: src/components/pipeline/presets/default-presets-i18n.ts:27
 msgid "Preview Thumbnail"
 msgstr "Preview Thumbnail"
 
@@ -4568,11 +4647,11 @@ msgstr "Priority"
 msgid "Process exited with code {0}"
 msgstr "Process exited with code {0}"
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:103
+#: src/components/pipeline/presets/default-presets-i18n.ts:105
 msgid "Process locally: Remux to MP4, generate thumbnail, move to archive folder."
 msgstr "Process locally: Remux to MP4, generate thumbnail, move to archive folder."
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:106
+#: src/components/pipeline/presets/default-presets-i18n.ts:108
 msgid "Process video and extract podcast audio in parallel, then upload both."
 msgstr "Process video and extract podcast audio in parallel, then upload both."
 
@@ -4586,7 +4665,7 @@ msgstr "Process video and extract podcast audio in parallel, then upload both."
 msgid "Processing"
 msgstr "Processing"
 
-#: src/components/pipeline/presets/processors/danmaku-factory-config-form.tsx:82
+#: src/components/pipeline/presets/processors/danmaku-factory-config-form.tsx:135
 msgid "Processing Behavior"
 msgstr "Processing Behavior"
 
@@ -4594,7 +4673,7 @@ msgstr "Processing Behavior"
 msgid "Processing nodes"
 msgstr "Processing nodes"
 
-#: src/components/pipeline/presets/editor/preset-meta-form.tsx:141
+#: src/components/pipeline/presets/editor/preset-meta-form.tsx:143
 msgid "Processor"
 msgstr "Processor"
 
@@ -4664,7 +4743,7 @@ msgstr "Quality Rate"
 msgid "Queue"
 msgstr "Queue"
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:85
+#: src/components/pipeline/presets/default-presets-i18n.ts:87
 msgid "Quick Share"
 msgstr "Quick Share"
 
@@ -4777,6 +4856,10 @@ msgstr "Regex"
 msgid "Regex Pattern"
 msgstr "Regex Pattern"
 
+#: src/components/pipeline/presets/processors/copy-move-config-form.tsx:194
+msgid "Regex patterns to exclude files. Matched against full path and filename."
+msgstr "Regex patterns to exclude files. Matched against full path and filename."
+
 #: src/components/config/templates/tabs/engine-overrides-tab.tsx:160
 msgid "Remove"
 msgstr "Remove"
@@ -4786,7 +4869,7 @@ msgid "Remove Input on Success"
 msgstr "Remove Input on Success"
 
 #: src/components/pipeline/presets/default-presets-i18n.ts:4
-#: src/components/pipeline/presets/default-presets-i18n.ts:35
+#: src/components/pipeline/presets/default-presets-i18n.ts:36
 #: src/components/pipeline/presets/preset-card.tsx:86
 #: src/routes/_authed/_dashboard/pipeline/presets/index.tsx:62
 msgid "Remux"
@@ -4798,7 +4881,7 @@ msgstr "Remux"
 msgid "Remux / Transcode"
 msgstr "Remux / Transcode"
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:29
+#: src/components/pipeline/presets/default-presets-i18n.ts:30
 msgid "Remux and Clean"
 msgstr "Remux and Clean"
 
@@ -4806,23 +4889,23 @@ msgstr "Remux and Clean"
 msgid "Remux to MKV"
 msgstr "Remux to MKV"
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:51
+#: src/components/pipeline/presets/default-presets-i18n.ts:52
 msgid "Remux to MKV without re-encoding. Matroska supports more codecs and features."
 msgstr "Remux to MKV without re-encoding. Matroska supports more codecs and features."
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:69
+#: src/components/pipeline/presets/default-presets-i18n.ts:71
 msgid "Remux to MP4 with faststart flag for web streaming optimization."
 msgstr "Remux to MP4 with faststart flag for web streaming optimization."
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:75
+#: src/components/pipeline/presets/default-presets-i18n.ts:77
 msgid "Remux to MP4 without re-encoding and delete the original file on success. Saves disk space."
 msgstr "Remux to MP4 without re-encoding and delete the original file on success. Saves disk space."
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:50
+#: src/components/pipeline/presets/default-presets-i18n.ts:51
 msgid "Remux to MP4 without re-encoding. Fast and lossless - just changes the container format."
 msgstr "Remux to MP4 without re-encoding. Fast and lossless - just changes the container format."
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:23
+#: src/components/pipeline/presets/default-presets-i18n.ts:24
 msgid "Remux with Faststart"
 msgstr "Remux with Faststart"
 
@@ -4937,9 +5020,13 @@ msgstr "Route traffic through an intermediate server"
 msgid "Rows per page"
 msgstr "Rows per page"
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:68
+#: src/components/pipeline/presets/default-presets-i18n.ts:69
 msgid "Run a custom FFmpeg command. Edit the args to customize."
 msgstr "Run a custom FFmpeg command. Edit the args to customize."
+
+#: src/components/pipeline/presets/default-presets-i18n.ts:70
+msgid "Run a custom shell command with placeholders (e.g. {input}, {inputs_json}, {streamer}, %Y%m%d)."
+msgstr "Run a custom shell command with placeholders (e.g. {input}, {inputs_json}, {streamer}, %Y%m%d)."
 
 #: src/components/config/global/pipeline-config-card.tsx:291
 #: src/components/config/shared-config-editor.tsx:542
@@ -5014,6 +5101,14 @@ msgstr "Sample Rate (Hz)"
 msgid "Sampling Strategy"
 msgstr "Sampling Strategy"
 
+#: src/components/pipeline/presets/processors/execute-config-form.tsx:152
+msgid "Sanitized session title"
+msgstr "Sanitized session title"
+
+#: src/components/pipeline/presets/processors/execute-config-form.tsx:145
+msgid "Sanitized streamer name"
+msgstr "Sanitized streamer name"
+
 #: src/components/config/engines/engine-editor.tsx:288
 #: src/components/config/platforms/platform-editor.tsx:152
 #: src/components/config/templates/template-editor.tsx:206
@@ -5045,11 +5140,11 @@ msgstr "Save Workflow"
 msgid "Saving..."
 msgstr "Saving..."
 
-#: src/components/pipeline/presets/processors/execute-config-form.tsx:132
+#: src/components/pipeline/presets/processors/execute-config-form.tsx:245
 msgid "Scan a directory for new files created by the command. Detected files will be passed to the next pipeline step."
 msgstr "Scan a directory for new files created by the command. Detected files will be passed to the next pipeline step."
 
-#: src/components/pipeline/presets/processors/execute-config-form.tsx:145
+#: src/components/pipeline/presets/processors/execute-config-form.tsx:258
 msgid "Scan Directory"
 msgstr "Scan Directory"
 
@@ -5130,6 +5225,10 @@ msgstr "Search templates..."
 msgid "Search workflows..."
 msgstr "Search workflows..."
 
+#: src/components/pipeline/presets/processors/execute-config-form.tsx:209
+msgid "Second (00-59)"
+msgstr "Second (00-59)"
+
 #: src/components/config/engines/forms/ffmpeg-form.tsx:74
 msgid "secs"
 msgstr "secs"
@@ -5179,7 +5278,7 @@ msgstr "Select an engine"
 msgid "Select behavior"
 msgstr "Select behavior"
 
-#: src/components/pipeline/presets/editor/preset-meta-form.tsx:251
+#: src/components/pipeline/presets/editor/preset-meta-form.tsx:253
 msgid "Select category"
 msgstr "Select category"
 
@@ -5226,7 +5325,7 @@ msgid "Select the steps that must complete successfully before this step runs."
 msgstr "Select the steps that must complete successfully before this step runs."
 
 #: src/components/config/engines/engine-editor.tsx:194
-#: src/components/pipeline/presets/editor/preset-meta-form.tsx:159
+#: src/components/pipeline/presets/editor/preset-meta-form.tsx:161
 msgid "Select type"
 msgstr "Select type"
 
@@ -5301,6 +5400,7 @@ msgstr "Session Gap"
 #~ msgid "Session Gap (seconds)"
 #~ msgstr "Session Gap (seconds)"
 
+#: src/components/pipeline/presets/processors/execute-config-form.tsx:138
 #: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.tsx:426
 msgid "Session ID"
 msgstr "Session ID"
@@ -5424,7 +5524,7 @@ msgstr "Something went wrong!"
 msgid "Source"
 msgstr "Source"
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:86
+#: src/components/pipeline/presets/default-presets-i18n.ts:88
 msgid "Space Saver"
 msgstr "Space Saver"
 
@@ -5454,7 +5554,7 @@ msgstr "Split after duration."
 msgid "Split after size."
 msgstr "Split after size."
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:81
+#: src/components/pipeline/presets/default-presets-i18n.ts:83
 msgid "Standard"
 msgstr "Standard"
 
@@ -5544,7 +5644,7 @@ msgstr "Steps List"
 msgid "Storage"
 msgstr "Storage"
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:92
+#: src/components/pipeline/presets/default-presets-i18n.ts:94
 msgid "Stream Archive"
 msgstr "Stream Archive"
 
@@ -5595,6 +5695,7 @@ msgstr "Streamer deleted"
 msgid "Streamer Details"
 msgstr "Streamer Details"
 
+#: src/components/pipeline/presets/processors/execute-config-form.tsx:131
 #: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.tsx:432
 msgid "Streamer ID"
 msgstr "Streamer ID"
@@ -5649,7 +5750,7 @@ msgstr "Subscriptions"
 msgid "Subscriptions updated"
 msgstr "Subscriptions updated"
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:46
+#: src/components/pipeline/presets/default-presets-i18n.ts:47
 msgid "Subtitle"
 msgstr "Subtitle"
 
@@ -5870,7 +5971,7 @@ msgstr "Theme Mode"
 #~ msgid "There are no recorded sessions matching your criteria."
 #~ msgstr "There are no recorded sessions matching your criteria."
 
-#: src/components/pipeline/presets/editor/preset-meta-form.tsx:294
+#: src/components/pipeline/presets/editor/preset-meta-form.tsx:296
 msgid "This is a default preset. Description cannot be modified."
 msgstr "This is a default preset. Description cannot be modified."
 
@@ -5928,7 +6029,7 @@ msgid "This will permanently remove the \"{0}\" configuration. This action canno
 msgstr "This will permanently remove the \"{0}\" configuration. This action cannot be undone."
 
 #: src/components/pipeline/presets/default-presets-i18n.ts:8
-#: src/components/pipeline/presets/default-presets-i18n.ts:37
+#: src/components/pipeline/presets/default-presets-i18n.ts:38
 #: src/components/pipeline/presets/editor/preset-meta-form.tsx:61
 #: src/components/pipeline/presets/preset-card.tsx:88
 #: src/components/pipeline/presets/preset-templates.ts:24
@@ -5955,6 +6056,10 @@ msgstr "Time between sampling attempts."
 #: src/components/pipeline/presets/processors/thumbnail-config-form.tsx:67
 msgid "Time offset to take screenshot from"
 msgstr "Time offset to take screenshot from"
+
+#: src/components/pipeline/presets/processors/execute-config-form.tsx:168
+msgid "Time Placeholders (Local Time)"
+msgstr "Time Placeholders (Local Time)"
 
 #: src/routes/_authed/_dashboard/sessions/$sessionId.tsx:223
 msgid "Timeline"
@@ -6185,11 +6290,11 @@ msgstr "Type your answer here..."
 msgid "type=bolt,path=/data/tdl"
 msgstr "type=bolt,path=/data/tdl"
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:28
+#: src/components/pipeline/presets/default-presets-i18n.ts:29
 msgid "Ultrafast Compression"
 msgstr "Ultrafast Compression"
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:74
+#: src/components/pipeline/presets/default-presets-i18n.ts:76
 msgid "Ultrafast H.264 encoding (CRF 26) for quick sharing."
 msgstr "Ultrafast H.264 encoding (CRF 26) for quick sharing."
 
@@ -6197,6 +6302,10 @@ msgstr "Ultrafast H.264 encoding (CRF 26) for quick sharing."
 #: src/routes/_authed/_dashboard/dashboard.tsx:505
 msgid "Unhealthy"
 msgstr "Unhealthy"
+
+#: src/components/pipeline/presets/processors/execute-config-form.tsx:216
+msgid "Unix timestamp"
+msgstr "Unix timestamp"
 
 #: src/routes/_authed/_dashboard/dashboard.tsx:507
 msgid "Unknown"
@@ -6239,7 +6348,7 @@ msgstr "Updated"
 msgid "Updates existing items and creates new ones. Nothing is deleted."
 msgstr "Updates existing items and creates new ones. Nothing is deleted."
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:40
+#: src/components/pipeline/presets/default-presets-i18n.ts:41
 #: src/components/pipeline/presets/preset-card.tsx:91
 #: src/routes/_authed/_dashboard/pipeline/presets/index.tsx:67
 msgid "Upload"
@@ -6265,11 +6374,11 @@ msgstr "Upload Arguments"
 msgid "Upload everything regardless of file type"
 msgstr "Upload everything regardless of file type"
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:66
+#: src/components/pipeline/presets/default-presets-i18n.ts:67
 msgid "Upload file to cloud storage and delete local copy after successful upload."
 msgstr "Upload file to cloud storage and delete local copy after successful upload."
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:65
+#: src/components/pipeline/presets/default-presets-i18n.ts:66
 msgid "Upload file to cloud storage using rclone. Configure remote in rclone config."
 msgstr "Upload file to cloud storage using rclone. Configure remote in rclone config."
 
@@ -6295,7 +6404,7 @@ msgstr "Use <0>-movflags +faststart</0>"
 #~ msgid "Use computed query parameters (WUP v2)."
 #~ msgstr "Use computed query parameters (WUP v2)."
 
-#: src/components/pipeline/presets/processors/danmaku-factory-config-form.tsx:143
+#: src/components/pipeline/presets/processors/danmaku-factory-config-form.tsx:196
 msgid "Use danmu_inputs from job manifest"
 msgstr "Use danmu_inputs from job manifest"
 
@@ -6394,11 +6503,11 @@ msgstr "Vars: '{streamer}', '{title}', '{platform}' | Time: %Y, %m, %d, %H, %M, 
 msgid "Velocity Based (Dynamic)"
 msgstr "Velocity Based (Dynamic)"
 
-#: src/components/pipeline/presets/processors/copy-move-config-form.tsx:151
+#: src/components/pipeline/presets/processors/copy-move-config-form.tsx:155
 msgid "Verify Integrity"
 msgstr "Verify Integrity"
 
-#: src/components/pipeline/presets/processors/danmaku-factory-config-form.tsx:117
+#: src/components/pipeline/presets/processors/danmaku-factory-config-form.tsx:170
 msgid "Verify Output"
 msgstr "Verify Output"
 
@@ -6553,6 +6662,10 @@ msgstr "Workflows"
 #: src/components/pipeline/presets/processors/tdl-config-form.tsx:345
 msgid "Working Directory"
 msgstr "Working Directory"
+
+#: src/components/pipeline/presets/processors/execute-config-form.tsx:174
+msgid "Year (4 digits)"
+msgstr "Year (4 digits)"
 
 #: src/routes/_authed/_dashboard/sessions/index.tsx:194
 msgid "Yesterday"

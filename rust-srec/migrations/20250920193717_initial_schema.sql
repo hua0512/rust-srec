@@ -855,14 +855,26 @@ INSERT INTO job_presets (id, name, description, category, processor, config, cre
 -- CUSTOM EXECUTE PRESETS
 -- ============================================
 
+-- Generic execute command template
+INSERT INTO job_presets (id, name, description, category, processor, config, created_at, updated_at) VALUES (
+    'preset-default-execute',
+    'execute',
+    'Run a custom shell command with placeholders (e.g. {input}, {inputs_json}, {streamer}, %Y%m%d).',
+    'custom',
+    'execute',
+    '{"command":"echo {input}"}',
+    datetime('now'),
+    datetime('now')
+);
+
 -- Custom FFmpeg command template
 INSERT INTO job_presets (id, name, description, category, processor, config, created_at, updated_at) VALUES (
     'preset-default-custom-ffmpeg',
     'custom_ffmpeg',
-    'Run a custom FFmpeg command. Edit the args to customize.',
+    'Run a custom FFmpeg command. Requires explicit outputs (for {output}) or configure scan_output_dir.',
     'custom',
     'execute',
-    '{"command":"ffmpeg","args":["-i","{input}","-c","copy","{output}"],"timeout_secs":3600,"working_dir":null}',
+    '{"command":"ffmpeg -i \\"{input}\\" -c copy \\"{output}\\""}',
     datetime('now'),
     datetime('now')
 );

@@ -20,7 +20,10 @@ import { ProcessorConfigFormProps } from './common-props';
 import { CopyMoveConfigSchema } from '../processor-schemas';
 import { z } from 'zod';
 import { motion } from 'motion/react';
-import { Copy, Settings2 } from 'lucide-react';
+import { Copy, Settings2, Terminal } from 'lucide-react';
+import { ListInput } from '@/components/ui/list-input';
+import { useLingui } from '@lingui/react';
+import { t } from '@lingui/core/macro';
 
 type CopyMoveConfig = z.infer<typeof CopyMoveConfigSchema>;
 
@@ -28,6 +31,7 @@ export function CopyMoveConfigForm({
   control,
   pathPrefix,
 }: ProcessorConfigFormProps<CopyMoveConfig>) {
+  const { i18n } = useLingui();
   const prefix = pathPrefix ? `${pathPrefix}.` : '';
 
   const containerVariants = {
@@ -164,6 +168,38 @@ export function CopyMoveConfigForm({
               )}
             />
           </div>
+        </div>
+
+        <div className="p-4 rounded-xl bg-muted/10 border border-border/40 space-y-4">
+          <div className="flex items-center gap-2 pb-2 border-b border-border/40">
+            <Terminal className="w-4 h-4 text-orange-500" />
+            <h3 className="font-semibold text-sm mr-auto">
+              <Trans>Exclude Patterns</Trans>
+            </h3>
+          </div>
+
+          <FormField
+            control={control}
+            name={`${prefix}exclude_patterns` as any}
+            render={({ field }) => (
+              <FormItem>
+                <FormControl>
+                  <ListInput
+                    value={field.value || []}
+                    onChange={field.onChange}
+                    placeholder={t(i18n)`Add exclude regex pattern`}
+                  />
+                </FormControl>
+                <FormDescription className="text-[11px] ml-1">
+                  <Trans>
+                    Regex patterns to exclude files. Matched against full path
+                    and filename.
+                  </Trans>
+                </FormDescription>
+                <FormMessage />
+              </FormItem>
+            )}
+          />
         </div>
       </div>
     </motion.div>

@@ -242,7 +242,9 @@ pub async fn create_preset(
     };
 
     // Validate the preset
-    preset.validate().map_err(ApiError::bad_request)?;
+    preset
+        .validate()
+        .map_err(|e| ApiError::bad_request(e.to_string()))?;
 
     // Check for duplicate name
     if pipeline_manager
@@ -306,7 +308,9 @@ pub async fn update_preset(
     };
 
     // Validate the preset
-    preset.validate().map_err(ApiError::bad_request)?;
+    preset
+        .validate()
+        .map_err(|e| ApiError::bad_request(e.to_string()))?;
 
     // Check for duplicate name (excluding current preset)
     if pipeline_manager

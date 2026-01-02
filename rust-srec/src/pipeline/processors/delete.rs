@@ -78,7 +78,7 @@ impl DeleteProcessor {
         path: &Path,
         config: &DeleteConfig,
         logs: &mut Vec<crate::pipeline::job_queue::JobLogEntry>,
-    ) -> std::result::Result<(), String> {
+    ) -> crate::Result<()> {
         let mut last_error: Option<std::io::Error> = None;
 
         for attempt in 0..=config.max_retries {
@@ -126,9 +126,8 @@ impl DeleteProcessor {
         }
 
         // All retries exhausted or non-retryable error
-        Err(last_error
-            .map(|e| e.to_string())
-            .unwrap_or_else(|| "Unknown error".to_string()))
+        let error = last_error.unwrap_or_else(|| std::io::Error::other("Unknown delete error"));
+        Err(crate::Error::io_path("deleting file", path, error))
     }
 }
 
@@ -258,10 +257,10 @@ impl Processor for DeleteProcessor {
                         logs,
                     })
                 }
-                Err(error_msg) => {
+                Err(error) => {
                     let err_detail = format!(
                         "Failed to delete file after {} retries: {} - {}",
-                        config.max_retries, file_path, error_msg
+                        config.max_retries, file_path, error
                     );
                     error!("{}", err_detail); // Log error for backend
                     logs.push(create_log_entry(
@@ -312,8 +311,8 @@ impl Processor for DeleteProcessor {
                 Ok(()) => {
                     succeeded = succeeded.saturating_add(1);
                 }
-                Err(error_msg) => {
-                    failed.push((file_path.clone(), error_msg));
+                Err(error) => {
+                    failed.push((file_path.clone(), error.to_string()));
                 }
             }
         }

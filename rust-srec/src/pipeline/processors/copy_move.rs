@@ -12,6 +12,7 @@
 //! - Time placeholders: `%Y`, `%m`, `%d`, `%H`, `%M`, `%S`, etc.
 
 use async_trait::async_trait;
+use regex::RegexSet;
 use serde::{Deserialize, Serialize};
 use std::io::ErrorKind;
 use std::path::Path;
@@ -61,6 +62,12 @@ pub struct CopyMoveConfig {
     /// Whether to overwrite existing files at destination.
     #[serde(default)]
     pub overwrite: bool,
+
+    /// Regex patterns for excluding inputs.
+    ///
+    /// Patterns are matched against both the full input path and the filename.
+    #[serde(default)]
+    pub exclude_patterns: Vec<String>,
 }
 
 impl Default for CopyMoveConfig {
@@ -71,6 +78,7 @@ impl Default for CopyMoveConfig {
             create_dirs: true,
             verify_integrity: true,
             overwrite: false,
+            exclude_patterns: Vec::new(),
         }
     }
 }
@@ -186,6 +194,14 @@ impl Processor for CopyMoveProcessor {
 
         let dest_dir_path = Path::new(&dest_dir);
 
+        let exclude_set = if config.exclude_patterns.is_empty() {
+            None
+        } else {
+            Some(RegexSet::new(&config.exclude_patterns).map_err(|e| {
+                crate::Error::PipelineError(format!("Invalid exclude_patterns regex: {}", e))
+            })?)
+        };
+
         let dest_dir_exists = fs::try_exists(dest_dir_path).await.map_err(|e| {
             crate::Error::PipelineError(format!(
                 "Failed to check destination directory '{}': {}",
@@ -203,7 +219,12 @@ impl Processor for CopyMoveProcessor {
                     log_msg,
                 ));
 
-                fs::create_dir_all(dest_dir_path).await.map_err(|e| {
+                crate::utils::fs::ensure_dir_all_with_op(
+                    "creating destination directory",
+                    dest_dir_path,
+                )
+                .await
+                .map_err(|e| {
                     crate::Error::PipelineError(format!(
                         "Failed to create destination directory '{}': {}",
                         dest_dir, e
@@ -221,10 +242,24 @@ impl Processor for CopyMoveProcessor {
         let mut items_produced = Vec::with_capacity(input.inputs.len());
         let mut succeeded_inputs = Vec::with_capacity(input.inputs.len());
         let mut failed_inputs: Vec<(String, String)> = Vec::new();
+        let mut skipped_inputs: Vec<(String, String)> = Vec::new();
         let mut total_input_size: u64 = 0;
         let mut total_output_size: u64 = 0;
 
         for source_path in &input.inputs {
+            if let Some(exclude_set) = &exclude_set
+                && exclude_set.is_match(source_path)
+            {
+                let msg = format!("Skipping excluded input: {}", source_path);
+                debug!("{}", msg);
+                logs.push(create_log_entry(
+                    crate::pipeline::job_queue::LogLevel::Debug,
+                    msg,
+                ));
+                skipped_inputs.push((source_path.clone(), "excluded".to_string()));
+                continue;
+            }
+
             let source = Path::new(source_path);
 
             // Get filename from source
@@ -238,6 +273,19 @@ impl Processor for CopyMoveProcessor {
                 failed_inputs.push((source_path.clone(), error_msg));
                 continue;
             };
+
+            if let Some(exclude_set) = &exclude_set
+                && exclude_set.is_match(&filename.to_string_lossy())
+            {
+                let msg = format!("Skipping excluded input: {}", source_path);
+                debug!("{}", msg);
+                logs.push(create_log_entry(
+                    crate::pipeline::job_queue::LogLevel::Debug,
+                    msg,
+                ));
+                skipped_inputs.push((source_path.clone(), "excluded".to_string()));
+                continue;
+            }
 
             let dest = dest_dir_path.join(filename);
 
@@ -466,7 +514,7 @@ impl Processor for CopyMoveProcessor {
         let duration = start.elapsed().as_secs_f64();
 
         let success_msg = format!(
-            "{} completed in {:.2}s: {} files processed ({} succeeded, {} failed)",
+            "{} completed in {:.2}s: {} inputs ({} succeeded, {} failed, {} skipped)",
             if config.operation == CopyMoveOperation::Copy {
                 "Copy"
             } else {
@@ -475,7 +523,8 @@ impl Processor for CopyMoveProcessor {
             duration,
             input.inputs.len(),
             succeeded_inputs.len(),
-            failed_inputs.len()
+            failed_inputs.len(),
+            skipped_inputs.len()
         );
         info!("{}", success_msg);
         logs.push(create_log_entry(
@@ -501,6 +550,7 @@ impl Processor for CopyMoveProcessor {
                     "total_files": input.inputs.len(),
                     "succeeded": succeeded_inputs.len(),
                     "failed": failed_inputs.len(),
+                    "skipped": skipped_inputs.len(),
                     "total_size_bytes": total_output_size,
                 })
                 .to_string(),
@@ -510,7 +560,7 @@ impl Processor for CopyMoveProcessor {
             output_size_bytes: Some(total_output_size),
             failed_inputs,
             succeeded_inputs,
-            skipped_inputs: vec![],
+            skipped_inputs,
             logs,
         })
     }
@@ -558,7 +608,8 @@ mod tests {
             "destination": "/dest/file.mp4",
             "create_dirs": true,
             "verify_integrity": false,
-            "overwrite": true
+            "overwrite": true,
+            "exclude_patterns": ["\\.tmp$"]
         }"#;
 
         let config: CopyMoveConfig = serde_json::from_str(json).unwrap();
@@ -567,6 +618,7 @@ mod tests {
         assert!(config.create_dirs);
         assert!(!config.verify_integrity);
         assert!(config.overwrite);
+        assert_eq!(config.exclude_patterns, vec!["\\.tmp$"]);
     }
 
     #[test]
@@ -617,6 +669,91 @@ mod tests {
         assert!(output.input_size_bytes.is_some());
         assert!(output.output_size_bytes.is_some());
         assert_eq!(output.input_size_bytes, output.output_size_bytes);
+    }
+
+    #[tokio::test]
+    async fn test_exclude_patterns_skip_inputs() {
+        let temp_dir = TempDir::new().unwrap();
+        let keep_path = temp_dir.path().join("keep.txt");
+        let skip_path = temp_dir.path().join("skip.tmp");
+        let dest_dir = temp_dir.path().join("output");
+
+        fs::write(&keep_path, "keep").await.unwrap();
+        fs::write(&skip_path, "skip").await.unwrap();
+
+        let processor = CopyMoveProcessor::new();
+        let ctx = ProcessorContext::noop("test");
+        let input = ProcessorInput {
+            inputs: vec![
+                keep_path.to_string_lossy().to_string(),
+                skip_path.to_string_lossy().to_string(),
+            ],
+            outputs: vec![],
+            config: Some(
+                serde_json::json!({
+                    "operation": "copy",
+                    "destination": dest_dir.to_string_lossy(),
+                    "exclude_patterns": [r"\.tmp$"],
+                })
+                .to_string(),
+            ),
+            streamer_id: "test".to_string(),
+            session_id: "test".to_string(),
+            ..Default::default()
+        };
+
+        let output = processor.process(&input, &ctx).await.unwrap();
+
+        let keep_dest = dest_dir.join("keep.txt");
+        let skip_dest = dest_dir.join("skip.tmp");
+        assert!(keep_dest.exists());
+        assert!(!skip_dest.exists());
+        assert_eq!(
+            output.outputs,
+            vec![keep_dest.to_string_lossy().to_string()]
+        );
+        assert!(output.failed_inputs.is_empty());
+        assert_eq!(
+            output.succeeded_inputs,
+            vec![keep_path.to_string_lossy().to_string()]
+        );
+        assert_eq!(
+            output.skipped_inputs,
+            vec![(
+                skip_path.to_string_lossy().to_string(),
+                "excluded".to_string()
+            )]
+        );
+    }
+
+    #[tokio::test]
+    async fn test_exclude_patterns_invalid_regex_fails() {
+        let temp_dir = TempDir::new().unwrap();
+        let source_path = temp_dir.path().join("source.txt");
+        let dest_dir = temp_dir.path().join("output");
+
+        fs::write(&source_path, "test content").await.unwrap();
+
+        let processor = CopyMoveProcessor::new();
+        let ctx = ProcessorContext::noop("test");
+        let input = ProcessorInput {
+            inputs: vec![source_path.to_string_lossy().to_string()],
+            outputs: vec![],
+            config: Some(
+                serde_json::json!({
+                    "operation": "copy",
+                    "destination": dest_dir.to_string_lossy(),
+                    "exclude_patterns": ["("],
+                })
+                .to_string(),
+            ),
+            streamer_id: "test".to_string(),
+            session_id: "test".to_string(),
+            ..Default::default()
+        };
+
+        let err = processor.process(&input, &ctx).await.unwrap_err();
+        assert!(err.to_string().contains("Invalid exclude_patterns regex"));
     }
 
     #[tokio::test]

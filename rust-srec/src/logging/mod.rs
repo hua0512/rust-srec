@@ -23,6 +23,7 @@ use tracing_subscriber::{
 };
 
 use crate::database::repositories::{ConfigRepository, StreamerRepository};
+use crate::utils::fs;
 
 /// Default log filter directive.
 pub const DEFAULT_LOG_FILTER: &str = "rust_srec=info,sqlx=warn,mesio_engine=info,flv=info,hls=info";
@@ -76,13 +77,13 @@ impl LoggingConfig {
     ///
     /// # Returns
     /// Error if the directive is invalid.
-    pub fn set_filter(&self, directive: &str) -> Result<(), String> {
+    pub fn set_filter(&self, directive: &str) -> crate::Result<()> {
         let new_filter = EnvFilter::try_new(directive)
-            .map_err(|e| format!("Invalid filter directive: {}", e))?;
+            .map_err(|e| crate::Error::Other(format!("Invalid filter directive: {}", e)))?;
 
         self.handle
             .reload(new_filter)
-            .map_err(|e| format!("Failed to reload filter: {}", e))?;
+            .map_err(|e| crate::Error::Other(format!("Failed to reload filter: {}", e)))?;
 
         info!(directive = %directive, "Log filter updated");
         Ok(())
@@ -260,12 +261,11 @@ impl tracing::field::Visit for MessageVisitor<'_> {
 ///
 /// # Returns
 /// Tuple of (LoggingConfig, WorkerGuard) - keep the guard alive for the app lifetime
-pub fn init_logging(log_dir: &str) -> Result<(Arc<LoggingConfig>, WorkerGuard), String> {
+pub fn init_logging(log_dir: &str) -> crate::Result<(Arc<LoggingConfig>, WorkerGuard)> {
     let log_path = PathBuf::from(log_dir);
 
     // Create log directory if it doesn't exist
-    std::fs::create_dir_all(&log_path)
-        .map_err(|e| format!("Failed to create log directory: {}", e))?;
+    fs::ensure_dir_all_sync_with_op("creating log directory", &log_path)?;
 
     // Create file appender with daily rotation
     let file_appender = tracing_appender::rolling::daily(&log_path, "rust-srec.log");

@@ -67,45 +67,158 @@ export function ExecuteConfigForm({
                   </FormControl>
                   <FormDescription className="mt-2 text-sm max-w-full">
                     <div className="p-3 border border-border/40 rounded-lg bg-muted/20">
-                      <div className="mb-2 font-semibold text-[10px] uppercase tracking-wide opacity-70">
-                        <Trans>Available Variables</Trans>
-                      </div>
-                      <div className="flex flex-wrap gap-2">
-                        <Badge
-                          variant="outline"
-                          className="font-mono text-[10px] bg-background/50 cursor-help border-border/50"
-                          title="Input file path"
-                        >
-                          {'{input}'}
-                        </Badge>
-                        <Badge
-                          variant="outline"
-                          className="font-mono text-[10px] bg-background/50 cursor-help border-border/50"
-                          title="Output file path"
-                        >
-                          {'{output}'}
-                        </Badge>
-                        <Badge
-                          variant="outline"
-                          className="font-mono text-[10px] bg-background/50 cursor-help border-border/50"
-                          title="Input file directory"
-                        >
-                          {'{input_dir}'}
-                        </Badge>
-                        <Badge
-                          variant="outline"
-                          className="font-mono text-[10px] bg-background/50 cursor-help border-border/50"
-                          title="Streamer ID"
-                        >
-                          {'{streamer_id}'}
-                        </Badge>
-                        <Badge
-                          variant="outline"
-                          className="font-mono text-[10px] bg-background/50 cursor-help border-border/50"
-                          title="Session ID"
-                        >
-                          {'{session_id}'}
-                        </Badge>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                        <div className="space-y-2">
+                          <div className="mb-2 font-semibold text-[10px] uppercase tracking-wide opacity-70">
+                            <Trans>Path Variables</Trans>
+                          </div>
+                          <div className="flex flex-wrap gap-2">
+                            <Badge
+                              variant="outline"
+                              className="font-mono text-[10px] bg-background/50 cursor-help border-border/50"
+                              title={t(i18n)`First input file path`}
+                            >
+                              {'{input}'}
+                            </Badge>
+                            <Badge
+                              variant="outline"
+                              className="font-mono text-[10px] bg-background/50 cursor-help border-border/50"
+                              title={t(i18n)`First output file path`}
+                            >
+                              {'{output}'}
+                            </Badge>
+                            <Badge
+                              variant="outline"
+                              className="font-mono text-[10px] bg-background/50 cursor-help border-border/50"
+                              title={t(i18n)`JSON array of all inputs`}
+                            >
+                              {'{inputs_json}'}
+                            </Badge>
+                            <Badge
+                              variant="outline"
+                              className="font-mono text-[10px] bg-background/50 cursor-help border-border/50"
+                              title={t(i18n)`JSON array of all outputs`}
+                            >
+                              {'{outputs_json}'}
+                            </Badge>
+                            <Badge
+                              variant="outline"
+                              className="font-mono text-[10px] bg-background/50 cursor-help border-border/50"
+                              title={t(i18n)`Nth input: {input0}, {input1}...`}
+                            >
+                              {'{inputN}'}
+                            </Badge>
+                            <Badge
+                              variant="outline"
+                              className="font-mono text-[10px] bg-background/50 cursor-help border-border/50"
+                              title={t(
+                                i18n,
+                              )`Nth output: {output0}, {output1}...`}
+                            >
+                              {'{outputN}'}
+                            </Badge>
+                          </div>
+                        </div>
+
+                        <div className="space-y-2">
+                          <div className="mb-2 font-semibold text-[10px] uppercase tracking-wide opacity-70">
+                            <Trans>Metadata Variables</Trans>
+                          </div>
+                          <div className="flex flex-wrap gap-2">
+                            <Badge
+                              variant="outline"
+                              className="font-mono text-[10px] bg-background/50 cursor-help border-border/50"
+                              title={t(i18n)`Streamer ID`}
+                            >
+                              {'{streamer_id}'}
+                            </Badge>
+                            <Badge
+                              variant="outline"
+                              className="font-mono text-[10px] bg-background/50 cursor-help border-border/50"
+                              title={t(i18n)`Session ID`}
+                            >
+                              {'{session_id}'}
+                            </Badge>
+                            <Badge
+                              variant="outline"
+                              className="font-mono text-[10px] bg-background/50 cursor-help border-border/50"
+                              title={t(i18n)`Sanitized streamer name`}
+                            >
+                              {'{streamer}'}
+                            </Badge>
+                            <Badge
+                              variant="outline"
+                              className="font-mono text-[10px] bg-background/50 cursor-help border-border/50"
+                              title={t(i18n)`Sanitized session title`}
+                            >
+                              {'{title}'}
+                            </Badge>
+                            <Badge
+                              variant="outline"
+                              className="font-mono text-[10px] bg-background/50 cursor-help border-border/50"
+                              title={t(i18n)`Platform name`}
+                            >
+                              {'{platform}'}
+                            </Badge>
+                          </div>
+                        </div>
+
+                        <div className="col-span-full space-y-2 border-t border-border/20 pt-2 mt-2">
+                          <div className="mb-2 font-semibold text-[10px] uppercase tracking-wide opacity-70">
+                            <Trans>Time Placeholders (Local Time)</Trans>
+                          </div>
+                          <div className="flex flex-wrap gap-2">
+                            <Badge
+                              variant="outline"
+                              className="font-mono text-[10px] bg-muted/30 cursor-help border-dashed"
+                              title={t(i18n)`Year (4 digits)`}
+                            >
+                              %Y
+                            </Badge>
+                            <Badge
+                              variant="outline"
+                              className="font-mono text-[10px] bg-muted/30 cursor-help border-dashed"
+                              title={t(i18n)`Month (01-12)`}
+                            >
+                              %m
+                            </Badge>
+                            <Badge
+                              variant="outline"
+                              className="font-mono text-[10px] bg-muted/30 cursor-help border-dashed"
+                              title={t(i18n)`Day (01-31)`}
+                            >
+                              %d
+                            </Badge>
+                            <Badge
+                              variant="outline"
+                              className="font-mono text-[10px] bg-muted/30 cursor-help border-dashed"
+                              title={t(i18n)`Hour (00-23)`}
+                            >
+                              %H
+                            </Badge>
+                            <Badge
+                              variant="outline"
+                              className="font-mono text-[10px] bg-muted/30 cursor-help border-dashed"
+                              title={t(i18n)`Minute (00-59)`}
+                            >
+                              %M
+                            </Badge>
+                            <Badge
+                              variant="outline"
+                              className="font-mono text-[10px] bg-muted/30 cursor-help border-dashed"
+                              title={t(i18n)`Second (00-59)`}
+                            >
+                              %S
+                            </Badge>
+                            <Badge
+                              variant="outline"
+                              className="font-mono text-[10px] bg-muted/30 cursor-help border-dashed"
+                              title={t(i18n)`Unix timestamp`}
+                            >
+                              %t
+                            </Badge>
+                          </div>
+                        </div>
                       </div>
                     </div>
                   </FormDescription>

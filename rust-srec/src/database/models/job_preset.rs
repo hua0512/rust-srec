@@ -98,35 +98,35 @@ impl JobPreset {
     }
 
     /// Validate the preset configuration.
-    pub fn validate(&self) -> Result<(), String> {
+    pub fn validate(&self) -> crate::Result<()> {
         // Validate processor type
         if !VALID_PROCESSORS.contains(&self.processor.as_str()) {
-            return Err(format!(
+            return Err(crate::Error::validation(format!(
                 "Invalid processor type '{}'. Valid types: {}",
                 self.processor,
                 VALID_PROCESSORS.join(", ")
-            ));
+            )));
         }
 
         // Validate category if provided
         if let Some(ref cat) = self.category
             && !VALID_CATEGORIES.contains(&cat.as_str())
         {
-            return Err(format!(
+            return Err(crate::Error::validation(format!(
                 "Invalid category '{}'. Valid categories: {}",
                 cat,
                 VALID_CATEGORIES.join(", ")
-            ));
+            )));
         }
 
         // Validate config is valid JSON
         if serde_json::from_str::<serde_json::Value>(&self.config).is_err() {
-            return Err("Config must be valid JSON".to_string());
+            return Err(crate::Error::validation("Config must be valid JSON"));
         }
 
         // Validate name is not empty
         if self.name.trim().is_empty() {
-            return Err("Name cannot be empty".to_string());
+            return Err(crate::Error::validation("Name cannot be empty"));
         }
 
         Ok(())
@@ -246,26 +246,22 @@ impl PipelinePreset {
     }
 
     /// Validate the preset configuration.
-    pub fn validate(&self) -> Result<(), String> {
+    pub fn validate(&self) -> crate::Result<()> {
         // Validate name is not empty
         if self.name.trim().is_empty() {
-            return Err("Name cannot be empty".to_string());
+            return Err(crate::Error::validation("Name cannot be empty"));
         }
 
         // Validate DAG definition
         if let Some(ref dag_str) = self.dag_definition {
-            let dag: Result<DagPipelineDefinition, _> = serde_json::from_str(dag_str);
-            match dag {
-                Ok(d) => {
-                    // Validate the DAG structure
-                    d.validate()?;
-                }
-                Err(e) => {
-                    return Err(format!("Invalid DAG definition: {}", e));
-                }
-            }
+            let dag: DagPipelineDefinition = serde_json::from_str(dag_str)
+                .map_err(|e| crate::Error::validation(format!("Invalid DAG definition: {}", e)))?;
+            // Validate the DAG structure
+            dag.validate()?;
         } else {
-            return Err("Pipeline must have a dag_definition".to_string());
+            return Err(crate::Error::validation(
+                "Pipeline must have a dag_definition",
+            ));
         }
 
         Ok(())

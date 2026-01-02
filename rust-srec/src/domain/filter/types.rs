@@ -4,11 +4,10 @@ use chrono::{Datelike, NaiveTime, Weekday};
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 
-fn parse_db_filter_config<T: DeserializeOwned>(
-    raw: &str,
-    label: &'static str,
-) -> Result<T, String> {
-    serde_json::from_str(raw).map_err(|e| format!("Failed to parse {label} filter config: {e}"))
+fn parse_db_filter_config<T: DeserializeOwned>(raw: &str, label: &'static str) -> crate::Result<T> {
+    serde_json::from_str(raw).map_err(|e| {
+        crate::Error::validation(format!("Failed to parse {label} filter config: {e}"))
+    })
 }
 
 /// Filter type enum.
@@ -83,11 +82,12 @@ impl Filter {
     }
 
     /// Create a Filter from a database model.
-    pub fn from_db_model(model: &crate::database::models::FilterDbModel) -> Result<Self, String> {
+    pub fn from_db_model(model: &crate::database::models::FilterDbModel) -> crate::Result<Self> {
         use crate::database::models::filter::FilterType as DbFilterType;
 
-        let filter_type = DbFilterType::parse(&model.filter_type)
-            .ok_or_else(|| format!("Unknown filter type: {}", model.filter_type))?;
+        let filter_type = DbFilterType::parse(&model.filter_type).ok_or_else(|| {
+            crate::Error::validation(format!("Unknown filter type: {}", model.filter_type))
+        })?;
 
         match filter_type {
             DbFilterType::TimeBased => {

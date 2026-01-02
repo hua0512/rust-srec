@@ -1,7 +1,9 @@
 //! File utility functions for download engines.
 
 use std::path::Path;
-use tokio::fs;
+
+use crate::Result;
+use crate::utils::fs;
 
 /// Ensure the output directory exists, creating it if necessary.
 ///
@@ -10,12 +12,10 @@ use tokio::fs;
 ///
 /// # Returns
 /// * `Ok(())` - If the directory exists or was created successfully
-/// * `Err(String)` - If the directory could not be created, with a descriptive error message
+/// * `Err(crate::Error)` - If the directory could not be created
 ///
-pub async fn ensure_output_dir(path: &Path) -> Result<(), String> {
-    fs::create_dir_all(path)
-        .await
-        .map_err(|e| format!("Failed to create output directory {:?}: {}", path, e))
+pub async fn ensure_output_dir(path: &Path) -> Result<()> {
+    fs::ensure_dir_all_with_op("creating output directory", path).await
 }
 
 #[cfg(test)]

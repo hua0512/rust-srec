@@ -1,5 +1,6 @@
 //! Application-wide error types.
 
+use std::path::Path;
 use thiserror::Error;
 
 /// Application-wide result type.
@@ -31,6 +32,14 @@ pub enum Error {
 
     #[error("IO error: {0}")]
     Io(#[from] std::io::Error),
+
+    #[error("IO error while {op} '{path}': {source}")]
+    IoPath {
+        op: &'static str,
+        path: String,
+        #[source]
+        source: std::io::Error,
+    },
 
     #[error("Monitor error: {0}")]
     Monitor(String),
@@ -72,5 +81,13 @@ impl Error {
 
     pub fn duplicate_url(url: impl Into<String>) -> Self {
         Self::DuplicateUrl(url.into())
+    }
+
+    pub fn io_path(op: &'static str, path: &Path, source: std::io::Error) -> Self {
+        Self::IoPath {
+            op,
+            path: path.display().to_string(),
+            source,
+        }
     }
 }

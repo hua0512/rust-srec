@@ -96,6 +96,8 @@ export function PresetMetaForm({
 
   const handleProcessorChange = (value: string) => {
     form.setValue('processor', value);
+    // Reset config when processor type changes to avoid stale config from previous type
+    form.setValue('config', {});
   };
 
   return (

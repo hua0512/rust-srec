@@ -48,9 +48,11 @@ export const StepsList = memo(
                 const { step, id } = dagStep;
                 const stepName =
                   step.type === 'inline' ? step.processor : step.name;
-                const presetInfo = presets.find(
-                  (p) => p.name === stepName || p.processor === stepName,
-                );
+                // Prioritize exact name match over processor type match
+                // to avoid returning wrong preset when multiple presets share the same processor type
+                const presetInfo =
+                  presets.find((p) => p.name === stepName) ||
+                  presets.find((p) => p.processor === stepName);
                 const Icon = getStepIcon(stepName);
                 const isInline = step.type === 'inline';
                 // Use different color style for inline detached steps to distinguish them

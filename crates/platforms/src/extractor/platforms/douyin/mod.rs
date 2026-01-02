@@ -4,6 +4,7 @@ mod builder;
 pub mod danmu;
 
 pub(crate) mod models;
+pub(crate) mod sign;
 pub(crate) mod utils;
 
 pub use builder::URL_REGEX;
