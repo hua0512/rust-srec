@@ -21,7 +21,7 @@ FROM node:22-alpine
 WORKDIR /app
 
 # Install Nginx and gettext (for envsubst)
-RUN apk add --no-cache nginx gettext
+RUN apk add --no-cache nginx gettext tzdata
 
 # Copy built assets
 COPY --from=builder /app/.output ./.output
