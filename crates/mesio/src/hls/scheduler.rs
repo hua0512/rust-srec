@@ -136,6 +136,7 @@ impl BatchScheduler {
 
 #[derive(Debug)]
 pub struct ProcessedSegmentOutput {
+    #[allow(dead_code)]
     pub original_segment_uri: String,
     pub data: HlsData,
     pub media_sequence_number: u64,
@@ -209,25 +210,16 @@ impl SegmentScheduler {
         token: CancellationToken,
         metrics: Arc<PerformanceMetrics>,
     ) -> Self {
-        let batch_scheduler =
-            BatchScheduler::new(config.performance_config.batch_scheduler.clone());
-        let prefetch_manager = PrefetchManager::new(config.performance_config.prefetch.clone());
-        Self {
+        let mut scheduler = Self::new(
             config,
             segment_fetcher,
             segment_processor,
             segment_request_rx,
             output_tx,
             token,
-            batch_scheduler,
-            prefetch_manager,
-            known_segments: BTreeMap::new(),
-            buffer_size: 0,
-            in_flight_segments: HashSet::new(),
-            metrics: Some(metrics),
-            init_required: false,
-            init_seen: false,
-        }
+        );
+        scheduler.metrics = Some(metrics);
+        scheduler
     }
 
     /// Result of segment processing, including metadata for prefetch tracking

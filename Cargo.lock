@@ -1580,6 +1580,7 @@ dependencies = [
  "hls",
  "m3u8-rs",
  "pipeline-common",
+ "tempfile",
  "thiserror 2.0.17",
  "tokio",
  "tokio-util",

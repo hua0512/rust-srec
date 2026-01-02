@@ -105,3 +105,6 @@ criterion = "0.8.1"
 
 [profile.dev]
 debug = true
+
+[profile.dev.package.sqlx-macros]
+opt-level = 3

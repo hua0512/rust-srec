@@ -230,7 +230,7 @@ impl DownloaderInstance {
 // #[derive(Debug)]
 pub enum DownloadStream {
     Flv(BoxMediaStream<flv::data::FlvData, crate::flv::error::FlvDownloadError>),
-    Hls(BoxMediaStream<hls::segment::HlsData, crate::hls::error::HlsDownloaderError>),
+    Hls(BoxMediaStream<hls::segment::HlsData, crate::hls::HlsDownloaderError>),
 }
 
 /// Helper macro to process streams with type-specific handling

@@ -77,6 +77,7 @@ impl BufferedSegment {
     }
 
     /// Creates a BufferedSegment with a specific size (useful for testing).
+    #[allow(dead_code)]
     pub fn with_size(output: ProcessedSegmentOutput, size_bytes: usize) -> Self {
         Self {
             output,
@@ -218,21 +219,25 @@ impl ReorderBufferMetrics {
     }
 
     /// Returns the current buffer depth.
+    #[cfg(test)]
     pub fn get_buffer_depth(&self) -> u64 {
         self.current_buffer_depth.load(Ordering::Relaxed)
     }
 
     /// Returns the current buffer size in bytes.
+    #[cfg(test)]
     pub fn get_buffer_bytes(&self) -> u64 {
         self.current_buffer_bytes.load(Ordering::Relaxed)
     }
 
     /// Returns the total segments emitted.
+    #[cfg(test)]
     pub fn get_segments_emitted(&self) -> u64 {
         self.segments_emitted.load(Ordering::Relaxed)
     }
 
     /// Returns the total segments rejected as stale.
+    #[cfg(test)]
     pub fn get_segments_rejected_stale(&self) -> u64 {
         self.segments_rejected_stale.load(Ordering::Relaxed)
     }
@@ -245,6 +250,7 @@ use crate::hls::metrics::PerformanceMetrics;
 use hls::SegmentType;
 
 /// Statistics about the current state of the reorder buffer.
+#[allow(dead_code)]
 #[derive(Debug, Clone)]
 pub struct BufferStats {
     /// Number of segments currently in the buffer
@@ -283,6 +289,7 @@ pub struct OutputManager {
     has_emitted_media_segment: bool,
     is_live_stream: bool,
     expected_next_media_sequence: u64,
+    #[allow(dead_code)]
     playlist_ended: bool,
     token: CancellationToken,
 
@@ -360,43 +367,30 @@ impl OutputManager {
         token: CancellationToken,
         performance_metrics: Arc<PerformanceMetrics>,
     ) -> Self {
-        Self {
+        let mut manager = Self::new(
             config,
             input_rx,
             event_tx,
-            reorder_buffer: BTreeMap::new(),
-            pending_init_segments: BTreeMap::new(),
-            has_seen_init_segment: false,
-            is_fmp4_stream: false,
-            has_emitted_media_segment: false,
             is_live_stream,
-            expected_next_media_sequence: initial_media_sequence,
-            playlist_ended: false,
+            initial_media_sequence,
             token,
-            gap_state: None,
-            last_input_received_time: if is_live_stream {
-                Some(Instant::now())
-            } else {
-                None
-            },
-            metrics: Arc::new(ReorderBufferMetrics::new()),
-            current_buffer_bytes: 0,
-            live_gap_strategy_override: None,
-            vod_gap_strategy_override: None,
-            performance_metrics: Some(performance_metrics),
-        }
+        );
+        manager.performance_metrics = Some(performance_metrics);
+        manager
     }
 
     /// Get current metrics snapshot.
     ///
+    #[allow(dead_code)]
     pub fn metrics(&self) -> &ReorderBufferMetrics {
-        // Note: We return a reference to the inner ReorderBufferMetrics
+        // Note: We return a reference to the inner ReorderBufferMetrics        
         // The Arc is used internally for potential future sharing
         &self.metrics
     }
 
     /// Get current buffer statistics.
     ///
+    #[allow(dead_code)]
     pub fn buffer_stats(&self) -> BufferStats {
         BufferStats {
             segment_count: self.reorder_buffer.len(),
@@ -431,6 +425,7 @@ impl OutputManager {
     /// over the config's gap strategy. The new strategy will be used for evaluating
     /// subsequent gaps - any gap currently being tracked will continue to be evaluated
     /// with the new strategy on the next check.
+    #[allow(dead_code)]
     pub fn set_gap_strategy(&mut self, strategy: GapSkipStrategy) {
         if self.is_live_stream {
             debug!("Updating live gap strategy at runtime: {:?}", strategy);
@@ -1258,6 +1253,7 @@ impl OutputManager {
 
     /// Called when the playlist is known to have ended (e.g., ENDLIST tag or VOD completion).
     /// This is also called by the run loop's shutdown path.
+    #[allow(dead_code)]
     pub async fn signal_stream_end_and_flush(&mut self) {
         debug!(
             "start to signal end, is_live_stream: {}",
@@ -1281,6 +1277,7 @@ impl OutputManager {
     }
 
     // Method to update live status and expected sequence, perhaps called by coordinator during init
+    #[allow(dead_code)]
     pub fn update_stream_state(&mut self, is_live: bool, initial_sequence: u64) {
         self.is_live_stream = is_live;
         self.expected_next_media_sequence = initial_sequence;

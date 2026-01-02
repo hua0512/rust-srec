@@ -20,7 +20,6 @@ use crate::analyzer::HlsAnalyzer;
 pub struct HlsFormatStrategy {
     analyzer: HlsAnalyzer,
     current_offset: u64,
-    is_finalizing: bool,
     target_duration: f32,
     max_file_size: Option<u64>,
 }
@@ -40,14 +39,12 @@ impl HlsFormatStrategy {
         Self {
             analyzer: HlsAnalyzer::new(),
             current_offset: 0,
-            is_finalizing: false,
             target_duration: 0.0,
             max_file_size,
         }
     }
 
-    fn reset(&mut self) -> Result<(), HlsStrategyError> {
-        self.is_finalizing = false;
+    fn reset_for_new_file(&mut self) -> Result<(), HlsStrategyError> {
         self.analyzer.reset();
         self.current_offset = 0;
         self.target_duration = 0.0;
@@ -124,8 +121,17 @@ impl FormatStrategy<HlsData> for HlsFormatStrategy {
         }
     }
 
-    fn should_rotate_file(&self, _config: &WriterConfig, _state: &WriterState) -> bool {
-        false
+    fn should_rotate_file(&self, _config: &WriterConfig, state: &WriterState) -> bool {
+        let Some(max_size) = self.max_file_size else {
+            return false;
+        };
+        if max_size == 0 {
+            return false;
+        }
+
+        // Rotate before writing the next item once we have at least one item in the current file.
+        // This avoids creating empty files when a rotation is requested before any payload is written.
+        state.items_written_current_file > 0 && state.bytes_written_current_file >= max_size
     }
 
     fn next_file_path(&self, config: &WriterConfig, state: &WriterState) -> PathBuf {
@@ -144,6 +150,8 @@ impl FormatStrategy<HlsData> for HlsFormatStrategy {
         _config: &WriterConfig,
         _state: &WriterState,
     ) -> Result<u64, Self::StrategyError> {
+        self.reset_for_new_file()?;
+
         info!(path = %path.display(), "Opening segment");
 
         // Initialize the span's progress bar
@@ -168,10 +176,6 @@ impl FormatStrategy<HlsData> for HlsFormatStrategy {
         let items_written = state.items_written_current_file;
         let duration_secs = self.target_duration;
 
-        if self.is_finalizing {
-            self.reset()?;
-        }
-
         info!(
             path = %path.display(),
             items = items_written,
@@ -190,12 +194,17 @@ impl FormatStrategy<HlsData> for HlsFormatStrategy {
     ) -> Result<PostWriteAction, Self::StrategyError> {
         self.update_status(state);
         if matches!(item, HlsData::EndMarker) {
+            // If an end marker arrives before any real payload, don't rotate.
+            // This prevents creating empty files if the stream begins with a boundary marker.
+            if state.items_written_current_file <= 1 {
+                return Ok(PostWriteAction::None);
+            }
+
             let stats = self
                 .analyzer
                 .build_stats()
                 .map_err(HlsStrategyError::Analyzer)?;
             debug!("HLS stats: {:?}", stats);
-            self.is_finalizing = true;
             Ok(PostWriteAction::Rotate)
         } else {
             Ok(PostWriteAction::None)
@@ -295,9 +304,15 @@ impl ProtocolWriter for HlsWriter {
         &mut self,
         mut receiver: tokio::sync::mpsc::Receiver<Result<HlsData, pipeline_common::PipelineError>>,
     ) -> Result<(usize, u32, u64, f64), WriterError<HlsStrategyError>> {
+        let mut saw_payload = false;
         while let Some(result) = receiver.blocking_recv() {
             match result {
                 Ok(hls_data) => {
+                    if !saw_payload && matches!(hls_data, HlsData::EndMarker) {
+                        // Avoid creating an empty file if the stream begins with a boundary marker.
+                        continue;
+                    }
+                    saw_payload |= !matches!(hls_data, HlsData::EndMarker);
                     trace!("Received HLS data: {:?}", hls_data.tag_type());
                     self.writer_task.process_item(hls_data)?;
                 }
@@ -327,5 +342,93 @@ impl ProtocolWriter for HlsWriter {
             total_bytes_written,
             total_duration_secs,
         ))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use bytes::Bytes;
+    use m3u8_rs::MediaSegment;
+    use pipeline_common::PipelineError;
+
+    #[test]
+    fn rotates_on_max_file_size_between_items() {
+        let tempdir = tempfile::tempdir().expect("create temp dir");
+
+        let mut extras = HashMap::new();
+        extras.insert("max_file_size".to_string(), "15".to_string());
+
+        let mut writer = HlsWriter::new(
+            tempdir.path().to_path_buf(),
+            "test-%i".to_string(),
+            "ts".to_string(),
+            Some(extras),
+        );
+
+        let (tx, rx) = tokio::sync::mpsc::channel::<Result<HlsData, PipelineError>>(16);
+
+        let handle = std::thread::spawn(move || writer.run(rx));
+
+        let seg = |bytes: &'static [u8]| {
+            Ok(HlsData::ts(
+                MediaSegment {
+                    duration: 1.0,
+                    ..MediaSegment::empty()
+                },
+                Bytes::from_static(bytes),
+            ))
+        };
+
+        tx.blocking_send(seg(&[0u8; 10])).unwrap();
+        tx.blocking_send(seg(&[1u8; 10])).unwrap();
+        tx.blocking_send(seg(&[2u8; 10])).unwrap();
+        drop(tx);
+
+        let result = handle.join().expect("writer thread join").expect("writer ok");
+        let (_items_written, files_created, _total_bytes, _total_duration) = result;
+
+        // One rotation means file sequence number increments once.
+        assert_eq!(files_created, 1);
+
+        let file_count = std::fs::read_dir(tempdir.path())
+            .expect("read_dir")
+            .filter_map(|entry| entry.ok())
+            .filter(|entry| entry.path().extension().is_some_and(|e| e == "ts"))
+            .count();
+        assert_eq!(file_count, 2);
+    }
+
+    #[test]
+    fn ignores_leading_end_markers() {
+        let tempdir = tempfile::tempdir().expect("create temp dir");
+
+        let mut writer = HlsWriter::new(
+            tempdir.path().to_path_buf(),
+            "test-%i".to_string(),
+            "ts".to_string(),
+            None,
+        );
+
+        let (tx, rx) = tokio::sync::mpsc::channel::<Result<HlsData, PipelineError>>(16);
+
+        let handle = std::thread::spawn(move || writer.run(rx));
+
+        tx.blocking_send(Ok(HlsData::EndMarker)).unwrap();
+        tx.blocking_send(Ok(HlsData::EndMarker)).unwrap();
+        drop(tx);
+
+        let result = handle.join().expect("writer thread join").expect("writer ok");
+        let (_items_written, files_created, total_bytes, total_duration) = result;
+        assert_eq!(files_created, 0);
+        assert_eq!(total_bytes, 0);
+        assert_eq!(total_duration, 0.0);
+
+        let file_count = std::fs::read_dir(tempdir.path())
+            .expect("read_dir")
+            .filter_map(|entry| entry.ok())
+            .filter(|entry| entry.path().extension().is_some_and(|e| e == "ts"))
+            .count();
+        assert_eq!(file_count, 0);
     }
 }

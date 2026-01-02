@@ -42,6 +42,7 @@ impl DecryptionOffloader {
     }
 
     /// Check if offloading is enabled
+    #[cfg(test)]
     pub fn is_enabled(&self) -> bool {
         self.enabled
     }
@@ -72,6 +73,7 @@ impl DecryptionOffloader {
     }
 
     /// Synchronous decryption helper for actual AES decryption (without buffer pool)
+    #[cfg(test)]
     pub fn decrypt_sync(
         data: Bytes,
         key: &[u8; 16],
@@ -217,17 +219,10 @@ impl DecryptionService {
         cache_manager: Option<Arc<CacheManager>>,
         buffer_pool: Arc<BufferPool>,
     ) -> Self {
-        // Create offloader with buffer pool
-        let offloader = DecryptionOffloader::with_buffer_pool(
-            config.decryption_config.offload_decryption_to_cpu_pool,
-            buffer_pool,
-        );
-        Self {
-            config,
-            key_fetcher,
-            cache_manager,
-            offloader,
-        }
+        let offload = config.decryption_config.offload_decryption_to_cpu_pool;
+        let mut service = Self::new(config, key_fetcher, cache_manager);
+        service.offloader = DecryptionOffloader::with_buffer_pool(offload, buffer_pool);
+        service
     }
 
     async fn get_key_data(

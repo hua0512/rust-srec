@@ -108,7 +108,7 @@ impl HlsDownloader {
     ///
     /// Returns download statistics on success.
     pub async fn run(self) -> Result<DownloadStats> {
-        let token = CancellationToken::new();
+        let token = self.cancellation_token.child_token();
 
         // Create factory with configuration
         let factory = self.create_factory(token.clone());
@@ -138,8 +138,13 @@ impl HlsDownloader {
         };
 
         // Peek at the first segment to determine file extension
-        let first_segment = match hls_stream.next().await {
-            Some(Ok(segment)) => segment,
+        let first_segment = loop {
+            match hls_stream.next().await {
+            Some(Ok(HlsData::EndMarker)) => {
+                debug!("Skipping leading HLS EndMarker before first data segment");
+                continue;
+            }
+            Some(Ok(segment)) => break segment,
             Some(Err(e)) => {
                 let _ = self
                     .event_tx
@@ -163,17 +168,14 @@ impl HlsDownloader {
                     .await;
                 return Err(crate::Error::Other("HLS stream is empty".to_string()));
             }
+            }
         };
 
         // Determine extension from first segment
         let extension = match &first_segment {
             HlsData::TsData(_) => "ts",
             HlsData::M4sData(_) => "m4s",
-            HlsData::EndMarker => {
-                return Err(crate::Error::Other(
-                    "First segment is EndMarker".to_string(),
-                ));
-            }
+            HlsData::EndMarker => unreachable!("filtered before extension detection"),
         };
 
         let config_snapshot = self.config_snapshot();
