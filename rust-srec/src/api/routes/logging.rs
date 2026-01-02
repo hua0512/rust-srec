@@ -111,7 +111,7 @@ pub async fn update_logging_config(
     // Apply the new filter
     logging_config
         .set_filter(&request.filter)
-        .map_err(|e| ApiError::bad_request(format!("Invalid filter: {}", e)))?;
+        .map_err(|e| ApiError::bad_request(e.to_string()))?;
 
     // Persist to database if config service is available
     if let Some(config_service) = &state.config_service {

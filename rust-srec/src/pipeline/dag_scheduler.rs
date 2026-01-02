@@ -170,7 +170,7 @@ impl DagScheduler {
         before_root_jobs: Option<BeforeRootJobsHook>,
     ) -> Result<DagCreationResult> {
         // 1. Validate DAG structure
-        dag_definition.validate().map_err(Error::Validation)?;
+        dag_definition.validate()?;
 
         // 2. Create DAG execution record
         let dag_exec =

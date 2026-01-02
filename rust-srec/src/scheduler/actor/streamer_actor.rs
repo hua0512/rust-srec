@@ -1088,11 +1088,11 @@ impl StreamerActor {
             .map_err(|e| ActorError::recoverable(format!("Failed to serialize state: {}", e)))?;
 
         // Ensure parent directory exists
-        if let Some(parent) = path.parent() {
-            tokio::fs::create_dir_all(parent).await.map_err(|e| {
+        crate::utils::fs::ensure_parent_dir_with_op("creating state directory", path)
+            .await
+            .map_err(|e| {
                 ActorError::recoverable(format!("Failed to create state directory: {}", e))
             })?;
-        }
 
         // Write atomically using a temp file
         let temp_path = path.with_extension("tmp");

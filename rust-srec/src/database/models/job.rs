@@ -712,19 +712,24 @@ impl DagPipelineDefinition {
     /// - A step references a non-existent dependency
     /// - There are no root steps (steps with no dependencies)
     /// - Step IDs are not unique
-    pub fn validate(&self) -> Result<(), String> {
+    pub fn validate(&self) -> crate::Result<()> {
         use std::collections::{HashMap, HashSet};
 
         // Check for empty DAG
         if self.steps.is_empty() {
-            return Err("DAG pipeline must have at least one step".to_string());
+            return Err(crate::Error::validation(
+                "DAG pipeline must have at least one step",
+            ));
         }
 
         // Check for unique step IDs
         let mut seen_ids = HashSet::new();
         for step in &self.steps {
             if !seen_ids.insert(&step.id) {
-                return Err(format!("Duplicate step ID: {}", step.id));
+                return Err(crate::Error::validation(format!(
+                    "Duplicate step ID: {}",
+                    step.id
+                )));
             }
         }
 
@@ -733,19 +738,19 @@ impl DagPipelineDefinition {
         for step in &self.steps {
             for dep in &step.depends_on {
                 if !step_ids.contains(dep.as_str()) {
-                    return Err(format!(
+                    return Err(crate::Error::validation(format!(
                         "Step '{}' depends on non-existent step '{}'",
                         step.id, dep
-                    ));
+                    )));
                 }
             }
         }
 
         // Check for at least one root step
         if !self.steps.iter().any(|s| s.is_root()) {
-            return Err(
-                "DAG pipeline must have at least one root step (no dependencies)".to_string(),
-            );
+            return Err(crate::Error::validation(
+                "DAG pipeline must have at least one root step (no dependencies)",
+            ));
         }
 
         // Check for cycles using DFS
@@ -789,7 +794,7 @@ impl DagPipelineDefinition {
             if !visited.contains(step.id.as_str())
                 && has_cycle(step.id.as_str(), &adj, &mut visited, &mut rec_stack)
             {
-                return Err("DAG pipeline contains a cycle".to_string());
+                return Err(crate::Error::validation("DAG pipeline contains a cycle"));
             }
         }
 
@@ -819,7 +824,7 @@ impl DagPipelineDefinition {
 
     /// Get a topological ordering of the steps (dependencies before dependents).
     /// Returns an error if the graph contains a cycle.
-    pub fn topological_order(&self) -> Result<Vec<&DagStep>, String> {
+    pub fn topological_order(&self) -> crate::Result<Vec<&DagStep>> {
         use std::collections::{HashMap, HashSet, VecDeque};
 
         let step_map: HashMap<&str, &DagStep> =
@@ -870,7 +875,7 @@ impl DagPipelineDefinition {
         }
 
         if result.len() != self.steps.len() {
-            return Err("DAG pipeline contains a cycle".to_string());
+            return Err(crate::Error::validation("DAG pipeline contains a cycle"));
         }
 
         Ok(result)
@@ -1336,7 +1341,12 @@ mod tests {
     fn test_dag_pipeline_validation_empty() {
         let dag = DagPipelineDefinition::new("empty-dag", vec![]);
         assert!(dag.validate().is_err());
-        assert!(dag.validate().unwrap_err().contains("at least one step"));
+        assert!(
+            dag.validate()
+                .unwrap_err()
+                .to_string()
+                .contains("at least one step")
+        );
     }
 
     #[test]
@@ -1349,7 +1359,12 @@ mod tests {
             ],
         );
         assert!(dag.validate().is_err());
-        assert!(dag.validate().unwrap_err().contains("Duplicate"));
+        assert!(
+            dag.validate()
+                .unwrap_err()
+                .to_string()
+                .contains("Duplicate")
+        );
     }
 
     #[test]
@@ -1366,7 +1381,12 @@ mod tests {
             ],
         );
         assert!(dag.validate().is_err());
-        assert!(dag.validate().unwrap_err().contains("non-existent"));
+        assert!(
+            dag.validate()
+                .unwrap_err()
+                .to_string()
+                .contains("non-existent")
+        );
     }
 
     #[test]

@@ -135,6 +135,10 @@ impl From<Error> for ApiError {
                 tracing::error!("IO error: {}", e);
                 ApiError::internal("IO error occurred")
             }
+            Error::IoPath { op, path, source } => {
+                tracing::error!("IO error while {} '{}': {}", op, path, source);
+                ApiError::internal("IO error occurred")
+            }
             Error::ApiError(msg) => ApiError::bad_request(msg),
             _ => {
                 tracing::error!("Unexpected error: {}", err);

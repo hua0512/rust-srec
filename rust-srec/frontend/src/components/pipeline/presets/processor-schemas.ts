@@ -101,6 +101,7 @@ export const CopyMoveConfigSchema = z.object({
   create_dirs: z.boolean().default(true),
   verify_integrity: z.boolean().default(true),
   overwrite: z.boolean().default(false),
+  exclude_patterns: z.array(z.string()).default([]),
 });
 
 // --- Delete Processor ---

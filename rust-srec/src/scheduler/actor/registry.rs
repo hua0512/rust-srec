@@ -15,7 +15,7 @@ use tracing::{debug, info, warn};
 use super::handle::ActorHandle;
 use super::messages::{PlatformMessage, StreamerMessage};
 use super::platform_actor::PlatformActor;
-use super::streamer_actor::{ActorOutcome, ActorResult, StreamerActor};
+use super::streamer_actor::{ActorError, ActorOutcome, ActorResult, StreamerActor};
 
 /// Result of an actor task completion.
 #[derive(Debug)]
@@ -25,7 +25,7 @@ pub struct ActorTaskResult {
     /// Actor type ("streamer" or "platform").
     pub actor_type: String,
     /// The outcome of the actor's run.
-    pub outcome: Result<ActorOutcome, String>,
+    pub outcome: ActorResult,
 }
 
 impl ActorTaskResult {
@@ -34,7 +34,7 @@ impl ActorTaskResult {
         Self {
             actor_id: id.into(),
             actor_type: "streamer".to_string(),
-            outcome: outcome.map_err(|e| e.to_string()),
+            outcome,
         }
     }
 
@@ -43,7 +43,7 @@ impl ActorTaskResult {
         Self {
             actor_id: id.into(),
             actor_type: "platform".to_string(),
-            outcome: outcome.map_err(|e| e.to_string()),
+            outcome,
         }
     }
 
@@ -59,7 +59,7 @@ impl ActorTaskResult {
     /// Get the error message if this was a crash.
     pub fn error_message(&self) -> Option<&str> {
         match &self.outcome {
-            Err(e) => Some(e.as_str()),
+            Err(ActorError { message, .. }) => Some(message.as_str()),
             _ => None,
         }
     }

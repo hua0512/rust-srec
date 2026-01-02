@@ -246,7 +246,10 @@ impl Processor for ExecuteCommandProcessor {
 
             if !is_dir {
                 // Create directory if it doesn't exist (or isn't a directory yet)
-                if let Err(e) = tokio::fs::create_dir_all(dir_path).await {
+                if let Err(e) =
+                    crate::utils::fs::ensure_dir_all_with_op("creating output directory", dir_path)
+                        .await
+                {
                     let _ = ctx.warn(format!("Failed to create output directory {}: {}", dir, e));
                 }
             }

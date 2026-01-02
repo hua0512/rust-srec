@@ -264,6 +264,10 @@ msgstr "Add Custom Tag"
 msgid "Add Environment Variable"
 msgstr "Add Environment Variable"
 
+#: src/components/pipeline/presets/processors/copy-move-config-form.tsx:190
+msgid "Add exclude regex pattern"
+msgstr "Add exclude regex pattern"
+
 #: src/components/pipeline/presets/processors/danmaku-factory-config-form.tsx:117
 msgid "Add extra argument"
 msgstr "Add extra argument"
@@ -878,7 +882,7 @@ msgstr "Check Login"
 #~ msgid "Check Now"
 #~ msgstr "Check Now"
 
-#: src/components/pipeline/presets/processors/copy-move-config-form.tsx:154
+#: src/components/pipeline/presets/processors/copy-move-config-form.tsx:158
 msgid "Check size after copy"
 msgstr "Check size after copy"
 
@@ -1199,7 +1203,7 @@ msgstr "Copy Directory"
 msgid "Copy File"
 msgstr "Copy File"
 
-#: src/components/pipeline/presets/processors/copy-move-config-form.tsx:74
+#: src/components/pipeline/presets/processors/copy-move-config-form.tsx:78
 msgid "Copy Files"
 msgstr "Copy Files"
 
@@ -1258,7 +1262,7 @@ msgstr "Create a ZIP archive of the file. Good for bundling with metadata."
 msgid "Create Channel"
 msgstr "Create Channel"
 
-#: src/components/pipeline/presets/processors/copy-move-config-form.tsx:128
+#: src/components/pipeline/presets/processors/copy-move-config-form.tsx:132
 msgid "Create Directories"
 msgstr "Create Directories"
 
@@ -1271,7 +1275,7 @@ msgstr "Create Engine"
 msgid "Create Filter"
 msgstr "Create Filter"
 
-#: src/components/pipeline/presets/processors/copy-move-config-form.tsx:131
+#: src/components/pipeline/presets/processors/copy-move-config-form.tsx:135
 msgid "Create missing folders"
 msgstr "Create missing folders"
 
@@ -1669,7 +1673,7 @@ msgstr "Deselect All"
 msgid "Design your automation pipeline step by step"
 msgstr "Design your automation pipeline step by step"
 
-#: src/components/pipeline/presets/processors/copy-move-config-form.tsx:92
+#: src/components/pipeline/presets/processors/copy-move-config-form.tsx:96
 msgid "Destination Path (Optional)"
 msgstr "Destination Path (Optional)"
 
@@ -2129,6 +2133,10 @@ msgstr "Exclude"
 #: src/components/pipeline/presets/processors/ass-burnin-config-form.tsx:300
 msgid "Exclude ASS from Passthrough"
 msgstr "Exclude ASS from Passthrough"
+
+#: src/components/pipeline/presets/processors/copy-move-config-form.tsx:177
+msgid "Exclude Patterns"
+msgstr "Exclude Patterns"
 
 #: src/components/pipeline/presets/processors/tdl-config-form.tsx:588
 msgid "Excluded Extensions"
@@ -2914,7 +2922,7 @@ msgstr "ID is required"
 msgid "Identity and type of the engine."
 msgstr "Identity and type of the engine."
 
-#: src/components/pipeline/presets/processors/copy-move-config-form.tsx:103
+#: src/components/pipeline/presets/processors/copy-move-config-form.tsx:107
 msgid "If empty, uses next output path in pipeline"
 msgstr "If empty, uses next output path in pipeline"
 
@@ -3555,7 +3563,7 @@ msgstr "Move"
 msgid "Move File"
 msgstr "Move File"
 
-#: src/components/pipeline/presets/processors/copy-move-config-form.tsx:77
+#: src/components/pipeline/presets/processors/copy-move-config-form.tsx:81
 msgid "Move Files"
 msgstr "Move Files"
 
@@ -4006,7 +4014,7 @@ msgstr "Only include files with this extension (without dot)"
 msgid "Open menu"
 msgstr "Open menu"
 
-#: src/components/pipeline/presets/processors/copy-move-config-form.tsx:50
+#: src/components/pipeline/presets/processors/copy-move-config-form.tsx:54
 #: src/components/pipeline/presets/processors/rclone-config-form.tsx:80
 msgid "Operation"
 msgstr "Operation"
@@ -4015,7 +4023,7 @@ msgstr "Operation"
 msgid "Operation Mode"
 msgstr "Operation Mode"
 
-#: src/components/pipeline/presets/processors/copy-move-config-form.tsx:61
+#: src/components/pipeline/presets/processors/copy-move-config-form.tsx:65
 msgid "Operation Type"
 msgstr "Operation Type"
 
@@ -4034,7 +4042,7 @@ msgid "Optional extra arguments appended to `tdl login`."
 msgstr "Optional extra arguments appended to `tdl login`."
 
 #: src/components/pipeline/presets/processors/compression-config-form.tsx:115
-#: src/components/pipeline/presets/processors/copy-move-config-form.tsx:116
+#: src/components/pipeline/presets/processors/copy-move-config-form.tsx:120
 msgid "Options"
 msgstr "Options"
 
@@ -4847,6 +4855,10 @@ msgstr "Regex"
 #: src/components/filters/forms/RegexFilterForm.tsx:25
 msgid "Regex Pattern"
 msgstr "Regex Pattern"
+
+#: src/components/pipeline/presets/processors/copy-move-config-form.tsx:194
+msgid "Regex patterns to exclude files. Matched against full path and filename."
+msgstr "Regex patterns to exclude files. Matched against full path and filename."
 
 #: src/components/config/templates/tabs/engine-overrides-tab.tsx:160
 msgid "Remove"
@@ -6491,7 +6503,7 @@ msgstr "Vars: '{streamer}', '{title}', '{platform}' | Time: %Y, %m, %d, %H, %M, 
 msgid "Velocity Based (Dynamic)"
 msgstr "Velocity Based (Dynamic)"
 
-#: src/components/pipeline/presets/processors/copy-move-config-form.tsx:151
+#: src/components/pipeline/presets/processors/copy-move-config-form.tsx:155
 msgid "Verify Integrity"
 msgstr "Verify Integrity"
 

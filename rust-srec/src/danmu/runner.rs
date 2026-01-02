@@ -200,9 +200,7 @@ impl CollectionRunner {
         self.message_buffer.clear();
 
         // Create output directory if needed
-        if let Some(parent) = output_path.parent() {
-            tokio::fs::create_dir_all(parent).await?;
-        }
+        crate::utils::fs::ensure_parent_dir(&output_path).await?;
 
         // Start new segment with the provided start time and metadata comments
         let comments = vec![

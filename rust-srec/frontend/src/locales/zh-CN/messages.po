@@ -264,6 +264,10 @@ msgstr "添加自定义标签"
 msgid "Add Environment Variable"
 msgstr ""
 
+#: src/components/pipeline/presets/processors/copy-move-config-form.tsx:190
+msgid "Add exclude regex pattern"
+msgstr "添加排除正则模式"
+
 #: src/components/pipeline/presets/processors/danmaku-factory-config-form.tsx:117
 msgid "Add extra argument"
 msgstr "添加额外参数"
@@ -878,7 +882,7 @@ msgstr ""
 #~ msgid "Check Now"
 #~ msgstr "立即检查"
 
-#: src/components/pipeline/presets/processors/copy-move-config-form.tsx:154
+#: src/components/pipeline/presets/processors/copy-move-config-form.tsx:158
 msgid "Check size after copy"
 msgstr "复制后检查大小"
 
@@ -1199,7 +1203,7 @@ msgstr "复制目录"
 msgid "Copy File"
 msgstr "复制文件"
 
-#: src/components/pipeline/presets/processors/copy-move-config-form.tsx:74
+#: src/components/pipeline/presets/processors/copy-move-config-form.tsx:78
 msgid "Copy Files"
 msgstr "复制文件"
 
@@ -1258,7 +1262,7 @@ msgstr "为文件创建 ZIP 压缩包，适合与元数据一起打包。"
 msgid "Create Channel"
 msgstr "创建渠道"
 
-#: src/components/pipeline/presets/processors/copy-move-config-form.tsx:128
+#: src/components/pipeline/presets/processors/copy-move-config-form.tsx:132
 msgid "Create Directories"
 msgstr "创建目录"
 
@@ -1271,7 +1275,7 @@ msgstr "创建引擎"
 msgid "Create Filter"
 msgstr "创建过滤器"
 
-#: src/components/pipeline/presets/processors/copy-move-config-form.tsx:131
+#: src/components/pipeline/presets/processors/copy-move-config-form.tsx:135
 msgid "Create missing folders"
 msgstr "创建缺失的文件夹"
 
@@ -1669,7 +1673,7 @@ msgstr "取消全选"
 msgid "Design your automation pipeline step by step"
 msgstr "逐步设计你的自动化处理管道"
 
-#: src/components/pipeline/presets/processors/copy-move-config-form.tsx:92
+#: src/components/pipeline/presets/processors/copy-move-config-form.tsx:96
 msgid "Destination Path (Optional)"
 msgstr "目标路径（可选）"
 
@@ -2129,6 +2133,10 @@ msgstr "排除"
 #: src/components/pipeline/presets/processors/ass-burnin-config-form.tsx:300
 msgid "Exclude ASS from Passthrough"
 msgstr "从透传中排除 ASS"
+
+#: src/components/pipeline/presets/processors/copy-move-config-form.tsx:177
+msgid "Exclude Patterns"
+msgstr "排除模式"
 
 #: src/components/pipeline/presets/processors/tdl-config-form.tsx:588
 msgid "Excluded Extensions"
@@ -2914,7 +2922,7 @@ msgstr "必须填写 ID"
 msgid "Identity and type of the engine."
 msgstr "引擎的身份与类型。"
 
-#: src/components/pipeline/presets/processors/copy-move-config-form.tsx:103
+#: src/components/pipeline/presets/processors/copy-move-config-form.tsx:107
 msgid "If empty, uses next output path in pipeline"
 msgstr "留空则使用处理管道中的下一个输出路径"
 
@@ -3555,7 +3563,7 @@ msgstr "移动"
 msgid "Move File"
 msgstr "移动文件"
 
-#: src/components/pipeline/presets/processors/copy-move-config-form.tsx:77
+#: src/components/pipeline/presets/processors/copy-move-config-form.tsx:81
 msgid "Move Files"
 msgstr "移动文件"
 
@@ -4006,7 +4014,7 @@ msgstr "仅包含具有该扩展名的文件（不含点号）"
 msgid "Open menu"
 msgstr "打开菜单"
 
-#: src/components/pipeline/presets/processors/copy-move-config-form.tsx:50
+#: src/components/pipeline/presets/processors/copy-move-config-form.tsx:54
 #: src/components/pipeline/presets/processors/rclone-config-form.tsx:80
 msgid "Operation"
 msgstr "操作"
@@ -4015,7 +4023,7 @@ msgstr "操作"
 msgid "Operation Mode"
 msgstr "操作模式"
 
-#: src/components/pipeline/presets/processors/copy-move-config-form.tsx:61
+#: src/components/pipeline/presets/processors/copy-move-config-form.tsx:65
 msgid "Operation Type"
 msgstr "操作类型"
 
@@ -4034,7 +4042,7 @@ msgid "Optional extra arguments appended to `tdl login`."
 msgstr ""
 
 #: src/components/pipeline/presets/processors/compression-config-form.tsx:115
-#: src/components/pipeline/presets/processors/copy-move-config-form.tsx:116
+#: src/components/pipeline/presets/processors/copy-move-config-form.tsx:120
 msgid "Options"
 msgstr "选项"
 
@@ -4847,6 +4855,10 @@ msgstr "正则表达式"
 #: src/components/filters/forms/RegexFilterForm.tsx:25
 msgid "Regex Pattern"
 msgstr "正则模式"
+
+#: src/components/pipeline/presets/processors/copy-move-config-form.tsx:194
+msgid "Regex patterns to exclude files. Matched against full path and filename."
+msgstr "用于排除文件的正则模式。将针对完整路径和文件名进行匹配。"
 
 #: src/components/config/templates/tabs/engine-overrides-tab.tsx:160
 msgid "Remove"
@@ -6491,7 +6503,7 @@ msgstr "变量：'{streamer}'、'{title}'、'{platform}' | 时间：%Y、%m、%d
 msgid "Velocity Based (Dynamic)"
 msgstr "基于速度（动态）"
 
-#: src/components/pipeline/presets/processors/copy-move-config-form.tsx:151
+#: src/components/pipeline/presets/processors/copy-move-config-form.tsx:155
 msgid "Verify Integrity"
 msgstr "校验完整性"
 

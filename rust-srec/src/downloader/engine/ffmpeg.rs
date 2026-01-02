@@ -163,11 +163,12 @@ impl DownloadEngine for FfmpegEngine {
         let config = handle.config_snapshot();
         // 1. Ensure output directory exists before spawning process
         if let Err(e) = ensure_output_dir(&config.output_dir).await {
+            let msg = e.to_string();
             let _ = handle.event_tx.try_send(SegmentEvent::DownloadFailed {
-                error: e.clone(),
+                error: msg.clone(),
                 recoverable: false,
             });
-            return Err(crate::Error::Other(e));
+            return Err(crate::Error::Other(msg));
         }
 
         let args = self.build_args(&config);
