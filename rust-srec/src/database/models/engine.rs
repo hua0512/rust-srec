@@ -150,6 +150,79 @@ impl Default for StreamlinkEngineConfig {
     }
 }
 
+/// How the FLV splitter should detect audio/video sequence-header changes.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum MesioSequenceHeaderChangeMode {
+    /// Split when the raw CRC32 of the sequence header changes (legacy behavior).
+    Crc32,
+    /// Split only when the codec configuration meaningfully changes.
+    SemanticSignature,
+}
+
+/// Overrides for the FLV duplicate media-tag filter.
+///
+/// Fields are optional so they can be used as a partial override payload.
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct MesioDuplicateTagFilterConfig {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub window_capacity_tags: Option<usize>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub replay_backjump_threshold_ms: Option<u32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub enable_replay_offset_matching: Option<bool>,
+}
+
+/// Mesio-configurable knobs for FLV fixing.
+///
+/// This config is applied only when FLV pipeline processing is enabled.
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct MesioFlvFixConfig {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub sequence_header_change_mode: Option<MesioSequenceHeaderChangeMode>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub drop_duplicate_sequence_headers: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub duplicate_tag_filtering: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub duplicate_tag_filter_config: Option<MesioDuplicateTagFilterConfig>,
+}
+
+impl MesioFlvFixConfig {
+    pub fn apply_to(&self, cfg: &mut flv_fix::FlvPipelineConfig) {
+        if let Some(mode) = self.sequence_header_change_mode {
+            cfg.sequence_header_change_mode = match mode {
+                MesioSequenceHeaderChangeMode::Crc32 => flv_fix::SequenceHeaderChangeMode::Crc32,
+                MesioSequenceHeaderChangeMode::SemanticSignature => {
+                    flv_fix::SequenceHeaderChangeMode::SemanticSignature
+                }
+            };
+        }
+
+        if let Some(value) = self.drop_duplicate_sequence_headers {
+            cfg.drop_duplicate_sequence_headers = value;
+        }
+
+        if let Some(value) = self.duplicate_tag_filtering {
+            cfg.duplicate_tag_filtering = value;
+        }
+
+        if let Some(ref override_cfg) = self.duplicate_tag_filter_config {
+            let mut c = cfg.duplicate_tag_filter_config.clone();
+            if let Some(value) = override_cfg.window_capacity_tags {
+                c.window_capacity_tags = value;
+            }
+            if let Some(value) = override_cfg.replay_backjump_threshold_ms {
+                c.replay_backjump_threshold_ms = value;
+            }
+            if let Some(value) = override_cfg.enable_replay_offset_matching {
+                c.enable_replay_offset_matching = value;
+            }
+            cfg.duplicate_tag_filter_config = c;
+        }
+    }
+}
+
 /// Mesio engine configuration.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct MesioEngineConfig {
@@ -162,6 +235,9 @@ pub struct MesioEngineConfig {
     /// Enable HLS fixing
     #[serde(default = "default_true")]
     pub fix_hls: bool,
+    /// Extra FLV-fix tuning knobs for Mesio.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub flv_fix: Option<MesioFlvFixConfig>,
 }
 
 fn default_buffer_size() -> usize {
@@ -178,6 +254,7 @@ impl Default for MesioEngineConfig {
             buffer_size: default_buffer_size(),
             fix_flv: true,
             fix_hls: true,
+            flv_fix: None,
         }
     }
 }
@@ -205,5 +282,53 @@ mod tests {
         let json = serde_json::to_string(&config).unwrap();
         let parsed: FfmpegEngineConfig = serde_json::from_str(&json).unwrap();
         assert_eq!(parsed.binary_path, config.binary_path);
+    }
+
+    #[test]
+    fn test_mesio_config_backward_compatible() {
+        let json = r#"{"buffer_size":123,"fix_flv":true,"fix_hls":false}"#;
+        let parsed: MesioEngineConfig = serde_json::from_str(json).unwrap();
+        assert_eq!(parsed.buffer_size, 123);
+        assert!(parsed.fix_flv);
+        assert!(!parsed.fix_hls);
+        assert!(parsed.flv_fix.is_none());
+    }
+
+    #[test]
+    fn test_mesio_flv_fix_config_apply() {
+        let json = r#"
+        {
+          "flv_fix": {
+            "sequence_header_change_mode": "semantic_signature",
+            "drop_duplicate_sequence_headers": true,
+            "duplicate_tag_filtering": false,
+            "duplicate_tag_filter_config": {
+              "window_capacity_tags": 123,
+              "replay_backjump_threshold_ms": 5000,
+              "enable_replay_offset_matching": false
+            }
+          }
+        }"#;
+        let parsed: MesioEngineConfig = serde_json::from_str(json).unwrap();
+        let opts = parsed.flv_fix.unwrap();
+
+        let mut cfg = flv_fix::FlvPipelineConfig::default();
+        opts.apply_to(&mut cfg);
+
+        assert_eq!(
+            cfg.sequence_header_change_mode,
+            flv_fix::SequenceHeaderChangeMode::SemanticSignature
+        );
+        assert!(cfg.drop_duplicate_sequence_headers);
+        assert!(!cfg.duplicate_tag_filtering);
+        assert_eq!(cfg.duplicate_tag_filter_config.window_capacity_tags, 123);
+        assert_eq!(
+            cfg.duplicate_tag_filter_config.replay_backjump_threshold_ms,
+            5000
+        );
+        assert!(
+            !cfg.duplicate_tag_filter_config
+                .enable_replay_offset_matching
+        );
     }
 }

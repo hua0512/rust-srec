@@ -7,6 +7,13 @@
 //! - `FlvDownloader` - FLV-specific download orchestrator
 //! - `config` - Configuration mapping utilities for mesio protocol configs
 //!
+//! # FLV Fix Configuration
+//!
+//! When FLV processing is enabled, Mesio can further tune the `flv-fix` pipeline
+//! via `MesioEngineConfig.flv_fix` (e.g. split detection mode and duplicate-tag
+//! filtering parameters). Defaults preserve the legacy behavior (split on raw
+//! sequence-header CRC32 changes).
+//!
 //! # Architecture
 //!
 //! The `MesioEngine` acts as a thin coordinator that:

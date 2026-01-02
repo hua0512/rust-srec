@@ -26,6 +26,27 @@ export const MesioConfigSchema = z.object({
   buffer_size: z.coerce.number().default(8388608), // 8MB
   fix_flv: z.boolean().default(true),
   fix_hls: z.boolean().default(true),
+  flv_fix: z
+    .object({
+      sequence_header_change_mode: z
+        .enum(['crc32', 'semantic_signature'])
+        .default('crc32'),
+      drop_duplicate_sequence_headers: z.boolean().default(false),
+      duplicate_tag_filtering: z.boolean().default(true),
+      duplicate_tag_filter_config: z
+        .object({
+          window_capacity_tags: z.coerce.number().min(1).default(8192),
+          replay_backjump_threshold_ms: z.coerce.number().min(0).default(2000),
+          enable_replay_offset_matching: z.boolean().default(true),
+        })
+        .optional()
+        .default({
+          window_capacity_tags: 8192,
+          replay_backjump_threshold_ms: 2000,
+          enable_replay_offset_matching: true,
+        }),
+    })
+    .optional(),
 });
 export type MesioConfig = z.infer<typeof MesioConfigSchema>;
 

@@ -522,7 +522,7 @@ msgstr "ASS Subtitle Burn-in"
 msgid "At least one input path is required"
 msgstr "At least one input path is required"
 
-#: src/components/config/engines/forms/mesio-form.tsx:75
+#: src/components/config/engines/forms/mesio-form.tsx:95
 msgid "Attempt to repair timestamps in FLV streams"
 msgstr "Attempt to repair timestamps in FLV streams"
 
@@ -732,11 +732,11 @@ msgstr "Border Radius"
 msgid "Browse generated media artifacts from pipeline jobs"
 msgstr "Browse generated media artifacts from pipeline jobs"
 
-#: src/components/config/engines/forms/mesio-form.tsx:29
+#: src/components/config/engines/forms/mesio-form.tsx:49
 msgid "Buffer Settings"
 msgstr "Buffer Settings"
 
-#: src/components/config/engines/forms/mesio-form.tsx:39
+#: src/components/config/engines/forms/mesio-form.tsx:59
 msgid "Buffer Size"
 msgstr "Buffer Size"
 
@@ -744,7 +744,7 @@ msgstr "Buffer Size"
 msgid "Burn .ass subtitles into videos (produces *_burnin.mp4 by default). Manifest-aware and batch-safe."
 msgstr "Burn .ass subtitles into videos (produces *_burnin.mp4 by default). Manifest-aware and batch-safe."
 
-#: src/components/config/engines/forms/mesio-form.tsx:49
+#: src/components/config/engines/forms/mesio-form.tsx:69
 msgid "bytes"
 msgstr "bytes"
 
@@ -1527,7 +1527,7 @@ msgstr "Default pipeline flow. Configure the sequence of processors for new jobs
 msgid "Default workflow: Remux to MP4 (deletes original), generate native-resolution thumbnail, upload both to cloud and delete local files."
 msgstr "Default workflow: Remux to MP4 (deletes original), generate native-resolution thumbnail, upload both to cloud and delete local files."
 
-#: src/components/config/engines/forms/mesio-form.tsx:54
+#: src/components/config/engines/forms/mesio-form.tsx:74
 msgid "Default: 8388608 (8 MiB)"
 msgstr "Default: 8388608 (8 MiB)"
 
@@ -1788,6 +1788,14 @@ msgstr "Downloading"
 msgid "Drag from edge to link steps"
 msgstr "Drag from edge to link steps"
 
+#: src/components/config/engines/forms/mesio-form.tsx:210
+msgid "Drop duplicate sequence headers"
+msgstr "Drop duplicate sequence headers"
+
+#: src/components/config/engines/forms/mesio-form.tsx:248
+msgid "Drop repeated A/V tags and detect replay loops (useful when streams go offline and replay tail)."
+msgstr "Drop repeated A/V tags and detect replay loops (useful when streams go offline and replay tail)."
+
 #: src/components/pipeline/presets/processors/tdl-config-form.tsx:678
 msgid "Dry Run"
 msgstr "Dry Run"
@@ -1795,6 +1803,10 @@ msgstr "Dry Run"
 #: src/components/pipeline/presets/default-presets-i18n.ts:93
 msgid "Dual Format"
 msgstr "Dual Format"
+
+#: src/components/config/engines/forms/mesio-form.tsx:238
+msgid "Duplicate media-tag filtering"
+msgstr "Duplicate media-tag filtering"
 
 #: src/components/pipeline/presets/processors/remux-config-form.tsx:514
 #: src/components/streamers/edit/active-download-card.tsx:68
@@ -1948,6 +1960,10 @@ msgstr "Enable Proxy"
 #: src/components/config/global/file-config-card.tsx:36
 msgid "Enable recording of danmu/chat messages along with the video."
 msgstr "Enable recording of danmu/chat messages along with the video."
+
+#: src/components/config/engines/forms/mesio-form.tsx:314
+msgid "Enable Replay Offset Matching"
+msgstr "Enable Replay Offset Matching"
 
 #: src/routes/_authed/_dashboard/config/theme.tsx:50
 msgid "Enable translucent background blur effects."
@@ -2164,6 +2180,11 @@ msgstr "Executions"
 #: src/routes/_authed/_dashboard/player/index.tsx:318
 msgid "Exit Immersive"
 msgstr "Exit Immersive"
+
+#: src/components/config/engines/forms/mesio-form.tsx:185
+#: src/components/config/engines/forms/mesio-form.tsx:244
+msgid "Experimental"
+msgstr "Experimental"
 
 #: src/components/sessions/session-card.tsx:235
 msgid "Explore"
@@ -2583,11 +2604,11 @@ msgstr "First input file path"
 msgid "First output file path"
 msgstr "First output file path"
 
-#: src/components/config/engines/forms/mesio-form.tsx:72
+#: src/components/config/engines/forms/mesio-form.tsx:92
 msgid "Fix FLV"
 msgstr "Fix FLV"
 
-#: src/components/config/engines/forms/mesio-form.tsx:95
+#: src/components/config/engines/forms/mesio-form.tsx:115
 msgid "Fix HLS"
 msgstr "Fix HLS"
 
@@ -2598,6 +2619,10 @@ msgstr "Fixed Interval"
 #: src/components/pipeline/workflows/step-config-dialog.tsx:296
 msgid "Flow & Dependencies"
 msgstr "Flow & Dependencies"
+
+#: src/components/config/engines/forms/mesio-form.tsx:137
+msgid "FLV Fix (Advanced)"
+msgstr "FLV Fix (Advanced)"
 
 #: src/routes/_authed/_dashboard/config/logging.tsx:58
 msgid "FLV parser"
@@ -2784,7 +2809,7 @@ msgstr "H.264"
 msgid "H.264 medium compression (CRF 23) optimized for long-term storage."
 msgstr "H.264 medium compression (CRF 23) optimized for long-term storage."
 
-#: src/components/config/engines/forms/mesio-form.tsx:98
+#: src/components/config/engines/forms/mesio-form.tsx:118
 msgid "Handle discontinuities in HLS streams"
 msgstr "Handle discontinuities in HLS streams"
 
@@ -4921,6 +4946,10 @@ msgstr "Replace output files"
 msgid "Replace output files if they already exist"
 msgstr "Replace output files if they already exist"
 
+#: src/components/config/engines/forms/mesio-form.tsx:294
+msgid "Replay Backjump Threshold (ms)"
+msgstr "Replay Backjump Threshold (ms)"
+
 #: src/components/notifications/forms/webhook-form.tsx:182
 msgid "Request timeout duration"
 msgstr "Request timeout duration"
@@ -5554,6 +5583,18 @@ msgstr "Split after duration."
 msgid "Split after size."
 msgstr "Split after size."
 
+#: src/components/config/engines/forms/mesio-form.tsx:148
+msgid "Split on sequence header change"
+msgstr "Split on sequence header change"
+
+#: src/components/config/engines/forms/mesio-form.tsx:189
+msgid "Split only when codec configuration changes (reduces false splits)."
+msgstr "Split only when codec configuration changes (reduces false splits)."
+
+#: src/components/config/engines/forms/mesio-form.tsx:166
+msgid "Split whenever raw sequence-header bytes change (most conservative, may split on non-semantic changes)."
+msgstr "Split whenever raw sequence-header bytes change (most conservative, may split on non-semantic changes)."
+
 #: src/components/pipeline/presets/default-presets-i18n.ts:83
 msgid "Standard"
 msgstr "Standard"
@@ -5770,6 +5811,10 @@ msgstr "Supported"
 #: src/components/config/platforms/supported-platforms.tsx:27
 msgid "Supported Platforms"
 msgstr "Supported Platforms"
+
+#: src/components/config/engines/forms/mesio-form.tsx:213
+msgid "Suppress redundant sequence headers with the same config (can reduce player stutter)."
+msgstr "Suppress redundant sequence headers with the same config (can reduce player stutter)."
 
 #: src/components/language-switcher.tsx:39
 #: src/components/language-switcher.tsx:45
@@ -6619,6 +6664,10 @@ msgstr "Width"
 #: src/components/pipeline/presets/processors/thumbnail-config-form.tsx:94
 msgid "Width in pixels (keeps aspect ratio)"
 msgstr "Width in pixels (keeps aspect ratio)"
+
+#: src/components/config/engines/forms/mesio-form.tsx:275
+msgid "Window Capacity (Tags)"
+msgstr "Window Capacity (Tags)"
 
 #: src/components/pipeline/presets/processors/tdl-login-dialog.tsx:450
 msgid "Windows Console Error"

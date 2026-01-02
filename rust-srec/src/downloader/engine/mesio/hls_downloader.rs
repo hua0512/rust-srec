@@ -140,34 +140,34 @@ impl HlsDownloader {
         // Peek at the first segment to determine file extension
         let first_segment = loop {
             match hls_stream.next().await {
-            Some(Ok(HlsData::EndMarker)) => {
-                debug!("Skipping leading HLS EndMarker before first data segment");
-                continue;
-            }
-            Some(Ok(segment)) => break segment,
-            Some(Err(e)) => {
-                let _ = self
-                    .event_tx
-                    .send(SegmentEvent::DownloadFailed {
-                        error: format!("Failed to get first HLS segment: {}", e),
-                        recoverable: true,
-                    })
-                    .await;
-                return Err(crate::Error::Other(format!(
-                    "Failed to get first HLS segment: {}",
-                    e
-                )));
-            }
-            None => {
-                let _ = self
-                    .event_tx
-                    .send(SegmentEvent::DownloadFailed {
-                        error: "HLS stream is empty".to_string(),
-                        recoverable: false,
-                    })
-                    .await;
-                return Err(crate::Error::Other("HLS stream is empty".to_string()));
-            }
+                Some(Ok(HlsData::EndMarker)) => {
+                    debug!("Skipping leading HLS EndMarker before first data segment");
+                    continue;
+                }
+                Some(Ok(segment)) => break segment,
+                Some(Err(e)) => {
+                    let _ = self
+                        .event_tx
+                        .send(SegmentEvent::DownloadFailed {
+                            error: format!("Failed to get first HLS segment: {}", e),
+                            recoverable: true,
+                        })
+                        .await;
+                    return Err(crate::Error::Other(format!(
+                        "Failed to get first HLS segment: {}",
+                        e
+                    )));
+                }
+                None => {
+                    let _ = self
+                        .event_tx
+                        .send(SegmentEvent::DownloadFailed {
+                            error: "HLS stream is empty".to_string(),
+                            recoverable: false,
+                        })
+                        .await;
+                    return Err(crate::Error::Other("HLS stream is empty".to_string()));
+                }
             }
         };
 
