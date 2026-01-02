@@ -18,12 +18,67 @@ use crate::api::server::AppState;
 use crate::credentials::CredentialScope;
 use crate::database::models::{
     EngineConfigurationDbModel, FilterDbModel, NotificationChannelDbModel, PlatformConfigDbModel,
-    StreamerDbModel, TemplateConfigDbModel,
+    StreamerDbModel, TemplateConfigDbModel, UserDbModel,
 };
 use crate::database::models::{JobPreset, PipelinePreset};
 
 /// Current schema version for exports.
-const EXPORT_SCHEMA_VERSION: &str = "0.1.0";
+const EXPORT_SCHEMA_VERSION: &str = "0.1.3";
+
+fn schema_version_at_least(version: &str, min: (u32, u32, u32)) -> bool {
+    fn parse_segment(segment: &str) -> Option<u32> {
+        let digits: String = segment.chars().take_while(|c| c.is_ascii_digit()).collect();
+        if digits.is_empty() {
+            return None;
+        }
+        digits.parse().ok()
+    }
+
+    let mut parts = version.split('.');
+    let Some(major) = parts.next().and_then(parse_segment) else {
+        return false;
+    };
+    let Some(minor) = parts.next().and_then(parse_segment) else {
+        return false;
+    };
+    let Some(patch) = parts.next().and_then(parse_segment) else {
+        return false;
+    };
+
+    (major, minor, patch) >= min
+}
+
+fn default_streamer_state() -> String {
+    "NOT_LIVE".to_string()
+}
+
+async fn revoke_all_refresh_tokens(
+    auth_service: &crate::api::auth_service::AuthService,
+) -> Result<(), ApiError> {
+    let user_repo = auth_service.user_repository();
+    let total_users = user_repo
+        .count()
+        .await
+        .map_err(|e| ApiError::internal(format!("Failed to count users: {}", e)))?;
+
+    if total_users == 0 {
+        return Ok(());
+    }
+
+    let users = user_repo
+        .list(total_users, 0)
+        .await
+        .map_err(|e| ApiError::internal(format!("Failed to list users: {}", e)))?;
+
+    for user in users {
+        auth_service
+            .logout_all(&user.id)
+            .await
+            .map_err(|e| ApiError::internal(format!("Failed to revoke refresh tokens: {}", e)))?;
+    }
+
+    Ok(())
+}
 
 /// Unwraps double-encoded JSON values.
 fn unwrap_json_value(mut v: serde_json::Value) -> serde_json::Value {
@@ -57,6 +112,38 @@ fn parse_db_config(s: impl Into<String>) -> serde_json::Value {
     }
     let value = serde_json::from_str(&s).unwrap_or(serde_json::Value::String(s));
     unwrap_json_value(value)
+}
+
+fn build_streamer_export(
+    streamer: &StreamerDbModel,
+    platform_map: &HashMap<String, String>,
+    template_map: &HashMap<String, String>,
+    filters: Vec<FilterExport>,
+) -> StreamerExport {
+    let platform_name = platform_map
+        .get(&streamer.platform_config_id)
+        .cloned()
+        .unwrap_or_else(|| streamer.platform_config_id.clone());
+
+    let template_name = streamer
+        .template_config_id
+        .as_ref()
+        .and_then(|id| template_map.get(id).cloned());
+
+    StreamerExport {
+        name: streamer.name.clone(),
+        url: streamer.url.clone(),
+        platform: platform_name,
+        template: template_name,
+        priority: streamer.priority.clone(),
+        state: streamer.state.clone(),
+        avatar_url: streamer.avatar.clone(),
+        streamer_specific_config: streamer
+            .streamer_specific_config
+            .clone()
+            .map(parse_db_config),
+        filters,
+    }
 }
 
 /// Create the export/import router.
@@ -95,6 +182,9 @@ pub struct ConfigExport {
     /// All pipeline presets (workflow configurations).
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub pipeline_presets: Vec<PipelinePresetExport>,
+    /// All users (authentication accounts).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub users: Vec<UserExport>,
 }
 
 /// Global configuration for export (excludes internal ID).
@@ -160,6 +250,11 @@ pub struct StreamerExport {
     /// Template name (resolved from template_config_id).
     pub template: Option<String>,
     pub priority: String,
+    /// Streamer operational state (e.g. NOT_LIVE, LIVE).
+    #[serde(default = "default_streamer_state")]
+    pub state: String,
+    /// Streamer avatar URL (if known).
+    pub avatar_url: Option<String>,
     pub streamer_specific_config: Option<serde_json::Value>,
     /// Associated filters.
     pub filters: Vec<FilterExport>,
@@ -233,6 +328,22 @@ pub struct PipelinePresetExport {
     pub pipeline_type: Option<String>,
 }
 
+/// User account for export (uses username as identifier).
+#[derive(Debug, Clone, Serialize, Deserialize, utoipa::ToSchema)]
+pub struct UserExport {
+    pub id: String,
+    pub username: String,
+    /// Argon2id password hash (sensitive but required for full restore).
+    pub password_hash: String,
+    pub email: Option<String>,
+    pub roles: Vec<String>,
+    pub is_active: bool,
+    pub must_change_password: bool,
+    pub last_login_at: Option<String>,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
 // ============================================================================
 // Import Data Models
 // ============================================================================
@@ -288,6 +399,9 @@ pub struct ImportStats {
     pub pipeline_presets_created: u32,
     pub pipeline_presets_updated: u32,
     pub pipeline_presets_deleted: u32,
+    pub users_created: u32,
+    pub users_updated: u32,
+    pub users_deleted: u32,
 }
 
 // ============================================================================
@@ -309,10 +423,10 @@ pub async fn export_config(State(state): State<AppState>) -> Result<impl IntoRes
         .as_ref()
         .ok_or_else(|| ApiError::internal("ConfigService not available"))?;
 
-    let streamer_manager = state
-        .streamer_manager
+    let streamer_repo = state
+        .streamer_repository
         .as_ref()
-        .ok_or_else(|| ApiError::internal("StreamerManager not available"))?;
+        .ok_or_else(|| ApiError::internal("StreamerRepository not available"))?;
 
     let notification_repo = state
         .notification_repository
@@ -333,6 +447,40 @@ pub async fn export_config(State(state): State<AppState>) -> Result<impl IntoRes
         .pipeline_preset_repository
         .as_ref()
         .ok_or_else(|| ApiError::internal("PipelinePresetRepository not available"))?;
+
+    let user_exports = if let Some(auth_service) = state.auth_service.as_ref() {
+        let user_repo = auth_service.user_repository();
+        let total_users = user_repo
+            .count()
+            .await
+            .map_err(|e| ApiError::internal(format!("Failed to count users: {}", e)))?;
+
+        let users = user_repo
+            .list(total_users, 0)
+            .await
+            .map_err(|e| ApiError::internal(format!("Failed to list users: {}", e)))?;
+
+        users
+            .into_iter()
+            .map(|u: UserDbModel| {
+                let roles = u.get_roles();
+                UserExport {
+                    id: u.id,
+                    username: u.username,
+                    password_hash: u.password_hash,
+                    email: u.email,
+                    roles,
+                    is_active: u.is_active,
+                    must_change_password: u.must_change_password,
+                    last_login_at: u.last_login_at,
+                    created_at: u.created_at,
+                    updated_at: u.updated_at,
+                }
+            })
+            .collect::<Vec<_>>()
+    } else {
+        Vec::new()
+    };
 
     // Collect all data
     let global_config = config_service
@@ -355,8 +503,10 @@ pub async fn export_config(State(state): State<AppState>) -> Result<impl IntoRes
         .await
         .map_err(|e| ApiError::internal(format!("Failed to list platforms: {}", e)))?;
 
-    // Get streamers from manager and convert to list
-    let streamer_metadata_list = streamer_manager.get_all();
+    let streamers = streamer_repo
+        .list_streamers()
+        .await
+        .map_err(|e| ApiError::internal(format!("Failed to list streamers: {}", e)))?;
 
     let channels = notification_repo
         .list_channels()
@@ -387,7 +537,7 @@ pub async fn export_config(State(state): State<AppState>) -> Result<impl IntoRes
 
     // Export streamers with filters
     let mut streamer_exports = Vec::new();
-    for streamer in &streamer_metadata_list {
+    for streamer in &streamers {
         let filters = filter_repo
             .get_filters_for_streamer(&streamer.id)
             .await
@@ -401,28 +551,12 @@ pub async fn export_config(State(state): State<AppState>) -> Result<impl IntoRes
             })
             .collect();
 
-        let platform_name = platform_map
-            .get(&streamer.platform_config_id)
-            .cloned()
-            .unwrap_or_else(|| streamer.platform_config_id.clone());
-
-        let template_name = streamer
-            .template_config_id
-            .as_ref()
-            .and_then(|id| template_map.get(id).cloned());
-
-        streamer_exports.push(StreamerExport {
-            name: streamer.name.clone(),
-            url: streamer.url.clone(),
-            platform: platform_name,
-            template: template_name,
-            priority: streamer.priority.as_str().to_string(),
-            streamer_specific_config: streamer
-                .streamer_specific_config
-                .clone()
-                .map(parse_db_config),
-            filters: filter_exports,
-        });
+        streamer_exports.push(build_streamer_export(
+            streamer,
+            &platform_map,
+            &template_map,
+            filter_exports,
+        ));
     }
 
     // Export notification channels with subscriptions
@@ -549,6 +683,7 @@ pub async fn export_config(State(state): State<AppState>) -> Result<impl IntoRes
                 pipeline_type: pp.pipeline_type,
             })
             .collect(),
+        users: user_exports,
     };
 
     let json = serde_json::to_string_pretty(&export)
@@ -591,6 +726,8 @@ pub async fn import_config(
     let config = request.config;
     let mode = request.mode;
     let credential_service = state.credential_service.clone();
+    let includes_users =
+        schema_version_at_least(&config.version, (0, 1, 3)) && !config.users.is_empty();
 
     // Validate schema version
     if !config.version.starts_with("0.") {
@@ -1016,12 +1153,24 @@ pub async fn import_config(
             .and_then(|name| new_template_name_to_id.get(name).cloned());
 
         if let Some(existing) = streamer_url_map.get(&streamer_export.url) {
+            if crate::domain::StreamerState::parse(&streamer_export.state).is_none() {
+                return Err(ApiError::bad_request(format!(
+                    "Invalid state '{}' for streamer '{}'",
+                    streamer_export.state, streamer_export.name
+                )));
+            }
+
             // Update existing
             let mut updated = existing.clone();
             updated.name = streamer_export.name.clone();
             updated.platform_config_id = platform_id;
             updated.template_config_id = template_id;
+            updated.state = streamer_export.state.clone();
             updated.priority = streamer_export.priority.clone();
+            updated.avatar = streamer_export
+                .avatar_url
+                .clone()
+                .filter(|s| !s.trim().is_empty());
             updated.streamer_specific_config = streamer_export
                 .streamer_specific_config
                 .clone()
@@ -1058,11 +1207,23 @@ pub async fn import_config(
 
             stats.streamers_updated += 1;
         } else {
+            if crate::domain::StreamerState::parse(&streamer_export.state).is_none() {
+                return Err(ApiError::bad_request(format!(
+                    "Invalid state '{}' for streamer '{}'",
+                    streamer_export.state, streamer_export.name
+                )));
+            }
+
             // Create new
             let mut new_streamer =
                 StreamerDbModel::new(&streamer_export.name, &streamer_export.url, &platform_id);
             new_streamer.template_config_id = template_id;
+            new_streamer.state = streamer_export.state.clone();
             new_streamer.priority = streamer_export.priority.clone();
+            new_streamer.avatar = streamer_export
+                .avatar_url
+                .clone()
+                .filter(|s| !s.trim().is_empty());
             new_streamer.streamer_specific_config = streamer_export
                 .streamer_specific_config
                 .clone()
@@ -1335,15 +1496,138 @@ pub async fn import_config(
         }
     }
 
+    // 9. Import users (by username)
+    if includes_users {
+        if is_replace
+            && !config
+                .users
+                .iter()
+                .any(|u| u.is_active && u.roles.iter().any(|r| r == "admin"))
+        {
+            return Err(ApiError::bad_request(
+                "Replace import requires at least one active user with the 'admin' role",
+            ));
+        }
+
+        let auth_service = state
+            .auth_service
+            .as_ref()
+            .ok_or_else(|| ApiError::service_unavailable("Authentication not configured"))?;
+        let user_repo = auth_service.user_repository();
+
+        let total_users = user_repo
+            .count()
+            .await
+            .map_err(|e| ApiError::internal(format!("Failed to count users: {}", e)))?;
+        let existing_users = user_repo
+            .list(total_users, 0)
+            .await
+            .map_err(|e| ApiError::internal(format!("Failed to list users: {}", e)))?;
+        let user_username_map: HashMap<String, UserDbModel> = existing_users
+            .into_iter()
+            .map(|u| (u.username.clone(), u))
+            .collect();
+
+        for user_export in &config.users {
+            if user_export.username.trim().is_empty() {
+                return Err(ApiError::bad_request("User username cannot be empty"));
+            }
+            if user_export.id.trim().is_empty() {
+                return Err(ApiError::bad_request(format!(
+                    "User id cannot be empty for username '{}'",
+                    user_export.username
+                )));
+            }
+            if user_export.password_hash.trim().is_empty() {
+                return Err(ApiError::bad_request(format!(
+                    "User password_hash cannot be empty for username '{}'",
+                    user_export.username
+                )));
+            }
+
+            let roles_json = serde_json::to_string(&user_export.roles)
+                .unwrap_or_else(|_| r#"["user"]"#.to_string());
+
+            if let Some(existing) = user_username_map.get(&user_export.username) {
+                let mut updated = existing.clone();
+                updated.password_hash = user_export.password_hash.clone();
+                updated.email = user_export.email.clone();
+                updated.roles = roles_json;
+                updated.is_active = user_export.is_active;
+                updated.must_change_password = user_export.must_change_password;
+                updated.last_login_at = user_export.last_login_at.clone();
+
+                user_repo
+                    .update(&updated)
+                    .await
+                    .map_err(|e| ApiError::internal(format!("Failed to update user: {}", e)))?;
+                stats.users_updated += 1;
+            } else {
+                let id_conflict = user_repo
+                    .find_by_id(&user_export.id)
+                    .await
+                    .map_err(|e| {
+                        ApiError::internal(format!("Failed to check user id conflict: {}", e))
+                    })?
+                    .is_some();
+                if id_conflict {
+                    return Err(ApiError::bad_request(format!(
+                        "User id '{}' is already in use (username '{}')",
+                        user_export.id, user_export.username
+                    )));
+                }
+
+                let new_user = UserDbModel {
+                    id: user_export.id.clone(),
+                    username: user_export.username.clone(),
+                    password_hash: user_export.password_hash.clone(),
+                    email: user_export.email.clone(),
+                    roles: roles_json,
+                    is_active: user_export.is_active,
+                    must_change_password: user_export.must_change_password,
+                    last_login_at: user_export.last_login_at.clone(),
+                    created_at: user_export.created_at.clone(),
+                    updated_at: user_export.updated_at.clone(),
+                };
+
+                user_repo
+                    .create(&new_user)
+                    .await
+                    .map_err(|e| ApiError::internal(format!("Failed to create user: {}", e)))?;
+                stats.users_created += 1;
+            }
+        }
+
+        // In replace mode, delete users not in the import
+        if is_replace {
+            let imported_usernames: std::collections::HashSet<&str> =
+                config.users.iter().map(|u| u.username.as_str()).collect();
+
+            for (username, user) in &user_username_map {
+                if !imported_usernames.contains(username.as_str())
+                    && user_repo.delete(&user.id).await.is_ok()
+                {
+                    stats.users_deleted += 1;
+                }
+            }
+        }
+    }
+
+    // Revoke all refresh tokens after any successful import so clients must re-authenticate.
+    if let Some(auth_service) = state.auth_service.as_ref() {
+        revoke_all_refresh_tokens(auth_service).await?;
+    }
+
     let stats_msg = format!(
-        "Imported: {} templates, {} streamers, {} engines, {} platforms updated, {} channels, {} job presets, {} pipeline presets",
+        "Imported: {} templates, {} streamers, {} engines, {} platforms updated, {} channels, {} job presets, {} pipeline presets, {} users",
         stats.templates_created + stats.templates_updated,
         stats.streamers_created + stats.streamers_updated,
         stats.engines_created + stats.engines_updated,
         stats.platforms_updated,
         stats.channels_created + stats.channels_updated,
         stats.job_presets_created + stats.job_presets_updated,
-        stats.pipeline_presets_created + stats.pipeline_presets_updated
+        stats.pipeline_presets_created + stats.pipeline_presets_updated,
+        stats.users_created + stats.users_updated
     );
 
     Ok(Json(ImportResult {
@@ -1356,6 +1640,248 @@ pub async fn import_config(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::api::auth_service::{AuthConfig, AuthService};
+    use crate::api::jwt::JwtService;
+    use crate::database::models::RefreshTokenDbModel;
+    use crate::database::repositories::{RefreshTokenRepository, UserRepository};
+    use std::sync::Arc;
+    use tokio::sync::Mutex;
+
+    #[test]
+    fn test_schema_version_at_least() {
+        assert!(schema_version_at_least("0.1.3", (0, 1, 3)));
+        assert!(schema_version_at_least("0.1.10", (0, 1, 3)));
+        assert!(!schema_version_at_least("0.1.2", (0, 1, 3)));
+        assert!(schema_version_at_least("0.1.3-alpha.1", (0, 1, 3)));
+        assert!(!schema_version_at_least("invalid", (0, 1, 3)));
+    }
+
+    #[test]
+    fn test_streamer_export_serialization_includes_avatar_url() {
+        let streamer = StreamerExport {
+            name: "test".to_string(),
+            url: "https://example.com/streamer".to_string(),
+            platform: "twitch".to_string(),
+            template: None,
+            priority: "NORMAL".to_string(),
+            state: "NOT_LIVE".to_string(),
+            avatar_url: Some("https://example.com/avatar.png".to_string()),
+            streamer_specific_config: None,
+            filters: vec![],
+        };
+
+        let json = serde_json::to_value(&streamer).unwrap();
+        assert_eq!(json["state"], "NOT_LIVE");
+        assert_eq!(json["avatar_url"], "https://example.com/avatar.png");
+    }
+
+    #[test]
+    fn test_streamer_export_deserialization_missing_avatar_url_defaults_to_none() {
+        let json = r#"{
+            "name":"test",
+            "url":"https://example.com/streamer",
+            "platform":"twitch",
+            "template":null,
+            "priority":"NORMAL",
+            "state":"NOT_LIVE",
+            "streamer_specific_config":null,
+            "filters":[]
+        }"#;
+
+        let streamer: StreamerExport = serde_json::from_str(json).unwrap();
+        assert_eq!(streamer.avatar_url, None);
+    }
+
+    #[test]
+    fn test_streamer_export_deserialization_missing_state_defaults_to_not_live() {
+        let json = r#"{
+            "name":"test",
+            "url":"https://example.com/streamer",
+            "platform":"twitch",
+            "template":null,
+            "priority":"NORMAL",
+            "avatar_url":null,
+            "streamer_specific_config":null,
+            "filters":[]
+        }"#;
+
+        let streamer: StreamerExport = serde_json::from_str(json).unwrap();
+        assert_eq!(streamer.state, "NOT_LIVE");
+    }
+
+    #[test]
+    fn test_user_export_serialization_includes_sensitive_fields() {
+        let user = UserExport {
+            id: "user-1".to_string(),
+            username: "admin".to_string(),
+            password_hash: "$argon2id$v=19$m=19456,t=2,p=1$abc$def".to_string(),
+            email: None,
+            roles: vec!["admin".to_string(), "user".to_string()],
+            is_active: true,
+            must_change_password: false,
+            last_login_at: None,
+            created_at: "2026-01-01T00:00:00Z".to_string(),
+            updated_at: "2026-01-01T00:00:00Z".to_string(),
+        };
+
+        let json = serde_json::to_value(&user).unwrap();
+        assert_eq!(json["username"], "admin");
+        assert_eq!(
+            json["password_hash"],
+            "$argon2id$v=19$m=19456,t=2,p=1$abc$def"
+        );
+        assert_eq!(json["roles"][0], "admin");
+    }
+
+    #[test]
+    fn test_build_streamer_export_includes_streamer_specific_config_refresh_token() {
+        let mut streamer =
+            StreamerDbModel::new("test", "https://live.bilibili.com/123", "platform-bilibili");
+        streamer.streamer_specific_config =
+            Some(r#"{"refresh_token":"rt","cookies":"c"}"#.to_string());
+
+        let platform_map =
+            HashMap::from([("platform-bilibili".to_string(), "bilibili".to_string())]);
+        let template_map = HashMap::new();
+
+        let export = build_streamer_export(&streamer, &platform_map, &template_map, vec![]);
+        assert_eq!(export.platform, "bilibili");
+        assert_eq!(
+            export
+                .streamer_specific_config
+                .and_then(|v| v.get("refresh_token").cloned()),
+            Some(serde_json::Value::String("rt".to_string()))
+        );
+    }
+
+    #[tokio::test]
+    async fn test_revoke_all_refresh_tokens_revokes_for_all_users() {
+        #[derive(Clone)]
+        struct TestUserRepo {
+            users: Vec<UserDbModel>,
+        }
+
+        #[async_trait::async_trait]
+        impl UserRepository for TestUserRepo {
+            async fn create(&self, _user: &UserDbModel) -> crate::Result<()> {
+                Ok(())
+            }
+
+            async fn find_by_id(&self, _id: &str) -> crate::Result<Option<UserDbModel>> {
+                Ok(None)
+            }
+
+            async fn find_by_username(
+                &self,
+                _username: &str,
+            ) -> crate::Result<Option<UserDbModel>> {
+                Ok(None)
+            }
+
+            async fn find_by_email(&self, _email: &str) -> crate::Result<Option<UserDbModel>> {
+                Ok(None)
+            }
+
+            async fn update(&self, _user: &UserDbModel) -> crate::Result<()> {
+                Ok(())
+            }
+
+            async fn delete(&self, _id: &str) -> crate::Result<()> {
+                Ok(())
+            }
+
+            async fn list(&self, _limit: i64, _offset: i64) -> crate::Result<Vec<UserDbModel>> {
+                Ok(self.users.clone())
+            }
+
+            async fn update_last_login(
+                &self,
+                _id: &str,
+                _time: chrono::DateTime<chrono::Utc>,
+            ) -> crate::Result<()> {
+                Ok(())
+            }
+
+            async fn update_password(
+                &self,
+                _id: &str,
+                _password_hash: &str,
+                _clear_must_change: bool,
+            ) -> crate::Result<()> {
+                Ok(())
+            }
+
+            async fn count(&self) -> crate::Result<i64> {
+                Ok(self.users.len() as i64)
+            }
+        }
+
+        struct TestTokenRepo {
+            revoked_for_users: Mutex<Vec<String>>,
+        }
+
+        #[async_trait::async_trait]
+        impl RefreshTokenRepository for TestTokenRepo {
+            async fn create(&self, _token: &RefreshTokenDbModel) -> crate::Result<()> {
+                Ok(())
+            }
+
+            async fn find_by_token_hash(
+                &self,
+                _hash: &str,
+            ) -> crate::Result<Option<RefreshTokenDbModel>> {
+                Ok(None)
+            }
+
+            async fn find_active_by_user(
+                &self,
+                _user_id: &str,
+            ) -> crate::Result<Vec<RefreshTokenDbModel>> {
+                Ok(vec![])
+            }
+
+            async fn revoke(&self, _id: &str) -> crate::Result<()> {
+                Ok(())
+            }
+
+            async fn revoke_all_for_user(&self, user_id: &str) -> crate::Result<()> {
+                self.revoked_for_users
+                    .lock()
+                    .await
+                    .push(user_id.to_string());
+                Ok(())
+            }
+
+            async fn cleanup_expired(&self) -> crate::Result<u64> {
+                Ok(0)
+            }
+
+            async fn count_active_by_user(&self, _user_id: &str) -> crate::Result<i64> {
+                Ok(0)
+            }
+        }
+
+        let user1 = UserDbModel::new("user1", "hash1", vec!["user".to_string()]);
+        let user2 = UserDbModel::new("user2", "hash2", vec!["user".to_string()]);
+
+        let user_repo: Arc<dyn UserRepository> = Arc::new(TestUserRepo {
+            users: vec![user1.clone(), user2.clone()],
+        });
+        let token_repo = Arc::new(TestTokenRepo {
+            revoked_for_users: Mutex::new(vec![]),
+        });
+        let token_repo_dyn: Arc<dyn RefreshTokenRepository> = token_repo.clone();
+
+        let jwt = Arc::new(JwtService::new("secret", "issuer", "aud", Some(3600)));
+        let auth = AuthService::new(user_repo, token_repo_dyn, jwt, AuthConfig::default());
+
+        revoke_all_refresh_tokens(&auth).await.unwrap();
+
+        let revoked = token_repo.revoked_for_users.lock().await.clone();
+        assert!(revoked.contains(&user1.id));
+        assert!(revoked.contains(&user2.id));
+        assert_eq!(revoked.len(), 2);
+    }
 
     #[test]
     fn test_global_config_export_serialization_with_log_filter() {

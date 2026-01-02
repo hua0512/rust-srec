@@ -195,6 +195,10 @@ impl AuthService {
         }
     }
 
+    pub fn user_repository(&self) -> Arc<dyn UserRepository> {
+        self.user_repo.clone()
+    }
+
     /// Hash a password using Argon2id with OWASP recommended parameters.
     pub fn hash_password(password: &str) -> Result<String, AuthError> {
         // OWASP recommended parameters: m=19456 (19 MiB), t=2, p=1
