@@ -12,8 +12,7 @@ use tracing::debug;
 
 use crate::{
     BoxMediaStream, CacheManager, Download, DownloadError, ProtocolBase, SourceManager,
-    create_client,
-    hls::HlsDownloaderError,
+    create_client, hls::HlsDownloaderError,
 };
 use tokio_util::sync::CancellationToken;
 

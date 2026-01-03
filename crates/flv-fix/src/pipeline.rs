@@ -24,8 +24,9 @@
 use crate::operators::{
     ContinuityMode, DefragmentOperator, DuplicateTagFilterConfig, DuplicateTagFilterOperator,
     GopSortOperator, HeaderCheckOperator, LimitConfig, LimitOperator, RepairStrategy,
-    ScriptFillerConfig, ScriptFilterOperator, ScriptKeyframesFillerOperator, SequenceHeaderChangeMode,
-    SplitOperator, TimeConsistencyOperator, TimingRepairConfig, TimingRepairOperator,
+    ScriptFillerConfig, ScriptFilterOperator, ScriptKeyframesFillerOperator,
+    SequenceHeaderChangeMode, SplitOperator, TimeConsistencyOperator, TimingRepairConfig,
+    TimingRepairOperator,
 };
 use flv::data::FlvData;
 use flv::error::FlvError;

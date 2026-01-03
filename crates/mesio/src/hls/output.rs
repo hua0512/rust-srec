@@ -383,7 +383,7 @@ impl OutputManager {
     ///
     #[allow(dead_code)]
     pub fn metrics(&self) -> &ReorderBufferMetrics {
-        // Note: We return a reference to the inner ReorderBufferMetrics        
+        // Note: We return a reference to the inner ReorderBufferMetrics
         // The Arc is used internally for potential future sharing
         &self.metrics
     }

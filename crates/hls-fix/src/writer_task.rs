@@ -385,7 +385,10 @@ mod tests {
         tx.blocking_send(seg(&[2u8; 10])).unwrap();
         drop(tx);
 
-        let result = handle.join().expect("writer thread join").expect("writer ok");
+        let result = handle
+            .join()
+            .expect("writer thread join")
+            .expect("writer ok");
         let (_items_written, files_created, _total_bytes, _total_duration) = result;
 
         // One rotation means file sequence number increments once.
@@ -418,7 +421,10 @@ mod tests {
         tx.blocking_send(Ok(HlsData::EndMarker)).unwrap();
         drop(tx);
 
-        let result = handle.join().expect("writer thread join").expect("writer ok");
+        let result = handle
+            .join()
+            .expect("writer thread join")
+            .expect("writer ok");
         let (_items_written, files_created, total_bytes, total_duration) = result;
         assert_eq!(files_created, 0);
         assert_eq!(total_bytes, 0);

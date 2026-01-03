@@ -152,7 +152,8 @@ impl DuplicateTagFilterOperator {
         let seq = self.seq;
 
         self.seen.insert(key);
-        self.fingerprint_last.insert(fingerprint, (tag.timestamp_ms, seq));
+        self.fingerprint_last
+            .insert(fingerprint, (tag.timestamp_ms, seq));
         self.order.push_back(SeenEntry {
             key,
             fingerprint,
@@ -177,11 +178,7 @@ impl DuplicateTagFilterOperator {
         self.seen.contains(&key)
     }
 
-    fn replay_mapped_key(
-        &mut self,
-        tag: &FlvTag,
-        fingerprint: FingerprintKey,
-    ) -> Option<TagKey> {
+    fn replay_mapped_key(&mut self, tag: &FlvTag, fingerprint: FingerprintKey) -> Option<TagKey> {
         if !self.replay_active || !self.config.enable_replay_offset_matching {
             return None;
         }
@@ -339,11 +336,15 @@ mod tests {
 
         // Duplicate video and audio tags at the same timestamp.
         let v = create_video_tag(100, true);
-        operator.process(&context, v.clone(), &mut output_fn).unwrap();
+        operator
+            .process(&context, v.clone(), &mut output_fn)
+            .unwrap();
         operator.process(&context, v, &mut output_fn).unwrap();
 
         let a = create_audio_tag(120);
-        operator.process(&context, a.clone(), &mut output_fn).unwrap();
+        operator
+            .process(&context, a.clone(), &mut output_fn)
+            .unwrap();
         operator.process(&context, a, &mut output_fn).unwrap();
 
         let video_count = output_items

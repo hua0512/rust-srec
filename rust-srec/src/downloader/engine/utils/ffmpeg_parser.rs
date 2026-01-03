@@ -108,7 +108,13 @@ pub fn parse_time_field(line: &str) -> Option<f64> {
 /// * `Some(DownloadProgress)` - If the line contains progress info
 /// * `None` - If the line is not a progress line
 pub fn parse_progress(line: &str) -> Option<DownloadProgress> {
-    if !line.contains("size=") {
+    // FFmpeg typically emits progress lines like:
+    // `frame=... size=... time=... bitrate=... speed=...`
+    //
+    // When segmenting, some builds/loglevels may omit `size=` while still
+    // reporting `time=`. Require `time=` plus at least one other known progress
+    // marker to avoid parsing unrelated lines.
+    if !line.contains("time=") || !(line.contains("frame=") || line.contains("size=")) {
         return None;
     }
 
@@ -235,6 +241,25 @@ mod tests {
         assert_eq!(p.bytes_downloaded, 512 * 1024);
         assert_eq!(p.duration_secs, 10.0);
         assert_eq!(p.playback_ratio, 0.0); // No speed field
+    }
+
+    #[test]
+    fn test_parse_progress_without_size_field() {
+        // Some FFmpeg outputs can omit `size=` while still reporting `time=`.
+        let line = "frame=  100 fps=25 q=-1.0 time=00:00:04.00 bitrate=2097.2kbits/s speed=1.00x";
+        let progress = parse_progress(line);
+
+        assert!(progress.is_some());
+        let p = progress.unwrap();
+        assert_eq!(p.bytes_downloaded, 0);
+        assert_eq!(p.duration_secs, 4.0);
+        assert_eq!(p.media_duration_secs, 4.0);
+        assert_eq!(p.playback_ratio, 1.0);
+    }
+
+    #[test]
+    fn test_parse_progress_time_only_is_not_progress() {
+        assert!(parse_progress("time=00:00:10.00").is_none());
     }
 
     #[test]

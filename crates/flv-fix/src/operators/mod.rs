@@ -26,7 +26,7 @@ pub use limit::LimitOperator;
 pub use script_filler::MIN_INTERVAL_BETWEEN_KEYFRAMES_MS;
 pub use script_filler::{ScriptFillerConfig, ScriptKeyframesFillerOperator};
 pub use script_filter::ScriptFilterOperator;
-pub use split::SplitOperator;
 pub use split::SequenceHeaderChangeMode;
+pub use split::SplitOperator;
 pub use time_consistency::{ContinuityMode, TimeConsistencyOperator};
 pub use timing_repair::{RepairStrategy, TimingRepairConfig, TimingRepairOperator};

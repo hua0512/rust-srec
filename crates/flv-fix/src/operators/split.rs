@@ -941,7 +941,10 @@ mod tests {
             .filter(|item| matches!(item, FlvData::Header(_)))
             .count();
 
-        assert_eq!(header_count, 1, "Should not split on non-config differences");
+        assert_eq!(
+            header_count, 1,
+            "Should not split on non-config differences"
+        );
     }
 
     #[test]
@@ -983,11 +986,7 @@ mod tests {
             ]),
         });
         operator
-            .process(
-                &context,
-                same_config_different_header_bits,
-                &mut output_fn,
-            )
+            .process(&context, same_config_different_header_bits, &mut output_fn)
             .unwrap();
         operator
             .process(&context, create_audio_tag(200), &mut output_fn)
@@ -1040,7 +1039,10 @@ mod tests {
             .filter(|tag| tag.is_video_sequence_header())
             .count();
 
-        assert_eq!(seq_hdr_count, 1, "Expected duplicate video sequence header to be dropped");
+        assert_eq!(
+            seq_hdr_count, 1,
+            "Expected duplicate video sequence header to be dropped"
+        );
     }
 
     #[test]
@@ -1082,6 +1084,9 @@ mod tests {
             .filter(|tag| tag.is_audio_sequence_header())
             .count();
 
-        assert_eq!(seq_hdr_count, 1, "Expected duplicate audio sequence header to be dropped");
+        assert_eq!(
+            seq_hdr_count, 1,
+            "Expected duplicate audio sequence header to be dropped"
+        );
     }
 }
