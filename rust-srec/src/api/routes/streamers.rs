@@ -433,9 +433,8 @@ pub async fn update_streamer(
     // Convert API priority to domain priority if provided
     let new_priority = request.priority.map(api_to_domain_priority);
 
-    // Convert template_id: Some(value) -> Some(Some(value)), None -> None
-    // This allows distinguishing between "not updating" and "setting to None"
-    let template_config_id = request.template_id.map(Some);
+    // `template_id` supports "missing" (no update) vs explicit `null` (clear).
+    let template_config_id = request.template_id;
 
     // Use partial_update_streamer for atomic update
     let metadata = streamer_manager

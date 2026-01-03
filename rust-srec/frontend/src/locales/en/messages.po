@@ -216,7 +216,7 @@ msgstr "Active"
 msgid "Active Days"
 msgstr "Active Days"
 
-#: src/components/streamers/edit/active-download-card.tsx:33
+#: src/components/streamers/edit/active-download-card.tsx:34
 msgid "Active Download"
 msgstr "Active Download"
 
@@ -300,7 +300,7 @@ msgstr "Add New Engine"
 msgid "Add New Filter"
 msgstr "Add New Filter"
 
-#: src/routes/_authed/_dashboard/streamers/new.tsx:46
+#: src/routes/_authed/_dashboard/streamers/new.tsx:49
 msgid "Add New Streamer"
 msgstr "Add New Streamer"
 
@@ -350,12 +350,12 @@ msgstr "Adjust the roundness of UI elements."
 #: src/components/pipeline/presets/processors/rclone-config-form.tsx:59
 #: src/components/pipeline/presets/processors/remux-config-form.tsx:108
 #: src/components/streamers/edit/streamer-config-form.tsx:74
-#: src/routes/_authed/_dashboard/streamers/$id.edit.tsx:363
+#: src/routes/_authed/_dashboard/streamers/$id.edit.tsx:239
 msgid "Advanced"
 msgstr "Advanced"
 
 #: src/components/streamers/edit/streamer-config-form.tsx:121
-#: src/routes/_authed/_dashboard/streamers/$id.edit.tsx:437
+#: src/routes/_authed/_dashboard/streamers/$id.edit.tsx:313
 msgid "Advanced Configuration"
 msgstr "Advanced Configuration"
 
@@ -691,7 +691,7 @@ msgid "Basic post-processing: Remux FLV to MP4 and generate a thumbnail preview.
 msgstr "Basic post-processing: Remux FLV to MP4 and generate a thumbnail preview."
 
 #: src/components/streamers/edit/streamer-config-form.tsx:94
-#: src/routes/_authed/_dashboard/streamers/$id.edit.tsx:404
+#: src/routes/_authed/_dashboard/streamers/$id.edit.tsx:280
 msgid "Basic settings for the streamer."
 msgstr "Basic settings for the streamer."
 
@@ -1078,7 +1078,7 @@ msgstr "Configure"
 msgid "Configure a new download tool."
 msgstr "Configure a new download tool."
 
-#: src/routes/_authed/_dashboard/streamers/new.tsx:48
+#: src/routes/_authed/_dashboard/streamers/new.tsx:51
 msgid "Configure a new streamer to monitor and record."
 msgstr "Configure a new streamer to monitor and record."
 
@@ -1308,7 +1308,7 @@ msgstr "Create Pipeline"
 msgid "Create Preset"
 msgstr "Create Preset"
 
-#: src/routes/_authed/_dashboard/streamers/new.tsx:50
+#: src/routes/_authed/_dashboard/streamers/new.tsx:53
 msgid "Create Streamer"
 msgstr "Create Streamer"
 
@@ -1617,6 +1617,10 @@ msgstr "Delete Source"
 msgid "Delete Source ASS"
 msgstr "Delete Source ASS"
 
+#: src/components/pipeline/presets/processors/metadata-config-form.tsx:288
+msgid "Delete source file after successful processing"
+msgstr "Delete source file after successful processing"
+
 #: src/components/pipeline/presets/processors/ass-burnin-config-form.tsx:332
 msgid "Delete Source Videos"
 msgstr "Delete Source Videos"
@@ -1785,7 +1789,7 @@ msgstr "Download Manager"
 msgid "Download Retry Policy"
 msgstr "Download Retry Policy"
 
-#: src/components/streamers/edit/active-download-card.tsx:39
+#: src/components/streamers/edit/active-download-card.tsx:40
 msgid "Downloading"
 msgstr "Downloading"
 
@@ -1814,7 +1818,7 @@ msgid "Duplicate media-tag filtering"
 msgstr "Duplicate media-tag filtering"
 
 #: src/components/pipeline/presets/processors/remux-config-form.tsx:514
-#: src/components/streamers/edit/active-download-card.tsx:68
+#: src/components/streamers/edit/active-download-card.tsx:69
 #: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.tsx:583
 msgid "Duration"
 msgstr "Duration"
@@ -2259,7 +2263,7 @@ msgid "Failed steps retry initiated"
 msgstr "Failed steps retry initiated"
 
 #: src/components/streamers/streamer-form.tsx:117
-#: src/routes/_authed/_dashboard/streamers/$id.edit.tsx:237
+#: src/hooks/use-edit-streamer.ts:119
 msgid "Failed to autofill name"
 msgstr "Failed to autofill name"
 
@@ -2330,7 +2334,7 @@ msgstr "Failed to create workflow: {0}"
 msgid "Failed to delete channel"
 msgstr "Failed to delete channel"
 
-#: src/routes/_authed/_dashboard/streamers/$id.edit.tsx:283
+#: src/hooks/use-edit-streamer.ts:92
 msgid "Failed to delete filter"
 msgstr "Failed to delete filter"
 
@@ -2370,7 +2374,7 @@ msgid "Failed to export configuration"
 msgstr "Failed to export configuration"
 
 #: src/components/streamers/streamer-form.tsx:113
-#: src/routes/_authed/_dashboard/streamers/$id.edit.tsx:233
+#: src/hooks/use-edit-streamer.ts:115
 msgid "Failed to extract name from URL"
 msgstr "Failed to extract name from URL"
 
@@ -2479,8 +2483,8 @@ msgstr "Failed to update preset: {0}"
 msgid "Failed to update settings"
 msgstr "Failed to update settings"
 
+#: src/hooks/use-edit-streamer.ts:80
 #: src/routes/_authed/_dashboard/dashboard.tsx:86
-#: src/routes/_authed/_dashboard/streamers/$id.edit.tsx:253
 #: src/routes/_authed/_dashboard/streamers/index.tsx:203
 msgid "Failed to update streamer"
 msgstr "Failed to update streamer"
@@ -2586,7 +2590,7 @@ msgstr "Filter by title keywords"
 msgid "Filter created successfully"
 msgstr "Filter created successfully"
 
-#: src/routes/_authed/_dashboard/streamers/$id.edit.tsx:279
+#: src/hooks/use-edit-streamer.ts:88
 msgid "Filter deleted successfully"
 msgstr "Filter deleted successfully"
 
@@ -2718,12 +2722,12 @@ msgstr "Full Processing"
 #: src/components/pipeline/presets/processors/rclone-config-form.tsx:53
 #: src/components/pipeline/presets/processors/remux-config-form.tsx:72
 #: src/components/streamers/edit/streamer-config-form.tsx:67
-#: src/routes/_authed/_dashboard/streamers/$id.edit.tsx:356
+#: src/routes/_authed/_dashboard/streamers/$id.edit.tsx:232
 msgid "General"
 msgstr "General"
 
 #: src/components/streamers/edit/streamer-config-form.tsx:91
-#: src/routes/_authed/_dashboard/streamers/$id.edit.tsx:401
+#: src/routes/_authed/_dashboard/streamers/$id.edit.tsx:277
 msgid "General Configuration"
 msgstr "General Configuration"
 
@@ -3263,8 +3267,8 @@ msgstr "List of allowed file extensions (without dot)."
 
 #: src/components/streamers/card/use-streamer-status.tsx:31
 #: src/components/streamers/card/use-streamer-status.tsx:167
-#: src/components/streamers/edit/recent-sessions-list.tsx:65
-#: src/components/streamers/edit/streamer-header.tsx:62
+#: src/components/streamers/edit/recent-sessions-list.tsx:71
+#: src/components/streamers/edit/streamer-header.tsx:63
 #: src/routes/_authed/_dashboard/sessions/index.tsx:187
 #: src/routes/_authed/_dashboard/streamers/index.tsx:68
 msgid "Live"
@@ -3651,7 +3655,7 @@ msgid "Name"
 msgstr "Name"
 
 #: src/components/streamers/streamer-form.tsx:109
-#: src/routes/_authed/_dashboard/streamers/$id.edit.tsx:229
+#: src/hooks/use-edit-streamer.ts:111
 msgid "Name autofilled successfully"
 msgstr "Name autofilled successfully"
 
@@ -3882,7 +3886,7 @@ msgstr "No presets yet"
 msgid "No preview generated"
 msgstr "No preview generated"
 
-#: src/components/streamers/edit/recent-sessions-list.tsx:102
+#: src/components/streamers/edit/recent-sessions-list.tsx:108
 msgid "No recent sessions found."
 msgstr "No recent sessions found."
 
@@ -4001,8 +4005,8 @@ msgstr "OAuth Token"
 #: src/components/streamers/card/use-streamer-status.tsx:30
 #: src/components/streamers/card/use-streamer-status.tsx:237
 #: src/components/streamers/card/use-streamer-status.tsx:246
-#: src/components/streamers/edit/recent-sessions-list.tsx:63
-#: src/components/streamers/edit/streamer-header.tsx:64
+#: src/components/streamers/edit/recent-sessions-list.tsx:69
+#: src/components/streamers/edit/streamer-header.tsx:65
 #: src/routes/_authed/_dashboard/streamers/index.tsx:69
 msgid "Offline"
 msgstr "Offline"
@@ -4199,7 +4203,7 @@ msgid "Override global default."
 msgstr "Override global default."
 
 #: src/components/streamers/edit/streamer-config-form.tsx:124
-#: src/routes/_authed/_dashboard/streamers/$id.edit.tsx:440
+#: src/routes/_authed/_dashboard/streamers/$id.edit.tsx:316
 msgid "Override global defaults for this streamer."
 msgstr "Override global defaults for this streamer."
 
@@ -4543,7 +4547,7 @@ msgstr "Please enter at least one URL"
 msgid "Please enter your new password details"
 msgstr "Please enter your new password details"
 
-#: src/routes/_authed/_dashboard/streamers/$id.edit.tsx:272
+#: src/hooks/use-edit-streamer.ts:146
 msgid "Please fix validation errors"
 msgstr "Please fix validation errors"
 
@@ -4811,7 +4815,7 @@ msgstr "Quick Share"
 msgid "RAM utilization"
 msgstr "RAM utilization"
 
-#: src/components/streamers/edit/active-download-card.tsx:84
+#: src/components/streamers/edit/active-download-card.tsx:85
 msgid "Ratio"
 msgstr "Ratio"
 
@@ -4865,7 +4869,7 @@ msgstr "Receive a notification when a stream ends."
 msgid "Receive a notification when a streamer goes live."
 msgstr "Receive a notification when a streamer goes live."
 
-#: src/components/streamers/edit/recent-sessions-list.tsx:28
+#: src/components/streamers/edit/recent-sessions-list.tsx:34
 msgid "Recent Sessions"
 msgstr "Recent Sessions"
 
@@ -4878,12 +4882,12 @@ msgstr "Recommended"
 msgid "Record Danmu"
 msgstr "Record Danmu"
 
-#: src/components/streamers/edit/streamer-header.tsx:60
+#: src/components/streamers/edit/streamer-header.tsx:61
 msgid "Recording"
 msgstr "Recording"
 
 #: src/components/streamers/edit/streamer-filters-tab.tsx:30
-#: src/routes/_authed/_dashboard/streamers/$id.edit.tsx:370
+#: src/routes/_authed/_dashboard/streamers/$id.edit.tsx:246
 msgid "Recording Filters"
 msgstr "Recording Filters"
 
@@ -4927,6 +4931,10 @@ msgstr "Remove"
 #: src/components/pipeline/presets/processors/remux-config-form.tsx:702
 msgid "Remove Input on Success"
 msgstr "Remove Input on Success"
+
+#: src/components/pipeline/presets/processors/metadata-config-form.tsx:285
+msgid "Remove source on success"
+msgstr "Remove source on success"
 
 #: src/components/pipeline/presets/default-presets-i18n.ts:4
 #: src/components/pipeline/presets/default-presets-i18n.ts:36
@@ -5302,7 +5310,7 @@ msgstr "secs"
 msgid "Segment"
 msgstr "Segment"
 
-#: src/components/streamers/edit/active-download-card.tsx:76
+#: src/components/streamers/edit/active-download-card.tsx:77
 msgid "Segments"
 msgstr "Segments"
 
@@ -5564,7 +5572,7 @@ msgid "Single URL"
 msgstr "Single URL"
 
 #: src/components/pipeline/outputs/output-card.tsx:178
-#: src/components/streamers/edit/active-download-card.tsx:57
+#: src/components/streamers/edit/active-download-card.tsx:58
 msgid "Size"
 msgstr "Size"
 
@@ -5605,7 +5613,7 @@ msgstr "Specific settings for the platform."
 msgid "Specific TTWID value for this platform."
 msgstr "Specific TTWID value for this platform."
 
-#: src/components/streamers/edit/active-download-card.tsx:46
+#: src/components/streamers/edit/active-download-card.tsx:47
 #: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.tsx:601
 msgid "Speed"
 msgstr "Speed"
@@ -5797,7 +5805,7 @@ msgstr "Streamer pagination"
 msgid "Streamer updated"
 msgstr "Streamer updated"
 
-#: src/routes/_authed/_dashboard/streamers/$id.edit.tsx:247
+#: src/hooks/use-edit-streamer.ts:74
 msgid "Streamer updated successfully"
 msgstr "Streamer updated successfully"
 

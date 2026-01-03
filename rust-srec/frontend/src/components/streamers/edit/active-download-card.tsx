@@ -1,3 +1,4 @@
+import { memo } from 'react';
 import { Download, Zap, Save, Clock, Layers, Gauge } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { CountUp } from '@/components/ui/count-up';
@@ -11,7 +12,7 @@ interface ActiveDownloadCardProps {
   isRecording: boolean;
 }
 
-export function ActiveDownloadCard({
+export const ActiveDownloadCard = memo(function ActiveDownloadCard({
   downloads,
   isRecording,
 }: ActiveDownloadCardProps) {
@@ -104,4 +105,4 @@ export function ActiveDownloadCard({
         ))}
     </AnimatePresence>
   );
-}
+});

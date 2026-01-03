@@ -1,7 +1,7 @@
 //! JSON parsing/serialization helpers with consistent warning logs.
 
-use serde::Serialize;
-use serde::de::DeserializeOwned;
+use serde::de::{DeserializeOwned, Deserializer};
+use serde::{Deserialize, Serialize};
 use tracing::warn;
 
 #[derive(Debug, Clone, Copy)]
@@ -42,6 +42,20 @@ pub enum JsonContext<'a> {
         user_id: &'a str,
         field: &'static str,
     },
+}
+
+/// Deserialize a JSON field as `Option<Option<T>>` to distinguish:
+/// - `None`: field missing (no update)
+/// - `Some(None)`: field present as `null` (clear)
+/// - `Some(Some(v))`: field present with value (set)
+pub fn deserialize_field_present_nullable<'de, D, T>(
+    deserializer: D,
+) -> Result<Option<Option<T>>, D::Error>
+where
+    D: Deserializer<'de>,
+    T: Deserialize<'de>,
+{
+    Ok(Some(Option::<T>::deserialize(deserializer)?))
 }
 
 fn warn_parse_error(

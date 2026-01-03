@@ -120,6 +120,7 @@ export const MetadataConfigSchema = z.object({
   custom: z.record(z.string(), z.string()).default({}),
   output_path: z.string().optional(),
   overwrite: z.boolean().default(true),
+  remove_input_on_success: z.boolean().default(false).optional(),
 });
 
 // --- Execute Processor ---

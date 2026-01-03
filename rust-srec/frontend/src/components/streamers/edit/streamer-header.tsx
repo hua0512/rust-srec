@@ -1,3 +1,4 @@
+import { memo } from 'react';
 import { Link } from '@tanstack/react-router';
 import { ArrowLeft } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -12,7 +13,7 @@ interface StreamerHeaderProps {
   platform: string;
 }
 
-export function StreamerHeader({
+export const StreamerHeader = memo(function StreamerHeader({
   streamer,
   isRecording,
   isLive,
@@ -81,4 +82,4 @@ export function StreamerHeader({
       </div>
     </div>
   );
-}
+});
