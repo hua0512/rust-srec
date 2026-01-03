@@ -457,7 +457,9 @@ impl RegexFilter {
 }
 
 fn parse_time(s: &str) -> Option<NaiveTime> {
-    NaiveTime::parse_from_str(s, "%H:%M").ok()
+    NaiveTime::parse_from_str(s, "%H:%M:%S")
+        .or_else(|_| NaiveTime::parse_from_str(s, "%H:%M"))
+        .ok()
 }
 
 fn weekday_to_string(weekday: Weekday) -> String {

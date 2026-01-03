@@ -5,8 +5,24 @@ import {
   CreateEngineRequestSchema,
   UpdateEngineRequestSchema,
   EngineTestResponseSchema,
+  FfmpegConfigSchema,
+  StreamlinkConfigSchema,
+  MesioConfigSchema,
 } from '../../api/schemas';
 import { z } from 'zod';
+
+function normalizeConfig(engineType: string, config: Record<string, unknown>) {
+  switch (engineType) {
+    case 'FFMPEG':
+      return FfmpegConfigSchema.parse(config);
+    case 'STREAMLINK':
+      return StreamlinkConfigSchema.parse(config);
+    case 'MESIO':
+      return MesioConfigSchema.parse(config);
+    default:
+      return config;
+  }
+}
 
 export const listEngines = createServerFn({ method: 'GET' }).handler(
   async () => {
@@ -52,7 +68,15 @@ export const getEngine = createServerFn({ method: 'GET' })
   });
 
 export const createEngine = createServerFn({ method: 'POST' })
-  .inputValidator((data: z.infer<typeof CreateEngineRequestSchema>) => data)
+  .inputValidator((data: z.infer<typeof CreateEngineRequestSchema>) =>
+    (() => {
+      const parsed = CreateEngineRequestSchema.parse(data);
+      return {
+        ...parsed,
+        config: normalizeConfig(parsed.engine_type, parsed.config),
+      };
+    })(),
+  )
   .handler(async ({ data }) => {
     // Backend expects config as JSON value (will be stringified by backend)
     const json = await fetchBackend('/engines', {
@@ -72,7 +96,19 @@ export const createEngine = createServerFn({ method: 'POST' })
 
 export const updateEngine = createServerFn({ method: 'POST' })
   .inputValidator(
-    (d: { id: string; data: z.infer<typeof UpdateEngineRequestSchema> }) => d,
+    (d: { id: string; data: z.infer<typeof UpdateEngineRequestSchema> }) => ({
+      id: z.string().parse(d.id),
+      data: (() => {
+        const parsed = UpdateEngineRequestSchema.parse(d.data);
+        if (parsed.engine_type && parsed.config) {
+          return {
+            ...parsed,
+            config: normalizeConfig(parsed.engine_type, parsed.config),
+          };
+        }
+        return parsed;
+      })(),
+    }),
   )
   .handler(async ({ data: { id, data } }) => {
     // Backend expects config as JSON value

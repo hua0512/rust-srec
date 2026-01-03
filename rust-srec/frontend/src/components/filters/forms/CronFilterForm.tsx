@@ -32,7 +32,7 @@ export function CronFilterForm() {
             </FormControl>
             <FormDescription>
               <Trans>
-                Standard cron expression (sec min hour day mon year).
+                Standard cron expression (sec min hour day mon dow).
               </Trans>
             </FormDescription>
             <FormMessage />

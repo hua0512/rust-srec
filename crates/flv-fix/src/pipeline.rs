@@ -22,9 +22,10 @@
 //! - **ScriptFilter**: Removes or modifies problematic script tags
 
 use crate::operators::{
-    ContinuityMode, DefragmentOperator, GopSortOperator, HeaderCheckOperator, LimitConfig,
-    LimitOperator, RepairStrategy, ScriptFillerConfig, ScriptFilterOperator,
-    ScriptKeyframesFillerOperator, SplitOperator, TimeConsistencyOperator, TimingRepairConfig,
+    ContinuityMode, DefragmentOperator, DuplicateTagFilterConfig, DuplicateTagFilterOperator,
+    GopSortOperator, HeaderCheckOperator, LimitConfig, LimitOperator, RepairStrategy,
+    ScriptFillerConfig, ScriptFilterOperator, ScriptKeyframesFillerOperator,
+    SequenceHeaderChangeMode, SplitOperator, TimeConsistencyOperator, TimingRepairConfig,
     TimingRepairOperator,
 };
 use flv::data::FlvData;
@@ -45,6 +46,21 @@ pub struct FlvPipelineConfig {
     /// Whether to filter duplicate tags
     pub duplicate_tag_filtering: bool,
 
+    /// Configuration for duplicate media-tag filtering (used when
+    /// `duplicate_tag_filtering` is enabled).
+    pub duplicate_tag_filter_config: DuplicateTagFilterConfig,
+
+    /// How to detect audio/video sequence-header changes that trigger a split.
+    pub sequence_header_change_mode: SequenceHeaderChangeMode,
+
+    /// Whether to drop semantically duplicate audio/video sequence headers.
+    ///
+    /// When enabled, the pipeline will suppress repeated AAC/AVC/HEVC sequence
+    /// headers that carry the same codec configuration. This can reduce player
+    /// stutter caused by redundant decoder re-initialization signals, but may
+    /// reduce "mid-stream join" friendliness for live pipelines.
+    pub drop_duplicate_sequence_headers: bool,
+
     /// Strategy for timestamp repair
     pub repair_strategy: RepairStrategy,
 
@@ -63,6 +79,9 @@ impl Default for FlvPipelineConfig {
     fn default() -> Self {
         Self {
             duplicate_tag_filtering: true,
+            duplicate_tag_filter_config: DuplicateTagFilterConfig::default(),
+            sequence_header_change_mode: SequenceHeaderChangeMode::Crc32,
+            drop_duplicate_sequence_headers: false,
             repair_strategy: RepairStrategy::Strict,
             continuity_mode: ContinuityMode::Reset,
             keyframe_index_config: Some(ScriptFillerConfig::default()),
@@ -92,6 +111,30 @@ impl FlvPipelineConfigBuilder {
 
     pub fn duplicate_tag_filtering(mut self, duplicate_tag_filtering: bool) -> Self {
         self.config.duplicate_tag_filtering = duplicate_tag_filtering;
+        self
+    }
+
+    pub fn duplicate_tag_filter_config(
+        mut self,
+        duplicate_tag_filter_config: DuplicateTagFilterConfig,
+    ) -> Self {
+        self.config.duplicate_tag_filter_config = duplicate_tag_filter_config;
+        self
+    }
+
+    pub fn sequence_header_change_mode(
+        mut self,
+        sequence_header_change_mode: SequenceHeaderChangeMode,
+    ) -> Self {
+        self.config.sequence_header_change_mode = sequence_header_change_mode;
+        self
+    }
+
+    pub fn drop_duplicate_sequence_headers(
+        mut self,
+        drop_duplicate_sequence_headers: bool,
+    ) -> Self {
+        self.config.drop_duplicate_sequence_headers = drop_duplicate_sequence_headers;
         self
     }
 
@@ -192,7 +235,20 @@ impl PipelineProvider for FlvPipeline {
         let gop_sort_operator = GopSortOperator::new(context.clone());
         let timing_repair_operator =
             TimingRepairOperator::new(context.clone(), TimingRepairConfig::default());
-        let split_operator = SplitOperator::new(context.clone());
+        let split_operator = SplitOperator::with_config(
+            context.clone(),
+            config.sequence_header_change_mode,
+            config.drop_duplicate_sequence_headers,
+        );
+
+        let duplicate_tag_filter_operator = if config.duplicate_tag_filtering {
+            Some(DuplicateTagFilterOperator::with_config(
+                context.clone(),
+                config.duplicate_tag_filter_config.clone(),
+            ))
+        } else {
+            None
+        };
         let time_consistency_operator =
             TimeConsistencyOperator::new(context.clone(), config.continuity_mode);
         let time_consistency_operator_2 =
@@ -223,7 +279,13 @@ impl PipelineProvider for FlvPipeline {
             .add_processor(defrag_operator)
             .add_processor(header_check_operator)
             .add_processor(split_operator)
-            .add_processor(gop_sort_operator)
+            .add_processor(gop_sort_operator);
+
+        if let Some(op) = duplicate_tag_filter_operator {
+            sync_pipeline = sync_pipeline.add_processor(op);
+        }
+
+        sync_pipeline = sync_pipeline
             .add_processor(time_consistency_operator)
             .add_processor(timing_repair_operator)
             .add_processor(limit_operator)

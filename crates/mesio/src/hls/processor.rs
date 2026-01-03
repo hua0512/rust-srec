@@ -53,12 +53,9 @@ impl SegmentProcessor {
         cache_service: Option<Arc<CacheManager>>,
         metrics: Arc<PerformanceMetrics>,
     ) -> Self {
-        Self {
-            config,
-            decryption_service,
-            cache_service,
-            metrics: Some(metrics),
-        }
+        let mut processor = Self::new(config, decryption_service, cache_service);
+        processor.metrics = Some(metrics);
+        processor
     }
 
     fn u64_to_iv_bytes(val: u64) -> [u8; 16] {

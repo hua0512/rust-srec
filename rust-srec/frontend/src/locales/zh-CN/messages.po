@@ -187,8 +187,8 @@ msgid "A unique name for this configuration template."
 msgstr "为此配置模板提供一个唯一的名称。"
 
 #: src/components/filters/FilterCard.tsx:103
-msgid "Aa"
-msgstr "Aa"
+#~ msgid "Aa"
+#~ msgstr "Aa"
 
 #: src/components/config/engines/forms/ffmpeg-form.tsx:51
 msgid "Absolute path or 'ffmpeg' if in PATH"
@@ -207,7 +207,7 @@ msgid "Actions"
 msgstr "操作"
 
 #: src/components/notifications/forms/webhook-form.tsx:113
-#: src/components/streamers/edit/streamer-meta-form.tsx:178
+#: src/components/streamers/edit/streamer-meta-form.tsx:221
 #: src/routes/_authed/_dashboard/config/language.tsx:96
 msgid "Active"
 msgstr "启用"
@@ -216,7 +216,7 @@ msgstr "启用"
 msgid "Active Days"
 msgstr "生效日期"
 
-#: src/components/streamers/edit/active-download-card.tsx:33
+#: src/components/streamers/edit/active-download-card.tsx:34
 msgid "Active Download"
 msgstr "正在录制"
 
@@ -262,7 +262,7 @@ msgstr "添加自定义标签"
 
 #: src/components/pipeline/presets/processors/tdl-config-form.tsx:129
 msgid "Add Environment Variable"
-msgstr ""
+msgstr "添加环境变量"
 
 #: src/components/pipeline/presets/processors/copy-move-config-form.tsx:190
 msgid "Add exclude regex pattern"
@@ -296,11 +296,11 @@ msgstr "添加模块..."
 msgid "Add New Engine"
 msgstr "添加新引擎"
 
-#: src/components/filters/FilterDialog.tsx:242
+#: src/components/filters/FilterDialog.tsx:210
 msgid "Add New Filter"
 msgstr "添加新过滤器"
 
-#: src/routes/_authed/_dashboard/streamers/new.tsx:46
+#: src/routes/_authed/_dashboard/streamers/new.tsx:49
 msgid "Add New Streamer"
 msgstr "添加新主播"
 
@@ -350,12 +350,12 @@ msgstr "调整 UI 元素的圆角程度。"
 #: src/components/pipeline/presets/processors/rclone-config-form.tsx:59
 #: src/components/pipeline/presets/processors/remux-config-form.tsx:108
 #: src/components/streamers/edit/streamer-config-form.tsx:74
-#: src/routes/_authed/_dashboard/streamers/$id.edit.tsx:332
+#: src/routes/_authed/_dashboard/streamers/$id.edit.tsx:239
 msgid "Advanced"
 msgstr "高级"
 
 #: src/components/streamers/edit/streamer-config-form.tsx:121
-#: src/routes/_authed/_dashboard/streamers/$id.edit.tsx:404
+#: src/routes/_authed/_dashboard/streamers/$id.edit.tsx:313
 msgid "Advanced Configuration"
 msgstr "高级配置"
 
@@ -413,7 +413,7 @@ msgstr "全部时间"
 
 #: src/components/pipeline/presets/processors/tdl-config-form.tsx:559
 msgid "Allowed Extensions"
-msgstr ""
+msgstr "允许的扩展名"
 
 #: src/components/credentials/bilibili-qr-login-dialog.tsx:174
 msgid "An error occurred"
@@ -447,7 +447,7 @@ msgstr "为卡片和侧边栏的背景应用模糊效果。"
 #~ msgid "Apply Changes"
 #~ msgstr "应用更改"
 
-#: src/components/streamers/config/streamer-general-settings.tsx:162
+#: src/components/streamers/config/streamer-general-settings.tsx:202
 msgid "Apply template settings."
 msgstr "应用模板设置。"
 
@@ -522,7 +522,7 @@ msgstr "ASS 字幕内嵌"
 msgid "At least one input path is required"
 msgstr "至少需要一个输入路径"
 
-#: src/components/config/engines/forms/mesio-form.tsx:75
+#: src/components/config/engines/forms/mesio-form.tsx:95
 msgid "Attempt to repair timestamps in FLV streams"
 msgstr "尝试修复 FLV 流中的时间戳"
 
@@ -574,11 +574,11 @@ msgstr "认证"
 
 #: src/components/pipeline/presets/processors/tdl-config-form.tsx:174
 msgid "Authentication & Setup"
-msgstr ""
+msgstr "身份验证与设置"
 
 #: src/components/pipeline/presets/processors/tdl-config-form.tsx:209
 msgid "Auto (QR → Phone & Code → Desktop)"
-msgstr ""
+msgstr "自动 (二维码 → 手机号和验证码 → 桌面)"
 
 #: src/components/pipeline/workflows/flow-editor/workflow-flow-editor.tsx:259
 msgid "Auto Layout"
@@ -599,6 +599,11 @@ msgstr "已关闭自动滚动"
 #: src/components/logging/log-viewer.tsx:419
 msgid "Auto-scroll enabled"
 msgstr "已开启自动滚动"
+
+#: src/components/streamers/config/streamer-general-settings.tsx:118
+#: src/components/streamers/edit/streamer-meta-form.tsx:168
+msgid "Autofill name from URL"
+msgstr "从 URL 自动填充名称"
 
 #: src/components/config/global/file-config-card.tsx:47
 msgid "Automatically generate a thumbnail for the first segment of each session."
@@ -626,7 +631,7 @@ msgstr "平均时长"
 msgid "Back"
 msgstr "返回"
 
-#: src/components/streamers/streamer-form.tsx:201
+#: src/components/streamers/streamer-form.tsx:238
 msgid "Back to Details"
 msgstr "返回详情"
 
@@ -686,7 +691,7 @@ msgid "Basic post-processing: Remux FLV to MP4 and generate a thumbnail preview.
 msgstr "基础后处理：将 FLV 重封装为 MP4，并生成缩略图预览。"
 
 #: src/components/streamers/edit/streamer-config-form.tsx:94
-#: src/routes/_authed/_dashboard/streamers/$id.edit.tsx:373
+#: src/routes/_authed/_dashboard/streamers/$id.edit.tsx:280
 msgid "Basic settings for the streamer."
 msgstr "主播的基本设置。"
 
@@ -732,11 +737,11 @@ msgstr "圆角半径"
 msgid "Browse generated media artifacts from pipeline jobs"
 msgstr "浏览处理任务生成的媒体文件"
 
-#: src/components/config/engines/forms/mesio-form.tsx:29
+#: src/components/config/engines/forms/mesio-form.tsx:49
 msgid "Buffer Settings"
 msgstr "缓冲区设置"
 
-#: src/components/config/engines/forms/mesio-form.tsx:39
+#: src/components/config/engines/forms/mesio-form.tsx:59
 msgid "Buffer Size"
 msgstr "缓冲区大小"
 
@@ -744,7 +749,7 @@ msgstr "缓冲区大小"
 msgid "Burn .ass subtitles into videos (produces *_burnin.mp4 by default). Manifest-aware and batch-safe."
 msgstr "将 .ass 字幕内嵌到视频中（默认生成 *_burnin.mp4）。支持清单感知和批量处理。"
 
-#: src/components/config/engines/forms/mesio-form.tsx:49
+#: src/components/config/engines/forms/mesio-form.tsx:69
 msgid "bytes"
 msgstr "字节"
 
@@ -755,7 +760,7 @@ msgstr "C:path1.flv,C:path2.flv"
 #: src/components/config/engines/engine-card.tsx:238
 #: src/components/config/global/backup-restore-card.tsx:578
 #: src/components/config/templates/template-card.tsx:196
-#: src/components/filters/FilterDialog.tsx:277
+#: src/components/filters/FilterDialog.tsx:245
 #: src/components/notifications/channel-card.tsx:186
 #: src/components/notifications/channel-form.tsx:358
 #: src/components/notifications/subscription-manager.tsx:436
@@ -765,7 +770,7 @@ msgstr "C:path1.flv,C:path2.flv"
 #: src/components/pipeline/presets/preset-card.tsx:204
 #: src/components/pipeline/workflows/step-config-dialog.tsx:526
 #: src/components/pipeline/workflows/workflow-card.tsx:196
-#: src/components/streamers/streamer-form.tsx:157
+#: src/components/streamers/streamer-form.tsx:194
 #: src/routes/_authed/_dashboard/config/templates/index.tsx:266
 #: src/routes/_authed/_dashboard/pipeline/jobs/new.tsx:158
 #: src/routes/_authed/_dashboard/pipeline/presets/index.tsx:500
@@ -818,8 +823,8 @@ msgid "Case Insensitive"
 msgstr "不区分大小写"
 
 #: src/components/filters/forms/KeywordFilterForm.tsx:72
-msgid "Case Sensitive"
-msgstr "区分大小写"
+#~ msgid "Case Sensitive"
+#~ msgstr "区分大小写"
 
 #: src/components/filters/forms/CategoryFilterForm.tsx:25
 msgid "Categories"
@@ -876,7 +881,7 @@ msgstr "转换后检查文件是否存在"
 
 #: src/components/pipeline/presets/processors/tdl-login-dialog.tsx:410
 msgid "Check Login"
-msgstr ""
+msgstr "检查登录"
 
 #: src/components/streamers/card/stream-actions-menu.tsx:58
 #~ msgid "Check Now"
@@ -903,7 +908,7 @@ msgstr "检查中"
 msgid "Checking stream status..."
 msgstr "正在检查流状态..."
 
-#: src/components/streamers/streamer-form.tsx:168
+#: src/components/streamers/streamer-form.tsx:205
 msgid "Checking..."
 msgstr "检查中..."
 
@@ -971,7 +976,7 @@ msgstr "命令"
 #: src/components/pipeline/presets/processors/danmaku-factory-config-form.tsx:85
 #: src/components/pipeline/presets/processors/tdl-config-form.tsx:452
 msgid "Command Arguments"
-msgstr ""
+msgstr "命令参数"
 
 #: src/components/pipeline/presets/processors/danmaku-factory-config-form.tsx:95
 msgid "Command template args. Use {input} and {output} placeholders."
@@ -983,7 +988,7 @@ msgstr "评论"
 
 #: src/components/pipeline/presets/processors/tdl-login-dialog.tsx:353
 msgid "Complete the Telegram login process in this terminal."
-msgstr ""
+msgstr "在此终端中完成 Telegram 登录过程。"
 
 #: src/components/pipeline/presets/default-presets-i18n.ts:104
 msgid "Complete workflow: Remux, generate thumbnail, add metadata, and upload."
@@ -1073,7 +1078,7 @@ msgstr "配置"
 msgid "Configure a new download tool."
 msgstr "配置新的录制工具。"
 
-#: src/routes/_authed/_dashboard/streamers/new.tsx:48
+#: src/routes/_authed/_dashboard/streamers/new.tsx:51
 msgid "Configure a new streamer to monitor and record."
 msgstr "配置一个新的主播以进行监控和录制。"
 
@@ -1097,7 +1102,7 @@ msgstr "配置从所选备份文件导入数据的方式。"
 #~ msgid "Configure log levels for different modules"
 #~ msgstr "配置不同模块的日志级别"
 
-#: src/components/filters/FilterDialog.tsx:246
+#: src/components/filters/FilterDialog.tsx:214
 msgid "Configure recording rules for this streamer."
 msgstr "配置此主播的录制规则。"
 
@@ -1156,7 +1161,7 @@ msgstr "上下文"
 
 #: src/components/pipeline/presets/processors/tdl-config-form.tsx:535
 msgid "Continue on Error"
-msgstr ""
+msgstr "出错时继续"
 
 #: src/routes/_authed/_dashboard/config/logging.tsx:213
 msgid "Control verbosity for each module. Lower levels include higher ones."
@@ -1271,7 +1276,7 @@ msgstr "创建目录"
 msgid "Create Engine"
 msgstr "创建引擎"
 
-#: src/components/filters/FilterDialog.tsx:292
+#: src/components/filters/FilterDialog.tsx:260
 msgid "Create Filter"
 msgstr "创建过滤器"
 
@@ -1303,7 +1308,7 @@ msgstr "创建处理管道"
 msgid "Create Preset"
 msgstr "创建预设"
 
-#: src/routes/_authed/_dashboard/streamers/new.tsx:50
+#: src/routes/_authed/_dashboard/streamers/new.tsx:53
 msgid "Create Streamer"
 msgstr "创建主播"
 
@@ -1527,7 +1532,7 @@ msgstr "默认处理管道流程。为新的处理任务配置处理器顺序。
 msgid "Default workflow: Remux to MP4 (deletes original), generate native-resolution thumbnail, upload both to cloud and delete local files."
 msgstr "默认工作流：重封装为 MP4（删除原始文件），生成原始分辨率缩略图，上传两者至云端并删除本地文件。"
 
-#: src/components/config/engines/forms/mesio-form.tsx:54
+#: src/components/config/engines/forms/mesio-form.tsx:74
 msgid "Default: 8388608 (8 MiB)"
 msgstr "默认：8388608（8 MiB）"
 
@@ -1555,7 +1560,7 @@ msgstr "延迟、代理与保留策略。"
 #: src/components/config/engines/engine-card.tsx:244
 #: src/components/config/templates/template-card.tsx:128
 #: src/components/config/templates/template-card.tsx:202
-#: src/components/filters/FilterCard.tsx:289
+#: src/components/filters/FilterCard.tsx:316
 #: src/components/notifications/channel-card.tsx:169
 #: src/components/notifications/channel-card.tsx:192
 #: src/components/pipeline/jobs/pipeline-summary-card.tsx:238
@@ -1611,6 +1616,10 @@ msgstr "删除源文件"
 #: src/components/pipeline/presets/processors/ass-burnin-config-form.tsx:352
 msgid "Delete Source ASS"
 msgstr "删除源 ASS 文件"
+
+#: src/components/pipeline/presets/processors/metadata-config-form.tsx:288
+msgid "Delete source file after successful processing"
+msgstr "处理成功后删除源文件"
 
 #: src/components/pipeline/presets/processors/ass-burnin-config-form.tsx:332
 msgid "Delete Source Videos"
@@ -1780,7 +1789,7 @@ msgstr "下载管理"
 msgid "Download Retry Policy"
 msgstr "录制重试策略"
 
-#: src/components/streamers/edit/active-download-card.tsx:39
+#: src/components/streamers/edit/active-download-card.tsx:40
 msgid "Downloading"
 msgstr "下载中"
 
@@ -1788,23 +1797,35 @@ msgstr "下载中"
 msgid "Drag from edge to link steps"
 msgstr "从边缘拖动以连接步骤"
 
+#: src/components/config/engines/forms/mesio-form.tsx:210
+msgid "Drop duplicate sequence headers"
+msgstr "丢弃重复序列头"
+
+#: src/components/config/engines/forms/mesio-form.tsx:248
+msgid "Drop repeated A/V tags and detect replay loops (useful when streams go offline and replay tail)."
+msgstr "丢弃重复的音视频标签并检测回放循环（在流离线并回放尾部时很有用）。"
+
 #: src/components/pipeline/presets/processors/tdl-config-form.tsx:678
 msgid "Dry Run"
-msgstr ""
+msgstr "演练模式"
 
 #: src/components/pipeline/presets/default-presets-i18n.ts:93
 msgid "Dual Format"
 msgstr "双格式输出"
 
+#: src/components/config/engines/forms/mesio-form.tsx:238
+msgid "Duplicate media-tag filtering"
+msgstr "重复媒体标签过滤"
+
 #: src/components/pipeline/presets/processors/remux-config-form.tsx:514
-#: src/components/streamers/edit/active-download-card.tsx:68
+#: src/components/streamers/edit/active-download-card.tsx:69
 #: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.tsx:583
 msgid "Duration"
 msgstr "时长"
 
 #: src/components/pipeline/presets/processors/tdl-config-form.tsx:416
 msgid "e.g. --namespace my_account"
-msgstr ""
+msgstr "例如 --namespace my_account"
 
 #: src/components/config/engines/forms/streamlink-form.tsx:70
 msgid "e.g. 'best', 'worst', '720p', 'audio_only'"
@@ -1812,7 +1833,7 @@ msgstr "例如 'best'、'worst'、'720p'、'audio_only'"
 
 #: src/components/pipeline/presets/processors/tdl-config-form.tsx:350
 msgid "e.g. /data/tdl"
-msgstr ""
+msgstr "例如 /data/tdl"
 
 #: src/components/pipeline/presets/processors/execute-config-form.tsx:262
 msgid "e.g. /output/processed/"
@@ -1824,7 +1845,7 @@ msgstr "例如 128k、320k"
 
 #: src/components/pipeline/presets/processors/tdl-config-form.tsx:382
 msgid "e.g. C:\\Users\\...\\AppData\\Roaming\\Telegram Desktop"
-msgstr ""
+msgstr "例如 C:\\Users\\...\\AppData\\Roaming\\Telegram Desktop"
 
 #: src/components/pipeline/presets/processors/execute-config-form.tsx:62
 msgid "e.g. echo {input} > {output}"
@@ -1843,8 +1864,8 @@ msgstr "例如 高质量 Streamlink"
 msgid "e.g. mp4"
 msgstr "例如 mp4"
 
-#: src/components/streamers/config/streamer-general-settings.tsx:80
-#: src/components/streamers/edit/streamer-meta-form.tsx:128
+#: src/components/streamers/config/streamer-general-settings.tsx:92
+#: src/components/streamers/edit/streamer-meta-form.tsx:139
 msgid "e.g. My Favorite Streamer"
 msgstr "例如 我喜欢的主播"
 
@@ -1854,11 +1875,11 @@ msgstr "例如：重封装为 H.264"
 
 #: src/components/pipeline/presets/processors/tdl-config-form.tsx:594
 msgid "e.g. tmp"
-msgstr ""
+msgstr "例如 tmp"
 
 #: src/components/pipeline/presets/processors/tdl-config-form.tsx:458
 msgid "e.g. up -c @channel -p {input}"
-msgstr ""
+msgstr "例如 up -c @channel -p {input}"
 
 #: src/components/pipeline/workflows/step-config-dialog.tsx:431
 msgid "e.g., process-video"
@@ -1870,7 +1891,7 @@ msgstr "例如：标准处理"
 
 #: src/components/config/platforms/platform-card.tsx:89
 #: src/components/config/templates/template-card.tsx:116
-#: src/components/filters/FilterCard.tsx:278
+#: src/components/filters/FilterCard.tsx:305
 #: src/components/notifications/channel-card.tsx:154
 #: src/components/pipeline/presets/preset-card.tsx:174
 #: src/components/pipeline/workflows/workflow-card.tsx:171
@@ -1899,7 +1920,7 @@ msgstr "编辑渠道"
 msgid "Edit Engine"
 msgstr "编辑引擎"
 
-#: src/components/filters/FilterDialog.tsx:240
+#: src/components/filters/FilterDialog.tsx:208
 msgid "Edit Filter"
 msgstr "编辑过滤器"
 
@@ -1933,7 +1954,7 @@ msgstr "启用"
 #~ msgid "Enable encryption for secure communication"
 #~ msgstr "启用加密以确保通信安全"
 
-#: src/components/streamers/config/streamer-general-settings.tsx:215
+#: src/components/streamers/config/streamer-general-settings.tsx:255
 msgid "Enable Monitoring"
 msgstr "启用监控"
 
@@ -1948,6 +1969,10 @@ msgstr "启用代理"
 #: src/components/config/global/file-config-card.tsx:36
 msgid "Enable recording of danmu/chat messages along with the video."
 msgstr "启用弹幕/聊天消息与视频一起录制。"
+
+#: src/components/config/engines/forms/mesio-form.tsx:314
+msgid "Enable Replay Offset Matching"
+msgstr "启用回放偏移匹配"
 
 #: src/routes/_authed/_dashboard/config/theme.tsx:50
 msgid "Enable translucent background blur effects."
@@ -2043,8 +2068,8 @@ msgid "Enter categories to match against (e.g. Just Chatting, Gaming)."
 msgstr "输入要匹配的分类（例如 Just Chatting、Gaming）。"
 
 #: src/components/filters/forms/KeywordFilterForm.tsx:36
-msgid "Enter keywords to match against the stream title."
-msgstr "输入要匹配的直播标题关键字。"
+#~ msgid "Enter keywords to match against the stream title."
+#~ msgstr "输入要匹配的直播标题关键字。"
 
 #: src/routes/_public/login.tsx:146
 msgid "Enter your credentials to access your account"
@@ -2056,7 +2081,7 @@ msgstr "条"
 
 #: src/components/pipeline/presets/processors/tdl-config-form.tsx:432
 msgid "Environment Variables"
-msgstr ""
+msgstr "环境变量"
 
 #: src/components/config/engines/engine-card.tsx:151
 #: src/components/streamers/card/use-streamer-status.tsx:40
@@ -2122,10 +2147,9 @@ msgstr "错误：无法加载预设详情。"
 msgid "ETA"
 msgstr "预计剩余时间"
 
-#: src/components/filters/FilterCard.tsx:93
-#: src/components/filters/FilterCard.tsx:208
+#: src/components/filters/FilterCard.tsx:121
+#: src/components/filters/FilterCard.tsx:235
 #: src/components/filters/forms/CategoryFilterForm.tsx:52
-#: src/components/filters/forms/KeywordFilterForm.tsx:50
 #: src/components/filters/forms/RegexFilterForm.tsx:49
 msgid "Exclude"
 msgstr "排除"
@@ -2134,13 +2158,17 @@ msgstr "排除"
 msgid "Exclude ASS from Passthrough"
 msgstr "从透传中排除 ASS"
 
+#: src/components/filters/forms/KeywordFilterForm.tsx:51
+msgid "Exclude Keywords"
+msgstr "排除关键字"
+
 #: src/components/pipeline/presets/processors/copy-move-config-form.tsx:177
 msgid "Exclude Patterns"
 msgstr "排除模式"
 
 #: src/components/pipeline/presets/processors/tdl-config-form.tsx:588
 msgid "Excluded Extensions"
-msgstr ""
+msgstr "排除的扩展名"
 
 #: src/components/pipeline/presets/default-presets-i18n.ts:23
 #: src/components/pipeline/presets/editor/preset-meta-form.tsx:72
@@ -2164,6 +2192,11 @@ msgstr "执行记录"
 #: src/routes/_authed/_dashboard/player/index.tsx:318
 msgid "Exit Immersive"
 msgstr "退出沉浸模式"
+
+#: src/components/config/engines/forms/mesio-form.tsx:185
+#: src/components/config/engines/forms/mesio-form.tsx:244
+msgid "Experimental"
+msgstr "实验性"
 
 #: src/components/sessions/session-card.tsx:235
 msgid "Explore"
@@ -2229,6 +2262,11 @@ msgstr "失败"
 msgid "Failed steps retry initiated"
 msgstr "已开始重试失败的步骤"
 
+#: src/components/streamers/streamer-form.tsx:117
+#: src/hooks/use-edit-streamer.ts:119
+msgid "Failed to autofill name"
+msgstr "自动填充名称失败"
+
 #: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.tsx:200
 msgid "Failed to cancel job"
 msgstr "取消处理任务失败"
@@ -2245,7 +2283,7 @@ msgstr "修改密码失败"
 #. placeholder {0}: e.message
 #: src/components/pipeline/presets/processors/tdl-login-dialog.tsx:180
 msgid "Failed to check TDL status: {0}"
-msgstr ""
+msgstr "检查 TDL 状态失败：{0}"
 
 #. placeholder {0}: error.message
 #: src/routes/_authed/_dashboard/pipeline/presets/index.tsx:188
@@ -2261,7 +2299,7 @@ msgstr "克隆模板失败：{0}"
 msgid "Failed to create channel"
 msgstr "创建渠道失败"
 
-#: src/components/filters/FilterDialog.tsx:148
+#: src/components/filters/FilterDialog.tsx:151
 msgid "Failed to create filter"
 msgstr "创建过滤器失败"
 
@@ -2296,7 +2334,7 @@ msgstr "创建工作流失败：{0}"
 msgid "Failed to delete channel"
 msgstr "删除渠道失败"
 
-#: src/routes/_authed/_dashboard/streamers/$id.edit.tsx:252
+#: src/hooks/use-edit-streamer.ts:92
 msgid "Failed to delete filter"
 msgstr "删除过滤器失败"
 
@@ -2334,6 +2372,11 @@ msgstr "删除工作流失败：{0}"
 #: src/components/config/global/backup-restore-card.tsx:92
 msgid "Failed to export configuration"
 msgstr "导出配置失败"
+
+#: src/components/streamers/streamer-form.tsx:113
+#: src/hooks/use-edit-streamer.ts:115
+msgid "Failed to extract name from URL"
+msgstr "从 URL 提取名称失败"
 
 #: src/components/config/global/backup-restore-card.tsx:118
 msgid "Failed to import configuration"
@@ -2398,7 +2441,7 @@ msgstr "无法重试步骤"
 #. placeholder {0}: e.message
 #: src/components/pipeline/presets/processors/tdl-login-dialog.tsx:147
 msgid "Failed to send input: {0}"
-msgstr ""
+msgstr "发送输入失败：{0}"
 
 #: src/routes/_authed/_dashboard/notifications/index.tsx:58
 msgid "Failed to send test notification"
@@ -2407,7 +2450,7 @@ msgstr "发送测试通知失败"
 #. placeholder {0}: e.message
 #: src/components/pipeline/presets/processors/tdl-login-dialog.tsx:135
 msgid "Failed to start login: {0}"
-msgstr ""
+msgstr "启动登录失败：{0}"
 
 #: src/routes/_authed/_dashboard/dashboard.tsx:75
 #: src/routes/_authed/_dashboard/streamers/index.tsx:192
@@ -2418,7 +2461,7 @@ msgstr "触发检查失败"
 msgid "Failed to update channel"
 msgstr "更新渠道失败"
 
-#: src/components/filters/FilterDialog.tsx:163
+#: src/components/filters/FilterDialog.tsx:166
 msgid "Failed to update filter"
 msgstr "更新过滤器失败"
 
@@ -2440,8 +2483,8 @@ msgstr "更新预设失败：{0}"
 msgid "Failed to update settings"
 msgstr "更新设置失败"
 
+#: src/hooks/use-edit-streamer.ts:80
 #: src/routes/_authed/_dashboard/dashboard.tsx:86
-#: src/routes/_authed/_dashboard/streamers/$id.edit.tsx:222
 #: src/routes/_authed/_dashboard/streamers/index.tsx:203
 msgid "Failed to update streamer"
 msgstr "更新主播失败"
@@ -2543,11 +2586,11 @@ msgstr "当当前时间在开始与结束时间之间时应用过滤器。"
 msgid "Filter by title keywords"
 msgstr "按标题关键字过滤"
 
-#: src/components/filters/FilterDialog.tsx:141
+#: src/components/filters/FilterDialog.tsx:144
 msgid "Filter created successfully"
 msgstr "过滤器创建成功"
 
-#: src/routes/_authed/_dashboard/streamers/$id.edit.tsx:248
+#: src/hooks/use-edit-streamer.ts:88
 msgid "Filter deleted successfully"
 msgstr "过滤器删除成功"
 
@@ -2559,13 +2602,13 @@ msgstr "过滤低于此优先级的事件"
 msgid "Filter Type"
 msgstr "过滤器类型"
 
-#: src/components/filters/FilterDialog.tsx:156
+#: src/components/filters/FilterDialog.tsx:159
 msgid "Filter updated successfully"
 msgstr "过滤器更新成功"
 
 #: src/components/pipeline/presets/processors/tdl-config-form.tsx:498
 msgid "Filtering & Behavior"
-msgstr ""
+msgstr "过滤与行为"
 
 #: src/components/config/shared-config-editor.tsx:155
 msgid "Filters"
@@ -2583,11 +2626,11 @@ msgstr "第一个输入文件路径"
 msgid "First output file path"
 msgstr "第一个输出文件路径"
 
-#: src/components/config/engines/forms/mesio-form.tsx:72
+#: src/components/config/engines/forms/mesio-form.tsx:92
 msgid "Fix FLV"
 msgstr "修复 FLV"
 
-#: src/components/config/engines/forms/mesio-form.tsx:95
+#: src/components/config/engines/forms/mesio-form.tsx:115
 msgid "Fix HLS"
 msgstr "修复 HLS"
 
@@ -2598,6 +2641,10 @@ msgstr "固定间隔"
 #: src/components/pipeline/workflows/step-config-dialog.tsx:296
 msgid "Flow & Dependencies"
 msgstr "流程与依赖"
+
+#: src/components/config/engines/forms/mesio-form.tsx:137
+msgid "FLV Fix (Advanced)"
+msgstr "FLV 修复 (高级)"
 
 #: src/routes/_authed/_dashboard/config/logging.tsx:58
 msgid "FLV parser"
@@ -2675,12 +2722,12 @@ msgstr "全流程处理"
 #: src/components/pipeline/presets/processors/rclone-config-form.tsx:53
 #: src/components/pipeline/presets/processors/remux-config-form.tsx:72
 #: src/components/streamers/edit/streamer-config-form.tsx:67
-#: src/routes/_authed/_dashboard/streamers/$id.edit.tsx:325
+#: src/routes/_authed/_dashboard/streamers/$id.edit.tsx:232
 msgid "General"
 msgstr "常规"
 
 #: src/components/streamers/edit/streamer-config-form.tsx:91
-#: src/routes/_authed/_dashboard/streamers/$id.edit.tsx:370
+#: src/routes/_authed/_dashboard/streamers/$id.edit.tsx:277
 msgid "General Configuration"
 msgstr "常规配置"
 
@@ -2784,7 +2831,7 @@ msgstr "H.264"
 msgid "H.264 medium compression (CRF 23) optimized for long-term storage."
 msgstr "面向长期存储优化的 H.264 中等压缩（CRF 23）。"
 
-#: src/components/config/engines/forms/mesio-form.tsx:98
+#: src/components/config/engines/forms/mesio-form.tsx:118
 msgid "Handle discontinuities in HLS streams"
 msgstr "处理 HLS 流中的不连续段"
 
@@ -2824,8 +2871,8 @@ msgstr "正常"
 msgid "Hide password"
 msgstr "隐藏密码"
 
-#: src/components/streamers/config/streamer-general-settings.tsx:187
-#: src/components/streamers/edit/streamer-meta-form.tsx:156
+#: src/components/streamers/config/streamer-general-settings.tsx:227
+#: src/components/streamers/edit/streamer-meta-form.tsx:199
 msgid "High"
 msgstr "高"
 
@@ -2902,7 +2949,7 @@ msgstr "HTTP 请求"
 msgid "https://lb-eu.cdn-perfprod.com"
 msgstr "https://lb-eu.cdn-perfprod.com"
 
-#: src/components/filters/FilterCard.tsx:218
+#: src/components/filters/FilterCard.tsx:245
 msgid "i"
 msgstr "i"
 
@@ -2922,6 +2969,10 @@ msgstr "必须填写 ID"
 msgid "Identity and type of the engine."
 msgstr "引擎的身份与类型。"
 
+#: src/components/filters/forms/KeywordFilterForm.tsx:62
+msgid "If any of these keywords appear in the title, the stream will be ignored."
+msgstr "如果标题中出现任何这些关键字，该流将被忽略。"
+
 #: src/components/pipeline/presets/processors/copy-move-config-form.tsx:107
 msgid "If empty, uses next output path in pipeline"
 msgstr "留空则使用处理管道中的下一个输出路径"
@@ -2931,16 +2982,20 @@ msgid "If enabled, streams in these categories will be ignored."
 msgstr "启用后，将忽略这些分类的流。"
 
 #: src/components/filters/forms/KeywordFilterForm.tsx:53
-msgid "If enabled, streams matching these keywords will be ignored."
-msgstr "启用后，将忽略匹配这些关键字的流。"
+#~ msgid "If enabled, streams matching these keywords will be ignored."
+#~ msgstr "启用后，将忽略匹配这些关键字的流。"
 
 #: src/components/filters/forms/RegexFilterForm.tsx:52
 msgid "If enabled, streams matching this pattern will be ignored."
 msgstr "启用后，将忽略匹配此模式的流。"
 
+#: src/components/filters/forms/KeywordFilterForm.tsx:35
+msgid "If set, stream titles must contain at least one of these keywords."
+msgstr "如果设置，直播标题必须包含至少一个这些关键字。"
+
 #: src/components/pipeline/presets/processors/tdl-config-form.tsx:240
 msgid "If your account has Telegram 2FA enabled, use Desktop login (`-T desktop`) or run `tdl login` locally in a terminal."
-msgstr ""
+msgstr "如果你的账户启用了 Telegram 两步验证，请使用桌面登录（`-T desktop`）或在终端中本地运行 `tdl login`。"
 
 #: src/components/streamers/config/stream-selection-input.tsx:181
 msgid "Ignore streams above this bitrate."
@@ -2952,7 +3007,7 @@ msgstr "忽略低于此比特率的流。"
 
 #: src/components/pipeline/presets/processors/tdl-config-form.tsx:570
 msgid "Ignored when \"Upload All Files\" is enabled."
-msgstr ""
+msgstr "当“上传所有文件”启用时忽略。"
 
 #: src/routes/_authed/_dashboard/player/index.tsx:323
 msgid "Immersive Mode"
@@ -2979,14 +3034,18 @@ msgstr "正在导入..."
 msgid "In active"
 msgstr "进行中"
 
-#: src/components/filters/FilterCard.tsx:95
-#: src/components/filters/FilterCard.tsx:210
+#: src/components/filters/FilterCard.tsx:113
+#: src/components/filters/FilterCard.tsx:237
 msgid "Include"
 msgstr "包含"
 
 #: src/components/pipeline/presets/processors/tdl-config-form.tsx:642
 msgid "Include Images"
-msgstr ""
+msgstr "包含图片"
+
+#: src/components/filters/forms/KeywordFilterForm.tsx:24
+msgid "Include Keywords"
+msgstr "包含关键字"
 
 #: src/components/pipeline/presets/processors/danmaku-factory-config-form.tsx:219
 msgid "Include original files in outputs"
@@ -3036,7 +3095,7 @@ msgstr "检查中"
 
 #: src/components/pipeline/presets/processors/tdl-login-dialog.tsx:453
 msgid "Interactive password entry via this API is not supported on Windows. Please use \"Desktop Login\" (import tdata) or log in once in a regular terminal."
-msgstr ""
+msgstr "Windows 不支持通过此 API 进行交互式密码输入。请使用“桌面登录”（导入 tdata）或在常规终端中登录一次。"
 
 #: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.tsx:331
 msgid "Interrupted"
@@ -3134,19 +3193,19 @@ msgstr "保持运行"
 
 #: src/components/pipeline/presets/processors/tdl-config-form.tsx:538
 msgid "Keep uploading other files if one fails"
-msgstr ""
+msgstr "如果一个文件上传失败，继续上传其他文件"
 
 #: src/components/pipeline/presets/processors/tdl-config-form.tsx:93
 msgid "Key"
-msgstr ""
+msgstr "键"
 
 #: src/components/filters/forms/FilterTypeSelector.tsx:16
 msgid "Keyword"
 msgstr "关键字"
 
 #: src/components/filters/forms/KeywordFilterForm.tsx:25
-msgid "Keywords"
-msgstr "关键字"
+#~ msgid "Keywords"
+#~ msgstr "关键字"
 
 #: src/routes/_authed/_dashboard/config/route.tsx:90
 msgid "Language"
@@ -3204,12 +3263,12 @@ msgstr "列表"
 
 #: src/components/pipeline/presets/processors/tdl-config-form.tsx:572
 msgid "List of allowed file extensions (without dot)."
-msgstr ""
+msgstr "允许的文件扩展名列表（不含点号）。"
 
 #: src/components/streamers/card/use-streamer-status.tsx:31
 #: src/components/streamers/card/use-streamer-status.tsx:167
-#: src/components/streamers/edit/recent-sessions-list.tsx:65
-#: src/components/streamers/edit/streamer-header.tsx:62
+#: src/components/streamers/edit/recent-sessions-list.tsx:71
+#: src/components/streamers/edit/streamer-header.tsx:63
 #: src/routes/_authed/_dashboard/sessions/index.tsx:187
 #: src/routes/_authed/_dashboard/streamers/index.tsx:68
 msgid "Live"
@@ -3289,16 +3348,16 @@ msgstr "日志已暂停"
 
 #: src/components/pipeline/presets/processors/tdl-config-form.tsx:410
 msgid "Login Args"
-msgstr ""
+msgstr "登录参数"
 
 #. placeholder {0}: typeof status === 'object' && 'failed' in status ? status.failed.message : 'Unknown error'
 #: src/components/pipeline/presets/processors/tdl-login-dialog.tsx:598
 msgid "Login failed: {0}"
-msgstr ""
+msgstr "登录失败：{0}"
 
 #: src/components/pipeline/presets/processors/tdl-login-dialog.tsx:592
 msgid "Login session cancelled"
-msgstr ""
+msgstr "登录会话已取消"
 
 #: src/components/credentials/bilibili-qr-login-dialog.tsx:154
 msgid "Login successful!"
@@ -3306,18 +3365,18 @@ msgstr "登录成功！"
 
 #: src/components/pipeline/presets/processors/tdl-config-form.tsx:184
 msgid "Login to Telegram"
-msgstr ""
+msgstr "登录 Telegram"
 
 #: src/components/pipeline/presets/processors/tdl-config-form.tsx:195
 msgid "Login Type"
-msgstr ""
+msgstr "登录类型"
 
 #: src/components/sidebar/navbar.tsx:27
 msgid "Logs"
 msgstr "日志"
 
-#: src/components/streamers/config/streamer-general-settings.tsx:193
-#: src/components/streamers/edit/streamer-meta-form.tsx:162
+#: src/components/streamers/config/streamer-general-settings.tsx:233
+#: src/components/streamers/edit/streamer-meta-form.tsx:205
 msgid "Low"
 msgstr "低"
 
@@ -3538,7 +3597,7 @@ msgstr "模块日志级别"
 msgid "Monitor and manage processing jobs"
 msgstr "监控并管理处理任务"
 
-#: src/components/streamers/edit/streamer-meta-form.tsx:181
+#: src/components/streamers/edit/streamer-meta-form.tsx:224
 msgid "Monitor this streamer"
 msgstr "监控此主播"
 
@@ -3590,10 +3649,15 @@ msgstr "我的归档工作流"
 #: src/components/notifications/channel-form.tsx:275
 #: src/components/pipeline/presets/editor/preset-meta-form.tsx:215
 #: src/components/pipeline/workflows/workflow-editor.tsx:305
-#: src/components/streamers/config/streamer-general-settings.tsx:74
-#: src/components/streamers/edit/streamer-meta-form.tsx:123
+#: src/components/streamers/config/streamer-general-settings.tsx:85
+#: src/components/streamers/edit/streamer-meta-form.tsx:133
 msgid "Name"
 msgstr "名称"
+
+#: src/components/streamers/streamer-form.tsx:109
+#: src/hooks/use-edit-streamer.ts:111
+msgid "Name autofilled successfully"
+msgstr "名称自动填充成功"
 
 #: src/components/pipeline/presets/preset-editor.tsx:14
 msgid "Name is required"
@@ -3605,7 +3669,7 @@ msgstr "name@example.com"
 
 #: src/components/pipeline/presets/processors/tdl-config-form.tsx:256
 msgid "Namespace"
-msgstr ""
+msgstr "命名空间"
 
 #: src/components/pipeline/presets/default-presets-i18n.ts:12
 msgid "Native Resolution Thumbnail"
@@ -3639,7 +3703,7 @@ msgstr "新预设名称"
 msgid "New Template Name"
 msgstr "新模板名称"
 
-#: src/components/streamers/streamer-form.tsx:172
+#: src/components/streamers/streamer-form.tsx:209
 msgid "Next"
 msgstr "下一步"
 
@@ -3697,7 +3761,7 @@ msgstr "未找到引擎。"
 
 #: src/components/pipeline/presets/processors/tdl-config-form.tsx:118
 msgid "No environment variables defined"
-msgstr ""
+msgstr "未定义环境变量"
 
 #. placeholder {0}: result.max_depth
 #: src/components/pipeline/workflows/workflow-editor.tsx:182
@@ -3706,7 +3770,7 @@ msgstr "未发现错误。最大深度：{0}"
 
 #: src/components/pipeline/presets/processors/tdl-config-form.tsx:660
 msgid "No Extension"
-msgstr ""
+msgstr "无扩展名"
 
 #: src/components/filters/FilterList.tsx:23
 msgid "No filters yet"
@@ -3728,7 +3792,7 @@ msgstr "未找到处理任务"
 #~ msgid "No Jobs Found"
 #~ msgstr "未找到处理任务"
 
-#: src/components/filters/FilterCard.tsx:122
+#: src/components/filters/FilterCard.tsx:149
 msgid "No keywords set"
 msgstr "未设置关键字"
 
@@ -3822,7 +3886,7 @@ msgstr "暂无预设"
 msgid "No preview generated"
 msgstr "未生成预览"
 
-#: src/components/streamers/edit/recent-sessions-list.tsx:102
+#: src/components/streamers/edit/recent-sessions-list.tsx:108
 msgid "No recent sessions found."
 msgstr "未找到最近的录制会话。"
 
@@ -3880,14 +3944,14 @@ msgstr "暂无工作流"
 msgid "None"
 msgstr "无"
 
-#: src/components/streamers/config/streamer-general-settings.tsx:114
-#: src/components/streamers/config/streamer-general-settings.tsx:152
+#: src/components/streamers/config/streamer-general-settings.tsx:154
+#: src/components/streamers/config/streamer-general-settings.tsx:192
 msgid "None (Default)"
 msgstr "无（默认）"
 
 #: src/components/pipeline/presets/processors/tdl-login-dialog.tsx:643
-#: src/components/streamers/config/streamer-general-settings.tsx:190
-#: src/components/streamers/edit/streamer-meta-form.tsx:159
+#: src/components/streamers/config/streamer-general-settings.tsx:230
+#: src/components/streamers/edit/streamer-meta-form.tsx:202
 msgid "Normal"
 msgstr "正常"
 
@@ -3920,7 +3984,7 @@ msgstr "第 N 个输出：{output0}, {output1}..."
 #: src/components/pipeline/presets/processors/rclone-config-form.tsx:251
 #: src/components/pipeline/presets/processors/tdl-config-form.tsx:627
 msgid "Number of attempts before failing the upload."
-msgstr "上传失败前的尝试次数。"
+msgstr "上传失败前的重试次数。"
 
 #: src/components/config/global/network-system-card.tsx:154
 msgid "Number of consecutive failed checks required to definitively confirm a streamer has gone offline. Higher values prevent \"fake\" offline detection."
@@ -3941,8 +4005,8 @@ msgstr "OAuth 令牌"
 #: src/components/streamers/card/use-streamer-status.tsx:30
 #: src/components/streamers/card/use-streamer-status.tsx:237
 #: src/components/streamers/card/use-streamer-status.tsx:246
-#: src/components/streamers/edit/recent-sessions-list.tsx:63
-#: src/components/streamers/edit/streamer-header.tsx:64
+#: src/components/streamers/edit/recent-sessions-list.tsx:69
+#: src/components/streamers/edit/streamer-header.tsx:65
 #: src/routes/_authed/_dashboard/streamers/index.tsx:69
 msgid "Offline"
 msgstr "离线"
@@ -4039,7 +4103,7 @@ msgstr "此预设的可选描述"
 
 #: src/components/pipeline/presets/processors/tdl-config-form.tsx:420
 msgid "Optional extra arguments appended to `tdl login`."
-msgstr ""
+msgstr "附加到 `tdl login` 的可选额外参数。"
 
 #: src/components/pipeline/presets/processors/compression-config-form.tsx:115
 #: src/components/pipeline/presets/processors/copy-move-config-form.tsx:120
@@ -4139,7 +4203,7 @@ msgid "Override global default."
 msgstr "覆盖全局默认值。"
 
 #: src/components/streamers/edit/streamer-config-form.tsx:124
-#: src/routes/_authed/_dashboard/streamers/$id.edit.tsx:407
+#: src/routes/_authed/_dashboard/streamers/$id.edit.tsx:316
 msgid "Override global defaults for this streamer."
 msgstr "为此主播覆盖全局默认值。"
 
@@ -4234,7 +4298,7 @@ msgstr "密码"
 
 #: src/components/pipeline/presets/processors/tdl-login-dialog.tsx:487
 msgid "Password / 2FA blocked"
-msgstr ""
+msgstr "密码/两步验证被阻止"
 
 #: src/routes/_authed/change-password.tsx:76
 #~ msgid "Password changed successfully"
@@ -4258,7 +4322,7 @@ msgstr "DanmakuFactory 可执行文件路径。如果为空，则使用环境变
 
 #: src/components/pipeline/presets/processors/tdl-login-dialog.tsx:521
 msgid "Path to Telegram Desktop (contains tdata)"
-msgstr ""
+msgstr "Telegram Desktop 路径（包含 tdata）"
 
 #: src/components/pipeline/presets/processors/execute-config-form.tsx:73
 msgid "Path Variables"
@@ -4316,7 +4380,7 @@ msgstr "性能"
 
 #: src/components/pipeline/presets/processors/tdl-config-form.tsx:215
 msgid "Phone & Code (2FA optional)"
-msgstr ""
+msgstr "手机号和验证码（可选两步验证）"
 
 #: src/components/config/shared-config-editor.tsx:221
 #: src/components/sidebar/navbar.tsx:30
@@ -4405,13 +4469,13 @@ msgstr "处理管道"
 
 #: src/components/pipeline/presets/processors/tdl-config-form.tsx:464
 msgid "Placeholders"
-msgstr ""
+msgstr "占位符"
 
 #: src/routes/_authed/_dashboard/streamers/index.tsx:264
 msgid "Platform"
 msgstr "平台"
 
-#: src/components/streamers/config/streamer-general-settings.tsx:99
+#: src/components/streamers/config/streamer-general-settings.tsx:139
 msgid "Platform Configuration"
 msgstr "平台配置"
 
@@ -4483,7 +4547,7 @@ msgstr "请至少输入一个 URL"
 msgid "Please enter your new password details"
 msgstr "请输入你的新密码信息"
 
-#: src/routes/_authed/_dashboard/streamers/$id.edit.tsx:241
+#: src/hooks/use-edit-streamer.ts:146
 msgid "Please fix validation errors"
 msgstr "请修正校验错误"
 
@@ -4497,7 +4561,7 @@ msgstr "请选择一个 JSON 文件"
 
 #: src/components/pipeline/presets/processors/tdl-login-dialog.tsx:534
 msgid "Please set Telegram Desktop Directory first"
-msgstr ""
+msgstr "请先设置 Telegram Desktop 目录"
 
 #: src/routes/_authed/_dashboard/player/index.tsx:356
 msgid "Please wait while we resolve the stream URL."
@@ -4525,7 +4589,7 @@ msgstr "优先使用清单"
 
 #: src/components/pipeline/presets/processors/tdl-config-form.tsx:223
 msgid "Prefer QR login first; Phone & Code (2FA optional) second; Desktop last."
-msgstr ""
+msgstr "优先使用二维码登录；其次是手机号和验证码（可选两步验证）；最后是桌面登录。"
 
 #: src/components/streamers/config/stream-selection-input.tsx:58
 msgid "Preferences"
@@ -4637,15 +4701,15 @@ msgstr "优先选择特定画质（不区分大小写）。按 Enter 添加。"
 msgid "Prioritize specific streaming protocols. Press Enter to add."
 msgstr "优先选择特定流媒体协议。按 Enter 添加。"
 
-#: src/components/streamers/config/streamer-general-settings.tsx:177
-#: src/components/streamers/edit/streamer-meta-form.tsx:146
+#: src/components/streamers/config/streamer-general-settings.tsx:217
+#: src/components/streamers/edit/streamer-meta-form.tsx:189
 msgid "Priority"
 msgstr "优先级"
 
 #. placeholder {0}: status.exited.code ?? 0
 #: src/components/pipeline/presets/processors/tdl-login-dialog.tsx:594
 msgid "Process exited with code {0}"
-msgstr ""
+msgstr "进程以代码 {0} 退出"
 
 #: src/components/pipeline/presets/default-presets-i18n.ts:105
 msgid "Process locally: Remux to MP4, generate thumbnail, move to archive folder."
@@ -4712,7 +4776,7 @@ msgstr "代理 URL"
 #: src/components/pipeline/presets/processors/tdl-config-form.tsx:212
 #: src/components/pipeline/presets/processors/tdl-login-dialog.tsx:504
 msgid "QR Code"
-msgstr ""
+msgstr "二维码"
 
 #: src/components/credentials/bilibili-qr-login-dialog.tsx:163
 msgid "QR code expired"
@@ -4751,7 +4815,7 @@ msgstr "快速分享"
 msgid "RAM utilization"
 msgstr "内存使用率"
 
-#: src/components/streamers/edit/active-download-card.tsx:84
+#: src/components/streamers/edit/active-download-card.tsx:85
 msgid "Ratio"
 msgstr "比例"
 
@@ -4805,7 +4869,7 @@ msgstr "当直播结束时接收通知。"
 msgid "Receive a notification when a streamer goes live."
 msgstr "当主播开播时接收通知。"
 
-#: src/components/streamers/edit/recent-sessions-list.tsx:28
+#: src/components/streamers/edit/recent-sessions-list.tsx:34
 msgid "Recent Sessions"
 msgstr "最近录制会话"
 
@@ -4818,12 +4882,12 @@ msgstr "推荐"
 msgid "Record Danmu"
 msgstr "录制弹幕"
 
-#: src/components/streamers/edit/streamer-header.tsx:60
+#: src/components/streamers/edit/streamer-header.tsx:61
 msgid "Recording"
 msgstr "录制"
 
 #: src/components/streamers/edit/streamer-filters-tab.tsx:30
-#: src/routes/_authed/_dashboard/streamers/$id.edit.tsx:339
+#: src/routes/_authed/_dashboard/streamers/$id.edit.tsx:246
 msgid "Recording Filters"
 msgstr "录制过滤器"
 
@@ -4867,6 +4931,10 @@ msgstr "移除"
 #: src/components/pipeline/presets/processors/remux-config-form.tsx:702
 msgid "Remove Input on Success"
 msgstr "成功后移除输入"
+
+#: src/components/pipeline/presets/processors/metadata-config-form.tsx:285
+msgid "Remove source on success"
+msgstr "成功后移除源文件"
 
 #: src/components/pipeline/presets/default-presets-i18n.ts:4
 #: src/components/pipeline/presets/default-presets-i18n.ts:36
@@ -4921,6 +4989,10 @@ msgstr "替换输出文件"
 msgid "Replace output files if they already exist"
 msgstr "若输出文件已存在则替换"
 
+#: src/components/config/engines/forms/mesio-form.tsx:294
+msgid "Replay Backjump Threshold (ms)"
+msgstr "回放跳回阈值 (毫秒)"
+
 #: src/components/notifications/forms/webhook-form.tsx:182
 msgid "Request timeout duration"
 msgstr "请求超时时长"
@@ -4957,7 +5029,7 @@ msgstr "需要重启"
 
 #: src/components/pipeline/presets/processors/tdl-login-dialog.tsx:548
 msgid "Restart with -d"
-msgstr ""
+msgstr "使用 -d 重启"
 
 #: src/components/config/global/backup-restore-card.tsx:260
 msgid "Restore from a backup file"
@@ -5112,7 +5184,7 @@ msgstr "清理后的主播名称"
 #: src/components/config/engines/engine-editor.tsx:288
 #: src/components/config/platforms/platform-editor.tsx:152
 #: src/components/config/templates/template-editor.tsx:206
-#: src/components/filters/FilterDialog.tsx:290
+#: src/components/filters/FilterDialog.tsx:258
 #: src/components/notifications/subscription-manager.tsx:446
 #: src/components/pipeline/presets/editor/preset-save-fab.tsx:37
 #: src/components/pipeline/workflows/step-config-dialog.tsx:543
@@ -5132,7 +5204,7 @@ msgstr "保存工作流"
 
 #: src/components/config/platforms/platform-editor.tsx:150
 #: src/components/config/templates/template-editor.tsx:202
-#: src/components/filters/FilterDialog.tsx:287
+#: src/components/filters/FilterDialog.tsx:255
 #: src/components/pipeline/workflows/workflow-editor.tsx:268
 #: src/components/streamers/edit/streamer-save-fab.tsx:48
 #: src/routes/_authed/_dashboard/config/global.tsx:88
@@ -5238,7 +5310,7 @@ msgstr "秒"
 msgid "Segment"
 msgstr "分段"
 
-#: src/components/streamers/edit/active-download-card.tsx:76
+#: src/components/streamers/edit/active-download-card.tsx:77
 msgid "Segments"
 msgstr "分段"
 
@@ -5282,7 +5354,7 @@ msgstr "选择行为"
 msgid "Select category"
 msgstr "选择类别"
 
-#: src/components/streamers/config/streamer-general-settings.tsx:109
+#: src/components/streamers/config/streamer-general-settings.tsx:149
 msgid "Select config"
 msgstr "选择配置"
 
@@ -5292,7 +5364,7 @@ msgstr "选择文件"
 
 #: src/components/pipeline/presets/processors/tdl-config-form.tsx:204
 msgid "Select login type"
-msgstr ""
+msgstr "选择登录类型"
 
 #: src/components/pipeline/presets/processors/rclone-config-form.tsx:91
 msgid "Select operation"
@@ -5302,12 +5374,12 @@ msgstr "选择操作"
 #~ msgid "Select preset"
 #~ msgstr "选择预设"
 
-#: src/components/streamers/config/streamer-general-settings.tsx:182
-#: src/components/streamers/edit/streamer-meta-form.tsx:151
+#: src/components/streamers/config/streamer-general-settings.tsx:222
+#: src/components/streamers/edit/streamer-meta-form.tsx:194
 msgid "Select priority"
 msgstr "选择优先级"
 
-#: src/components/streamers/config/streamer-general-settings.tsx:147
+#: src/components/streamers/config/streamer-general-settings.tsx:187
 msgid "Select template"
 msgstr "选择模板"
 
@@ -5347,11 +5419,11 @@ msgstr "已选择"
 
 #: src/components/pipeline/presets/processors/tdl-login-dialog.tsx:658
 msgid "Send"
-msgstr ""
+msgstr "发送"
 
 #: src/components/pipeline/presets/processors/tdl-login-dialog.tsx:643
 msgid "Sensitive"
-msgstr ""
+msgstr "敏感"
 
 #: src/routes/_authed/_dashboard/pipeline/jobs/new.tsx:303
 msgid "Separate multiple paths with commas."
@@ -5411,7 +5483,7 @@ msgstr "会话 ID 是必需的"
 
 #: src/components/pipeline/presets/processors/tdl-login-dialog.tsx:621
 msgid "Session is not running"
-msgstr ""
+msgstr "会话未运行"
 
 #: src/components/sessions/session-card.tsx:256
 msgid "Session Menu"
@@ -5441,7 +5513,7 @@ msgstr "录制会话"
 
 #: src/components/pipeline/presets/processors/tdl-login-dialog.tsx:477
 msgid "Set \"TDL Binary Path\" to your `tdl` executable, or make sure `tdl` is in PATH."
-msgstr ""
+msgstr "将“TDL 二进制路径”设置为你的 `tdl` 可执行文件，或确保 `tdl` 在 PATH 中。"
 
 #: src/components/config/shared/limits-card.tsx:35
 msgid "Set constraints on downloads."
@@ -5500,7 +5572,7 @@ msgid "Single URL"
 msgstr "单个 URL"
 
 #: src/components/pipeline/outputs/output-card.tsx:178
-#: src/components/streamers/edit/active-download-card.tsx:57
+#: src/components/streamers/edit/active-download-card.tsx:58
 msgid "Size"
 msgstr "大小"
 
@@ -5533,7 +5605,7 @@ msgstr "空间节省"
 msgid "Specific"
 msgstr "特定"
 
-#: src/components/streamers/config/streamer-general-settings.tsx:124
+#: src/components/streamers/config/streamer-general-settings.tsx:164
 msgid "Specific settings for the platform."
 msgstr "平台的特定设置。"
 
@@ -5541,7 +5613,7 @@ msgstr "平台的特定设置。"
 msgid "Specific TTWID value for this platform."
 msgstr "此平台的特定 TTWID 值。"
 
-#: src/components/streamers/edit/active-download-card.tsx:46
+#: src/components/streamers/edit/active-download-card.tsx:47
 #: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.tsx:601
 msgid "Speed"
 msgstr "速度"
@@ -5554,21 +5626,37 @@ msgstr "按时长分割。"
 msgid "Split after size."
 msgstr "按大小分割。"
 
+#: src/components/config/engines/forms/mesio-form.tsx:148
+msgid "Split on sequence header change"
+msgstr "在序列头变更时分段"
+
+#: src/components/config/engines/forms/mesio-form.tsx:189
+msgid "Split only when codec configuration changes (reduces false splits)."
+msgstr "仅当编码配置发生变化时分段（减少错误分段）。"
+
+#: src/components/config/engines/forms/mesio-form.tsx:166
+msgid "Split whenever raw sequence-header bytes change (most conservative, may split on non-semantic changes)."
+msgstr "当原始序列头字节发生变化时分段（最保守，可能会在非语义变化时分段）。"
+
 #: src/components/pipeline/presets/default-presets-i18n.ts:83
 msgid "Standard"
 msgstr "标准"
 
 #: src/components/filters/forms/CronFilterForm.tsx:34
-msgid "Standard cron expression (sec min hour day mon year)."
-msgstr "标准 Cron 表达式（秒 分 时 日 月 年）。"
+msgid "Standard cron expression (sec min hour day mon dow)."
+msgstr "标准 Cron 表达式（秒 分 时 日 月 星期）。"
 
-#: src/components/streamers/config/streamer-general-settings.tsx:218
+#: src/components/filters/forms/CronFilterForm.tsx:34
+#~ msgid "Standard cron expression (sec min hour day mon year)."
+#~ msgstr "标准 Cron 表达式（秒 分 时 日 月 年）。"
+
+#: src/components/streamers/config/streamer-general-settings.tsx:258
 msgid "Start checking this streamer immediately."
 msgstr "立即开始检查此主播。"
 
 #: src/components/pipeline/presets/processors/tdl-login-dialog.tsx:309
 msgid "Start Desktop Login"
-msgstr ""
+msgstr "开始桌面登录"
 
 #: src/components/not-found.tsx:28
 msgid "Start Over"
@@ -5576,11 +5664,11 @@ msgstr "重新开始"
 
 #: src/components/pipeline/presets/processors/tdl-login-dialog.tsx:311
 msgid "Start Phone & Code Login"
-msgstr ""
+msgstr "开始手机号和验证码登录"
 
 #: src/components/pipeline/presets/processors/tdl-login-dialog.tsx:313
 msgid "Start QR Login"
-msgstr ""
+msgstr "开始二维码登录"
 
 #: src/components/filters/forms/TimeBasedFilterForm.tsx:81
 #: src/components/pipeline/presets/processors/remux-config-form.tsx:484
@@ -5596,7 +5684,7 @@ msgstr "已开始"
 
 #: src/components/pipeline/presets/processors/tdl-login-dialog.tsx:562
 msgid "Starting tdl process..."
-msgstr ""
+msgstr "正在启动 tdl 进程..."
 
 #: src/routes/_authed/_dashboard/pipeline/executions.$pipelineId.tsx:496
 #: src/routes/_authed/_dashboard/system/health.tsx:157
@@ -5642,13 +5730,13 @@ msgstr "步骤列表"
 
 #: src/components/pipeline/presets/processors/tdl-config-form.tsx:287
 msgid "Storage"
-msgstr ""
+msgstr "存储"
 
 #: src/components/pipeline/presets/default-presets-i18n.ts:94
 msgid "Stream Archive"
 msgstr "直播归档"
 
-#: src/components/streamers/config/streamer-general-settings.tsx:40
+#: src/components/streamers/config/streamer-general-settings.tsx:51
 msgid "Stream Details"
 msgstr "流详情"
 
@@ -5691,7 +5779,7 @@ msgstr "主播创建成功"
 msgid "Streamer deleted"
 msgstr "主播已删除"
 
-#: src/components/streamers/edit/streamer-meta-form.tsx:78
+#: src/components/streamers/edit/streamer-meta-form.tsx:88
 msgid "Streamer Details"
 msgstr "主播详情"
 
@@ -5717,7 +5805,7 @@ msgstr "主播分页"
 msgid "Streamer updated"
 msgstr "主播已更新"
 
-#: src/routes/_authed/_dashboard/streamers/$id.edit.tsx:216
+#: src/hooks/use-edit-streamer.ts:74
 msgid "Streamer updated successfully"
 msgstr "主播更新成功"
 
@@ -5771,6 +5859,10 @@ msgstr "支持"
 msgid "Supported Platforms"
 msgstr "支持的平台"
 
+#: src/components/config/engines/forms/mesio-form.tsx:213
+msgid "Suppress redundant sequence headers with the same config (can reduce player stutter)."
+msgstr "抑制具有相同配置的冗余序列头（可减少播放器卡顿）。"
+
 #: src/components/language-switcher.tsx:39
 #: src/components/language-switcher.tsx:45
 msgid "Switch language"
@@ -5822,65 +5914,65 @@ msgstr "每个采样周期捕获的目标消息数量。"
 
 #: src/components/pipeline/presets/processors/tdl-config-form.tsx:271
 msgid "TDL account namespace (`tdl --ns ...`). Use this to manage multiple Telegram accounts."
-msgstr ""
+msgstr "TDL 账户命名空间 (`tdl --ns ...`)。使用它来管理多个 Telegram 账户。"
 
 #: src/components/pipeline/presets/processors/tdl-login-dialog.tsx:474
 msgid "TDL binary not found"
-msgstr ""
+msgstr "未找到 TDL 二进制文件"
 
 #: src/components/pipeline/presets/processors/tdl-config-form.tsx:320
 msgid "TDL Binary Path"
-msgstr ""
+msgstr "TDL 二进制路径"
 
 #: src/components/pipeline/presets/processors/tdl-login-dialog.tsx:350
 msgid "TDL Interactive Login"
-msgstr ""
+msgstr "TDL 交互式登录"
 
 #: src/components/pipeline/presets/processors/tdl-login-dialog.tsx:170
 msgid "TDL is logged in{version}"
-msgstr ""
+msgstr "TDL 已登录{version}"
 
 #: src/components/pipeline/presets/processors/tdl-login-dialog.tsx:174
 msgid "TDL is not logged in{version}"
-msgstr ""
+msgstr "TDL 未登录{version}"
 
 #: src/components/pipeline/presets/processors/tdl-login-dialog.tsx:132
 msgid "TDL login session started"
-msgstr ""
+msgstr "TDL 登录会话已开始"
 
 #: src/components/pipeline/presets/processors/tdl-login-dialog.tsx:166
 msgid "TDL not found"
-msgstr ""
+msgstr "未找到 TDL"
 
 #: src/components/pipeline/presets/processors/tdl-login-dialog.tsx:464
 msgid "TDL Status"
-msgstr ""
+msgstr "TDL 状态"
 
 #: src/components/pipeline/presets/processors/tdl-login-dialog.tsx:177
 msgid "TDL status unknown{version}"
-msgstr ""
+msgstr "TDL 状态未知{version}"
 
 #: src/components/pipeline/presets/processors/tdl-config-form.tsx:237
 msgid "Telegram 2FA password is not supported"
-msgstr ""
+msgstr "不支持 Telegram 两步验证密码"
 
 #: src/components/pipeline/presets/processors/tdl-login-dialog.tsx:372
 msgid "Telegram 2FA via web is unsupported"
-msgstr ""
+msgstr "不支持通过 Web 进行 Telegram 两步验证"
 
 #: src/components/pipeline/presets/processors/tdl-config-form.tsx:218
 msgid "Telegram Desktop"
-msgstr ""
+msgstr "Telegram 桌面版"
 
 #: src/components/pipeline/presets/processors/tdl-login-dialog.tsx:515
 msgid "Telegram Desktop data required"
-msgstr ""
+msgstr "需要 Telegram 桌面版数据"
 
 #: src/components/pipeline/presets/processors/tdl-config-form.tsx:377
 msgid "Telegram Desktop Directory"
-msgstr ""
+msgstr "Telegram 桌面版目录"
 
-#: src/components/streamers/config/streamer-general-settings.tsx:137
+#: src/components/streamers/config/streamer-general-settings.tsx:177
 msgid "Template"
 msgstr "模板"
 
@@ -5942,7 +6034,7 @@ msgstr "配置已成功处理。以下是更改摘要："
 msgid "The configuration matches existing data"
 msgstr "配置与现有数据一致"
 
-#: src/components/streamers/config/streamer-general-settings.tsx:61
+#: src/components/streamers/config/streamer-general-settings.tsx:72
 msgid "The direct link to the channel or stream."
 msgstr "频道或直播流的直接链接。"
 
@@ -5977,7 +6069,7 @@ msgstr "这是默认预设，描述无法修改。"
 
 #: src/components/pipeline/presets/processors/tdl-login-dialog.tsx:490
 msgid "This login requires a Telegram 2FA password. Enable \"Allow 2FA\" and restart."
-msgstr ""
+msgstr "该登录需要 Telegram 两步验证密码。请启用“允许两步验证”并重启。"
 
 #: src/components/config/global/pipeline-config-card.tsx:191
 #: src/components/config/shared-config-editor.tsx:436
@@ -6284,11 +6376,11 @@ msgstr "类型"
 
 #: src/components/pipeline/presets/processors/tdl-login-dialog.tsx:620
 msgid "Type your answer here..."
-msgstr ""
+msgstr "在此输入你的回答..."
 
 #: src/components/pipeline/presets/processors/tdl-config-form.tsx:292
 msgid "type=bolt,path=/data/tdl"
-msgstr ""
+msgstr "type=bolt,path=/data/tdl"
 
 #: src/components/pipeline/presets/default-presets-i18n.ts:29
 msgid "Ultrafast Compression"
@@ -6360,7 +6452,7 @@ msgstr "上传 (Rclone)"
 
 #: src/components/pipeline/presets/processors/tdl-config-form.tsx:511
 msgid "Upload All Files"
-msgstr ""
+msgstr "上传所有文件"
 
 #: src/components/pipeline/presets/default-presets-i18n.ts:20
 msgid "Upload and Delete"
@@ -6368,11 +6460,11 @@ msgstr "上传并删除"
 
 #: src/components/pipeline/presets/processors/tdl-config-form.tsx:442
 msgid "Upload Arguments"
-msgstr ""
+msgstr "上传参数"
 
 #: src/components/pipeline/presets/processors/tdl-config-form.tsx:514
 msgid "Upload everything regardless of file type"
-msgstr ""
+msgstr "上传所有内容，无论文件类型如何"
 
 #: src/components/pipeline/presets/default-presets-i18n.ts:67
 msgid "Upload file to cloud storage and delete local copy after successful upload."
@@ -6387,8 +6479,8 @@ msgid "Uptime"
 msgstr "运行时间"
 
 #: src/components/notifications/channel-card.tsx:104
-#: src/components/streamers/config/streamer-general-settings.tsx:48
-#: src/components/streamers/edit/streamer-meta-form.tsx:99
+#: src/components/streamers/config/streamer-general-settings.tsx:59
+#: src/components/streamers/edit/streamer-meta-form.tsx:109
 msgid "URL"
 msgstr "URL"
 
@@ -6414,11 +6506,11 @@ msgstr "使用移动端 API 进行流提取。"
 
 #: src/components/pipeline/presets/processors/tdl-login-dialog.tsx:421
 msgid "Use Phone & Code"
-msgstr ""
+msgstr "使用手机号和验证码"
 
 #: src/components/pipeline/presets/processors/tdl-login-dialog.tsx:432
 msgid "Use QR Login"
-msgstr ""
+msgstr "使用二维码登录"
 
 #: src/components/config/platforms/tabs/specific-configs/DouyinConfigFields.tsx:60
 msgid "Use separate stream data for double screen."
@@ -6454,7 +6546,7 @@ msgstr "使用 WUP V2"
 
 #: src/components/pipeline/presets/processors/tdl-config-form.tsx:394
 msgid "Used for Desktop login (fallback); points to Telegram Desktop folder containing `tdata`."
-msgstr ""
+msgstr "用于桌面登录（备选）；指向包含 `tdata` 的 Telegram Desktop 文件夹。"
 
 #: src/components/config/engines/forms/ffmpeg-form.tsx:94
 msgid "User Agent"
@@ -6489,7 +6581,7 @@ msgstr "校验服务不可用"
 
 #: src/components/pipeline/presets/processors/tdl-config-form.tsx:99
 msgid "Value"
-msgstr ""
+msgstr "值"
 
 #: src/components/config/global/file-config-card.tsx:73
 #~ msgid "Vars: '{streamer}', '{title}' | Time: %Y, %m, %d, %H, %M, %S"
@@ -6606,11 +6698,11 @@ msgstr "欢迎回来"
 
 #: src/components/pipeline/presets/processors/tdl-config-form.tsx:360
 msgid "Where TDL stores its session and configuration."
-msgstr ""
+msgstr "TDL 存储其会话和配置的地方。"
 
 #: src/components/pipeline/presets/processors/tdl-config-form.tsx:302
 msgid "Where TDL stores session data (`tdl --storage ...`). Example: `type=bolt,path=/data/tdl`."
-msgstr ""
+msgstr "TDL 存储会话数据的地方 (`tdl --storage ...`)。例如：`type=bolt,path=/data/tdl`。"
 
 #: src/components/pipeline/presets/processors/thumbnail-config-form.tsx:80
 msgid "Width"
@@ -6620,9 +6712,13 @@ msgstr "宽度"
 msgid "Width in pixels (keeps aspect ratio)"
 msgstr "宽度（像素，保持宽高比）"
 
+#: src/components/config/engines/forms/mesio-form.tsx:275
+msgid "Window Capacity (Tags)"
+msgstr "窗口容量 (标签数)"
+
 #: src/components/pipeline/presets/processors/tdl-login-dialog.tsx:450
 msgid "Windows Console Error"
-msgstr ""
+msgstr "Windows 控制台错误"
 
 #: src/components/pipeline/workflows/flow-editor/step-node.tsx:123
 msgid "workflow"
@@ -6661,7 +6757,7 @@ msgstr "工作流"
 
 #: src/components/pipeline/presets/processors/tdl-config-form.tsx:345
 msgid "Working Directory"
-msgstr ""
+msgstr "工作目录"
 
 #: src/components/pipeline/presets/processors/execute-config-form.tsx:174
 msgid "Year (4 digits)"

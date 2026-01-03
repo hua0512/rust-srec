@@ -2,6 +2,7 @@
 
 use serde::{Deserialize, Serialize};
 use sqlx::FromRow;
+use std::borrow::Cow;
 use std::str::FromStr;
 
 /// Validation errors for filter configurations.
@@ -21,6 +22,12 @@ pub enum FilterValidationError {
 
     #[error("Missing required field: {0}")]
     MissingField(String),
+
+    #[error("Invalid time format for {field}: '{value}' (expected HH:MM or HH:MM:SS)")]
+    InvalidTimeFormat { field: &'static str, value: String },
+
+    #[error("Invalid day of week: '{0}' (expected Monday..Sunday)")]
+    InvalidDayOfWeek(String),
 }
 
 /// Trait for validating filter configurations.
@@ -103,10 +110,55 @@ impl FilterType {
 pub struct TimeBasedFilterConfig {
     /// Days of the week (e.g., ["Monday", "Saturday"])
     pub days_of_week: Vec<String>,
-    /// Start time in HH:MM format
+    /// Start time in HH:MM:SS format (HH:MM accepted and normalized)
     pub start_time: String,
-    /// End time in HH:MM format (can be next day for overnight ranges)
+    /// End time in HH:MM:SS format (HH:MM accepted and normalized; can be next day for overnight ranges)
     pub end_time: String,
+}
+
+impl TimeBasedFilterConfig {
+    /// Normalize day names and time formats into the canonical backend form.
+    pub fn normalize(&mut self) {
+        self.days_of_week = self
+            .days_of_week
+            .iter()
+            .filter_map(|d| normalize_day_of_week(d))
+            .map(|d| d.to_string())
+            .collect();
+
+        if let Some(t) = normalize_time_hh_mm_ss(&self.start_time) {
+            self.start_time = t;
+        }
+        if let Some(t) = normalize_time_hh_mm_ss(&self.end_time) {
+            self.end_time = t;
+        }
+    }
+}
+
+impl FilterConfigValidator for TimeBasedFilterConfig {
+    fn validate(&self) -> Result<(), FilterValidationError> {
+        for day in &self.days_of_week {
+            if normalize_day_of_week(day).is_none() {
+                return Err(FilterValidationError::InvalidDayOfWeek(day.clone()));
+            }
+        }
+
+        if normalize_time_hh_mm_ss(&self.start_time).is_none() {
+            return Err(FilterValidationError::InvalidTimeFormat {
+                field: "start_time",
+                value: self.start_time.clone(),
+            });
+        }
+
+        if normalize_time_hh_mm_ss(&self.end_time).is_none() {
+            return Err(FilterValidationError::InvalidTimeFormat {
+                field: "end_time",
+                value: self.end_time.clone(),
+            });
+        }
+
+        Ok(())
+    }
 }
 
 /// Keyword filter configuration.
@@ -118,11 +170,36 @@ pub struct KeywordFilterConfig {
     pub exclude: Vec<String>,
 }
 
+impl KeywordFilterConfig {
+    pub fn normalize(&mut self) {
+        self.include = normalize_string_list(&self.include);
+        self.exclude = normalize_string_list(&self.exclude);
+    }
+}
+
+impl FilterConfigValidator for KeywordFilterConfig {
+    fn validate(&self) -> Result<(), FilterValidationError> {
+        Ok(())
+    }
+}
+
 /// Category filter configuration.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CategoryFilterConfig {
     /// Allowed categories
     pub categories: Vec<String>,
+}
+
+impl CategoryFilterConfig {
+    pub fn normalize(&mut self) {
+        self.categories = normalize_string_list(&self.categories);
+    }
+}
+
+impl FilterConfigValidator for CategoryFilterConfig {
+    fn validate(&self) -> Result<(), FilterValidationError> {
+        Ok(())
+    }
 }
 
 /// Cron-based filter configuration using standard cron expressions.
@@ -186,6 +263,53 @@ impl FilterConfigValidator for RegexFilterConfig {
     }
 }
 
+fn normalize_string_list(values: &[String]) -> Vec<String> {
+    values
+        .iter()
+        .map(|s| s.trim())
+        .filter(|s| !s.is_empty())
+        .map(|s| s.to_string())
+        .collect()
+}
+
+fn normalize_day_of_week(raw: &str) -> Option<Cow<'static, str>> {
+    let trimmed = raw.trim();
+    if trimmed.is_empty() {
+        return None;
+    }
+
+    let lowered = trimmed.to_ascii_lowercase();
+    let canonical = match lowered.as_str() {
+        "mon" | "monday" => "Monday",
+        "tue" | "tues" | "tuesday" => "Tuesday",
+        "wed" | "wednesday" => "Wednesday",
+        "thu" | "thur" | "thurs" | "thursday" => "Thursday",
+        "fri" | "friday" => "Friday",
+        "sat" | "saturday" => "Saturday",
+        "sun" | "sunday" => "Sunday",
+        _ => return None,
+    };
+
+    Some(Cow::Owned(canonical.to_string()))
+}
+
+fn normalize_time_hh_mm_ss(raw: &str) -> Option<String> {
+    use chrono::NaiveTime;
+
+    let trimmed = raw.trim();
+    if trimmed.is_empty() {
+        return None;
+    }
+
+    // Accept both HH:MM and HH:MM:SS, but normalize storage to HH:MM:SS so the
+    // evaluator can support second-level precision end-to-end.
+    let parsed = NaiveTime::parse_from_str(trimmed, "%H:%M")
+        .or_else(|_| NaiveTime::parse_from_str(trimmed, "%H:%M:%S"))
+        .ok()?;
+
+    Some(parsed.format("%H:%M:%S").to_string())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -224,6 +348,22 @@ mod tests {
         let json = serde_json::to_string(&config).unwrap();
         let parsed: TimeBasedFilterConfig = serde_json::from_str(&json).unwrap();
         assert_eq!(parsed.days_of_week.len(), 2);
+    }
+
+    #[test]
+    fn test_time_based_filter_accepts_seconds_and_normalizes() {
+        let mut config = TimeBasedFilterConfig {
+            days_of_week: vec!["Mon".to_string()],
+            start_time: "09:00:00".to_string(),
+            end_time: "17:30:59".to_string(),
+        };
+
+        config.normalize();
+
+        assert_eq!(config.days_of_week, vec!["Monday"]);
+        assert_eq!(config.start_time, "09:00:00");
+        assert_eq!(config.end_time, "17:30:59");
+        assert!(config.validate().is_ok());
     }
 
     #[test]

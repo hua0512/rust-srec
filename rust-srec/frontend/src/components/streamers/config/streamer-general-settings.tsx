@@ -18,20 +18,31 @@ import {
 import { Checkbox } from '@/components/ui/checkbox';
 import { Trans } from '@lingui/react/macro';
 import { t } from '@lingui/core/macro';
-import { Link, User } from 'lucide-react';
+import { Link, User, Sparkles, Loader2 } from 'lucide-react';
 import { PlatformConfig, Template } from '@/api/schemas';
+import { Button } from '@/components/ui/button';
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from '@/components/ui/tooltip';
 
 interface StreamerGeneralSettingsProps {
   form: UseFormReturn<any>;
   platformConfigs?: PlatformConfig[];
   templates?: Template[];
   isLoading?: boolean;
+  onAutofillName?: () => void;
+  isAutofilling?: boolean;
 }
 
 export function StreamerGeneralSettings({
   form,
   platformConfigs,
   templates,
+  onAutofillName,
+  isAutofilling = false,
 }: StreamerGeneralSettingsProps) {
   return (
     <div className="space-y-6">
@@ -74,13 +85,42 @@ export function StreamerGeneralSettings({
                 <Trans>Name</Trans>
               </FormLabel>
               <FormControl>
-                <div className="relative">
-                  <User className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
-                  <Input
-                    placeholder={t`e.g. My Favorite Streamer`}
-                    {...field}
-                    className="bg-background/50 pl-9"
-                  />
+                <div className="flex gap-2">
+                  <div className="relative flex-1">
+                    <User className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+                    <Input
+                      placeholder={t`e.g. My Favorite Streamer`}
+                      {...field}
+                      className="bg-background/50 pl-9"
+                    />
+                  </div>
+                  {onAutofillName && (
+                    <TooltipProvider>
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="icon"
+                            className="h-10 w-10 shrink-0 bg-background/50"
+                            onClick={onAutofillName}
+                            disabled={isAutofilling || !form.getValues('url')}
+                          >
+                            {isAutofilling ? (
+                              <Loader2 className="h-4 w-4 animate-spin text-primary" />
+                            ) : (
+                              <Sparkles className="h-4 w-4 text-primary" />
+                            )}
+                          </Button>
+                        </TooltipTrigger>
+                        <TooltipContent>
+                          <p>
+                            <Trans>Autofill name from URL</Trans>
+                          </p>
+                        </TooltipContent>
+                      </Tooltip>
+                    </TooltipProvider>
+                  )}
                 </div>
               </FormControl>
               <FormMessage />
@@ -138,7 +178,7 @@ export function StreamerGeneralSettings({
               </FormLabel>
               <Select
                 onValueChange={(val) =>
-                  field.onChange(val === 'none' ? undefined : val)
+                  field.onChange(val === 'none' ? null : val)
                 }
                 value={field.value ? String(field.value) : 'none'}
               >

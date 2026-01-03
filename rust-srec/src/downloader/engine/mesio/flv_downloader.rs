@@ -6,7 +6,7 @@
 
 use chrono::Utc;
 use flv::data::FlvData;
-use flv_fix::{FlvPipeline, FlvWriter};
+use flv_fix::{FlvPipeline, FlvPipelineConfig, FlvWriter};
 use futures::StreamExt;
 use mesio::flv::FlvProtocolConfig;
 use mesio::flv::error::FlvDownloadError;
@@ -163,7 +163,15 @@ impl FlvDownloader {
 
         // Build pipeline and common configs
         let pipeline_config = config.build_pipeline_config();
-        let flv_pipeline_config = config.build_flv_pipeline_config();
+        let flv_pipeline_config = if let Some(cfg) = config.flv_pipeline_config.clone() {
+            cfg
+        } else {
+            let mut cfg = FlvPipelineConfig::default();
+            if let Some(ref opts) = self.engine_config.flv_fix {
+                opts.apply_to(&mut cfg);
+            }
+            cfg
+        };
 
         // Create StreamerContext with cancellation token
         let context = StreamerContext::new(token.clone());

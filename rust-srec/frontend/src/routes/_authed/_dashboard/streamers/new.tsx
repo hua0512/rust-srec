@@ -32,7 +32,10 @@ function CreateStreamerPage() {
         data.platform_config_id === 'none' || data.platform_config_id === ''
           ? undefined
           : data.platform_config_id,
-      template_id: data.template_id === 'none' ? undefined : data.template_id,
+      template_id:
+        data.template_id === null || data.template_id === 'none'
+          ? null
+          : data.template_id,
       streamer_specific_config: data.streamer_specific_config ?? undefined,
     };
     createMutation.mutate(payload);

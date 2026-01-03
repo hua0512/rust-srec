@@ -24,11 +24,17 @@ import {
 } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Link as RouterLink } from '@tanstack/react-router';
-import { ArrowLeft, User, Link } from 'lucide-react';
+import { ArrowLeft, User, Link, Sparkles, Loader2 } from 'lucide-react';
 import { Trans } from '@lingui/react/macro';
 import { t } from '@lingui/core/macro';
 import { motion } from 'motion/react';
 import { Checkbox } from '@/components/ui/checkbox';
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from '@/components/ui/tooltip';
 
 interface StreamerMetaFormProps {
   form: UseFormReturn<any>;
@@ -37,6 +43,8 @@ interface StreamerMetaFormProps {
   onBack?: () => void;
   fieldsDisabled?: boolean;
   hideIdentityFields?: boolean;
+  onAutofillName?: () => void;
+  isAutofilling?: boolean;
   children?: React.ReactNode;
 }
 
@@ -47,6 +55,8 @@ export function StreamerMetaForm({
   onBack,
   fieldsDisabled = false,
   hideIdentityFields = false,
+  onAutofillName,
+  isAutofilling = false,
   children,
 }: StreamerMetaFormProps) {
   return (
@@ -123,12 +133,45 @@ export function StreamerMetaForm({
                       <Trans>Name</Trans>
                     </FormLabel>
                     <FormControl>
-                      <Input
-                        {...field}
-                        placeholder={t`e.g. My Favorite Streamer`}
-                        className="h-11 bg-muted/30 border-muted-foreground/20 focus:bg-background transition-all"
-                        disabled={fieldsDisabled}
-                      />
+                      <div className="flex gap-2">
+                        <Input
+                          {...field}
+                          placeholder={t`e.g. My Favorite Streamer`}
+                          className="h-11 bg-muted/30 border-muted-foreground/20 focus:bg-background transition-all"
+                          disabled={fieldsDisabled}
+                        />
+                        {onAutofillName && (
+                          <TooltipProvider>
+                            <Tooltip>
+                              <TooltipTrigger asChild>
+                                <Button
+                                  type="button"
+                                  variant="outline"
+                                  size="icon"
+                                  className="h-11 w-11 shrink-0 bg-muted/30 border-muted-foreground/20 hover:bg-background transition-all"
+                                  onClick={onAutofillName}
+                                  disabled={
+                                    fieldsDisabled ||
+                                    isAutofilling ||
+                                    !form.getValues('url')
+                                  }
+                                >
+                                  {isAutofilling ? (
+                                    <Loader2 className="h-4 w-4 animate-spin text-primary" />
+                                  ) : (
+                                    <Sparkles className="h-4 w-4 text-primary" />
+                                  )}
+                                </Button>
+                              </TooltipTrigger>
+                              <TooltipContent>
+                                <p>
+                                  <Trans>Autofill name from URL</Trans>
+                                </p>
+                              </TooltipContent>
+                            </Tooltip>
+                          </TooltipProvider>
+                        )}
+                      </div>
                     </FormControl>
                     <FormMessage />
                   </FormItem>

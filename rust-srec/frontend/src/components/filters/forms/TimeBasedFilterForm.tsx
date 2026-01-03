@@ -12,13 +12,13 @@ import { Trans } from '@lingui/macro';
 import { cn } from '@/lib/utils';
 
 const DAYS = [
-  { id: 'Mon', label: 'M' },
-  { id: 'Tue', label: 'T' },
-  { id: 'Wed', label: 'W' },
-  { id: 'Thu', label: 'T' },
-  { id: 'Fri', label: 'F' },
-  { id: 'Sat', label: 'S' },
-  { id: 'Sun', label: 'S' },
+  { id: 'Monday', label: 'M' },
+  { id: 'Tuesday', label: 'T' },
+  { id: 'Wednesday', label: 'W' },
+  { id: 'Thursday', label: 'T' },
+  { id: 'Friday', label: 'F' },
+  { id: 'Saturday', label: 'S' },
+  { id: 'Sunday', label: 'S' },
 ];
 
 export function TimeBasedFilterForm() {
@@ -28,7 +28,7 @@ export function TimeBasedFilterForm() {
     <div className="space-y-6 p-4">
       <FormField
         control={control}
-        name="config.days"
+        name="config.days_of_week"
         render={({ field }) => (
           <FormItem className="space-y-3">
             <div>

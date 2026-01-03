@@ -525,6 +525,7 @@ impl WorkerPool {
                                                 &output.outputs,
                                                 input.streamer_name.as_deref(),
                                                 input.session_title.as_deref(),
+                                                input.platform.as_deref(),
                                             )
                                             .await
                                         {

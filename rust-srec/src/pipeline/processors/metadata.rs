@@ -44,6 +44,12 @@ pub struct MetadataConfig {
     /// Whether to overwrite existing output file.
     #[serde(default = "default_true")]
     pub overwrite: bool,
+
+    /// Whether to remove the input file after successful metadata embedding.
+    ///
+    /// In batch mode, inputs are only removed after *all* embeds succeed.
+    #[serde(default)]
+    pub remove_input_on_success: bool,
 }
 
 fn default_true() -> bool {
@@ -61,6 +67,7 @@ impl Default for MetadataConfig {
             custom: HashMap::new(),
             output_path: None,
             overwrite: true,
+            remove_input_on_success: false,
         }
     }
 }
@@ -203,6 +210,7 @@ impl MetadataProcessor {
         output_override: Option<&str>,
         config: &MetadataConfig,
         ctx: &ProcessorContext,
+        remove_input_on_success: bool,
     ) -> Result<ProcessorOutput> {
         let start = std::time::Instant::now();
 
@@ -248,6 +256,13 @@ impl MetadataProcessor {
 
         // Determine output path
         let output_path = self.determine_output_path(input_path, config, &dummy_input);
+
+        if Path::new(input_path) == Path::new(&output_path) {
+            return Err(crate::Error::PipelineError(format!(
+                "metadata: output_path must be different from input_path (input: {}, output: {})",
+                input_path, output_path
+            )));
+        }
 
         ctx.info(format!(
             "Embedding metadata into {} -> {} (artist: {:?}, title: {:?}, date: {:?})",
@@ -318,6 +333,32 @@ impl MetadataProcessor {
             command_output.duration, output_path
         ));
 
+        let mut logs = command_output.logs;
+        if remove_input_on_success {
+            match tokio::fs::remove_file(input_path).await {
+                Ok(()) => {
+                    ctx.info(format!(
+                        "Removed input file after successful metadata embedding: {}",
+                        input_path
+                    ));
+                    logs.push(crate::pipeline::job_queue::JobLogEntry::info(format!(
+                        "Removed input file: {}",
+                        input_path
+                    )));
+                }
+                Err(e) => {
+                    ctx.warn(format!(
+                        "Failed to remove input file after metadata embedding {}: {}",
+                        input_path, e
+                    ));
+                    logs.push(crate::pipeline::job_queue::JobLogEntry::warn(format!(
+                        "Failed to remove input file {}: {}",
+                        input_path, e
+                    )));
+                }
+            }
+        }
+
         // Build metadata summary for output
         let metadata_summary = serde_json::json!({
             "artist": config.artist,
@@ -328,6 +369,7 @@ impl MetadataProcessor {
             "custom_fields": config.custom.keys().collect::<Vec<_>>(),
             "input": input_path,
             "output": output_path,
+            "input_removed": remove_input_on_success,
         });
 
         Ok(ProcessorOutput {
@@ -340,7 +382,7 @@ impl MetadataProcessor {
             failed_inputs: vec![],
             succeeded_inputs: vec![input_path.to_string()],
             skipped_inputs: vec![],
-            logs: command_output.logs,
+            logs,
         })
     }
 }
@@ -409,7 +451,7 @@ impl Processor for MetadataProcessor {
             for (idx, input_path) in input.inputs.iter().enumerate() {
                 let output_override = input.outputs.get(idx).map(|s| s.as_str());
                 match self
-                    .process_one(input_path, output_override, &config, ctx)
+                    .process_one(input_path, output_override, &config, ctx, false)
                     .await
                 {
                     Ok(one) => {
@@ -429,6 +471,29 @@ impl Processor for MetadataProcessor {
                 }
             }
 
+            if config.remove_input_on_success {
+                for input_path in &succeeded_inputs {
+                    match tokio::fs::remove_file(input_path).await {
+                        Ok(()) => {
+                            logs.push(crate::pipeline::job_queue::JobLogEntry::info(format!(
+                                "Removed input file: {}",
+                                input_path
+                            )));
+                        }
+                        Err(e) => {
+                            ctx.warn(format!(
+                                "Failed to remove input file after metadata embedding {}: {}",
+                                input_path, e
+                            ));
+                            logs.push(crate::pipeline::job_queue::JobLogEntry::warn(format!(
+                                "Failed to remove input file {}: {}",
+                                input_path, e
+                            )));
+                        }
+                    }
+                }
+            }
+
             return Ok(ProcessorOutput {
                 outputs,
                 duration_secs,
@@ -436,6 +501,7 @@ impl Processor for MetadataProcessor {
                     serde_json::json!({
                         "batch": true,
                         "inputs": input.inputs.len(),
+                        "input_removed": config.remove_input_on_success,
                     })
                     .to_string(),
                 ),
@@ -457,8 +523,14 @@ impl Processor for MetadataProcessor {
         })?;
 
         let output_override = input.outputs.first().map(|s| s.as_str());
-        self.process_one(input_path, output_override, &config, ctx)
-            .await
+        self.process_one(
+            input_path,
+            output_override,
+            &config,
+            ctx,
+            config.remove_input_on_success,
+        )
+        .await
     }
 }
 
@@ -499,6 +571,7 @@ mod tests {
         assert!(config.custom.is_empty());
         assert!(config.output_path.is_none());
         assert!(config.overwrite);
+        assert!(!config.remove_input_on_success);
     }
 
     #[test]
@@ -511,7 +584,8 @@ mod tests {
             "comment": "Recorded live",
             "custom": {"genre": "Gaming", "language": "en"},
             "output_path": "/output/video_meta.mp4",
-            "overwrite": false
+            "overwrite": false,
+            "remove_input_on_success": true
         }"#;
 
         let config: MetadataConfig = serde_json::from_str(json).unwrap();
@@ -527,6 +601,7 @@ mod tests {
             Some("/output/video_meta.mp4".to_string())
         );
         assert!(!config.overwrite);
+        assert!(config.remove_input_on_success);
     }
 
     #[test]
@@ -537,6 +612,7 @@ mod tests {
         assert!(config.title.is_none());
         assert!(config.custom.is_empty());
         assert!(config.overwrite); // default
+        assert!(!config.remove_input_on_success); // default
     }
 
     #[test]

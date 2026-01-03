@@ -210,16 +210,12 @@ impl SegmentFetcher {
         cache_service: Option<Arc<CacheManager>>,
         http2_stats: Arc<Http2Stats>,
     ) -> Self {
-        Self {
-            http_client,
-            config,
-            cache_service,
-            http2_stats,
-            performance_metrics: None,
-        }
+        let mut fetcher = Self::new(http_client, config, cache_service);
+        fetcher.http2_stats = http2_stats;
+        fetcher
     }
 
-    /// Create a new fetcher with shared HTTP/2 stats and performance metrics
+    /// Create a new fetcher with shared HTTP/2 stats and performance metrics   
     pub fn with_metrics(
         http_client: Client,
         config: Arc<HlsConfig>,
@@ -227,16 +223,13 @@ impl SegmentFetcher {
         http2_stats: Arc<Http2Stats>,
         performance_metrics: Arc<super::metrics::PerformanceMetrics>,
     ) -> Self {
-        Self {
-            http_client,
-            config,
-            cache_service,
-            http2_stats,
-            performance_metrics: Some(performance_metrics),
-        }
+        let mut fetcher = Self::with_stats(http_client, config, cache_service, http2_stats);
+        fetcher.performance_metrics = Some(performance_metrics);
+        fetcher
     }
 
     /// Get the HTTP/2 statistics tracker
+    #[allow(dead_code)]
     pub fn http2_stats(&self) -> &Http2Stats {
         &self.http2_stats
     }

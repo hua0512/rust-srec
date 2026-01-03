@@ -7,7 +7,6 @@ import {
   FormLabel,
   FormMessage,
 } from '@/components/ui/form';
-import { Switch } from '@/components/ui/switch';
 import { Trans } from '@lingui/macro';
 import { TagInput } from '@/components/ui/tag-input';
 
@@ -18,22 +17,25 @@ export function KeywordFilterForm() {
     <div className="space-y-4">
       <FormField
         control={control}
-        name="config.keywords"
+        name="config.include"
         render={({ field }) => (
           <FormItem>
             <FormLabel>
-              <Trans>Keywords</Trans>
+              <Trans>Include Keywords</Trans>
             </FormLabel>
             <FormControl>
               <TagInput
                 {...field}
-                placeholder="Enter keywords..."
+                placeholder="Enter keywords to include..."
                 value={field.value || []}
                 onChange={(newValue) => field.onChange(newValue)}
               />
             </FormControl>
             <FormDescription>
-              <Trans>Enter keywords to match against the stream title.</Trans>
+              <Trans>
+                If set, stream titles must contain at least one of these
+                keywords.
+              </Trans>
             </FormDescription>
             <FormMessage />
           </FormItem>
@@ -44,37 +46,25 @@ export function KeywordFilterForm() {
         control={control}
         name="config.exclude"
         render={({ field }) => (
-          <FormItem className="flex flex-row items-center justify-between rounded-lg border p-4">
-            <div className="space-y-0.5">
-              <FormLabel className="text-base">
-                <Trans>Exclude</Trans>
-              </FormLabel>
-              <FormDescription>
-                <Trans>
-                  If enabled, streams matching these keywords will be ignored.
-                </Trans>
-              </FormDescription>
-            </div>
+          <FormItem>
+            <FormLabel>
+              <Trans>Exclude Keywords</Trans>
+            </FormLabel>
             <FormControl>
-              <Switch checked={field.value} onCheckedChange={field.onChange} />
+              <TagInput
+                {...field}
+                placeholder="Enter keywords to exclude..."
+                value={field.value || []}
+                onChange={(newValue) => field.onChange(newValue)}
+              />
             </FormControl>
-          </FormItem>
-        )}
-      />
-
-      <FormField
-        control={control}
-        name="config.case_sensitive"
-        render={({ field }) => (
-          <FormItem className="flex flex-row items-center justify-between rounded-lg border p-4">
-            <div className="space-y-0.5">
-              <FormLabel className="text-base">
-                <Trans>Case Sensitive</Trans>
-              </FormLabel>
-            </div>
-            <FormControl>
-              <Switch checked={field.value} onCheckedChange={field.onChange} />
-            </FormControl>
+            <FormDescription>
+              <Trans>
+                If any of these keywords appear in the title, the stream will be
+                ignored.
+              </Trans>
+            </FormDescription>
+            <FormMessage />
           </FormItem>
         )}
       />

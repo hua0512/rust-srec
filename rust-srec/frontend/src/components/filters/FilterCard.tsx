@@ -5,12 +5,14 @@ import {
   // CategoryFilterConfigSchema,
   CronFilterConfigSchema,
   RegexFilterConfigSchema,
+  type FilterType,
+  normalizeFilterConfigForType,
 } from '../../api/schemas';
 import { z } from 'zod';
 import { Card, CardContent, CardHeader } from '../ui/card';
 import { Badge } from '../ui/badge';
 import { Button } from '../ui/button';
-import { Edit, Trash2, Clock, Tag, Calendar } from 'lucide-react';
+import { Edit, Trash2, Clock, Tag, Calendar, Regex } from 'lucide-react';
 import { Trans } from '@lingui/react/macro';
 
 type Filter = z.infer<typeof FilterSchema>;
@@ -44,25 +46,37 @@ export function FilterCard({ filter, onEdit, onDelete }: FilterCardProps) {
   const renderConfig = () => {
     switch (filter.filter_type) {
       case 'TIME_BASED': {
-        const config = TimeBasedFilterConfigSchema.safeParse(filter.config);
+        const normalized = normalizeFilterConfigForType(
+          filter.filter_type as FilterType,
+          filter.config,
+        );
+        const config = TimeBasedFilterConfigSchema.safeParse(normalized);
         if (!config.success)
           return (
             <span className="text-destructive text-xs">Invalid Config</span>
           );
-        const { days, start_time, end_time } = config.data;
-        const allDays = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+        const { days_of_week, start_time, end_time } = config.data;
+        const allDays = [
+          { id: 'Monday', label: 'M' },
+          { id: 'Tuesday', label: 'T' },
+          { id: 'Wednesday', label: 'W' },
+          { id: 'Thursday', label: 'T' },
+          { id: 'Friday', label: 'F' },
+          { id: 'Saturday', label: 'S' },
+          { id: 'Sunday', label: 'S' },
+        ];
 
         return (
           <div className="space-y-3">
             <div className="flex gap-1">
               {allDays.map((d) => {
-                const isActive = days.includes(d);
+                const isActive = days_of_week.includes(d.id as any);
                 return (
                   <div
-                    key={d}
+                    key={d.id}
                     className={`w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold transition-colors ${isActive ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground opacity-50'}`}
                   >
-                    {d[0]}
+                    {d.label}
                   </div>
                 );
               })}
@@ -75,43 +89,56 @@ export function FilterCard({ filter, onEdit, onDelete }: FilterCardProps) {
         );
       }
       case 'KEYWORD': {
-        const config = KeywordFilterConfigSchema.safeParse(filter.config);
+        const normalized = normalizeFilterConfigForType(
+          filter.filter_type as FilterType,
+          filter.config,
+        );
+        const config = KeywordFilterConfigSchema.safeParse(normalized);
         if (!config.success)
           return (
             <span className="text-destructive text-xs">Invalid Config</span>
           );
-        const hasKeywords = config.data.keywords.length > 0;
+        const include = config.data.include;
+        const exclude = config.data.exclude;
+        const hasAnyKeywords = include.length > 0 || exclude.length > 0;
 
         return (
           <div className="space-y-3">
-            <div className="flex gap-2 items-center">
-              <Badge
-                variant={config.data.exclude ? 'destructive' : 'default'}
-                className="text-[10px] px-2 h-5 shadow-none rounded-md"
-              >
-                {config.data.exclude ? (
-                  <Trans>Exclude</Trans>
-                ) : (
-                  <Trans>Include</Trans>
-                )}
-              </Badge>
-              {config.data.case_sensitive && (
+            <div className="flex gap-2 items-center flex-wrap">
+              {include.length > 0 && (
                 <Badge
-                  variant="outline"
-                  className="text-[10px] px-2 h-5 bg-background text-muted-foreground"
+                  variant="default"
+                  className="text-[10px] px-2 h-5 shadow-none rounded-md"
                 >
-                  <Trans>Aa</Trans>
+                  <Trans>Include</Trans>
+                </Badge>
+              )}
+              {exclude.length > 0 && (
+                <Badge
+                  variant="destructive"
+                  className="text-[10px] px-2 h-5 shadow-none rounded-md"
+                >
+                  <Trans>Exclude</Trans>
                 </Badge>
               )}
             </div>
 
-            {hasKeywords ? (
+            {hasAnyKeywords ? (
               <div className="flex gap-1.5 flex-wrap">
-                {config.data.keywords.map((k) => (
+                {include.map((k) => (
                   <Badge
-                    key={k}
+                    key={`include:${k}`}
                     variant="secondary"
                     className="px-1.5 py-0 h-5 text-[11px] font-normal border bg-background hover:bg-muted transition-colors"
+                  >
+                    {k}
+                  </Badge>
+                ))}
+                {exclude.map((k) => (
+                  <Badge
+                    key={`exclude:${k}`}
+                    variant="destructive"
+                    className="px-1.5 py-0 h-5 text-[11px] font-normal shadow-none"
                   >
                     {k}
                   </Badge>
@@ -247,7 +274,7 @@ export function FilterCard({ filter, onEdit, onDelete }: FilterCardProps) {
       case 'CRON':
         return <Calendar className="w-3.5 h-3.5" />;
       case 'REGEX':
-        return <Tag className="w-3.5 h-3.5" />;
+        return <Regex className="w-3.5 h-3.5" />;
       default:
         return <Tag className="w-3.5 h-3.5" />;
     }

@@ -1,8 +1,6 @@
-import { useEffect, lazy, Suspense } from 'react';
-import { createFileRoute, useNavigate } from '@tanstack/react-router';
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { toast } from 'sonner';
-import { t } from '@lingui/core/macro';
+import { lazy, Suspense, useMemo } from 'react';
+import { createFileRoute } from '@tanstack/react-router';
+import { useQuery } from '@tanstack/react-query';
 import { Trans } from '@lingui/react/macro';
 import { Skeleton } from '@/components/ui/skeleton';
 import { motion } from 'motion/react';
@@ -28,23 +26,15 @@ const StreamerSaveFab = lazy(() =>
   })),
 );
 
-import {
-  UpdateStreamerSchema,
-  StreamerFormSchema,
-  StreamerFormValues,
-} from '@/api/schemas';
-import { z } from 'zod';
-import { useDownloadProgress } from '@/hooks/use-download-progress';
-import { useDownloadStore, type Download } from '@/store/downloads';
+import { type Download } from '@/store/downloads';
+import { useDownloadStore } from '@/store/downloads';
 import { useShallow } from 'zustand/react/shallow';
 
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Settings, Filter as FilterIcon, Activity } from 'lucide-react';
 import {
   getStreamer,
-  updateStreamer,
   listFilters,
-  deleteFilter,
   listSessions,
   listPlatformConfigs,
   listTemplates,
@@ -52,8 +42,6 @@ import {
 } from '@/server/functions';
 
 import { getPlatformFromUrl } from '@/lib/utils';
-import { useForm } from 'react-hook-form';
-import { zodResolver } from '@hookform/resolvers/zod';
 import { Form } from '@/components/ui/form';
 import {
   Card,
@@ -67,6 +55,9 @@ import {
 import { StreamerHeader } from '@/components/streamers/edit/streamer-header';
 import { ActiveDownloadCard } from '@/components/streamers/edit/active-download-card';
 import { RecentSessionsList } from '@/components/streamers/edit/recent-sessions-list';
+import { EditStreamerSkeleton } from '@/components/streamers/edit/edit-streamer-skeleton';
+import { useDownloadProgress } from '@/hooks/use-download-progress';
+import { useEditStreamer } from '@/hooks/use-edit-streamer';
 
 export const Route = createFileRoute('/_authed/_dashboard/streamers/$id/edit')({
   component: EditStreamerPage,
@@ -98,7 +89,6 @@ const tabContentVariants: any = {
 
 function EditStreamerPage() {
   const { id } = Route.useParams();
-  const queryClient = useQueryClient();
 
   // Subscribe to download progress updates for this specific streamer
   useDownloadProgress({ streamerId: id });
@@ -143,21 +133,7 @@ function EditStreamerPage() {
     isStreamerLoading || isPlatformsLoading || isTemplatesLoading;
 
   if (isLoading || !streamer) {
-    return (
-      <div className="max-w-4xl mx-auto space-y-8 p-6 animate-pulse">
-        <div className="flex items-center gap-4">
-          <Skeleton className="h-10 w-10 rounded-full" />
-          <div className="space-y-2">
-            <Skeleton className="h-8 w-48" />
-            <Skeleton className="h-4 w-24" />
-          </div>
-        </div>
-        <div className="space-y-6">
-          <Skeleton className="h-10 w-full rounded-xl" />
-          <Skeleton className="h-[400px] w-full rounded-xl" />
-        </div>
-      </div>
-    );
+    return <EditStreamerSkeleton />;
   }
 
   // Render the form component only when all data is ready
@@ -173,7 +149,6 @@ function EditStreamerPage() {
       isLoadingSessions={isLoadingSessions}
       isFiltersLoading={isFiltersLoading}
       downloads={downloads}
-      queryClient={queryClient}
     />
   );
 }
@@ -190,7 +165,6 @@ function EditStreamerForm({
   isLoadingSessions,
   isFiltersLoading,
   downloads,
-  queryClient,
 }: {
   id: string;
   streamer: NonNullable<Awaited<ReturnType<typeof getStreamer>>>;
@@ -202,98 +176,31 @@ function EditStreamerForm({
   isLoadingSessions: boolean;
   isFiltersLoading: boolean;
   downloads: Download[];
-  queryClient: ReturnType<typeof useQueryClient>;
 }) {
-  const navigate = useNavigate();
-  const isRecording = downloads.length > 0;
-  const isLive = streamer.state === 'LIVE';
-  const platform = getPlatformFromUrl(streamer.url);
+  const isRecording = useMemo(() => downloads.length > 0, [downloads.length]);
+  const isLive = useMemo(() => streamer.state === 'LIVE', [streamer.state]);
+  const platform = useMemo(
+    () => getPlatformFromUrl(streamer.url),
+    [streamer.url],
+  );
 
-  const updateMutation = useMutation({
-    mutationFn: (data: z.infer<typeof UpdateStreamerSchema>) =>
-      updateStreamer({ data: { id, data } }),
-    onSuccess: () => {
-      toast.success(t`Streamer updated successfully`);
-      queryClient.invalidateQueries({ queryKey: ['streamers'] });
-      queryClient.invalidateQueries({ queryKey: ['streamer', id] });
-      navigate({ to: '/streamers' });
-    },
-    onError: (error: any) => {
-      toast.error(error.message || t`Failed to update streamer`);
-    },
+  const {
+    form,
+    isAutofilling,
+    handleAutofillName,
+    onSubmit,
+    onInvalid,
+    isSaving,
+    deleteFilter,
+  } = useEditStreamer({
+    id,
+    streamer,
   });
 
-  const onSubmit = (data: StreamerFormValues) => {
-    const payload: z.infer<typeof UpdateStreamerSchema> = {
-      ...data,
-      platform_config_id:
-        data.platform_config_id === 'none' || data.platform_config_id === ''
-          ? undefined
-          : data.platform_config_id,
-      template_id: data.template_id === 'none' ? undefined : data.template_id,
-      streamer_specific_config: data.streamer_specific_config ?? undefined,
-    };
-    updateMutation.mutate(payload);
-  };
-
-  const onInvalid = (errors: any) => {
-    console.error('Form validation errors:', errors);
-    toast.error(t`Please fix validation errors`);
-  };
-
-  const deleteFilterMutation = useMutation({
-    mutationFn: (filterId: string) =>
-      deleteFilter({ data: { streamerId: id, filterId } }),
-    onSuccess: () => {
-      toast.success(t`Filter deleted successfully`);
-      queryClient.invalidateQueries({ queryKey: ['streamers', id, 'filters'] });
-    },
-    onError: (error: any) => {
-      toast.error(error.message || t`Failed to delete filter`);
-    },
-  });
-
-  // Parse the specific config
-  const specificConfig =
-    typeof streamer.streamer_specific_config === 'string'
-      ? JSON.parse(streamer.streamer_specific_config)
-      : (streamer.streamer_specific_config ?? {});
-
-  // Initialize form with correct values from the start
-  const form = useForm<StreamerFormValues>({
-    resolver: zodResolver(StreamerFormSchema) as any,
-    defaultValues: {
-      name: streamer.name,
-      url: streamer.url,
-      enabled: streamer.enabled,
-      priority: streamer.priority,
-      platform_config_id: streamer.platform_config_id || '',
-      streamer_specific_config: specificConfig,
-    },
-    reValidateMode: 'onBlur',
-  });
-  const { reset } = form;
-
-  // Reset form when streamer data changes (e.g. after QR login re-fetch)
-  useEffect(() => {
-    const specificConfig =
-      typeof streamer.streamer_specific_config === 'string'
-        ? JSON.parse(streamer.streamer_specific_config)
-        : (streamer.streamer_specific_config ?? {});
-    reset({
-      name: streamer.name,
-      url: streamer.url,
-      enabled: streamer.enabled,
-      priority: streamer.priority,
-      platform_config_id: streamer.platform_config_id || '',
-      template_id: streamer.template_id ?? undefined,
-      streamer_specific_config: specificConfig,
-    });
-  }, [streamer, reset]);
-
-  const platformNameHint = platforms?.find(
-    (p) => p.id === streamer.platform_config_id,
-  )?.name;
+  const platformNameHint = useMemo(
+    () => platforms?.find((p) => p.id === streamer.platform_config_id)?.name,
+    [platforms, streamer.platform_config_id],
+  );
 
   return (
     <Form {...form}>
@@ -378,6 +285,8 @@ function EditStreamerForm({
                             form={form}
                             platformConfigs={platforms || []}
                             templates={templates || []}
+                            onAutofillName={handleAutofillName}
+                            isAutofilling={isAutofilling}
                           />
                         </CardContent>
                       </Card>
@@ -433,14 +342,16 @@ function EditStreamerForm({
                   animate="visible"
                   key="filters"
                 >
-                  <StreamerFiltersTab
-                    streamerId={id}
-                    filters={filters || []}
-                    isLoading={isFiltersLoading}
-                    onDeleteFilter={(filterId) =>
-                      deleteFilterMutation.mutate(filterId)
-                    }
-                  />
+                  <Suspense
+                    fallback={<Skeleton className="h-[400px] w-full" />}
+                  >
+                    <StreamerFiltersTab
+                      streamerId={id}
+                      filters={filters || []}
+                      isLoading={isFiltersLoading}
+                      onDeleteFilter={deleteFilter}
+                    />
+                  </Suspense>
                 </motion.div>
               </TabsContent>
             </Tabs>
@@ -464,10 +375,7 @@ function EditStreamerForm({
         </div>
 
         <Suspense fallback={null}>
-          <StreamerSaveFab
-            isSaving={updateMutation.isPending}
-            formId="streamer-edit-form"
-          />
+          <StreamerSaveFab isSaving={isSaving} formId="streamer-edit-form" />
         </Suspense>
       </motion.div>
     </Form>

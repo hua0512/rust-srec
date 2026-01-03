@@ -12,12 +12,11 @@ use tracing::debug;
 
 use crate::{
     BoxMediaStream, CacheManager, Download, DownloadError, ProtocolBase, SourceManager,
-    create_client,
-    hls::{HlsDownloaderError, coordinator::AllTaskHandles},
+    create_client, hls::HlsDownloaderError,
 };
 use tokio_util::sync::CancellationToken;
 
-use super::{HlsConfig, HlsStreamCoordinator, HlsStreamEvent};
+use super::{HlsConfig, HlsStreamCoordinator, HlsStreamEvent, coordinator::AllTaskHandles};
 
 pub struct HlsDownloader {
     client: Client,

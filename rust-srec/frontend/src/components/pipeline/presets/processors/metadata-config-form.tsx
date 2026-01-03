@@ -1,4 +1,4 @@
-import { Trans } from '@lingui/macro';
+import { Trans } from '@lingui/react/macro';
 import {
   FormField,
   FormItem,
@@ -263,6 +263,31 @@ export function MetadataConfigForm({
                   </FormLabel>
                   <FormDescription className="text-xs">
                     <Trans>Overwrite existing files</Trans>
+                  </FormDescription>
+                </div>
+                <FormControl>
+                  <Switch
+                    checked={field.value}
+                    onCheckedChange={field.onChange}
+                  />
+                </FormControl>
+              </FormItem>
+            )}
+          />
+
+          <FormField
+            control={control}
+            name={`${prefix}remove_input_on_success` as any}
+            render={({ field }) => (
+              <FormItem className="flex flex-row items-center justify-between rounded-xl border border-border/40 p-4 shadow-sm bg-muted/10 transition-colors hover:bg-muted/20">
+                <div className="space-y-1">
+                  <FormLabel className="text-sm font-medium">
+                    <Trans>Remove source on success</Trans>
+                  </FormLabel>
+                  <FormDescription className="text-xs">
+                    <Trans>
+                      Delete source file after successful processing
+                    </Trans>
                   </FormDescription>
                 </div>
                 <FormControl>

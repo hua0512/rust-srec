@@ -52,6 +52,7 @@ pub struct MediaPlaylistDetails {
 }
 
 #[derive(Debug, Clone)]
+#[allow(dead_code)]
 pub enum PlaylistUpdateEvent {
     PlaylistRefreshed {
         media_sequence_base: u64,

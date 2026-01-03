@@ -21,7 +21,7 @@ import { PlatformOverridesTab } from './tabs/platform-overrides-tab';
 import { cn } from '@/lib/utils';
 import { SharedConfigEditor } from '../shared-config-editor';
 
-export type TemplateFormValues = z.infer<typeof UpdateTemplateRequestSchema>;
+export type TemplateFormValues = z.input<typeof UpdateTemplateRequestSchema>;
 
 interface TemplateEditorProps {
   template?: z.infer<typeof TemplateSchema>;
@@ -38,7 +38,7 @@ export function TemplateEditor({
 }: TemplateEditorProps) {
   console.log('TemplateEditor render template:', template);
 
-  const form = useForm({
+  const form = useForm<TemplateFormValues>({
     resolver: zodResolver(UpdateTemplateRequestSchema),
     defaultValues: template
       ? {
@@ -55,7 +55,7 @@ export function TemplateEditor({
           download_retry_policy: template.download_retry_policy,
           danmu_sampling_config: template.danmu_sampling_config,
           download_engine: template.download_engine,
-          engines_override: template.engines_override,
+          engines_override: template.engines_override ?? undefined,
           proxy_config: template.proxy_config,
           event_hooks: template.event_hooks,
           stream_selection_config: template.stream_selection_config,
@@ -77,7 +77,7 @@ export function TemplateEditor({
           download_retry_policy: null,
           danmu_sampling_config: null,
           download_engine: null,
-          engines_override: null,
+          engines_override: undefined,
           proxy_config: null,
           event_hooks: null,
           stream_selection_config: null,
@@ -105,7 +105,7 @@ export function TemplateEditor({
         download_retry_policy: template.download_retry_policy,
         danmu_sampling_config: template.danmu_sampling_config,
         download_engine: template.download_engine,
-        engines_override: template.engines_override,
+        engines_override: template.engines_override ?? undefined,
         proxy_config: template.proxy_config,
         event_hooks: template.event_hooks,
         stream_selection_config: template.stream_selection_config,

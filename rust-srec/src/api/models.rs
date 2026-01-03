@@ -20,6 +20,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::domain::streamer::StreamerState;
 use crate::domain::value_objects::Priority;
+use crate::utils::json::deserialize_field_present_nullable;
 
 // ============================================================================
 // Pagination
@@ -163,7 +164,8 @@ pub struct UpdateStreamerRequest {
     /// Streamer URL
     pub url: Option<String>,
     /// Template ID
-    pub template_id: Option<String>,
+    #[serde(default, deserialize_with = "deserialize_field_present_nullable")]
+    pub template_id: Option<Option<String>>,
     /// Priority
     pub priority: Option<Priority>,
     /// Whether to enable recording

@@ -187,8 +187,8 @@ msgid "A unique name for this configuration template."
 msgstr "A unique name for this configuration template."
 
 #: src/components/filters/FilterCard.tsx:103
-msgid "Aa"
-msgstr "Aa"
+#~ msgid "Aa"
+#~ msgstr "Aa"
 
 #: src/components/config/engines/forms/ffmpeg-form.tsx:51
 msgid "Absolute path or 'ffmpeg' if in PATH"
@@ -207,7 +207,7 @@ msgid "Actions"
 msgstr "Actions"
 
 #: src/components/notifications/forms/webhook-form.tsx:113
-#: src/components/streamers/edit/streamer-meta-form.tsx:178
+#: src/components/streamers/edit/streamer-meta-form.tsx:221
 #: src/routes/_authed/_dashboard/config/language.tsx:96
 msgid "Active"
 msgstr "Active"
@@ -216,7 +216,7 @@ msgstr "Active"
 msgid "Active Days"
 msgstr "Active Days"
 
-#: src/components/streamers/edit/active-download-card.tsx:33
+#: src/components/streamers/edit/active-download-card.tsx:34
 msgid "Active Download"
 msgstr "Active Download"
 
@@ -296,11 +296,11 @@ msgstr "Add module..."
 msgid "Add New Engine"
 msgstr "Add New Engine"
 
-#: src/components/filters/FilterDialog.tsx:242
+#: src/components/filters/FilterDialog.tsx:210
 msgid "Add New Filter"
 msgstr "Add New Filter"
 
-#: src/routes/_authed/_dashboard/streamers/new.tsx:46
+#: src/routes/_authed/_dashboard/streamers/new.tsx:49
 msgid "Add New Streamer"
 msgstr "Add New Streamer"
 
@@ -350,12 +350,12 @@ msgstr "Adjust the roundness of UI elements."
 #: src/components/pipeline/presets/processors/rclone-config-form.tsx:59
 #: src/components/pipeline/presets/processors/remux-config-form.tsx:108
 #: src/components/streamers/edit/streamer-config-form.tsx:74
-#: src/routes/_authed/_dashboard/streamers/$id.edit.tsx:332
+#: src/routes/_authed/_dashboard/streamers/$id.edit.tsx:239
 msgid "Advanced"
 msgstr "Advanced"
 
 #: src/components/streamers/edit/streamer-config-form.tsx:121
-#: src/routes/_authed/_dashboard/streamers/$id.edit.tsx:404
+#: src/routes/_authed/_dashboard/streamers/$id.edit.tsx:313
 msgid "Advanced Configuration"
 msgstr "Advanced Configuration"
 
@@ -447,7 +447,7 @@ msgstr "Apply a blur effect to the background of cards and sidebars."
 #~ msgid "Apply Changes"
 #~ msgstr "Apply Changes"
 
-#: src/components/streamers/config/streamer-general-settings.tsx:162
+#: src/components/streamers/config/streamer-general-settings.tsx:202
 msgid "Apply template settings."
 msgstr "Apply template settings."
 
@@ -522,7 +522,7 @@ msgstr "ASS Subtitle Burn-in"
 msgid "At least one input path is required"
 msgstr "At least one input path is required"
 
-#: src/components/config/engines/forms/mesio-form.tsx:75
+#: src/components/config/engines/forms/mesio-form.tsx:95
 msgid "Attempt to repair timestamps in FLV streams"
 msgstr "Attempt to repair timestamps in FLV streams"
 
@@ -600,6 +600,11 @@ msgstr "Auto-scroll disabled"
 msgid "Auto-scroll enabled"
 msgstr "Auto-scroll enabled"
 
+#: src/components/streamers/config/streamer-general-settings.tsx:118
+#: src/components/streamers/edit/streamer-meta-form.tsx:168
+msgid "Autofill name from URL"
+msgstr "Autofill name from URL"
+
 #: src/components/config/global/file-config-card.tsx:47
 msgid "Automatically generate a thumbnail for the first segment of each session."
 msgstr "Automatically generate a thumbnail for the first segment of each session."
@@ -626,7 +631,7 @@ msgstr "Avg. Duration"
 msgid "Back"
 msgstr "Back"
 
-#: src/components/streamers/streamer-form.tsx:201
+#: src/components/streamers/streamer-form.tsx:238
 msgid "Back to Details"
 msgstr "Back to Details"
 
@@ -686,7 +691,7 @@ msgid "Basic post-processing: Remux FLV to MP4 and generate a thumbnail preview.
 msgstr "Basic post-processing: Remux FLV to MP4 and generate a thumbnail preview."
 
 #: src/components/streamers/edit/streamer-config-form.tsx:94
-#: src/routes/_authed/_dashboard/streamers/$id.edit.tsx:373
+#: src/routes/_authed/_dashboard/streamers/$id.edit.tsx:280
 msgid "Basic settings for the streamer."
 msgstr "Basic settings for the streamer."
 
@@ -732,11 +737,11 @@ msgstr "Border Radius"
 msgid "Browse generated media artifacts from pipeline jobs"
 msgstr "Browse generated media artifacts from pipeline jobs"
 
-#: src/components/config/engines/forms/mesio-form.tsx:29
+#: src/components/config/engines/forms/mesio-form.tsx:49
 msgid "Buffer Settings"
 msgstr "Buffer Settings"
 
-#: src/components/config/engines/forms/mesio-form.tsx:39
+#: src/components/config/engines/forms/mesio-form.tsx:59
 msgid "Buffer Size"
 msgstr "Buffer Size"
 
@@ -744,7 +749,7 @@ msgstr "Buffer Size"
 msgid "Burn .ass subtitles into videos (produces *_burnin.mp4 by default). Manifest-aware and batch-safe."
 msgstr "Burn .ass subtitles into videos (produces *_burnin.mp4 by default). Manifest-aware and batch-safe."
 
-#: src/components/config/engines/forms/mesio-form.tsx:49
+#: src/components/config/engines/forms/mesio-form.tsx:69
 msgid "bytes"
 msgstr "bytes"
 
@@ -755,7 +760,7 @@ msgstr "C:path1.flv,C:path2.flv"
 #: src/components/config/engines/engine-card.tsx:238
 #: src/components/config/global/backup-restore-card.tsx:578
 #: src/components/config/templates/template-card.tsx:196
-#: src/components/filters/FilterDialog.tsx:277
+#: src/components/filters/FilterDialog.tsx:245
 #: src/components/notifications/channel-card.tsx:186
 #: src/components/notifications/channel-form.tsx:358
 #: src/components/notifications/subscription-manager.tsx:436
@@ -765,7 +770,7 @@ msgstr "C:path1.flv,C:path2.flv"
 #: src/components/pipeline/presets/preset-card.tsx:204
 #: src/components/pipeline/workflows/step-config-dialog.tsx:526
 #: src/components/pipeline/workflows/workflow-card.tsx:196
-#: src/components/streamers/streamer-form.tsx:157
+#: src/components/streamers/streamer-form.tsx:194
 #: src/routes/_authed/_dashboard/config/templates/index.tsx:266
 #: src/routes/_authed/_dashboard/pipeline/jobs/new.tsx:158
 #: src/routes/_authed/_dashboard/pipeline/presets/index.tsx:500
@@ -818,8 +823,8 @@ msgid "Case Insensitive"
 msgstr "Case Insensitive"
 
 #: src/components/filters/forms/KeywordFilterForm.tsx:72
-msgid "Case Sensitive"
-msgstr "Case Sensitive"
+#~ msgid "Case Sensitive"
+#~ msgstr "Case Sensitive"
 
 #: src/components/filters/forms/CategoryFilterForm.tsx:25
 msgid "Categories"
@@ -903,7 +908,7 @@ msgstr "Checking"
 msgid "Checking stream status..."
 msgstr "Checking stream status..."
 
-#: src/components/streamers/streamer-form.tsx:168
+#: src/components/streamers/streamer-form.tsx:205
 msgid "Checking..."
 msgstr "Checking..."
 
@@ -1073,7 +1078,7 @@ msgstr "Configure"
 msgid "Configure a new download tool."
 msgstr "Configure a new download tool."
 
-#: src/routes/_authed/_dashboard/streamers/new.tsx:48
+#: src/routes/_authed/_dashboard/streamers/new.tsx:51
 msgid "Configure a new streamer to monitor and record."
 msgstr "Configure a new streamer to monitor and record."
 
@@ -1097,7 +1102,7 @@ msgstr "Configure how you want to import data from the selected backup file."
 #~ msgid "Configure log levels for different modules"
 #~ msgstr "Configure log levels for different modules"
 
-#: src/components/filters/FilterDialog.tsx:246
+#: src/components/filters/FilterDialog.tsx:214
 msgid "Configure recording rules for this streamer."
 msgstr "Configure recording rules for this streamer."
 
@@ -1271,7 +1276,7 @@ msgstr "Create Directories"
 msgid "Create Engine"
 msgstr "Create Engine"
 
-#: src/components/filters/FilterDialog.tsx:292
+#: src/components/filters/FilterDialog.tsx:260
 msgid "Create Filter"
 msgstr "Create Filter"
 
@@ -1303,7 +1308,7 @@ msgstr "Create Pipeline"
 msgid "Create Preset"
 msgstr "Create Preset"
 
-#: src/routes/_authed/_dashboard/streamers/new.tsx:50
+#: src/routes/_authed/_dashboard/streamers/new.tsx:53
 msgid "Create Streamer"
 msgstr "Create Streamer"
 
@@ -1527,7 +1532,7 @@ msgstr "Default pipeline flow. Configure the sequence of processors for new jobs
 msgid "Default workflow: Remux to MP4 (deletes original), generate native-resolution thumbnail, upload both to cloud and delete local files."
 msgstr "Default workflow: Remux to MP4 (deletes original), generate native-resolution thumbnail, upload both to cloud and delete local files."
 
-#: src/components/config/engines/forms/mesio-form.tsx:54
+#: src/components/config/engines/forms/mesio-form.tsx:74
 msgid "Default: 8388608 (8 MiB)"
 msgstr "Default: 8388608 (8 MiB)"
 
@@ -1555,7 +1560,7 @@ msgstr "Delays, proxy, and retention policies."
 #: src/components/config/engines/engine-card.tsx:244
 #: src/components/config/templates/template-card.tsx:128
 #: src/components/config/templates/template-card.tsx:202
-#: src/components/filters/FilterCard.tsx:289
+#: src/components/filters/FilterCard.tsx:316
 #: src/components/notifications/channel-card.tsx:169
 #: src/components/notifications/channel-card.tsx:192
 #: src/components/pipeline/jobs/pipeline-summary-card.tsx:238
@@ -1611,6 +1616,10 @@ msgstr "Delete Source"
 #: src/components/pipeline/presets/processors/ass-burnin-config-form.tsx:352
 msgid "Delete Source ASS"
 msgstr "Delete Source ASS"
+
+#: src/components/pipeline/presets/processors/metadata-config-form.tsx:288
+msgid "Delete source file after successful processing"
+msgstr "Delete source file after successful processing"
 
 #: src/components/pipeline/presets/processors/ass-burnin-config-form.tsx:332
 msgid "Delete Source Videos"
@@ -1780,13 +1789,21 @@ msgstr "Download Manager"
 msgid "Download Retry Policy"
 msgstr "Download Retry Policy"
 
-#: src/components/streamers/edit/active-download-card.tsx:39
+#: src/components/streamers/edit/active-download-card.tsx:40
 msgid "Downloading"
 msgstr "Downloading"
 
 #: src/components/pipeline/workflows/flow-editor/workflow-flow-editor.tsx:272
 msgid "Drag from edge to link steps"
 msgstr "Drag from edge to link steps"
+
+#: src/components/config/engines/forms/mesio-form.tsx:210
+msgid "Drop duplicate sequence headers"
+msgstr "Drop duplicate sequence headers"
+
+#: src/components/config/engines/forms/mesio-form.tsx:248
+msgid "Drop repeated A/V tags and detect replay loops (useful when streams go offline and replay tail)."
+msgstr "Drop repeated A/V tags and detect replay loops (useful when streams go offline and replay tail)."
 
 #: src/components/pipeline/presets/processors/tdl-config-form.tsx:678
 msgid "Dry Run"
@@ -1796,8 +1813,12 @@ msgstr "Dry Run"
 msgid "Dual Format"
 msgstr "Dual Format"
 
+#: src/components/config/engines/forms/mesio-form.tsx:238
+msgid "Duplicate media-tag filtering"
+msgstr "Duplicate media-tag filtering"
+
 #: src/components/pipeline/presets/processors/remux-config-form.tsx:514
-#: src/components/streamers/edit/active-download-card.tsx:68
+#: src/components/streamers/edit/active-download-card.tsx:69
 #: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.tsx:583
 msgid "Duration"
 msgstr "Duration"
@@ -1843,8 +1864,8 @@ msgstr "e.g. High Quality Streamlink"
 msgid "e.g. mp4"
 msgstr "e.g. mp4"
 
-#: src/components/streamers/config/streamer-general-settings.tsx:80
-#: src/components/streamers/edit/streamer-meta-form.tsx:128
+#: src/components/streamers/config/streamer-general-settings.tsx:92
+#: src/components/streamers/edit/streamer-meta-form.tsx:139
 msgid "e.g. My Favorite Streamer"
 msgstr "e.g. My Favorite Streamer"
 
@@ -1870,7 +1891,7 @@ msgstr "e.g., Standard Processing"
 
 #: src/components/config/platforms/platform-card.tsx:89
 #: src/components/config/templates/template-card.tsx:116
-#: src/components/filters/FilterCard.tsx:278
+#: src/components/filters/FilterCard.tsx:305
 #: src/components/notifications/channel-card.tsx:154
 #: src/components/pipeline/presets/preset-card.tsx:174
 #: src/components/pipeline/workflows/workflow-card.tsx:171
@@ -1899,7 +1920,7 @@ msgstr "Edit Channel"
 msgid "Edit Engine"
 msgstr "Edit Engine"
 
-#: src/components/filters/FilterDialog.tsx:240
+#: src/components/filters/FilterDialog.tsx:208
 msgid "Edit Filter"
 msgstr "Edit Filter"
 
@@ -1933,7 +1954,7 @@ msgstr "Enable"
 #~ msgid "Enable encryption for secure communication"
 #~ msgstr "Enable encryption for secure communication"
 
-#: src/components/streamers/config/streamer-general-settings.tsx:215
+#: src/components/streamers/config/streamer-general-settings.tsx:255
 msgid "Enable Monitoring"
 msgstr "Enable Monitoring"
 
@@ -1948,6 +1969,10 @@ msgstr "Enable Proxy"
 #: src/components/config/global/file-config-card.tsx:36
 msgid "Enable recording of danmu/chat messages along with the video."
 msgstr "Enable recording of danmu/chat messages along with the video."
+
+#: src/components/config/engines/forms/mesio-form.tsx:314
+msgid "Enable Replay Offset Matching"
+msgstr "Enable Replay Offset Matching"
 
 #: src/routes/_authed/_dashboard/config/theme.tsx:50
 msgid "Enable translucent background blur effects."
@@ -2043,8 +2068,8 @@ msgid "Enter categories to match against (e.g. Just Chatting, Gaming)."
 msgstr "Enter categories to match against (e.g. Just Chatting, Gaming)."
 
 #: src/components/filters/forms/KeywordFilterForm.tsx:36
-msgid "Enter keywords to match against the stream title."
-msgstr "Enter keywords to match against the stream title."
+#~ msgid "Enter keywords to match against the stream title."
+#~ msgstr "Enter keywords to match against the stream title."
 
 #: src/routes/_public/login.tsx:146
 msgid "Enter your credentials to access your account"
@@ -2122,10 +2147,9 @@ msgstr "Error: Could not load preset details."
 msgid "ETA"
 msgstr "ETA"
 
-#: src/components/filters/FilterCard.tsx:93
-#: src/components/filters/FilterCard.tsx:208
+#: src/components/filters/FilterCard.tsx:121
+#: src/components/filters/FilterCard.tsx:235
 #: src/components/filters/forms/CategoryFilterForm.tsx:52
-#: src/components/filters/forms/KeywordFilterForm.tsx:50
 #: src/components/filters/forms/RegexFilterForm.tsx:49
 msgid "Exclude"
 msgstr "Exclude"
@@ -2133,6 +2157,10 @@ msgstr "Exclude"
 #: src/components/pipeline/presets/processors/ass-burnin-config-form.tsx:300
 msgid "Exclude ASS from Passthrough"
 msgstr "Exclude ASS from Passthrough"
+
+#: src/components/filters/forms/KeywordFilterForm.tsx:51
+msgid "Exclude Keywords"
+msgstr "Exclude Keywords"
 
 #: src/components/pipeline/presets/processors/copy-move-config-form.tsx:177
 msgid "Exclude Patterns"
@@ -2164,6 +2192,11 @@ msgstr "Executions"
 #: src/routes/_authed/_dashboard/player/index.tsx:318
 msgid "Exit Immersive"
 msgstr "Exit Immersive"
+
+#: src/components/config/engines/forms/mesio-form.tsx:185
+#: src/components/config/engines/forms/mesio-form.tsx:244
+msgid "Experimental"
+msgstr "Experimental"
 
 #: src/components/sessions/session-card.tsx:235
 msgid "Explore"
@@ -2229,6 +2262,11 @@ msgstr "Failed"
 msgid "Failed steps retry initiated"
 msgstr "Failed steps retry initiated"
 
+#: src/components/streamers/streamer-form.tsx:117
+#: src/hooks/use-edit-streamer.ts:119
+msgid "Failed to autofill name"
+msgstr "Failed to autofill name"
+
 #: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.tsx:200
 msgid "Failed to cancel job"
 msgstr "Failed to cancel job"
@@ -2261,7 +2299,7 @@ msgstr "Failed to clone template: {0}"
 msgid "Failed to create channel"
 msgstr "Failed to create channel"
 
-#: src/components/filters/FilterDialog.tsx:148
+#: src/components/filters/FilterDialog.tsx:151
 msgid "Failed to create filter"
 msgstr "Failed to create filter"
 
@@ -2296,7 +2334,7 @@ msgstr "Failed to create workflow: {0}"
 msgid "Failed to delete channel"
 msgstr "Failed to delete channel"
 
-#: src/routes/_authed/_dashboard/streamers/$id.edit.tsx:252
+#: src/hooks/use-edit-streamer.ts:92
 msgid "Failed to delete filter"
 msgstr "Failed to delete filter"
 
@@ -2334,6 +2372,11 @@ msgstr "Failed to delete workflow: {0}"
 #: src/components/config/global/backup-restore-card.tsx:92
 msgid "Failed to export configuration"
 msgstr "Failed to export configuration"
+
+#: src/components/streamers/streamer-form.tsx:113
+#: src/hooks/use-edit-streamer.ts:115
+msgid "Failed to extract name from URL"
+msgstr "Failed to extract name from URL"
 
 #: src/components/config/global/backup-restore-card.tsx:118
 msgid "Failed to import configuration"
@@ -2418,7 +2461,7 @@ msgstr "Failed to trigger check"
 msgid "Failed to update channel"
 msgstr "Failed to update channel"
 
-#: src/components/filters/FilterDialog.tsx:163
+#: src/components/filters/FilterDialog.tsx:166
 msgid "Failed to update filter"
 msgstr "Failed to update filter"
 
@@ -2440,8 +2483,8 @@ msgstr "Failed to update preset: {0}"
 msgid "Failed to update settings"
 msgstr "Failed to update settings"
 
+#: src/hooks/use-edit-streamer.ts:80
 #: src/routes/_authed/_dashboard/dashboard.tsx:86
-#: src/routes/_authed/_dashboard/streamers/$id.edit.tsx:222
 #: src/routes/_authed/_dashboard/streamers/index.tsx:203
 msgid "Failed to update streamer"
 msgstr "Failed to update streamer"
@@ -2543,11 +2586,11 @@ msgstr "Filter applies if current time is between Start and End time."
 msgid "Filter by title keywords"
 msgstr "Filter by title keywords"
 
-#: src/components/filters/FilterDialog.tsx:141
+#: src/components/filters/FilterDialog.tsx:144
 msgid "Filter created successfully"
 msgstr "Filter created successfully"
 
-#: src/routes/_authed/_dashboard/streamers/$id.edit.tsx:248
+#: src/hooks/use-edit-streamer.ts:88
 msgid "Filter deleted successfully"
 msgstr "Filter deleted successfully"
 
@@ -2559,7 +2602,7 @@ msgstr "Filter events below this priority"
 msgid "Filter Type"
 msgstr "Filter Type"
 
-#: src/components/filters/FilterDialog.tsx:156
+#: src/components/filters/FilterDialog.tsx:159
 msgid "Filter updated successfully"
 msgstr "Filter updated successfully"
 
@@ -2583,11 +2626,11 @@ msgstr "First input file path"
 msgid "First output file path"
 msgstr "First output file path"
 
-#: src/components/config/engines/forms/mesio-form.tsx:72
+#: src/components/config/engines/forms/mesio-form.tsx:92
 msgid "Fix FLV"
 msgstr "Fix FLV"
 
-#: src/components/config/engines/forms/mesio-form.tsx:95
+#: src/components/config/engines/forms/mesio-form.tsx:115
 msgid "Fix HLS"
 msgstr "Fix HLS"
 
@@ -2598,6 +2641,10 @@ msgstr "Fixed Interval"
 #: src/components/pipeline/workflows/step-config-dialog.tsx:296
 msgid "Flow & Dependencies"
 msgstr "Flow & Dependencies"
+
+#: src/components/config/engines/forms/mesio-form.tsx:137
+msgid "FLV Fix (Advanced)"
+msgstr "FLV Fix (Advanced)"
 
 #: src/routes/_authed/_dashboard/config/logging.tsx:58
 msgid "FLV parser"
@@ -2675,12 +2722,12 @@ msgstr "Full Processing"
 #: src/components/pipeline/presets/processors/rclone-config-form.tsx:53
 #: src/components/pipeline/presets/processors/remux-config-form.tsx:72
 #: src/components/streamers/edit/streamer-config-form.tsx:67
-#: src/routes/_authed/_dashboard/streamers/$id.edit.tsx:325
+#: src/routes/_authed/_dashboard/streamers/$id.edit.tsx:232
 msgid "General"
 msgstr "General"
 
 #: src/components/streamers/edit/streamer-config-form.tsx:91
-#: src/routes/_authed/_dashboard/streamers/$id.edit.tsx:370
+#: src/routes/_authed/_dashboard/streamers/$id.edit.tsx:277
 msgid "General Configuration"
 msgstr "General Configuration"
 
@@ -2784,7 +2831,7 @@ msgstr "H.264"
 msgid "H.264 medium compression (CRF 23) optimized for long-term storage."
 msgstr "H.264 medium compression (CRF 23) optimized for long-term storage."
 
-#: src/components/config/engines/forms/mesio-form.tsx:98
+#: src/components/config/engines/forms/mesio-form.tsx:118
 msgid "Handle discontinuities in HLS streams"
 msgstr "Handle discontinuities in HLS streams"
 
@@ -2824,8 +2871,8 @@ msgstr "Healthy"
 msgid "Hide password"
 msgstr "Hide password"
 
-#: src/components/streamers/config/streamer-general-settings.tsx:187
-#: src/components/streamers/edit/streamer-meta-form.tsx:156
+#: src/components/streamers/config/streamer-general-settings.tsx:227
+#: src/components/streamers/edit/streamer-meta-form.tsx:199
 msgid "High"
 msgstr "High"
 
@@ -2902,7 +2949,7 @@ msgstr "HTTP requests"
 msgid "https://lb-eu.cdn-perfprod.com"
 msgstr "https://lb-eu.cdn-perfprod.com"
 
-#: src/components/filters/FilterCard.tsx:218
+#: src/components/filters/FilterCard.tsx:245
 msgid "i"
 msgstr "i"
 
@@ -2922,6 +2969,10 @@ msgstr "ID is required"
 msgid "Identity and type of the engine."
 msgstr "Identity and type of the engine."
 
+#: src/components/filters/forms/KeywordFilterForm.tsx:62
+msgid "If any of these keywords appear in the title, the stream will be ignored."
+msgstr "If any of these keywords appear in the title, the stream will be ignored."
+
 #: src/components/pipeline/presets/processors/copy-move-config-form.tsx:107
 msgid "If empty, uses next output path in pipeline"
 msgstr "If empty, uses next output path in pipeline"
@@ -2931,12 +2982,16 @@ msgid "If enabled, streams in these categories will be ignored."
 msgstr "If enabled, streams in these categories will be ignored."
 
 #: src/components/filters/forms/KeywordFilterForm.tsx:53
-msgid "If enabled, streams matching these keywords will be ignored."
-msgstr "If enabled, streams matching these keywords will be ignored."
+#~ msgid "If enabled, streams matching these keywords will be ignored."
+#~ msgstr "If enabled, streams matching these keywords will be ignored."
 
 #: src/components/filters/forms/RegexFilterForm.tsx:52
 msgid "If enabled, streams matching this pattern will be ignored."
 msgstr "If enabled, streams matching this pattern will be ignored."
+
+#: src/components/filters/forms/KeywordFilterForm.tsx:35
+msgid "If set, stream titles must contain at least one of these keywords."
+msgstr "If set, stream titles must contain at least one of these keywords."
 
 #: src/components/pipeline/presets/processors/tdl-config-form.tsx:240
 msgid "If your account has Telegram 2FA enabled, use Desktop login (`-T desktop`) or run `tdl login` locally in a terminal."
@@ -2979,14 +3034,18 @@ msgstr "Importing..."
 msgid "In active"
 msgstr "In active"
 
-#: src/components/filters/FilterCard.tsx:95
-#: src/components/filters/FilterCard.tsx:210
+#: src/components/filters/FilterCard.tsx:113
+#: src/components/filters/FilterCard.tsx:237
 msgid "Include"
 msgstr "Include"
 
 #: src/components/pipeline/presets/processors/tdl-config-form.tsx:642
 msgid "Include Images"
 msgstr "Include Images"
+
+#: src/components/filters/forms/KeywordFilterForm.tsx:24
+msgid "Include Keywords"
+msgstr "Include Keywords"
 
 #: src/components/pipeline/presets/processors/danmaku-factory-config-form.tsx:219
 msgid "Include original files in outputs"
@@ -3145,8 +3204,8 @@ msgid "Keyword"
 msgstr "Keyword"
 
 #: src/components/filters/forms/KeywordFilterForm.tsx:25
-msgid "Keywords"
-msgstr "Keywords"
+#~ msgid "Keywords"
+#~ msgstr "Keywords"
 
 #: src/routes/_authed/_dashboard/config/route.tsx:90
 msgid "Language"
@@ -3208,8 +3267,8 @@ msgstr "List of allowed file extensions (without dot)."
 
 #: src/components/streamers/card/use-streamer-status.tsx:31
 #: src/components/streamers/card/use-streamer-status.tsx:167
-#: src/components/streamers/edit/recent-sessions-list.tsx:65
-#: src/components/streamers/edit/streamer-header.tsx:62
+#: src/components/streamers/edit/recent-sessions-list.tsx:71
+#: src/components/streamers/edit/streamer-header.tsx:63
 #: src/routes/_authed/_dashboard/sessions/index.tsx:187
 #: src/routes/_authed/_dashboard/streamers/index.tsx:68
 msgid "Live"
@@ -3316,8 +3375,8 @@ msgstr "Login Type"
 msgid "Logs"
 msgstr "Logs"
 
-#: src/components/streamers/config/streamer-general-settings.tsx:193
-#: src/components/streamers/edit/streamer-meta-form.tsx:162
+#: src/components/streamers/config/streamer-general-settings.tsx:233
+#: src/components/streamers/edit/streamer-meta-form.tsx:205
 msgid "Low"
 msgstr "Low"
 
@@ -3538,7 +3597,7 @@ msgstr "Module Log Levels"
 msgid "Monitor and manage processing jobs"
 msgstr "Monitor and manage processing jobs"
 
-#: src/components/streamers/edit/streamer-meta-form.tsx:181
+#: src/components/streamers/edit/streamer-meta-form.tsx:224
 msgid "Monitor this streamer"
 msgstr "Monitor this streamer"
 
@@ -3590,10 +3649,15 @@ msgstr "My Archiving Workflow"
 #: src/components/notifications/channel-form.tsx:275
 #: src/components/pipeline/presets/editor/preset-meta-form.tsx:215
 #: src/components/pipeline/workflows/workflow-editor.tsx:305
-#: src/components/streamers/config/streamer-general-settings.tsx:74
-#: src/components/streamers/edit/streamer-meta-form.tsx:123
+#: src/components/streamers/config/streamer-general-settings.tsx:85
+#: src/components/streamers/edit/streamer-meta-form.tsx:133
 msgid "Name"
 msgstr "Name"
+
+#: src/components/streamers/streamer-form.tsx:109
+#: src/hooks/use-edit-streamer.ts:111
+msgid "Name autofilled successfully"
+msgstr "Name autofilled successfully"
 
 #: src/components/pipeline/presets/preset-editor.tsx:14
 msgid "Name is required"
@@ -3639,7 +3703,7 @@ msgstr "New Preset Name"
 msgid "New Template Name"
 msgstr "New Template Name"
 
-#: src/components/streamers/streamer-form.tsx:172
+#: src/components/streamers/streamer-form.tsx:209
 msgid "Next"
 msgstr "Next"
 
@@ -3728,7 +3792,7 @@ msgstr "No jobs found"
 #~ msgid "No Jobs Found"
 #~ msgstr "No Jobs Found"
 
-#: src/components/filters/FilterCard.tsx:122
+#: src/components/filters/FilterCard.tsx:149
 msgid "No keywords set"
 msgstr "No keywords set"
 
@@ -3822,7 +3886,7 @@ msgstr "No presets yet"
 msgid "No preview generated"
 msgstr "No preview generated"
 
-#: src/components/streamers/edit/recent-sessions-list.tsx:102
+#: src/components/streamers/edit/recent-sessions-list.tsx:108
 msgid "No recent sessions found."
 msgstr "No recent sessions found."
 
@@ -3880,14 +3944,14 @@ msgstr "No workflows yet"
 msgid "None"
 msgstr "None"
 
-#: src/components/streamers/config/streamer-general-settings.tsx:114
-#: src/components/streamers/config/streamer-general-settings.tsx:152
+#: src/components/streamers/config/streamer-general-settings.tsx:154
+#: src/components/streamers/config/streamer-general-settings.tsx:192
 msgid "None (Default)"
 msgstr "None (Default)"
 
 #: src/components/pipeline/presets/processors/tdl-login-dialog.tsx:643
-#: src/components/streamers/config/streamer-general-settings.tsx:190
-#: src/components/streamers/edit/streamer-meta-form.tsx:159
+#: src/components/streamers/config/streamer-general-settings.tsx:230
+#: src/components/streamers/edit/streamer-meta-form.tsx:202
 msgid "Normal"
 msgstr "Normal"
 
@@ -3941,8 +4005,8 @@ msgstr "OAuth Token"
 #: src/components/streamers/card/use-streamer-status.tsx:30
 #: src/components/streamers/card/use-streamer-status.tsx:237
 #: src/components/streamers/card/use-streamer-status.tsx:246
-#: src/components/streamers/edit/recent-sessions-list.tsx:63
-#: src/components/streamers/edit/streamer-header.tsx:64
+#: src/components/streamers/edit/recent-sessions-list.tsx:69
+#: src/components/streamers/edit/streamer-header.tsx:65
 #: src/routes/_authed/_dashboard/streamers/index.tsx:69
 msgid "Offline"
 msgstr "Offline"
@@ -4139,7 +4203,7 @@ msgid "Override global default."
 msgstr "Override global default."
 
 #: src/components/streamers/edit/streamer-config-form.tsx:124
-#: src/routes/_authed/_dashboard/streamers/$id.edit.tsx:407
+#: src/routes/_authed/_dashboard/streamers/$id.edit.tsx:316
 msgid "Override global defaults for this streamer."
 msgstr "Override global defaults for this streamer."
 
@@ -4411,7 +4475,7 @@ msgstr "Placeholders"
 msgid "Platform"
 msgstr "Platform"
 
-#: src/components/streamers/config/streamer-general-settings.tsx:99
+#: src/components/streamers/config/streamer-general-settings.tsx:139
 msgid "Platform Configuration"
 msgstr "Platform Configuration"
 
@@ -4483,7 +4547,7 @@ msgstr "Please enter at least one URL"
 msgid "Please enter your new password details"
 msgstr "Please enter your new password details"
 
-#: src/routes/_authed/_dashboard/streamers/$id.edit.tsx:241
+#: src/hooks/use-edit-streamer.ts:146
 msgid "Please fix validation errors"
 msgstr "Please fix validation errors"
 
@@ -4637,8 +4701,8 @@ msgstr "Prioritize specific qualities (case-insensitive). Press Enter to add."
 msgid "Prioritize specific streaming protocols. Press Enter to add."
 msgstr "Prioritize specific streaming protocols. Press Enter to add."
 
-#: src/components/streamers/config/streamer-general-settings.tsx:177
-#: src/components/streamers/edit/streamer-meta-form.tsx:146
+#: src/components/streamers/config/streamer-general-settings.tsx:217
+#: src/components/streamers/edit/streamer-meta-form.tsx:189
 msgid "Priority"
 msgstr "Priority"
 
@@ -4751,7 +4815,7 @@ msgstr "Quick Share"
 msgid "RAM utilization"
 msgstr "RAM utilization"
 
-#: src/components/streamers/edit/active-download-card.tsx:84
+#: src/components/streamers/edit/active-download-card.tsx:85
 msgid "Ratio"
 msgstr "Ratio"
 
@@ -4805,7 +4869,7 @@ msgstr "Receive a notification when a stream ends."
 msgid "Receive a notification when a streamer goes live."
 msgstr "Receive a notification when a streamer goes live."
 
-#: src/components/streamers/edit/recent-sessions-list.tsx:28
+#: src/components/streamers/edit/recent-sessions-list.tsx:34
 msgid "Recent Sessions"
 msgstr "Recent Sessions"
 
@@ -4818,12 +4882,12 @@ msgstr "Recommended"
 msgid "Record Danmu"
 msgstr "Record Danmu"
 
-#: src/components/streamers/edit/streamer-header.tsx:60
+#: src/components/streamers/edit/streamer-header.tsx:61
 msgid "Recording"
 msgstr "Recording"
 
 #: src/components/streamers/edit/streamer-filters-tab.tsx:30
-#: src/routes/_authed/_dashboard/streamers/$id.edit.tsx:339
+#: src/routes/_authed/_dashboard/streamers/$id.edit.tsx:246
 msgid "Recording Filters"
 msgstr "Recording Filters"
 
@@ -4867,6 +4931,10 @@ msgstr "Remove"
 #: src/components/pipeline/presets/processors/remux-config-form.tsx:702
 msgid "Remove Input on Success"
 msgstr "Remove Input on Success"
+
+#: src/components/pipeline/presets/processors/metadata-config-form.tsx:285
+msgid "Remove source on success"
+msgstr "Remove source on success"
 
 #: src/components/pipeline/presets/default-presets-i18n.ts:4
 #: src/components/pipeline/presets/default-presets-i18n.ts:36
@@ -4920,6 +4988,10 @@ msgstr "Replace output files"
 #: src/components/pipeline/presets/processors/audio-extract-config-form.tsx:224
 msgid "Replace output files if they already exist"
 msgstr "Replace output files if they already exist"
+
+#: src/components/config/engines/forms/mesio-form.tsx:294
+msgid "Replay Backjump Threshold (ms)"
+msgstr "Replay Backjump Threshold (ms)"
 
 #: src/components/notifications/forms/webhook-form.tsx:182
 msgid "Request timeout duration"
@@ -5112,7 +5184,7 @@ msgstr "Sanitized streamer name"
 #: src/components/config/engines/engine-editor.tsx:288
 #: src/components/config/platforms/platform-editor.tsx:152
 #: src/components/config/templates/template-editor.tsx:206
-#: src/components/filters/FilterDialog.tsx:290
+#: src/components/filters/FilterDialog.tsx:258
 #: src/components/notifications/subscription-manager.tsx:446
 #: src/components/pipeline/presets/editor/preset-save-fab.tsx:37
 #: src/components/pipeline/workflows/step-config-dialog.tsx:543
@@ -5132,7 +5204,7 @@ msgstr "Save Workflow"
 
 #: src/components/config/platforms/platform-editor.tsx:150
 #: src/components/config/templates/template-editor.tsx:202
-#: src/components/filters/FilterDialog.tsx:287
+#: src/components/filters/FilterDialog.tsx:255
 #: src/components/pipeline/workflows/workflow-editor.tsx:268
 #: src/components/streamers/edit/streamer-save-fab.tsx:48
 #: src/routes/_authed/_dashboard/config/global.tsx:88
@@ -5238,7 +5310,7 @@ msgstr "secs"
 msgid "Segment"
 msgstr "Segment"
 
-#: src/components/streamers/edit/active-download-card.tsx:76
+#: src/components/streamers/edit/active-download-card.tsx:77
 msgid "Segments"
 msgstr "Segments"
 
@@ -5282,7 +5354,7 @@ msgstr "Select behavior"
 msgid "Select category"
 msgstr "Select category"
 
-#: src/components/streamers/config/streamer-general-settings.tsx:109
+#: src/components/streamers/config/streamer-general-settings.tsx:149
 msgid "Select config"
 msgstr "Select config"
 
@@ -5302,12 +5374,12 @@ msgstr "Select operation"
 #~ msgid "Select preset"
 #~ msgstr "Select preset"
 
-#: src/components/streamers/config/streamer-general-settings.tsx:182
-#: src/components/streamers/edit/streamer-meta-form.tsx:151
+#: src/components/streamers/config/streamer-general-settings.tsx:222
+#: src/components/streamers/edit/streamer-meta-form.tsx:194
 msgid "Select priority"
 msgstr "Select priority"
 
-#: src/components/streamers/config/streamer-general-settings.tsx:147
+#: src/components/streamers/config/streamer-general-settings.tsx:187
 msgid "Select template"
 msgstr "Select template"
 
@@ -5500,7 +5572,7 @@ msgid "Single URL"
 msgstr "Single URL"
 
 #: src/components/pipeline/outputs/output-card.tsx:178
-#: src/components/streamers/edit/active-download-card.tsx:57
+#: src/components/streamers/edit/active-download-card.tsx:58
 msgid "Size"
 msgstr "Size"
 
@@ -5533,7 +5605,7 @@ msgstr "Space Saver"
 msgid "Specific"
 msgstr "Specific"
 
-#: src/components/streamers/config/streamer-general-settings.tsx:124
+#: src/components/streamers/config/streamer-general-settings.tsx:164
 msgid "Specific settings for the platform."
 msgstr "Specific settings for the platform."
 
@@ -5541,7 +5613,7 @@ msgstr "Specific settings for the platform."
 msgid "Specific TTWID value for this platform."
 msgstr "Specific TTWID value for this platform."
 
-#: src/components/streamers/edit/active-download-card.tsx:46
+#: src/components/streamers/edit/active-download-card.tsx:47
 #: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.tsx:601
 msgid "Speed"
 msgstr "Speed"
@@ -5554,15 +5626,31 @@ msgstr "Split after duration."
 msgid "Split after size."
 msgstr "Split after size."
 
+#: src/components/config/engines/forms/mesio-form.tsx:148
+msgid "Split on sequence header change"
+msgstr "Split on sequence header change"
+
+#: src/components/config/engines/forms/mesio-form.tsx:189
+msgid "Split only when codec configuration changes (reduces false splits)."
+msgstr "Split only when codec configuration changes (reduces false splits)."
+
+#: src/components/config/engines/forms/mesio-form.tsx:166
+msgid "Split whenever raw sequence-header bytes change (most conservative, may split on non-semantic changes)."
+msgstr "Split whenever raw sequence-header bytes change (most conservative, may split on non-semantic changes)."
+
 #: src/components/pipeline/presets/default-presets-i18n.ts:83
 msgid "Standard"
 msgstr "Standard"
 
 #: src/components/filters/forms/CronFilterForm.tsx:34
-msgid "Standard cron expression (sec min hour day mon year)."
-msgstr "Standard cron expression (sec min hour day mon year)."
+msgid "Standard cron expression (sec min hour day mon dow)."
+msgstr "Standard cron expression (sec min hour day mon dow)."
 
-#: src/components/streamers/config/streamer-general-settings.tsx:218
+#: src/components/filters/forms/CronFilterForm.tsx:34
+#~ msgid "Standard cron expression (sec min hour day mon year)."
+#~ msgstr "Standard cron expression (sec min hour day mon year)."
+
+#: src/components/streamers/config/streamer-general-settings.tsx:258
 msgid "Start checking this streamer immediately."
 msgstr "Start checking this streamer immediately."
 
@@ -5648,7 +5736,7 @@ msgstr "Storage"
 msgid "Stream Archive"
 msgstr "Stream Archive"
 
-#: src/components/streamers/config/streamer-general-settings.tsx:40
+#: src/components/streamers/config/streamer-general-settings.tsx:51
 msgid "Stream Details"
 msgstr "Stream Details"
 
@@ -5691,7 +5779,7 @@ msgstr "Streamer created successfully"
 msgid "Streamer deleted"
 msgstr "Streamer deleted"
 
-#: src/components/streamers/edit/streamer-meta-form.tsx:78
+#: src/components/streamers/edit/streamer-meta-form.tsx:88
 msgid "Streamer Details"
 msgstr "Streamer Details"
 
@@ -5717,7 +5805,7 @@ msgstr "Streamer pagination"
 msgid "Streamer updated"
 msgstr "Streamer updated"
 
-#: src/routes/_authed/_dashboard/streamers/$id.edit.tsx:216
+#: src/hooks/use-edit-streamer.ts:74
 msgid "Streamer updated successfully"
 msgstr "Streamer updated successfully"
 
@@ -5770,6 +5858,10 @@ msgstr "Supported"
 #: src/components/config/platforms/supported-platforms.tsx:27
 msgid "Supported Platforms"
 msgstr "Supported Platforms"
+
+#: src/components/config/engines/forms/mesio-form.tsx:213
+msgid "Suppress redundant sequence headers with the same config (can reduce player stutter)."
+msgstr "Suppress redundant sequence headers with the same config (can reduce player stutter)."
 
 #: src/components/language-switcher.tsx:39
 #: src/components/language-switcher.tsx:45
@@ -5880,7 +5972,7 @@ msgstr "Telegram Desktop data required"
 msgid "Telegram Desktop Directory"
 msgstr "Telegram Desktop Directory"
 
-#: src/components/streamers/config/streamer-general-settings.tsx:137
+#: src/components/streamers/config/streamer-general-settings.tsx:177
 msgid "Template"
 msgstr "Template"
 
@@ -5942,7 +6034,7 @@ msgstr "The configuration has been successfully processed. Here is a summary of 
 msgid "The configuration matches existing data"
 msgstr "The configuration matches existing data"
 
-#: src/components/streamers/config/streamer-general-settings.tsx:61
+#: src/components/streamers/config/streamer-general-settings.tsx:72
 msgid "The direct link to the channel or stream."
 msgstr "The direct link to the channel or stream."
 
@@ -6387,8 +6479,8 @@ msgid "Uptime"
 msgstr "Uptime"
 
 #: src/components/notifications/channel-card.tsx:104
-#: src/components/streamers/config/streamer-general-settings.tsx:48
-#: src/components/streamers/edit/streamer-meta-form.tsx:99
+#: src/components/streamers/config/streamer-general-settings.tsx:59
+#: src/components/streamers/edit/streamer-meta-form.tsx:109
 msgid "URL"
 msgstr "URL"
 
@@ -6619,6 +6711,10 @@ msgstr "Width"
 #: src/components/pipeline/presets/processors/thumbnail-config-form.tsx:94
 msgid "Width in pixels (keeps aspect ratio)"
 msgstr "Width in pixels (keeps aspect ratio)"
+
+#: src/components/config/engines/forms/mesio-form.tsx:275
+msgid "Window Capacity (Tags)"
+msgstr "Window Capacity (Tags)"
 
 #: src/components/pipeline/presets/processors/tdl-login-dialog.tsx:450
 msgid "Windows Console Error"

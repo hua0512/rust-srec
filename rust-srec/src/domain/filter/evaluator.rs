@@ -520,12 +520,18 @@ impl FilterEvaluator {
             return Self::is_in_overnight_range_next_day(config, current_time);
         }
 
-        // Parse times
-        let start = match NaiveTime::parse_from_str(&config.start_time, "%H:%M").ok() {
+        // Parse times (accept both HH:MM and HH:MM:SS)
+        let start = match NaiveTime::parse_from_str(&config.start_time, "%H:%M:%S")
+            .or_else(|_| NaiveTime::parse_from_str(&config.start_time, "%H:%M"))
+            .ok()
+        {
             Some(t) => t,
             None => return false,
         };
-        let end = match NaiveTime::parse_from_str(&config.end_time, "%H:%M").ok() {
+        let end = match NaiveTime::parse_from_str(&config.end_time, "%H:%M:%S")
+            .or_else(|_| NaiveTime::parse_from_str(&config.end_time, "%H:%M"))
+            .ok()
+        {
             Some(t) => t,
             None => return false,
         };
@@ -546,11 +552,17 @@ impl FilterEvaluator {
     ) -> bool {
         use chrono::NaiveTime;
 
-        let start = match NaiveTime::parse_from_str(&config.start_time, "%H:%M").ok() {
+        let start = match NaiveTime::parse_from_str(&config.start_time, "%H:%M:%S")
+            .or_else(|_| NaiveTime::parse_from_str(&config.start_time, "%H:%M"))
+            .ok()
+        {
             Some(t) => t,
             None => return false,
         };
-        let end = match NaiveTime::parse_from_str(&config.end_time, "%H:%M").ok() {
+        let end = match NaiveTime::parse_from_str(&config.end_time, "%H:%M:%S")
+            .or_else(|_| NaiveTime::parse_from_str(&config.end_time, "%H:%M"))
+            .ok()
+        {
             Some(t) => t,
             None => return false,
         };

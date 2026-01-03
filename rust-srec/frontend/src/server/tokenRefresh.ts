@@ -215,7 +215,7 @@ async function performRefresh({
       //   `[TokenRefresh] Refresh failed with status: ${response.status}${detail ? ` (${detail})` : ''}${wwwAuthenticate ? ` [www-authenticate: ${wwwAuthenticate}]` : ''}`,
       // );
       throw new Error(
-        `Refresh failed: ${response.status}${detail ? ` (${detail})` : ''}`,
+        `Refresh failed: ${response.status}${detail ? ` (${detail})` : ''}${wwwAuthenticate ? ` [www-authenticate: ${wwwAuthenticate}]` : ''}`,
       );
     }
 

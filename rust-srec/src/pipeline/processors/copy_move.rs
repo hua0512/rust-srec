@@ -1014,6 +1014,7 @@ mod tests {
         // Use placeholders in destination using platform-native path separator
         let dest_template = temp_dir
             .path()
+            .join("{platform}")
             .join("{streamer}")
             .join("{title}")
             .to_string_lossy()
@@ -1033,13 +1034,14 @@ mod tests {
             session_id: "session456".to_string(),
             streamer_name: Some("TestStreamer".to_string()),
             session_title: Some("LiveStream".to_string()),
-            platform: None,
+            platform: Some("Twitch".to_string()),
         };
 
         let output = processor.process(&input, &ctx).await.unwrap();
 
         // Verify placeholders were expanded - check via output existence
         assert_eq!(output.outputs.len(), 1);
+        assert!(output.outputs[0].contains("Twitch"));
         assert!(output.outputs[0].contains("TestStreamer"));
         assert!(output.outputs[0].contains("LiveStream"));
         assert!(output.outputs[0].contains("video.mp4"));

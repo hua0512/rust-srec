@@ -1604,7 +1604,7 @@ impl JobQueue {
 
         for input in job.inputs.iter() {
             // Create a new job for each input
-            let split_job = Job::new_pipeline_step(
+            let mut split_job = Job::new_pipeline_step(
                 job.job_type.clone(),
                 vec![input.clone()],
                 vec![], // Outputs will be determined by processor
@@ -1614,6 +1614,16 @@ impl JobQueue {
             )
             .with_priority(job.priority)
             .with_config(job.config.clone().unwrap_or_else(|| "{}".to_string()));
+
+            if let Some(name) = job.streamer_name.as_ref() {
+                split_job = split_job.with_streamer_name(name.clone());
+            }
+            if let Some(title) = job.session_title.as_ref() {
+                split_job = split_job.with_session_title(title.clone());
+            }
+            if let Some(platform) = job.platform.as_ref() {
+                split_job = split_job.with_platform(platform.clone());
+            }
 
             let job_id = self.enqueue(split_job).await?;
             created_job_ids.push(job_id);
@@ -2264,7 +2274,10 @@ mod tests {
             "streamer-1",
             "session-1",
         )
-        .with_pipeline_id("pipeline-1".to_string());
+        .with_pipeline_id("pipeline-1".to_string())
+        .with_streamer_name("StreamerName".to_string())
+        .with_session_title("SessionTitle".to_string())
+        .with_platform("Twitch".to_string());
 
         let original_id = job.id.clone();
         queue.enqueue(job.clone()).await.unwrap();
@@ -2284,6 +2297,9 @@ mod tests {
             assert_eq!(split_job.inputs.len(), 1);
             assert_eq!(split_job.job_type, "remux");
             assert_eq!(split_job.pipeline_id, Some("pipeline-1".to_string()));
+            assert_eq!(split_job.streamer_name.as_deref(), Some("StreamerName"));
+            assert_eq!(split_job.session_title.as_deref(), Some("SessionTitle"));
+            assert_eq!(split_job.platform.as_deref(), Some("Twitch"));
         }
     }
 

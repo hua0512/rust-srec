@@ -7,7 +7,7 @@ use std::path::PathBuf;
 use std::process::Stdio;
 use std::sync::Arc;
 use tokio::process::Command;
-use tokio::time::Duration;
+use tokio::time::{Duration, Instant};
 use tracing::{debug, error, info, warn};
 
 use super::traits::{
@@ -203,6 +203,7 @@ impl DownloadEngine for FfmpegEngine {
         // 2. Wait for exit (supports graceful stop on cancellation)
         let (exit_tx, exit_rx) = tokio::sync::oneshot::channel::<Option<i32>>();
         let cancellation_token = handle.cancellation_token.clone();
+        let started_instant = Instant::now();
         tokio::spawn(async move {
             use tokio::io::AsyncWriteExt;
 
@@ -261,7 +262,13 @@ impl DownloadEngine for FfmpegEngine {
             let mut segments_completed = 0u32;
             let mut total_bytes = 0u64;
             let mut total_duration = 0.0f64;
-            let mut last_seen_media_duration = 0.0f64;
+            let mut bytes_completed = 0u64;
+            let mut media_duration_offset_secs = 0.0f64;
+            let mut media_duration_total_secs = 0.0f64;
+            let mut cached_active_segment_bytes = 0u64;
+            let mut has_active_segment_fs_bytes = false;
+            let mut last_active_segment_stat_at = Instant::now();
+            let mut last_progress_snapshot: Option<(u64, f64, f64)> = None;
 
             if let Some(path) = single_output_path {
                 let index = 0u32;
@@ -291,8 +298,15 @@ impl DownloadEngine for FfmpegEngine {
                                                 .await
                                                 .map(|m| m.len())
                                                 .unwrap_or(0);
-                                            let duration_secs = (last_seen_media_duration - started_at).max(0.0);
+                                            let duration_secs =
+                                                (media_duration_total_secs - started_at).max(0.0);
                                             segments_completed = segments_completed.saturating_add(1);
+                                            bytes_completed = bytes_completed.saturating_add(size_bytes);
+                                            media_duration_offset_secs += duration_secs;
+                                            media_duration_total_secs = media_duration_offset_secs;
+                                            total_bytes = bytes_completed;
+                                            total_duration = media_duration_offset_secs;
+                                            cached_active_segment_bytes = 0;
                                             let _ = event_tx
                                                 .send(SegmentEvent::SegmentCompleted(SegmentInfo {
                                                     path,
@@ -307,7 +321,7 @@ impl DownloadEngine for FfmpegEngine {
                                         let index = next_segment_index;
                                         next_segment_index = next_segment_index.saturating_add(1);
                                         active_segment =
-                                            Some((index, path.clone(), last_seen_media_duration));
+                                            Some((index, path.clone(), media_duration_total_secs));
 
                                         let _ = event_tx
                                             .send(SegmentEvent::SegmentStarted { path, sequence: index })
@@ -320,14 +334,79 @@ impl DownloadEngine for FfmpegEngine {
 
                                 // Parse progress using shared utility
                                 if let Some(mut progress) = parse_progress(&line) {
-                                    total_bytes = progress.bytes_downloaded;
-                                    total_duration = progress.duration_secs;
-                                    last_seen_media_duration = progress.media_duration_secs;
+                                    let elapsed_secs = started_instant.elapsed().as_secs_f64();
 
+                                    let segment_media_secs = progress.media_duration_secs;
+                                    if segment_mode {
+                                        media_duration_total_secs =
+                                            media_duration_offset_secs + segment_media_secs;
+                                    } else {
+                                        media_duration_total_secs = segment_media_secs;
+                                    }
+
+                                    // Prefer filesystem-backed byte counts since FFmpeg's `size=`
+                                    // can reset or be absent when segmenting.
+                                    let mut bytes_total = progress.bytes_downloaded;
+                                    if let Some((_, path, _)) = active_segment.as_ref() {
+                                        let now = Instant::now();
+                                        if now.duration_since(last_active_segment_stat_at)
+                                            >= Duration::from_millis(500)
+                                        {
+                                            let path = path.clone();
+                                            if let Ok(meta) = tokio::fs::metadata(&path).await {
+                                                cached_active_segment_bytes = meta.len();
+                                                has_active_segment_fs_bytes = true;
+                                            }
+                                            last_active_segment_stat_at = now;
+                                        }
+
+                                        let fs_total = if segment_mode {
+                                            bytes_completed.saturating_add(cached_active_segment_bytes)
+                                        } else {
+                                            cached_active_segment_bytes
+                                        };
+                                        let parsed_total = if segment_mode {
+                                            bytes_completed.saturating_add(progress.bytes_downloaded)
+                                        } else {
+                                            progress.bytes_downloaded
+                                        };
+                                        bytes_total = if has_active_segment_fs_bytes {
+                                            fs_total
+                                        } else {
+                                            parsed_total
+                                        };
+                                    } else if segment_mode {
+                                        bytes_total = bytes_completed.saturating_add(bytes_total);
+                                    }
+
+                                    total_bytes = bytes_total;
+                                    total_duration = media_duration_total_secs;
+
+                                    progress.bytes_downloaded = bytes_total;
+                                    progress.duration_secs = elapsed_secs;
+                                    progress.media_duration_secs = media_duration_total_secs;
                                     progress.segments_completed = segments_completed;
                                     progress.current_segment = active_segment
                                         .as_ref()
                                         .map(|(_, p, _)| p.to_string_lossy().to_string());
+
+                                    progress.speed_bytes_per_sec = last_progress_snapshot
+                                        .and_then(|(prev_bytes, prev_elapsed, _)| {
+                                            let dt = elapsed_secs - prev_elapsed;
+                                            (dt > 0.0).then_some(
+                                                ((bytes_total.saturating_sub(prev_bytes)) as f64 / dt) as u64,
+                                            )
+                                        })
+                                        .unwrap_or(0);
+                                    progress.playback_ratio = last_progress_snapshot
+                                        .and_then(|(_, prev_elapsed, prev_media)| {
+                                            let dt = elapsed_secs - prev_elapsed;
+                                            (dt > 0.0)
+                                                .then_some((media_duration_total_secs - prev_media) / dt)
+                                        })
+                                        .unwrap_or(0.0);
+                                    last_progress_snapshot =
+                                        Some((bytes_total, elapsed_secs, media_duration_total_secs));
 
                                     let _ = event_tx.send(SegmentEvent::Progress(progress)).await;
                                 }
@@ -360,8 +439,16 @@ impl DownloadEngine for FfmpegEngine {
                     .await
                     .map(|m| m.len())
                     .unwrap_or(0);
-                let duration_secs = (last_seen_media_duration - started_at).max(0.0);
+                let duration_secs = (media_duration_total_secs - started_at).max(0.0);
                 segments_completed = segments_completed.saturating_add(1);
+                bytes_completed = bytes_completed.saturating_add(size_bytes);
+                total_bytes = bytes_completed;
+                if segment_mode {
+                    media_duration_offset_secs += duration_secs;
+                    total_duration = media_duration_offset_secs;
+                } else {
+                    total_duration = media_duration_total_secs;
+                }
                 let _ = event_tx
                     .send(SegmentEvent::SegmentCompleted(SegmentInfo {
                         path,

@@ -1,3 +1,4 @@
+import { memo, useMemo } from 'react';
 import { FileVideo, Calendar, Clock, HardDrive } from 'lucide-react';
 import { Trans } from '@lingui/react/macro';
 import { cn } from '@/lib/utils';
@@ -8,19 +9,24 @@ interface RecentSessionsListProps {
   isLoading: boolean;
 }
 
-export function RecentSessionsList({
+export const RecentSessionsList = memo(function RecentSessionsList({
   sessions,
   isLoading,
 }: RecentSessionsListProps) {
   const { i18n } = useLingui();
-  const recentSessions = sessions
-    ? [...sessions]
-        .sort(
-          (a: any, b: any) =>
-            new Date(b.start_time).getTime() - new Date(a.start_time).getTime(),
-        )
-        .slice(0, 5)
-    : [];
+  const recentSessions = useMemo(
+    () =>
+      sessions
+        ? [...sessions]
+            .sort(
+              (a: any, b: any) =>
+                new Date(b.start_time).getTime() -
+                new Date(a.start_time).getTime(),
+            )
+            .slice(0, 5)
+        : [],
+    [sessions],
+  );
 
   return (
     <div className="p-6 rounded-xl border bg-card/50 shadow-sm space-y-4">
@@ -104,4 +110,4 @@ export function RecentSessionsList({
       )}
     </div>
   );
-}
+});
