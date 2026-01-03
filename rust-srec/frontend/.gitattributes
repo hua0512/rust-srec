@@ -1,0 +1,4 @@
+# Frontend is built inside Linux containers; keep scripts/configs with LF endings.
+Dockerfile text eol=lf
+*.sh text eol=lf
+*.template text eol=lf

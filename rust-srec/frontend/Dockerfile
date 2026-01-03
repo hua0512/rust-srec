@@ -37,6 +37,8 @@ RUN chmod +x /entrypoint.sh
 ENV PORT=3000
 ENV HOST=0.0.0.0
 ENV NODE_ENV=production
+# Timezone (override at runtime via `-e TZ=...`)
+ENV TZ=UTC
 # Default backend if not set
 ENV BACKEND_URL=http://rust-srec:8080
 
