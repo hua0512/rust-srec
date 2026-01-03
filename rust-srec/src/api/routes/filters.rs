@@ -10,7 +10,10 @@ use serde_json::Value;
 use crate::api::error::{ApiError, ApiResult};
 use crate::api::models::{CreateFilterRequest, FilterResponse, UpdateFilterRequest};
 use crate::api::server::AppState;
-use crate::database::models::{FilterDbModel, FilterType};
+use crate::database::models::{
+    CategoryFilterConfig, CronFilterConfig, FilterConfigValidator, FilterDbModel, FilterType,
+    KeywordFilterConfig, RegexFilterConfig, TimeBasedFilterConfig,
+};
 
 /// Create the filters router.
 pub fn router() -> Router<AppState> {
@@ -33,6 +36,70 @@ fn model_to_response(model: &FilterDbModel) -> ApiResult<FilterResponse> {
         filter_type: model.filter_type.clone(),
         config,
     })
+}
+
+fn validate_and_serialize_config(filter_type: FilterType, config: Value) -> ApiResult<String> {
+    match filter_type {
+        FilterType::TimeBased => {
+            let mut typed: TimeBasedFilterConfig = serde_json::from_value(config).map_err(|e| {
+                ApiError::validation(format!("Invalid time-based filter config: {}", e))
+            })?;
+            typed.normalize();
+            typed
+                .validate()
+                .map_err(|e| ApiError::validation(e.to_string()))?;
+            serde_json::to_string(&typed).map_err(|e| {
+                ApiError::validation(format!(
+                    "Failed to serialize time-based filter config: {}",
+                    e
+                ))
+            })
+        }
+        FilterType::Keyword => {
+            let mut typed: KeywordFilterConfig = serde_json::from_value(config).map_err(|e| {
+                ApiError::validation(format!("Invalid keyword filter config: {}", e))
+            })?;
+            typed.normalize();
+            typed
+                .validate()
+                .map_err(|e| ApiError::validation(e.to_string()))?;
+            serde_json::to_string(&typed).map_err(|e| {
+                ApiError::validation(format!("Failed to serialize keyword filter config: {}", e))
+            })
+        }
+        FilterType::Category => {
+            let mut typed: CategoryFilterConfig = serde_json::from_value(config).map_err(|e| {
+                ApiError::validation(format!("Invalid category filter config: {}", e))
+            })?;
+            typed.normalize();
+            typed
+                .validate()
+                .map_err(|e| ApiError::validation(e.to_string()))?;
+            serde_json::to_string(&typed).map_err(|e| {
+                ApiError::validation(format!("Failed to serialize category filter config: {}", e))
+            })
+        }
+        FilterType::Cron => {
+            let typed: CronFilterConfig = serde_json::from_value(config)
+                .map_err(|e| ApiError::validation(format!("Invalid cron filter config: {}", e)))?;
+            typed
+                .validate()
+                .map_err(|e| ApiError::validation(e.to_string()))?;
+            serde_json::to_string(&typed).map_err(|e| {
+                ApiError::validation(format!("Failed to serialize cron filter config: {}", e))
+            })
+        }
+        FilterType::Regex => {
+            let typed: RegexFilterConfig = serde_json::from_value(config)
+                .map_err(|e| ApiError::validation(format!("Invalid regex filter config: {}", e)))?;
+            typed
+                .validate()
+                .map_err(|e| ApiError::validation(e.to_string()))?;
+            serde_json::to_string(&typed).map_err(|e| {
+                ApiError::validation(format!("Failed to serialize regex filter config: {}", e))
+            })
+        }
+    }
 }
 
 #[utoipa::path(
@@ -85,14 +152,20 @@ pub async fn create_filter(
         .as_ref()
         .ok_or_else(|| ApiError::service_unavailable("Filter service not available"))?;
 
+    if request.streamer_id != streamer_id {
+        return Err(ApiError::validation(format!(
+            "streamer_id mismatch: path={} body={}",
+            streamer_id, request.streamer_id
+        )));
+    }
+
     // Validate filter type
     let filter_type = FilterType::parse(&request.filter_type).ok_or_else(|| {
         ApiError::validation(format!("Invalid filter type: {}", request.filter_type))
     })?;
 
-    // Serialize config to string
-    let config_str = serde_json::to_string(&request.config)
-        .map_err(|e| ApiError::validation(format!("Invalid config JSON: {}", e)))?;
+    // Validate + normalize config and store canonical JSON.
+    let config_str = validate_and_serialize_config(filter_type, request.config)?;
 
     // Create DB model
     let filter = FilterDbModel::new(streamer_id, filter_type, config_str);
@@ -178,16 +251,36 @@ pub async fn update_filter(
         )));
     }
 
-    // Update fields if provided
-    if let Some(ft_str) = request.filter_type {
-        let _ = FilterType::parse(&ft_str)
-            .ok_or_else(|| ApiError::validation(format!("Invalid filter type: {}", ft_str)))?;
-        filter.filter_type = ft_str;
+    let existing_type = FilterType::parse(&filter.filter_type).ok_or_else(|| {
+        ApiError::validation(format!(
+            "Invalid stored filter type: {}",
+            filter.filter_type
+        ))
+    })?;
+
+    let (target_type, type_changed) = match request.filter_type.as_deref() {
+        Some(ft_str) => {
+            let parsed = FilterType::parse(ft_str)
+                .ok_or_else(|| ApiError::validation(format!("Invalid filter type: {}", ft_str)))?;
+            (parsed, parsed.as_str() != filter.filter_type.as_str())
+        }
+        None => (existing_type, false),
+    };
+
+    if type_changed && request.config.is_none() {
+        return Err(ApiError::validation(
+            "config is required when changing filter_type".to_string(),
+        ));
     }
 
+    // Apply type update first (canonical string form).
+    if request.filter_type.is_some() {
+        filter.filter_type = target_type.as_str().to_string();
+    }
+
+    // Validate + normalize config if provided.
     if let Some(config_value) = request.config {
-        filter.config = serde_json::to_string(&config_value)
-            .map_err(|e| ApiError::validation(format!("Invalid config JSON: {}", e)))?;
+        filter.config = validate_and_serialize_config(target_type, config_value)?;
     }
 
     // Save updates

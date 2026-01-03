@@ -9,17 +9,14 @@ import {
 import { Filter as FilterIcon } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Form } from '@/components/ui/form';
-import { useForm } from 'react-hook-form';
+import { type SubmitHandler, useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import {
   CreateFilterRequestSchema,
   FilterSchema,
-  TimeBasedFilterConfigSchema,
-  KeywordFilterConfigSchema,
-  // CategoryFilterConfigSchema,
-  CronFilterConfigSchema,
-  RegexFilterConfigSchema,
+  type FilterType,
+  normalizeFilterConfigForType,
 } from '../../api/schemas';
 import { createFilter, updateFilter } from '@/server/functions';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
@@ -36,6 +33,8 @@ import { Trans } from '@lingui/react/macro';
 
 // Union of all possible configs for the form state
 const FormSchema = CreateFilterRequestSchema;
+type FormInput = z.input<typeof FormSchema>;
+type FormOutput = z.infer<typeof FormSchema>;
 
 type Filter = z.infer<typeof FilterSchema>;
 
@@ -55,11 +54,11 @@ export function FilterDialog({
   const queryClient = useQueryClient();
   const isEditing = !!filterToEdit;
 
-  const form = useForm<z.infer<typeof FormSchema>>({
+  const form = useForm<FormInput, any, FormOutput>({
     resolver: zodResolver(FormSchema),
     defaultValues: {
       filter_type: 'KEYWORD',
-      config: { keywords: [], exclude: false, case_sensitive: false },
+      config: { include: [], exclude: [] },
     },
   });
 
@@ -71,14 +70,19 @@ export function FilterDialog({
         // But we need to ensure it matches the schema expected by the form for that type.
         // The API returns config as `any` (or `Value`), so we pass it directly.
         // We need to valid cast filter_type string to enum.
+        const filterType = filterToEdit.filter_type as FilterType;
+        const normalizedConfig = normalizeFilterConfigForType(
+          filterType,
+          filterToEdit.config,
+        );
         form.reset({
-          filter_type: filterToEdit.filter_type as any,
-          config: filterToEdit.config,
+          filter_type: filterType,
+          config: normalizedConfig as any,
         });
       } else {
         form.reset({
           filter_type: 'KEYWORD',
-          config: { keywords: [], exclude: false, case_sensitive: false },
+          config: { include: [], exclude: [] },
         });
       }
     }
@@ -95,20 +99,19 @@ export function FilterDialog({
     const subscription = form.watch((value, { name }) => {
       if (name === 'filter_type') {
         const type = value.filter_type;
-        let defaultConfig = {};
+        let defaultConfig: any = {};
         switch (type) {
           case 'TIME_BASED':
             defaultConfig = {
-              days: [],
+              days_of_week: [],
               start_time: '00:00:00',
               end_time: '23:59:59',
             };
             break;
           case 'KEYWORD':
             defaultConfig = {
-              keywords: [],
-              exclude: false,
-              case_sensitive: false,
+              include: [],
+              exclude: [],
             };
             break;
           /*
@@ -127,7 +130,7 @@ export function FilterDialog({
             };
             break;
         }
-        form.setValue('config', defaultConfig);
+        form.setValue('config', defaultConfig as any);
         form.clearErrors('config');
       }
     });
@@ -164,42 +167,7 @@ export function FilterDialog({
     },
   });
 
-  const onSubmit = (data: z.infer<typeof FormSchema>) => {
-    // Additional validation based on type?
-    // Zod resolver might handle it if we used a discriminated union, but we are using `any` for config in `CreateFilterRequestSchema`.
-    // We should manually validate config against specific schema before submitting.
-    let result;
-    switch (data.filter_type) {
-      case 'TIME_BASED':
-        result = TimeBasedFilterConfigSchema.safeParse(data.config);
-        break;
-      case 'KEYWORD':
-        result = KeywordFilterConfigSchema.safeParse(data.config);
-        break;
-      /*
-      case 'CATEGORY':
-        result = CategoryFilterConfigSchema.safeParse(data.config);
-        break;
-      */
-      case 'CRON':
-        result = CronFilterConfigSchema.safeParse(data.config);
-        break;
-      case 'REGEX':
-        result = RegexFilterConfigSchema.safeParse(data.config);
-        break;
-    }
-
-    if (result && !result.success) {
-      // Map errors to form
-      const error = result.error as any;
-      error.errors.forEach((err: any) => {
-        form.setError(`config.${err.path.join('.')}` as any, {
-          message: err.message,
-        });
-      });
-      return;
-    }
-
+  const onSubmit: SubmitHandler<FormOutput> = (data) => {
     if (isEditing) {
       updateMutation.mutate(data);
     } else {

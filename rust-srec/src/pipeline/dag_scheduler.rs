@@ -135,6 +135,7 @@ impl DagScheduler {
     /// 1. A DAG execution record
     /// 2. Step execution records for all steps
     /// 3. Jobs for all root steps (steps with no dependencies)
+    #[allow(clippy::too_many_arguments)]
     pub async fn create_dag_pipeline(
         &self,
         dag_definition: DagPipelineDefinition,
@@ -143,6 +144,7 @@ impl DagScheduler {
         session_id: Option<String>,
         streamer_name: Option<String>,
         session_title: Option<String>,
+        platform: Option<String>,
     ) -> Result<DagCreationResult> {
         self.create_dag_pipeline_with_hook(
             dag_definition,
@@ -151,6 +153,7 @@ impl DagScheduler {
             session_id,
             streamer_name,
             session_title,
+            platform,
             None,
         )
         .await
@@ -167,6 +170,7 @@ impl DagScheduler {
         session_id: Option<String>,
         streamer_name: Option<String>,
         session_title: Option<String>,
+        platform: Option<String>,
         before_root_jobs: Option<BeforeRootJobsHook>,
     ) -> Result<DagCreationResult> {
         // 1. Validate DAG structure
@@ -220,6 +224,7 @@ impl DagScheduler {
                     session_id.clone(),
                     streamer_name.clone(),
                     session_title.clone(),
+                    platform.clone(),
                 )
                 .await?;
 
@@ -289,9 +294,11 @@ impl DagScheduler {
         outputs: &[String],
         streamer_name: Option<&str>,
         session_title: Option<&str>,
+        platform: Option<&str>,
     ) -> Result<DagJobCompletedUpdate> {
         let streamer_name = streamer_name.map(ToString::to_string);
         let session_title = session_title.map(ToString::to_string);
+        let platform = platform.map(ToString::to_string);
 
         // Get step info for logging
         let step = self.dag_repository.get_step(dag_step_execution_id).await?;
@@ -350,6 +357,7 @@ impl DagScheduler {
                         dag.session_id.clone(),
                         streamer_name.clone(),
                         session_title.clone(),
+                        platform.clone(),
                     )
                     .await
                 {
@@ -508,6 +516,7 @@ impl DagScheduler {
         session_id: Option<String>,
         streamer_name: Option<String>,
         session_title: Option<String>,
+        platform: Option<String>,
     ) -> Result<String> {
         // Get processor and config from the step
         let (processor, config) = match &dag_step.step {
@@ -565,7 +574,7 @@ impl DagScheduler {
             session_id: job_db.session_id.clone().unwrap_or_default(),
             streamer_name,
             session_title,
-            platform: None,
+            platform,
             config: Some(job_db.config.clone()),
             created_at: chrono::Utc::now(),
             started_at: None,
@@ -637,7 +646,8 @@ impl DagScheduler {
         // Some cancelled steps may already have all dependencies completed (e.g. a parallel
         // branch when fail-fast triggers). Since no new completion events will occur for those
         // dependencies, proactively enqueue any now-ready steps.
-        self.enqueue_now_ready_steps(dag_id, None, None).await?;
+        self.enqueue_now_ready_steps(dag_id, None, None, None)
+            .await?;
 
         Ok(())
     }
@@ -647,9 +657,11 @@ impl DagScheduler {
         dag_id: &str,
         streamer_name: Option<&str>,
         session_title: Option<&str>,
+        platform: Option<&str>,
     ) -> Result<Vec<String>> {
         let streamer_name = streamer_name.map(ToString::to_string);
         let session_title = session_title.map(ToString::to_string);
+        let platform = platform.map(ToString::to_string);
 
         let dag = self.dag_repository.get_dag(dag_id).await?;
         let dag_def = dag
@@ -723,6 +735,7 @@ impl DagScheduler {
                     dag.session_id.clone(),
                     streamer_name.clone(),
                     session_title.clone(),
+                    platform.clone(),
                 )
                 .await?;
             new_job_ids.push(job_id);

@@ -7,9 +7,11 @@ import {
   listTemplates,
   extractMetadata,
   listEngines,
+  parseUrl,
 } from '@/server/functions';
 import { Button } from '@/components/ui/button';
-
+import { toast } from 'sonner';
+import { t } from '@lingui/core/macro';
 import { Form } from '@/components/ui/form';
 import { z } from 'zod';
 import { Trans } from '@lingui/react/macro';
@@ -42,6 +44,7 @@ export function StreamerForm({
   const navigate = useNavigate();
   const [stage, setStage] = useState<1 | 2>(1);
   const [detectingPlatform, setDetectingPlatform] = useState(false);
+  const [isAutofilling, setIsAutofilling] = useState(false);
   const [detectedPlatform, setDetectedPlatform] = useState<string | null>(null);
   const [validPlatformConfigs, setValidPlatformConfigs] = useState<
     PlatformConfig[]
@@ -87,6 +90,35 @@ export function StreamerForm({
     defaultValues: defaults,
     mode: 'onChange', // Validate on change so we can disable Next button if needed
   });
+
+  const handleAutofillName = async () => {
+    const url = form.getValues('url');
+    if (!url) return;
+
+    const urlValid = await form.trigger('url');
+    if (!urlValid) return;
+
+    setIsAutofilling(true);
+    try {
+      const response = await parseUrl({ data: { url } });
+      if (response.success && response.media_info?.artist) {
+        form.setValue('name', response.media_info.artist, {
+          shouldDirty: true,
+          shouldValidate: true,
+        });
+        toast.success(t`Name autofilled successfully`);
+      } else if (response.error) {
+        toast.error(response.error);
+      } else {
+        toast.error(t`Failed to extract name from URL`);
+      }
+    } catch (error: any) {
+      console.error('Failed to autofill name:', error);
+      toast.error(error.message || t`Failed to autofill name`);
+    } finally {
+      setIsAutofilling(false);
+    }
+  };
 
   const handleNext = async () => {
     const url = form.getValues('url');
@@ -147,7 +179,12 @@ export function StreamerForm({
         <Form {...form}>
           <form className="space-y-6">
             <div className="animate-in fade-in slide-in-from-right-4 duration-300">
-              <StreamerMetaForm form={form} title={title}>
+              <StreamerMetaForm
+                form={form}
+                title={title}
+                onAutofillName={handleAutofillName}
+                isAutofilling={isAutofilling}
+              >
                 <div className="flex justify-end pt-4 gap-2">
                   <Button
                     variant="ghost"

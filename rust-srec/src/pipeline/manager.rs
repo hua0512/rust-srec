@@ -1098,6 +1098,37 @@ where
         }
     }
 
+    /// Look up the platform name (e.g. "Twitch") from the streamer's platform config.
+    async fn lookup_platform_name(&self, streamer_id: &str) -> Option<String> {
+        let streamer_repo = self.streamer_repo.as_ref()?;
+        let config_service = self.config_service.as_ref()?;
+
+        let platform_id = match streamer_repo.get_streamer(streamer_id).await {
+            Ok(streamer) => streamer.platform_config_id,
+            Err(e) => {
+                debug!(
+                    streamer_id = %streamer_id,
+                    error = %e,
+                    "Failed to look up streamer platform_config_id"
+                );
+                return None;
+            }
+        };
+
+        match config_service.get_platform_config(&platform_id).await {
+            Ok(platform) => Some(platform.platform_name),
+            Err(e) => {
+                debug!(
+                    streamer_id = %streamer_id,
+                    platform_id = %platform_id,
+                    error = %e,
+                    "Failed to look up platform name"
+                );
+                None
+            }
+        }
+    }
+
     /// Look up the session title from the repository.
     /// Returns the most recent title from the titles JSON array.
     async fn lookup_session_title(&self, session_id: &str) -> Option<String> {
@@ -1178,6 +1209,7 @@ where
         // Look up metadata for placeholder support
         let streamer_name = self.lookup_streamer_name(streamer_id).await;
         let session_title = self.lookup_session_title(session_id).await;
+        let platform = self.lookup_platform_name(streamer_id).await;
 
         // Delegate to DAG scheduler
         let result = dag_scheduler
@@ -1188,6 +1220,7 @@ where
                 Some(session_id.to_string()),
                 streamer_name.clone(),
                 session_title.clone(),
+                platform.clone(),
                 before_root_jobs,
             )
             .await?;
