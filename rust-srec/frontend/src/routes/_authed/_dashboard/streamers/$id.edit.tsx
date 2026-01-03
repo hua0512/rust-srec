@@ -342,12 +342,16 @@ function EditStreamerForm({
                   animate="visible"
                   key="filters"
                 >
-                  <StreamerFiltersTab
-                    streamerId={id}
-                    filters={filters || []}
-                    isLoading={isFiltersLoading}
-                    onDeleteFilter={deleteFilter}
-                  />
+                  <Suspense
+                    fallback={<Skeleton className="h-[400px] w-full" />}
+                  >
+                    <StreamerFiltersTab
+                      streamerId={id}
+                      filters={filters || []}
+                      isLoading={isFiltersLoading}
+                      onDeleteFilter={deleteFilter}
+                    />
+                  </Suspense>
                 </motion.div>
               </TabsContent>
             </Tabs>
