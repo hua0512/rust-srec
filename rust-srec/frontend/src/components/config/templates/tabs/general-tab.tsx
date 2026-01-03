@@ -15,7 +15,7 @@ import { z } from 'zod';
 import { UpdateTemplateRequestSchema } from '@/api/schemas';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 
-type EditTemplateFormValues = z.infer<typeof UpdateTemplateRequestSchema>;
+type EditTemplateFormValues = z.input<typeof UpdateTemplateRequestSchema>;
 
 interface GeneralTabProps {
   form: UseFormReturn<EditTemplateFormValues>;

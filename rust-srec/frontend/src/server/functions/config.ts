@@ -156,10 +156,12 @@ const TemplateWriteSchema = CreateTemplateRequestSchema.extend({
 });
 
 export const createTemplate = createServerFn({ method: 'POST' })
-  .inputValidator((data: z.infer<typeof CreateTemplateRequestSchema>) => data)
+  .inputValidator((data: z.input<typeof CreateTemplateRequestSchema>) =>
+    TemplateWriteSchema.parse(data),
+  )
   .handler(async ({ data }) => {
     console.log('Creating template:', data);
-    const payload = TemplateWriteSchema.parse(data);
+    const payload = data;
     const json = await fetchBackend('/templates', {
       method: 'POST',
       body: JSON.stringify(payload),
@@ -170,11 +172,14 @@ export const createTemplate = createServerFn({ method: 'POST' })
 
 export const updateTemplate = createServerFn({ method: 'POST' })
   .inputValidator(
-    (d: { id: string; data: z.infer<typeof UpdateTemplateRequestSchema> }) => d,
+    (d: { id: string; data: z.input<typeof UpdateTemplateRequestSchema> }) => ({
+      id: z.string().parse(d.id),
+      data: TemplateWriteSchema.parse(d.data),
+    }),
   )
   .handler(async ({ data: { id, data } }) => {
     console.log('Updating template:', id, data);
-    const payload = TemplateWriteSchema.parse(data);
+    const payload = data;
     const json = await fetchBackend(`/templates/${id}`, {
       method: 'PUT',
       body: JSON.stringify(payload),

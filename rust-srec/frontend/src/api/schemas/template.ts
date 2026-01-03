@@ -7,6 +7,30 @@ import {
   EventHooksSchema,
 } from './common';
 import { DagPipelineDefinitionSchema } from './pipeline';
+import { EngineConfigOverrideSchema } from './engine';
+
+const parseJsonIfString = (val: unknown) => {
+  if (typeof val === 'string' && val.trim() !== '') {
+    try {
+      return JSON.parse(val);
+    } catch (e) {
+      console.error('Failed to parse JSON:', e);
+      return val;
+    }
+  }
+  return val;
+};
+
+// Read schema: be permissive (don't break loading older/hand-edited templates).
+const EnginesOverrideReadSchema = z.preprocess(
+  parseJsonIfString,
+  z.record(z.string(), z.record(z.string(), z.any())),
+);
+
+// Write schema: validate + coerce known override fields (engine forms write into this).
+const EnginesOverrideWriteSchema = z
+  .record(z.string(), EngineConfigOverrideSchema)
+  .optional();
 
 // --- Template ---
 export const TemplateSchema = z.object({
@@ -31,7 +55,7 @@ export const TemplateSchema = z.object({
     }, z.any())
     .nullable()
     .optional(),
-  engines_override: z.any().nullable().optional(),
+  engines_override: EnginesOverrideReadSchema.nullable().optional(),
   min_segment_size_bytes: z.number().nullable().optional(),
   max_download_duration_secs: z.number().nullable().optional(),
   max_part_size_bytes: z.number().nullable().optional(),
@@ -122,7 +146,7 @@ export const CreateTemplateRequestSchema = z.object({
   cookies: z.string().nullable().optional(),
   download_engine: z.string().nullable().optional(),
   platform_overrides: z.any().nullable().optional(),
-  engines_override: z.any().nullable().optional(),
+  engines_override: EnginesOverrideWriteSchema.optional(),
   stream_selection_config:
     StreamSelectionConfigObjectSchema.nullable().optional(),
   download_retry_policy: DownloadRetryPolicyObjectSchema.nullable().optional(),
