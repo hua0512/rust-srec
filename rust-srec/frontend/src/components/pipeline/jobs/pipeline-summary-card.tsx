@@ -54,14 +54,6 @@ interface PipelineSummaryCardProps {
 
 // Helper function to format duration removed as unused
 
-const PipelineStatus = {
-  Pending: 'pending',
-  Processing: 'processing',
-  Completed: 'completed',
-  Failed: 'failed',
-  Mixed: 'mixed',
-} as const;
-
 interface StatusConfigItem {
   icon: React.ElementType;
   color: string;
@@ -70,28 +62,33 @@ interface StatusConfigItem {
 }
 
 const STATUS_CONFIG: Record<string, StatusConfigItem> = {
-  [PipelineStatus.Pending]: {
+  PENDING: {
     icon: Clock,
     color: 'bg-muted text-muted-foreground',
     badgeVariant: 'secondary',
   },
-  [PipelineStatus.Processing]: {
+  PROCESSING: {
     icon: RefreshCw,
     color: 'bg-blue-500/10 text-blue-500 border-blue-500/20',
     badgeVariant: 'default',
     animate: true,
   },
-  [PipelineStatus.Completed]: {
+  COMPLETED: {
     icon: CheckCircle2,
     color: 'bg-green-500/10 text-green-500 border-green-500/20',
     badgeVariant: 'secondary',
   },
-  [PipelineStatus.Failed]: {
+  FAILED: {
     icon: XCircle,
     color: 'bg-red-500/10 text-red-500 border-red-500/20',
     badgeVariant: 'destructive',
   },
-  [PipelineStatus.Mixed]: {
+  CANCELLED: {
+    icon: AlertCircle,
+    color: 'bg-orange-500/10 text-orange-500 border-orange-500/20',
+    badgeVariant: 'secondary',
+  },
+  MIXED: {
     icon: AlertCircle,
     color: 'bg-orange-500/10 text-orange-500 border-orange-500/20',
     badgeVariant: 'secondary',
@@ -105,19 +102,19 @@ export function PipelineSummaryCard({
   onViewDetails,
 }: PipelineSummaryCardProps) {
   const { i18n } = useLingui();
-  const status = pipeline.status.toLowerCase();
-  const statusConfig =
-    STATUS_CONFIG[status] || STATUS_CONFIG[PipelineStatus.Mixed];
+  const statusKey = pipeline.status;
+  const statusConfig = STATUS_CONFIG[statusKey] || STATUS_CONFIG.MIXED;
   const StatusIcon = statusConfig.icon;
 
-  const isCompleted = status === PipelineStatus.Completed;
-  const isFailed = status === PipelineStatus.Failed;
-  const isPending = status === PipelineStatus.Pending;
-  const isProcessing = status === PipelineStatus.Processing;
+  const isCompleted = statusKey === 'COMPLETED';
+  const isFailed = statusKey === 'FAILED';
+  const isPending = statusKey === 'PENDING';
+  const isProcessing = statusKey === 'PROCESSING';
   // Show cancel button if there are any jobs that aren't completed or failed
   const hasUnfinishedJobs =
     pipeline.total_steps > pipeline.completed_steps + pipeline.failed_steps;
   const canCancel = isPending || isProcessing || hasUnfinishedJobs;
+  const statusLabel = statusKey.toLowerCase();
 
   return (
     <Card
@@ -158,7 +155,7 @@ export function PipelineSummaryCard({
           variant={statusConfig.badgeVariant}
           className="capitalize py-0 h-6 text-[10px] sm:text-xs"
         >
-          {status}
+          {statusLabel}
         </Badge>
         <DropdownMenu>
           <DropdownMenuTrigger asChild onClick={(e) => e.stopPropagation()}>

@@ -886,11 +886,14 @@ pub async fn get_job(
         .ok_or_else(|| ApiError::not_found(format!("Job with id '{}' not found", id)))?;
 
     // Fetch streamer name
-    let streamer_name = state.streamer_repository.as_ref().and_then(|repo| {
-        futures::executor::block_on(repo.get_streamer(&job.streamer_id))
+    let streamer_name = if let Some(repo) = state.streamer_repository.as_ref() {
+        repo.get_streamer(&job.streamer_id)
+            .await
             .ok()
             .map(|s| s.name)
-    });
+    } else {
+        None
+    };
 
     Ok(Json(job_to_response(&job, streamer_name)))
 }
@@ -921,7 +924,7 @@ pub async fn get_job(
 /// # Errors
 ///
 /// - `404 Not Found` - Job with the specified ID does not exist
-/// - `400 Bad Request` - Job is not in "failed" status
+/// - `409 Conflict` - Job is not in "failed" status
 ///
 #[utoipa::path(
     post,
@@ -930,7 +933,7 @@ pub async fn get_job(
     params(("id" = String, Path, description = "Job ID")),
     responses(
         (status = 200, description = "Job retried", body = JobResponse),
-        (status = 400, description = "Job not in failed status", body = crate::api::error::ApiErrorResponse),
+        (status = 409, description = "Job not in failed status", body = crate::api::error::ApiErrorResponse),
         (status = 404, description = "Job not found", body = crate::api::error::ApiErrorResponse)
     ),
     security(("bearer_auth" = []))
@@ -952,11 +955,14 @@ pub async fn retry_job(
         .map_err(ApiError::from)?;
 
     // Fetch streamer name
-    let streamer_name = state.streamer_repository.as_ref().and_then(|repo| {
-        futures::executor::block_on(repo.get_streamer(&job.streamer_id))
+    let streamer_name = if let Some(repo) = state.streamer_repository.as_ref() {
+        repo.get_streamer(&job.streamer_id)
+            .await
             .ok()
             .map(|s| s.name)
-    });
+    } else {
+        None
+    };
 
     Ok(Json(job_to_response(&job, streamer_name)))
 }
@@ -1276,11 +1282,14 @@ pub async fn create_pipeline(
         .ok_or_else(|| ApiError::internal("Failed to retrieve created job"))?;
 
     // Fetch streamer name (we have the ID from the request)
-    let streamer_name = state.streamer_repository.as_ref().and_then(|repo| {
-        futures::executor::block_on(repo.get_streamer(&request.streamer_id))
+    let streamer_name = if let Some(repo) = state.streamer_repository.as_ref() {
+        repo.get_streamer(&request.streamer_id)
+            .await
             .ok()
             .map(|s| s.name)
-    });
+    } else {
+        None
+    };
 
     let response = CreatePipelineResponse {
         pipeline_id: result.dag_id,

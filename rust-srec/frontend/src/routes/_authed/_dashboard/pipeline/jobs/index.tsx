@@ -70,6 +70,7 @@ function PipelineJobsPage() {
     { value: 'PROCESSING', label: t`Processing`, icon: RefreshCw },
     { value: 'COMPLETED', label: t`Completed`, icon: CheckCircle2 },
     { value: 'FAILED', label: t`Failed`, icon: XCircle },
+    { value: 'CANCELLED', label: t`Cancelled`, icon: AlertCircle },
   ] as const;
 
   const [searchQuery, setSearchQuery] = useState('');

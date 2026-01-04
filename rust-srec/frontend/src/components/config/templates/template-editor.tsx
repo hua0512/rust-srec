@@ -6,6 +6,7 @@ import { Trans } from '@lingui/react/macro';
 import { motion } from 'motion/react';
 import { Form } from '@/components/ui/form';
 import { Button } from '@/components/ui/button';
+import { useQuery } from '@tanstack/react-query';
 import {
   Settings,
   Save,
@@ -20,6 +21,7 @@ import { EngineOverridesTab } from './tabs/engine-overrides-tab';
 import { PlatformOverridesTab } from './tabs/platform-overrides-tab';
 import { cn } from '@/lib/utils';
 import { SharedConfigEditor } from '../shared-config-editor';
+import { listEngines } from '@/server/functions';
 
 export type TemplateFormValues = z.input<typeof UpdateTemplateRequestSchema>;
 
@@ -37,6 +39,11 @@ export function TemplateEditor({
   mode,
 }: TemplateEditorProps) {
   console.log('TemplateEditor render template:', template);
+
+  const { data: engines = [] } = useQuery({
+    queryKey: ['engines'],
+    queryFn: () => listEngines(),
+  });
 
   const form = useForm<TemplateFormValues>({
     resolver: zodResolver(UpdateTemplateRequestSchema),
@@ -229,6 +236,7 @@ export function TemplateEditor({
               template ? { type: 'template', id: template.id } : undefined
             }
             credentialPlatformNameHint={credentialPlatformNameHint}
+            engines={engines}
             proxyMode="object"
             configMode="object"
             extraTabs={[

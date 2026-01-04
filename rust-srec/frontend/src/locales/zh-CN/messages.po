@@ -14,7 +14,7 @@ msgstr ""
 "Plural-Forms: \n"
 
 #. placeholder {0}: pipeline.session_id.substring(0, 8)
-#: src/components/pipeline/jobs/pipeline-summary-card.tsx:278
+#: src/components/pipeline/jobs/pipeline-summary-card.tsx:275
 msgid " - Session: {0}"
 msgstr " - 会话：{0}"
 
@@ -52,7 +52,7 @@ msgid "(Preserve source)"
 msgstr "（保留源文件）"
 
 #. placeholder {0}: pipeline.completed_steps
-#: src/components/pipeline/jobs/pipeline-summary-card.tsx:297
+#: src/components/pipeline/jobs/pipeline-summary-card.tsx:294
 msgid "{0, plural, one {# done} other {# done}}"
 msgstr "{0, plural, other {# 已完成}}"
 
@@ -62,7 +62,7 @@ msgid "{0, plural, one {# Error} other {# Errors}}"
 msgstr "{0, plural, other {# 个错误}}"
 
 #. placeholder {0}: pipeline.failed_steps
-#: src/components/pipeline/jobs/pipeline-summary-card.tsx:308
+#: src/components/pipeline/jobs/pipeline-summary-card.tsx:305
 msgid "{0, plural, one {# failed} other {# failed}}"
 msgstr "{0, plural, other {# 失败}}"
 
@@ -77,8 +77,8 @@ msgstr "{0, plural, other {# 行}}"
 
 #. placeholder {0}: pipeline.total_steps
 #. placeholder {0}: steps.length
-#: src/components/pipeline/jobs/pipeline-summary-card.tsx:287
-#: src/components/pipeline/jobs/pipeline-summary-card.tsx:337
+#: src/components/pipeline/jobs/pipeline-summary-card.tsx:284
+#: src/components/pipeline/jobs/pipeline-summary-card.tsx:334
 #: src/components/pipeline/workflows/workflow-card.tsx:149
 msgid "{0, plural, one {# step} other {# steps}}"
 msgstr "{0, plural, other {# 步}}"
@@ -621,13 +621,13 @@ msgstr "可选"
 msgid "Avatar URL (Optional)"
 msgstr "头像 URL（可选）"
 
-#: src/routes/_authed/_dashboard/pipeline/jobs/index.tsx:293
+#: src/routes/_authed/_dashboard/pipeline/jobs/index.tsx:294
 msgid "Avg. Duration"
 msgstr "平均时长"
 
-#: src/components/config/platforms/platform-editor.tsx:134
-#: src/components/config/templates/template-editor.tsx:182
-#: src/components/config/templates/template-editor.tsx:185
+#: src/components/config/platforms/platform-editor.tsx:141
+#: src/components/config/templates/template-editor.tsx:189
+#: src/components/config/templates/template-editor.tsx:192
 msgid "Back"
 msgstr "返回"
 
@@ -764,9 +764,9 @@ msgstr "C:path1.flv,C:path2.flv"
 #: src/components/notifications/channel-card.tsx:186
 #: src/components/notifications/channel-form.tsx:358
 #: src/components/notifications/subscription-manager.tsx:436
-#: src/components/pipeline/jobs/pipeline-summary-card.tsx:196
-#: src/components/pipeline/jobs/pipeline-summary-card.tsx:219
-#: src/components/pipeline/jobs/pipeline-summary-card.tsx:256
+#: src/components/pipeline/jobs/pipeline-summary-card.tsx:193
+#: src/components/pipeline/jobs/pipeline-summary-card.tsx:216
+#: src/components/pipeline/jobs/pipeline-summary-card.tsx:253
 #: src/components/pipeline/presets/preset-card.tsx:204
 #: src/components/pipeline/workflows/step-config-dialog.tsx:526
 #: src/components/pipeline/workflows/workflow-card.tsx:196
@@ -785,7 +785,7 @@ msgstr "取消执行"
 msgid "Cancel Pipeline"
 msgstr "取消处理管道"
 
-#: src/components/pipeline/jobs/pipeline-summary-card.tsx:202
+#: src/components/pipeline/jobs/pipeline-summary-card.tsx:199
 msgid "Cancel Pipeline?"
 msgstr "取消处理管道？"
 
@@ -793,6 +793,7 @@ msgstr "取消处理管道？"
 #: src/components/streamers/card/use-streamer-status.tsx:36
 #: src/routes/_authed/_dashboard/pipeline/executions.$pipelineId.tsx:276
 #: src/routes/_authed/_dashboard/pipeline/executions.$pipelineId.tsx:515
+#: src/routes/_authed/_dashboard/pipeline/jobs/index.tsx:73
 msgid "Cancelled"
 msgstr "已取消"
 
@@ -802,7 +803,7 @@ msgstr "已取消"
 
 #. placeholder {0}: result.cancelled_steps
 #: src/routes/_authed/_dashboard/pipeline/executions.$pipelineId.tsx:142
-#: src/routes/_authed/_dashboard/pipeline/jobs/index.tsx:157
+#: src/routes/_authed/_dashboard/pipeline/jobs/index.tsx:158
 msgid "Cancelled {0} steps in pipeline"
 msgstr "已取消处理管道中的 {0} 个步骤"
 
@@ -1002,7 +1003,7 @@ msgstr "完整流程：重封装、生成缩略图、添加元数据并上传。
 #: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.tsx:327
 #: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.tsx:640
 #: src/routes/_authed/_dashboard/pipeline/jobs/index.tsx:71
-#: src/routes/_authed/_dashboard/pipeline/jobs/index.tsx:279
+#: src/routes/_authed/_dashboard/pipeline/jobs/index.tsx:280
 msgid "Completed"
 msgstr "已完成"
 
@@ -1232,9 +1233,9 @@ msgstr "无法连接到服务器，请检查网络连接。"
 msgid "CPU Usage"
 msgstr "CPU 使用率"
 
-#: src/components/config/templates/template-editor.tsx:204
+#: src/components/config/templates/template-editor.tsx:211
 #: src/routes/_authed/_dashboard/config/templates/index.tsx:138
-#: src/routes/_authed/_dashboard/pipeline/jobs/index.tsx:253
+#: src/routes/_authed/_dashboard/pipeline/jobs/index.tsx:254
 msgid "Create"
 msgstr "创建"
 
@@ -1296,7 +1297,7 @@ msgstr "创建新预设"
 msgid "Create New Workflow"
 msgstr "创建新工作流"
 
-#: src/routes/_authed/_dashboard/pipeline/jobs/index.tsx:250
+#: src/routes/_authed/_dashboard/pipeline/jobs/index.tsx:251
 msgid "Create Pipeline"
 msgstr "创建处理管道"
 
@@ -1312,7 +1313,7 @@ msgstr "创建预设"
 msgid "Create Streamer"
 msgstr "创建主播"
 
-#: src/components/config/templates/template-editor.tsx:156
+#: src/components/config/templates/template-editor.tsx:163
 #: src/routes/_authed/_dashboard/config/templates/index.tsx:230
 msgid "Create Template"
 msgstr "创建模板"
@@ -1563,8 +1564,8 @@ msgstr "延迟、代理与保留策略。"
 #: src/components/filters/FilterCard.tsx:316
 #: src/components/notifications/channel-card.tsx:169
 #: src/components/notifications/channel-card.tsx:192
-#: src/components/pipeline/jobs/pipeline-summary-card.tsx:238
-#: src/components/pipeline/jobs/pipeline-summary-card.tsx:262
+#: src/components/pipeline/jobs/pipeline-summary-card.tsx:235
+#: src/components/pipeline/jobs/pipeline-summary-card.tsx:259
 #: src/components/pipeline/presets/editor/preset-meta-form.tsx:65
 #: src/components/pipeline/presets/preset-card.tsx:187
 #: src/components/pipeline/presets/preset-card.tsx:210
@@ -1597,7 +1598,7 @@ msgstr "删除处理任务"
 msgid "Delete original file after successful remux"
 msgstr "成功重封装后删除原始文件"
 
-#: src/components/pipeline/jobs/pipeline-summary-card.tsx:244
+#: src/components/pipeline/jobs/pipeline-summary-card.tsx:241
 msgid "Delete Pipeline?"
 msgstr "删除处理管道？"
 
@@ -2048,7 +2049,7 @@ msgstr "未在平台/主播中指定时使用的录制引擎。"
 #: src/components/config/global/backup-restore-card.tsx:371
 #: src/components/config/global/backup-restore-card.tsx:376
 #: src/components/config/global/backup-restore-card.tsx:381
-#: src/components/config/templates/template-editor.tsx:249
+#: src/components/config/templates/template-editor.tsx:257
 #: src/components/sidebar/navbar.tsx:35
 #: src/routes/_authed/_dashboard/config/route.tsx:66
 msgid "Engines"
@@ -2089,7 +2090,7 @@ msgstr "环境变量"
 #: src/routes/_authed/_dashboard/config/engines/index.tsx:34
 #: src/routes/_authed/_dashboard/config/platforms/index.tsx:58
 #: src/routes/_authed/_dashboard/config/templates/index.tsx:107
-#: src/routes/_authed/_dashboard/pipeline/jobs/index.tsx:195
+#: src/routes/_authed/_dashboard/pipeline/jobs/index.tsx:196
 #: src/routes/_authed/_dashboard/pipeline/outputs.tsx:142
 #: src/routes/_authed/_dashboard/pipeline/presets/index.tsx:227
 #: src/routes/_authed/_dashboard/pipeline/workflows/index.tsx:140
@@ -2254,7 +2255,7 @@ msgstr "提取 MP3"
 #: src/routes/_authed/_dashboard/pipeline/executions.$pipelineId.tsx:513
 #: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.tsx:329
 #: src/routes/_authed/_dashboard/pipeline/jobs/index.tsx:72
-#: src/routes/_authed/_dashboard/pipeline/jobs/index.tsx:286
+#: src/routes/_authed/_dashboard/pipeline/jobs/index.tsx:287
 msgid "Failed"
 msgstr "失败"
 
@@ -2272,7 +2273,7 @@ msgid "Failed to cancel job"
 msgstr "取消处理任务失败"
 
 #: src/routes/_authed/_dashboard/pipeline/executions.$pipelineId.tsx:148
-#: src/routes/_authed/_dashboard/pipeline/jobs/index.tsx:167
+#: src/routes/_authed/_dashboard/pipeline/jobs/index.tsx:168
 msgid "Failed to cancel pipeline"
 msgstr "取消处理管道失败"
 
@@ -2342,7 +2343,7 @@ msgstr "删除过滤器失败"
 msgid "Failed to delete job"
 msgstr "删除处理任务失败"
 
-#: src/routes/_authed/_dashboard/pipeline/jobs/index.tsx:179
+#: src/routes/_authed/_dashboard/pipeline/jobs/index.tsx:180
 msgid "Failed to delete pipeline"
 msgstr "删除处理管道失败"
 
@@ -2393,7 +2394,7 @@ msgid "Failed to load engines: {0}"
 msgstr "加载引擎列表失败：{0}"
 
 #. placeholder {0}: error.message
-#: src/routes/_authed/_dashboard/pipeline/jobs/index.tsx:198
+#: src/routes/_authed/_dashboard/pipeline/jobs/index.tsx:199
 msgid "Failed to load jobs: {0}"
 msgstr "加载处理任务列表失败：{0}"
 
@@ -2715,9 +2716,9 @@ msgstr "完整的多媒体处理：并行进行视频重封装、音频提取和
 msgid "Full Processing"
 msgstr "全流程处理"
 
-#: src/components/config/platforms/platform-editor.tsx:181
+#: src/components/config/platforms/platform-editor.tsx:189
 #: src/components/config/templates/tabs/platform-override-card.tsx:62
-#: src/components/config/templates/template-editor.tsx:239
+#: src/components/config/templates/template-editor.tsx:247
 #: src/components/pipeline/presets/processors/audio-extract-config-form.tsx:54
 #: src/components/pipeline/presets/processors/rclone-config-form.tsx:53
 #: src/components/pipeline/presets/processors/remux-config-form.tsx:72
@@ -3167,7 +3168,7 @@ msgstr "已开始重试处理任务"
 msgid "Jobs"
 msgstr "处理任务"
 
-#: src/routes/_authed/_dashboard/pipeline/jobs/index.tsx:409
+#: src/routes/_authed/_dashboard/pipeline/jobs/index.tsx:410
 msgid "Jobs will appear here when recordings are processed."
 msgstr "处理录制内容后，处理任务将显示在此处。"
 
@@ -3187,7 +3188,7 @@ msgstr "所有输出的 JSON 数组"
 msgid "Keep directory structure"
 msgstr "保留目录结构"
 
-#: src/components/pipeline/jobs/pipeline-summary-card.tsx:213
+#: src/components/pipeline/jobs/pipeline-summary-card.tsx:210
 msgid "Keep Running"
 msgstr "保持运行"
 
@@ -3593,7 +3594,7 @@ msgstr "修改此处理步骤的参数。"
 msgid "Module Log Levels"
 msgstr "模块日志级别"
 
-#: src/routes/_authed/_dashboard/pipeline/jobs/index.tsx:221
+#: src/routes/_authed/_dashboard/pipeline/jobs/index.tsx:222
 msgid "Monitor and manage processing jobs"
 msgstr "监控并管理处理任务"
 
@@ -3784,7 +3785,7 @@ msgstr "没有输入路径"
 msgid "No issues detected"
 msgstr "未检测到问题"
 
-#: src/routes/_authed/_dashboard/pipeline/jobs/index.tsx:400
+#: src/routes/_authed/_dashboard/pipeline/jobs/index.tsx:401
 msgid "No jobs found"
 msgstr "未找到处理任务"
 
@@ -3853,7 +3854,7 @@ msgstr "未发现处理管道 DAG。"
 #~ msgid "No pipeline jobs found."
 #~ msgstr "未找到处理管道任务。"
 
-#: src/routes/_authed/_dashboard/pipeline/jobs/index.tsx:402
+#: src/routes/_authed/_dashboard/pipeline/jobs/index.tsx:403
 msgid "No pipeline jobs yet"
 msgstr "暂无处理任务"
 
@@ -4071,7 +4072,7 @@ msgstr "仅包含具有该扩展名的文件（不含点号）"
 #: src/components/config/platforms/platform-card.tsx:83
 #: src/components/config/templates/template-card.tsx:110
 #: src/components/notifications/channel-card.tsx:148
-#: src/components/pipeline/jobs/pipeline-summary-card.tsx:172
+#: src/components/pipeline/jobs/pipeline-summary-card.tsx:169
 #: src/components/pipeline/outputs/output-card.tsx:128
 #: src/components/pipeline/presets/preset-card.tsx:168
 #: src/components/pipeline/workflows/workflow-card.tsx:165
@@ -4341,7 +4342,7 @@ msgstr "条已暂停"
 #: src/routes/_authed/_dashboard/pipeline/executions.$pipelineId.tsx:507
 #: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.tsx:323
 #: src/routes/_authed/_dashboard/pipeline/jobs/index.tsx:69
-#: src/routes/_authed/_dashboard/pipeline/jobs/index.tsx:264
+#: src/routes/_authed/_dashboard/pipeline/jobs/index.tsx:265
 msgid "Pending"
 msgstr "待处理"
 
@@ -4353,7 +4354,7 @@ msgstr "待处理任务"
 msgid "Per Extractor"
 msgstr "按提取器"
 
-#: src/routes/_authed/_dashboard/pipeline/jobs/index.tsx:424
+#: src/routes/_authed/_dashboard/pipeline/jobs/index.tsx:425
 #: src/routes/_authed/_dashboard/pipeline/outputs.tsx:308
 #: src/routes/_authed/_dashboard/pipeline/presets/index.tsx:399
 #: src/routes/_authed/_dashboard/pipeline/workflows/index.tsx:282
@@ -4397,7 +4398,7 @@ msgstr "处理管道配置"
 #~ msgid "Pipeline created"
 #~ msgstr "处理管道已创建"
 
-#: src/routes/_authed/_dashboard/pipeline/jobs/index.tsx:175
+#: src/routes/_authed/_dashboard/pipeline/jobs/index.tsx:176
 msgid "Pipeline deleted successfully"
 msgstr "处理管道已删除"
 
@@ -4405,11 +4406,11 @@ msgstr "处理管道已删除"
 msgid "Pipeline Execution"
 msgstr "处理管道执行"
 
-#: src/components/pipeline/jobs/pipeline-summary-card.tsx:329
+#: src/components/pipeline/jobs/pipeline-summary-card.tsx:326
 msgid "Pipeline has failed jobs. Click to view details."
 msgstr "处理管道中有失败的处理任务。点击查看详情。"
 
-#: src/routes/_authed/_dashboard/pipeline/jobs/index.tsx:164
+#: src/routes/_authed/_dashboard/pipeline/jobs/index.tsx:165
 msgid "Pipeline is already completed or cancelled"
 msgstr "该处理管道已结束或已取消"
 
@@ -4426,7 +4427,7 @@ msgid "Pipeline job created successfully"
 msgstr "处理任务创建成功"
 
 #: src/components/sessions/jobs-tab.tsx:28
-#: src/routes/_authed/_dashboard/pipeline/jobs/index.tsx:218
+#: src/routes/_authed/_dashboard/pipeline/jobs/index.tsx:219
 msgid "Pipeline Jobs"
 msgstr "处理任务"
 
@@ -4463,7 +4464,7 @@ msgstr "处理管道统计"
 msgid "Pipeline Structure"
 msgstr "处理管道结构"
 
-#: src/routes/_authed/_dashboard/pipeline/jobs/index.tsx:241
+#: src/routes/_authed/_dashboard/pipeline/jobs/index.tsx:242
 msgid "pipelines"
 msgstr "处理管道"
 
@@ -4520,7 +4521,7 @@ msgid "platforms"
 msgstr "平台"
 
 #: src/components/config/global/backup-restore-card.tsx:388
-#: src/components/config/templates/template-editor.tsx:259
+#: src/components/config/templates/template-editor.tsx:267
 #: src/components/sidebar/navbar.tsx:36
 #: src/routes/_authed/_dashboard/config/route.tsx:54
 msgid "Platforms"
@@ -4725,7 +4726,7 @@ msgstr "并行处理视频并提取播客音频，然后同时上传两者。"
 #: src/routes/_authed/_dashboard/pipeline/executions.$pipelineId.tsx:509
 #: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.tsx:325
 #: src/routes/_authed/_dashboard/pipeline/jobs/index.tsx:70
-#: src/routes/_authed/_dashboard/pipeline/jobs/index.tsx:270
+#: src/routes/_authed/_dashboard/pipeline/jobs/index.tsx:271
 msgid "Processing"
 msgstr "处理中"
 
@@ -4749,7 +4750,7 @@ msgstr "必须选择处理器"
 msgid "Progress"
 msgstr "进度"
 
-#: src/components/pipeline/jobs/pipeline-summary-card.tsx:320
+#: src/components/pipeline/jobs/pipeline-summary-card.tsx:317
 msgid "Progress:"
 msgstr "进度："
 
@@ -5182,8 +5183,8 @@ msgid "Sanitized streamer name"
 msgstr "清理后的主播名称"
 
 #: src/components/config/engines/engine-editor.tsx:288
-#: src/components/config/platforms/platform-editor.tsx:152
-#: src/components/config/templates/template-editor.tsx:206
+#: src/components/config/platforms/platform-editor.tsx:159
+#: src/components/config/templates/template-editor.tsx:213
 #: src/components/filters/FilterDialog.tsx:258
 #: src/components/notifications/subscription-manager.tsx:446
 #: src/components/pipeline/presets/editor/preset-save-fab.tsx:37
@@ -5202,8 +5203,8 @@ msgstr "将设置保存为 JSON 文件"
 msgid "Save Workflow"
 msgstr "保存工作流"
 
-#: src/components/config/platforms/platform-editor.tsx:150
-#: src/components/config/templates/template-editor.tsx:202
+#: src/components/config/platforms/platform-editor.tsx:157
+#: src/components/config/templates/template-editor.tsx:209
 #: src/components/filters/FilterDialog.tsx:255
 #: src/components/pipeline/workflows/workflow-editor.tsx:268
 #: src/components/streamers/edit/streamer-save-fab.tsx:48
@@ -5261,7 +5262,7 @@ msgstr "搜索引擎..."
 msgid "Search events..."
 msgstr "搜索事件..."
 
-#: src/routes/_authed/_dashboard/pipeline/jobs/index.tsx:230
+#: src/routes/_authed/_dashboard/pipeline/jobs/index.tsx:231
 msgid "Search jobs..."
 msgstr "搜索处理任务..."
 
@@ -5600,7 +5601,7 @@ msgstr "来源"
 msgid "Space Saver"
 msgstr "空间节省"
 
-#: src/components/config/platforms/platform-editor.tsx:191
+#: src/components/config/platforms/platform-editor.tsx:199
 #: src/components/config/templates/tabs/platform-override-card.tsx:68
 msgid "Specific"
 msgstr "特定"
@@ -5675,7 +5676,7 @@ msgstr "开始二维码登录"
 msgid "Start Time"
 msgstr "开始时间"
 
-#: src/components/pipeline/jobs/pipeline-summary-card.tsx:275
+#: src/components/pipeline/jobs/pipeline-summary-card.tsx:272
 #: src/components/sessions/overview-tab.tsx:218
 #: src/routes/_authed/_dashboard/pipeline/executions.$pipelineId.tsx:352
 #: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.tsx:631
@@ -6092,7 +6093,7 @@ msgstr "此步骤已关联到预设 <0>{presetName}</0>。"
 msgid "This streamer is currently live, but outside your configured recording schedule."
 msgstr "该主播当前正在直播，但不在你配置的录制时间表内。"
 
-#: src/components/pipeline/jobs/pipeline-summary-card.tsx:205
+#: src/components/pipeline/jobs/pipeline-summary-card.tsx:202
 msgid "This will cancel all pending and processing jobs in this pipeline."
 msgstr "这将取消此处理管道中所有待处理和处理中的任务。"
 
@@ -6101,7 +6102,7 @@ msgstr "这将取消此处理管道中所有待处理和处理中的任务。"
 msgid "This will permanently delete the notification channel \"{0}\"."
 msgstr "这将永久删除通知渠道“{0}”。"
 
-#: src/components/pipeline/jobs/pipeline-summary-card.tsx:247
+#: src/components/pipeline/jobs/pipeline-summary-card.tsx:244
 msgid "This will permanently delete the pipeline and all its associated jobs and logs. This action cannot be undone."
 msgstr "这将永久删除处理管道及其关联的所有任务和日志。此操作无法撤销。"
 
@@ -6325,7 +6326,7 @@ msgstr "尝试调整搜索或过滤器"
 msgid "Try adjusting your search or filters, or add a new streamer to start monitoring."
 msgstr "尝试调整搜索或过滤器，或添加新主播以开始监控。"
 
-#: src/routes/_authed/_dashboard/pipeline/jobs/index.tsx:407
+#: src/routes/_authed/_dashboard/pipeline/jobs/index.tsx:408
 #: src/routes/_authed/_dashboard/pipeline/outputs.tsx:290
 #: src/routes/_authed/_dashboard/pipeline/presets/index.tsx:375
 msgid "Try adjusting your search or filters."
@@ -6644,7 +6645,7 @@ msgstr "查看弹幕"
 msgid "View Detailed Logs & Outputs"
 msgstr "查看详细日志与输出"
 
-#: src/components/pipeline/jobs/pipeline-summary-card.tsx:184
+#: src/components/pipeline/jobs/pipeline-summary-card.tsx:181
 #: src/components/sessions/session-card.tsx:271
 #: src/routes/_authed/_dashboard/dashboard.tsx:137
 msgid "View Details"
