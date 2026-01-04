@@ -546,6 +546,12 @@ impl DagScheduler {
             session_id.clone(),
         );
         job_db.config = config;
+        job_db.state = serde_json::json!({
+            "streamer_name": streamer_name.clone(),
+            "session_title": session_title.clone(),
+            "platform": platform.clone(),
+        })
+        .to_string();
         job_db.dag_step_execution_id = Some(step_execution_id.to_string());
 
         let job_id = job_db.id.clone();

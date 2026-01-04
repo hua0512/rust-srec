@@ -2054,6 +2054,18 @@ fn job_to_db_model(job: &Job) -> JobDbModel {
         "Failed to serialize job outputs; storing empty list",
     );
 
+    let state =
+        if job.streamer_name.is_some() || job.session_title.is_some() || job.platform.is_some() {
+            serde_json::json!({
+                "streamer_name": job.streamer_name.clone(),
+                "session_title": job.session_title.clone(),
+                "platform": job.platform.clone(),
+            })
+            .to_string()
+        } else {
+            "{}".to_string()
+        };
+
     // Serialize execution_info to JSON
     let execution_info_json = job.execution_info.as_ref().and_then(|info| {
         json::to_string_option_or_warn(
@@ -2071,7 +2083,7 @@ fn job_to_db_model(job: &Job) -> JobDbModel {
         job_type: job.job_type.clone(),
         status: status.as_str().to_string(),
         config: job.config.clone().unwrap_or_else(|| "{}".to_string()),
-        state: "{}".to_string(),
+        state,
         created_at: job.created_at.to_rfc3339(),
         updated_at: Utc::now().to_rfc3339(),
         input: Some(inputs_json),
@@ -2145,6 +2157,26 @@ fn db_model_to_job(db_job: &JobDbModel) -> Job {
         vec![output_str]
     };
 
+    let mut streamer_name = None;
+    let mut session_title = None;
+    let mut platform = None;
+    if let Ok(state) = serde_json::from_str::<serde_json::Value>(&db_job.state)
+        && let Some(obj) = state.as_object()
+    {
+        streamer_name = obj
+            .get("streamer_name")
+            .and_then(|v| v.as_str())
+            .map(ToString::to_string);
+        session_title = obj
+            .get("session_title")
+            .and_then(|v| v.as_str())
+            .map(ToString::to_string);
+        platform = obj
+            .get("platform")
+            .and_then(|v| v.as_str())
+            .map(ToString::to_string);
+    }
+
     Job {
         id: db_job.id.clone(),
         job_type: db_job.job_type.clone(),
@@ -2173,9 +2205,9 @@ fn db_model_to_job(db_job: &JobDbModel) -> Job {
         duration_secs: db_job.duration_secs,
         queue_wait_secs: db_job.queue_wait_secs,
         dag_step_execution_id: db_job.dag_step_execution_id.clone(),
-        streamer_name: None,
-        session_title: None,
-        platform: None,
+        streamer_name,
+        session_title,
+        platform,
     }
 }
 
@@ -2210,6 +2242,28 @@ mod tests {
         assert_eq!(job.job_type, "remux");
         assert_eq!(job.priority, 10);
         assert_eq!(job.status, JobStatus::Pending);
+    }
+
+    #[test]
+    fn test_job_db_state_roundtrip_preserves_platform() {
+        let job = Job::new(
+            "copy_move",
+            vec!["/input.flv".to_string()],
+            vec![],
+            "streamer-1",
+            "session-1",
+        )
+        .with_streamer_name("StreamerName".to_string())
+        .with_session_title("SessionTitle".to_string())
+        .with_platform("Twitch".to_string());
+
+        let db = job_to_db_model(&job);
+        assert!(db.state.contains("Twitch"));
+
+        let restored = db_model_to_job(&db);
+        assert_eq!(restored.platform.as_deref(), Some("Twitch"));
+        assert_eq!(restored.streamer_name.as_deref(), Some("StreamerName"));
+        assert_eq!(restored.session_title.as_deref(), Some("SessionTitle"));
     }
 
     #[test]
