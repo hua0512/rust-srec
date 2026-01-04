@@ -97,7 +97,7 @@ export const CopyMoveOperationSchema = z.enum(['copy', 'move']);
 
 export const CopyMoveConfigSchema = z.object({
   operation: CopyMoveOperationSchema.default('copy'),
-  destination: z.string().optional(),
+  destination: z.string().min(1, 'Destination is required'),
   create_dirs: z.boolean().default(true),
   verify_integrity: z.boolean().default(true),
   overwrite: z.boolean().default(false),

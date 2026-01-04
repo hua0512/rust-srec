@@ -264,7 +264,7 @@ msgstr "添加自定义标签"
 msgid "Add Environment Variable"
 msgstr "添加环境变量"
 
-#: src/components/pipeline/presets/processors/copy-move-config-form.tsx:190
+#: src/components/pipeline/presets/processors/copy-move-config-form.tsx:217
 msgid "Add exclude regex pattern"
 msgstr "添加排除正则模式"
 
@@ -888,7 +888,7 @@ msgstr "检查登录"
 #~ msgid "Check Now"
 #~ msgstr "立即检查"
 
-#: src/components/pipeline/presets/processors/copy-move-config-form.tsx:158
+#: src/components/pipeline/presets/processors/copy-move-config-form.tsx:162
 msgid "Check size after copy"
 msgstr "复制后检查大小"
 
@@ -1268,7 +1268,7 @@ msgstr "为文件创建 ZIP 压缩包，适合与元数据一起打包。"
 msgid "Create Channel"
 msgstr "创建渠道"
 
-#: src/components/pipeline/presets/processors/copy-move-config-form.tsx:132
+#: src/components/pipeline/presets/processors/copy-move-config-form.tsx:136
 msgid "Create Directories"
 msgstr "创建目录"
 
@@ -1281,7 +1281,7 @@ msgstr "创建引擎"
 msgid "Create Filter"
 msgstr "创建过滤器"
 
-#: src/components/pipeline/presets/processors/copy-move-config-form.tsx:135
+#: src/components/pipeline/presets/processors/copy-move-config-form.tsx:139
 msgid "Create missing folders"
 msgstr "创建缺失的文件夹"
 
@@ -1684,8 +1684,12 @@ msgid "Design your automation pipeline step by step"
 msgstr "逐步设计你的自动化处理管道"
 
 #: src/components/pipeline/presets/processors/copy-move-config-form.tsx:96
-msgid "Destination Path (Optional)"
-msgstr "目标路径（可选）"
+msgid "Destination Directory"
+msgstr "目标文件夹"
+
+#: src/components/pipeline/presets/processors/copy-move-config-form.tsx:96
+#~ msgid "Destination Path (Optional)"
+#~ msgstr "目标路径（可选）"
 
 #: src/components/pipeline/presets/processors/rclone-config-form.tsx:160
 msgid "Destination Root"
@@ -2163,7 +2167,7 @@ msgstr "从透传中排除 ASS"
 msgid "Exclude Keywords"
 msgstr "排除关键字"
 
-#: src/components/pipeline/presets/processors/copy-move-config-form.tsx:177
+#: src/components/pipeline/presets/processors/copy-move-config-form.tsx:204
 msgid "Exclude Patterns"
 msgstr "排除模式"
 
@@ -2627,6 +2631,10 @@ msgstr "第一个输入文件路径"
 msgid "First output file path"
 msgstr "第一个输出文件路径"
 
+#: src/components/pipeline/presets/preset-editor.tsx:74
+msgid "Fix configuration errors before saving"
+msgstr "保存前修复配置错误"
+
 #: src/components/config/engines/forms/mesio-form.tsx:92
 msgid "Fix FLV"
 msgstr "修复 FLV"
@@ -2962,7 +2970,7 @@ msgstr "IANA 时区（例如 Asia/Shanghai、UTC）。"
 msgid "ID"
 msgstr "ID"
 
-#: src/components/pipeline/presets/preset-editor.tsx:13
+#: src/components/pipeline/presets/preset-editor.tsx:15
 msgid "ID is required"
 msgstr "必须填写 ID"
 
@@ -2975,8 +2983,8 @@ msgid "If any of these keywords appear in the title, the stream will be ignored.
 msgstr "如果标题中出现任何这些关键字，该流将被忽略。"
 
 #: src/components/pipeline/presets/processors/copy-move-config-form.tsx:107
-msgid "If empty, uses next output path in pipeline"
-msgstr "留空则使用处理管道中的下一个输出路径"
+#~ msgid "If empty, uses next output path in pipeline"
+#~ msgstr "留空则使用处理管道中的下一个输出路径"
 
 #: src/components/filters/forms/CategoryFilterForm.tsx:55
 msgid "If enabled, streams in these categories will be ignored."
@@ -3660,7 +3668,7 @@ msgstr "名称"
 msgid "Name autofilled successfully"
 msgstr "名称自动填充成功"
 
-#: src/components/pipeline/presets/preset-editor.tsx:14
+#: src/components/pipeline/presets/preset-editor.tsx:16
 msgid "Name is required"
 msgstr "必须填写名称"
 
@@ -4107,7 +4115,7 @@ msgid "Optional extra arguments appended to `tdl login`."
 msgstr "附加到 `tdl login` 的可选额外参数。"
 
 #: src/components/pipeline/presets/processors/compression-config-form.tsx:115
-#: src/components/pipeline/presets/processors/copy-move-config-form.tsx:120
+#: src/components/pipeline/presets/processors/copy-move-config-form.tsx:124
 msgid "Options"
 msgstr "选项"
 
@@ -4224,6 +4232,10 @@ msgstr "概览"
 #: src/components/pipeline/presets/processors/metadata-config-form.tsx:262
 msgid "Overwrite"
 msgstr "覆盖"
+
+#: src/components/pipeline/presets/processors/copy-move-config-form.tsx:182
+msgid "Overwrite Existing"
+msgstr "覆盖已存在文件"
 
 #: src/components/pipeline/presets/processors/danmaku-factory-config-form.tsx:150
 msgid "Overwrite existing .ass files"
@@ -4742,7 +4754,7 @@ msgstr "处理节点"
 msgid "Processor"
 msgstr "处理器"
 
-#: src/components/pipeline/presets/preset-editor.tsx:17
+#: src/components/pipeline/presets/preset-editor.tsx:19
 msgid "Processor is required"
 msgstr "必须选择处理器"
 
@@ -4921,7 +4933,7 @@ msgstr "正则表达式"
 msgid "Regex Pattern"
 msgstr "正则模式"
 
-#: src/components/pipeline/presets/processors/copy-move-config-form.tsx:194
+#: src/components/pipeline/presets/processors/copy-move-config-form.tsx:221
 msgid "Regex patterns to exclude files. Matched against full path and filename."
 msgstr "用于排除文件的正则模式。将针对完整路径和文件名进行匹配。"
 
@@ -4981,6 +4993,10 @@ msgstr "重封装 (Faststart)"
 #: src/components/config/global/backup-restore-card.tsx:546
 msgid "Replace All"
 msgstr "全部替换"
+
+#: src/components/pipeline/presets/processors/copy-move-config-form.tsx:185
+msgid "Replace destination files if they exist"
+msgstr "如果目标文件已存在则替换"
 
 #: src/components/pipeline/presets/processors/compression-config-form.tsx:153
 msgid "Replace output files"
@@ -5860,6 +5876,10 @@ msgstr "支持"
 msgid "Supported Platforms"
 msgstr "支持的平台"
 
+#: src/components/pipeline/presets/processors/copy-move-config-form.tsx:107
+msgid "Supports placeholders: {platform}, {streamer}, {title}, {streamer_id}, {session_id} and time tokens like %Y/%m/%d."
+msgstr "支持占位符：{platform}, {streamer}, {title}, {streamer_id}, {session_id} 和时间标记，如 %Y/%m/%d。"
+
 #: src/components/config/engines/forms/mesio-form.tsx:213
 msgid "Suppress redundant sequence headers with the same config (can reduce player stutter)."
 msgstr "抑制具有相同配置的冗余序列头（可减少播放器卡顿）。"
@@ -6596,7 +6616,7 @@ msgstr "变量：'{streamer}'、'{title}'、'{platform}' | 时间：%Y、%m、%d
 msgid "Velocity Based (Dynamic)"
 msgstr "基于速度（动态）"
 
-#: src/components/pipeline/presets/processors/copy-move-config-form.tsx:155
+#: src/components/pipeline/presets/processors/copy-move-config-form.tsx:159
 msgid "Verify Integrity"
 msgstr "校验完整性"
 

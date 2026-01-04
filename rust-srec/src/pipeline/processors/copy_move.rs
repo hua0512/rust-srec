@@ -47,8 +47,9 @@ pub struct CopyMoveConfig {
     #[serde(default)]
     pub operation: CopyMoveOperation,
 
-    /// Destination path for the file.
-    /// If not provided, uses the first output path from ProcessorInput.
+    /// Destination directory for output files (supports placeholder expansion).
+    ///
+    /// This is required at runtime; the processor will return an error if it is missing.
     pub destination: Option<String>,
 
     /// Whether to create destination directories if they don't exist.

@@ -264,7 +264,7 @@ msgstr "Add Custom Tag"
 msgid "Add Environment Variable"
 msgstr "Add Environment Variable"
 
-#: src/components/pipeline/presets/processors/copy-move-config-form.tsx:190
+#: src/components/pipeline/presets/processors/copy-move-config-form.tsx:217
 msgid "Add exclude regex pattern"
 msgstr "Add exclude regex pattern"
 
@@ -888,7 +888,7 @@ msgstr "Check Login"
 #~ msgid "Check Now"
 #~ msgstr "Check Now"
 
-#: src/components/pipeline/presets/processors/copy-move-config-form.tsx:158
+#: src/components/pipeline/presets/processors/copy-move-config-form.tsx:162
 msgid "Check size after copy"
 msgstr "Check size after copy"
 
@@ -1268,7 +1268,7 @@ msgstr "Create a ZIP archive of the file. Good for bundling with metadata."
 msgid "Create Channel"
 msgstr "Create Channel"
 
-#: src/components/pipeline/presets/processors/copy-move-config-form.tsx:132
+#: src/components/pipeline/presets/processors/copy-move-config-form.tsx:136
 msgid "Create Directories"
 msgstr "Create Directories"
 
@@ -1281,7 +1281,7 @@ msgstr "Create Engine"
 msgid "Create Filter"
 msgstr "Create Filter"
 
-#: src/components/pipeline/presets/processors/copy-move-config-form.tsx:135
+#: src/components/pipeline/presets/processors/copy-move-config-form.tsx:139
 msgid "Create missing folders"
 msgstr "Create missing folders"
 
@@ -1684,8 +1684,12 @@ msgid "Design your automation pipeline step by step"
 msgstr "Design your automation pipeline step by step"
 
 #: src/components/pipeline/presets/processors/copy-move-config-form.tsx:96
-msgid "Destination Path (Optional)"
-msgstr "Destination Path (Optional)"
+msgid "Destination Directory"
+msgstr "Destination Directory"
+
+#: src/components/pipeline/presets/processors/copy-move-config-form.tsx:96
+#~ msgid "Destination Path (Optional)"
+#~ msgstr "Destination Path (Optional)"
 
 #: src/components/pipeline/presets/processors/rclone-config-form.tsx:160
 msgid "Destination Root"
@@ -2163,7 +2167,7 @@ msgstr "Exclude ASS from Passthrough"
 msgid "Exclude Keywords"
 msgstr "Exclude Keywords"
 
-#: src/components/pipeline/presets/processors/copy-move-config-form.tsx:177
+#: src/components/pipeline/presets/processors/copy-move-config-form.tsx:204
 msgid "Exclude Patterns"
 msgstr "Exclude Patterns"
 
@@ -2627,6 +2631,10 @@ msgstr "First input file path"
 msgid "First output file path"
 msgstr "First output file path"
 
+#: src/components/pipeline/presets/preset-editor.tsx:74
+msgid "Fix configuration errors before saving"
+msgstr "Fix configuration errors before saving"
+
 #: src/components/config/engines/forms/mesio-form.tsx:92
 msgid "Fix FLV"
 msgstr "Fix FLV"
@@ -2962,7 +2970,7 @@ msgstr "IANA Timezone (e.g. Asia/Shanghai, UTC)."
 msgid "ID"
 msgstr "ID"
 
-#: src/components/pipeline/presets/preset-editor.tsx:13
+#: src/components/pipeline/presets/preset-editor.tsx:15
 msgid "ID is required"
 msgstr "ID is required"
 
@@ -2975,8 +2983,8 @@ msgid "If any of these keywords appear in the title, the stream will be ignored.
 msgstr "If any of these keywords appear in the title, the stream will be ignored."
 
 #: src/components/pipeline/presets/processors/copy-move-config-form.tsx:107
-msgid "If empty, uses next output path in pipeline"
-msgstr "If empty, uses next output path in pipeline"
+#~ msgid "If empty, uses next output path in pipeline"
+#~ msgstr "If empty, uses next output path in pipeline"
 
 #: src/components/filters/forms/CategoryFilterForm.tsx:55
 msgid "If enabled, streams in these categories will be ignored."
@@ -3660,7 +3668,7 @@ msgstr "Name"
 msgid "Name autofilled successfully"
 msgstr "Name autofilled successfully"
 
-#: src/components/pipeline/presets/preset-editor.tsx:14
+#: src/components/pipeline/presets/preset-editor.tsx:16
 msgid "Name is required"
 msgstr "Name is required"
 
@@ -4107,7 +4115,7 @@ msgid "Optional extra arguments appended to `tdl login`."
 msgstr "Optional extra arguments appended to `tdl login`."
 
 #: src/components/pipeline/presets/processors/compression-config-form.tsx:115
-#: src/components/pipeline/presets/processors/copy-move-config-form.tsx:120
+#: src/components/pipeline/presets/processors/copy-move-config-form.tsx:124
 msgid "Options"
 msgstr "Options"
 
@@ -4224,6 +4232,10 @@ msgstr "Overview"
 #: src/components/pipeline/presets/processors/metadata-config-form.tsx:262
 msgid "Overwrite"
 msgstr "Overwrite"
+
+#: src/components/pipeline/presets/processors/copy-move-config-form.tsx:182
+msgid "Overwrite Existing"
+msgstr "Overwrite Existing"
 
 #: src/components/pipeline/presets/processors/danmaku-factory-config-form.tsx:150
 msgid "Overwrite existing .ass files"
@@ -4742,7 +4754,7 @@ msgstr "Processing nodes"
 msgid "Processor"
 msgstr "Processor"
 
-#: src/components/pipeline/presets/preset-editor.tsx:17
+#: src/components/pipeline/presets/preset-editor.tsx:19
 msgid "Processor is required"
 msgstr "Processor is required"
 
@@ -4921,7 +4933,7 @@ msgstr "Regex"
 msgid "Regex Pattern"
 msgstr "Regex Pattern"
 
-#: src/components/pipeline/presets/processors/copy-move-config-form.tsx:194
+#: src/components/pipeline/presets/processors/copy-move-config-form.tsx:221
 msgid "Regex patterns to exclude files. Matched against full path and filename."
 msgstr "Regex patterns to exclude files. Matched against full path and filename."
 
@@ -4981,6 +4993,10 @@ msgstr "Remux with Faststart"
 #: src/components/config/global/backup-restore-card.tsx:546
 msgid "Replace All"
 msgstr "Replace All"
+
+#: src/components/pipeline/presets/processors/copy-move-config-form.tsx:185
+msgid "Replace destination files if they exist"
+msgstr "Replace destination files if they exist"
 
 #: src/components/pipeline/presets/processors/compression-config-form.tsx:153
 msgid "Replace output files"
@@ -5860,6 +5876,10 @@ msgstr "Supported"
 msgid "Supported Platforms"
 msgstr "Supported Platforms"
 
+#: src/components/pipeline/presets/processors/copy-move-config-form.tsx:107
+msgid "Supports placeholders: {platform}, {streamer}, {title}, {streamer_id}, {session_id} and time tokens like %Y/%m/%d."
+msgstr "Supports placeholders: {platform}, {streamer}, {title}, {streamer_id}, {session_id} and time tokens like %Y/%m/%d."
+
 #: src/components/config/engines/forms/mesio-form.tsx:213
 msgid "Suppress redundant sequence headers with the same config (can reduce player stutter)."
 msgstr "Suppress redundant sequence headers with the same config (can reduce player stutter)."
@@ -6596,7 +6616,7 @@ msgstr "Vars: '{streamer}', '{title}', '{platform}' | Time: %Y, %m, %d, %H, %M, 
 msgid "Velocity Based (Dynamic)"
 msgstr "Velocity Based (Dynamic)"
 
-#: src/components/pipeline/presets/processors/copy-move-config-form.tsx:155
+#: src/components/pipeline/presets/processors/copy-move-config-form.tsx:159
 msgid "Verify Integrity"
 msgstr "Verify Integrity"
 
