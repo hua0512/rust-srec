@@ -1806,9 +1806,10 @@ impl ServiceContainer {
                 info!("Streamer {} ({}) went offline", streamer_name, streamer_id);
 
                 // Stop danmu collection if active
-                if let Some(sid) = session_id
-                    && danmu_service.is_collecting(&sid)
-                {
+                let sid = session_id
+                    .filter(|sid| danmu_service.is_collecting(sid))
+                    .or_else(|| danmu_service.get_session_by_streamer(&streamer_id));
+                if let Some(sid) = sid {
                     match danmu_service.stop_collection(&sid).await {
                         Ok(stats) => {
                             info!(

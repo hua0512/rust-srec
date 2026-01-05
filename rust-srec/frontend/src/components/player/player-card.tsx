@@ -60,6 +60,7 @@ export function PlayerCard({
 
   // Auto-resolve URL on mount or refresh if streamData is present
   useEffect(() => {
+    let disposed = false;
     const resolve = async () => {
       if (!streamData || !title) {
         setCurrentUrl(url);
@@ -85,6 +86,7 @@ export function PlayerCard({
             stream_info: baseStreamInfo,
           },
         });
+        if (disposed) return;
         console.log('[PlayerCard] Headers:', headers);
         console.log('[PlayerCard] Resolve Response:', response);
 
@@ -107,20 +109,37 @@ export function PlayerCard({
         }
       } catch (err) {
         console.error('[PlayerCard] Resolution error:', err);
+        if (disposed) return;
         setCurrentUrl(url);
         setCurrentHeaders(headers);
       } finally {
-        setResolving(false);
+        if (!disposed) setResolving(false);
       }
     };
 
     resolve();
+
+    return () => {
+      disposed = true;
+    };
   }, [url, headers, streamData, title, refreshKey]);
 
   useEffect(() => {
     if (!artRef.current || resolving) return;
 
+    let disposed = false;
+
     if (playerRef.current) {
+      const video: HTMLMediaElement | undefined = playerRef.current?.video;
+      if (video) {
+        try {
+          video.pause();
+          video.removeAttribute('src');
+          video.load();
+        } catch {
+          // ignore
+        }
+      }
       playerRef.current.destroy(false);
       playerRef.current = null;
     }
@@ -164,6 +183,7 @@ export function PlayerCard({
     const initPlayer = async () => {
       try {
         const { default: Artplayer } = await import('artplayer');
+        if (disposed || !artRef.current) return;
 
         const options: any = {
           container: artRef.current,
@@ -259,6 +279,10 @@ export function PlayerCard({
         }
 
         const art = new Artplayer(options);
+        if (disposed) {
+          art.destroy(false);
+          return;
+        }
         playerRef.current = art;
 
         art.on('ready', () => {
@@ -287,15 +311,32 @@ export function PlayerCard({
     initPlayer();
 
     return () => {
+      disposed = true;
       if (hlsRef.current) {
-        hlsRef.current.destroy();
+        const hls = hlsRef.current;
+        hls.stopLoad?.();
+        hls.detachMedia?.();
+        hls.destroy?.();
         hlsRef.current = null;
       }
       if (flvRef.current) {
-        flvRef.current.destroy();
+        const flv = flvRef.current;
+        flv.unload?.();
+        flv.detachMediaElement?.();
+        flv.destroy?.();
         flvRef.current = null;
       }
       if (playerRef.current) {
+        const video: HTMLMediaElement | undefined = playerRef.current?.video;
+        if (video) {
+          try {
+            video.pause();
+            video.removeAttribute('src');
+            video.load();
+          } catch {
+            // ignore
+          }
+        }
         playerRef.current.destroy(false);
         playerRef.current = null;
       }
