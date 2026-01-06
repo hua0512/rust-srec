@@ -886,6 +886,7 @@ impl ServiceContainer {
                 // Handle download failure for error tracking
                 if let DownloadManagerEvent::DownloadFailed {
                     ref streamer_id,
+                    ref session_id,
                     ref error,
                     ..
                 } = download_event
@@ -896,6 +897,45 @@ impl ServiceContainer {
                             warn!("Failed to record download error for {}: {}", streamer_id, e);
                         } else {
                             debug!("Recorded download error for {}: {}", streamer_id, error);
+                        }
+                    }
+
+                    // Stop danmu collection when download fails
+                    if danmu_service.is_collecting(session_id) {
+                        match danmu_service.stop_collection(session_id).await {
+                            Ok(stats) => {
+                                info!(
+                                    "Stopped danmu collection after download failure for session {}: {} messages",
+                                    session_id, stats.total_count
+                                );
+                            }
+                            Err(e) => {
+                                warn!(
+                                    "Failed to stop danmu collection for session {}: {}",
+                                    session_id, e
+                                );
+                            }
+                        }
+                    }
+                }
+
+                // Handle download cancellation - stop danmu collection
+                if let DownloadManagerEvent::DownloadCancelled { ref session_id, .. } =
+                    download_event
+                    && danmu_service.is_collecting(session_id)
+                {
+                    match danmu_service.stop_collection(session_id).await {
+                        Ok(stats) => {
+                            info!(
+                                "Stopped danmu collection after download cancelled for session {}: {} messages",
+                                session_id, stats.total_count
+                            );
+                        }
+                        Err(e) => {
+                            warn!(
+                                "Failed to stop danmu collection for session {}: {}",
+                                session_id, e
+                            );
                         }
                     }
                 }

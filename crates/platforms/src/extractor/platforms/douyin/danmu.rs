@@ -38,8 +38,10 @@ const DOUYIN_WS_HOSTS: &[&str] = &[
 /// Douyin WebSocket server URL path
 const DOUYIN_WS_URL_PATH: &str = "/webcast/im/push/v2/";
 
+/// Heartbeat packet.
+const HEARTBEAT: &[u8] = b":\x02hb";
 /// Heartbeat interval in seconds
-const HEARTBEAT_INTERVAL_SECS: u64 = 15;
+const HEARTBEAT_INTERVAL_SECS: u64 = 10;
 
 /// Douyin Protocol Implementation
 #[derive(Clone, Default)]
@@ -301,8 +303,7 @@ impl DanmuProtocol for DouyinDanmuProtocol {
     }
 
     fn heartbeat_message(&self) -> Option<Message> {
-        // Douyin doesn't use heartbeat messages
-        None
+        Some(Message::Binary(Bytes::from_static(HEARTBEAT)))
     }
 
     fn heartbeat_interval(&self) -> Duration {
@@ -396,10 +397,17 @@ mod tests {
     }
 
     #[test]
-    fn test_heartbeat_disabled() {
+    fn test_heartbeat_message() {
         let protocol = DouyinDanmuProtocol::default();
-        // Douyin doesn't use heartbeat
-        assert!(protocol.heartbeat_message().is_none());
+        let heartbeat = protocol.heartbeat_message();
+        assert!(heartbeat.is_some());
+
+        // Verify the heartbeat packet bytes: 0x3A 0x02 0x68 0x62 (":\x02hb")
+        if let Some(Message::Binary(data)) = heartbeat {
+            assert_eq!(data.as_ref(), b":\x02hb");
+        } else {
+            panic!("Expected binary heartbeat message");
+        }
     }
 
     #[tokio::test]
