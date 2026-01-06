@@ -10,7 +10,7 @@ repository = "https://github.com/hua0512/rust-srec"
 bytes = { workspace = true }
 tokio = { workspace = true, features = ["rt-multi-thread", "io-util"] }
 tokio-util = { workspace = true }
-tokio-stream = "0.1.17"
+tokio-stream = "0.1.18"
 futures = { workspace = true }
 reqwest = { workspace = true, features = [
     "json",
