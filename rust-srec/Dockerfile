@@ -1,4 +1,43 @@
-# Build stage
+# =============================================================================
+# Stage 1: Planner - Generate recipe.json (dependency manifest)
+# =============================================================================
+FROM rust:1.92.0-bookworm AS planner
+
+RUN cargo install cargo-chef
+
+WORKDIR /app
+
+# Copy workspace files
+COPY Cargo.toml Cargo.lock ./
+COPY rust-srec ./rust-srec
+COPY crates ./crates
+COPY mesio-cli ./mesio-cli
+COPY strev-cli ./strev-cli
+
+RUN cargo chef prepare --recipe-path recipe.json
+
+# =============================================================================
+# Stage 2: Cacher - Build dependencies only (highly cacheable)
+# =============================================================================
+FROM rust:1.92.0-bookworm AS cacher
+
+RUN cargo install cargo-chef
+
+# Install build dependencies including protoc
+RUN apt-get update && apt-get install -y \
+    protobuf-compiler \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+
+COPY --from=planner /app/recipe.json recipe.json
+
+# Build only dependencies - this layer is cached if recipe.json unchanged
+RUN cargo chef cook --release --recipe-path recipe.json
+
+# =============================================================================
+# Stage 3: Builder - Build the actual application
+# =============================================================================
 FROM rust:1.92.0-bookworm AS builder
 
 # Install build dependencies including protoc
@@ -8,16 +47,18 @@ RUN apt-get update && apt-get install -y \
 
 WORKDIR /app
 
+# Copy pre-built dependencies from cacher
+COPY --from=cacher /app/target target
+COPY --from=cacher /usr/local/cargo /usr/local/cargo
+
 # Copy workspace files
 COPY Cargo.toml Cargo.lock ./
-
-# Copy required workspace members only
 COPY rust-srec ./rust-srec
 COPY crates ./crates
 COPY mesio-cli ./mesio-cli
 COPY strev-cli ./strev-cli
 
-# Build the release binary
+# Build the release binary (only compiles our code, deps are cached)
 RUN cargo build --release --bin rust-srec
 
 # Runtime stage
